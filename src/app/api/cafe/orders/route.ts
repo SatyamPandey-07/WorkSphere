@@ -124,3 +124,50 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const orderId = searchParams.get("orderId");
+
+    if (!orderId) {
+      return NextResponse.json(
+        { error: "Missing required query parameter: orderId" },
+        { status: 400 }
+      );
+    }
+
+    const order = activeOrdersStore.get(orderId);
+    if (!order) {
+      return NextResponse.json(
+        { error: "Order not found or expired from live queue." },
+        { status: 404 }
+      );
+    }
+
+    const elapsedMs = Date.now() - order.createdAt;
+    const totalDurationMs = order.estimatedReadyTime - order.createdAt;
+    if (elapsedMs > totalDurationMs) {
+      order.status = "ready_for_pickup";
+    } else if (elapsedMs > 15000 && order.status === "received") {
+      order.status = "brewing";
+    }
+
+    if (order.status !== "received") {
+      return NextResponse.json(
+        { success: false, error: "Only orders that have not started brewing can be cancelled.", order },
+        { status: 409 }
+      );
+    }
+
+    order.status = "cancelled";
+    activeOrdersStore.delete(orderId);
+    return NextResponse.json({ success: true, order });
+  } catch (error: any) {
+    console.error("[DELETE /api/cafe/orders] Error:", error);
+    return NextResponse.json(
+      { error: "Failed to cancel barista order", details: error.message },
+      { status: 500 }
+    );
+  }
+}

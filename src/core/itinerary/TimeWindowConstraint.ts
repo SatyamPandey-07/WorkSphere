@@ -18,6 +18,35 @@ export interface MeetingSlot {
     endTime: Date | string;
 }
 
+export const DEFAULT_TRANSIT_BUFFER_MIN = 15;
+export const MIN_BREAK_DURATION_MINUTES = 0;
+export const MAX_BREAK_DURATION_MINUTES = 240;
+
+export interface TransitConstraintOptions {
+    customBreakDurationMinutes?: number;
+    breakDurationMinutes?: number;
+    minBreakDuration?: number;
+    segmentBreakDurations?: Record<string, number>;
+}
+
+/**
+ * Validates that custom break duration is within the acceptable range [0, 240] minutes.
+ */
+export function validateBreakDuration(duration?: number): number {
+    if (duration === undefined || duration === null) {
+        return 0;
+    }
+    if (typeof duration !== 'number' || !Number.isFinite(duration) || isNaN(duration)) {
+        throw new Error("Invalid break duration: must be a finite number.");
+    }
+    if (duration < MIN_BREAK_DURATION_MINUTES || duration > MAX_BREAK_DURATION_MINUTES) {
+        throw new Error(
+            `customBreakDurationMinutes must be between ${MIN_BREAK_DURATION_MINUTES} and ${MAX_BREAK_DURATION_MINUTES} minutes (received ${duration}).`
+        );
+    }
+    return duration;
+}
+
 export interface TimeWindowValidationResult {
     isValid: boolean;
     requiredTransitBufferMinutes: number;
@@ -148,14 +177,71 @@ export class TimeWindowConstraint {
     }
 
     /**
+     * Resolves the configured break duration in minutes from TransitConstraintOptions.
+     */
+    public resolveBreakDuration(
+        options?: TransitConstraintOptions,
+        fromVenueId?: string,
+        toVenueId?: string
+    ): number {
+        if (!options) return 0;
+
+        if (fromVenueId && toVenueId && options.segmentBreakDurations) {
+            const segmentKey = `${fromVenueId}->${toVenueId}`;
+            const altKey = `${fromVenueId}-${toVenueId}`;
+            const segmentBreak = options.segmentBreakDurations[segmentKey] ?? options.segmentBreakDurations[altKey];
+            if (segmentBreak !== undefined) {
+                return validateBreakDuration(segmentBreak);
+            }
+        }
+
+        const candidate =
+            options.customBreakDurationMinutes ??
+            options.breakDurationMinutes ??
+            options.minBreakDuration ??
+            0;
+
+        return validateBreakDuration(candidate);
+    }
+
+    /**
+     * Calculates the earliest arrival time at the next venue considering departure time,
+     * transit duration, and configured custom break duration.
+     */
+    public calculateEarliestArrival(
+        departureTime: Date,
+        transitMinutes: number,
+        options?: TransitConstraintOptions
+    ): Date {
+        const breakMinutes = this.resolveBreakDuration(options);
+        const totalMinutes = Math.max(0, transitMinutes) + breakMinutes;
+        return new Date(departureTime.getTime() + totalMinutes * 60000);
+    }
+
+    /**
+     * Validates if a transit window between venues is feasible, taking into account
+     * mobility mode transit buffer and configured custom break duration.
+     */
+    public validateTransitWindow(
+        previousSlot: MeetingSlot,
+        nextSlot: MeetingSlot,
+        mode: MobilityMode = 'walking',
+        graph?: ItineraryGraph,
+        options?: TransitConstraintOptions
+    ): TimeWindowValidationResult {
+        return this.validateConsecutiveSlots(previousSlot, nextSlot, mode, graph, options);
+    }
+
+    /**
      * Validates if a transition between two consecutive meeting time windows is feasible
-     * by enforcing a minimum transit buffer based on distance and mobility mode.
+     * by enforcing a minimum transit buffer based on distance, mobility mode, and custom break duration.
      */
     public validateConsecutiveSlots(
         previousSlot: MeetingSlot,
         nextSlot: MeetingSlot,
         mode: MobilityMode = 'walking',
-        graph?: ItineraryGraph
+        graph?: ItineraryGraph,
+        options?: TransitConstraintOptions
     ): TimeWindowValidationResult {
         const prevEnd = previousSlot.endTime instanceof Date ? previousSlot.endTime : new Date(previousSlot.endTime);
         const nextStart = nextSlot.startTime instanceof Date ? nextSlot.startTime : new Date(nextSlot.startTime);
@@ -168,37 +254,47 @@ export class TimeWindowConstraint {
             graph
         );
 
-        if (availableGapMinutes < requiredTransitMinutes) {
+        const breakMinutes = this.resolveBreakDuration(
+            options,
+            previousSlot.venue.id,
+            nextSlot.venue.id
+        );
+
+        const totalRequiredMinutes = requiredTransitMinutes + breakMinutes;
+
+        if (availableGapMinutes < totalRequiredMinutes) {
+            const breakDetail = breakMinutes > 0 ? ` (${requiredTransitMinutes}m transit + ${breakMinutes}m break)` : "";
             return {
                 isValid: false,
-                requiredTransitBufferMinutes: requiredTransitMinutes,
+                requiredTransitBufferMinutes: totalRequiredMinutes,
                 availableGapMinutes: Math.round(availableGapMinutes * 10) / 10,
-                error: `Insufficient transit allowance between '${previousSlot.venue.name}' and '${nextSlot.venue.name}'. Required: ${requiredTransitMinutes} mins via ${mode}, available: ${Math.round(availableGapMinutes * 10) / 10} mins.`
+                error: `Insufficient transit allowance between '${previousSlot.venue.name}' and '${nextSlot.venue.name}'. Required: ${totalRequiredMinutes} mins${breakDetail} via ${mode}, available: ${Math.round(availableGapMinutes * 10) / 10} mins.`
             };
         }
 
         return {
             isValid: true,
-            requiredTransitBufferMinutes: requiredTransitMinutes,
+            requiredTransitBufferMinutes: totalRequiredMinutes,
             availableGapMinutes: Math.round(availableGapMinutes * 10) / 10
         };
     }
 
     /**
      * Validates a sequence of meeting slots to guarantee that every transition satisfies
-     * the required minimum transit buffer without overlapping time windows.
+     * the required minimum transit buffer and break duration without overlapping time windows.
      */
     public validateItinerarySlots(
         slots: MeetingSlot[],
         mode: MobilityMode = 'walking',
-        graph?: ItineraryGraph
+        graph?: ItineraryGraph,
+        options?: TransitConstraintOptions
     ): TimeWindowValidationResult {
         if (!slots || slots.length < 2) {
             return { isValid: true, requiredTransitBufferMinutes: 0, availableGapMinutes: 0 };
         }
 
         for (let i = 0; i < slots.length - 1; i++) {
-            const validation = this.validateConsecutiveSlots(slots[i], slots[i + 1], mode, graph);
+            const validation = this.validateConsecutiveSlots(slots[i], slots[i + 1], mode, graph, options);
             if (!validation.isValid) {
                 return validation;
             }

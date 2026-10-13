@@ -4,11 +4,23 @@
  * Implements statistical filtering to discard outliers and provide stable throughput estimates.
  */
 
+export type PacketLossSeverity = 'green' | 'amber' | 'red';
+
+export interface PacketLossIndicator {
+    packetLossPercent: number;
+    probesSent: number;
+    probesReceived: number;
+    severity: PacketLossSeverity;
+    colorCode: 'Green' | 'Amber' | 'Red';
+    colorHex: string;
+}
+
 export interface SpeedTestResult {
     downloadSpeedMbps: number;
     uploadSpeedMbps: number;
     jitterMs: number;
     packetLossPercent: number;
+    packetLossIndicator?: PacketLossIndicator;
     durationMs: number;
 }
 
@@ -19,6 +31,8 @@ export class P2PBandwidthEstimator {
     private downloadEndTimes: number[];
     private uploadStartTimes: number[];
     private uploadEndTimes: number[];
+    private pingProbesSent: number = 0;
+    private pingProbesReceived: number = 0;
 
     constructor(chunkSize: number = 1024 * 1024, totalChunks: number = 10) {
         this.chunkSize = chunkSize;
@@ -45,29 +59,80 @@ export class P2PBandwidthEstimator {
         this.uploadEndTimes[index] = timestamp;
     }
 
+    public recordPingProbeSent(count: number = 1) {
+        this.pingProbesSent += count;
+    }
+
+    public recordPingProbeReceived(count: number = 1) {
+        this.pingProbesReceived += count;
+    }
+
+    public getPacketLossIndicator(): PacketLossIndicator {
+        const sent = this.pingProbesSent > 0 ? this.pingProbesSent : this.totalChunks;
+        const received = this.pingProbesSent > 0 
+            ? this.pingProbesReceived 
+            : this.downloadEndTimes.filter((t, i) => !isNaN(t) && !isNaN(this.downloadStartTimes[i])).length;
+
+        const lossPercent = sent > 0 ? Math.max(0, Math.min(100, ((sent - received) / sent) * 100)) : 0;
+        const roundedLoss = Math.round(lossPercent * 100) / 100;
+
+        let severity: PacketLossSeverity = 'green';
+        let colorCode: 'Green' | 'Amber' | 'Red' = 'Green';
+        let colorHex = '#22c55e'; // Green
+
+        if (roundedLoss > 5) {
+            severity = 'red';
+            colorCode = 'Red';
+            colorHex = '#ef4444'; // Red
+        } else if (roundedLoss >= 1) {
+            severity = 'amber';
+            colorCode = 'Amber';
+            colorHex = '#f59e0b'; // Amber
+        }
+
+        return {
+            packetLossPercent: roundedLoss,
+            probesSent: sent,
+            probesReceived: received,
+            severity,
+            colorCode,
+            colorHex
+        };
+    }
+
     public calculateResults(): SpeedTestResult {
         const downloadDurations = this.downloadEndTimes
-            .map((end, i) => end - this.downloadStartTimes[i])
-            .filter(d => d > 0);
+            .map((end, i) => Math.max(0.1, end - this.downloadStartTimes[i]))
+            .filter(d => !isNaN(d) && d > 0);
 
         const uploadDurations = this.uploadEndTimes
-            .map((end, i) => end - this.uploadStartTimes[i])
-            .filter(d => d > 0);
+            .map((end, i) => Math.max(0.1, end - this.uploadStartTimes[i]))
+            .filter(d => !isNaN(d) && d > 0);
 
-        const avgDownloadDuration = this.calculateMedian(downloadDurations);
-        const avgUploadDuration = this.calculateMedian(uploadDurations);
+        const rawAvgDownloadDuration = this.calculateMedian(downloadDurations);
+        const rawAvgUploadDuration = this.calculateMedian(uploadDurations);
 
-        const downloadSpeedMbps = (this.chunkSize * 8) / (avgDownloadDuration * 1000);
-        const uploadSpeedMbps = (this.chunkSize * 8) / (avgUploadDuration * 1000);
+        // Clamp measured latency/duration to a minimum threshold of 0.1 ms to avoid divide-by-zero (#5480)
+        const avgDownloadDuration = Math.max(0.1, rawAvgDownloadDuration);
+        const avgUploadDuration = Math.max(0.1, rawAvgUploadDuration);
+
+        const downloadSpeedMbps = downloadDurations.length > 0
+            ? (this.chunkSize * 8) / (avgDownloadDuration * 1000)
+            : 0;
+        const uploadSpeedMbps = uploadDurations.length > 0
+            ? (this.chunkSize * 8) / (avgUploadDuration * 1000)
+            : 0;
 
         const jitter = this.calculateJitter(downloadDurations);
-        const packetLoss = this.calculatePacketLoss(downloadDurations);
+        const packetLossIndicator = this.getPacketLossIndicator();
+        const packetLoss = packetLossIndicator.packetLossPercent;
 
         return {
             downloadSpeedMbps: Math.round(downloadSpeedMbps * 100) / 100,
             uploadSpeedMbps: Math.round(uploadSpeedMbps * 100) / 100,
             jitterMs: Math.round(jitter * 100) / 100,
-            packetLossPercent: Math.round(packetLoss * 100) / 100,
+            packetLossPercent: packetLoss,
+            packetLossIndicator,
             durationMs: avgDownloadDuration + avgUploadDuration
         };
     }

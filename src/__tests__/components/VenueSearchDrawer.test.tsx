@@ -310,4 +310,57 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       expect(handleSortByChange).toHaveBeenCalledWith("default");
     });
   });
+
+  describe("Clear search query button and ESC keybinding (#5763)", () => {
+    it("renders clear button when search input has text and clears on click", () => {
+      const handleSearchChange = jest.fn();
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          searchText="Coworking Space"
+          onSearchChange={handleSearchChange}
+        />,
+      );
+
+      const clearBtn = screen.getByTestId("clear-search-input-btn");
+      expect(clearBtn).toBeInTheDocument();
+      expect(clearBtn).toHaveAttribute("aria-label", "Clear search input");
+
+      fireEvent.click(clearBtn);
+      expect(handleSearchChange).toHaveBeenCalledWith("");
+    });
+
+    it("hides clear button when search input is empty", () => {
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          searchText=""
+        />,
+      );
+
+      expect(screen.queryByTestId("clear-search-input-btn")).not.toBeInTheDocument();
+    });
+
+    it("clears search query and blurs input when Escape key is pressed", () => {
+      const handleSearchChange = jest.fn();
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          searchText="Desk"
+          onSearchChange={handleSearchChange}
+        />,
+      );
+
+      const searchInput = screen.getByTestId("search-input");
+      const blurSpy = jest.spyOn(searchInput, "blur");
+
+      fireEvent.keyDown(searchInput, { key: "Escape", code: "Escape" });
+
+      expect(handleSearchChange).toHaveBeenCalledWith("");
+      expect(blurSpy).toHaveBeenCalled();
+    });
+  });
 });

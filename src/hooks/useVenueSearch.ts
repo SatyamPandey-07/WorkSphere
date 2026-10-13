@@ -29,6 +29,10 @@ export interface UseVenueSearchOptions {
   minQueryLength?: number;
   /** Optional custom base API path (default: "/api/venues") */
   apiEndpoint?: string;
+  /** Configurable semantic vector scoring weight (0.0 - 1.0 or 0 - 100) */
+  semanticWeight?: number;
+  /** Configurable full-text keyword scoring weight (0.0 - 1.0 or 0 - 100) */
+  fullTextWeight?: number;
 }
 
 export interface UseVenueSearchReturn<T = VenueSearchResult> {
@@ -36,6 +40,7 @@ export interface UseVenueSearchReturn<T = VenueSearchResult> {
   setQuery: (query: string) => void;
   venues: T[];
   results: T[];
+  suggestedQuery: string | null;
   isLoading: boolean;
   loading: boolean;
   error: string | null;
@@ -73,6 +78,7 @@ export function useVenueSearch<T = VenueSearchResult>(
   const activeQuery = isControlled ? controlledQuery : internalQuery;
 
   const [venues, setVenues] = useState<T[]>([]);
+  const [suggestedQuery, setSuggestedQuery] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +102,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     }
     abort();
     setVenues([]);
+    setSuggestedQuery(null);
     setIsLoading(false);
     setError(null);
     if (!isControlled) {
@@ -111,6 +118,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       if (!trimmedQuery || trimmedQuery.length < minQueryLength) {
         abort();
         setVenues([]);
+        setSuggestedQuery(null);
         setIsLoading(false);
         setError(null);
         return;
@@ -127,10 +135,17 @@ export function useVenueSearch<T = VenueSearchResult>(
 
       setIsLoading(true);
       setError(null);
+      setSuggestedQuery(null);
 
       try {
         const delimiter = apiEndpoint.includes("?") ? "&" : "?";
-        const url = `${apiEndpoint}${delimiter}query=${encodeURIComponent(trimmedQuery)}`;
+        let url = `${apiEndpoint}${delimiter}query=${encodeURIComponent(trimmedQuery)}`;
+        if (options.semanticWeight !== undefined) {
+          url += `&semanticWeight=${encodeURIComponent(String(options.semanticWeight))}`;
+        }
+        if (options.fullTextWeight !== undefined) {
+          url += `&fullTextWeight=${encodeURIComponent(String(options.fullTextWeight))}`;
+        }
 
         const response = await fetch(url, {
           signal: controller.signal,
@@ -154,6 +169,9 @@ export function useVenueSearch<T = VenueSearchResult>(
             : [];
 
         setVenues(items);
+        setSuggestedQuery(
+          typeof data?.suggestedQuery === "string" ? data.suggestedQuery : null,
+        );
         setIsLoading(false);
       } catch (err: unknown) {
         // Catch AbortError (or DOMException.ABORT_ERR) and ignore it silently
@@ -199,6 +217,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     if (!trimmed || trimmed.length < minQueryLength) {
       abort();
       setVenues([]);
+      setSuggestedQuery(null);
       setIsLoading(false);
       setError(null);
       return;
@@ -237,11 +256,23 @@ export function useVenueSearch<T = VenueSearchResult>(
 
   const handleSetQuery = useCallback(
     (newQuery: string) => {
+      const trimmed = newQuery.trim();
+      if (!trimmed || trimmed.length < minQueryLength) {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        abort();
+        setVenues([]);
+        setIsLoading(false);
+        setError(null);
+      }
       if (!isControlled) {
         setInternalQuery(newQuery);
       }
+      setSuggestedQuery(null);
     },
-    [isControlled],
+    [abort, isControlled, minQueryLength],
   );
 
   return {
@@ -249,6 +280,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     setQuery: handleSetQuery,
     venues,
     results: venues,
+    suggestedQuery,
     isLoading,
     loading: isLoading,
     error,

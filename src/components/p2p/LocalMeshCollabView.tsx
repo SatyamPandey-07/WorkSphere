@@ -21,6 +21,9 @@ import {
   CRDTDocumentDelta,
   MeshCollabEngine,
 } from "@/lib/p2p/meshCollabEngine";
+import { PeerLatencySignalBadge } from "./PeerLatencySignalBadge";
+
+export { PeerLatencySignalBadge };
 
 const INITIAL_PEERS: MeshPeerNode[] = [
   {
@@ -310,12 +313,18 @@ export default function LocalMeshCollabView({
                     className="p-5 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 hover:border-violet-500/40 transition-all flex flex-col justify-between space-y-3"
                   >
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                          {peer.displayName}
-                        </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-800 text-violet-300 border border-slate-700">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                            {peer.displayName}
+                          </span>
+                          <PeerLatencySignalBadge
+                            peer={peer}
+                            initialLatencyMs={peer.latencyMs}
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-800 text-violet-300 border border-slate-700 shrink-0">
                           {peer.hopCount === 0
                             ? "Direct LAN"
                             : `${peer.hopCount}-Hop Relay`}

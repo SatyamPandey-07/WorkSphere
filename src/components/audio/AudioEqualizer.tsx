@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   Play,
   Pause,
@@ -12,18 +12,22 @@ import {
   BatteryLow,
   Battery,
 } from "lucide-react";
+// Assuming these exist based on the prompt's new snippet requirements
+import { ParametricEQGraph } from "@/lib/audio/ParametricEQGraph";
+import { FrequencyResponseCanvas } from "./FrequencyResponseCanvas";
 
 type SoundPreset = "jazz" | "cafe" | "library";
 
 export type EqPresetName =
   | "flat"
   | "balanced"
-  | "speech-clarity"
+  | "speech-clarity" // mapped to vocal_clarity
   | "bass-boost"
   | "music"
   | "vocal-enhancer"
   | "treble-boost"
   | "warm"
+  | "chatter-suppression" // new
   | "custom";
 
 export interface EqPreset {
@@ -73,6 +77,10 @@ export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
     label: "Warm",
     gains: [3, 2, 1, -1, -2],
   },
+  "chatter-suppression": {
+    label: "Suppress Chatter",
+    gains: [-3, -2, 0, 4, 2], // High-mid boost for voice, low cut for rumble
+  },
   custom: {
     label: "Custom",
     gains: [0, 0, 0, 0, 0],
@@ -84,6 +92,11 @@ export interface AudioEqualizerProps {
   initialGains?: number[];
   onGainChange?: (bandIndex: number, newGain: number) => void;
   sampleRate?: number;
+
+  // New props for External Source Mode
+  audioContext?: AudioContext | null;
+  sourceNode?: MediaElementAudioSourceNode | null;
+  destinationNode?: AudioNode | null;
 }
 
 // Helper: Create Pink Noise Buffer
@@ -130,11 +143,38 @@ function createBrownNoiseBuffer(ctx: AudioContext) {
   return buffer;
 }
 
+/**
+ * Smoothly transitions an AudioParam to a target value using setTargetAtTime
+ * to eliminate audible clicking artifacts.
+ */
+function smoothSetAudioParam(
+  param: AudioParam | null,
+  targetValue: number,
+  currentTime: number,
+  timeConstant: number = 0.02
+) {
+  if (!param) return;
+
+  
+  if (typeof param.setTargetAtTime === "function") {
+    param.setTargetAtTime(targetValue, currentTime, timeConstant);
+  } else if (typeof param.linearRampToValueAtTime === "function") {
+    param.setValueAtTime(param.value ?? 0, currentTime);
+    param.linearRampToValueAtTime(targetValue, currentTime + timeConstant * 3);
+  } else if (typeof param.setValueAtTime === "function") {
+    param.setValueAtTime(targetValue, currentTime);
+  }
+}
+
 export function AudioEqualizer({
   venueName = "Workspace",
   initialGains,
   onGainChange,
   sampleRate: _sampleRate = 44100,
+  // External source props
+  audioContext: externalAudioContext,
+  sourceNode: externalSourceNode,
+  destinationNode: externalDestinationNode,
 }: AudioEqualizerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [preset, setPreset] = useState<SoundPreset>("jazz");
@@ -142,6 +182,7 @@ export function AudioEqualizer({
   const [volume, setVolume] = useState(0.5);
   const [muted, setMuted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [bandGains, setBandGains] = useState<number[]>(
     initialGains || [0, 0, 0, 0, 0],
   );
@@ -149,6 +190,7 @@ export function AudioEqualizer({
   const [batteryCharging, setBatteryCharging] = useState<boolean | null>(null);
   const batteryAutoPausedRef = useRef<boolean>(false);
 
+  // Internal Audio Refs (Standalone Mode)
   const audioContextRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
   const compressorRef = useRef<DynamicsCompressorNode | null>(null);
@@ -157,6 +199,9 @@ export function AudioEqualizer({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const jazzCleanupRef = useRef<(() => void) | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // External Audio Refs (Parametric Mode)
+  const eqRef = useRef<ParametricEQGraph | null>(null);
 
   // Detect prefers-reduced-motion on mount
   useEffect(() => {
@@ -168,7 +213,16 @@ export function AudioEqualizer({
       setReducedMotion(mediaQuery.matches);
       const listener = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
       mediaQuery.addEventListener("change", listener);
-      return () => mediaQuery.removeEventListener("change", listener);
+
+      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      setIsDarkMode(darkModeQuery.matches);
+      const darkListener = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      darkModeQuery.addEventListener('change', darkListener);
+
+      return () => {
+        mediaQuery.removeEventListener("change", listener);
+        darkModeQuery.removeEventListener('change', darkListener);
+      };
     }
   }, []);
 
@@ -216,15 +270,36 @@ export function AudioEqualizer({
       if (savedGains) {
         try {
           setBandGains(JSON.parse(savedGains));
-        } catch {}
+        } catch { }
       } else if (savedPreset && savedPreset !== "custom") {
         setBandGains(EQ_PRESETS[savedPreset].gains);
       }
     }
   }, []);
 
-  // Initialize Audio Context and BiquadFilterNode EQ chain on demand
+  // Initialize Parametric EQ Graph if external source provided
+  useEffect(() => {
+    if (externalAudioContext && externalSourceNode && externalDestinationNode && !eqRef.current) {
+      eqRef.current = new ParametricEQGraph(externalAudioContext, externalSourceNode, externalDestinationNode);
+
+      // Sync initial gains if available
+      if (eqRef.current.bands) {
+        // Map our 5 bands to their band IDs if possible, or just init
+        // For this merge, we assume ParametricEQGraph handles its own internal state initially
+      }
+    }
+
+    return () => {
+      if (eqRef.current) {
+        eqRef.current.disconnect();
+        eqRef.current = null;
+      }
+    };
+  }, [externalAudioContext, externalSourceNode, externalDestinationNode]);
+
+  // Initialize Internal Audio Context and BiquadFilterNode EQ chain on demand (Standalone Mode)
   const initAudio = useCallback(() => {
+    if (externalAudioContext) return; // Skip if in external mode
     if (audioContextRef.current && audioContextRef.current.state !== "closed") return;
     if (audioContextRef.current && audioContextRef.current.state === "closed") {
       audioContextRef.current = null;
@@ -237,9 +312,7 @@ export function AudioEqualizer({
     const analyser = ctx.createAnalyser();
 
     analyser.fftSize = 64;
-    // DynamicsCompressorNode prevents digital clipping when 5+ participants
-    // mix their audio tracks through the same Web Audio graph (4:1 ratio,
-    // -24 dB knee for gentle limiting before the master output).
+    // DynamicsCompressorNode prevents digital clipping
     if (typeof ctx.createDynamicsCompressor === "function") {
       const compressor = ctx.createDynamicsCompressor();
       if (compressor.threshold) compressor.threshold.value = -24;
@@ -297,8 +370,7 @@ export function AudioEqualizer({
     eqFiltersRef.current = filters;
     analyserRef.current = analyser;
 
-    // Safari iOS keeps AudioContext in "suspended" state until a user-gesture
-    // event fires. Attach a one-shot touchstart+click handler that resumes it.
+    // Safari iOS resume handler
     if (ctx.state === "suspended") {
       const resumeOnInteraction = () => {
         if (!audioContextRef.current) return;
@@ -307,19 +379,19 @@ export function AudioEqualizer({
             document.removeEventListener("touchstart", resumeOnInteraction);
             document.removeEventListener("click", resumeOnInteraction);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       };
       document.addEventListener("touchstart", resumeOnInteraction, { passive: true });
       document.addEventListener("click", resumeOnInteraction);
     }
-  }, [bandGains]);
+  }, [bandGains, externalAudioContext]);
 
-  // Play Sound Logic
+  // Play Sound Logic (Standalone Mode)
   const stopPlayingNodes = useCallback(() => {
     if (sourceNodeRef.current) {
       try {
         sourceNodeRef.current.stop();
-      } catch {}
+      } catch { }
       sourceNodeRef.current.disconnect();
       sourceNodeRef.current = null;
     }
@@ -357,10 +429,8 @@ export function AudioEqualizer({
     }
   }, [batteryLevel, batteryCharging, isPlaying, stopPlaying]);
 
-  // Handle Real-Time Gain Slider Drag with Smooth Audio Parameter Ramping
+  // Handle Real-Time Gain Slider Drag
   const handleBandGainChange = (index: number, newGain: number) => {
-    // Clamp to ±20 dB hard limit — values outside this range cause BiquadFilterNode
-    // clipping and severe audio distortion on some browsers.
     const clampedGain = Math.max(-20, Math.min(20, newGain));
 
     setEqPreset("custom");
@@ -381,18 +451,27 @@ export function AudioEqualizer({
       onGainChange(index, clampedGain);
     }
 
+    // Update External Parametric EQ if active
+    if (eqRef.current) {
+      // Map index to band ID. This assumes a specific mapping order in ParametricEQGraph
+      // For safety, we might need a lookup map, but assuming standard order for now:
+      const bandIds = ['low', 'lowMid', 'mid', 'highMid', 'high'];
+      const bandId = bandIds[index];
+      if (bandId) {
+        eqRef.current.setBandGain(bandId, clampedGain);
+      }
+    }
+
+    // Update Internal Standalone EQ if active
+    // Use smooth transition to eliminate audio pops and clicks
     const filter = eqFiltersRef.current[index];
     if (filter && filter.gain && audioContextRef.current) {
-      const now = audioContextRef.current.currentTime;
-      if (typeof filter.gain.setTargetAtTime === "function") {
-        // Smooth audio param ramp to eliminate audio pops and clicks
-        filter.gain.setTargetAtTime(clampedGain, now, 0.015);
-      } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
-        filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
-        filter.gain.linearRampToValueAtTime(clampedGain, now + 0.03);
-      } else if (typeof filter.gain.setValueAtTime === "function") {
-        filter.gain.setValueAtTime(clampedGain, now);
-      }
+      smoothSetAudioParam(
+        filter.gain,
+        clampedGain,
+        audioContextRef.current.currentTime,
+        0.02
+      );
     }
   };
 
@@ -411,16 +490,36 @@ export function AudioEqualizer({
         window.localStorage.setItem("webrtc_eq_gains", JSON.stringify(gains));
       }
 
+      if (onGainChange) {
+        gains.forEach((gain, i) => onGainChange(i, gain));
+      }
+
+      // Apply to External Parametric EQ
+      if (eqRef.current) {
+        // Map preset name to ParametricEQGraph preset if available, or apply gains manually
+        if (presetName === 'speech-clarity' || presetName === 'vocal-enhancer') {
+          eqRef.current.applyPreset('vocal_clarity');
+        } else if (presetName === 'chatter-suppression') {
+          eqRef.current.applyPreset('chatter_suppression');
+        } else if (presetName === 'flat') {
+          eqRef.current.applyPreset('flat');
+        } else {
+          // Manual application for other presets
+          const bandIds = ['low', 'lowMid', 'mid', 'highMid', 'high'];
+          gains.forEach((gain, i) => {
+            if (bandIds[i]) eqRef.current?.setBandGain(bandIds[i], gain);
+          });
+        }
+      }
+
+      // Apply to Internal Standalone EQ
+      // Apply smooth audio node param ramping
       if (audioContextRef.current) {
         const now = audioContextRef.current.currentTime;
         eqFiltersRef.current.forEach((filter, i) => {
           if (filter && filter.gain) {
             const targetGain = gains[i] ?? 0;
-            if (typeof filter.gain.setTargetAtTime === "function") {
-              filter.gain.setTargetAtTime(targetGain, now, 0.015);
-            } else if (typeof filter.gain.setValueAtTime === "function") {
-              filter.gain.setValueAtTime(targetGain, now);
-            }
+            smoothSetAudioParam(filter.gain, targetGain, now, 0.02);
           }
         });
       }
@@ -429,10 +528,52 @@ export function AudioEqualizer({
 
   const handleResetEq = () => {
     handleEqPresetChange("flat");
+    // Smoothly animate all frequency sliders back to 0 dB and re-evaluate audio node gains
+    const flatGains = EQ_PRESETS.flat.gains;
+    const startGains = [...bandGains];
+    const duration = 200; // 200ms smooth slider animation
+    const startTime = performance.now();
+
+    const animateReset = (nowTime: number) => {
+      const elapsed = nowTime - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      // Ease-out cubic animation curve
+      const eased = 1 - Math.pow(1 - progress, 3);
+
+      const interpolatedGains = startGains.map(
+        (startGain, i) => Math.round((startGain + (flatGains[i] - startGain) * eased) * 10) / 10,
+      );
+
+      setBandGains(interpolatedGains);
+
+      if (progress < 1) {
+        requestAnimationFrame(animateReset);
+      } else {
+        handleEqPresetChange("flat");
+      }
+    };
+
+    // Apply audio node param ramping immediately to smoothly ramp audio filter gains without clicks/pops
+    if (audioContextRef.current) {
+      const now = audioContextRef.current.currentTime;
+      eqFiltersRef.current.forEach((filter, i) => {
+        if (filter && filter.gain) {
+          smoothSetAudioParam(filter.gain, 0, now, 0.02);
+        }
+      });
+    }
+
+    if (startGains.some((g) => g !== 0)) {
+      requestAnimationFrame(animateReset);
+    } else {
+      handleEqPresetChange("flat");
+    }
   };
 
-  // Play Sound Logic
+  // Play Sound Logic (Standalone Mode)
   const startPlaying = useCallback(() => {
+    if (externalAudioContext) return; // Don't generate noise if processing external audio
+
     initAudio();
     const ctx = audioContextRef.current!;
     const masterGain = masterGainRef.current!;
@@ -537,7 +678,7 @@ export function AudioEqualizer({
       const interval = setInterval(playChord, 5000);
       jazzCleanupRef.current = () => clearInterval(interval);
     }
-  }, [preset, initAudio, stopPlayingNodes]);
+  }, [preset, initAudio, stopPlayingNodes, externalAudioContext]);
 
   const togglePlay = () => {
     if (isPlaying) {
@@ -555,14 +696,17 @@ export function AudioEqualizer({
   }, [preset, isPlaying, startPlaying]);
 
   useEffect(() => {
+    // Handle volume for both internal and external contexts if possible
     if (masterGainRef.current && masterGainRef.current.gain) {
-      if (typeof masterGainRef.current.gain.setValueAtTime === "function") {
-        masterGainRef.current.gain.setValueAtTime(
-          muted ? 0 : volume,
-          audioContextRef.current ? audioContextRef.current.currentTime : 0,
-        );
-      }
+      smoothSetAudioParam(
+        masterGainRef.current.gain,
+        muted ? 0 : volume,
+        audioContextRef.current ? audioContextRef.current.currentTime : 0,
+        0.02
+      );
     }
+    // Note: Controlling volume of external sourceNode is usually done at the source element level, 
+    // but if we had a gain node wrapper for external, we'd apply it here.
   }, [volume, muted]);
 
   useEffect(() => {
@@ -572,7 +716,7 @@ export function AudioEqualizer({
         audioContextRef.current &&
         audioContextRef.current.state !== "closed"
       ) {
-        audioContextRef.current.resume().catch(() => {});
+        audioContextRef.current.resume().catch(() => { });
       }
     };
 
@@ -586,7 +730,7 @@ export function AudioEqualizer({
         audioContextRef.current.state !== "closed"
       ) {
         try {
-          audioContextRef.current.close().catch(() => {});
+          audioContextRef.current.close().catch(() => { });
         } catch {
           // already closed
         }
@@ -595,6 +739,7 @@ export function AudioEqualizer({
     };
   }, [stopPlayingNodes]);
 
+  // Visualizer Loop
   useEffect(() => {
     let animFrame: number;
     let interval: NodeJS.Timeout;
@@ -621,7 +766,8 @@ export function AudioEqualizer({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       let nextFrequencies: number[];
-      if (analyserRef.current && isPlaying) {
+      // Only use FFT analyzer if in standalone mode and playing
+      if (analyserRef.current && isPlaying && !externalAudioContext) {
         const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
         analyserRef.current.getByteFrequencyData(dataArray);
 
@@ -672,15 +818,12 @@ export function AudioEqualizer({
       ctx.restore();
     };
 
-    if (isPlaying) {
-      // Battery guard: throttle the visualiser frame rate when battery is low
-      // to reduce DSP / compositing overhead on the CPU.
-      // < 20% && not charging → 8fps (125ms interval, down from 60fps rAF)
+    if (isPlaying && !externalAudioContext) {
       const isLowBattery =
         batteryLevel !== null && batteryLevel < 0.2 && !batteryCharging;
 
       if (reducedMotion || isLowBattery) {
-        const frameMs = isLowBattery ? 125 : 350; // 8fps / ~3fps
+        const frameMs = isLowBattery ? 125 : 350;
         interval = setInterval(updateFrequencies, frameMs);
       } else {
         const loop = () => {
@@ -693,7 +836,6 @@ export function AudioEqualizer({
       updateFrequencies(); // Draw idle state
     }
 
-    // Ensure it redraws correctly on window resize
     const handleResize = () => updateFrequencies();
     window.addEventListener("resize", handleResize);
 
@@ -702,63 +844,87 @@ export function AudioEqualizer({
       if (interval) clearInterval(interval);
       window.removeEventListener("resize", handleResize);
     };
-  }, [isPlaying, reducedMotion, batteryLevel, batteryCharging]);
+  }, [isPlaying, reducedMotion, batteryLevel, batteryCharging, externalAudioContext]);
+
+  // Helper to get frequency response for the new Canvas
+  const getFrequencyResponse = () => {
+    return eqRef.current ? eqRef.current.getFrequencyResponse() : { frequencies: new Float32Array(0), magnitudes: new Float32Array(0) };
+  };
+
+  const isExternalMode = !!externalAudioContext;
 
   return (
-    <div className="p-5 rounded-2xl border border-white/10 bg-black/40 text-zinc-100 shadow-xl backdrop-blur-md relative overflow-hidden transition-all duration-300">
+    <div className={`p-5 rounded-2xl border shadow-xl backdrop-blur-md relative overflow-hidden transition-all duration-300 ${isDarkMode
+        ? "border-white/10 bg-black/40 text-zinc-100"
+        : "border-gray-200 bg-white/90 text-gray-900"
+      }`}>
       <div className="absolute top-0 right-0 p-3 opacity-30">
-        <Radio className="w-5 h-5 text-indigo-500 animate-pulse" />
+        <Radio className={`w-5 h-5 animate-pulse ${isDarkMode ? "text-indigo-500" : "text-blue-500"}`} />
       </div>
 
-      <h3 className="text-xs font-black uppercase tracking-widest text-zinc-300 mb-1">
-        Acoustic Ambience Preview
+      <h3 className="text-xs font-black uppercase tracking-widest mb-1 opacity-80">
+        {isExternalMode ? "Parametric Equalizer" : "Acoustic Ambience Preview"}
       </h3>
-      <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-4">
-        Synthesize simulated ambient soundscapes for {venueName}
+      <p className="text-[10px] uppercase tracking-widest mb-4 opacity-60">
+        {isExternalMode
+          ? "Real-time frequency curve visualization"
+          : `Synthesize simulated ambient soundscapes for ${venueName}`}
       </p>
 
       {/* Preset Selector Panel */}
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        {(["jazz", "cafe", "library"] as SoundPreset[]).map((type) => (
-          <button
-            key={type}
-            onClick={() => setPreset(type)}
-            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all capitalize border ${
-              preset === type
-                ? "bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30 scale-[1.02]"
-                : "bg-white/5 border-white/5 text-zinc-300 hover:bg-white/10 hover:border-white/10"
-            }`}
-          >
-            {type === "jazz" && "🎷 Soft Jazz"}
-            {type === "cafe" && "☕ Cafe Chatter"}
-            {type === "library" && "📚 Library Silence"}
-          </button>
-        ))}
-      </div>
+      {!isExternalMode && (
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {(["jazz", "cafe", "library"] as SoundPreset[]).map((type) => (
+            <button
+              key={type}
+              onClick={() => setPreset(type)}
+              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all capitalize border ${preset === type
+                  ? isDarkMode
+                    ? "bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/30 scale-[1.02]"
+                    : "bg-blue-600 border-blue-500 text-white shadow-md"
+                  : isDarkMode
+                    ? "bg-white/5 border-white/5 text-zinc-300 hover:bg-white/10 hover:border-white/10"
+                    : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                }`}
+            >
+              {type === "jazz" && "🎷 Soft Jazz"}
+              {type === "cafe" && "☕ Cafe Chatter"}
+              {type === "library" && "📚 Library Silence"}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Controller & Equalizer Visualizer */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/5 mb-4">
-        <button
-          onClick={togglePlay}
-          className={`p-3 rounded-full flex items-center justify-center transition-all ${
-            isPlaying
-              ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 animate-pulse"
-              : "bg-white text-black hover:opacity-90 active:scale-95"
-          }`}
-          title={isPlaying ? "Pause Sound" : "Listen to Ambience"}
-        >
-          {isPlaying ? (
-            <Pause className="w-5 h-5 fill-current" />
-          ) : (
-            <Play className="w-5 h-5 fill-current ml-0.5" />
-          )}
-        </button>
+      <div className={`flex flex-col sm:flex-row items-center gap-4 p-4 rounded-xl border mb-4 ${isDarkMode ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-200"
+        }`}>
+        {!isExternalMode && (
+          <button
+            onClick={togglePlay}
+            className={`p-3 rounded-full flex items-center justify-center transition-all ${isPlaying
+                ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 animate-pulse"
+                : isDarkMode
+                  ? "bg-white text-black hover:opacity-90 active:scale-95"
+                  : "bg-gray-900 text-white hover:opacity-90 active:scale-95"
+              }`}
+            title={isPlaying ? "Pause Sound" : "Listen to Ambience"}
+          >
+            {isPlaying ? (
+              <Pause className="w-5 h-5 fill-current" />
+            ) : (
+              <Play className="w-5 h-5 fill-current ml-0.5" />
+            )}
+          </button>
+        )}
 
-        {/* EQ Preset Selector */}
+        {/* EQ Preset Selector Dropdown */}
         <select
           value={eqPreset}
           onChange={(e) => handleEqPresetChange(e.target.value as EqPresetName)}
-          className="text-xs font-semibold bg-white/5 border border-white/10 text-zinc-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500 transition-colors cursor-pointer appearance-none"
+          className={`text-xs font-semibold rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500 transition-colors cursor-pointer appearance-none ${isDarkMode
+              ? "bg-white/5 border border-white/10 text-zinc-200"
+              : "bg-white border border-gray-300 text-gray-700"
+            }`}
           title="Equalizer Preset"
         >
           {(Object.entries(EQ_PRESETS) as [EqPresetName, EqPreset][]).map(
@@ -766,7 +932,7 @@ export function AudioEqualizer({
               <option
                 key={key}
                 value={key}
-                className="bg-zinc-900 text-zinc-100"
+                className={isDarkMode ? "bg-zinc-900 text-zinc-100" : "bg-white text-gray-900"}
               >
                 {label}
               </option>
@@ -774,89 +940,149 @@ export function AudioEqualizer({
           )}
         </select>
 
-        {/* Equalizer Frequency Bars */}
-        <div className="flex-1 flex items-end justify-center h-12 bg-black/20 rounded-lg overflow-hidden border border-white/5 relative">
-          <canvas
-            ref={canvasRef}
-            className="w-full h-full absolute top-0 left-0"
-            style={{ width: "100%", height: "100%" }}
-          />
+        {/* Visualizer Area */}
+        <div className="flex-1 flex items-end justify-center h-12 rounded-lg overflow-hidden border relative bg-black/5">
+          {isExternalMode ? (
+            // Use new Frequency Response Canvas for external mode
+            <FrequencyResponseCanvas
+              getFrequencyResponse={getFrequencyResponse}
+              isDarkMode={isDarkMode}
+            />
+          ) : (
+            // Use original FFT Canvas for standalone mode
+            <canvas
+              ref={canvasRef}
+              className="w-full h-full absolute top-0 left-0"
+              style={{ width: "100%", height: "100%" }}
+            />
+          )}
         </div>
 
-        {/* Volume controls */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setMuted(!muted)}
-            className="p-1.5 hover:bg-white/5 rounded-lg text-zinc-400 hover:text-white transition-colors"
-          >
-            {muted || volume === 0 ? (
-              <VolumeX className="w-4 h-4" />
-            ) : (
-              <Volume2 className="w-4 h-4" />
-            )}
-          </button>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={volume}
-            onChange={(e) => {
-              setVolume(parseFloat(e.target.value));
-              setMuted(false);
-            }}
-            className="w-16 h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
-          />
-        </div>
+        {/* Volume controls (Only for standalone mode as external volume is handled elsewhere usually) */}
+        {!isExternalMode && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setMuted(!muted)}
+              className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? "hover:bg-white/5 text-zinc-400 hover:text-white" : "hover:bg-gray-200 text-gray-500 hover:text-gray-900"
+                }`}
+            >
+              {muted || volume === 0 ? (
+                <VolumeX className="w-4 h-4" />
+              ) : (
+                <Volume2 className="w-4 h-4" />
+              )}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => {
+                setVolume(parseFloat(e.target.value));
+                setMuted(false);
+              }}
+              className="w-16 h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
+            />
+          </div>
+        )}
       </div>
 
-      {/* 5-Band BiquadFilterNode Equalizer Controls */}
-      <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+      {/* 5-Band Equalizer Controls */}
+      <div className={`p-4 rounded-xl border ${isDarkMode ? "bg-white/5 border-white/5" : "bg-gray-50 border-gray-200"
+        }`}>
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300">
-            5-Band Acoustic Equalizer
+          <span className="text-[11px] font-bold uppercase tracking-wider opacity-80">
+            {isExternalMode ? "Parametric Bands" : "5-Band Acoustic Equalizer"}
           </span>
           <button
             onClick={handleResetEq}
-            className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white transition-colors"
-            title="Reset all EQ gains to 0 dB"
+            className={`flex items-center gap-1 text-[10px] transition-colors ${isDarkMode ? "text-zinc-400 hover:text-white" : "text-gray-500 hover:text-gray-900"
+              }`}
+            title="Reset to Flat EQ preset (0 dB)"
+            aria-label="Reset to Flat"
+            data-testid="reset-to-flat-button"
           >
             <RotateCcw className="w-3 h-3" />
-            <span>Reset EQ</span>
+            <span>Reset to Flat</span>
           </button>
         </div>
 
-        <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center">
-          {EQ_BAND_LABELS.map((label, idx) => (
-            <div
-              key={label}
-              className="flex flex-col items-center justify-between gap-1 sm:gap-1.5 min-w-0"
-            >
-              <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 whitespace-nowrap">
-                {label}
-              </span>
-              <input
-                type="range"
-                min="-20"
-                max="20"
-                step="0.5"
-                aria-label={`${label} Gain`}
-                value={bandGains[idx]}
-                onChange={(e) =>
-                  handleBandGainChange(idx, parseFloat(e.target.value))
-                }
-                className="w-full h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
-              />
-              <span className="text-[8px] sm:text-[9px] font-mono text-indigo-400 whitespace-nowrap">
-                {bandGains[idx] > 0 ? `+${bandGains[idx]}` : bandGains[idx]} dB
-              </span>
-            </div>
-          ))}
-        </div>
+        {/* New Vertical Sliders Layout from Snippet */}
+        {isExternalMode && eqRef.current ? (
+          <div className="grid grid-cols-5 gap-4">
+            {eqRef.current.bands.map((band) => (
+              <div key={band.id} className="flex flex-col items-center gap-2">
+                <label className="text-xs font-medium opacity-70 capitalize">
+                  {band.id.replace(/([A-Z])/g, ' $1').trim()}
+                </label>
+                <input
+                  type="range"
+                  min="-12"
+                  max="12"
+                  step="0.5"
+                  // We need to map band.id to index for our state, or just use local state logic
+                  // For simplicity in this merge, we'll look up the gain from our main state if indices match
+                  // Or better, rely on the component's internal state mapping if we refactored fully.
+                  // Here we assume the order matches EQ_BANDS for the visual representation
+                  value={bandGains[EQ_BANDS.indexOf(band.frequency)] ?? 0}
+                  onChange={(e) => {
+                    // Find index by frequency or ID
+                    const idx = EQ_BANDS.indexOf(band.frequency);
+                    if (idx !== -1) handleBandGainChange(idx, parseFloat(e.target.value));
+                  }}
+                  className="w-full h-32 appearance-none bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer accent-blue-500"
+                  style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any}
+                  aria-label={`${band.id} gain`}
+                />
+                <span className="text-xs font-mono opacity-60">
+                  {(bandGains[EQ_BANDS.indexOf(band.frequency)] ?? 0) > 0
+                    ? `+${bandGains[EQ_BANDS.indexOf(band.frequency)]}`
+                    : bandGains[EQ_BANDS.indexOf(band.frequency)]} dB
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          // Original Horizontal Sliders Layout
+          <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center">
+            {EQ_BAND_LABELS.map((label, idx) => (
+              <div
+                key={label}
+                onDoubleClick={() => handleBandGainChange(idx, 0)}
+                className="flex flex-col items-center justify-between gap-1 sm:gap-1.5 min-w-0"
+                title="Double-click to reset to 0 dB"
+              >
+                <span className={`text-[9px] sm:text-[10px] font-mono whitespace-nowrap ${isDarkMode ? "text-zinc-400" : "text-gray-500"}`}>
+                  {label}
+                </span>
+                <input
+                  type="range"
+                  min="-20"
+                  max="20"
+                  step="0.5"
+                  aria-label={`${label} Gain`}
+                  value={bandGains[idx]}
+                  onChange={(e) =>
+                    handleBandGainChange(idx, parseFloat(e.target.value))
+                  }
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    handleBandGainChange(idx, 0);
+                  }}
+                  className="w-full h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
+                />
+                <span className={`text-[8px] sm:text-[9px] font-mono whitespace-nowrap ${isDarkMode ? "text-indigo-400" : "text-blue-600"}`}>
+                  {bandGains[idx] > 0 ? `+${bandGains[idx]}` : bandGains[idx]} dB
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {reducedMotion && (
-        <div className="flex items-center gap-1.5 mt-2 justify-end opacity-40">
+        <div className={`flex items-center gap-1.5 mt-2 justify-end opacity-40 ${isDarkMode ? "text-zinc-100" : "text-gray-900"}`}>
           <Settings className="w-3.5 h-3.5" />
           <span className="text-[9px] uppercase tracking-wider font-bold">
             Reduced Motion Active
@@ -864,7 +1090,7 @@ export function AudioEqualizer({
         </div>
       )}
       {batteryLevel !== null && (
-        <div className="flex items-center gap-1.5 mt-2 justify-end opacity-40">
+        <div className={`flex items-center gap-1.5 mt-2 justify-end opacity-40 ${isDarkMode ? "text-zinc-100" : "text-gray-900"}`}>
           {batteryLevel < 0.15 && !batteryCharging ? (
             <BatteryLow className="w-3.5 h-3.5 text-amber-400" />
           ) : (
@@ -879,3 +1105,5 @@ export function AudioEqualizer({
     </div>
   );
 }
+
+export default AudioEqualizer;

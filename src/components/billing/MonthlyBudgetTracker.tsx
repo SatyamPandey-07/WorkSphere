@@ -1,30 +1,109 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Wallet,
   DollarSign,
-  TrendingUp,
   AlertTriangle,
-  PieChart,
   Edit3,
   Download,
-  Plus,
   CheckCircle2,
-  Calendar,
   X,
   Building,
   RefreshCw,
-  Sparkles,
   Layers,
 } from "lucide-react";
-import { BudgetSummary, DepartmentAllocation } from "@/lib/billing/budgetService";
+import { BudgetSummary } from "@/lib/billing/budgetService";
 
-export function MonthlyBudgetTracker() {
-  const [summary, setSummary] = useState<BudgetSummary | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+export interface MonthlyBudgetTrackerProps {
+  initialSummary?: BudgetSummary | null;
+  spent?: number;
+  totalBudget?: number;
+}
+
+/**
+ * Calculates budget spending percentage: (spent / totalBudget) * 100.
+ */
+export function calculateBudgetPercentage(
+  spent: number,
+  totalBudget: number,
+): number {
+  if (!totalBudget || totalBudget <= 0) return 0;
+  return (spent / totalBudget) * 100;
+}
+
+/**
+ * Returns dynamic color tokens and gradient classes based on budget utilization:
+ * - < 70%: green (emerald)
+ * - 70% to 90%: amber
+ * - > 90%: red (rose)
+ */
+export function getBudgetProgressColor(utilizationPercentage: number) {
+  if (utilizationPercentage > 90) {
+    return {
+      threshold: "rose" as const,
+      color: "red" as const,
+      gradientClass:
+        "bg-red-500 bg-rose-500 bg-gradient-to-r from-rose-500 to-red-600",
+      textClass: "text-red-600 dark:text-red-400 text-rose-600 dark:text-rose-400",
+      badgeClass:
+        "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30",
+    };
+  }
+  if (utilizationPercentage >= 70) {
+    return {
+      threshold: "amber" as const,
+      color: "amber" as const,
+      gradientClass:
+        "bg-amber-500 bg-gradient-to-r from-amber-500 to-orange-500",
+      textClass: "text-amber-600 dark:text-amber-400",
+      badgeClass:
+        "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    };
+  }
+  return {
+    threshold: "emerald" as const,
+    color: "green" as const,
+    gradientClass:
+      "bg-green-500 bg-emerald-500 bg-gradient-to-r from-emerald-500 to-teal-500",
+    textClass: "text-emerald-600 dark:text-emerald-400 text-green-600 dark:text-green-400",
+    badgeClass:
+      "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+  };
+}
+
+export function MonthlyBudgetTracker({
+  initialSummary = null,
+  spent,
+  totalBudget,
+}: MonthlyBudgetTrackerProps = {}) {
+  const derivedSummary = useMemo<BudgetSummary | null>(() => {
+    if (initialSummary) return initialSummary;
+    if (spent !== undefined && totalBudget !== undefined) {
+      const percentage = calculateBudgetPercentage(spent, totalBudget);
+      return {
+        month: new Date().toISOString().slice(0, 7),
+        monthlyLimit: totalBudget,
+        totalSpent: spent,
+        remainingBudget: totalBudget - spent,
+        utilizationPercentage: percentage,
+        projectedMonthEndSpend: spent,
+        burnRatePerDay: 0,
+        isNearLimit: percentage >= 70 && percentage <= 90,
+        isOverLimit: percentage > 90,
+        departments: [],
+        recentExpenses: [],
+      };
+    }
+    return null;
+  }, [initialSummary, spent, totalBudget]);
+
+  const [summary, setSummary] = useState<BudgetSummary | null>(derivedSummary);
+  const [loading, setLoading] = useState<boolean>(!derivedSummary);
   const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
-  const [newLimit, setNewLimit] = useState<number>(500);
+  const [newLimit, setNewLimit] = useState<number>(
+    derivedSummary ? derivedSummary.monthlyLimit : 500,
+  );
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -47,8 +126,14 @@ export function MonthlyBudgetTracker() {
   }, []);
 
   useEffect(() => {
-    fetchBudget();
-  }, [fetchBudget]);
+    if (derivedSummary) {
+      setSummary(derivedSummary);
+      setNewLimit(derivedSummary.monthlyLimit);
+      setLoading(false);
+    } else {
+      fetchBudget();
+    }
+  }, [fetchBudget, derivedSummary]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -82,7 +167,14 @@ export function MonthlyBudgetTracker() {
 
   const handleExportCSV = () => {
     if (!summary?.recentExpenses?.length) return;
-    const headers = ["Date", "Venue", "Category", "Department", "Cost Center", "Amount (USD)"];
+    const headers = [
+      "Date",
+      "Venue",
+      "Category",
+      "Department",
+      "Cost Center",
+      "Amount (USD)",
+    ];
     const rows = summary.recentExpenses.map((e) => [
       e.date,
       `"${e.venueName}"`,
@@ -92,7 +184,9 @@ export function MonthlyBudgetTracker() {
       e.amount,
     ]);
 
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -103,19 +197,30 @@ export function MonthlyBudgetTracker() {
     showToast("Exported expense report to CSV!");
   };
 
+  const progressStyle = useMemo(() => {
+    if (!summary) return getBudgetProgressColor(0);
+    return getBudgetProgressColor(summary.utilizationPercentage);
+  }, [summary]);
+
   if (loading) {
     return (
       <div className="p-6 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center gap-2 text-zinc-500">
         <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
-        <span className="text-xs">Loading workspace budget & allocations...</span>
+        <span className="text-xs">
+          Loading workspace budget & allocations...
+        </span>
       </div>
     );
   }
 
   if (!summary) return null;
 
-  const isWarning = summary.utilizationPercentage >= 80;
-  const isDanger = summary.utilizationPercentage >= 100;
+  const isWarning = summary.utilizationPercentage >= 70;
+  const isDanger = summary.utilizationPercentage > 90;
+  const percentClamped = Math.min(
+    100,
+    Math.max(0, Math.round(summary.utilizationPercentage)),
+  );
 
   return (
     <div className="rounded-3xl p-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-6">
@@ -139,7 +244,8 @@ export function MonthlyBudgetTracker() {
                 Monthly Workspace Budget & Team Allocations
               </h3>
               <p className="text-xs text-zinc-500">
-                Track coworking spend across departments, burn rate, and expense limits.
+                Track coworking spend across departments, burn rate, and expense
+                limits.
               </p>
             </div>
           </div>
@@ -168,17 +274,13 @@ export function MonthlyBudgetTracker() {
       {/* Warning banner if approaching budget cap */}
       {isWarning && (
         <div
-          className={`p-3.5 rounded-2xl flex items-center gap-2.5 text-xs font-semibold ${
-            isDanger
-              ? "bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400"
-              : "bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400"
-          }`}
+          className={`p-3.5 rounded-2xl flex items-center gap-2.5 text-xs font-semibold border ${progressStyle.badgeClass}`}
         >
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>
             {isDanger
-              ? `Budget Cap Exceeded: You have spent $${summary.totalSpent} of your $${summary.monthlyLimit} monthly limit.`
-              : `Budget Warning: You have utilized ${summary.utilizationPercentage}% ($${summary.totalSpent}) of your $${summary.monthlyLimit} monthly budget.`}
+              ? `Budget Warning (>90%): You have utilized ${summary.utilizationPercentage}% ($${summary.totalSpent}) of your $${summary.monthlyLimit} limit.`
+              : `Budget Notice (70-90%): You have utilized ${summary.utilizationPercentage}% ($${summary.totalSpent}) of your $${summary.monthlyLimit} budget.`}
           </span>
         </div>
       )}
@@ -190,34 +292,75 @@ export function MonthlyBudgetTracker() {
             <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
               Total Monthly Utilization
             </div>
-            <div className="text-2xl font-black text-zinc-900 dark:text-white mt-0.5 flex items-baseline gap-2">
+            <div className="text-2xl font-black text-zinc-900 dark:text-white mt-0.5 flex flex-wrap items-baseline gap-2">
               <span>${summary.totalSpent}</span>
-              <span className="text-sm font-normal text-zinc-500">/ ${summary.monthlyLimit}</span>
+              <span className="text-sm font-normal text-zinc-500">
+                / ${summary.monthlyLimit}
+              </span>
+              <span
+                data-testid="budget-percentage"
+                className={`text-xs font-bold px-2 py-0.5 rounded-full border ${progressStyle.badgeClass}`}
+              >
+                {Math.round(summary.utilizationPercentage)}% used
+              </span>
+              {isDanger && (
+                <span
+                  role="alert"
+                  data-testid="alert-badge"
+                  className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Alert: Spending exceeds 90%</span>
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="text-right">
+          <div className="text-left sm:text-right">
             <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
-              Remaining Budget
+              Remaining Allowance
             </div>
-            <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+            <div
+              data-testid="remaining-allowance"
+              className={`text-lg font-bold mt-0.5 ${
+                summary.remainingBudget >= 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-rose-600 dark:text-rose-400"
+              }`}
+            >
               ${summary.remainingBudget}
             </div>
           </div>
         </div>
 
-        {/* Progress Bar */}
-        <div className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-3 overflow-hidden">
+        {/* Horizontal Accessible Progress Bar */}
+        <div className="space-y-1.5" data-testid="budget-progressbar">
+          <div className="flex items-center justify-between text-xs text-zinc-500">
+            <span>Budget Allowance Progress</span>
+            <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+              ${summary.totalSpent} of ${summary.monthlyLimit} ({percentClamped}
+              %)
+            </span>
+          </div>
+
           <div
-            className={`h-full transition-all duration-700 rounded-full ${
-              isDanger
-                ? "bg-rose-500"
-                : isWarning
-                  ? "bg-amber-500"
-                  : "bg-gradient-to-r from-blue-500 to-indigo-600"
-            }`}
-            style={{ width: `${Math.min(100, summary.utilizationPercentage)}%` }}
-          />
+            role="progressbar"
+            aria-valuenow={percentClamped}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuetext={`${percentClamped}% of monthly budget spent`}
+            aria-label="Monthly budget utilization progress"
+            data-testid="spending-progress-bar"
+            className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-3.5 overflow-hidden relative shadow-inner"
+          >
+            <div
+              data-testid="spending-progress-bar-fill"
+              className={`h-full transition-all duration-700 rounded-full ${progressStyle.gradientClass}`}
+              style={{
+                width: `${Math.min(100, Math.max(0, summary.utilizationPercentage))}%`,
+              }}
+            />
+          </div>
         </div>
 
         {/* Forecast Metrics */}
@@ -229,8 +372,11 @@ export function MonthlyBudgetTracker() {
             </span>
           </div>
           <div>
-            <span className="text-zinc-500">Projected Month-End:</span>
-            <span className="ml-1.5 font-bold text-zinc-800 dark:text-zinc-200">
+            <span className="text-zinc-500">Projected End-of-Month Spend:</span>
+            <span
+              data-testid="projected-month-end-spend"
+              className="ml-1.5 font-bold text-zinc-800 dark:text-zinc-200"
+            >
               ${summary.projectedMonthEndSpend}
             </span>
           </div>
@@ -255,7 +401,9 @@ export function MonthlyBudgetTracker() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {summary.departments.map((dept) => {
-            const deptPct = Math.round((dept.spentAmount / (dept.allocatedAmount || 1)) * 100);
+            const deptPct = Math.round(
+              (dept.spentAmount / (dept.allocatedAmount || 1)) * 100,
+            );
             return (
               <div
                 key={dept.id}
@@ -321,7 +469,9 @@ export function MonthlyBudgetTracker() {
                       <span className="font-semibold text-purple-600 dark:text-purple-400">
                         {expense.department}
                       </span>
-                      {expense.costCenter && <span>({expense.costCenter})</span>}
+                      {expense.costCenter && (
+                        <span>({expense.costCenter})</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -330,7 +480,9 @@ export function MonthlyBudgetTracker() {
                   <div className="font-black font-mono text-zinc-900 dark:text-zinc-100 text-sm">
                     ${expense.amount}
                   </div>
-                  <div className="text-[10px] text-zinc-400 mt-0.5">{expense.date}</div>
+                  <div className="text-[10px] text-zinc-400 mt-0.5">
+                    {expense.date}
+                  </div>
                 </div>
               </div>
             ))}
@@ -375,7 +527,7 @@ export function MonthlyBudgetTracker() {
                   />
                 </div>
                 <p className="text-[11px] text-zinc-500 mt-1">
-                  You will receive alert warnings at 80% utilization.
+                  You will receive alert warnings at 70% utilization.
                 </p>
               </div>
 
@@ -402,3 +554,5 @@ export function MonthlyBudgetTracker() {
     </div>
   );
 }
+
+export default MonthlyBudgetTracker;

@@ -29,17 +29,22 @@ export default function CarbonFootprintTracker() {
   const [summary, setSummary] = useState<CarbonFootprintSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchCarbonAnalytics = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/analytics/carbon-footprint");
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setSummary(data.summary);
+      } else {
+        setError(data.error || "Failed to load carbon footprint analytics.");
       }
     } catch (err) {
       console.error("Failed to load carbon analytics:", err);
+      setError("Unable to connect to carbon analytics service.");
     } finally {
       setLoading(false);
     }
@@ -74,6 +79,53 @@ export default function CarbonFootprintTracker() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (!summary?.records.length) return;
+
+    const headers = [
+      "Date",
+      "Venue",
+      "Commute Mode",
+      "Distance (km)",
+      "CO2 (kg)",
+      "Offset Status",
+    ];
+    const escapeCsvValue = (value: string | number) => {
+      const csvValue =
+        typeof value === "string" && /^[\t\r ]*[=+\-@]/.test(value)
+          ? `'${value}`
+          : String(value);
+      return `"${csvValue.replace(/"/g, '""')}"`;
+    };
+    const rows = summary.records.map((record) => [
+      record.date,
+      record.venueName,
+      record.commuteMode,
+      safeParseDistance(record.distanceKm).toFixed(1),
+      (safeParseDistance(record.emissionsGramsCo2) / 1000).toFixed(3),
+      record.isGreenCertifiedVenue ? "Offset" : "Not offset",
+    ]);
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map(escapeCsvValue).join(",")),
+    ].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+
+    anchor.href = url;
+    anchor.download = `worksphere-carbon-report-${now.getFullYear()}-${month}.csv`;
+    try {
+      document.body.appendChild(anchor);
+      anchor.click();
+    } finally {
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    }
+  };
+
   const getModeIcon = (mode: CommuteMode) => {
     switch (mode) {
       case "WALKING":
@@ -91,7 +143,15 @@ export default function CarbonFootprintTracker() {
   };
 
   const totalDistance = summary ? safeParseDistance(summary.totalDistanceKm) : 0;
-  const isMissingCommuteDistance = totalDistance === 0;
+  const missingDistanceRecordsCount = summary
+    ? summary.records.filter((r) => safeParseDistance(r.distanceKm) === 0).length
+    : 0;
+  const isMissingCommuteDistance = Boolean(
+    summary && (totalDistance === 0 || summary.records.length === 0)
+  );
+  const hasPartialMissingDistance = Boolean(
+    summary && totalDistance > 0 && missingDistanceRecordsCount > 0
+  );
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
@@ -106,11 +166,19 @@ export default function CarbonFootprintTracker() {
               Remote Work Carbon Footprint & Eco-Tracker
             </h1>
             <p className="text-xs md:text-sm text-slate-300 max-w-2xl">
-              Track commuter $\text{CO}_2$ emissions across walking, cycling, and transit. Certify green workspace visits and export corporate Scope 3 ESG carbon audit reports.
+              Track commuter CO₂ emissions across walking, cycling, and transit. Certify green workspace visits and export corporate Scope 3 ESG carbon audit reports.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={handleExportCSV}
+              disabled={!summary?.records.length}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-500/40 bg-slate-900/70 hover:bg-slate-800 text-emerald-200 text-xs font-bold transition disabled:opacity-50"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Export CSV
+            </button>
             <button
               onClick={handleExportESG}
               disabled={exporting || !summary}
@@ -123,8 +191,57 @@ export default function CarbonFootprintTracker() {
         </div>
       </div>
 
-      {/* Missing Commute Distance Gentle Prompt */}
-      {isMissingCommuteDistance && !loading && (
+      {/* API / Connectivity Error Banner */}
+      {error && !loading && (
+        <div
+          data-testid="carbon-fetch-error"
+          className="p-4 sm:p-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 text-rose-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-md"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 shrink-0">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <p className="text-xs text-rose-200 font-medium">{error}</p>
+          </div>
+          <button
+            onClick={fetchCarbonAnalytics}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-400 text-white transition shrink-0"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Partial Missing Commute Distance Notice */}
+      {hasPartialMissingDistance && !loading && !error && (
+        <div
+          data-testid="partial-missing-commute-distance-prompt"
+          className="p-4 rounded-2xl border border-sky-500/30 bg-sky-500/10 text-sky-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-md"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400 shrink-0">
+              <MapPin className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-sky-200">
+                {missingDistanceRecordsCount} commute {missingDistanceRecordsCount === 1 ? "record has" : "records have"} uncalculated distance
+              </h4>
+              <p className="text-xs text-sky-300/80 mt-0.5">
+                Some workspace check-ins are missing transit distance. Configure default commute origin in settings for full Scope 3 coverage.
+              </p>
+            </div>
+          </div>
+          <a
+            href="/settings"
+            className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-950 bg-sky-400 hover:bg-sky-300 transition shrink-0"
+          >
+            Update Location
+          </a>
+        </div>
+      )}
+
+      {/* All Missing Commute Distance Gentle Prompt */}
+      {isMissingCommuteDistance && !loading && !error && (
         <div
           data-testid="missing-commute-distance-prompt"
           className="p-4 sm:p-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-md"

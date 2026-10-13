@@ -436,3 +436,111 @@ describe('AccessibleRouter', () => {
     });
   });
 });
+
+import { WayfindingGraph, HAPTIC_VIBRATION_PATTERNS } from '@/core/accessibility/WayfindingGraph';
+
+describe('WayfindingGraph Tactile Vibration Guidance (#5527)', () => {
+  let mockVibrate: jest.Mock;
+  let mockNavigator: any;
+
+  beforeEach(() => {
+    mockVibrate = jest.fn().mockReturnValue(true);
+    mockNavigator = {
+      vibrate: mockVibrate,
+    };
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('defines distinct vibration signatures for navigational decision points', () => {
+    const graph = new WayfindingGraph();
+
+    // Single pulse for left: [200]
+    expect(graph.getHapticPatternForTurn('left')).toEqual(HAPTIC_VIBRATION_PATTERNS.LEFT);
+    expect(HAPTIC_VIBRATION_PATTERNS.LEFT).toEqual([200]);
+
+    // Double pulse for right: [150, 100, 150]
+    expect(graph.getHapticPatternForTurn('right')).toEqual(HAPTIC_VIBRATION_PATTERNS.RIGHT);
+    expect(HAPTIC_VIBRATION_PATTERNS.RIGHT).toEqual([150, 100, 150]);
+
+    // Long pulse for destination: [600]
+    expect(graph.getHapticPatternForTurn('destination')).toEqual(HAPTIC_VIBRATION_PATTERNS.DESTINATION);
+    expect(HAPTIC_VIBRATION_PATTERNS.DESTINATION).toEqual([600]);
+
+    // Decision point / sharp turn
+    expect(graph.getHapticPatternForTurn('decision_point')).toEqual(HAPTIC_VIBRATION_PATTERNS.DECISION_POINT);
+  });
+
+  it('emits tactile vibration when supported by navigator', () => {
+    const graph = new WayfindingGraph();
+
+    const resultLeft = graph.emitTactileTurnGuidance('left', { navigator: mockNavigator });
+    expect(resultLeft).toBe(true);
+    expect(mockVibrate).toHaveBeenCalledWith([200]);
+
+    const resultRight = graph.emitTactileTurnGuidance('right', { navigator: mockNavigator });
+    expect(resultRight).toBe(true);
+    expect(mockVibrate).toHaveBeenCalledWith([150, 100, 150]);
+
+    const resultDest = graph.emitTactileTurnGuidance('destination', { navigator: mockNavigator });
+    expect(resultDest).toBe(true);
+    expect(mockVibrate).toHaveBeenCalledWith([600]);
+  });
+
+  it('is automatically disabled if browser lacks vibration hardware or user disables haptic feedback', () => {
+    const graph = new WayfindingGraph();
+
+    // Browser without vibrate API
+    const emptyNav = {} as any;
+    expect(graph.isHapticFeedbackSupported(emptyNav)).toBe(false);
+    const resultUnsupported = graph.emitTactileTurnGuidance('left', { navigator: emptyNav });
+    expect(resultUnsupported).toBe(false);
+
+    // User disabled haptic feedback
+    const resultDisabled = graph.emitTactileTurnGuidance('left', { enabled: false, navigator: mockNavigator });
+    expect(resultDisabled).toBe(false);
+    expect(mockVibrate).not.toHaveBeenCalled();
+  });
+
+  it('generates tactile guidance cues along path node sequence', () => {
+    const graph = new WayfindingGraph();
+
+    graph.addNode({ id: 'node-1', latitude: 0, longitude: 0, hasElevator: false, hasRamp: true, isTactilePaving: true });
+    graph.addNode({ id: 'node-2', latitude: 0, longitude: 1, hasElevator: false, hasRamp: true, isTactilePaving: true });
+    graph.addNode({ id: 'node-3', latitude: 1, longitude: 1, hasElevator: false, hasRamp: true, isTactilePaving: true });
+
+    graph.addEdge({
+      fromId: 'node-1',
+      toId: 'node-2',
+      distanceMeters: 10,
+      hasStairs: false,
+      maxGradientPercent: 2,
+      surfaceType: 'smooth',
+      isIndoor: true,
+      turnDirection: 'left'
+    });
+
+    graph.addEdge({
+      fromId: 'node-2',
+      toId: 'node-3',
+      distanceMeters: 15,
+      hasStairs: false,
+      maxGradientPercent: 1,
+      surfaceType: 'smooth',
+      isIndoor: true
+    });
+
+    const cues = graph.generateTactileGuidancePath(['node-1', 'node-2', 'node-3']);
+    expect(cues).toHaveLength(2);
+
+    // First cue: turn left
+    expect(cues[0].decisionPoint).toBe('left');
+    expect(cues[0].pattern).toEqual([200]);
+
+    // Destination cue
+    expect(cues[1].decisionPoint).toBe('destination');
+    expect(cues[1].pattern).toEqual([600]);
+  });
+});

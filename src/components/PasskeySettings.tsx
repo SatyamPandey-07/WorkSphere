@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   browserSupportsWebAuthn,
   startRegistration,
+  startAuthentication,
+  WebAuthnAbortService,
 } from "@simplewebauthn/browser";
 import {
   KeyRound,
@@ -40,6 +42,26 @@ export interface PasskeyCredentialItem {
   transports: string[];
   createdAt: string;
   lastUsedAt: string;
+}
+
+/**
+ * Checks whether the current browser supports WebAuthn conditional mediation (passkey autofill).
+ */
+export async function isConditionalMediationSupported(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (!browserSupportsWebAuthn()) return false;
+  if (
+    typeof window.PublicKeyCredential === "undefined" ||
+    typeof window.PublicKeyCredential.isConditionalMediationAvailable !==
+      "function"
+  ) {
+    return false;
+  }
+  try {
+    return await window.PublicKeyCredential.isConditionalMediationAvailable();
+  } catch {
+    return false;
+  }
 }
 
 export function formatRelativeOrDate(dateString?: string | null): string {
@@ -83,9 +105,12 @@ export function PasskeySettings() {
   const [passkeys, setPasskeys] = useState<PasskeyCredentialItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
+  const [authenticating, setAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
+  const [isConditionalSupported, setIsConditionalSupported] = useState(false);
+  const isAuthenticatingRef = useRef(false);
 
   // New passkey registration modal / input state
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -124,6 +149,78 @@ export function PasskeySettings() {
     fetchPasskeys();
   }, [fetchPasskeys]);
 
+  // Conditional UI: Trigger conditional WebAuthn get request on page mount when supported
+  useEffect(() => {
+    let isMounted = true;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    async function initConditionalAutofill() {
+      const supported = await isConditionalMediationSupported();
+      if (!isMounted) return;
+      setIsConditionalSupported(supported);
+
+      if (!supported) return;
+
+      // Small delay to allow eligible DOM inputs (e.g. autocomplete$='webauthn') to render
+      await new Promise((resolve) => {
+        timerId = setTimeout(resolve, 50);
+      });
+      if (!isMounted || isAuthenticatingRef.current) return;
+
+      try {
+        const optRes = await fetch("/api/auth/passkey/authenticate/options");
+        if (!optRes.ok || !isMounted || isAuthenticatingRef.current) return;
+        const optionsJSON = await optRes.json();
+
+        isAuthenticatingRef.current = true;
+        const authenticationResponse = await startAuthentication({
+          optionsJSON,
+          useBrowserAutofill: true,
+        });
+
+        if (!isMounted) return;
+
+        const verifyRes = await fetch("/api/auth/passkey/authenticate/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ authenticationResponse }),
+        });
+
+        if (verifyRes.ok) {
+          const verifyData = await verifyRes.json();
+          const savedName =
+            verifyData.credential?.nickname ||
+            verifyData.credential?.name ||
+            "Passkey";
+          setSuccess(`Passkey "${savedName}" verified successfully!`);
+          fetchPasskeys();
+        }
+      } catch (err: unknown) {
+        if (
+          err instanceof Error &&
+          (err.name === "AbortError" || err.name === "NotAllowedError")
+        ) {
+          console.debug(
+            "Passkey conditional autofill dismissed or aborted:",
+            err.name,
+          );
+          return;
+        }
+        console.debug("Passkey conditional autofill error:", err);
+      } finally {
+        isAuthenticatingRef.current = false;
+      }
+    }
+
+    initConditionalAutofill();
+
+    return () => {
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
+      WebAuthnAbortService.cancelCeremony();
+    };
+  }, [fetchPasskeys]);
+
   // Open registration modal with intelligent pre-filled nickname
   const handleOpenRegister = () => {
     const suggested = inferDeviceNickname();
@@ -143,7 +240,9 @@ export function PasskeySettings() {
       const optRes = await fetch("/api/auth/passkey/register/options");
       if (!optRes.ok) {
         const data = await optRes.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to initialize registration challenge.");
+        throw new Error(
+          data.error || "Failed to initialize registration challenge.",
+        );
       }
       const optionsJSON = await optRes.json();
 
@@ -167,14 +266,18 @@ export function PasskeySettings() {
       }
 
       const verifyData = await verifyRes.json();
-      const savedName = verifyData.credential?.nickname || verifyData.credential?.name || "Passkey";
+      const savedName =
+        verifyData.credential?.nickname ||
+        verifyData.credential?.name ||
+        "Passkey";
       setSuccess(`Passkey "${savedName}" successfully registered!`);
       setShowRegisterModal(false);
       setCustomNickname("");
       await fetchPasskeys();
     } catch (err: unknown) {
       console.error("Passkey registration failed:", err);
-      const msg = err instanceof Error ? err.message : "Passkey registration failed.";
+      const msg =
+        err instanceof Error ? err.message : "Passkey registration failed.";
       if (msg.includes("cancelled") || msg.includes("abort")) {
         setError("Registration cancelled.");
       } else {
@@ -206,7 +309,9 @@ export function PasskeySettings() {
     const previousName = pk.name;
     // Immediate optimistic update
     setPasskeys((prev) =>
-      prev.map((item) => (item.id === pk.id ? { ...item, name: trimmed } : item)),
+      prev.map((item) =>
+        item.id === pk.id ? { ...item, name: trimmed } : item,
+      ),
     );
     setEditingId(null);
     setSavingRenameId(pk.id);
@@ -228,11 +333,84 @@ export function PasskeySettings() {
     } catch (err) {
       // Revert optimistic update on failure
       setPasskeys((prev) =>
-        prev.map((item) => (item.id === pk.id ? { ...item, name: previousName } : item)),
+        prev.map((item) =>
+          item.id === pk.id ? { ...item, name: previousName } : item,
+        ),
       );
-      setError(err instanceof Error ? err.message : "Failed to rename passkey.");
+      setError(
+        err instanceof Error ? err.message : "Failed to rename passkey.",
+      );
     } finally {
       setSavingRenameId(null);
+    }
+  };
+
+  const handleVerifyPasskey = async () => {
+    try {
+      setAuthenticating(true);
+      setError(null);
+      setSuccess(null);
+      isAuthenticatingRef.current = true;
+
+      // Cancel any ongoing background conditional autofill ceremony
+      WebAuthnAbortService.cancelCeremony();
+
+      if (!browserSupportsWebAuthn()) {
+        setError("Your current browser does not support biometric passkeys.");
+        return;
+      }
+
+      // 1. Fetch challenge
+      const optRes = await fetch("/api/auth/passkey/authenticate/options");
+      if (!optRes.ok) {
+        const data = await optRes.json().catch(() => ({}));
+        throw new Error(
+          data.error || "Failed to initialize authentication challenge.",
+        );
+      }
+      const optionsJSON = await optRes.json();
+
+      // 2. Prompt browser authenticator modal (explicit / modal prompt)
+      const authenticationResponse = await startAuthentication({
+        optionsJSON,
+        useBrowserAutofill: false,
+      });
+
+      // 3. Verify on server
+      const verifyRes = await fetch("/api/auth/passkey/authenticate/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authenticationResponse }),
+      });
+
+      if (!verifyRes.ok) {
+        const data = await verifyRes.json().catch(() => ({}));
+        throw new Error(data.error || "Passkey verification failed.");
+      }
+
+      const verifyData = await verifyRes.json();
+      const savedName =
+        verifyData.credential?.nickname ||
+        verifyData.credential?.name ||
+        "Passkey";
+      setSuccess(`Passkey "${savedName}" verified successfully!`);
+      await fetchPasskeys();
+    } catch (err: unknown) {
+      console.error("Passkey verification failed:", err);
+      const msg =
+        err instanceof Error ? err.message : "Passkey verification failed.";
+      if (
+        msg.includes("cancelled") ||
+        msg.includes("abort") ||
+        (err instanceof Error &&
+          (err.name === "AbortError" || err.name === "NotAllowedError"))
+      ) {
+        return;
+      }
+      setError(msg);
+    } finally {
+      isAuthenticatingRef.current = false;
+      setAuthenticating(false);
     }
   };
 
@@ -254,7 +432,9 @@ export function PasskeySettings() {
       setSuccess("Passkey revoked successfully.");
       setConfirmDeleteId(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete passkey.");
+      setError(
+        err instanceof Error ? err.message : "Failed to delete passkey.",
+      );
     } finally {
       setDeletingId(null);
     }
@@ -268,14 +448,20 @@ export function PasskeySettings() {
     if (detected.iconType === "phone" || /iphone|android/i.test(item.name)) {
       return <Smartphone className="h-5 w-5 text-emerald-500" />;
     }
-    if (detected.iconType === "key" || /yubi|titan|security key/i.test(item.name)) {
+    if (
+      detected.iconType === "key" ||
+      /yubi|titan|security key/i.test(item.name)
+    ) {
       return <KeyRound className="h-5 w-5 text-amber-500" />;
     }
     return <Fingerprint className="h-5 w-5 text-blue-500" />;
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6" data-testid="passkey-settings">
+    <div
+      className="w-full max-w-4xl mx-auto space-y-6"
+      data-testid="passkey-settings"
+    >
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-purple-50/70 dark:from-slate-900 dark:via-indigo-950/30 dark:to-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm">
         <div className="space-y-1">
@@ -286,21 +472,38 @@ export function PasskeySettings() {
             </h2>
           </div>
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Sign in instantly using Touch ID, Face ID, Windows Hello, or hardware security keys without passwords.
+            Sign in instantly using Touch ID, Face ID, Windows Hello, or
+            hardware security keys without passwords.
           </p>
         </div>
 
         {isSupported && (
-          <button
-            type="button"
-            onClick={handleOpenRegister}
-            disabled={registering || loading}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
-            data-testid="add-passkey-btn"
-          >
-            <Plus className="h-4 w-4" />
-            Add New Passkey
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleVerifyPasskey}
+              disabled={authenticating || registering || loading}
+              className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl font-medium text-sm text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 border border-slate-300 dark:border-slate-700 active:bg-slate-100 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+              data-testid="verify-passkey-btn"
+            >
+              {authenticating ? (
+                <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+              ) : (
+                <Fingerprint className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              )}
+              Verify Passkey
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenRegister}
+              disabled={registering || authenticating || loading}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+              data-testid="add-passkey-btn"
+            >
+              <Plus className="h-4 w-4" />
+              Add New Passkey
+            </button>
+          </div>
         )}
       </div>
 
@@ -310,7 +513,10 @@ export function PasskeySettings() {
           <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
           <div>
             <p className="font-semibold">WebAuthn not supported</p>
-            <p>Your current browser does not support biometric passkeys. Please use a modern browser like Safari, Chrome, Edge, or Firefox.</p>
+            <p>
+              Your current browser does not support biometric passkeys. Please
+              use a modern browser like Safari, Chrome, Edge, or Firefox.
+            </p>
           </div>
         </div>
       )}
@@ -330,13 +536,84 @@ export function PasskeySettings() {
         </div>
       )}
 
+      {/* Passkey Conditional Autofill & Quick Verification Section */}
+      {isSupported && (
+        <div
+          className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          data-testid="passkey-autofill-section"
+        >
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Fingerprint className="h-4 w-4 text-indigo-500" />
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Browser Autofill & Sign-In Verification
+              </h4>
+              {isConditionalSupported ? (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/50"
+                  data-testid="autofill-supported-badge"
+                >
+                  Autofill Active
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/50 dark:border-amber-800/50"
+                  data-testid="autofill-fallback-badge"
+                >
+                  Modal Fallback
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {isConditionalSupported
+                ? "Saved passkeys appear directly inside your browser's autofill suggestions when focusing the input."
+                : "Conditional autofill is unavailable in this browser; click Verify Passkey to prompt authentication modal."}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <input
+              type="text"
+              name="username"
+              autoComplete="username webauthn"
+              placeholder="Username / Email"
+              className="px-3.5 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-850 transition-colors"
+              aria-label="Autofill passkey username"
+              data-testid="passkey-autofill-input"
+            />
+            <button
+              type="button"
+              onClick={handleVerifyPasskey}
+              disabled={authenticating || registering || loading}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 transition-colors shadow-sm cursor-pointer whitespace-nowrap"
+              data-testid="test-passkey-btn"
+            >
+              {authenticating ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Test Passkey
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Passkey List */}
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-850 flex items-center justify-between">
           <div>
-            <h3 className="font-semibold text-slate-900 dark:text-white">Registered Passkeys</h3>
+            <h3 className="font-semibold text-slate-900 dark:text-white">
+              Registered Passkeys
+            </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {passkeys.length} {passkeys.length === 1 ? "device" : "devices"} configured for passwordless authentication
+              {passkeys.length} {passkeys.length === 1 ? "device" : "devices"}{" "}
+              configured for passwordless authentication
             </p>
           </div>
           <button
@@ -361,9 +638,12 @@ export function PasskeySettings() {
               <KeyRound className="h-6 w-6" />
             </div>
             <div className="space-y-1">
-              <p className="text-base font-semibold text-slate-900 dark:text-white">No passkeys registered yet</p>
+              <p className="text-base font-semibold text-slate-900 dark:text-white">
+                No passkeys registered yet
+              </p>
               <p className="text-sm text-slate-500 max-w-sm mx-auto">
-                Add your Touch ID, Face ID, or security key for one-touch authentication on this account.
+                Add your Touch ID, Face ID, or security key for one-touch
+                authentication on this account.
               </p>
             </div>
             {isSupported && (
@@ -470,7 +750,10 @@ export function PasskeySettings() {
                       {/* Timestamps & Metadata Badges */}
                       <div className="flex flex-wrap items-center gap-y-1 gap-x-3 text-xs text-slate-500 dark:text-slate-400">
                         {/* Creation Date */}
-                        <span className="flex items-center gap-1" title={formatFullDate(pk.createdAt)}>
+                        <span
+                          className="flex items-center gap-1"
+                          title={formatFullDate(pk.createdAt)}
+                        >
                           <Calendar className="h-3.5 w-3.5 text-slate-400" />
                           Added {formatRelativeOrDate(pk.createdAt)}
                         </span>
@@ -478,7 +761,10 @@ export function PasskeySettings() {
                         <span>•</span>
 
                         {/* Last Used Date */}
-                        <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300" title={formatFullDate(pk.lastUsedAt)}>
+                        <span
+                          className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300"
+                          title={formatFullDate(pk.lastUsedAt)}
+                        >
                           <Clock className="h-3.5 w-3.5 text-indigo-500" />
                           Last used: {formatRelativeOrDate(pk.lastUsedAt)}
                         </span>
@@ -507,7 +793,9 @@ export function PasskeySettings() {
                   <div className="flex items-center gap-2 shrink-0 sm:self-center">
                     {isConfirming ? (
                       <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-3 py-1.5 rounded-xl">
-                        <span className="text-xs text-red-700 dark:text-red-300 font-medium">Revoke?</span>
+                        <span className="text-xs text-red-700 dark:text-red-300 font-medium">
+                          Revoke?
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleDeletePasskey(pk.id)}
@@ -567,7 +855,8 @@ export function PasskeySettings() {
             </div>
 
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Give your passkey a recognizable nickname so you know which device it belongs to.
+              Give your passkey a recognizable nickname so you know which device
+              it belongs to.
             </p>
 
             <div className="space-y-3">
@@ -586,7 +875,9 @@ export function PasskeySettings() {
 
               {/* Nickname preset pills */}
               <div className="space-y-1.5">
-                <span className="text-[11px] font-medium text-slate-400">Quick Suggestions:</span>
+                <span className="text-[11px] font-medium text-slate-400">
+                  Quick Suggestions:
+                </span>
                 <div className="flex flex-wrap gap-1.5">
                   {DEVICE_NICKNAME_PRESETS.slice(0, 5).map((preset) => (
                     <button

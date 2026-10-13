@@ -9,30 +9,48 @@ import {
   CHAT_SOUND_CHANGE_EVENT,
 } from "@/lib/chatSound";
 
-export function ChatSoundToggle() {
+export interface ChatSoundToggleProps {
+  onSoundChange?: (enabled: boolean) => void;
+  className?: string;
+}
+
+export function ChatSoundToggle({ onSoundChange, className = "" }: ChatSoundToggleProps = {}) {
   const [enabled, setEnabled] = useState<boolean>(true);
   const [mounted, setMounted] = useState<boolean>(false);
 
   useEffect(() => {
-    setEnabled(isChatSoundEnabled());
+    const initial = isChatSoundEnabled();
+    setEnabled(initial);
     setMounted(true);
 
     const handleSoundChange = (e: Event) => {
       const customEvent = e as CustomEvent<boolean>;
       if (typeof customEvent.detail === "boolean") {
         setEnabled(customEvent.detail);
+        onSoundChange?.(customEvent.detail);
+      }
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === null || e.key === "worksphere_chat_sound_enabled") {
+        const val = isChatSoundEnabled();
+        setEnabled(val);
+        onSoundChange?.(val);
       }
     };
 
     window.addEventListener(CHAT_SOUND_CHANGE_EVENT, handleSoundChange);
+    window.addEventListener("storage", handleStorageChange);
     return () => {
       window.removeEventListener(CHAT_SOUND_CHANGE_EVENT, handleSoundChange);
+      window.removeEventListener("storage", handleStorageChange);
     };
-  }, []);
+  }, [onSoundChange]);
 
   const handleToggle = (checked: boolean) => {
     setEnabled(checked);
     setChatSoundEnabled(checked);
+    onSoundChange?.(checked);
   };
 
   if (!mounted) {

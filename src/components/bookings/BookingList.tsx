@@ -161,7 +161,7 @@ export function BookingList({
     }
   };
 
-  const exportSelected = async (format: "pdf" | "csv") => {
+  const exportSelected = async (format: "pdf" | "csv" | "xlsx") => {
     setIsExporting(true);
     setMessage(null);
     try {
@@ -451,6 +451,13 @@ export function BookingList({
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 disabled:opacity-50"
             >
               Export CSV
+            </button>
+            <button
+              onClick={() => exportSelected("xlsx")}
+              disabled={isExporting}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 disabled:opacity-50"
+            >
+              Export Excel
             </button>
             <button
               onClick={() => exportSelected("pdf")}

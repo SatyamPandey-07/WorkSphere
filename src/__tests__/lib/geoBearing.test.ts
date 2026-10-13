@@ -4,6 +4,7 @@ import {
   formatDistance,
   getCompassDirection,
   getRelativeDirectionDescription,
+  getTurnArrow,
 } from "@/lib/geo";
 
 describe("geo utilities", () => {
@@ -63,13 +64,13 @@ describe("geo utilities", () => {
 
   describe("formatDistance", () => {
     it("formats distances under 1 km in meters", () => {
-      expect(formatDistance(0.045)).toBe("45 m");
-      expect(formatDistance(0.5)).toBe("500 m");
+      expect(formatDistance(0.045, "METRIC")).toBe("45 m");
+      expect(formatDistance(0.5, "METRIC")).toBe("500 m");
     });
 
     it("formats distances 1 km and above in kilometers", () => {
-      expect(formatDistance(1.23)).toBe("1.2 km");
-      expect(formatDistance(14.8)).toBe("14.8 km");
+      expect(formatDistance(1.23, "METRIC")).toBe("1.2 km");
+      expect(formatDistance(14.8, "METRIC")).toBe("14.8 km");
     });
 
     it("returns -- for invalid distance", () => {
@@ -113,6 +114,30 @@ describe("geo utilities", () => {
 
     it("returns empty string when relative bearing is null", () => {
       expect(getRelativeDirectionDescription(null)).toBe("");
+    });
+  });
+
+  describe("getTurnArrow", () => {
+    it("returns straight up arrow when relative bearing is straight ahead", () => {
+      expect(getTurnArrow(0)).toBe("↑");
+      expect(getTurnArrow(15)).toBe("↑");
+      expect(getTurnArrow(355)).toBe("↑");
+    });
+
+    it("returns correct directional arrow symbols for various angles", () => {
+      expect(getTurnArrow(45)).toBe("↗");
+      expect(getTurnArrow(90)).toBe("→");
+      expect(getTurnArrow(135)).toBe("↘");
+      expect(getTurnArrow(180)).toBe("↓");
+      expect(getTurnArrow(225)).toBe("↙");
+      expect(getTurnArrow(270)).toBe("←");
+      expect(getTurnArrow(315)).toBe("↖");
+    });
+
+    it("returns empty string when input is null, undefined, or NaN", () => {
+      expect(getTurnArrow(null)).toBe("");
+      expect(getTurnArrow(undefined)).toBe("");
+      expect(getTurnArrow(NaN)).toBe("");
     });
   });
 });

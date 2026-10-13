@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  extensions = [vector]
+  extensions = [vector, pg_trgm]
 }
 
 model User {
@@ -82,6 +82,8 @@ model Venue {
   id                  String              @id @default(cuid())
   placeId             String              @unique
   name                String
+  searchVector        Unsupported("tsvector")?
+  searchEmbedding     Unsupported("vector(1024)")?
   latitude            Float
   longitude           Float
   category            String // cafe, coworking, library
@@ -153,6 +155,8 @@ model Venue {
   hostMessage         String?
   photos              VenuePhoto[]
   openingHours        String?
+  beaconReferenceRssi Float?
+  beaconPathLossExponent Float?
   seatWaitlists       VenueSeatWaitlist[]
   liveFeedbacks       VenueLiveFeedback[]
 
@@ -215,6 +219,7 @@ model VenueRating {
   comment            String?
   speedtestPhoto     String?
   createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
   avgDecibels        Float?
   peakDecibels       Float?
   lighting           String?
@@ -689,6 +694,7 @@ enum WebhookEventType {
   REVIEW_SUBMITTED
   BOOKING_CONFIRMED
   BOOKING_CANCELLED
+  BOOKING_RESCHEDULED
 }
 
 model WebhookEndpoint {
@@ -954,4 +960,3 @@ model VenueSeatWaitlist {
   @@index([seatId])
   @@index([status, claimExpiresAt])
 }
-

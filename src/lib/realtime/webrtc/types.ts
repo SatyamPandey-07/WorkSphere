@@ -121,6 +121,7 @@ export interface PeerConnection {
   sharedKey: CryptoKey | null;
   status: PeerStatus;
   lifecycleState?: ConnectionLifecycleState;
+  optimalChunkSize?: number;
 }
 
 export interface FileTransfer {

@@ -7,9 +7,12 @@ import {
   Zap,
   Navigation,
   Terminal,
+  X,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 const AGENTS = [
   {
@@ -52,10 +55,105 @@ const TERMINAL_MESSAGES = [
   "Synthesizing results for WorkSphere AI...",
 ];
 
-export function BrainTerminal() {
+export interface BrainTerminalProps {
+  onClose?: () => void;
+  isOpen?: boolean;
+  className?: string;
+  onCommand?: (command: string) => void;
+  onSubmitCommand?: (command: string) => void;
+}
+
+export function BrainTerminal({
+  onClose,
+  isOpen = true,
+  className = "",
+  onCommand,
+  onSubmitCommand,
+}: BrainTerminalProps) {
   const [activeStep, setActiveStep] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [currentLog, setCurrentLog] = useState(0);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [commandInput, setCommandInput] = useState("");
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const draftInputRef = useRef("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleCommandSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const trimmed = commandInput.trim();
+    if (!trimmed) return;
+
+    // Reset input immediately upon submission
+    setCommandInput("");
+    draftInputRef.current = "";
+    setHistoryIndex(-1);
+
+    // Preserve submitted command in history buffer
+    setCommandHistory((prev) => [...prev, trimmed]);
+
+    // Append executed command to live logs
+    setLogs((prev) => [...prev, trimmed].slice(-4));
+
+    onCommand?.(trimmed);
+    onSubmitCommand?.(trimmed);
+  };
+
+  const handleCommandKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      if (!commandInput.trim()) {
+        e.preventDefault();
+        return;
+      }
+    } else if (e.key === "ArrowUp") {
+      if (commandHistory.length === 0) return;
+      e.preventDefault();
+
+      if (historyIndex === -1) {
+        draftInputRef.current = commandInput;
+        const newIndex = commandHistory.length - 1;
+        setHistoryIndex(newIndex);
+        setCommandInput(commandHistory[newIndex]);
+      } else if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setCommandInput(commandHistory[newIndex]);
+      }
+    } else if (e.key === "ArrowDown") {
+      if (historyIndex === -1) return;
+      e.preventDefault();
+
+      if (historyIndex < commandHistory.length - 1) {
+        const newIndex = historyIndex + 1;
+        setHistoryIndex(newIndex);
+        setCommandInput(commandHistory[newIndex]);
+      } else {
+        setHistoryIndex(-1);
+        setCommandInput(draftInputRef.current);
+      }
+    }
+  };
+
+  // Bind keydown event listener for Escape key to close terminal
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose?.();
+      }
+    },
+    [onClose],
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, handleKeyDown]);
 
   // Animate nodes and logs while loading
   useEffect(() => {
@@ -74,19 +172,72 @@ export function BrainTerminal() {
     };
   }, [currentLog]);
 
+  if (!isOpen) return null;
+
   return (
-    <div className="glass-card rounded-2xl p-6 glow-accent max-w-lg mx-auto overflow-hidden">
-      <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
-        <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
-          <Brain className="w-5 h-5 text-blue-500 animate-pulse" />
+    <div
+      data-testid="brain-terminal-container"
+      className={`glass-card rounded-2xl p-6 glow-accent mx-auto overflow-hidden transition-all duration-300 ${
+        isMaximized ? "max-w-3xl w-full" : "max-w-lg"
+      } ${className}`}
+    >
+      {/* Terminal Header */}
+      <div className="flex items-center justify-between gap-3 mb-6 border-b border-white/10 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+            <Brain className="w-5 h-5 text-blue-500 animate-pulse" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold uppercase tracking-tighter text-zinc-200">
+              Neural Engine Replay
+            </h3>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+              Active Pipeline: Multi-Agent v2.0
+            </p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-sm font-bold uppercase tracking-tighter text-zinc-200">
-            Neural Engine Replay
-          </h3>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-            Active Pipeline: Multi-Agent v2.0
-          </p>
+
+        {/* Header Controls & Keyboard Shortcut Badge */}
+        <div className="flex items-center gap-2">
+          {/* Subtle Semantic Keyboard Shortcut Badge */}
+          <div
+            data-testid="terminal-esc-badge"
+            className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] font-mono text-zinc-400 select-none"
+            aria-label="Keyboard shortcut: Press Escape to close"
+          >
+            <kbd className="px-1 py-0.2 rounded bg-white/10 text-zinc-300 font-semibold border border-white/10 shadow-xs">
+              Esc
+            </kbd>
+            <span className="text-zinc-500">to close</span>
+          </div>
+
+          {/* Maximize / Restore Button */}
+          <button
+            type="button"
+            onClick={() => setIsMaximized((prev) => !prev)}
+            aria-label={isMaximized ? "Restore terminal" : "Maximize terminal"}
+            data-testid="terminal-maximize-btn"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            {isMaximized ? (
+              <Minimize2 className="w-4 h-4" />
+            ) : (
+              <Maximize2 className="w-4 h-4" />
+            )}
+          </button>
+
+          {/* Close Button */}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close terminal"
+              data-testid="terminal-close-btn"
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -206,7 +357,40 @@ export function BrainTerminal() {
             </div>
           ))}
         </div>
+
+        {/* Command Input Prompt */}
+        <form
+          onSubmit={handleCommandSubmit}
+          data-testid="terminal-command-form"
+          className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2"
+        >
+          <span className="text-green-500 text-xs font-mono select-none font-bold">
+            &gt;
+          </span>
+          <input
+            ref={inputRef}
+            type="text"
+            value={commandInput}
+            onChange={(e) => setCommandInput(e.target.value)}
+            onKeyDown={handleCommandKeyDown}
+            placeholder="Enter AI command..."
+            aria-label="Terminal command input"
+            data-testid="terminal-command-input"
+            className="flex-1 bg-transparent border-none outline-none font-mono text-xs text-green-400 placeholder:text-zinc-600 focus:ring-0 p-0"
+          />
+          <button
+            type="submit"
+            disabled={!commandInput.trim()}
+            aria-label="Submit command"
+            data-testid="terminal-submit-btn"
+            className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            Enter
+          </button>
+        </form>
       </div>
     </div>
   );
 }
+
+export default BrainTerminal;

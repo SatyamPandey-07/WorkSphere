@@ -16,7 +16,7 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
   const [taxYear, setTaxYear] = useState(String(currentYear));
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [format, setFormat] = useState<"pdf" | "csv">("pdf");
+  const [format, setFormat] = useState<"pdf" | "csv" | "xlsx">("pdf");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -65,7 +65,7 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
         throw new Error(data.error || "Export failed");
       }
 
-      if (format === "csv") {
+      if (format === "csv" || format === "xlsx") {
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -155,6 +155,12 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
             onClick={() => setFormat("csv")}
           >
             CSV
+          </button>
+          <button
+            className={`flex-1 rounded px-3 py-2 text-sm ${format === "xlsx" ? "accent-bg text-white" : "bg-gray-100"}`}
+            onClick={() => setFormat("xlsx")}
+          >
+            Excel (.xlsx)
           </button>
         </div>
 

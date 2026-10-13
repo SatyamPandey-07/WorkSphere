@@ -5,7 +5,7 @@ import { Download, Check, FileSpreadsheet } from "lucide-react";
 import {
   BookingHistoryExportItem,
   downloadBookingsCSV,
-  BookingHistoryCsvOptions,
+  downloadBookingsExcel,
 } from "@/lib/venueBookingCsvExport";
 
 export interface ExportBookingsCSVButtonProps {
@@ -15,6 +15,7 @@ export interface ExportBookingsCSVButtonProps {
   className?: string;
   label?: string;
   variant?: "primary" | "secondary" | "outline" | "compact";
+  format?: "csv" | "xlsx";
   disabled?: boolean;
   onExport?: () => void;
 }
@@ -24,17 +25,24 @@ export function ExportBookingsCSVButton({
   venueName,
   filename,
   className = "",
-  label = "Export CSV",
+  label,
   variant = "outline",
+  format = "csv",
   disabled = false,
   onExport,
 }: ExportBookingsCSVButtonProps) {
   const [downloaded, setDownloaded] = useState(false);
 
+  const displayLabel = label || (format === "xlsx" ? "Export Excel" : "Export CSV");
+
   const handleDownload = () => {
     if (disabled || bookings.length === 0) return;
 
-    downloadBookingsCSV(bookings, { venueName, filename });
+    if (format === "xlsx") {
+      downloadBookingsExcel(bookings, { venueName, filename });
+    } else {
+      downloadBookingsCSV(bookings, { venueName, filename });
+    }
     setDownloaded(true);
     if (onExport) {
       onExport();
@@ -66,11 +74,11 @@ export function ExportBookingsCSVButton({
       onClick={handleDownload}
       disabled={isDisabled}
       className={`${baseStyles} ${variantStyles[variant]} ${className}`}
-      aria-label="Export booking history as CSV"
+      aria-label={`Export booking history as ${format === "xlsx" ? "Excel" : "CSV"}`}
       title={
         bookings.length === 0
           ? "No bookings available to export"
-          : `${label} (${bookings.length} ${bookings.length === 1 ? "booking" : "bookings"})`
+          : `${displayLabel} (${bookings.length} ${bookings.length === 1 ? "booking" : "bookings"})`
       }
     >
       {downloaded ? (
@@ -85,9 +93,21 @@ export function ExportBookingsCSVButton({
           ) : (
             <FileSpreadsheet className="w-3.5 h-3.5 text-zinc-400" />
           )}
-          <span>{label}</span>
+          <span>{displayLabel}</span>
         </>
       )}
     </button>
+  );
+}
+
+export function ExportBookingsExcelButton(
+  props: Omit<ExportBookingsCSVButtonProps, "format">,
+) {
+  return (
+    <ExportBookingsCSVButton
+      {...props}
+      format="xlsx"
+      label={props.label || "Export Excel (.xlsx)"}
+    />
   );
 }

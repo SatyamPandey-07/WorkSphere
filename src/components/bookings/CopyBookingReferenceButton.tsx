@@ -168,6 +168,17 @@ export function CopyBookingReferenceButton({
         {label && <span>{label}</span>}
       </button>
 
+      {/* Accessible Screen Reader Live Announcement */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        data-testid="copy-sr-announcement"
+      >
+        {isCopied ? "Booking reference copied to clipboard" : ""}
+      </div>
+
       {/* Floating Tooltip with Smooth Animation */}
       {isTooltipVisible && (
         <div

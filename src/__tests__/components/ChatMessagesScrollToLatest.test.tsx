@@ -258,4 +258,75 @@ describe("MessageList 'Scroll to Latest' Button", () => {
 
     expect(screen.queryByRole("button", { name: /scroll to latest message/i })).not.toBeInTheDocument();
   });
+
+  it("displays 'New messages below' indicator when new message arrives while scrolled up", () => {
+    const endRef = React.createRef<HTMLDivElement>();
+    const { container, rerender } = render(
+      <MessageList
+        messages={sampleMessages}
+        isLoading={false}
+        error={null}
+        expandedSteps={{}}
+        favorites={new Set<string>()}
+        messagesEndRef={endRef}
+        onToggleSteps={jest.fn()}
+        onGetDirections={jest.fn()}
+        onToggleFavorite={jest.fn()}
+        onRateVenue={jest.fn()}
+        onOpenDetails={jest.fn()}
+        onBook={jest.fn()}
+        onSuggestionClick={jest.fn()}
+        initialSuggestions={[]}
+      />
+    );
+
+    const scrollContainer = container.querySelector(".overflow-y-auto") as HTMLDivElement;
+    Object.defineProperty(scrollContainer, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(scrollContainer, "clientHeight", { value: 400, configurable: true });
+    Object.defineProperty(scrollContainer, "scrollTop", { value: 100, configurable: true, writable: true });
+
+    // Scroll up (distance = 500 > 100)
+    fireEvent.scroll(scrollContainer);
+
+    // New message arrives
+    const updatedMessages: Message[] = [
+      ...sampleMessages,
+      {
+        id: "msg-3",
+        role: "assistant",
+        content: "Here is another message!",
+        timestamp: new Date(),
+      },
+    ];
+
+    rerender(
+      <MessageList
+        messages={updatedMessages}
+        isLoading={false}
+        error={null}
+        expandedSteps={{}}
+        favorites={new Set<string>()}
+        messagesEndRef={endRef}
+        onToggleSteps={jest.fn()}
+        onGetDirections={jest.fn()}
+        onToggleFavorite={jest.fn()}
+        onRateVenue={jest.fn()}
+        onOpenDetails={jest.fn()}
+        onBook={jest.fn()}
+        onSuggestionClick={jest.fn()}
+        initialSuggestions={[]}
+      />
+    );
+
+    const newMessagesButton = screen.getByRole("button", { name: /new messages below/i });
+    expect(newMessagesButton).toBeInTheDocument();
+    expect(newMessagesButton).toHaveTextContent("New messages below");
+
+    // Clicking it triggers scroll and clears the pill
+    const scrollIntoViewMock = jest.fn();
+    window.HTMLDivElement.prototype.scrollIntoView = scrollIntoViewMock;
+    fireEvent.click(newMessagesButton);
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth" });
+    expect(screen.queryByRole("button", { name: /new messages below/i })).not.toBeInTheDocument();
+  });
 });

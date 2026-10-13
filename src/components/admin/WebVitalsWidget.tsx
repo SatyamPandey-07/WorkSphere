@@ -1,18 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import {
-  Activity,
-  AlertCircle,
-  CheckCircle2,
-  Gauge,
-  HelpCircle,
-  Info,
-  Layers,
-  RefreshCw,
-  Zap,
-  Download,
-} from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Gauge, RefreshCw, Download } from "lucide-react";
 import {
   AggregatedWebVitals,
   WebVitalMetricName,
@@ -20,10 +9,12 @@ import {
   WEB_VITALS_THRESHOLDS,
   generateDefaultWebVitalsData,
   recordWebVital,
-  getStoredWebVitals,
   MetricSummary,
 } from "@/lib/webVitalsCollector";
 import { downloadWebVitalsCSV } from "@/lib/export/domain/systemVitalsExporter";
+import { TelemetryOscilloscope } from "./TelemetryOscilloscope";
+
+export { TelemetryOscilloscope } from "./TelemetryOscilloscope";
 
 export interface WebVitalsWidgetProps {
   initialRange?: string;
@@ -148,8 +139,6 @@ function WebVitalGaugeCard({ summary }: { summary: MetricSummary }) {
   // Derive percent towards good threshold scale
   const maxScale = threshold.needsImprovement * 1.25;
   const p75Percent = Math.min(100, (p75 / maxScale) * 100);
-  const goodBoundaryPercent = (threshold.good / maxScale) * 100;
-  const needsImpBoundaryPercent = (threshold.needsImprovement / maxScale) * 100;
 
   return (
     <article
@@ -159,8 +148,12 @@ function WebVitalGaugeCard({ summary }: { summary: MetricSummary }) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-white tracking-wide">{name}</span>
-            <span className="text-[10px] text-zinc-400 font-mono">({threshold.unit})</span>
+            <span className="text-base font-bold text-white tracking-wide">
+              {name}
+            </span>
+            <span className="text-[10px] text-zinc-400 font-mono">
+              ({threshold.unit})
+            </span>
           </div>
           <span
             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${badge.bg}`}
@@ -176,7 +169,9 @@ function WebVitalGaugeCard({ summary }: { summary: MetricSummary }) {
             <span className="text-2xl font-bold font-mono text-white">
               {formatValue(name, p75)}
             </span>
-            <span className="ml-2 text-xs text-zinc-400 font-sans">p75 standard</span>
+            <span className="ml-2 text-xs text-zinc-400 font-sans">
+              p75 standard
+            </span>
           </div>
           <span className="text-xs text-zinc-500">{sampleCount} samples</span>
         </div>
@@ -194,26 +189,34 @@ function WebVitalGaugeCard({ summary }: { summary: MetricSummary }) {
           </div>
           <div className="mt-1 flex justify-between text-[10px] text-zinc-500 font-mono">
             <span>Good: &le;{formatValue(name, threshold.good)}</span>
-            <span>Poor: &gt;{formatValue(name, threshold.needsImprovement)}</span>
+            <span>
+              Poor: &gt;{formatValue(name, threshold.needsImprovement)}
+            </span>
           </div>
         </div>
 
         {/* Percentile Breakdown (p50, p75, p90) */}
         <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-zinc-900/60 p-2 text-center text-xs">
           <div>
-            <span className="block text-[10px] text-zinc-400 uppercase font-medium">p50</span>
+            <span className="block text-[10px] text-zinc-400 uppercase font-medium">
+              p50
+            </span>
             <span className="font-mono text-zinc-200 font-semibold">
               {formatValue(name, p50)}
             </span>
           </div>
           <div className="border-x border-zinc-800">
-            <span className="block text-[10px] text-violet-400 uppercase font-bold">p75</span>
+            <span className="block text-[10px] text-violet-400 uppercase font-bold">
+              p75
+            </span>
             <span className="font-mono text-violet-200 font-bold">
               {formatValue(name, p75)}
             </span>
           </div>
           <div>
-            <span className="block text-[10px] text-zinc-400 uppercase font-medium">p90</span>
+            <span className="block text-[10px] text-zinc-400 uppercase font-medium">
+              p90
+            </span>
             <span className="font-mono text-zinc-200 font-semibold">
               {formatValue(name, p90)}
             </span>
@@ -249,8 +252,87 @@ function WebVitalGaugeCard({ summary }: { summary: MetricSummary }) {
   );
 }
 
+export interface TimeframeOption {
+  label: string;
+  value: string;
+}
+
+export const TIMEFRAME_OPTIONS: TimeframeOption[] = [
+  { label: "24 Hours", value: "24h" },
+  { label: "7 Days", value: "7d" },
+  { label: "30 Days", value: "30d" },
+];
+
+/**
+ * Skeleton shimmer placeholder displayed while loading or refetching historical metrics
+ */
+export function WebVitalsSkeletonShimmer() {
+  return (
+    <div
+      data-testid="web-vitals-skeleton"
+      className="mt-6 space-y-6 animate-pulse"
+      aria-label="Loading Web Vitals historical metrics..."
+    >
+      {/* Top Banner Skeleton */}
+      <div className="grid gap-6 md:grid-cols-3 bg-zinc-950/40 border border-white/10 rounded-2xl p-5">
+        <div className="md:col-span-1 border-r border-white/10 pr-4 flex flex-col items-center justify-center">
+          <div className="h-3 w-32 bg-zinc-800/80 rounded mb-4" />
+          <div className="h-32 w-32 rounded-full border-8 border-zinc-800/80 flex items-center justify-center">
+            <div className="h-10 w-16 bg-zinc-800/80 rounded" />
+          </div>
+          <div className="h-6 w-28 bg-zinc-800/80 rounded-full mt-3" />
+        </div>
+
+        <div className="md:col-span-2 flex flex-col justify-center space-y-3.5 pl-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between border-b border-white/5 pb-2.5"
+            >
+              <div className="h-3.5 w-44 bg-zinc-800/80 rounded" />
+              <div className="h-4 w-20 bg-zinc-800/80 rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Telemetry Oscilloscope Skeleton */}
+      <div className="rounded-2xl border border-white/10 bg-zinc-950/40 p-4 h-44 space-y-3">
+        <div className="flex justify-between items-center">
+          <div className="h-4 w-52 bg-zinc-800/80 rounded" />
+          <div className="h-4 w-20 bg-zinc-800/80 rounded" />
+        </div>
+        <div className="h-28 w-full bg-zinc-900/60 rounded-xl" />
+      </div>
+
+      {/* Metric Cards Grid Skeleton */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <div className="h-4 w-20 bg-zinc-800/80 rounded" />
+              <div className="h-4 w-16 bg-zinc-800/80 rounded-full" />
+            </div>
+            <div className="h-8 w-28 bg-zinc-800/80 rounded mt-2" />
+            <div className="h-2 w-full bg-zinc-800/80 rounded-full" />
+            <div className="grid grid-cols-3 gap-2 p-2 bg-zinc-900/60 rounded-xl">
+              <div className="h-6 bg-zinc-800/80 rounded" />
+              <div className="h-6 bg-zinc-800/80 rounded" />
+              <div className="h-6 bg-zinc-800/80 rounded" />
+            </div>
+            <div className="h-2 w-full bg-zinc-800/80 rounded-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function WebVitalsWidget({
-  initialRange = "7d",
+  initialRange = "24h",
   className = "",
   autoRefreshMs = 30000,
 }: WebVitalsWidgetProps) {
@@ -285,6 +367,12 @@ export function WebVitalsWidget({
     const interval = setInterval(fetchVitals, autoRefreshMs);
     return () => clearInterval(interval);
   }, [fetchVitals, autoRefreshMs]);
+
+  const handleTimeframeChange = (newRange: string) => {
+    if (newRange === range) return;
+    setRange(newRange);
+    setLoading(true);
+  };
 
   const handleSimulateSample = () => {
     recordWebVital({
@@ -321,7 +409,8 @@ export function WebVitalsWidget({
             </h2>
           </div>
           <p className="mt-1 text-xs text-zinc-400">
-            Real-world user performance distributions, p50/p75/p90 percentiles, and route status gauges.
+            Real-world user performance distributions, p50/p75/p90 percentiles,
+            and route status gauges.
           </p>
         </div>
 
@@ -350,21 +439,32 @@ export function WebVitalsWidget({
             </button>
           </div>
 
-          {/* Time Range Selector */}
-          <div className="flex rounded-xl bg-zinc-900/80 p-1 border border-white/10 text-xs">
-            {["7d", "30d", "90d"].map((r) => (
-              <button
-                key={r}
-                onClick={() => setRange(r)}
-                className={`px-2.5 py-1 rounded-lg font-medium uppercase transition-colors ${
-                  range === r
-                    ? "bg-zinc-800 text-violet-300 font-bold"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                {r}
-              </button>
-            ))}
+          {/* Timeframe Filter Segmented Control */}
+          <div
+            role="group"
+            aria-label="Timeframe selector"
+            data-testid="timeframe-segmented-control"
+            className="flex rounded-xl bg-zinc-900/80 p-1 border border-white/10 text-xs"
+          >
+            {TIMEFRAME_OPTIONS.map((tf) => {
+              const isSelected = range === tf.value;
+              return (
+                <button
+                  key={tf.value}
+                  type="button"
+                  aria-pressed={isSelected}
+                  data-testid={`timeframe-option-${tf.value}`}
+                  onClick={() => handleTimeframeChange(tf.value)}
+                  className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                    isSelected
+                      ? "bg-zinc-800 text-violet-300 font-bold shadow-sm"
+                      : "text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Export CSV button */}
@@ -386,18 +486,16 @@ export function WebVitalsWidget({
             title="Refresh Web Vitals metrics"
             aria-label="Refresh Web Vitals metrics"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin text-violet-400" : ""}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${refreshing ? "animate-spin text-violet-400" : ""}`}
+            />
           </button>
         </div>
       </div>
 
-      {loading && (
-        <div className="py-12 text-center text-sm text-zinc-400">
-          Loading Web Vitals performance score widget telemetry...
-        </div>
-      )}
-
-      {!loading && data && (
+      {loading || refreshing ? (
+        <WebVitalsSkeletonShimmer />
+      ) : data ? (
         <div className="mt-6">
           {/* Top Score Banner */}
           <div className="grid gap-6 md:grid-cols-3 bg-zinc-950/40 border border-white/10 rounded-2xl p-5 mb-6">
@@ -410,31 +508,59 @@ export function WebVitalsWidget({
 
             <div className="md:col-span-2 flex flex-col justify-center space-y-3 pl-2">
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="text-xs text-zinc-400">Total Samples Evaluated</span>
+                <span className="text-xs text-zinc-400">
+                  Total Samples Evaluated
+                </span>
                 <span className="text-sm font-bold font-mono text-zinc-200">
                   {data.totalSamples.toLocaleString()}
                 </span>
               </div>
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="text-xs text-zinc-400">Primary Core Web Vital (LCP p75)</span>
+                <span className="text-xs text-zinc-400">
+                  Primary Core Web Vital (LCP p75)
+                </span>
                 <span className="text-sm font-bold font-mono text-emerald-400">
-                  {data.metrics.LCP ? formatValue("LCP", data.metrics.LCP.p75) : "N/A"}
+                  {data.metrics.LCP
+                    ? formatValue("LCP", data.metrics.LCP.p75)
+                    : "N/A"}
                 </span>
               </div>
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="text-xs text-zinc-400">Responsiveness Metric (INP p75)</span>
+                <span className="text-xs text-zinc-400">
+                  Responsiveness Metric (INP p75)
+                </span>
                 <span className="text-sm font-bold font-mono text-violet-400">
-                  {data.metrics.INP ? formatValue("INP", data.metrics.INP.p75) : "N/A"}
+                  {data.metrics.INP
+                    ? formatValue("INP", data.metrics.INP.p75)
+                    : "N/A"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-400">Visual Stability (CLS p75)</span>
+                <span className="text-xs text-zinc-400">
+                  Visual Stability (CLS p75)
+                </span>
                 <span className="text-sm font-bold font-mono text-cyan-400">
-                  {data.metrics.CLS ? formatValue("CLS", data.metrics.CLS.p75) : "N/A"}
+                  {data.metrics.CLS
+                    ? formatValue("CLS", data.metrics.CLS.p75)
+                    : "N/A"}
                 </span>
               </div>
             </div>
           </div>
+
+          {/* Retro-futuristic Real-time Telemetry Oscilloscope Waveform */}
+          <TelemetryOscilloscope
+            className="mb-6"
+            latestMetric={
+              data.metrics.LCP
+                ? {
+                    name: "LCP",
+                    value: data.metrics.LCP.p75,
+                    rating: data.metrics.LCP.rating,
+                  }
+                : null
+            }
+          />
 
           {/* Active Tab View */}
           {activeTab === "gauges" && (
@@ -485,29 +611,44 @@ export function WebVitalsWidget({
                       const inpVal = r.metrics.INP?.p75;
                       const clsVal = r.metrics.CLS?.p75;
 
-                      let statusBadge = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+                      let statusBadge =
+                        "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
                       let statusText = "Good";
                       if (r.score < 50) {
-                        statusBadge = "bg-red-500/10 text-red-400 border-red-500/20";
+                        statusBadge =
+                          "bg-red-500/10 text-red-400 border-red-500/20";
                         statusText = "Poor";
                       } else if (r.score < 90) {
-                        statusBadge = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+                        statusBadge =
+                          "bg-amber-500/10 text-amber-400 border-amber-500/20";
                         statusText = "Needs Imp.";
                       }
 
                       return (
                         <tr key={r.route} className="hover:bg-white/[0.02]">
-                          <td className="px-4 py-3 font-sans font-medium text-white">{r.route}</td>
-                          <td className="px-4 py-3 text-zinc-400">{r.sampleCount}</td>
-                          <td className="px-4 py-3 font-bold text-violet-300">{r.score}</td>
-                          <td className="px-4 py-3 text-zinc-300">
-                            {lcpVal !== undefined ? formatValue("LCP", lcpVal) : "—"}
+                          <td className="px-4 py-3 font-sans font-medium text-white">
+                            {r.route}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-400">
+                            {r.sampleCount}
+                          </td>
+                          <td className="px-4 py-3 font-bold text-violet-300">
+                            {r.score}
                           </td>
                           <td className="px-4 py-3 text-zinc-300">
-                            {inpVal !== undefined ? formatValue("INP", inpVal) : "—"}
+                            {lcpVal !== undefined
+                              ? formatValue("LCP", lcpVal)
+                              : "—"}
                           </td>
                           <td className="px-4 py-3 text-zinc-300">
-                            {clsVal !== undefined ? formatValue("CLS", clsVal) : "—"}
+                            {inpVal !== undefined
+                              ? formatValue("INP", inpVal)
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-300">
+                            {clsVal !== undefined
+                              ? formatValue("CLS", clsVal)
+                              : "—"}
                           </td>
                           <td className="px-4 py-3 font-sans">
                             <span
@@ -527,12 +668,15 @@ export function WebVitalsWidget({
 
           <p className="mt-4 text-[11px] text-zinc-500 flex items-center justify-between">
             <span>
-              Web Vitals collected client-side via PerformanceObserver according to Google Web Vitals 2026 specifications.
+              Web Vitals collected client-side via PerformanceObserver according
+              to Google Web Vitals 2026 specifications.
             </span>
-            <span>Generated: {new Date(data.generatedAt).toLocaleTimeString()}</span>
+            <span>
+              Generated: {new Date(data.generatedAt).toLocaleTimeString()}
+            </span>
           </p>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

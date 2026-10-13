@@ -8,7 +8,13 @@ import {
   createContext,
   useContext,
 } from "react";
-import { X, CheckCircle2, AlertCircle, AlertTriangle, Info } from "lucide-react";
+import {
+  X,
+  CheckCircle2,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type ToastType = "success" | "error" | "warning" | "info";
@@ -17,6 +23,7 @@ export interface ToastOptions {
   id?: string;
   key?: string;
   countdown?: number;
+  duration?: number;
   action?: { label: string; onClick: () => void };
 }
 
@@ -30,6 +37,7 @@ export interface Toast {
     onClick: () => void;
   };
   countdown?: number;
+  duration?: number;
   updatedAt?: number;
 }
 
@@ -69,6 +77,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     ) => {
       let action: { label: string; onClick: () => void } | undefined;
       let effectiveCountdown = countdown;
+      let effectiveDuration: number | undefined;
       let toastKey: string | undefined = idOrKey;
 
       if (actionOrOptions) {
@@ -78,6 +87,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           const opts = actionOrOptions as ToastOptions;
           if (opts.action) action = opts.action;
           if (opts.countdown !== undefined) effectiveCountdown = opts.countdown;
+          if (opts.duration !== undefined) effectiveDuration = opts.duration;
           if (opts.id) toastKey = opts.id;
           else if (opts.key) toastKey = opts.key;
         }
@@ -102,6 +112,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 effectiveCountdown !== undefined
                   ? effectiveCountdown
                   : updated[existingIndex].countdown,
+              duration:
+                effectiveDuration !== undefined
+                  ? effectiveDuration
+                  : updated[existingIndex].duration,
               key: toastKey,
               updatedAt: now,
             };
@@ -116,6 +130,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               type,
               action,
               countdown: effectiveCountdown,
+              duration: effectiveDuration,
               updatedAt: now,
             },
           ];
@@ -124,7 +139,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       }
 
       const lastSeen = recentMessagesRef.current.get(message);
-      if (effectiveCountdown === undefined && lastSeen && now - lastSeen < 3000) {
+      if (
+        effectiveCountdown === undefined &&
+        lastSeen &&
+        now - lastSeen < 3000
+      ) {
         return; // Suppress duplicate toast dispatch within 3-second window (#1748)
       }
       recentMessagesRef.current.set(message, now);
@@ -143,7 +162,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           : `${now}-${Math.random().toString(36).slice(2, 9)}-${recentMessagesRef.current.size}`;
 
       setToasts((prev) => {
-        if (effectiveCountdown !== undefined && message.includes("Rate limit")) {
+        if (
+          effectiveCountdown !== undefined &&
+          message.includes("Rate limit")
+        ) {
           const existingIndex = prev.findIndex(
             (t) =>
               t.countdown !== undefined && t.message.includes("Rate limit"),
@@ -170,6 +192,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             type,
             action,
             countdown: effectiveCountdown,
+            duration: effectiveDuration,
             updatedAt: now,
           },
         ];
@@ -309,8 +332,8 @@ function ToastItem({
       setCountdown((prev) =>
         deadline === null
           ? prev !== undefined
-          ? prev - 1
-          : undefined
+            ? prev - 1
+            : undefined
           : Math.max(0, Math.ceil((deadline - Date.now()) / 1000)),
       );
     }, 1000);
@@ -322,16 +345,27 @@ function ToastItem({
     if (isInteracting) return;
 
     const duration =
-      toast.type === "warning" || toast.type === "info"
-        ? WARNING_TOAST_DURATION_MS
-        : TOAST_DURATION_MS;
+      toast.duration !== undefined
+        ? toast.duration
+        : toast.type === "warning" || toast.type === "info"
+          ? WARNING_TOAST_DURATION_MS
+          : TOAST_DURATION_MS;
 
     const timer = setTimeout(() => {
       onRemove(toast.id);
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [toast.id, onRemove, toast.countdown, isInteracting, toast.updatedAt, toast.message, toast.type]);
+  }, [
+    toast.id,
+    onRemove,
+    toast.countdown,
+    toast.duration,
+    isInteracting,
+    toast.updatedAt,
+    toast.message,
+    toast.type,
+  ]);
 
   const Icon =
     toast.type === "success"

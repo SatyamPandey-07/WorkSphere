@@ -118,7 +118,7 @@ export default function Home() {
               <>
                 <Link
                   href="/sign-up"
-                  className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
+                  className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
                   style={{
                     backgroundImage:
                       "linear-gradient(to right, #2563eb, #7c3aed)",
@@ -129,7 +129,7 @@ export default function Home() {
                 </Link>
                 <a
                   href="#features"
-                  className="px-8 py-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-zinc-800 dark:text-white/80 font-semibold text-base hover:bg-zinc-50 hover:border-zinc-300 dark:hover:bg-white/10 dark:hover:border-white/20 transition-all backdrop-blur-sm shadow-sm dark:shadow-none"
+                  className="px-8 py-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-zinc-800 dark:text-white/80 font-semibold text-base hover:bg-zinc-50 hover:border-zinc-300 dark:hover:bg-white/10 dark:hover:border-white/20 transition-all backdrop-blur-sm shadow-sm dark:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
                 >
                   See Features
                 </a>
@@ -137,7 +137,7 @@ export default function Home() {
             ) : (
               <Link
                 href="/ai"
-                className="group px-8 py-4 rounded-2xl accent-bg text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
+                className="group px-8 py-4 rounded-2xl accent-bg text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
               >
                 Open Dashboard
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -408,7 +408,7 @@ export default function Home() {
             </p>
             <Link
               href={isSignedIn ? "/ai" : "/sign-up"}
-              className="group inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-white accent-text font-bold text-base hover:bg-zinc-100 transition-all shadow-2xl hover:shadow-white/20 hover:scale-105"
+              className="group inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-white accent-text font-bold text-base hover:bg-zinc-100 transition-all shadow-2xl hover:shadow-white/20 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
             >
               Get Started Free
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -424,7 +424,7 @@ export default function Home() {
       {scrollY > 300 && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="fixed bottom-6 left-6 z-50 p-3 rounded-xl accent-bg text-white shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:scale-110 active:scale-95 transition-all duration-300 border border-white/10 cursor-pointer group"
+          className="fixed bottom-6 left-6 z-50 p-3 rounded-xl accent-bg text-white shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:scale-110 active:scale-95 transition-all duration-300 border border-white/10 cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
           aria-label="Scroll to top"
         >
           <ArrowUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />

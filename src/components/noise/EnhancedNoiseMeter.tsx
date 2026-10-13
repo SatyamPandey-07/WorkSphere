@@ -21,18 +21,80 @@ export type NoiseMeasurement = {
   peakDb: number;
 };
 
-type Props = {
-  onMeasured: (measurement: NoiseMeasurement) => void;
-};
+export const MIN_DB = 30;
+export const MAX_DB = 120;
 
-function rmsToDb(rms: number): number {
-  if (rms <= 0.00001) return 20;
-  const dbfs = 20 * Math.log10(rms);
-  return Math.max(20, Math.min(120, Math.round((dbfs + 100) * 10) / 10));
+/**
+ * Filter out -Infinity, NaN, null, undefined, or negative values from raw decibel inputs,
+ * clamping strictly between 30 dB (whisper quiet baseline) and 120 dB (maximum safety threshold).
+ */
+export function sanitizeDecibel(rawDb: number | null | undefined): number {
+  if (
+    rawDb === null ||
+    rawDb === undefined ||
+    Number.isNaN(rawDb) ||
+    rawDb === -Infinity
+  ) {
+    return MIN_DB;
+  }
+  if (!Number.isFinite(rawDb)) {
+    return rawDb > 0 ? MAX_DB : MIN_DB;
+  }
+  if (rawDb < MIN_DB) {
+    return MIN_DB;
+  }
+  if (rawDb > MAX_DB) {
+    return MAX_DB;
+  }
+  return Math.round(rawDb * 10) / 10;
 }
 
-function getEnvironmentCategory(db: number) {
-  if (db < 50) {
+/**
+ * Calculate needle position percentage (0% to 100%) mapped strictly across [MIN_DB, MAX_DB].
+ */
+export function calculateNeedlePosition(db: number): number {
+  const safeDb = sanitizeDecibel(db);
+  const percent = ((safeDb - MIN_DB) / (MAX_DB - MIN_DB)) * 100;
+  return Math.min(100, Math.max(0, Math.round(percent * 100) / 100));
+}
+
+/**
+ * Safely parse frequency data from analyser.getFloatFrequencyData(), filtering out
+ * -Infinity, NaN, or anomalous values during audio track initialization.
+ */
+export function frequencyDataToDb(
+  frequencyBins: Float32Array | number[],
+): number {
+  if (!frequencyBins || frequencyBins.length === 0) return MIN_DB;
+  let sum = 0;
+  let validCount = 0;
+  for (let i = 0; i < frequencyBins.length; i++) {
+    const val = frequencyBins[i];
+    if (Number.isFinite(val) && !Number.isNaN(val)) {
+      sum += val;
+      validCount++;
+    }
+  }
+  if (validCount === 0) return MIN_DB;
+  const avgDbfs = sum / validCount;
+  // Convert dBFS (typical range -100 to 0) to approximate SPL dB
+  return sanitizeDecibel(avgDbfs + 100);
+}
+
+export function rmsToDb(rms: number): number {
+  if (!Number.isFinite(rms) || Number.isNaN(rms) || rms <= 0.00001) {
+    return MIN_DB;
+  }
+  const dbfs = 20 * Math.log10(rms);
+  if (!Number.isFinite(dbfs) || Number.isNaN(dbfs)) {
+    return MIN_DB;
+  }
+  return sanitizeDecibel(dbfs + 100);
+}
+
+export function getEnvironmentCategory(db: number) {
+  const safeDb = sanitizeDecibel(db);
+  if (safeDb < 50) {
     return {
       label: "Quiet Focus",
       desc: "Perfect for high-concentration work, equivalent to a quiet library.",
@@ -44,7 +106,7 @@ function getEnvironmentCategory(db: number) {
         "bg-emerald-500 dark:bg-emerald-600 shadow-[0_0_10px_rgba(16,185,129,0.5)]",
       emoji: "🍃",
     };
-  } else if (db < 70) {
+  } else if (safeDb < 70) {
     return {
       label: "Ambient Cafe",
       desc: "Moderate sound level, standard coffee shop chatter and soft background music.",
@@ -71,12 +133,22 @@ function getEnvironmentCategory(db: number) {
   }
 }
 
-export function EnhancedNoiseMeter({ onMeasured }: Props) {
+type Props = {
+  onMeasured: (measurement: NoiseMeasurement) => void;
+  initialDb?: number;
+  initialStatus?: "idle" | "requesting" | "measuring" | "done" | "error";
+};
+
+export function EnhancedNoiseMeter({
+  onMeasured,
+  initialDb,
+  initialStatus,
+}: Props) {
   const [status, setStatus] = useState<
     "idle" | "requesting" | "measuring" | "done" | "error"
-  >("idle");
+  >(initialStatus ?? "idle");
   const [remaining, setRemaining] = useState(5);
-  const [liveDb, setLiveDb] = useState(0);
+  const [liveDb, setLiveDb] = useState(initialDb ?? MIN_DB);
   const [result, setResult] = useState<NoiseMeasurement | null>(null);
   const [sensitivity, setSensitivityState] = useState(0.5);
   const [dspReady, setDspReady] = useState(false);
@@ -85,7 +157,7 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const valuesRef = useRef<number[]>([]);
-  const peakRef = useRef(0);
+  const peakRef = useRef(MIN_DB);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -117,7 +189,7 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
 
       resetCalibration();
       valuesRef.current = [];
-      peakRef.current = 0;
+      peakRef.current = MIN_DB;
 
       let timer = 5;
       setRemaining(timer);
@@ -158,7 +230,13 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
               let x = 0;
 
               for (let i = 0; i < samples.length; i++) {
-                const normalizedDb = (samples[i] - 20) / 100;
+                const normalizedDb = Math.min(
+                  1,
+                  Math.max(
+                    0,
+                    (sanitizeDecibel(samples[i]) - MIN_DB) / (MAX_DB - MIN_DB),
+                  ),
+                );
                 const y = height - normalizedDb * height;
 
                 if (i === 0) ctx.moveTo(x, y);
@@ -189,7 +267,9 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
         cleanup();
         cleanupRef.current = null;
 
-        const usable = valuesRef.current.filter((v) => Number.isFinite(v));
+        const usable = valuesRef.current
+          .map((v) => sanitizeDecibel(v))
+          .filter((v) => Number.isFinite(v));
         if (usable.length === 0) {
           setStatus("error");
           return;
@@ -199,7 +279,7 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
           Math.round(
             (usable.reduce((sum, v) => sum + v, 0) / usable.length) * 10,
           ) / 10;
-        const peakDb = Math.round(peakRef.current * 10) / 10;
+        const peakDb = sanitizeDecibel(peakRef.current);
 
         const measurement = { averageDb, peakDb };
         setResult(measurement);
@@ -211,6 +291,9 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
       setStatus("error");
     }
   }, [dspReady, onMeasured]);
+
+  const clampedLiveDb = sanitizeDecibel(liveDb);
+  const needlePercent = calculateNeedlePosition(clampedLiveDb);
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60 shadow-md">
@@ -261,7 +344,7 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
             onClick={() => {
               resetCalibration();
               valuesRef.current = [];
-              peakRef.current = 0;
+              peakRef.current = MIN_DB;
             }}
             className="flex items-center gap-1.5 text-[10px] font-bold text-blue-500 hover:text-blue-600"
           >
@@ -276,20 +359,20 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xl shrink-0">
-                {getEnvironmentCategory(liveDb).emoji}
+                {getEnvironmentCategory(clampedLiveDb).emoji}
               </span>
               <div>
                 <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest leading-none">
                   Vibe Classification
                 </p>
                 <p className="text-xs font-black text-zinc-900 dark:text-zinc-50 uppercase tracking-tight mt-1">
-                  {getEnvironmentCategory(liveDb).label}
+                  {getEnvironmentCategory(clampedLiveDb).label}
                 </p>
               </div>
             </div>
             <div className="text-right">
               <p className="text-3xl font-black tracking-tighter text-zinc-900 dark:text-white leading-none">
-                {liveDb.toFixed(1)}
+                {clampedLiveDb.toFixed(1)}
                 <span className="ml-1 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
                   dB
                 </span>
@@ -304,22 +387,33 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
               height={80}
               className="w-full h-full opacity-80"
             />
-            <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-zinc-900/90 border border-zinc-800 text-[9px] font-black uppercase text-zinc-400">
+            <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-zinc-900/90 border border-zinc-850 text-[9px] font-black uppercase text-zinc-400">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
               <span>SIMD DSP</span>
             </div>
           </div>
 
-          <div className="space-y-1">
+          {/* Real-time decibel progress gauge with ease-out needle */}
+          <div className="space-y-1.5" data-testid="decibel-gauge">
             <div className="flex justify-between text-[9px] font-black uppercase tracking-widest text-zinc-400">
-              <span>0 dB</span>
-              <span>120 dB</span>
+              <span>{MIN_DB} dB</span>
+              <span>{MAX_DB} dB</span>
             </div>
-            <div className="h-2.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 shadow-inner">
+            <div className="relative h-3 rounded-full bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 shadow-inner overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-75 ${getEnvironmentCategory(liveDb).progressBg}`}
+                data-testid="meter-progress"
+                className={`h-full rounded-full transition-all duration-200 ease-out ${getEnvironmentCategory(clampedLiveDb).progressBg}`}
                 style={{
-                  width: `${Math.min(100, Math.max(5, ((liveDb - 20) / 100) * 100))}%`,
+                  width: `${needlePercent}%`,
+                  transitionTimingFunction: "ease-out",
+                }}
+              />
+              <div
+                data-testid="meter-needle"
+                className="absolute top-0 bottom-0 w-1.5 -ml-0.5 rounded-full bg-white dark:bg-zinc-100 shadow-md transition-all duration-200 ease-out pointer-events-none"
+                style={{
+                  left: `${needlePercent}%`,
+                  transitionTimingFunction: "ease-out",
                 }}
               />
             </div>

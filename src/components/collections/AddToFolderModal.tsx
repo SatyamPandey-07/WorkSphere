@@ -64,7 +64,7 @@ export function AddToFolderModal({ venue, onClose }: AddToFolderModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-zinc-900 dark:text-white flex items-center gap-2">
             <Folder className="w-5 h-5 accent-text" />
             Add to Collection
@@ -76,6 +76,18 @@ export function AddToFolderModal({ venue, onClose }: AddToFolderModalProps) {
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {venue?.name && (
+          <div className="mb-4 px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/60 dark:border-zinc-800 flex items-center gap-2 overflow-hidden">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium shrink-0">Venue:</span>
+            <span
+              title={venue.name}
+              className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate cursor-help"
+            >
+              {venue.name}
+            </span>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center p-8">
@@ -103,14 +115,17 @@ export function AddToFolderModal({ venue, onClose }: AddToFolderModalProps) {
                 disabled={addingTo !== null}
                 className="w-full flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:accent-border-50 hover:accent-bg-10 dark:hover:accent-bg-dark-10 transition-all text-left"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-semibold shadow-xs"
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-semibold shadow-xs shrink-0"
                     style={{ backgroundColor: folder.color || "#3b82f6" }}
                   >
                     <Folder className="w-4 h-4" />
                   </div>
-                  <span className="font-medium text-sm text-zinc-900 dark:text-white">
+                  <span
+                    title={folder.name}
+                    className="font-medium text-sm text-zinc-900 dark:text-white truncate"
+                  >
                     {folder.name}
                   </span>
                 </div>

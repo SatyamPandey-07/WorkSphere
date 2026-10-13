@@ -21,6 +21,10 @@ import {
   X,
 } from "lucide-react";
 import { CompassKalmanFilter } from "@/lib/spatial/compassFilter";
+import {
+  QuaternionOrientationFilter,
+  isGimbalLockProne,
+} from "@/lib/spatial/quaternionOrientation";
 
 interface CompassFallbackProps {
   destinationLat?: number | null;
@@ -31,6 +35,10 @@ interface CompassFallbackProps {
   trapFocus?: boolean;
   kalmanQ?: number;
   kalmanR?: number;
+  slerpFactor?: number;
+  alpha?: number | null;
+  beta?: number | null;
+  gamma?: number | null;
 }
 
 interface UserCoordinates {
@@ -48,6 +56,10 @@ export default function CompassFallback({
   trapFocus = true,
   kalmanQ = 0.05,
   kalmanR = 0.5,
+  slerpFactor = 0.2,
+  alpha,
+  beta,
+  gamma,
 }: CompassFallbackProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -58,14 +70,23 @@ export default function CompassFallback({
   const {
     heading,
     accuracy,
+    alpha: hookAlpha,
+    beta: hookBeta,
+    gamma: hookGamma,
     error: orientationError,
     isSupported,
     permissionState,
     requestPermission,
   } = useDeviceOrientation();
 
+  const effectiveAlpha = alpha !== undefined ? alpha : hookAlpha;
+  const effectiveBeta = beta !== undefined ? beta : hookBeta;
+  const effectiveGamma = gamma !== undefined ? gamma : hookGamma;
+  const isGimbalLockActive = isGimbalLockProne(effectiveBeta);
+
   const [filteredHeading, setFilteredHeading] = useState<number | null>(null);
   const kalmanFilterRef = useRef<CompassKalmanFilter | null>(null);
+  const quaternionFilterRef = useRef<QuaternionOrientationFilter | null>(null);
 
   if (!kalmanFilterRef.current) {
     kalmanFilterRef.current = new CompassKalmanFilter({
@@ -74,20 +95,46 @@ export default function CompassFallback({
     });
   }
 
+  if (!quaternionFilterRef.current) {
+    quaternionFilterRef.current = new QuaternionOrientationFilter(slerpFactor);
+  }
+
   useEffect(() => {
     kalmanFilterRef.current?.setParameters({ q: kalmanQ, r: kalmanR });
   }, [kalmanQ, kalmanR]);
 
   useEffect(() => {
-    if (heading !== null && !isNaN(heading)) {
-      const smoothed = kalmanFilterRef.current?.update(heading, accuracy);
+    quaternionFilterRef.current?.setSlerpFactor(slerpFactor);
+  }, [slerpFactor]);
+
+  useEffect(() => {
+    let rawHeading: number | null = null;
+
+    if (
+      effectiveAlpha !== null &&
+      effectiveAlpha !== undefined &&
+      Number.isFinite(effectiveAlpha)
+    ) {
+      rawHeading =
+        quaternionFilterRef.current?.update(
+          effectiveAlpha,
+          effectiveBeta,
+          effectiveGamma,
+        ) ?? null;
+    } else if (heading !== null && !isNaN(heading)) {
+      rawHeading = heading;
+    }
+
+    if (rawHeading !== null && !isNaN(rawHeading)) {
+      const smoothed = kalmanFilterRef.current?.update(rawHeading, accuracy);
       if (smoothed !== null && smoothed !== undefined) {
         setFilteredHeading(Math.round(smoothed * 10) / 10);
       }
     } else {
+      quaternionFilterRef.current?.reset();
       setFilteredHeading(null);
     }
-  }, [heading, accuracy]);
+  }, [effectiveAlpha, effectiveBeta, effectiveGamma, heading, accuracy]);
 
   const activeHeading = filteredHeading !== null ? filteredHeading : heading;
 
@@ -200,6 +247,16 @@ export default function CompassFallback({
           </span>
           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
             2D Compass Fallback
+          </span>
+          <span
+            data-testid="quaternion-stabilization-badge"
+            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
+              isGimbalLockActive
+                ? "bg-purple-500/20 text-purple-300 border-purple-500/40 animate-pulse"
+                : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+            }`}
+          >
+            {isGimbalLockActive ? "Gimbal Lock Protected" : "Quaternion SLERP"}
           </span>
         </div>
 
@@ -377,7 +434,10 @@ export default function CompassFallback({
 
           {/* Heading Readout */}
           <div className="flex items-center gap-3 font-mono text-xs text-slate-400">
-            <span className="bg-slate-800/80 px-2.5 py-1 rounded-md border border-slate-700/60">
+            <span
+              data-testid="heading-readout"
+              className="bg-slate-800/80 px-2.5 py-1 rounded-md border border-slate-700/60"
+            >
               Heading:{" "}
               <strong className="text-white">
                 {activeHeading !== null
@@ -392,6 +452,18 @@ export default function CompassFallback({
                 Bearing:{" "}
                 <strong className="text-white">
                   {Math.round(targetBearing)}°
+                </strong>
+              </span>
+            )}
+
+            {effectiveBeta !== null && effectiveBeta !== undefined && (
+              <span
+                data-testid="pitch-readout"
+                className="bg-slate-800/80 px-2.5 py-1 rounded-md border border-slate-700/60"
+              >
+                Pitch:{" "}
+                <strong className="text-white">
+                  {Math.round(effectiveBeta)}°
                 </strong>
               </span>
             )}

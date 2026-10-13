@@ -49,8 +49,18 @@ function applyTheme(theme: Theme) {
     root.classList.add("cyberpunk");
   }
 
-  const bg = theme === "dark" ? "#0a0a0a" : theme === "cyberpunk" ? "#090014" : "#ffffff";
-  const fg = theme === "dark" ? "#ededed" : theme === "cyberpunk" ? "#f4f4ff" : "#171717";
+  const bg =
+    theme === "dark"
+      ? "#0a0a0a"
+      : theme === "cyberpunk"
+        ? "#090014"
+        : "#ffffff";
+  const fg =
+    theme === "dark"
+      ? "#ededed"
+      : theme === "cyberpunk"
+        ? "#f4f4ff"
+        : "#171717";
 
   root.style.colorScheme = theme === "light" ? "light" : "dark";
   root.style.backgroundColor = bg;
@@ -77,6 +87,11 @@ function applyAccent(accent: AccentColor) {
   const hex = ACCENT_HEX_MAP[accent] || ACCENT_HEX_MAP[DEFAULT_ACCENT];
   root.style.setProperty("--primary-accent", hex);
   root.style.setProperty("--primary-accent-rgb", hexToRgb(hex));
+  if (accent === "lantern-emerald") {
+    root.style.setProperty("--accent-lantern", hex);
+  } else {
+    root.style.removeProperty("--accent-lantern");
+  }
 }
 
 function hexToRgb(hex: string): string {
@@ -121,15 +136,25 @@ export function ThemeProvider({
   const [accent, setAccentState] = useState<AccentColor>(() => {
     if (typeof window === "undefined") return initialAccent;
     const saved = window.localStorage.getItem(ACCENT_STORAGE_KEY);
-    return parseAccentColor(saved);
+    if (saved !== null) return parseAccentColor(saved);
+    return initialAccent;
   });
 
   const [highContrast, setHighContrastState] = useState<boolean>(() => {
     if (typeof document === "undefined") return initialHighContrast;
     const root = document.documentElement;
-    if (root.classList.contains("high-contrast") || root.getAttribute("data-high-contrast") === "true") return true;
-    const saved = window.localStorage.getItem(HIGH_CONTRAST_STORAGE_KEY);
+    if (
+      root.classList.contains("high-contrast") ||
+      root.getAttribute("data-high-contrast") === "true"
+    )
+      return true;
+    const saved =
+      window.localStorage.getItem(HIGH_CONTRAST_STORAGE_KEY) ??
+      window.localStorage.getItem("worksphere-high-contrast");
     if (saved !== null) return saved === "true";
+    if (typeof window !== "undefined" && window.matchMedia) {
+      return window.matchMedia("(forced-colors: active)").matches;
+    }
     return initialHighContrast;
   });
 
@@ -174,6 +199,7 @@ export function ThemeProvider({
   const setAccent = useCallback((next: AccentColor) => {
     setAccentState(next);
     window.localStorage.setItem(ACCENT_STORAGE_KEY, next);
+    document.cookie = `${ACCENT_STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
     applyAccent(next);
   }, []);
 
@@ -183,7 +209,7 @@ export function ThemeProvider({
     document.cookie = `${HIGH_CONTRAST_STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
     applyHighContrast(next);
     window.dispatchEvent(
-      new CustomEvent("worksphere_high_contrast_change", { detail: next })
+      new CustomEvent("worksphere_high_contrast_change", { detail: next }),
     );
   }, []);
 
@@ -194,7 +220,7 @@ export function ThemeProvider({
       document.cookie = `${HIGH_CONTRAST_STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
       applyHighContrast(next);
       window.dispatchEvent(
-        new CustomEvent("worksphere_high_contrast_change", { detail: next })
+        new CustomEvent("worksphere_high_contrast_change", { detail: next }),
       );
       return next;
     });
@@ -229,7 +255,9 @@ export function ThemeProvider({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isHighContrastShortcut =
-        ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "H" || e.key === "h")) ||
+        ((e.metaKey || e.ctrlKey) &&
+          e.shiftKey &&
+          (e.key === "H" || e.key === "h")) ||
         (e.altKey && e.shiftKey && (e.key === "H" || e.key === "h"));
 
       if (isHighContrastShortcut) {

@@ -2,24 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
   AlertOctagon,
   AlertTriangle,
-  Clock,
   Filter,
   Flame,
-  Gauge,
   Info,
-  Layers,
   Pause,
   Play,
-  Radio,
   RefreshCw,
   Search,
-  SlidersHorizontal,
-  Sparkles,
-  TrendingUp,
-  Zap,
+  Map as MapIcon,
+  Grid3X3,
 } from "lucide-react";
 import type {
   RouteHeatmapCell,
@@ -28,6 +21,8 @@ import type {
   LatencySeverity,
 } from "@/lib/telemetry/types";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
+// Import the new Worker-based Canvas Component
+import { RouteLatencyHeatmap as GeoHeatmapCanvas } from "./RouteLatencyHeatmapCanvas"; // Assuming path based on context
 
 interface RouteLatencyHeatmapProps {
   className?: string;
@@ -389,7 +384,9 @@ function HyperlaneViewport({ routes }: { routes: HyperlaneRoute[] }) {
 }
 
 type MetricMode = "p95" | "p50" | "avg" | "count";
-type CategoryFilter = "all" | "ai" | "api" | "auth" | "db" | "telemetry" | "wallet" | "admin";
+type CategoryFilter =
+  "all" | "ai" | "api" | "auth" | "db" | "telemetry" | "wallet" | "admin";
+type ViewMode = "grid" | "geo";
 
 export interface LatencyDeltaMessage {
   type: "LATENCY_DELTA" | "telemetry_update";
@@ -404,17 +401,26 @@ export interface LatencyDeltaMessage {
   bucketIndex?: number;
 }
 
+// Interface for the Geo/Scatter mode
+interface LatencyPoint {
+  x: number;
+  y: number;
+  latency: number; // 0.0 to 1.0
+}
+
 export function RouteLatencyHeatmap({
   className = "",
   initialRange = "1h",
 }: RouteLatencyHeatmapProps) {
   const [range, setRange] = useState<"1h" | "24h" | "7d">(initialRange);
   const [metricMode, setMetricMode] = useState<MetricMode>("p95");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [highlightSlowOnly, setHighlightSlowOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>("all");
+  const [selectedCategory, setSelectedCategory] =
+    useState<CategoryFilter>("all");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshIntervalSec, setRefreshIntervalSec] = useState(8);
+  const [refreshIntervalSec] = useState(8);
   const [countdown, setCountdown] = useState(8);
   const [wsConnected, setWsConnected] = useState(false);
   const [lastLiveDeltaAt, setLastLiveDeltaAt] = useState<string | null>(null);
@@ -483,7 +489,10 @@ export function RouteLatencyHeatmap({
     onMessage(event) {
       try {
         const delta = JSON.parse(event.data) as LatencyDeltaMessage;
-        if (!delta || (delta.type !== "LATENCY_DELTA" && delta.type !== "telemetry_update")) {
+        if (
+          !delta ||
+          (delta.type !== "LATENCY_DELTA" && delta.type !== "telemetry_update")
+        ) {
           return;
         }
 
@@ -508,11 +517,22 @@ export function RouteLatencyHeatmap({
 
               const newCount = delta.count ?? cell.count + 1;
               const newP95 = delta.p95Ms ?? delta.latencyMs ?? cell.p95Ms;
-              const newP50 = delta.p50Ms ?? (delta.latencyMs ? Math.round(delta.latencyMs * 0.8) : cell.p50Ms);
+              const newP50 =
+                delta.p50Ms ??
+                (delta.latencyMs
+                  ? Math.round(delta.latencyMs * 0.8)
+                  : cell.p50Ms);
               const newAvg = delta.avgMs ?? delta.latencyMs ?? cell.avgMs;
-              const newSeverity: LatencySeverity =
+              // Same thresholds as getLatencySeverity() in performanceCollector.ts
+              const newStatus: LatencySeverity =
                 delta.severity ??
-                (newP95 > 300 ? "critical" : newP95 > 150 ? "high" : newP95 > 80 ? "medium" : "low");
+                (newP95 < 80
+                  ? "optimal"
+                  : newP95 < 150
+                    ? "normal"
+                    : newP95 < 300
+                      ? "amber"
+                      : "red");
 
               return {
                 ...cell,
@@ -520,18 +540,18 @@ export function RouteLatencyHeatmap({
                 p95Ms: newP95,
                 p50Ms: newP50,
                 avgMs: newAvg,
-                severity: newSeverity,
+                status: newStatus,
               };
             });
 
-            const overallP95 = delta.p95Ms ?? routeRow.p95Ms;
-            const isSlow = overallP95 > 150;
+            const overallP95 = delta.p95Ms ?? routeRow.overallP95Ms;
+            const isSlow = overallP95 >= 150;
 
             return {
               ...routeRow,
               cells: updatedCells,
-              p95Ms: overallP95,
-              avgMs: delta.avgMs ?? routeRow.avgMs,
+              overallP95Ms: overallP95,
+              overallAvgMs: delta.avgMs ?? routeRow.overallAvgMs,
               totalRequests: routeRow.totalRequests + 1,
               isSlowPath: isSlow,
             };
@@ -590,8 +610,38 @@ export function RouteLatencyHeatmap({
     });
   }, [data, highlightSlowOnly, selectedCategory, searchQuery]);
 
+  // Transform data for Geo/Scatter Mode
+  const geoPoints = useMemo<LatencyPoint[]>(() => {
+    if (!data || viewMode !== "geo") return [];
+
+    // Mocking geographic distribution based on route hash for visualization purposes
+    // In a real app, this would come from actual geo-IP data in the API response
+    return data.routes.flatMap((row) => {
+      // Generate a point for each active time bucket
+      return row.cells
+        .filter((c) => c.count > 0)
+        .map((cell, idx) => {
+          // Simple hash to determine X/Y position on the canvas (0-1 range)
+          const hash = row.route
+            .split("")
+            .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          const x = (hash % 100) / 100;
+          const y = ((hash * idx) % 100) / 100;
+
+          // Normalize latency for color intensity (0-1)
+          // Assume 500ms is max critical
+          const latencyNorm = Math.min(1, cell.p95Ms / 500);
+
+          return { x, y, latency: latencyNorm };
+        });
+    });
+  }, [data, viewMode]);
+
   // Helper to get fill color and styling for a latency value
-  function getCellColor(cell: RouteHeatmapCell, mode: MetricMode): {
+  function getCellColor(
+    cell: RouteHeatmapCell,
+    mode: MetricMode,
+  ): {
     fill: string;
     text: string;
     border: string;
@@ -627,10 +677,6 @@ export function RouteLatencyHeatmap({
     }
 
     // Latency heat map modes:
-    // < 80ms: Optimal (Emerald)
-    // 80 - 150ms: Normal (Cyan)
-    // 150 - 300ms: Amber (Elevated Warning)
-    // > 300ms: Red (Critical Slow Path)
     if (value < 80) {
       const alpha = 0.25 + (value / 80) * 0.35;
       return {
@@ -707,18 +753,44 @@ export function RouteLatencyHeatmap({
 
   function getCategoryBadge(category: string) {
     const map: Record<string, { label: string; color: string }> = {
-      ai: { label: "AI / LLM", color: "border-purple-500/30 bg-purple-500/10 text-purple-300" },
-      api: { label: "REST API", color: "border-blue-500/30 bg-blue-500/10 text-blue-300" },
-      auth: { label: "Auth / Passkey", color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
-      db: { label: "Prisma DB", color: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
-      telemetry: { label: "Telemetry", color: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300" },
-      wallet: { label: "Wallet Pass", color: "border-pink-500/30 bg-pink-500/10 text-pink-300" },
-      admin: { label: "Admin Core", color: "border-indigo-500/30 bg-indigo-500/10 text-indigo-300" },
+      ai: {
+        label: "AI / LLM",
+        color: "border-purple-500/30 bg-purple-500/10 text-purple-300",
+      },
+      api: {
+        label: "REST API",
+        color: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+      },
+      auth: {
+        label: "Auth / Passkey",
+        color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+      },
+      db: {
+        label: "Prisma DB",
+        color: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+      },
+      telemetry: {
+        label: "Telemetry",
+        color: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
+      },
+      wallet: {
+        label: "Wallet Pass",
+        color: "border-pink-500/30 bg-pink-500/10 text-pink-300",
+      },
+      admin: {
+        label: "Admin Core",
+        color: "border-indigo-500/30 bg-indigo-500/10 text-indigo-300",
+      },
     };
 
-    const c = map[category] || { label: category, color: "border-white/10 bg-white/5 text-zinc-400" };
+    const c = map[category] || {
+      label: category,
+      color: "border-white/10 bg-white/5 text-zinc-400",
+    };
     return (
-      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider border ${c.color}`}>
+      <span
+        className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider border ${c.color}`}
+      >
         {c.label}
       </span>
     );
@@ -756,7 +828,9 @@ export function RouteLatencyHeatmap({
                   <span className="relative flex h-2 w-2">
                     <span
                       className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                        wsConnected ? "animate-ping bg-emerald-400" : "bg-amber-400"
+                        wsConnected
+                          ? "animate-ping bg-emerald-400"
+                          : "bg-amber-400"
                       }`}
                     />
                     <span
@@ -774,9 +848,16 @@ export function RouteLatencyHeatmap({
                 </span>
               </div>
               <p className="mt-1 text-xs text-zinc-400 md:text-sm">
-                Real-time p95 latency matrix across API routes. Slow paths are highlighted in{" "}
-                <span className="font-semibold text-amber-400">Amber (&gt;150ms)</span> and{" "}
-                <span className="font-semibold text-rose-400">Red (&gt;300ms)</span>.
+                Real-time p95 latency matrix across API routes. Slow paths are
+                highlighted in{" "}
+                <span className="font-semibold text-amber-400">
+                  Amber (&gt;150ms)
+                </span>{" "}
+                and{" "}
+                <span className="font-semibold text-rose-400">
+                  Red (&gt;300ms)
+                </span>
+                .
               </p>
             </div>
           </div>
@@ -805,6 +886,32 @@ export function RouteLatencyHeatmap({
                 {item.label}
               </button>
             ))}
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex rounded-2xl border border-white/10 bg-white/[0.03] p-1 shadow-inner">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                viewMode === "grid"
+                  ? "bg-white text-zinc-950 font-semibold shadow-md"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              <Grid3X3 className="h-3.5 w-3.5" />
+              Matrix
+            </button>
+            <button
+              onClick={() => setViewMode("geo")}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                viewMode === "geo"
+                  ? "bg-white text-zinc-950 font-semibold shadow-md"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              <MapIcon className="h-3.5 w-3.5" />
+              Geo Map
+            </button>
           </div>
 
           {/* Auto Refresh Toggle */}
@@ -909,7 +1016,9 @@ export function RouteLatencyHeatmap({
             <div className="mt-1 flex items-baseline gap-2">
               <span
                 className={`font-mono text-2xl font-bold ${
-                  data.summary.slowEndpointsCount > 0 ? "text-amber-400" : "text-emerald-400"
+                  data.summary.slowEndpointsCount > 0
+                    ? "text-amber-400"
+                    : "text-emerald-400"
                 }`}
               >
                 {data.summary.slowEndpointsCount}
@@ -961,7 +1070,9 @@ export function RouteLatencyHeatmap({
                 : "border-white/10 bg-white/[0.03] text-zinc-400 hover:text-white"
             }`}
           >
-            <AlertTriangle className={`h-3.5 w-3.5 ${highlightSlowOnly ? "text-amber-400" : ""}`} />
+            <AlertTriangle
+              className={`h-3.5 w-3.5 ${highlightSlowOnly ? "text-amber-400" : ""}`}
+            />
             <span>Highlight Slow Paths Only</span>
             {data && data.summary.slowEndpointsCount > 0 && (
               <span className="ml-1 rounded-full bg-amber-500/30 px-1.5 py-0.2 text-[10px] font-bold text-amber-200">
@@ -1038,26 +1149,49 @@ export function RouteLatencyHeatmap({
       <HyperlaneViewport routes={data?.routes ?? []} />
 
       {/* Main Heatmap Visualization */}
+      {/* Main Visualization Area */}
       <div className="relative z-10 mt-5 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-inner">
         {loading && !data ? (
           <div className="flex h-96 flex-col items-center justify-center gap-3">
             <RefreshCw className="h-8 w-8 animate-spin text-amber-400" />
-            <p className="text-xs text-zinc-400">Synthesizing real-time latency telemetry...</p>
+            <p className="text-xs text-zinc-400">
+              Synthesizing real-time latency telemetry...
+            </p>
+          </div>
+        ) : viewMode === "geo" ? (
+          // New Geo/Scatter Heatmap View
+          <div className="h-[500px] w-full p-2">
+            <GeoHeatmapCanvas points={geoPoints} width={800} height={500} />
+            <div className="absolute bottom-4 left-4 pointer-events-none">
+              <p className="text-xs text-zinc-400 bg-black/50 px-2 py-1 rounded backdrop-blur">
+                Geographic Distribution of Latency Events (Simulated)
+              </p>
+            </div>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-2 text-zinc-500">
             <Filter className="h-8 w-8 text-zinc-600" />
-            <p className="text-sm font-medium">No endpoints match the current filter</p>
-            <p className="text-xs text-zinc-600">Try clearing your search query or slow paths filter.</p>
+            <p className="text-sm font-medium">
+              No endpoints match the current filter
+            </p>
+            <p className="text-xs text-zinc-600">
+              Try clearing your search query or slow paths filter.
+            </p>
           </div>
         ) : (
+          // Original Grid Matrix View
           <div className="overflow-x-auto">
             <div className="min-w-[760px] p-4">
               {/* Header row: Time bucket columns */}
               <div className="mb-2 grid grid-cols-[240px_repeat(12,_1fr)_90px] items-center gap-1.5 text-[11px] font-medium text-zinc-500">
-                <div className="pl-2">Route / Endpoint ({filteredRows.length})</div>
+                <div className="pl-2">
+                  Route / Endpoint ({filteredRows.length})
+                </div>
                 {data?.timeBuckets.map((bucket) => (
-                  <div key={bucket.index} className="truncate text-center font-mono">
+                  <div
+                    key={bucket.index}
+                    className="truncate text-center font-mono"
+                  >
                     {bucket.label}
                   </div>
                 ))}
@@ -1122,7 +1256,8 @@ export function RouteLatencyHeatmap({
                           <div
                             key={cell.bucketIndex}
                             onMouseEnter={(e) => {
-                              const rect = e.currentTarget.getBoundingClientRect();
+                              const rect =
+                                e.currentTarget.getBoundingClientRect();
                               setHoveredCell({
                                 cell,
                                 row,
@@ -1134,7 +1269,9 @@ export function RouteLatencyHeatmap({
                             style={{ backgroundColor: style.fill }}
                             className={`relative flex h-9 cursor-pointer items-center justify-center rounded-lg border transition-all duration-150 hover:scale-105 hover:z-20 ${style.border} ${style.glow}`}
                           >
-                            <span className={`text-[11px] font-mono select-none ${style.text}`}>
+                            <span
+                              className={`text-[11px] font-mono select-none ${style.text}`}
+                            >
                               {cell.count === 0
                                 ? "—"
                                 : metricMode === "count"
@@ -1171,8 +1308,8 @@ export function RouteLatencyHeatmap({
         )}
       </div>
 
-      {/* Floating Tooltip */}
-      {hoveredCell && (
+      {/* Floating Tooltip (Grid Mode Only) */}
+      {hoveredCell && viewMode === "grid" && (
         <div
           style={{
             left: `${hoveredCell.clientX}px`,
@@ -1270,7 +1407,10 @@ export function RouteLatencyHeatmap({
 
         <div className="flex items-center gap-2 text-[11px] text-zinc-500">
           <Info className="h-3.5 w-3.5" />
-          <span>Tail p95 reflects the 95th percentile worst response latency in that time bucket.</span>
+          <span>
+            Tail p95 reflects the 95th percentile worst response latency in that
+            time bucket.
+          </span>
         </div>
       </div>
     </section>

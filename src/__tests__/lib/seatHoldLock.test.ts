@@ -7,6 +7,7 @@ import {
   releaseSeatWebLock,
   getSeatWebLock,
   resetMemorySeatLocks,
+  withSeatWebLock,
 } from "@/lib/locks/seatHoldLock";
 
 describe("Distributed SeatHoldLock Library & Redis WebLocks (#3522)", () => {
@@ -129,4 +130,95 @@ describe("Distributed SeatHoldLock Library & Redis WebLocks (#3522)", () => {
     );
     expect(res.success).toBe(true);
   });
+
+  describe("withSeatWebLock Timeout Fallback & Abort Handling (#4921)", () => {
+    const originalNavigator = global.navigator;
+
+    afterEach(() => {
+      Object.defineProperty(global, "navigator", {
+        value: originalNavigator,
+        configurable: true,
+        writable: true,
+      });
+    });
+
+    it("runs callback immediately when navigator.locks is unavailable", async () => {
+      Object.defineProperty(global, "navigator", {
+        value: {},
+        configurable: true,
+        writable: true,
+      });
+
+      let executed = false;
+      const result = await withSeatWebLock("v1", "s1", async (release) => {
+        executed = true;
+        release();
+        return "SUCCESS";
+      });
+
+      expect(executed).toBe(true);
+      expect(result).toBe("SUCCESS");
+    });
+
+    it("acquires exclusive lock successfully via navigator.locks when available", async () => {
+      let requestedLockName = "";
+      const mockRequest = jest.fn((name, options, cb) => {
+        requestedLockName = name;
+        return cb();
+      });
+
+      Object.defineProperty(global, "navigator", {
+        value: {
+          locks: {
+            request: mockRequest,
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+
+      const res = await withSeatWebLock("v1", "s1", async (release) => {
+        release();
+        return "LOCK_ACQUIRED";
+      });
+
+      expect(res).toBe("LOCK_ACQUIRED");
+      expect(mockRequest).toHaveBeenCalled();
+      expect(requestedLockName).toBe("seat-hold:v1:s1");
+    });
+
+    it("times out and aborts when navigator.locks.request hangs indefinitely", async () => {
+      // Mock request that never fulfills
+      let abortSignalPassed: AbortSignal | undefined;
+      const hangingMockRequest = jest.fn((name, options, cb) => {
+        abortSignalPassed = options?.signal;
+        return new Promise(() => {}); // never resolves
+      });
+
+      Object.defineProperty(global, "navigator", {
+        value: {
+          locks: {
+            request: hangingMockRequest,
+          },
+        },
+        configurable: true,
+        writable: true,
+      });
+
+      // Use real timers for the timeout race test
+      jest.useRealTimers();
+
+      await expect(
+        withSeatWebLock(
+          "v1",
+          "s1",
+          async () => "SHOULD_NOT_REACH",
+          { timeoutMs: 50 } // fast 50ms timeout for test
+        )
+      ).rejects.toThrow(/Web Lock acquisition timed out after 50ms/);
+
+      expect(abortSignalPassed?.aborted).toBe(true);
+    });
+  });
 });
+

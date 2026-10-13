@@ -5,15 +5,20 @@
  */
 
 import { ItineraryGraph, PriorityQueue } from "./ItineraryGraph";
-import { TimeWindowConstraint } from "./TimeWindowConstraint";
+import {
+  TimeWindowConstraint,
+  validateBreakDuration,
+  type TransitConstraintOptions,
+} from "./TimeWindowConstraint";
 import type { TransitEdge } from "./ItineraryGraph";
 
 export interface ItinerarySolution {
   sequence: string[]; // Ordered list of venue IDs
-  totalDurationMinutes: number; // Transit + Dwell + Wait times
+  totalDurationMinutes: number; // Transit + Dwell + Wait + Break times
   totalTransitTimeMinutes: number;
   totalDwellTimeMinutes: number;
   totalWaitTimeMinutes: number;
+  totalBreakTimeMinutes?: number;
   totalCarbonGrams: number;
   totalCost: number;
   startTime: Date;
@@ -24,6 +29,7 @@ export interface ItinerarySolution {
     arrivalTime: Date;
     departureTime: Date;
     waitTimeMinutes: number;
+    breakTimeMinutes?: number;
     carbonGrams: number;
     mode?: TransitEdge["mode"];
   }>;
@@ -44,6 +50,9 @@ export interface TransitSolverOptions {
   maxExecutionTimeMs?: number;
   pruneTimeWindowViolations?: boolean;
   objective?: TransitOptimizationObjective;
+  customBreakDurationMinutes?: number;
+  breakDurationMinutes?: number;
+  segmentBreakDurations?: Record<string, number>;
 }
 
 export class TransitSolver {
@@ -79,6 +88,16 @@ export class TransitSolver {
     let bestCost = Infinity;
     const objective = options.objective ?? "time";
 
+    const globalBreak = options.customBreakDurationMinutes ?? options.breakDurationMinutes;
+    if (globalBreak !== undefined) {
+      validateBreakDuration(globalBreak);
+    }
+    if (options.segmentBreakDurations) {
+      for (const val of Object.values(options.segmentBreakDurations)) {
+        validateBreakDuration(val);
+      }
+    }
+
     // Search state for Branch-and-Bound recursion
     const initialScheduleItem = {
       venueId: startVenueId,
@@ -88,6 +107,7 @@ export class TransitSolver {
         startTime.getTime() + startNode.averageDwellTimeMinutes * 60000,
       ),
       waitTimeMinutes: 0,
+      breakTimeMinutes: 0,
       carbonGrams: 0,
     };
 
@@ -99,6 +119,7 @@ export class TransitSolver {
       accumulatedTransitTime: number,
       accumulatedDwellTime: number,
       accumulatedWaitTime: number,
+      accumulatedBreakTime: number,
       accumulatedCarbonGrams: number,
       accumulatedCost: number,
       remainingTargets: Set<string>,
@@ -111,7 +132,10 @@ export class TransitSolver {
       // Base case: All target venues visited
       if (remainingTargets.size === 0) {
         const totalDuration =
-          accumulatedTransitTime + accumulatedDwellTime + accumulatedWaitTime;
+          accumulatedTransitTime +
+          accumulatedDwellTime +
+          accumulatedWaitTime +
+          accumulatedBreakTime;
 
         const objectiveValue =
           objective === "carbon"
@@ -127,6 +151,7 @@ export class TransitSolver {
             totalTransitTimeMinutes: accumulatedTransitTime,
             totalDwellTimeMinutes: accumulatedDwellTime,
             totalWaitTimeMinutes: accumulatedWaitTime,
+            totalBreakTimeMinutes: accumulatedBreakTime,
             totalCarbonGrams: accumulatedCarbonGrams,
             totalCost: accumulatedCost,
             startTime,
@@ -143,6 +168,7 @@ export class TransitSolver {
         accumulatedTransitTime +
         accumulatedDwellTime +
         accumulatedWaitTime +
+        accumulatedBreakTime +
         remainingLowerBound;
 
       // PRUNE strictly when lowerBound > bestCost to avoid premature pruning of equal-cost routes
@@ -173,9 +199,21 @@ export class TransitSolver {
         if (!nextNode) continue;
 
         const transitTime = edge.transitTimeMinutes;
+        const breakTime = this.timeConstraint.resolveBreakDuration(
+          {
+            customBreakDurationMinutes: globalBreak,
+            segmentBreakDurations: options.segmentBreakDurations,
+          },
+          currentVenueId,
+          nextVenueId
+        );
         const carbonGrams = this.calculateEdgeCarbonGrams(edge);
-        const arrivalTimestamp = new Date(
-          currentTime.getTime() + transitTime * 60000,
+        const arrivalTimestamp = this.timeConstraint.calculateEarliestArrival(
+          currentTime,
+          transitTime,
+          {
+            customBreakDurationMinutes: breakTime,
+          }
         );
 
         // Time Window Validation & Wait Time Computation
@@ -218,6 +256,7 @@ export class TransitSolver {
               arrivalTime: effectiveArrival,
               departureTime,
               waitTimeMinutes: waitTime,
+              breakTimeMinutes: breakTime,
               carbonGrams,
               mode: edge.mode,
             },
@@ -225,6 +264,7 @@ export class TransitSolver {
           accumulatedTransitTime + transitTime,
           accumulatedDwellTime + nextNode.averageDwellTimeMinutes,
           accumulatedWaitTime + waitTime,
+          accumulatedBreakTime + breakTime,
           accumulatedCarbonGrams + carbonGrams,
           accumulatedCost + (edge.cost ?? 0),
           newRemaining,
@@ -242,6 +282,7 @@ export class TransitSolver {
       0,
       0,
       0,
+      0,
       unvisited,
     );
 
@@ -256,8 +297,10 @@ export class TransitSolver {
     targetVenueIds: string[],
     startTime: Date,
     objective: TransitOptimizationObjective = "time",
+    options: TransitSolverOptions = {},
   ) {
     const res = this.solve(startVenueId, targetVenueIds, startTime, {
+      ...options,
       objective,
     });
     if (!res) {

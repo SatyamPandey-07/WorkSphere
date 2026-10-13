@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Welcome Issue Contributor
         if: github.event_name == 'issues'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
@@ -156,7 +156,7 @@ jobs:
 
       - name: Welcome PR Contributor & Triage PR
         if: github.event_name == 'pull_request_target' && github.actor != 'dependabot[bot]'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             try {

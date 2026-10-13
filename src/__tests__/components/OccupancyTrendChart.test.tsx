@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import {
   OccupancyTrendChart,
@@ -7,30 +7,10 @@ import {
   getOccupancyColor,
   getOccupancyLabel,
   getMondayFirstIndex,
+  getResponsiveDayLabel,
   BookingRecord,
+  DAYS_ORDER,
 } from "@/components/analytics/OccupancyTrendChart";
-
-// Mock recharts components for jsdom
-jest.mock("recharts", () => {
-  const OriginalModule = jest.requireActual("recharts");
-  return {
-    ...OriginalModule,
-    ResponsiveContainer: ({ children }: any) => (
-      <div data-testid="responsive-container">{children}</div>
-    ),
-    BarChart: ({ children, data }: any) => (
-      <div data-testid="bar-chart" data-points={JSON.stringify(data)}>
-        {children}
-      </div>
-    ),
-    Bar: ({ children }: any) => <div data-testid="bar">{children}</div>,
-    Cell: ({ fill }: any) => <div data-testid="cell" data-fill={fill} />,
-    XAxis: () => <div data-testid="x-axis" />,
-    YAxis: () => <div data-testid="y-axis" />,
-    CartesianGrid: () => <div data-testid="cartesian-grid" />,
-    Tooltip: () => <div data-testid="tooltip" />,
-  };
-});
 
 describe("OccupancyTrendChart & calculateDayOfWeekOccupancy (#3954)", () => {
   describe("getMondayFirstIndex", () => {
@@ -140,7 +120,50 @@ describe("OccupancyTrendChart & calculateDayOfWeekOccupancy (#3954)", () => {
     });
   });
 
-  describe("OccupancyTrendChart Component Rendering", () => {
+  describe("getResponsiveDayLabel across Viewport Breakpoints", () => {
+    const mondayPoint = {
+      day: "Monday",
+      shortDay: "Mon",
+      dayIndex: 0,
+      occupancyPercent: 50,
+      bookedHours: 10,
+      totalCapacityHours: 100,
+      bookingCount: 5,
+    };
+
+    it("returns single-letter abbreviation on mobile (375px <= 420px)", () => {
+      expect(getResponsiveDayLabel(mondayPoint, 375)).toBe("M");
+      expect(getResponsiveDayLabel(mondayPoint, 420)).toBe("M");
+    });
+
+    it("returns short day abbreviation on tablet (768px <= 900px)", () => {
+      expect(getResponsiveDayLabel(mondayPoint, 768)).toBe("Mon");
+      expect(getResponsiveDayLabel(mondayPoint, 900)).toBe("Mon");
+    });
+
+    it("returns full day name on desktop (1280px > 900px)", () => {
+      expect(getResponsiveDayLabel(mondayPoint, 1280)).toBe("Monday");
+      expect(getResponsiveDayLabel(mondayPoint, 1440)).toBe("Monday");
+    });
+  });
+
+  describe("OccupancyTrendChart Component Rendering & Responsive SVG", () => {
+    let resizeObserverCallback: (
+      entries: Array<{ contentRect: { width: number } }>,
+    ) => void;
+
+    beforeEach(() => {
+      // Mock ResizeObserver
+      global.ResizeObserver = jest.fn().mockImplementation((cb) => {
+        resizeObserverCallback = cb;
+        return {
+          observe: jest.fn(),
+          unobserve: jest.fn(),
+          disconnect: jest.fn(),
+        };
+      });
+    });
+
     it("renders the chart container with accessibility attributes", () => {
       const mockData = calculateDayOfWeekOccupancy([], 50, 10, 4);
 
@@ -148,7 +171,7 @@ describe("OccupancyTrendChart & calculateDayOfWeekOccupancy (#3954)", () => {
         <OccupancyTrendChart
           data={mockData}
           title="Custom Monthly Occupancy"
-        />
+        />,
       );
 
       const region = screen.getByRole("region", {
@@ -159,7 +182,7 @@ describe("OccupancyTrendChart & calculateDayOfWeekOccupancy (#3954)", () => {
 
       // Check screen reader table caption
       expect(
-        screen.getByText("Monthly average seat occupancy per day of week")
+        screen.getByText("Monthly average seat occupancy per day of week"),
       ).toBeInTheDocument();
     });
 
@@ -169,15 +192,96 @@ describe("OccupancyTrendChart & calculateDayOfWeekOccupancy (#3954)", () => {
       ];
 
       render(
-        <OccupancyTrendChart
-          bookings={mockBookings}
-          venueCapacity={20}
-        />
+        <OccupancyTrendChart bookings={mockBookings} venueCapacity={20} />,
       );
 
-      expect(screen.getByRole("columnheader", { name: "Day" })).toBeInTheDocument();
-      expect(screen.getByRole("rowheader", { name: "Monday" })).toBeInTheDocument();
-      expect(screen.getByRole("rowheader", { name: "Sunday" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("columnheader", { name: "Day" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("rowheader", { name: "Monday" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("rowheader", { name: "Sunday" }),
+      ).toBeInTheDocument();
+    });
+
+    it("sets responsive SVG viewBox and preserveAspectRatio attributes on fluid container", () => {
+      const mockData = calculateDayOfWeekOccupancy([], 50, 10, 4);
+
+      render(<OccupancyTrendChart data={mockData} />);
+
+      const container = screen.getByTestId("chart-container");
+      expect(container).toHaveClass("w-full");
+
+      const svg = screen.getByTestId("occupancy-trend-svg");
+      expect(svg).toHaveAttribute("viewBox", "0 0 800 400");
+      expect(svg).toHaveAttribute("preserveAspectRatio", "xMidYMid meet");
+    });
+
+    it("recalculates axis tick labels on viewport resize across mobile (375px), tablet (768px), and desktop (1280px)", () => {
+      const mockData = calculateDayOfWeekOccupancy([], 50, 10, 4);
+
+      render(<OccupancyTrendChart data={mockData} />);
+
+      // 1. Mobile viewport (375px)
+      act(() => {
+        resizeObserverCallback([{ contentRect: { width: 375 } }]);
+      });
+
+      // On mobile (375px), tick labels should be single-letter abbreviations
+      const mondayMobileTick = screen.getByTestId("x-axis-tick-0");
+      expect(mondayMobileTick).toHaveTextContent("M");
+
+      // 2. Tablet viewport (768px)
+      act(() => {
+        resizeObserverCallback([{ contentRect: { width: 768 } }]);
+      });
+
+      // On tablet (768px), tick labels should be short day names
+      const mondayTabletTick = screen.getByTestId("x-axis-tick-0");
+      expect(mondayTabletTick).toHaveTextContent("Mon");
+
+      // 3. Desktop viewport (1280px)
+      act(() => {
+        resizeObserverCallback([{ contentRect: { width: 1280 } }]);
+      });
+
+      // On desktop (1280px), tick labels should be full day names
+      const mondayDesktopTick = screen.getByTestId("x-axis-tick-0");
+      expect(mondayDesktopTick).toHaveTextContent("Monday");
+    });
+
+    it("displays interactive tooltip when hovering or focusing a bar", () => {
+      const mockData = DAYS_ORDER.map((d) => ({
+        day: d.full,
+        shortDay: d.short,
+        dayIndex: d.dayIndex,
+        occupancyPercent: 65,
+        bookedHours: 32.5,
+        totalCapacityHours: 50,
+        bookingCount: 15,
+      }));
+
+      render(<OccupancyTrendChart data={mockData} />);
+
+      expect(screen.queryByTestId("chart-tooltip")).not.toBeInTheDocument();
+
+      const mondayBarGroup = screen.getByRole("graphics-symbol", {
+        name: /Monday: 65% occupancy/i,
+      });
+
+      fireEvent.mouseEnter(mondayBarGroup);
+
+      const tooltip = screen.getByTestId("chart-tooltip");
+      expect(tooltip).toBeInTheDocument();
+      expect(tooltip).toHaveTextContent("Monday");
+      expect(tooltip).toHaveTextContent("65% (Moderate)");
+      expect(tooltip).toHaveTextContent("32.5 hrs");
+      expect(tooltip).toHaveTextContent("15");
+
+      fireEvent.mouseLeave(mondayBarGroup);
+      expect(screen.queryByTestId("chart-tooltip")).not.toBeInTheDocument();
     });
   });
 });

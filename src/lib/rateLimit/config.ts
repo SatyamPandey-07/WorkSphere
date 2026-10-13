@@ -71,6 +71,7 @@ export function matchRateTier(pathname: string): RateTier | null {
   // Never rate-limit webhooks, cron jobs, or health checks
   if (
     pathname === "/api/webhook" ||
+    pathname === "/api/webhooks" ||
     pathname.startsWith("/api/cron") ||
     pathname === "/api/webhooks/worker"
   ) {

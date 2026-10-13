@@ -90,13 +90,59 @@ describe("CollectionUpvoteButton optimistic update and error rollback (#3510)", 
       />,
     );
 
-    const button = screen.getByRole("button", { name: /upvote collection/i });
+    const button = screen.getByRole("button", { name: /remove upvote/i });
     expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAttribute("aria-label", "Remove upvote (0 upvotes)");
 
     fireEvent.click(button);
 
     expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button).toHaveAttribute("aria-label", "Upvote collection (0 upvotes)");
     expect(screen.getByText("0")).toBeInTheDocument();
+  });
+
+  it("renders inline loading spinner and disables button during in-flight network request (#6049)", async () => {
+    let resolveFetch: (val: any) => void;
+    const fetchPromise = new Promise((resolve) => {
+      resolveFetch = resolve;
+    });
+    (global.fetch as jest.Mock).mockReturnValueOnce(fetchPromise);
+
+    render(
+      <CollectionUpvoteButton
+        folderId="folder-loading"
+        initialUpvotes={3}
+        initialHasUpvoted={false}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: /upvote collection/i });
+    expect(screen.queryByTestId("collection-upvote-spinner")).not.toBeInTheDocument();
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "false");
+
+    fireEvent.click(button);
+
+    // In-flight state: spinner rendered, button disabled, aria-busy true
+    expect(screen.getByTestId("collection-upvote-spinner")).toBeInTheDocument();
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+
+    // Click again while loading should be ignored (duplicate request guard)
+    fireEvent.click(button);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    // Resolve network request
+    resolveFetch!({
+      ok: true,
+      json: async () => ({ success: true, hasUpvoted: true, upvotes: 4 }),
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("collection-upvote-spinner")).not.toBeInTheDocument();
+      expect(button).not.toBeDisabled();
+      expect(button).toHaveAttribute("aria-busy", "false");
+    });
   });
 });
 

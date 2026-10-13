@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useRef } from "react";
 import { useIdleSession } from "@/hooks/useIdleSession";
 import { Clock, ShieldAlert, LogOut, CheckCircle2, Loader2 } from "lucide-react";
+import { FocusTrap } from "@/components/ui/FocusTrap";
 
 export interface IdleSessionDialogProps {
   /** Optional custom idle timeout in ms */
@@ -19,7 +20,8 @@ export interface IdleSessionDialogProps {
  * IdleSessionDialog
  *
  * Renders an accessible warning dialog when the user has been inactive for 30 minutes.
- * Allows the user to seamlessly extend their session with silent token rotation or sign out cleanly.
+ * Traps keyboard focus within the modal, auto-focuses the primary action button,
+ * and restores focus to the trigger element on close (#6066).
  */
 export function IdleSessionDialog({
   idleTimeoutMs,
@@ -40,17 +42,22 @@ export function IdleSessionDialog({
     enabled,
   });
 
+  const extendButtonRef = useRef<HTMLButtonElement | null>(null);
+
   if (!showWarning) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="idle-session-title"
-      aria-describedby="idle-session-desc"
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
-    >
-      <div className="w-full max-w-md bg-zinc-950/95 border border-zinc-800 text-zinc-100 rounded-2xl shadow-2xl p-6 sm:p-7 relative overflow-hidden">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
+      <FocusTrap
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="idle-session-title"
+        aria-describedby="idle-session-desc"
+        initialFocusRef={extendButtonRef}
+        returnFocus={true}
+        onEscape={extendSession}
+        className="w-full max-w-md bg-zinc-950/95 border border-zinc-800 text-zinc-100 rounded-2xl shadow-2xl p-6 sm:p-7 relative overflow-hidden"
+      >
         {/* Top accent bar */}
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500" />
 
@@ -90,10 +97,12 @@ export function IdleSessionDialog({
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
           <button
+            ref={extendButtonRef}
             type="button"
+            data-testid="extend-session-btn"
             onClick={extendSession}
             disabled={isRefreshing}
-            className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all disabled:opacity-50"
+            className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             {isRefreshing ? (
               <>
@@ -110,15 +119,18 @@ export function IdleSessionDialog({
 
           <button
             type="button"
+            data-testid="logout-session-btn"
             onClick={signOut}
             disabled={isRefreshing}
-            className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white font-medium text-sm flex items-center justify-center gap-2 transition-all"
+            className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white font-medium text-sm flex items-center justify-center gap-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
           >
             <LogOut className="w-4 h-4 text-zinc-400" />
             <span>Sign Out</span>
           </button>
         </div>
-      </div>
+      </FocusTrap>
     </div>
   );
 }
+
+export default IdleSessionDialog;

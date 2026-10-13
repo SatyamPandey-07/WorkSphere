@@ -90,7 +90,7 @@ export async function POST(req: Request) {
       messages: [
         {
           role: "system",
-          content: `You are a professional translator. Strictly translate the user's text into the language: ${normalised}. Do not provide any explanations, notes, or quotes. Output ONLY the translated text. Ensure the tone is natural and appropriate for a venue review.`,
+          content: `You are a professional translator. Translate the user's text into ${normalised}, and identify its original language. Return ONLY a JSON object with string fields "translatedText" and "sourceLanguage". Do not include explanations or additional fields.`,
         },
         {
           role: "user",
@@ -102,13 +102,34 @@ export async function POST(req: Request) {
       max_tokens: 1024,
     });
 
-    const translatedText = completion.choices[0]?.message?.content?.trim();
+    const rawTranslation = completion.choices[0]?.message?.content?.trim();
 
+    if (!rawTranslation) {
+      throw new Error("Failed to generate translation");
+    }
+
+    let translatedText = rawTranslation;
+    let sourceLanguage = "Unknown";
+    try {
+      const result = JSON.parse(rawTranslation) as {
+        translatedText?: unknown;
+        sourceLanguage?: unknown;
+      };
+      if (
+        typeof result.translatedText === "string" &&
+        typeof result.sourceLanguage === "string"
+      ) {
+        translatedText = result.translatedText.trim();
+        sourceLanguage = result.sourceLanguage.trim() || "Unknown";
+      }
+    } catch {
+      // Keep compatibility with model responses that return plain translated text.
+    }
     if (!translatedText) {
       throw new Error("Failed to generate translation");
     }
 
-    return NextResponse.json({ translatedText });
+    return NextResponse.json({ translatedText, sourceLanguage });
   } catch (error) {
     console.error("Translation API error:", error);
     return NextResponse.json({ error: "Translation failed" }, { status: 500 });

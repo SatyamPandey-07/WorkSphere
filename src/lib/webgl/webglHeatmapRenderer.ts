@@ -18,10 +18,13 @@ export interface HeatmapPoint {
   radius?: number; // Spatial influence radius in pixels (default 25)
 }
 
+export type WebGLHeatmapPaletteMode = "thermal" | "neon" | "grayscale";
+
 export interface WebGLHeatmapOptions {
   opacity?: number;
   blur?: number;
   maxPoints?: number;
+  palette?: WebGLHeatmapPaletteMode;
   /** Called after a lost GL context is rebuilt and point data re-uploaded, so the owner can redraw (#1729). */
   onContextRestored?: () => void;
 }
@@ -39,6 +42,7 @@ export class WebGLHeatmapRenderer {
   private maxPoints: number;
   private opacity: number;
   private blur: number;
+  private palette: WebGLHeatmapPaletteMode = "thermal";
   private isDestroyed = false;
 
   // Uniform locations
@@ -46,6 +50,7 @@ export class WebGLHeatmapRenderer {
   private uZoomLoc: WebGLUniformLocation | null = null;
   private uOpacityLoc: WebGLUniformLocation | null = null;
   private uBlurLoc: WebGLUniformLocation | null = null;
+  private uPaletteModeLoc: WebGLUniformLocation | null = null;
 
   // Attribute locations
   private aPositionLoc = -1;
@@ -57,6 +62,7 @@ export class WebGLHeatmapRenderer {
     this.maxPoints = options.maxPoints || 100000;
     this.opacity = options.opacity ?? 0.85;
     this.blur = options.blur ?? 1.0;
+    this.palette = options.palette ?? "thermal";
 
     this.initGL();
     this.cleanupContextRecovery = attachWebGLContextRecovery(canvas, () => {
@@ -145,6 +151,12 @@ export class WebGLHeatmapRenderer {
       this.uZoomLoc = gl.getUniformLocation(program, "u_zoom");
       this.uOpacityLoc = gl.getUniformLocation(program, "u_opacity");
       this.uBlurLoc = gl.getUniformLocation(program, "u_blur");
+      this.uPaletteModeLoc = gl.getUniformLocation(program, "u_paletteMode");
+
+      // Set initial palette uniform
+      if (this.uPaletteModeLoc) {
+        gl.uniform1i(this.uPaletteModeLoc, this.getPaletteModeIndex(this.palette));
+      }
 
       // Initialize ArrayBuffer VBO (Float32Array: 4 floats per vertex -> x, y, intensity, radius)
       this.vbo = gl.createBuffer();
@@ -156,6 +168,18 @@ export class WebGLHeatmapRenderer {
       );
     } catch (err) {
       console.error("[WebGLHeatmap] Context initialization error:", err);
+    }
+  }
+
+  private getPaletteModeIndex(palette: WebGLHeatmapPaletteMode): number {
+    switch (palette) {
+      case "neon":
+        return 1;
+      case "grayscale":
+        return 2;
+      case "thermal":
+      default:
+        return 0;
     }
   }
 
@@ -203,6 +227,21 @@ export class WebGLHeatmapRenderer {
   }
 
   /**
+   * Dynamically switches the heatmap color palette uniform without rebuilding the WebGL context.
+   */
+  public setPalette(palette: WebGLHeatmapPaletteMode) {
+    this.palette = palette;
+    if (this.gl && this.program && this.uPaletteModeLoc) {
+      this.gl.useProgram(this.program);
+      this.gl.uniform1i(this.uPaletteModeLoc, this.getPaletteModeIndex(palette));
+    }
+  }
+
+  public getPalette(): WebGLHeatmapPaletteMode {
+    return this.palette;
+  }
+
+  /**
    * Render frame to canvas with hardware spatial clustering
    */
   public render(width: number, height: number, zoom: number = 1.0) {
@@ -228,6 +267,9 @@ export class WebGLHeatmapRenderer {
     gl.uniform1f(this.uZoomLoc, zoom);
     gl.uniform1f(this.uOpacityLoc, this.opacity);
     gl.uniform1f(this.uBlurLoc, this.blur);
+    if (this.uPaletteModeLoc) {
+      gl.uniform1i(this.uPaletteModeLoc, this.getPaletteModeIndex(this.palette));
+    }
 
     // Bind VBO & attributes
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);

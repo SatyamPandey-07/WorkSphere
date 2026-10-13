@@ -5,8 +5,12 @@ import {
   parsePartitionDate,
   isValidDateString,
   DATE_STRING_REGEX,
+  sanitizeExportFilename,
 } from "../../../../app/api/admin/system/partitions/dateHelper";
-import { GET } from "../../../../app/api/admin/system/partitions/export/route";
+import {
+  GET,
+  HEAD,
+} from "../../../../app/api/admin/system/partitions/export/route";
 import { getAdminUser } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { NextRequest } from "next/server";
@@ -30,7 +34,7 @@ jest.mock("@/lib/prisma", () => ({
 
 describe("Partition Date Calculations & Export (#3777, #4914)", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   describe("dateHelper validation (#4914)", () => {
@@ -168,6 +172,127 @@ describe("Partition Date Calculations & Export (#3777, #4914)", () => {
       expect(text).toContain(
         "tel-1,ven-1,2026-03-15T10:00:00.000Z,150.5,50.2,12,45,20,true,moderate",
       );
+    });
+
+    it("sanitizes filename in Content-Disposition header when table name has special characters or spaces", async () => {
+      (getAdminUser as jest.Mock).mockResolvedValue({
+        id: "admin-1",
+        email: "admin@worksphere.com",
+      });
+      (prisma.$queryRawUnsafe as jest.Mock).mockResolvedValueOnce([]);
+
+      const req = new NextRequest(
+        "http://localhost:3000/api/admin/system/partitions/export?year=2026&month=2&tableName=Telemetry%20Records;%22alert(1)%22",
+      );
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      const disposition = res.headers.get("Content-Disposition");
+      expect(disposition).toBeDefined();
+      expect(disposition).toContain(
+        'filename="Telemetry_Records_alert_1-2026-03.csv"',
+      );
+      expect(disposition).not.toContain(" ");
+      expect(disposition).not.toContain(";alert");
+      await res.text();
+    });
+
+    it("guards against path traversal sequences (../) in export tableName parameter", async () => {
+      (getAdminUser as jest.Mock).mockResolvedValue({
+        id: "admin-1",
+        email: "admin@worksphere.com",
+      });
+
+      const req = new NextRequest(
+        "http://localhost:3000/api/admin/system/partitions/export?year=2026&month=2&tableName=../../etc/passwd",
+      );
+      const res = await GET(req);
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe(
+        "Invalid table name: path traversal sequences are not allowed",
+      );
+    });
+
+    it("returns metadata JSON when preview=true or dryRun=true query param is provided (#5764)", async () => {
+      (getAdminUser as jest.Mock).mockResolvedValue({
+        id: "admin-1",
+        email: "admin@worksphere.com",
+      });
+      (prisma.$queryRawUnsafe as jest.Mock).mockResolvedValueOnce([
+        { count: 42500 },
+      ]);
+
+      const req = new NextRequest(
+        "http://localhost:3000/api/admin/system/partitions/export?year=2026&month=2&type=telemetry&preview=true",
+      );
+      const res = await GET(req);
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.preview).toBe(true);
+      expect(json.rowCount).toBe(42500);
+      expect(json.estimatedSizeBytes).toBeGreaterThan(0);
+      expect(json.partitionRange).toBeDefined();
+      expect(json.partitionRange.year).toBe(2026);
+      expect(json.partitionRange.month).toBe(3);
+      expect(json.partitionRange.start).toContain("2026-03-01");
+      expect(json.partitionRange.end).toContain("2026-04-01");
+      expect(json.filename).toContain("telemetry-records-2026-03.csv");
+    });
+
+    it("supports HEAD request returning row count and estimated size headers (#5764)", async () => {
+      (getAdminUser as jest.Mock).mockResolvedValue({
+        id: "admin-1",
+        email: "admin@worksphere.com",
+      });
+      (prisma.$queryRawUnsafe as jest.Mock).mockResolvedValueOnce([
+        { count: 1200 },
+      ]);
+
+      const req = new NextRequest(
+        "http://localhost:3000/api/admin/system/partitions/export?year=2026&month=2&type=push",
+      );
+      const res = await HEAD(req);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-Row-Count")).toBe("1200");
+      expect(res.headers.get("X-Estimated-Size-Bytes")).toBeDefined();
+      expect(Number(res.headers.get("X-Estimated-Size-Bytes"))).toBeGreaterThan(
+        0,
+      );
+      expect(res.headers.get("X-Partition-Start")).toContain("2026-03-01");
+      expect(res.headers.get("X-Partition-End")).toContain("2026-04-01");
+    });
+  });
+
+  describe("sanitizeExportFilename helper", () => {
+    it("replaces spaces and special characters with underscores", () => {
+      expect(sanitizeExportFilename("Telemetry Records (2026)!")).toBe(
+        "Telemetry_Records_2026",
+      );
+      expect(sanitizeExportFilename('foo"bar;baz?qux=1')).toBe(
+        "foo_bar_baz_qux_1",
+      );
+    });
+
+    it("guards against path traversal sequences and slashes", () => {
+      expect(sanitizeExportFilename("../../secrets/passwords.csv")).toBe(
+        "secrets_passwords.csv",
+      );
+      expect(sanitizeExportFilename("..\\..\\windows\\win.ini")).toBe(
+        "windows_win.ini",
+      );
+    });
+
+    it("falls back to default fallback when string is empty or invalid", () => {
+      expect(sanitizeExportFilename("")).toBe("export");
+      expect(sanitizeExportFilename("___")).toBe("export");
+      expect(
+        sanitizeExportFilename(null as unknown as string, "fallback"),
+      ).toBe("fallback");
     });
   });
 });

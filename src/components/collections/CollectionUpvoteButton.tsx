@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ThumbsUp } from "lucide-react";
+import { ThumbsUp, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
 export interface CollectionUpvoteButtonProps {
@@ -19,7 +19,7 @@ export function CollectionUpvoteButton({
 }: CollectionUpvoteButtonProps) {
   const [upvotes, setUpvotes] = useState(initialUpvotes);
   const [hasUpvoted, setHasUpvoted] = useState(initialHasUpvoted);
-  const [isPending, setIsPending] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export function CollectionUpvoteButton({
     e.preventDefault();
     e.stopPropagation();
 
-    if (isPending) return;
+    if (isLoading) return;
 
     // Snapshot previous state for rollback
     const prevUpvotes = upvotes;
@@ -43,7 +43,7 @@ export function CollectionUpvoteButton({
 
     setHasUpvoted(nextHasUpvoted);
     setUpvotes(nextUpvotes);
-    setIsPending(true);
+    setIsLoading(true);
 
     try {
       const res = await fetch("/api/collections/public/upvote", {
@@ -76,7 +76,7 @@ export function CollectionUpvoteButton({
         "error",
       );
     } finally {
-      setIsPending(false);
+      setIsLoading(false);
     }
   };
 
@@ -84,16 +84,29 @@ export function CollectionUpvoteButton({
     <button
       type="button"
       onClick={handleToggleUpvote}
-      disabled={isPending}
-      aria-pressed={hasUpvoted}
-      aria-label={`Upvote collection (${upvotes} upvotes)`}
+      disabled={isLoading}
+      aria-pressed={Boolean(hasUpvoted)}
+      aria-label={
+        hasUpvoted
+          ? `Remove upvote (${upvotes} upvotes)`
+          : `Upvote collection (${upvotes} upvotes)`
+      }
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
         hasUpvoted
           ? "accent-bg accent-border text-white shadow-sm shadow-[var(--primary-accent)]/20 scale-105"
           : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:accent-border-50 hover:accent-text"
       } ${className}`}
     >
-      <ThumbsUp className={`w-3.5 h-3.5 ${hasUpvoted ? "fill-current" : ""}`} />
+      {isLoading ? (
+        <Loader2
+          data-testid="collection-upvote-spinner"
+          className="w-3.5 h-3.5 animate-spin"
+        />
+      ) : (
+        <ThumbsUp
+          className={`w-3.5 h-3.5 ${hasUpvoted ? "fill-current" : ""}`}
+        />
+      )}
       <span>{upvotes}</span>
     </button>
   );

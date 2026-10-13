@@ -29,6 +29,7 @@ import {
   CafeOrder,
   SmartCafeEngine,
 } from "@/lib/cafe/smartCafeEngine";
+import { FocusTrap } from "@/components/ui/FocusTrap";
 
 const ALL_DIETARY_TAGS: Array<{ tag: DietaryTag; label: string; icon: string }> = [
   { tag: "vegan", label: "Vegan", icon: "🌱" },
@@ -52,6 +53,9 @@ export default function SmartBaristaOrderView() {
   const [customerName, setCustomerName] = useState("Alex Chen");
   const [activeOrder, setActiveOrder] = useState<CafeOrder | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   // Filter items
   const filteredMenu = SmartCafeEngine.filterMenu(
@@ -167,6 +171,36 @@ export default function SmartBaristaOrderView() {
       console.error("Order submission failed:", err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const confirmCancelOrder = async () => {
+    if (!activeOrder || activeOrder.status !== "received" || isCancelling) return;
+
+    setIsCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await fetch(
+        `/api/cafe/orders?orderId=${encodeURIComponent(activeOrder.id)}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (data.order) {
+          setActiveOrder(data.order);
+        }
+        throw new Error(data.error || "The order could not be cancelled.");
+      }
+
+      setActiveOrder(null);
+      setIsCancelDialogOpen(false);
+    } catch (err) {
+      console.error("Order cancellation failed:", err);
+      setCancelError(
+        err instanceof Error ? err.message : "The order could not be cancelled."
+      );
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -313,6 +347,70 @@ export default function SmartBaristaOrderView() {
               Total: ${activeOrder.total.toFixed(2)}
             </div>
           </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setCancelError(null);
+                setIsCancelDialogOpen(true);
+              }}
+              disabled={activeOrder.status !== "received" || isCancelling}
+              className="px-4 py-2 rounded-xl border border-rose-500/40 text-rose-200 text-xs font-bold hover:bg-rose-500/10 transition disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel Order
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isCancelDialogOpen && activeOrder && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <FocusTrap
+            className="w-full max-w-md space-y-5 rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
+            aria-labelledby="cancel-order-title"
+            aria-describedby="cancel-order-description"
+            initialFocusSelector="[data-initial-focus]"
+            onEscape={() => {
+              if (!isCancelling) {
+                setIsCancelDialogOpen(false);
+                setCancelError(null);
+              }
+            }}
+          >
+            <h2 id="cancel-order-title" className="text-lg font-bold text-white">
+              Confirm order cancellation
+            </h2>
+            <p id="cancel-order-description" className="text-sm text-slate-300">
+              Are you sure you want to cancel your barista order?
+            </p>
+            {cancelError && (
+              <p role="alert" className="text-sm text-rose-300">
+                {cancelError}
+              </p>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                data-initial-focus
+                onClick={() => {
+                  setIsCancelDialogOpen(false);
+                  setCancelError(null);
+                }}
+                disabled={isCancelling}
+                className="rounded-xl border border-slate-600 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+              >
+                Keep Order
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelOrder}
+                disabled={activeOrder.status !== "received" || isCancelling}
+                className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isCancelling ? "Cancelling..." : "Yes, Cancel"}
+              </button>
+            </div>
+          </FocusTrap>
         </div>
       )}
 
@@ -646,4 +744,3 @@ export default function SmartBaristaOrderView() {
     </div>
   );
 }
-

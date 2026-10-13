@@ -74,7 +74,7 @@ export function NetworkQualityBadge({
       case "good":
         return {
           icon: (
-            <SignalHigh className="h-4 w-4 text-green-500" aria-hidden="true" />
+            <SignalHigh className="h-4 w-4 shrink-0 text-green-500" aria-hidden="true" />
           ),
           bgColor: "bg-green-500/10",
           borderColor: "border-green-500/20",
@@ -86,7 +86,7 @@ export function NetworkQualityBadge({
         return {
           icon: (
             <SignalMedium
-              className="h-4 w-4 text-yellow-500"
+              className="h-4 w-4 shrink-0 text-yellow-500"
               aria-hidden="true"
             />
           ),
@@ -99,7 +99,7 @@ export function NetworkQualityBadge({
       case "poor":
         return {
           icon: (
-            <SignalLow className="h-4 w-4 text-red-500" aria-hidden="true" />
+            <SignalLow className="h-4 w-4 shrink-0 text-red-500" aria-hidden="true" />
           ),
           bgColor: "bg-red-500/10",
           borderColor: "border-red-500/20",
@@ -111,7 +111,7 @@ export function NetworkQualityBadge({
         return {
           icon: (
             <SignalMedium
-              className="h-4 w-4 text-zinc-400"
+              className="h-4 w-4 shrink-0 text-zinc-400"
               aria-hidden="true"
             />
           ),
@@ -170,7 +170,7 @@ export function NetworkQualityBadge({
   return (
     <div
       ref={badgeRef}
-      className={`relative inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium transition-colors ${details.bgColor} ${details.borderColor} ${details.textColor} ${className}`}
+      className={`relative inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium transition-colors ${details.bgColor} ${details.borderColor} ${details.textColor} ${className}`}
       aria-label={tooltip}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
@@ -180,16 +180,16 @@ export function NetworkQualityBadge({
     >
       {details.icon}
 
-      <span>{details.label}</span>
+      <span className="shrink-0">{details.label}</span>
 
       {Number.isFinite(ping) && (
-        <span className="ml-0.5 font-mono text-[10px] opacity-75">
+        <span className="ml-0.5 font-mono text-[10px] opacity-75 max-[400px]:hidden">
           {Math.round(ping as number)}ms
         </span>
       )}
 
       {Number.isFinite(packetLoss) && (
-        <span className="font-mono text-[10px] opacity-75">
+        <span className="font-mono text-[10px] opacity-75 max-[400px]:hidden">
           {(packetLoss as number).toFixed(1)}%
         </span>
       )}

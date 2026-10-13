@@ -4,4 +4,7 @@
  * Re-exports from @/lib/export/domain/analyticsExporter.
  */
 
-export { generateAnalyticsPdfReport } from "./export/domain/analyticsExporter";
+export {
+  generateAnalyticsPdfReport,
+  downloadAnalyticsPDF,
+} from "./export/domain/analyticsExporter";

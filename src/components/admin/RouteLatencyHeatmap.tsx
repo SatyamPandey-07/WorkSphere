@@ -2,24 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
   AlertOctagon,
   AlertTriangle,
-  Clock,
   Filter,
   Flame,
-  Gauge,
   Info,
-  Layers,
   Pause,
   Play,
-  Radio,
   RefreshCw,
   Search,
-  SlidersHorizontal,
-  Sparkles,
-  TrendingUp,
-  Zap,
+  Map as MapIcon,
+  Grid3X3,
 } from "lucide-react";
 import type {
   RouteHeatmapCell,
@@ -28,14 +21,372 @@ import type {
   LatencySeverity,
 } from "@/lib/telemetry/types";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
+// Import the new Worker-based Canvas Component
+import { RouteLatencyHeatmap as GeoHeatmapCanvas } from "./RouteLatencyHeatmapCanvas"; // Assuming path based on context
 
 interface RouteLatencyHeatmapProps {
   className?: string;
   initialRange?: "1h" | "24h" | "7d";
 }
 
+const MAX_HYPERLANES = 12;
+
+const HYPERLANE_VERTEX_SHADER = `
+attribute vec2 a_position;
+
+void main() {
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}
+`;
+
+const HYPERLANE_FRAGMENT_SHADER = `
+precision mediump float;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform vec3 u_view;
+uniform int u_routeCount;
+uniform vec4 u_routes[${MAX_HYPERLANES}];
+
+float hash(vec2 point) {
+  return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+void main() {
+  float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+  vec2 screenUv = gl_FragCoord.xy / u_resolution;
+  vec2 viewScale = vec2(aspect, 1.0);
+  vec2 point = (screenUv - 0.5) * viewScale / u_view.x
+    - u_view.yz * viewScale;
+
+  vec3 color = vec3(0.01176, 0.02745, 0.07059);
+  vec2 starCell = floor((point + viewScale * 0.5) * vec2(38.0, 26.0));
+  float star = step(0.997, hash(starCell));
+  color += vec3(0.12, 0.22, 0.25) * star * 0.35;
+
+  for (int i = 0; i < ${MAX_HYPERLANES}; i++) {
+    if (i >= u_routeCount) break;
+
+    vec4 route = u_routes[i];
+    vec2 start = vec2(-aspect * 0.46, route.x - 0.5);
+    vec2 end = vec2(aspect * 0.46, route.y - 0.5);
+    vec2 segment = end - start;
+    float segmentLength = max(dot(segment, segment), 0.0001);
+    float along = clamp(dot(point - start, segment) / segmentLength, 0.0, 1.0);
+    float distanceToLane = length(point - (start + segment * along));
+    float intensity = route.z;
+
+    vec3 laneColor = mix(
+      vec3(0.015, 0.35, 0.19),
+      vec3(0.04, 1.0, 0.70),
+      smoothstep(0.2, 1.0, intensity)
+    );
+    float corridor = exp(-distanceToLane * distanceToLane * 1250.0);
+    color += laneColor * corridor * (0.18 + intensity * 0.34);
+
+    float pulsePosition = fract(u_time * (0.25 + intensity * 1.2) + route.w);
+    vec2 pulsePoint = start + segment * pulsePosition;
+    float pulseDistance = length(point - pulsePoint);
+    float pulse = exp(-pulseDistance * pulseDistance * 2400.0);
+    color += laneColor * pulse * (0.45 + intensity * 1.8);
+  }
+
+  float vignette = 1.0 - smoothstep(0.15, 1.15, length((screenUv - 0.5) * vec2(aspect, 1.0)));
+  color *= 0.72 + vignette * 0.28;
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+interface HyperlaneRoute {
+  route: string;
+  totalRequests: number;
+}
+
+function buildHyperlaneUniforms(routes: HyperlaneRoute[]) {
+  const routeUniforms = new Float32Array(MAX_HYPERLANES * 4);
+  const maxRequests = Math.max(1, ...routes.map((route) => route.totalRequests));
+  const maxLogRequests = Math.log1p(maxRequests);
+
+  routes.forEach((route, index) => {
+    let hash = 2166136261;
+    for (let charIndex = 0; charIndex < route.route.length; charIndex++) {
+      hash = Math.imul(hash ^ route.route.charCodeAt(charIndex), 16777619);
+    }
+    const seed = hash >>> 0;
+    const offset = index * 4;
+    const throughput = Math.log1p(route.totalRequests) / maxLogRequests;
+    routeUniforms.set(
+      [
+        0.1 + ((index + 0.5) / Math.max(routes.length, 1)) * 0.8,
+        0.1 + ((seed % 10000) / 9999) * 0.8,
+        0.25 + throughput * 0.75,
+        (seed % 1000) / 1000,
+      ],
+      offset,
+    );
+  });
+
+  return routeUniforms;
+}
+
+function HyperlaneViewport({ routes }: { routes: HyperlaneRoute[] }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewRef = useRef({ zoom: 1, panX: 0, panY: 0 });
+  const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [renderError, setRenderError] = useState<string | null>(null);
+
+  const activeRoutes = useMemo(
+    () => routes.filter((route) => route.totalRequests > 0).slice(0, MAX_HYPERLANES),
+    [routes],
+  );
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const gl = canvas?.getContext("webgl", {
+      alpha: false,
+      antialias: false,
+      depth: false,
+      powerPreference: "high-performance",
+      stencil: false,
+    });
+    if (!canvas || !gl) {
+      setRenderError("WebGL is unavailable in this browser.");
+      return;
+    }
+
+    const compileShader = (type: number, source: string) => {
+      const shader = gl.createShader(type);
+      if (!shader) throw new Error("Unable to allocate a WebGL shader.");
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const message = gl.getShaderInfoLog(shader) || "Unknown shader compilation error.";
+        gl.deleteShader(shader);
+        throw new Error(message);
+      }
+      return shader;
+    };
+
+    let program: WebGLProgram | null = null;
+    let frameId = 0;
+    let resizeObserver: ResizeObserver | null = null;
+
+    try {
+      const vertexShader = compileShader(gl.VERTEX_SHADER, HYPERLANE_VERTEX_SHADER);
+      const fragmentShader = compileShader(gl.FRAGMENT_SHADER, HYPERLANE_FRAGMENT_SHADER);
+      program = gl.createProgram();
+      if (!program) throw new Error("Unable to allocate a WebGL program.");
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(program) || "Unable to link the WebGL program.");
+      }
+
+      const positionLocation = gl.getAttribLocation(program, "a_position");
+      const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+      const timeLocation = gl.getUniformLocation(program, "u_time");
+      const viewLocation = gl.getUniformLocation(program, "u_view");
+      const routeCountLocation = gl.getUniformLocation(program, "u_routeCount");
+      const routesLocation = gl.getUniformLocation(program, "u_routes[0]");
+      if (
+        positionLocation < 0 ||
+        !resolutionLocation ||
+        !timeLocation ||
+        !viewLocation ||
+        !routeCountLocation ||
+        !routesLocation
+      ) {
+        throw new Error("The WebGL program is missing a required shader input.");
+      }
+
+      const buffer = gl.createBuffer();
+      if (!buffer) throw new Error("Unable to allocate a WebGL vertex buffer.");
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+        gl.STATIC_DRAW,
+      );
+      gl.useProgram(program);
+      gl.enableVertexAttribArray(positionLocation);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+      const routeUniforms = buildHyperlaneUniforms(activeRoutes);
+      gl.uniform1i(routeCountLocation, activeRoutes.length);
+      gl.uniform4fv(routesLocation, routeUniforms);
+
+      const resize = () => {
+        const bounds = canvas.getBoundingClientRect();
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+        const width = Math.max(1, Math.round(bounds.width * pixelRatio));
+        const height = Math.max(1, Math.round(bounds.height * pixelRatio));
+        if (canvas.width === width && canvas.height === height) return;
+        canvas.width = width;
+        canvas.height = height;
+        gl.viewport(0, 0, width, height);
+        gl.useProgram(program);
+        gl.uniform2f(resolutionLocation, width, height);
+      };
+      resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(canvas);
+      resize();
+
+      const startTime = performance.now();
+      let lastFrameTime = 0;
+      const render = (now: number) => {
+        resize();
+        if (now - lastFrameTime < 1000 / 60) {
+          frameId = requestAnimationFrame(render);
+          return;
+        }
+        lastFrameTime = now;
+        gl.useProgram(program);
+        gl.uniform1f(timeLocation, (now - startTime) / 1000);
+        gl.uniform3f(
+          viewLocation,
+          viewRef.current.zoom,
+          viewRef.current.panX,
+          viewRef.current.panY,
+        );
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        if (!document.hidden) frameId = requestAnimationFrame(render);
+      };
+      const onVisibilityChange = () => {
+        cancelAnimationFrame(frameId);
+        if (!document.hidden) frameId = requestAnimationFrame(render);
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      frameId = requestAnimationFrame(render);
+
+      return () => {
+        cancelAnimationFrame(frameId);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        resizeObserver?.disconnect();
+        gl.deleteBuffer(buffer);
+        if (program) gl.deleteProgram(program);
+      };
+    } catch (error) {
+      if (program) gl.deleteProgram(program);
+      setRenderError(
+        error instanceof Error ? error.message : "Unable to initialize the WebGL renderer.",
+      );
+      console.error("Failed to initialize the route hyperlane WebGL renderer.", error);
+      return;
+    }
+    // The renderer is mounted once; route data is uploaded by the separate uniform-update effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const gl = canvas?.getContext("webgl");
+    if (!gl) return;
+    const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+    if (!program) return;
+    const routeCountLocation = gl.getUniformLocation(program, "u_routeCount");
+    const routesLocation = gl.getUniformLocation(program, "u_routes[0]");
+    if (!routeCountLocation || !routesLocation) return;
+
+    const routeUniforms = buildHyperlaneUniforms(activeRoutes);
+    gl.useProgram(program);
+    gl.uniform1i(routeCountLocation, activeRoutes.length);
+    gl.uniform4fv(routesLocation, routeUniforms);
+  }, [activeRoutes]);
+
+  const changeZoom = (nextZoom: number) => {
+    const boundedZoom = Math.min(2.5, Math.max(0.75, nextZoom));
+    viewRef.current.zoom = boundedZoom;
+    setZoom(boundedZoom);
+  };
+
+  return (
+    <div className="relative mt-5 overflow-hidden rounded-2xl border border-emerald-400/15 bg-[#030712]">
+      <canvas
+        ref={canvasRef}
+        aria-label="Animated network hyperlanes representing active API routes"
+        className="block h-48 w-full cursor-grab touch-none active:cursor-grabbing"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          viewRef.current.panX += (event.clientX - drag.x) / bounds.width / viewRef.current.zoom;
+          viewRef.current.panY -= (event.clientY - drag.y) / bounds.height / viewRef.current.zoom;
+          dragRef.current = { ...drag, x: event.clientX, y: event.clientY };
+        }}
+        onPointerUp={() => {
+          dragRef.current = null;
+        }}
+        onPointerCancel={() => {
+          dragRef.current = null;
+        }}
+        onWheel={(event) => {
+          event.preventDefault();
+          changeZoom(viewRef.current.zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
+        }}
+      />
+      <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
+            Interstellar Hyperlanes
+          </p>
+          <p className="mt-1 text-[10px] text-emerald-100/45">
+            {activeRoutes.length} active corridors · drag to pan · scroll to zoom
+          </p>
+        </div>
+        <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-emerald-200/10 bg-[#030712]/70 p-1">
+          <button
+            type="button"
+            aria-label="Zoom out hyperlanes"
+            onClick={() => changeZoom(zoom / 1.2)}
+            className="h-6 w-6 rounded text-xs text-emerald-100/70 hover:bg-emerald-300/10"
+          >
+            −
+          </button>
+          <span className="min-w-10 text-center font-mono text-[10px] text-emerald-100/55">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            aria-label="Zoom in hyperlanes"
+            onClick={() => changeZoom(zoom * 1.2)}
+            className="h-6 w-6 rounded text-xs text-emerald-100/70 hover:bg-emerald-300/10"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              viewRef.current.panX = 0;
+              viewRef.current.panY = 0;
+              changeZoom(1);
+            }}
+            className="rounded px-1.5 py-1 text-[10px] text-emerald-100/55 hover:bg-emerald-300/10 hover:text-emerald-100"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+      {renderError && (
+        <div role="status" className="absolute inset-x-3 bottom-2 text-[10px] text-rose-300">
+          Hyperlane renderer unavailable: {renderError}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type MetricMode = "p95" | "p50" | "avg" | "count";
-type CategoryFilter = "all" | "ai" | "api" | "auth" | "db" | "telemetry" | "wallet" | "admin";
+type CategoryFilter =
+  "all" | "ai" | "api" | "auth" | "db" | "telemetry" | "wallet" | "admin";
+type ViewMode = "grid" | "geo";
 
 export interface LatencyDeltaMessage {
   type: "LATENCY_DELTA" | "telemetry_update";
@@ -50,17 +401,26 @@ export interface LatencyDeltaMessage {
   bucketIndex?: number;
 }
 
+// Interface for the Geo/Scatter mode
+interface LatencyPoint {
+  x: number;
+  y: number;
+  latency: number; // 0.0 to 1.0
+}
+
 export function RouteLatencyHeatmap({
   className = "",
   initialRange = "1h",
 }: RouteLatencyHeatmapProps) {
   const [range, setRange] = useState<"1h" | "24h" | "7d">(initialRange);
   const [metricMode, setMetricMode] = useState<MetricMode>("p95");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [highlightSlowOnly, setHighlightSlowOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>("all");
+  const [selectedCategory, setSelectedCategory] =
+    useState<CategoryFilter>("all");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshIntervalSec, setRefreshIntervalSec] = useState(8);
+  const [refreshIntervalSec] = useState(8);
   const [countdown, setCountdown] = useState(8);
   const [wsConnected, setWsConnected] = useState(false);
   const [lastLiveDeltaAt, setLastLiveDeltaAt] = useState<string | null>(null);
@@ -129,7 +489,10 @@ export function RouteLatencyHeatmap({
     onMessage(event) {
       try {
         const delta = JSON.parse(event.data) as LatencyDeltaMessage;
-        if (!delta || (delta.type !== "LATENCY_DELTA" && delta.type !== "telemetry_update")) {
+        if (
+          !delta ||
+          (delta.type !== "LATENCY_DELTA" && delta.type !== "telemetry_update")
+        ) {
           return;
         }
 
@@ -154,11 +517,22 @@ export function RouteLatencyHeatmap({
 
               const newCount = delta.count ?? cell.count + 1;
               const newP95 = delta.p95Ms ?? delta.latencyMs ?? cell.p95Ms;
-              const newP50 = delta.p50Ms ?? (delta.latencyMs ? Math.round(delta.latencyMs * 0.8) : cell.p50Ms);
+              const newP50 =
+                delta.p50Ms ??
+                (delta.latencyMs
+                  ? Math.round(delta.latencyMs * 0.8)
+                  : cell.p50Ms);
               const newAvg = delta.avgMs ?? delta.latencyMs ?? cell.avgMs;
-              const newSeverity: LatencySeverity =
+              // Same thresholds as getLatencySeverity() in performanceCollector.ts
+              const newStatus: LatencySeverity =
                 delta.severity ??
-                (newP95 > 300 ? "critical" : newP95 > 150 ? "high" : newP95 > 80 ? "medium" : "low");
+                (newP95 < 80
+                  ? "optimal"
+                  : newP95 < 150
+                    ? "normal"
+                    : newP95 < 300
+                      ? "amber"
+                      : "red");
 
               return {
                 ...cell,
@@ -166,18 +540,18 @@ export function RouteLatencyHeatmap({
                 p95Ms: newP95,
                 p50Ms: newP50,
                 avgMs: newAvg,
-                severity: newSeverity,
+                status: newStatus,
               };
             });
 
-            const overallP95 = delta.p95Ms ?? routeRow.p95Ms;
-            const isSlow = overallP95 > 150;
+            const overallP95 = delta.p95Ms ?? routeRow.overallP95Ms;
+            const isSlow = overallP95 >= 150;
 
             return {
               ...routeRow,
               cells: updatedCells,
-              p95Ms: overallP95,
-              avgMs: delta.avgMs ?? routeRow.avgMs,
+              overallP95Ms: overallP95,
+              overallAvgMs: delta.avgMs ?? routeRow.overallAvgMs,
               totalRequests: routeRow.totalRequests + 1,
               isSlowPath: isSlow,
             };
@@ -236,8 +610,38 @@ export function RouteLatencyHeatmap({
     });
   }, [data, highlightSlowOnly, selectedCategory, searchQuery]);
 
+  // Transform data for Geo/Scatter Mode
+  const geoPoints = useMemo<LatencyPoint[]>(() => {
+    if (!data || viewMode !== "geo") return [];
+
+    // Mocking geographic distribution based on route hash for visualization purposes
+    // In a real app, this would come from actual geo-IP data in the API response
+    return data.routes.flatMap((row) => {
+      // Generate a point for each active time bucket
+      return row.cells
+        .filter((c) => c.count > 0)
+        .map((cell, idx) => {
+          // Simple hash to determine X/Y position on the canvas (0-1 range)
+          const hash = row.route
+            .split("")
+            .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          const x = (hash % 100) / 100;
+          const y = ((hash * idx) % 100) / 100;
+
+          // Normalize latency for color intensity (0-1)
+          // Assume 500ms is max critical
+          const latencyNorm = Math.min(1, cell.p95Ms / 500);
+
+          return { x, y, latency: latencyNorm };
+        });
+    });
+  }, [data, viewMode]);
+
   // Helper to get fill color and styling for a latency value
-  function getCellColor(cell: RouteHeatmapCell, mode: MetricMode): {
+  function getCellColor(
+    cell: RouteHeatmapCell,
+    mode: MetricMode,
+  ): {
     fill: string;
     text: string;
     border: string;
@@ -273,10 +677,6 @@ export function RouteLatencyHeatmap({
     }
 
     // Latency heat map modes:
-    // < 80ms: Optimal (Emerald)
-    // 80 - 150ms: Normal (Cyan)
-    // 150 - 300ms: Amber (Elevated Warning)
-    // > 300ms: Red (Critical Slow Path)
     if (value < 80) {
       const alpha = 0.25 + (value / 80) * 0.35;
       return {
@@ -353,18 +753,44 @@ export function RouteLatencyHeatmap({
 
   function getCategoryBadge(category: string) {
     const map: Record<string, { label: string; color: string }> = {
-      ai: { label: "AI / LLM", color: "border-purple-500/30 bg-purple-500/10 text-purple-300" },
-      api: { label: "REST API", color: "border-blue-500/30 bg-blue-500/10 text-blue-300" },
-      auth: { label: "Auth / Passkey", color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
-      db: { label: "Prisma DB", color: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
-      telemetry: { label: "Telemetry", color: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300" },
-      wallet: { label: "Wallet Pass", color: "border-pink-500/30 bg-pink-500/10 text-pink-300" },
-      admin: { label: "Admin Core", color: "border-indigo-500/30 bg-indigo-500/10 text-indigo-300" },
+      ai: {
+        label: "AI / LLM",
+        color: "border-purple-500/30 bg-purple-500/10 text-purple-300",
+      },
+      api: {
+        label: "REST API",
+        color: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+      },
+      auth: {
+        label: "Auth / Passkey",
+        color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+      },
+      db: {
+        label: "Prisma DB",
+        color: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+      },
+      telemetry: {
+        label: "Telemetry",
+        color: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
+      },
+      wallet: {
+        label: "Wallet Pass",
+        color: "border-pink-500/30 bg-pink-500/10 text-pink-300",
+      },
+      admin: {
+        label: "Admin Core",
+        color: "border-indigo-500/30 bg-indigo-500/10 text-indigo-300",
+      },
     };
 
-    const c = map[category] || { label: category, color: "border-white/10 bg-white/5 text-zinc-400" };
+    const c = map[category] || {
+      label: category,
+      color: "border-white/10 bg-white/5 text-zinc-400",
+    };
     return (
-      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider border ${c.color}`}>
+      <span
+        className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider border ${c.color}`}
+      >
         {c.label}
       </span>
     );
@@ -402,7 +828,9 @@ export function RouteLatencyHeatmap({
                   <span className="relative flex h-2 w-2">
                     <span
                       className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                        wsConnected ? "animate-ping bg-emerald-400" : "bg-amber-400"
+                        wsConnected
+                          ? "animate-ping bg-emerald-400"
+                          : "bg-amber-400"
                       }`}
                     />
                     <span
@@ -420,9 +848,16 @@ export function RouteLatencyHeatmap({
                 </span>
               </div>
               <p className="mt-1 text-xs text-zinc-400 md:text-sm">
-                Real-time p95 latency matrix across API routes. Slow paths are highlighted in{" "}
-                <span className="font-semibold text-amber-400">Amber (&gt;150ms)</span> and{" "}
-                <span className="font-semibold text-rose-400">Red (&gt;300ms)</span>.
+                Real-time p95 latency matrix across API routes. Slow paths are
+                highlighted in{" "}
+                <span className="font-semibold text-amber-400">
+                  Amber (&gt;150ms)
+                </span>{" "}
+                and{" "}
+                <span className="font-semibold text-rose-400">
+                  Red (&gt;300ms)
+                </span>
+                .
               </p>
             </div>
           </div>
@@ -451,6 +886,32 @@ export function RouteLatencyHeatmap({
                 {item.label}
               </button>
             ))}
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex rounded-2xl border border-white/10 bg-white/[0.03] p-1 shadow-inner">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                viewMode === "grid"
+                  ? "bg-white text-zinc-950 font-semibold shadow-md"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              <Grid3X3 className="h-3.5 w-3.5" />
+              Matrix
+            </button>
+            <button
+              onClick={() => setViewMode("geo")}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                viewMode === "geo"
+                  ? "bg-white text-zinc-950 font-semibold shadow-md"
+                  : "text-zinc-400 hover:text-white"
+              }`}
+            >
+              <MapIcon className="h-3.5 w-3.5" />
+              Geo Map
+            </button>
           </div>
 
           {/* Auto Refresh Toggle */}
@@ -555,7 +1016,9 @@ export function RouteLatencyHeatmap({
             <div className="mt-1 flex items-baseline gap-2">
               <span
                 className={`font-mono text-2xl font-bold ${
-                  data.summary.slowEndpointsCount > 0 ? "text-amber-400" : "text-emerald-400"
+                  data.summary.slowEndpointsCount > 0
+                    ? "text-amber-400"
+                    : "text-emerald-400"
                 }`}
               >
                 {data.summary.slowEndpointsCount}
@@ -607,7 +1070,9 @@ export function RouteLatencyHeatmap({
                 : "border-white/10 bg-white/[0.03] text-zinc-400 hover:text-white"
             }`}
           >
-            <AlertTriangle className={`h-3.5 w-3.5 ${highlightSlowOnly ? "text-amber-400" : ""}`} />
+            <AlertTriangle
+              className={`h-3.5 w-3.5 ${highlightSlowOnly ? "text-amber-400" : ""}`}
+            />
             <span>Highlight Slow Paths Only</span>
             {data && data.summary.slowEndpointsCount > 0 && (
               <span className="ml-1 rounded-full bg-amber-500/30 px-1.5 py-0.2 text-[10px] font-bold text-amber-200">
@@ -681,27 +1146,52 @@ export function RouteLatencyHeatmap({
         </div>
       )}
 
+      <HyperlaneViewport routes={data?.routes ?? []} />
+
       {/* Main Heatmap Visualization */}
+      {/* Main Visualization Area */}
       <div className="relative z-10 mt-5 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-inner">
         {loading && !data ? (
           <div className="flex h-96 flex-col items-center justify-center gap-3">
             <RefreshCw className="h-8 w-8 animate-spin text-amber-400" />
-            <p className="text-xs text-zinc-400">Synthesizing real-time latency telemetry...</p>
+            <p className="text-xs text-zinc-400">
+              Synthesizing real-time latency telemetry...
+            </p>
+          </div>
+        ) : viewMode === "geo" ? (
+          // New Geo/Scatter Heatmap View
+          <div className="h-[500px] w-full p-2">
+            <GeoHeatmapCanvas points={geoPoints} width={800} height={500} />
+            <div className="absolute bottom-4 left-4 pointer-events-none">
+              <p className="text-xs text-zinc-400 bg-black/50 px-2 py-1 rounded backdrop-blur">
+                Geographic Distribution of Latency Events (Simulated)
+              </p>
+            </div>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-2 text-zinc-500">
             <Filter className="h-8 w-8 text-zinc-600" />
-            <p className="text-sm font-medium">No endpoints match the current filter</p>
-            <p className="text-xs text-zinc-600">Try clearing your search query or slow paths filter.</p>
+            <p className="text-sm font-medium">
+              No endpoints match the current filter
+            </p>
+            <p className="text-xs text-zinc-600">
+              Try clearing your search query or slow paths filter.
+            </p>
           </div>
         ) : (
+          // Original Grid Matrix View
           <div className="overflow-x-auto">
             <div className="min-w-[760px] p-4">
               {/* Header row: Time bucket columns */}
               <div className="mb-2 grid grid-cols-[240px_repeat(12,_1fr)_90px] items-center gap-1.5 text-[11px] font-medium text-zinc-500">
-                <div className="pl-2">Route / Endpoint ({filteredRows.length})</div>
+                <div className="pl-2">
+                  Route / Endpoint ({filteredRows.length})
+                </div>
                 {data?.timeBuckets.map((bucket) => (
-                  <div key={bucket.index} className="truncate text-center font-mono">
+                  <div
+                    key={bucket.index}
+                    className="truncate text-center font-mono"
+                  >
                     {bucket.label}
                   </div>
                 ))}
@@ -766,7 +1256,8 @@ export function RouteLatencyHeatmap({
                           <div
                             key={cell.bucketIndex}
                             onMouseEnter={(e) => {
-                              const rect = e.currentTarget.getBoundingClientRect();
+                              const rect =
+                                e.currentTarget.getBoundingClientRect();
                               setHoveredCell({
                                 cell,
                                 row,
@@ -778,7 +1269,9 @@ export function RouteLatencyHeatmap({
                             style={{ backgroundColor: style.fill }}
                             className={`relative flex h-9 cursor-pointer items-center justify-center rounded-lg border transition-all duration-150 hover:scale-105 hover:z-20 ${style.border} ${style.glow}`}
                           >
-                            <span className={`text-[11px] font-mono select-none ${style.text}`}>
+                            <span
+                              className={`text-[11px] font-mono select-none ${style.text}`}
+                            >
                               {cell.count === 0
                                 ? "—"
                                 : metricMode === "count"
@@ -815,8 +1308,8 @@ export function RouteLatencyHeatmap({
         )}
       </div>
 
-      {/* Floating Tooltip */}
-      {hoveredCell && (
+      {/* Floating Tooltip (Grid Mode Only) */}
+      {hoveredCell && viewMode === "grid" && (
         <div
           style={{
             left: `${hoveredCell.clientX}px`,
@@ -914,7 +1407,10 @@ export function RouteLatencyHeatmap({
 
         <div className="flex items-center gap-2 text-[11px] text-zinc-500">
           <Info className="h-3.5 w-3.5" />
-          <span>Tail p95 reflects the 95th percentile worst response latency in that time bucket.</span>
+          <span>
+            Tail p95 reflects the 95th percentile worst response latency in that
+            time bucket.
+          </span>
         </div>
       </div>
     </section>

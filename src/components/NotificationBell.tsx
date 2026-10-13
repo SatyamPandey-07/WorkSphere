@@ -13,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { useToast } from "@/components/ui/Toast";
 
 interface NotificationItem {
   id: string;
@@ -41,6 +42,34 @@ export function NotificationBell() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const previousUnreadCount = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { toast } = useToast();
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const undoSnapshotRef = useRef<{
+    unreadIds: string[];
+    unreadCount: number;
+  } | null>(null);
+  const lastUnreadSnapshotRef = useRef<{
+    unreadIds: string[];
+    unreadCount: number;
+  } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const unread = notifications.filter((n) => !n.read).map((n) => n.id);
+    if (unread.length > 0) {
+      lastUnreadSnapshotRef.current = {
+        unreadIds: unread,
+        unreadCount: unreadCount > 0 ? unreadCount : unread.length,
+      };
+    }
+  }, [notifications, unreadCount]);
 
   useEffect(() => {
     audioRef.current = new Audio("/sounds/notification-chime.mp3");
@@ -100,15 +129,74 @@ export function NotificationBell() {
     localStorage.setItem("notification-sound-enabled", String(next));
   };
 
-  const markAllAsRead = async () => {
+  const handleUndo = useCallback(() => {
+    if (!undoSnapshotRef.current) return;
+    const { unreadIds, unreadCount: prevCount } = undoSnapshotRef.current;
+
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = null;
+    }
+    undoSnapshotRef.current = null;
+
+    setNotifications((prev) =>
+      prev.map((n) => (unreadIds.includes(n.id) ? { ...n, read: false } : n)),
+    );
+    setUnreadCount(prevCount);
+
+    fetch("/api/user/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "markAsUnread", ids: unreadIds }),
+    }).catch(() => {});
+  }, []);
+
+  const markAllAsRead = async (showToast = true) => {
     if (isMarkingRead) return;
     setIsMarkingRead(true);
 
     const prevCount = unreadCount;
     const prevNotifications = notifications;
 
+    const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
+
+    const snapshotIds =
+      unreadIds.length > 0
+        ? unreadIds
+        : lastUnreadSnapshotRef.current?.unreadIds || [];
+    const snapshotCount =
+      prevCount > 0
+        ? prevCount
+        : lastUnreadSnapshotRef.current?.unreadCount || snapshotIds.length;
+
     setUnreadCount(0);
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+
+    if (showToast && (snapshotIds.length > 0 || snapshotCount > 0)) {
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+      }
+
+      undoSnapshotRef.current = {
+        unreadIds: snapshotIds,
+        unreadCount: Math.max(1, snapshotCount),
+      };
+
+      undoTimeoutRef.current = setTimeout(() => {
+        undoSnapshotRef.current = null;
+        undoTimeoutRef.current = null;
+      }, 5000);
+
+      toast(
+        "All notifications marked as read",
+        "success",
+        {
+          label: "Undo",
+          onClick: handleUndo,
+        },
+        5,
+      );
+    }
 
     try {
       const res = await fetch("/api/user/notifications", {
@@ -119,11 +207,21 @@ export function NotificationBell() {
       if (!res.ok) {
         setUnreadCount(Math.max(0, prevCount));
         setNotifications(prevNotifications);
+        if (undoTimeoutRef.current) {
+          clearTimeout(undoTimeoutRef.current);
+          undoTimeoutRef.current = null;
+        }
+        undoSnapshotRef.current = null;
       }
     } catch (e) {
       console.error("Failed to mark notifications as read:", e);
       setUnreadCount(Math.max(0, prevCount));
       setNotifications(prevNotifications);
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+        undoTimeoutRef.current = null;
+      }
+      undoSnapshotRef.current = null;
     } finally {
       setIsMarkingRead(false);
     }
@@ -132,6 +230,12 @@ export function NotificationBell() {
   const clearAllNotifications = async () => {
     if (isClearing) return;
     setIsClearing(true);
+
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = null;
+    }
+    undoSnapshotRef.current = null;
 
     const prevNotifications = notifications;
     const prevUnreadCount = unreadCount;
@@ -163,7 +267,7 @@ export function NotificationBell() {
     const nextState = !isOpen;
     setIsOpen(nextState);
     if (nextState && unreadCount > 0) {
-      markAllAsRead();
+      markAllAsRead(false);
     }
   };
 
@@ -276,14 +380,16 @@ export function NotificationBell() {
                 )}
               </button>
 
-              {unreadCount > 0 && (
+              {(unreadCount > 0 || notifications.length > 0) && (
                 <button
-                  onClick={markAllAsRead}
+                  onClick={() => markAllAsRead(true)}
                   disabled={isMarkingRead}
                   className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Mark all as read"
+                  aria-label="Mark all as read"
                 >
                   <Check className="w-3 h-3" />
-                  Read All
+                  Mark all as read
                 </button>
               )}
 

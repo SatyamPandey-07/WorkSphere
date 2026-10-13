@@ -17,6 +17,8 @@ export interface OptimizeRequestPayload {
   edges: TransitEdge[];
   startTime: string; // ISO string
   objective?: TransitOptimizationObjective;
+  customBreakDurationMinutes?: number;
+  breakDurationMinutes?: number;
 }
 
 export async function POST(request: NextRequest) {
@@ -48,6 +50,9 @@ export async function POST(request: NextRequest) {
       body.targetVenueIds,
       startTime,
       body.objective ?? "time",
+      {
+        customBreakDurationMinutes: body.customBreakDurationMinutes ?? body.breakDurationMinutes,
+      }
     );
     const paretoSuggestions = solver.optimizePareto(
       body.startVenueId,

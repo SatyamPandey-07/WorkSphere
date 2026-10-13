@@ -39,27 +39,49 @@ static bool is_word_character(uint32_t codepoint) {
   return false;
 }
 
-static uint32_t decode_utf8(const uint8_t *str, int *bytes_read) {
-  if (!str || !bytes_read)
+static uint32_t decode_utf8(const uint8_t *str, uint32_t remaining_length, int *bytes_read) {
+  if (!str || !bytes_read || remaining_length == 0) {
+    if (bytes_read) *bytes_read = 0;
     return 0;
+  }
 
+  // 1-byte ASCII (0xxxxxxx)
   if ((str[0] & 0x80) == 0) {
     *bytes_read = 1;
     return str[0];
-  } else if ((str[0] & 0xE0) == 0xC0) {
+  } 
+  // 2-byte sequence (110xxxxx 10xxxxxx)
+  else if ((str[0] & 0xE0) == 0xC0) {
+    if (remaining_length < 2 || (str[1] & 0xC0) != 0x80) {
+      *bytes_read = 1; // Invalid / truncated sequence: advance by 1 byte safely
+      return 0xFFFD;   // Unicode Replacement Character
+    }
     *bytes_read = 2;
     return ((str[0] & 0x1F) << 6) | (str[1] & 0x3F);
-  } else if ((str[0] & 0xF0) == 0xE0) {
+  } 
+  // 3-byte sequence (1110xxxx 10xxxxxx 10xxxxxx)
+  else if ((str[0] & 0xF0) == 0xE0) {
+    if (remaining_length < 3 || (str[1] & 0xC0) != 0x80 || (str[2] & 0xC0) != 0x80) {
+      *bytes_read = 1; // Invalid / truncated sequence: advance by 1 byte safely
+      return 0xFFFD;
+    }
     *bytes_read = 3;
     return ((str[0] & 0x0F) << 12) | ((str[1] & 0x3F) << 6) | (str[2] & 0x3F);
-  } else if ((str[0] & 0xF8) == 0xF0) {
+  } 
+  // 4-byte sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
+  else if ((str[0] & 0xF8) == 0xF0) {
+    if (remaining_length < 4 || (str[1] & 0xC0) != 0x80 || (str[2] & 0xC0) != 0x80 || (str[3] & 0xC0) != 0x80) {
+      *bytes_read = 1; // Invalid / truncated sequence: advance by 1 byte safely
+      return 0xFFFD;
+    }
     *bytes_read = 4;
     return ((str[0] & 0x07) << 18) | ((str[1] & 0x3F) << 12) |
            ((str[2] & 0x3F) << 6) | (str[3] & 0x3F);
   }
 
+  // Invalid leading byte (continuation byte or 0xF8+)
   *bytes_read = 1;
-  return str[0];
+  return 0xFFFD;
 }
 
 void tokenize_utf8(const uint8_t *input, uint32_t input_length,
@@ -74,7 +96,10 @@ void tokenize_utf8(const uint8_t *input, uint32_t input_length,
 
   while (i < input_length && result->count < MAX_TOKENS) {
     int bytes_read = 0;
-    uint32_t codepoint = decode_utf8(&input[i], &bytes_read);
+    uint32_t codepoint = decode_utf8(&input[i], input_length - i, &bytes_read);
+    if (bytes_read <= 0) {
+      bytes_read = 1; // Safeguard against zero-progress infinite loops on malformed bytes
+    }
 
     bool is_word = is_word_character(codepoint);
 

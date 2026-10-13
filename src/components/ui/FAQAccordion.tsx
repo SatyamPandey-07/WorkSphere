@@ -85,10 +85,16 @@ export default function FAQAccordion({ className }: FAQAccordionProps = {}) {
             >
               <button
                 onClick={() => toggleItem(index)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleItem(index);
+                  }
+                }}
                 className="w-full px-6 cursor-pointer py-5 flex items-center justify-between text-left focus:outline-none focus-visible:ring-2 accent-ring rounded-2xl"
                 aria-expanded={isOpen}
-                aria-controls={`faq-answer-${index}`}
-                id={`faq-question-${index}`}
+                aria-controls={`faq-panel-${index}`}
+                id={`faq-header-${index}`}
               >
                 <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
                   {faq.question}
@@ -105,9 +111,9 @@ export default function FAQAccordion({ className }: FAQAccordionProps = {}) {
               <AnimatePresence initial={false}>
                 {isOpen && (
                   <motion.div
-                    id={`faq-answer-${index}`}
+                    id={`faq-panel-${index}`}
                     role="region"
-                    aria-labelledby={`faq-question-${index}`}
+                    aria-labelledby={`faq-header-${index}`}
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}

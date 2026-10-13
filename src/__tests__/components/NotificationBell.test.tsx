@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { NotificationBell } from "@/components/NotificationBell";
+import { ToastProvider } from "@/components/ui/Toast";
 
 // Mock matchMedia
 beforeAll(() => {
@@ -78,7 +79,8 @@ describe("NotificationBell Component (#685, #3429)", () => {
       },
     ];
 
-    global.fetch = jest.fn()
+    global.fetch = jest
+      .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -96,7 +98,9 @@ describe("NotificationBell Component (#685, #3429)", () => {
     const badge = await screen.findByText("1");
     expect(badge).toBeInTheDocument();
 
-    const bellBtn = screen.getByRole("button", { name: "Open notifications menu" });
+    const bellBtn = screen.getByRole("button", {
+      name: "Open notifications menu",
+    });
     fireEvent.click(bellBtn);
 
     // Opening should trigger markAsRead API call
@@ -106,7 +110,7 @@ describe("NotificationBell Component (#685, #3429)", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ action: "markAsRead" }),
-        })
+        }),
       );
     });
 
@@ -125,7 +129,8 @@ describe("NotificationBell Component (#685, #3429)", () => {
       },
     ];
 
-    global.fetch = jest.fn()
+    global.fetch = jest
+      .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -146,10 +151,14 @@ describe("NotificationBell Component (#685, #3429)", () => {
 
     await screen.findByText("1");
 
-    const bellBtn = screen.getByRole("button", { name: "Open notifications menu" });
+    const bellBtn = screen.getByRole("button", {
+      name: "Open notifications menu",
+    });
     fireEvent.click(bellBtn);
 
-    const clearAllBtn = screen.getByRole("button", { name: "Clear all notifications" });
+    const clearAllBtn = screen.getByRole("button", {
+      name: "Clear all notifications",
+    });
     expect(clearAllBtn).toBeInTheDocument();
     expect(screen.getByText("Clear All")).toBeInTheDocument();
 
@@ -161,7 +170,7 @@ describe("NotificationBell Component (#685, #3429)", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ action: "clearAll" }),
-        })
+        }),
       );
     });
 
@@ -193,7 +202,8 @@ describe("NotificationBell Component (#685, #3429)", () => {
       },
     ];
 
-    global.fetch = jest.fn()
+    global.fetch = jest
+      .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -212,7 +222,9 @@ describe("NotificationBell Component (#685, #3429)", () => {
     const badge3 = await screen.findByText("3");
     expect(badge3).toBeInTheDocument();
 
-    const bellBtn = screen.getByRole("button", { name: "Open notifications menu" });
+    const bellBtn = screen.getByRole("button", {
+      name: "Open notifications menu",
+    });
     fireEvent.click(bellBtn);
 
     // Dismiss first notification
@@ -227,7 +239,7 @@ describe("NotificationBell Component (#685, #3429)", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ action: "dismiss", id: "notif-1" }),
-        })
+        }),
       );
     });
 
@@ -242,5 +254,162 @@ describe("NotificationBell Component (#685, #3429)", () => {
       expect(screen.getByText("All caught up! 🎉")).toBeInTheDocument();
     });
   });
-});
 
+  it("triggers confirmation toast and restores unread state when Undo is clicked within 5 seconds", async () => {
+    const mockNotifications = [
+      {
+        id: "notif-1",
+        title: "Desk Confirmed",
+        body: "Desk #4 is ready.",
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: "notif-2",
+        title: "WiFi Access",
+        body: "Network password updated.",
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          notifications: mockNotifications,
+          unreadCount: 2,
+        }),
+      } as any)
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true }),
+      } as any);
+
+    render(
+      <ToastProvider>
+        <NotificationBell />
+      </ToastProvider>,
+    );
+
+    // Initial badge
+    const badge = await screen.findByText("2");
+    expect(badge).toBeInTheDocument();
+
+    const bellBtn = screen.getByRole("button", {
+      name: "Open notifications menu",
+    });
+    fireEvent.click(bellBtn);
+
+    // Click "Mark all as read"
+    const markAllBtn = await screen.findByRole("button", {
+      name: "Mark all as read",
+    });
+    expect(markAllBtn).toBeInTheDocument();
+    fireEvent.click(markAllBtn);
+
+    // Verify transient success toast is displayed
+    const toastMsg = await screen.findByText(
+      "All notifications marked as read",
+    );
+    expect(toastMsg).toBeInTheDocument();
+
+    // Verify accessible Undo button with keyboard support
+    const undoBtn = screen.getByRole("button", { name: "Undo" });
+    expect(undoBtn).toBeInTheDocument();
+    expect(undoBtn).toHaveAttribute("type", "button");
+    React.act(() => {
+      undoBtn.focus();
+    });
+    expect(undoBtn).toHaveFocus();
+
+    // Click undo
+    fireEvent.click(undoBtn);
+
+    // Verify unread state is restored
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/user/notifications",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            action: "markAsUnread",
+            ids: ["notif-1", "notif-2"],
+          }),
+        }),
+      );
+    });
+
+    const restoredBadges = await screen.findAllByText("2");
+    expect(restoredBadges.length).toBeGreaterThan(0);
+    expect(screen.getByTestId("unread-badge-counter")).toHaveTextContent("2");
+  });
+
+  it("expires undo callback after 5-second window", async () => {
+    jest.useFakeTimers();
+
+    const mockNotifications = [
+      {
+        id: "notif-1",
+        title: "Desk Confirmed",
+        body: "Desk #4 is ready.",
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          notifications: mockNotifications,
+          unreadCount: 1,
+        }),
+      } as any)
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true }),
+      } as any);
+
+    render(
+      <ToastProvider>
+        <NotificationBell />
+      </ToastProvider>,
+    );
+
+    // Resolve fetch promise
+    await React.act(async () => {
+      jest.advanceTimersByTime(10);
+    });
+
+    const bellBtn = screen.getByRole("button", {
+      name: "Open notifications menu",
+    });
+    await React.act(async () => {
+      fireEvent.click(bellBtn);
+    });
+
+    const markAllBtn = screen.getByRole("button", { name: "Mark all as read" });
+    await React.act(async () => {
+      fireEvent.click(markAllBtn);
+    });
+
+    expect(
+      screen.getByText("All notifications marked as read"),
+    ).toBeInTheDocument();
+
+    // Advance timers past 5 seconds (5000ms)
+    await React.act(async () => {
+      jest.advanceTimersByTime(5100);
+    });
+
+    // Toast auto-dismisses after 5 seconds countdown
+    expect(
+      screen.queryByText("All notifications marked as read"),
+    ).not.toBeInTheDocument();
+
+    jest.useRealTimers();
+  });
+});

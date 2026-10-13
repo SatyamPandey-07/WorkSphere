@@ -50,6 +50,20 @@ self.onmessage = async (event: MessageEvent) => {
                 return;
             }
 
+            // Ensure WASM linear memory has sufficient pages for audioData
+            const requiredBytes = audioData.length * 4;
+            const currentBytes = wasmMemory.buffer.byteLength;
+            if (requiredBytes > currentBytes) {
+                const additionalBytes = requiredBytes - currentBytes;
+                const additionalPages = Math.ceil(additionalBytes / 65536);
+                wasmMemory.grow(additionalPages);
+            }
+
+            // Update sample rate in WASM engine if sampleRate provided
+            if (sampleRate && typeof (wasmInstance.exports.acoustic_fft_init as CallableFunction) === 'function') {
+                (wasmInstance.exports.acoustic_fft_init as CallableFunction)(sampleRate, Math.min(audioData.length, 4096));
+            }
+
             // Copy audio data to WASM memory
             // Find a free offset in memory (using offset 0)
             const memoryView = new Float32Array(wasmMemory.buffer, 0, audioData.length);

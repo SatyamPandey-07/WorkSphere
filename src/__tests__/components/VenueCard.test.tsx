@@ -72,6 +72,20 @@ describe("VenueCard", () => {
     expect(screen.getAllByText(/Outlets/)[0]).toBeInTheDocument();
   });
 
+  it("renders Mach Speed classification badge when venue has wifiSpeed", async () => {
+    const venueWithSpeed = {
+      ...mockVenue,
+      id: "venue-mach-speed",
+      wifiSpeed: 300,
+    };
+    await renderVenueCard(venueWithSpeed);
+
+    expect(
+      screen.getByText("Hypersonic Mach 5 (>250 Mbps)"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("jet-icon")).toBeInTheDocument();
+  });
+
   it("calls onGetDirections when Directions button is clicked", async () => {
     await renderVenueCard();
 

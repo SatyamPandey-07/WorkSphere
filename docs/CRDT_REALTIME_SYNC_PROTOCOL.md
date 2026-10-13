@@ -8,8 +8,9 @@ WorkSphere uses **Yjs** (a CRDT library) over **PartyKit** WebSockets for multip
 
 - [Overview](#overview)
 - [Yjs Document Structures](#yjs-document-structures)
-- [Yjs Delta Format](#yjs-delta-format)
-- [State Vector Resolution](#state-vector-resolution)
+- [Yjs Delta Format & Wire Encoding](#yjs-delta-format--wire-encoding)
+- [State Vector Resolution & Peer Reconnection](#state-vector-resolution--peer-reconnection)
+- [Deletion Tombstones & Garbage Collection Lifecycle](#deletion-tombstones--garbage-collection-lifecycle)
 - [PartyKit WebSocket Synchronization](#partykit-websocket-synchronization)
 - [Offline Delta Queue Merging](#offline-delta-queue-merging)
 - [Presence & Awareness Protocols](#presence--awareness-protocols)
@@ -90,73 +91,299 @@ const um = new Y.UndoManager(shapes, { captureTimeout: 500 });
 
 ---
 
-## Yjs Delta Format
+## Yjs Delta Format & Wire Encoding
 
-Yjs encodes updates as **binary incremental deltas** (not full snapshots). The `y-partykit` integration handles encoding/decoding transparently.
+Yjs encodes document modifications as **binary incremental deltas** (not full snapshots). The `y-partykit` provider and peer mesh brokers serialize updates using compact variable-length integer encoding via `lib0`.
 
-### What a delta contains
+### What a Delta Contains
 
-A Yjs update binary encodes:
+A Yjs binary update payload encodes:
 
-- **Client ID** — unique integer per `Y.Doc` instance, used in the state vector.
-- **Clock** — monotonically increasing counter per client.
-- **Operations** — inserts, deletes, or attribute changes on shared types (`Y.Array`, `Y.Map`, etc.).
+- **Client ID**: Monotonically allocated 53-bit unsigned integer per active replica (`Y.Doc` instance).
+- **Clock**: Monotonically increasing logical Lamport sequence counter per client.
+- **Content Blocks**: Typed operations (inserts, formats, embed payloads, deletion descriptors) across shared data types (`Y.Array`, `Y.Map`, `Y.Text`).
+- **Dependencies (Left/Right IDs)**: Relative causal coordinates anchoring new operations within the CRDT linked-list structure without absolute index drift.
 
-### How `y-partykit` exchanges deltas
+### Wire Protocol Message Framing (`lib0` & `y-protocols`)
 
-1. On `onConnect`, `y-partykit` sends the server's current document state to the new client.
-2. The client responds with its own state vector so the server can compute the diff.
-3. Only the missing operations are sent — not the full document.
-4. Subsequent edits are broadcast as binary `ArrayBuffer` messages to all peers in the room.
+WorkSphere's WebSocket and WebRTC DataChannel transports format messages using standard `y-protocols` framing:
 
-The server in `party/server.ts` delegates all of this to `y-partykit`:
-
-```ts
-onConnectYjs(conn, this.room, {
-  gc: true, // garbage-collect deleted items
-  readOnly: isViewer, // drop incoming updates from VIEWER connections
-});
+```
++-------------------------------------------------------------------------------+
+|                       CRDT BINARY MESSAGE WIRE LAYOUT                         |
++-------------------------------------------------------------------------------+
+| Message Type (VarUint) | Sync Subtype (VarUint) |       Payload Bytes         |
+| 0 = MESSAGE_SYNC       | 0 = SYNC_STEP_1        | State Vector (VarUint8Array)|
+|                        | 1 = SYNC_STEP_2        | Document Diff (Update Binary)|
+|                        | 2 = SYNC_UPDATE        | Incremental Update Binary   |
+| 1 = MESSAGE_AWARENESS  | --                     | Ephemeral Awareness State   |
+| 2 = MESSAGE_AUTH       | --                     | Authentication Token Payload|
++-------------------------------------------------------------------------------+
 ```
 
-JSON messages (presence, seat check-ins) share the same WebSocket but are handled separately — Yjs only processes `ArrayBuffer` payloads.
+### Code Snippets: Update Message Encoding & Decoding
+
+The following TypeScript implementation demonstrates the exact encoding and decoding pipelines used by WorkSphere's real-time communication tier:
+
+```ts
+import * as Y from "yjs";
+import * as encoding from "lib0/encoding";
+import * as decoding from "lib0/decoding";
+import * as syncProtocol from "y-protocols/sync";
+
+// Primary Message Framing Constants
+export const MESSAGE_SYNC = 0;
+export const MESSAGE_AWARENESS = 1;
+export const MESSAGE_AUTH = 2;
+
+/**
+ * 1. Step 1 Handshake: Encode a SyncStep1 message carrying local State Vector.
+ * Invoked immediately upon WebSocket connection or peer reconnection.
+ */
+export function encodeSyncStep1(doc: Y.Doc): Uint8Array {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarUint(encoder, MESSAGE_SYNC);
+  syncProtocol.writeSyncStep1(encoder, doc);
+  return encoding.toUint8Array(encoder);
+}
+
+/**
+ * 2. Step 2 Response: Decode incoming remote State Vector and encode
+ * SyncStep2 carrying only the operations the remote peer is missing.
+ */
+export function handleSyncStep1AndEncodeReply(
+  doc: Y.Doc,
+  decoder: decoding.Decoder,
+): Uint8Array {
+  const replyEncoder = encoding.createEncoder();
+  encoding.writeVarUint(replyEncoder, MESSAGE_SYNC);
+  // syncProtocol.readSyncStep1 automatically reads remote SV and writes SyncStep2
+  syncProtocol.readSyncStep1(decoder, replyEncoder, doc);
+  return encoding.toUint8Array(replyEncoder);
+}
+
+/**
+ * 3. Step 2 Application: Apply incoming missing delta to local document.
+ */
+export function handleSyncStep2(
+  doc: Y.Doc,
+  decoder: decoding.Decoder,
+  origin: string,
+): void {
+  syncProtocol.readSyncStep2(decoder, doc, origin);
+}
+
+/**
+ * 4. Steady-State Broadcast: Encode an incremental update triggered by local edit.
+ */
+export function encodeIncrementalUpdate(update: Uint8Array): Uint8Array {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarUint(encoder, MESSAGE_SYNC);
+  syncProtocol.writeUpdate(encoder, update);
+  return encoding.toUint8Array(encoder);
+}
+
+/**
+ * 5. Incoming Network Dispatcher: Routes raw binary ArrayBuffer messages.
+ */
+export function processIncomingBinaryMessage(
+  message: Uint8Array,
+  doc: Y.Doc,
+  socket: WebSocket,
+  origin: string = "network",
+): void {
+  const decoder = decoding.createDecoder(message);
+  const messageType = decoding.readVarUint(decoder);
+
+  switch (messageType) {
+    case MESSAGE_SYNC: {
+      const syncType = decoding.readVarUint(decoder);
+      switch (syncType) {
+        case syncProtocol.messageYjsSyncStep1: {
+          const reply = handleSyncStep1AndEncodeReply(doc, decoder);
+          if (reply.byteLength > 1) {
+            socket.send(reply);
+          }
+          break;
+        }
+        case syncProtocol.messageYjsSyncStep2:
+        case syncProtocol.messageYjsUpdate: {
+          handleSyncStep2(doc, decoder, origin);
+          break;
+        }
+      }
+      break;
+    }
+  }
+}
+```
 
 ---
 
-## State Vector Resolution
+## State Vector Resolution & Peer Reconnection
 
-A **state vector** maps each client ID to its highest known clock value:
+A **state vector** represents a compact summary of all operations applied to a given `Y.Doc`. It maps each unique `clientId` to its highest contiguous Lamport clock counter:
+
+$$\mathbf{SV} = \{ \text{client}_1: \text{clock}_1, \; \text{client}_2: \text{clock}_2, \; \dots, \; \text{client}_n: \text{clock}_n \}$$
+
+When a client has been offline or disconnected due to local network fluctuations (such as roaming access points in a cafe), it accumulates local edits without receiving remote updates. The reconnection protocol guarantees bidirectional convergence without exchanging redundant history.
+
+### Architectural Sequence: Peer Reconnection State Vector Exchange
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UserA as Peer A (Reconnecting Client)
+    participant DocA as Y.Doc (Peer A: Clock A=58, B=17)
+    participant PartyKit as PartyKit Server / Mesh Relay
+    participant DocB as Y.Doc (Peer B / Server: Clock A=42, B=35)
+    actor UserB as Peer B (Active Peer)
+
+    Note over UserA,DocA: 1. Wi-Fi Restores: Reconnection event fired
+    UserA->>DocA: Read current state vector svA
+    DocA-->>UserA: svA = { A: 58, B: 17 }
+
+    rect rgb(240, 245, 255)
+    Note over UserA,PartyKit: Phase 1: SyncStep1 Handshake
+    UserA->>PartyKit: Send SyncStep1 [Type: 0, Subtype: 0, svA: { A:58, B:17 }]
+    PartyKit->>DocB: Route SyncStep1 to active room replica
+    end
+
+    rect rgb(245, 255, 240)
+    Note over DocB,PartyKit: Phase 2: Compute Missing Ops for Peer A & Send Server Vector
+    DocB->>DocB: Read svB = { A: 42, B: 35 }
+    DocB->>DocB: Compute Diff: Y.encodeStateAsUpdate(DocB, svA) -> Delta_B [Ops B: 18..35]
+    DocB->>PartyKit: Send SyncStep2 [Type: 0, Subtype: 1, Delta_B (B: 18..35)]
+    DocB->>PartyKit: Send SyncStep1 [Type: 0, Subtype: 0, svB: { A: 42, B: 35 }]
+    PartyKit->>UserA: Forward SyncStep2 & SyncStep1 to Peer A
+    end
+
+    rect rgb(255, 250, 240)
+    Note over UserA,DocA: Phase 3: Apply Remote Diff & Transmit Local Offline Edits
+    UserA->>DocA: Y.applyUpdate(DocA, Delta_B, "remote-sync")
+    Note over DocA: DocA integrates B: 18..35. Clock B now 35.
+    DocA->>DocA: Compute Diff: Y.encodeStateAsUpdate(DocA, svB) -> Delta_A [Ops A: 43..58]
+    UserA->>PartyKit: Send SyncStep2 [Type: 0, Subtype: 1, Delta_A (A: 43..58)]
+    PartyKit->>DocB: Forward Delta_A to Peer B / Server
+    DocB->>DocB: Y.applyUpdate(DocB, Delta_A, "remote-sync")
+    Note over DocB: DocB integrates A: 43..58. Clock A now 58.
+    end
+
+    Note over DocA,DocB: Converged State: SV = { A: 58, B: 35 } on both replicas
+    Note over UserA,UserB: Phase 4: Steady-State Incremental Sync (SyncUpdate [Type: 0, Subtype: 2])
+```
+
+### State Vector Diff Calculation Mechanics
+
+When Peer B receives `svA = { A: 58, B: 17 }` while its own state is `svB = { A: 42, B: 35 }`:
+
+1. **Evaluation for Peer A**:
+   - Peer B checks `client B`: Peer B has clock `35`, Peer A only knows up to `17`.
+   - Peer B slices all operations for `client B` with clocks in the range $(17, 35]$.
+   - Operations for `client A` are skipped because Peer A's known clock (`58`) exceeds Peer B's clock (`42`).
+   - The resulting encoded binary `Delta_B` contains **only** ops `B: 18..35`.
+2. **Evaluation for Peer B**:
+   - Peer A applies `Delta_B`, bringing its known clock for `client B` to `35`.
+   - Peer A receives `svB = { A: 42, B: 35 }` and slices its operations for `client A` in the range $(42, 58]$.
+   - The resulting `Delta_A` contains **only** ops `A: 43..58`.
+3. **Bandwidth Optimization**: Historical operations (e.g., `A: 1..42` and `B: 1..17`) are never re-transmitted, minimizing payload sizes even after prolonged offline disconnects.
+
+---
+
+## Deletion Tombstones & Garbage Collection Lifecycle
+
+In Conflict-Free Replicated Data Types (CRDTs), deletions cannot simply overwrite or physically delete memory addresses. Concurrent peers may insert items anchored relative to a deleted item's ID. To maintain deterministic causal convergence, Yjs employs **tombstones**.
+
+### Tombstone Architecture
+
+When an item (such as a whiteboard shape, a collection item, or a character in a note) is deleted:
+
+1. `Item.deleted` is set to `true`.
+2. `Item.content` is freed (`content = null`), stripping character strings, shape coordinates, or JSON properties to reclaim memory.
+3. The item's structural metadata header is retained:
+   - `id: { client: 42, clock: 104 }`
+   - `length: 1`
+   - `left: ID`, `right: ID`, `origin: ID`, `originRight: ID`
 
 ```
-{ clientId_A: 42, clientId_B: 17, clientId_C: 5 }
+Active Item:     [ ID: (A, 104) | Content: "Workspace" | Left: (A, 103) | Right: (B, 12) ]
+                      |
+                      | User Deletes Text / Shape
+                      v
+Tombstone Item:  [ ID: (A, 104) | Content: NULL        | Left: (A, 103) | Right: (B, 12) ] (deleted = true)
 ```
 
-### Sync handshake
+### Tombstone Coalescing & Memory Compaction
+
+To prevent unbounded structural overhead in high-churn environments, Yjs executes **structurally adjacent tombstone coalescing**:
+
+- When adjacent items belonging to the same client are deleted (e.g., deleting a sentence of 20 characters), Yjs merges them into a single continuous tombstone block:
+  $$\text{Tombstone}_{(A, 104..123)} \quad (\text{length} = 20)$$
+- This reduces 20 distinct linked-list nodes into a single lightweight node, cutting pointer memory overhead by over 90%.
+
+### Garbage Collection (GC) Threshold & Epoch Retention Rules
+
+While content is nulled immediately, completely purging the structural tombstone header requires meeting strict epoch retention rules:
 
 ```
-Client                          Server (y-partykit)
-  |                                    |
-  |--- WebSocket connect ------------->|
-  |<-- current doc state (binary) ----|  (encodes server's full state vector)
-  |--- client state vector (binary) ->|  (what the client already has)
-  |<-- missing delta (binary) --------|  (ops client hasn't seen)
-  |--- client's own delta (binary) -->|  (ops server hasn't seen)
-  |          [synced]                 |
++-----------------------------------------------------------------------------------+
+|                        TOMBSTONE CLEANUP LIFECYCLE                                |
++-----------------------------------------------------------------------------------+
+| 1. Invalidation Phase:                                                           |
+|    - Item marked deleted = true, content nulled                                  |
+|    - Adjacent tombstones from same client coalesced                              |
+|                                                                                   |
+| 2. Threshold Trigger:                                                            |
+|    - Evaluated when Tombstone Ratio >= 40% (Deleted Items / Total Items)          |
+|    - OR uncompacted transaction update count > 1,000                              |
+|                                                                                   |
+| 3. Epoch Retention Horizon (Minimum Known Vector - MKV):                         |
+|    - Clock threshold C_safe = MIN(all active peer clocks for target client)       |
+|    - If C_tombstone <= C_safe across all active replicas:                        |
+|        -> Tombstone can be safely purged from history graph                       |
+|                                                                                   |
+| 4. Offline Peer Eviction Policy:                                                 |
+|    - Maximum offline epoch window: 7 Days (or 30 Days for enterprise archives)    |
+|    - Peers disconnected beyond the epoch are evicted from the active vector set  |
+|    - Evicted peer reconnecting receives SNAPSHOT_RESET instead of state vector diff|
++-----------------------------------------------------------------------------------+
 ```
 
-After the handshake, every local edit produces a delta that is:
+#### 1. Garbage Collection Threshold Matrix
 
-1. Applied to the local `Y.Doc` immediately (optimistic).
-2. Sent to the server as a binary WebSocket message.
-3. Broadcast by the server to all other connections in the room.
-4. Applied by each peer — Yjs merges commutatively, so order doesn't matter.
+| Policy Dimension              | Threshold Metric                                                    | Action Taken                                                                                       |
+| :---------------------------- | :------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------- |
+| **Tombstone Ratio Trigger**   | $\frac{\text{Deleted Items}}{\text{Total Items}} \ge 0.40$ ($40\%$) | Schedules background document compaction.                                                          |
+| **Transaction Count Trigger** | $> 1,000$ uncompacted transactions                                  | Flushes cumulative updates into a single compressed update block via `Y.encodeStateAsUpdate(doc)`. |
+| **Payload Size Trigger**      | Document binary $> 5\text{ MB}$                                     | Strips redundant historical operations and emits compacted snapshot.                               |
 
-### Conflict resolution
+#### 2. Minimum Known Vector (MKV) Safe Horizon
 
-Yjs CRDTs are **operation-based** and **commutative**. Concurrent edits to the same position are resolved deterministically by client ID (higher ID wins for same-position inserts). This means:
+A tombstone node at coordinate $(C_{\text{client}}, \text{clock})$ can **only** be permanently purged if every participating replica has confirmed receiving operations beyond that clock:
 
-- No "last write wins" data loss.
-- No manual conflict resolution needed.
-- Peers that receive operations out of order still converge to the same state.
+$$\text{Safe To Purge} \iff \forall \, p \in \text{ActivePeers}, \quad \mathbf{SV}_p[\text{client}] > \text{clock}$$
+
+If any active peer has not confirmed reception of that clock, the tombstone header **must** be preserved to ensure proper relative positioning if that peer concurrently inserts adjacent characters.
+
+#### 3. Offline Epoch Retention & Eviction Rules
+
+1. **Active Session Horizon (7-Day Epoch Window)**:
+   - When a peer disconnects, its last acknowledged state vector is held in PartyKit memory for up to **7 days**.
+   - If the peer reconnects within 7 days, standard two-way `SyncStep1`/`SyncStep2` diff resolution executes seamlessly.
+2. **Epoch Expiry & Forced Snapshot Reset (`SNAPSHOT_RESET`)**:
+   - If a peer remains disconnected past the 7-day threshold, its client ID is evicted from the minimum vector calculation to prevent blocking GC for active peers.
+   - Tombstones older than the active peers' clocks are purged.
+   - If the expired peer subsequently reconnects, the server rejects incremental diff resolution and responds with a complete document snapshot (`SNAPSHOT_RESET`), replacing the peer's local state.
+
+#### 4. `gc: true` vs. `gc: false` Configuration Matrix
+
+WorkSphere configures Yjs garbage collection based on room domain requirements:
+
+| Room Pattern                    | `gc` Setting | Persistence Mode               | Rationale                                                                                                                                                                                                                                                                    |
+| :------------------------------ | :----------- | :----------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`canvas-{id}`** (Whiteboard)  | `gc: true`   | Ephemeral / Redis              | High velocity drawing and stroke erasing. Tombstones must be reclaimed aggressively to prevent GPU/DOM memory bloat.                                                                                                                                                         |
+| **`folder-{id}`** (Collections) | `gc: true`   | Ephemeral / DB                 | Frequent item add/remove operations. Tombstones are merged and collected continuously.                                                                                                                                                                                       |
+| **`folder-notes-{id}`** (Notes) | `gc: false`  | Snapshot (`persist: snapshot`) | `gc: false` is required during active note editing so that full character undo/redo history (`Y.UndoManager`) and offline text edits can diff against the exact ancestral graph without missing causal anchors. Background snapshots compact the document every 1.5 seconds. |
 
 ---
 
@@ -483,12 +710,12 @@ non-empty note.
 
 ### Access control (`party/server.ts`)
 
-| Who | `folder-notes-{id}` room |
-| --- | --- |
-| No Clerk token | Rejected (`4003`) |
-| Signed in, not a member/owner of the folder | Rejected (`4003`) |
-| `VIEWER` / `MEMBER` | Read-only (`y-partykit` drops their updates) |
-| `OWNER` / `EDITOR` | Read/write |
+| Who                                         | `folder-notes-{id}` room                     |
+| ------------------------------------------- | -------------------------------------------- |
+| No Clerk token                              | Rejected (`4003`)                            |
+| Signed in, not a member/owner of the folder | Rejected (`4003`)                            |
+| `VIEWER` / `MEMBER`                         | Read-only (`y-partykit` drops their updates) |
+| `OWNER` / `EDITOR`                          | Read/write                                   |
 
 The role lookup to `/api/partykit/auth` now sends
 `Authorization: Bearer $PARTYKIT_AUTH_SECRET`. The route has always required
@@ -503,12 +730,12 @@ y-partykit requires) so notes survive the room being evicted from memory.
 
 ### Files
 
-| File | Role |
-| --- | --- |
-| `src/lib/crdt/collectionNotes.ts` | Room naming, deterministic seeding, length limit |
+| File                                                   | Role                                                                         |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `src/lib/crdt/collectionNotes.ts`                      | Room naming, deterministic seeding, length limit                             |
 | `src/components/collections/CollectionNotesEditor.tsx` | Textarea ↔ `Y.Text`, caret preservation via relative positions, snapshotting |
-| `party/server.ts` | Members-only notes rooms, authenticated role lookup, persistence |
-| `src/app/api/partykit/auth/route.ts` | Adds the `member` flag |
+| `party/server.ts`                                      | Members-only notes rooms, authenticated role lookup, persistence             |
+| `src/app/api/partykit/auth/route.ts`                   | Adds the `member` flag                                                       |
 
 ### Tests
 

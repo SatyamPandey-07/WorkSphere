@@ -29,22 +29,21 @@ const IMPERIAL_REGIONS = new Set([
  * @returns "METRIC" | "IMPERIAL"
  */
 export function detectDefaultDistanceUnit(locale?: string): DistanceUnit {
-  let lang = locale;
-  if (!lang && typeof navigator !== "undefined" && navigator.language) {
-    lang = navigator.language;
-  }
-
-  if (!lang) {
+  if (!locale) {
     return "METRIC";
   }
 
-  const parts = lang.split(/[-_]/);
+  const parts = locale.split(/[-_]/);
   const regionCandidate = parts
     .slice(1)
     .find((p) => /^[A-Za-z]{2}$/.test(p) || /^\d{3}$/.test(p));
   const region = (regionCandidate ?? parts[parts.length - 1]).toUpperCase();
 
-  if (IMPERIAL_REGIONS.has(region) || lang.toUpperCase() === "EN-US" || lang.toUpperCase() === "EN-GB") {
+  if (
+    IMPERIAL_REGIONS.has(region) ||
+    locale.toUpperCase() === "EN-US" ||
+    locale.toUpperCase() === "EN-GB"
+  ) {
     return "IMPERIAL";
   }
 
@@ -66,11 +65,15 @@ export function getStoredDistanceUnit(): DistanceUnit {
     }
 
     // First visit: Auto-detect and save
-    const detected = detectDefaultDistanceUnit();
+    const userLocale =
+      typeof navigator !== "undefined" ? navigator.language : undefined;
+    const detected = detectDefaultDistanceUnit(userLocale);
     localStorage.setItem(DISTANCE_UNIT_STORAGE_KEY, detected);
     return detected;
   } catch {
-    return detectDefaultDistanceUnit();
+    const userLocale =
+      typeof navigator !== "undefined" ? navigator.language : undefined;
+    return detectDefaultDistanceUnit(userLocale);
   }
 }
 
@@ -81,7 +84,9 @@ export function setStoredDistanceUnit(unit: DistanceUnit): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(DISTANCE_UNIT_STORAGE_KEY, unit);
-    window.dispatchEvent(new CustomEvent("worksphere_distance_unit_change", { detail: unit }));
+    window.dispatchEvent(
+      new CustomEvent("worksphere_distance_unit_change", { detail: unit }),
+    );
   } catch {
     // Ignore storage errors in private browsing
   }
@@ -114,7 +119,9 @@ export function formatDistance(
     return "--";
   }
 
-  const activeUnit = unit ?? (typeof window !== "undefined" ? getStoredDistanceUnit() : "METRIC");
+  const activeUnit =
+    unit ??
+    (typeof window !== "undefined" ? getStoredDistanceUnit() : "METRIC");
   const fractionDigits = options.fractionDigits ?? 1;
   const useSubUnits = options.useSubUnits ?? true;
 
@@ -135,9 +142,21 @@ export function formatDistance(
   return `${distanceKm.toFixed(fractionDigits)} km`;
 }
 
+function formatMinutesDuration(totalMinutes: number): string {
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMins = totalMinutes % 60;
+  if (remainingMins === 0) {
+    return `${hours} hr`;
+  }
+  return `${hours} hr ${remainingMins} min`;
+}
+
 /**
  * Formats walking time badge respecting user's distance unit preference.
- * e.g. "15 min walk · 1.2 km" or "15 min walk · 0.8 mi"
+ * e.g. "15 min walk · 1.2 km", "1 hr 15 min walk · 6 km", or "15 min walk · 0.8 mi"
  */
 export function formatWalkingBadgeWithUnit(
   distanceKm: number,
@@ -155,6 +174,33 @@ export function formatWalkingBadgeWithUnit(
 
   // 4.8 km/h = 0.08 km/min
   const mins = distanceKm <= 0 ? 0 : Math.ceil(distanceKm / 0.08);
+  const formattedTime = formatMinutesDuration(mins);
   const formattedDist = formatDistance(distanceKm, unit);
-  return `${mins} min walk · ${formattedDist}`;
+  return `${formattedTime} walk · ${formattedDist}`;
+}
+
+/**
+ * Formats cycling / bike commute time badge respecting user's distance unit preference.
+ * Estimates urban cycling at 16 km/h (~0.267 km/min).
+ * e.g. "12 min bike · 3.2 km" or "1 hr 15 min bike · 20 km"
+ */
+export function formatCyclingBadgeWithUnit(
+  distanceKm: number,
+  unit?: DistanceUnit,
+): string {
+  if (
+    distanceKm == null ||
+    typeof distanceKm !== "number" ||
+    !Number.isFinite(distanceKm) ||
+    isNaN(distanceKm) ||
+    distanceKm < 0
+  ) {
+    return "--";
+  }
+
+  // 16 km/h = 16 / 60 = ~0.2667 km/min
+  const mins = distanceKm <= 0 ? 0 : Math.ceil(distanceKm / (16 / 60));
+  const formattedTime = formatMinutesDuration(mins);
+  const formattedDist = formatDistance(distanceKm, unit);
+  return `${formattedTime} bike · ${formattedDist}`;
 }

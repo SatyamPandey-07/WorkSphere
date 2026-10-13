@@ -3,10 +3,19 @@
  */
 
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { wrapText } from "./pdf/generateBookingPdf";
 
 export { generateTaxExportPdf } from "./export/domain/taxExporter";
-export { generateBookingItineraryPdf, type BookingItineraryData } from "./export/domain/itineraryExporter";
-export { generateBookingPdf, wrapText, type BookingPdfData, type BookingPdfOptions } from "./pdf/generateBookingPdf";
+export {
+  generateBookingItineraryPdf,
+  type BookingItineraryData,
+} from "./export/domain/itineraryExporter";
+export {
+  generateBookingPdf,
+  wrapText,
+  type BookingPdfData,
+  type BookingPdfOptions,
+} from "./pdf/generateBookingPdf";
 export { PdfDocumentBuilder } from "./export/pdfBuilder";
 
 /**
@@ -32,9 +41,7 @@ export function formatUserAddress(address: any): string {
       .map((p) => p.trim())
       .filter(
         (p) =>
-          p &&
-          p.toLowerCase() !== "null" &&
-          p.toLowerCase() !== "undefined",
+          p && p.toLowerCase() !== "null" && p.toLowerCase() !== "undefined",
       );
 
     return parts.length > 0 ? parts.join(", ") : "No address provided";
@@ -79,21 +86,25 @@ export function formatUserAddress(address: any): string {
       ...rest
     } = address;
 
-    const line1Part = [street, streetAddress, addressLine1, line1].find(
-      (v) =>
-        typeof v === "string" &&
-        v.trim() &&
-        v.trim().toLowerCase() !== "null" &&
-        v.trim().toLowerCase() !== "undefined",
-    )?.trim();
+    const line1Part = [street, streetAddress, addressLine1, line1]
+      .find(
+        (v) =>
+          typeof v === "string" &&
+          v.trim() &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      ?.trim();
 
-    const line2Part = [addressLine2, line2, suite, unit, apt].find(
-      (v) =>
-        typeof v === "string" &&
-        v.trim() &&
-        v.trim().toLowerCase() !== "null" &&
-        v.trim().toLowerCase() !== "undefined",
-    )?.trim();
+    const line2Part = [addressLine2, line2, suite, unit, apt]
+      .find(
+        (v) =>
+          typeof v === "string" &&
+          v.trim() &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      ?.trim();
 
     const cityPart =
       typeof city === "string" &&
@@ -103,21 +114,25 @@ export function formatUserAddress(address: any): string {
         ? city.trim()
         : undefined;
 
-    const statePart = [state, province, region].find(
-      (v) =>
-        typeof v === "string" &&
-        v.trim() &&
-        v.trim().toLowerCase() !== "null" &&
-        v.trim().toLowerCase() !== "undefined",
-    )?.trim();
+    const statePart = [state, province, region]
+      .find(
+        (v) =>
+          typeof v === "string" &&
+          v.trim() &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      ?.trim();
 
-    const zipPart = [postalCode, zipCode, zip, postcode].find(
-      (v) =>
-        typeof v === "string" &&
-        v.trim() &&
-        v.trim().toLowerCase() !== "null" &&
-        v.trim().toLowerCase() !== "undefined",
-    )?.trim();
+    const zipPart = [postalCode, zipCode, zip, postcode]
+      .find(
+        (v) =>
+          typeof v === "string" &&
+          v.trim() &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      ?.trim();
 
     const countryPart =
       typeof country === "string" &&
@@ -329,9 +344,7 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
           city: booking.user.city,
           state: booking.user.state,
           zip:
-            booking.user.zipCode ||
-            booking.user.postalCode ||
-            booking.user.zip,
+            booking.user.zipCode || booking.user.postalCode || booking.user.zip,
           country: booking.user.country,
         }
       : undefined);
@@ -406,9 +419,15 @@ export async function generateGuestListPdf(
   for (const guest of guests.slice(0, 30)) {
     page.drawText(guest.name || "N/A", { x: 50, y: yPosition, size: 9, font });
     const email = guest.email || "N/A";
-    const displayEmail = email.length > 25 ? email.substring(0, 22) + "..." : email;
+    const displayEmail =
+      email.length > 25 ? email.substring(0, 22) + "..." : email;
     page.drawText(displayEmail, { x: 200, y: yPosition, size: 9, font });
-    page.drawText(guest.status || "PENDING", { x: 420, y: yPosition, size: 9, font: boldFont });
+    page.drawText(guest.status || "PENDING", {
+      x: 420,
+      y: yPosition,
+      size: 9,
+      font: boldFont,
+    });
     yPosition -= 20;
     if (yPosition < 50) break;
   }

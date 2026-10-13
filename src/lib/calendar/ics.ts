@@ -145,6 +145,7 @@ export interface ICSOptions {
   description?: string;
   summary?: string;
   location?: string;
+  alarmMinutes?: number;
 }
 
 /**
@@ -170,6 +171,7 @@ export function generateICSContent(
   let timezone = "";
   let customSummary = "";
   let customDescription = "";
+  let alarmMinutes: number | undefined;
 
   if (typeof venueNameOrOptions === "object" && venueNameOrOptions !== null) {
     venueName = venueNameOrOptions.venueName ?? "";
@@ -183,6 +185,7 @@ export function generateICSContent(
     timezone = venueNameOrOptions.timezone ?? "";
     customSummary = venueNameOrOptions.summary ?? "";
     customDescription = venueNameOrOptions.description ?? "";
+    alarmMinutes = venueNameOrOptions.alarmMinutes;
   } else {
     venueName = venueNameOrOptions ?? "";
     address = venueAddress ?? "";
@@ -203,6 +206,7 @@ export function generateICSContent(
       timezone = durationOrOptions.timezone ?? "";
       customSummary = durationOrOptions.summary ?? "";
       customDescription = durationOrOptions.description ?? "";
+      alarmMinutes = durationOrOptions.alarmMinutes;
     }
   }
 
@@ -266,6 +270,15 @@ export function generateICSContent(
     `DESCRIPTION:${description}`,
     `LOCATION:${escapeIcsText(address)}`,
     "STATUS:CONFIRMED",
+    ...(alarmMinutes !== undefined && alarmMinutes > 0
+      ? [
+          "BEGIN:VALARM",
+          `TRIGGER:-PT${alarmMinutes}M`,
+          "ACTION:DISPLAY",
+          `DESCRIPTION:Reminder: ${escapeIcsText(summary)}`,
+          "END:VALARM",
+        ]
+      : []),
     "END:VEVENT",
     "END:VCALENDAR",
   ];

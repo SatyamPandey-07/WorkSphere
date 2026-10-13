@@ -22,6 +22,7 @@ import { StorageQuotaWarningBanner } from "../components/ui/StorageQuotaWarningB
 import { OfflineBanner } from "../components/ui/OfflineBanner";
 import { RateLimitBanner } from "../components/ui/RateLimitBanner";
 import { THEME_INIT_SCRIPT } from "../lib/theme-init-script";
+import { parseAccentColor, type AccentColor } from "../lib/constants/theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -87,13 +88,7 @@ export default async function RootLayout({
       : "light";
 
   const storedAccent = cookieStore.get("worksphere-accent")?.value;
-  const accent: "blue" | "purple" | "emerald" | "amber" =
-    storedAccent === "blue" ||
-    storedAccent === "purple" ||
-    storedAccent === "emerald" ||
-    storedAccent === "amber"
-      ? storedAccent
-      : "blue";
+  const accent: AccentColor = parseAccentColor(storedAccent ?? null);
 
   const appContent = (
     <ThemeProvider initialTheme={theme} initialAccent={accent}>

@@ -18,7 +18,7 @@ import {
   TIER_CONFIGS,
 } from "@/lib/rateLimit";
 import { GET as venueSummaryGET } from "@/app/api/venues/[venueId]/summary/route";
-import { POST as venueTranslatePOST } from "@/app/api/venues/[id]/translate/route";
+import { POST as venueTranslatePOST } from "@/app/api/venues/[venueId]/translate/route";
 import { auth } from "@clerk/nextjs/server";
 
 // Mock Upstash Ratelimit & Redis
@@ -561,7 +561,7 @@ describe("Tier-Based Sliding Window Rate Limiter (#3475)", () => {
       expect(body.error).toBe("Too many requests. Please try again later.");
     });
 
-    it("protects POST /api/venues/[id]/translate with rate limiting", async () => {
+    it("protects POST /api/venues/[venueId]/translate with rate limiting", async () => {
       const ip = "192.0.2.2";
 
       for (let i = 0; i < 10; i++) {
@@ -577,7 +577,7 @@ describe("Tier-Based Sliding Window Rate Limiter (#3475)", () => {
           },
         );
         const res = await venueTranslatePOST(req, {
-          params: Promise.resolve({ id: "venue-123" }),
+          params: Promise.resolve({ venueId: "venue-123" }),
         });
         expect(res.status).toBe(200);
         expect(res.headers.get("X-RateLimit-Limit")).toBe("10");

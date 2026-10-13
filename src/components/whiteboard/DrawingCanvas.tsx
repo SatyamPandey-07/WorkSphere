@@ -62,6 +62,12 @@ export function renderShape(
   ctx.lineJoin = "round";
   ctx.globalAlpha = shape.opacity;
 
+  // Emerald Construct neon glow halo styling (#6186)
+  if (shape.color === "#00FF88" || shape.type === "construct") {
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "#10b981";
+  }
+
   if (shape.type === "pen" || shape.type === "eraser") {
     ctx.beginPath();
     if (smooth) {
@@ -369,7 +375,9 @@ export function DrawingCanvas({
               : [worldX, worldY],
         color:
           toolRef.current === "construct"
-            ? colorRef.current || "#10b981"
+            ? colorRef.current && colorRef.current !== "#000000"
+              ? colorRef.current
+              : "#00FF88"
             : colorRef.current,
         width: strokeWidthRef.current,
         opacity: 1,
@@ -451,7 +459,12 @@ export function DrawingCanvas({
         const shape: ShapeData = {
           id,
           type: finalType,
-          color: colorRef.current,
+          color:
+            finalType === "construct"
+              ? colorRef.current && colorRef.current !== "#000000"
+                ? colorRef.current
+                : "#00FF88"
+              : colorRef.current,
           width: strokeWidthRef.current,
           opacity: 1,
           points: points.slice(),

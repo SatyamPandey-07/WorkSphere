@@ -1176,3 +1176,32 @@ html.high-contrast.dark kbd {
   border: 2px solid #ffffff !important;
   font-weight: 700 !important;
 }
+
+/* Cockpit CRT Phosphor Scanline Overlay (#6293) */
+html.crt-phosphor-overlay body::after,
+html[data-crt-phosphor="true"] body::after {
+  content: "";
+  display: block;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99999;
+  opacity: 0.04;
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.25) 50%
+  ),
+  linear-gradient(
+    90deg,
+    rgba(0, 255, 136, 0.04),
+    rgba(0, 255, 136, 0.01),
+    rgba(0, 255, 136, 0.04)
+  );
+  background-size: 100% 3px, 6px 100%;
+}
+
+.dark.crt-phosphor-overlay,
+.dark[data-crt-phosphor="true"],
+.crt-phosphor-scanlines {
+  position: relative;
+}

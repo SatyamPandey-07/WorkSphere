@@ -297,7 +297,7 @@ export function renderConstructToCanvas(
 
   const bounds = getConstructBounds(shape.points);
   const type = shape.constructType || "shield";
-  const baseColor = shape.color || "#10b981"; // Emerald neon hard-light default
+  const baseColor = shape.color || "#00FF88"; // Emerald neon green hard-light
 
   ctx.save();
   ctx.globalAlpha = shape.opacity ?? 1;
@@ -311,8 +311,8 @@ export function renderConstructToCanvas(
   ctx.lineWidth = Math.max(2, shape.width || 3);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.shadowColor = baseColor;
-  ctx.shadowBlur = 14;
+  ctx.shadowColor = "#10b981";
+  ctx.shadowBlur = 10;
 
   traceConstructPath(ctx, type, bounds);
   ctx.fill();

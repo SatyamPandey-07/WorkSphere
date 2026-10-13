@@ -51,17 +51,12 @@ const TOOLS: { id: ToolType; label: string; icon: string }[] = [
   {
     id: "construct",
     label: "Construct Generator",
-    icon: "M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z",
+    icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-4-8a4 4 0 1 1 8 0 4 4 0 0 1-8 0zm-2-4h12v2H6zm0 6h12v2H6z",
   },
   {
     id: "sticky",
     label: "Sticky Note",
     icon: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z",
-  },
-  {
-    id: "construct",
-    label: "Construct",
-    icon: "M12 2l8 4.5v7c0 5-3.5 9-8 10.5-4.5-1.5-8-5.5-8-10.5v-7L12 2z",
   },
 ];
 
@@ -95,10 +90,11 @@ export function CanvasToolbar({
           type="button"
           data-testid={`tool-${t.id}`}
           title={t.label}
+          aria-label={t.id === "construct" ? "Emerald Construct" : t.label}
           onClick={() => {
             onToolChange(t.id);
-            if (t.id === "construct" && color === "#000000") {
-              onColorChange("#10b981");
+            if (t.id === "construct") {
+              onColorChange("#00FF88");
             }
           }}
           className={`rounded-md p-1.5 transition-colors ${

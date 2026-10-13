@@ -35,8 +35,17 @@ export interface MachVelocityInfo {
  * - >= 500 Mbps: Mach 5.0 Hypersonic with pulsing emerald flames
  */
 export function getMachVelocityInfo(downloadMbps: number): MachVelocityInfo {
-  if (downloadMbps >= 500) {
-    const machValue = Number((5.0 + ((downloadMbps - 500) / 250) * 1.5).toFixed(1));
+  const safeSpeed =
+    typeof downloadMbps === "number" &&
+    !Number.isNaN(downloadMbps) &&
+    downloadMbps > 0
+      ? downloadMbps
+      : 0;
+
+  if (safeSpeed >= 500) {
+    const machValue = Number(
+      (5.0 + ((safeSpeed - 500) / 250) * 1.5).toFixed(1),
+    );
     return {
       machValue,
       tier: "hypersonic",
@@ -48,8 +57,10 @@ export function getMachVelocityInfo(downloadMbps: number): MachVelocityInfo {
     };
   }
 
-  if (downloadMbps >= 250) {
-    const machValue = Number((2.5 + ((downloadMbps - 250) / 250) * 1.2).toFixed(1));
+  if (safeSpeed >= 250) {
+    const machValue = Number(
+      (2.5 + ((safeSpeed - 250) / 250) * 1.2).toFixed(1),
+    );
     return {
       machValue,
       tier: "supersonic",
@@ -61,8 +72,10 @@ export function getMachVelocityInfo(downloadMbps: number): MachVelocityInfo {
     };
   }
 
-  if (downloadMbps >= 100) {
-    const machValue = Number((1.2 + ((downloadMbps - 100) / 150) * 0.8).toFixed(1));
+  if (safeSpeed >= 100) {
+    const machValue = Number(
+      (1.2 + ((safeSpeed - 100) / 150) * 0.8).toFixed(1),
+    );
     return {
       machValue,
       tier: "turbo",
@@ -74,9 +87,9 @@ export function getMachVelocityInfo(downloadMbps: number): MachVelocityInfo {
   }
 
   return {
-    machValue: Number((downloadMbps / 100).toFixed(2)),
+    machValue: Number((safeSpeed / 100).toFixed(2)),
     tier: "subsonic",
-    tierLabel: `${downloadMbps} Mbps`,
+    tierLabel: `${safeSpeed} Mbps`,
     badgeStyle: "bg-zinc-800/80 border-zinc-700 text-zinc-300",
     iconColor: "text-zinc-400",
     glowEffect: "",
@@ -101,15 +114,22 @@ export function NetworkSpeedBadge({
   const isHypersonic = velocity.tier === "hypersonic";
   const isSupersonic = velocity.tier === "supersonic";
 
-  const computedUpload = uploadMbps ?? Math.round(downloadMbps * 0.4);
-  const computedPing = pingMs ?? (downloadMbps >= 250 ? 12 : 28);
+  const safeDownload =
+    typeof downloadMbps === "number" &&
+    !Number.isNaN(downloadMbps) &&
+    downloadMbps > 0
+      ? downloadMbps
+      : 0;
+  const computedUpload = uploadMbps ?? Math.round(safeDownload * 0.4);
+  const computedPing = pingMs ?? (safeDownload >= 250 ? 12 : 28);
 
-  const tooltipText = `Download: ${downloadMbps} Mbps • Upload: ${computedUpload} Mbps • Latency: ${computedPing}ms`;
+  const tooltipText = `Download: ${safeDownload} Mbps • Upload: ${computedUpload} Mbps • Latency: ${computedPing}ms`;
 
   return (
     <div className="relative inline-flex items-center">
       <div
         role="status"
+        data-testid="network-speed-badge"
         aria-label={`${velocity.tierLabel}: ${tooltipText}`}
         tabIndex={0}
         onMouseEnter={() => setShowTooltip(true)}
@@ -120,9 +140,13 @@ export function NetworkSpeedBadge({
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-mono font-bold cursor-help transition-all duration-200 select-none ${velocity.badgeStyle} ${className}`}
       >
         {isHypersonic ? (
-          <Flame className={`w-3.5 h-3.5 ${velocity.iconColor} ${velocity.glowEffect}`} />
+          <Flame
+            className={`w-3.5 h-3.5 ${velocity.iconColor} ${velocity.glowEffect}`}
+          />
         ) : isSupersonic ? (
-          <Zap className={`w-3.5 h-3.5 ${velocity.iconColor} ${velocity.glowEffect}`} />
+          <Zap
+            className={`w-3.5 h-3.5 ${velocity.iconColor} ${velocity.glowEffect}`}
+          />
         ) : velocity.tier === "turbo" ? (
           <Gauge className={`w-3.5 h-3.5 ${velocity.iconColor}`} />
         ) : (
@@ -136,6 +160,7 @@ export function NetworkSpeedBadge({
       {showTooltip && (
         <div
           role="tooltip"
+          data-testid="network-speed-tooltip"
           aria-live="polite"
           className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 px-3 py-2 text-xs font-mono rounded-xl bg-zinc-950/95 border border-emerald-500/30 text-zinc-100 shadow-2xl shadow-emerald-950/60 whitespace-nowrap animate-in fade-in zoom-in-95"
         >
@@ -144,9 +169,17 @@ export function NetworkSpeedBadge({
             <span>{velocity.tier.toUpperCase()} VELOCITY</span>
           </div>
           <div className="space-y-0.5 text-[11px] text-zinc-300">
-            <div>⬇️ Download: <strong className="text-white">{downloadMbps} Mbps</strong></div>
-            <div>⬆️ Upload: <strong className="text-white">{computedUpload} Mbps</strong></div>
-            <div>⏱️ Ping: <strong className="text-white">{computedPing} ms</strong></div>
+            <div>
+              ⬇️ Download:{" "}
+              <strong className="text-white">{downloadMbps} Mbps</strong>
+            </div>
+            <div>
+              ⬆️ Upload:{" "}
+              <strong className="text-white">{computedUpload} Mbps</strong>
+            </div>
+            <div>
+              ⏱️ Ping: <strong className="text-white">{computedPing} ms</strong>
+            </div>
           </div>
           <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-zinc-950 border-r border-b border-emerald-500/30" />
         </div>

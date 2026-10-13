@@ -133,23 +133,76 @@ export function getHighContrastIcon(shape: HighContrastShape): L.DivIcon {
   return cachedHighContrastCircleIcon;
 }
 
+export interface UserLocationIconOptions {
+  /** Enable 360° rotating radar sweep line around the user position (#6183) */
+  enableRadarSweep?: boolean;
+  /** Radar search radius diameter in pixels. Default: 160 */
+  radarRadius?: number;
+  /** Duration of 1 full 360° revolution in seconds. Default: 4 */
+  durationSeconds?: number;
+  /** Force reduced motion mode (switches from rotating sweep to static radius ring) */
+  reducedMotion?: boolean;
+}
+
 /**
- * Returns user location marker icon.
+ * Returns user location marker icon with optional rotating radar sweep effect (#6183).
  */
-export function getUserLocationIcon(iconUrl?: string | null): L.DivIcon {
+export function getUserLocationIcon(
+  iconUrl?: string | null,
+  options?: UserLocationIconOptions,
+): L.DivIcon {
   if (typeof window === "undefined" || !L?.divIcon) {
     return getVenueIcon();
   }
-  const html =
+
+  const baseDotHtml =
     iconUrl && iconUrl !== "default"
       ? `<div class="image-marker" style="background-image: url(${iconUrl})" width="40" height="40"></div>`
       : `<div class="default-dot-marker" width="20" height="20"></div>`;
 
+  if (options?.enableRadarSweep === false) {
+    return L.divIcon({
+      className: "custom-user-marker",
+      html: baseDotHtml,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+    });
+  }
+
+  const radius = options?.radarRadius ?? 160;
+  const duration = options?.durationSeconds ?? 4;
+  const isReduced = Boolean(options?.reducedMotion);
+
+  const sweepOrStatic = isReduced
+    ? `<div class="radar-static-ring" style="position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(0, 255, 136, 0.8); box-shadow: 0 0 12px rgba(0, 255, 136, 0.35);"></div>`
+    : `<div class="radar-sweep-beam animate-radar-sweep" style="animation-duration: ${duration}s;"></div>`;
+
+  const pingAura = !isReduced
+    ? `<div class="radar-ping-aura"></div>`
+    : "";
+
+  const html = `
+    <div class="radar-sweep-marker-wrapper" style="width: ${radius}px; height: ${radius}px;" data-reduced-motion="${isReduced}">
+      <div class="radar-range-rings" aria-hidden="true">
+        <div class="radar-ring radar-ring-outer"></div>
+        <div class="radar-ring radar-ring-mid"></div>
+        <div class="radar-ring radar-ring-inner"></div>
+        <div class="radar-crosshair radar-crosshair-h"></div>
+        <div class="radar-crosshair radar-crosshair-v"></div>
+      </div>
+      ${sweepOrStatic}
+      <div class="radar-center-beacon">
+        ${baseDotHtml}
+        ${pingAura}
+      </div>
+    </div>
+  `;
+
   return L.divIcon({
     className: "custom-user-marker",
     html,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
+    iconSize: [radius, radius],
+    iconAnchor: [radius / 2, radius / 2],
   });
 }
 
@@ -327,5 +380,8 @@ export const MapMarkerFactory = memo(function MapMarkerFactory({
     </>
   );
 });
+
+export { RadarSweepLayer } from "./RadarSweepLayer";
+export type { RadarSweepLayerProps, RadarVenueTarget } from "./RadarSweepLayer";
 
 export default MapMarkerFactory;

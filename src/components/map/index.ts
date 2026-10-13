@@ -9,3 +9,6 @@ export { default as useMapRealtimeSync } from "./useMapRealtimeSync";
 
 export * from "./TacticalAirspaceMap";
 export { default as TacticalAirspaceMap } from "./TacticalAirspaceMap";
+
+export * from "./RadarSweepLayer";
+export { default as RadarSweepLayer } from "./RadarSweepLayer";

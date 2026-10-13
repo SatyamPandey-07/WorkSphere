@@ -21,7 +21,11 @@ import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import { Contrast } from "lucide-react";
 import { formatDistance } from "@/lib/geo/formatDistance";
-import { MapMarkerFactory, SEAT_RING_COLORS } from "./map/MapMarkerFactory";
+import {
+  MapMarkerFactory,
+  SEAT_RING_COLORS,
+  getUserLocationIcon,
+} from "./map/MapMarkerFactory";
 import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
 
@@ -30,6 +34,8 @@ export {
   getHighContrastIcon,
   getVenueIcon,
   getDestinationIcon,
+  getUserLocationIcon,
+  RadarSweepLayer,
   SEAT_RING_COLORS,
 } from "./map/MapMarkerFactory";
 
@@ -583,6 +589,8 @@ export interface MapProps {
   onHighContrastChange?: (enabled: boolean) => void;
   onViewportChange?: (bounds: MapViewportBounds) => void;
   enableClustering?: boolean;
+  enableRadarSweep?: boolean;
+  radarRadius?: number;
 }
 
 const Map = ({
@@ -596,6 +604,8 @@ const Map = ({
   onHighContrastChange,
   onViewportChange,
   enableClustering = true,
+  enableRadarSweep = true,
+  radarRadius = 160,
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -964,23 +974,13 @@ const Map = ({
     return null;
   }, [clerkUser.isLoaded, clerkUser.user]);
 
-  // Derive customIcon from iconUrl
+  // Derive customIcon from iconUrl with rotating radar sweep effect (#6183)
   const customIcon = useMemo(() => {
-    let html: string;
-
-    if (iconUrl && iconUrl !== "default") {
-      html = `<div class="image-marker" style="background-image: url(${iconUrl})" width="40" height="40"></div>`;
-    } else {
-      html = `<div class="default-dot-marker" width="20" height="20"></div>`;
-    }
-
-    return L.divIcon({
-      className: "custom-user-marker",
-      html: html,
-      iconSize: [40, 40],
-      iconAnchor: [20, 20],
+    return getUserLocationIcon(iconUrl, {
+      enableRadarSweep,
+      radarRadius,
     });
-  }, [iconUrl]);
+  }, [iconUrl, enableRadarSweep, radarRadius]);
 
   // Memoize the rendered CircleMarker JSX to prevent unnecessary SVG re-renders
   // and micro-flickering on every Map.tsx update (e.g. cursor socket events)
@@ -1481,6 +1481,13 @@ const Map = ({
           <LayersControl.Overlay
             name="High-Contrast Mode"
             checked={isHighContrast}
+          >
+            <LayerGroup />
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay
+            name="Radar Search Radius (Sweep)"
+            checked={enableRadarSweep}
           >
             <LayerGroup />
           </LayersControl.Overlay>

@@ -1280,4 +1280,134 @@ html[data-hud-cursor="true"] [role="switch"] {
     filter: drop-shadow(0 0 8px rgba(0, 255, 136, 0.8));
     transform: none;
   }
-}
+}
+
+/* =========================================================================
+   ROTATING RADAR SWEEP EFFECT ON VENUEMAP (#6183)
+   ========================================================================= */
+
+@keyframes radar-sweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-radar-sweep {
+  animation: radar-sweep 4s linear infinite;
+  will-change: transform;
+  transform-origin: center center;
+}
+
+.radar-sweep-marker-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.radar-range-rings {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.radar-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px dashed rgba(0, 255, 136, 0.25);
+  box-sizing: border-box;
+}
+
+.radar-ring-outer {
+  inset: 0;
+  border: 1.5px solid rgba(0, 255, 136, 0.45);
+  box-shadow: 0 0 14px rgba(0, 255, 136, 0.2), inset 0 0 14px rgba(0, 255, 136, 0.08);
+}
+
+.radar-ring-mid {
+  inset: 22%;
+}
+
+.radar-ring-inner {
+  inset: 44%;
+}
+
+.radar-crosshair {
+  position: absolute;
+  background-color: rgba(0, 255, 136, 0.25);
+}
+
+.radar-crosshair-h {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.radar-crosshair-v {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.radar-sweep-beam {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(0, 255, 136, 0) 0deg,
+    rgba(0, 255, 136, 0) 270deg,
+    rgba(0, 255, 136, 0.04) 300deg,
+    rgba(0, 255, 136, 0.12) 330deg,
+    rgba(0, 255, 136, 0.35) 358deg,
+    rgba(0, 255, 136, 0.95) 360deg
+  );
+  filter: drop-shadow(0 0 6px rgba(0, 255, 136, 0.5));
+  pointer-events: none;
+  transform-origin: center center;
+}
+
+.radar-center-beacon {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.radar-ping-aura {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 255, 136, 0.6);
+  animation: ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-radar-sweep {
+    animation: none !important;
+  }
+  .radar-sweep-beam {
+    display: none !important;
+  }
+  .radar-ping-aura {
+    animation: none !important;
+    display: none !important;
+  }
+  .radar-ring-outer {
+    border: 2px solid rgba(0, 255, 136, 0.6) !important;
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.3) !important;
+  }
+}
+

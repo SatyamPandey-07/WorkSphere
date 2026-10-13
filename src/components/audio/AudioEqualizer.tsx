@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import type { CSSProperties } from "react";
 import {
   Play,
   Pause,
@@ -827,32 +828,70 @@ export function AudioEqualizer({
         </div>
 
         <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center">
-          {EQ_BAND_LABELS.map((label, idx) => (
-            <div
-              key={label}
-              className="flex flex-col items-center justify-between gap-1 sm:gap-1.5 min-w-0"
-            >
-              <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 whitespace-nowrap">
-                {label}
-              </span>
-              <input
-                type="range"
-                min="-20"
-                max="20"
-                step="0.5"
-                aria-label={`${label} Gain`}
-                value={bandGains[idx]}
-                onChange={(e) =>
-                  handleBandGainChange(idx, parseFloat(e.target.value))
-                }
-                className="w-full h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
-              />
-              <span className="text-[8px] sm:text-[9px] font-mono text-indigo-400 whitespace-nowrap">
-                {bandGains[idx] > 0 ? `+${bandGains[idx]}` : bandGains[idx]} dB
-              </span>
-            </div>
-          ))}
+          {EQ_BAND_LABELS.map((label, idx) => {
+            const gain = bandGains[idx] ?? 0;
+            const intensity = Math.min(1, Math.abs(gain) / 12);
+            const energyStyle = {
+              "--energy-glow": `${4 + intensity * 16}px`,
+            } as CSSProperties;
+            const levelStyle = {
+              height: `${(Math.min(Math.abs(gain), 20) / 40) * 100}%`,
+              opacity: 0.2 + intensity * 0.8,
+              boxShadow: `0 0 ${4 + intensity * 18}px rgba(74, 222, 128, ${0.2 + intensity * 0.6})`,
+            };
+
+            return (
+              <div
+                key={label}
+                className="flex min-w-0 flex-col items-center justify-between gap-1 sm:gap-1.5"
+              >
+                <span className="whitespace-nowrap font-mono text-[9px] text-zinc-400 sm:text-[10px]">
+                  {label}
+                </span>
+                <div
+                  className="relative flex h-28 w-10 items-center justify-center"
+                  style={energyStyle}
+                >
+                  <div className="pointer-events-none absolute inset-y-1 left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-emerald-950/80 shadow-[0_0_8px_rgba(34,197,94,0.12)]">
+                    <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-emerald-200/60 shadow-[0_0_5px_rgba(134,239,172,0.8)]" />
+                    {gain >= 0 ? (
+                      <div
+                        className="absolute inset-x-0 bottom-1/2 rounded-t-full bg-gradient-to-t from-emerald-500/70 to-lime-200 transition-[height,opacity,box-shadow] duration-150"
+                        style={levelStyle}
+                      />
+                    ) : (
+                      <div
+                        className="absolute inset-x-0 top-1/2 rounded-b-full bg-gradient-to-b from-emerald-500/70 to-lime-200 transition-[height,opacity,box-shadow] duration-150"
+                        style={levelStyle}
+                      />
+                    )}
+                  </div>
+                  <input
+                    type="range"
+                    min="-20"
+                    max="20"
+                    step="0.5"
+                    aria-label={`${label} Gain`}
+                    aria-valuetext={`${gain > 0 ? "plus " : gain < 0 ? "minus " : ""}${Math.abs(gain)} decibels`}
+                    aria-describedby="eq-slider-instructions"
+                    value={gain}
+                    onChange={(e) =>
+                      handleBandGainChange(idx, parseFloat(e.target.value))
+                    }
+                    className="audio-eq-energy-slider"
+                    style={energyStyle}
+                  />
+                </div>
+                <span className="whitespace-nowrap font-mono text-[8px] text-emerald-300 sm:text-[9px]">
+                  {gain > 0 ? `+${gain}` : gain} dB
+                </span>
+              </div>
+            );
+          })}
         </div>
+        <span id="eq-slider-instructions" className="sr-only">
+          Use the arrow keys to adjust gain in 0.5 decibel steps, from minus 20 to plus 20 decibels.
+        </span>
       </div>
 
       {reducedMotion && (

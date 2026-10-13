@@ -2,6 +2,71 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@layer components {
+  .audio-eq-energy-slider {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 7rem;
+    height: 2rem;
+    margin: 0;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .audio-eq-energy-slider::-webkit-slider-runnable-track {
+    height: 5px;
+    border: 1px solid rgb(52 211 153 / 35%);
+    border-radius: 9999px;
+    background: linear-gradient(90deg, rgb(6 78 59 / 75%), rgb(16 185 129 / 45%), rgb(6 78 59 / 75%));
+  }
+
+  .audio-eq-energy-slider::-moz-range-track {
+    height: 5px;
+    border: 1px solid rgb(52 211 153 / 35%);
+    border-radius: 9999px;
+    background: linear-gradient(90deg, rgb(6 78 59 / 75%), rgb(16 185 129 / 45%), rgb(6 78 59 / 75%));
+  }
+
+  .audio-eq-energy-slider::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;
+    appearance: none;
+    border: 2px solid rgb(187 247 208);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgb(236 253 245) 0 20%, rgb(34 197 94) 45%, rgb(6 78 59) 100%);
+    box-shadow: 0 0 var(--energy-glow, 8px) rgb(74 222 128 / 85%), inset 0 0 5px rgb(220 252 231 / 80%);
+    transition: box-shadow 150ms ease;
+  }
+
+  .audio-eq-energy-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgb(187 247 208);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgb(236 253 245) 0 20%, rgb(34 197 94) 45%, rgb(6 78 59) 100%);
+    box-shadow: 0 0 var(--energy-glow, 8px) rgb(74 222 128 / 85%), inset 0 0 5px rgb(220 252 231 / 80%);
+    transition: box-shadow 150ms ease;
+  }
+
+  .audio-eq-energy-slider:focus-visible {
+    outline: 2px solid rgb(187 247 208);
+    outline-offset: 4px;
+    border-radius: 9999px;
+  }
+
+  .audio-eq-energy-slider:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px rgb(3 7 18), 0 0 0 5px rgb(187 247 208), 0 0 var(--energy-glow, 8px) rgb(74 222 128 / 95%);
+  }
+
+  .audio-eq-energy-slider:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px rgb(3 7 18), 0 0 0 5px rgb(187 247 208), 0 0 var(--energy-glow, 8px) rgb(74 222 128 / 95%);
+  }
+}
+
 @layer utilities {
   .glass-card {
     @apply bg-white border border-zinc-200 shadow-xl;
@@ -815,5 +880,3 @@ html.high-contrast.dark kbd {
   border: 2px solid #ffffff !important;
   font-weight: 700 !important;
 }
-
-

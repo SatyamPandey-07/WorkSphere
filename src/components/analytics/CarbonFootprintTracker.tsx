@@ -24,8 +24,10 @@ import {
   CommuteMode,
   safeParseDistance,
 } from "@/lib/sustainability/carbonEngine";
+import { LanternPowerRing } from "./LanternPowerRing";
 
 export default function CarbonFootprintTracker() {
+
   const [summary, setSummary] = useState<CarbonFootprintSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -170,26 +172,46 @@ export default function CarbonFootprintTracker() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            <button
-              onClick={handleExportCSV}
-              disabled={!summary?.records.length}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-500/40 bg-slate-900/70 hover:bg-slate-800 text-emerald-200 text-xs font-bold transition disabled:opacity-50"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              Export CSV
-            </button>
-            <button
-              onClick={handleExportESG}
-              disabled={exporting || !summary}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 transition disabled:opacity-50"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              {exporting ? "Generating..." : "Export Scope 3 ESG CSV"}
-            </button>
+          <div className="flex flex-col sm:flex-row items-center gap-4 shrink-0">
+            {/* Green Lantern Willpower Power Ring Widget */}
+            <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-emerald-950/30 border border-emerald-500/20 backdrop-blur-md">
+              <LanternPowerRing
+                size="md"
+                tooltipPlacement="bottom"
+                data-testid="carbon-lantern-power-ring"
+              />
+              <div className="text-left pr-1">
+                <span className="block text-[10px] font-mono font-semibold uppercase text-emerald-400/80 tracking-wider">
+                  Willpower Ring
+                </span>
+                <span className="text-xs font-bold text-white">
+                  Battery Status
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleExportCSV}
+                disabled={!summary?.records.length}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-500/40 bg-slate-900/70 hover:bg-slate-800 text-emerald-200 text-xs font-bold transition disabled:opacity-50"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Export CSV
+              </button>
+              <button
+                onClick={handleExportESG}
+                disabled={exporting || !summary}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 transition disabled:opacity-50"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                {exporting ? "Generating..." : "Export Scope 3 ESG CSV"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
 
       {/* API / Connectivity Error Banner */}
       {error && !loading && (

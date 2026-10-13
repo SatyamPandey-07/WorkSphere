@@ -1250,9 +1250,34 @@ html[data-hud-cursor="true"] [role="switch"] {
   animation: ring-pulse 1.8s ease-out infinite;
 }
 
+/* Green Lantern Ring 100% Full Charge Flash Animation */
+@keyframes ring-flash {
+  0% {
+    filter: drop-shadow(0 0 6px rgba(0, 255, 136, 0.6));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 20px rgba(0, 255, 136, 1)) drop-shadow(0 0 30px rgba(255, 255, 255, 0.9));
+    transform: scale(1.06);
+  }
+  100% {
+    filter: drop-shadow(0 0 8px rgba(0, 255, 136, 0.7));
+    transform: scale(1);
+  }
+}
+
+.animate-ring-flash {
+  animation: ring-flash 1.2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-ring-pulse {
     animation: none;
     box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.5);
   }
-}
+  .animate-ring-flash {
+    animation: none;
+    filter: drop-shadow(0 0 8px rgba(0, 255, 136, 0.8));
+    transform: none;
+  }
+}

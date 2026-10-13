@@ -44,7 +44,9 @@ describe("CopyToClipboardButton", () => {
       },
     });
 
-    render(<CopyToClipboardButton textToCopy="456 Elm St, San Francisco, CA" />);
+    render(
+      <CopyToClipboardButton textToCopy="456 Elm St, San Francisco, CA" />,
+    );
 
     const button = screen.getByRole("button", { name: /copy to clipboard/i });
     await act(async () => {
@@ -175,6 +177,60 @@ describe("CopyToClipboardButton", () => {
       fireEvent.click(button);
     });
 
-    expect(screen.getByRole("status")).toHaveTextContent("Venue address saved!");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Venue address saved!",
+    );
+  });
+
+  it("calls onCopy callback when copy succeeds", async () => {
+    const mockWriteText = jest.fn().mockResolvedValue(undefined);
+    const onCopySpy = jest.fn();
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: mockWriteText,
+      },
+    });
+
+    render(
+      <CopyToClipboardButton
+        textToCopy="Target Clipboard Value"
+        onCopy={onCopySpy}
+      />,
+    );
+
+    const button = screen.getByTestId("copy-to-clipboard-button");
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(onCopySpy).toHaveBeenCalledWith("Target Clipboard Value");
+  });
+
+  it("does not trigger copy when button is disabled", async () => {
+    const mockWriteText = jest.fn().mockResolvedValue(undefined);
+    const onCopySpy = jest.fn();
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: mockWriteText,
+      },
+    });
+
+    render(
+      <CopyToClipboardButton
+        textToCopy="Disabled Value"
+        disabled={true}
+        onCopy={onCopySpy}
+      />,
+    );
+
+    const button = screen.getByTestId("copy-to-clipboard-button");
+    expect(button).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(button);
+    });
+
+    expect(mockWriteText).not.toHaveBeenCalled();
+    expect(onCopySpy).not.toHaveBeenCalled();
   });
 });

@@ -3,14 +3,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   Volume2,
-  VolumeX,
-  Activity,
   Mic,
   Square,
-  Sparkles,
-  Info,
   Radio,
-  Sliders,
 } from "lucide-react";
 import {
   analyzeFrequencyBands,
@@ -53,6 +48,10 @@ export function AmbientNoiseSpectrumVisualizer({
   });
 
   const [frequencySpectrum, setFrequencySpectrum] = useState<FrequencyBandSpectrum | null>(null);
+  const radarCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const barsRef = useRef(bars);
+  const peaksRef = useRef(peaks);
+  const currentDbRef = useRef(currentDb);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -242,14 +241,6 @@ export function AmbientNoiseSpectrumVisualizer({
     };
   }, [stopLiveMic]);
 
-  // Color generator for spectrum frequency bands (Violet -> Emerald -> Amber -> Cyan -> Rose)
-  const getBarColor = (index: number) => {
-    if (index < 6) return "from-purple-500 to-indigo-500 shadow-purple-500/20"; // Bass / Low (20-250Hz)
-    if (index < 14) return "from-emerald-400 to-teal-500 shadow-teal-500/20"; // Mid Speech (250-2000Hz)
-    if (index < 19) return "from-amber-400 to-orange-500 shadow-amber-500/20"; // High-Mid (2k-4kHz)
-    return "from-cyan-400 to-rose-500 shadow-rose-500/20"; // Presence / Clatter (4k-16kHz)
-  };
-
   const getNoiseStatusLabel = (db: number) => {
     if (db < 45) return { label: "Deep Focus (Quiet)", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" };
     if (db <= 62) return { label: "Gentle Ambience (Moderate)", color: "text-teal-400 bg-teal-500/10 border-teal-500/30" };
@@ -258,6 +249,174 @@ export function AmbientNoiseSpectrumVisualizer({
   };
 
   const status = getNoiseStatusLabel(currentDb);
+  barsRef.current = bars;
+  peaksRef.current = peaks;
+  currentDbRef.current = currentDb;
+
+  useEffect(() => {
+    const canvas = radarCanvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+
+    let frameId = 0;
+    let lastFrameTime = 0;
+    let width = 0;
+    let height = 0;
+    let pixelRatio = 1;
+    const resizeObserver = new ResizeObserver(() => {
+      const bounds = canvas.getBoundingClientRect();
+      width = bounds.width;
+      height = bounds.height;
+      pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+      canvas.width = Math.max(1, Math.round(width * pixelRatio));
+      canvas.height = Math.max(1, Math.round(height * pixelRatio));
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    });
+    resizeObserver.observe(canvas);
+
+    const drawRadar = (now: number) => {
+      frameId = requestAnimationFrame(drawRadar);
+      if (now - lastFrameTime < 1000 / 60) return;
+      lastFrameTime = now;
+      if (width <= 0 || height <= 0) return;
+
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.max(1, Math.min(width, height) * 0.39);
+      const ringLevels = [
+        { db: 40, fraction: 0.34 },
+        { db: 60, fraction: 0.67 },
+        { db: 80, fraction: 1 },
+      ];
+      const barsNow = barsRef.current;
+      const peaksNow = peaksRef.current;
+      const dbNow = currentDbRef.current;
+
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = "rgba(2, 12, 9, 0.94)";
+      context.fillRect(0, 0, width, height);
+
+      const background = context.createRadialGradient(
+        centerX,
+        centerY,
+        radius * 0.05,
+        centerX,
+        centerY,
+        radius * 1.2,
+      );
+      background.addColorStop(0, "rgba(13, 68, 44, 0.38)");
+      background.addColorStop(1, "rgba(1, 10, 8, 0.05)");
+      context.fillStyle = background;
+      context.fillRect(0, 0, width, height);
+
+      context.save();
+      context.translate(centerX, centerY);
+      context.lineWidth = 1;
+      context.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+
+      for (const ring of ringLevels) {
+        const ringRadius = radius * ring.fraction;
+        context.beginPath();
+        context.arc(0, 0, ringRadius, 0, Math.PI * 2);
+        context.strokeStyle = "rgba(74, 222, 128, 0.35)";
+        context.setLineDash(ring.db === 60 ? [] : [3, 5]);
+        context.stroke();
+        context.setLineDash([]);
+        context.fillStyle = "rgba(167, 243, 208, 0.78)";
+        context.fillText(`${ring.db} dB`, -ringRadius + 5, -4);
+      }
+
+      context.strokeStyle = "rgba(74, 222, 128, 0.13)";
+      for (let spoke = 0; spoke < 12; spoke++) {
+        const angle = (spoke / 12) * Math.PI * 2 - Math.PI / 2;
+        context.beginPath();
+        context.moveTo(0, 0);
+        context.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+        context.stroke();
+      }
+
+      const measuredRadius =
+        radius *
+        (0.34 + ((Math.min(80, Math.max(40, dbNow)) - 40) / 40) * 0.66);
+      context.beginPath();
+      context.arc(0, 0, measuredRadius, 0, Math.PI * 2);
+      context.strokeStyle = "rgba(134, 239, 172, 0.28)";
+      context.setLineDash([2, 4]);
+      context.stroke();
+      context.setLineDash([]);
+
+      const sweepAngle = (now / 4200) % (Math.PI * 2);
+      const sweep = context.createLinearGradient(
+        0,
+        0,
+        Math.cos(sweepAngle) * radius,
+        Math.sin(sweepAngle) * radius,
+      );
+      sweep.addColorStop(0, "rgba(74, 222, 128, 0.02)");
+      sweep.addColorStop(1, "rgba(74, 222, 128, 0.72)");
+      context.beginPath();
+      context.moveTo(0, 0);
+      context.lineTo(Math.cos(sweepAngle) * radius, Math.sin(sweepAngle) * radius);
+      context.strokeStyle = sweep;
+      context.lineWidth = 1.5;
+      context.stroke();
+
+      barsNow.forEach((level, index) => {
+        const angle = (index / barsNow.length) * Math.PI * 2 - Math.PI / 2;
+        const innerRadius = radius * 0.12;
+        const normalizedLevel = normalizeFrequencyGain(level) / 100;
+        const outerRadius = innerRadius + normalizedLevel * radius * 0.82;
+        const hue = 112 + (index / barsNow.length) * 30;
+        context.beginPath();
+        context.moveTo(Math.cos(angle) * innerRadius, Math.sin(angle) * innerRadius);
+        context.lineTo(Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
+        context.strokeStyle = `hsla(${hue}, 95%, ${52 + normalizedLevel * 22}%, ${0.48 + normalizedLevel * 0.5})`;
+        context.lineWidth = Math.max(2, (Math.PI * radius * 1.35) / barsNow.length);
+        context.lineCap = "round";
+        context.shadowColor = "rgba(74, 222, 128, 0.85)";
+        context.shadowBlur = 4 + normalizedLevel * 12;
+        context.stroke();
+        const peakRadius =
+          innerRadius + (normalizeFrequencyGain(peaksNow[index] ?? level) / 100) * radius * 0.82;
+        context.beginPath();
+        context.arc(
+          Math.cos(angle) * peakRadius,
+          Math.sin(angle) * peakRadius,
+          1.6,
+          0,
+          Math.PI * 2,
+        );
+        context.fillStyle = "rgba(209, 250, 229, 0.9)";
+        context.fill();
+      });
+      context.shadowBlur = 0;
+
+      context.strokeStyle = "rgba(187, 247, 208, 0.9)";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(-9, 0);
+      context.lineTo(9, 0);
+      context.moveTo(0, -9);
+      context.lineTo(0, 9);
+      context.stroke();
+      context.beginPath();
+      context.arc(0, 0, 3, 0, Math.PI * 2);
+      context.fillStyle = "#bbf7d0";
+      context.fill();
+      context.restore();
+
+      context.textAlign = "center";
+      context.fillStyle = "rgba(167, 243, 208, 0.86)";
+      context.font = "bold 10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      context.fillText(`${dbNow} dBA`, centerX, centerY + radius * 0.16);
+    };
+
+    frameId = requestAnimationFrame(drawRadar);
+    return () => {
+      cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   return (
     <div
@@ -351,51 +510,27 @@ export function AmbientNoiseSpectrumVisualizer({
         )}
       </div>
 
-      {/* 24-Band Frequency Bars Visualizer Canvas / Grid */}
-      <div
-        aria-label="Noise Frequency Spectrum Bars"
-        role="img"
-        className="relative h-32 sm:h-36 w-full bg-black/50 border border-zinc-800/80 rounded-xl p-3 flex items-end justify-between gap-1 overflow-hidden"
-      >
-        {/* Background Decibel Reference Grid Lines */}
-        <div className="absolute inset-x-0 top-[25%] border-b border-white/5 pointer-events-none" />
-        <div className="absolute inset-x-0 top-[50%] border-b border-white/5 pointer-events-none" />
-        <div className="absolute inset-x-0 top-[75%] border-b border-white/5 pointer-events-none" />
-
-        {bars.map((height, i) => {
-          const clampedHeight = normalizeFrequencyGain(height);
-          const peakHeight = normalizeFrequencyGain(peaks[i] || height);
-          const bgGradient = getBarColor(i);
-
-          return (
-            <div
-              key={`freq-bar-${i}`}
-              className="relative flex-1 h-full flex items-end justify-center group"
-            >
-              {/* Peak indicator tick */}
-              <div
-                className="absolute w-full h-1 bg-white/90 rounded-xs shadow-xs transition-all duration-150 pointer-events-none"
-                style={{ bottom: `${Math.min(98, peakHeight)}%` }}
-              />
-
-              {/* Dynamic Frequency Bar */}
-              <div
-                className={`w-full max-w-[12px] bg-gradient-to-t ${bgGradient} rounded-t-sm transition-all duration-100 ease-out`}
-                style={{ height: `${clampedHeight}%` }}
-              />
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Frequency Labels Scale */}
-      <div className="flex justify-between items-center px-1 pt-2 text-[9px] font-mono text-zinc-500 uppercase tracking-tighter select-none">
-        <span>32Hz</span>
-        <span>125Hz</span>
-        <span>500Hz</span>
-        <span>2kHz</span>
-        <span>8kHz</span>
-        <span>16kHz</span>
+      {/* Circular acoustic radar canvas */}
+      <div className="relative flex h-64 w-full items-center justify-center overflow-hidden rounded-xl border border-emerald-500/20 bg-[#020c09] sm:h-80">
+        <canvas
+          ref={radarCanvasRef}
+          role="img"
+          aria-label={`360-degree ambient noise radar. ${currentDb} decibels A-weighted. ${status.label}. Concentric reference rings at 40, 60, and 80 decibels.`}
+          className="h-full w-full"
+        />
+        <div className="pointer-events-none absolute inset-x-3 top-3 flex items-center justify-between">
+          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-200/70">
+            360° Acoustic Radar
+          </span>
+          <span className={`rounded-md border px-2 py-1 text-[10px] font-bold ${status.color}`}>
+            {status.label}
+          </span>
+        </div>
+        <div className="pointer-events-none absolute inset-x-3 bottom-2 flex justify-between font-mono text-[9px] uppercase tracking-wider text-emerald-100/45">
+          <span>Low · 32 Hz</span>
+          <span>Mid · 1 kHz</span>
+          <span>High · 16 kHz</span>
+        </div>
       </div>
 
       {/* 3-Band Acoustic Distribution Summary */}

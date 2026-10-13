@@ -34,6 +34,360 @@ interface RouteLatencyHeatmapProps {
   initialRange?: "1h" | "24h" | "7d";
 }
 
+const MAX_HYPERLANES = 12;
+
+const HYPERLANE_VERTEX_SHADER = `
+attribute vec2 a_position;
+
+void main() {
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}
+`;
+
+const HYPERLANE_FRAGMENT_SHADER = `
+precision mediump float;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform vec3 u_view;
+uniform int u_routeCount;
+uniform vec4 u_routes[${MAX_HYPERLANES}];
+
+float hash(vec2 point) {
+  return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+void main() {
+  float aspect = u_resolution.x / max(u_resolution.y, 1.0);
+  vec2 screenUv = gl_FragCoord.xy / u_resolution;
+  vec2 viewScale = vec2(aspect, 1.0);
+  vec2 point = (screenUv - 0.5) * viewScale / u_view.x
+    - u_view.yz * viewScale;
+
+  vec3 color = vec3(0.01176, 0.02745, 0.07059);
+  vec2 starCell = floor((point + viewScale * 0.5) * vec2(38.0, 26.0));
+  float star = step(0.997, hash(starCell));
+  color += vec3(0.12, 0.22, 0.25) * star * 0.35;
+
+  for (int i = 0; i < ${MAX_HYPERLANES}; i++) {
+    if (i >= u_routeCount) break;
+
+    vec4 route = u_routes[i];
+    vec2 start = vec2(-aspect * 0.46, route.x - 0.5);
+    vec2 end = vec2(aspect * 0.46, route.y - 0.5);
+    vec2 segment = end - start;
+    float segmentLength = max(dot(segment, segment), 0.0001);
+    float along = clamp(dot(point - start, segment) / segmentLength, 0.0, 1.0);
+    float distanceToLane = length(point - (start + segment * along));
+    float intensity = route.z;
+
+    vec3 laneColor = mix(
+      vec3(0.015, 0.35, 0.19),
+      vec3(0.04, 1.0, 0.70),
+      smoothstep(0.2, 1.0, intensity)
+    );
+    float corridor = exp(-distanceToLane * distanceToLane * 1250.0);
+    color += laneColor * corridor * (0.18 + intensity * 0.34);
+
+    float pulsePosition = fract(u_time * (0.25 + intensity * 1.2) + route.w);
+    vec2 pulsePoint = start + segment * pulsePosition;
+    float pulseDistance = length(point - pulsePoint);
+    float pulse = exp(-pulseDistance * pulseDistance * 2400.0);
+    color += laneColor * pulse * (0.45 + intensity * 1.8);
+  }
+
+  float vignette = 1.0 - smoothstep(0.15, 1.15, length((screenUv - 0.5) * vec2(aspect, 1.0)));
+  color *= 0.72 + vignette * 0.28;
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+interface HyperlaneRoute {
+  route: string;
+  totalRequests: number;
+}
+
+function buildHyperlaneUniforms(routes: HyperlaneRoute[]) {
+  const routeUniforms = new Float32Array(MAX_HYPERLANES * 4);
+  const maxRequests = Math.max(1, ...routes.map((route) => route.totalRequests));
+  const maxLogRequests = Math.log1p(maxRequests);
+
+  routes.forEach((route, index) => {
+    let hash = 2166136261;
+    for (let charIndex = 0; charIndex < route.route.length; charIndex++) {
+      hash = Math.imul(hash ^ route.route.charCodeAt(charIndex), 16777619);
+    }
+    const seed = hash >>> 0;
+    const offset = index * 4;
+    const throughput = Math.log1p(route.totalRequests) / maxLogRequests;
+    routeUniforms.set(
+      [
+        0.1 + ((index + 0.5) / Math.max(routes.length, 1)) * 0.8,
+        0.1 + ((seed % 10000) / 9999) * 0.8,
+        0.25 + throughput * 0.75,
+        (seed % 1000) / 1000,
+      ],
+      offset,
+    );
+  });
+
+  return routeUniforms;
+}
+
+function HyperlaneViewport({ routes }: { routes: HyperlaneRoute[] }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewRef = useRef({ zoom: 1, panX: 0, panY: 0 });
+  const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [renderError, setRenderError] = useState<string | null>(null);
+
+  const activeRoutes = useMemo(
+    () => routes.filter((route) => route.totalRequests > 0).slice(0, MAX_HYPERLANES),
+    [routes],
+  );
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const gl = canvas?.getContext("webgl", {
+      alpha: false,
+      antialias: false,
+      depth: false,
+      powerPreference: "high-performance",
+      stencil: false,
+    });
+    if (!canvas || !gl) {
+      setRenderError("WebGL is unavailable in this browser.");
+      return;
+    }
+
+    const compileShader = (type: number, source: string) => {
+      const shader = gl.createShader(type);
+      if (!shader) throw new Error("Unable to allocate a WebGL shader.");
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const message = gl.getShaderInfoLog(shader) || "Unknown shader compilation error.";
+        gl.deleteShader(shader);
+        throw new Error(message);
+      }
+      return shader;
+    };
+
+    let program: WebGLProgram | null = null;
+    let frameId = 0;
+    let resizeObserver: ResizeObserver | null = null;
+
+    try {
+      const vertexShader = compileShader(gl.VERTEX_SHADER, HYPERLANE_VERTEX_SHADER);
+      const fragmentShader = compileShader(gl.FRAGMENT_SHADER, HYPERLANE_FRAGMENT_SHADER);
+      program = gl.createProgram();
+      if (!program) throw new Error("Unable to allocate a WebGL program.");
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(program) || "Unable to link the WebGL program.");
+      }
+
+      const positionLocation = gl.getAttribLocation(program, "a_position");
+      const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+      const timeLocation = gl.getUniformLocation(program, "u_time");
+      const viewLocation = gl.getUniformLocation(program, "u_view");
+      const routeCountLocation = gl.getUniformLocation(program, "u_routeCount");
+      const routesLocation = gl.getUniformLocation(program, "u_routes[0]");
+      if (
+        positionLocation < 0 ||
+        !resolutionLocation ||
+        !timeLocation ||
+        !viewLocation ||
+        !routeCountLocation ||
+        !routesLocation
+      ) {
+        throw new Error("The WebGL program is missing a required shader input.");
+      }
+
+      const buffer = gl.createBuffer();
+      if (!buffer) throw new Error("Unable to allocate a WebGL vertex buffer.");
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+        gl.STATIC_DRAW,
+      );
+      gl.useProgram(program);
+      gl.enableVertexAttribArray(positionLocation);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+      const routeUniforms = buildHyperlaneUniforms(activeRoutes);
+      gl.uniform1i(routeCountLocation, activeRoutes.length);
+      gl.uniform4fv(routesLocation, routeUniforms);
+
+      const resize = () => {
+        const bounds = canvas.getBoundingClientRect();
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+        const width = Math.max(1, Math.round(bounds.width * pixelRatio));
+        const height = Math.max(1, Math.round(bounds.height * pixelRatio));
+        if (canvas.width === width && canvas.height === height) return;
+        canvas.width = width;
+        canvas.height = height;
+        gl.viewport(0, 0, width, height);
+        gl.useProgram(program);
+        gl.uniform2f(resolutionLocation, width, height);
+      };
+      resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(canvas);
+      resize();
+
+      const startTime = performance.now();
+      let lastFrameTime = 0;
+      const render = (now: number) => {
+        resize();
+        if (now - lastFrameTime < 1000 / 60) {
+          frameId = requestAnimationFrame(render);
+          return;
+        }
+        lastFrameTime = now;
+        gl.useProgram(program);
+        gl.uniform1f(timeLocation, (now - startTime) / 1000);
+        gl.uniform3f(
+          viewLocation,
+          viewRef.current.zoom,
+          viewRef.current.panX,
+          viewRef.current.panY,
+        );
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        if (!document.hidden) frameId = requestAnimationFrame(render);
+      };
+      const onVisibilityChange = () => {
+        cancelAnimationFrame(frameId);
+        if (!document.hidden) frameId = requestAnimationFrame(render);
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      frameId = requestAnimationFrame(render);
+
+      return () => {
+        cancelAnimationFrame(frameId);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        resizeObserver?.disconnect();
+        gl.deleteBuffer(buffer);
+        if (program) gl.deleteProgram(program);
+      };
+    } catch (error) {
+      if (program) gl.deleteProgram(program);
+      setRenderError(
+        error instanceof Error ? error.message : "Unable to initialize the WebGL renderer.",
+      );
+      console.error("Failed to initialize the route hyperlane WebGL renderer.", error);
+      return;
+    }
+    // The renderer is mounted once; route data is uploaded by the separate uniform-update effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const gl = canvas?.getContext("webgl");
+    if (!gl) return;
+    const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+    if (!program) return;
+    const routeCountLocation = gl.getUniformLocation(program, "u_routeCount");
+    const routesLocation = gl.getUniformLocation(program, "u_routes[0]");
+    if (!routeCountLocation || !routesLocation) return;
+
+    const routeUniforms = buildHyperlaneUniforms(activeRoutes);
+    gl.useProgram(program);
+    gl.uniform1i(routeCountLocation, activeRoutes.length);
+    gl.uniform4fv(routesLocation, routeUniforms);
+  }, [activeRoutes]);
+
+  const changeZoom = (nextZoom: number) => {
+    const boundedZoom = Math.min(2.5, Math.max(0.75, nextZoom));
+    viewRef.current.zoom = boundedZoom;
+    setZoom(boundedZoom);
+  };
+
+  return (
+    <div className="relative mt-5 overflow-hidden rounded-2xl border border-emerald-400/15 bg-[#030712]">
+      <canvas
+        ref={canvasRef}
+        aria-label="Animated network hyperlanes representing active API routes"
+        className="block h-48 w-full cursor-grab touch-none active:cursor-grabbing"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          viewRef.current.panX += (event.clientX - drag.x) / bounds.width / viewRef.current.zoom;
+          viewRef.current.panY -= (event.clientY - drag.y) / bounds.height / viewRef.current.zoom;
+          dragRef.current = { ...drag, x: event.clientX, y: event.clientY };
+        }}
+        onPointerUp={() => {
+          dragRef.current = null;
+        }}
+        onPointerCancel={() => {
+          dragRef.current = null;
+        }}
+        onWheel={(event) => {
+          event.preventDefault();
+          changeZoom(viewRef.current.zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
+        }}
+      />
+      <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
+            Interstellar Hyperlanes
+          </p>
+          <p className="mt-1 text-[10px] text-emerald-100/45">
+            {activeRoutes.length} active corridors · drag to pan · scroll to zoom
+          </p>
+        </div>
+        <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-emerald-200/10 bg-[#030712]/70 p-1">
+          <button
+            type="button"
+            aria-label="Zoom out hyperlanes"
+            onClick={() => changeZoom(zoom / 1.2)}
+            className="h-6 w-6 rounded text-xs text-emerald-100/70 hover:bg-emerald-300/10"
+          >
+            −
+          </button>
+          <span className="min-w-10 text-center font-mono text-[10px] text-emerald-100/55">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            aria-label="Zoom in hyperlanes"
+            onClick={() => changeZoom(zoom * 1.2)}
+            className="h-6 w-6 rounded text-xs text-emerald-100/70 hover:bg-emerald-300/10"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              viewRef.current.panX = 0;
+              viewRef.current.panY = 0;
+              changeZoom(1);
+            }}
+            className="rounded px-1.5 py-1 text-[10px] text-emerald-100/55 hover:bg-emerald-300/10 hover:text-emerald-100"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+      {renderError && (
+        <div role="status" className="absolute inset-x-3 bottom-2 text-[10px] text-rose-300">
+          Hyperlane renderer unavailable: {renderError}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type MetricMode = "p95" | "p50" | "avg" | "count";
 type CategoryFilter = "all" | "ai" | "api" | "auth" | "db" | "telemetry" | "wallet" | "admin";
 
@@ -680,6 +1034,8 @@ export function RouteLatencyHeatmap({
           </div>
         </div>
       )}
+
+      <HyperlaneViewport routes={data?.routes ?? []} />
 
       {/* Main Heatmap Visualization */}
       <div className="relative z-10 mt-5 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-inner">

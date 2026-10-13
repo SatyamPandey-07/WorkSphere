@@ -15,7 +15,7 @@ describe("ShortcutTooltip", () => {
     render(
       <ShortcutTooltip content="Quick search" shortcut="K">
         <button>Search</button>
-      </ShortcutTooltip>
+      </ShortcutTooltip>,
     );
 
     expect(screen.getByText("Search")).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe("ShortcutTooltip", () => {
     render(
       <ShortcutTooltip content="Quick search" shortcut="K">
         <button>Search</button>
-      </ShortcutTooltip>
+      </ShortcutTooltip>,
     );
 
     const button = screen.getByRole("button", { name: /search/i });
@@ -38,7 +38,7 @@ describe("ShortcutTooltip", () => {
     render(
       <ShortcutTooltip content="Quick search" shortcut="K" delayMs={50}>
         <button>Search</button>
-      </ShortcutTooltip>
+      </ShortcutTooltip>,
     );
 
     const wrapper = screen.getByText("Search").parentElement!;
@@ -63,7 +63,7 @@ describe("ShortcutTooltip", () => {
     render(
       <ShortcutTooltip content="Open AI Chat" shortcut="/" delayMs={50}>
         <button>Open</button>
-      </ShortcutTooltip>
+      </ShortcutTooltip>,
     );
 
     const wrapper = screen.getByText("Open").parentElement!;
@@ -75,10 +75,40 @@ describe("ShortcutTooltip", () => {
     });
 
     expect(screen.getByTestId("shortcut-tooltip")).toBeInTheDocument();
-    expect(screen.getByTestId("shortcut-tooltip")).toHaveTextContent("Open AI Chat");
+    expect(screen.getByTestId("shortcut-tooltip")).toHaveTextContent(
+      "Open AI Chat",
+    );
 
     // Blur
     fireEvent.blur(wrapper);
     expect(screen.queryByTestId("shortcut-tooltip")).not.toBeInTheDocument();
+  });
+
+  it("supports withModifier={false} for standalone shortcuts", () => {
+    render(
+      <ShortcutTooltip
+        content="Quick Help"
+        shortcut="?"
+        withModifier={false}
+        delayMs={50}
+      >
+        <button>Help</button>
+      </ShortcutTooltip>,
+    );
+
+    const button = screen.getByRole("button", { name: /help/i });
+    expect(button).toHaveAttribute("aria-keyshortcuts", "?");
+    expect(button).toHaveAttribute("title", "Quick Help (?)");
+
+    const wrapper = button.parentElement!;
+    fireEvent.mouseEnter(wrapper);
+    act(() => {
+      jest.advanceTimersByTime(50);
+    });
+
+    const tooltip = screen.getByTestId("shortcut-tooltip");
+    expect(tooltip).toBeInTheDocument();
+    expect(tooltip).toHaveTextContent("Quick Help");
+    expect(tooltip).toHaveTextContent("?");
   });
 });

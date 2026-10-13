@@ -112,3 +112,94 @@ export function validateUsername(username: string | null | undefined): UsernameV
     sanitized,
   };
 }
+
+// =========================================================================
+// TEST PILOT FLIGHT CALLSIGN (#6172)
+// =========================================================================
+
+export const MAX_CALLSIGN_LENGTH = 20;
+
+/**
+ * Sanitizes an aviation callsign by trimming whitespace and stripping non-printable characters.
+ */
+export function sanitizeCallsign(callsign: string | null | undefined): string {
+  if (!callsign) return "";
+  return callsign
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[\u0000-\u001F\u007F]/g, "");
+}
+
+export interface CallsignValidationResult {
+  isValid: boolean;
+  sanitized: string;
+  error?: string;
+}
+
+/**
+ * Validates an optional aviation callsign.
+ * Accepts alphanumeric characters and hyphens, up to 20 characters.
+ */
+export function validateCallsign(callsign: string | null | undefined): CallsignValidationResult {
+  const sanitized = sanitizeCallsign(callsign);
+
+  if (!sanitized) {
+    return {
+      isValid: true,
+      sanitized: "",
+    };
+  }
+
+  if (sanitized.length > MAX_CALLSIGN_LENGTH) {
+    return {
+      isValid: false,
+      sanitized,
+      error: `Callsign cannot exceed ${MAX_CALLSIGN_LENGTH} characters.`,
+    };
+  }
+
+  if (!/^[a-zA-Z0-9-]+$/.test(sanitized)) {
+    return {
+      isValid: false,
+      sanitized,
+      error: "Callsign can only contain alphanumeric characters and hyphens.",
+    };
+  }
+
+  return {
+    isValid: true,
+    sanitized,
+  };
+}
+
+/**
+ * Preview-formats a user's display name with their optional aviation callsign
+ * rendered in quotes between their first and last name (e.g. Hal "Highball" Jordan).
+ * If display name has only one word, renders as: First "Callsign"
+ * If display name is empty, renders as: "Callsign"
+ */
+export function formatDisplayNameWithCallsign(
+  displayName: string | null | undefined,
+  callsign?: string | null | undefined,
+): string {
+  const trimmedName = displayName ? displayName.trim().replace(/\s+/g, " ") : "";
+  const sanitizedCallsign = sanitizeCallsign(callsign);
+
+  if (!sanitizedCallsign) {
+    return trimmedName;
+  }
+
+  if (!trimmedName) {
+    return `"${sanitizedCallsign}"`;
+  }
+
+  const spaceIndex = trimmedName.indexOf(" ");
+  if (spaceIndex === -1) {
+    return `${trimmedName} "${sanitizedCallsign}"`;
+  }
+
+  const firstName = trimmedName.slice(0, spaceIndex);
+  const rest = trimmedName.slice(spaceIndex + 1);
+  return `${firstName} "${sanitizedCallsign}" ${rest}`;
+}
+

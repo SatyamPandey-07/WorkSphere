@@ -19,7 +19,7 @@ global.fetch = jest.fn(() =>
   }),
 ) as jest.Mock;
 
-describe("OfflineBanner Component & useOfflineStatus Hook (#4144, #4410)", () => {
+describe("OfflineBanner Component & useOfflineStatus Hook (#4144, #4410, #6195)", () => {
   let originalOnLine: boolean;
 
   beforeAll(() => {
@@ -250,6 +250,147 @@ describe("OfflineBanner Component & useOfflineStatus Hook (#4144, #4410)", () =>
       fireEvent.click(dismissBtn);
 
       expect(screen.queryByTestId("offline-banner")).toBeNull();
+    });
+  });
+
+  describe("Cosmic Sector Offline Alert - Acceptance Criteria (#6195)", () => {
+    beforeEach(() => {
+      Object.defineProperty(navigator, "onLine", {
+        value: false,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    describe("Acceptance Criteria 1: Style banner with cockpit emergency alert styling", () => {
+      it("renders starship flight deck alert message, beacon, and sector badge when offline", () => {
+        render(
+          <ToastProvider>
+            <OfflineBanner />
+          </ToastProvider>,
+        );
+
+        expect(screen.getByTestId("offline-banner")).toHaveClass(
+          "cosmic-offline-banner",
+        );
+        expect(screen.getByTestId("warning-beacon")).toBeInTheDocument();
+        expect(screen.getByTestId("sector-badge")).toHaveTextContent("SEC-2814");
+        expect(screen.getByTestId("offline-alert-message")).toHaveTextContent(
+          "⚠️ Sector 2814 Signal Lost — Switching to Auxiliary Ring Power (Offline Cache Mode)",
+        );
+      });
+
+      it("displays battery reserve percentage from prop and default fallback", () => {
+        const { rerender } = render(
+          <ToastProvider>
+            <OfflineBanner batteryReserve={82} />
+          </ToastProvider>,
+        );
+
+        expect(
+          screen.getByTestId("battery-reserve-indicator"),
+        ).toBeInTheDocument();
+        expect(screen.getByTestId("battery-reserve-value")).toHaveTextContent(
+          "82% Reserve",
+        );
+
+        rerender(
+          <ToastProvider>
+            <OfflineBanner batteryReserve={45} />
+          </ToastProvider>,
+        );
+        expect(screen.getByTestId("battery-reserve-value")).toHaveTextContent(
+          "45% Reserve",
+        );
+      });
+
+      it("assures the user that offline drafts are secure", () => {
+        render(
+          <ToastProvider>
+            <OfflineBanner />
+          </ToastProvider>,
+        );
+
+        expect(screen.getByTestId("offline-drafts-status")).toHaveTextContent(
+          "Offline Drafts Secure",
+        );
+      });
+    });
+
+    describe("Acceptance Criteria 2: Display offline storage queue status", () => {
+      it("displays queue status with count of buffered offline actions", () => {
+        render(
+          <ToastProvider>
+            <OfflineBanner storageQueueCount={4} />
+          </ToastProvider>,
+        );
+
+        const queueStatus = screen.getByTestId("offline-storage-queue-status");
+        expect(queueStatus).toBeInTheDocument();
+        expect(queueStatus).toHaveTextContent(
+          "Storage Queue: 4 actions buffered",
+        );
+      });
+
+      it("formats singular vs plural items buffered in storage queue status", () => {
+        const { rerender } = render(
+          <ToastProvider>
+            <OfflineBanner storageQueueCount={1} />
+          </ToastProvider>,
+        );
+
+        expect(
+          screen.getByTestId("offline-storage-queue-status"),
+        ).toHaveTextContent("Storage Queue: 1 action buffered");
+
+        rerender(
+          <ToastProvider>
+            <OfflineBanner storageQueueCount={0} />
+          </ToastProvider>,
+        );
+        expect(
+          screen.getByTestId("offline-storage-queue-status"),
+        ).toHaveTextContent("Storage Queue: 0 actions buffered");
+      });
+    });
+
+    describe("Acceptance Criteria 3: Provide one-click 'Re-establish Uplink' reconnect button", () => {
+      it("renders Re-establish Uplink button with flight deck cockpit typography", () => {
+        render(
+          <ToastProvider>
+            <OfflineBanner />
+          </ToastProvider>,
+        );
+
+        const uplinkButton = screen.getByTestId("re-establish-uplink-button");
+        expect(uplinkButton).toBeInTheDocument();
+        expect(uplinkButton).toHaveTextContent("Re-establish Uplink");
+      });
+
+      it("triggers reconnection ping when Re-establish Uplink button is clicked and dismisses banner on success", async () => {
+        render(
+          <ToastProvider>
+            <OfflineBanner />
+          </ToastProvider>,
+        );
+
+        const uplinkButton = screen.getByTestId("re-establish-uplink-button");
+
+        // Simulate network coming back online
+        Object.defineProperty(navigator, "onLine", {
+          value: true,
+          writable: true,
+          configurable: true,
+        });
+
+        await act(async () => {
+          fireEvent.click(uplinkButton);
+        });
+
+        await waitFor(() => {
+          expect(screen.queryByTestId("offline-banner")).toBeNull();
+        });
+      });
     });
   });
 });

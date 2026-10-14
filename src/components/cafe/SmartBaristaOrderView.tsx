@@ -8,16 +8,12 @@ import {
   Flame,
   Zap,
   CheckCircle2,
-  AlertCircle,
   Plus,
   Minus,
   ShoppingBag,
   ArrowRight,
-  RotateCcw,
   Check,
-  ShieldCheck,
   QrCode,
-  CupSoda,
   ChevronRight,
   X,
 } from "lucide-react";
@@ -30,8 +26,14 @@ import {
   SmartCafeEngine,
 } from "@/lib/cafe/smartCafeEngine";
 import { FocusTrap } from "@/components/ui/FocusTrap";
+import { usePrepCountdown } from "@/hooks/usePrepCountdown";
+import { formatReadyIn } from "@/lib/cafe/prepTime";
 
-const ALL_DIETARY_TAGS: Array<{ tag: DietaryTag; label: string; icon: string }> = [
+const ALL_DIETARY_TAGS: Array<{
+  tag: DietaryTag;
+  label: string;
+  icon: string;
+}> = [
   { tag: "vegan", label: "Vegan", icon: "🌱" },
   { tag: "gluten_free", label: "Gluten-Free", icon: "🌾" },
   { tag: "dairy_free", label: "Dairy-Free", icon: "🥛" },
@@ -43,9 +45,11 @@ const ALL_DIETARY_TAGS: Array<{ tag: DietaryTag; label: string; icon: string }> 
 
 export default function SmartBaristaOrderView() {
   const [selectedTags, setSelectedTags] = useState<DietaryTag[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [activeCategory] = useState<string>("all");
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({});
+  const [selectedOptions, setSelectedOptions] = useState<
+    Record<string, string[]>
+  >({});
   const [quantity, setQuantity] = useState(1);
 
   const [cart, setCart] = useState<OrderItemInput[]>([]);
@@ -62,13 +66,15 @@ export default function SmartBaristaOrderView() {
     SAMPLE_CAFE_MENU,
     selectedTags,
     [],
-    activeCategory === "all" ? undefined : (activeCategory as MenuItem["category"])
+    activeCategory === "all"
+      ? undefined
+      : (activeCategory as MenuItem["category"]),
   );
 
   // Toggle dietary tag
   const toggleTag = (tag: DietaryTag) => {
     setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
   };
 
@@ -86,7 +92,11 @@ export default function SmartBaristaOrderView() {
   };
 
   // Handle option select
-  const selectOption = (groupId: string, optionId: string, maxSelectable: number) => {
+  const selectOption = (
+    groupId: string,
+    optionId: string,
+    maxSelectable: number,
+  ) => {
     setSelectedOptions((prev) => {
       const current = prev[groupId] || [];
       if (maxSelectable === 1) {
@@ -107,7 +117,9 @@ export default function SmartBaristaOrderView() {
     if (!customizingItem) return 0;
     let price = customizingItem.basePrice;
     Object.entries(selectedOptions).forEach(([groupId, optIds]) => {
-      const group = customizingItem.customizationGroups.find((g) => g.id === groupId);
+      const group = customizingItem.customizationGroups.find(
+        (g) => g.id === groupId,
+      );
       if (!group) return;
       optIds.forEach((id) => {
         const opt = group.options.find((o) => o.id === id);
@@ -121,10 +133,12 @@ export default function SmartBaristaOrderView() {
   const addToCart = () => {
     if (!customizingItem || quantity < 1) return;
     const safeQty = Math.max(1, Math.floor(quantity));
-    const customizations = Object.entries(selectedOptions).map(([groupId, selectedOptionIds]) => ({
-      groupId,
-      selectedOptionIds,
-    }));
+    const customizations = Object.entries(selectedOptions).map(
+      ([groupId, selectedOptionIds]) => ({
+        groupId,
+        selectedOptionIds,
+      }),
+    );
 
     const orderItem: OrderItemInput = {
       menuItemId: customizingItem.id,
@@ -141,11 +155,12 @@ export default function SmartBaristaOrderView() {
       setCart((prev) => prev.filter((_, i) => i !== index));
     } else {
       setCart((prev) =>
-        prev.map((item, i) => (i === index ? { ...item, quantity: newQty } : item))
+        prev.map((item, i) =>
+          i === index ? { ...item, quantity: newQty } : item,
+        ),
       );
     }
   };
-
 
   // Submit mobile pre-order
   const submitOrder = async () => {
@@ -175,14 +190,15 @@ export default function SmartBaristaOrderView() {
   };
 
   const confirmCancelOrder = async () => {
-    if (!activeOrder || activeOrder.status !== "received" || isCancelling) return;
+    if (!activeOrder || activeOrder.status !== "received" || isCancelling)
+      return;
 
     setIsCancelling(true);
     setCancelError(null);
     try {
       const res = await fetch(
         `/api/cafe/orders?orderId=${encodeURIComponent(activeOrder.id)}`,
-        { method: "DELETE" }
+        { method: "DELETE" },
       );
       const data = await res.json();
       if (!res.ok || !data.success) {
@@ -197,7 +213,9 @@ export default function SmartBaristaOrderView() {
     } catch (err) {
       console.error("Order cancellation failed:", err);
       setCancelError(
-        err instanceof Error ? err.message : "The order could not be cancelled."
+        err instanceof Error
+          ? err.message
+          : "The order could not be cancelled.",
       );
     } finally {
       setIsCancelling(false);
@@ -211,15 +229,28 @@ export default function SmartBaristaOrderView() {
     const interval = setInterval(() => {
       const now = Date.now();
       if (now >= activeOrder.estimatedReadyTime) {
-        setActiveOrder((prev) => (prev ? { ...prev, status: "ready_for_pickup" } : null));
-      } else if (now - activeOrder.createdAt > 15000 && activeOrder.status === "received") {
-        setActiveOrder((prev) => (prev ? { ...prev, status: "brewing" } : null));
+        setActiveOrder((prev) =>
+          prev ? { ...prev, status: "ready_for_pickup" } : null,
+        );
+      } else if (
+        now - activeOrder.createdAt > 15000 &&
+        activeOrder.status === "received"
+      ) {
+        setActiveOrder((prev) =>
+          prev ? { ...prev, status: "brewing" } : null,
+        );
       }
     }, 3000);
 
     return () => clearInterval(interval);
   }, [activeOrder]);
 
+  const isPrepInProgress =
+    activeOrder?.status === "received" || activeOrder?.status === "brewing";
+  const prepMinutesLeft = usePrepCountdown(
+    activeOrder?.estimatedReadyTime,
+    isPrepInProgress,
+  );
   const cartCalculation =
     cart.length > 0
       ? SmartCafeEngine.calculateOrderDetails(cart, SAMPLE_CAFE_MENU, 3)
@@ -241,7 +272,8 @@ export default function SmartBaristaOrderView() {
               </span>
             </h2>
             <p className="text-sm text-slate-400">
-              Zero-friction ordering with instant allergen filters, custom brews, and queue-time prediction
+              Zero-friction ordering with instant allergen filters, custom
+              brews, and queue-time prediction
             </p>
           </div>
         </div>
@@ -267,19 +299,32 @@ export default function SmartBaristaOrderView() {
                   {activeOrder.status === "received"
                     ? "Order Received"
                     : activeOrder.status === "brewing"
-                    ? "☕ Barista is Brewing"
-                    : "🎉 Ready for Pickup!"}
+                      ? "☕ Barista is Brewing"
+                      : "🎉 Ready for Pickup!"}
                 </span>
-                <span className="text-xs font-mono text-slate-400">ID: {activeOrder.id}</span>
+                <span className="text-xs font-mono text-slate-400">
+                  ID: {activeOrder.id}
+                </span>
               </div>
               <h3 className="text-xl font-bold text-white">
                 {activeOrder.venueName} — {activeOrder.deskNumber}
               </h3>
+              {prepMinutesLeft !== null && (
+                <p
+                  role="timer"
+                  className="flex items-center gap-1.5 text-sm font-semibold text-amber-300"
+                >
+                  <Clock className="w-4 h-4" aria-hidden="true" />
+                  {formatReadyIn(prepMinutesLeft)}
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-4 bg-slate-800/80 p-3 rounded-xl border border-slate-700">
               <div className="text-center px-2">
-                <div className="text-[10px] text-slate-400 uppercase font-mono">Pickup Pass</div>
+                <div className="text-[10px] text-slate-400 uppercase font-mono">
+                  Pickup Pass
+                </div>
                 <div className="text-2xl font-black font-mono text-amber-400 tracking-wider">
                   {activeOrder.pickupCode}
                 </div>
@@ -298,7 +343,8 @@ export default function SmartBaristaOrderView() {
               </span>
               <span
                 className={`flex items-center gap-1 ${
-                  activeOrder.status === "brewing" || activeOrder.status === "ready_for_pickup"
+                  activeOrder.status === "brewing" ||
+                  activeOrder.status === "ready_for_pickup"
                     ? "text-amber-300 font-semibold"
                     : ""
                 }`}
@@ -307,7 +353,9 @@ export default function SmartBaristaOrderView() {
               </span>
               <span
                 className={`flex items-center gap-1 ${
-                  activeOrder.status === "ready_for_pickup" ? "text-emerald-400 font-bold" : ""
+                  activeOrder.status === "ready_for_pickup"
+                    ? "text-emerald-400 font-bold"
+                    : ""
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" /> Ready at Counter
@@ -321,8 +369,8 @@ export default function SmartBaristaOrderView() {
                     activeOrder.status === "received"
                       ? "33%"
                       : activeOrder.status === "brewing"
-                      ? "70%"
-                      : "100%",
+                        ? "70%"
+                        : "100%",
                 }}
               />
             </div>
@@ -377,7 +425,10 @@ export default function SmartBaristaOrderView() {
               }
             }}
           >
-            <h2 id="cancel-order-title" className="text-lg font-bold text-white">
+            <h2
+              id="cancel-order-title"
+              className="text-lg font-bold text-white"
+            >
               Confirm order cancellation
             </h2>
             <p id="cancel-order-description" className="text-sm text-slate-300">
@@ -445,7 +496,9 @@ export default function SmartBaristaOrderView() {
               >
                 <span>{icon}</span>
                 <span>{label}</span>
-                {isSelected && <Check className="w-3 h-3 ml-0.5 text-amber-300" />}
+                {isSelected && (
+                  <Check className="w-3 h-3 ml-0.5 text-amber-300" />
+                )}
               </button>
             );
           })}
@@ -472,23 +525,30 @@ export default function SmartBaristaOrderView() {
                     </span>
                   </div>
 
-                  <h3 className="font-bold text-white text-base leading-snug">{item.name}</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">{item.description}</p>
+                  <h3 className="font-bold text-white text-base leading-snug">
+                    {item.name}
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    {item.description}
+                  </p>
                 </div>
 
                 <div className="space-y-3 pt-2 border-t border-slate-800">
                   {/* Dietary & Macro Pills */}
                   <div className="flex flex-wrap gap-1.5 text-[10px]">
                     <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 flex items-center gap-1">
-                      <Flame className="w-3 h-3 text-orange-400" /> {item.baseCalories} kcal
+                      <Flame className="w-3 h-3 text-orange-400" />{" "}
+                      {item.baseCalories} kcal
                     </span>
                     {item.caffeineMg > 0 && (
                       <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 flex items-center gap-1">
-                        <Zap className="w-3 h-3 text-yellow-400" /> {item.caffeineMg}mg caffeine
+                        <Zap className="w-3 h-3 text-yellow-400" />{" "}
+                        {item.caffeineMg}mg caffeine
                       </span>
                     )}
                     <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-cyan-400" /> ~{item.prepTimeMinutes}m
+                      <Clock className="w-3 h-3 text-cyan-400" /> ~
+                      {item.prepTimeMinutes}m
                     </span>
                   </div>
 
@@ -510,9 +570,13 @@ export default function SmartBaristaOrderView() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingBag className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-base text-white">Your Barista Order</h3>
+                <h3 className="font-bold text-base text-white">
+                  Your Barista Order
+                </h3>
               </div>
-              <span className="text-xs font-mono text-slate-400">{cart.length} items</span>
+              <span className="text-xs font-mono text-slate-400">
+                {cart.length} items
+              </span>
             </div>
 
             {/* Desk Delivery Info */}
@@ -527,7 +591,9 @@ export default function SmartBaristaOrderView() {
                 />
               </div>
               <div>
-                <label className="text-slate-400 block mb-1">Desk / Zone Location</label>
+                <label className="text-slate-400 block mb-1">
+                  Desk / Zone Location
+                </label>
                 <input
                   type="text"
                   value={deskNumber}
@@ -554,13 +620,17 @@ export default function SmartBaristaOrderView() {
                         {cartItem.quantity}x {cartItem.item.name}
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        {cartItem.customizations.flatMap((c) => c.optionNames).join(", ") || "Standard"}
+                        {cartItem.customizations
+                          .flatMap((c) => c.optionNames)
+                          .join(", ") || "Standard"}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5 border border-slate-700">
                         <button
-                          onClick={() => updateCartItemQuantity(idx, cartItem.quantity - 1)}
+                          onClick={() =>
+                            updateCartItemQuantity(idx, cartItem.quantity - 1)
+                          }
                           className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
                           title="Decrease quantity"
                         >
@@ -570,7 +640,9 @@ export default function SmartBaristaOrderView() {
                           {cartItem.quantity}
                         </span>
                         <button
-                          onClick={() => updateCartItemQuantity(idx, cartItem.quantity + 1)}
+                          onClick={() =>
+                            updateCartItemQuantity(idx, cartItem.quantity + 1)
+                          }
                           className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
                           title="Increase quantity"
                         >
@@ -649,8 +721,12 @@ export default function SmartBaristaOrderView() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <h3 className="text-lg font-bold text-white">{customizingItem.name}</h3>
-                <p className="text-xs text-slate-400">{customizingItem.description}</p>
+                <h3 className="text-lg font-bold text-white">
+                  {customizingItem.name}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {customizingItem.description}
+                </p>
               </div>
               <button
                 onClick={() => setCustomizingItem(null)}
@@ -667,17 +743,23 @@ export default function SmartBaristaOrderView() {
                   <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
                     <span>{group.name}</span>
                     <span className="text-[10px] text-slate-500">
-                      {group.required ? "Required" : `Max ${group.maxSelectable}`}
+                      {group.required
+                        ? "Required"
+                        : `Max ${group.maxSelectable}`}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {group.options.map((opt) => {
-                      const isSelected = (selectedOptions[group.id] || []).includes(opt.id);
+                      const isSelected = (
+                        selectedOptions[group.id] || []
+                      ).includes(opt.id);
                       return (
                         <button
                           key={opt.id}
-                          onClick={() => selectOption(group.id, opt.id, group.maxSelectable)}
+                          onClick={() =>
+                            selectOption(group.id, opt.id, group.maxSelectable)
+                          }
                           className={`p-2.5 rounded-xl border text-left text-xs transition-all flex items-center justify-between ${
                             isSelected
                               ? "bg-amber-500/20 border-amber-500/60 text-amber-300"
@@ -699,7 +781,9 @@ export default function SmartBaristaOrderView() {
 
               {/* Quantity Selector */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                <span className="text-xs text-slate-400 font-semibold">Quantity</span>
+                <span className="text-xs text-slate-400 font-semibold">
+                  Quantity
+                </span>
                 <div className="flex items-center gap-3 bg-slate-800 p-1 rounded-xl border border-slate-700">
                   <button
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -709,7 +793,9 @@ export default function SmartBaristaOrderView() {
                   >
                     <Minus className="w-4 h-4" />
                   </button>
-                  <span className="font-mono font-bold text-sm px-2 text-white">{quantity}</span>
+                  <span className="font-mono font-bold text-sm px-2 text-white">
+                    {quantity}
+                  </span>
                   <button
                     onClick={() => setQuantity(quantity + 1)}
                     className="p-1 rounded-lg hover:bg-slate-700 text-slate-300"

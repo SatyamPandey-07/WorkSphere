@@ -199,4 +199,23 @@ describe("CompassFallback Component", () => {
     rerender(<CompassFallback alpha={0} beta={91} gamma={0} slerpFactor={1} />);
     expect(screen.getByTestId("heading-readout")).toHaveTextContent("0°");
   });
+
+  describe("Fighter Jet Cockpit HUD Pitch Ladder & Roll Horizon", () => {
+    it("renders pitch ladder rungs (+10°, 0° horizon, -10°) and boresight reticle", () => {
+      render(<CompassFallback beta={10} gamma={-5} showPitchLadder={true} />);
+
+      expect(screen.getByTestId("hud-pitch-ladder")).toBeInTheDocument();
+      expect(screen.getByTestId("hud-horizon-group")).toBeInTheDocument();
+      expect(screen.getByTestId("pitch-rung-plus-10")).toBeInTheDocument();
+      expect(screen.getByTestId("pitch-rung-horizon")).toBeInTheDocument();
+      expect(screen.getByTestId("pitch-rung-minus-10")).toBeInTheDocument();
+      expect(screen.getByTestId("hud-boresight")).toBeInTheDocument();
+      expect(screen.getByTestId("roll-readout")).toHaveTextContent("Roll: -5°");
+    });
+
+    it("can toggle pitch ladder visibility off via showPitchLadder prop", () => {
+      render(<CompassFallback showPitchLadder={false} />);
+      expect(screen.queryByTestId("hud-pitch-ladder")).not.toBeInTheDocument();
+    });
+  });
 });

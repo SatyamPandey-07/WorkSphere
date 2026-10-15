@@ -1,8 +1,7 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
-  CSRF_PROTECTED_METHODS,
   isCsrfProtectedMethod,
   issueCsrfToken,
   verifyCsrfToken,
@@ -46,13 +45,18 @@ export async function applyCsrfProtection(
 
   // Safe request: issue a token cookie if one isn't already set.
   if (!existingCookie && !isCsrfExemptRoute(req)) {
-    const { cookieValue } = await issueCsrfToken();
-    res.cookies.set(CSRF_COOKIE_NAME, cookieValue, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-    });
+    try {
+      const { cookieValue } = await issueCsrfToken();
+      res.cookies.set(CSRF_COOKIE_NAME, cookieValue, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      });
+    } catch (err) {
+      // Defensive fallback to prevent unhandled rejection in middleware
+      console.error("Failed to issue CSRF cookie in middleware:", err);
+    }
   }
 
   return res;

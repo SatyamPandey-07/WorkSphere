@@ -1410,4 +1410,41 @@ html[data-hud-cursor="true"] [role="switch"] {
     box-shadow: 0 0 8px rgba(0, 255, 136, 0.3) !important;
   }
 }
+
+/* =========================================================================
+   COSMIC SECTOR OFFLINE - RUNNING ON AUXILIARY POWER ALERT (#6195)
+   ========================================================================= */
+
+@keyframes cosmic-beacon-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  75%, 100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.cosmic-offline-banner {
+  background: linear-gradient(
+    135deg,
+    rgba(2, 44, 29, 0.98) 0%,
+    rgba(4, 32, 22, 0.98) 50%,
+    rgba(1, 22, 15, 0.99) 100%
+  );
+  border-bottom: 1px solid rgba(16, 185, 129, 0.45);
+  box-shadow: 0 4px 25px rgba(4, 120, 87, 0.35), inset 0 1px 0 rgba(52, 211, 153, 0.3);
+}
+
+.beacon-ring-ping {
+  animation: cosmic-beacon-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beacon-ring-ping {
+    animation: none !important;
+  }
+}
+
 

@@ -89,6 +89,116 @@ interface VenueEnrichData {
   categories?: string[];
 }
 
+/**
+ * Formats latitude and longitude coordinates into military aviation waypoint format:
+ * WP-<hash> // <lat>°N/S <lng>°E/W
+ */
+export function formatTacticalWaypoint(
+  lat: number,
+  lng: number,
+): {
+  waypointCode: string;
+  gridCoordinate: string;
+  formatted: string;
+  fullDecimal: string;
+} {
+  // Deterministic 4-digit aviation waypoint hash
+  const latFactor = Math.abs(Math.round(lat * 1000));
+  const lngFactor = Math.abs(Math.round(lng * 1000));
+  const hash = String(((latFactor * 37 + lngFactor * 17) % 9000) + 1000);
+  const waypointCode = `WP-${hash}`;
+
+  const latDir = lat >= 0 ? "N" : "S";
+  const lngDir = lng >= 0 ? "E" : "W";
+  const latFormatted = `${Math.abs(lat).toFixed(2)}°${latDir}`;
+  const lngFormatted = `${Math.abs(lng).toFixed(2)}°${lngDir}`;
+  const gridCoordinate = `${latFormatted} ${lngFormatted}`;
+  const formatted = `${waypointCode} // ${gridCoordinate}`;
+  const fullDecimal = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+  return {
+    waypointCode,
+    gridCoordinate,
+    formatted,
+    fullDecimal,
+  };
+}
+
+export interface TacticalWaypointPillProps {
+  latitude: number;
+  longitude: number;
+  className?: string;
+  venueName?: string;
+}
+
+/**
+ * TacticalWaypointPill: Renders military aviation grid coordinates with emerald monospaced typography.
+ * Flips on hover/focus to display tactical waypoint navigation symbology.
+ */
+export function TacticalWaypointPill({
+  latitude,
+  longitude,
+  className = "",
+  venueName,
+}: TacticalWaypointPillProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const { waypointCode, gridCoordinate, formatted, fullDecimal } =
+    formatTacticalWaypoint(latitude, longitude);
+
+  return (
+    <div
+      role="status"
+      tabIndex={0}
+      data-testid="tactical-waypoint-pill"
+      aria-label={`Tactical Waypoint ${waypointCode}: ${fullDecimal}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+      className={`group relative inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-emerald-500/30 bg-emerald-950/40 text-emerald-400 font-mono text-[11px] tracking-tight transition-all duration-300 hover:border-emerald-400 hover:bg-emerald-900/40 hover:shadow-sm hover:shadow-emerald-500/20 cursor-crosshair select-none ${className}`}
+    >
+      {/* Test pilot symbology target icon */}
+      <span className="relative flex h-2 w-2 shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+      </span>
+
+      {/* Monospaced aviation waypoint code & grid coordinates with flip transition */}
+      <span className="font-mono font-bold tracking-wider text-emerald-300">
+        {isHovered ? formatted : waypointCode}
+      </span>
+      {!isHovered && (
+        <span className="text-[10px] text-emerald-500/70 font-mono">
+          {gridCoordinate}
+        </span>
+      )}
+
+      {/* Accessible Tooltip with full decimal coordinates */}
+      <div
+        role="tooltip"
+        data-testid="tactical-waypoint-tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex group-focus-within:flex flex-col gap-1 w-64 p-2.5 rounded-lg bg-zinc-900 text-zinc-100 text-xs shadow-xl border border-emerald-500/30 z-50 transition-opacity"
+      >
+        <div className="font-mono font-bold text-emerald-400 flex items-center justify-between">
+          <span>🎯 {waypointCode}</span>
+          <span className="text-[10px] text-zinc-400 uppercase font-sans">
+            Aviation Grid
+          </span>
+        </div>
+        <div className="text-[11px] text-zinc-300 font-mono">{gridCoordinate}</div>
+        <div className="text-[10px] text-emerald-300/80 font-mono mt-0.5 pt-1 border-t border-zinc-800">
+          GPS: {fullDecimal}
+        </div>
+        {venueName && (
+          <div className="text-[10px] text-zinc-400 truncate">
+            Target: {venueName}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface VenueCardProps {
   venue: MapMarker;
   onGetDirections?: (venue: MapMarker) => void;
@@ -111,6 +221,8 @@ interface VenueCardProps {
   currentTimestamp?: Date | number;
   /** Optional override for Data Saver mode */
   isDataSaver?: boolean;
+  /** Optional tactical waypoint pill display */
+  showTacticalWaypoint?: boolean;
 }
 
 interface VoteMetricState {
@@ -135,6 +247,7 @@ export function VenueCard({
   searchQuery = "",
   currentTimestamp,
   isDataSaver: isDataSaverProp,
+  showTacticalWaypoint,
 }: VenueCardProps) {
   const { isDataSaver: globalDataSaver } = useDataSaver();
   const effectiveDataSaver =
@@ -674,6 +787,17 @@ export function VenueCard({
                 </span>
               </div>
             )}
+            {(showTacticalWaypoint || (venue as any)?.showTacticalWaypoint) &&
+              venue.position?.lat != null &&
+              venue.position?.lng != null && (
+                <div className="mt-1.5 mb-1 flex items-center">
+                  <TacticalWaypointPill
+                    latitude={venue.position.lat}
+                    longitude={venue.position.lng}
+                    venueName={venue.name}
+                  />
+                </div>
+              )}
             {liveOccupancy && liveOccupancy.count > 0 && (
               <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />

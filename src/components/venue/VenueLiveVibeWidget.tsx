@@ -1,8 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Sparkles, Check, Users, Radio, AlertCircle } from "lucide-react";
-import { VibeSummary, VibeType, VIBE_OPTIONS } from "@/lib/venues/liveVibeService";
+import { Check, Users, Radio, AlertCircle } from "lucide-react";
+import {
+  VibeSummary,
+  VibeType,
+  VIBE_OPTIONS,
+} from "@/lib/venues/liveVibeTypes";
 
 interface VenueLiveVibeWidgetProps {
   venueId: string;
@@ -57,7 +61,11 @@ export function VenueLivePulseBadge({
     <div
       data-testid="venue-live-pulse-badge"
       className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold backdrop-blur-sm transition-all ${styles.badgeBg} ${styles.badgeBorder} ${styles.badgeText} ${className}`}
-      title={vibe?.lastUpdated ? `Last reported: ${new Date(vibe.lastUpdated).toLocaleTimeString()}` : "Live crowd vibe"}
+      title={
+        vibe?.lastUpdated
+          ? `Last reported: ${new Date(vibe.lastUpdated).toLocaleTimeString()}`
+          : "Live crowd vibe"
+      }
     >
       <span className="relative flex h-2 w-2">
         {pulseColor !== "zinc" && (
@@ -85,7 +93,7 @@ export function VenueLiveVibeWidget({
   className = "",
 }: VenueLiveVibeWidgetProps) {
   const [vibe, setVibe] = useState<VibeSummary | null>(initialVibe);
-  const [loading, setLoading] = useState(!initialVibe);
+  const [_loading, setLoading] = useState(!initialVibe);
   const [submitting, setSubmitting] = useState(false);
   const [selectedVibe, setSelectedVibe] = useState<VibeType | null>(null);
   const [votedMessage, setVotedMessage] = useState<string | null>(null);
@@ -202,13 +210,19 @@ export function VenueLiveVibeWidget({
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-zinc-500">
             <span>What&apos;s the vibe right now?</span>
-            <span className="text-[11px] text-zinc-400 font-medium">Votes valid for 2h</span>
+            <span className="text-[11px] text-zinc-400 font-medium">
+              Votes valid for 2h
+            </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-2" data-testid="live-vibe-reaction-bar">
+          <div
+            className="grid grid-cols-3 gap-2"
+            data-testid="live-vibe-reaction-bar"
+          >
             {VIBE_OPTIONS.map((opt) => {
               const count = vibe?.breakdown[opt.type] || 0;
-              const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+              const pct =
+                totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
               const isSelected = selectedVibe === opt.type;
 
               return (
@@ -246,26 +260,35 @@ export function VenueLiveVibeWidget({
             <div className="space-y-1 pt-1">
               <div className="h-1.5 w-full rounded-full overflow-hidden flex bg-zinc-100 dark:bg-zinc-800">
                 <div
-                  style={{ width: `${Math.round(((vibe?.breakdown.silent_focus || 0) / totalVotes) * 100)}%` }}
+                  style={{
+                    width: `${Math.round(((vibe?.breakdown.silent_focus || 0) / totalVotes) * 100)}%`,
+                  }}
                   className="bg-emerald-500 transition-all duration-500"
                   title={`Silent Focus: ${vibe?.breakdown.silent_focus} votes`}
                 />
                 <div
-                  style={{ width: `${Math.round(((vibe?.breakdown.moderate_buzz || 0) / totalVotes) * 100)}%` }}
+                  style={{
+                    width: `${Math.round(((vibe?.breakdown.moderate_buzz || 0) / totalVotes) * 100)}%`,
+                  }}
                   className="bg-amber-500 transition-all duration-500"
                   title={`Moderate Buzz: ${vibe?.breakdown.moderate_buzz} votes`}
                 />
                 <div
-                  style={{ width: `${Math.round(((vibe?.breakdown.lively || 0) / totalVotes) * 100)}%` }}
+                  style={{
+                    width: `${Math.round(((vibe?.breakdown.lively || 0) / totalVotes) * 100)}%`,
+                  }}
                   className="bg-purple-500 transition-all duration-500"
                   title={`Lively: ${vibe?.breakdown.lively} votes`}
                 />
               </div>
               <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                <span>{totalVotes} live report{totalVotes > 1 ? "s" : ""}</span>
+                <span>
+                  {totalVotes} live report{totalVotes > 1 ? "s" : ""}
+                </span>
                 {vibe?.verifiedCheckIns ? (
                   <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
-                    <Users className="w-3 h-3" /> {vibe.verifiedCheckIns} verified on-site
+                    <Users className="w-3 h-3" /> {vibe.verifiedCheckIns}{" "}
+                    verified on-site
                   </span>
                 ) : null}
               </div>

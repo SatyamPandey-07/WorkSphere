@@ -18,20 +18,31 @@ import {
   Globe,
   MapPin,
   AlertCircle,
+  Trophy,
+  Medal,
+  Users,
+  Plane,
+  Building2,
+  Download,
+  ShieldCheck,
 } from "lucide-react";
 import {
   CarbonFootprintSummary,
   CommuteMode,
   safeParseDistance,
+  TeamCarbonSavings,
+  aggregateTeamCarbonSavings,
+  generateTeamBadgeSVG,
 } from "@/lib/sustainability/carbonEngine";
 import { LanternPowerRing } from "./LanternPowerRing";
 
 export default function CarbonFootprintTracker() {
-
   const [summary, setSummary] = useState<CarbonFootprintSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTeam, setSelectedTeam] = useState<TeamCarbonSavings | null>(null);
+  const [badgeExported, setBadgeExported] = useState(false);
 
   const fetchCarbonAnalytics = async () => {
     setLoading(true);
@@ -154,6 +165,42 @@ export default function CarbonFootprintTracker() {
   const hasPartialMissingDistance = Boolean(
     summary && totalDistance > 0 && missingDistanceRecordsCount > 0
   );
+  const teams: TeamCarbonSavings[] = React.useMemo(() => {
+    if (summary?.teamLeaderboard && summary.teamLeaderboard.length > 0) {
+      return summary.teamLeaderboard;
+    }
+    return aggregateTeamCarbonSavings();
+  }, [summary]);
+
+  const activeSelectedTeam =
+    selectedTeam || (teams.length > 0 ? teams[0] : null);
+
+  const handleExportTeamBadge = (teamToExport?: TeamCarbonSavings) => {
+    const target = teamToExport || activeSelectedTeam;
+    if (!target) return;
+
+    const svgContent = generateTeamBadgeSVG(
+      target,
+      summary?.periodMonth || "October 2026",
+    );
+    const blob = new Blob([svgContent], {
+      type: "image/svg+xml;charset=utf-8;",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const sanitizedName = target.teamName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-");
+    a.download = `worksphere-team-carbon-badge-${sanitizedName}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    setBadgeExported(true);
+    setTimeout(() => setBadgeExported(false), 3000);
+  };
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
@@ -435,6 +482,367 @@ export default function CarbonFootprintTracker() {
                     </p>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Team Aggregate Carbon Savings Leaderboard & Visual Ranking Podium (#5309) */}
+          <div
+            data-testid="team-carbon-leaderboard"
+            className="rounded-3xl bg-slate-900/80 border border-slate-800 p-6 md:p-8 space-y-8 backdrop-blur-md shadow-2xl"
+          >
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold uppercase tracking-wider">
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" /> Regional Hub Sustainability Champions
+                </div>
+                <h2 className="text-xl md:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                  Team & Organization Carbon Savings Leaderboard
+                </h2>
+                <p className="text-xs md:text-sm text-slate-400 max-w-2xl">
+                  Celebrating distributed teams that slash Scope 3 flight and transit emissions by collaborating from regional eco-hubs instead of cross-country flights to HQ.
+                </p>
+              </div>
+
+              {activeSelectedTeam && (
+                <button
+                  onClick={() => handleExportTeamBadge(activeSelectedTeam)}
+                  data-testid="export-team-badge-btn"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition shrink-0"
+                >
+                  <Download className="w-4 h-4" />
+                  {badgeExported ? "Badge Exported! ✓" : "Export Team Sustainability Badge"}
+                </button>
+              )}
+            </div>
+
+            {/* Visual Ranking Podium */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+                  <Award className="w-4 h-4" /> Monthly Top Performing Podia
+                </h3>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {summary.periodMonth} • Flight & Transit Avoidance
+                </span>
+              </div>
+
+              <div
+                data-testid="carbon-ranking-podium"
+                className="grid grid-cols-1 md:grid-cols-3 gap-5 items-end pt-4"
+              >
+                {/* 2nd Place (Silver) */}
+                {teams[1] && (
+                  <div
+                    data-testid="podium-rank-2"
+                    onClick={() => setSelectedTeam(teams[1])}
+                    className={`cursor-pointer group relative rounded-3xl p-5 border transition-all duration-300 flex flex-col justify-between ${
+                      activeSelectedTeam?.teamId === teams[1].teamId
+                        ? "bg-slate-900 border-slate-400/80 shadow-lg shadow-slate-500/10 ring-2 ring-slate-400/40"
+                        : "bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60"
+                    }`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-400/10 border border-slate-400/30 text-slate-300 font-mono text-[11px] font-bold">
+                          <Medal className="w-3.5 h-3.5 text-slate-300" /> 2nd Place
+                        </span>
+                        <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                          Silver Tier
+                        </span>
+                      </div>
+
+                      <div>
+                        <h4 className="text-sm font-bold text-white group-hover:text-slate-200 transition">
+                          {teams[1].teamName}
+                        </h4>
+                        <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3 text-cyan-400 shrink-0" />
+                          {teams[1].regionalHub}
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-2xl bg-black/40 border border-slate-800/80 space-y-1">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Avoided Emissions
+                        </div>
+                        <div className="text-2xl font-black text-white font-mono">
+                          {teams[1].monthlyAvoidedKgCo2}{" "}
+                          <span className="text-xs text-slate-400 font-normal">kg CO₂e</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+                          <span className="flex items-center gap-1">
+                            <Plane className="w-3 h-3 text-rose-400" />
+                            {teams[1].flightEmissionsAvoidedKg} kg flights
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <TreePine className="w-3 h-3 text-emerald-400" />
+                            {teams[1].treesEquivalent} trees
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <Users className="w-3 h-3" /> {teams[1].membersCount} members
+                      </span>
+                      <span className="font-semibold text-slate-300 group-hover:underline">
+                        Select Badge →
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 1st Place (Gold / Emerald Champion - Elevated & Highlighted) */}
+                {teams[0] && (
+                  <div
+                    data-testid="podium-rank-1"
+                    onClick={() => setSelectedTeam(teams[0])}
+                    className={`cursor-pointer group relative rounded-3xl p-6 border transition-all duration-300 md:-translate-y-3 flex flex-col justify-between ${
+                      activeSelectedTeam?.teamId === teams[0].teamId
+                        ? "bg-gradient-to-b from-emerald-950/70 via-slate-900 to-slate-950 border-emerald-500/80 shadow-2xl shadow-emerald-500/20 ring-2 ring-emerald-500/50"
+                        : "bg-gradient-to-b from-emerald-950/40 via-slate-900 to-slate-950 border-emerald-500/40 hover:border-emerald-500/70 hover:shadow-xl"
+                    }`}
+                  >
+                    <div className="space-y-3.5">
+                      <div className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono text-xs font-bold shadow-sm">
+                          <Trophy className="w-4 h-4 text-amber-400" /> 1st Place Champion
+                        </span>
+                        <span className="text-[10px] font-mono uppercase px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Emerald Tier
+                        </span>
+                      </div>
+
+                      <div>
+                        <h4 className="text-base font-extrabold text-white group-hover:text-emerald-300 transition">
+                          {teams[0].teamName}
+                        </h4>
+                        <p className="text-xs text-emerald-200/90 flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          {teams[0].regionalHub}
+                        </p>
+                      </div>
+
+                      <div className="p-4 rounded-2xl bg-black/60 border border-emerald-500/30 space-y-1.5">
+                        <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                          Total Monthly Avoided CO₂e
+                        </div>
+                        <div className="text-3xl font-black text-emerald-400 font-mono">
+                          {teams[0].monthlyAvoidedKgCo2}{" "}
+                          <span className="text-sm text-slate-300 font-normal">kg</span>
+                        </div>
+                        <div className="flex justify-between text-[11px] font-mono text-slate-300 pt-1.5 border-t border-slate-800">
+                          <span className="flex items-center gap-1 text-emerald-300">
+                            <Plane className="w-3 h-3 text-emerald-400" />
+                            {teams[0].flightEmissionsAvoidedKg} kg flights
+                          </span>
+                          <span className="flex items-center gap-1 text-teal-300">
+                            <TreePine className="w-3 h-3 text-teal-400" />
+                            {teams[0].treesEquivalent} trees
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 pt-3.5 border-t border-emerald-500/20 flex items-center justify-between text-xs text-emerald-300/90 font-medium">
+                      <span className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5" /> {teams[0].membersCount} active members
+                      </span>
+                      <span className="font-bold text-white group-hover:underline flex items-center gap-1">
+                        Select Badge →
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3rd Place (Bronze) */}
+                {teams[2] && (
+                  <div
+                    data-testid="podium-rank-3"
+                    onClick={() => setSelectedTeam(teams[2])}
+                    className={`cursor-pointer group relative rounded-3xl p-5 border transition-all duration-300 flex flex-col justify-between ${
+                      activeSelectedTeam?.teamId === teams[2].teamId
+                        ? "bg-slate-900 border-amber-600/80 shadow-lg shadow-amber-600/10 ring-2 ring-amber-600/40"
+                        : "bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60"
+                    }`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-600/10 border border-amber-600/30 text-amber-300 font-mono text-[11px] font-bold">
+                          <Medal className="w-3.5 h-3.5 text-amber-500" /> 3rd Place
+                        </span>
+                        <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                          Bronze Tier
+                        </span>
+                      </div>
+
+                      <div>
+                        <h4 className="text-sm font-bold text-white group-hover:text-amber-200 transition">
+                          {teams[2].teamName}
+                        </h4>
+                        <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3 text-cyan-400 shrink-0" />
+                          {teams[2].regionalHub}
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-2xl bg-black/40 border border-slate-800/80 space-y-1">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Avoided Emissions
+                        </div>
+                        <div className="text-2xl font-black text-white font-mono">
+                          {teams[2].monthlyAvoidedKgCo2}{" "}
+                          <span className="text-xs text-slate-400 font-normal">kg CO₂e</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+                          <span className="flex items-center gap-1">
+                            <Plane className="w-3 h-3 text-rose-400" />
+                            {teams[2].flightEmissionsAvoidedKg} kg flights
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <TreePine className="w-3 h-3 text-emerald-400" />
+                            {teams[2].treesEquivalent} trees
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <Users className="w-3 h-3" /> {teams[2].membersCount} members
+                      </span>
+                      <span className="font-semibold text-amber-300 group-hover:underline">
+                        Select Badge →
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Exportable Team Badge Preview Card */}
+            {activeSelectedTeam && (
+              <div
+                data-testid="team-badge-preview"
+                className="rounded-3xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-teal-950/30 p-6 flex flex-col md:flex-row items-center justify-between gap-6 backdrop-blur-md"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                    <Trophy className="w-8 h-8 text-amber-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold uppercase">
+                        Rank #{activeSelectedTeam.rank} • {activeSelectedTeam.badgeTier} Badge
+                      </span>
+                      <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Scope 3 Certified
+                      </span>
+                    </div>
+                    <h3 className="text-base font-bold text-white">
+                      {activeSelectedTeam.teamName}
+                    </h3>
+                    <p className="text-xs text-slate-300">
+                      Regional Hub: <span className="text-emerald-300 font-semibold">{activeSelectedTeam.regionalHub}</span> • Saved{" "}
+                      <span className="font-mono text-emerald-400 font-bold">{activeSelectedTeam.monthlyAvoidedKgCo2} kg CO₂e</span> ({activeSelectedTeam.treesEquivalent} trees)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => handleExportTeamBadge(activeSelectedTeam)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 transition"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download ESG Vector Badge
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Complete Team Organization Standings Table */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                All Participating Teams & Regional Hubs
+              </h3>
+
+              <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-950/80 text-[11px] text-slate-400 font-mono">
+                      <th className="py-3 px-4">Rank</th>
+                      <th className="py-3 px-4">Team & Department</th>
+                      <th className="py-3 px-4">Regional Hub</th>
+                      <th className="py-3 px-4">Members</th>
+                      <th className="py-3 px-4">Avoided Flights</th>
+                      <th className="py-3 px-4">Transit Saved</th>
+                      <th className="py-3 px-4">Total Avoided CO₂e</th>
+                      <th className="py-3 px-4 text-right">Badge Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-sans">
+                    {teams.map((t) => (
+                      <tr
+                        key={t.teamId}
+                        onClick={() => setSelectedTeam(t)}
+                        className={`cursor-pointer transition-colors ${
+                          activeSelectedTeam?.teamId === t.teamId
+                            ? "bg-emerald-950/20"
+                            : "hover:bg-slate-900/50"
+                        }`}
+                      >
+                        <td className="py-3.5 px-4 font-mono font-bold">
+                          {t.rank === 1 ? (
+                            <span className="text-amber-400">🥇 1</span>
+                          ) : t.rank === 2 ? (
+                            <span className="text-slate-300">🥈 2</span>
+                          ) : t.rank === 3 ? (
+                            <span className="text-amber-600">🥉 3</span>
+                          ) : (
+                            <span className="text-slate-500">#{t.rank}</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-white">{t.teamName}</div>
+                          <div className="text-[10px] text-slate-400">{t.department}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-300">
+                          <span className="flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            {t.regionalHub}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-slate-300">
+                          {t.membersCount}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-emerald-300">
+                          {t.flightEmissionsAvoidedKg} kg
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-cyan-300">
+                          {t.transitEmissionsSavedKg} kg
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-emerald-400">
+                          {t.monthlyAvoidedKgCo2} kg
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExportTeamBadge(t);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-700 hover:border-emerald-500/50 hover:bg-slate-800 text-[11px] text-slate-300 hover:text-emerald-300 transition"
+                          >
+                            <Download className="w-3 h-3" /> Export
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

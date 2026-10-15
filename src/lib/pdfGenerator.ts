@@ -3,7 +3,9 @@
  */
 
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { wrapText } from "./pdf/generateBookingPdf";
+import { wrapText, drawVectorQrMatrix } from "./pdf/generateBookingPdf";
+import { generateQRMatrix } from "./qr/svgQr";
+import crypto from "crypto";
 
 export { generateTaxExportPdf } from "./export/domain/taxExporter";
 export {
@@ -194,26 +196,123 @@ export function formatUserAddress(address: any): string {
 
 export const formatAddress = formatUserAddress;
 
-export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
+export interface ReceiptHmacMetadata {
+  bookingId: string | number;
+  amount: string | number;
+  date: string;
+  venueId?: string | number | null;
+  userHash?: string | null;
+}
+
+export interface ReceiptPdfOptions {
+  secret?: string;
+  baseUrl?: string;
+}
+
+/**
+ * Computes a deterministic 16-character SHA-256 hash slice of a user identifier
+ * to preserve privacy while maintaining tamper verification.
+ */
+export function computeUserHash(identifier?: string | number | null): string {
+  if (!identifier) return "anonymous";
+  return crypto
+    .createHash("sha256")
+    .update(String(identifier).trim().toLowerCase())
+    .digest("hex")
+    .slice(0, 16);
+}
+
+/**
+ * Computes an HMAC-SHA256 verification digest of receipt metadata
+ * (bookingId, amount, date, venueId, userHash) using a server secret.
+ */
+export function computeReceiptHmacSha256(
+  metadata: ReceiptHmacMetadata,
+  secret: string = process.env.RECEIPT_VERIFICATION_SECRET ||
+    process.env.HMAC_SECRET ||
+    "worksphere-receipt-tamper-secret-key-2026",
+): string {
+  const payload = [
+    String(metadata.bookingId ?? ""),
+    String(metadata.amount ?? ""),
+    String(metadata.date ?? ""),
+    String(metadata.venueId ?? ""),
+    String(metadata.userHash ?? ""),
+  ].join(":");
+
+  return crypto
+    .createHmac("sha256", secret)
+    .update(payload)
+    .digest("hex");
+}
+
+/**
+ * Verifies the authenticity and provenance of a receipt's HMAC-SHA256 digest.
+ */
+export function verifyReceiptHmacSha256(
+  metadata: ReceiptHmacMetadata,
+  signature: string,
+  secret?: string,
+): boolean {
+  if (!signature || typeof signature !== "string") return false;
+  const expected = computeReceiptHmacSha256(metadata, secret);
+  if (expected.length !== signature.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+
+export async function generateReceiptPdf(
+  booking: any,
+  options?: ReceiptPdfOptions,
+): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595, 842]);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const courierFont = await pdfDoc.embedFont(StandardFonts.Courier);
 
   const { width, height } = page.getSize();
   let yPosition = height - 50;
+
+  const rawId = booking.id || booking.confirmationId || "UNKNOWN";
+  const amount = booking.totalAmount ?? booking.amount ?? booking.price ?? 0;
+  const date =
+    booking.date ||
+    (booking.createdAt
+      ? typeof booking.createdAt === "string"
+        ? booking.createdAt.split("T")[0]
+        : new Date(booking.createdAt).toISOString().split("T")[0]
+      : "");
+  const venueId = booking.venueId || booking.venue?.id || "";
+  const userIdentifier =
+    booking.userId ||
+    booking.user?.id ||
+    booking.user?.email ||
+    booking.customerEmail ||
+    "";
+  const userHash = computeUserHash(userIdentifier);
+
+  const hmacSignature = computeReceiptHmacSha256(
+    {
+      bookingId: rawId,
+      amount,
+      date,
+      venueId,
+      userHash,
+    },
+    options?.secret,
+  );
 
   const customerName = booking.user
     ? `${booking.user.firstName || ""} ${booking.user.lastName || ""}`.trim()
     : booking.customerEmail || "N/A";
 
-  const drawText = (text: string, options: any) => {
+  const drawText = (text: string, opts: any) => {
     try {
-      page.drawText(text, options);
+      page.drawText(text, opts);
     } catch {
       const strictText = text.replace(/[^\x20-\x7E]/g, "?");
       try {
-        page.drawText(strictText, options);
+        page.drawText(strictText, opts);
       } catch {}
     }
   };
@@ -359,6 +458,84 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
       font,
     });
   }
+
+  if (amount !== undefined && amount !== null && amount !== 0) {
+    const currency = booking.currency || "USD";
+    const formattedAmount =
+      typeof amount === "number" ? amount.toFixed(2) : String(amount);
+    yPosition -= 18;
+    drawText(`AMOUNT: ${currency} ${formattedAmount}`, {
+      x: 50,
+      y: yPosition,
+      size: 10,
+      font: boldFont,
+    });
+  }
+
+  // --- Tamper-Evident Footer: Cryptographic HMAC-SHA256 & QR Code ---
+  page.drawLine({
+    start: { x: 50, y: 110 },
+    end: { x: width - 50, y: 110 },
+    thickness: 1,
+    color: rgb(0.85, 0.85, 0.85),
+  });
+
+  const baseUrl = options?.baseUrl || "https://worksphere.app";
+  const verificationUrl = `${baseUrl.replace(/\/+$/, "")}/api/receipts/verify?id=${encodeURIComponent(String(rawId))}&sig=${hmacSignature}`;
+
+  try {
+    const qrMatrix = generateQRMatrix(verificationUrl);
+    drawVectorQrMatrix(page, qrMatrix, 50, 42, 58);
+  } catch {
+    // If QR matrix generation encounters an edge case, proceed with text verification
+  }
+
+  const textX = 120;
+  drawText("CRYPTOGRAPHIC AUTHENTICITY & PROVENANCE VERIFICATION", {
+    x: textX,
+    y: 92,
+    size: 8,
+    font: boldFont,
+    color: rgb(0.1, 0.15, 0.25),
+  });
+
+  drawText("HMAC-SHA256 Verification Hash (Tamper-Evident Receipt Digest):", {
+    x: textX,
+    y: 80,
+    size: 7,
+    font,
+    color: rgb(0.35, 0.4, 0.45),
+  });
+
+  drawText(hmacSignature, {
+    x: textX,
+    y: 69,
+    size: 6.5,
+    font: courierFont,
+    color: rgb(0.05, 0.05, 0.05),
+  });
+
+  drawText(
+    `Payload: [ID: ${rawId} | AMT: ${amount} | DATE: ${date} | VENUE: ${venueId || "N/A"} | USER: ${userHash}]`,
+    {
+      x: textX,
+      y: 57,
+      size: 6,
+      font,
+      color: rgb(0.45, 0.45, 0.5),
+    },
+  );
+
+  drawText(
+    "Auditors: Scan QR or verify HMAC-SHA256 digest against server key without external database query.",
+    {
+      x: textX,
+      y: 47,
+      size: 5.5,
+      font,
+      color: rgb(0.55, 0.55, 0.6),
+    },
+  );
 
   return await pdfDoc.save();
 }

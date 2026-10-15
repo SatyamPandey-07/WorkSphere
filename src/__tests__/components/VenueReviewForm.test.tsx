@@ -243,4 +243,77 @@ describe("VenueReviewForm Star Rating", () => {
       expect(submitButton).toBeDisabled();
     });
   });
+
+  describe("Offline Draft Caching & Optimistic UI (#6489)", () => {
+    beforeEach(() => {
+      localStorage.clear();
+      jest.restoreAllMocks();
+    });
+
+    it("auto-saves review draft to localStorage on keystroke", () => {
+      render(<VenueReviewForm venueId="venue-abc" initialRating={4} />);
+
+      const textarea = screen.getByPlaceholderText(/share your experience/i);
+      fireEvent.change(textarea, { target: { value: "Quiet and productive." } });
+
+      const saved = localStorage.getItem("worksphere:review-draft:venue-abc");
+      expect(saved).not.toBeNull();
+      const parsed = JSON.parse(saved!);
+      expect(parsed.text).toBe("Quiet and productive.");
+      expect(parsed.rating).toBe(4);
+    });
+
+    it("restores review draft from localStorage on mount", () => {
+      localStorage.setItem(
+        "worksphere:review-draft:venue-xyz",
+        JSON.stringify({
+          text: "Saved draft content",
+          rating: 4.5,
+          updatedAt: Date.now(),
+        }),
+      );
+
+      render(<VenueReviewForm venueId="venue-xyz" />);
+
+      const textarea = screen.getByPlaceholderText(
+        /share your experience/i,
+      ) as HTMLTextAreaElement;
+      expect(textarea.value).toBe("Saved draft content");
+      expect(screen.getByTestId("rating-preview-text")).toHaveTextContent("4.5");
+    });
+
+    it("optimistically renders pending review with amber sync icon when offline", () => {
+      // Simulate offline mode
+      Object.defineProperty(navigator, "onLine", {
+        value: false,
+        configurable: true,
+        writable: true,
+      });
+
+      render(<VenueReviewForm venueId="venue-offline" initialRating={5} />);
+
+      const textarea = screen.getByPlaceholderText(/share your experience/i);
+      fireEvent.change(textarea, {
+        target: { value: "Offline subway review" },
+      });
+
+      const submitButton = screen.getByRole("button", {
+        name: /submit review/i,
+      });
+      fireEvent.click(submitButton);
+
+      // Optimistic review should appear in feed with Pending Sync badge
+      expect(screen.getByTestId("pending-reviews-feed")).toBeInTheDocument();
+      expect(screen.getByTestId("pending-sync-badge")).toBeInTheDocument();
+      expect(screen.getByText(/pending sync/i)).toBeInTheDocument();
+      expect(screen.getByText("Offline subway review")).toBeInTheDocument();
+
+      // Form text should be reset and draft cleared
+      expect(textarea.value).toBe("");
+      expect(
+        localStorage.getItem("worksphere:review-draft:venue-offline"),
+      ).toBeNull();
+    });
+  });
 });
+

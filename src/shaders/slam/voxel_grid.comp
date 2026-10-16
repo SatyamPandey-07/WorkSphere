@@ -1,0 +1,128 @@
+/**
+ * SLAMPointcloud.ts
+ * Interfaces with the WebXR Depth API to ingest raw depth buffers 
+ * and construct a continuous 3D spatial mesh.
+ */
+
+export interface DepthPoint {
+  x: number;
+  y: number;
+  z: number;
+  confidence: number;
+}
+
+export interface SLAMConfig {
+  maxPoints: number;
+  voxelResolution: number;
+  confidenceThreshold: number;
+}
+
+export class SLAMPointcloud {
+  private points: Float32Array;
+  private pointCount: number = 0;
+  private config: SLAMConfig;
+  private viewMatrix: Float32Array = new Float32Array(16);
+  private projectionMatrix: Float32Array = new Float32Array(16);
+
+  constructor(config: SLAMConfig) {
+    this.config = config;
+    // Allocate flat array for x, y, z, confidence (4 floats per point)
+    this.points = new Float32Array(config.maxPoints * 4);
+    this.initIdentityMatrices();
+  }
+
+  private initIdentityMatrices(): void {
+    // Initialize basic identity for view/projection until XR frame provides them
+    for (let i = 0; i < 4; i++) {
+      this.viewMatrix[i * 4 + i] = 1.0;
+      this.projectionMatrix[i * 4 + i] = 1.0;
+    }
+  }
+
+  public updateMatrices(view: Float32Array, projection: Float32Array): void {
+    this.viewMatrix.set(view);
+    this.projectionMatrix.set(projection);
+  }
+
+  public ingestDepthBuffer(
+    depthData: Uint16Array | Float32Array, 
+    width: number, 
+    height: number, 
+    depthToMeters: number,
+    cameraIntrinsics: { fx: number; fy: number; cx: number; cy: number }
+  ): number {
+    let newPointsAdded = 0;
+    const { fx, fy, cx, cy } = cameraIntrinsics;
+
+    for (let y = 0; y < height; y += 2) { // Subsample for performance
+      for (let x = 0; x < width; x += 2) {
+        const index = y * width + x;
+        const rawDepth = depthData[index];
+        
+        // Convert raw depth to meters
+        const z = rawDepth * depthToMeters;
+        
+        if (z <= 0 || z > 5.0) continue; // Filter out invalid or distant readings
+        
+        // Unproject to 3D camera space
+        const x3d = (x - cx) * z / fx;
+        const y3d = (y - cy) * z / fy;
+        const z3d = z;
+
+        // Transform to world space using view matrix (simplified)
+        const worldPos = this.transformToWorld(x3d, y3d, z3d);
+        
+        if (this.pointCount < this.config.maxPoints) {
+          const offset = this.pointCount * 4;
+          this.points[offset] = worldPos.x;
+          this.points[offset + 1] = worldPos.y;
+          this.points[offset + 2] = worldPos.z;
+          this.points[offset + 3] = 1.0; // Confidence
+          this.pointCount++;
+          newPointsAdded++;
+        } else {
+          // Ring buffer replacement for oldest points
+          const replaceIndex = (this.pointCount % this.config.maxPoints) * 4;
+          this.points[replaceIndex] = worldPos.x;
+          this.points[replaceIndex + 1] = worldPos.y;
+          this.points[replaceIndex + 2] = worldPos.z;
+          this.points[replaceIndex + 3] = 1.0;
+          this.pointCount++;
+        }
+      }
+    }
+
+    return newPointsAdded;
+  }
+
+  private transformToWorld(x: number, y: number, z: number): { x: number; y: number; z: number } {
+    // Simplified inverse view matrix multiplication
+    // In production, this uses the full XRFrame getViewerPose() matrix
+    const m = this.viewMatrix;
+    return {
+      x: m[0] * x + m[4] * y + m[8] * z + m[12],
+      y: m[1] * x + m[5] * y + m[9] * z + m[13],
+      z: m[2] * x + m[6] * y + m[10] * z + m[14]
+    };
+  }
+
+  public getPointBuffer(): Float32Array {
+    return this.points.subarray(0, Math.min(this.pointCount, this.config.maxPoints) * 4);
+  }
+
+  public getActivePointCount(): number {
+    return Math.min(this.pointCount, this.config.maxPoints);
+  }
+
+  public clear(): void {
+    this.pointCount = 0;
+    this.points.fill(0);
+  }
+
+  public serializeForWorker(): ArrayBuffer {
+    const activePoints = this.getActivePointCount();
+    const copy = new Float32Array(activePoints * 4);
+    copy.set(this.points.subarray(0, activePoints * 4));
+    return copy.buffer;
+  }
+}

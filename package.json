@@ -67,7 +67,7 @@
     "react-leaflet": "^5.0.0",
     "recharts": "^3.10.1",
     "snarkjs": "^0.7.6",
-    "svix": "^2.0.0",
+    "svix": "^2.8.0",
     "tailwind-merge": "^3.7.0",
     "tesseract.js": "^7.0.0",
     "three": "^0.186.1",

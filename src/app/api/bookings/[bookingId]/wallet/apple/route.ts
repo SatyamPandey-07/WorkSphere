@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { buildApplePassJson } from "@/lib/wallet/passService";
+import {
+  buildApplePassJson,
+  generatePkpassArchive,
+  validatePassJson,
+} from "@/lib/wallet/passService";
 
 type RouteContext = {
   params: Promise<{
@@ -11,7 +15,7 @@ type RouteContext = {
 
 /**
  * GET /api/bookings/[bookingId]/wallet/apple
- * Downloads Apple Wallet .pkpass payload.
+ * Downloads Apple Wallet .pkpass zip archive binary payload.
  */
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
@@ -50,9 +54,17 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     const passJson = buildApplePassJson(booking as any);
-    const passBuffer = Buffer.from(JSON.stringify(passJson, null, 2), "utf-8");
+    const validation = validatePassJson(passJson);
+    if (!validation.isValid) {
+      return NextResponse.json(
+        { error: "Invalid pass structure", details: validation.errors },
+        { status: 500 },
+      );
+    }
 
-    return new NextResponse(passBuffer, {
+    const pkpassArchiveBuffer = generatePkpassArchive(passJson);
+
+    return new NextResponse(pkpassArchiveBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.apple.pkpass",

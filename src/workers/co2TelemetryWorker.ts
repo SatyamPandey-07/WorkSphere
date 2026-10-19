@@ -97,3 +97,5 @@ self.onmessage = (event) => {
         client.disconnect();
     }
 };
+
+export {};

@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
             podId: podToBook.id,
             startTime: bestSlot.startUTC,
             endTime: bestSlot.endUTC,
-            reasoning: bestSlot.reasoning,
+            participants: bestSlot.participants,
         }, { status: 201 });
 
     } catch (error) {

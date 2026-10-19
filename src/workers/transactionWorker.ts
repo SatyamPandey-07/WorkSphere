@@ -119,3 +119,4 @@ function calculateMerkleRoot(leaves: string[]): string {
 
     return currentLevel[0];
 }
+export {};

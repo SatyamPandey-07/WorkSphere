@@ -421,7 +421,7 @@ export function BinauralSpatialRoom({
       await ctx.suspend();
       setIsAudioRunning(false);
     } else {
-      setIsAudioRunning(ctx.state === "running");
+      setIsAudioRunning((ctx.state as AudioContextState) === "running");
     }
   }, [getOrCreateAudioContext]);
 

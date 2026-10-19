@@ -23,7 +23,6 @@ export interface BookingHistoryExportItem {
     category?: string | null;
     address?: string | null;
   } | null;
-  [key: string]: unknown;
 }
 
 export interface BookingHistoryCsvOptions {

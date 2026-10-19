@@ -101,3 +101,5 @@ function sendAggregatedData() {
         items: aggregated
     });
 }
+
+export {};

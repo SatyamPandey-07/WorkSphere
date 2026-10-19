@@ -123,3 +123,5 @@ self.onmessage = (event) => {
         });
     }
 };
+
+export {};

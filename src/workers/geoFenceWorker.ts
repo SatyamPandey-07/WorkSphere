@@ -68,3 +68,5 @@ self.onmessage = (event) => {
         lastKnownCountry = null;
     }
 };
+
+export {};

@@ -1,21 +1,16 @@
 /**
  * @file Core barrel export file for WorkSphere business logic.
- * @description Centralizes exports for all core domain modules.
-*/
+ * @description Centralizes exports for core domain modules.
+ *
+ * Only modules that actually exist are re-exported here. Previously this file
+ * re-exported nine non-existent modules (./agents, ./spatial/SpatialEngine,
+ * ./audio/AudioProcessor, ...) and ./ergonomics/ISOValidator, which is a
+ * worker script rather than a module, so importing the barrel failed.
+ */
 
-export * from './agents';
-export * from './spatial';
 export * from './health/JetlagRecoveryEngine';
 export * from './health/SolarExposureTracker';
-export * from './spatial/SpatialEngine';
-export * from './audio/AudioProcessor';
-export * from './network/MeshNetwork';
-export * from './auth/SessionManager';
-export * from './db/PrismaClient';
-export * from './cache/RedisManager';
-export * from './analytics/TelemetryTracker';
 export * from './nutrition/AllergenMatcher';
 export * from './iot/LuggageLockerProtocol';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
-export * from './ergonomics/ISOValidator';

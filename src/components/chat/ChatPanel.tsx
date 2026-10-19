@@ -520,7 +520,10 @@ export function useDeduplicatedMessages<
     (msg: Omit<T, "clientMessageId"> & { clientMessageId?: string }): T => {
       const clientMessageId =
         msg.clientMessageId ||
-        generateClientMessageId(msg.content || "", msg.role || "user");
+        generateClientMessageId(
+          (msg.content as string | undefined) || "",
+          (msg.role as string | undefined) || "user",
+        );
       const optimistic = {
         ...msg,
         clientMessageId,
@@ -958,7 +961,10 @@ export function ChatPanel({
 
   const combinedMessages = useMemo(() => {
     const all = [...messages, ...(pendingMessages || [])];
-    const { deduplicated, reconciledCount } = deduplicateMessages([], all);
+    const { deduplicated, reconciledCount } = deduplicateMessages(
+      [],
+      all as ChatMessageLike[],
+    );
     if (reconciledCount > 0 && onMessageDeduplicated) {
       onMessageDeduplicated(reconciledCount);
     }

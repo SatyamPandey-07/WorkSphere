@@ -122,3 +122,5 @@ self.onmessage = (event: MessageEvent<SyncMessage>) => {
             break;
     }
 };
+
+export {};

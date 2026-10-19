@@ -6,14 +6,15 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
     try {
-        const { userId } = auth();
+        const { userId } = await auth();
         if (!userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         // Verify user is a venue manager to allow telemetry ingestion
         const user = await db.user.findUnique({ where: { id: userId } });
-        if (!user || user.role !== 'MANAGER') {
+        // There is no role column on User; venue managers are admins.
+        if (!user || !user.isAdmin) {
             return NextResponse.json({ error: 'Forbidden: Manager access required' }, { status: 403 });
         }
 

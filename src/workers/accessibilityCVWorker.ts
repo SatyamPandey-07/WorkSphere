@@ -88,3 +88,5 @@ self.addEventListener('message', async (event) => {
         });
     }
 });
+
+export {};

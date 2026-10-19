@@ -137,3 +137,5 @@ function resolveConflict(data: { fileId: string; ours: string; theirs: string })
         content: conflictMarkers
     });
 }
+
+export {};

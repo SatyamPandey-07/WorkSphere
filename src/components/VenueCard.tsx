@@ -917,9 +917,9 @@ export function VenueCard({
         )}
 
         {/* Aerospace Mach Speed Classification Badge (#6175) */}
-        {venue.wifiSpeed ? (
+        {venue.amenities?.wifiSpeed ? (
           <div className="flex items-center gap-2 mb-3">
-            <MachSpeedBadge downloadMbps={venue.wifiSpeed} size="sm" />
+            <MachSpeedBadge downloadMbps={venue.amenities.wifiSpeed} size="sm" />
           </div>
         ) : null}
 

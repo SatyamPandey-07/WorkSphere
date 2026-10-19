@@ -111,3 +111,5 @@ self.onmessage = (event) => {
         stopHeartbeat();
     }
 };
+
+export {};

@@ -98,9 +98,7 @@ export function supportsCircadianLighting(
       circadianLighting?: boolean;
       circadian?: boolean;
       lighting?: string | null;
-      [key: string]: unknown;
     } | null;
-    [key: string]: unknown;
   } | null,
 ): boolean {
   if (!venue) return false;

@@ -34,6 +34,7 @@ export interface MapMarker {
   isClaimed?: boolean;
   ownerId?: string | null;
   hostMessage?: string | null;
+  photos?: string[];
   amenities?: {
     wifi?: boolean;
     outlets?: boolean;

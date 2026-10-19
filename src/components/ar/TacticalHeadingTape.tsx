@@ -67,7 +67,7 @@ export const TacticalHeadingTape: React.FC<TacticalHeadingTapeProps> = ({
   }, [externalHeading, onHeadingUpdate]);
 
   // Generate ticks for 0 to 360 degrees
-  const ticks = [];
+  const ticks: { deg: number; label: string; isMajor: boolean }[] = [];
   for (let deg = 0; deg < 360; deg += 5) {
     let label = '';
     if (deg === 0) label = 'N';

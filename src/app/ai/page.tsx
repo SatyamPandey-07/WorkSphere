@@ -1008,7 +1008,7 @@ function AppPage() {
                         outlets: v.hasOutlets,
                         quiet: v.noiseLevel === "quiet",
                         hasErgonomic: v.hasErgonomic,
-                        outletDensity: v.outletDensity,
+                        outletDensity: v.outletDensity ?? undefined,
                         wifiSpeed: v.wifiSpeed,
                       },
                       score: v.score,

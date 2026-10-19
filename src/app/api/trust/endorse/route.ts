@@ -6,7 +6,7 @@ import { auth } from '@clerk/nextjs/server';
  * the cryptographic chains of user skill profiles.
  */
 export async function POST(req: NextRequest) {
-    const { userId } = auth();
+    const { userId } = await auth();
     if (!userId) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

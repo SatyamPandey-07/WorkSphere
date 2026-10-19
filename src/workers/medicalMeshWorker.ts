@@ -70,3 +70,5 @@ self.onmessage = (event) => {
             break;
     }
 };
+
+export {};

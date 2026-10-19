@@ -71,7 +71,7 @@ export function PasswordStrengthMeter({
 }: PasswordStrengthMeterProps) {
   const {
     strength,
-    score: _score,
+    score,
     feedback,
   } = evaluatePasswordStrength(password);
 

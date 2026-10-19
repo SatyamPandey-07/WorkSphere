@@ -65,6 +65,8 @@ model User {
   badges             UserBadge[]
   seatWaitlists      VenueSeatWaitlist[]
   liveFeedbacks      VenueLiveFeedback[]
+  // Running total of verified deep-work minutes (see /api/zkp/deepwork)
+  totalDeepWorkMinutes Int              @default(0)
 }
 
 model UserBadge {
@@ -959,4 +961,156 @@ model VenueSeatWaitlist {
   @@index([userId, status])
   @@index([seatId])
   @@index([status, claimExpiresAt])
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Models used by API routes that previously had no backing table. Shapes are
+// derived from how each route reads/writes them.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// /api/audio/jammer
+model PrivacyJammerSession {
+  id              String   @id @default(cuid())
+  userId          String
+  venueId         String
+  durationMinutes Float
+  averageDelayMs  Float
+  completedAt     DateTime @default(now())
+
+  @@index([userId, completedAt])
+}
+
+/// /api/ergonomics/avatar
+model ErgonomicSession {
+  id                 String   @id @default(cuid())
+  userId             String
+  durationMinutes    Float
+  averageStrainScore Float
+  peakStrainJoint    String   @default("unknown")
+  completedAt        DateTime @default(now())
+
+  @@index([userId, completedAt])
+}
+
+/// /api/events/match — populated by the event ingestion worker
+model LocalEvent {
+  id            String   @id @default(cuid())
+  title         String
+  description   String   @default("")
+  startTime     DateTime
+  endTime       DateTime
+  venueName     String
+  venueLat      Float
+  venueLng      Float
+  tags          String[] @default([])
+  attendeeCount Int      @default(0)
+  sourceUrl     String   @default("")
+  createdAt     DateTime @default(now())
+
+  @@index([startTime])
+}
+
+/// /api/events/match
+model MatchmakingSession {
+  id           String   @id @default(cuid())
+  userId       String
+  matchesFound Int
+  topRoiScore  Float
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// /api/health/jetlag
+model JetLagProtocol {
+  id                  String   @id @default(cuid())
+  userId              String
+  originTimezone      String
+  destinationTimezone String
+  protocolData        String
+  summary             String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([userId, originTimezone, destinationTimezone])
+}
+
+/// /api/iot/orchestrate
+model IoTOrchestrationLog {
+  id             String   @id @default(cuid())
+  userId         String
+  zoneId         String
+  deskId         String
+  sessionState   String
+  commandsIssued Int
+  executedAt     DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// /api/network/multiplex
+model MeshSession {
+  id             String   @id @default(cuid())
+  userId         String
+  venueId        String
+  role           String
+  meshToken      String   @unique
+  expiresAt      DateTime
+  contributionMb Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// /api/network/survival
+model EmergencyMessage {
+  id               String   @id
+  senderId         String
+  encryptedPayload String
+  gpsLat           Float?
+  gpsLng           Float?
+  hopCount         Int      @default(0)
+  createdAt        DateTime @default(now())
+  lastSyncedAt     DateTime @default(now())
+
+  @@index([senderId])
+}
+
+/// /api/twin/sync
+model VenueTelemetry {
+  id         String   @id @default(cuid())
+  venueId    String
+  roomId     String
+  sensorId   String
+  type       String
+  value      Float
+  recordedAt DateTime @default(now())
+
+  @@unique([sensorId, recordedAt])
+  @@index([venueId, roomId, recordedAt])
+}
+
+/// /api/twin/sync
+model VenueStateSnapshot {
+  id        String   @id @default(cuid())
+  venueId   String
+  stateJson String
+  createdAt DateTime @default(now())
+
+  @@index([venueId, createdAt])
+}
+
+/// /api/zkp/deepwork
+model DeepWorkCredential {
+  id              String   @id @default(cuid())
+  userId          String
+  sessionId       String   @unique
+  durationMinutes Int
+  focusThreshold  Float
+  commitmentHash  String
+  proofData       String
+  mintedAt        DateTime @default(now())
+
+  @@index([userId, mintedAt])
 }

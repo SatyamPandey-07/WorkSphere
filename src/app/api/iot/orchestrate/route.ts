@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
     try {
-        const { userId } = auth();
+        const { userId } = await auth();
         if (!userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -20,12 +20,14 @@ export async function POST(req: NextRequest) {
         }
 
         const activeBooking = await db.booking.findFirst({
+            // Booking has no start/end timestamps or ACTIVE status: a booking
+            // is "active" when it is for this seat, today, and confirmed or
+            // checked in.
             where: {
                 userId,
-                deskId,
-                status: 'ACTIVE',
-                startTime: { lte: new Date() },
-                endTime: { gte: new Date() }
+                seatId: deskId,
+                status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+                date: new Date().toISOString().slice(0, 10)
             }
         });
 
@@ -57,4 +59,4 @@ export async function POST(req: NextRequest) {
         console.error('[IOT_ORCHESTRATE_API]', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
-}
+}

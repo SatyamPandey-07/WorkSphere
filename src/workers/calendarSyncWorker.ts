@@ -107,3 +107,5 @@ self.onmessage = (event) => {
         performSync(payload as SyncConfig);
     }
 };
+
+export {};

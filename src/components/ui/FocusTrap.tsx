@@ -6,7 +6,7 @@ import { useFocusTrap, UseFocusTrapOptions } from "@/hooks/useFocusTrap";
 export interface FocusTrapProps extends UseFocusTrapOptions {
   children: React.ReactNode;
   className?: string;
-  as?: keyof JSX.IntrinsicElements;
+  as?: keyof React.JSX.IntrinsicElements;
   role?: string;
   "aria-modal"?: boolean | "true" | "false";
   "aria-label"?: string;
@@ -31,6 +31,9 @@ export function FocusTrap({
   ...rest
 }: FocusTrapProps) {
   const containerRef = useRef<HTMLElement | null>(null);
+  // A union of every intrinsic tag collapses its props to `never`; render
+  // through a generic element type instead.
+  const Tag = Component as React.ElementType;
 
   useFocusTrap(containerRef, {
     isActive,
@@ -41,7 +44,7 @@ export function FocusTrap({
   });
 
   return (
-    <Component
+    <Tag
       ref={containerRef}
       role={role}
       aria-modal={ariaModal}
@@ -52,6 +55,6 @@ export function FocusTrap({
       {...rest}
     >
       {children}
-    </Component>
+    </Tag>
   );
 }

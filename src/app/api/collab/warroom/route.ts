@@ -28,7 +28,10 @@ const TriggerSchema = z.object({
     conflicts: z.array(z.object({
         filePath: z.string(),
         conflictMarkers: z.number(),
-        linesAffected: z.number()
+        linesAffected: z.number(),
+        // GitConflict requires a severity; the trigger escalates it to
+        // CRITICAL for critical paths, so default to LOW when omitted.
+        severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('LOW')
     })),
     podId: z.string(),
     teamMembers: z.array(z.string().uuid())

@@ -23,6 +23,7 @@ export interface AnnunciatorTileFlag {
   isActive: boolean;
   color: "amber" | "red" | "cyan";
   priority: number;
+  icon?: React.ReactNode;
 }
 
 export interface CockpitMasterCautionAnnunciatorProps {

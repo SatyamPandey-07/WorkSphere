@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
             escrowId: escrowRecord.id,
             state: escrowRecord.state,
             unlockToken,
-            expiresAt: unlockToken.payload.expiresAt,
+            // payload is base64url-encoded JSON, so decode it to read the expiry.
+            expiresAt: JSON.parse(Buffer.from(unlockToken.payload, 'base64url').toString('utf8')).expiresAt,
         }, { status: 201 });
 
     } catch (error) {

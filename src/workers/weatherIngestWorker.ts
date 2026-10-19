@@ -146,3 +146,5 @@ function preprocessHazards(payload: { path: string[] }) {
         hazards: Array.from(pathHazards)
     });
 }
+
+export {};

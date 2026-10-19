@@ -80,3 +80,244 @@ export async function apiClient<T = any>(
 }
 
 export default apiClient;
+
+// ---------------------------------------------------------------------------
+// apiFetch — rate-limit aware fetch wrapper (see docs/API_CLIENT_WRAPPER.md)
+//
+// This export (and the quota store below) had been dropped from this module
+// while EnhancedChatbot, the reservation client, RateLimitBanner and
+// useRateLimit still import it, which broke those modules at runtime.
+// ---------------------------------------------------------------------------
+
+export type RateLimitEndpoint = "chat" | "book" | "other";
+
+export interface RateLimitEventDetail {
+  /** Seconds until requests are accepted again. */
+  retryAfter: number;
+  endpoint: RateLimitEndpoint;
+  /** "chat", "book" or the request pathname. */
+  bucket: string;
+  /** Epoch ms when requests are accepted again. */
+  retryAt: number;
+  /** True when apiFetch will re-send the request automatically. */
+  willRetry: boolean;
+}
+
+export interface RateLimitQuota {
+  limit: number | null;
+  remaining: number | null;
+  /** Epoch ms when the window resets, if known. */
+  resetAt: number | null;
+  /** Epoch ms until which the bucket is blocked after a 429, if any. */
+  retryAt: number | null;
+  updatedAt: number;
+}
+
+export interface RetryOnRateLimitOptions {
+  maxRetries?: number;
+  maxWaitSeconds?: number;
+}
+
+export interface ApiFetchOptions {
+  retryOnRateLimit?: boolean | RetryOnRateLimitOptions;
+}
+
+const quotas = new Map<string, RateLimitQuota>();
+const quotaListeners = new Set<() => void>();
+
+export function getRateLimitQuota(bucket: string): RateLimitQuota | undefined {
+  return quotas.get(bucket);
+}
+
+export function subscribeRateLimitQuota(listener: () => void): () => void {
+  quotaListeners.add(listener);
+  return () => {
+    quotaListeners.delete(listener);
+  };
+}
+
+function setQuota(bucket: string, quota: RateLimitQuota): void {
+  // Replace the object so useSyncExternalStore sees a new snapshot.
+  quotas.set(bucket, quota);
+  quotaListeners.forEach((l) => l());
+}
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
+function pathnameOf(url: string): string {
+  try {
+    const base =
+      typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    return new URL(url, base).pathname;
+  } catch {
+    return url.split("?")[0].split("#")[0];
+  }
+}
+
+/** Classifies a request by its path only (query string ignored). */
+export function classifyEndpoint(url: string): {
+  endpoint: RateLimitEndpoint;
+  bucket: string;
+} {
+  const path = pathnameOf(url);
+  if (/\/book|\/confirm|\/reservations/.test(path)) {
+    return { endpoint: "book", bucket: "book" };
+  }
+  if (path === "/api/chat" || path.startsWith("/api/chat/")) {
+    return { endpoint: "chat", bucket: "chat" };
+  }
+  return { endpoint: "other", bucket: path };
+}
+
+function parseNumberHeader(value: string | null): number | null {
+  if (value === null || value.trim() === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Interprets an X-RateLimit-Reset / RateLimit-Reset value, which may be a
+ * delta in seconds, a Unix timestamp in seconds, or one in milliseconds.
+ * Returns epoch ms, or null.
+ */
+export function parseResetHeader(value: string | null, now = Date.now()): number | null {
+  const n = parseNumberHeader(value);
+  if (n === null || n < 0) return null;
+  if (n > 1e12) return n; // epoch ms
+  if (n > 1e9) return n * 1000; // epoch seconds
+  return now + n * 1000; // delta seconds
+}
+
+function readHeader(headers: Headers, ...names: string[]): string | null {
+  for (const name of names) {
+    const v = headers.get(name);
+    if (v !== null) return v;
+  }
+  return null;
+}
+
+async function retryAfterSecondsFrom(response: Response, now: number): Promise<number> {
+  const retryAfter = response.headers.get("Retry-After");
+  if (retryAfter) {
+    return Math.max(0, Math.ceil(parseRetryAfterHeader(retryAfter) / 1000));
+  }
+
+  const reset = parseResetHeader(
+    readHeader(response.headers, "X-RateLimit-Reset", "RateLimit-Reset"),
+    now,
+  );
+  if (reset !== null) return Math.max(0, Math.ceil((reset - now) / 1000));
+
+  try {
+    const body = await response.clone().json();
+    const value = body?.retryAfter ?? body?.retry_after ?? body?.resetIn;
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) return Math.ceil(n);
+  } catch {
+    // Body is not JSON — fall through to the default.
+  }
+  return 60;
+}
+
+function recordQuota(bucket: string, response: Response, now: number): void {
+  const limit = parseNumberHeader(
+    readHeader(response.headers, "X-RateLimit-Limit", "RateLimit-Limit"),
+  );
+  const remaining = parseNumberHeader(
+    readHeader(response.headers, "X-RateLimit-Remaining", "RateLimit-Remaining"),
+  );
+  const resetAt = parseResetHeader(
+    readHeader(response.headers, "X-RateLimit-Reset", "RateLimit-Reset"),
+    now,
+  );
+  const previous = quotas.get(bucket);
+
+  if (limit === null && remaining === null && resetAt === null) {
+    // No quota headers: only clear a stale 429 block.
+    if (previous?.retryAt) setQuota(bucket, { ...previous, retryAt: null, updatedAt: now });
+    return;
+  }
+  setQuota(bucket, { limit, remaining, resetAt, retryAt: null, updatedAt: now });
+}
+
+function wait(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * fetch() wrapper that detects HTTP 429, records X-RateLimit-* quota per
+ * bucket, broadcasts a `rate-limit-triggered` CustomEvent, and optionally
+ * waits out the limit and re-sends. The original Response is returned.
+ */
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options: ApiFetchOptions = {},
+): Promise<Response> {
+  const url = requestUrl(input);
+  const { endpoint, bucket } = classifyEndpoint(url);
+  const retryConfig =
+    options.retryOnRateLimit === true
+      ? {}
+      : options.retryOnRateLimit || null;
+  const maxRetries = retryConfig ? retryConfig.maxRetries ?? 2 : 0;
+  const maxWaitSeconds = retryConfig?.maxWaitSeconds ?? 60;
+  const signal = init?.signal ?? (input instanceof Request ? input.signal : null);
+
+  for (let attempt = 0; ; attempt++) {
+    // A retrying request waits while the bucket is known to be blocked.
+    const blockedUntil = quotas.get(bucket)?.retryAt;
+    if (retryConfig && blockedUntil && blockedUntil > Date.now()) {
+      await wait(blockedUntil - Date.now(), signal);
+    }
+
+    const attemptInput = input instanceof Request ? input.clone() : input;
+    const response = await fetch(attemptInput, init);
+    const now = Date.now();
+
+    if (response.status !== 429) {
+      recordQuota(bucket, response, now);
+      return response;
+    }
+
+    const retryAfter = await retryAfterSecondsFrom(response, now);
+    const retryAt = now + retryAfter * 1000;
+    const willRetry =
+      Boolean(retryConfig) && attempt < maxRetries && retryAfter <= maxWaitSeconds;
+
+    const previous = quotas.get(bucket);
+    setQuota(bucket, {
+      limit: previous?.limit ?? null,
+      remaining: 0,
+      resetAt: previous?.resetAt ?? retryAt,
+      retryAt,
+      updatedAt: now,
+    });
+
+    if (typeof window !== "undefined") {
+      const detail: RateLimitEventDetail = { retryAfter, endpoint, bucket, retryAt, willRetry };
+      window.dispatchEvent(new CustomEvent("rate-limit-triggered", { detail }));
+    }
+
+    if (!willRetry) return response;
+    await wait(Math.max(0, retryAt - Date.now()), signal);
+  }
+}

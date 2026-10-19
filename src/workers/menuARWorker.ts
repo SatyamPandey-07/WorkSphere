@@ -86,3 +86,5 @@ self.onmessage = async (event) => {
 };
 
 initWasm();
+
+export {};

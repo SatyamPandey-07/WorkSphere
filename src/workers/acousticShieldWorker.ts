@@ -85,3 +85,5 @@ class AcousticShieldProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('acoustic-shield-processor', AcousticShieldProcessor);
+
+export {};

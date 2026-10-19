@@ -98,3 +98,5 @@ class AcousticJammerProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('acoustic-jammer-processor', AcousticJammerProcessor);
+
+export {};

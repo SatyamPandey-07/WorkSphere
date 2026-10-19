@@ -128,3 +128,4 @@ function processFlightUpdate(flightNumber: string, update: any) {
 
 // Keep alive
 self.addEventListener('error', (e) => console.error('[FlightWorker] Global error:', e.message));
+export {};

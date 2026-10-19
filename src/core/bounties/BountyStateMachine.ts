@@ -41,10 +41,11 @@ export class BountyStateMachine {
         { from: 'CLAIMED', to: 'CANCELLED', condition: (b, p) => p.posterId === b.posterId },
     ];
 
-    public createBounty(bounty: Omit<Bounty, 'id' | 'status' | 'createdAt' | 'expiresAt'>): Bounty {
+    public createBounty(bounty: Omit<Bounty, 'status' | 'createdAt' | 'expiresAt'> & { id?: string }): Bounty {
+        const id = bounty.id || crypto.randomUUID();
         const newBounty: Bounty = {
             ...bounty,
-            id: crypto.randomUUID(),
+            id,
             status: 'POSTED',
             createdAt: Date.now(),
             expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 days
@@ -69,7 +70,7 @@ export class BountyStateMachine {
         );
 
         if (!validTransition) {
-            return { success: false, error: `Invalid transition from ${bounty.status} to ${action}` };
+            return { success: false, error: 'Invalid transition from ' + bounty.status + ' to ' + action };
         }
 
         bounty.status = action;
@@ -92,5 +93,9 @@ export class BountyStateMachine {
         return Array.from(this.bounties.values()).filter(b =>
             ['POSTED', 'CLAIMED', 'IN_PROGRESS', 'REVIEW'].includes(b.status)
         );
+    }
+
+    public reset(): void {
+        this.bounties.clear();
     }
 }

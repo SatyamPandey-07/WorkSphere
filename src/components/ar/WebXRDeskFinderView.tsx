@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import * as THREE from "three";
+import CompassCalibrationModal from "./CompassCalibrationModal";
 import {
   Camera,
   Navigation,
@@ -213,6 +214,7 @@ export default function WebXRDeskFinderView({
   const [_fallbackMode, setFallbackMode] =
     useState<ARCameraFallbackMode>("horizon_locked");
   const [isCompassReliable, setIsCompassReliable] = useState<boolean>(true);
+  const [isCalibrationOpen, setIsCalibrationOpen] = useState<boolean>(false);
   const [positioningMode, setPositioningMode] =
     useState<PositioningSourceMode>("GPS_DOMINANT");
   const [sensorMetrics] =
@@ -862,6 +864,16 @@ export default function WebXRDeskFinderView({
                 {bearingDeg}° NNE
               </strong>
             </span>
+            <button
+              type="button"
+              onClick={() => setIsCalibrationOpen(true)}
+              className="pointer-events-auto ml-1 p-1 rounded-full text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-400"
+              title="Calibrate Compass Sensors"
+              aria-label="Calibrate Compass Sensors"
+              data-testid="open-compass-calibration-modal"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </button>
             {!isCompassReliable && (
               <span
                 data-testid="ar-fallback-indicator"
@@ -958,6 +970,13 @@ export default function WebXRDeskFinderView({
           </div>
         </div>
       </div>
+
+      <CompassCalibrationModal
+        isOpen={isCalibrationOpen}
+        onClose={() => setIsCalibrationOpen(false)}
+        onComplete={() => setIsCalibrationOpen(false)}
+        heading={bearingDeg}
+      />
     </div>
   );
 }

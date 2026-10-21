@@ -1,4 +1,5 @@
 import { mean, standardDeviation, median } from "./statistics";
+import { isValidTimeZone } from "./booking/dateTimeAdapter";
 
 export interface RawNoiseData {
   avgDecibels: number;
@@ -18,8 +19,14 @@ export interface NoiseForecastResult {
   recommendedHours: number[];
 }
 
+/**
+ * @param timeZone IANA zone to bucket readings in (the viewer's zone). Without
+ * one, getHours() uses the server's zone, which is UTC in production, so every
+ * hour on the chart would be shifted by the viewer's UTC offset.
+ */
 export function generateNoiseForecast(
   data: RawNoiseData[],
+  timeZone?: string,
 ): NoiseForecastResult {
   if (!data || !Array.isArray(data)) {
     return { forecast: [], recommendedHours: [] };
@@ -30,9 +37,24 @@ export function generateNoiseForecast(
     groupedByHour[i] = [];
   }
 
+  const hourFormatter =
+    timeZone && isValidTimeZone(timeZone)
+      ? new Intl.DateTimeFormat("en-US", {
+          timeZone,
+          hour: "numeric",
+          hourCycle: "h23",
+        })
+      : null;
+
   for (const entry of data) {
     if (!entry || !entry.timestamp || !(entry.timestamp instanceof Date) || isNaN(entry.timestamp.getTime())) continue;
-    const hour = entry.timestamp.getHours();
+    const hour = hourFormatter
+      ? Number(
+          hourFormatter
+            .formatToParts(entry.timestamp)
+            .find((part) => part.type === "hour")?.value,
+        ) % 24
+      : entry.timestamp.getHours();
     groupedByHour[hour].push(entry.avgDecibels);
   }
 

@@ -537,7 +537,7 @@ export function VenueDetailDialog({
         .catch((err) => console.error(err));
 
       fetch(
-        `/api/venues/${encodeURIComponent(venue.id)}/noise-metrics/forecast`,
+        `/api/venues/${encodeURIComponent(venue.id)}/noise-metrics/forecast?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
       )
         .then((r) => r.json())
         .then((data) => {

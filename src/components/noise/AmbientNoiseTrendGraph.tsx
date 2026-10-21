@@ -91,7 +91,9 @@ export function AmbientNoiseTrendGraph({
     let active = true;
     setLoading(true);
 
-    fetch(`/api/venues/${encodeURIComponent(venueId)}/noise-metrics/forecast`)
+    fetch(
+      `/api/venues/${encodeURIComponent(venueId)}/noise-metrics/forecast?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
+    )
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
         if (active && json?.forecast) {

@@ -119,4 +119,55 @@ describe("Web Vitals Collector & Aggregator Library (#4145)", () => {
       expect(stored[stored.length - 1].route).toBe("/chat");
     });
   });
+
+  describe("Numeric Sanitization and Edge-Case Hardening", () => {
+    it("safely handles NaN and negative values in getWebVitalRating", () => {
+      expect(getWebVitalRating("LCP", NaN)).toBe("good");
+      expect(getWebVitalRating("LCP", -100)).toBe("good");
+      expect(getWebVitalRating("LCP", Infinity)).toBe("good");
+    });
+
+    it("filters out NaN and negative values in calculatePercentiles", () => {
+      const values = [100, NaN, -50, 200, 300, Infinity];
+      const res = calculatePercentiles(values);
+      expect(res.count).toBe(3);
+      expect(res.min).toBe(100);
+      expect(res.max).toBe(300);
+      expect(res.p50).toBe(200);
+      expect(Number.isNaN(res.p75)).toBe(false);
+    });
+
+    it("handles nullish and invalid metrics in calculatePerformanceScore", () => {
+      expect(calculatePerformanceScore(null)).toBe(100);
+      expect(calculatePerformanceScore(undefined)).toBe(100);
+      expect(calculatePerformanceScore({} as any)).toBe(100);
+
+      const invalidMetrics = {
+        LCP: { name: "LCP" as const, p50: NaN, p75: NaN, p90: NaN, rating: "good" as const, sampleCount: 5, distribution: { good: 100, needsImprovement: 0, poor: 0 } },
+      };
+      expect(calculatePerformanceScore(invalidMetrics)).toBe(100);
+    });
+
+    it("excludes NaN and negative telemetry entries in aggregateWebVitals", () => {
+      const entries: WebVitalEntry[] = [
+        { id: "1", name: "LCP", value: 1500, rating: "good", delta: 1500, route: "/", timestamp: 100 },
+        { id: "2", name: "LCP", value: NaN, rating: "poor", delta: NaN, route: "/", timestamp: 200 },
+        { id: "3", name: "LCP", value: -500, rating: "poor", delta: -500, route: "/", timestamp: 300 },
+        { id: "4", name: "INP", value: 50, rating: "good", delta: 50, route: "/", timestamp: 400 },
+      ];
+
+      const res = aggregateWebVitals(entries);
+      expect(res.totalSamples).toBe(2);
+      expect(res.metrics.LCP.sampleCount).toBe(1);
+      expect(res.metrics.LCP.distribution.poor).toBe(0);
+      expect(res.metrics.LCP.distribution.good).toBe(100);
+    });
+
+    it("safely records entry with nullish/partial inputs in recordWebVital", () => {
+      const entry = recordWebVital({} as any);
+      expect(entry.id).toBeDefined();
+      expect(entry.value).toBe(0);
+      expect(entry.name).toBe("LCP");
+    });
+  });
 });

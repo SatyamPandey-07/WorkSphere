@@ -49,6 +49,19 @@ describe("pickBitrateTier", () => {
       }).label,
     ).toBe("low");
   });
+
+  it("handles null, undefined, and non-object inputs by defaulting to medium", () => {
+    expect(pickBitrateTier(null).label).toBe("medium");
+    expect(pickBitrateTier(undefined).label).toBe("medium");
+    expect(pickBitrateTier({}).label).toBe("high");
+  });
+
+  it("conservatively falls back to medium on corrupted or non-finite telemetry", () => {
+    expect(pickBitrateTier({ rttMs: NaN }).label).toBe("medium");
+    expect(pickBitrateTier({ jitterMs: Infinity }).label).toBe("medium");
+    expect(pickBitrateTier({ packetsLost: NaN, packetsSent: 100 }).label).toBe("medium");
+    expect(pickBitrateTier({ rttMs: -10, packetsSent: -100 }).label).toBe("high");
+  });
 });
 
 describe("readNetworkHints", () => {
@@ -84,6 +97,27 @@ describe("readNetworkHints", () => {
       packetsSent: 200,
       jitterMs: 25,
     });
+  });
+
+  it("handles nullish reports and skips invalid or negative values", () => {
+    expect(readNetworkHints(null)).toEqual({});
+    expect(readNetworkHints(undefined)).toEqual({});
+    expect(readNetworkHints({} as any)).toEqual({});
+
+    const rows = [
+      null,
+      undefined,
+      { type: "candidate-pair", state: "succeeded", currentRoundTripTime: -0.5 },
+      { type: "candidate-pair", state: "succeeded", currentRoundTripTime: NaN },
+      { type: "remote-inbound-rtp", jitter: -0.1, packetsLost: -5 },
+    ];
+    const report = {
+      forEach(cb: (stat: any) => void) {
+        rows.forEach(cb);
+      },
+    } as unknown as RTCStatsReport;
+
+    expect(readNetworkHints(report)).toEqual({});
   });
 });
 
@@ -189,4 +223,37 @@ describe("adaptVideoBitrate", () => {
       expect(maxBitrate).toBeLessThan(tierMaxBitrate * 0.4);
     },
   );
+
+  it("handles null, undefined, or closed RTCPeerConnection safely", async () => {
+    expect(await adaptVideoBitrate(null)).toBeNull();
+    expect(await adaptVideoBitrate(undefined)).toBeNull();
+    expect(await adaptVideoBitrate({ signalingState: "closed" } as any)).toBeNull();
+    expect(await adaptVideoBitrate({ connectionState: "closed" } as any)).toBeNull();
+  });
+
+  it("enforces minimum bitrate floors for video and audio", async () => {
+    const videoParams: RTCRtpSendParameters = { encodings: [{}, {}] };
+    const audioParams: RTCRtpSendParameters = { encodings: [{}] };
+    const videoSender = {
+      track: { kind: "video" },
+      getParameters: jest.fn().mockReturnValue(videoParams),
+      setParameters: jest.fn().mockResolvedValue(undefined),
+    };
+    const audioSender = {
+      track: { kind: "audio" },
+      getParameters: jest.fn().mockReturnValue(audioParams),
+      setParameters: jest.fn().mockResolvedValue(undefined),
+    };
+    const pc = {
+      getSenders: () => [videoSender, audioSender],
+      getStats: jest.fn().mockResolvedValue({
+        forEach: (cb: (s: any) => void) =>
+          cb({ type: "candidate-pair", state: "succeeded", currentRoundTripTime: 0.5 }),
+      }),
+    } as unknown as RTCPeerConnection;
+
+    await adaptVideoBitrate(pc, { dataSaverMode: true });
+    expect(videoParams.encodings?.[0]?.maxBitrate).toBeGreaterThanOrEqual(50_000);
+    expect(audioParams.encodings?.[0]?.maxBitrate).toBeGreaterThanOrEqual(8_000);
+  });
 });

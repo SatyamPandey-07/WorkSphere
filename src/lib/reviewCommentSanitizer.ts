@@ -98,60 +98,58 @@ export function stripScriptAndEventHandlers(input: string): string {
 }
 
 /**
- * Sanitizes an anchor (<a>) tag, ensuring only http/https URLs are permitted,
- * and automatically enforcing rel="noopener noreferrer" and target="_blank".
- */
-function sanitizeAnchorTag(fullTag: string, attributes: string): string {
-  const hrefMatch = attributes.match(/href\s*=\s*(['"])(.*?)\1/i) || attributes.match(/href\s*=\s*([^\s>]+)/i);
-  if (!hrefMatch) {
-    return ""; // Strip links without valid href
-  }
-
-  const rawUrl = (hrefMatch[2] || hrefMatch[1] || "").trim();
-
-  // Validate protocol: allow only http, https, and mailto
-  if (!/^(https?:\/\/|mailto:)/i.test(rawUrl)) {
-    return ""; // Drop malicious or relative javascript/file links
-  }
-
-  // Sanitize raw URL quotes
-  const safeUrl = rawUrl.replace(/"/g, "&quot;");
-
-  return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">`;
-}
-
-/**
  * Filters HTML tags to an allowlist consisting strictly of <b>, <i>, and <a>.
  * All other HTML tags (<p>, <div>, <span>, <img>, etc.) are stripped while preserving text.
+ * Malicious or invalid anchor tags are unwrapped to their plain text content.
  */
 export function filterAllowedHtml(input: string): string {
   if (!input) return "";
 
-  // First, strip executable scripts and event handlers
-  const scriptFree = stripScriptAndEventHandlers(input);
+  // 1. First, strip executable scripts and event handlers
+  let cleaned = stripScriptAndEventHandlers(input);
 
-  // Regex matching HTML tags: <(/?)(\w+)([^>]*)>
-  return scriptFree.replace(/<\/?([a-z0-9]+)([^>]*)>/gi, (match, tagName: string, attrs: string) => {
-    const lowerTag = tagName.toLowerCase();
-
-    if (lowerTag === "b") {
-      return match.startsWith("</") ? "</b>" : "<b>";
-    }
-
-    if (lowerTag === "i") {
-      return match.startsWith("</") ? "</i>" : "<i>";
-    }
-
-    if (lowerTag === "a") {
-      if (match.startsWith("</")) {
-        return "</a>";
+  // 2. Process anchor pairs: preserve valid links with safe hrefs, and unwrap invalid ones
+  cleaned = cleaned.replace(
+    /<a\b([^>]*)>(.*?)<\/a>/gi,
+    (match, attrs, innerText) => {
+      const hrefMatch =
+        attrs.match(/href\s*=\s*(['"])(.*?)\1/i) ||
+        attrs.match(/href\s*=\s*([^\s>]+)/i);
+      if (!hrefMatch) {
+        return innerText; // unwrap to plain text
       }
-      return sanitizeAnchorTag(match, attrs);
-    }
 
-    // Disallow all other tags: drop the tag, keep outer text
-    return "";
-  });
+      const rawUrl = (hrefMatch[2] || hrefMatch[1] || "").trim();
+      if (!/^(https?:\/\/|mailto:)/i.test(rawUrl)) {
+        return innerText; // drop malicious/relative protocols and unwrap text
+      }
+
+      const safeUrl = rawUrl.replace(/"/g, "&quot;");
+      return `\u0000SAFE_A_${encodeURIComponent(safeUrl)}\u0000${innerText}\u0000SAFE_A_END\u0000`;
+    },
+  );
+
+  // 3. Allow strictly <b> and <i> tags, stripping all other HTML tags (including orphaned <a>/</a>)
+  cleaned = cleaned.replace(
+    /<\/?([a-z0-9]+)([^>]*)>/gi,
+    (match, tagName: string) => {
+      const lowerTag = tagName.toLowerCase();
+      if (lowerTag === "b") return match.startsWith("</") ? "</b>" : "<b>";
+      if (lowerTag === "i") return match.startsWith("</") ? "</i>" : "<i>";
+      return "";
+    },
+  );
+
+  // 4. Restore valid sanitized anchor tags
+  cleaned = cleaned.replace(
+    /\u0000SAFE_A_([^\u0000]+)\u0000([^\u0000]*?)\u0000SAFE_A_END\u0000/g,
+    (_, encodedUrl, text) => {
+      const safeUrl = decodeURIComponent(encodedUrl);
+      return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    },
+  );
+
+  return cleaned;
 }
 
 /**
@@ -225,7 +223,7 @@ export function sanitizeReviewComment(
     let output = cleanControlCharacters(String(comment).trim());
     output = filterAllowedHtml(output);
     const { maskedText } = maskProfanity(output);
-    output = maskedText;
+    output = maskedText.replace(/[ \t]+/g, " ").trim();
 
     if (output.length > MAX_COMMENT_LENGTH) {
       output = output.slice(0, MAX_COMMENT_LENGTH);

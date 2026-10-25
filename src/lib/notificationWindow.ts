@@ -1,9 +1,9 @@
 /**
  * Checks whether the current time falls within a user's notification window.
  *
- * @param now The current date/time
- * @param start Start time in HH:mm format (e.g. "09:00" or "9:00 AM")
- * @param end End time in HH:mm format (e.g. "17:00" or "5:00 PM")
+ * @param now The current date/time instant
+ * @param start Start time in HH:mm or 12h AM/PM format (e.g. "09:00", "9:00 AM", "09:00:00")
+ * @param end End time in HH:mm or 12h AM/PM format (e.g. "17:00", "5:00 PM", "17:00:00", "24:00")
  * @param timezone The user's timezone (e.g. "America/New_York", "UTC")
  * @returns boolean True if notifications are allowed to be sent, false otherwise.
  */
@@ -18,56 +18,88 @@ export function isWithinNotificationWindow(
     return true;
   }
 
-  const tz = timezone || "UTC";
+  if (typeof start !== "string" || typeof end !== "string") {
+    return true;
+  }
 
-  try {
-    // Get the hour and minute in the user's timezone
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+  const trimmedStart = start.trim();
+  const trimmedEnd = end.trim();
+  if (!trimmedStart || !trimmedEnd) {
+    return true;
+  }
 
-    const formatted = formatter.format(now);
-    const parts = formatted.split(":");
-    let currentHour = parseInt(parts[0], 10);
-    const currentMin = parseInt(parts[1], 10);
+  const parseTimeToMinutes = (timeStr: string): number | null => {
+    // 1. Check for 12-hour format with optional seconds: e.g. "09:00 AM", "9:00:00 PM", "9:30am"
+    const match12 = timeStr.match(
+      /^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)\s*$/i,
+    );
+    if (match12) {
+      let h = parseInt(match12[1], 10);
+      const m = parseInt(match12[2], 10);
+      if (h < 1 || h > 12 || m < 0 || m > 59) return null;
 
-    // Normalize 24 to 0
-    if (currentHour === 24) {
-      currentHour = 0;
+      const ampm = match12[4].toUpperCase();
+      if (ampm === "PM" && h < 12) h += 12;
+      if (ampm === "AM" && h === 12) h = 0;
+      return h * 60 + m;
     }
 
+    // 2. Check for 24-hour format with optional seconds: e.g. "09:00", "9:00:00", "24:00"
+    const match24 = timeStr.match(/^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$/);
+    if (match24) {
+      const h = parseInt(match24[1], 10);
+      const m = parseInt(match24[2], 10);
+
+      // Support 24:00 midnight end representation
+      if (h === 24 && m === 0) {
+        return 1440;
+      }
+
+      if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+      return h * 60 + m;
+    }
+
+    return null;
+  };
+
+  const startMinutes = parseTimeToMinutes(trimmedStart);
+  const endMinutes = parseTimeToMinutes(trimmedEnd);
+
+  // If time format cannot be parsed, safely default to sending notifications
+  if (startMinutes === null || endMinutes === null) {
+    return true;
+  }
+
+  // Continuous 24-hour schedules (e.g. 00:00 to 00:00, 12:00 AM to 12:00 AM, or 00:00 to 24:00)
+  if (startMinutes === endMinutes || (startMinutes === 0 && endMinutes === 1440)) {
+    return true;
+  }
+
+  let tz =
+    typeof timezone === "string" && timezone.trim() ? timezone.trim() : "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+  } catch {
+    tz = "UTC";
+  }
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(now);
+
+    const getPart = (type: string) =>
+      parts.find((p) => p.type === type)?.value ?? "0";
+    let currentHour = Number(getPart("hour"));
+    if (currentHour === 24) currentHour = 0;
+    const currentMin = Number(getPart("minute"));
     const currentMinutes = currentHour * 60 + currentMin;
 
-    const parseTimeToMinutes = (timeStr: string): number => {
-      // Check for 12-hour format: e.g. "09:00 AM" or "9:00 PM"
-      const match12 = timeStr.match(/^\s*(\d+):(\d+)\s*(AM|PM)\s*$/i);
-      if (match12) {
-        let h = parseInt(match12[1], 10);
-        const m = parseInt(match12[2], 10);
-        const ampm = match12[3].toUpperCase();
-        if (ampm === "PM" && h < 12) h += 12;
-        if (ampm === "AM" && h === 12) h = 0;
-        return h * 60 + m;
-      }
-
-      // Check for 24-hour format: e.g. "09:00"
-      const match24 = timeStr.match(/^\s*(\d+):(\d+)\s*$/);
-      if (match24) {
-        const h = parseInt(match24[1], 10);
-        const m = parseInt(match24[2], 10);
-        return h * 60 + m;
-      }
-      return 0;
-    };
-
-    const startMinutes = parseTimeToMinutes(start);
-    const endMinutes = parseTimeToMinutes(end);
-
     if (startMinutes <= endMinutes) {
-      // Standard window: e.g., 09:00 to 17:00
+      // Standard daytime window: e.g., 09:00 to 17:00
       return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
     } else {
       // Overnight window: e.g., 22:00 to 06:00 (next day)
@@ -78,7 +110,6 @@ export function isWithinNotificationWindow(
       `Error calculating notification window for timezone ${tz}:`,
       error,
     );
-    // Fall back to sending notifications on error
     return true;
   }
 }

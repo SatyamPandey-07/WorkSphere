@@ -89,11 +89,21 @@ describe("NIOSH Daily Noise Dosimetry Engine", () => {
     });
 
     test("handles zero duration and non-finite numbers gracefully", () => {
-      const res = calculateNioshDose(85, 0);
-      expect(res.dosePercentage).toBe(0.0);
-      expect(res.exposureHours).toBe(0.0);
-      expect(res.status).toBe("safe");
-      expect(res.isExceeded).toBe(false);
+      const resZero = calculateNioshDose(85, 0);
+      expect(resZero.dosePercentage).toBe(0.0);
+      expect(resZero.exposureHours).toBe(0.0);
+      expect(resZero.status).toBe("safe");
+      expect(resZero.isExceeded).toBe(false);
+
+      const resNaN = calculateNioshDose(NaN, 60);
+      expect(resNaN.dosePercentage).toBe(0.0);
+      expect(resNaN.status).toBe("safe");
+      expect(resNaN.isExceeded).toBe(false);
+
+      const resNaNDur = calculateNioshDose(85, NaN);
+      expect(resNaNDur.dosePercentage).toBe(0.0);
+      expect(resNaNDur.status).toBe("safe");
+      expect(resNaNDur.isExceeded).toBe(false);
     });
   });
 

@@ -25,12 +25,27 @@ export function generateVenueFeatureVector(
 }
 
 export function rerankVenues(
-  venues: Venue[],
-  userVector: Record<string, number>,
+  venues: Venue[] | null | undefined,
+  userVector: Record<string, number> | null | undefined,
   recommendationThreshold: number = 0.85,
 ): RerankedVenue[] {
+  if (!Array.isArray(venues) || venues.length === 0) {
+    return [];
+  }
+
+  const safeThreshold =
+    typeof recommendationThreshold === "number" &&
+    Number.isFinite(recommendationThreshold)
+      ? recommendationThreshold
+      : 0.85;
+
+  const safeUserVector =
+    userVector && typeof userVector === "object" ? userVector : {};
+
   // If user vector has all zeros (no preferences), return original order
-  const hasPreferences = Object.values(userVector).some((v) => v > 0);
+  const hasPreferences = Object.values(safeUserVector).some(
+    (v) => typeof v === "number" && Number.isFinite(v) && v > 0,
+  );
 
   if (!hasPreferences) {
     return venues.map((venue) => ({
@@ -42,21 +57,27 @@ export function rerankVenues(
 
   const scored = venues.map((venue) => {
     const venueVector = generateVenueFeatureVector(venue);
-    const score = cosineSimilarity(userVector, venueVector);
+    const score = cosineSimilarity(safeUserVector, venueVector);
     return {
       ...venue,
       similarityScore: score,
-      isRecommended: score >= recommendationThreshold,
+      isRecommended: score >= safeThreshold,
     };
   });
 
-  // Sort descending by similarity score, keeping original order for ties
+  // Sort descending by similarity score, keeping deterministic tie-breaking
   return scored.sort((a, b) => {
     if (Math.abs(a.similarityScore - b.similarityScore) < 0.001) {
-      // Secondary sort: maybe venue score if available
+      // Secondary sort: venue rating/score if available
       const scoreA = a.score || 0;
       const scoreB = b.score || 0;
-      return scoreB - scoreA;
+      if (Math.abs(scoreB - scoreA) >= 0.001) {
+        return scoreB - scoreA;
+      }
+      // Tertiary sort: deterministic tie-breaker by venue id or name
+      const idA = a.id || a.name || "";
+      const idB = b.id || b.name || "";
+      return idA.localeCompare(idB);
     }
     return b.similarityScore - a.similarityScore;
   });

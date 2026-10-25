@@ -3,6 +3,8 @@ export interface Cache<T> {
   set(key: string, value: T): void;
   invalidate(key: string): void;
   clear(): void;
+  has?(key: string): boolean;
+  readonly size?: number;
   dispose?(): void;
 }
 
@@ -27,10 +29,17 @@ export class LRUCache<T> implements Cache<T> {
    * @param ttlMs Time to live for each item in milliseconds
    */
   constructor(capacity: number, ttlMs: number) {
-    if (capacity <= 0) {
+    const normalizedCapacity =
+      typeof capacity === "number" && Number.isFinite(capacity)
+        ? Math.floor(capacity)
+        : NaN;
+    if (!Number.isFinite(normalizedCapacity) || normalizedCapacity <= 0) {
       throw new Error("Capacity must be greater than 0");
     }
-    this.capacity = capacity;
+    if (typeof ttlMs !== "number" || !Number.isFinite(ttlMs) || ttlMs <= 0) {
+      throw new Error("TTL must be a positive number in milliseconds");
+    }
+    this.capacity = normalizedCapacity;
     this.ttlMs = ttlMs;
     this.cache = new Map();
 
@@ -116,12 +125,31 @@ export class LRUCache<T> implements Cache<T> {
 
   private cleanup(): void {
     const now = Date.now();
-    for (const [key, node] of Array.from(this.cache.entries())) {
+    for (const [key, node] of this.cache.entries()) {
       if (now > node.expiresAt) {
         this.detachNode(node);
         this.cache.delete(key);
       }
     }
+  }
+
+  get size(): number {
+    return this.cache.size;
+  }
+
+  has(key: string): boolean {
+    const node = this.cache.get(key);
+    if (!node) {
+      return false;
+    }
+
+    if (Date.now() > node.expiresAt) {
+      this.detachNode(node);
+      this.cache.delete(key);
+      return false;
+    }
+
+    return true;
   }
 
   get(key: string): T | undefined {

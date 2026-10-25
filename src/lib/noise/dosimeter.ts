@@ -118,9 +118,45 @@ export function calculateNioshDose(
   decibelLevel: number,
   durationMinutes: number,
 ): NioshDoseResult {
-  const exposureHours = Math.max(0, durationMinutes) / 60;
-  const allowableHours = calculateNioshAllowableHours(decibelLevel);
+  const safeDecibels =
+    typeof decibelLevel === "number" && Number.isFinite(decibelLevel)
+      ? decibelLevel
+      : null;
+  const exposureHours =
+    typeof durationMinutes === "number" && Number.isFinite(durationMinutes)
+      ? Math.max(0, durationMinutes) / 60
+      : 0;
+
+  if (safeDecibels === null || exposureHours === 0) {
+    const allowableHours =
+      safeDecibels !== null ? calculateNioshAllowableHours(safeDecibels) : 0;
+    return {
+      dosePercentage: 0,
+      exposureHours: Math.round(exposureHours * 1000) / 1000,
+      allowableHours: Math.round(allowableHours * 100) / 100,
+      allowableMinutes: Math.round(allowableHours * 60 * 10) / 10,
+      twa: 0,
+      status: "safe",
+      isExceeded: false,
+      isWarning: false,
+    };
+  }
+
+  const allowableHours = calculateNioshAllowableHours(safeDecibels);
   const allowableMinutes = allowableHours * 60;
+
+  if (allowableHours <= 0 || !Number.isFinite(allowableHours)) {
+    return {
+      dosePercentage: 100,
+      exposureHours: Math.round(exposureHours * 1000) / 1000,
+      allowableHours: 0,
+      allowableMinutes: 0,
+      twa: 120,
+      status: "danger",
+      isExceeded: true,
+      isWarning: false,
+    };
+  }
 
   const rawDose = (exposureHours / allowableHours) * 100;
   const dosePercentage =

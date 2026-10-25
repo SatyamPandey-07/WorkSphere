@@ -402,8 +402,18 @@ export function classifyAcousticComfort(
   leq: number,
   l90?: number,
 ): AcousticComfortProfile {
-  // Use Leq as primary determinant
-  if (leq < 50) {
+  // Validate and sanitize Leq; invalid or non-finite inputs default to quiet baseline 30 dBA
+  const safeLeq =
+    typeof leq === "number" && Number.isFinite(leq) && leq >= 0 ? leq : 30;
+
+  // Background noise floor (L90) establishes ambient baseline
+  const safeL90 =
+    typeof l90 === "number" && Number.isFinite(l90) && l90 >= 0 ? l90 : null;
+
+  // Effective sound level cannot be quieter than the persistent background noise floor
+  const effectiveDb = safeL90 !== null ? Math.max(safeLeq, safeL90) : safeLeq;
+
+  if (effectiveDb < 50) {
     return {
       category: "deep_focus",
       label: "Deep Focus Zone",
@@ -416,7 +426,7 @@ export function classifyAcousticComfort(
     };
   }
 
-  if (leq < 65) {
+  if (effectiveDb < 65) {
     return {
       category: "conversational",
       label: "Conversational Ambience",
@@ -429,7 +439,7 @@ export function classifyAcousticComfort(
     };
   }
 
-  if (leq < 75) {
+  if (effectiveDb < 75) {
     return {
       category: "lively",
       label: "Lively Bustle",
@@ -470,15 +480,48 @@ export function calculateDailyNoiseDose(
   durationMinutes: number,
   standard: "NIOSH" | "OSHA" = "NIOSH",
 ): NoiseDoseResult {
-  const exposureHours = Math.max(0, durationMinutes) / 60;
+  const safeDecibels =
+    typeof decibelLevel === "number" && Number.isFinite(decibelLevel)
+      ? decibelLevel
+      : null;
+  const exposureHours =
+    typeof durationMinutes === "number" && Number.isFinite(durationMinutes)
+      ? Math.max(0, durationMinutes) / 60
+      : 0;
   const isNiosh = standard === "NIOSH";
 
   const criterionLevel = isNiosh ? 85 : 90;
   const exchangeRate = isNiosh ? 3 : 5;
 
+  if (safeDecibels === null || exposureHours === 0) {
+    const allowableHours =
+      safeDecibels !== null
+        ? 8 / Math.pow(2, (safeDecibels - criterionLevel) / exchangeRate)
+        : 0;
+    return {
+      dosePercentage: 0,
+      exposureHours: Math.round(exposureHours * 100) / 100,
+      allowableHours: Math.round(allowableHours * 100) / 100,
+      timeWeightedAverage: 30,
+      standard,
+      isExceeded: false,
+    };
+  }
+
   // Allowable exposure hours T
   const allowableHours =
-    8 / Math.pow(2, (decibelLevel - criterionLevel) / exchangeRate);
+    8 / Math.pow(2, (safeDecibels - criterionLevel) / exchangeRate);
+
+  if (allowableHours <= 0 || !Number.isFinite(allowableHours)) {
+    return {
+      dosePercentage: 100,
+      exposureHours: Math.round(exposureHours * 100) / 100,
+      allowableHours: 0,
+      timeWeightedAverage: 120,
+      standard,
+      isExceeded: true,
+    };
+  }
 
   // Dose percentage D = (C / T) * 100 (preserves precision for small fractions)
   const rawDose = (exposureHours / allowableHours) * 100;

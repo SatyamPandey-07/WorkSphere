@@ -34,6 +34,16 @@ describe("csvExport utility", () => {
       const date = new Date("2026-10-03T12:00:00.000Z");
       expect(escapeCSVField(date)).toBe("2026-10-03T12:00:00.000Z");
     });
+
+    it("sanitizes DDE command execution triggers starting with pipe (|)", () => {
+      expect(escapeCSVField("|'cmd'!' /C calc'")).toBe("'|'cmd'!' /C calc'");
+      expect(escapeCSVField("   |cmd")).toBe("'   |cmd");
+    });
+
+    it("sanitizes formula triggers with leading whitespace and strips null bytes", () => {
+      expect(escapeCSVField("   =1+1")).toBe("'   =1+1");
+      expect(escapeCSVField("Hello\0World")).toBe("HelloWorld");
+    });
   });
 
   describe("exportAnalyticsToCSV", () => {

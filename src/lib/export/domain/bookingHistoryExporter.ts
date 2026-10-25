@@ -40,6 +40,12 @@ export function formatBookingStatus(status?: string | null): string {
   return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 }
 
+function getSafeDurationHours(duration?: number | null): number {
+  const raw = duration ?? 60;
+  const minutes = !Number.isFinite(raw) || raw < 0 ? 0 : raw;
+  return minutes / 60;
+}
+
 export function generateBookingsCSV(
   bookings: BookingHistoryExportItem[],
   options: BookingHistoryCsvOptions = {},
@@ -77,7 +83,10 @@ export function generateBookingsCSV(
     },
     {
       header: "Duration (mins)",
-      accessor: (b) => String(b.duration || 60),
+      accessor: (b) => {
+        const raw = b.duration ?? 60;
+        return String(!Number.isFinite(raw) || raw < 0 ? 0 : raw);
+      },
     },
     {
       header: "Status",
@@ -86,14 +95,14 @@ export function generateBookingsCSV(
     {
       header: "Estimated Price ($)",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const hours = getSafeDurationHours(b.duration);
         return (hours * 15).toFixed(2);
       },
     },
     {
       header: "Tax ($)",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const hours = getSafeDurationHours(b.duration);
         const price = hours * 15;
         return (price * 0.08).toFixed(2);
       },
@@ -101,7 +110,7 @@ export function generateBookingsCSV(
     {
       header: "Total ($)",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const hours = getSafeDurationHours(b.duration);
         const price = hours * 15;
         const tax = Number((price * 0.08).toFixed(2));
         return (price + tax).toFixed(2);
@@ -201,7 +210,10 @@ export function generateBookingsExcel(
     {
       header: "Duration (mins)",
       type: "Number",
-      accessor: (b) => b.duration || 60,
+      accessor: (b) => {
+        const raw = b.duration ?? 60;
+        return !Number.isFinite(raw) || raw < 0 ? 0 : raw;
+      },
     },
     {
       header: "Status",
@@ -212,7 +224,7 @@ export function generateBookingsExcel(
       header: "Estimated Price ($)",
       type: "Currency",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const hours = getSafeDurationHours(b.duration);
         return Number((hours * 15).toFixed(2));
       },
     },
@@ -220,7 +232,7 @@ export function generateBookingsExcel(
       header: "Tax ($)",
       type: "Currency",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const hours = getSafeDurationHours(b.duration);
         const price = hours * 15;
         return Number((price * 0.08).toFixed(2));
       },
@@ -229,7 +241,7 @@ export function generateBookingsExcel(
       header: "Total ($)",
       type: "Currency",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const hours = getSafeDurationHours(b.duration);
         const price = hours * 15;
         const tax = Number((price * 0.08).toFixed(2));
         return Number((price + tax).toFixed(2));

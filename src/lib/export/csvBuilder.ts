@@ -23,12 +23,12 @@ export function escapeCSVField(
   if (val instanceof Date) {
     str = isNaN(val.getTime()) ? "" : val.toISOString();
   } else {
-    str = String(val);
+    str = String(val).replace(/\0/g, "");
   }
 
   // Formula injection sanitization (leading whitespace is trimmed by
-  // spreadsheet apps before evaluation, so test the trimmed value)
-  if (sanitizeFormulas && /^[=+\-@\t\r]/.test(str.trimStart())) {
+  // spreadsheet apps before evaluation, so test both raw and trimmed string)
+  if (sanitizeFormulas && (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()))) {
     str = "'" + str;
   }
 

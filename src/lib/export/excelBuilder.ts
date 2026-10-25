@@ -14,7 +14,7 @@ import { triggerBrowserDownload } from "./csvBuilder";
  */
 export function escapeXml(val: string | number | boolean | null | undefined): string {
   if (val === null || val === undefined) return "";
-  const str = String(val);
+  const str = String(val).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
   return str
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -27,7 +27,8 @@ export function escapeXml(val: string | number | boolean | null | undefined): st
  * Sanitizes spreadsheet formula injection triggers (=, +, -, @, \t, \r).
  */
 export function sanitizeExcelFormula(val: string): string {
-  if (/^[=+\-@\t\r]/.test(val) || /^[=+\-@]/.test(val.trimStart())) {
+  if (typeof val !== "string") val = String(val ?? "");
+  if (/^[=+\-@|\t\r]/.test(val) || /^[=+\-@|]/.test(val.trimStart())) {
     return "'" + val;
   }
   return val;
@@ -242,28 +243,47 @@ export class ExcelXmlBuilder<TRow = any> {
 
     switch (resolvedType) {
       case "Currency": {
-        const num = typeof val === "number" ? val : parseFloat(String(val).replace(/[^0-9.-]/g, ""));
-        if (!isNaN(num)) {
-          return `<Cell ss:StyleID="Currency"><Data ss:Type="Number">${num.toFixed(2)}</Data></Cell>`;
+        const str = String(val);
+        const isFormula = sanitizeFormulas && (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()));
+        if (!isFormula) {
+          const num = typeof val === "number" ? val : parseFloat(str.replace(/[^0-9.-]/g, ""));
+          if (!isNaN(num)) {
+            return `<Cell ss:StyleID="Currency"><Data ss:Type="Number">${num.toFixed(2)}</Data></Cell>`;
+          }
         }
-        return `<Cell ss:StyleID="Currency"><Data ss:Type="String">${escapeXml(val)}</Data></Cell>`;
+        let strVal = str;
+        if (sanitizeFormulas) {
+          strVal = sanitizeExcelFormula(strVal);
+        }
+        return `<Cell ss:StyleID="Currency"><Data ss:Type="String">${escapeXml(strVal)}</Data></Cell>`;
       }
 
       case "Number": {
-        const num = typeof val === "number" ? val : parseFloat(String(val));
-        if (!isNaN(num)) {
-          const style = Number.isInteger(num) ? "Integer" : "Number";
-          return `<Cell ss:StyleID="${style}"><Data ss:Type="Number">${num}</Data></Cell>`;
+        const str = String(val);
+        const isFormula = sanitizeFormulas && (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()));
+        if (!isFormula) {
+          const num = typeof val === "number" ? val : parseFloat(str);
+          if (!isNaN(num)) {
+            const style = Number.isInteger(num) ? "Integer" : "Number";
+            return `<Cell ss:StyleID="${style}"><Data ss:Type="Number">${num}</Data></Cell>`;
+          }
         }
-        return `<Cell ss:StyleID="Text"><Data ss:Type="String">${escapeXml(val)}</Data></Cell>`;
+        let strVal = str;
+        if (sanitizeFormulas) {
+          strVal = sanitizeExcelFormula(strVal);
+        }
+        return `<Cell ss:StyleID="Text"><Data ss:Type="String">${escapeXml(strVal)}</Data></Cell>`;
       }
 
       case "Date": {
         let dateStr: string;
         if (val instanceof Date) {
-          dateStr = val.toISOString().slice(0, 10);
+          dateStr = isNaN(val.getTime()) ? "" : val.toISOString().slice(0, 10);
         } else {
           dateStr = String(val).slice(0, 10);
+        }
+        if (sanitizeFormulas) {
+          dateStr = sanitizeExcelFormula(dateStr);
         }
         return `<Cell ss:StyleID="Date"><Data ss:Type="String">${escapeXml(dateStr)}</Data></Cell>`;
       }
@@ -271,9 +291,12 @@ export class ExcelXmlBuilder<TRow = any> {
       case "DateTime": {
         let dateStr: string;
         if (val instanceof Date) {
-          dateStr = val.toISOString().replace("T", " ").slice(0, 19);
+          dateStr = isNaN(val.getTime()) ? "" : val.toISOString().replace("T", " ").slice(0, 19);
         } else {
           dateStr = String(val);
+        }
+        if (sanitizeFormulas) {
+          dateStr = sanitizeExcelFormula(dateStr);
         }
         return `<Cell ss:StyleID="DateTime"><Data ss:Type="String">${escapeXml(dateStr)}</Data></Cell>`;
       }

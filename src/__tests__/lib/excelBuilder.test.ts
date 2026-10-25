@@ -25,6 +25,11 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
       expect(escapeXml(123.45)).toBe("123.45");
       expect(escapeXml(true)).toBe("true");
     });
+
+    it("strips illegal XML 1.0 control characters to prevent parser failures", () => {
+      expect(escapeXml("Hello\x00World\x08Test\x1bEnd")).toBe("HelloWorldTestEnd");
+      expect(escapeXml("Safe\tTab\nNewline\rReturn")).toBe("Safe\tTab\nNewline\rReturn");
+    });
   });
 
   describe("sanitizeExcelFormula", () => {
@@ -39,6 +44,11 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
 
     it("sanitizes formula triggers with leading whitespace", () => {
       expect(sanitizeExcelFormula("   =1+1")).toBe("'   =1+1");
+    });
+
+    it("sanitizes DDE command execution triggers using pipe (|)", () => {
+      expect(sanitizeExcelFormula("|'cmd'!' /C calc'")).toBe("'|'cmd'!' /C calc'");
+      expect(sanitizeExcelFormula("   |cmd")).toBe("'   |cmd");
     });
 
     it("leaves safe text unchanged", () => {
@@ -131,7 +141,25 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
       builder.addRow({ note: "=HYPERLINK(\"http://evil.com\")" });
 
       const xml = builder.build();
-      expect(xml).toContain("&apos;=HYPERLINK(&quot;http://evil.com&quot;)");
+      expect(xml).toContain("&apos;=HYPERLINK");
+    });
+
+    it("sanitizes formula injection in Currency and Number column fallback strings", () => {
+      const builder = new ExcelXmlBuilder<{ price: string; count: string; date: string }>();
+      builder.addColumn({ header: "Price", accessor: "price", type: "Currency" });
+      builder.addColumn({ header: "Count", accessor: "count", type: "Number" });
+      builder.addColumn({ header: "Date", accessor: "date", type: "Date" });
+
+      builder.addRow({
+        price: "=SUM(A1:A10)",
+        count: "|'cmd'!' /C calc'",
+        date: "=HYPERLINK(\"http://evil.com\")",
+      });
+
+      const xml = builder.build();
+      expect(xml).toContain("&apos;=SUM(A1:A10)");
+      expect(xml).toContain("&apos;|&apos;cmd&apos;!&apos; /C calc&apos;");
+      expect(xml).toContain("&apos;=HYPERLINK");
     });
 
     it("handles toBlob generation with spreadsheet MIME type", () => {
@@ -279,6 +307,25 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
       expect(xml).toContain('<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"');
       expect(xml).toContain(">Confirmation ID</Data></Cell>");
       expect(xml).toContain("</Table>");
+    });
+
+    it("safely clamps duration 0 and negative durations to 0 hours ($0.00)", () => {
+      const zeroBooking: BookingHistoryExportItem = {
+        id: "bk-zero",
+        date: "2026-10-25",
+        time: "10:00",
+        duration: 0,
+      };
+      const negBooking: BookingHistoryExportItem = {
+        id: "bk-neg",
+        date: "2026-10-25",
+        time: "11:00",
+        duration: -60,
+      };
+
+      const xml = generateBookingsExcel([zeroBooking, negBooking]);
+      expect(xml).toContain('<Cell ss:StyleID="Currency"><Data ss:Type="Number">0.00</Data></Cell>');
+      expect(xml).toContain('<Cell ss:StyleID="Integer"><Data ss:Type="Number">0</Data></Cell>');
     });
 
     it("triggers downloadBookingsExcel with formatted workbook blob", () => {

@@ -174,7 +174,7 @@ describe("venueHours utility", () => {
       const sundayAfternoon = new Date(2026, 9, 11, 14, 0);
       const status = getVenueHoursStatus(weeklySchedule, sundayAfternoon);
       expect(status.isOpen).toBe(false);
-      expect(status.badgeText).toBe("Closed · Opens 8 AM Monday");
+      expect(status.badgeText).toBe("Closed · Opens 8 AM tomorrow");
     });
 
     it("shows opening on Saturday tomorrow when closed Friday evening", () => {
@@ -271,6 +271,110 @@ describe("venueHours utility", () => {
     it("supports custom fallback timezone", () => {
       expect(resolveTimezone(null, "America/New_York")).toBe("America/New_York");
       expect(resolveTimezone("Invalid/Tz", "Europe/Paris")).toBe("Europe/Paris");
+    });
+  });
+
+  describe("Structured 24-hour periods, non-Monday schedules, and 12-hour AM/PM formats (#6714)", () => {
+    it("evaluates structured 24-hour period (00:00 - 00:00) as Open 24 Hours", () => {
+      const schedule24 = JSON.stringify({
+        periods: {
+          thursday: { open: "00:00", close: "00:00", closed: false },
+        },
+      });
+      const thursdayAfternoon = new Date(2026, 9, 8, 14, 30);
+      const status = getVenueHoursStatus(schedule24, thursdayAfternoon);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open 24 Hours");
+      expect(status.status).toBe("24/7");
+      expect(status.is24Hours).toBe(true);
+    });
+
+    it("evaluates structured 24-hour period (00:00 - 24:00) as Open 24 Hours", () => {
+      const schedule24 = JSON.stringify({
+        periods: {
+          thursday: { open: "00:00", close: "24:00", closed: false },
+        },
+      });
+      const thursdayMorning = new Date(2026, 9, 8, 3, 15);
+      const status = getVenueHoursStatus(schedule24, thursdayMorning);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open 24 Hours");
+      expect(status.status).toBe("24/7");
+      expect(status.is24Hours).toBe(true);
+    });
+
+    it("parses top-level structured schedules that omit Monday and Tuesday", () => {
+      const weekendOnly = JSON.stringify({
+        friday: { open: "12:00", close: "22:00", closed: false },
+        saturday: { open: "10:00", close: "20:00", closed: false },
+        sunday: { open: "10:00", close: "18:00", closed: false },
+      });
+      const saturdayNoon = new Date(2026, 9, 10, 12, 0);
+      const status = getVenueHoursStatus(weekendOnly, saturdayNoon);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open Now · Closes 8 PM");
+      expect(status.status).toBe("open");
+      expect(status.closesAt).toBe("8 PM");
+    });
+
+    it("parses 12-hour AM/PM text ranges (e.g. 8:00 AM - 8:00 PM)", () => {
+      const hours = "8:00 AM - 8:00 PM";
+      const duringShift = new Date(2026, 9, 8, 14, 0);
+      const statusOpen = getVenueHoursStatus(hours, duringShift);
+      expect(statusOpen.isOpen).toBe(true);
+      expect(statusOpen.badgeText).toBe("Open Now · Closes 8 PM");
+      expect(statusOpen.status).toBe("open");
+      expect(statusOpen.closesAt).toBe("8 PM");
+
+      const beforeShift = new Date(2026, 9, 8, 6, 0);
+      const statusBefore = getVenueHoursStatus(hours, beforeShift);
+      expect(statusBefore.isOpen).toBe(false);
+      expect(statusBefore.badgeText).toBe("Closed · Opens 8 AM");
+      expect(statusBefore.opensAt).toBe("8 AM");
+
+      const afterShift = new Date(2026, 9, 8, 21, 30);
+      const statusAfter = getVenueHoursStatus(hours, afterShift);
+      expect(statusAfter.isOpen).toBe(false);
+      expect(statusAfter.badgeText).toBe("Closed · Opens 8 AM tomorrow");
+    });
+
+    it("supports 12-hour AM/PM strings with 'to' and non-zero minutes", () => {
+      const hours = "9:30 AM to 5:45 PM";
+      const duringShift = new Date(2026, 9, 8, 12, 0);
+      const statusOpen = getVenueHoursStatus(hours, duringShift);
+      expect(statusOpen.isOpen).toBe(true);
+      expect(statusOpen.badgeText).toBe("Open Now · Closes 5:45 PM");
+      expect(statusOpen.closesAt).toBe("5:45 PM");
+    });
+
+    it("evaluates 12:00 AM - 12:00 AM as 24-hour open span", () => {
+      const status = getVenueHoursStatus("12:00 AM - 12:00 AM", new Date(2026, 9, 8, 14, 0));
+      expect(status.isOpen).toBe(true);
+      expect(status.status).toBe("24/7");
+      expect(status.badgeText).toBe("Open 24 Hours");
+      expect(status.is24Hours).toBe(true);
+    });
+
+    it("handles 12-hour overnight shifts (e.g. 6:00 PM - 2:00 AM)", () => {
+      const hours = "6:00 PM - 2:00 AM";
+      const lateNight = new Date(2026, 9, 8, 23, 0);
+      const statusLate = getVenueHoursStatus(hours, lateNight);
+      expect(statusLate.isOpen).toBe(true);
+      expect(statusLate.badgeText).toBe("Open Now · Closes 2 AM");
+      expect(statusLate.closesAt).toBe("2 AM");
+
+      const pastMidnight = new Date(2026, 9, 8, 1, 0);
+      const statusPastMidnight = getVenueHoursStatus(hours, pastMidnight);
+      expect(statusPastMidnight.isOpen).toBe(true);
+      expect(statusPastMidnight.badgeText).toBe("Open Now · Closes 2 AM");
+    });
+
+    it("normalizes 12-hour strings in formatTimeBadge", () => {
+      expect(formatTimeBadge("8:00 PM")).toBe("8 PM");
+      expect(formatTimeBadge("8:30 PM")).toBe("8:30 PM");
+      expect(formatTimeBadge("8 PM")).toBe("8 PM");
+      expect(formatTimeBadge("12:00 AM")).toBe("12 AM");
+      expect(formatTimeBadge("12:15 AM")).toBe("12:15 AM");
     });
   });
 });

@@ -39,8 +39,16 @@ export function formatTimeBadge(time24: string): string {
   const trimmed = time24.trim();
 
   // Already in 12h format?
-  if (/am|pm/i.test(trimmed)) {
-    return trimmed;
+  const ampmMatch = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (ampmMatch) {
+    const h = Number(ampmMatch[1]);
+    const m = Number(ampmMatch[2] || 0);
+    const ampm = ampmMatch[3].toUpperCase();
+    if (m === 0) {
+      return `${h} ${ampm}`;
+    }
+    const displayM = String(m).padStart(2, "0");
+    return `${h}:${displayM} ${ampm}`;
   }
 
   const parts = trimmed.split(":");
@@ -95,14 +103,52 @@ function timeToMinutes(timeStr: string): number {
 }
 
 /**
+ * Converts a 24h ("08:00") or 12h ("8:00 AM", "8 PM") time string to minutes from midnight (0..1440).
+ */
+function parseTimeToMinutes(raw: string): number | null {
+  if (!raw || typeof raw !== "string") return null;
+  const match = raw.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!match) return null;
+  let h = Number(match[1]);
+  const m = Number(match[2] || 0);
+  const meridian = match[3] ? match[3].toUpperCase() : null;
+
+  if (meridian === "AM") {
+    if (h === 12) h = 0;
+  } else if (meridian === "PM") {
+    if (h < 12) h += 12;
+  } else if (h === 24 && m === 0) {
+    return 1440;
+  }
+  return h * 60 + m;
+}
+
+/**
+ * Checks if a DayPeriod represents a continuous 24-hour operating span.
+ */
+function is24HoursPeriod(period?: DayPeriod): boolean {
+  if (!period || period.closed || !period.open || !period.close) return false;
+  const o = timeToMinutes(period.open);
+  const c = timeToMinutes(period.close);
+  return (
+    (o === 0 && (c === 0 || c === 1440 || period.close.trim() === "24:00")) ||
+    (o === c && o !== 0) ||
+    is24HoursString(`${period.open}-${period.close}`)
+  );
+}
+
+/**
  * Helper to parse structured JSON opening hours if present.
  */
 function parseStructuredJson(hoursStr: string): StructuredHours | null {
   try {
     const parsed = JSON.parse(hoursStr);
     if (parsed && typeof parsed === "object") {
-      if (parsed.periods || parsed.monday || parsed.tuesday) {
-        return parsed.periods ? parsed : { periods: parsed };
+      if (parsed.periods) {
+        return parsed;
+      }
+      if (DAYS_OF_WEEK.some((day) => day in parsed)) {
+        return { periods: parsed, timezone: parsed.timezone };
       }
     }
   } catch {
@@ -242,6 +288,16 @@ export function getVenueHoursStatus(
       todayPeriod.open &&
       todayPeriod.close
     ) {
+      if (is24HoursPeriod(todayPeriod)) {
+        return {
+          isOpen: true,
+          badgeText: "Open 24 Hours",
+          status: "24/7",
+          is24Hours: true,
+          isAvailable: true,
+        };
+      }
+
       const tOpen = timeToMinutes(todayPeriod.open);
       const tClose = timeToMinutes(todayPeriod.close);
 
@@ -319,17 +375,20 @@ export function getVenueHoursStatus(
 
   // 3. Standard Text Time Range: e.g. "08:00 - 20:00", "08:00-20:00", "8:00 AM - 8:00 PM"
   const rangeMatch = trimmed.match(
-    /(\d{1,2}:\d{2})\s*(?:-|–|to)\s*(\d{1,2}:\d{2})/i,
+    /(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:-|–|to)\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i,
   );
 
   if (rangeMatch) {
-    const rawOpen = rangeMatch[1];
-    const rawClose = rangeMatch[2];
-    const openMin = timeToMinutes(rawOpen);
-    const closeMin = timeToMinutes(rawClose);
+    const rawOpen = rangeMatch[1].trim();
+    const rawClose = rangeMatch[2].trim();
+    const openMin = parseTimeToMinutes(rawOpen) ?? timeToMinutes(rawOpen);
+    const closeMin = parseTimeToMinutes(rawClose) ?? timeToMinutes(rawClose);
 
     // All day / 24-hour operating span
-    if (openMin === closeMin || (openMin === 0 && closeMin === 1440)) {
+    if (
+      openMin === closeMin ||
+      (openMin === 0 && (closeMin === 1440 || rawClose === "24:00"))
+    ) {
       return {
         isOpen: true,
         badgeText: "Open 24 Hours",

@@ -170,25 +170,39 @@ export function calculateSunPosition(
   longitude: number,
   date: Date = new Date(),
 ): SunPosition {
-  const jd = julianDay(date);
+  const safeDate =
+    date instanceof Date && !Number.isNaN(date.getTime())
+      ? date
+      : new Date(date && !Number.isNaN(new Date(date).getTime()) ? date : Date.now());
+
+  const safeLat =
+    typeof latitude === "number" && Number.isFinite(latitude)
+      ? Math.max(-90, Math.min(90, latitude))
+      : 0;
+  const safeLon =
+    typeof longitude === "number" && Number.isFinite(longitude)
+      ? Math.max(-180, Math.min(180, longitude))
+      : 0;
+
+  const jd = julianDay(safeDate);
   const t = julianCentury(jd);
 
   // True solar time in minutes
   const utcMinutes =
-    date.getUTCHours() * 60 +
-    date.getUTCMinutes() +
-    date.getUTCSeconds() / 60 +
-    date.getUTCMilliseconds() / 60000;
+    safeDate.getUTCHours() * 60 +
+    safeDate.getUTCMinutes() +
+    safeDate.getUTCSeconds() / 60 +
+    safeDate.getUTCMilliseconds() / 60000;
   const eot = equationOfTimeMinutes(t);
   const trueSolarTime =
-    (((utcMinutes + eot + 4 * longitude) % 1440) + 1440) % 1440;
+    (((utcMinutes + eot + 4 * safeLon) % 1440) + 1440) % 1440;
 
   // Hour angle
   const hourAngleDeg =
     trueSolarTime / 4 < 0 ? trueSolarTime / 4 + 180 : trueSolarTime / 4 - 180;
   const ha = toRad(hourAngleDeg);
 
-  const latRad = toRad(latitude);
+  const latRad = toRad(safeLat);
   const decl = toRad(sunDeclinationDeg(t));
 
   // Solar zenith
@@ -205,12 +219,12 @@ export function calculateSunPosition(
   const sinZenith = Math.sin(zenithRad);
   let azimuth: number;
 
-  if (sinZenith === 0) {
-    azimuth = latitude < 0 ? 0 : 180;
+  const denom = Math.cos(latRad) * sinZenith;
+  if (Math.abs(denom) < 1e-7 || sinZenith === 0) {
+    azimuth = safeLat < 0 ? 0 : 180;
   } else {
     const cosAz =
-      (Math.sin(latRad) * Math.cos(zenithRad) - Math.sin(decl)) /
-      (Math.cos(latRad) * sinZenith);
+      (Math.sin(latRad) * Math.cos(zenithRad) - Math.sin(decl)) / denom;
     const gamma = toDeg(Math.acos(Math.min(1, Math.max(-1, cosAz))));
 
     if (hourAngleDeg > 0) {
@@ -251,6 +265,7 @@ export function getPatioShadePercentage(
   date: Date = new Date(),
   patioAzimuth: number = 0,
 ): PatioShadeResult {
+  const safePatioAzimuth = normalizeAzimuth(patioAzimuth);
   const { altitude, azimuth, isAboveHorizon, normalizedAltitude } =
     calculateSunPosition(latitude, longitude, date);
 
@@ -259,7 +274,7 @@ export function getPatioShadePercentage(
   }
 
   const angleDiff = Math.abs(
-    ((((azimuth - patioAzimuth + 180) % 360) + 360) % 360) - 180,
+    ((((azimuth - safePatioAzimuth + 180) % 360) + 360) % 360) - 180,
   );
   // 1 when the patio faces the sun head-on, 0 when facing directly away
   const orientationFactor = (1 + Math.cos(toRad(angleDiff))) / 2;
@@ -279,7 +294,7 @@ export function getPatioShadePercentage(
 export function estimateUvRisk(
   altitude: number,
 ): "none" | "low" | "moderate" | "high" | "very-high" {
-  if (altitude <= 0) return "none";
+  if (typeof altitude !== "number" || !Number.isFinite(altitude) || altitude <= 0) return "none";
   if (altitude < 15) return "low";
   if (altitude < 35) return "moderate";
   if (altitude < 55) return "high";
@@ -299,10 +314,14 @@ export function getSunExposure(
   longitude: number,
   date: Date = new Date(),
 ): SunExposureResult {
-  const { altitude, azimuth } = calculateSunPosition(latitude, longitude, date);
+  const safeDate =
+    date instanceof Date && !Number.isNaN(date.getTime())
+      ? date
+      : new Date(date && !Number.isNaN(new Date(date).getTime()) ? date : Date.now());
+  const { altitude, azimuth } = calculateSunPosition(latitude, longitude, safeDate);
   const uvRisk = estimateUvRisk(altitude);
 
-  const month = date.getUTCMonth(); // 0 = Jan, 11 = Dec
+  const month = safeDate.getUTCMonth(); // 0 = Jan, 11 = Dec
   const isSummerHemisphere =
     latitude >= 0
       ? month >= 4 && month <= 8 // Northern summer: May–Sep
@@ -435,9 +454,13 @@ export function computeRelativeSunAngle(
  * based on current solar geometry and venue compass orientation (#5064).
  */
 export function recommendNaturalLightDesks(
-  desks: NaturalLightDeskInput[],
+  desks: NaturalLightDeskInput[] | null | undefined,
   options: NaturalLightRecommendationOptions,
 ): NaturalLightDeskRecommendation[] {
+  if (!Array.isArray(desks) || desks.length === 0 || !options || typeof options !== "object") {
+    return [];
+  }
+
   const {
     latitude,
     longitude,
@@ -447,17 +470,32 @@ export function recommendNaturalLightDesks(
     minDaylightAltitudeDeg = 10,
   } = options;
 
+  const safeOrientation =
+    typeof venueCompassOrientation === "number" && Number.isFinite(venueCompassOrientation)
+      ? normalizeAzimuth(venueCompassOrientation)
+      : 180;
+  const safeGlareAngle =
+    typeof glareAngleThresholdDeg === "number" && Number.isFinite(glareAngleThresholdDeg)
+      ? glareAngleThresholdDeg
+      : 25;
+  const safeMinAltitude =
+    typeof minDaylightAltitudeDeg === "number" && Number.isFinite(minDaylightAltitudeDeg)
+      ? minDaylightAltitudeDeg
+      : 10;
+
   const sun = calculateSunPosition(latitude, longitude, date);
   const relativeSunAngle = computeRelativeSunAngle(
     sun.azimuth,
-    venueCompassOrientation,
+    safeOrientation,
   );
 
-  return desks.map((desk) => {
+  return desks.map((desk, idx) => {
+    const deskId = desk?.id || `desk-${idx}`;
+
     // If sun is below horizon or altitude too low for daylight
-    if (!sun.isAboveHorizon || sun.altitude < minDaylightAltitudeDeg) {
+    if (!sun.isAboveHorizon || sun.altitude < safeMinAltitude) {
       return {
-        deskId: desk.id,
+        deskId,
         isOptimalNaturalLight: false,
         relativeSunAngle,
         sunAltitude: sun.altitude,
@@ -472,13 +510,16 @@ export function recommendNaturalLightDesks(
 
     // Determine desk window distance (normalized or meters, default ~3m)
     const windowDist =
-      desk.windowDistance !== undefined
+      desk?.windowDistance !== undefined && Number.isFinite(desk.windowDistance)
         ? desk.windowDistance
-        : desk.row !== undefined
+        : desk?.row !== undefined && Number.isFinite(desk.row)
           ? Math.max(1, desk.row * 1.5 + 1)
           : 3.0;
 
-    const deskOrientation = desk.facingOrientationDeg ?? venueCompassOrientation;
+    const deskOrientation =
+      desk?.facingOrientationDeg !== undefined && Number.isFinite(desk.facingOrientationDeg)
+        ? normalizeAzimuth(desk.facingOrientationDeg)
+        : safeOrientation;
     const deskRelativeAngle = computeRelativeSunAngle(sun.azimuth, deskOrientation);
 
     // Sun is illuminating the window facade if relative angle <= 90°
@@ -489,7 +530,7 @@ export function recommendNaturalLightDesks(
       // Desks close to window get soft diffuse daylight (optimal if windowDist between 1 and 4.5m)
       const isOptimal = windowDist >= 1 && windowDist <= 4.5;
       return {
-        deskId: desk.id,
+        deskId,
         isOptimalNaturalLight: isOptimal,
         badgeLabel: isOptimal ? BEST_NATURAL_LIGHT_BADGE : undefined,
         relativeSunAngle: deskRelativeAngle,
@@ -506,11 +547,11 @@ export function recommendNaturalLightDesks(
     // Facade is directly illuminated by sun
     // If sun enters at an acute direct angle (< glareAngleThresholdDeg) and desk is immediately at window, direct glare occurs
     const isDirectGlare =
-      deskRelativeAngle < glareAngleThresholdDeg && windowDist < 2.0 && sun.altitude < 50;
+      deskRelativeAngle < safeGlareAngle && windowDist < 2.0 && sun.altitude < 50;
 
     if (isDirectGlare) {
       return {
-        deskId: desk.id,
+        deskId,
         isOptimalNaturalLight: false,
         relativeSunAngle: deskRelativeAngle,
         sunAltitude: sun.altitude,
@@ -524,12 +565,12 @@ export function recommendNaturalLightDesks(
     // Optimal daylight zone:
     // Either oblique sun illumination (relative angle between glare threshold and 85°),
     // OR desk is slightly recessed (e.g. 2m-5.5m) buffering direct beam while capturing generous daylight.
-    const isOptimalAngle = deskRelativeAngle >= glareAngleThresholdDeg && deskRelativeAngle <= 85;
+    const isOptimalAngle = deskRelativeAngle >= safeGlareAngle && deskRelativeAngle <= 85;
     const isOptimalDistance = windowDist >= 1.5 && windowDist <= 5.5;
     const isOptimal = (isOptimalAngle && isOptimalDistance) || (isOptimalDistance && sun.altitude >= 30);
 
     return {
-      deskId: desk.id,
+      deskId,
       isOptimalNaturalLight: isOptimal,
       badgeLabel: isOptimal ? BEST_NATURAL_LIGHT_BADGE : undefined,
       relativeSunAngle: deskRelativeAngle,

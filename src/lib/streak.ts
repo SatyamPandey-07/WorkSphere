@@ -10,16 +10,21 @@ export const STREAK_MILESTONES = [5, 10, 30] as const;
 export type StreakMilestone = (typeof STREAK_MILESTONES)[number];
 
 /** Returns the date in a given timezone as a "YYYY-MM-DD" string */
-export function dateInTimeZone(date: Date, timeZone: string = "UTC"): string {
+export function dateInTimeZone(
+  date: Date = new Date(),
+  timeZone: string = "UTC",
+): string {
+  const safeDate =
+    date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
   try {
     const formatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
+      timeZone: timeZone || "UTC",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
     });
 
-    const parts = formatter.formatToParts(date);
+    const parts = formatter.formatToParts(safeDate);
     const map = Object.fromEntries(
       parts
         .filter((part) => part.type !== "literal")
@@ -28,12 +33,15 @@ export function dateInTimeZone(date: Date, timeZone: string = "UTC"): string {
 
     return `${map.year}-${map.month}-${map.day}`;
   } catch {
-    return new Date(date.toISOString()).toISOString().slice(0, 10);
+    return safeDate.toISOString().slice(0, 10);
   }
 }
 
 /** Returns today's date as a "YYYY-MM-DD" string in the supplied timezone */
-export function todayUTC(timeZone: string = "UTC", now: Date = new Date()): string {
+export function todayUTC(
+  timeZone: string = "UTC",
+  now: Date = new Date(),
+): string {
   return dateInTimeZone(now, timeZone);
 }
 
@@ -44,8 +52,19 @@ export function todayUTC(timeZone: string = "UTC", now: Date = new Date()): stri
  * it is independent of any timezone's UTC offset.
  */
 export function shiftDateString(dateStr: string, days: number): string {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+  if (
+    !dateStr ||
+    typeof dateStr !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}/.test(dateStr)
+  ) {
+    return todayUTC();
+  }
+  const [year, month, day] = dateStr.slice(0, 10).split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + (days || 0)));
+  if (isNaN(shifted.getTime())) {
+    return todayUTC();
+  }
+  return shifted.toISOString().slice(0, 10);
 }
 
 /**
@@ -56,7 +75,10 @@ export function shiftDateString(dateStr: string, days: number): string {
  * day is 23 or 25 hours long, so "now - 24h" can land two calendar days back
  * (spring forward) or on today's date (fall back), wrongly breaking streaks.
  */
-export function yesterdayUTC(timeZone: string = "UTC", now: Date = new Date()): string {
+export function yesterdayUTC(
+  timeZone: string = "UTC",
+  now: Date = new Date(),
+): string {
   return shiftDateString(dateInTimeZone(now, timeZone), -1);
 }
 
@@ -69,7 +91,7 @@ export interface StreakResult {
   lastCheckInDate: string;
   /**
    * true  → streak was incremented (new day)
-   * false → same-day duplicate, nothing changed
+   * false → same-day duplicate or future check-in, nothing changed
    */
   incremented: boolean;
   /** Milestones newly unlocked by this check-in */
@@ -84,10 +106,19 @@ export interface StreakResult {
  */
 export function normalizeToUTCMidnight(date: Date | string): Date {
   if (typeof date === "string") {
-    const [year, month, day] = date.slice(0, 10).split("-").map(Number);
-    return new Date(Date.UTC(year, month - 1, day));
+    if (/^\d{4}-\d{2}-\d{2}/.test(date)) {
+      const [year, month, day] = date.slice(0, 10).split("-").map(Number);
+      const d = new Date(Date.UTC(year, month - 1, day));
+      if (!isNaN(d.getTime())) return d;
+    }
+    return new Date(Date.UTC(1970, 0, 1));
   }
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  if (date instanceof Date && !isNaN(date.getTime())) {
+    return new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
+  }
+  return new Date(Date.UTC(1970, 0, 1));
 }
 
 /**
@@ -96,7 +127,10 @@ export function normalizeToUTCMidnight(date: Date | string): Date {
  * Guarantees accurate 1-day step calculations across leap years (Feb 28 -> Feb 29 / Mar 1)
  * and DST transitions (23-hour spring forward and 25-hour fall back days).
  */
-export function getCalendarDayDifference(d1: Date | string, d2: Date | string): number {
+export function getCalendarDayDifference(
+  d1: Date | string,
+  d2: Date | string,
+): number {
   const utc1 = normalizeToUTCMidnight(d1);
   const utc2 = normalizeToUTCMidnight(d2);
   const diffMs = utc2.getTime() - utc1.getTime();
@@ -109,13 +143,15 @@ export function getCalendarDayDifference(d1: Date | string, d2: Date | string): 
  * Determines the new streak values when a user performs a daily check-in.
  *
  * Rules:
- * - Same day as lastCheckInDate → no-op (returns incremented: false)
+ * - Same day as lastCheckInDate or future check-in (day diff <= 0) → no-op (preserves streak, incremented: false)
  * - Consecutive day (1 calendar day delta normalized to UTC midnight) → streak + 1
- * - Any gap > 1 day → streak resets to 1
+ * - Any gap > 1 day or first check-in → streak resets to 1
  *
  * @param lastCheckInDate  Stored "YYYY-MM-DD" UTC string, or null for first-ever
  * @param currentStreak    Current streak count stored in DB
  * @param longestStreak    All-time longest streak stored in DB
+ * @param timeZone         User's configured or detected IANA timezone (defaults to "UTC")
+ * @param now              Optional clock instant (defaults to current system time)
  */
 export function calculateStreak(
   lastCheckInDate: string | null,
@@ -124,16 +160,33 @@ export function calculateStreak(
   timeZone: string = "UTC",
   now: Date = new Date(),
 ): StreakResult {
+  const safeCurrent = Math.max(0, Math.floor(currentStreak) || 0);
+  const safeLongest = Math.max(safeCurrent, Math.floor(longestStreak) || 0);
+
   // Sample the clock once so "today" and "yesterday" can never straddle midnight.
   const today = todayUTC(timeZone, now);
   const yesterday = yesterdayUTC(timeZone, now);
 
-  // ── Same-day duplicate ──────────────────────────────────────────────────
-  if (lastCheckInDate === today || (lastCheckInDate && getCalendarDayDifference(lastCheckInDate, today) === 0)) {
+  const isValidLastDate =
+    typeof lastCheckInDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}/.test(lastCheckInDate);
+
+  const dayDiff = isValidLastDate
+    ? getCalendarDayDifference(lastCheckInDate, today)
+    : null;
+
+  // ── Same-day duplicate or Future Date check-in ──────────────────────────
+  // If the user already checked in today or has a lastCheckInDate in the future
+  // (e.g. user traveled west across time zones, or client clock skew), do not
+  // reset or alter their streak.
+  if (
+    lastCheckInDate === today ||
+    (dayDiff !== null && dayDiff <= 0)
+  ) {
     return {
-      currentStreak,
-      longestStreak,
-      lastCheckInDate: today,
+      currentStreak: safeCurrent,
+      longestStreak: safeLongest,
+      lastCheckInDate: dayDiff !== null && dayDiff < 0 ? lastCheckInDate : today,
       incremented: false,
       newMilestones: [],
     };
@@ -142,19 +195,19 @@ export function calculateStreak(
   // ── Determine new streak ────────────────────────────────────────────────
   const isConsecutive =
     lastCheckInDate === yesterday ||
-    (lastCheckInDate !== null && getCalendarDayDifference(lastCheckInDate, today) === 1);
+    (dayDiff !== null && dayDiff === 1);
 
   const newStreak = isConsecutive
-    ? currentStreak + 1 // consecutive day
-    : 1; // first check-in ever, or gap reset
+    ? safeCurrent + 1 // consecutive day
+    : 1; // first check-in ever, gap reset, or corrupted last date
 
-  const newLongest = Math.max(longestStreak, newStreak);
+  const newLongest = Math.max(safeLongest, newStreak);
 
   // ── Milestone detection ─────────────────────────────────────────────────
   // A milestone is "newly unlocked" if the streak has never reached this threshold
   // before (longestStreak < milestone, newStreak >= milestone).
   const newMilestones = STREAK_MILESTONES.filter(
-    (m) => newStreak >= m && longestStreak < m,
+    (m) => newStreak >= m && safeLongest < m,
   );
 
   return {
@@ -173,5 +226,6 @@ export function calculateStreak(
  * Used by the UI to render badge states on load.
  */
 export function getUnlockedMilestones(streak: number): StreakMilestone[] {
-  return STREAK_MILESTONES.filter((m) => streak >= m);
+  const safeStreak = Math.max(0, Math.floor(streak) || 0);
+  return STREAK_MILESTONES.filter((m) => safeStreak >= m);
 }

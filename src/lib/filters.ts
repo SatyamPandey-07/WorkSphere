@@ -69,9 +69,12 @@ export function sanitizeCapacityInput(
 export type VenueFilterKey = keyof typeof VENUE_FILTERS;
 export type VenueFilters = Partial<Record<VenueFilterKey, unknown>> & {
   minCapacity?: number | string;
+  category?: string;
 };
 
 interface VenueLike {
+  category?: string;
+  categories?: Array<{ name?: string } | string>;
   wifi?: boolean;
   hasOutlets?: boolean;
   noiseLevel?: string;
@@ -108,6 +111,7 @@ function matchesOutletDensity(venue: VenueLike, target: string): boolean {
 }
 
 function matchesWifiSpeedBand(venue: VenueLike, band: string): boolean {
+  if (band === "all") return true;
   const speed = venue.wifiSpeed;
   if (speed === null || speed === undefined) return false;
   if (band === "basic") return speed >= 10;
@@ -117,6 +121,7 @@ function matchesWifiSpeedBand(venue: VenueLike, band: string): boolean {
 }
 
 function matchesMusicStyle(venue: VenueLike, style: string): boolean {
+  if (style === "all") return true;
   if (style === "no_music")
     return venue.musicStyle === "no_music" || venue.hasNoMusic === true;
   return venue.musicStyle === style;
@@ -180,6 +185,24 @@ export function applyFilters<T extends object>(
           return venue.catsAllowed === true;
         case "musicStyle":
           return matchesMusicStyle(venue, value as string);
+        case "category": {
+          if (!value || value === "all") return true;
+          const target = String(value).toLowerCase();
+          if (
+            typeof venue.category === "string" &&
+            venue.category.toLowerCase() === target
+          ) {
+            return true;
+          }
+          if (Array.isArray(venue.categories)) {
+            return venue.categories.some((c: any) => {
+              if (typeof c === "string") return c.toLowerCase() === target;
+              if (typeof c?.name === "string") return c.name.toLowerCase() === target;
+              return false;
+            });
+          }
+          return false;
+        }
         case "minCapacity": {
           const targetCapacity = sanitizeCapacityInput(value);
           const cap =
@@ -204,13 +227,18 @@ export function buildVenueSearchSchema() {
     maxLat: z.coerce.number().min(-90).max(90).optional(),
     minLng: z.coerce.number().min(-180).max(180).optional(),
     maxLng: z.coerce.number().min(-180).max(180).optional(),
-    category: z.enum(["cafe", "coworking", "library", "all"]).optional(),
+    category: z
+      .preprocess(
+        (v) => (v === "" || v === null || v === undefined ? undefined : v),
+        z.enum(["cafe", "coworking", "library", "all"]).optional(),
+      )
+      .optional(),
     cities: z.string().optional(),
     query: z.string().optional(),
     minCapacity: z
       .preprocess(
         (v) => sanitizeCapacityInput(v),
-        z.number().int().min(1),
+        z.number().int().min(1).optional(),
       )
       .optional(),
     semanticWeight: z.coerce.number().min(0).max(100).optional(),
@@ -221,14 +249,18 @@ export function buildVenueSearchSchema() {
     if (config.type === "boolean") {
       shape[key] = z
         .preprocess((v) => {
-          if (v === "true") return true;
-          if (v === "false") return false;
+          if (v === "true" || v === "1" || v === 1) return true;
+          if (v === "false" || v === "0" || v === 0) return false;
+          if (v === "" || v === null || v === undefined) return undefined;
           return v;
-        }, z.boolean())
+        }, z.boolean().optional())
         .optional();
     } else if (config.type === "enum" && config.values) {
       shape[key] = z
-        .enum(config.values as unknown as [string, ...string[]])
+        .preprocess(
+          (v) => (v === "" || v === null || v === undefined ? undefined : v),
+          z.enum(config.values as unknown as [string, ...string[]]).optional(),
+        )
         .optional();
     }
   }

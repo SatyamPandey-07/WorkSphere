@@ -85,10 +85,17 @@ export class BookingEngine {
 
     const [openH, openM] = normOpen.split(":").map(Number);
     const [closeH, closeM] = normClose.split(":").map(Number);
-    const openMinutes = openH * 60 + openM;
-    const closeMinutes = closeH * 60 + closeM;
+    let openMinutes = openH * 60 + openM;
+    let closeMinutes = closeH * 60 + closeM;
 
-    if (closeMinutes <= openMinutes) {
+    // Support continuous 24-hour schedules (e.g. 00:00 - 24:00 or 00:00 - 00:00)
+    const is24HourSchedule =
+      (normOpen === "00:00" && (normClose === "00:00" || normClose === "24:00")) ||
+      (openMinutes === 0 && closeMinutes === 0);
+    if (is24HourSchedule) {
+      openMinutes = 0;
+      closeMinutes = 1440;
+    } else if (closeMinutes <= openMinutes) {
       return [];
     }
 
@@ -287,8 +294,17 @@ export class BookingEngine {
             const [closeH, closeM] = normClose.split(":").map(Number);
             const [reqH, reqM] = normTime.split(":").map(Number);
 
-            const openMinutes = openH * 60 + openM;
-            const closeMinutes = closeH * 60 + closeM;
+            let openMinutes = openH * 60 + openM;
+            let closeMinutes = closeH * 60 + closeM;
+
+            const is24HourSchedule =
+              (normOpen === "00:00" && (normClose === "00:00" || normClose === "24:00")) ||
+              (openMinutes === 0 && closeMinutes === 0);
+            if (is24HourSchedule) {
+              openMinutes = 0;
+              closeMinutes = 1440;
+            }
+
             const reqStartMinutes = reqH * 60 + reqM;
             const reqEndMinutes = reqStartMinutes + duration;
 
@@ -386,10 +402,10 @@ export class BookingEngine {
       customPolicyMessage = BOOKING_CANCELLATION_POLICY_MESSAGE,
     } = params;
 
-    const bookingStart = this.dateTimeAdapter.parseBookingDateTime(
+    const bookingStart = this.dateTimeAdapter.parseBookingStart(
       date,
       time,
-      timeZone || this.config.defaultTimeZone || "UTC",
+      timeZone ?? null,
     );
 
     if (!bookingStart) {

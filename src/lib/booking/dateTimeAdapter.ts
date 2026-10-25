@@ -19,6 +19,11 @@ export interface DateTimeAdapter {
     timeStr: string,
     timeZone?: string,
   ): Date | null;
+  parseBookingStart(
+    dateStr: string,
+    timeStr: string,
+    timeZone?: string | null,
+  ): Date | null;
   bookingStartsAt(
     booking: { date: string; time: string; timeZone?: string | null },
     fallbackTimeZone?: string | null,
@@ -69,6 +74,7 @@ export function normalizeBookingTime(time: string): string | null {
   } else if (twentyFourHour) {
     hours = parseInt(twentyFourHour[1], 10);
     minutes = parseInt(twentyFourHour[2], 10);
+    if (hours === 24 && minutes === 0) return "24:00";
     if (hours > 23) return null;
   } else {
     return null;
@@ -157,6 +163,42 @@ export function parseBookingDateTime(
 
   const result = new Date(instant);
   return isNaN(result.getTime()) ? null : result;
+}
+
+/**
+ * Converts a booking's date and time into a Date instant.
+ * If timeZone is provided, resolves wall-clock time in that zone.
+ * If timeZone is omitted/null/undefined, follows local-time convention.
+ */
+export function parseBookingStart(
+  dateStr: string,
+  timeStr: string,
+  timeZone?: string | null,
+): Date | null {
+  if (timeZone) {
+    return parseBookingDateTime(dateStr, timeStr, timeZone);
+  }
+  if (!isValidBookingDate(dateStr)) return null;
+  const normalized = normalizeBookingTime(timeStr);
+  if (!normalized) return null;
+
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hour, minute] = normalized.split(":").map(Number);
+
+  const bookingStart = new Date(year, month - 1, day, hour, minute, 0, 0);
+
+  // Reject impossible dates such as 2026-02-31, which JavaScript normalizes.
+  if (
+    bookingStart.getFullYear() !== year ||
+    bookingStart.getMonth() !== month - 1 ||
+    bookingStart.getDate() !== day ||
+    bookingStart.getHours() !== hour ||
+    bookingStart.getMinutes() !== minute
+  ) {
+    return null;
+  }
+
+  return bookingStart;
 }
 
 /**
@@ -291,6 +333,14 @@ export class BookingDateTimeAdapter implements DateTimeAdapter {
     timeZone?: string,
   ): Date | null {
     return parseBookingDateTime(dateStr, timeStr, timeZone);
+  }
+
+  parseBookingStart(
+    dateStr: string,
+    timeStr: string,
+    timeZone?: string | null,
+  ): Date | null {
+    return parseBookingStart(dateStr, timeStr, timeZone);
   }
 
   bookingStartsAt(

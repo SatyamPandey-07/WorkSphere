@@ -22,6 +22,7 @@ import {
   normalizeBookingTime,
   isValidBookingDate,
   parseBookingDateTime,
+  parseBookingStart,
   bookingStartsAt,
   bookingInterval,
   intervalsOverlap,
@@ -93,10 +94,4 @@ export function cancellationWindowHoursRemaining(
 /**
  * Functional bridge helper: parseBookingStart
  */
-export function parseBookingStart(
-  date: string,
-  time: string,
-  timeZone: string = "UTC",
-): Date | null {
-  return parseBookingDateTime(date, time, timeZone);
-}
+export { parseBookingStart };

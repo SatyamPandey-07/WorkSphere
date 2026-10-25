@@ -3,7 +3,7 @@ import { isValidTimeZone } from "./booking/dateTimeAdapter";
 
 export interface RawNoiseData {
   avgDecibels: number;
-  timestamp: Date;
+  timestamp: Date | string | number;
 }
 
 export interface HourlyForecast {
@@ -47,14 +47,33 @@ export function generateNoiseForecast(
       : null;
 
   for (const entry of data) {
-    if (!entry || !entry.timestamp || !(entry.timestamp instanceof Date) || isNaN(entry.timestamp.getTime())) continue;
+    if (!entry) continue;
+
+    // Validate decibels: must be a finite, non-negative number
+    if (
+      typeof entry.avgDecibels !== "number" ||
+      !Number.isFinite(entry.avgDecibels) ||
+      entry.avgDecibels < 0
+    ) {
+      continue;
+    }
+
+    // Coerce timestamp if Date, ISO string, or timestamp number
+    const ts =
+      entry.timestamp instanceof Date
+        ? entry.timestamp
+        : new Date(entry.timestamp);
+
+    if (!ts || isNaN(ts.getTime())) continue;
+
     const hour = hourFormatter
       ? Number(
           hourFormatter
-            .formatToParts(entry.timestamp)
+            .formatToParts(ts)
             .find((part) => part.type === "hour")?.value,
         ) % 24
-      : entry.timestamp.getHours();
+      : ts.getHours();
+
     groupedByHour[hour].push(entry.avgDecibels);
   }
 
@@ -69,6 +88,7 @@ export function generateNoiseForecast(
       forecast.push({
         hour: i,
         predictedDb: null,
+        medianDb: null,
         confidence: 0,
         samples: 0,
       });
@@ -104,7 +124,15 @@ export function generateNoiseForecast(
   // 4. Identify Quietest Hours (top 3)
   // Only consider hours with actual data
   const validForecasts = forecast.filter((f) => f.predictedDb !== null);
-  validForecasts.sort((a, b) => a.predictedDb! - b.predictedDb!);
+  validForecasts.sort((a, b) => {
+    if (a.predictedDb! !== b.predictedDb!) {
+      return a.predictedDb! - b.predictedDb!;
+    }
+    if (a.confidence !== b.confidence) {
+      return b.confidence - a.confidence;
+    }
+    return a.hour - b.hour;
+  });
 
   const recommendedHours = validForecasts.slice(0, 3).map((f) => f.hour);
 

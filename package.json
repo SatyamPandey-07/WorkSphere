@@ -24,7 +24,7 @@
     "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
-    "@react-three/drei": "^10.7.8",
+    "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.7.0",
     "@simplewebauthn/browser": "^14.0.0",
     "@simplewebauthn/server": "^13.3.2",

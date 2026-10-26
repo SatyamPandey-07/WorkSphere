@@ -17,6 +17,12 @@ describe("QR Code SVG Generator", () => {
     expect(matrixShort[6][6]).toBe(true);
   });
 
+  it("safely coerces nullish or non-string input in generateQRMatrix", () => {
+    expect(() => generateQRMatrix(null as any)).not.toThrow();
+    expect(generateQRMatrix(null as any).length).toBeGreaterThanOrEqual(21);
+    expect(generateQRMatrix(12345 as any).length).toBeGreaterThanOrEqual(21);
+  });
+
   it("generates a valid SVG string with correct viewBox and attributes", () => {
     const url = "https://worksphere.app/venues/cm80abcdef123456";
     const svg = generateQRCodeSVG(url, {
@@ -30,6 +36,12 @@ describe("QR Code SVG Generator", () => {
     expect(svg).toContain("<title>Venue QR Code</title>");
     expect(svg).toContain("<path");
     expect(svg.trim().endsWith("</svg>")).toBe(true);
+  });
+
+  it("merges horizontal runs into compact path rectangles", () => {
+    const svg = generateQRCodeSVG("https://worksphere.app");
+    // Merged horizontal runs format like `h7v1h-7z` for finder patterns
+    expect(svg).toMatch(/h[2-9]\d*v1h-[2-9]\d*z/);
   });
 
   it("supports custom colors and transparent background", () => {
@@ -67,6 +79,37 @@ describe("QR Code SVG Generator", () => {
     expect(appendChildSpy).toHaveBeenCalled();
     expect(removeChildSpy).toHaveBeenCalled();
     expect(revokeObjectURLMock).toHaveBeenCalledWith("blob:mock-url");
+
+    appendChildSpy.mockRestore();
+    removeChildSpy.mockRestore();
+  });
+
+  it("ensures .svg extension and handles fallback filename in downloadSVG", () => {
+    const createObjectURLMock = jest.fn(() => "blob:mock-url");
+    const revokeObjectURLMock = jest.fn();
+    global.URL.createObjectURL = createObjectURLMock;
+    global.URL.revokeObjectURL = revokeObjectURLMock;
+
+    let downloadedFilename = "";
+    const appendChildSpy = jest
+      .spyOn(document.body, "appendChild")
+      .mockImplementation((node: any) => {
+        downloadedFilename = node.download;
+        return node;
+      });
+    const removeChildSpy = jest
+      .spyOn(document.body, "removeChild")
+      .mockImplementation((node: any) => node);
+
+    const svg = generateQRCodeSVG("https://worksphere.app");
+
+    // Without extension
+    downloadSVG(svg, "custom-name");
+    expect(downloadedFilename).toBe("custom-name.svg");
+
+    // Undefined / empty filename
+    downloadSVG(svg, undefined as any);
+    expect(downloadedFilename).toBe("qr-code.svg");
 
     appendChildSpy.mockRestore();
     removeChildSpy.mockRestore();

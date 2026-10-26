@@ -1,5 +1,4 @@
-// @ts-nocheck
-import React, { useState, useEffect, useCallback, MouseEvent } from 'react';
+import React, { useState, useEffect, useCallback, useRef, MouseEvent } from 'react';
 
 export interface RippleState {
   x: number;
@@ -21,6 +20,7 @@ export const ConstructForcefieldBackdrop: React.FC<ConstructForcefieldBackdropPr
   ariaLabel = 'Interactive Construct Energy Barrier',
 }) => {
   const [ripple, setRipple] = useState<RippleState | null>(null);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keyboard Escape listener for dialog dismissal
   useEffect(() => {
@@ -33,7 +33,13 @@ export const ConstructForcefieldBackdrop: React.FC<ConstructForcefieldBackdropPr
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+    };
   }, [isOpen, onDismiss]);
 
   const handleBackdropClick = useCallback(
@@ -44,14 +50,28 @@ export const ConstructForcefieldBackdrop: React.FC<ConstructForcefieldBackdropPr
 
       setRipple({ x, y, active: true });
 
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+      }
+
       // Trigger dismiss shortly after shockwave radiates
-      setTimeout(() => {
+      dismissTimerRef.current = setTimeout(() => {
         onDismiss();
         setRipple(null);
+        dismissTimerRef.current = null;
       }, 450);
     },
     [onDismiss]
   );
+
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -90,6 +110,7 @@ export const ConstructForcefieldBackdrop: React.FC<ConstructForcefieldBackdropPr
       {/* Radiating Emerald Shockwave Ripple */}
       {ripple?.active && (
         <span
+          data-testid="forcefield-ripple"
           className="pointer-events-none absolute rounded-full bg-emerald-400/30 ring-4 ring-emerald-400 animate-ping"
           style={{
             left: `${ripple.x}px`,

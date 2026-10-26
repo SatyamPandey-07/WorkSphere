@@ -50,12 +50,15 @@ export function generateBookingsCSV(
   bookings: BookingHistoryExportItem[],
   options: BookingHistoryCsvOptions = {},
 ): string {
+  const safeBookings = Array.isArray(bookings)
+    ? bookings.filter((b): b is BookingHistoryExportItem => Boolean(b && typeof b === "object"))
+    : [];
   const builder = new CsvBuilder<BookingHistoryExportItem>({ lineDelimiter: "\n" });
 
   builder.setColumns([
     {
       header: "Confirmation ID",
-      accessor: (b) => b.confirmationId || `WS-#${b.id}`,
+      accessor: (b) => b.confirmationId || (b.id ? `WS-#${b.id}` : "WS-#N/A"),
     },
     {
       header: "Venue Name",
@@ -133,7 +136,7 @@ export function generateBookingsCSV(
     },
   ]);
 
-  builder.addRows(bookings);
+  builder.addRows(safeBookings);
   return builder.build();
 }
 
@@ -166,6 +169,9 @@ export function generateBookingsExcel(
   bookings: BookingHistoryExportItem[],
   options: BookingHistoryExcelOptions = {},
 ): string {
+  const safeBookings = Array.isArray(bookings)
+    ? bookings.filter((b): b is BookingHistoryExportItem => Boolean(b && typeof b === "object"))
+    : [];
   const builder = new ExcelXmlBuilder<BookingHistoryExportItem>({
     worksheetName: options.sheetName || "Bookings",
     author: "WorkSphere",
@@ -175,7 +181,7 @@ export function generateBookingsExcel(
     {
       header: "Confirmation ID",
       type: "String",
-      accessor: (b) => b.confirmationId || `WS-#${b.id}`,
+      accessor: (b) => b.confirmationId || (b.id ? `WS-#${b.id}` : "WS-#N/A"),
     },
     {
       header: "Venue Name",
@@ -266,7 +272,7 @@ export function generateBookingsExcel(
     },
   ]);
 
-  builder.addRows(bookings);
+  builder.addRows(safeBookings);
   return builder.build();
 }
 

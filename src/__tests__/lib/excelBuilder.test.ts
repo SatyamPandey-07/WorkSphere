@@ -297,9 +297,7 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
       );
 
       // Alias exportBookingsToExcel is identical
-      expect(exportBookingsToExcel(mockBookings)).toBe(
-        generateBookingsExcel(mockBookings),
-      );
+      expect(exportBookingsToExcel).toBe(generateBookingsExcel);
     });
 
     it("handles empty bookings list without crashing", () => {
@@ -347,6 +345,53 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
 
       appendSpy.mockRestore();
       removeSpy.mockRestore();
+    });
+    it("safely handles nullish rows and non-array inputs in addRows and addRow", () => {
+      const builder = new ExcelXmlBuilder<{ id: string; val: number }>({ worksheetName: "NullSafe" });
+      builder.setColumns([
+        { header: "ID", accessor: "id", type: "String" },
+        { header: "Value", accessor: "val", type: "Number" },
+      ]);
+
+      expect(() => builder.addRows(null as any)).not.toThrow();
+      expect(() => builder.addRows(undefined as any)).not.toThrow();
+      expect(() => builder.addRow(null as any)).not.toThrow();
+      expect(() => builder.addRow(undefined as any)).not.toThrow();
+      expect(() => builder.addRows([null as any, { id: "ok-1", val: 10 }, undefined as any])).not.toThrow();
+
+      const xml = builder.build();
+      expect(xml).toContain(">ok-1</Data></Cell>");
+      expect(xml).toContain(">10</Data></Cell>");
+    });
+
+    it("sanitizes Infinity and -Infinity in Currency and Number columns to safe text", () => {
+      const builder = new ExcelXmlBuilder<{ num: number; curr: number }>({ worksheetName: "FiniteTest" });
+      builder.setColumns([
+        { header: "Num", accessor: "num", type: "Number" },
+        { header: "Curr", accessor: "curr", type: "Currency" },
+      ]);
+
+      builder.addRow({ num: Infinity, curr: -Infinity });
+      const xml = builder.build();
+      // Must NOT contain ss:Type="Number" for Infinity
+      expect(xml).not.toContain('<Data ss:Type="Number">Infinity</Data>');
+      expect(xml).not.toContain('<Data ss:Type="Number">-Infinity</Data>');
+      expect(xml).toContain('<Cell ss:StyleID="Text"><Data ss:Type="String">Infinity</Data></Cell>');
+    });
+
+    it("generateBookingsExcel handles nullish bookings and missing booking IDs safely", () => {
+      expect(() => generateBookingsExcel(null as any)).not.toThrow();
+      expect(() => generateBookingsExcel(undefined as any)).not.toThrow();
+
+      const xmlNull = generateBookingsExcel(null as any);
+      expect(xmlNull).toContain(">Confirmation ID</Data></Cell>");
+
+      const missingIdBooking: any = {
+        date: "2026-10-26",
+        time: "14:00",
+      };
+      const xmlMissing = generateBookingsExcel([missingIdBooking, null as any]);
+      expect(xmlMissing).toContain(">WS-#N/A</Data></Cell>");
     });
   });
 });

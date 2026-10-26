@@ -32,38 +32,71 @@ export interface WeeklyVenueAnalyticsData {
  * Generates formatted CSV string for weekly venue analytics report.
  */
 export function generateWeeklyVenueAnalyticsCSV(
-  data: WeeklyVenueAnalyticsData,
+  data: WeeklyVenueAnalyticsData | null | undefined,
 ): string {
   const builder = new CsvBuilder<VenueWeeklySummary>({ lineDelimiter: "\r\n" });
 
+  const safeData = data || {
+    startDate: "",
+    endDate: "",
+    generatedAt: new Date().toISOString(),
+    venues: [],
+  };
+  const venues = Array.isArray(safeData.venues) ? safeData.venues : [];
+
   builder.addSectionHeader("WEEKLY VENUE ANALYTICS & FOOT-TRAFFIC REPORT");
   builder.addRawLine(
-    `Report Window,${escapeCSVField(data.startDate)} to ${escapeCSVField(data.endDate)}`,
+    `Report Window,${escapeCSVField(safeData.startDate)} to ${escapeCSVField(safeData.endDate)}`,
   );
-  builder.addRawLine(`Generated At,${escapeCSVField(data.generatedAt)}`);
-  builder.addRawLine(`Total Venues Reported,${data.venues.length}`);
+  builder.addRawLine(`Generated At,${escapeCSVField(safeData.generatedAt)}`);
+  builder.addRawLine(`Total Venues Reported,${venues.length}`);
   builder.addBlankLine();
 
   builder.setColumns([
-    { header: "Venue ID", accessor: (v) => v.venueId },
-    { header: "Venue Name", accessor: (v) => v.venueName },
-    { header: "Category", accessor: (v) => v.category },
-    { header: "Manager Email", accessor: (v) => v.managerEmail },
-    { header: "Total Bookings", accessor: (v) => v.totalBookings },
+    { header: "Venue ID", accessor: (v) => v?.venueId ?? "" },
+    { header: "Venue Name", accessor: (v) => v?.venueName ?? "" },
+    { header: "Category", accessor: (v) => v?.category ?? "" },
+    { header: "Manager Email", accessor: (v) => v?.managerEmail ?? "" },
+    {
+      header: "Total Bookings",
+      accessor: (v) =>
+        typeof v?.totalBookings === "number" && Number.isFinite(v.totalBookings)
+          ? v.totalBookings
+          : 0,
+    },
     {
       header: "Total Revenue",
-      accessor: (v) => `${v.currency}${v.totalRevenue.toFixed(2)}`,
+      accessor: (v) => {
+        const currency = typeof v?.currency === "string" ? v.currency : "$";
+        const rev =
+          typeof v?.totalRevenue === "number" && Number.isFinite(v.totalRevenue)
+            ? v.totalRevenue
+            : 0;
+        return `${currency}${rev.toFixed(2)}`;
+      },
     },
-    { header: "Foot Traffic Check-Ins", accessor: (v) => v.footTrafficCount },
+    {
+      header: "Foot Traffic Check-Ins",
+      accessor: (v) =>
+        typeof v?.footTrafficCount === "number" && Number.isFinite(v.footTrafficCount)
+          ? v.footTrafficCount
+          : 0,
+    },
     {
       header: "Average Rating",
       accessor: (v) =>
-        v.averageRating !== null ? v.averageRating.toFixed(1) : "N/A",
+        v &&
+        v.averageRating !== null &&
+        v.averageRating !== undefined &&
+        typeof v.averageRating === "number" &&
+        Number.isFinite(v.averageRating)
+          ? v.averageRating.toFixed(1)
+          : "N/A",
     },
   ]);
 
-  if (Array.isArray(data.venues) && data.venues.length > 0) {
-    builder.addRows(data.venues);
+  if (venues.length > 0) {
+    builder.addRows(venues);
   }
 
   return builder.build();
@@ -77,9 +110,15 @@ export async function fetchWeeklyVenueAnalyticsData(options?: {
   endDate?: Date;
   venueId?: string;
 }): Promise<WeeklyVenueAnalyticsData> {
-  const end = options?.endDate || new Date();
+  const now = new Date();
+  const end =
+    options?.endDate instanceof Date && !isNaN(options.endDate.getTime())
+      ? options.endDate
+      : now;
   const start =
-    options?.startDate || new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    options?.startDate instanceof Date && !isNaN(options.startDate.getTime())
+      ? options.startDate
+      : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const startIso = start.toISOString().slice(0, 10);
   const endIso = end.toISOString().slice(0, 10);
@@ -155,20 +194,27 @@ export async function fetchWeeklyVenueAnalyticsData(options?: {
  * Sends weekly venue analytics CSV report email via Nodemailer.
  */
 export async function sendWeeklyVenueAnalyticsEmail(
-  reportData: WeeklyVenueAnalyticsData,
+  reportData: WeeklyVenueAnalyticsData | null | undefined,
   targetEmail?: string,
 ): Promise<{ success: boolean; recipient: string; messageId?: string }> {
+  const safeData = reportData || {
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
+    generatedAt: new Date().toISOString(),
+    venues: [],
+  };
+
   const SMTP_USER = process.env.SMTP_USER;
   const SMTP_PASS = process.env.SMTP_PASS;
 
   const recipient =
     targetEmail ||
-    reportData.venues[0]?.managerEmail ||
+    (Array.isArray(safeData.venues) && safeData.venues[0]?.managerEmail) ||
     process.env.ADMIN_EMAIL ||
     "manager@worksphere.app";
 
-  const csvContent = generateWeeklyVenueAnalyticsCSV(reportData);
-  const filename = `weekly-venue-analytics-${reportData.startDate}-to-${reportData.endDate}.csv`;
+  const csvContent = generateWeeklyVenueAnalyticsCSV(safeData);
+  const filename = `weekly-venue-analytics-${safeData.startDate}-to-${safeData.endDate}.csv`;
 
   if (!SMTP_USER || !SMTP_PASS) {
     console.log(

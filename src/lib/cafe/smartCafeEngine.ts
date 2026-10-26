@@ -411,27 +411,36 @@ export class SmartCafeEngine {
    * Filters a menu catalog against selected dietary tags and excluded allergens
    */
   public static filterMenu(
-    menu: MenuItem[],
-    requiredTags: DietaryTag[],
-    excludedAllergens: string[],
+    menu?: MenuItem[] | null,
+    requiredTags?: DietaryTag[] | null,
+    excludedAllergens?: string[] | null,
     category?: MenuItem["category"],
   ): MenuItem[] {
-    return menu.filter((item) => {
-      if (!item.isAvailable) return false;
+    const safeMenu = Array.isArray(menu) ? menu : [];
+    const safeTags = Array.isArray(requiredTags)
+      ? requiredTags.filter((t): t is DietaryTag => typeof t === "string" && t.trim().length > 0)
+      : [];
+    const safeExclusions = Array.isArray(excludedAllergens)
+      ? excludedAllergens.filter((ex): ex is string => typeof ex === "string" && ex.trim().length > 0)
+      : [];
+
+    return safeMenu.filter((item) => {
+      if (!item || !item.isAvailable) return false;
       if (category && item.category !== category) return false;
 
       // Check dietary tags (must contain all required tags)
-      if (requiredTags.length > 0) {
-        const hasAllTags = requiredTags.every((t) =>
-          item.dietaryTags.includes(t),
-        );
+      if (safeTags.length > 0) {
+        const itemTags = Array.isArray(item.dietaryTags) ? item.dietaryTags : [];
+        const hasAllTags = safeTags.every((t) => itemTags.includes(t));
         if (!hasAllTags) return false;
       }
 
       // Check allergen exclusions (must not contain any excluded allergens)
-      if (excludedAllergens.length > 0) {
-        const hasExcluded = item.allergens.some((all) =>
-          excludedAllergens.some((ex) =>
+      if (safeExclusions.length > 0) {
+        const itemAllergens = Array.isArray(item.allergens) ? item.allergens : [];
+        const hasExcluded = itemAllergens.some((all) =>
+          typeof all === "string" &&
+          safeExclusions.some((ex) =>
             all.toLowerCase().includes(ex.toLowerCase()),
           ),
         );
@@ -446,8 +455,8 @@ export class SmartCafeEngine {
    * Calculates total price, calories, and wait times for an order
    */
   public static calculateOrderDetails(
-    itemsInput: OrderItemInput[],
-    menu: MenuItem[],
+    itemsInput?: OrderItemInput[] | null,
+    menu?: MenuItem[] | null,
     currentQueueLength: number = 3,
   ): {
     calculatedItems: CafeOrder["items"];
@@ -456,37 +465,68 @@ export class SmartCafeEngine {
     total: number;
     estimatedPrepMinutes: number;
   } {
+    const safeItemsInput = Array.isArray(itemsInput)
+      ? itemsInput.filter((input): input is OrderItemInput => input != null)
+      : [];
+    const safeMenu = Array.isArray(menu) ? menu : [];
+
+    if (safeItemsInput.length === 0) {
+      return {
+        calculatedItems: [],
+        subtotal: 0,
+        tax: 0,
+        total: 0,
+        estimatedPrepMinutes: 0,
+      };
+    }
+
     let subtotal = 0;
     let maxItemPrep = 0;
     let totalPrepSum = 0;
 
-    const calculatedItems: CafeOrder["items"] = itemsInput.map((input) => {
-      const item = menu.find((m) => m.id === input.menuItemId);
+    const calculatedItems: CafeOrder["items"] = safeItemsInput.map((input) => {
+      const item = safeMenu.find((m) => m && m.id === input.menuItemId);
       if (!item) {
         throw new Error(`Menu item with ID ${input.menuItemId} not found.`);
       }
 
-      let itemUnitPrice = item.basePrice;
+      const rawQuantity = input.quantity;
+      const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0
+        ? Math.floor(rawQuantity)
+        : 1;
+
+      let itemUnitPrice = Number.isFinite(item.basePrice) ? Math.max(0, item.basePrice) : 0;
       const appliedCustomizations: Array<{
         groupName: string;
         optionNames: string[];
         priceDelta: number;
       }> = [];
 
-      input.customizations.forEach((cust) => {
-        const group = item.customizationGroups.find(
-          (g) => g.id === cust.groupId,
-        );
+      const customizations = Array.isArray(input.customizations)
+        ? input.customizations
+        : [];
+
+      customizations.forEach((cust) => {
+        if (!cust) return;
+        const groups = Array.isArray(item.customizationGroups)
+          ? item.customizationGroups
+          : [];
+        const group = groups.find((g) => g && g.id === cust.groupId);
         if (!group) return;
 
         const optionNames: string[] = [];
         let groupPriceDelta = 0;
+        const selectedIds = Array.isArray(cust.selectedOptionIds)
+          ? cust.selectedOptionIds
+          : [];
+        const groupOptions = Array.isArray(group.options) ? group.options : [];
 
-        cust.selectedOptionIds.forEach((optId) => {
-          const opt = group.options.find((o) => o.id === optId);
+        selectedIds.forEach((optId) => {
+          const opt = groupOptions.find((o) => o && o.id === optId);
           if (opt) {
             optionNames.push(opt.name);
-            groupPriceDelta += opt.priceDelta;
+            const delta = Number.isFinite(opt.priceDelta) ? opt.priceDelta : 0;
+            groupPriceDelta += delta;
           }
         });
 
@@ -501,19 +541,22 @@ export class SmartCafeEngine {
       });
 
       const itemTotalPrice = Number(
-        (itemUnitPrice * input.quantity).toFixed(2),
+        (itemUnitPrice * quantity).toFixed(2),
       );
       subtotal += itemTotalPrice;
 
-      const itemPrep = item.prepTimeMinutes * input.quantity;
+      const basePrep = Number.isFinite(item.prepTimeMinutes) && item.prepTimeMinutes > 0
+        ? item.prepTimeMinutes
+        : 0;
+      const itemPrep = basePrep * quantity;
       totalPrepSum += itemPrep;
-      if (item.prepTimeMinutes > maxItemPrep) {
-        maxItemPrep = item.prepTimeMinutes;
+      if (basePrep > maxItemPrep) {
+        maxItemPrep = basePrep;
       }
 
       return {
         item,
-        quantity: input.quantity,
+        quantity,
         customizations: appliedCustomizations,
         itemTotalPrice,
       };
@@ -522,13 +565,17 @@ export class SmartCafeEngine {
     const tax = Number((subtotal * 0.0875).toFixed(2)); // standard 8.75% tax
     const total = Number((subtotal + tax).toFixed(2));
 
+    const safeQueueLength = Number.isFinite(currentQueueLength) && currentQueueLength >= 0
+      ? Math.floor(currentQueueLength)
+      : 0;
+
     // Prep estimate: the order's own prep time plus 2 minutes per ticket ahead in the queue
     const estimatedPrepMinutes = Math.max(
       3,
       Math.round(
         estimatePrepMinutes(
           maxItemPrep + totalPrepSum * 0.4,
-          currentQueueLength,
+          safeQueueLength,
         ),
       ),
     );
@@ -545,7 +592,7 @@ export class SmartCafeEngine {
   /**
    * Generates a 4-character human-friendly pickup code and SHA-256 styled pickup token
    */
-  public static generatePickupTokens(orderId: string): {
+  public static generatePickupTokens(orderId?: string | number | null): {
     pickupCode: string;
     pickupToken: string;
   } {
@@ -554,7 +601,13 @@ export class SmartCafeEngine {
     for (let i = 0; i < 4; i++) {
       pickupCode += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    const pickupToken = `WS-BARISTA-${orderId.slice(-6).toUpperCase()}-${pickupCode}`;
+    const safeId = typeof orderId === "string"
+      ? orderId
+      : typeof orderId === "number" && Number.isFinite(orderId)
+        ? String(orderId)
+        : "000000";
+    const suffix = safeId.slice(-6).toUpperCase();
+    const pickupToken = `WS-BARISTA-${suffix}-${pickupCode}`;
     return { pickupCode, pickupToken };
   }
 }

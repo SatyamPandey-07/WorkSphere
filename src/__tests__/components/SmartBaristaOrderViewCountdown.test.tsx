@@ -1,6 +1,5 @@
 import "@testing-library/jest-dom";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, fireEvent } from "@testing-library/react";
 import SmartBaristaOrderView from "@/components/cafe/SmartBaristaOrderView";
 import type { CafeOrder } from "@/lib/cafe/smartCafeEngine";
 
@@ -34,18 +33,17 @@ describe("SmartBaristaOrderView prep countdown", () => {
   });
 
   const placeOrder = async (order: CafeOrder) => {
-    const user = userEvent.setup();
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, order }),
     });
 
     render(<SmartBaristaOrderView />);
-    await user.click(
+    fireEvent.click(
       screen.getAllByRole("button", { name: /customize & add/i })[0],
     );
-    await user.click(screen.getByRole("button", { name: /add to cart/i }));
-    await user.click(screen.getByRole("button", { name: /place pre-order/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to cart/i }));
+    fireEvent.click(screen.getByRole("button", { name: /place pre-order/i }));
     await screen.findByText(`ID: ${order.id}`);
   };
 

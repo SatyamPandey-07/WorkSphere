@@ -100,6 +100,7 @@ interface VenueLike {
 }
 
 function matchesOutletDensity(venue: VenueLike, target: string): boolean {
+  if (!venue) return false;
   if (target === "every_table") return venue.outletDensity === "every_table";
   if (target === "some_tables")
     return ["every_table", "some_tables"].includes(venue.outletDensity ?? "");
@@ -112,8 +113,11 @@ function matchesOutletDensity(venue: VenueLike, target: string): boolean {
 
 function matchesWifiSpeedBand(venue: VenueLike, band: string): boolean {
   if (band === "all") return true;
-  const speed = venue.wifiSpeed;
-  if (speed === null || speed === undefined) return false;
+  if (!venue) return false;
+  const raw = venue.wifiSpeed;
+  if (raw === null || raw === undefined || raw === "") return false;
+  const speed = typeof raw === "number" ? raw : Number(raw);
+  if (isNaN(speed) || !isFinite(speed)) return false;
   if (band === "basic") return speed >= 10;
   if (band === "fast") return speed >= 50;
   if (band === "ultra") return speed >= 100;
@@ -122,6 +126,7 @@ function matchesWifiSpeedBand(venue: VenueLike, band: string): boolean {
 
 function matchesMusicStyle(venue: VenueLike, style: string): boolean {
   if (style === "all") return true;
+  if (!venue) return false;
   if (style === "no_music")
     return venue.musicStyle === "no_music" || venue.hasNoMusic === true;
   return venue.musicStyle === style;
@@ -131,17 +136,25 @@ export function applyFilters<T extends object>(
   venues: T[],
   filters: VenueFilters,
 ): T[] {
+  if (!Array.isArray(venues)) return [];
+  if (!filters || typeof filters !== "object") {
+    return venues.filter((item): item is T => Boolean(item && typeof item === "object"));
+  }
+
   const active = Object.entries(filters).filter(
     ([key, value]) =>
       value !== undefined &&
       value !== null &&
       value !== VENUE_FILTERS[key as VenueFilterKey]?.default,
   );
-  if (active.length === 0) return venues;
+  if (active.length === 0) {
+    return venues.filter((item): item is T => Boolean(item && typeof item === "object"));
+  }
 
-  return venues.filter((item) =>
-    active.every(([key, value]) => {
-      const venue = item as VenueLike;
+  return venues.filter((item): item is T => {
+    if (!item || typeof item !== "object") return false;
+    const venue = item as VenueLike;
+    return active.every(([key, value]) => {
       switch (key) {
         case "wifi":
           return venue.wifi === true;
@@ -209,13 +222,14 @@ export function applyFilters<T extends object>(
             (venue as any).capacity ??
             (venue as any).meetingRoomCapacity ??
             (venue as any).maxCapacity;
-          return typeof cap === "number" && !isNaN(cap) && cap >= targetCapacity;
+          const capNum = typeof cap === "number" ? cap : Number(cap);
+          return !isNaN(capNum) && isFinite(capNum) && capNum >= targetCapacity;
         }
         default:
           return true;
       }
-    }),
-  );
+    });
+  });
 }
 
 export function buildVenueSearchSchema() {
@@ -237,7 +251,7 @@ export function buildVenueSearchSchema() {
     query: z.string().optional(),
     minCapacity: z
       .preprocess(
-        (v) => sanitizeCapacityInput(v),
+        (v) => (v === "" || v === null || v === undefined ? undefined : sanitizeCapacityInput(v)),
         z.number().int().min(1).optional(),
       )
       .optional(),

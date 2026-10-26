@@ -64,6 +64,52 @@ describe("Venue amenity filtering", () => {
   it("empty venues returns empty", () => {
     expect(filterByAmenities([], { hasOutlets: true })).toHaveLength(0);
   });
+
+  describe("applyFilters null-safety and minCapacity schema preservation (#6760)", () => {
+    it("safely handles nullish venues and filters arrays without throwing", async () => {
+      const { applyFilters } = await import("@/lib/filters");
+      expect(applyFilters(null as any, {})).toEqual([]);
+      expect(applyFilters(undefined as any, {})).toEqual([]);
+      expect(applyFilters([{ id: "v1", wifi: true }], null as any)).toEqual([{ id: "v1", wifi: true }]);
+      expect(applyFilters([{ id: "v1", wifi: true }], undefined as any)).toEqual([{ id: "v1", wifi: true }]);
+    });
+
+    it("filters out nullish venue entries gracefully", async () => {
+      const { applyFilters } = await import("@/lib/filters");
+      const mixedVenues = [null, undefined, { id: "v1", wifi: true }, { id: "v2", wifi: false }];
+      const result = applyFilters(mixedVenues as any, { wifi: true });
+      expect(result).toHaveLength(1);
+      expect((result[0] as any).id).toBe("v1");
+    });
+
+    it("matches minCapacity against numeric string venue capacities", async () => {
+      const { applyFilters } = await import("@/lib/filters");
+      const venues = [
+        { id: "v1", capacity: "25" },
+        { id: "v2", capacity: 10 },
+        { id: "v3", capacity: null },
+      ];
+      const result = applyFilters(venues as any, { minCapacity: 20 });
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe("v1");
+    });
+
+    it("preserves undefined for omitted minCapacity in buildVenueSearchSchema", async () => {
+      const { buildVenueSearchSchema } = await import("@/lib/filters");
+      const schema = buildVenueSearchSchema();
+      const parsedOmitted = schema.safeParse({ lat: "40", lng: "-74" });
+      expect(parsedOmitted.success).toBe(true);
+      if (parsedOmitted.success) {
+        expect(parsedOmitted.data.minCapacity).toBeUndefined();
+      }
+
+      const parsedExplicit = schema.safeParse({ lat: "40", lng: "-74", minCapacity: "15" });
+      expect(parsedExplicit.success).toBe(true);
+      if (parsedExplicit.success) {
+        expect(parsedExplicit.data.minCapacity).toBe(15);
+      }
+    });
+  });
 });
 
 describe("applyFilters with pet and lighting filters", () => {

@@ -270,6 +270,23 @@ export function microTimestampMember(
 
 // ─── Token Bucket Rate Limiting Exports (#3529) ──────────────────────────────
 export {
+  MemoryRateLimitStore,
+  defaultMemoryStore,
+  type MemEntry,
+  type MemoryBucketEntry,
+} from "./rateLimit/stores/memoryStore";
+
+export {
+  SlidingWindowLimiter,
+  type SlidingWindowOptions,
+} from "./rateLimit/limiters/slidingWindowLimiter";
+
+export {
+  TokenBucketLimiter,
+  type TokenBucketOptions,
+} from "./rateLimit/limiters/tokenBucketLimiter";
+
+export {
   checkTokenBucketRateLimit,
   checkInMemoryTokenBucket,
   matchRateTier,

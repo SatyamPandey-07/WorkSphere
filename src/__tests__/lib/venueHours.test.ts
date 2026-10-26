@@ -249,6 +249,16 @@ describe("venueHours utility", () => {
       const status = getVenueHoursStatus(invalidTzJson, testDate);
       expect(status.isAvailable).toBe(true);
     });
+
+    it("handles invalid Date object passed as nowInput without throwing RangeError (#6766)", () => {
+      const invalidDate = new Date("invalid_date_string");
+      const hours = "08:00 - 20:00";
+
+      expect(() => getVenueHoursStatus(hours, invalidDate, "America/New_York")).not.toThrow();
+      const status = getVenueHoursStatus(hours, invalidDate, "America/New_York");
+      expect(status).toBeDefined();
+      expect(typeof status.isOpen).toBe("boolean");
+    });
   });
 
   describe("resolveTimezone helper", () => {

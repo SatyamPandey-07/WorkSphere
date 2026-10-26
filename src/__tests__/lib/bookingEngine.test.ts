@@ -178,4 +178,118 @@ describe("BookingEngine & Domain Schedule Validation (#6730)", () => {
       expect(insideWindow.reason).toBe("INSIDE_WINDOW");
     });
   });
+  describe("Defensive hardening & edge-case safety (#6762)", () => {
+    it("handles nullish and invalid params in calculateAvailableSlots safely", () => {
+      // @ts-expect-error testing null input
+      expect(engine.calculateAvailableSlots(null)).toEqual([]);
+      // @ts-expect-error testing undefined input
+      expect(engine.calculateAvailableSlots(undefined)).toEqual([]);
+
+      // Non-positive or NaN duration should not hang in infinite loop
+      expect(
+        engine.calculateAvailableSlots({
+          date: "2026-10-30",
+          slotDurationMinutes: 0,
+        }),
+      ).toEqual([]);
+      expect(
+        engine.calculateAvailableSlots({
+          date: "2026-10-30",
+          slotDurationMinutes: -15,
+        }),
+      ).toEqual([]);
+      expect(
+        engine.calculateAvailableSlots({
+          date: "2026-10-30",
+          // @ts-expect-error testing NaN
+          slotDurationMinutes: NaN,
+        }),
+      ).toEqual([]);
+
+      // Corrupt elements in existingBookings and nullish seatIds
+      const slots = engine.calculateAvailableSlots({
+        date: "2026-10-30",
+        openingTime: "08:00",
+        closingTime: "09:00",
+        slotDurationMinutes: 60,
+        // @ts-expect-error testing null in array
+        existingBookings: [null, undefined, { date: "2026-10-30", time: "08:00", duration: 60, seatId: "s1" }],
+        // @ts-expect-error testing invalid seatIds
+        seatIds: [null, "s1", "s2"],
+        now: new Date("2026-10-01T00:00:00.000Z"),
+      });
+
+      expect(slots).toHaveLength(1);
+      expect(slots[0].availableSeatIds).toEqual(["s2"]);
+      expect(slots[0].bookedSeatsCount).toBe(1);
+    });
+
+    it("handles nullish params and non-finite duration in validateBookingWindow safely", () => {
+      // @ts-expect-error testing null input
+      const nullRes = engine.validateBookingWindow(null);
+      expect(nullRes.valid).toBe(false);
+      expect(nullRes.errors[0]).toContain("parameters object is required");
+
+      // Non-finite duration (NaN or string)
+      const nanRes = engine.validateBookingWindow({
+        date: "2026-10-30",
+        time: "10:00",
+        // @ts-expect-error testing NaN duration
+        duration: NaN,
+      });
+      expect(nanRes.valid).toBe(false);
+      expect(nanRes.errors).toContain(
+        "Booking duration must be a positive finite number.",
+      );
+
+      // Negative duration
+      const negRes = engine.validateBookingWindow({
+        date: "2026-10-30",
+        time: "10:00",
+        duration: -30,
+      });
+      expect(negRes.valid).toBe(false);
+      expect(negRes.errors).toContain(
+        "Booking duration must be a positive finite number.",
+      );
+    });
+
+    it("handles nullish existingBookings and corrupt items in checkConflicts", () => {
+      // @ts-expect-error testing null params
+      expect(() => engine.checkConflicts(null)).toThrow("params object is required");
+
+      const res = engine.checkConflicts({
+        requestedSlot: { date: "2026-10-30", time: "10:00", duration: 60 },
+        // @ts-expect-error testing null existingBookings
+        existingBookings: null,
+      });
+      expect(res.hasConflict).toBe(false);
+      expect(res.conflictingBookings).toEqual([]);
+
+      // Array containing nullish items
+      const corruptRes = engine.checkConflicts({
+        requestedSlot: { date: "2026-10-30", time: "10:00", duration: 60 },
+        // @ts-expect-error testing corrupt array
+        existingBookings: [null, undefined, { date: "2026-10-30", time: "10:00", duration: 60 }],
+      });
+      expect(corruptRes.hasConflict).toBe(true);
+      expect(corruptRes.conflictingBookings).toHaveLength(1);
+    });
+
+    it("handles nullish params and negative/NaN radius in getConflictDateWindow safely", () => {
+      // Negative radius falls back to default
+      const defaultWin = engine.getConflictDateWindow("2026-10-10");
+      const negWin = engine.getConflictDateWindow("2026-10-10", -1);
+      const nanWin = engine.getConflictDateWindow("2026-10-10", NaN);
+      expect(negWin).toEqual(defaultWin);
+      expect(nanWin).toEqual(defaultWin);
+    });
+
+    it("handles nullish params in evaluateCancellationEligibility safely", () => {
+      // @ts-expect-error testing null input
+      const nullRes = engine.evaluateCancellationEligibility(null);
+      expect(nullRes.allowed).toBe(false);
+      expect(nullRes.reason).toBe("INVALID_START_TIME");
+    });
+  });
 });

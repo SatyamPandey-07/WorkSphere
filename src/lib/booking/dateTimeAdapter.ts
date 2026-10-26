@@ -58,7 +58,7 @@ export function isValidTimeZone(timeZone: unknown): timeZone is string {
  * Normalizes "9:05", "09:05" or "9:05 AM" to 24-hour "HH:mm"; returns null if invalid.
  */
 export function normalizeBookingTime(time: string): string | null {
-  const value = time?.trim() ?? "";
+  const value = typeof time === "string" ? time.trim() : "";
   let hours: number;
   let minutes: number;
 
@@ -87,7 +87,8 @@ export function normalizeBookingTime(time: string): string | null {
  * Returns true for a valid calendar date in "YYYY-MM-DD" format.
  */
 export function isValidBookingDate(date: string): boolean {
-  const match = date?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (typeof date !== "string") return false;
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return false;
   const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
   const probe = new Date(Date.UTC(y, m - 1, d));
@@ -102,6 +103,9 @@ export function isValidBookingDate(date: string): boolean {
  * Calculates the offset in milliseconds of `timeZone` relative to UTC at `instant`.
  */
 export function timeZoneOffsetMs(instant: Date, timeZone: string): number {
+  if (!(instant instanceof Date) || isNaN(instant.getTime())) {
+    return 0;
+  }
   const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: zone,
@@ -208,6 +212,14 @@ export function bookingStartsAt(
   booking: { date: string; time: string; timeZone?: string | null },
   fallbackTimeZone?: string | null,
 ): Date | null {
+  if (
+    !booking ||
+    typeof booking !== "object" ||
+    typeof booking.date !== "string" ||
+    typeof booking.time !== "string"
+  ) {
+    return null;
+  }
   return parseBookingDateTime(
     booking.date,
     booking.time,
@@ -222,6 +234,9 @@ export function formatToWallClock(
   instant: Date,
   timeZone: string = "UTC",
 ): { date: string; time: string } {
+  if (!(instant instanceof Date) || isNaN(instant.getTime())) {
+    return { date: "", time: "" };
+  }
   const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: zone,
@@ -253,15 +268,24 @@ export function bookingInterval(
   fallbackTimeZone?: string | null,
   defaultDurationMinutes: number = 60,
 ): BookingInterval | null {
+  if (!slot || typeof slot !== "object") return null;
+
   const startsAt = bookingStartsAt(slot, fallbackTimeZone);
   if (!startsAt) return null;
+
+  const fallbackDuration =
+    typeof defaultDurationMinutes === "number" &&
+    Number.isFinite(defaultDurationMinutes) &&
+    defaultDurationMinutes > 0
+      ? defaultDurationMinutes
+      : 60;
 
   const minutes =
     typeof slot.duration === "number" &&
     Number.isFinite(slot.duration) &&
     slot.duration > 0
       ? slot.duration
-      : defaultDurationMinutes;
+      : fallbackDuration;
 
   const start = startsAt.getTime();
   return { start, end: start + minutes * 60_000 };
@@ -276,6 +300,22 @@ export function intervalsOverlap(
   a: BookingInterval,
   b: BookingInterval,
 ): boolean {
+  if (
+    !a ||
+    !b ||
+    typeof a !== "object" ||
+    typeof b !== "object" ||
+    typeof a.start !== "number" ||
+    typeof a.end !== "number" ||
+    typeof b.start !== "number" ||
+    typeof b.end !== "number" ||
+    !Number.isFinite(a.start) ||
+    !Number.isFinite(a.end) ||
+    !Number.isFinite(b.start) ||
+    !Number.isFinite(b.end)
+  ) {
+    return false;
+  }
   const aStart = Math.min(a.start, a.end);
   const aEnd = Math.max(a.start, a.end);
   const bStart = Math.min(b.start, b.end);
@@ -301,9 +341,13 @@ export function conflictDateWindow(
   radiusDays: number = 3,
 ): string[] {
   if (!isValidBookingDate(date)) return [];
+  const safeRadius =
+    typeof radiusDays === "number" && Number.isFinite(radiusDays) && radiusDays >= 0
+      ? Math.floor(radiusDays)
+      : 3;
   const [y, m, d] = date.split("-").map(Number);
   const dates: string[] = [];
-  for (let offset = -radiusDays; offset <= radiusDays; offset++) {
+  for (let offset = -safeRadius; offset <= safeRadius; offset++) {
     dates.push(
       new Date(Date.UTC(y, m - 1, d + offset)).toISOString().slice(0, 10),
     );

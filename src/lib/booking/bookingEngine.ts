@@ -60,18 +60,51 @@ export class BookingEngine {
    * Calculates all available time slots and seat availability on a requested date.
    */
   public calculateAvailableSlots(params: CalculateSlotsParams): AvailableSlot[] {
+    if (!params || typeof params !== "object") {
+      return [];
+    }
+
     const {
       date,
       timeZone = this.config.defaultTimeZone || "UTC",
-      slotDurationMinutes = this.config.defaultDurationMinutes || 60,
+      slotDurationMinutes: rawDuration = this.config.defaultDurationMinutes || 60,
       openingTime = "08:00",
       closingTime = "20:00",
       isClosed = false,
-      seatIds = [],
-      existingBookings = [],
-      minAdvanceMinutes = 0,
+      seatIds: rawSeatIds = [],
+      existingBookings: rawBookings = [],
+      minAdvanceMinutes: rawMinAdvance = 0,
       now = new Date(),
     } = params;
+
+    if (params.slotDurationMinutes !== undefined) {
+      if (
+        typeof params.slotDurationMinutes !== "number" ||
+        !Number.isFinite(params.slotDurationMinutes) ||
+        params.slotDurationMinutes <= 0
+      ) {
+        return [];
+      }
+    }
+
+    const slotDurationMinutes =
+      typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0
+        ? Math.floor(rawDuration)
+        : (this.config.defaultDurationMinutes || 60);
+
+    if (slotDurationMinutes <= 0) {
+      return [];
+    }
+
+    const seatIds = Array.isArray(rawSeatIds) ? rawSeatIds.filter((s): s is string => typeof s === "string") : [];
+    const existingBookings = Array.isArray(rawBookings)
+      ? rawBookings.filter((b): b is NonNullable<typeof b> => Boolean(b && typeof b === "object"))
+      : [];
+    const minAdvanceMinutes =
+      typeof rawMinAdvance === "number" && Number.isFinite(rawMinAdvance) && rawMinAdvance >= 0
+        ? rawMinAdvance
+        : 0;
+    const safeNow = now instanceof Date && !isNaN(now.getTime()) ? now : new Date();
 
     if (isClosed || !this.dateTimeAdapter.isValidBookingDate(date)) {
       return [];
@@ -101,7 +134,7 @@ export class BookingEngine {
 
     const slots: AvailableSlot[] = [];
     const minAdvanceMs = minAdvanceMinutes * 60_000;
-    const earliestAllowedTime = now.getTime() + minAdvanceMs;
+    const earliestAllowedTime = safeNow.getTime() + minAdvanceMs;
 
     for (
       let currentMin = openMinutes;
@@ -148,6 +181,7 @@ export class BookingEngine {
 
       // Identify conflicting bookings in this slot interval
       const conflictingBookings = existingBookings.filter((b) => {
+        if (!b || typeof b !== "object") return false;
         const rowInterval = this.dateTimeAdapter.bookingInterval(
           { ...b, date: b.date ?? date },
           timeZone,
@@ -203,6 +237,15 @@ export class BookingEngine {
    * Validates a requested booking window against notice constraints, operating hours, and policies.
    */
   public validateBookingWindow(params: ValidateWindowParams): BookingWindowValidation {
+    if (!params || typeof params !== "object") {
+      return {
+        valid: false,
+        bookingStart: null,
+        bookingEnd: null,
+        errors: ["Invalid parameters: parameters object is required."],
+      };
+    }
+
     const {
       date,
       time,
@@ -214,6 +257,9 @@ export class BookingEngine {
       isClosed = false,
       now = new Date(),
     } = params;
+
+    const safeNow = now instanceof Date && !isNaN(now.getTime()) ? now : new Date();
+    const safePolicy = policy && typeof policy === "object" ? policy : {};
 
     const errors: string[] = [];
 
@@ -230,25 +276,29 @@ export class BookingEngine {
       errors.push("The venue is closed on the selected date.");
     }
 
+    if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
+      errors.push("Booking duration must be a positive finite number.");
+    } else {
+      // Duration limits
+      const minDur = safePolicy.minDurationMinutes ?? 15;
+      const maxDur = safePolicy.maxDurationMinutes ?? 480;
+      if (duration < minDur || duration > maxDur) {
+        errors.push(
+          `Booking duration must be between ${minDur} and ${maxDur} minutes.`,
+        );
+      }
+
+      const increment = safePolicy.allowedDurationIncrementsMinutes ?? 15;
+      if (increment > 0 && duration % increment !== 0) {
+        errors.push(
+          `Booking duration must be in increments of ${increment} minutes.`,
+        );
+      }
+    }
+
     const zone = this.dateTimeAdapter.isValidTimeZone(timeZone)
       ? timeZone
       : "UTC";
-
-    // Duration limits
-    const minDur = policy.minDurationMinutes ?? 15;
-    const maxDur = policy.maxDurationMinutes ?? 480;
-    if (duration < minDur || duration > maxDur) {
-      errors.push(
-        `Booking duration must be between ${minDur} and ${maxDur} minutes.`,
-      );
-    }
-
-    const increment = policy.allowedDurationIncrementsMinutes ?? 15;
-    if (duration % increment !== 0) {
-      errors.push(
-        `Booking duration must be in increments of ${increment} minutes.`,
-      );
-    }
 
     let bookingStart: Date | null = null;
     let bookingEnd: Date | null = null;
@@ -266,8 +316,8 @@ export class BookingEngine {
         bookingEnd = new Date(bookingStart.getTime() + duration * 60_000);
 
         // Advance notice check
-        const minNoticeMs = (policy.minNoticeMinutes ?? 0) * 60_000;
-        if (bookingStart.getTime() < now.getTime() + minNoticeMs) {
+        const minNoticeMs = (safePolicy.minNoticeMinutes ?? 0) * 60_000;
+        if (bookingStart.getTime() < safeNow.getTime() + minNoticeMs) {
           errors.push(
             "Booking start time must satisfy the minimum advance notice requirement.",
           );
@@ -275,10 +325,10 @@ export class BookingEngine {
 
         // Max advance window check
         const maxAdvanceMs =
-          (policy.maxAdvanceDays ?? 90) * 24 * 60 * 60 * 1000;
-        if (bookingStart.getTime() > now.getTime() + maxAdvanceMs) {
+          (safePolicy.maxAdvanceDays ?? 90) * 24 * 60 * 60 * 1000;
+        if (bookingStart.getTime() > safeNow.getTime() + maxAdvanceMs) {
           errors.push(
-            `Bookings can only be scheduled up to ${policy.maxAdvanceDays ?? 90} days in advance.`,
+            `Bookings can only be scheduled up to ${safePolicy.maxAdvanceDays ?? 90} days in advance.`,
           );
         }
 
@@ -335,12 +385,22 @@ export class BookingEngine {
   public checkConflicts<T extends StoredBookingSlot = StoredBookingSlot>(
     params: CheckConflictsParams<T>,
   ): ConflictCheckResult<T> {
+    if (!params || typeof params !== "object") {
+      throw new Error("findConflictingBookings: params object is required");
+    }
+
     const {
       requestedSlot,
-      existingBookings,
-      seatId = requestedSlot.seatId,
+      existingBookings: rawExisting = [],
+      seatId = requestedSlot?.seatId,
       excludeBookingId,
     } = params;
+
+    if (!requestedSlot || typeof requestedSlot !== "object") {
+      throw new Error(
+        "findConflictingBookings: requested slot has an invalid date or time",
+      );
+    }
 
     const requestedInterval = this.dateTimeAdapter.bookingInterval(
       requestedSlot,
@@ -357,7 +417,15 @@ export class BookingEngine {
     const fallbackZone =
       requestedSlot.timeZone || this.config.defaultTimeZone || "UTC";
 
+    const existingBookings = Array.isArray(rawExisting)
+      ? rawExisting.filter((row): row is T => Boolean(row && typeof row === "object"))
+      : [];
+
     const conflictingBookings = existingBookings.filter((row) => {
+      if (!row || typeof row !== "object") {
+        return false;
+      }
+
       if (excludeBookingId && row.id === excludeBookingId) {
         return false;
       }
@@ -392,15 +460,33 @@ export class BookingEngine {
   public evaluateCancellationEligibility(
     params: CancellationEligibilityParams,
   ): BookingCancellationEligibility {
+    if (!params || typeof params !== "object") {
+      return {
+        allowed: false,
+        bookingStart: null,
+        millisecondsUntilStart: null,
+        reason: "INVALID_START_TIME",
+        message:
+          "The booking start date or time is invalid. Please contact support.",
+      };
+    }
+
     const {
       date,
       time,
       timeZone,
       now = new Date(),
-      cancellationWindowMs = this.config.cancellationWindowMs ||
+      cancellationWindowMs: rawWindowMs = this.config.cancellationWindowMs ||
         BOOKING_CANCELLATION_WINDOW_MS,
       customPolicyMessage = BOOKING_CANCELLATION_POLICY_MESSAGE,
     } = params;
+
+    const cancellationWindowMs =
+      typeof rawWindowMs === "number" && Number.isFinite(rawWindowMs) && rawWindowMs >= 0
+        ? rawWindowMs
+        : BOOKING_CANCELLATION_WINDOW_MS;
+
+    const safeNow = now instanceof Date && !isNaN(now.getTime()) ? now : new Date();
 
     const bookingStart = this.dateTimeAdapter.parseBookingStart(
       date,
@@ -419,7 +505,7 @@ export class BookingEngine {
       };
     }
 
-    const millisecondsUntilStart = bookingStart.getTime() - now.getTime();
+    const millisecondsUntilStart = bookingStart.getTime() - safeNow.getTime();
 
     if (millisecondsUntilStart <= 0) {
       return {
@@ -456,7 +542,11 @@ export class BookingEngine {
     date: string,
     radiusDays = this.config.conflictDateRadiusDays || 3,
   ): string[] {
-    return this.dateTimeAdapter.conflictDateWindow(date, radiusDays);
+    const safeRadius =
+      typeof radiusDays === "number" && Number.isFinite(radiusDays) && radiusDays >= 0
+        ? radiusDays
+        : (this.config.conflictDateRadiusDays || 3);
+    return this.dateTimeAdapter.conflictDateWindow(date, safeRadius);
   }
 }
 

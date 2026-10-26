@@ -13,9 +13,13 @@ export function computeMeanAndStdDev(values: number[]): {
   if (!values || values.length === 0) {
     return { mean: 0, stdDev: 0 };
   }
-  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const filtered = values.filter((v) => typeof v === "number" && Number.isFinite(v));
+  if (filtered.length === 0) {
+    return { mean: 0, stdDev: 0 };
+  }
+  const mean = filtered.reduce((sum, val) => sum + val, 0) / filtered.length;
   const variance =
-    values.reduce((sum, val) => sum + (val - mean) ** 2, 0) / values.length;
+    filtered.reduce((sum, val) => sum + (val - mean) ** 2, 0) / filtered.length;
   return { mean, stdDev: Math.sqrt(variance) };
 }
 
@@ -49,10 +53,11 @@ export function calculateEMA(
   prevEMA: number | null,
   alpha = 0.25,
 ): number {
-  if (!Number.isFinite(currentVal) || Number.isNaN(currentVal)) {
+  if (typeof currentVal !== "number" || !Number.isFinite(currentVal) || Number.isNaN(currentVal)) {
     return prevEMA ?? 0;
   }
-  const clampedAlpha = Math.min(0.4, Math.max(0.1, alpha));
+  const safeAlpha = typeof alpha === "number" && Number.isFinite(alpha) ? alpha : 0.25;
+  const clampedAlpha = Math.min(0.4, Math.max(0.1, safeAlpha));
   if (prevEMA === null || Number.isNaN(prevEMA) || !Number.isFinite(prevEMA)) {
     return currentVal;
   }
@@ -71,10 +76,12 @@ export class TelemetrySmoother {
   private history: number[] = [];
 
   constructor(options: TelemetrySmootherOptions = {}) {
-    const rawAlpha = options.alpha ?? 0.25;
+    const rawAlpha = typeof options.alpha === "number" && Number.isFinite(options.alpha) ? options.alpha : 0.25;
     this.alpha = Math.min(0.4, Math.max(0.1, rawAlpha));
-    this.windowSize = Math.max(3, options.windowSize ?? 10);
-    this.sigmaThreshold = Math.max(1, options.sigmaThreshold ?? 3);
+    const rawWindow = typeof options.windowSize === "number" && Number.isFinite(options.windowSize) ? options.windowSize : 10;
+    this.windowSize = Math.max(3, rawWindow);
+    const rawSigma = typeof options.sigmaThreshold === "number" && Number.isFinite(options.sigmaThreshold) ? options.sigmaThreshold : 3;
+    this.sigmaThreshold = Math.max(1, rawSigma);
   }
 
   public update(rawValue: number): SmoothedTelemetryResult {

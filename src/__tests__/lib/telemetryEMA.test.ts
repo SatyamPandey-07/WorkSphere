@@ -163,4 +163,29 @@ describe("Telemetry EMA Smoothing and 3-Sigma Outlier Filtering (#3436)", () => 
       expect(getSpeedTier(5).tier).toBe("Basic");
     });
   });
+  describe("Defensive NaN options and calculation hardening (#6764)", () => {
+    it("handles NaN options in TelemetrySmoother without memory leaks or state corruption", () => {
+      const smoother = new TelemetrySmoother({
+        // @ts-expect-error testing NaN options
+        alpha: NaN,
+        // @ts-expect-error testing NaN options
+        windowSize: NaN,
+        // @ts-expect-error testing NaN options
+        sigmaThreshold: NaN,
+      });
+
+      for (let i = 0; i < 20; i++) {
+        smoother.update(100);
+      }
+
+      // Default window size of 10 should be enforced, avoiding unbounded leak
+      expect(smoother.getHistory().length).toBe(10);
+      expect(smoother.getSmoothed()).toBe(100);
+    });
+
+    it("handles NaN in computeMeanAndStdDev and calculateEMA safely", () => {
+      expect(computeMeanAndStdDev([10, NaN, 20])).toEqual({ mean: 15, stdDev: 5 });
+      expect(calculateEMA(50, 100, NaN)).toBeCloseTo(87.5, 1);
+    });
+  });
 });

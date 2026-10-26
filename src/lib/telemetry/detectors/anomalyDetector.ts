@@ -52,8 +52,10 @@ export const DEFAULT_CONFIGS: Record<TelemetryMetricType, AnomalyDetectionConfig
  * Calculates median of an array of numeric values.
  */
 export function calculateMedian(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
+  if (!values || values.length === 0) return 0;
+  const filtered = values.filter((v) => typeof v === "number" && Number.isFinite(v));
+  if (filtered.length === 0) return 0;
+  const sorted = [...filtered].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0
     ? sorted[mid]
@@ -65,9 +67,11 @@ export function calculateMedian(values: number[]): number {
  * MAD = median(|x_i - median(X)|)
  */
 export function calculateMAD(values: number[], medianVal?: number): number {
-  if (values.length <= 1) return 0;
-  const med = medianVal !== undefined ? medianVal : calculateMedian(values);
-  const deviations = values.map((v) => Math.abs(v - med));
+  if (!values || values.length <= 1) return 0;
+  const filtered = values.filter((v) => typeof v === "number" && Number.isFinite(v));
+  if (filtered.length <= 1) return 0;
+  const med = medianVal !== undefined && Number.isFinite(medianVal) ? medianVal : calculateMedian(filtered);
+  const deviations = filtered.map((v) => Math.abs(v - med));
   return calculateMedian(deviations);
 }
 
@@ -80,7 +84,10 @@ export function calculateModifiedZScore(
   median: number,
   mad: number,
 ): number {
-  if (mad === 0) {
+  if (!Number.isFinite(value) || !Number.isFinite(median) || !Number.isFinite(mad)) {
+    return NaN;
+  }
+  if (mad <= 0) {
     return value === median ? 0 : Infinity;
   }
   return (0.6745 * Math.abs(value - median)) / mad;
@@ -90,9 +97,11 @@ export function calculateModifiedZScore(
  * Calculates standard deviation.
  */
 export function calculateStandardDeviation(values: number[], meanVal?: number): number {
-  if (values.length <= 1) return 0;
-  const mean = meanVal !== undefined ? meanVal : values.reduce((a, b) => a + b, 0) / values.length;
-  const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (values.length - 1);
+  if (!values || values.length <= 1) return 0;
+  const filtered = values.filter((v) => typeof v === "number" && Number.isFinite(v));
+  if (filtered.length <= 1) return 0;
+  const mean = meanVal !== undefined && Number.isFinite(meanVal) ? meanVal : filtered.reduce((a, b) => a + b, 0) / filtered.length;
+  const variance = filtered.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (filtered.length - 1);
   return Math.sqrt(variance);
 }
 
@@ -139,15 +148,37 @@ export class TelemetryAnomalyDetector {
     return this.evaluate(value, timestamp);
   }
 
+  public getHistory(): TelemetryPoint[] {
+    return this.window.map((p) => ({ ...p }));
+  }
+
+  public getBaseline(): BaselineStats {
+    return this.getBaselineStats();
+  }
+
   private evaluate(value: number, timestamp: number): AnomalyResult {
+    // 0. Non-finite or NaN value check (protects against baseline poisoning even without physicalBounds)
+    if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) {
+      return {
+        isAnomaly: true,
+        severity: "sensor_fault",
+        value,
+        timestamp,
+        zScore: null,
+        ema: this.ema,
+        baselineMedian: null,
+        mad: null,
+        rateOfChange: null,
+        reason: `Value ${value} is non-finite or NaN`,
+      };
+    }
+
     // 1. Check physical bounds
     if (this.config.physicalBounds) {
       const { min, max } = this.config.physicalBounds;
       if (
         (min !== undefined && value < min) ||
-        (max !== undefined && value > max) ||
-        Number.isNaN(value) ||
-        !Number.isFinite(value)
+        (max !== undefined && value > max)
       ) {
         return {
           isAnomaly: true,
@@ -303,3 +334,46 @@ export class TelemetryAnomalyDetector {
     this.ema = null;
   }
 }
+
+export class VenueTelemetryAnomalyManager {
+  private detectors = new Map<string, Map<TelemetryMetricType, TelemetryAnomalyDetector>>();
+
+  public getDetector(
+    venueId: string,
+    metricType: TelemetryMetricType,
+    config?: Partial<AnomalyDetectionConfig>,
+  ): TelemetryAnomalyDetector {
+    let venueMap = this.detectors.get(venueId);
+    if (!venueMap) {
+      venueMap = new Map();
+      this.detectors.set(venueId, venueMap);
+    }
+    let detector = venueMap.get(metricType);
+    if (!detector) {
+      detector = new TelemetryAnomalyDetector(metricType, config);
+      venueMap.set(metricType, detector);
+    }
+    return detector;
+  }
+
+  public processTelemetry(
+    venueId: string,
+    metricType: TelemetryMetricType,
+    value: number,
+    timestamp = Date.now(),
+    config?: Partial<AnomalyDetectionConfig>,
+  ): AnomalyResult {
+    const detector = this.getDetector(venueId, metricType, config);
+    return detector.record(value, timestamp);
+  }
+
+  public clearVenue(venueId: string): void {
+    this.detectors.delete(venueId);
+  }
+
+  public reset(): void {
+    this.detectors.clear();
+  }
+}
+
+export const globalAnomalyManager = new VenueTelemetryAnomalyManager();

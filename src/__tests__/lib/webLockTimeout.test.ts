@@ -3,42 +3,51 @@
  * The timeout path should throw LockTimeoutError, never run the callback.
  */
 
-class LockTimeoutError extends Error {
-  readonly lockName: string;
-  constructor(lockName: string, timeoutMs: number) {
-    super(`Could not acquire lock "${lockName}" within ${timeoutMs}ms. The critical section was NOT executed.`);
-    this.name = "LockTimeoutError";
-    this.lockName = lockName;
-  }
-}
-
-// Simulate the withWebLock timeout logic
-async function withWebLockSimulated<T>(
-  callback: () => Promise<T>,
-  lockName: string,
-  timeoutMs: number,
-  lockAvailable: boolean, // simulated lock availability
-): Promise<T> {
-  if (!lockAvailable) {
-    throw new LockTimeoutError(lockName, timeoutMs);
-  }
-  return callback();
-}
+import { LockTimeoutError, withWebLock } from "../../lib/webLock";
 
 describe("WebLock timeout behavior", () => {
-  it("throws LockTimeoutError when lock cannot be acquired", async () => {
-    const callback = jest.fn().mockResolvedValue("result");
+  let originalLocks: PropertyDescriptor | undefined;
 
-    await expect(
-      withWebLockSimulated(callback, "test-lock", 5000, false /* lock unavailable */),
-    ).rejects.toThrow(LockTimeoutError);
+  beforeEach(() => {
+    originalLocks = Object.getOwnPropertyDescriptor(navigator, "locks");
+  });
+
+  afterEach(() => {
+    if (originalLocks) {
+      Object.defineProperty(navigator, "locks", originalLocks);
+    } else {
+      delete (navigator as any).locks;
+    }
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it("throws LockTimeoutError when lock cannot be acquired", async () => {
+    const mockRequest = jest.fn().mockImplementation(() => new Promise(() => {}));
+    Object.defineProperty(navigator, "locks", {
+      value: { request: mockRequest },
+      configurable: true,
+      writable: true,
+    });
+
+    const callback = jest.fn().mockResolvedValue("result");
+    const promise = withWebLock(callback, "test-lock", { timeoutMs: 50 });
+
+    await expect(promise).rejects.toThrow(LockTimeoutError);
   });
 
   it("callback is NOT called when lock times out", async () => {
+    const mockRequest = jest.fn().mockImplementation(() => new Promise(() => {}));
+    Object.defineProperty(navigator, "locks", {
+      value: { request: mockRequest },
+      configurable: true,
+      writable: true,
+    });
+
     const callback = jest.fn().mockResolvedValue("result");
 
     try {
-      await withWebLockSimulated(callback, "test-lock", 5000, false);
+      await withWebLock(callback, "test-lock", { timeoutMs: 50 });
     } catch {
       // expected
     }
@@ -47,8 +56,15 @@ describe("WebLock timeout behavior", () => {
   });
 
   it("LockTimeoutError message mentions the lock name", async () => {
+    const mockRequest = jest.fn().mockImplementation(() => new Promise(() => {}));
+    Object.defineProperty(navigator, "locks", {
+      value: { request: mockRequest },
+      configurable: true,
+      writable: true,
+    });
+
     try {
-      await withWebLockSimulated(jest.fn(), "my-lock", 5000, false);
+      await withWebLock(jest.fn(), "my-lock", { timeoutMs: 50 });
     } catch (err) {
       expect((err as Error).message).toContain("my-lock");
     }
@@ -62,11 +78,19 @@ describe("WebLock timeout behavior", () => {
   it("LockTimeoutError.lockName contains the lock identifier", () => {
     const err = new LockTimeoutError("my-lock", 5000);
     expect(err.lockName).toBe("my-lock");
+    expect(err.timeoutMs).toBe(5000);
   });
 
   it("executes callback successfully when lock is available", async () => {
+    const mockRequest = jest.fn().mockImplementation((_name, cb) => cb());
+    Object.defineProperty(navigator, "locks", {
+      value: { request: mockRequest },
+      configurable: true,
+      writable: true,
+    });
+
     const callback = jest.fn().mockResolvedValue("success");
-    const result = await withWebLockSimulated(callback, "lock", 5000, true);
+    const result = await withWebLock(callback, "lock", 5000);
     expect(result).toBe("success");
     expect(callback).toHaveBeenCalledTimes(1);
   });
@@ -76,12 +100,24 @@ describe("WebLock timeout behavior", () => {
   });
 
   it("critical section is never executed without a held lock", async () => {
+    const mockRequest = jest.fn().mockImplementation(() => new Promise(() => {}));
+    Object.defineProperty(navigator, "locks", {
+      value: { request: mockRequest },
+      configurable: true,
+      writable: true,
+    });
+
     let criticalExecuted = false;
-    const critical = async () => { criticalExecuted = true; return "done"; };
+    const critical = async () => {
+      criticalExecuted = true;
+      return "done";
+    };
 
     try {
-      await withWebLockSimulated(critical, "lock", 1000, false /* no lock */);
-    } catch { /* expected */ }
+      await withWebLock(critical, "lock", { timeoutMs: 50 });
+    } catch {
+      /* expected */
+    }
 
     expect(criticalExecuted).toBe(false);
   });

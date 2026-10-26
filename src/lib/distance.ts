@@ -151,24 +151,33 @@ export function sortVenuesByProximity<T extends LocationCoordinates>(
   venues: T[],
   userLocation: { lat: number; lng: number } | null | undefined,
 ): T[] {
-  if (!userLocation || !isValidCoordinate(userLocation.lat, userLocation.lng)) {
-    return venues;
+  if (!Array.isArray(venues)) {
+    return [];
   }
 
-  return [...venues].sort((a, b) => {
+  const safeVenues = venues.filter((v): v is T => Boolean(v && typeof v === "object"));
+
+  if (!userLocation || typeof userLocation !== "object" || !isValidCoordinate(userLocation.lat, userLocation.lng)) {
+    return safeVenues;
+  }
+
+  return [...safeVenues].sort((a, b) => {
     const aLat = a.latitude ?? a.lat;
     const aLon = a.longitude ?? a.lng;
     const bLat = b.latitude ?? b.lat;
     const bLon = b.longitude ?? b.lng;
 
-    const distA =
+    const rawDistA =
       aLat != null && aLon != null
         ? haversineKm(userLocation.lat, userLocation.lng, aLat, aLon)
         : Infinity;
-    const distB =
+    const distA = typeof rawDistA === "number" && Number.isFinite(rawDistA) ? rawDistA : Infinity;
+
+    const rawDistB =
       bLat != null && bLon != null
         ? haversineKm(userLocation.lat, userLocation.lng, bLat, bLon)
         : Infinity;
+    const distB = typeof rawDistB === "number" && Number.isFinite(rawDistB) ? rawDistB : Infinity;
 
     return distA - distB;
   });
@@ -182,22 +191,30 @@ export function filterVenuesByRadius<T extends LocationCoordinates>(
   userLocation: { lat: number; lng: number } | null | undefined,
   maxDistanceKm: number,
 ): T[] {
-  if (
-    !maxDistanceKm ||
-    maxDistanceKm <= 0 ||
-    !userLocation ||
-    !isValidCoordinate(userLocation.lat, userLocation.lng)
-  ) {
-    return venues;
+  if (!Array.isArray(venues)) {
+    return [];
   }
 
-  return venues.filter((venue) => {
+  const safeVenues = venues.filter((v): v is T => Boolean(v && typeof v === "object"));
+
+  if (
+    typeof maxDistanceKm !== "number" ||
+    !Number.isFinite(maxDistanceKm) ||
+    maxDistanceKm <= 0 ||
+    !userLocation ||
+    typeof userLocation !== "object" ||
+    !isValidCoordinate(userLocation.lat, userLocation.lng)
+  ) {
+    return safeVenues;
+  }
+
+  return safeVenues.filter((venue) => {
     const vLat = venue.latitude ?? venue.lat;
     const vLon = venue.longitude ?? venue.lng;
     if (vLat == null || vLon == null) return false;
 
     const dist = haversineKm(userLocation.lat, userLocation.lng, vLat, vLon);
-    return dist <= maxDistanceKm;
+    return typeof dist === "number" && Number.isFinite(dist) && dist <= maxDistanceKm;
   });
 }
 

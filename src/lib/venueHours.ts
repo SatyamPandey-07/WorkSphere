@@ -208,7 +208,10 @@ export function getVenueHoursStatus(
     };
   }
 
-  const now = nowInput || new Date();
+  const now =
+    nowInput instanceof Date && !isNaN(nowInput.getTime())
+      ? nowInput
+      : new Date();
 
   // Parse structured JSON early to extract possible structured.timezone
   const structured = parseStructuredJson(trimmed);

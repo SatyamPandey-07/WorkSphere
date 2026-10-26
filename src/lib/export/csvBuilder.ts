@@ -89,20 +89,28 @@ export class CsvBuilder<TRow = any> {
   }
 
   public addRow(item: TRow): this {
+    if (item == null) return this;
     const cells = this.columns.map((col) => {
-      const val =
-        typeof col.accessor === "function"
-          ? col.accessor(item)
-          : item[col.accessor];
-      return escapeCSVField(val, this.options.sanitizeFormulas);
+      try {
+        const val =
+          typeof col.accessor === "function"
+            ? col.accessor(item)
+            : item[col.accessor];
+        return escapeCSVField(val, this.options.sanitizeFormulas);
+      } catch {
+        return "";
+      }
     });
     this.lines.push(cells.join(","));
     return this;
   }
 
   public addRows(items: readonly TRow[]): this {
+    if (!Array.isArray(items)) return this;
     for (const item of items) {
-      this.addRow(item);
+      if (item != null) {
+        this.addRow(item);
+      }
     }
     return this;
   }

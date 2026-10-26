@@ -63,12 +63,19 @@ export class ExcelXmlBuilder<TRow = any> {
   }
 
   public addRow(row: TRow): this {
-    this.rows.push(row);
+    if (row != null) {
+      this.rows.push(row);
+    }
     return this;
   }
 
   public addRows(rows: TRow[]): this {
-    this.rows.push(...rows);
+    if (!Array.isArray(rows)) return this;
+    for (const row of rows) {
+      if (row != null) {
+        this.rows.push(row);
+      }
+    }
     return this;
   }
 
@@ -84,13 +91,18 @@ export class ExcelXmlBuilder<TRow = any> {
       if (col.width && col.width > 0) return col.width;
       let maxLen = col.header.length;
       for (const row of this.rows) {
-        const val =
-          typeof col.accessor === "function"
-            ? col.accessor(row)
-            : row[col.accessor];
-        if (val !== null && val !== undefined) {
-          const str = String(val);
-          if (str.length > maxLen) maxLen = str.length;
+        if (row == null) continue;
+        try {
+          const val =
+            typeof col.accessor === "function"
+              ? col.accessor(row)
+              : row[col.accessor];
+          if (val !== null && val !== undefined) {
+            const str = String(val);
+            if (str.length > maxLen) maxLen = str.length;
+          }
+        } catch {
+          // ignore accessor error on unexpected row
         }
       }
       // Auto-fit formula: ~8 points per character + 20 points padding, clamped between 60 and 320
@@ -209,12 +221,18 @@ export class ExcelXmlBuilder<TRow = any> {
 
     // Data Rows
     for (const row of this.rows) {
+      if (row == null) continue;
       lines.push('      <Row ss:Height="19">');
       for (const col of this.columns) {
-        const rawVal =
-          typeof col.accessor === "function"
-            ? col.accessor(row)
-            : row[col.accessor];
+        let rawVal: any;
+        try {
+          rawVal =
+            typeof col.accessor === "function"
+              ? col.accessor(row)
+              : row[col.accessor];
+        } catch {
+          rawVal = "";
+        }
 
         const cellXml = this.renderCellXml(rawVal, col.type, sanitizeFormulas);
         lines.push(`        ${cellXml}`);
@@ -247,7 +265,7 @@ export class ExcelXmlBuilder<TRow = any> {
         const isFormula = sanitizeFormulas && (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()));
         if (!isFormula) {
           const num = typeof val === "number" ? val : parseFloat(str.replace(/[^0-9.-]/g, ""));
-          if (!isNaN(num)) {
+          if (!isNaN(num) && Number.isFinite(num)) {
             return `<Cell ss:StyleID="Currency"><Data ss:Type="Number">${num.toFixed(2)}</Data></Cell>`;
           }
         }
@@ -263,7 +281,7 @@ export class ExcelXmlBuilder<TRow = any> {
         const isFormula = sanitizeFormulas && (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()));
         if (!isFormula) {
           const num = typeof val === "number" ? val : parseFloat(str);
-          if (!isNaN(num)) {
+          if (!isNaN(num) && Number.isFinite(num)) {
             const style = Number.isInteger(num) ? "Integer" : "Number";
             return `<Cell ss:StyleID="${style}"><Data ss:Type="Number">${num}</Data></Cell>`;
           }

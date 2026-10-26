@@ -39,6 +39,9 @@ import {
   ensureCounterClockwise,
   type PolygonValidationResult,
   type IntersectionDetail,
+  escapeXml,
+  formatKmlNumber,
+  INVALID_XML_CHARS,
 } from "./export/domain/geoExporter";
 
 export {
@@ -80,6 +83,9 @@ export {
   ensureCounterClockwise,
   type PolygonValidationResult,
   type IntersectionDetail,
+  escapeXml,
+  formatKmlNumber,
+  INVALID_XML_CHARS,
 };
 
 export function parseGeoExportFormat(
@@ -102,17 +108,4 @@ export function buildGeoExportFilename(
     .slice(0, 80)
     .replace(/-+$/g, "");
   return `${slug || "collection"}.${format}`;
-}
-
-const INVALID_XML_CHARS =
-  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
-
-export function escapeXml(value: unknown): string {
-  return String(value ?? "")
-    .replace(INVALID_XML_CHARS, "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
 }

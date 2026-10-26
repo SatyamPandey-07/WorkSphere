@@ -657,4 +657,27 @@ describe("folder geographic export (#3477)", () => {
       expect(await res.json()).toEqual({ error: "Failed to export folder" });
     });
   });
+
+  describe("Defensive hardening and null-safety (#6770)", () => {
+    it("handles nullish venues and coordinates in hasValidCoordinates safely", () => {
+      expect(hasValidCoordinates(null as any)).toBe(false);
+      expect(hasValidCoordinates(undefined as any)).toBe(false);
+      expect(hasValidCoordinates({} as any)).toBe(false);
+      expect(hasValidCoordinates({ latitude: NaN, longitude: 0 })).toBe(false);
+      expect(hasValidCoordinates({ latitude: 10, longitude: Infinity })).toBe(false);
+    });
+
+    it("handles nullish inputs and invalid dates in generateGeoJson and generateKml safely", () => {
+      const geoJson = generateGeoJson(null as any);
+      expect(geoJson.type).toBe("FeatureCollection");
+      expect(geoJson.features).toEqual([]);
+
+      const kml = generateKml(null as any, new Date("invalid"));
+      expect(kml).toContain("<kml");
+      expect(kml).toContain("<Document>");
+
+      const invalidDateGeoJson = generateGeoJson([], new Date("invalid"));
+      expect(invalidDateGeoJson.features).toEqual([]);
+    });
+  });
 });

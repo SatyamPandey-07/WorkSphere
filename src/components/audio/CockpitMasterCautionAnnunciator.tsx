@@ -54,6 +54,29 @@ export interface CockpitMasterCautionAnnunciatorProps {
   sectorName?: string;
 }
 
+/** Calculate 10-segment decibel ladder states from 40 dB to 90 dB */
+export function calculateDbSegments(
+  currentDb: number,
+  thresholdDecibels: number = 72,
+): Array<{ val: number; isLit: boolean; isOverLimit: boolean }> {
+  const safeDb = Number.isFinite(currentDb) ? currentDb : 54;
+  const safeThreshold =
+    Number.isFinite(thresholdDecibels) && thresholdDecibels > 0
+      ? thresholdDecibels
+      : 72;
+  const segs = [];
+  const minDb = 40;
+  const maxDb = 90;
+  const step = (maxDb - minDb) / 10;
+  for (let i = 0; i < 10; i++) {
+    const segVal = minDb + (i + 1) * step;
+    const isLit = safeDb >= segVal;
+    const isOverLimit = segVal >= safeThreshold;
+    segs.push({ val: segVal, isLit, isOverLimit });
+  }
+  return segs;
+}
+
 /**
  * CockpitMasterCautionAnnunciator: Military-grade avionics caution & warning panel (CWP)
  * with Master Caution push-to-reset button, backlit annunciator tile matrix, and
@@ -74,8 +97,16 @@ export function CockpitMasterCautionAnnunciator({
   const [simulatedDb, setSimulatedDb] = useState<number | null>(null);
   const [simulatedSpike, setSimulatedSpike] = useState<boolean>(false);
 
-  const currentDb = simulatedDb !== null ? simulatedDb : (externalDecibels ?? 54);
-  const isSpikeActive = simulatedSpike || externalSpike;
+  const rawDb = simulatedDb !== null ? simulatedDb : (externalDecibels ?? 54);
+  const currentDb = Number.isFinite(rawDb) ? rawDb : 54;
+  const safeThreshold =
+    Number.isFinite(thresholdDecibels) && thresholdDecibels > 0
+      ? thresholdDecibels
+      : 72;
+  const safeAudioVolume = Number.isFinite(audioVolume)
+    ? Math.max(0, Math.min(1, audioVolume))
+    : 0.25;
+  const isSpikeActive = simulatedSpike || Boolean(externalSpike);
 
   // Acknowledged state: when true, the alarm is silenced until conditions reset
   const [isAcknowledged, setIsAcknowledged] = useState<boolean>(false);
@@ -93,15 +124,15 @@ export function CockpitMasterCautionAnnunciator({
     isLowBattery,
     unlockAudio,
   } = useAvionicsAudio({
-    volume: audioVolume,
+    volume: safeAudioVolume,
     autoTrigger: false, // We control acoustic triggers explicitly
   });
 
   // Evaluate warning triggers
-  const isDecibelExceeded = currentDb >= thresholdDecibels;
+  const isDecibelExceeded = currentDb >= safeThreshold;
   const isNoiseSpike = customFlags?.noiseSpike ?? isDecibelExceeded;
   const isTransientPeak = customFlags?.transientPeak ?? isSpikeActive;
-  const isAcousticTurb = customFlags?.acousticTurb ?? (currentDb >= thresholdDecibels - 4);
+  const isAcousticTurb = customFlags?.acousticTurb ?? (currentDb >= safeThreshold - 4);
   const isLatencySpike = customFlags?.latencySpike ?? false;
   const isOfflineFlag = customFlags?.offline ?? isOffline;
   const isAuxPowerFlag = customFlags?.auxPower ?? isLowBattery;
@@ -115,7 +146,7 @@ export function CockpitMasterCautionAnnunciator({
     isOfflineFlag ||
     isAuxPowerFlag;
 
-  // Reset acknowledged state with hysteresis when noise drops 3 dB below threshold
+  // Reset acknowledged state with hysteresis when noise drops below threshold
   useEffect(() => {
     if (!hasActiveCaution) {
       setIsAcknowledged(false);
@@ -151,16 +182,25 @@ export function CockpitMasterCautionAnnunciator({
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
     }
-    silenceTimerRef.current = setTimeout(() => {
+    const timer = setTimeout(() => {
       setSilenceCooldownMs(0);
       setIsAcknowledged(false);
+      silenceTimerRef.current = null;
     }, 120000);
+
+    if (typeof (timer as unknown as { unref?: () => void })?.unref === "function") {
+      (timer as unknown as { unref: () => void }).unref();
+    }
+    silenceTimerRef.current = timer;
   }, [stopMasterCaution, onCautionReset]);
 
   // Clean up timers
   useEffect(() => {
     return () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -170,7 +210,7 @@ export function CockpitMasterCautionAnnunciator({
       {
         id: "tile-decibel",
         label: "NOISE LIMIT",
-        sublabel: `>${thresholdDecibels} dB`,
+        sublabel: `>${safeThreshold} dB`,
         isActive: isNoiseSpike,
         color: "red",
         priority: 1,
@@ -223,7 +263,7 @@ export function CockpitMasterCautionAnnunciator({
       },
     ],
     [
-      thresholdDecibels,
+      safeThreshold,
       isNoiseSpike,
       isTransientPeak,
       isAcousticTurb,
@@ -234,19 +274,10 @@ export function CockpitMasterCautionAnnunciator({
   );
 
   // Decibel Segmented Meter: 10 segments from 40dB to 90dB
-  const dbSegments = useMemo(() => {
-    const segs = [];
-    const minDb = 40;
-    const maxDb = 90;
-    const step = (maxDb - minDb) / 10;
-    for (let i = 0; i < 10; i++) {
-      const segVal = minDb + (i + 1) * step;
-      const isLit = currentDb >= segVal;
-      const isOverLimit = segVal >= thresholdDecibels;
-      segs.push({ val: segVal, isLit, isOverLimit });
-    }
-    return segs;
-  }, [currentDb, thresholdDecibels]);
+  const dbSegments = useMemo(
+    () => calculateDbSegments(currentDb, safeThreshold),
+    [currentDb, safeThreshold]
+  );
 
   // Master Caution Lamp Visual State
   const isFlashing = hasActiveCaution && !isAcknowledged;
@@ -389,7 +420,7 @@ export function CockpitMasterCautionAnnunciator({
             >
               {currentDb} dB
             </span>
-            <span className="text-zinc-500 text-[11px]">/ LIMIT {thresholdDecibels} dB</span>
+            <span className="text-zinc-500 text-[11px]">/ LIMIT {safeThreshold} dB</span>
           </div>
         </div>
 
@@ -429,7 +460,7 @@ export function CockpitMasterCautionAnnunciator({
             className="px-2 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-emerald-500/30 text-emerald-300 text-[10px] font-semibold transition inline-flex items-center gap-1"
           >
             <RotateCcw className="w-3 h-3" />
-            <span>{currentDb >= thresholdDecibels ? "Normalize (54 dB)" : "Spike (82 dB)"}</span>
+            <span>{currentDb >= safeThreshold ? "Normalize (54 dB)" : "Spike (82 dB)"}</span>
           </button>
 
           {/* Simulate Transient Peak Toggle */}

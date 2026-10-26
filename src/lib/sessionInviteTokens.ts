@@ -55,7 +55,14 @@ export function validateSessionInviteToken(
     const jsonStr = decodeBase64Url(payloadB64);
     const payload = JSON.parse(jsonStr) as InviteTokenPayload;
 
-    if (!payload || !payload.sessionId || !payload.expiresAt) {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof payload.sessionId !== "string" ||
+      !payload.sessionId.trim() ||
+      typeof payload.expiresAt !== "number" ||
+      !Number.isFinite(payload.expiresAt)
+    ) {
       return {
         valid: false,
         error: "Invalid invite token structure.",
@@ -84,7 +91,12 @@ export function validateSessionInviteToken(
       };
     }
 
-    if (serverTimestamp > payload.expiresAt) {
+    const safeTimestamp =
+      typeof serverTimestamp === "number" && Number.isFinite(serverTimestamp)
+        ? serverTimestamp
+        : Date.now();
+
+    if (safeTimestamp > payload.expiresAt) {
       return {
         valid: false,
         error: "Invite token has expired",
@@ -93,9 +105,15 @@ export function validateSessionInviteToken(
       };
     }
 
+    const safeParticipantsCount =
+      typeof currentParticipantsCount === "number" &&
+      Number.isFinite(currentParticipantsCount)
+        ? Math.max(0, currentParticipantsCount)
+        : 0;
+
     if (
       payload.maxParticipants !== undefined &&
-      currentParticipantsCount >= payload.maxParticipants
+      safeParticipantsCount >= payload.maxParticipants
     ) {
       return {
         valid: false,
@@ -148,6 +166,7 @@ const CHUNK_SIZE = 8192;
  * Encodes string to URL-safe base64 format supporting full UTF-8 strings.
  */
 export function encodeBase64Url(str: string): string {
+  if (typeof str !== "string") return "";
   if (typeof Buffer !== "undefined") {
     return Buffer.from(str, "utf-8").toString("base64url");
   }
@@ -167,6 +186,7 @@ export function encodeBase64Url(str: string): string {
  * Decodes URL-safe base64 string back to raw UTF-8 text.
  */
 export function decodeBase64Url(base64Url: string): string {
+  if (!base64Url || typeof base64Url !== "string") return "";
   let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
   while (base64.length % 4 !== 0) {
     base64 += "=";
@@ -186,14 +206,21 @@ export function decodeBase64Url(base64Url: string): string {
  * Generates a cryptographically secure random hex nonce using WebCrypto API.
  */
 export function generateSecureNonce(bytesCount = 16): string {
-  const bytes = new Uint8Array(bytesCount);
+  const safeCount =
+    typeof bytesCount === "number" &&
+    Number.isInteger(bytesCount) &&
+    bytesCount > 0 &&
+    bytesCount <= 1024
+      ? bytesCount
+      : 16;
+  const bytes = new Uint8Array(safeCount);
   if (
     typeof crypto !== "undefined" &&
     typeof crypto.getRandomValues === "function"
   ) {
     crypto.getRandomValues(bytes);
   } else {
-    for (let i = 0; i < bytesCount; i++) {
+    for (let i = 0; i < safeCount; i++) {
       bytes[i] = Math.floor(Math.random() * 256);
     }
   }
@@ -369,6 +396,14 @@ export async function generateSessionInviteToken(
   maxParticipants?: number,
   secret: string = getInviteSecret(),
 ): Promise<string> {
+  if (!sessionId || typeof sessionId !== "string" || !sessionId.trim()) {
+    throw new Error("sessionId must be a non-empty string.");
+  }
+
+  if (typeof expiresInHours !== "number" || !Number.isFinite(expiresInHours)) {
+    throw new Error("expiresInHours must be a finite number.");
+  }
+
   if (
     maxParticipants !== undefined &&
     (typeof maxParticipants !== "number" ||
@@ -382,7 +417,7 @@ export async function generateSessionInviteToken(
   const expiresAt = Date.now() + expiresInHours * 60 * 60 * 1000;
 
   const payload: InviteTokenPayload = {
-    sessionId,
+    sessionId: sessionId.trim(),
     expiresAt,
     maxParticipants,
     nonce,

@@ -29,25 +29,52 @@ const BRACKET_LENGTH = 22; // px per bracket arm
 const ROTATION_SPEED = 0.9; // rad/s
 const SPRING_STIFFNESS = 180;
 const SPRING_DAMPING = 22;
-const LOCK_RANGE_KM = 4.2; // simulated rangefinder reference
+export const LOCK_RANGE_KM = 4.2; // simulated rangefinder reference
 
-interface Rect {
+export interface Rect {
   x: number;
   y: number;
   w: number;
   h: number;
 }
 
-/** Spring integration step (semi-implicit Euler). */
-function stepSpring(
+/** Sanitize rectangle dimensions and position against NaN/infinite values. */
+export function sanitizeRect(r: Partial<Rect> | null | undefined): Rect {
+  return {
+    x: Number.isFinite(r?.x) ? (r!.x as number) : 0,
+    y: Number.isFinite(r?.y) ? (r!.y as number) : 0,
+    w: Number.isFinite(r?.w) && (r!.w as number) >= 0 ? (r!.w as number) : 0,
+    h: Number.isFinite(r?.h) && (r!.h as number) >= 0 ? (r!.h as number) : 0,
+  };
+}
+
+/** Spring integration step (semi-implicit Euler) with finite checks. */
+export function stepSpring(
   pos: number,
   vel: number,
   target: number,
   dt: number,
 ): [number, number] {
+  if (
+    !Number.isFinite(pos) ||
+    !Number.isFinite(vel) ||
+    !Number.isFinite(target) ||
+    !Number.isFinite(dt) ||
+    dt <= 0
+  ) {
+    const safeTarget = Number.isFinite(target)
+      ? target
+      : Number.isFinite(pos)
+        ? pos
+        : 0;
+    return [safeTarget, 0];
+  }
   const accel = (target - pos) * SPRING_STIFFNESS - vel * SPRING_DAMPING;
   const newVel = vel + accel * dt;
   const newPos = pos + newVel * dt;
+  if (!Number.isFinite(newPos) || !Number.isFinite(newVel)) {
+    return [target, 0];
+  }
   return [newPos, newVel];
 }
 
@@ -70,6 +97,7 @@ export function TacticalTargetReticle({
   const rafRef = useRef<number | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const activeNodesRef = useRef<AudioScheduledSourceNode[]>([]);
+  const teardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastBeepTimeRef = useRef(0);
 
   // Current animated rect (spring) + velocity + target rect, all in refs so the
@@ -85,7 +113,12 @@ export function TacticalTargetReticle({
   // Desktop viewport gate (<1024px wide or touch-primary → no reticle).
   useEffect(() => {
     const check = () =>
-      setIsDesktop(window.matchMedia("(hover: hover) and (pointer: fine)").matches && window.innerWidth >= 1024);
+      setIsDesktop(
+        typeof window !== "undefined" &&
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(hover: hover) and (pointer: fine)").matches &&
+          window.innerWidth >= 1024,
+      );
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
@@ -93,7 +126,12 @@ export function TacticalTargetReticle({
 
   const readRect = useCallback((el: HTMLElement): Rect => {
     const r = el.getBoundingClientRect();
-    return { x: r.left, y: r.top, w: r.width, h: r.height };
+    return sanitizeRect({
+      x: r.left,
+      y: r.top,
+      w: r.width,
+      h: r.height,
+    });
   }, []);
 
   // Hover delegation: find the closest `[data-reticle-target]` under the pointer.
@@ -116,9 +154,9 @@ export function TacticalTargetReticle({
         const raw = el.getAttribute("data-reticle-range");
         const parsed = raw ? parseFloat(raw) : NaN;
         setRangeKm(
-          Number.isFinite(parsed)
+          Number.isFinite(parsed) && parsed >= 0
             ? parsed
-            : Math.round((0.4 + ((el.offsetTop * 7919) % 3800) / 1000) * 10) / 10,
+            : Math.round((0.4 + ((Math.abs(el.offsetTop || 0) * 7919) % 3800) / 1000) * 10) / 10,
         );
       } else if (!el && hoveredElRef.current) {
         hoveredElRef.current = null;
@@ -146,6 +184,11 @@ export function TacticalTargetReticle({
           .webkitAudioContext;
       if (!AudioCtor) return;
 
+      const safeFreq =
+        Number.isFinite(toneFrequency) && toneFrequency > 0
+          ? toneFrequency
+          : 880;
+
       let ctx = ctxRef.current;
       if (!ctx || ctx.state === "closed") {
         ctx = new AudioCtor();
@@ -169,17 +212,22 @@ export function TacticalTargetReticle({
       };
 
       // Double chirp: rising confirmation, characteristic "lock" signature.
-      chirp(t0, toneFrequency, 0.06);
-      chirp(t0 + 0.09, toneFrequency * 1.5, 0.09);
+      chirp(t0, safeFreq, 0.06);
+      chirp(t0 + 0.09, safeFreq * 1.5, 0.09);
 
       gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.06, t0 + 0.06);
       gain.gain.exponentialRampToValueAtTime(0.1, t0 + 0.09);
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.19);
 
+      if (teardownTimerRef.current !== null) {
+        clearTimeout(teardownTimerRef.current);
+        teardownTimerRef.current = null;
+      }
+
       // Full teardown after the final chirp decays.
       const sources = [...activeNodesRef.current];
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
         for (const node of sources) {
           try {
             node.disconnect();
@@ -187,9 +235,19 @@ export function TacticalTargetReticle({
             /* already disconnected */
           }
         }
-        gain.disconnect();
+        try {
+          gain.disconnect();
+        } catch {
+          /* noop */
+        }
         activeNodesRef.current = [];
+        teardownTimerRef.current = null;
       }, 450);
+
+      if (typeof (timer as unknown as { unref?: () => void })?.unref === "function") {
+        (timer as unknown as { unref: () => void }).unref();
+      }
+      teardownTimerRef.current = timer;
     } catch {
       /* audio unavailable — silently skip */
     }
@@ -205,8 +263,10 @@ export function TacticalTargetReticle({
 
     const dpr = window.devicePixelRatio || 1;
     const resize = () => {
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
+      const width = Math.max(window.innerWidth * dpr, 1);
+      const height = Math.max(window.innerHeight * dpr, 1);
+      canvas.width = width;
+      canvas.height = height;
       canvas.style.width = "100%";
       canvas.style.height = "100%";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -243,55 +303,61 @@ export function TacticalTargetReticle({
         const bh = h + pad * 2;
         const phase = active ? 1 : 0;
 
-        ctx.save();
-        ctx.strokeStyle = `rgba(52, 211, 153, ${0.75 + 0.2 * Math.sin(now * 0.008) * phase})`;
-        ctx.lineWidth = 2;
-        ctx.lineCap = "round";
-        ctx.shadowColor = "rgba(52, 211, 153, 0.8)";
-        ctx.shadowBlur = 6;
-
-        // Segments: 4 corner brackets that slowly orbit the card bounds.
-        const corners: Array<[number, number, number, number]> = [
-          [bx, by, 1, 1], // top-left
-          [bx + bw, by, -1, 1], // top-right
-          [bx + bw, by + bh, -1, -1], // bottom-right
-          [bx, by + bh, 1, -1], // bottom-left
-        ];
-        for (let i = 0; i < BRACKET_SEGMENTS; i++) {
-          const [cx, cy, sx, sy] = corners[i];
-          // Orbit offset via rotation — brackets slide along the perimeter.
-          const travel = ((rotation + (i * Math.PI) / 2) % (Math.PI * 2)) / (Math.PI * 2);
+        if (bw > 0 && bh > 0 && Number.isFinite(bw) && Number.isFinite(bh)) {
           const perim = 2 * (bw + bh);
-          let d = travel * perim;
-          // Walk the perimeter to find the bracket anchor point.
-          let ax: number, ay: number, dirX = 0, dirY = 0;
-          if (d < bw) {
-            ax = bx + d; ay = by; dirX = 1;
-          } else if ((d -= bw) < bh) {
-            ax = bx + bw; ay = by + d; dirY = 1;
-          } else if ((d -= bh) < bw) {
-            ax = bx + bw - d; ay = by + bh; dirX = -1;
-          } else {
-            d -= bw; ax = bx; ay = by + bh - d; dirY = -1;
-          }
-          void cx; void cy; void sx; void sy; // corners reserved for future styling
-          ctx.beginPath();
-          ctx.moveTo(ax + dirX * BRACKET_LENGTH, ay + dirY * BRACKET_LENGTH);
-          ctx.lineTo(ax, ay);
-          ctx.lineTo(ax - dirX * BRACKET_LENGTH * 0.4, ay - dirY * BRACKET_LENGTH * 0.4);
-          ctx.stroke();
-        }
+          if (perim > 0 && Number.isFinite(perim)) {
+            ctx.save();
+            ctx.strokeStyle = `rgba(52, 211, 153, ${0.75 + 0.2 * Math.sin(now * 0.008) * phase})`;
+            ctx.lineWidth = 2;
+            ctx.lineCap = "round";
+            ctx.shadowColor = "rgba(52, 211, 153, 0.8)";
+            ctx.shadowBlur = 6;
 
-        // Center reticle dot when locked.
-        if (phase > 0) {
-          const ccx = bx + bw / 2;
-          const ccy = by + bh / 2;
-          ctx.beginPath();
-          ctx.arc(ccx, ccy, 3, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(52, 211, 153, 0.9)";
-          ctx.fill();
+            // Segments: 4 corner brackets that slowly orbit the card bounds.
+            const corners: Array<[number, number, number, number]> = [
+              [bx, by, 1, 1], // top-left
+              [bx + bw, by, -1, 1], // top-right
+              [bx + bw, by + bh, -1, -1], // bottom-right
+              [bx, by + bh, 1, -1], // bottom-left
+            ];
+            for (let i = 0; i < BRACKET_SEGMENTS; i++) {
+              const [cx, cy, sx, sy] = corners[i];
+              // Orbit offset via rotation — brackets slide along the perimeter.
+              const travel = ((rotation + (i * Math.PI) / 2) % (Math.PI * 2)) / (Math.PI * 2);
+              let d = travel * perim;
+              // Walk the perimeter to find the bracket anchor point.
+              let ax: number, ay: number, dirX = 0, dirY = 0;
+              if (d < bw) {
+                ax = bx + d; ay = by; dirX = 1;
+              } else if ((d -= bw) < bh) {
+                ax = bx + bw; ay = by + d; dirY = 1;
+              } else if ((d -= bh) < bw) {
+                ax = bx + bw - d; ay = by + bh; dirX = -1;
+              } else {
+                d -= bw; ax = bx; ay = by + bh - d; dirY = -1;
+              }
+              void cx; void cy; void sx; void sy; // corners reserved for future styling
+              ctx.beginPath();
+              ctx.moveTo(ax + dirX * BRACKET_LENGTH, ay + dirY * BRACKET_LENGTH);
+              ctx.lineTo(ax, ay);
+              ctx.lineTo(ax - dirX * BRACKET_LENGTH * 0.4, ay - dirY * BRACKET_LENGTH * 0.4);
+              ctx.stroke();
+            }
+
+            // Center reticle dot when locked.
+            if (phase > 0) {
+              const ccx = bx + bw / 2;
+              const ccy = by + bh / 2;
+              if (Number.isFinite(ccx) && Number.isFinite(ccy)) {
+                ctx.beginPath();
+                ctx.arc(ccx, ccy, 3, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(52, 211, 153, 0.9)";
+                ctx.fill();
+              }
+            }
+            ctx.restore();
+          }
         }
-        ctx.restore();
       }
 
       rafRef.current = requestAnimationFrame(draw);
@@ -313,15 +379,22 @@ export function TacticalTargetReticle({
   useEffect(() => {
     if (!hoverActive) return;
     const now = performance.now();
-    if (now - lastBeepTimeRef.current < 400) return;
+    if (lastBeepTimeRef.current !== 0 && now - lastBeepTimeRef.current < 400) return;
     lastBeepTimeRef.current = now;
     playLockTone();
   }, [hoverActive, playLockTone]);
 
-  // Unmount: cancel loop, close audio context, disconnect residual nodes.
+  // Unmount: cancel loop, close audio context, disconnect residual nodes and timers.
   useEffect(() => {
     return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (teardownTimerRef.current !== null) {
+        clearTimeout(teardownTimerRef.current);
+        teardownTimerRef.current = null;
+      }
       for (const node of activeNodesRef.current) {
         try {
           node.disconnect();
@@ -330,8 +403,10 @@ export function TacticalTargetReticle({
         }
       }
       activeNodesRef.current = [];
-      ctxRef.current?.close().catch(() => { });
-      ctxRef.current = null;
+      if (ctxRef.current && ctxRef.current.state !== "closed") {
+        ctxRef.current.close().catch(() => { });
+        ctxRef.current = null;
+      }
     };
   }, []);
 
@@ -354,24 +429,29 @@ export function TacticalTargetReticle({
         <div style={overlayStyle} aria-hidden="true">
           <canvas ref={canvasRef} />
           {/* Simulated distance rangefinder readout, positioned near the card */}
-          {hoverActive && rangeKm !== null && rectRef.current && (
-            <div
-              style={{
-                position: "fixed",
-                left: rectRef.current.x + rectRef.current.w / 2 - 40,
-                top: rectRef.current.y - 34,
-                fontFamily: "monospace",
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                color: "rgba(52, 211, 153, 0.95)",
-                textShadow: "0 0 6px rgba(52, 211, 153, 0.5)",
-                userSelect: "none",
-              }}
-            >
-              RNG {rangeKm.toFixed(1)} KM
-            </div>
-          )}
+          {hoverActive &&
+            rangeKm !== null &&
+            rectRef.current &&
+            Number.isFinite(rectRef.current.x) &&
+            Number.isFinite(rectRef.current.y) && (
+              <div
+                data-testid="reticle-rangefinder"
+                style={{
+                  position: "fixed",
+                  left: rectRef.current.x + rectRef.current.w / 2 - 40,
+                  top: rectRef.current.y - 34,
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  color: "rgba(52, 211, 153, 0.95)",
+                  textShadow: "0 0 6px rgba(52, 211, 153, 0.5)",
+                  userSelect: "none",
+                }}
+              >
+                RNG {rangeKm.toFixed(1)} KM
+              </div>
+            )}
         </div>
       )}
     </div>

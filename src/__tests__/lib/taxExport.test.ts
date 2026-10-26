@@ -2,6 +2,7 @@ import {
   resolveDateRange,
   filterBookingsByRange,
   computeTaxTotals,
+  taxBookingsToCSV,
 } from "@/lib/taxExport";
 
 import { exportBookingsToJson } from "@/lib/pdfHelpers";
@@ -106,5 +107,59 @@ describe("exportBookingsToJson", () => {
     const result = exportBookingsToJson([]);
 
     expect(JSON.parse(result)).toEqual([]);
+  });
+});
+
+
+describe("taxExport input sanitization and edge cases (#6754)", () => {
+  it("resolveDateRange throws structured error on nullish or non-object input", () => {
+    expect(() => resolveDateRange(null)).toThrow("Either taxYear or both startDate and endDate are required");
+    expect(() => resolveDateRange(undefined)).toThrow("Either taxYear or both startDate and endDate are required");
+  });
+
+  it("resolveDateRange parses string tax year correctly", () => {
+    expect(resolveDateRange({ taxYear: " 2026 " })).toEqual({
+      start: "2026-01-01",
+      end: "2026-12-31",
+    });
+  });
+
+  it("filterBookingsByRange safely handles nullish bookings or range", () => {
+    expect(filterBookingsByRange(null as any, { start: "2025-01-01", end: "2025-12-31" })).toEqual([]);
+    expect(filterBookingsByRange([{ date: "2025-05-01" }], null as any)).toEqual([]);
+  });
+
+  it("filterBookingsByRange handles nullish items and ISO date strings", () => {
+    const list = [
+      null as any,
+      { date: null as any },
+      { date: "2025-05-10T14:30:00Z" },
+      { date: "2024-01-01" },
+    ];
+    const filtered = filterBookingsByRange(list, { start: "2025-01-01", end: "2025-12-31" });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.date).toBe("2025-05-10T14:30:00Z");
+  });
+
+  it("computeTaxTotals safely handles nullish or non-array inputs", () => {
+    expect(computeTaxTotals(null)).toEqual({ subtotal: 0, tax: 0, total: 0, count: 0 });
+    expect(computeTaxTotals(undefined)).toEqual({ subtotal: 0, tax: 0, total: 0, count: 0 });
+  });
+
+  it("computeTaxTotals handles null elements and NaN durations safely", () => {
+    const totals = computeTaxTotals([
+      null,
+      { duration: 2 },
+      { duration: NaN }, // defaults to 1 hr
+    ]);
+    expect(totals.count).toBe(2);
+    expect(totals.subtotal).toBe(45); // (2 * 15) + (1 * 15) = 45
+    expect(totals.tax).toBe(3.6);
+    expect(totals.total).toBe(48.6);
+  });
+
+  it("taxBookingsToCSV handles nullish or empty bookings array gracefully", () => {
+    expect(taxBookingsToCSV(null)).toBe("");
+    expect(taxBookingsToCSV([])).toBe("");
   });
 });

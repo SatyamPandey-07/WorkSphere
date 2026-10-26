@@ -118,8 +118,18 @@ export function setChatSoundEnabled(enabled: boolean): void {
  */
 export function playCockpitTelemetrySound(volume: number = 0.3): boolean {
   if (typeof window === "undefined") return false;
+  if (typeof volume === "number" && Number.isFinite(volume) && volume <= 0) {
+    return false;
+  }
+  const safeVolume =
+    typeof volume === "number" && Number.isFinite(volume)
+      ? Math.min(1, Math.max(0.001, volume))
+      : 0.3;
+
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return false;
     const ctx = new AudioCtx();
     const now = ctx.currentTime;
@@ -141,7 +151,7 @@ export function playCockpitTelemetrySound(volume: number = 0.3): boolean {
       filter.Q.setValueAtTime(2.0, now);
 
       const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.08 * volume, now);
+      noiseGain.gain.setValueAtTime(0.08 * safeVolume, now);
       noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
 
       whiteNoise.connect(filter);
@@ -161,7 +171,7 @@ export function playCockpitTelemetrySound(volume: number = 0.3): boolean {
     chirpOsc.frequency.exponentialRampToValueAtTime(2600, chirpStartTime + 0.07);
 
     chirpGain.gain.setValueAtTime(0.001, chirpStartTime);
-    chirpGain.gain.linearRampToValueAtTime(0.2 * volume, chirpStartTime + 0.015);
+    chirpGain.gain.linearRampToValueAtTime(0.2 * safeVolume, chirpStartTime + 0.015);
     chirpGain.gain.exponentialRampToValueAtTime(0.0001, chirpStartTime + 0.07);
 
     chirpOsc.connect(chirpGain);
@@ -175,7 +185,7 @@ export function playCockpitTelemetrySound(volume: number = 0.3): boolean {
     const pip1Gain = ctx.createGain();
     pip1Osc.type = "triangle";
     pip1Osc.frequency.setValueAtTime(2400, pip1Start);
-    pip1Gain.gain.setValueAtTime(0.25 * volume, pip1Start);
+    pip1Gain.gain.setValueAtTime(0.25 * safeVolume, pip1Start);
     pip1Gain.gain.exponentialRampToValueAtTime(0.0001, pip1Start + 0.045);
 
     pip1Osc.connect(pip1Gain);
@@ -188,7 +198,7 @@ export function playCockpitTelemetrySound(volume: number = 0.3): boolean {
     const pip2Gain = ctx.createGain();
     pip2Osc.type = "triangle";
     pip2Osc.frequency.setValueAtTime(2800, pip2Start);
-    pip2Gain.gain.setValueAtTime(0.28 * volume, pip2Start);
+    pip2Gain.gain.setValueAtTime(0.28 * safeVolume, pip2Start);
     pip2Gain.gain.exponentialRampToValueAtTime(0.0001, pip2Start + 0.055);
 
     pip2Osc.connect(pip2Gain);
@@ -197,11 +207,14 @@ export function playCockpitTelemetrySound(volume: number = 0.3): boolean {
     pip2Osc.stop(pip2Start + 0.06);
 
     // Safely close context after audio finishes
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (ctx.state !== "closed") {
         ctx.close().catch(() => {});
       }
     }, 600);
+    if (typeof timer === "object" && typeof (timer as any).unref === "function") {
+      (timer as any).unref();
+    }
 
     return true;
   } catch {
@@ -214,8 +227,18 @@ export function playCockpitTelemetrySound(volume: number = 0.3): boolean {
  */
 export function playSynthesizedBell(volume: number = 0.2): boolean {
   if (typeof window === "undefined") return false;
+  if (typeof volume === "number" && Number.isFinite(volume) && volume <= 0) {
+    return false;
+  }
+  const safeVolume =
+    typeof volume === "number" && Number.isFinite(volume)
+      ? Math.min(1, Math.max(0.001, volume))
+      : 0.2;
+
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return false;
     const ctx = new AudioCtx();
     const now = ctx.currentTime;
@@ -224,15 +247,18 @@ export function playSynthesizedBell(volume: number = 0.2): boolean {
     osc.type = "sine";
     osc.frequency.setValueAtTime(587.33, now);
     osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
-    gain.gain.setValueAtTime(volume, now);
+    gain.gain.setValueAtTime(safeVolume, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.65);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (ctx.state !== "closed") ctx.close().catch(() => {});
     }, 800);
+    if (typeof timer === "object" && typeof (timer as any).unref === "function") {
+      (timer as any).unref();
+    }
     return true;
   } catch {
     return false;

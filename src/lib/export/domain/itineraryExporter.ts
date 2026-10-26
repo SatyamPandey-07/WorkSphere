@@ -115,14 +115,20 @@ export async function generateBookingItineraryPdf(
   const cancelRed = rgb(0.88, 0.22, 0.22);
 
   const drawSafe = (
-    text: string,
+    text: unknown,
     x: number,
     y: number,
     size: number,
     f: PDFFont = font,
     c = darkNavy,
   ) => {
-    const sanitized = (text || "").replace(/[^\x20-\x7E]/g, "?");
+    const raw =
+      typeof text === "string"
+        ? text
+        : text == null
+          ? ""
+          : String(text);
+    const sanitized = raw.replace(/[^\x20-\x7E]/g, "?");
     try {
       page.drawText(sanitized, { x, y, size, font: f, color: c });
     } catch {
@@ -130,7 +136,7 @@ export async function generateBookingItineraryPdf(
     }
   };
 
-  // Top Accent Header Strip
+// Top Accent Header Strip
   page.drawRectangle({
     x: 0,
     y: height - 10,
@@ -146,8 +152,12 @@ export async function generateBookingItineraryPdf(
   drawSafe("OFFICIAL BOOKING ITINERARY & PASS", margin + 115, y + 1, 10, boldFont, slateGrey);
 
   // Reference & Status Pill (Top Right)
-  const confirmation = booking.confirmationId || `WS-#${booking.id}`;
-  const statusStr = (booking.status || "CONFIRMED").toUpperCase();
+  const safeBooking = (booking || {}) as Partial<BookingItineraryData>;
+  const confirmation =
+    safeBooking.confirmationId ||
+    (safeBooking.id ? `WS-#${safeBooking.id}` : "WS-#CONF-UNKNOWN");
+  const rawStatus = safeBooking.status ? String(safeBooking.status) : "CONFIRMED";
+  const statusStr = rawStatus.toUpperCase();
   const isCancelled = statusStr === "CANCELLED";
   const statusColor = isCancelled ? cancelRed : successGreen;
 
@@ -198,12 +208,17 @@ export async function generateBookingItineraryPdf(
   });
 
   // Verification URL / QR Matrix Data
-  const verificationPayload = `https://worksphere.io/verify/booking?id=${booking.id}&ref=${encodeURIComponent(confirmation)}`;
+  const bookingId = safeBooking.id ? String(safeBooking.id) : "";
+  const verificationPayload = `https://worksphere.io/verify/booking?id=${bookingId}&ref=${encodeURIComponent(confirmation)}`;
   let qrMatrix: boolean[][];
   try {
     qrMatrix = generateQRMatrix(verificationPayload);
   } catch {
-    qrMatrix = generateQRMatrix(confirmation);
+    try {
+      qrMatrix = generateQRMatrix(confirmation || "WS-ITINERARY-PASS");
+    } catch {
+      qrMatrix = generateQRMatrix("WORKSPHERE-VERIFIED-PASS");
+    }
   }
 
   // Draw QR Frame Box inside card
@@ -247,16 +262,41 @@ export async function generateBookingItineraryPdf(
 
   detailsY -= 16;
   drawSafe("Date & Time:", detailsX, detailsY, 9, font, slateGrey);
-  drawSafe(`${booking.date} @ ${booking.time}`, detailsX + 90, detailsY, 10, boldFont, darkNavy);
+  let formattedDate = "Scheduled Date";
+  if (safeBooking.date) {
+    if (safeBooking.date instanceof Date) {
+      formattedDate = !isNaN(safeBooking.date.getTime())
+        ? safeBooking.date.toISOString().slice(0, 10)
+        : "Scheduled Date";
+    } else if (typeof safeBooking.date === "string") {
+      formattedDate = safeBooking.date;
+    } else {
+      formattedDate = String(safeBooking.date);
+    }
+  }
+  const bookingTime = safeBooking.time ? String(safeBooking.time) : "Scheduled Time";
+
+  drawSafe(`${formattedDate} @ ${bookingTime}`, detailsX + 90, detailsY, 10, boldFont, darkNavy);
 
   detailsY -= 16;
   drawSafe("Duration:", detailsX, detailsY, 9, font, slateGrey);
-  const durationMins = booking.duration || 60;
+  const rawDuration =
+    typeof safeBooking.duration === "number"
+      ? safeBooking.duration
+      : safeBooking.duration != null
+        ? Number(safeBooking.duration)
+        : NaN;
+  const durationMins =
+    Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : 60;
   drawSafe(`${durationMins} minutes (${(durationMins / 60).toFixed(1)} hrs)`, detailsX + 90, detailsY, 9.5, font, darkNavy);
 
   detailsY -= 16;
   drawSafe("Seat Allocation:", detailsX, detailsY, 9, font, slateGrey);
-  drawSafe(booking.seatNumber ? `Desk / Seat #${booking.seatNumber}` : "General Open Workspace", detailsX + 90, detailsY, 9.5, boldFont, primaryBlue);
+  const seatLabel =
+    safeBooking.seatNumber != null && String(safeBooking.seatNumber).trim().length > 0
+      ? `Desk / Seat #${String(safeBooking.seatNumber).trim()}`
+      : "General Open Workspace";
+  drawSafe(seatLabel, detailsX + 90, detailsY, 9.5, boldFont, primaryBlue);
 
   y -= badgeCardHeight + 15;
 
@@ -273,13 +313,23 @@ export async function generateBookingItineraryPdf(
   });
   y -= 16;
 
-  const venueName = booking.venue?.name || "Verified WorkSphere Venue";
-  const venueCategory = (booking.venue?.category || "Coworking Space").toUpperCase();
-  const rawAddress = booking.venue?.address ? formatUserAddress(booking.venue.address) : "Verified Workspace Address";
-  const venueAddress = rawAddress === "No address provided" ? "Verified Workspace Address" : rawAddress;
+  const venue = safeBooking.venue;
+  const venueName = venue?.name ? String(venue.name) : "Verified WorkSphere Venue";
+  const venueCategory = (venue?.category ? String(venue.category) : "Coworking Space").toUpperCase();
+  const rawAddress = venue?.address ? formatUserAddress(venue.address) : "Verified Workspace Address";
+  const venueAddress = !rawAddress || rawAddress === "No address provided" ? "Verified Workspace Address" : rawAddress;
 
+  const safeVenueName = venueName.replace(/[^\x20-\x7E]/g, "?");
+  const venueNameWidth = font.widthOfTextAtSize(safeVenueName, 13);
   drawSafe(venueName, margin, y, 13, boldFont, darkNavy);
-  drawSafe(`· ${venueCategory}`, margin + font.widthOfTextAtSize(venueName.replace(/[^\x20-\x7E]/g, "?"), 13) + 8, y + 1, 9, boldFont, primaryBlue);
+
+  const categoryX = Math.min(
+    margin + venueNameWidth + 8,
+    width - margin - font.widthOfTextAtSize(`· ${venueCategory}`, 9) - 4,
+  );
+  if (categoryX > margin + 40) {
+    drawSafe(`· ${venueCategory}`, categoryX, y + 1, 9, boldFont, primaryBlue);
+  }
   y -= 16;
 
   const addressLabel = "Address: ";
@@ -306,10 +356,10 @@ export async function generateBookingItineraryPdf(
   y -= 4;
 
   // Amenities line
-  const wifiText = booking.venue?.wifiQuality ? `High-Speed Wi-Fi (${booking.venue.wifiQuality}/5 Stars)` : "High-Speed Wi-Fi";
-  const powerText = booking.venue?.hasOutlets ? "Dedicated Power Outlets" : "Power Available";
-  const ergoText = booking.venue?.hasErgonomic ? "Ergonomic Seating" : "Standard Seating";
-  const noiseText = booking.venue?.noiseLevel ? `Noise: ${booking.venue.noiseLevel}` : "Quiet Zone";
+  const wifiText = venue?.wifiQuality ? `High-Speed Wi-Fi (${venue.wifiQuality}/5 Stars)` : "High-Speed Wi-Fi";
+  const powerText = venue?.hasOutlets ? "Dedicated Power Outlets" : "Power Available";
+  const ergoText = venue?.hasErgonomic ? "Ergonomic Seating" : "Standard Seating";
+  const noiseText = venue?.noiseLevel ? `Noise: ${venue.noiseLevel}` : "Quiet Zone";
 
   drawSafe(`Amenities: [ ${wifiText} ]  [ ${powerText} ]  [ ${ergoText} ]  [ ${noiseText} ]`, margin, y, 8, font, slateGrey);
   y -= 24;
@@ -317,8 +367,15 @@ export async function generateBookingItineraryPdf(
   // ==========================================================================
   // SECTION 3: GUEST & CONTACT DETAILS
   // ==========================================================================
-  const company = booking.companyName || booking.billing?.companyName || booking.user?.companyName;
-  const taxId = booking.taxId || booking.billing?.taxId || booking.user?.taxId;
+  const user = safeBooking.user;
+  const company =
+    safeBooking.companyName ||
+    safeBooking.billing?.companyName ||
+    user?.companyName;
+  const taxId =
+    safeBooking.taxId ||
+    safeBooking.billing?.taxId ||
+    user?.taxId;
   const sectionTitle = (company || taxId) ? "BILL TO & GUEST INFORMATION" : "GUEST & ACCOUNT INFORMATION";
 
   drawSafe(sectionTitle, margin, y, 11, boldFont, darkNavy);
@@ -331,11 +388,14 @@ export async function generateBookingItineraryPdf(
   });
   y -= 16;
 
-  const customerName = booking.user
-    ? `${booking.user.firstName || ""} ${booking.user.lastName || ""}`.trim() || booking.user.email || "Registered Member"
-    : booking.customerEmail || "Registered Member";
+  const rawFirst = user?.firstName ? String(user.firstName).trim() : "";
+  const rawLast = user?.lastName ? String(user.lastName).trim() : "";
+  const fullName = `${rawFirst} ${rawLast}`.trim();
+  const customerName =
+    fullName ||
+    (user?.email ? String(user.email) : safeBooking.customerEmail ? String(safeBooking.customerEmail) : "Registered Member");
 
-  const customerEmail = booking.user?.email || booking.customerEmail || "N/A";
+  const customerEmail = user?.email ? String(user.email) : safeBooking.customerEmail ? String(safeBooking.customerEmail) : "N/A";
 
   drawSafe("Primary Guest:", margin, y, 9, font, slateGrey);
   drawSafe(customerName, margin + 90, y, 9.5, boldFont, darkNavy);
@@ -347,19 +407,20 @@ export async function generateBookingItineraryPdf(
 
   if (company) {
     drawSafe("Company:", margin, y, 9, font, slateGrey);
-    drawSafe(company, margin + 90, y, 9.5, boldFont, darkNavy);
+    drawSafe(String(company), margin + 90, y, 9.5, boldFont, darkNavy);
     y -= 15;
   }
 
   if (taxId) {
     drawSafe("Tax / GST ID:", margin, y, 9, font, slateGrey);
-    drawSafe(taxId, margin + 90, y, 9.5, boldFont, darkNavy);
+    drawSafe(String(taxId), margin + 90, y, 9.5, boldFont, darkNavy);
     y -= 15;
   }
 
-  if (booking.user?.id) {
+  if (user?.id != null) {
     drawSafe("Account ID:", margin, y, 9, font, slateGrey);
-    drawSafe(`USR-${booking.user.id.slice(0, 16)}`, margin + 90, y, 9, font, slateGrey);
+    const userIdStr = String(user.id);
+    drawSafe(`USR-${userIdStr.slice(0, 16)}`, margin + 90, y, 9, font, slateGrey);
     y -= 15;
   }
 
@@ -395,8 +456,23 @@ export async function generateBookingItineraryPdf(
   // ==========================================================================
   // SECTION 5: CRYPTOGRAPHIC INTEGRITY & ANTI-FORGERY SEAL
   // ==========================================================================
-  const integrityPayload = `${booking.id}|${confirmation}|${booking.date}|${booking.time}|${booking.user?.id || ""}`;
+  const userIdStr = user?.id != null ? String(user.id) : "";
+  const integrityPayload = `${bookingId}|${confirmation}|${formattedDate}|${bookingTime}|${userIdStr}`;
   const integrityHash = crypto.createHash("sha256").update(integrityPayload).digest("hex").slice(0, 32);
+
+  let generatedTimestamp = new Date().toISOString();
+  if (safeBooking.createdAt) {
+    if (safeBooking.createdAt instanceof Date) {
+      if (!isNaN(safeBooking.createdAt.getTime())) {
+        generatedTimestamp = safeBooking.createdAt.toISOString();
+      }
+    } else if (typeof safeBooking.createdAt === "string") {
+      const parsed = new Date(safeBooking.createdAt);
+      if (!isNaN(parsed.getTime())) {
+        generatedTimestamp = parsed.toISOString();
+      }
+    }
+  }
 
   page.drawRectangle({
     x: margin,
@@ -410,7 +486,7 @@ export async function generateBookingItineraryPdf(
 
   drawSafe("ANTI-FORGERY DIGITAL VERIFICATION SEAL", margin + 12, y - 10, 8, boldFont, slateGrey);
   drawSafe(`Verification Hash: ${integrityHash.toUpperCase()}`, margin + 12, y - 22, 7.5, obliqueFont, slateGrey);
-  drawSafe(`Generated: ${new Date().toISOString()}  ·  Issued by WorkSphere Core Access Authority`, margin + 12, y - 32, 7, font, slateGrey);
+  drawSafe(`Generated: ${generatedTimestamp}  ·  Issued by WorkSphere Core Access Authority`, margin + 12, y - 32, 7, font, slateGrey);
 
   // Footer Disclaimer
   const footerY = 32;

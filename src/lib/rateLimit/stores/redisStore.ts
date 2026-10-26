@@ -179,11 +179,16 @@ export async function executeAtomicTokenBucket(
   now = Date.now()
 ) {
   if (!redis || typeof redis.eval !== "function") return null;
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 10;
+  const safeWindowMs = Number.isFinite(windowMs) && windowMs > 0 ? windowMs : 60_000;
+  const safeCost = Number.isFinite(cost) && cost >= 0 ? Math.floor(cost) : 1;
+  const safeNow = Number.isFinite(now) && now > 0 ? now : Date.now();
+
   try {
     const rawResult = await redis.eval(
       ATOMIC_TOKEN_BUCKET_LUA_SCRIPT,
       [key],
-      [limit, windowMs, cost, now]
+      [safeLimit, safeWindowMs, safeCost, safeNow]
     );
 
     const [allowedNum, remainingNum, resetSecNum, retryAfterNum] = Array.isArray(rawResult)
@@ -192,7 +197,7 @@ export async function executeAtomicTokenBucket(
 
     return {
       success: Number(allowedNum) === 1,
-      limit,
+      limit: safeLimit,
       remaining: Math.max(0, Number(remainingNum)),
       reset: Number(resetSecNum),
       retryAfter: Number(retryAfterNum),
@@ -220,11 +225,15 @@ export async function executeAtomicSlidingWindow(
   )
 ) {
   if (!redis || typeof redis.eval !== "function") return null;
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 10;
+  const safeWindowMs = Number.isFinite(windowMs) && windowMs > 0 ? windowMs : 60_000;
+  const safeNow = Number.isFinite(now) && now > 0 ? now : Date.now();
+
   try {
     const rawResult = await redis.eval(
       ATOMIC_SLIDING_WINDOW_LUA_SCRIPT,
       [key],
-      [limit, windowMs, now, member]
+      [safeLimit, safeWindowMs, safeNow, member]
     );
 
     const [allowedNum, remainingNum, resetSecNum, retryAfterNum] = Array.isArray(rawResult)
@@ -233,7 +242,7 @@ export async function executeAtomicSlidingWindow(
 
     return {
       success: Number(allowedNum) === 1,
-      limit,
+      limit: safeLimit,
       remaining: Math.max(0, Number(remainingNum)),
       reset: Number(resetSecNum),
       retryAfter: Number(retryAfterNum),

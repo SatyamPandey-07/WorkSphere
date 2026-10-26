@@ -165,6 +165,10 @@ export class MemoryRateLimitStore {
   getTokenBucketEntry(key: string): MemoryBucketEntry | undefined {
     const entry = this.tokenBucketStore.get(key);
     if (entry) {
+      if (!Number.isFinite(entry.tokens) || !Number.isFinite(entry.lastRefill)) {
+        this.tokenBucketStore.delete(key);
+        return undefined;
+      }
       const now = Date.now();
       const windowMs = entry.windowMs ?? MemoryRateLimitStore.TOKEN_BUCKET_DEFAULT_WINDOW_MS;
       if (now - entry.lastRefill >= windowMs) {
@@ -179,6 +183,10 @@ export class MemoryRateLimitStore {
   }
 
   setTokenBucketEntry(key: string, entry: MemoryBucketEntry) {
+    if (!Number.isFinite(entry.tokens) || !Number.isFinite(entry.lastRefill)) {
+      this.tokenBucketStore.delete(key);
+      return;
+    }
     const now = Date.now();
     const windowMs = entry.windowMs ?? MemoryRateLimitStore.TOKEN_BUCKET_DEFAULT_WINDOW_MS;
     if (now - entry.lastRefill >= windowMs) {

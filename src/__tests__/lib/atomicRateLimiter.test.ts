@@ -200,4 +200,50 @@ describe("Atomic Distributed Token Bucket & Sliding Window Limiter (#4127)", () 
       expect(checkRes2.reset).toBeLessThan(nowSec + 120);
     });
   });
+  describe("Unified Rate Limiting Robustness & Export Validation (#6816)", () => {
+    it("exports MemoryRateLimitStore, SlidingWindowLimiter, and TokenBucketLimiter from @/lib/rateLimit", async () => {
+      const rl = await import("@/lib/rateLimit");
+      expect(typeof rl.MemoryRateLimitStore).toBe("function");
+      expect(typeof rl.SlidingWindowLimiter).toBe("function");
+      expect(typeof rl.TokenBucketLimiter).toBe("function");
+    });
+
+    it("sanitizes invalid limits and non-positive window durations in TokenBucketLimiter", async () => {
+      const badLimiter = new TokenBucketLimiter({
+        limit: -5 as any,
+        windowMs: NaN as any,
+        name: "bad-options",
+      });
+
+      expect(badLimiter.limit).toBe(10);
+      expect(badLimiter.windowMs).toBe(60000);
+
+      const res = await badLimiter.consume("user-bad", -10);
+      expect(res.success).toBe(true);
+      expect(res.remaining).toBe(9);
+    });
+
+    it("heals and rejects NaN tokens in MemoryRateLimitStore", () => {
+      const store = new defaultMemoryStore.constructor();
+      store.setTokenBucketEntry("corrupt-key", {
+        tokens: NaN,
+        lastRefill: Date.now(),
+      });
+
+      expect(store.getTokenBucketEntry("corrupt-key")).toBeUndefined();
+    });
+
+    it("sanitizes negative and non-finite arguments in executeAtomicTokenBucket", async () => {
+      const mockRedis = {
+        eval: jest.fn(async () => [1, 9, 100, 0]),
+      };
+
+      await executeAtomicTokenBucket(mockRedis, "safe-eval-key", -5, NaN, -2);
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.any(String),
+        ["safe-eval-key"],
+        [10, 60000, 1, expect.any(Number)]
+      );
+    });
+  });
 });

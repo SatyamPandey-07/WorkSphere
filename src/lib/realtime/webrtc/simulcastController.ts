@@ -68,7 +68,14 @@ export function computeScaleResolutionDownBy(
   sourceHeight: number,
   targetHeight: number,
 ): number {
-  if (targetHeight <= 0 || sourceHeight <= 0) return 1.0;
+  if (
+    !Number.isFinite(sourceHeight) ||
+    !Number.isFinite(targetHeight) ||
+    targetHeight <= 0 ||
+    sourceHeight <= 0
+  ) {
+    return 1.0;
+  }
   const factor = sourceHeight / targetHeight;
   return Math.max(1.0, Math.round(factor * 100) / 100);
 }
@@ -80,7 +87,11 @@ export function computeScaleResolutionDownBy(
 export function createSimulcastEncodings(
   sourceResolution?: Resolution,
 ): RTCRtpEncodingParameters[] {
-  const sourceHeight = sourceResolution?.height ?? 720;
+  const rawHeight = sourceResolution?.height;
+  const sourceHeight =
+    typeof rawHeight === "number" && Number.isFinite(rawHeight) && rawHeight > 0
+      ? rawHeight
+      : 720;
 
   return SIMULCAST_BITRATE_LADDER.map((layer) => ({
     rid: layer.rid,
@@ -172,7 +183,7 @@ export function extractRTCPStats(
       stat.type === "candidate-pair" &&
       (stat.state === "succeeded" || stat.nominated === true)
     ) {
-      if (typeof stat.currentRoundTripTime === "number") {
+      if (typeof stat.currentRoundTripTime === "number" && Number.isFinite(stat.currentRoundTripTime)) {
         const val = stat.currentRoundTripTime;
         rttMs = val < 10 ? val * 1000 : val;
       }
@@ -180,51 +191,51 @@ export function extractRTCPStats(
 
     // 2. Remote Inbound RTP
     if (stat.type === "remote-inbound-rtp") {
-      if (typeof stat.roundTripTime === "number") {
+      if (typeof stat.roundTripTime === "number" && Number.isFinite(stat.roundTripTime)) {
         const val = stat.roundTripTime;
         rttMs = val < 10 ? val * 1000 : val;
       }
-      if (typeof stat.jitter === "number") {
+      if (typeof stat.jitter === "number" && Number.isFinite(stat.jitter)) {
         const val = stat.jitter;
         const jMs = val < 10 ? val * 1000 : val;
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
-      if (typeof stat.fractionLost === "number") {
+      if (typeof stat.fractionLost === "number" && Number.isFinite(stat.fractionLost)) {
         let f = stat.fractionLost;
         if (f > 100) f /= 255;
         else if (f > 1) f /= 100;
         fractionLost = Math.max(0, Math.min(1, f));
       }
-      if (typeof stat.packetsLost === "number") {
-        cumPacketsLost = stat.packetsLost;
+      if (typeof stat.packetsLost === "number" && Number.isFinite(stat.packetsLost)) {
+        cumPacketsLost = Math.max(0, stat.packetsLost);
       }
     }
 
     // 3. Inbound RTP
     if (stat.type === "inbound-rtp") {
-      if (typeof stat.jitter === "number" && jitterMs === undefined) {
+      if (typeof stat.jitter === "number" && Number.isFinite(stat.jitter) && jitterMs === undefined) {
         const val = stat.jitter;
         const jMs = val < 10 ? val * 1000 : val;
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
-      if (typeof stat.fractionLost === "number" && fractionLost === undefined) {
+      if (typeof stat.fractionLost === "number" && Number.isFinite(stat.fractionLost) && fractionLost === undefined) {
         let f = stat.fractionLost;
         if (f > 100) f /= 255;
         else if (f > 1) f /= 100;
         fractionLost = Math.max(0, Math.min(1, f));
       }
-      if (typeof stat.packetsLost === "number" && cumPacketsLost === undefined) {
-        cumPacketsLost = stat.packetsLost;
+      if (typeof stat.packetsLost === "number" && Number.isFinite(stat.packetsLost) && cumPacketsLost === undefined) {
+        cumPacketsLost = Math.max(0, stat.packetsLost);
       }
-      if (typeof stat.packetsReceived === "number") {
-        cumPacketsReceived = stat.packetsReceived;
+      if (typeof stat.packetsReceived === "number" && Number.isFinite(stat.packetsReceived)) {
+        cumPacketsReceived = Math.max(0, stat.packetsReceived);
       }
     }
 
     // 4. Outbound RTP
     if (stat.type === "outbound-rtp") {
-      if (typeof stat.packetsSent === "number") {
-        cumPacketsSent = stat.packetsSent;
+      if (typeof stat.packetsSent === "number" && Number.isFinite(stat.packetsSent)) {
+        cumPacketsSent = Math.max(0, stat.packetsSent);
       }
     }
   });
@@ -302,8 +313,13 @@ export function evaluateNetworkCondition(stats: NetworkStats): {
   isHighRtt: boolean;
 } {
   const isHighLoss =
-    stats.packetLossFraction !== undefined && stats.packetLossFraction > 0.08;
-  const isHighRtt = stats.rttMs !== undefined && stats.rttMs > 350;
+    stats.packetLossFraction !== undefined &&
+    Number.isFinite(stats.packetLossFraction) &&
+    stats.packetLossFraction > 0.08;
+  const isHighRtt =
+    stats.rttMs !== undefined &&
+    Number.isFinite(stats.rttMs) &&
+    stats.rttMs > 350;
   const isBadSample = isHighLoss || isHighRtt;
 
   return { isBadSample, isHighLoss, isHighRtt };
@@ -351,8 +367,12 @@ export async function setHighLayerActive(
     }
   });
 
-  await sender.setParameters(params);
-  return true;
+  try {
+    await sender.setParameters(params);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -380,8 +400,18 @@ export class SimulcastAdaptiveController {
     this.pc = pc;
     this.videoSender = videoSender;
     this.options = options;
-    this.pollIntervalMs = options.pollIntervalMs ?? 2000;
-    this.recoveryThresholdMs = options.recoveryThresholdMs ?? 15000;
+    this.pollIntervalMs =
+      typeof options.pollIntervalMs === "number" &&
+      Number.isFinite(options.pollIntervalMs) &&
+      options.pollIntervalMs > 0
+        ? Math.max(200, options.pollIntervalMs)
+        : 2000;
+    this.recoveryThresholdMs =
+      typeof options.recoveryThresholdMs === "number" &&
+      Number.isFinite(options.recoveryThresholdMs) &&
+      options.recoveryThresholdMs > 0
+        ? Math.max(1000, options.recoveryThresholdMs)
+        : 15000;
   }
 
   public getState(): SimulcastAdaptationState {

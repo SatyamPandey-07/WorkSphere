@@ -667,4 +667,77 @@ describe("WebRTC Simulcast & Adaptive Degradation", () => {
       controller.destroy();
     });
   });
+
+  describe("10. Non-finite & NaN Telemetry Hardening", () => {
+    it("handles NaN, non-finite, and negative dimensions in computeScaleResolutionDownBy", () => {
+      expect(computeScaleResolutionDownBy(NaN, 720)).toBe(1.0);
+      expect(computeScaleResolutionDownBy(1080, NaN)).toBe(1.0);
+      expect(computeScaleResolutionDownBy(Infinity, 720)).toBe(1.0);
+      expect(computeScaleResolutionDownBy(-1080, -720)).toBe(1.0);
+      expect(computeScaleResolutionDownBy(0, 720)).toBe(1.0);
+    });
+
+    it("falls back to default 720p height in createSimulcastEncodings when given NaN or negative dimensions", () => {
+      const encodingsNaN = createSimulcastEncodings({ width: NaN, height: NaN });
+      expect(encodingsNaN[0].scaleResolutionDownBy).toBe(1.0);
+      expect(encodingsNaN[1].scaleResolutionDownBy).toBe(2.0);
+      expect(encodingsNaN[2].scaleResolutionDownBy).toBe(4.0);
+
+      const encodingsNeg = createSimulcastEncodings({ width: -1920, height: -1080 });
+      expect(encodingsNeg[0].scaleResolutionDownBy).toBe(1.0);
+    });
+
+    it("ignores NaN values in RTCP stats reports and prevents NaN pollution in evaluateNetworkCondition", () => {
+      const report = new Map<string, any>();
+      report.set("candidate-pair-nan", {
+        type: "candidate-pair",
+        state: "succeeded",
+        currentRoundTripTime: NaN,
+      });
+      report.set("remote-inbound-nan", {
+        type: "remote-inbound-rtp",
+        roundTripTime: NaN,
+        jitter: NaN,
+        fractionLost: NaN,
+      });
+
+      const { stats } = extractRTCPStats(report as any);
+      expect(stats.rttMs).toBeUndefined();
+      expect(stats.jitterMs).toBeUndefined();
+      expect(stats.packetLossFraction).toBeUndefined();
+
+      const evaluation = evaluateNetworkCondition(stats);
+      expect(evaluation.isBadSample).toBe(false);
+      expect(evaluation.isHighLoss).toBe(false);
+      expect(evaluation.isHighRtt).toBe(false);
+    });
+
+    it("gracefully catches exceptions in setHighLayerActive when setParameters rejects", async () => {
+      const senderMock = createMockSender("video");
+      senderMock.setParameters.mockRejectedValueOnce(new Error("Renegotiation in progress"));
+
+      const result = await setHighLayerActive(senderMock.sender, false);
+      expect(result).toBe(false);
+    });
+
+    it("sanitizes controller intervals against NaN, non-positive, or extreme values", () => {
+      const pc = {} as RTCPeerConnection;
+      const senderMock = createMockSender("video");
+
+      const ctrl = new SimulcastAdaptiveController(pc, senderMock.sender, {
+        pollIntervalMs: NaN as any,
+        recoveryThresholdMs: -500,
+      });
+
+      expect((ctrl as any).pollIntervalMs).toBe(2000);
+      expect((ctrl as any).recoveryThresholdMs).toBe(15000);
+
+      const ctrlMin = new SimulcastAdaptiveController(pc, senderMock.sender, {
+        pollIntervalMs: 50,
+        recoveryThresholdMs: 500,
+      });
+      expect((ctrlMin as any).pollIntervalMs).toBe(200);
+      expect((ctrlMin as any).recoveryThresholdMs).toBe(1000);
+    });
+  });
 });

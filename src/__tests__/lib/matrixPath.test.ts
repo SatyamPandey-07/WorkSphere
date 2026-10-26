@@ -5,10 +5,21 @@ describe("matrixToSvgPath", () => {
   it("returns an empty path for an empty or all-light matrix", () => {
     expect(matrixToSvgPath([])).toBe("");
     expect(matrixToSvgPath([[false, false]])).toBe("");
+    expect(matrixToSvgPath(null)).toBe("");
+    expect(matrixToSvgPath(undefined)).toBe("");
+  });
+
+  it("handles nullish rows gracefully without crashing", () => {
+    expect(matrixToSvgPath([null as any, [true]] as any)).toBe("M0 1h1v1h-1z");
   });
 
   it("draws a single dark module as a unit square", () => {
     expect(matrixToSvgPath([[true]])).toBe("M0 0h1v1h-1z");
+  });
+
+  it("applies coordinate padding offset when provided", () => {
+    expect(matrixToSvgPath([[true]], 4)).toBe("M4 4h1v1h-1z");
+    expect(matrixToSvgPath([[true, true]], 2)).toBe("M2 2h2v1h-2z");
   });
 
   it("merges horizontal runs into one rectangle", () => {

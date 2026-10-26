@@ -38,6 +38,13 @@ export interface ErgonomicSessionState {
 
 export * from './deskPostureAnalytics';
 
+import {
+  DailyPostureRecord,
+  calculateSitStandRatio,
+  computeWeeklyDeskSummary,
+  generateSampleWeeklyPostureHistory,
+} from './deskPostureAnalytics';
+
 export interface ErgonomicStrainScore {
   score: number; // 0 - 100 (100 is optimal, <40 is critical fatigue)
   tier: 'optimal' | 'good' | 'mild_strain' | 'high_strain' | 'critical_fatigue';
@@ -98,54 +105,55 @@ export const MICRO_STRETCH_CATALOG: MicroStretchRoutine[] = [
       'Repeat on the contralateral arm.'
     ],
     ergonomicBenefit: 'Reduces carpal tunnel intra-neural pressure and repetitive strain injury (RSI) risks.',
-    iconName: 'Zap'
+    iconName: 'Hand'
   },
   {
     id: 'standing-hip-flexor-lunge',
-    name: 'Standing Desk Iliopsoas & Hip Release',
+    name: 'Desk-Supported Hip Flexor Release',
     category: 'lower_body',
-    targetMuscles: ['Iliopsoas', 'Rectus Femoris', 'Gluteus Maximus'],
-    durationSeconds: 60,
-    difficulty: 'moderate',
+    targetMuscles: ['Psoas Major', 'Iliacus', 'Rectus Femoris'],
+    durationSeconds: 45,
+    difficulty: 'easy',
     instructions: [
-      'Stand up and step one foot back into a shallow staggered stance.',
-      'Tuck your pelvis slightly under and squeeze the glute of your rear leg.',
-      'Shift your weight forward slightly until you feel an elongation in the front hip.',
-      'Reach the arm on the same side upward for a deeper stretch. Hold 25s per side.'
+      'Stand facing your desk and rest your hands lightly on the desktop for balance.',
+      'Step your right foot back into a shallow lunge while keeping your torso upright and hips square.',
+      'Tuck your pelvis under slightly until you feel a mild stretch in the front of your right hip.',
+      'Hold for 20 seconds, then switch sides.'
     ],
-    ergonomicBenefit: 'Relieves prolonged hip flexion shortening and lumbar anterior pull caused by long sitting sessions.',
-    iconName: 'TrendingUp'
+    ergonomicBenefit: 'Decompresses shortened anterior hip capsule resulting from prolonged 90-degree sitting.',
+    iconName: 'Footprints'
+  },
+  {
+    id: 'ocular-palming-relaxation',
+    name: '20-20-20 Ocular Palming & Distant Gaze',
+    category: 'eyes_focus',
+    targetMuscles: ['Ciliary Muscles', 'Extraocular Muscles'],
+    durationSeconds: 30,
+    difficulty: 'easy',
+    instructions: [
+      'Look away from your screen toward an object at least 20 feet away for 20 seconds.',
+      'Rub your palms together briskly for 5 seconds until they feel warm.',
+      'Cup your warm palms gently over your closed eyes without applying pressure to the eyeballs.',
+      'Breathe deeply in complete darkness for 10 seconds to allow ciliary accommodation recovery.'
+    ],
+    ergonomicBenefit: 'Resets ciliary spasm, alleviates dry eyes, and halts digital eye strain progression.',
+    iconName: 'Eye'
   },
   {
     id: 'scapular-retraction-pinch',
-    name: 'Shoulder Blade Wall / Chair Angels',
+    name: 'Isometric Scapular Squeeze',
     category: 'upper_body',
-    targetMuscles: ['Rhomboids', 'Middle & Lower Trapezius', 'Posterior Deltoids'],
-    durationSeconds: 40,
+    targetMuscles: ['Middle Trapezius', 'Rhomboids', 'Latissimus Dorsi'],
+    durationSeconds: 30,
     difficulty: 'easy',
     instructions: [
-      'Draw your shoulder blades down and together as if pinching a pencil between them.',
-      'Keep your neck long and shoulders away from your ears.',
-      'Raise arms in a "W" shape, hold contraction for 3 seconds, then release.',
-      'Perform 8 deliberate repetitions.'
+      'Sit or stand tall with arms resting loosely at your sides.',
+      'Draw both shoulder blades backward and downward as if pinching a pencil between them.',
+      'Hold the isometric contraction firmly for 6 seconds without shrugging shoulders up.',
+      'Relax smoothly and repeat 4 times.'
     ],
-    ergonomicBenefit: 'Strengthens postural postural stabilizers and counteracts rounded shoulder slouch.',
+    ergonomicBenefit: 'Reactivates dormant scapular stabilizers to prevent rounded shoulder posture.',
     iconName: 'Shield'
-  },
-  {
-    id: 'twenty-twenty-eye-reset',
-    name: '20-20-20 Ocular Reset & Palming',
-    category: 'eyes_focus',
-    targetMuscles: ['Ciliary Muscle', 'Extraocular Muscles'],
-    durationSeconds: 20,
-    difficulty: 'easy',
-    instructions: [
-      'Shift your focus from your monitor to an object at least 20 feet (6 meters) away.',
-      'Blink deliberately 10 times to re-moisturize the corneal surface.',
-      'Rub palms together until warm and gently cup them over closed eyes for 10 seconds of dark resting.'
-    ],
-    ergonomicBenefit: 'Relaxes eye ciliary spasm, combats digital eye strain (asthenopia), and prevents dry eyes.',
-    iconName: 'Eye'
   }
 ];
 
@@ -153,17 +161,39 @@ export class ErgonomicCoachEngine {
   /**
    * Calculates the real-time Ergonomic Strain Score (0-100)
    */
-  public static calculateStrainScore(state: ErgonomicSessionState): ErgonomicStrainScore {
-    const elapsedSeconds = Math.max(1, (Date.now() - state.sessionStartTime) / 1000);
+  public static calculateStrainScore(state?: ErgonomicSessionState | null): ErgonomicStrainScore {
+    if (!state) {
+      return {
+        score: 100,
+        tier: 'optimal',
+        factors: {
+          postureBalanceScore: 100,
+          stretchComplianceScore: 100,
+          hydrationScore: 100,
+          eyeRestScore: 100,
+        },
+        recommendation: 'Your ergonomics and movement patterns are in peak equilibrium!',
+        nextSuggestedAction: 'Continue your focused flow.',
+      };
+    }
+
+    const now = Date.now();
+    const startTime = Number.isFinite(state.sessionStartTime) && state.sessionStartTime > 0
+      ? state.sessionStartTime
+      : now;
+    const elapsedSeconds = Math.max(1, (now - startTime) / 1000);
     const elapsedHours = elapsedSeconds / 3600;
+
+    const safeSitSec = Number.isFinite(state.totalSittingSeconds) ? Math.max(0, state.totalSittingSeconds) : 0;
+    const safeStandSec = Number.isFinite(state.totalStandingSeconds) ? Math.max(0, state.totalStandingSeconds) : 0;
 
     // 1. Posture Balance Score (Sit vs Stand ratio)
     // Optimal: 60-70% sit, 30-40% stand for sit-stand desks; or regular posture check-ins for standard desk
     let postureBalanceScore = 100;
-    const totalPosTime = state.totalSittingSeconds + state.totalStandingSeconds;
+    const totalPosTime = safeSitSec + safeStandSec;
     
     if (state.deskType === 'height_adjustable_sit_stand' && totalPosTime > 600) {
-      const standRatio = state.totalStandingSeconds / totalPosTime;
+      const standRatio = safeStandSec / totalPosTime;
       if (standRatio < 0.15) {
         postureBalanceScore = Math.max(40, 100 - (0.15 - standRatio) * 300);
       } else if (standRatio > 0.65) {
@@ -171,8 +201,11 @@ export class ErgonomicCoachEngine {
       }
     } else {
       // Continuous sitting penalty (> 60 minutes uninterrupted sitting)
+      const lastChange = Number.isFinite(state.lastPostureStateChange) && state.lastPostureStateChange > 0
+        ? state.lastPostureStateChange
+        : startTime;
       const currentContinuous = state.currentPostureState === 'sitting'
-        ? (Date.now() - state.lastPostureStateChange) / 1000
+        ? Math.max(0, (now - lastChange) / 1000)
         : 0;
       if (currentContinuous > 3600) {
         const extraMinutes = (currentContinuous - 3600) / 60;
@@ -181,26 +214,30 @@ export class ErgonomicCoachEngine {
     }
 
     // Adjust for posture check-ins
-    if (state.postureCheckIns.length > 0) {
-      const slouches = state.postureCheckIns.filter(p => p.rating === 'slouching').length;
-      const stiff = state.postureCheckIns.filter(p => p.rating === 'stiff').length;
+    const checkIns = Array.isArray(state.postureCheckIns) ? state.postureCheckIns : [];
+    if (checkIns.length > 0) {
+      const slouches = checkIns.filter(p => p && p.rating === 'slouching').length;
+      const stiff = checkIns.filter(p => p && p.rating === 'stiff').length;
       const penalty = (slouches * 10) + (stiff * 5);
       postureBalanceScore = Math.max(20, postureBalanceScore - penalty);
     }
 
     // 2. Stretch Compliance Score
+    const completedStretches = Array.isArray(state.completedStretches) ? state.completedStretches : [];
     const expectedStretches = Math.max(1, Math.floor(elapsedHours * 1.5));
-    const stretchRatio = Math.min(1.2, state.completedStretches.length / expectedStretches);
+    const stretchRatio = Math.min(1.2, completedStretches.length / expectedStretches);
     const stretchComplianceScore = Math.min(100, Math.round(stretchRatio * 100));
 
     // 3. Hydration Score
+    const waterIntake = Number.isFinite(state.waterIntakeMl) ? Math.max(0, state.waterIntakeMl) : 0;
     const expectedIntake = Math.max(250, Math.round(elapsedHours * 250)); // ~250ml per hour
-    const hydrationRatio = Math.min(1.2, state.waterIntakeMl / expectedIntake);
+    const hydrationRatio = Math.min(1.2, waterIntake / expectedIntake);
     const hydrationScore = Math.min(100, Math.round(hydrationRatio * 100));
 
     // 4. Eye Rest Score (20-20-20 rule compliance)
+    const eyeBreaks = Number.isFinite(state.eyeBreaksCompleted) ? Math.max(0, state.eyeBreaksCompleted) : 0;
     const expectedEyeBreaks = Math.max(1, Math.floor(elapsedHours * 3)); // every 20 mins
-    const eyeRatio = Math.min(1.2, state.eyeBreaksCompleted / expectedEyeBreaks);
+    const eyeRatio = Math.min(1.2, eyeBreaks / expectedEyeBreaks);
     const eyeRestScore = Math.min(100, Math.round(eyeRatio * 100));
 
     // Weighted Overall Score
@@ -256,8 +293,13 @@ export class ErgonomicCoachEngine {
   /**
    * Recommends the highest-priority stretch based on user check-in history and time
    */
-  public static getRecommendedStretch(state: ErgonomicSessionState): MicroStretchRoutine {
-    const lastCheck = state.postureCheckIns[state.postureCheckIns.length - 1];
+  public static getRecommendedStretch(state?: ErgonomicSessionState | null): MicroStretchRoutine {
+    if (!state) {
+      return MICRO_STRETCH_CATALOG[0];
+    }
+
+    const checkIns = Array.isArray(state.postureCheckIns) ? state.postureCheckIns : [];
+    const lastCheck = checkIns[checkIns.length - 1];
     
     if (lastCheck?.rating === 'slouching') {
       return MICRO_STRETCH_CATALOG.find(s => s.id === 'neck-chin-tuck') || MICRO_STRETCH_CATALOG[0];
@@ -267,12 +309,14 @@ export class ErgonomicCoachEngine {
       return MICRO_STRETCH_CATALOG.find(s => s.id === 'thoracic-open-book') || MICRO_STRETCH_CATALOG[1];
     }
 
-    if (state.currentPostureState === 'sitting' && (Date.now() - state.lastPostureStateChange) > 2700000) {
+    const lastChange = Number.isFinite(state.lastPostureStateChange) ? state.lastPostureStateChange : Date.now();
+    if (state.currentPostureState === 'sitting' && (Date.now() - lastChange) > 2700000) {
       return MICRO_STRETCH_CATALOG.find(s => s.id === 'standing-hip-flexor-lunge') || MICRO_STRETCH_CATALOG[3];
     }
 
     // Default rotation based on completed stretches count
-    const index = state.completedStretches.length % MICRO_STRETCH_CATALOG.length;
+    const completedStretches = Array.isArray(state.completedStretches) ? state.completedStretches : [];
+    const index = completedStretches.length % MICRO_STRETCH_CATALOG.length;
     return MICRO_STRETCH_CATALOG[index];
   }
 
@@ -291,4 +335,3 @@ export class ErgonomicCoachEngine {
     return computeWeeklyDeskSummary(records, targetRatio);
   }
 }
-

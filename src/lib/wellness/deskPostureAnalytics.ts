@@ -95,8 +95,8 @@ export function calculateSitStandRatio(sittingSeconds: number, standingSeconds: 
   standingHours: number;
   totalHours: number;
 } {
-  const safeSit = Math.max(0, sittingSeconds);
-  const safeStand = Math.max(0, standingSeconds);
+  const safeSit = Number.isFinite(sittingSeconds) ? Math.max(0, sittingSeconds) : 0;
+  const safeStand = Number.isFinite(standingSeconds) ? Math.max(0, standingSeconds) : 0;
   const totalSeconds = safeSit + safeStand;
 
   if (totalSeconds === 0) {
@@ -135,14 +135,18 @@ export function evaluatePostureCompliance(
   standingSeconds: number,
   targetRatio = 2.0
 ): DailyPostureRecord['complianceStatus'] {
-  const total = sittingSeconds + standingSeconds;
+  const safeSit = Number.isFinite(sittingSeconds) ? Math.max(0, sittingSeconds) : 0;
+  const safeStand = Number.isFinite(standingSeconds) ? Math.max(0, standingSeconds) : 0;
+  const safeTarget = Number.isFinite(targetRatio) && targetRatio > 0 ? targetRatio : 2.0;
+
+  const total = safeSit + safeStand;
   if (total < 600) return 'low_activity'; // Under 10 minutes total
 
-  const standingPct = (standingSeconds / total) * 100;
+  const standingPct = (safeStand / total) * 100;
 
-  // Ideal target band based on targetRatio:
+  // Ideal target band based on safeTarget:
   // e.g., target 2:1 -> standing ~33%, optimal range 28%-42%
-  const targetStandingPct = 100 / (targetRatio + 1);
+  const targetStandingPct = 100 / (safeTarget + 1);
 
   if (standingPct >= targetStandingPct * 0.85 && standingPct <= targetStandingPct * 1.35) {
     return 'optimal';
@@ -160,7 +164,8 @@ export function evaluatePostureCompliance(
  * Standing burns roughly ~0.65 kcal/minute over resting seated posture (~40 kcal/hour).
  */
 export function estimateStandingCaloriesBurned(standingSeconds: number): number {
-  const standingMinutes = standingSeconds / 60;
+  const safeStand = Number.isFinite(standingSeconds) ? Math.max(0, standingSeconds) : 0;
+  const standingMinutes = safeStand / 60;
   return Math.round(standingMinutes * 0.65);
 }
 
@@ -168,7 +173,7 @@ export function estimateStandingCaloriesBurned(standingSeconds: number): number 
  * Formats seconds into human-readable hours and minutes (e.g., "3h 24m" or "45m")
  */
 export function formatDurationHoursMinutes(totalSeconds: number): string {
-  const safe = Math.max(0, Math.round(totalSeconds));
+  const safe = Number.isFinite(totalSeconds) ? Math.max(0, Math.round(totalSeconds)) : 0;
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
 
@@ -190,19 +195,23 @@ export function buildDailyPostureRecord(params: {
   targetRatio?: number;
   notes?: string;
 }): DailyPostureRecord {
-  const target = params.targetRatio ?? 2.0;
-  const ratioMetrics = calculateSitStandRatio(params.sittingSeconds, params.standingSeconds);
-  const compliance = evaluatePostureCompliance(params.sittingSeconds, params.standingSeconds, target);
-  const calories = estimateStandingCaloriesBurned(params.standingSeconds);
+  const target = Number.isFinite(params.targetRatio) && (params.targetRatio ?? 0) > 0 ? (params.targetRatio as number) : 2.0;
+  const safeSit = Number.isFinite(params.sittingSeconds) ? Math.max(0, Math.round(params.sittingSeconds)) : 0;
+  const safeStand = Number.isFinite(params.standingSeconds) ? Math.max(0, Math.round(params.standingSeconds)) : 0;
+  const safeTrans = Number.isFinite(params.transitionsCount) ? Math.max(0, Math.round(params.transitionsCount as number)) : 0;
+
+  const ratioMetrics = calculateSitStandRatio(safeSit, safeStand);
+  const compliance = evaluatePostureCompliance(safeSit, safeStand, target);
+  const calories = estimateStandingCaloriesBurned(safeStand);
 
   return {
-    id: `posture-${params.date}`,
-    date: params.date,
-    dayOfWeek: params.dayOfWeek,
-    dayName: params.dayName,
-    sittingSeconds: Math.round(params.sittingSeconds),
-    standingSeconds: Math.round(params.standingSeconds),
-    transitionsCount: params.transitionsCount ?? 0,
+    id: `posture-${params.date || 'unspecified'}`,
+    date: params.date || new Date().toISOString().split('T')[0],
+    dayOfWeek: params.dayOfWeek || 'Mon',
+    dayName: params.dayName || 'Monday',
+    sittingSeconds: safeSit,
+    standingSeconds: safeStand,
+    transitionsCount: safeTrans,
     targetRatio: target,
     actualRatio: ratioMetrics.ratio,
     ratioDisplay: ratioMetrics.display,
@@ -218,10 +227,11 @@ export function buildDailyPostureRecord(params: {
  * Computes weekly summary analytics from a 7-day array of DailyPostureRecords
  */
 export function computeWeeklyDeskSummary(
-  dailyRecords: DailyPostureRecord[],
+  dailyRecords?: DailyPostureRecord[] | null,
   targetRatio = 2.0
 ): WeeklyDeskSummaryAnalytics {
-  const records = [...dailyRecords];
+  const records = Array.isArray(dailyRecords) ? dailyRecords.filter((r): r is DailyPostureRecord => Boolean(r)) : [];
+  const safeTargetRatio = Number.isFinite(targetRatio) && targetRatio > 0 ? targetRatio : 2.0;
 
   let totalSitting = 0;
   let totalStanding = 0;
@@ -236,11 +246,15 @@ export function computeWeeklyDeskSummary(
   let maxSittingSec = -1;
 
   records.forEach((record) => {
-    totalSitting += record.sittingSeconds;
-    totalStanding += record.standingSeconds;
-    totalTransitions += record.transitionsCount;
+    const sitSec = Number.isFinite(record.sittingSeconds) ? Math.max(0, record.sittingSeconds) : 0;
+    const standSec = Number.isFinite(record.standingSeconds) ? Math.max(0, record.standingSeconds) : 0;
+    const transCount = Number.isFinite(record.transitionsCount) ? Math.max(0, record.transitionsCount) : 0;
 
-    const dayTotal = record.sittingSeconds + record.standingSeconds;
+    totalSitting += sitSec;
+    totalStanding += standSec;
+    totalTransitions += transCount;
+
+    const dayTotal = sitSec + standSec;
     if (dayTotal > 1800) {
       activeDays += 1;
       if (record.complianceStatus === 'optimal' || record.complianceStatus === 'good') {
@@ -248,21 +262,21 @@ export function computeWeeklyDeskSummary(
       }
     }
 
-    if (record.standingSeconds > maxStandingSec) {
-      maxStandingSec = record.standingSeconds;
+    if (standSec > maxStandingSec) {
+      maxStandingSec = standSec;
       peakStandingDay = {
-        day: record.dayName,
-        hours: Math.floor(record.standingSeconds / 3600),
-        minutes: Math.floor((record.standingSeconds % 3600) / 60),
+        day: record.dayName || 'Unknown',
+        hours: Math.floor(standSec / 3600),
+        minutes: Math.floor((standSec % 3600) / 60),
       };
     }
 
-    if (record.sittingSeconds > maxSittingSec) {
-      maxSittingSec = record.sittingSeconds;
+    if (sitSec > maxSittingSec) {
+      maxSittingSec = sitSec;
       mostSedentaryDay = {
-        day: record.dayName,
-        hours: Math.floor(record.sittingSeconds / 3600),
-        minutes: Math.floor((record.sittingSeconds % 3600) / 60),
+        day: record.dayName || 'Unknown',
+        hours: Math.floor(sitSec / 3600),
+        minutes: Math.floor((sitSec % 3600) / 60),
       };
     }
   });
@@ -306,6 +320,10 @@ export function computeWeeklyDeskSummary(
       weeklyGradeDescription =
         'Critical sedentary overload. Over 90% of desk time was seated uninterrupted.';
     }
+  } else if (activeDays === 0) {
+    weeklyErgonomicGrade = 'D';
+    weeklyGradeDescription =
+      'No active desk sessions logged this week. Check into your workstation to track posture.';
   }
 
   // Key Insights Generator
@@ -369,9 +387,12 @@ export function computeWeeklyDeskSummary(
     'Pair each desk transition with a quick 30-second shoulder blade pinch or hip flexor stretch.'
   );
 
-  const startDate = records[0]?.date || '2026-10-12';
-  const endDate = records[records.length - 1]?.date || '2026-10-18';
-  const weekLabel = `${records[0]?.dayOfWeek || 'Mon'} - ${records[records.length - 1]?.dayOfWeek || 'Sun'}`;
+  const nowIsoDate = new Date().toISOString().split('T')[0];
+  const startDate = records[0]?.date || nowIsoDate;
+  const endDate = records[records.length - 1]?.date || nowIsoDate;
+  const weekLabel = records.length > 0
+    ? `${records[0]?.dayOfWeek || 'Mon'} - ${records[records.length - 1]?.dayOfWeek || 'Sun'}`
+    : 'No Active Week';
 
   return {
     weekLabel,
@@ -384,7 +405,7 @@ export function computeWeeklyDeskSummary(
     standingPercentage: ratioMetrics.standingPct,
     overallRatio: ratioMetrics.ratio,
     overallRatioFormatted: ratioMetrics.display,
-    targetRatio,
+    targetRatio: safeTargetRatio,
     averageDailySittingMinutes,
     averageDailyStandingMinutes,
     totalTransitionsCount: totalTransitions,
@@ -407,6 +428,7 @@ export function computeWeeklyDeskSummary(
  * Anchored to the past 7 days relative to today.
  */
 export function generateSampleWeeklyPostureHistory(targetRatio = 2.0): DailyPostureRecord[] {
+  const safeTarget = Number.isFinite(targetRatio) && targetRatio > 0 ? targetRatio : 2.0;
   const daysMeta = [
     { dayOfWeek: 'Mon', dayName: 'Monday', sitHrs: 5.2, standHrs: 2.1, transitions: 7, notes: 'Focus work & standup' },
     { dayOfWeek: 'Tue', dayName: 'Tuesday', sitHrs: 4.8, standHrs: 2.6, transitions: 9, notes: 'Optimal 1.8:1 ratio achieved' },
@@ -437,7 +459,7 @@ export function generateSampleWeeklyPostureHistory(targetRatio = 2.0): DailyPost
       sittingSeconds: sitSec,
       standingSeconds: standSec,
       transitionsCount: meta.transitions,
-      targetRatio,
+      targetRatio: safeTarget,
       notes: meta.notes,
     });
   });
@@ -447,41 +469,46 @@ export function generateSampleWeeklyPostureHistory(targetRatio = 2.0): DailyPost
  * Syncs the live session into today's record in the 7-day records list
  */
 export function syncLiveSessionToDailyRecords(
-  existingRecords: DailyPostureRecord[],
-  liveSittingSeconds: number,
-  liveStandingSeconds: number,
+  existingRecords?: DailyPostureRecord[] | null,
+  liveSittingSeconds: number = 0,
+  liveStandingSeconds: number = 0,
   transitionsCount = 0,
   targetRatio = 2.0
 ): DailyPostureRecord[] {
+  const safeTarget = Number.isFinite(targetRatio) && targetRatio > 0 ? targetRatio : 2.0;
   const now = new Date();
   const currentDayIndex = (now.getDay() + 6) % 7; // 0=Mon..6=Sun
   const dateStr = now.toISOString().split('T')[0];
 
-  const records = existingRecords.length === 7
+  const records = Array.isArray(existingRecords) && existingRecords.length === 7
     ? [...existingRecords]
-    : generateSampleWeeklyPostureHistory(targetRatio);
+    : generateSampleWeeklyPostureHistory(safeTarget);
 
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const dayShorts = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  const targetIdx = records.findIndex((r) => r.date === dateStr || r.dayOfWeek === dayShorts[currentDayIndex]);
+  const targetIdx = records.findIndex((r) => r && (r.date === dateStr || r.dayOfWeek === dayShorts[currentDayIndex]));
 
   if (targetIdx !== -1) {
     const existing = records[targetIdx];
+    const safeLiveSit = Number.isFinite(liveSittingSeconds) ? Math.max(0, liveSittingSeconds) : 0;
+    const safeLiveStand = Number.isFinite(liveStandingSeconds) ? Math.max(0, liveStandingSeconds) : 0;
+    const safeTransitions = Number.isFinite(transitionsCount) ? Math.max(0, transitionsCount) : 0;
+
     // Incorporate live session time
-    const updatedSitting = Math.max(existing.sittingSeconds, liveSittingSeconds);
-    const updatedStanding = Math.max(existing.standingSeconds, liveStandingSeconds);
-    const updatedTransitions = Math.max(existing.transitionsCount, transitionsCount);
+    const updatedSitting = Math.max(existing?.sittingSeconds ?? 0, safeLiveSit);
+    const updatedStanding = Math.max(existing?.standingSeconds ?? 0, safeLiveStand);
+    const updatedTransitions = Math.max(existing?.transitionsCount ?? 0, safeTransitions);
 
     records[targetIdx] = buildDailyPostureRecord({
-      date: existing.date || dateStr,
-      dayOfWeek: existing.dayOfWeek || dayShorts[currentDayIndex],
-      dayName: existing.dayName || dayNames[currentDayIndex],
+      date: existing?.date || dateStr,
+      dayOfWeek: existing?.dayOfWeek || dayShorts[currentDayIndex],
+      dayName: existing?.dayName || dayNames[currentDayIndex],
       sittingSeconds: updatedSitting,
       standingSeconds: updatedStanding,
       transitionsCount: updatedTransitions,
-      targetRatio,
-      notes: existing.notes || 'Live telemetry synced',
+      targetRatio: safeTarget,
+      notes: existing?.notes || 'Live telemetry synced',
     });
   }
 

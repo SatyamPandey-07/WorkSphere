@@ -31,37 +31,99 @@ export interface PeerSprintIntention {
   isCompleted: boolean;
 }
 
+interface ActiveTrackNode {
+  source: AudioBufferSourceNode;
+  filter: BiquadFilterNode;
+  panner: StereoPannerNode;
+  gain: GainNode;
+  volume: number;
+  pan: number;
+  stopped: boolean;
+}
+
 export class AmbientAudioSynthesizer {
   private ctx: AudioContext | null = null;
-  private noiseNodes: Map<string, { gain: GainNode; panner: StereoPannerNode }> = new Map();
+  private noiseNodes: Map<string, ActiveTrackNode> = new Map();
   private isMuted: boolean = false;
+  private isDisposed: boolean = false;
+
+  constructor(audioContext?: AudioContext) {
+    if (audioContext) {
+      this.ctx = audioContext;
+    }
+  }
 
   public init() {
+    if (this.isDisposed) return;
     if (!this.ctx && typeof window !== "undefined") {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      this.ctx = new AudioCtx();
+      if (AudioCtx) {
+        this.ctx = new AudioCtx();
+      }
     }
     if (this.ctx && this.ctx.state === "suspended") {
-      this.ctx.resume();
+      try {
+        this.ctx.resume();
+      } catch (_) {}
     }
+  }
+
+  public getContext(): AudioContext | null {
+    return this.ctx;
+  }
+
+  public isAudioMuted(): boolean {
+    return this.isMuted;
+  }
+
+  public isPlaying(trackId: string): boolean {
+    const node = this.noiseNodes.get(trackId);
+    return Boolean(node && !node.stopped);
+  }
+
+  public getPlayingTracks(): string[] {
+    const playing: string[] = [];
+    for (const [id, node] of this.noiseNodes.entries()) {
+      if (!node.stopped) {
+        playing.push(id);
+      }
+    }
+    return playing;
   }
 
   /**
    * Generates continuous filtered noise buffers for rain / cafe / ambient textures.
    */
   public playTrack(trackId: SoundTrackState["id"], volume: number, pan: number) {
+    if (this.isDisposed) return;
     this.init();
     if (!this.ctx) return;
 
+    const safeVol = typeof volume === "number" && Number.isFinite(volume)
+      ? Math.max(0, Math.min(1, volume))
+      : 0.5;
+    const safePan = typeof pan === "number" && Number.isFinite(pan)
+      ? Math.max(-1, Math.min(1, pan))
+      : 0;
+
     if (this.noiseNodes.has(trackId)) {
       const node = this.noiseNodes.get(trackId)!;
-      node.gain.gain.setValueAtTime(this.isMuted ? 0 : volume * 0.3, this.ctx.currentTime);
-      node.panner.pan.setValueAtTime(pan, this.ctx.currentTime);
-      return;
+      if (!node.stopped) {
+        node.volume = safeVol;
+        node.pan = safePan;
+        const targetGain = this.isMuted ? 0 : safeVol * 0.3;
+        try {
+          node.gain.gain.setValueAtTime(targetGain, this.ctx.currentTime);
+          node.panner.pan.setValueAtTime(safePan, this.ctx.currentTime);
+        } catch (_) {}
+        return;
+      }
+      this.stopTrack(trackId);
     }
 
-    const bufferSize = this.ctx.sampleRate * 2;
-    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const sampleRate = this.ctx.sampleRate || 48000;
+    const bufferSize = sampleRate * 2;
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, sampleRate);
     const output = noiseBuffer.getChannelData(0);
 
     let lastOut = 0.0;
@@ -73,7 +135,7 @@ export class AmbientAudioSynthesizer {
         lastOut = output[i];
       } else if (trackId === "binaural") {
         // Low frequency hum
-        output[i] = Math.sin((i / this.ctx.sampleRate) * 2 * Math.PI * 140) * 0.5;
+        output[i] = Math.sin((i / sampleRate) * 2 * Math.PI * 140) * 0.5;
       } else {
         // Pinkish ambient murmur
         output[i] = (lastOut + 0.05 * white) / 1.05;
@@ -91,10 +153,11 @@ export class AmbientAudioSynthesizer {
     filter.frequency.setValueAtTime(trackId === "rain" ? 800 : 400, this.ctx.currentTime);
 
     const panner = this.ctx.createStereoPanner();
-    panner.pan.setValueAtTime(pan, this.ctx.currentTime);
+    panner.pan.setValueAtTime(safePan, this.ctx.currentTime);
 
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(this.isMuted ? 0 : volume * 0.3, this.ctx.currentTime);
+    const initialGain = this.isMuted ? 0 : safeVol * 0.3;
+    gain.gain.setValueAtTime(initialGain, this.ctx.currentTime);
 
     whiteNoise.connect(filter);
     filter.connect(panner);
@@ -102,15 +165,39 @@ export class AmbientAudioSynthesizer {
     gain.connect(this.ctx.destination);
 
     whiteNoise.start();
-    this.noiseNodes.set(trackId, { gain, panner });
+
+    this.noiseNodes.set(trackId, {
+      source: whiteNoise,
+      filter,
+      panner,
+      gain,
+      volume: safeVol,
+      pan: safePan,
+      stopped: false,
+    });
   }
 
   public stopTrack(trackId: string) {
     if (this.noiseNodes.has(trackId)) {
       const node = this.noiseNodes.get(trackId)!;
-      if (this.ctx) {
-        node.gain.gain.setValueAtTime(0, this.ctx.currentTime);
+      if (!node.stopped) {
+        node.stopped = true;
+        if (this.ctx) {
+          try {
+            node.gain.gain.setValueAtTime(0, this.ctx.currentTime);
+          } catch (_) {}
+        }
+        try {
+          node.source.stop();
+        } catch (_) {}
+        try {
+          node.source.disconnect();
+          node.filter.disconnect();
+          node.panner.disconnect();
+          node.gain.disconnect();
+        } catch (_) {}
       }
+      this.noiseNodes.delete(trackId);
     }
   }
 
@@ -118,32 +205,55 @@ export class AmbientAudioSynthesizer {
    * Plays a gentle acoustic chime when Pomodoro intervals transition.
    */
   public playChime() {
+    if (this.isDisposed) return;
     this.init();
     if (!this.ctx || this.isMuted) return;
 
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
 
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(587.33, this.ctx.currentTime); // D5
-    osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.3); // A5
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, this.ctx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.3); // A5
 
-    gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.8);
+      gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.8);
 
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
 
-    osc.start();
-    osc.stop(this.ctx.currentTime + 1.8);
+      osc.onended = () => {
+        try {
+          osc.disconnect();
+          gain.disconnect();
+        } catch (_) {}
+      };
+
+      osc.start();
+      osc.stop(this.ctx.currentTime + 1.8);
+    } catch (_) {}
   }
 
   public setMuted(muted: boolean) {
-    this.isMuted = muted;
+    this.isMuted = Boolean(muted);
     if (this.ctx) {
       for (const [_, node] of this.noiseNodes.entries()) {
-        node.gain.gain.setValueAtTime(muted ? 0 : 0.15, this.ctx.currentTime);
+        if (!node.stopped) {
+          const targetGain = this.isMuted ? 0 : node.volume * 0.3;
+          try {
+            node.gain.gain.setValueAtTime(targetGain, this.ctx.currentTime);
+          } catch (_) {}
+        }
       }
     }
+  }
+
+  public dispose() {
+    this.isDisposed = true;
+    for (const trackId of Array.from(this.noiseNodes.keys())) {
+      this.stopTrack(trackId);
+    }
+    this.noiseNodes.clear();
   }
 }

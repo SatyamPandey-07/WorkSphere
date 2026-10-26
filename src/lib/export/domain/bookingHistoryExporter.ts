@@ -13,7 +13,7 @@ export interface BookingHistoryExportItem {
   confirmationId?: string | null;
   date: string;
   time: string;
-  duration?: number | null;
+  duration?: number | string | null;
   seatNumber?: string | null;
   status?: "CONFIRMED" | "PENDING" | "CANCELLED" | string | null;
   createdAt?: string | Date | null;
@@ -32,7 +32,7 @@ export interface BookingHistoryCsvOptions {
 }
 
 export function formatBookingStatus(status?: string | null): string {
-  if (!status) return "Confirmed";
+  if (!status || typeof status !== "string") return "Confirmed";
   const s = status.toUpperCase();
   if (s === "CONFIRMED") return "Confirmed";
   if (s === "PENDING") return "Pending";
@@ -40,9 +40,11 @@ export function formatBookingStatus(status?: string | null): string {
   return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 }
 
-function getSafeDurationHours(duration?: number | null): number {
-  const raw = duration ?? 60;
-  const minutes = !Number.isFinite(raw) || raw < 0 ? 0 : raw;
+function getSafeDurationHours(duration?: number | string | null): number {
+  if (duration === null || duration === undefined) return 1;
+  const num = typeof duration === "number" ? duration : Number(duration);
+  const raw = Number.isFinite(num) ? num : 60;
+  const minutes = raw < 0 ? 0 : raw;
   return minutes / 60;
 }
 
@@ -50,10 +52,11 @@ export function generateBookingsCSV(
   bookings: BookingHistoryExportItem[],
   options: BookingHistoryCsvOptions = {},
 ): string {
+  const safeOptions = options || {};
   const safeBookings = Array.isArray(bookings)
     ? bookings.filter((b): b is BookingHistoryExportItem => Boolean(b && typeof b === "object"))
     : [];
-  const builder = new CsvBuilder<BookingHistoryExportItem>({ lineDelimiter: "\n" });
+  const builder = new CsvBuilder<BookingHistoryExportItem>({ lineDelimiter: "\r\n" });
 
   builder.setColumns([
     {
@@ -62,7 +65,7 @@ export function generateBookingsCSV(
     },
     {
       header: "Venue Name",
-      accessor: (b) => b.venue?.name || options.venueName || "Workspace",
+      accessor: (b) => b.venue?.name || safeOptions.venueName || "Workspace",
     },
     {
       header: "Category",
@@ -87,7 +90,7 @@ export function generateBookingsCSV(
     {
       header: "Duration (mins)",
       accessor: (b) => {
-        const raw = b.duration ?? 60;
+        const raw = b.duration !== null && b.duration !== undefined ? Number(b.duration) : 60;
         return String(!Number.isFinite(raw) || raw < 0 ? 0 : raw);
       },
     },
@@ -146,17 +149,18 @@ export function downloadBookingsCSV(
   bookings: BookingHistoryExportItem[],
   options: BookingHistoryCsvOptions = {},
 ): Blob {
-  const csvContent = generateBookingsCSV(bookings, options);
+  const safeOptions = options || {};
+  const csvContent = generateBookingsCSV(bookings, safeOptions);
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
 
-  const safeVenue = options.venueName
-    ? options.venueName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  const safeVenue = safeOptions.venueName
+    ? safeOptions.venueName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
     : "venue-bookings";
   const today = new Date().toISOString().slice(0, 10);
-  const filename = options.filename || `${safeVenue}-history-${today}.csv`;
+  const filename = safeOptions.filename || `${safeVenue}-history-${today}.csv`;
 
-  const builder = new CsvBuilder();
-  return builder.download.call({ toBlob: () => blob }, filename);
+  triggerBrowserDownload(blob, filename);
+  return blob;
 }
 
 export interface BookingHistoryExcelOptions {
@@ -169,11 +173,12 @@ export function generateBookingsExcel(
   bookings: BookingHistoryExportItem[],
   options: BookingHistoryExcelOptions = {},
 ): string {
+  const safeOptions = options || {};
   const safeBookings = Array.isArray(bookings)
     ? bookings.filter((b): b is BookingHistoryExportItem => Boolean(b && typeof b === "object"))
     : [];
   const builder = new ExcelXmlBuilder<BookingHistoryExportItem>({
-    worksheetName: options.sheetName || "Bookings",
+    worksheetName: safeOptions.sheetName || "Bookings",
     author: "WorkSphere",
   });
 
@@ -186,7 +191,7 @@ export function generateBookingsExcel(
     {
       header: "Venue Name",
       type: "String",
-      accessor: (b) => b.venue?.name || options.venueName || "Workspace",
+      accessor: (b) => b.venue?.name || safeOptions.venueName || "Workspace",
     },
     {
       header: "Category",
@@ -217,7 +222,7 @@ export function generateBookingsExcel(
       header: "Duration (mins)",
       type: "Number",
       accessor: (b) => {
-        const raw = b.duration ?? 60;
+        const raw = b.duration !== null && b.duration !== undefined ? Number(b.duration) : 60;
         return !Number.isFinite(raw) || raw < 0 ? 0 : raw;
       },
     },
@@ -282,17 +287,18 @@ export function downloadBookingsExcel(
   bookings: BookingHistoryExportItem[],
   options: BookingHistoryExcelOptions = {},
 ): Blob {
-  const safeVenue = options.venueName
-    ? options.venueName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  const safeOptions = options || {};
+  const safeVenue = safeOptions.venueName
+    ? safeOptions.venueName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
     : "venue-bookings";
   const today = new Date().toISOString().slice(0, 10);
-  const filename = options.filename || `${safeVenue}-history-${today}.xlsx`;
+  const filename = safeOptions.filename || `${safeVenue}-history-${today}.xlsx`;
   const safeFilename =
     filename.endsWith(".xlsx") || filename.endsWith(".xml")
       ? filename
       : `${filename}.xlsx`;
 
-  const xmlContent = generateBookingsExcel(bookings, options);
+  const xmlContent = generateBookingsExcel(bookings, safeOptions);
   const blob = new Blob([xmlContent], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8",
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Download, Check, FileSpreadsheet } from "lucide-react";
 import {
   BookingHistoryExportItem,
@@ -32,6 +32,15 @@ export function ExportBookingsCSVButton({
   onExport,
 }: ExportBookingsCSVButtonProps) {
   const [downloaded, setDownloaded] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   const displayLabel = label || (format === "xlsx" ? "Export Excel" : "Export CSV");
 
@@ -47,7 +56,10 @@ export function ExportBookingsCSVButton({
     if (onExport) {
       onExport();
     }
-    setTimeout(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
       setDownloaded(false);
     }, 2500);
   };

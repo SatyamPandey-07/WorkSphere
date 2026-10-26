@@ -35,8 +35,18 @@ import NomadPassportCoin from "./NomadPassportCoin";
  */
 export function playPoapMintChime(volume = 0.5): boolean {
   if (typeof window === "undefined") return false;
+  if (typeof volume === "number" && Number.isFinite(volume) && volume <= 0) {
+    return false;
+  }
+  const safeVolume =
+    typeof volume === "number" && Number.isFinite(volume)
+      ? Math.min(1, Math.max(0.001, volume))
+      : 0.5;
+
   try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return false;
     const ctx = new AudioCtx();
 
@@ -59,7 +69,7 @@ export function playPoapMintChime(volume = 0.5): boolean {
       osc.frequency.setValueAtTime(freq, startTime);
 
       gain.gain.setValueAtTime(0.001, startTime);
-      gain.gain.linearRampToValueAtTime(gainMul * volume, startTime + 0.03);
+      gain.gain.linearRampToValueAtTime(gainMul * safeVolume, startTime + 0.03);
       gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       osc.connect(gain);
@@ -70,11 +80,14 @@ export function playPoapMintChime(volume = 0.5): boolean {
     });
 
     // Cleanly close AudioContext after chime finishes to prevent memory leaks
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (ctx.state !== "closed") {
         ctx.close().catch(() => {});
       }
     }, 1800);
+    if (typeof timer === "object" && typeof (timer as any).unref === "function") {
+      (timer as any).unref();
+    }
 
     return true;
   } catch {

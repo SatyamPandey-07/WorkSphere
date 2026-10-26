@@ -14,6 +14,8 @@ describe("CircadianFilter Astronomical Engine", () => {
   const SAN_FRANCISCO = { lat: 37.7749, lng: -122.4194 };
   const LONDON = { lat: 51.5074, lng: -0.1278 };
   const EQUATOR = { lat: 0, lng: 0 };
+  const NORTH_POLE = { lat: 90, lng: 0 };
+  const SOUTH_POLE = { lat: -90, lng: 0 };
 
   describe("calculateSolarTimes", () => {
     it("computes solar noon, sunrise, and sunset in chronological order", () => {
@@ -56,6 +58,42 @@ describe("CircadianFilter Astronomical Engine", () => {
       expect(midnightTimes.solarPhase).toBe("night");
       expect(midnightTimes.solarElevationDeg).toBeLessThan(-80);
     });
+
+    it("handles nullish, string, or invalid dates safely without throwing", () => {
+      expect(() => calculateSolarTimes(0, 0, null as any)).not.toThrow();
+      expect(() => calculateSolarTimes(0, 0, undefined as any)).not.toThrow();
+      expect(() => calculateSolarTimes(0, 0, "invalid-date" as any)).not.toThrow();
+      expect(() => calculateSolarTimes(0, 0, 1774358400000 as any)).not.toThrow();
+
+      const times = calculateSolarTimes(0, 0, null as any);
+      expect(Number.isNaN(times.sunrise.getTime())).toBe(false);
+      expect(Number.isNaN(times.sunset.getTime())).toBe(false);
+      expect(Number.isNaN(times.solarNoon.getTime())).toBe(false);
+    });
+
+    it("handles non-finite or NaN coordinates without NaN propagation", () => {
+      const times = calculateSolarTimes(NaN, NaN);
+      expect(Number.isNaN(times.sunrise.getTime())).toBe(false);
+      expect(Number.isNaN(times.sunset.getTime())).toBe(false);
+      expect(Number.isNaN(times.solarElevationDeg)).toBe(false);
+      expect(Number.isFinite(times.solarElevationDeg)).toBe(true);
+    });
+
+    it("evaluates polar day and polar night boundary conditions at the poles", () => {
+      // Northern summer solstice at North Pole: polar day (sun does not set)
+      const summerDate = new Date(Date.UTC(2026, 5, 21, 12, 0, 0));
+      const poleSummer = calculateSolarTimes(NORTH_POLE.lat, NORTH_POLE.lng, summerDate);
+      expect(poleSummer.daylightDurationMinutes).toBe(1440);
+
+      // Northern winter solstice at North Pole: polar night (sun does not rise)
+      const winterDate = new Date(Date.UTC(2026, 11, 21, 12, 0, 0));
+      const poleWinter = calculateSolarTimes(NORTH_POLE.lat, NORTH_POLE.lng, winterDate);
+      expect(poleWinter.daylightDurationMinutes).toBe(0);
+
+      // Southern winter (northern summer) at South Pole: polar night
+      const southWinter = calculateSolarTimes(SOUTH_POLE.lat, SOUTH_POLE.lng, summerDate);
+      expect(southWinter.daylightDurationMinutes).toBe(0);
+    });
   });
 
   describe("calculateCircadianColorTemperature", () => {
@@ -79,6 +117,24 @@ describe("CircadianFilter Astronomical Engine", () => {
       const temp = calculateCircadianColorTemperature(LONDON.lat, LONDON.lng, date);
       expect(temp).toBeGreaterThanOrEqual(DEFAULT_MIN_COLOR_TEMP);
       expect(temp).toBeLessThanOrEqual(DEFAULT_MAX_COLOR_TEMP);
+    });
+
+    it("corrects inverted min and max color temperature arguments", () => {
+      const date = new Date(Date.UTC(2026, 2, 20, 12, 0, 0));
+      // Inverted: min=6500, max=2700
+      const temp = calculateCircadianColorTemperature(EQUATOR.lat, EQUATOR.lng, date, 6500, 2700);
+      expect(temp).toBe(6500);
+
+      const nightDate = new Date(Date.UTC(2026, 2, 20, 0, 0, 0));
+      const nightTemp = calculateCircadianColorTemperature(EQUATOR.lat, EQUATOR.lng, nightDate, 6500, 2700);
+      expect(nightTemp).toBe(2700);
+    });
+
+    it("safely handles non-finite or negative temperature bounds", () => {
+      const date = new Date(Date.UTC(2026, 2, 20, 12, 0, 0));
+      const temp = calculateCircadianColorTemperature(EQUATOR.lat, EQUATOR.lng, date, NaN, -100);
+      expect(Number.isFinite(temp)).toBe(true);
+      expect(temp).toBeGreaterThanOrEqual(1000);
     });
   });
 
@@ -104,6 +160,13 @@ describe("CircadianFilter Astronomical Engine", () => {
       expect(tint).toBeGreaterThanOrEqual(0);
       expect(tint).toBeLessThanOrEqual(1);
     });
+
+    it("prevents NaN in formatCssAmberTint when given non-finite inputs", () => {
+      expect(formatCssAmberTint(NaN)).toBe("0");
+      expect(formatCssAmberTint(Infinity)).toBe("1");
+      expect(formatCssAmberTint(-5)).toBe("0");
+      expect(formatCssAmberTint(null as any)).toBe("0");
+    });
   });
 
   describe("applyCircadianAmberTint", () => {
@@ -117,6 +180,14 @@ describe("CircadianFilter Astronomical Engine", () => {
       applyCircadianAmberTint(0.65, mockElement, 3200);
       expect(mockElement.style.getPropertyValue("--screen-amber-tint")).toBe("0.65");
       expect(mockElement.style.getPropertyValue("--screen-color-temp")).toBe("3200K");
+    });
+
+    it("does not set invalid color temperature variable when given NaN or negative", () => {
+      applyCircadianAmberTint(0.5, mockElement, NaN);
+      expect(mockElement.style.getPropertyValue("--screen-color-temp")).toBe("");
+
+      applyCircadianAmberTint(0.5, mockElement, -100);
+      expect(mockElement.style.getPropertyValue("--screen-color-temp")).toBe("");
     });
 
     it("gracefully handles null or missing elements without throwing", () => {
@@ -171,6 +242,22 @@ describe("CircadianFilter Astronomical Engine", () => {
       manager.stop();
       jest.advanceTimersByTime(10000);
       expect(spyApply).toHaveBeenCalledTimes(3); // No more ticks after stop
+    });
+
+    it("safely falls back to default interval when given non-positive or NaN intervalMs", () => {
+      const manager = new CircadianFilterManager({
+        latitude: LONDON.lat,
+        longitude: LONDON.lng,
+      });
+
+      const spyApply = jest.spyOn(manager, "apply");
+      manager.start(NaN);
+      expect(spyApply).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(60000);
+      expect(spyApply).toHaveBeenCalledTimes(2);
+
+      manager.stop();
     });
   });
 });

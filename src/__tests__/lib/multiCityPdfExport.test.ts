@@ -58,6 +58,43 @@ describe("MultiCity PDF Export Utility (src/lib/multiCityPdfExport.ts)", () => {
     expect(emptyMetrics.outletDensityPct).toBe(0);
   });
 
+  it("handles null and undefined city, venues, and corrupted fields in computeCityMetrics", () => {
+    const nullCityMetrics = computeCityMetrics(null as any, null as any);
+    expect(nullCityMetrics.totalVenues).toBe(0);
+    expect(nullCityMetrics.avgWifiSpeed).toBe(0);
+    expect(nullCityMetrics.city).toBe("Unknown City");
+
+    const corruptedVenues: any[] = [
+      null,
+      undefined,
+      { id: "c1", address: null, wifiSpeed: NaN },
+      { id: "c2", address: 12345, wifiSpeed: -50, hasOutlets: true },
+      { id: "c3", address: "Austin Downtown", wifiSpeed: 300, hasOutlets: true, noiseLevel: "quiet" },
+    ];
+
+    const austinMetrics = computeCityMetrics("Austin", corruptedVenues as any);
+    expect(austinMetrics.totalVenues).toBe(1);
+    expect(austinMetrics.avgWifiSpeed).toBe(300);
+    expect(austinMetrics.outletRatio).toBe(100);
+    expect(austinMetrics.quietRatio).toBe(100);
+  });
+
+  it("handles null or empty options in generateMultiCityPdfReport without throwing", async () => {
+    const pdfBytesNull = await generateMultiCityPdfReport(null as any);
+    expect(pdfBytesNull).toBeInstanceOf(Uint8Array);
+    expect(pdfBytesNull.length).toBeGreaterThan(100);
+
+    const pdfBytesEmpty = await generateMultiCityPdfReport({
+      selectedCities: [],
+      venues: [],
+    });
+    expect(pdfBytesEmpty).toBeInstanceOf(Uint8Array);
+    expect(pdfBytesEmpty.length).toBeGreaterThan(100);
+
+    const doc = await PDFDocument.load(pdfBytesEmpty);
+    expect(doc.getPageCount()).toBe(1);
+  });
+
   it("generates a valid binary PDF document given multiple selected cities", async () => {
     const pdfBytes = await generateMultiCityPdfReport({
       selectedCities: ["San Francisco", "Tokyo"],
@@ -66,6 +103,30 @@ describe("MultiCity PDF Export Utility (src/lib/multiCityPdfExport.ts)", () => {
 
     expect(pdfBytes).toBeInstanceOf(Uint8Array);
     expect(pdfBytes.length).toBeGreaterThan(100);
+
+    const doc = await PDFDocument.load(pdfBytes);
+    expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders 6+ cities in multi-row grid layout across pages without throwing", async () => {
+    const manyCities = [
+      "San Francisco",
+      "Tokyo",
+      "New York",
+      "London",
+      "Berlin",
+      "Singapore",
+      "Bangalore",
+      "Amsterdam",
+    ];
+
+    const pdfBytes = await generateMultiCityPdfReport({
+      selectedCities: manyCities,
+      venues: mockVenues,
+    });
+
+    expect(pdfBytes).toBeInstanceOf(Uint8Array);
+    expect(pdfBytes.length).toBeGreaterThan(500);
 
     const doc = await PDFDocument.load(pdfBytes);
     expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);

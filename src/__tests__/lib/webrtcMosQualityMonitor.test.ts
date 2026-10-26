@@ -276,4 +276,99 @@ describe("webrtcMosQualityMonitor", () => {
       expect(globalMosQualityMonitor).toBeInstanceOf(WebRtcMosQualityMonitor);
     });
   });
+
+  describe("Input Sanitization and NaN Telemetry Resilience (#6748)", () => {
+    it("calculateRFactor sanitizes NaN, negative, and infinite inputs", () => {
+      expect(calculateRFactor(NaN, 10, 0.01)).toBeGreaterThan(0);
+      expect(calculateRFactor(50, NaN, 0.01)).toBeGreaterThan(0);
+      expect(calculateRFactor(50, 10, NaN)).toBeGreaterThan(0);
+      expect(calculateRFactor(-100, -50, -0.5)).toBeCloseTo(94.2, 1);
+      expect(Number.isFinite(calculateRFactor(NaN, NaN, NaN))).toBe(true);
+    });
+
+    it("calculateMosFromRFactor returns 1.0 for NaN, negative, or non-finite values", () => {
+      expect(calculateMosFromRFactor(NaN)).toBe(1.0);
+      expect(calculateMosFromRFactor(-50)).toBe(1.0);
+      expect(calculateMosFromRFactor(Infinity)).toBe(4.5);
+    });
+
+    it("getTierForMos returns critical for NaN and non-finite values", () => {
+      expect(getTierForMos(NaN).name).toBe("critical");
+      expect(getTierForMos(-1).name).toBe("critical");
+    });
+
+    it("extractNetworkMetricsFromStats handles nullish or malformed reports", () => {
+      expect(extractNetworkMetricsFromStats(null as any)).toBeDefined();
+      expect(extractNetworkMetricsFromStats(undefined as any)).toBeDefined();
+      expect(extractNetworkMetricsFromStats({} as any)).toBeDefined();
+    });
+
+    it("extractNetworkMetricsFromStats ignores NaN and negative metric values", () => {
+      const statsMap = new Map();
+      statsMap.set("pair1", {
+        type: "candidate-pair",
+        state: "succeeded",
+        currentRoundTripTime: NaN,
+      });
+      statsMap.set("remote1", {
+        type: "remote-inbound-rtp",
+        roundTripTime: -0.05,
+        jitter: NaN,
+        packetsLost: -5,
+        fractionLost: NaN,
+      });
+
+      const metrics = extractNetworkMetricsFromStats(statsMap as any);
+      expect(metrics.rttMs).toBeUndefined();
+      expect(metrics.jitterMs).toBeUndefined();
+      expect(metrics.packetsLost).toBeUndefined();
+      expect(metrics.fractionLost).toBeUndefined();
+    });
+
+    it("WebRtcMosQualityMonitor survives NaN telemetry and does not lock into critical", () => {
+      const monitor = new WebRtcMosQualityMonitor({
+        emaAlpha: 0.5,
+        upgradeConsecutiveRequired: 1,
+        hysteresisBuffer: 0,
+      });
+
+      // Ingest corrupted NaN reading
+      const res1 = monitor.updateMetrics({
+        rttMs: NaN,
+        jitterMs: NaN,
+        fractionLost: NaN,
+      });
+      expect(Number.isFinite(res1.mos)).toBe(true);
+      expect(res1.mos).toBeGreaterThanOrEqual(1.0);
+
+      // Ingest good reading - should cleanly upgrade without permanent poisoning
+      const res2 = monitor.updateMetrics({
+        rttMs: 30,
+        jitterMs: 5,
+        fractionLost: 0,
+      });
+      expect(Number.isFinite(res2.mos)).toBe(true);
+      expect(res2.mos).toBeGreaterThan(4.0);
+      expect(monitor.getCurrentTier().name).toBe("excellent");
+    });
+
+    it("WebRtcMosQualityMonitor handles nullish raw inputs gracefully", () => {
+      const monitor = new WebRtcMosQualityMonitor();
+      const res = monitor.updateMetrics(null as any);
+      expect(res.tier).toBeDefined();
+      expect(Number.isFinite(res.mos)).toBe(true);
+    });
+
+    it("applyToPeerConnection safely handles nullish RTCPeerConnection or null senders", async () => {
+      const monitor = new WebRtcMosQualityMonitor();
+      expect(await monitor.applyToPeerConnection(null as any)).toBe(false);
+      expect(await monitor.applyToPeerConnection({} as any)).toBe(false);
+
+      const pcWithNullSender = {
+        getSenders: jest.fn().mockReturnValue([null, { track: null }]),
+      } as unknown as RTCPeerConnection;
+      expect(await monitor.applyToPeerConnection(pcWithNullSender)).toBe(false);
+    });
+  });
+
 });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 export interface Point2D {
@@ -26,6 +25,26 @@ export interface ConstructMeshExtrusionProps {
   onTransformChange?: (transform: Transform3D) => void;
 }
 
+const DEFAULT_TRANSFORM: Transform3D = {
+  rotationX: 15,
+  rotationY: 30,
+  rotationZ: 0,
+  scale: 1,
+  positionX: 0,
+  positionY: 0,
+  positionZ: 0,
+};
+
+const sanitizeTransform = (t: Partial<Transform3D>, fallback: Transform3D): Transform3D => ({
+  rotationX: typeof t.rotationX === 'number' && Number.isFinite(t.rotationX) ? t.rotationX : fallback.rotationX,
+  rotationY: typeof t.rotationY === 'number' && Number.isFinite(t.rotationY) ? t.rotationY : fallback.rotationY,
+  rotationZ: typeof t.rotationZ === 'number' && Number.isFinite(t.rotationZ) ? t.rotationZ : fallback.rotationZ,
+  scale: typeof t.scale === 'number' && Number.isFinite(t.scale) && t.scale > 0 ? t.scale : fallback.scale,
+  positionX: typeof t.positionX === 'number' && Number.isFinite(t.positionX) ? t.positionX : fallback.positionX,
+  positionY: typeof t.positionY === 'number' && Number.isFinite(t.positionY) ? t.positionY : fallback.positionY,
+  positionZ: typeof t.positionZ === 'number' && Number.isFinite(t.positionZ) ? t.positionZ : fallback.positionZ,
+});
+
 export const ConstructMeshExtrusion: React.FC<ConstructMeshExtrusionProps> = ({
   strokePoints = [],
   extrusionDepth = 24,
@@ -36,15 +55,7 @@ export const ConstructMeshExtrusion: React.FC<ConstructMeshExtrusionProps> = ({
   onTransformChange,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [transform, setTransform] = useState<Transform3D>({
-    rotationX: 15,
-    rotationY: 30,
-    rotationZ: 0,
-    scale: 1,
-    positionX: 0,
-    positionY: 0,
-    positionZ: 0,
-  });
+  const [transform, setTransform] = useState<Transform3D>(DEFAULT_TRANSFORM);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'connected' | 'disconnected'>('idle');
 
   // PartyKit Real-time Sync Lifecycle
@@ -54,43 +65,69 @@ export const ConstructMeshExtrusion: React.FC<ConstructMeshExtrusionProps> = ({
       return;
     }
 
+    let isMounted = true;
     let socket: WebSocket | null = null;
+
     try {
       const protocol = partykitHost.startsWith('localhost') ? 'ws' : 'wss';
       socket = new WebSocket(`${protocol}://${partykitHost}/parties/whiteboard/${roomId}`);
 
       socket.onopen = () => {
+        if (!isMounted) return;
         setSyncStatus('connected');
-        socket?.send(JSON.stringify({ type: 'join', payload: { client: 'mesh-extruder' } }));
+        try {
+          socket?.send(JSON.stringify({ type: 'join', payload: { client: 'mesh-extruder' } }));
+        } catch {
+          // ignore send error
+        }
       };
 
       socket.onmessage = (event) => {
+        if (!isMounted) return;
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'sync-transform' && data.payload) {
-            setTransform(data.payload);
-            if (onTransformChange) onTransformChange(data.payload);
+          if (data && data.type === 'sync-transform' && typeof data.payload === 'object' && data.payload !== null) {
+            setTransform((prev) => {
+              const sanitized = sanitizeTransform(data.payload, prev);
+              if (onTransformChange) onTransformChange(sanitized);
+              return sanitized;
+            });
           }
         } catch {
           // ignore parsing error
         }
       };
 
-      socket.onerror = () => setSyncStatus('disconnected');
-      socket.onclose = () => setSyncStatus('disconnected');
+      socket.onerror = () => {
+        if (isMounted) setSyncStatus('disconnected');
+      };
+      socket.onclose = () => {
+        if (isMounted) setSyncStatus('disconnected');
+      };
     } catch {
-      setSyncStatus('disconnected');
+      if (isMounted) setSyncStatus('disconnected');
     }
 
     return () => {
-      if (socket) socket.close();
+      isMounted = false;
+      if (socket) {
+        socket.onopen = null;
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        try {
+          socket.close();
+        } catch {
+          // ignore socket close errors during teardown
+        }
+      }
     };
   }, [partykitHost, roomId, onTransformChange]);
 
   const updateTransform = useCallback(
     (newTransform: Partial<Transform3D>) => {
       setTransform((prev) => {
-        const updated = { ...prev, ...newTransform };
+        const updated = sanitizeTransform(newTransform, prev);
         if (onTransformChange) onTransformChange(updated);
         return updated;
       });
@@ -102,14 +139,15 @@ export const ConstructMeshExtrusion: React.FC<ConstructMeshExtrusionProps> = ({
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       ctx.clearRect(0, 0, width, height);
 
-      const cx = width / 2 + transform.positionX;
-      const cy = height / 2 + transform.positionY;
+      const cx = width / 2 + (Number.isFinite(transform.positionX) ? transform.positionX : 0);
+      const cy = height / 2 + (Number.isFinite(transform.positionY) ? transform.positionY : 0);
 
       ctx.save();
       ctx.translate(cx, cy);
 
-      const radX = (transform.rotationX * Math.PI) / 180;
-      const radY = (transform.rotationY * Math.PI) / 180;
+      const radX = ((transform.rotationX || 0) * Math.PI) / 180;
+      const radY = ((transform.rotationY || 0) * Math.PI) / 180;
+      const safeScale = Number.isFinite(transform.scale) && transform.scale > 0 ? transform.scale : 1;
 
       const project = (x: number, y: number, z: number) => {
         const cosY = Math.cos(radY);
@@ -121,21 +159,44 @@ export const ConstructMeshExtrusion: React.FC<ConstructMeshExtrusionProps> = ({
         const rotZ = -x * sinY + z * cosY;
         const rotY = y * cosX - rotZ * sinX;
 
+        const px = rotX * safeScale;
+        const py = rotY * safeScale;
+
         return {
-          px: rotX * transform.scale,
-          py: rotY * transform.scale,
+          px: Number.isFinite(px) ? px : 0,
+          py: Number.isFinite(py) ? py : 0,
         };
       };
 
-      const points = strokePoints.length >= 3 ? strokePoints : [
-        { x: -50, y: -50 },
-        { x: 50, y: -50 },
-        { x: 70, y: 50 },
-        { x: -70, y: 50 },
-      ];
+      const safeDepth =
+        typeof extrusionDepth === 'number' && Number.isFinite(extrusionDepth) && extrusionDepth > 0
+          ? extrusionDepth
+          : 24;
 
-      const frontFace = points.map((p) => project(p.x, p.y, -extrusionDepth / 2));
-      const backFace = points.map((p) => project(p.x, p.y, extrusionDepth / 2));
+      const validPoints: Point2D[] = Array.isArray(strokePoints)
+        ? strokePoints.filter(
+            (p): p is Point2D =>
+              p !== null &&
+              typeof p === 'object' &&
+              typeof p.x === 'number' &&
+              Number.isFinite(p.x) &&
+              typeof p.y === 'number' &&
+              Number.isFinite(p.y)
+          )
+        : [];
+
+      const points =
+        validPoints.length >= 3
+          ? validPoints
+          : [
+              { x: -50, y: -50 },
+              { x: 50, y: -50 },
+              { x: 70, y: 50 },
+              { x: -70, y: 50 },
+            ];
+
+      const frontFace = points.map((p) => project(p.x, p.y, -safeDepth / 2));
+      const backFace = points.map((p) => project(p.x, p.y, safeDepth / 2));
 
       // 1. Emissive Solid Fill
       ctx.fillStyle = emissiveColor;
@@ -223,15 +284,17 @@ export const ConstructMeshExtrusion: React.FC<ConstructMeshExtrusionProps> = ({
     };
   }, [renderMesh]);
 
+  const activePointsCount = Array.isArray(strokePoints) ? strokePoints.length : 0;
+
   return (
     <div className="relative w-full h-full min-h-96 flex items-center justify-center bg-black/40 rounded-xl overflow-hidden border border-emerald-950/40">
-      <canvas ref={canvasRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+      <canvas ref={canvasRef} data-testid="mesh-canvas" className="w-full h-full cursor-grab active:cursor-grabbing" />
 
       <div className="absolute bottom-3 left-3 flex flex-col gap-1 p-2.5 rounded-lg bg-black/80 border border-emerald-500/20 text-[11px] font-mono text-emerald-300">
         <div className="flex items-center gap-2">
           <span>MESH EXTRUSION:</span>
-          <span className="text-emerald-400 font-bold">{strokePoints.length || 4} PTS</span>
-          <span className="text-xs text-emerald-500/80">({syncStatus})</span>
+          <span className="text-emerald-400 font-bold">{activePointsCount || 4} PTS</span>
+          <span data-testid="sync-status" className="text-xs text-emerald-500/80">({syncStatus})</span>
         </div>
         <div className="flex gap-2 mt-1">
           <button

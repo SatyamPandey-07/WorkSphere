@@ -3,7 +3,7 @@
  * Import directly from `@/lib/offline` instead.
  */
 
-export { withWebLock } from "./webLock";
+export { withWebLock, LockTimeoutError, type WebLockOptions } from "./webLock";
 import { withWebLock } from "./webLock";
 import { syncQueueManager } from "./offline/SyncQueueManager";
 

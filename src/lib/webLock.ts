@@ -17,10 +17,38 @@
 
 export const OFFLINE_WRITE_LOCK = "worksphere-offline-write-lock";
 
+export class LockTimeoutError extends Error {
+  readonly lockName: string;
+  readonly timeoutMs: number;
+
+  constructor(lockName: string, timeoutMs: number = 5000) {
+    super(`Could not acquire lock "${lockName}" within ${timeoutMs}ms. The critical section was NOT executed.`);
+    this.name = "LockTimeoutError";
+    this.lockName = lockName;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export interface WebLockOptions {
+  timeoutMs?: number;
+  fallbackOnTimeout?: boolean;
+}
+
 export async function withWebLock<T>(
   callback: () => Promise<T>,
   lockName: string = OFFLINE_WRITE_LOCK,
+  options?: WebLockOptions | number,
 ): Promise<T> {
+  const parsedTimeout =
+    typeof options === "number"
+      ? options
+      : typeof options === "object" && typeof options?.timeoutMs === "number"
+      ? options.timeoutMs
+      : 5000;
+
+  const timeoutMs = Number.isFinite(parsedTimeout) && parsedTimeout >= 0 ? parsedTimeout : 5000;
+  const fallbackOnTimeout = typeof options === "object" && Boolean(options?.fallbackOnTimeout);
+
   const hasLocksApi =
     typeof navigator !== "undefined" &&
     "locks" in navigator &&
@@ -57,17 +85,21 @@ export async function withWebLock<T>(
       timeoutId = setTimeout(() => {
         timedOut = true;
         timeoutReject(new Error("LOCK_TIMEOUT"));
-      }, 5000);
+      }, timeoutMs);
     });
 
     Promise.race([lockPromise, timeoutPromise])
       .then(resolve)
       .catch((err) => {
         if (err instanceof Error && err.message === "LOCK_TIMEOUT") {
-          // Running the callback without a lock would defeat serialization —
-          // exactly the scenario Web Locks are supposed to prevent.
-          // Reject instead so the caller can surface the error and retry if needed.
-          reject(new Error("Web Lock acquisition timed out after 5s — operation aborted to prevent unsafe concurrent execution"));
+          if (fallbackOnTimeout) {
+            runOnce().then(resolve).catch(reject);
+          } else {
+            // Running the callback without a lock would defeat serialization —
+            // exactly the scenario Web Locks are supposed to prevent.
+            // Reject instead so the caller can surface the error and retry if needed.
+            reject(new LockTimeoutError(lockName, timeoutMs));
+          }
         } else {
           reject(err);
         }

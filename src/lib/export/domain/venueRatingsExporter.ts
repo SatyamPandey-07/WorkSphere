@@ -5,7 +5,7 @@
  * for venue ratings, feedback, and user reviews.
  */
 
-import { CsvBuilder, escapeCSVField } from "../csvBuilder";
+import { CsvBuilder, escapeCSVField, triggerBrowserDownload } from "../csvBuilder";
 
 export interface VenueRatingRecord {
   id?: string;
@@ -28,6 +28,12 @@ export interface VenueRatingRecord {
   reviewText?: string | null;
 }
 
+export interface DownloadRatingsOptions {
+  venueName?: string | null;
+  name?: string | null;
+  filename?: string | null;
+}
+
 export function formatCSVDate(dateVal: string | Date | null | undefined): string {
   if (!dateVal) return "N/A";
   try {
@@ -45,20 +51,28 @@ export function formatCSVDate(dateVal: string | Date | null | undefined): string
 export function formatCSVUser(user: VenueRatingRecord["user"]): string {
   if (!user) return "Anonymous";
   if (typeof user === "string") return user.trim() || "Anonymous";
+  if (typeof user !== "object") return "Anonymous";
   const fullName = [user.firstName, user.lastName]
     .filter(Boolean)
     .join(" ")
     .trim();
   if (fullName) return fullName;
-  if (user.email) return user.email;
+  if (user.email && typeof user.email === "string") return user.email.trim() || "Anonymous";
   return "Anonymous";
 }
 
 export function generateRatingsCSV(
   records: VenueRatingRecord[],
-  defaultVenueName?: string,
+  defaultVenueName?: string | DownloadRatingsOptions,
 ): string {
-  const builder = new CsvBuilder<VenueRatingRecord>({ lineDelimiter: "\n" });
+  const resolvedVenueName =
+    typeof defaultVenueName === "object" && defaultVenueName !== null
+      ? defaultVenueName.venueName || defaultVenueName.name
+      : typeof defaultVenueName === "string"
+      ? defaultVenueName
+      : undefined;
+
+  const builder = new CsvBuilder<VenueRatingRecord>({ lineDelimiter: "\r\n" });
 
   builder.setColumns([
     {
@@ -67,7 +81,7 @@ export function generateRatingsCSV(
     },
     {
       header: "Venue Name",
-      accessor: (r) => r.venueName || defaultVenueName || "Workspace",
+      accessor: (r) => r.venueName || resolvedVenueName || "Workspace",
     },
     {
       header: "User",
@@ -92,7 +106,9 @@ export function generateRatingsCSV(
     },
   ]);
 
-  builder.addRows(records);
+  if (Array.isArray(records)) {
+    builder.addRows(records);
+  }
   return builder.build();
 }
 
@@ -100,19 +116,32 @@ export const exportRatingsToCSV = generateRatingsCSV;
 
 export function downloadRatingsCSV(
   records: VenueRatingRecord[],
-  defaultVenueName?: string,
+  defaultVenueName?: string | DownloadRatingsOptions,
   filename?: string,
 ): Blob {
-  const csvContent = generateRatingsCSV(records, defaultVenueName);
+  const resolvedVenueName =
+    typeof defaultVenueName === "object" && defaultVenueName !== null
+      ? defaultVenueName.venueName || defaultVenueName.name
+      : typeof defaultVenueName === "string"
+      ? defaultVenueName
+      : undefined;
+
+  const resolvedFilename =
+    typeof defaultVenueName === "object" && defaultVenueName !== null
+      ? filename || defaultVenueName.filename
+      : filename;
+
+  const csvContent = generateRatingsCSV(records, resolvedVenueName);
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
 
-  const safeVenueName = defaultVenueName
-    ? defaultVenueName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
-    : "venue";
+  const safeVenueName =
+    resolvedVenueName && typeof resolvedVenueName === "string"
+      ? resolvedVenueName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+      : "venue";
   const today = new Date().toISOString().slice(0, 10);
   const downloadFileName =
-    filename || `${safeVenueName}-ratings-${today}.csv`;
+    resolvedFilename || `${safeVenueName}-ratings-${today}.csv`;
 
-  const builder = new CsvBuilder();
-  return builder.download.call({ toBlob: () => blob }, downloadFileName);
+  triggerBrowserDownload(blob, downloadFileName);
+  return blob;
 }

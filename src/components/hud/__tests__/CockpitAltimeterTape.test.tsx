@@ -30,6 +30,11 @@ describe("CockpitAltimeterTape", () => {
       expect(calculateAltitudeFeet(0, 5)).toBe(0);
       expect(calculateAltitudeFeet(-1, 5)).toBe(0);
     });
+    it("handles NaN or non-finite floor and totalFloors safely", () => {
+      expect(calculateAltitudeFeet(NaN, 5)).toBe(0);
+      expect(calculateAltitudeFeet(2, NaN)).toBe(2000);
+      expect(calculateAltitudeFeet(NaN, NaN)).toBe(0);
+    });
   });
 
   describe("interpolateAltitudeDrumPosition", () => {
@@ -56,6 +61,13 @@ describe("CockpitAltimeterTape", () => {
     it("clamps values below 0 ft or above 10,000 ft", () => {
       expect(interpolateAltitudeDrumPosition(-500, 10000, 320)).toBe(0);
       expect(interpolateAltitudeDrumPosition(15000, 10000, 320)).toBe(320);
+    });
+
+    it("handles NaN or non-positive maxAltitude and tapeHeightPx safely", () => {
+      expect(interpolateAltitudeDrumPosition(NaN, 10000, 320)).toBe(0);
+      expect(interpolateAltitudeDrumPosition(5000, 0, 320)).toBe(160);
+      expect(interpolateAltitudeDrumPosition(5000, NaN, 320)).toBe(160);
+      expect(interpolateAltitudeDrumPosition(5000, 10000, NaN)).toBe(160);
     });
   });
 
@@ -91,6 +103,55 @@ describe("CockpitAltimeterTape", () => {
       expect(screen.getByTestId("tape-mark-10000")).toBeInTheDocument();
       expect(screen.getByTestId("tape-mark-1000")).toBeInTheDocument();
       expect(screen.getByTestId("tape-mark-0")).toBeInTheDocument();
+    });
+
+    it("triggers avionics audio tick on floor change and closes AudioContext", () => {
+      const mockClose = jest.fn().mockResolvedValue(undefined);
+      const mockStart = jest.fn();
+      const mockStop = jest.fn();
+      let capturedOnEnded: (() => void) | null = null;
+
+      class MockAudioContext {
+        state = "running";
+        currentTime = 0;
+        destination = {};
+        createOscillator() {
+          return {
+            type: "sine",
+            frequency: { setValueAtTime: jest.fn(), exponentialRampToValueAtTime: jest.fn() },
+            connect: jest.fn(),
+            start: mockStart,
+            stop: mockStop,
+            set onended(handler: () => void) {
+              capturedOnEnded = handler;
+            },
+          };
+        }
+        createGain() {
+          return {
+            gain: { setValueAtTime: jest.fn(), exponentialRampToValueAtTime: jest.fn() },
+            connect: jest.fn(),
+          };
+        }
+        close = mockClose;
+      }
+
+      (window as any).AudioContext = MockAudioContext;
+
+      const { rerender } = render(
+        <CockpitAltimeterTape floorNumber={1} totalFloors={5} enableAudioFeedback={true} />
+      );
+
+      // Floor transition from 1 to 2 triggers audio feedback
+      rerender(
+        <CockpitAltimeterTape floorNumber={2} totalFloors={5} enableAudioFeedback={true} />
+      );
+
+      expect(mockStart).toHaveBeenCalled();
+      if (capturedOnEnded) {
+        capturedOnEnded();
+        expect(mockClose).toHaveBeenCalled();
+      }
     });
   });
 });

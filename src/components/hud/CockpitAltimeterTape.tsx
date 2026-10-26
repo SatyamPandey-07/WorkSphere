@@ -24,11 +24,13 @@ export interface CockpitAltimeterTapeProps {
  * Ground floor (0) = 0 ft.
  */
 export function calculateAltitudeFeet(floorNumber: number, totalFloors: number): number {
-  if (floorNumber <= 0) return 0;
-  if (totalFloors > 1 && floorNumber >= totalFloors) {
+  const safeFloor = typeof floorNumber === "number" && Number.isFinite(floorNumber) ? floorNumber : 0;
+  const safeTotal = typeof totalFloors === "number" && Number.isFinite(totalFloors) ? totalFloors : 1;
+  if (safeFloor <= 0) return 0;
+  if (safeTotal > 1 && safeFloor >= safeTotal) {
     return 10000; // Rooftop altitude
   }
-  return floorNumber * 1000;
+  return safeFloor * 1000;
 }
 
 /**
@@ -40,15 +42,24 @@ export function interpolateAltitudeDrumPosition(
   maxAltitude: number = 10000,
   tapeHeightPx: number = 320
 ): number {
-  const clampedAlt = Math.max(0, Math.min(altitudeFeet, maxAltitude));
-  const ratio = clampedAlt / maxAltitude;
-  return ratio * tapeHeightPx;
+  const safeMax =
+    typeof maxAltitude === "number" && Number.isFinite(maxAltitude) && maxAltitude > 0
+      ? maxAltitude
+      : 10000;
+  const safeHeight =
+    typeof tapeHeightPx === "number" && Number.isFinite(tapeHeightPx) && tapeHeightPx > 0
+      ? tapeHeightPx
+      : 320;
+  const safeAlt = typeof altitudeFeet === "number" && Number.isFinite(altitudeFeet) ? altitudeFeet : 0;
+  const clampedAlt = Math.max(0, Math.min(safeAlt, safeMax));
+  const ratio = clampedAlt / safeMax;
+  return ratio * safeHeight;
 }
 
 /**
  * Synthetic flight avionics audio tick feedback using Web Audio API
  */
-function playAvionicsTickSound() {
+export function playAvionicsTickSound() {
   if (typeof window === "undefined") return;
   try {
     const AudioContextClass =
@@ -59,6 +70,17 @@ function playAvionicsTickSound() {
     if (ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
+
+    const cleanup = () => {
+      try {
+        if (ctx.state !== "closed") {
+          ctx.close().catch(() => {});
+        }
+      } catch {
+        // Context already closed
+      }
+    };
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -72,8 +94,16 @@ function playAvionicsTickSound() {
 
     osc.connect(gain);
     gain.connect(ctx.destination);
+
+    osc.onended = cleanup;
+
     osc.start(now);
     osc.stop(now + 0.04);
+
+    const timer = setTimeout(cleanup, 100);
+    if (typeof timer === "object" && typeof (timer as any).unref === "function") {
+      (timer as any).unref();
+    }
   } catch {
     // Ignore audio permission or context restrictions
   }

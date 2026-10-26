@@ -6,6 +6,8 @@
 
 export {
   type FeedbackFlag,
+  type FeedbackExportOptions,
+  createFeedbackCsvBuilder,
   exportFeedbackToCSV,
   downloadFeedbackCSV,
 } from "./export/domain/feedbackExporter";

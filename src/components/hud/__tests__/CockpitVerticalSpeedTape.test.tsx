@@ -207,5 +207,59 @@ describe("CockpitVerticalSpeedTape", () => {
       fireEvent.click(decFloorBtn);
       expect(handleFloorTransition).toHaveBeenCalledWith(3, 6);
     });
+
+    it("triggers rate change audio and safely closes AudioContext", () => {
+      const mockClose = jest.fn().mockResolvedValue(undefined);
+      const mockStart = jest.fn();
+      const mockStop = jest.fn();
+      let capturedOnEnded: (() => void) | null = null;
+
+      class MockAudioContext {
+        state = "running";
+        currentTime = 0;
+        destination = {};
+        createOscillator() {
+          return {
+            type: "sine",
+            frequency: { setValueAtTime: jest.fn(), exponentialRampToValueAtTime: jest.fn() },
+            connect: jest.fn(),
+            start: mockStart,
+            stop: mockStop,
+            set onended(handler: () => void) {
+              capturedOnEnded = handler;
+            },
+          };
+        }
+        createGain() {
+          return {
+            gain: { setValueAtTime: jest.fn(), exponentialRampToValueAtTime: jest.fn() },
+            connect: jest.fn(),
+          };
+        }
+        close = mockClose;
+      }
+
+      (window as any).AudioContext = MockAudioContext;
+
+      const { rerender } = render(
+        <CockpitVerticalSpeedTape
+          verticalSpeedFpm={-500}
+          enableAudioFeedback={true}
+        />
+      );
+
+      rerender(
+        <CockpitVerticalSpeedTape
+          verticalSpeedFpm={500}
+          enableAudioFeedback={true}
+        />
+      );
+
+      expect(mockStart).toHaveBeenCalled();
+      if (capturedOnEnded) {
+        capturedOnEnded();
+        expect(mockClose).toHaveBeenCalled();
+      }
+    });
   });
 });

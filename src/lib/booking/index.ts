@@ -43,9 +43,10 @@ export function findConflictingBookings<T extends StoredBookingSlot>(
   requested: BookingSlot,
   existing: readonly T[],
 ): T[] {
+  const safeExisting = Array.isArray(existing) ? existing : [];
   return globalBookingEngine.checkConflicts({
     requestedSlot: requested,
-    existingBookings: existing,
+    existingBookings: safeExisting,
   }).conflictingBookings;
 }
 
@@ -56,10 +57,11 @@ export function hasBookingConflict(
   requested: BookingSlot,
   existing: readonly StoredBookingSlot[],
 ): boolean {
+  const safeExisting = Array.isArray(existing) ? existing : [];
   return (
     globalBookingEngine.checkConflicts({
       requestedSlot: requested,
-      existingBookings: existing,
+      existingBookings: safeExisting,
     }).conflictingBookings.length > 0
   );
 }
@@ -73,6 +75,12 @@ export function getBookingCancellationEligibility(input: {
   now?: Date;
   timeZone?: string | null;
 }): BookingCancellationEligibility {
+  if (!input || typeof input !== "object") {
+    return globalBookingEngine.evaluateCancellationEligibility({
+      date: "",
+      time: "",
+    });
+  }
   return globalBookingEngine.evaluateCancellationEligibility({
     date: input.date,
     time: input.time,

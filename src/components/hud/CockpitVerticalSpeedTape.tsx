@@ -107,11 +107,24 @@ export function calculateVerticalSpeedFpm(
   transitDurationSeconds: number,
   floorHeightFeet: number = 14,
 ): number {
-  if (transitDurationSeconds <= 0 || fromFloor === toFloor) return 0;
-  const floorDiff = toFloor - fromFloor;
-  const totalFeet = floorDiff * floorHeightFeet;
+  if (
+    typeof transitDurationSeconds !== "number" ||
+    !Number.isFinite(transitDurationSeconds) ||
+    transitDurationSeconds <= 0 ||
+    fromFloor === toFloor
+  ) {
+    return 0;
+  }
+  const safeFrom = typeof fromFloor === "number" && Number.isFinite(fromFloor) ? fromFloor : 0;
+  const safeTo = typeof toFloor === "number" && Number.isFinite(toFloor) ? toFloor : 0;
+  const safeFloorHeight =
+    typeof floorHeightFeet === "number" && Number.isFinite(floorHeightFeet) && floorHeightFeet > 0
+      ? floorHeightFeet
+      : 14;
+  const floorDiff = safeTo - safeFrom;
+  const totalFeet = floorDiff * safeFloorHeight;
   const fpm = (totalFeet * 60) / transitDurationSeconds;
-  return Math.round(fpm);
+  return Number.isFinite(fpm) ? Math.round(fpm) : 0;
 }
 
 /**
@@ -124,11 +137,17 @@ export function interpolateVsiNeedleOffset(
   maxFpm: number = 3000,
   halfTapeHeightPx: number = 96,
 ): number {
-  if (maxFpm <= 0) return 0;
-  const clampedFpm = Math.max(-maxFpm, Math.min(maxFpm, verticalSpeedFpm));
-  const ratio = clampedFpm / maxFpm;
-  // Positive FPM moves upward (negative translateY)
-  return -ratio * halfTapeHeightPx;
+  const safeMax = typeof maxFpm === "number" && Number.isFinite(maxFpm) && maxFpm > 0 ? maxFpm : 3000;
+  const safeHalfHeight =
+    typeof halfTapeHeightPx === "number" && Number.isFinite(halfTapeHeightPx) && halfTapeHeightPx > 0
+      ? halfTapeHeightPx
+      : 96;
+  const safeFpm = typeof verticalSpeedFpm === "number" && Number.isFinite(verticalSpeedFpm) ? verticalSpeedFpm : 0;
+  const clampedFpm = Math.max(-safeMax, Math.min(safeMax, safeFpm));
+  const ratio = clampedFpm / safeMax;
+  // Positive FPM moves upward (negative translateY). Normalize -0 to 0.
+  const offset = -ratio * safeHalfHeight;
+  return offset === 0 ? 0 : offset;
 }
 
 /**
@@ -136,7 +155,8 @@ export function interpolateVsiNeedleOffset(
  * 1 FPM = 0.00508 m/s
  */
 export function fpmToMetersPerSecond(fpm: number): number {
-  return Number((fpm * 0.00508).toFixed(1));
+  const safeFpm = typeof fpm === "number" && Number.isFinite(fpm) ? fpm : 0;
+  return Number((safeFpm * 0.00508).toFixed(1));
 }
 
 /**
@@ -148,11 +168,24 @@ export function calculateFloorTransitEtaSeconds(
   speedFpm: number,
   floorHeightFeet: number = 14,
 ): number {
-  if (currentFloor === targetFloor || speedFpm === 0) return 0;
-  const distanceFeet = Math.abs(targetFloor - currentFloor) * floorHeightFeet;
+  if (
+    typeof speedFpm !== "number" ||
+    !Number.isFinite(speedFpm) ||
+    speedFpm === 0 ||
+    currentFloor === targetFloor
+  ) {
+    return 0;
+  }
+  const safeCurrent = typeof currentFloor === "number" && Number.isFinite(currentFloor) ? currentFloor : 0;
+  const safeTarget = typeof targetFloor === "number" && Number.isFinite(targetFloor) ? targetFloor : 0;
+  const safeHeight =
+    typeof floorHeightFeet === "number" && Number.isFinite(floorHeightFeet) && floorHeightFeet > 0
+      ? floorHeightFeet
+      : 14;
+  const distanceFeet = Math.abs(safeTarget - safeCurrent) * safeHeight;
   const speedAbsFpm = Math.abs(speedFpm);
   const seconds = (distanceFeet / speedAbsFpm) * 60;
-  return Math.max(1, Math.round(seconds));
+  return Number.isFinite(seconds) ? Math.max(1, Math.round(seconds)) : 0;
 }
 
 /**
@@ -165,7 +198,8 @@ export function classifyVerticalRate(speedFpm: number): {
   color: string;
   badgeClass: string;
 } {
-  const absFpm = Math.abs(speedFpm);
+  const safeFpm = typeof speedFpm === "number" && Number.isFinite(speedFpm) ? speedFpm : 0;
+  const absFpm = Math.abs(safeFpm);
   if (absFpm < 50) {
     return {
       state: "LEVEL",
@@ -176,7 +210,7 @@ export function classifyVerticalRate(speedFpm: number): {
     };
   }
 
-  if (speedFpm > 0) {
+  if (safeFpm > 0) {
     if (absFpm >= 2000) {
       return {
         state: "CLIMB",
@@ -209,7 +243,7 @@ export function classifyVerticalRate(speedFpm: number): {
     return {
       state: "DESCENT",
       intensity: "RAPID",
-      label: "RAPID DESCENT",
+      label: "RAPID DROP",
       color: "text-rose-400",
       badgeClass: "bg-rose-500/15 border-rose-500/40 text-rose-300",
     };
@@ -247,6 +281,17 @@ function playAvionicsRateChime(isClimb: boolean) {
     if (ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
+
+    const cleanup = () => {
+      try {
+        if (ctx.state !== "closed") {
+          ctx.close().catch(() => {});
+        }
+      } catch {
+        // Ignore already closed context
+      }
+    };
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -263,8 +308,16 @@ function playAvionicsRateChime(isClimb: boolean) {
 
     osc.connect(gain);
     gain.connect(ctx.destination);
+
+    osc.onended = cleanup;
+
     osc.start(now);
     osc.stop(now + 0.045);
+
+    const timer = setTimeout(cleanup, 100);
+    if (typeof timer === "object" && typeof (timer as any).unref === "function") {
+      (timer as any).unref();
+    }
   } catch {
     // Ignore audio permission restrictions
   }

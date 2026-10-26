@@ -5,7 +5,7 @@
  * and multi-page expense summary PDF generation.
  */
 
-import { CsvBuilder } from "../csvBuilder";
+import { CsvBuilder, escapeCSVField } from "../csvBuilder";
 import {
   PdfDocumentBuilder,
   drawSafeText,
@@ -44,25 +44,37 @@ export interface TaxTotals {
   count: number;
 }
 
-export function resolveDateRange(input: {
-  taxYear?: string | number;
-  startDate?: string;
-  endDate?: string;
-}): DateRange {
-  if (input.taxYear) {
-    const year = Number(input.taxYear);
+export function resolveDateRange(input?: {
+  taxYear?: string | number | null;
+  startDate?: string | null;
+  endDate?: string | null;
+} | null): DateRange {
+  if (!input || typeof input !== "object") {
+    throw new Error("Either taxYear or both startDate and endDate are required");
+  }
+
+  if (input.taxYear != null && input.taxYear !== "") {
+    const year =
+      typeof input.taxYear === "number"
+        ? input.taxYear
+        : Number(String(input.taxYear).trim());
     if (!Number.isInteger(year) || year < 1970 || year > 9999) {
       throw new Error("Invalid tax year");
     }
     return { start: `${year}-01-01`, end: `${year}-12-31` };
   }
 
-  if (!input.startDate || !input.endDate) {
+  if (
+    !input.startDate ||
+    !input.endDate ||
+    typeof input.startDate !== "string" ||
+    typeof input.endDate !== "string"
+  ) {
     throw new Error("Either taxYear or both startDate and endDate are required");
   }
 
-  const start = input.startDate;
-  const end = input.endDate;
+  const start = input.startDate.trim();
+  const end = input.endDate.trim();
 
   if (isNaN(Date.parse(start)) || isNaN(Date.parse(end))) {
     throw new Error("startDate/endDate must be valid dates");
@@ -74,22 +86,43 @@ export function resolveDateRange(input: {
   return { start, end };
 }
 
-export function filterBookingsByRange<T extends { date: string }>(
-  bookings: T[],
-  range: DateRange,
+export function filterBookingsByRange<T extends { date?: string | null }>(
+  bookings?: T[] | null,
+  range?: DateRange | null,
 ): T[] {
-  return bookings.filter((b) => b.date >= range.start && b.date <= range.end);
+  if (!Array.isArray(bookings) || !range || !range.start || !range.end) {
+    return [];
+  }
+  return bookings.filter((b) => {
+    if (!b || !b.date || typeof b.date !== "string") return false;
+    const dateStr = b.date.slice(0, 10);
+    return dateStr >= range.start && dateStr <= range.end;
+  });
 }
 
 export function computeTaxTotals(
-  bookings: { duration?: number | null }[],
+  bookings?: ({ duration?: number | null } | null)[] | null,
 ): TaxTotals {
+  if (!Array.isArray(bookings) || bookings.length === 0) {
+    return { subtotal: 0, tax: 0, total: 0, count: 0 };
+  }
+
   let subtotal = 0;
   let tax = 0;
+  let count = 0;
 
   for (const b of bookings) {
-    const hours = Math.max(0, b.duration ?? 60) / 60;
+    if (!b) continue;
+    count++;
+    const raw = b.duration ?? 1;
+    const hours =
+      typeof raw === "number" && Number.isFinite(raw)
+        ? Math.max(0, raw)
+        : !Number.isFinite(raw)
+          ? 1
+          : 0;
     const price = hours * 15;
+
     subtotal += price;
     tax += Number((price * 0.08).toFixed(2));
   }
@@ -98,16 +131,21 @@ export function computeTaxTotals(
     subtotal: Number(subtotal.toFixed(2)),
     tax: Number(tax.toFixed(2)),
     total: Number((subtotal + tax).toFixed(2)),
-    count: bookings.length,
+    count,
   };
 }
 
-export function bookingsToCSV(bookings: ExportableBooking[]): string {
-  const builder = new CsvBuilder<ExportableBooking>({ lineDelimiter: "\n" });
+export function bookingsToCSV(bookings?: ExportableBooking[] | null): string {
+  if (!Array.isArray(bookings) || bookings.length === 0) {
+    return "";
+  }
+  const safeBookings = bookings.filter((b): b is ExportableBooking => Boolean(b && typeof b === "object"));
+  const builder = new CsvBuilder<ExportableBooking>({ lineDelimiter: "\r\n" });
+
   builder.setColumns([
     {
       header: "Confirmation ID",
-      accessor: (b) => b.confirmationId || `WS-#${b.id}`,
+      accessor: (b) => b.confirmationId || (b.id ? `WS-#${b.id}` : "WS-#N/A"),
     },
     { header: "Venue", accessor: (b) => b.venue?.name || "" },
     { header: "Category", accessor: (b) => b.venue?.category || "" },
@@ -121,14 +159,18 @@ export function bookingsToCSV(bookings: ExportableBooking[]): string {
     {
       header: "Price ($)",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const raw = b.duration !== null && b.duration !== undefined ? Number(b.duration) : 60;
+        const minutes = Number.isFinite(raw) && raw >= 0 ? raw : 60;
+        const hours = minutes / 60;
         return (hours * 15).toFixed(2);
       },
     },
     {
       header: "Tax ($)",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const raw = b.duration !== null && b.duration !== undefined ? Number(b.duration) : 60;
+        const minutes = Number.isFinite(raw) && raw >= 0 ? raw : 60;
+        const hours = minutes / 60;
         const price = hours * 15;
         return (price * 0.08).toFixed(2);
       },
@@ -136,7 +178,9 @@ export function bookingsToCSV(bookings: ExportableBooking[]): string {
     {
       header: "Total ($)",
       accessor: (b) => {
-        const hours = (b.duration || 60) / 60;
+        const raw = b.duration !== null && b.duration !== undefined ? Number(b.duration) : 60;
+        const minutes = Number.isFinite(raw) && raw >= 0 ? raw : 60;
+        const hours = minutes / 60;
         const price = hours * 15;
         const tax = Number((price * 0.08).toFixed(2));
         return (price + tax).toFixed(2);
@@ -144,24 +188,31 @@ export function bookingsToCSV(bookings: ExportableBooking[]): string {
     },
   ]);
 
-  builder.addRows(bookings);
+  builder.addRows(safeBookings);
   return builder.build();
 }
 
-export function taxBookingsToCSV(bookings: ExportableBooking[]): string {
+export function taxBookingsToCSV(bookings?: ExportableBooking[] | null): string {
   return bookingsToCSV(bookings);
 }
+
 /**
  * Exports booking data as formatted JSON.
  */
 export function exportBookingsToJson(
-  bookings: ExportableBooking[],
+  bookings?: ExportableBooking[] | null,
 ): string {
+  if (!Array.isArray(bookings)) return "[]";
   return JSON.stringify(bookings, null, 2);
 }
+
 export async function generateTaxExportPdf(
-  bookings: any[],
+  bookings?: any[] | null,
 ): Promise<Uint8Array> {
+  const safeBookings = Array.isArray(bookings)
+    ? bookings.filter((b): b is any => Boolean(b && typeof b === "object"))
+    : [];
+
   const builder = await PdfDocumentBuilder.create({
     accentColor: { r: 0.23, g: 0.51, b: 0.96 },
     margin: 50,
@@ -177,7 +228,7 @@ export async function generateTaxExportPdf(
     { titleSize: 18, color: rgb(0.1, 0.1, 0.1) },
   );
 
-  const totals = computeTaxTotals(bookings);
+  const totals = computeTaxTotals(safeBookings);
 
   builder.drawText(`TOTAL BOOKINGS: ${totals.count}`, {
     size: 11,
@@ -191,27 +242,38 @@ export async function generateTaxExportPdf(
 
   builder.drawDivider();
 
-  // Booking rows
-  for (const booking of bookings) {
-    builder.ensureSpace(50);
-
-    const confirmation = booking.confirmationId || `WS-#${booking.id}`;
-    const venueName = booking.venue?.name || "Workspace";
-    const dateStr = `${booking.date} at ${booking.time}`;
-    const duration = booking.duration ? `${booking.duration} mins` : "60 mins";
-
-    builder.drawText(`${confirmation} — ${safeText(venueName)}`, {
+  if (safeBookings.length === 0) {
+    builder.drawText("No bookings found for the selected date range.", {
       size: 10,
-      font: boldFont,
-      decrementY: 12,
-    });
-
-    builder.drawText(`${dateStr} (${duration})`, {
-      size: 8,
       font,
       color: rgb(0.4, 0.4, 0.4),
-      decrementY: 16,
+      decrementY: 20,
     });
+  } else {
+    // Booking rows
+    for (const booking of safeBookings) {
+      builder.ensureSpace(50);
+
+      const confirmation = booking.confirmationId || (booking.id ? `WS-#${booking.id}` : "WS-#N/A");
+      const venueName = booking.venue?.name || "Workspace";
+      const dateStr = `${booking.date ?? ""} at ${booking.time ?? ""}`.trim();
+      const rawDuration = booking.duration !== null && booking.duration !== undefined ? Number(booking.duration) : 60;
+      const safeDuration = Number.isFinite(rawDuration) && rawDuration >= 0 ? rawDuration : 60;
+      const durationStr = `${safeDuration} mins`;
+
+      builder.drawText(`${confirmation} — ${safeText(venueName)}`, {
+        size: 10,
+        font: boldFont,
+        decrementY: 12,
+      });
+
+      builder.drawText(`${dateStr} (${durationStr})`, {
+        size: 8,
+        font,
+        color: rgb(0.4, 0.4, 0.4),
+        decrementY: 16,
+      });
+    }
   }
 
   builder.addPageNumbers();

@@ -3,6 +3,8 @@ import {
   filterBookingsByRange,
   computeTaxTotals,
   taxBookingsToCSV,
+  bookingsToCSV,
+  generateTaxExportPdf,
 } from "@/lib/taxExport";
 
 import { exportBookingsToJson } from "@/lib/pdfHelpers";
@@ -53,15 +55,15 @@ describe("filterBookingsByRange", () => {
 });
 
 describe("computeTaxTotals", () => {
-
   it("computes subtotal/tax/total using the flat $15/hr, 8% assumption", () => {
-  const totals = computeTaxTotals([{ duration: 2 }, { duration: 1 }]);
+    const totals = computeTaxTotals([{ duration: 2 }, { duration: 1 }]);
 
-  expect(totals.subtotal).toBe(45);
-  expect(totals.tax).toBe(3.6);
-  expect(totals.total).toBe(48.6);
-  expect(totals.count).toBe(2);
-});
+    expect(totals.subtotal).toBe(45);
+    expect(totals.tax).toBe(3.6);
+    expect(totals.total).toBe(48.6);
+    expect(totals.count).toBe(2);
+  });
+
   it("defaults missing duration to 60 minutes (1 hour)", () => {
     const totals = computeTaxTotals([{}]);
     expect(totals.subtotal).toBe(15);
@@ -79,6 +81,7 @@ describe("computeTaxTotals", () => {
     expect(negativeTotals.total).toBe(0);
   });
 });
+
 describe("exportBookingsToJson", () => {
   it("exports bookings as formatted JSON", () => {
     const bookings = [
@@ -110,8 +113,7 @@ describe("exportBookingsToJson", () => {
   });
 });
 
-
-describe("taxExport input sanitization and edge cases (#6754)", () => {
+describe("taxExport input sanitization and edge cases (#6754 & #6790)", () => {
   it("resolveDateRange throws structured error on nullish or non-object input", () => {
     expect(() => resolveDateRange(null)).toThrow("Either taxYear or both startDate and endDate are required");
     expect(() => resolveDateRange(undefined)).toThrow("Either taxYear or both startDate and endDate are required");
@@ -161,5 +163,50 @@ describe("taxExport input sanitization and edge cases (#6754)", () => {
   it("taxBookingsToCSV handles nullish or empty bookings array gracefully", () => {
     expect(taxBookingsToCSV(null)).toBe("");
     expect(taxBookingsToCSV([])).toBe("");
+  });
+
+  it("bookingsToCSV outputs RFC-4180 CRLF line endings and bills 0-minute duration as $0.00", () => {
+    const csv = bookingsToCSV([
+      {
+        id: "b1",
+        confirmationId: "CONF-001",
+        date: "2026-10-26",
+        time: "10:00",
+        duration: 0,
+        projectBillingCode: "PROJ-ZERO",
+        venue: {
+          name: "WeWork",
+          category: "Desk",
+          address: "123 St",
+        },
+      },
+    ]);
+    const lines = csv.split("\r\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("Confirmation ID,Venue,Category,Address,Date,Time,Billing Code,Price ($),Tax ($),Total ($)");
+    expect(lines[1]).toContain("CONF-001,WeWork,Desk,123 St,2026-10-26,10:00,PROJ-ZERO,0.00,0.00,0.00");
+  });
+
+  it("generateTaxExportPdf handles nullish bookings and empty arrays without throwing", async () => {
+    const pdfNull = await generateTaxExportPdf(null);
+    expect(pdfNull).toBeInstanceOf(Uint8Array);
+    expect(pdfNull.length).toBeGreaterThan(0);
+
+    const pdfEmpty = await generateTaxExportPdf([]);
+    expect(pdfEmpty).toBeInstanceOf(Uint8Array);
+    expect(pdfEmpty.length).toBeGreaterThan(0);
+
+    const pdfWithItems = await generateTaxExportPdf([
+      null,
+      {
+        id: "b-test",
+        date: "2026-10-26",
+        time: "11:00",
+        duration: 0,
+        venue: { name: "Test Venue" },
+      },
+    ]);
+    expect(pdfWithItems).toBeInstanceOf(Uint8Array);
+    expect(pdfWithItems.length).toBeGreaterThan(0);
   });
 });

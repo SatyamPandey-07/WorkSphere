@@ -85,6 +85,15 @@ export function allocateWebGLBuffers(
     cleanupWebGLBuffers(gl, existingHandles);
   }
 
+  const safeW = Math.max(
+    1,
+    Math.floor(Number.isFinite(width) && width > 0 ? width : 1),
+  );
+  const safeH = Math.max(
+    1,
+    Math.floor(Number.isFinite(height) && height > 0 ? height : 1),
+  );
+
   const textureA = gl.createTexture();
   if (textureA) {
     gl.bindTexture(gl.TEXTURE_2D, textureA);
@@ -92,8 +101,8 @@ export function allocateWebGLBuffers(
       gl.TEXTURE_2D,
       0,
       gl.RGBA,
-      width,
-      height,
+      safeW,
+      safeH,
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
@@ -112,8 +121,8 @@ export function allocateWebGLBuffers(
       gl.TEXTURE_2D,
       0,
       gl.RGBA,
-      width,
-      height,
+      safeW,
+      safeH,
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
@@ -207,25 +216,33 @@ const MAX_TEMP = 34;
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function defaultNodes(gw: number, gh: number): HeatNode[] {
+  const safeGw = Math.max(
+    1,
+    Math.floor(Number.isFinite(gw) && gw > 0 ? gw : 80),
+  );
+  const safeGh = Math.max(
+    1,
+    Math.floor(Number.isFinite(gh) && gh > 0 ? gh : 60),
+  );
   return [
     {
       id: 1,
-      x: Math.floor(gw * 0.2),
-      y: Math.floor(gh * 0.25),
+      x: Math.max(0, Math.min(safeGw - 1, Math.floor(safeGw * 0.2))),
+      y: Math.max(0, Math.min(safeGh - 1, Math.floor(safeGh * 0.25))),
       kind: "coffee",
       temperature: 30,
     },
     {
       id: 2,
-      x: Math.floor(gw * 0.72),
-      y: Math.floor(gh * 0.2),
+      x: Math.max(0, Math.min(safeGw - 1, Math.floor(safeGw * 0.72))),
+      y: Math.max(0, Math.min(safeGh - 1, Math.floor(safeGh * 0.2))),
       kind: "window",
       temperature: 28,
     },
     {
       id: 3,
-      x: Math.floor(gw * 0.5),
-      y: Math.floor(gh * 0.75),
+      x: Math.max(0, Math.min(safeGw - 1, Math.floor(safeGw * 0.5))),
+      y: Math.max(0, Math.min(safeGh - 1, Math.floor(safeGh * 0.75))),
       kind: "ac",
       temperature: 16,
     },
@@ -233,7 +250,14 @@ function defaultNodes(gw: number, gh: number): HeatNode[] {
 }
 
 function nodesToSensors(nodes: HeatNode[]): HvacSensor[] {
-  return nodes.map((n) => ({ x: n.x, y: n.y, temperature: n.temperature }));
+  if (!Array.isArray(nodes)) return [];
+  return nodes
+    .filter((n) => n && Number.isFinite(n.x) && Number.isFinite(n.y))
+    .map((n) => ({
+      x: Math.round(n.x),
+      y: Math.round(n.y),
+      temperature: Number.isFinite(n.temperature) ? n.temperature : AMBIENT,
+    }));
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -279,6 +303,7 @@ export function HeatDiffusionViewer({
   });
   const resizeRafRef = useRef<number | null>(null);
   const isContextLostRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   // Keep mutable refs so RAF callbacks always see the latest values.
   const pausedRef = useRef(paused);
@@ -365,6 +390,7 @@ export function HeatDiffusionViewer({
       let lastFpsTime = performance.now();
 
       const loop = () => {
+        if (!isMountedRef.current) return;
         rafRef.current = requestAnimationFrame(loop);
         if (pausedRef.current) return;
 
@@ -459,14 +485,24 @@ export function HeatDiffusionViewer({
         const currentGl = glRef.current;
         if (currentGl) {
           const rect = currentCanvas.getBoundingClientRect();
-          const targetW = Math.max(
-            1,
-            Math.round(rect.width || currentCanvas.width),
-          );
-          const targetH = Math.max(
-            1,
-            Math.round(rect.height || currentCanvas.height),
-          );
+          const safeCanvasW =
+            Number.isFinite(currentCanvas.width) && currentCanvas.width > 0
+              ? currentCanvas.width
+              : 1;
+          const safeCanvasH =
+            Number.isFinite(currentCanvas.height) && currentCanvas.height > 0
+              ? currentCanvas.height
+              : 1;
+          const rawW =
+            Number.isFinite(rect.width) && rect.width > 0
+              ? rect.width
+              : safeCanvasW;
+          const rawH =
+            Number.isFinite(rect.height) && rect.height > 0
+              ? rect.height
+              : safeCanvasH;
+          const targetW = Math.max(1, Math.round(rawW));
+          const targetH = Math.max(1, Math.round(rawH));
 
           // Properly delete old WebGL textures and framebuffers via gl.deleteTexture() and gl.deleteFramebuffer()
           // before allocating new dimensions to avoid exhausting GPU context memory
@@ -556,6 +592,7 @@ export function HeatDiffusionViewer({
 
     return () => {
       cancelled = true;
+      isMountedRef.current = false;
       window.removeEventListener("resize", handleResize);
       canvas.removeEventListener("webglcontextlost", handleContextLost);
       canvas.removeEventListener("webglcontextrestored", handleContextRestored);
@@ -572,14 +609,46 @@ export function HeatDiffusionViewer({
 
   const gridCoords = useCallback(
     (e: MouseEvent<HTMLCanvasElement>): { gx: number; gy: number } => {
-      const canvas = canvasRef.current!;
+      const canvas = canvasRef.current;
+      const safeGridW = Math.max(
+        1,
+        Math.floor(Number.isFinite(gridWidth) && gridWidth > 0 ? gridWidth : 1),
+      );
+      const safeGridH = Math.max(
+        1,
+        Math.floor(
+          Number.isFinite(gridHeight) && gridHeight > 0 ? gridHeight : 1,
+        ),
+      );
+      if (!canvas) return { gx: 0, gy: 0 };
       const rect = canvas.getBoundingClientRect();
-      const scaleX = gridWidth / rect.width;
-      const scaleY = gridHeight / rect.height;
-      return {
-        gx: Math.round((e.clientX - rect.left) * scaleX),
-        gy: Math.round((e.clientY - rect.top) * scaleY),
-      };
+      const safeWidth =
+        Number.isFinite(rect.width) && rect.width > 0
+          ? rect.width
+          : canvas.width > 0
+            ? canvas.width
+            : 1;
+      const safeHeight =
+        Number.isFinite(rect.height) && rect.height > 0
+          ? rect.height
+          : canvas.height > 0
+            ? canvas.height
+            : 1;
+      const scaleX = safeGridW / safeWidth;
+      const scaleY = safeGridH / safeHeight;
+      const clientX = Number.isFinite(e.clientX) ? e.clientX : rect.left;
+      const clientY = Number.isFinite(e.clientY) ? e.clientY : rect.top;
+      const rawGx = Math.round((clientX - rect.left) * scaleX);
+      const rawGy = Math.round((clientY - rect.top) * scaleY);
+      const gx = Math.max(
+        0,
+        Math.min(safeGridW - 1, Number.isFinite(rawGx) ? rawGx : 0),
+      );
+      const gy = Math.max(
+        0,
+        Math.min(safeGridH - 1, Number.isFinite(rawGy) ? rawGy : 0),
+      );
+      return { gx, gy };
     },
     [gridWidth, gridHeight],
   );
@@ -636,6 +705,10 @@ export function HeatDiffusionViewer({
 
   const handleReset = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
+    if (resizeRafRef.current !== null) {
+      cancelAnimationFrame(resizeRafRef.current);
+      resizeRafRef.current = null;
+    }
     const next = defaultNodes(gridWidth, gridHeight);
     setNodes(next);
     nodesRef.current = next;

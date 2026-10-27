@@ -54,9 +54,20 @@ export function calculateHorizonTranslation(
   pixelsPerDegree = 3.2,
   maxTranslationPx = 140,
 ): number {
-  const clampedPitch = Math.max(-90, Math.min(90, pitch));
-  const translation = clampedPitch * pixelsPerDegree;
-  return Math.max(-maxTranslationPx, Math.min(maxTranslationPx, translation));
+  const safePitch = typeof pitch === "number" && Number.isFinite(pitch) ? pitch : 0;
+  const safePpd =
+    typeof pixelsPerDegree === "number" && Number.isFinite(pixelsPerDegree) && pixelsPerDegree > 0
+      ? pixelsPerDegree
+      : 3.2;
+  const safeMax =
+    typeof maxTranslationPx === "number" && Number.isFinite(maxTranslationPx) && maxTranslationPx > 0
+      ? maxTranslationPx
+      : 140;
+
+  const clampedPitch = Math.max(-90, Math.min(90, safePitch));
+  const translation = clampedPitch * safePpd;
+  const clamped = Math.max(-safeMax, Math.min(safeMax, translation));
+  return clamped === 0 ? 0 : clamped;
 }
 
 /**
@@ -64,7 +75,9 @@ export function calculateHorizonTranslation(
  * Clockwise device bank requires counter-clockwise horizon rotation.
  */
 export function calculateRollRotation(roll: number): number {
-  return -roll;
+  const safeRoll = typeof roll === "number" && Number.isFinite(roll) ? roll : 0;
+  const rotated = -safeRoll;
+  return rotated === 0 ? 0 : rotated;
 }
 
 /**
@@ -75,7 +88,14 @@ export function isAttitudeLevel(
   roll: number,
   toleranceDeg = 8,
 ): boolean {
-  return Math.abs(pitch) <= toleranceDeg && Math.abs(roll) <= toleranceDeg;
+  const safePitch = typeof pitch === "number" && Number.isFinite(pitch) ? pitch : 0;
+  const safeRoll = typeof roll === "number" && Number.isFinite(roll) ? roll : 0;
+  const safeTol =
+    typeof toleranceDeg === "number" && Number.isFinite(toleranceDeg) && toleranceDeg >= 0
+      ? toleranceDeg
+      : 8;
+
+  return Math.abs(safePitch) <= safeTol && Math.abs(safeRoll) <= safeTol;
 }
 
 /**
@@ -87,10 +107,23 @@ export function calculateFlightDirectorOffset(
   currentYaw: number,
   targetYaw: number,
 ): { pitchError: number; yawError: number; isAligned: boolean } {
-  const pitchError = targetPitch - currentPitch;
+  const safeCurrentPitch =
+    typeof currentPitch === "number" && Number.isFinite(currentPitch) ? currentPitch : 0;
+  const safeTargetPitch =
+    typeof targetPitch === "number" && Number.isFinite(targetPitch) ? targetPitch : 0;
+  const safeCurrentYaw =
+    typeof currentYaw === "number" && Number.isFinite(currentYaw)
+      ? ((currentYaw % 360) + 360) % 360
+      : 0;
+  const safeTargetYaw =
+    typeof targetYaw === "number" && Number.isFinite(targetYaw)
+      ? ((targetYaw % 360) + 360) % 360
+      : 0;
+
+  const pitchError = safeTargetPitch - safeCurrentPitch;
 
   // Shortest angular distance on circular compass
-  let yawError = (targetYaw - currentYaw + 540) % 360 - 180;
+  const yawError = (safeTargetYaw - safeCurrentYaw + 540) % 360 - 180;
 
   const isAligned = Math.abs(pitchError) <= 4 && Math.abs(yawError) <= 6;
 
@@ -133,21 +166,43 @@ export function AttitudeHorizonIndicator({
   const [simRoll, setSimRoll] = useState<number | null>(null);
   const [simYaw, setSimYaw] = useState<number | null>(null);
 
+  const safeSize = typeof size === "number" && Number.isFinite(size) && size > 0 ? size : 320;
+  const safePixelsPerDegree =
+    typeof pixelsPerDegree === "number" && Number.isFinite(pixelsPerDegree) && pixelsPerDegree > 0
+      ? pixelsPerDegree
+      : 3.2;
+
   // Effective attitude resolution: manual sim > prop override > sensor fusion tracker > nominal zero
   const attitude: FlightAttitude = useMemo(() => {
+    const rawPitch =
+      simPitch ??
+      (typeof propPitch === "number" && Number.isFinite(propPitch) ? propPitch : undefined) ??
+      tracker.attitude?.pitch ??
+      0;
+    const rawRoll =
+      simRoll ??
+      (typeof propRoll === "number" && Number.isFinite(propRoll) ? propRoll : undefined) ??
+      tracker.attitude?.roll ??
+      0;
+    const rawYaw =
+      simYaw ??
+      (typeof propYaw === "number" && Number.isFinite(propYaw) ? propYaw : undefined) ??
+      tracker.attitude?.yaw ??
+      0;
+
     return {
-      pitch: simPitch ?? propPitch ?? tracker.attitude?.pitch ?? 0,
-      roll: simRoll ?? propRoll ?? tracker.attitude?.roll ?? 0,
-      yaw: simYaw ?? propYaw ?? tracker.attitude?.yaw ?? 0,
+      pitch: Number.isFinite(rawPitch) ? rawPitch : 0,
+      roll: Number.isFinite(rawRoll) ? rawRoll : 0,
+      yaw: Number.isFinite(rawYaw) ? ((rawYaw % 360) + 360) % 360 : 0,
     };
   }, [simPitch, simRoll, simYaw, propPitch, propRoll, propYaw, tracker.attitude]);
 
   const { pitch, roll, yaw } = attitude;
 
-  const maxTranslation = (size / 2) * 0.85;
+  const maxTranslation = (safeSize / 2) * 0.85;
   const horizonTranslateY = calculateHorizonTranslation(
     pitch,
-    pixelsPerDegree,
+    safePixelsPerDegree,
     maxTranslation,
   );
   const rollRotationDeg = calculateRollRotation(roll);
@@ -155,7 +210,14 @@ export function AttitudeHorizonIndicator({
 
   // AR Flight Director waypoint alignment
   const flightDirector = useMemo(() => {
-    if (targetPitch === undefined || targetHeading === undefined) return null;
+    if (
+      targetPitch === undefined ||
+      targetHeading === undefined ||
+      !Number.isFinite(targetPitch) ||
+      !Number.isFinite(targetHeading)
+    ) {
+      return null;
+    }
     return calculateFlightDirectorOffset(pitch, targetPitch, yaw, targetHeading);
   }, [pitch, targetPitch, yaw, targetHeading]);
 
@@ -200,7 +262,7 @@ export function AttitudeHorizonIndicator({
       {/* Primary Circular Instrument Bezel */}
       <div
         className="relative rounded-full border-4 border-zinc-800 shadow-[inset_0_0_25px_rgba(0,0,0,0.9),0_0_20px_rgba(16,185,129,0.2)] overflow-hidden flex items-center justify-center bg-black"
-        style={{ width: size, height: size }}
+        style={{ width: safeSize, height: safeSize }}
       >
         {/* Dynamic Artificial Horizon Disc (Moves with Pitch & Roll) */}
         <div
@@ -228,7 +290,7 @@ export function AttitudeHorizonIndicator({
             className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
           >
             {ladderRungs.map((deg) => {
-              const rungY = -deg * pixelsPerDegree;
+              const rungY = -deg * safePixelsPerDegree;
               const isNoseUp = deg > 0;
               const rungWidth = Math.abs(deg) === 30 ? 76 : Math.abs(deg) === 20 ? 60 : 44;
 
@@ -333,7 +395,7 @@ export function AttitudeHorizonIndicator({
                 Math.min(90, flightDirector.yawError * 2.5),
               )}px, ${Math.max(
                 -90,
-                Math.min(90, -flightDirector.pitchError * pixelsPerDegree),
+                Math.min(90, -flightDirector.pitchError * safePixelsPerDegree),
               )}px)`,
             }}
           >
@@ -456,7 +518,7 @@ export function AttitudeHorizonIndicator({
         <div className="mt-4 pt-3 border-t border-emerald-500/20 w-full text-[11px]">
           <div className="flex items-center justify-between text-zinc-400 mb-2">
             <span>FLIGHT SIMULATOR CONTROLS:</span>
-            {(simPitch !== null || simRoll !== null) && (
+            {(simPitch !== null || simRoll !== null || simYaw !== null) && (
               <button
                 type="button"
                 data-testid="simulate-level-btn"
@@ -472,7 +534,7 @@ export function AttitudeHorizonIndicator({
             <button
               type="button"
               data-testid="simulate-pitch-up-btn"
-              onClick={() => setSimPitch((p) => (p ?? 0) + 10)}
+              onClick={() => setSimPitch((p) => (p ?? pitch) + 10)}
               className="px-2 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-emerald-300 text-[10px] font-semibold"
             >
               Pitch +10°
@@ -480,7 +542,7 @@ export function AttitudeHorizonIndicator({
             <button
               type="button"
               data-testid="simulate-pitch-down-btn"
-              onClick={() => setSimPitch((p) => (p ?? 0) - 10)}
+              onClick={() => setSimPitch((p) => (p ?? pitch) - 10)}
               className="px-2 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-emerald-300 text-[10px] font-semibold"
             >
               Pitch -10°
@@ -488,7 +550,7 @@ export function AttitudeHorizonIndicator({
             <button
               type="button"
               data-testid="simulate-roll-left-btn"
-              onClick={() => setSimRoll((r) => (r ?? 0) - 15)}
+              onClick={() => setSimRoll((r) => (r ?? roll) - 15)}
               className="px-2 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-emerald-300 text-[10px] font-semibold"
             >
               Bank L 15°
@@ -496,7 +558,7 @@ export function AttitudeHorizonIndicator({
             <button
               type="button"
               data-testid="simulate-roll-right-btn"
-              onClick={() => setSimRoll((r) => (r ?? 0) + 15)}
+              onClick={() => setSimRoll((r) => (r ?? roll) + 15)}
               className="px-2 py-1 rounded bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-emerald-300 text-[10px] font-semibold"
             >
               Bank R 15°

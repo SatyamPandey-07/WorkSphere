@@ -52,4 +52,21 @@ describe("weatherToCloudDensity utility tests", () => {
     const result = await fetchLiveVenueWeather(undefined, undefined);
     expect(result).toEqual(DEFAULT_MOCK_WEATHER);
   });
+  test("weatherToCloudUniforms sanitizes NaN and non-finite metrics gracefully", () => {
+    const uniforms = weatherToCloudUniforms({
+      cloudCover: NaN,
+      humidity: Number.POSITIVE_INFINITY,
+      rainProbability: -50,
+      windSpeed: NaN,
+    });
+
+    expect(Number.isFinite(uniforms.cloudCoverage)).toBe(true);
+    expect(uniforms.cloudCoverage).toBeCloseTo(0.45);
+    expect(Number.isFinite(uniforms.humidity)).toBe(true);
+    expect(uniforms.humidity).toBeCloseTo(0.60);
+    expect(Number.isFinite(uniforms.rainFactor)).toBe(true);
+    expect(uniforms.rainFactor).toBe(0);
+    expect(Number.isFinite(uniforms.windSpeed)).toBe(true);
+    expect(uniforms.windSpeed).toBeCloseTo(1.2);
+  });
 });

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Radar, Activity, RefreshCw, Terminal } from 'lucide-react';
 
-interface DogfightEvent {
+export interface DogfightEvent {
   id: string;
   deskId: string;
   contenderA: { callsign: string; ipSector: string; timestamp: string };
@@ -11,7 +11,12 @@ interface DogfightEvent {
   status: 'INTERCEPTED' | 'LOCKED' | 'RESOLVED_A' | 'RESOLVED_B' | 'COLLISION';
 }
 
-const MOCK_DOGFIGHTS: DogfightEvent[] = [
+export interface DogfightInterceptionTrackerProps {
+  initialDogfights?: DogfightEvent[];
+  pollIntervalMs?: number;
+}
+
+export const MOCK_DOGFIGHTS: DogfightEvent[] = [
   {
     id: 'DF-901',
     deskId: 'DESK-ALPHA-09',
@@ -41,9 +46,19 @@ const MOCK_DOGFIGHTS: DogfightEvent[] = [
   },
 ];
 
-export const DogfightInterceptionTracker: React.FC = () => {
-  const [dogfights, setDogfights] = useState<DogfightEvent[]>(MOCK_DOGFIGHTS);
+export const DogfightInterceptionTracker: React.FC<DogfightInterceptionTrackerProps> = ({
+  initialDogfights,
+  pollIntervalMs = 2000,
+}) => {
+  const [dogfights, setDogfights] = useState<DogfightEvent[]>(() => initialDogfights ?? MOCK_DOGFIGHTS);
   const [isLiveActive, setIsLiveActive] = useState(true);
+
+  // Sync state if initialDogfights prop changes
+  useEffect(() => {
+    if (initialDogfights) {
+      setDogfights(initialDogfights);
+    }
+  }, [initialDogfights]);
 
   // Simulate live telemetry updates
   useEffect(() => {
@@ -52,15 +67,53 @@ export const DogfightInterceptionTracker: React.FC = () => {
       setDogfights(prev =>
         prev.map(df => ({
           ...df,
-          settlementLatency: df.settlementLatency + Math.floor(Math.random() * 5) - 2,
+          settlementLatency: Math.max(
+            1,
+            Math.round(
+              (Number.isFinite(df.settlementLatency) ? df.settlementLatency : 35) +
+                Math.floor(Math.random() * 5) -
+                2,
+            ),
+          ),
         }))
       );
-    }, 2000);
+    }, pollIntervalMs);
+    (interval as any)?.unref?.();
     return () => clearInterval(interval);
-  }, [isLiveActive]);
+  }, [isLiveActive, pollIntervalMs]);
+
+  // Dynamic telemetry calculations
+  const { resolvedCount, avgLatency, integrityRate } = useMemo(() => {
+    if (!dogfights || dogfights.length === 0) {
+      return { resolvedCount: 0, avgLatency: '0.0', integrityRate: 100 };
+    }
+
+    const resolved = dogfights.filter(
+      df => df.status === 'RESOLVED_A' || df.status === 'RESOLVED_B',
+    ).length;
+
+    const totalLatency = dogfights.reduce(
+      (acc, df) =>
+        acc + (Number.isFinite(df.settlementLatency) ? Math.max(0, df.settlementLatency) : 0),
+      0,
+    );
+    const avg = (totalLatency / dogfights.length).toFixed(1);
+
+    const nonCollisionCount = dogfights.filter(df => df.status !== 'COLLISION').length;
+    const integrity = Math.round((nonCollisionCount / dogfights.length) * 100);
+
+    return { resolvedCount: resolved, avgLatency: avg, integrityRate: integrity };
+  }, [dogfights]);
+
+  const handleReset = () => {
+    setDogfights([...(initialDogfights ?? MOCK_DOGFIGHTS)]);
+  };
 
   return (
-    <div className="bg-slate-950 border border-emerald-500/30 rounded-2xl p-6 text-slate-100 font-mono shadow-2xl">
+    <div
+      data-testid="dogfight-interception-tracker"
+      className="bg-slate-950 border border-emerald-500/30 rounded-2xl p-6 text-slate-100 font-mono shadow-2xl"
+    >
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-emerald-500/20 pb-4 mb-6 gap-4">
         <div className="flex items-center gap-3">
@@ -91,7 +144,7 @@ export const DogfightInterceptionTracker: React.FC = () => {
             {isLiveActive ? 'LIVE TELEMETRY ACTIVE' : 'TELEMETRY PAUSED'}
           </button>
           <button
-            onClick={() => setDogfights([...MOCK_DOGFIGHTS])}
+            onClick={handleReset}
             className="p-1.5 bg-slate-900 border border-slate-700 hover:border-emerald-500/50 rounded text-slate-300 hover:text-emerald-400 transition-colors"
             title="Reset Mock Telemetry"
           >
@@ -106,15 +159,21 @@ export const DogfightInterceptionTracker: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
           <div className="bg-slate-950/60 border border-emerald-500/10 p-3 rounded-lg">
             <p className="text-[10px] text-slate-400 uppercase">Active Race Interceptions</p>
-            <p className="text-xl font-bold text-emerald-400 mt-1">3 Conflicts Resolved</p>
+            <p data-testid="metric-resolved-conflicts" className="text-xl font-bold text-emerald-400 mt-1">
+              {resolvedCount} {resolvedCount === 1 ? 'Conflict' : 'Conflicts'} Resolved
+            </p>
           </div>
           <div className="bg-slate-950/60 border border-emerald-500/10 p-3 rounded-lg">
             <p className="text-[10px] text-slate-400 uppercase">Avg Settlement Latency</p>
-            <p className="text-xl font-bold text-teal-400 mt-1">41.3 ms</p>
+            <p data-testid="metric-avg-latency" className="text-xl font-bold text-teal-400 mt-1">
+              {avgLatency} ms
+            </p>
           </div>
           <div className="bg-slate-950/60 border border-emerald-500/10 p-3 rounded-lg">
             <p className="text-[10px] text-slate-400 uppercase">Distributed Lock Leases</p>
-            <p className="text-xl font-bold text-emerald-300 mt-1">100% Integrity</p>
+            <p data-testid="metric-integrity-rate" className="text-xl font-bold text-emerald-300 mt-1">
+              {integrityRate}% Integrity
+            </p>
           </div>
         </div>
       </div>
@@ -128,6 +187,7 @@ export const DogfightInterceptionTracker: React.FC = () => {
         {dogfights.map(df => (
           <div
             key={df.id}
+            data-testid={`dogfight-row-${df.id}`}
             className="bg-slate-900 border border-slate-800 hover:border-emerald-500/40 rounded-xl p-4 transition-all shadow-lg"
           >
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-800 pb-3 mb-3 gap-2">
@@ -144,7 +204,9 @@ export const DogfightInterceptionTracker: React.FC = () => {
                 <span className="text-slate-400">Latency: <strong className="text-emerald-400">{df.settlementLatency}ms</strong></span>
                 <span
                   className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border ${
-                    df.status === 'RESOLVED_A' || df.status === 'RESOLVED_B'
+                    df.status === 'COLLISION'
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      : df.status === 'RESOLVED_A' || df.status === 'RESOLVED_B'
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                       : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                   }`}
@@ -178,5 +240,7 @@ export const DogfightInterceptionTracker: React.FC = () => {
     </div>
   );
 };
+
+export default DogfightInterceptionTracker;
 
 export default DogfightInterceptionTracker;

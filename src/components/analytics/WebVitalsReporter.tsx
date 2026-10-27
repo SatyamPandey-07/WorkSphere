@@ -6,44 +6,68 @@ import {
   getWebVitalRating,
   recordWebVital,
   WebVitalMetricName,
+  WebVitalEntry,
 } from "@/lib/webVitalsCollector";
+
+export interface WebVitalsReporterProps {
+  /** Target telemetry ingestion endpoint (defaults to "/api/admin/vitals") */
+  endpoint?: string;
+  /** Whether reporting is active (defaults to true) */
+  enabled?: boolean;
+  /** Optional callback invoked whenever a metric is evaluated and recorded */
+  onMetricReported?: (metric: WebVitalEntry) => void;
+}
 
 /**
  * Global Client Web Vitals Reporter Component
  * Listens for PerformanceObserver web vitals events (LCP, INP, CLS, FCP, TTFB)
- * and records telemetry data locally and to the server API.
+ * and records telemetry data locally and to the server API with proper lifecycle teardown.
  */
-export function WebVitalsReporter() {
+export function WebVitalsReporter({
+  endpoint = "/api/admin/vitals",
+  enabled = true,
+  onMetricReported,
+}: WebVitalsReporterProps = {}) {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (typeof window === "undefined" || !("PerformanceObserver" in window)) {
+    if (!enabled || typeof window === "undefined" || !("PerformanceObserver" in window)) {
       return;
     }
+
+    const observers: PerformanceObserver[] = [];
 
     const reportMetric = (
       name: WebVitalMetricName,
       value: number,
       delta: number = value
     ) => {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+        return;
+      }
+      const safeDelta = typeof delta === "number" && Number.isFinite(delta) ? delta : value;
       const rating = getWebVitalRating(name, value);
       const entry = recordWebVital({
         name,
         value,
         rating,
-        delta,
+        delta: safeDelta,
         route: pathname || "/",
       });
 
+      onMetricReported?.(entry);
+
       // Post metric to server endpoint asynchronously
       try {
+        const payload = JSON.stringify(entry);
         if (navigator.sendBeacon) {
-          navigator.sendBeacon("/api/admin/vitals", JSON.stringify(entry));
+          const blob = new Blob([payload], { type: "application/json" });
+          navigator.sendBeacon(endpoint, blob);
         } else {
-          fetch("/api/admin/vitals", {
+          fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(entry),
+            body: payload,
             keepalive: true,
           }).catch(() => {});
         }
@@ -62,6 +86,7 @@ export function WebVitalsReporter() {
         }
       });
       lcpObserver.observe({ type: "largest-contentful-paint", buffered: true });
+      observers.push(lcpObserver);
     } catch {
       // Observer type not supported in browser environment
     }
@@ -72,16 +97,17 @@ export function WebVitalsReporter() {
       const clsObserver = new PerformanceObserver((entryList) => {
         for (const entry of entryList.getEntries()) {
           const layoutShiftEntry = entry as any;
-          if (!layoutShiftEntry.hadRecentInput) {
+          if (!layoutShiftEntry.hadRecentInput && typeof layoutShiftEntry.value === "number") {
             clsValue += layoutShiftEntry.value;
           }
         }
         reportMetric("CLS", clsValue);
       });
       clsObserver.observe({ type: "layout-shift", buffered: true });
+      observers.push(clsObserver);
     } catch {}
 
-    // 3. Observe FCP & TTFB
+    // 3. Observe FCP (First Contentful Paint)
     try {
       const paintObserver = new PerformanceObserver((entryList) => {
         for (const entry of entryList.getEntries()) {
@@ -91,18 +117,48 @@ export function WebVitalsReporter() {
         }
       });
       paintObserver.observe({ type: "paint", buffered: true });
+      observers.push(paintObserver);
     } catch {}
 
+    // 4. Observe INP (Interaction to Next Paint)
     try {
-      const navEntries = performance.getEntriesByType("navigation");
-      if (navEntries.length > 0) {
-        const nav = navEntries[0] as PerformanceNavigationTiming;
-        if (nav.responseStart) {
-          reportMetric("TTFB", nav.responseStart);
+      let longestInteraction = 0;
+      const inpObserver = new PerformanceObserver((entryList) => {
+        for (const entry of entryList.getEntries()) {
+          const duration = (entry as any).duration || 0;
+          if (duration > longestInteraction) {
+            longestInteraction = duration;
+            reportMetric("INP", longestInteraction);
+          }
+        }
+      });
+      inpObserver.observe({ type: "event", buffered: true, durationThreshold: 16 } as any);
+      observers.push(inpObserver);
+    } catch {}
+
+    // 5. Observe TTFB (Time to First Byte)
+    try {
+      if (typeof performance !== "undefined" && typeof performance.getEntriesByType === "function") {
+        const navEntries = performance.getEntriesByType("navigation");
+        if (navEntries.length > 0) {
+          const nav = navEntries[0] as PerformanceNavigationTiming;
+          if (nav.responseStart) {
+            reportMetric("TTFB", nav.responseStart);
+          }
         }
       }
     } catch {}
-  }, [pathname]);
+
+    return () => {
+      for (const obs of observers) {
+        try {
+          obs.disconnect();
+        } catch {
+          // Ignore observer teardown errors
+        }
+      }
+    };
+  }, [pathname, endpoint, enabled, onMetricReported]);
 
   return null;
 }

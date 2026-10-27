@@ -324,4 +324,21 @@ describe("mapWMOCodeToCondition", () => {
   test("defaults to cloudy for unknown codes", () => {
     expect(weatherUtils.mapWMOCodeToCondition(10)).toBe("cloudy");
   });
+  test("renders safely when coordinates or weather data contain NaN", () => {
+    render(
+      <WeatherCloudRenderer
+        lat={NaN}
+        lng={NaN}
+        initialWeatherData={{
+          temperature: NaN,
+          cloudCover: NaN,
+          humidity: NaN,
+          windSpeed: NaN,
+          weatherCondition: "partly_cloudy",
+        }}
+      />,
+    );
+    expect(screen.getByText(/22°C/i)).toBeInTheDocument();
+    expect(screen.getByText(/45%/i)).toBeInTheDocument();
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   X,
   HardDrive,
@@ -52,6 +52,9 @@ export function StorageStatsDrawer({
   onClearCache,
   initialUnsyncedCheckIns,
 }: StorageStatsDrawerProps) {
+  const isMountedRef = useRef(true);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [stats, setStats] = useState<OfflineStorageStats | null>(initialStats);
   const [loading, setLoading] = useState(!initialStats);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -70,18 +73,34 @@ export function StorageStatsDrawer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+        successTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const fetchStats = useCallback(async () => {
     try {
       const data = await getCachedFloorPlanStorageStats();
+      if (!isMountedRef.current) return;
       setStats(data);
       setErrorMessage(null);
       onStatsUpdated?.(data);
     } catch (err) {
       console.error("[StorageStatsDrawer] Failed to fetch storage stats:", err);
-      setErrorMessage("Unable to retrieve storage quota details.");
+      if (isMountedRef.current) {
+        setErrorMessage("Unable to retrieve storage quota details.");
+      }
     } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [onStatsUpdated]);
 
@@ -89,6 +108,7 @@ export function StorageStatsDrawer({
     setIsCalculatingStale(true);
     try {
       const data = await getStaleFloorPlanCacheStats();
+      if (!isMountedRef.current) return;
       setStaleStats(data);
     } catch (err) {
       console.error(
@@ -96,13 +116,17 @@ export function StorageStatsDrawer({
         err,
       );
     } finally {
-      setIsCalculatingStale(false);
+      if (isMountedRef.current) {
+        setIsCalculatingStale(false);
+      }
     }
   }, []);
 
   const fetchUnsyncedCheckIns = useCallback(async () => {
     if (initialUnsyncedCheckIns !== undefined) {
-      setUnsyncedCheckIns(initialUnsyncedCheckIns);
+      if (isMountedRef.current) {
+        setUnsyncedCheckIns(initialUnsyncedCheckIns);
+      }
       return;
     }
     let count = 0;
@@ -118,7 +142,9 @@ export function StorageStatsDrawer({
     } catch {
       // SyncQueueManager fallback
     }
-    setUnsyncedCheckIns(count);
+    if (isMountedRef.current) {
+      setUnsyncedCheckIns(count);
+    }
   }, [initialUnsyncedCheckIns]);
 
   useEffect(() => {
@@ -171,6 +197,7 @@ export function StorageStatsDrawer({
     setErrorMessage(null);
     try {
       await purgeStaleFloorPlanCache();
+      if (!isMountedRef.current) return;
       setShowCleanConfirmation(false);
       setSuccessMessage("Stale cache successfully purged!");
       await Promise.all([
@@ -178,12 +205,19 @@ export function StorageStatsDrawer({
         fetchStaleStats(),
         fetchUnsyncedCheckIns(),
       ]);
-      setTimeout(() => setSuccessMessage(null), 4000);
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+      successTimerRef.current = setTimeout(() => {
+        if (isMountedRef.current) setSuccessMessage(null);
+      }, 4000);
     } catch (err) {
       console.error("[StorageStatsDrawer] Failed to purge stale cache:", err);
-      setErrorMessage("Failed to clean stale cache. Please try again.");
+      if (isMountedRef.current) {
+        setErrorMessage("Failed to clean stale cache. Please try again.");
+      }
     } finally {
-      setIsPurgingStale(false);
+      if (isMountedRef.current) {
+        setIsPurgingStale(false);
+      }
     }
   };
 
@@ -222,6 +256,7 @@ export function StorageStatsDrawer({
         }
       }
 
+      if (!isMountedRef.current) return;
       setShowClearCacheConfirmation(false);
       setSuccessMessage("Offline cache successfully cleared!");
       await Promise.all([
@@ -229,12 +264,19 @@ export function StorageStatsDrawer({
         fetchStaleStats(),
         fetchUnsyncedCheckIns(),
       ]);
-      setTimeout(() => setSuccessMessage(null), 4000);
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+      successTimerRef.current = setTimeout(() => {
+        if (isMountedRef.current) setSuccessMessage(null);
+      }, 4000);
     } catch (err) {
       console.error("[StorageStatsDrawer] Failed to clear offline cache:", err);
-      setErrorMessage("Failed to clear offline cache. Please try again.");
+      if (isMountedRef.current) {
+        setErrorMessage("Failed to clear offline cache. Please try again.");
+      }
     } finally {
-      setIsClearingCache(false);
+      if (isMountedRef.current) {
+        setIsClearingCache(false);
+      }
     }
   };
 
@@ -251,11 +293,40 @@ export function StorageStatsDrawer({
     isEstimateAvailable = false,
   } = stats || {};
 
-  const clampedUsagePercent = Math.min(100, Math.max(0, usagePercent));
-  const otherUsageBytes = Math.max(0, usageBytes - floorPlanBytes);
-  const formattedTotalUsage = formatBytes(usageBytes);
-  const formattedQuota = quotaBytes > 0 ? formatBytes(quotaBytes) : "Unlimited";
-  const formattedFloorPlanBytes = formatBytes(floorPlanBytes);
+  const rawUsagePercent =
+    typeof usagePercent === "number" && Number.isFinite(usagePercent)
+      ? usagePercent
+      : 0;
+  const clampedUsagePercent = Math.min(100, Math.max(0, rawUsagePercent));
+
+  const rawFloorPercent =
+    typeof floorPlanPercentOfUsage === "number" &&
+    Number.isFinite(floorPlanPercentOfUsage)
+      ? floorPlanPercentOfUsage
+      : 0;
+  const clampedFloorPlanPercentOfUsage = Math.min(
+    100,
+    Math.max(0, rawFloorPercent),
+  );
+
+  const safeUsageBytes =
+    typeof usageBytes === "number" && Number.isFinite(usageBytes)
+      ? Math.max(0, usageBytes)
+      : 0;
+  const safeFloorPlanBytes =
+    typeof floorPlanBytes === "number" && Number.isFinite(floorPlanBytes)
+      ? Math.max(0, floorPlanBytes)
+      : 0;
+  const safeQuotaBytes =
+    typeof quotaBytes === "number" && Number.isFinite(quotaBytes)
+      ? Math.max(0, quotaBytes)
+      : 0;
+
+  const otherUsageBytes = Math.max(0, safeUsageBytes - safeFloorPlanBytes);
+  const formattedTotalUsage = formatBytes(safeUsageBytes);
+  const formattedQuota =
+    safeQuotaBytes > 0 ? formatBytes(safeQuotaBytes) : "Unlimited";
+  const formattedFloorPlanBytes = formatBytes(safeFloorPlanBytes);
   const formattedOtherBytes = formatBytes(otherUsageBytes);
 
   // Dynamic color for quota progress bar
@@ -268,20 +339,29 @@ export function StorageStatsDrawer({
   const getStatusBadge = () => {
     if (clampedUsagePercent > 90) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-500 dark:text-red-400 border border-red-500/20">
+        <span
+          data-testid="storage-stats-status-badge"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-500/10 text-red-500 dark:text-red-400 border border-red-500/20"
+        >
           <AlertTriangle className="w-3.5 h-3.5" /> Quota Warning
         </span>
       );
     }
     if (clampedUsagePercent > 70) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20">
+        <span
+          data-testid="storage-stats-status-badge"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20"
+        >
           <AlertTriangle className="w-3.5 h-3.5" /> Heavy Usage
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+      <span
+        data-testid="storage-stats-status-badge"
+        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+      >
         <CheckCircle2 className="w-3.5 h-3.5" /> Healthy
       </span>
     );
@@ -322,8 +402,9 @@ export function StorageStatsDrawer({
               type="button"
               onClick={handleRefresh}
               disabled={isRefreshing}
+              data-testid="storage-stats-refresh-btn"
               aria-label="Refresh storage stats"
-              className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw
                 className={`w-4 h-4 ${isRefreshing ? "animate-spin text-blue-500" : ""}`}
@@ -332,8 +413,9 @@ export function StorageStatsDrawer({
             <button
               type="button"
               onClick={onClose}
+              data-testid="storage-stats-close-btn"
               aria-label="Close storage stats drawer"
-              className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -343,7 +425,10 @@ export function StorageStatsDrawer({
         {/* Drawer Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center gap-3 text-zinc-400">
+            <div
+              data-testid="storage-stats-loading-spinner"
+              className="py-12 flex flex-col items-center justify-center gap-3 text-zinc-400"
+            >
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
               <p className="text-sm font-medium">
                 Estimating browser storage quota…
@@ -379,6 +464,7 @@ export function StorageStatsDrawer({
                 {/* Main Progress Bar Indicator */}
                 <div
                   role="progressbar"
+                  data-testid="storage-stats-progressbar"
                   aria-valuenow={Math.round(clampedUsagePercent)}
                   aria-valuemin={0}
                   aria-valuemax={100}
@@ -396,26 +482,26 @@ export function StorageStatsDrawer({
                 </div>
 
                 {/* Sub-progress Multi-segment Breakdown */}
-                {usageBytes > 0 && (
+                {safeUsageBytes > 0 && (
                   <div className="pt-2">
                     <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">
                       <span>Breakdown by Data Type</span>
                       <span>
-                        {floorPlanPercentOfUsage.toFixed(0)}% floor plans
+                        {clampedFloorPlanPercentOfUsage.toFixed(0)}% floor plans
                       </span>
                     </div>
                     <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden flex">
                       <div
                         className="h-full bg-indigo-500 transition-all duration-500"
                         style={{
-                          width: `${Math.min(100, floorPlanPercentOfUsage)}%`,
+                          width: `${Math.min(100, clampedFloorPlanPercentOfUsage)}%`,
                         }}
                         title={`Floor Plans: ${formattedFloorPlanBytes}`}
                       />
                       <div
                         className="h-full bg-blue-500 transition-all duration-500"
                         style={{
-                          width: `${Math.min(100, Math.max(0, 100 - floorPlanPercentOfUsage))}%`,
+                          width: `${Math.min(100, Math.max(0, 100 - clampedFloorPlanPercentOfUsage))}%`,
                         }}
                         title={`Other App Data: ${formattedOtherBytes}`}
                       />
@@ -441,7 +527,10 @@ export function StorageStatsDrawer({
                     <Layers className="w-4 h-4" />
                     Cached Plans
                   </div>
-                  <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                  <div
+                    data-testid="storage-stats-plans-count"
+                    className="text-xl font-bold text-zinc-900 dark:text-zinc-100"
+                  >
                     {floorPlanCount}
                   </div>
                   <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
@@ -454,7 +543,10 @@ export function StorageStatsDrawer({
                     <MapPin className="w-4 h-4" />
                     Total Footprint
                   </div>
-                  <div className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                  <div
+                    data-testid="storage-stats-total-footprint"
+                    className="text-xl font-bold text-zinc-900 dark:text-zinc-100"
+                  >
                     {formattedTotalUsage}
                   </div>
                   <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
@@ -490,7 +582,8 @@ export function StorageStatsDrawer({
                     disabled={
                       isCalculatingStale || isPurgingStale || !staleStats?.count
                     }
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="storage-stats-purge-stale-btn"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Clean
@@ -498,13 +591,17 @@ export function StorageStatsDrawer({
                 </div>
 
                 {successMessage && (
-                  <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <p
+                    data-testid="storage-stats-success-message"
+                    className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1"
+                  >
                     <CheckCircle2 className="w-3.5 h-3.5" /> {successMessage}
                   </p>
                 )}
 
                 {errorMessage && (
                   <p
+                    data-testid="storage-stats-error-message"
                     className="text-xs text-red-600 dark:text-red-400"
                     role="alert"
                   >
@@ -530,7 +627,8 @@ export function StorageStatsDrawer({
                     type="button"
                     onClick={() => setShowClearCacheConfirmation(true)}
                     disabled={isClearingCache || loading}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="storage-stats-clear-cache-btn"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Clear Offline Cache
@@ -556,7 +654,8 @@ export function StorageStatsDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="w-full py-2.5 px-4 rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm font-semibold transition-colors"
+            data-testid="storage-stats-drawer-close-footer-btn"
+            className="w-full py-2.5 px-4 rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm font-semibold transition-colors cursor-pointer"
           >
             Close Drawer
           </button>
@@ -566,6 +665,7 @@ export function StorageStatsDrawer({
       {/* Clean Stale Floor Plans Confirmation Modal */}
       {showCleanConfirmation && (
         <div
+          data-testid="confirm-purge-modal"
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           role="presentation"
           onMouseDown={(e) => {
@@ -598,7 +698,8 @@ export function StorageStatsDrawer({
                 type="button"
                 onClick={() => setShowCleanConfirmation(false)}
                 disabled={isPurgingStale}
-                className="px-4 py-2 text-sm font-medium rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                data-testid="confirm-purge-cancel-btn"
+                className="px-4 py-2 text-sm font-medium rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -606,7 +707,8 @@ export function StorageStatsDrawer({
                 type="button"
                 onClick={handlePurgeStale}
                 disabled={isPurgingStale}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                data-testid="confirm-purge-proceed-btn"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer"
               >
                 {isPurgingStale ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -623,6 +725,7 @@ export function StorageStatsDrawer({
       {/* Clear Offline Cache Confirmation Modal */}
       {showClearCacheConfirmation && (
         <div
+          data-testid="confirm-clear-cache-modal"
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           role="presentation"
           onMouseDown={(e) => {
@@ -662,7 +765,7 @@ export function StorageStatsDrawer({
               >
                 <HardDrive className="w-4 h-4 text-blue-500 shrink-0" />
                 <span>
-                  Free up {(usageBytes / (1024 * 1024)).toFixed(1)} MB
+                  Free up {(safeUsageBytes / (1024 * 1024)).toFixed(1)} MB
                 </span>
                 <span className="text-zinc-400 dark:text-zinc-500 font-normal ml-auto">
                   ({formattedTotalUsage})
@@ -694,7 +797,8 @@ export function StorageStatsDrawer({
                 type="button"
                 onClick={() => setShowClearCacheConfirmation(false)}
                 disabled={isClearingCache}
-                className="px-4 py-2 text-sm font-medium rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                data-testid="confirm-clear-cache-cancel-btn"
+                className="px-4 py-2 text-sm font-medium rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -702,7 +806,8 @@ export function StorageStatsDrawer({
                 type="button"
                 onClick={handleConfirmClearCache}
                 disabled={isClearingCache}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
+                data-testid="confirm-clear-cache-proceed-btn"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {isClearingCache ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

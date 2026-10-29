@@ -11,6 +11,7 @@ import {
   formatSecretForDisplay,
   normalizeTotpSecret,
 } from "@/lib/auth/totp";
+import { isModalBackdropClick } from "@/lib/modal-interactions";
 
 /** Blank border around the code, in modules (the QR specification asks for 4). */
 const QUIET_ZONE_MODULES = 4;
@@ -26,6 +27,8 @@ export interface TotpSetupModalProps {
   /** One-time recovery codes created by the server. */
   recoveryCodes?: readonly string[];
   issuer?: string;
+  /** Whether clicking on the backdrop closes the modal (default: true). */
+  closeOnBackdropClick?: boolean;
 }
 
 /**
@@ -41,6 +44,7 @@ export function TotpSetupModal({
   accountName,
   recoveryCodes = [],
   issuer = DEFAULT_ISSUER,
+  closeOnBackdropClick = true,
 }: TotpSetupModalProps) {
   const normalizedSecret = useMemo(() => normalizeTotpSecret(secret), [secret]);
 
@@ -66,9 +70,21 @@ export function TotpSetupModal({
 
   if (!isOpen) return null;
 
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!closeOnBackdropClick) return;
+    if (isModalBackdropClick(e)) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+    <div
+      data-testid="totp-setup-overlay"
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+    >
       <FocusTrap
+        data-testid="totp-setup-modal"
         className="max-h-[90vh] w-full max-w-md space-y-5 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-6 text-slate-100 shadow-2xl"
         aria-labelledby="totp-setup-title"
         aria-describedby="totp-setup-description"
@@ -81,12 +97,17 @@ export function TotpSetupModal({
               className="h-5 w-5 text-emerald-400"
               aria-hidden="true"
             />
-            <h2 id="totp-setup-title" className="text-lg font-bold text-white">
+            <h2
+              id="totp-setup-title"
+              data-testid="totp-setup-title"
+              className="text-lg font-bold text-white"
+            >
               Set up two-factor authentication
             </h2>
           </div>
           <button
             type="button"
+            data-testid="totp-setup-close-btn"
             data-initial-focus
             onClick={onClose}
             aria-label="Close"
@@ -96,7 +117,11 @@ export function TotpSetupModal({
           </button>
         </div>
 
-        <p id="totp-setup-description" className="text-sm text-slate-300">
+        <p
+          id="totp-setup-description"
+          data-testid="totp-setup-description"
+          className="text-sm text-slate-300"
+        >
           Scan the QR code with an authenticator app such as Google
           Authenticator or 1Password. If you cannot scan it, enter the setup key
           manually.
@@ -105,6 +130,7 @@ export function TotpSetupModal({
         {!normalizedSecret ? (
           <p
             role="alert"
+            data-testid="totp-secret-error-alert"
             className="flex items-start gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200"
           >
             <AlertCircle
@@ -118,10 +144,11 @@ export function TotpSetupModal({
           </p>
         ) : (
           <>
-            <div className="flex justify-center">
+            <div className="flex justify-center" data-testid="totp-qr-container">
               {qr ? (
                 <svg
                   role="img"
+                  data-testid="totp-qr-svg"
                   aria-label="QR code for authenticator app setup"
                   viewBox={`0 0 ${qr.size} ${qr.size}`}
                   shapeRendering="crispEdges"
@@ -135,7 +162,10 @@ export function TotpSetupModal({
                   />
                 </svg>
               ) : (
-                <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-center text-sm text-amber-200">
+                <p
+                  data-testid="totp-qr-unavailable-msg"
+                  className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-center text-sm text-amber-200"
+                >
                   The QR code is unavailable. Enter the setup key below in your
                   authenticator app instead.
                 </p>
@@ -156,13 +186,14 @@ export function TotpSetupModal({
                 <CopyToClipboardButton
                   textToCopy={normalizedSecret}
                   label="Copy Secret Key"
+                  ariaLabel="Copy Secret Key"
                   toastMessage="Secret key copied!"
                 />
               </div>
             </div>
 
             {recoveryCodes.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-2" data-testid="totp-recovery-section">
                 <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
                   Recovery codes
                 </span>
@@ -172,11 +203,13 @@ export function TotpSetupModal({
                 </p>
                 <ul
                   aria-label="Recovery codes"
+                  data-testid="totp-recovery-codes-list"
                   className="grid grid-cols-2 gap-2"
                 >
                   {recoveryCodes.map((code) => (
                     <li
                       key={code}
+                      data-testid="totp-recovery-code-item"
                       className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-center font-mono text-sm tracking-wider text-slate-200"
                     >
                       {code}
@@ -191,6 +224,7 @@ export function TotpSetupModal({
         <div className="flex justify-end border-t border-slate-800 pt-4">
           <button
             type="button"
+            data-testid="totp-setup-done-btn"
             onClick={onClose}
             className="rounded-xl bg-slate-700 px-5 py-2 text-sm font-bold text-white hover:bg-slate-600"
           >

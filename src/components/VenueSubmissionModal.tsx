@@ -1,14 +1,17 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { X, MapPin, Loader2 } from "lucide-react";
 
-interface VenueSubmissionModalProps {
+export interface VenueSubmissionModalProps {
   isOpen: boolean;
   onClose: () => void;
   userLocation?: { lat: number; lng: number };
   onSubmitSuccess?: () => void;
+  className?: string;
+  "data-testid"?: string;
 }
 
 interface VenueFormData {
@@ -39,6 +42,8 @@ export function VenueSubmissionModal({
   onClose,
   userLocation,
   onSubmitSuccess,
+  className = "",
+  ...props
 }: VenueSubmissionModalProps) {
   const { isSignedIn } = useUser();
   const { getToken } = useAuth();
@@ -318,16 +323,27 @@ export function VenueSubmissionModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+    <div
+      data-testid={props["data-testid"] || "venue-submission-modal"}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+    >
       {/* Backdrop - High Contrast Solid for Visibility */}
-      <div className="absolute inset-0 bg-black/95" onClick={onClose} />
+      <div
+        data-testid="venue-submission-backdrop"
+        className="absolute inset-0 bg-black/95"
+        onClick={onClose}
+      />
 
       {/* Modal */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="venue-suggest-title"
-        className="relative w-full max-w-lg bg-white dark:bg-zinc-950 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden border border-zinc-200 dark:border-zinc-800"
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          "relative w-full max-w-lg bg-white dark:bg-zinc-950 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden border border-zinc-200 dark:border-zinc-800",
+          className,
+        )}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
@@ -336,6 +352,8 @@ export function VenueSubmissionModal({
           </h2>
           <button
             type="button"
+            data-testid="venue-submission-close-btn"
+            aria-label="Close modal"
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
           >
@@ -355,7 +373,10 @@ export function VenueSubmissionModal({
           )}
 
           {error && (
-            <div className="p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-lg text-sm font-bold border border-red-500/20">
+            <div
+              data-testid="venue-submission-error"
+              className="p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-lg text-sm font-bold border border-red-500/20"
+            >
               {error}
             </div>
           )}
@@ -366,6 +387,7 @@ export function VenueSubmissionModal({
             </label>
             <input
               type="text"
+              data-testid="venue-name-input"
               value={formData.name}
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, name: e.target.value }))
@@ -381,6 +403,7 @@ export function VenueSubmissionModal({
               Category *
             </label>
             <select
+              data-testid="venue-category-select"
               value={formData.category}
               onChange={(e) =>
                 setFormData((prev) => ({
@@ -404,6 +427,7 @@ export function VenueSubmissionModal({
               <input
                 type="number"
                 step="any"
+                data-testid="venue-lat-input"
                 value={formData.latitude || ""}
                 onChange={(e) =>
                   setFormData((prev) => ({
@@ -417,6 +441,7 @@ export function VenueSubmissionModal({
               <input
                 type="number"
                 step="any"
+                data-testid="venue-lng-input"
                 value={formData.longitude || ""}
                 onChange={(e) =>
                   setFormData((prev) => ({
@@ -429,6 +454,7 @@ export function VenueSubmissionModal({
               />
               <button
                 type="button"
+                data-testid="use-my-location-btn"
                 onClick={handleUseMyLocation}
                 className="px-3 py-2 accent-bg cursor-pointer text-white rounded-lg accent-bg-hover shadow-md transition-all active:scale-95"
               >
@@ -677,6 +703,7 @@ export function VenueSubmissionModal({
 
           <button
             type="submit"
+            data-testid="venue-submit-btn"
             disabled={isSubmitting || !isSignedIn}
             className="w-full cursor-pointer flex items-center justify-center gap-2 py-3 accent-bg accent-bg-hover text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-accent active:scale-[0.98]"
           >
@@ -694,3 +721,5 @@ export function VenueSubmissionModal({
     </div>
   );
 }
+
+export default VenueSubmissionModal;

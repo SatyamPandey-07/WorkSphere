@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import {
   Building2,
   ChevronUp,
@@ -269,7 +270,7 @@ export function classifyVerticalRate(speedFpm: number): {
 /**
  * Synthetic avionics audio tick feedback for vertical speed transitions.
  */
-function playAvionicsRateChime(isClimb: boolean) {
+export function playAvionicsRateChime(isClimb: boolean) {
   if (typeof window === "undefined") return;
   try {
     const AudioContextClass =
@@ -348,7 +349,7 @@ export function CockpitVerticalSpeedTape({
       return verticalSpeedFpm;
     }
     if (currentFloor === targetFloor) return 0;
-    const profile = TRANSIT_MODE_PROFILES[transitMode];
+    const profile = TRANSIT_MODE_PROFILES[transitMode] || TRANSIT_MODE_PROFILES.elevator_local;
     const direction = targetFloor >= currentFloor ? 1 : -1;
     return direction * profile.nominalSpeedFpm;
   }, [verticalSpeedFpm, currentFloor, targetFloor, transitMode]);
@@ -448,13 +449,13 @@ export function CockpitVerticalSpeedTape({
       role="region"
       aria-label={`Cockpit Vertical Speed Tape for ${venueName}`}
       data-testid="cockpit-vertical-speed-tape"
-      className={`p-4 md:p-5 rounded-2xl bg-[#03110b]/90 dark:bg-zinc-950/95 border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 text-emerald-400 font-mono backdrop-blur-md w-full max-w-[340px] select-none space-y-3 ${className}`}
+      className={cn("p-4 md:p-5 rounded-2xl bg-[#03110b]/90 dark:bg-zinc-950/95 border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 text-emerald-400 font-mono backdrop-blur-md w-full max-w-[340px] select-none space-y-3", className)}
     >
       {/* Header bar */}
       <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2.5">
         <div className="flex items-center gap-1.5 text-xs text-white font-bold tracking-wider">
           <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="truncate max-w-[170px]">{venueName}</span>
+          <span data-testid="vsi-venue-name" className="truncate max-w-[170px]">{venueName}</span>
         </div>
         <div className="flex items-center gap-1 text-[10px] text-emerald-300/80 font-semibold uppercase">
           <Compass className="w-3 h-3 text-cyan-400 animate-spin-slow" />
@@ -534,6 +535,7 @@ export function CockpitVerticalSpeedTape({
             <button
               type="button"
               aria-label="Increase climb rate"
+              data-testid="vsi-increase-rate-btn"
               onClick={() => handleStepSpeed(250)}
               className="flex-1 py-1 px-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center justify-center gap-1 transition"
             >
@@ -542,6 +544,7 @@ export function CockpitVerticalSpeedTape({
             <button
               type="button"
               aria-label="Decrease climb rate"
+              data-testid="vsi-decrease-rate-btn"
               onClick={() => handleStepSpeed(-250)}
               className="flex-1 py-1 px-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center justify-center gap-1 transition"
             >
@@ -550,6 +553,7 @@ export function CockpitVerticalSpeedTape({
             <button
               type="button"
               aria-label="Level out vertical speed"
+              data-testid="vsi-level-rate-btn"
               onClick={() => {
                 setSimulatedFpm(0);
                 onVerticalSpeedChange?.(0);
@@ -675,14 +679,15 @@ export function CockpitVerticalSpeedTape({
       <div className="pt-2 border-t border-emerald-500/15 flex items-center justify-between text-[10px] text-zinc-400 font-mono">
         <div className="flex items-center gap-1">
           <Zap className="w-3 h-3 text-emerald-400" />
-          <span className="text-zinc-300">
-            {TRANSIT_MODE_PROFILES[transitMode].name}
+          <span data-testid="vsi-transit-mode-name" className="text-zinc-300">
+            {(TRANSIT_MODE_PROFILES[transitMode] || TRANSIT_MODE_PROFILES.elevator_local).name}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             aria-label="Increase target floor"
+            data-testid="vsi-target-floor-up-btn"
             onClick={() => handleFloorChange(targetFloor + 1)}
             disabled={targetFloor >= totalFloors}
             className="p-0.5 rounded bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30"
@@ -693,6 +698,7 @@ export function CockpitVerticalSpeedTape({
           <button
             type="button"
             aria-label="Decrease target floor"
+            data-testid="vsi-target-floor-down-btn"
             onClick={() => handleFloorChange(targetFloor - 1)}
             disabled={targetFloor <= 1}
             className="p-0.5 rounded bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30"

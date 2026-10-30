@@ -3,13 +3,23 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { ShieldCheck, Loader2, Copy, Check } from "lucide-react";
 import { provePremiumAccess, type ZkpProgressStage } from "@/lib/zkp/client";
+import { cn } from "@/lib/utils";
 
-type Props = {
+export interface PremiumZkpGateProps {
   venueId: string;
   venueName: string;
-};
+  className?: string;
+  onSuccess?: (accessToken: string) => void;
+  onError?: (error: string) => void;
+}
 
-export default function PremiumZkpGate({ venueId, venueName }: Props) {
+export function PremiumZkpGate({
+  venueId,
+  venueName,
+  className,
+  onSuccess,
+  onError,
+}: PremiumZkpGateProps) {
   const [token, setToken] = useState("");
   const [stage, setStage] = useState<"idle" | "proving" | "verifying" | "done">(
     "idle",
@@ -18,11 +28,15 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const copyTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
       abortRef.current = null;
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
     };
   }, []);
 
@@ -48,16 +62,29 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
       });
 
       if (result.allowed) {
+        const key = result.accessToken ?? "";
         setStage("done");
-        setAccessToken(result.accessToken ?? null);
-        setMsg(
-          `Verified in ${result.proveMs}ms. Access granted to ${venueName}.`,
-        );
+        setAccessToken(key || null);
+        const successMsg = `Verified in ${result.proveMs}ms. Access granted to ${venueName}.`;
+        setMsg(successMsg);
         setToken("");
+        onSuccess?.(key);
       } else {
+        const errorMsg = result.error ?? "Access denied.";
         setStage("idle");
-        setMsg(result.error ?? "Access denied.");
+        setMsg(errorMsg);
+        onError?.(errorMsg);
       }
+    } catch (err: unknown) {
+      if (controller.signal.aborted) {
+        setStage("idle");
+        return;
+      }
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to prove membership.";
+      setStage("idle");
+      setMsg(errorMsg);
+      onError?.(errorMsg);
     } finally {
       abortRef.current = null;
     }
@@ -68,21 +95,34 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
     setStage("idle");
   }
 
-  async function copyToken() {
+  const copyToken = () => {
     if (!accessToken) return;
     try {
-      await navigator.clipboard.writeText(accessToken);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(accessToken).catch(() => {
+          // Clipboard API write rejected
+        });
+      }
     } catch {
       // Clipboard API not available or permission denied
     }
-  }
+    setCopied(true);
+    if (copyTimerRef.current) {
+      clearTimeout(copyTimerRef.current);
+    }
+    copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+  };
 
   const busy = stage === "proving" || stage === "verifying";
 
   return (
-    <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 p-4 space-y-3">
+    <div
+      data-testid="premium-zkp-gate"
+      className={cn(
+        "rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 p-4 space-y-3",
+        className
+      )}
+    >
       <div className="flex items-center gap-2 text-sm font-bold">
         <ShieldCheck className="h-4 w-4 text-blue-600" />
         Premium access (zero-knowledge)
@@ -92,22 +132,33 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
       </p>
 
       {stage === "done" && accessToken ? (
-        <div className="space-y-2">
+        <div
+          data-testid="premium-zkp-success-banner"
+          className="space-y-2"
+        >
           <p className="text-sm font-medium text-green-600 dark:text-green-400">
             {msg}
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded-lg bg-green-50 dark:bg-green-900/20 px-3 py-2 text-xs font-mono text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800">
+            <code
+              data-testid="premium-zkp-access-token"
+              className="flex-1 truncate rounded-lg bg-green-50 dark:bg-green-900/20 px-3 py-2 text-xs font-mono text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800"
+            >
               {accessToken}
             </code>
             <button
               type="button"
+              data-testid="premium-zkp-copy-btn"
               onClick={copyToken}
               className="shrink-0 rounded-lg bg-green-600 hover:bg-green-700 text-white p-2"
               title="Copy access token"
+              aria-label="Copy access token"
             >
               {copied ? (
-                <Check className="h-4 w-4" />
+                <Check
+                  data-testid="premium-zkp-copied-icon"
+                  className="h-4 w-4"
+                />
               ) : (
                 <Copy className="h-4 w-4" />
               )}
@@ -117,6 +168,7 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
       ) : (
         <>
           <input
+            data-testid="premium-zkp-token-input"
             type="password"
             inputMode="numeric"
             placeholder="Membership token"
@@ -127,6 +179,7 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
           />
           <div className="flex gap-2">
             <button
+              data-testid="premium-zkp-prove-btn"
               type="button"
               disabled={busy || !token.trim()}
               onClick={() => void onProve()}
@@ -135,7 +188,7 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
               {busy ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  {stage === "proving" ? "Proving…" : "Verifying…"}
+                  <span>{stage === "proving" ? "Proving…" : "Verifying…"}</span>
                 </>
               ) : (
                 "Prove & unlock"
@@ -143,6 +196,7 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
             </button>
             {busy && (
               <button
+                data-testid="premium-zkp-cancel-btn"
                 type="button"
                 onClick={onCancel}
                 className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 text-xs font-medium px-4 py-3"
@@ -151,9 +205,18 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
               </button>
             )}
           </div>
-          {msg && <p className="text-xs text-rose-500">{msg}</p>}
+          {msg && (
+            <p
+              data-testid="premium-zkp-error-msg"
+              className="text-xs text-rose-500"
+            >
+              {msg}
+            </p>
+          )}
         </>
       )}
     </div>
   );
 }
+
+export default PremiumZkpGate;

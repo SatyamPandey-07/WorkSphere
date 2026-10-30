@@ -1,6 +1,7 @@
 "use client";
 
 import { Volume2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   LineChart,
   Line,
@@ -18,21 +19,54 @@ export interface HourlyForecast {
   samples: number;
 }
 
-interface NoiseTimelineChartProps {
-  forecast: HourlyForecast[];
+export interface NoiseTimelineChartProps {
+  forecast?: HourlyForecast[];
+  className?: string;
+  "data-testid"?: string;
 }
 
-export function NoiseTimelineChart({ forecast }: NoiseTimelineChartProps) {
+export function NoiseTimelineChart({
+  forecast = [],
+  className,
+  "data-testid": dataTestId = "noise-timeline-chart",
+}: NoiseTimelineChartProps) {
+  if (!forecast || forecast.length === 0) {
+    return (
+      <div
+        data-testid={dataTestId}
+        className={cn(
+          "mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm text-center",
+          className
+        )}
+      >
+        <h3 className="text-xs font-black uppercase tracking-widest text-zinc-200 mb-1 flex items-center justify-center gap-2">
+          <Volume2 className="w-4 h-4 text-pink-400" />
+          Noise Level Timeline
+        </h3>
+        <p data-testid="noise-timeline-empty" className="text-xs text-zinc-400 py-4">
+          No noise level forecast data available for this venue.
+        </p>
+      </div>
+    );
+  }
+
   // Format data for Recharts
   const chartData = forecast.map((f) => ({
     hour: `${f.hour.toString().padStart(2, "0")}:00`,
     predictedDb: f.predictedDb,
     confidence: f.confidence,
+    samples: f.samples,
     rawHour: f.hour,
   }));
 
   return (
-    <div className="mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+    <div
+      data-testid={dataTestId}
+      className={cn(
+        "mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm",
+        className
+      )}
+    >
       <h3 className="text-xs font-black uppercase tracking-widest text-zinc-200 mb-1 flex items-center gap-2">
         <Volume2 className="w-4 h-4 text-pink-400" />
         Noise Level Timeline
@@ -41,7 +75,7 @@ export function NoiseTimelineChart({ forecast }: NoiseTimelineChartProps) {
         24-hour historical and forecasted ambient decibels
       </p>
 
-      <div className="h-40 w-full mt-2">
+      <div data-testid="noise-timeline-container" className="h-40 w-full mt-2">
         <ResponsiveContainer width="99%" height="100%" debounce={50}>
           <LineChart data={chartData}>
             <CartesianGrid
@@ -107,3 +141,5 @@ export function NoiseTimelineChart({ forecast }: NoiseTimelineChartProps) {
     </div>
   );
 }
+
+export default NoiseTimelineChart;

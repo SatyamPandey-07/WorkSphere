@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { cn } from "@/lib/utils";
 import {
   AreaChart,
   Area,
@@ -39,8 +40,10 @@ interface SeatingForecastResult {
   capacity: number;
 }
 
-interface SeatingForecastChartProps {
+export interface SeatingForecastChartProps {
   venueId: string;
+  className?: string;
+  "data-testid"?: string;
 }
 
 interface DayOccupancyData {
@@ -196,6 +199,7 @@ function ForecastLegend({ onOpenModal }: { onOpenModal?: () => void }) {
       {onOpenModal && (
         <button
           type="button"
+          data-testid="day-by-day-forecast-btn"
           onClick={onOpenModal}
           className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 rounded-lg transition-colors cursor-pointer"
         >
@@ -247,6 +251,7 @@ function SeatingForecastModal({
 
   return (
     <div
+      data-testid="seating-forecast-modal"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn"
       role="dialog"
       aria-modal="true"
@@ -521,6 +526,7 @@ function SeatingForecastModal({
           </div>
           <button
             type="button"
+            data-testid="seating-forecast-modal-footer-close-btn"
             onClick={onClose}
             className="px-4 py-2 text-xs font-semibold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
           >
@@ -532,7 +538,11 @@ function SeatingForecastModal({
   );
 }
 
-export function SeatingForecastChart({ venueId }: SeatingForecastChartProps) {
+export function SeatingForecastChart({
+  venueId,
+  className = "",
+  ...props
+}: SeatingForecastChartProps) {
   const [data, setData] = useState<SeatingForecastResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -562,7 +572,10 @@ export function SeatingForecastChart({ venueId }: SeatingForecastChartProps) {
 
   if (isLoading) {
     return (
-      <div className="w-full h-64 flex items-center justify-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+      <div
+        data-testid="seating-forecast-loading"
+        className="w-full h-64 flex items-center justify-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800"
+      >
         <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
@@ -570,7 +583,10 @@ export function SeatingForecastChart({ venueId }: SeatingForecastChartProps) {
 
   if (error || !data) {
     return (
-      <div className="w-full p-6 text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+      <div
+        data-testid="seating-forecast-unavailable"
+        className="w-full p-6 text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800"
+      >
         <p className="text-sm text-zinc-500">Forecast unavailable.</p>
       </div>
     );
@@ -587,7 +603,10 @@ export function SeatingForecastChart({ venueId }: SeatingForecastChartProps) {
 
   if (!hasData) {
     return (
-      <div className="w-full p-6 text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+      <div
+        data-testid="seating-forecast-empty"
+        className="w-full p-6 text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800"
+      >
         <p className="text-sm text-zinc-500">
           No historical data to generate forecast.
         </p>
@@ -596,7 +615,10 @@ export function SeatingForecastChart({ venueId }: SeatingForecastChartProps) {
   }
 
   return (
-    <div className="w-full space-y-4">
+    <div
+      data-testid={props["data-testid"] || "seating-forecast-chart"}
+      className={cn("w-full space-y-4", className)}
+    >
       <RecommendedHoursBadge hours={data.recommendedHours} />
 
       <div className="w-full h-64 min-h-[200px] bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm">
@@ -691,3 +713,5 @@ export function SeatingForecastChart({ venueId }: SeatingForecastChartProps) {
     </div>
   );
 }
+
+export default SeatingForecastChart;

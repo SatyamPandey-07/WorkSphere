@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
 import { AtSign, Check, AlertCircle, Loader2 } from "lucide-react";
 import {
   sanitizeUsername,
@@ -12,16 +13,28 @@ import {
 export interface UsernameFormProps {
   initialUsername?: string;
   onSaveSuccess?: (newUsername: string) => void;
+  className?: string;
+  "data-testid"?: string;
 }
 
 export function UsernameForm({
   initialUsername = "",
   onSaveSuccess,
+  className,
+  ...props
 }: UsernameFormProps) {
-  const [username, setUsername] = useState(initialUsername);
+  const [username, setUsername] = useState(initialUsername || "");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value;
@@ -71,21 +84,28 @@ export function UsernameForm({
         throw new Error(json.error || "Failed to update username");
       }
 
+      if (!isMounted.current) return;
       setSuccess("Username updated successfully");
       onSaveSuccess?.(sanitized);
     } catch (err: unknown) {
+      if (!isMounted.current) return;
       const message =
         err instanceof Error ? err.message : "An error occurred while updating username";
       setError(message);
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
 
   return (
     <div
-      data-testid="username-form"
-      className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm"
+      data-testid={props["data-testid"] || "username-form"}
+      className={cn(
+        "p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm",
+        className
+      )}
     >
       <div className="flex items-center gap-3 mb-4">
         <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-100 dark:border-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
@@ -122,11 +142,12 @@ export function UsernameForm({
               placeholder="e.g. nomad_dev"
               minLength={MIN_USERNAME_LENGTH}
               maxLength={MAX_USERNAME_LENGTH}
-              className={`w-full pl-8 pr-3.5 py-2 rounded-xl text-sm font-mono border bg-zinc-50 dark:bg-zinc-800/60 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 transition-all ${
+              className={cn(
+                "w-full pl-8 pr-3.5 py-2 rounded-xl text-sm font-mono border bg-zinc-50 dark:bg-zinc-800/60 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 transition-all",
                 error
                   ? "border-red-500 focus:ring-red-500/20"
                   : "border-zinc-200 dark:border-zinc-700 focus:ring-blue-500/20 focus:border-blue-500"
-              }`}
+              )}
             />
           </div>
           {error && (

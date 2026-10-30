@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   Ban,
   Calendar,
@@ -36,20 +36,28 @@ export interface BookingSummary {
   venue: {
     id?: string;
     name: string;
-    category: string;
-    address: string | null;
+    category?: string;
+    address?: string | null;
     latitude?: number;
     longitude?: number;
   } | null;
 }
 
-function isUpcoming(booking: BookingSummary): boolean {
+export function isUpcoming(booking: BookingSummary): boolean {
+  if (!booking?.date || !booking?.time) return false;
   const start = new Date(`${booking.date}T${booking.time}`);
   return !isNaN(start.getTime()) && start.getTime() > Date.now();
 }
 
 const chipClass =
   "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors";
+
+export interface BookingListProps {
+  initialBookings?: BookingSummary[];
+  onCountsChange?: (counts: { upcoming: number; total: number }) => void;
+  className?: string;
+  testId?: string;
+}
 
 /**
  * The signed-in user's bookings: upcoming first, with cancel, receipt,
@@ -58,14 +66,13 @@ const chipClass =
 export function BookingList({
   initialBookings,
   onCountsChange,
-}: {
-  initialBookings?: BookingSummary[];
-  onCountsChange?: (counts: { upcoming: number; total: number }) => void;
-}) {
+  className = "",
+  testId = "booking-list-container",
+}: BookingListProps) {
   const [bookings, setBookings] = useState<BookingSummary[]>(
-    initialBookings ?? [],
+    Array.isArray(initialBookings) ? initialBookings : [],
   );
-  const [loading, setLoading] = useState(!initialBookings?.length);
+  const [loading, setLoading] = useState(initialBookings === undefined);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     kind: "ok" | "error";
@@ -82,6 +89,14 @@ export function BookingList({
     null,
   );
 
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -89,22 +104,28 @@ export function BookingList({
       const res = await fetch("/api/bookings/history");
       if (!res.ok) throw new Error();
       const data = await res.json();
+      if (!isMountedRef.current) return;
       setBookings(Array.isArray(data?.bookings) ? data.bookings : []);
       setSelectedIds(new Set());
     } catch {
+      if (!isMountedRef.current) return;
       setError("We couldn't load your bookings. Please try again.");
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    if (!initialBookings?.length) void load();
+    if (initialBookings === undefined) {
+      void load();
+    }
   }, [initialBookings, load]);
 
   const { upcoming, rest } = useMemo(() => {
     const active = (b: BookingSummary) =>
-      b.status !== "CANCELLED" && isUpcoming(b);
+      b?.status !== "CANCELLED" && isUpcoming(b);
     return {
       upcoming: bookings
         .filter(active)
@@ -134,7 +155,7 @@ export function BookingList({
   const cancelBooking = async (booking: BookingSummary) => {
     if (
       !confirm(
-        `Cancel your booking at ${booking.venue?.name ?? "this venue"} on ${booking.date}?`,
+        `Cancel your booking at ${booking?.venue?.name ?? "this venue"} on ${booking?.date ?? ""}?`,
       )
     ) {
       return;
@@ -146,18 +167,24 @@ export function BookingList({
         method: "DELETE",
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok)
+      if (!isMountedRef.current) return;
+      if (!res.ok) {
         throw new Error(data.error || "Couldn't cancel this booking.");
+      }
       setBookings((prev) =>
         prev.map((b) =>
           b.id === booking.id ? { ...b, status: "CANCELLED" } : b,
         ),
       );
       setMessage({ kind: "ok", text: "Booking cancelled." });
-    } catch (err: any) {
-      setMessage({ kind: "error", text: err.message });
+    } catch (err: unknown) {
+      if (!isMountedRef.current) return;
+      const msg = err instanceof Error ? err.message : "Cancellation failed";
+      setMessage({ kind: "error", text: msg });
     } finally {
-      setCancellingId(null);
+      if (isMountedRef.current) {
+        setCancellingId(null);
+      }
     }
   };
 
@@ -172,6 +199,7 @@ export function BookingList({
       });
       if (!res.ok) throw new Error();
       const blob = await res.blob();
+      if (!isMountedRef.current) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -181,21 +209,25 @@ export function BookingList({
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
+      if (!isMountedRef.current) return;
       setMessage({ kind: "error", text: "Export failed. Please try again." });
     } finally {
-      setIsExporting(false);
+      if (isMountedRef.current) {
+        setIsExporting(false);
+      }
     }
   };
 
   const renderBooking = (booking: BookingSummary) => {
-    const cancelled = booking.status === "CANCELLED";
+    const cancelled = booking?.status === "CANCELLED";
     const future = !cancelled && isUpcoming(booking);
-    const venueName = booking.venue?.name ?? "Workspace";
-    const address = booking.venue?.address ?? "";
+    const venueName = booking?.venue?.name ?? "Workspace";
+    const address = booking?.venue?.address ?? "";
 
     return (
       <li
         key={booking.id}
+        data-testid={`booking-card-${booking.id}`}
         className={`rounded-2xl border p-4 transition-colors bg-white dark:bg-zinc-900 ${
           selectedIds.has(booking.id)
             ? "accent-border"
@@ -208,6 +240,7 @@ export function BookingList({
             checked={selectedIds.has(booking.id)}
             onChange={() => toggleSelected(booking.id)}
             aria-label={`Select booking ${booking.confirmationId}`}
+            data-testid={`booking-checkbox-${booking.id}`}
             className="w-4 h-4 mt-1 cursor-pointer shrink-0"
             style={{ accentColor: "var(--primary-accent)" }}
           />
@@ -215,6 +248,7 @@ export function BookingList({
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="font-semibold truncate">{venueName}</h4>
               <span
+                data-testid={`booking-status-${booking.id}`}
                 className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                   cancelled
                     ? "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
@@ -256,6 +290,7 @@ export function BookingList({
             href={`/api/bookings/${booking.id}/download`}
             className={chipClass}
             aria-label="Download receipt"
+            data-testid={`booking-receipt-link-${booking.id}`}
           >
             <Download className="w-3.5 h-3.5" />
             Receipt
@@ -264,6 +299,7 @@ export function BookingList({
             href={`/api/bookings/${booking.id}/itinerary`}
             className={chipClass}
             aria-label="Export booking itinerary as PDF with QR code verification badge"
+            data-testid={`booking-itinerary-link-${booking.id}`}
           >
             <QrCode className="w-3.5 h-3.5 text-blue-500" />
             Itinerary PDF
@@ -284,6 +320,7 @@ export function BookingList({
                 target="_blank"
                 rel="noopener noreferrer"
                 className={chipClass}
+                data-testid={`booking-google-calendar-${booking.id}`}
               >
                 <CalendarPlus className="w-3.5 h-3.5" />
                 Google Calendar
@@ -299,6 +336,7 @@ export function BookingList({
                 }
                 className={chipClass}
                 aria-label={`Download iCalendar file for booking ${booking.confirmationId}`}
+                data-testid={`booking-ics-btn-${booking.id}`}
               >
                 <Calendar className="w-3.5 h-3.5" />
                 Add to Calendar (.ics)
@@ -308,6 +346,7 @@ export function BookingList({
                 onClick={() => setReschedulingBooking(booking)}
                 className={chipClass}
                 aria-label={`Reschedule or extend booking ${booking.confirmationId}`}
+                data-testid={`booking-reschedule-btn-${booking.id}`}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 Reschedule / Extend
@@ -317,6 +356,7 @@ export function BookingList({
                 onClick={() => setSplitBillBooking(booking)}
                 className={chipClass}
                 aria-label={`Split bill & generate guest payment links for booking ${booking.confirmationId}`}
+                data-testid={`booking-split-bill-btn-${booking.id}`}
               >
                 <span className="text-xs">💳</span>
                 Split Bill &amp; Passes
@@ -326,13 +366,16 @@ export function BookingList({
                 onClick={() => setWalletBooking(booking)}
                 className={chipClass}
                 aria-label={`Add booking ${booking.confirmationId} to Apple or Google Wallet`}
+                data-testid={`booking-wallet-pass-btn-${booking.id}`}
               >
                 <Smartphone className="w-3.5 h-3.5 text-blue-500" />
                 Apple / Google Pass
               </button>
               <button
+                type="button"
                 onClick={() => cancelBooking(booking)}
                 disabled={cancellingId === booking.id}
+                data-testid={`booking-cancel-btn-${booking.id}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
               >
                 {cancellingId === booking.id ? (
@@ -352,6 +395,7 @@ export function BookingList({
   if (loading) {
     return (
       <div
+        data-testid="booking-loading"
         className="py-16 flex flex-col items-center gap-3 text-zinc-500"
         role="status"
       >
@@ -363,9 +407,14 @@ export function BookingList({
 
   if (error) {
     return (
-      <div className="py-12 text-center space-y-3">
+      <div data-testid="booking-error" className="py-12 text-center space-y-3">
         <p className="text-sm text-red-600">{error}</p>
-        <button onClick={load} className="text-sm font-medium accent-text">
+        <button
+          type="button"
+          onClick={load}
+          data-testid="booking-retry-btn"
+          className="text-sm font-medium accent-text"
+        >
           Try again
         </button>
       </div>
@@ -374,7 +423,10 @@ export function BookingList({
 
   if (bookings.length === 0) {
     return (
-      <div className="py-16 flex flex-col items-center text-center gap-3">
+      <div
+        data-testid="booking-empty"
+        className="py-16 flex flex-col items-center text-center gap-3"
+      >
         <div className="w-16 h-16 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
           <Inbox className="w-8 h-8 text-zinc-400" />
         </div>
@@ -388,12 +440,13 @@ export function BookingList({
   }
 
   return (
-    <div className="space-y-5">
+    <div data-testid={testId} className={`space-y-5 ${className}`.trim()}>
       <GeoCheckInReminderBanner bookings={bookings} onCheckInSuccess={load} />
 
       {message && (
         <p
           role="status"
+          data-testid="booking-status-message"
           className={`text-sm ${message.kind === "ok" ? "text-green-600" : "text-red-600"}`}
         >
           {message.text}
@@ -410,7 +463,10 @@ export function BookingList({
       ) : (
         <>
           <div className="flex items-center justify-between pb-1">
-            <span className="text-xs text-zinc-500 font-medium">
+            <span
+              data-testid="booking-count-summary"
+              className="text-xs text-zinc-500 font-medium"
+            >
               {bookings.length} {bookings.length === 1 ? "booking" : "bookings"}{" "}
               recorded
             </span>
@@ -421,7 +477,7 @@ export function BookingList({
             />
           </div>
           {upcoming.length > 0 && (
-            <section>
+            <section data-testid="upcoming-bookings-section">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-2">
                 Upcoming
               </h3>
@@ -429,7 +485,7 @@ export function BookingList({
             </section>
           )}
           {rest.length > 0 && (
-            <section>
+            <section data-testid="past-bookings-section">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-2">
                 Past &amp; cancelled
               </h3>
@@ -440,28 +496,37 @@ export function BookingList({
       )}
 
       {selectedIds.size > 0 && (
-        <div className="sticky bottom-4 flex items-center justify-between gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-3 shadow-lg">
+        <div
+          data-testid="bulk-actions-toolbar"
+          className="sticky bottom-4 flex items-center justify-between gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-3 shadow-lg"
+        >
           <span className="text-sm font-medium">
             {selectedIds.size} selected
           </span>
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => exportSelected("csv")}
               disabled={isExporting}
+              data-testid="bulk-export-csv-btn"
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 disabled:opacity-50"
             >
               Export CSV
             </button>
             <button
+              type="button"
               onClick={() => exportSelected("xlsx")}
               disabled={isExporting}
+              data-testid="bulk-export-excel-btn"
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 disabled:opacity-50"
             >
               Export Excel
             </button>
             <button
+              type="button"
               onClick={() => exportSelected("pdf")}
               disabled={isExporting}
+              data-testid="bulk-export-pdf-btn"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold accent-bg text-white disabled:opacity-50"
             >
               {isExporting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -514,3 +579,5 @@ export function BookingList({
     </div>
   );
 }
+
+export default BookingList;

@@ -11,6 +11,7 @@ import {
   Coffee,
   Check,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface AmenityFilterItem {
   id: string;
@@ -65,6 +66,7 @@ export interface AmenityFilterPillsProps {
   onToggleAmenity?: (amenityId: string, active: boolean) => void;
   syncWithUrl?: boolean;
   emptyMessage?: string;
+  "data-testid"?: string;
 }
 
 /**
@@ -79,6 +81,7 @@ export function AmenityFilterPills({
   onToggleAmenity,
   syncWithUrl = true,
   emptyMessage,
+  "data-testid": testId = "amenity-filter-pills-container",
 }: AmenityFilterPillsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -181,15 +184,19 @@ export function AmenityFilterPills({
       return null;
     }
     return (
-      <p className={`text-xs text-zinc-500 dark:text-zinc-400 ${className}`}>
+      <p
+        data-testid={testId}
+        className={cn("text-xs text-zinc-500 dark:text-zinc-400", className)}
+      >
         {emptyMessage}
       </p>
     );
   }
+
   return (
     <div
-      className={`relative w-full ${className}`}
-      data-testid="amenity-filter-pills-container"
+      data-testid={testId}
+      className={cn("relative w-full", className)}
     >
       {/* Smooth gradient shadow indicator for scrollable content on left */}
       {canScrollLeft && (
@@ -228,11 +235,12 @@ export function AmenityFilterPills({
               data-testid={`amenity-pill-${item.id}`}
               data-selected={isSelected}
               onClick={() => handleToggle(item)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-all active:scale-95 border select-none ${
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-all active:scale-95 border select-none",
                 isSelected
                   ? "bg-blue-600 text-white border-blue-600 shadow-sm hover:bg-blue-700 dark:bg-blue-600 dark:border-blue-500"
                   : "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80"
-              }`}
+              )}
             >
               {isSelected ? (
                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />

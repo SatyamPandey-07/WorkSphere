@@ -18,13 +18,16 @@ import {
   Activity,
 } from "lucide-react";
 import { VenueWifiConfig } from "@/lib/venues/venueWifiService";
+import { cn } from "@/lib/utils";
 
-interface VenueWifiConnectModalProps {
+export interface VenueWifiConnectModalProps {
   isOpen: boolean;
   onClose: () => void;
   venueId: string;
   venueName: string;
   initialConfig?: VenueWifiConfig | null;
+  className?: string;
+  "data-testid"?: string;
 }
 
 export function VenueWifiConnectModal({
@@ -33,6 +36,8 @@ export function VenueWifiConnectModal({
   venueId,
   venueName,
   initialConfig,
+  className = "",
+  ...props
 }: VenueWifiConnectModalProps) {
   const [config, setConfig] = useState<VenueWifiConfig | null>(initialConfig || null);
   const [qrSvg, setQrSvg] = useState<string>("");
@@ -69,6 +74,17 @@ export function VenueWifiConnectModal({
 
     loadWifiData();
   }, [isOpen, venueId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -120,8 +136,21 @@ export function VenueWifiConnectModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-zinc-100 animate-in zoom-in-95 duration-200 overflow-hidden">
+    <div
+      data-testid={props["data-testid"] || "venue-wifi-connect-modal"}
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Connect to ${venueName} Wi-Fi`}
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          "relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-zinc-100 animate-in zoom-in-95 duration-200 overflow-hidden",
+          className
+        )}
+      >
         {/* Header decoration */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
 
@@ -144,6 +173,8 @@ export function VenueWifiConnectModal({
           </div>
 
           <button
+            data-testid="wifi-connect-close-btn"
+            aria-label="Close modal"
             onClick={onClose}
             className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
           >
@@ -183,7 +214,7 @@ export function VenueWifiConnectModal({
                   <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                     Network SSID
                   </div>
-                  <div className="text-sm font-black text-white">{config?.ssid}</div>
+                  <div data-testid="wifi-ssid-value" className="text-sm font-black text-white">{config?.ssid}</div>
                 </div>
                 <span className="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-300 font-medium">
                   {config?.frequencyBand || "5 GHz"}
@@ -195,12 +226,13 @@ export function VenueWifiConnectModal({
                   <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                     Password
                   </div>
-                  <div className="text-sm font-mono font-bold text-zinc-200">
+                  <div data-testid="wifi-password-value" className="text-sm font-mono font-bold text-zinc-200">
                     {config?.password || "None (Open Network)"}
                   </div>
                 </div>
                 {config?.password && (
                   <button
+                    data-testid="wifi-copy-password-btn"
                     onClick={handleCopyPassword}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold border border-zinc-700 transition-colors"
                   >
@@ -237,6 +269,7 @@ export function VenueWifiConnectModal({
               </div>
 
               <button
+                data-testid="wifi-test-speed-btn"
                 onClick={runPingTest}
                 disabled={testingPing}
                 className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition-colors disabled:opacity-50"
@@ -248,6 +281,7 @@ export function VenueWifiConnectModal({
             {/* Action buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
               <button
+                data-testid="wifi-print-table-tent-btn"
                 onClick={handleDownloadTableTent}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold border border-zinc-700 transition-all"
               >
@@ -256,6 +290,7 @@ export function VenueWifiConnectModal({
               </button>
 
               <button
+                data-testid="wifi-one-click-connect-btn"
                 onClick={handleCopyPassword}
                 className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-blue-900/30 active:scale-[0.98] transition-all"
               >
@@ -269,3 +304,5 @@ export function VenueWifiConnectModal({
     </div>
   );
 }
+
+export default VenueWifiConnectModal;

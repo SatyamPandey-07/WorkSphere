@@ -2,6 +2,7 @@
 
 import React, { useMemo, useEffect, useRef } from "react";
 import { Building2, ChevronUp, ChevronDown, Compass } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface CockpitAltimeterTapeProps {
   /** Active venue floor level (e.g. 1, 2, ..., totalFloors) */
@@ -25,7 +26,10 @@ export interface CockpitAltimeterTapeProps {
  */
 export function calculateAltitudeFeet(floorNumber: number, totalFloors: number): number {
   const safeFloor = typeof floorNumber === "number" && Number.isFinite(floorNumber) ? floorNumber : 0;
-  const safeTotal = typeof totalFloors === "number" && Number.isFinite(totalFloors) ? totalFloors : 1;
+  const safeTotal =
+    typeof totalFloors === "number" && Number.isFinite(totalFloors) && totalFloors > 0
+      ? totalFloors
+      : 1;
   if (safeFloor <= 0) return 0;
   if (safeTotal > 1 && safeFloor >= safeTotal) {
     return 10000; // Rooftop altitude
@@ -177,13 +181,19 @@ export function CockpitAltimeterTape({
     <div
       role="region"
       aria-label={`Cockpit Altimeter Tape for ${venueName}`}
-      className={`p-4 rounded-2xl bg-[#03110b]/90 dark:bg-zinc-950/95 border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 text-emerald-400 font-mono backdrop-blur-md w-full max-w-[280px] select-none ${className}`}
+      data-testid="cockpit-altimeter-tape"
+      className={cn(
+        "p-4 rounded-2xl bg-[#03110b]/90 dark:bg-zinc-950/95 border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 text-emerald-400 font-mono backdrop-blur-md w-full max-w-[280px] select-none",
+        className
+      )}
     >
       {/* Header bar */}
       <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2 mb-3">
         <div className="flex items-center gap-1.5 text-xs text-white font-bold tracking-wider">
           <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="truncate max-w-[140px]">{venueName}</span>
+          <span data-testid="altimeter-venue-name" className="truncate max-w-[140px]">
+            {venueName}
+          </span>
         </div>
         <div className="flex items-center gap-1 text-[10px] text-emerald-300/80">
           <Compass className="w-3 h-3 text-emerald-400 animate-spin-slow" />
@@ -199,7 +209,10 @@ export function CockpitAltimeterTape({
             Active Level
           </div>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-black text-white tracking-tight">
+            <span
+              data-testid="altimeter-active-level"
+              className="text-2xl font-black text-white tracking-tight"
+            >
               {isRooftop ? "ROOF" : isGround ? "GND" : `F${floorNumber}`}
             </span>
             <span className="text-xs text-emerald-400">
@@ -207,7 +220,7 @@ export function CockpitAltimeterTape({
             </span>
           </div>
 
-          <div className="text-[11px] text-zinc-400 mt-0.5">
+          <div data-testid="altimeter-level-description" className="text-[11px] text-zinc-400 mt-0.5">
             {isRooftop
               ? "Sky Deck / 10,000 FT"
               : isGround
@@ -221,18 +234,20 @@ export function CockpitAltimeterTape({
               <button
                 type="button"
                 aria-label="Ascend floor"
+                data-testid="altimeter-ascend-btn"
                 disabled={floorNumber >= totalFloors}
                 onClick={() => onFloorChange(Math.min(totalFloors, floorNumber + 1))}
-                className="p-1 rounded bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="p-1 rounded bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
               >
                 <ChevronUp className="w-4 h-4" />
               </button>
               <button
                 type="button"
                 aria-label="Descend floor"
+                data-testid="altimeter-descend-btn"
                 disabled={floorNumber <= 1}
                 onClick={() => onFloorChange(Math.max(1, floorNumber - 1))}
-                className="p-1 rounded bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="p-1 rounded bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -300,7 +315,10 @@ export function CockpitAltimeterTape({
       </div>
 
       {/* Footer telemetry */}
-      <div className="flex items-center justify-between text-[10px] pt-2 mt-2 border-t border-emerald-500/15 text-zinc-400">
+      <div
+        data-testid="altimeter-elevation-footer"
+        className="flex items-center justify-between text-[10px] pt-2 mt-2 border-t border-emerald-500/15 text-zinc-400"
+      >
         <span>MSL ELEVATION</span>
         <span className="text-emerald-300 font-semibold">{currentAltitude.toLocaleString()} FT</span>
       </div>

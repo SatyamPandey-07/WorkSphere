@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import {
   BarChart,
   Bar,
@@ -12,7 +12,7 @@ import {
   Cell,
   ReferenceLine,
 } from "recharts";
-import { Volume2, Sun, Moon, Info, Sparkles } from "lucide-react";
+import { Volume2, Sun, Moon, Info, Sparkles, AlertCircle } from "lucide-react";
 import type { HourlyForecast } from "@/lib/noiseForecast";
 
 export interface AmbientNoiseTrendGraphProps {
@@ -32,6 +32,14 @@ export interface AmbientNoiseTrendGraphProps {
    * Initial active time bracket filter: "all" (8 AM - 10 PM), "morning" (8 AM - 2 PM), or "evening" (2 PM - 10 PM).
    */
   defaultBracket?: "all" | "morning" | "evening";
+  /**
+   * Optional custom CSS class.
+   */
+  className?: string;
+  /**
+   * Optional test identifier for testing libraries.
+   */
+  testId?: string;
 }
 
 export interface HourlyNoiseBarPoint {
@@ -52,14 +60,14 @@ export interface HourlyNoiseBarPoint {
  * - Orange (>70 dB): Loud
  */
 export function getNoiseLevelColor(db: number | null): string {
-  if (db === null) return "#71717a"; // muted zinc for missing
+  if (db === null || isNaN(db)) return "#71717a"; // muted zinc for missing
   if (db < 50) return "#22c55e"; // Green (< 50 dB)
   if (db <= 70) return "#eab308"; // Yellow (50 - 70 dB)
   return "#f97316"; // Orange (> 70 dB)
 }
 
 export function getNoiseLevelCategory(db: number | null): string {
-  if (db === null) return "No Data";
+  if (db === null || isNaN(db)) return "No Data";
   if (db < 50) return "Quiet (<50 dB)";
   if (db <= 70) return "Moderate (50-70 dB)";
   return "Loud (>70 dB)";
@@ -70,47 +78,74 @@ export function AmbientNoiseTrendGraph({
   forecast: initialForecast,
   title = "Ambient Noise Decibel Trend",
   defaultBracket = "all",
+  className = "",
+  testId = "ambient-noise-trend-graph",
 }: AmbientNoiseTrendGraphProps) {
   const [forecastData, setForecastData] = useState<HourlyForecast[]>(
     initialForecast || [],
   );
   const [loading, setLoading] = useState<boolean>(!initialForecast && !!venueId);
+  const [error, setError] = useState<string | null>(null);
   const [timeBracket, setTimeBracket] = useState<"all" | "morning" | "evening">(
     defaultBracket,
   );
+
+  const isMountedRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const fetchForecast = useCallback(async () => {
+    if (!venueId || initialForecast) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const tz =
+        typeof Intl !== "undefined" && Intl.DateTimeFormat
+          ? Intl.DateTimeFormat().resolvedOptions().timeZone
+          : "UTC";
+
+      const res = await fetch(
+        `/api/venues/${encodeURIComponent(venueId)}/noise-metrics/forecast?tz=${encodeURIComponent(tz)}`,
+      );
+
+      if (!res.ok) {
+        throw new Error(`Failed to load noise metrics forecast (HTTP ${res.status})`);
+      }
+
+      const json = await res.json();
+      if (isMountedRef.current && json?.forecast) {
+        setForecastData(json.forecast);
+      }
+    } catch (err: any) {
+      if (isMountedRef.current) {
+        setError(err?.message || "Failed to load noise metrics forecast");
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [venueId, initialForecast]);
 
   useEffect(() => {
     if (initialForecast) {
       setForecastData(initialForecast);
       setLoading(false);
+      setError(null);
       return;
     }
 
-    if (!venueId) return;
-
-    let active = true;
-    setLoading(true);
-
-    fetch(
-      `/api/venues/${encodeURIComponent(venueId)}/noise-metrics/forecast?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
-    )
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json) => {
-        if (active && json?.forecast) {
-          setForecastData(json.forecast);
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load noise metrics forecast:", err);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [venueId, initialForecast]);
+    if (venueId) {
+      fetchForecast();
+    }
+  }, [venueId, initialForecast, fetchForecast]);
 
   // Transform 8:00 AM (hour 8) to 10:00 PM (hour 22)
   const chartPoints: HourlyNoiseBarPoint[] = useMemo(() => {
@@ -161,7 +196,10 @@ export function AmbientNoiseTrendGraph({
   }, [chartPoints]);
 
   return (
-    <div className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm space-y-4">
+    <div
+      data-testid={testId}
+      className={`w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm space-y-4 ${className}`.trim()}
+    >
       {/* Header and Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-2.5">
@@ -170,9 +208,12 @@ export function AmbientNoiseTrendGraph({
           </div>
           <div>
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm sm:text-base flex items-center gap-2">
-              <span>{title}</span>
+              <span data-testid="noise-trend-title">{title}</span>
               {quietestHour && quietestHour.medianDb !== null && (
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
+                <span
+                  data-testid="quietest-hour-badge"
+                  className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20"
+                >
                   <Sparkles className="w-3 h-3" />
                   Quietest: {quietestHour.label} ({quietestHour.medianDb} dB)
                 </span>
@@ -188,6 +229,8 @@ export function AmbientNoiseTrendGraph({
         <div className="inline-flex rounded-xl bg-zinc-100 dark:bg-zinc-800 p-1 text-xs self-start sm:self-auto border border-zinc-200 dark:border-zinc-700/60">
           <button
             type="button"
+            data-testid="bracket-all-btn"
+            aria-pressed={timeBracket === "all"}
             onClick={() => setTimeBracket("all")}
             className={`px-3 py-1 rounded-lg font-medium transition-all ${
               timeBracket === "all"
@@ -199,6 +242,8 @@ export function AmbientNoiseTrendGraph({
           </button>
           <button
             type="button"
+            data-testid="bracket-morning-btn"
+            aria-pressed={timeBracket === "morning"}
             onClick={() => setTimeBracket("morning")}
             className={`flex items-center gap-1 px-3 py-1 rounded-lg font-medium transition-all ${
               timeBracket === "morning"
@@ -211,6 +256,8 @@ export function AmbientNoiseTrendGraph({
           </button>
           <button
             type="button"
+            data-testid="bracket-evening-btn"
+            aria-pressed={timeBracket === "evening"}
             onClick={() => setTimeBracket("evening")}
             className={`flex items-center gap-1 px-3 py-1 rounded-lg font-medium transition-all ${
               timeBracket === "evening"
@@ -224,17 +271,48 @@ export function AmbientNoiseTrendGraph({
         </div>
       </div>
 
+      {/* Error state with retry */}
+      {error && (
+        <div
+          role="alert"
+          data-testid="noise-trend-error"
+          className="flex items-center justify-between gap-3 p-3 text-xs rounded-xl bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 border border-red-200 dark:border-red-900/50"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchForecast}
+            data-testid="noise-trend-retry-btn"
+            className="font-medium underline hover:no-underline text-red-800 dark:text-red-200"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Chart Section */}
       {loading ? (
-        <div className="h-56 w-full flex items-center justify-center text-sm text-zinc-400">
+        <div
+          data-testid="noise-trend-loading"
+          className="h-56 w-full flex items-center justify-center text-sm text-zinc-400"
+        >
           Loading ambient noise trend…
         </div>
       ) : chartPoints.length === 0 ? (
-        <div className="h-56 w-full flex items-center justify-center text-sm text-zinc-500">
+        <div
+          data-testid="noise-trend-empty"
+          className="h-56 w-full flex items-center justify-center text-sm text-zinc-500"
+        >
           No noise calibration samples available for this bracket.
         </div>
       ) : (
-        <div className="h-56 w-full">
+        <div
+          data-testid="noise-trend-chart-container"
+          className="h-56 w-full"
+        >
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={chartPoints}
@@ -265,7 +343,10 @@ export function AmbientNoiseTrendGraph({
                   if (active && payload && payload.length) {
                     const data = payload[0].payload as HourlyNoiseBarPoint;
                     return (
-                      <div className="bg-white dark:bg-zinc-800 p-3 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 text-xs space-y-1">
+                      <div
+                        data-testid="noise-trend-tooltip"
+                        className="bg-white dark:bg-zinc-800 p-3 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 text-xs space-y-1"
+                      >
                         <p className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
                           {data.period === "morning" ? (
                             <Sun className="w-3.5 h-3.5 text-amber-500" />
@@ -354,3 +435,5 @@ export function AmbientNoiseTrendGraph({
     </div>
   );
 }
+
+export default AmbientNoiseTrendGraph;

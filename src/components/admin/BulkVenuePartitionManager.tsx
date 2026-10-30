@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   HardDrive,
   Archive,
@@ -26,7 +26,7 @@ import type {
   BulkPartitionOperationResult,
 } from "@/lib/adminPartitionService";
 
-interface BulkVenuePartitionManagerProps {
+export interface BulkVenuePartitionManagerProps {
   initialData?: VenuePartitionSummary | null;
   onRefresh?: () => Promise<void>;
 }
@@ -35,6 +35,15 @@ export function BulkVenuePartitionManager({
   initialData,
   onRefresh,
 }: BulkVenuePartitionManagerProps) {
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const [selectedPartitions, setSelectedPartitions] = useState<Set<string>>(
     new Set(),
   );
@@ -51,17 +60,21 @@ export function BulkVenuePartitionManager({
     details?: string[];
   } | null>(null);
 
-  const partitions = initialData?.partitions ?? [];
+  const partitions = useMemo(() => {
+    return (initialData?.partitions ?? []).filter(Boolean);
+  }, [initialData?.partitions]);
 
   // Filter partitions based on search, parent table, and status
   const filteredPartitions = useMemo(() => {
     return partitions.filter((p) => {
+      if (!p) return false;
+
       // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchesName = p.name.toLowerCase().includes(q);
+        const matchesName = (p.name || "").toLowerCase().includes(q);
         const matchesPeriod = (p.formattedPeriod || "").toLowerCase().includes(q);
-        const matchesParent = p.parentTable.toLowerCase().includes(q);
+        const matchesParent = (p.parentTable || "").toLowerCase().includes(q);
         if (!matchesName && !matchesPeriod && !matchesParent) return false;
       }
 
@@ -83,25 +96,28 @@ export function BulkVenuePartitionManager({
   // Distinct parent tables for filter dropdown
   const parentTables = useMemo(() => {
     const set = new Set<string>();
-    partitions.forEach((p) => set.add(p.parentTable));
+    partitions.forEach((p) => {
+      if (p?.parentTable) set.add(p.parentTable);
+    });
     return Array.from(set).sort();
   }, [partitions]);
 
   // Selected partition items
   const selectedItems = useMemo(() => {
-    return partitions.filter((p) => selectedPartitions.has(p.name));
+    return partitions.filter((p) => p?.name && selectedPartitions.has(p.name));
   }, [partitions, selectedPartitions]);
 
   const selectedTotalBytes = useMemo(() => {
-    return selectedItems.reduce((acc, p) => acc + p.tableSizeBytes, 0);
+    return selectedItems.reduce((acc, p) => acc + (p?.tableSizeBytes || 0), 0);
   }, [selectedItems]);
 
   const selectedTotalRows = useMemo(() => {
-    return selectedItems.reduce((acc, p) => acc + p.rowCount, 0);
+    return selectedItems.reduce((acc, p) => acc + (p?.rowCount || 0), 0);
   }, [selectedItems]);
 
   // Selection toggles
   const handleToggleSelect = (name: string) => {
+    if (!name) return;
     setSelectedPartitions((prev) => {
       const next = new Set(prev);
       if (next.has(name)) {
@@ -116,7 +132,9 @@ export function BulkVenuePartitionManager({
   const handleSelectAllVisible = () => {
     setSelectedPartitions((prev) => {
       const next = new Set(prev);
-      filteredPartitions.forEach((p) => next.add(p.name));
+      filteredPartitions.forEach((p) => {
+        if (p?.name) next.add(p.name);
+      });
       return next;
     });
   };
@@ -124,7 +142,7 @@ export function BulkVenuePartitionManager({
   const handleSelectExpired = () => {
     const next = new Set<string>();
     partitions.forEach((p) => {
-      if (p.isExpired && !p.isArchived) next.add(p.name);
+      if (p?.name && p.isExpired && !p.isArchived) next.add(p.name);
     });
     setSelectedPartitions(next);
   };
@@ -132,7 +150,7 @@ export function BulkVenuePartitionManager({
   const handleSelectCold = () => {
     const next = new Set<string>();
     partitions.forEach((p) => {
-      if (p.isNearColdStorage) next.add(p.name);
+      if (p?.name && p.isNearColdStorage) next.add(p.name);
     });
     setSelectedPartitions(next);
   };
@@ -154,27 +172,47 @@ export function BulkVenuePartitionManager({
         body: JSON.stringify({ partitions: Array.from(selectedPartitions) }),
       });
 
-      const data: BulkPartitionOperationResult = await res.json();
-      if (!res.ok) {
-        throw new Error((data as any).error || "Failed to archive partitions");
+      let data: BulkPartitionOperationResult | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Fallback for non-JSON responses
       }
+
+      if (!res.ok) {
+        throw new Error(
+          (data as any)?.error ||
+          `Failed to archive partitions (HTTP ${res.status})`
+        );
+      }
+
+      const processedCount = data?.processed?.length ?? selectedPartitions.size;
+      const freedPretty = data?.freedSizePretty ?? "0 B";
+      const failureList = (data?.failed || []).map((f) => `${f.name}: ${f.error}`);
+
+      if (!isMountedRef.current) return;
 
       setOperationFeedback({
         type: "success",
-        message: `Successfully archived ${data.processed.length} partition(s). Freed active catalog: ${data.freedSizePretty}.`,
-        details: data.failed.map((f) => `${f.name}: ${f.error}`),
+        message: `Successfully archived ${processedCount} partition(s). Freed active catalog: ${freedPretty}.`,
+        details: failureList.length > 0 ? failureList : undefined,
       });
 
       setSelectedPartitions(new Set());
       setShowArchiveModal(false);
-      await onRefresh?.();
+      if (onRefresh) {
+        await onRefresh();
+      }
     } catch (err: any) {
+      if (!isMountedRef.current) return;
       setOperationFeedback({
         type: "error",
-        message: err.message || "Archive operation failed",
+        message: err?.message || "Archive operation failed",
       });
     } finally {
-      setIsProcessing(false);
+      if (isMountedRef.current) {
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -193,33 +231,69 @@ export function BulkVenuePartitionManager({
         body: JSON.stringify({ partitions: Array.from(selectedPartitions) }),
       });
 
-      const data: BulkPartitionOperationResult = await res.json();
-      if (!res.ok) {
-        throw new Error((data as any).error || "Failed to delete partitions");
+      let data: BulkPartitionOperationResult | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Fallback for non-JSON responses
       }
+
+      if (!res.ok) {
+        throw new Error(
+          (data as any)?.error ||
+          `Failed to delete partitions (HTTP ${res.status})`
+        );
+      }
+
+      const processedCount = data?.processed?.length ?? selectedPartitions.size;
+      const freedPretty = data?.freedSizePretty ?? "0 B";
+      const failureList = (data?.failed || []).map((f) => `${f.name}: ${f.error}`);
+
+      if (!isMountedRef.current) return;
 
       setOperationFeedback({
         type: "success",
-        message: `Successfully permanently deleted ${data.processed.length} partition(s). Physical disk freed: ${data.freedSizePretty}.`,
-        details: data.failed.map((f) => `${f.name}: ${f.error}`),
+        message: `Successfully permanently deleted ${processedCount} partition(s). Physical disk freed: ${freedPretty}.`,
+        details: failureList.length > 0 ? failureList : undefined,
       });
 
       setSelectedPartitions(new Set());
       setShowDeleteModal(false);
       setDeleteConfirmInput("");
-      await onRefresh?.();
+      if (onRefresh) {
+        await onRefresh();
+      }
     } catch (err: any) {
+      if (!isMountedRef.current) return;
       setOperationFeedback({
         type: "error",
-        message: err.message || "Delete operation failed",
+        message: err?.message || "Delete operation failed",
       });
     } finally {
-      setIsProcessing(false);
+      if (isMountedRef.current) {
+        setIsProcessing(false);
+      }
+    }
+  };
+
+  const handleRefreshClick = async () => {
+    if (!onRefresh) return;
+    try {
+      await onRefresh();
+    } catch (err: any) {
+      if (!isMountedRef.current) return;
+      setOperationFeedback({
+        type: "error",
+        message: err?.message || "Failed to refresh partition catalog",
+      });
     }
   };
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 sm:p-6 transition-all">
+    <section
+      data-testid="bulk-partition-manager"
+      className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 sm:p-6 transition-all"
+    >
       {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-white/10 pb-5">
         <div>
@@ -260,7 +334,8 @@ export function BulkVenuePartitionManager({
           {onRefresh && (
             <button
               type="button"
-              onClick={() => onRefresh()}
+              data-testid="refresh-button"
+              onClick={handleRefreshClick}
               className="p-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-zinc-400 hover:text-zinc-200 border border-white/10 transition-colors"
               title="Refresh partition catalog health, live row counts, and disk allocation"
               aria-label="Refresh partition catalog metrics"
@@ -332,6 +407,7 @@ export function BulkVenuePartitionManager({
       {/* Operation Feedback Toast */}
       {operationFeedback && (
         <div
+          data-testid="operation-feedback"
           className={`mb-6 p-4 rounded-2xl border flex items-start gap-3 ${
             operationFeedback.type === "success"
               ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
@@ -355,6 +431,7 @@ export function BulkVenuePartitionManager({
           </div>
           <button
             type="button"
+            data-testid="dismiss-feedback-btn"
             onClick={() => setOperationFeedback(null)}
             className="text-zinc-400 hover:text-zinc-200 transition-colors"
             title="Dismiss notification"
@@ -373,6 +450,7 @@ export function BulkVenuePartitionManager({
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
               type="text"
+              data-testid="search-input"
               placeholder="Search by partition name or month (e.g. 2025, Telemetry)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -381,9 +459,11 @@ export function BulkVenuePartitionManager({
           </div>
 
           <select
+            data-testid="parent-filter-select"
             value={parentFilter}
             onChange={(e) => setParentFilter(e.target.value)}
             className="px-3 py-2 rounded-xl bg-zinc-900 border border-white/10 text-xs sm:text-sm text-zinc-300 focus:outline-none focus:border-violet-500/50"
+            aria-label="Filter partitions by parent table"
           >
             <option value="ALL">All Parent Tables</option>
             {parentTables.map((t) => (
@@ -394,9 +474,11 @@ export function BulkVenuePartitionManager({
           </select>
 
           <select
+            data-testid="status-filter-select"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 rounded-xl bg-zinc-900 border border-white/10 text-xs sm:text-sm text-zinc-300 focus:outline-none focus:border-violet-500/50"
+            aria-label="Filter partitions by retention or tier status"
           >
             <option value="ALL">All Statuses</option>
             <option value="ACTIVE">Active (Attached)</option>
@@ -410,6 +492,7 @@ export function BulkVenuePartitionManager({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            data-testid="bulk-archive-btn"
             onClick={() => setShowArchiveModal(true)}
             disabled={selectedPartitions.size === 0 || isProcessing}
             title={
@@ -426,6 +509,7 @@ export function BulkVenuePartitionManager({
 
           <button
             type="button"
+            data-testid="bulk-delete-btn"
             onClick={() => setShowDeleteModal(true)}
             disabled={selectedPartitions.size === 0 || isProcessing}
             title={
@@ -447,6 +531,7 @@ export function BulkVenuePartitionManager({
         <span className="text-zinc-500">Quick Select:</span>
         <button
           type="button"
+          data-testid="quick-select-all"
           onClick={handleSelectAllVisible}
           className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 transition-colors"
           title={`Select all ${filteredPartitions.length} currently filtered partition(s)`}
@@ -456,6 +541,7 @@ export function BulkVenuePartitionManager({
         </button>
         <button
           type="button"
+          data-testid="quick-select-expired"
           onClick={handleSelectExpired}
           className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition-colors"
           title="Select all active partitions exceeding the 12-month retention policy"
@@ -465,6 +551,7 @@ export function BulkVenuePartitionManager({
         </button>
         <button
           type="button"
+          data-testid="quick-select-cold"
           onClick={handleSelectCold}
           className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 transition-colors"
           title="Select all large partitions exceeding 100 MB cold storage threshold"
@@ -475,6 +562,7 @@ export function BulkVenuePartitionManager({
         {selectedPartitions.size > 0 && (
           <button
             type="button"
+            data-testid="clear-selection-btn"
             onClick={handleClearSelection}
             className="px-2.5 py-1 rounded-lg bg-zinc-700/50 hover:bg-zinc-700 text-zinc-300 transition-colors ml-auto"
             title="Deselect all currently selected partitions"
@@ -487,12 +575,16 @@ export function BulkVenuePartitionManager({
 
       {/* Partitions Table */}
       <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20">
-        <table className="w-full text-left text-xs sm:text-sm">
+        <table
+          className="w-full text-left text-xs sm:text-sm"
+          aria-label="Venue partitions catalog"
+        >
           <thead className="border-b border-white/10 bg-white/[0.02] text-zinc-400">
             <tr>
-              <th className="p-3.5 w-10 text-center">
+              <th scope="col" className="p-3.5 w-10 text-center">
                 <input
                   type="checkbox"
+                  data-testid="select-all-checkbox"
                   checked={
                     filteredPartitions.length > 0 &&
                     filteredPartitions.every((p) => selectedPartitions.has(p.name))
@@ -509,13 +601,13 @@ export function BulkVenuePartitionManager({
                   aria-label="Toggle select all visible partitions"
                 />
               </th>
-              <th className="p-3.5">Partition Name</th>
-              <th className="p-3.5">Parent Table</th>
-              <th className="p-3.5">Period</th>
-              <th className="p-3.5">Rows</th>
-              <th className="p-3.5">Disk Size</th>
-              <th className="p-3.5">Status</th>
-              <th className="p-3.5 text-right">Actions</th>
+              <th scope="col" className="p-3.5">Partition Name</th>
+              <th scope="col" className="p-3.5">Parent Table</th>
+              <th scope="col" className="p-3.5">Period</th>
+              <th scope="col" className="p-3.5">Rows</th>
+              <th scope="col" className="p-3.5">Disk Size</th>
+              <th scope="col" className="p-3.5">Status</th>
+              <th scope="col" className="p-3.5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -528,11 +620,13 @@ export function BulkVenuePartitionManager({
             ) : (
               filteredPartitions.map((partition) => {
                 const isSelected = selectedPartitions.has(partition.name);
-                const isNearingThreshold = partition.isNearColdStorage;
+                const isNearingThreshold = Boolean(partition.isNearColdStorage);
 
                 return (
                   <tr
                     key={partition.name}
+                    data-testid="partition-row"
+                    data-partition-name={partition.name}
                     className={`transition-colors ${
                       isSelected
                         ? "bg-violet-500/10"
@@ -542,6 +636,7 @@ export function BulkVenuePartitionManager({
                     <td className="p-3.5 text-center">
                       <input
                         type="checkbox"
+                        data-testid={`partition-checkbox-${partition.name}`}
                         checked={isSelected}
                         onChange={() => handleToggleSelect(partition.name)}
                         className="rounded border-zinc-600 bg-zinc-800 text-violet-500 focus:ring-violet-500"
@@ -554,7 +649,7 @@ export function BulkVenuePartitionManager({
                         {partition.name}
                         {partition.isArchived && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-sans">
-                            {partition.schema}
+                            {partition.schema || "archive"}
                           </span>
                         )}
                       </div>
@@ -569,7 +664,7 @@ export function BulkVenuePartitionManager({
                       </div>
                     </td>
                     <td className="p-3.5 text-zinc-300">
-                      {partition.rowCount.toLocaleString()}
+                      {(partition.rowCount ?? 0).toLocaleString()}
                     </td>
                     <td className="p-3.5 min-w-[130px]">
                       <div className="space-y-1">
@@ -579,7 +674,7 @@ export function BulkVenuePartitionManager({
                               isNearingThreshold ? "text-red-400 font-semibold" : "text-zinc-200"
                             }`}
                           >
-                            {partition.tableSizePretty}
+                            {partition.tableSizePretty || "0 B"}
                           </span>
                           {isNearingThreshold && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-semibold">
@@ -590,7 +685,7 @@ export function BulkVenuePartitionManager({
                         {/* Proportional partition storage bar */}
                         <div
                           className="h-1.5 w-24 bg-white/10 rounded-full overflow-hidden"
-                          title={`${partition.tableSizePretty} of 100 MB cold threshold`}
+                          title={`${partition.tableSizePretty || "0 B"} of 100 MB cold threshold`}
                         >
                           <div
                             className={`h-full rounded-full transition-all ${
@@ -605,7 +700,7 @@ export function BulkVenuePartitionManager({
                                 100,
                                 Math.max(
                                   4,
-                                  ((partition.tableSizeBytes || 0) /
+                                  (((partition.tableSizeBytes || 0)) /
                                     (100 * 1024 * 1024)) *
                                     100,
                                 ),
@@ -635,12 +730,13 @@ export function BulkVenuePartitionManager({
                         {!partition.isArchived && (
                           <button
                             type="button"
+                            data-testid={`row-archive-btn-${partition.name}`}
                             onClick={() => {
                               setSelectedPartitions(new Set([partition.name]));
                               setShowArchiveModal(true);
                             }}
                             className="p-1.5 rounded-lg text-amber-400 hover:bg-amber-500/10 transition-colors"
-                            title={`Archive partition ${partition.name} (${partition.tableSizePretty}) to cold storage schema`}
+                            title={`Archive partition ${partition.name} (${partition.tableSizePretty || "0 B"}) to cold storage schema`}
                             aria-label={`Archive partition ${partition.name}`}
                           >
                             <Archive className="h-3.5 w-3.5" />
@@ -648,12 +744,13 @@ export function BulkVenuePartitionManager({
                         )}
                         <button
                           type="button"
+                          data-testid={`row-delete-btn-${partition.name}`}
                           onClick={() => {
                             setSelectedPartitions(new Set([partition.name]));
                             setShowDeleteModal(true);
                           }}
                           className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
-                          title={`Permanently drop partition ${partition.name} (${partition.tableSizePretty})`}
+                          title={`Permanently drop partition ${partition.name} (${partition.tableSizePretty || "0 B"})`}
                           aria-label={`Delete partition ${partition.name}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -670,13 +767,19 @@ export function BulkVenuePartitionManager({
 
       {/* Confirmation Modal: Bulk Archive */}
       {showArchiveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="archive-modal-title"
+          data-testid="archive-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+        >
           <div className="w-full max-w-lg rounded-3xl bg-zinc-900 border border-white/10 p-6 text-zinc-100 shadow-2xl">
             <div className="flex items-center gap-3 mb-4 text-amber-400">
               <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
                 <Archive className="h-6 w-6" />
               </div>
-              <h3 className="text-lg font-bold">
+              <h3 id="archive-modal-title" className="text-lg font-bold">
                 Confirm Bulk Partition Archive
               </h3>
             </div>
@@ -712,6 +815,7 @@ export function BulkVenuePartitionManager({
             <div className="flex items-center justify-end gap-3">
               <button
                 type="button"
+                data-testid="cancel-archive-btn"
                 onClick={() => setShowArchiveModal(false)}
                 disabled={isProcessing}
                 className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors"
@@ -722,6 +826,7 @@ export function BulkVenuePartitionManager({
               </button>
               <button
                 type="button"
+                data-testid="confirm-archive-btn"
                 onClick={handleBulkArchive}
                 disabled={isProcessing}
                 className="flex items-center gap-2 px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
@@ -738,18 +843,25 @@ export function BulkVenuePartitionManager({
 
       {/* Confirmation Modal: Bulk Delete */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="delete-modal-title"
+          aria-describedby="delete-modal-desc"
+          data-testid="delete-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+        >
           <div className="w-full max-w-lg rounded-3xl bg-zinc-900 border border-red-500/20 p-6 text-zinc-100 shadow-2xl">
             <div className="flex items-center gap-3 mb-4 text-red-400">
               <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/20">
                 <ShieldAlert className="h-6 w-6" />
               </div>
-              <h3 className="text-lg font-bold">
+              <h3 id="delete-modal-title" className="text-lg font-bold">
                 Confirm Permanent Partition Deletion
               </h3>
             </div>
 
-            <p className="text-sm text-zinc-300 mb-4">
+            <p id="delete-modal-desc" className="text-sm text-zinc-300 mb-4">
               <span className="text-red-400 font-semibold">Warning:</span> You are about to permanently drop{" "}
               <strong className="text-white">{selectedPartitions.size} partition table(s)</strong> and all containing records from physical disk. This operation cannot be undone.
             </p>
@@ -776,11 +888,13 @@ export function BulkVenuePartitionManager({
             </div>
 
             <div className="mb-5">
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+              <label htmlFor="delete-confirm-field" className="block text-xs font-medium text-zinc-400 mb-1.5">
                 Type <strong className="text-red-400">DELETE</strong> to confirm permanent destruction:
               </label>
               <input
+                id="delete-confirm-field"
                 type="text"
+                data-testid="delete-confirm-input"
                 placeholder="DELETE"
                 value={deleteConfirmInput}
                 onChange={(e) => setDeleteConfirmInput(e.target.value)}
@@ -791,6 +905,7 @@ export function BulkVenuePartitionManager({
             <div className="flex items-center justify-end gap-3">
               <button
                 type="button"
+                data-testid="cancel-delete-btn"
                 onClick={() => {
                   setShowDeleteModal(false);
                   setDeleteConfirmInput("");
@@ -804,6 +919,7 @@ export function BulkVenuePartitionManager({
               </button>
               <button
                 type="button"
+                data-testid="confirm-delete-btn"
                 onClick={handleBulkDelete}
                 disabled={deleteConfirmInput !== "DELETE" || isProcessing}
                 className="flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"

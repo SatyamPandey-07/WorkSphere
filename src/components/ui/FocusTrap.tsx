@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef } from "react";
+import { cn } from "@/lib/utils";
 import { useFocusTrap, UseFocusTrapOptions } from "@/hooks/useFocusTrap";
 
 export interface FocusTrapProps extends UseFocusTrapOptions {
@@ -12,6 +13,7 @@ export interface FocusTrapProps extends UseFocusTrapOptions {
   "aria-label"?: string;
   "aria-labelledby"?: string;
   "aria-describedby"?: string;
+  "data-testid"?: string;
 }
 
 export function FocusTrap({
@@ -51,10 +53,13 @@ export function FocusTrap({
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
       aria-describedby={ariaDescribedBy}
-      className={className}
+      data-testid={rest["data-testid"] || "focus-trap"}
+      className={cn(className)}
       {...rest}
     >
       {children}
     </Tag>
   );
 }
+
+export default FocusTrap;

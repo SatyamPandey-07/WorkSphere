@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import {
   Wifi,
   Zap,
@@ -31,9 +32,11 @@ import {
   AmenityIncident,
 } from "@/lib/venues/amenityIncidentService";
 
-interface AmenityStatusIncidentTrackerProps {
+export interface AmenityStatusIncidentTrackerProps {
   venueId: string;
   venueName?: string;
+  className?: string;
+  "data-testid"?: string;
 }
 
 const AMENITY_ICONS: Record<AmenityCategory, React.ComponentType<{ className?: string }>> = {
@@ -61,6 +64,8 @@ const PRESET_ISSUES: Record<AmenityCategory, string[]> = {
 export function AmenityStatusIncidentTracker({
   venueId,
   venueName,
+  className = "",
+  ...props
 }: AmenityStatusIncidentTrackerProps) {
   const [overallHealth, setOverallHealth] = useState<number>(100);
   const [amenities, setAmenities] = useState<AmenityHealthSummary[]>([]);
@@ -229,7 +234,10 @@ export function AmenityStatusIncidentTracker({
   };
 
   return (
-    <div className="rounded-3xl p-6 bg-zinc-900/80 border border-zinc-800 text-zinc-100 shadow-xl backdrop-blur-md space-y-6">
+    <div
+      data-testid={props["data-testid"] || "amenity-incident-tracker"}
+      className={cn("rounded-3xl p-6 bg-zinc-900/80 border border-zinc-800 text-zinc-100 shadow-xl backdrop-blur-md space-y-6", className)}
+    >
       {/* Toast alert */}
       {actionMessage && (
         <div className="p-3 bg-blue-500/20 border border-blue-500/40 rounded-2xl text-blue-200 text-xs font-medium flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-300">
@@ -268,6 +276,7 @@ export function AmenityStatusIncidentTracker({
 
         <div className="flex items-center gap-3">
           <button
+            data-testid="refresh-incidents-btn"
             onClick={handleManualRefresh}
             disabled={isRefreshing}
             className="p-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors border border-zinc-700/60"
@@ -276,6 +285,7 @@ export function AmenityStatusIncidentTracker({
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-blue-400" : ""}`} />
           </button>
           <button
+            data-testid="report-incident-btn"
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-rose-900/30 active:scale-[0.98]"
           >
@@ -459,7 +469,7 @@ export function AmenityStatusIncidentTracker({
 
       {/* Incident Reporting Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div data-testid="report-incident-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
               <div className="flex items-center gap-2.5">
@@ -474,6 +484,7 @@ export function AmenityStatusIncidentTracker({
                 </div>
               </div>
               <button
+                data-testid="report-incident-modal-close-btn"
                 onClick={() => setIsModalOpen(false)}
                 className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
               >
@@ -538,6 +549,7 @@ export function AmenityStatusIncidentTracker({
                 </label>
                 <input
                   type="text"
+                  data-testid="incident-title-input"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Wi-Fi dropping frequently in North Corner"
@@ -613,6 +625,7 @@ export function AmenityStatusIncidentTracker({
                 </button>
                 <button
                   type="submit"
+                  data-testid="incident-submit-btn"
                   disabled={isSubmitting || !title.trim()}
                   className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-rose-900/30 active:scale-[0.98]"
                 >
@@ -626,3 +639,5 @@ export function AmenityStatusIncidentTracker({
     </div>
   );
 }
+
+export default AmenityStatusIncidentTracker;

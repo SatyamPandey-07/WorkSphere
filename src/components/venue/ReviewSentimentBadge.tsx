@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Frown, Meh, Smile, Filter, ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   SentimentLabel,
   SentimentSummary,
@@ -35,11 +36,13 @@ export type SentimentFilterValue = "all" | "positive" | "neutral" | "critical";
 export interface ReviewSentimentBadgeProps {
   summary: SentimentSummary | null;
   className?: string;
+  "data-testid"?: string;
 }
 
 export function ReviewSentimentBadge({
   summary,
   className = "",
+  "data-testid": testId = "review-sentiment-badge",
 }: ReviewSentimentBadgeProps) {
   if (!summary) return null;
 
@@ -49,12 +52,15 @@ export function ReviewSentimentBadge({
 
   return (
     <div
-      data-testid="review-sentiment-badge"
+      data-testid={testId}
       title={`Based on ${summary.reviewCount} recent reviews`}
-      className={`flex flex-wrap items-center gap-2 ${className}`}
+      className={cn("flex flex-wrap items-center gap-2", className)}
     >
       <span
-        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${tone}`}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold",
+          tone
+        )}
       >
         <Icon className="h-3.5 w-3.5" aria-hidden="true" />
         {text}
@@ -78,6 +84,7 @@ export interface ReviewSentimentFilterProps {
     critical?: number;
   };
   className?: string;
+  "data-testid"?: string;
 }
 
 export function ReviewSentimentFilter({
@@ -85,9 +92,10 @@ export function ReviewSentimentFilter({
   onChange,
   reviewCounts,
   className = "",
+  "data-testid": testId = "sentiment-filter-dropdown",
 }: ReviewSentimentFilterProps) {
   return (
-    <div className={`inline-flex items-center gap-2 ${className}`}>
+    <div className={cn("inline-flex items-center gap-2", className)}>
       <label
         htmlFor="sentiment-filter-select"
         className="text-xs font-semibold text-zinc-400 flex items-center gap-1"
@@ -98,7 +106,7 @@ export function ReviewSentimentFilter({
       <div className="relative">
         <select
           id="sentiment-filter-select"
-          data-testid="sentiment-filter-dropdown"
+          data-testid={testId}
           value={value}
           onChange={(e) => onChange(e.target.value as SentimentFilterValue)}
           className="appearance-none bg-zinc-800/80 hover:bg-zinc-800 text-xs font-medium text-zinc-100 border border-zinc-700/80 rounded-xl px-3 py-1.5 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition shadow-sm"
@@ -134,12 +142,14 @@ export interface ReviewSentimentSectionProps {
   reviews: ReviewItem[];
   summary?: SentimentSummary | null;
   className?: string;
+  "data-testid"?: string;
 }
 
 export function ReviewSentimentSection({
   reviews,
   summary,
   className = "",
+  "data-testid": testId = "review-sentiment-section",
 }: ReviewSentimentSectionProps) {
   const [selectedSentiment, setSelectedSentiment] =
     useState<SentimentFilterValue>("all");
@@ -165,7 +175,7 @@ export function ReviewSentimentSection({
   }, [reviews, selectedSentiment]);
 
   return (
-    <div data-testid="review-sentiment-section" className={`space-y-4 ${className}`}>
+    <div data-testid={testId} className={cn("space-y-4", className)}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 pb-3">
         {summary && <ReviewSentimentBadge summary={summary} />}
         <ReviewSentimentFilter
@@ -200,13 +210,14 @@ export function ReviewSentimentSection({
                   <span className="font-semibold text-zinc-200">{author}</span>
                   <span
                     data-testid={`review-sentiment-tag-${sentiment}`}
-                    className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    className={cn(
+                      "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border",
                       sentiment === "positive"
                         ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                         : sentiment === "critical"
                         ? "bg-red-500/15 text-red-300 border-red-500/30"
                         : "bg-zinc-500/15 text-zinc-300 border-zinc-500/30"
-                    }`}
+                    )}
                   >
                     {sentiment === "positive" ? (
                       <Smile className="w-3 h-3" />
@@ -229,4 +240,3 @@ export function ReviewSentimentSection({
 }
 
 export default ReviewSentimentBadge;
-

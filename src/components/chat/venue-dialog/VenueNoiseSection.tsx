@@ -9,6 +9,7 @@ import { NoiseReportingWidget } from "@/components/noise/NoiseReportingWidget";
 import { AmbientNoiseSpectrumVisualizer } from "@/components/noise/AmbientNoiseSpectrumVisualizer";
 import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
 import type { HourlyForecast } from "@/components/noise/NoiseTimelineChart";
+import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
 
 const VenueNoiseChart = dynamic(
   () =>
@@ -36,27 +37,58 @@ const NoiseTimelineChart = dynamic(
   },
 );
 
-import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
-
 export interface VenueNoiseSectionProps {
   venue: Venue;
-  reviews: any[];
-  wifiPredictions: any[];
-  occupancyData: any[];
-  noiseForecast: HourlyForecast[];
-  activeDistribution: "wifi" | "outlets" | "noise" | null;
-  setActiveDistribution: (dist: "wifi" | "outlets" | "noise" | null) => void;
+  reviews?: any[];
+  wifiPredictions?: any[];
+  occupancyData?: any[];
+  noiseForecast?: HourlyForecast[];
+  activeDistribution?: "wifi" | "outlets" | "noise" | null;
+  setActiveDistribution?: (dist: "wifi" | "outlets" | "noise" | null) => void;
 }
 
 export function VenueNoiseSection({
   venue,
-  reviews,
-  wifiPredictions,
-  occupancyData,
-  noiseForecast,
-  activeDistribution,
-  setActiveDistribution,
+  reviews = [],
+  wifiPredictions = [],
+  occupancyData = [],
+  noiseForecast = [],
+  activeDistribution = null,
+  setActiveDistribution = () => {},
 }: VenueNoiseSectionProps) {
+  const safeReviews = Array.isArray(reviews) ? reviews : [];
+  const safeWifiPredictions = Array.isArray(wifiPredictions)
+    ? wifiPredictions
+    : [];
+  const safeOccupancyData = Array.isArray(occupancyData) ? occupancyData : [];
+  const safeNoiseForecast = Array.isArray(noiseForecast) ? noiseForecast : [];
+  const safeVenue = venue || ({} as Partial<Venue>);
+
+  const formattedOutletDensity = (() => {
+    if (
+      typeof safeVenue.outletDensity === "string" &&
+      safeVenue.outletDensity !== "none"
+    ) {
+      return safeVenue.outletDensity
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c: string) => c.toUpperCase());
+    }
+    return safeVenue.hasOutlets ? "Yes" : "No";
+  })();
+
+  const formattedLighting = (() => {
+    if (typeof safeVenue.lighting === "string") {
+      return safeVenue.lighting.replace(/_/g, " ");
+    }
+    return "Normal";
+  })();
+
+  const safeOutletLocations = Array.isArray(safeVenue.outletLocations)
+    ? safeVenue.outletLocations.filter(
+        (loc): loc is string => typeof loc === "string" && loc.trim().length > 0,
+      )
+    : [];
+
   return (
     <>
       {/* 4-Box Quick Metrics Grid */}
@@ -64,8 +96,13 @@ export function VenueNoiseSection({
         <button
           type="button"
           onClick={() =>
-            setActiveDistribution(activeDistribution === "wifi" ? null : "wifi")
+            setActiveDistribution?.(
+              activeDistribution === "wifi" ? null : "wifi",
+            )
           }
+          aria-pressed={activeDistribution === "wifi"}
+          aria-label="Toggle WiFi rating distribution"
+          data-testid="venue-noise-metric-wifi"
           className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
             activeDistribution === "wifi"
               ? "bg-blue-500/20 border-blue-500 shadow-md ring-2 ring-blue-500/20 scale-95"
@@ -79,19 +116,22 @@ export function VenueNoiseSection({
             WiFi
           </span>
           <span className="text-xl font-black text-white leading-none">
-            {venue.wifiSpeed
-              ? `${venue.wifiSpeed}M`
-              : `${venue.wifiQuality || 4}/5`}
+            {safeVenue.wifiSpeed
+              ? `${safeVenue.wifiSpeed}M`
+              : `${safeVenue.wifiQuality || 4}/5`}
           </span>
         </button>
 
         <button
           type="button"
           onClick={() =>
-            setActiveDistribution(
+            setActiveDistribution?.(
               activeDistribution === "outlets" ? null : "outlets",
             )
           }
+          aria-pressed={activeDistribution === "outlets"}
+          aria-label="Toggle outlets and power rating distribution"
+          data-testid="venue-noise-metric-power"
           className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
             activeDistribution === "outlets"
               ? "bg-orange-500/20 border-orange-500 shadow-md ring-2 ring-orange-500/20 scale-95"
@@ -105,23 +145,20 @@ export function VenueNoiseSection({
             Power
           </span>
           <span className="text-xl font-black text-white leading-none uppercase tracking-wide">
-            {venue.outletDensity && venue.outletDensity !== "none"
-              ? venue.outletDensity
-                  .replace("_", " ")
-                  .replace(/\b\w/g, (c: string) => c.toUpperCase())
-              : venue.hasOutlets
-                ? "Yes"
-                : "No"}
+            {formattedOutletDensity}
           </span>
         </button>
 
         <button
           type="button"
           onClick={() =>
-            setActiveDistribution(
+            setActiveDistribution?.(
               activeDistribution === "noise" ? null : "noise",
             )
           }
+          aria-pressed={activeDistribution === "noise"}
+          aria-label="Toggle noise rating distribution"
+          data-testid="venue-noise-metric-noise"
           className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
             activeDistribution === "noise"
               ? "bg-pink-500/20 border-pink-500 shadow-md ring-2 ring-pink-500/20 scale-95"
@@ -135,11 +172,14 @@ export function VenueNoiseSection({
             Noise
           </span>
           <span className="text-xl font-black text-white leading-none capitalize">
-            {venue.noiseLevel || "Normal"}
+            {safeVenue.noiseLevel || "Normal"}
           </span>
         </button>
 
-        <div className="bg-black/20 p-5 rounded-2xl flex flex-col items-center text-center border border-white/5">
+        <div
+          data-testid="venue-noise-metric-lighting"
+          className="bg-black/20 p-5 rounded-2xl flex flex-col items-center text-center border border-white/5"
+        >
           <div className="p-3 rounded-xl bg-amber-500/20 mb-3">
             <Sun className="w-6 h-6 text-amber-400" />
           </div>
@@ -147,97 +187,121 @@ export function VenueNoiseSection({
             Lighting
           </span>
           <span className="text-xl font-black text-white leading-none capitalize text-center leading-tight">
-            {venue.lighting ? venue.lighting.replace("_", " ") : "Normal"}
+            {formattedLighting}
           </span>
         </div>
       </div>
 
       {activeDistribution && (
-        <div className="mb-6">
+        <div className="mb-6" data-testid="venue-rating-distribution-container">
           <RatingDistribution
-            reviews={reviews}
+            reviews={safeReviews}
             activeMetric={activeDistribution}
-            venueName={venue.name}
-            onClose={() => setActiveDistribution(null)}
+            venueName={safeVenue.name || "Workspace"}
+            onClose={() => setActiveDistribution?.(null)}
           />
         </div>
       )}
 
       {/* Ambient Noise Spectrum Frequency Visualization */}
-      <div className="mb-6">
+      <div className="mb-6" data-testid="ambient-noise-spectrum-container">
         <AmbientNoiseSpectrumVisualizer
-          venueId={venue.id}
-          venueName={venue.name}
-          noiseLevel={venue.noiseLevel}
+          venueId={safeVenue.id || "venue-default"}
+          venueName={safeVenue.name || "Workspace"}
+          noiseLevel={safeVenue.noiseLevel}
         />
       </div>
 
       {/* Noise Reporting Widget */}
-      <div className="mb-6">
-        <NoiseReportingWidget venueId={venue.id} venueName={venue.name} />
+      <div className="mb-6" data-testid="noise-reporting-container">
+        <NoiseReportingWidget
+          venueId={safeVenue.id || "venue-default"}
+          venueName={safeVenue.name || "Workspace"}
+        />
       </div>
 
       {/* WiFi & Occupancy Noise Chart */}
       <VenueNoiseChart
-        wifiPredictions={wifiPredictions}
-        occupancyData={occupancyData}
+        wifiPredictions={safeWifiPredictions}
+        occupancyData={safeOccupancyData}
       />
 
       {/* 24-Hour Forecast Graphs */}
-      {noiseForecast.length > 0 && (
-        <>
-          <AmbientNoiseTrendGraph venueId={venue.id} forecast={noiseForecast} />
-          <NoiseTimelineChart forecast={noiseForecast} />
-        </>
+      {safeNoiseForecast.length > 0 && (
+        <div data-testid="noise-forecast-graphs-container">
+          <AmbientNoiseTrendGraph
+            venueId={safeVenue.id || "venue-default"}
+            forecast={safeNoiseForecast}
+          />
+          <NoiseTimelineChart forecast={safeNoiseForecast} />
+        </div>
       )}
 
       {/* Audio Equalizer and Intelligence Brief */}
-      <div className="space-y-6 mt-6">
-        <AudioEqualizer venueName={venue.name} />
+      <div className="space-y-6 mt-6" data-testid="audio-equalizer-container">
+        <AudioEqualizer venueName={safeVenue.name || "Workspace"} />
 
-        <div className="accent-bg-10 p-5 rounded-2xl border accent-border-30">
+        <div
+          className="accent-bg-10 p-5 rounded-2xl border accent-border-30"
+          data-testid="venue-intelligence-brief"
+        >
           <h3 className="text-xs font-black uppercase tracking-widest accent-text mb-2 flex items-center gap-2">
             <Info className="w-4 h-4" />
             Intelligence Brief
           </h3>
           <p className="text-zinc-200 text-sm leading-relaxed font-medium">
             Analysis based on Multi-Agent telemetry suggests this{" "}
-            {venue.category || "workspace"} is optimal for{" "}
-            {venue.category === "cafe"
+            {safeVenue.category || "workspace"} is optimal for{" "}
+            {safeVenue.category === "cafe"
               ? "collaborative sessions"
               : "high-focus work"}
-            . Noise floor is {venue.noiseLevel || "ambient"} and connectivity is
-            verified as {venue.wifi ? "stable" : "pending"}.
-            {venue.hasErgonomic &&
+            . Noise floor is {safeVenue.noiseLevel || "ambient"} and connectivity is
+            verified as {safeVenue.wifi ? "stable" : "pending"}.
+            {safeVenue.hasErgonomic &&
               " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
           </p>
           <div className="flex flex-wrap gap-2 mt-4">
-            {venue.musicStyle === "lofi" && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
+            {safeVenue.musicStyle === "lofi" && (
+              <div
+                data-testid="badge-music-lofi"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold"
+              >
                 <span>🎵 Lo-Fi/Chill Beats</span>
               </div>
             )}
-            {venue.musicStyle === "classical_jazz" && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
+            {safeVenue.musicStyle === "classical_jazz" && (
+              <div
+                data-testid="badge-music-classical-jazz"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold"
+              >
                 <span>🎷 Classical/Jazz Background</span>
               </div>
             )}
-            {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
+            {(safeVenue.musicStyle === "no_music" || safeVenue.hasNoMusic) && (
+              <div
+                data-testid="badge-music-no-music"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold"
+              >
                 <span>🔇 No Music Played</span>
               </div>
             )}
-            {venue.hasPhoneBooths && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
+            {safeVenue.hasPhoneBooths && (
+              <div
+                data-testid="badge-phone-booths"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold"
+              >
                 <span>📞 Soundproof Booths Available</span>
               </div>
             )}
-            {venue.outletLocations && venue.outletLocations.length > 0 && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
+            {safeOutletLocations.length > 0 && (
+              <div
+                data-testid="badge-outlet-locations"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold"
+              >
                 <span>
                   🔌 Outlets:{" "}
-                  {venue.outletLocations
-                    .map((l) => l.replace("_", " "))
+                  {safeOutletLocations
+                    .map((l) => l.replace(/_/g, " "))
                     .join(", ")}
                 </span>
               </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import {
   WHITEBOARD_COLOR_SWATCHES,
   type ToolType,
@@ -28,9 +29,11 @@ export interface CanvasToolbarProps {
   onOpenShortcuts?: () => void;
   onExportPNG?: (ratio?: 1 | 2 | 4) => void;
   onExportSVG?: () => void;
+  className?: string;
+  "data-testid"?: string;
 }
 
-const TOOLS: { id: ToolType; label: string; icon: string }[] = [
+export const TOOLS: { id: ToolType; label: string; icon: string }[] = [
   {
     id: "pen",
     label: "Pen",
@@ -79,11 +82,19 @@ export function CanvasToolbar({
   onOpenShortcuts,
   onExportPNG,
   onExportSVG,
+  className,
+  "data-testid": testId = "canvas-toolbar",
 }: CanvasToolbarProps) {
   const [exportRatio, setExportRatio] = useState<1 | 2 | 4>(2);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-zinc-900/90 px-3 py-2 shadow-lg backdrop-blur-sm">
+    <div
+      data-testid={testId}
+      className={cn(
+        "flex flex-wrap items-center gap-2 rounded-lg bg-zinc-900/90 px-3 py-2 shadow-lg backdrop-blur-sm",
+        className,
+      )}
+    >
       {TOOLS.map((t) => (
         <button
           key={t.id}
@@ -212,9 +223,11 @@ export function CanvasToolbar({
           min={1}
           max={20}
           value={strokeWidth}
+          data-testid="whiteboard-stroke-width-slider"
           onChange={(e) => onStrokeWidthChange(Number(e.target.value))}
           className="h-1 w-16 cursor-pointer accent-blue-500"
           title="Stroke width"
+          aria-label="Stroke width"
         />
       </div>
 
@@ -223,6 +236,8 @@ export function CanvasToolbar({
       <button
         type="button"
         title="Undo"
+        aria-label="Undo"
+        data-testid="whiteboard-undo-btn"
         onClick={onUndo}
         disabled={!canUndo}
         className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
@@ -242,6 +257,8 @@ export function CanvasToolbar({
       <button
         type="button"
         title="Redo"
+        aria-label="Redo"
+        data-testid="whiteboard-redo-btn"
         onClick={onRedo}
         disabled={!canRedo}
         className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
@@ -261,6 +278,8 @@ export function CanvasToolbar({
       <button
         type="button"
         title="Clear canvas"
+        aria-label="Clear canvas"
+        data-testid="whiteboard-clear-btn"
         onClick={onClear}
         className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
       >
@@ -416,7 +435,10 @@ export function CanvasToolbar({
 
       <div className="mx-1 h-6 w-px bg-zinc-700" />
 
-      <div className="flex items-center gap-1.5 text-xs">
+      <div
+        data-testid="whiteboard-connection-status"
+        className="flex items-center gap-1.5 text-xs"
+      >
         <span
           className={`inline-block h-2 w-2 rounded-full ${
             isConnected ? "bg-green-500" : "bg-amber-500"
@@ -429,3 +451,5 @@ export function CanvasToolbar({
     </div>
   );
 }
+
+export default CanvasToolbar;

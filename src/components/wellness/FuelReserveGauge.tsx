@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Gauge, Fuel, AlertTriangle, Droplets, Coffee, BatteryCharging } from "lucide-react";
 import { useBatteryStatus } from "@/hooks/useBatteryStatus";
+import { cn } from "@/lib/utils";
 
 export const BINGO_FUEL_THRESHOLD = 15; // 15%
 export const MAX_JP8_CAPACITY_LBS = 8000; // 8,000 lbs standard jet fuel load
@@ -137,6 +138,8 @@ export interface FuelReserveGaugeProps {
   onBreakRefuel?: () => void;
   /** Custom wrapper styling */
   className?: string;
+  /** Custom test ID override */
+  "data-testid"?: string;
 }
 
 /**
@@ -152,6 +155,7 @@ export function FuelReserveGauge({
   onHydrateRefuel,
   onBreakRefuel,
   className = "",
+  "data-testid": dataTestId,
 }: FuelReserveGaugeProps) {
   const batteryState = useBatteryStatus();
 
@@ -210,7 +214,11 @@ export function FuelReserveGauge({
     <div
       role="region"
       aria-label="Fighter Jet JP-8 Fuel Reserve Gauge"
-      className={`p-4 rounded-2xl bg-[#03110b]/90 dark:bg-zinc-950/95 border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 text-emerald-400 font-mono backdrop-blur-md w-full max-w-[340px] select-none ${className}`}
+      data-testid={dataTestId || "fuel-reserve-gauge"}
+      className={cn(
+        "p-4 rounded-2xl bg-[#03110b]/90 dark:bg-zinc-950/95 border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 text-emerald-400 font-mono backdrop-blur-md w-full max-w-[340px] select-none",
+        className,
+      )}
     >
       {/* Header bar */}
       <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2 mb-3">

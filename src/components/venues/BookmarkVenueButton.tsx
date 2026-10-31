@@ -9,6 +9,7 @@ import {
 } from "@/lib/venues/favoriteStorage";
 import type { OfflineVenue } from "@/lib/offlineStorage";
 import { useToast } from "@/components/ui/Toast";
+import { cn } from "@/lib/utils";
 
 export interface BookmarkVenueButtonProps {
   venueId: string;
@@ -27,6 +28,7 @@ export interface BookmarkVenueButtonProps {
   ) => Promise<boolean | void>;
   className?: string;
   disabled?: boolean;
+  "data-testid"?: string;
 }
 
 export function BookmarkVenueButton({
@@ -43,6 +45,7 @@ export function BookmarkVenueButton({
   onPersist,
   className = "",
   disabled = false,
+  "data-testid": dataTestId,
 }: BookmarkVenueButtonProps) {
   const { toast } = useToast();
   const [isFavorited, setIsFavorited] = useState<boolean>(() => {
@@ -55,6 +58,18 @@ export function BookmarkVenueButton({
   const isFavoritedRef = useRef(isFavorited);
   const isTogglingRef = useRef(false);
   const lastToggleTimeRef = useRef(0);
+  const isMountedRef = useRef(true);
+  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toggleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+      if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
+    };
+  }, []);
 
   // Sync with local storage on mount & listen to external/cross-tab updates
   useEffect(() => {
@@ -72,7 +87,9 @@ export function BookmarkVenueButton({
     const unsubscribe = subscribeToFavoriteChanges((event) => {
       if (event.venueId === venueId) {
         isFavoritedRef.current = event.isFavorited;
-        setIsFavorited(event.isFavorited);
+        if (isMountedRef.current) {
+          setIsFavorited(event.isFavorited);
+        }
       }
     });
 
@@ -119,13 +136,17 @@ export function BookmarkVenueButton({
         // If backend returns authoritative state differing from optimistic state
         if (typeof result === "boolean" && result !== nextState) {
           isFavoritedRef.current = result;
-          setIsFavorited(result);
+          if (isMountedRef.current) {
+            setIsFavorited(result);
+          }
           onToggle?.(result);
         }
       } catch (err: unknown) {
         // 3. Rollback optimistic state gracefully with an error toast if API rejects
         isFavoritedRef.current = previousState;
-        setIsFavorited(previousState);
+        if (isMountedRef.current) {
+          setIsFavorited(previousState);
+        }
         onToggle?.(previousState);
 
         const errorMessage =
@@ -135,8 +156,12 @@ export function BookmarkVenueButton({
         toast(errorMessage, "error");
       } finally {
         isTogglingRef.current = false;
-        setTimeout(() => setIsAnimating(false), 400);
-        setTimeout(() => setJustToggled(false), 2000);
+        animTimerRef.current = setTimeout(() => {
+          if (isMountedRef.current) setIsAnimating(false);
+        }, 400);
+        toggleTimerRef.current = setTimeout(() => {
+          if (isMountedRef.current) setJustToggled(false);
+        }, 2000);
       }
     },
     [venueId, venueName, venueData, disabled, onToggle, onPersist, toast],
@@ -159,17 +184,18 @@ export function BookmarkVenueButton({
   const renderIcon = () => {
     const isFilled = isFavorited;
     const commonProps = {
-      className: `${iconSizeClasses} transition-all duration-200 ${
-        isAnimating ? "scale-125 rotate-12" : "scale-100 rotate-0"
-      } ${
+      className: cn(
+        iconSizeClasses,
+        "transition-all duration-200",
+        isAnimating ? "scale-125 rotate-12" : "scale-100 rotate-0",
         isFilled
           ? iconType === "heart"
             ? "fill-rose-500 text-rose-500"
             : iconType === "star"
               ? "fill-amber-400 text-amber-400"
               : "fill-blue-600 dark:fill-blue-400 text-blue-600 dark:text-blue-400"
-          : "text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-200"
-      }`,
+          : "text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-200",
+      ),
     };
 
     if (iconType === "heart") {
@@ -185,6 +211,8 @@ export function BookmarkVenueButton({
     ? `Remove ${venueName} from saved`
     : `Bookmark ${venueName}`;
 
+  const rootTestId = dataTestId || `bookmark-toggle-btn-${venueId}`;
+
   if (variant === "pill" || variant === "button") {
     return (
       <button
@@ -193,14 +221,16 @@ export function BookmarkVenueButton({
         disabled={disabled}
         aria-pressed={isFavorited}
         aria-label={actionLabel}
-        data-testid={`bookmark-toggle-btn-${venueId}`}
-        className={`group inline-flex items-center gap-2 rounded-xl font-medium border transition-all duration-150 select-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer ${
-          variant === "pill" ? "rounded-full px-3.5 py-1.5" : "px-3 py-2"
-        } ${
+        data-testid={rootTestId}
+        className={cn(
+          "group inline-flex items-center gap-2 rounded-xl font-medium border transition-all duration-150 select-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+          buttonSizeClasses,
+          variant === "pill" ? "rounded-full px-3.5 py-1.5" : "px-3 py-2",
           isFavorited
             ? "bg-blue-50/80 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/80 text-blue-700 dark:text-blue-300 shadow-sm"
-            : "bg-white/80 dark:bg-zinc-900/80 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
-        } ${buttonSizeClasses} ${className}`}
+            : "bg-white/80 dark:bg-zinc-900/80 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300",
+          className,
+        )}
         title={showTooltip ? actionLabel : undefined}
       >
         {renderIcon()}
@@ -230,13 +260,16 @@ export function BookmarkVenueButton({
       disabled={disabled}
       aria-pressed={isFavorited}
       aria-label={actionLabel}
-      data-testid={`bookmark-toggle-btn-${venueId}`}
+      data-testid={rootTestId}
       title={showTooltip ? actionLabel : undefined}
-      className={`group relative inline-flex items-center justify-center rounded-xl transition-all duration-150 border focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer ${
+      className={cn(
+        "group relative inline-flex items-center justify-center rounded-xl transition-all duration-150 border focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
         isFavorited
           ? "bg-blue-50/90 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800/80 shadow-sm"
-          : "bg-white/80 dark:bg-zinc-900/80 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-800/80 backdrop-blur-xs"
-      } ${buttonSizeClasses} ${className}`}
+          : "bg-white/80 dark:bg-zinc-900/80 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-800/80 backdrop-blur-xs",
+        buttonSizeClasses,
+        className,
+      )}
     >
       {renderIcon()}
     </button>

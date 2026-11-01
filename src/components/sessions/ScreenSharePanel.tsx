@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MonitorUp, PictureInPicture2, Square, Crop, Signal } from "lucide-react";
+import {
+  MonitorUp,
+  PictureInPicture2,
+  Square,
+  Crop,
+  Signal,
+} from "lucide-react";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useScreenShareQuality } from "@/hooks/useScreenShareQuality";
 import { DataSaverToggle } from "@/components/sessions/DataSaverToggle";
@@ -38,7 +44,6 @@ export function ScreenSharePanel({
     startShare,
     stopShare,
     setDataSaverMode,
-    requestPip,
   } = useScreenShare({
     roomId: `session-${sessionSlug}`,
     userId: currentUserId,
@@ -46,10 +51,14 @@ export function ScreenSharePanel({
   });
 
   // Initialize Quality Control Hook if we have a sender (usually the host)
-  const { currentProfile, manualSetProfile } = useScreenShareQuality(sender || null);
+  const { currentProfile, manualSetProfile } = useScreenShareQuality(
+    sender || null,
+  );
 
   const activeStream = isHost ? localStream : remoteStream;
-  const showStage = !!activeStream && (!isStageHidden || isHost);
+  const showStage = !!activeStream;
+  // Viewer-only; the stage is hidden via class (not unmounted) so the <video> keeps its srcObject and any active PiP window
+  const stageHidden = isStageHidden && !isHost;
 
   useEffect(() => {
     const el = videoRef.current;
@@ -84,7 +93,9 @@ export function ScreenSharePanel({
   const handleCropRegion = async () => {
     // Note: Region Capture API (CropTarget) requires specific browser support and setup.
     // This is a scaffold for the feature.
-    console.log("Region capture initiated. Implement CropTarget.fromElement() here.");
+    console.log(
+      "Region capture initiated. Implement CropTarget.fromElement() here.",
+    );
   };
 
   if (!currentUserId) {
@@ -94,7 +105,10 @@ export function ScreenSharePanel({
   return (
     <div
       data-testid={testId || "screen-share-panel"}
-      className={cn("mt-8 rounded-2xl border border-white/10 bg-black/25 p-5", className)}
+      className={cn(
+        "mt-8 rounded-2xl border border-white/10 bg-black/25 p-5",
+        className,
+      )}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
@@ -165,7 +179,10 @@ export function ScreenSharePanel({
       </div>
 
       {error && (
-        <p data-testid="screen-share-error" className="mt-3 text-sm text-rose-300">
+        <p
+          data-testid="screen-share-error"
+          className="mt-3 text-sm text-rose-300"
+        >
           {error}
         </p>
       )}
@@ -173,7 +190,10 @@ export function ScreenSharePanel({
       {showStage && (
         <div
           data-testid="screen-share-stage"
-          className="relative w-full aspect-video bg-black rounded-xl overflow-hidden group"
+          className={cn(
+            "relative w-full aspect-video bg-black rounded-xl overflow-hidden group",
+            stageHidden && "hidden",
+          )}
         >
           <video
             ref={videoRef}
@@ -188,7 +208,7 @@ export function ScreenSharePanel({
           {sharing && (
             <div
               data-testid="screen-share-overlay-controls"
-              className="absolute top-4 left-4 z-10 flex gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 transition-opacity duration-200"
+              className="absolute top-4 left-4 z-10 flex gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-200"
             >
               {/* Quality Profile Selector */}
               <div className="relative">

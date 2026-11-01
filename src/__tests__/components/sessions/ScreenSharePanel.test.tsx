@@ -11,7 +11,13 @@ import { useScreenShareQuality } from "@/hooks/useScreenShareQuality";
 jest.mock("@/hooks/useScreenShare");
 jest.mock("@/hooks/useScreenShareQuality");
 jest.mock("@/components/sessions/DataSaverToggle", () => ({
-  DataSaverToggle: ({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) => (
+  DataSaverToggle: ({
+    enabled,
+    onChange,
+  }: {
+    enabled: boolean;
+    onChange: (v: boolean) => void;
+  }) => (
     <button
       type="button"
       data-testid="data-saver-toggle"
@@ -22,8 +28,12 @@ jest.mock("@/components/sessions/DataSaverToggle", () => ({
   ),
 }));
 
-const mockUseScreenShare = useScreenShare as jest.MockedFunction<typeof useScreenShare>;
-const mockUseScreenShareQuality = useScreenShareQuality as jest.MockedFunction<typeof useScreenShareQuality>;
+const mockUseScreenShare = useScreenShare as jest.MockedFunction<
+  typeof useScreenShare
+>;
+const mockUseScreenShareQuality = useScreenShareQuality as jest.MockedFunction<
+  typeof useScreenShareQuality
+>;
 
 describe("ScreenSharePanel Component (#7133)", () => {
   const defaultScreenShareReturn = {
@@ -64,12 +74,12 @@ describe("ScreenSharePanel Component (#7133)", () => {
 
   it("returns null when currentUserId is null or undefined (signed out)", () => {
     const { container: c1 } = render(
-      <ScreenSharePanel {...defaultProps} currentUserId={null} />
+      <ScreenSharePanel {...defaultProps} currentUserId={null} />,
     );
     expect(c1.firstChild).toBeNull();
 
     const { container: c2 } = render(
-      <ScreenSharePanel {...defaultProps} currentUserId={undefined} />
+      <ScreenSharePanel {...defaultProps} currentUserId={undefined} />,
     );
     expect(c2.firstChild).toBeNull();
   });
@@ -77,14 +87,20 @@ describe("ScreenSharePanel Component (#7133)", () => {
   it("renders host copy and share screen button when current user is host", () => {
     render(<ScreenSharePanel {...defaultProps} currentUserId="user_host_1" />);
 
-    expect(screen.getByText("Share your screen with everyone in this session.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Share your screen with everyone in this session."),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("start-share-button")).toBeInTheDocument();
   });
 
   it("renders viewer waiting copy when current user is viewer and no stream is active", () => {
-    render(<ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />);
+    render(
+      <ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />,
+    );
 
-    expect(screen.getByText("Waiting for the host to share their screen.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Waiting for the host to share their screen."),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("start-share-button")).not.toBeInTheDocument();
   });
 
@@ -95,9 +111,15 @@ describe("ScreenSharePanel Component (#7133)", () => {
       remoteStream: fakeStream,
     });
 
-    render(<ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />);
+    render(
+      <ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />,
+    );
 
-    expect(screen.getByText("Host is presenting — open PiP to keep watching while you work.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Host is presenting — open PiP to keep watching while you work.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("calls startShare when host clicks Share Screen button", () => {
@@ -159,9 +181,13 @@ describe("ScreenSharePanel Component (#7133)", () => {
     const overlay = screen.getByTestId("screen-share-overlay-controls");
     expect(overlay).toHaveClass("group-focus-within:opacity-100");
     expect(overlay).toHaveClass("focus-within:opacity-100");
+    expect(overlay).toHaveClass("[@media(hover:none)]:opacity-100");
 
     const qualitySelect = screen.getByTestId("quality-select");
-    expect(qualitySelect).toHaveAttribute("aria-label", "Screen share quality profile");
+    expect(qualitySelect).toHaveAttribute(
+      "aria-label",
+      "Screen share quality profile",
+    );
     fireEvent.change(qualitySelect, { target: { value: "4k" } });
     expect(mockManualSetProfile).toHaveBeenCalledWith("4k");
 
@@ -177,10 +203,13 @@ describe("ScreenSharePanel Component (#7133)", () => {
       remoteStream: fakeStream,
     });
 
-    render(<ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />);
+    render(
+      <ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />,
+    );
 
     // Initially stage is visible
-    expect(screen.getByTestId("screen-share-stage")).toBeInTheDocument();
+    const stage = screen.getByTestId("screen-share-stage");
+    expect(stage).not.toHaveClass("hidden");
     const hideBtn = screen.getByTestId("hide-stage-button");
     expect(hideBtn).toHaveAttribute("type", "button");
 
@@ -188,7 +217,7 @@ describe("ScreenSharePanel Component (#7133)", () => {
     fireEvent.click(hideBtn);
 
     // Stage is now collapsed/hidden
-    expect(screen.queryByTestId("screen-share-stage")).not.toBeInTheDocument();
+    expect(stage).toHaveClass("hidden");
 
     // Show Stage button appears in header
     const showBtn = screen.getByTestId("show-stage-button");
@@ -198,7 +227,47 @@ describe("ScreenSharePanel Component (#7133)", () => {
     fireEvent.click(showBtn);
 
     // Stage is visible again
-    expect(screen.getByTestId("screen-share-stage")).toBeInTheDocument();
+    expect(screen.getByTestId("screen-share-stage")).not.toHaveClass("hidden");
+    expect(screen.queryByTestId("show-stage-button")).not.toBeInTheDocument();
+  });
+
+  it("keeps the same video element and its stream across Hide and Show Stage", () => {
+    const fakeStream = { id: "remote-stream" } as unknown as MediaStream;
+    mockUseScreenShare.mockReturnValue({
+      ...defaultScreenShareReturn,
+      remoteStream: fakeStream,
+    });
+
+    render(
+      <ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />,
+    );
+
+    const video = screen.getByTestId("screen-share-video") as HTMLVideoElement;
+    expect(video.srcObject).toBe(fakeStream);
+
+    fireEvent.click(screen.getByTestId("hide-stage-button"));
+    fireEvent.click(screen.getByTestId("show-stage-button"));
+
+    const restoredVideo = screen.getByTestId(
+      "screen-share-video",
+    ) as HTMLVideoElement;
+    expect(restoredVideo).toBe(video);
+    expect(restoredVideo.srcObject).toBe(fakeStream);
+  });
+
+  it("keeps the PiP control available while the stage is hidden", () => {
+    mockUseScreenShare.mockReturnValue({
+      ...defaultScreenShareReturn,
+      remoteStream: {} as MediaStream,
+      pipSupported: true,
+    });
+
+    render(
+      <ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />,
+    );
+
+    fireEvent.click(screen.getByTestId("hide-stage-button"));
+    expect(screen.getByTestId("pip-button")).toBeInTheDocument();
   });
 
   it("toggles picture-in-picture mode when Pop out button is clicked", async () => {
@@ -210,12 +279,18 @@ describe("ScreenSharePanel Component (#7133)", () => {
     });
 
     const mockRequestPip = jest.fn().mockResolvedValue({});
-    Object.defineProperty(HTMLVideoElement.prototype, "requestPictureInPicture", {
-      configurable: true,
-      value: mockRequestPip,
-    });
+    Object.defineProperty(
+      HTMLVideoElement.prototype,
+      "requestPictureInPicture",
+      {
+        configurable: true,
+        value: mockRequestPip,
+      },
+    );
 
-    render(<ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />);
+    render(
+      <ScreenSharePanel {...defaultProps} currentUserId="user_viewer_2" />,
+    );
 
     const pipBtn = screen.getByTestId("pip-button");
     expect(pipBtn).toHaveTextContent("Pop out");
@@ -235,7 +310,7 @@ describe("ScreenSharePanel Component (#7133)", () => {
     render(<ScreenSharePanel {...defaultProps} currentUserId="user_host_1" />);
 
     expect(screen.getByTestId("screen-share-error")).toHaveTextContent(
-      "Permission denied for screen capture"
+      "Permission denied for screen capture",
     );
   });
 
@@ -245,7 +320,7 @@ describe("ScreenSharePanel Component (#7133)", () => {
         {...defaultProps}
         className="custom-panel-class shadow-lg"
         data-testid="custom-screen-share"
-      />
+      />,
     );
 
     const panel = screen.getByTestId("custom-screen-share");

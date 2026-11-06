@@ -74,7 +74,7 @@ jobs:
               }
 
               // Assign labels logically based on modified files
-              const labelsToAdd = ["OSCI'26"];
+              const labelsToAdd = ["OSCI'26", "wocs"];
               
               if (hasBackend) {
                 labelsToAdd.push('good-backend');
@@ -89,6 +89,12 @@ jobs:
               // Fallback: If no bonus labels were matched, assign 'good-pr'
               if (!hasBackend && !hasUI && !hasTests && !hasDocs) {
                 labelsToAdd.push('good-pr');
+              }
+
+              // Check if PR already has a level label; if not, default to level 1
+              const currentPrLabels = (pr.labels || []).map(l => (typeof l === 'string' ? l : l.name));
+              if (!currentPrLabels.some(l => /^level\s*[123]$/i.test(l))) {
+                labelsToAdd.push('level 1');
               }
               
               console.log(`Auto-assigning labels pre-merge for PR #${prNumber}: ${labelsToAdd.join(', ')}`);

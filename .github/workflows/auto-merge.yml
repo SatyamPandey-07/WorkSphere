@@ -176,6 +176,34 @@ jobs:
                 console.log('PR approval notice:', e.message);
               }
 
+              // Ensure WOCS labels are applied to PR before merge so WOCS webhook tracks points
+              try {
+                let wocsLevel = null;
+                for (const num of candidateIssueNumbers) {
+                  try {
+                    const issueRes = await github.rest.issues.get({ owner, repo, issue_number: num });
+                    const issueLabels = (issueRes.data?.labels || []).map(l => (typeof l === 'string' ? l : l.name));
+                    const foundLevel = issueLabels.find(l => /^level\s*[123]$/i.test(l));
+                    if (foundLevel) {
+                      wocsLevel = foundLevel.toLowerCase().replace(/level\s*/, 'level ');
+                      break;
+                    }
+                  } catch (e) {
+                    console.warn(`Label check for issue #${num} note:`, e.message);
+                  }
+                }
+                const wocsLabelsToApply = ['wocs', wocsLevel || 'level 1'];
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  labels: wocsLabelsToApply
+                });
+                console.log(`Applied WOCS labels to PR #${prNumber} pre-merge: ${wocsLabelsToApply.join(', ')}`);
+              } catch (wocsErr) {
+                console.warn('WOCS label pre-merge warning:', wocsErr.message);
+              }
+
               // Fetch mergeable status (poll with delay if GitHub is computing)
               let prDetails;
               for (let attempt = 1; attempt <= 4; attempt++) {

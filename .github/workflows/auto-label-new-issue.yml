@@ -1,0 +1,56 @@
+name: Auto Label New Issues for WOCS
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  auto-label-issue:
+    name: Apply WOCS labels to new issues
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add WOCS and Level labels
+        uses: actions/github-script@v9
+        with:
+          script: |
+            try {
+              const issue = context.payload.issue;
+              const issueNumber = issue.number;
+              const existingLabels = (issue.labels || []).map(l => (typeof l === 'string' ? l : l.name).toLowerCase());
+
+              const labelsToAdd = [];
+
+              // 1. Ensure wocs label is present
+              if (!existingLabels.includes('wocs')) {
+                labelsToAdd.push('wocs');
+              }
+
+              // 2. Ensure difficulty level is present (defaults to level 1 if none provided)
+              const hasLevel = existingLabels.some(l => /^level\s*[123]$/i.test(l));
+              if (!hasLevel) {
+                // Check if title or body hints at difficulty
+                const text = `${issue.title || ''} ${issue.body || ''}`.toLowerCase();
+                if (text.includes('level 3') || text.includes('difficulty: hard') || text.includes('difficulty: high')) {
+                  labelsToAdd.push('level 3');
+                } else if (text.includes('level 2') || text.includes('difficulty: medium')) {
+                  labelsToAdd.push('level 2');
+                } else {
+                  labelsToAdd.push('level 1');
+                }
+              }
+
+              if (labelsToAdd.length > 0) {
+                console.log(`Auto-applying labels to Issue #${issueNumber}: ${labelsToAdd.join(', ')}`);
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  labels: labelsToAdd
+                });
+              }
+            } catch (err) {
+              console.warn('Auto-label issue warning (gracefully caught):', err.message);
+            }

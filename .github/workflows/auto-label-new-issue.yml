@@ -28,18 +28,34 @@ jobs:
                 labelsToAdd.push('wocs');
               }
 
-              // 2. Ensure difficulty level is present (defaults to level 1 if none provided)
+              // 2. Ensure difficulty level is present (intelligently classify if none provided)
               const hasLevel = existingLabels.some(l => /^level\s*[123]$/i.test(l));
               if (!hasLevel) {
-                // Check if title or body hints at difficulty
-                const text = `${issue.title || ''} ${issue.body || ''}`.toLowerCase();
-                if (text.includes('level 3') || text.includes('difficulty: hard') || text.includes('difficulty: high')) {
-                  labelsToAdd.push('level 3');
-                } else if (text.includes('level 2') || text.includes('difficulty: medium')) {
-                  labelsToAdd.push('level 2');
-                } else {
-                  labelsToAdd.push('level 1');
+                const text = `${issue.title || ''}\n${issue.body || ''}`.toLowerCase();
+                
+                const level3Keywords = [
+                  'wasm', 'webassembly', 'dsp', 'audioworklet', 'audio worklet', 'fft',
+                  'decibel engine', 'solana', 'escrow', 'smart contract', 'multi-agent',
+                  'agent orchestration', 'vector embedding', 'pgvector', 'partykit',
+                  'webrtc', 'p2p mesh', 'zkp', 'proof of work', 'difficulty: hard',
+                  'difficulty: high', 'level 3', 'level3', 'architectural'
+                ];
+
+                const level2Keywords = [
+                  'api route', 'endpoint', 'component', 'modal', 'hook', 'state management',
+                  'unit test', 'integration test', 'jest', 'playwright', 'form validation',
+                  'zod schema', 'filter bar', 'dashboard', 'responsive layout', 'refactor',
+                  'difficulty: medium', 'level 2', 'level2'
+                ];
+
+                let assignedLevel = 'level 1';
+                if (level3Keywords.some(kw => text.includes(kw))) {
+                  assignedLevel = 'level 3';
+                } else if (level2Keywords.some(kw => text.includes(kw))) {
+                  assignedLevel = 'level 2';
                 }
+
+                labelsToAdd.push(assignedLevel);
               }
 
               if (labelsToAdd.length > 0) {
@@ -54,3 +70,4 @@ jobs:
             } catch (err) {
               console.warn('Auto-label issue warning (gracefully caught):', err.message);
             }
+

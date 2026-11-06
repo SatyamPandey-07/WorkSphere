@@ -104,6 +104,7 @@ WorkSphere is officially participating in [Winter of Code Social 2026](https://w
   - `level 1` — **2 points** (Beginner-friendly fixes, documentation updates, minor UI tweaks)
   - `level 2` — **5 points** (Feature enhancements, component implementations, test coverage)
   - `level 3` — **11 points** (Complex architecture, agent workflows, backend endpoints)
+  - See the comprehensive [WOCS Level Evaluation Guide](docs/WOCS_LEVEL_GUIDE.md) for full breakdown by directory and complexity.
 - **Automatic Tracking**: Merged pull requests with the proper labels trigger the WOCS real-time webhook and automatically credit points to your account.
 - **AI Policy**: AI-assisted tooling is permitted provided that the contributor thoroughly understands and verifies the code, writes authentic tests, and adheres to our quality standards. Hallucinated or non-functional submissions will be rejected.
 

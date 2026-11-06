@@ -392,7 +392,7 @@ export class BookingEngine {
     const {
       requestedSlot,
       existingBookings: rawExisting = [],
-      seatId = requestedSlot?.seatId,
+      seatId = (requestedSlot as any)?.seatId,
       excludeBookingId,
     } = params;
 

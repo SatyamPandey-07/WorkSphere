@@ -216,7 +216,7 @@ export class ParametricEQGraph {
 
         for (const band of this.bands) {
             if (band.node && typeof band.node.getFrequencyResponse === 'function') {
-                band.node.getFrequencyResponse(frequencies, tempMag, tempPhase);
+                band.node.getFrequencyResponse(frequencies as any, tempMag as any, tempPhase as any);
                 for (let i = 0; i < frequencies.length; i++) {
                     const m = Number.isFinite(tempMag[i]) ? tempMag[i] : 1.0;
                     magnitudes[i] *= m;

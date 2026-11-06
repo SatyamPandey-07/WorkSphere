@@ -7,13 +7,11 @@ export type {
 
 export {
   default as SitStandRatioAnalytics,
-  SitStandRatioAnalytics,
   type SitStandRatioAnalyticsProps,
 } from "./SitStandRatioAnalytics";
 export { default as DynamicErgonomicCoach } from "./DynamicErgonomicCoach";
 export {
   default as FuelReserveGauge,
-  FuelReserveGauge,
   calculateFuelEndurance,
   BINGO_FUEL_THRESHOLD,
   MAX_JP8_CAPACITY_LBS,

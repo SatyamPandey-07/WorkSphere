@@ -186,7 +186,7 @@ export function calculateStreak(
     return {
       currentStreak: safeCurrent,
       longestStreak: safeLongest,
-      lastCheckInDate: dayDiff !== null && dayDiff < 0 ? lastCheckInDate : today,
+      lastCheckInDate: dayDiff !== null && dayDiff < 0 ? (lastCheckInDate || today) : today,
       incremented: false,
       newMilestones: [],
     };

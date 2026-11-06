@@ -102,6 +102,7 @@ Output JSON format:
                 if (lower.includes('coffee') || lower.includes('lunch') || lower.includes('food')) category = 'MEAL';
                 if (lower.includes('uber') || lower.includes('taxi') || lower.includes('parking')) category = 'TRANSPORT';
                 if (lower.includes('wifi') || lower.includes('internet')) category = 'WIFI';
+                if (lower.includes('office') || lower.includes('supply')) category = 'OFFICE_SUPPLY';
 
                 // Naive amount extraction
                 const match = l.text.match(/\$?(\d+\.\d{2})/);

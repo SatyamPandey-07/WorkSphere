@@ -115,7 +115,7 @@ function matchesWifiSpeedBand(venue: VenueLike, band: string): boolean {
   if (band === "all") return true;
   if (!venue) return false;
   const raw = venue.wifiSpeed;
-  if (raw === null || raw === undefined || raw === "") return false;
+  if (raw === null || raw === undefined || (raw as any) === "") return false;
   const speed = typeof raw === "number" ? raw : Number(raw);
   if (isNaN(speed) || !isFinite(speed)) return false;
   if (band === "basic") return speed >= 10;

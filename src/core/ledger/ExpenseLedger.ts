@@ -8,7 +8,7 @@ export interface LedgerEntry {
     hash: string;
     previousHash: string;
     timestamp: number;
-    type: 'CARD_ISSUED' | 'AUTHORIZATION' | 'SETTLEMENT' | 'RECONCILIATION';
+    type: 'GENESIS' | 'CARD_ISSUED' | 'AUTHORIZATION' | 'SETTLEMENT' | 'RECONCILIATION';
     data: any;
 }
 

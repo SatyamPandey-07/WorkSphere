@@ -264,9 +264,10 @@ export async function generateBookingItineraryPdf(
   drawSafe("Date & Time:", detailsX, detailsY, 9, font, slateGrey);
   let formattedDate = "Scheduled Date";
   if (safeBooking.date) {
-    if (safeBooking.date instanceof Date) {
-      formattedDate = !isNaN(safeBooking.date.getTime())
-        ? safeBooking.date.toISOString().slice(0, 10)
+    const rawDate = safeBooking.date as unknown;
+    if (rawDate instanceof Date) {
+      formattedDate = !isNaN(rawDate.getTime())
+        ? rawDate.toISOString().slice(0, 10)
         : "Scheduled Date";
     } else if (typeof safeBooking.date === "string") {
       formattedDate = safeBooking.date;

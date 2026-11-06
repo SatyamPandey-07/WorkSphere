@@ -116,7 +116,7 @@ export function attachPrfToAuthenticationOptions(
     extensions: {
       ...options.extensions,
       ...buildPrfAuthenticationExtension(salt),
-    },
+    } as any,
   };
 }
 
@@ -174,7 +174,7 @@ export async function deriveAesGcmKeyFromPrf(
   // Import raw PRF output bytes as HKDF key material
   const hkdfKey = await subtle.importKey(
     "raw",
-    prfBytes,
+    prfBytes as unknown as BufferSource,
     "HKDF",
     false,
     ["deriveKey"]
@@ -185,8 +185,8 @@ export async function deriveAesGcmKeyFromPrf(
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt: saltBuffer,
-      info: infoBuffer,
+      salt: saltBuffer as unknown as BufferSource,
+      info: infoBuffer as unknown as BufferSource,
     },
     hkdfKey,
     {

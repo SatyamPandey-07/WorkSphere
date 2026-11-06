@@ -35,7 +35,7 @@ export function FocusTrap({
   const containerRef = useRef<HTMLElement | null>(null);
   // A union of every intrinsic tag collapses its props to `never`; render
   // through a generic element type instead.
-  const Tag = Component as React.ElementType;
+  const Tag = Component as any;
 
   useFocusTrap(containerRef, {
     isActive,

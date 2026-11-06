@@ -97,7 +97,7 @@ export function TacticalTargetReticle({
   const rafRef = useRef<number | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const activeNodesRef = useRef<AudioScheduledSourceNode[]>([]);
-  const teardownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const teardownTimerRef = useRef<ReturnType<typeof setTimeout> | number | null>(null);
   const lastBeepTimeRef = useRef(0);
 
   // Current animated rect (spring) + velocity + target rect, all in refs so the

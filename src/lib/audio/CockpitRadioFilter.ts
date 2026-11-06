@@ -129,7 +129,7 @@ export class CockpitRadioFilter {
 
     // WaveShaper saturation overdrive
     this.waveshaper = this.audioContext.createWaveShaper();
-    this.waveshaper.curve = this.makeDistortionCurve(this.distortionAmount);
+    this.waveshaper.curve = this.makeDistortionCurve(this.distortionAmount) as any;
     this.waveshaper.oversample = '4x';
 
     // Wet chain routing
@@ -199,7 +199,7 @@ export class CockpitRadioFilter {
 
   public setDistortionAmount(amount: number): void {
     this.distortionAmount = sanitizeDistortionAmount(amount);
-    this.waveshaper.curve = this.makeDistortionCurve(this.distortionAmount);
+    this.waveshaper.curve = this.makeDistortionCurve(this.distortionAmount) as any;
   }
 
   public getDistortionAmount(): number {

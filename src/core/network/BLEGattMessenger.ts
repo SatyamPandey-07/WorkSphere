@@ -34,7 +34,7 @@ export class BLEGattMessenger {
         }
 
         try {
-            const device = await navigator.bluetooth.requestDevice({
+            const device = await navigator.bluetooth!.requestDevice({
                 filters: [{ services: [this.SERVICE_UUID] }],
                 optionalServices: [this.SERVICE_UUID]
             });
@@ -66,7 +66,7 @@ export class BLEGattMessenger {
             // Setup RX (Receiving data from peer)
             const rxChar = await service.getCharacteristic(this.CHAR_UUID_RX);
             await rxChar.startNotifications();
-            rxChar.addEventListener('characteristicvaluechanged', (event) => {
+            rxChar.addEventListener('characteristicvaluechanged', (event: any) => {
                 const target = event.target as BluetoothRemoteGATTCharacteristic;
                 if (target.value && this.onMessageReceivedCallback) {
                     this.onMessageReceivedCallback(device.id, new Uint8Array(target.value.buffer));

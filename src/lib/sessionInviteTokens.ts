@@ -355,7 +355,7 @@ function computeHmacSha256(message: string, secret: string): string {
   const msgBytes = encoder.encode(message);
 
   if (keyBytes.length > 64) {
-    keyBytes = sha256(keyBytes);
+    keyBytes = sha256(keyBytes) as any;
   }
   const paddedKey = new Uint8Array(64);
   paddedKey.set(keyBytes);

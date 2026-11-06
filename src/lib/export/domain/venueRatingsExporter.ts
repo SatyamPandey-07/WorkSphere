@@ -131,7 +131,7 @@ export function downloadRatingsCSV(
       ? filename || defaultVenueName.filename
       : filename;
 
-  const csvContent = generateRatingsCSV(records, resolvedVenueName);
+  const csvContent = generateRatingsCSV(records, resolvedVenueName || undefined);
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
 
   const safeVenueName =

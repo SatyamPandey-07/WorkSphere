@@ -242,5 +242,3 @@ export const DogfightInterceptionTracker: React.FC<DogfightInterceptionTrackerPr
 };
 
 export default DogfightInterceptionTracker;
-
-export default DogfightInterceptionTracker;

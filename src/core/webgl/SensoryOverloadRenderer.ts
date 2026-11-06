@@ -37,7 +37,7 @@ export class SensoryOverloadRenderer {
 
     private compileShader(source: string): WebGLProgram {
         const gl = this.gl;
-        const shader = gl.createShader(gl.COMPUTE_SHADER);
+        const shader = gl.createShader((gl as any).COMPUTE_SHADER || gl.FRAGMENT_SHADER);
         if (!shader) throw new Error('Failed to create compute shader');
 
         gl.shaderSource(shader, source);

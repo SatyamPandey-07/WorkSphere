@@ -5,7 +5,7 @@ const subtle = (typeof window !== 'undefined' && window.crypto?.subtle)
   ? window.crypto.subtle 
   : (webcrypto as unknown as Crypto).subtle;
 
-const cryptoObj = (typeof window !== 'undefined' && window.crypto) 
+const cryptoObj: any = (typeof window !== 'undefined' && window.crypto) 
   ? window.crypto 
   : webcrypto;
 
@@ -78,10 +78,10 @@ export class E2EEChatSession {
     const encryptedBuffer = await subtle.encrypt(
       {
         name: 'AES-GCM',
-        iv: iv,
+        iv: iv as unknown as BufferSource,
       },
       this.sharedKey,
-      encoded
+      encoded as unknown as BufferSource
     );
 
     return {
@@ -104,10 +104,10 @@ export class E2EEChatSession {
     const decryptedBuffer = await subtle.decrypt(
       {
         name: 'AES-GCM',
-        iv: iv,
+        iv: iv as unknown as BufferSource,
       },
       this.sharedKey,
-      ciphertext
+      ciphertext as unknown as BufferSource
     );
 
     return new TextDecoder().decode(decryptedBuffer);

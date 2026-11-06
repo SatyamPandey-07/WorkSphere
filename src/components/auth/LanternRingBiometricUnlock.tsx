@@ -385,7 +385,7 @@ export function LanternRingBiometricUnlock({
       const rawChallenge = stringToBuffer(challenge);
 
       const publicKeyOptions: PublicKeyCredentialRequestOptions = {
-        challenge: rawChallenge,
+        challenge: rawChallenge as unknown as BufferSource,
         rpId: effectiveRpId,
         timeout: 60000, // 60s standard timeout
         userVerification: "preferred",

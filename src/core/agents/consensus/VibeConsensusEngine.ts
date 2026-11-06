@@ -365,7 +365,8 @@ export class VibeConsensusEngine {
       this.venueStates.delete(venueId);
       this.venueVotes.delete(venueId);
     } else {
-      this.venueStates.clear(this.venueVotes.clear() as any);
+      this.venueStates.clear();
+      this.venueVotes.clear();
     }
   }
 }

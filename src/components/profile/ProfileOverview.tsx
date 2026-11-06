@@ -22,9 +22,10 @@ export interface ProfileOverviewProps {
   className?: string;
 }
 
-const DEFAULT_USER = {
+const DEFAULT_USER: NonNullable<ProfileOverviewProps["user"]> = {
   name: "Alex Nomad",
   username: "alexnomad",
+  avatarUrl: undefined,
   location: "Global Remote",
   joinedDate: "Member since Jan 2024",
 };

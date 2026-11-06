@@ -64,7 +64,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     const pkpassArchiveBuffer = generatePkpassArchive(passJson);
 
-    return new NextResponse(pkpassArchiveBuffer, {
+    return new NextResponse(new Uint8Array(pkpassArchiveBuffer), {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.apple.pkpass",

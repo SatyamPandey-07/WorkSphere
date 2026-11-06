@@ -89,7 +89,7 @@ export class LiDARDeskScanner {
 
     private processDepthBuffer(depthInfo: XRDepthInformation, view: XRView): PointCloudPoint[] {
         const points: PointCloudPoint[] = [];
-        const { width, height, data } = depthInfo;
+        const { width, height } = depthInfo;
         const projMatrix = view.projectionMatrix;
         const viewMatrix = view.transform.inverse.matrix;
 

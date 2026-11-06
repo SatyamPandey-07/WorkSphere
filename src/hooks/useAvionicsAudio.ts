@@ -208,7 +208,7 @@ export function useAvionicsAudio({
         }
         // Attempt resume if user has interacted
         ctx.resume().catch(() => {});
-        if (ctx.state !== "running") return false;
+        if ((ctx.state as string) !== "running") return false;
       }
 
       // Stop previous playback if active

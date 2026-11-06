@@ -248,7 +248,7 @@ export async function resolveAllDnsRecords(hostname: string): Promise<string[]> 
     const lookupAddrs = Array.isArray(resLookup.value)
       ? resLookup.value
       : [resLookup.value];
-    for (const entry of lookupAddrs) {
+    for (const entry of lookupAddrs as any[]) {
       if (typeof entry === "string") {
         ipSet.add(entry.trim());
       } else if (entry && typeof entry.address === "string") {

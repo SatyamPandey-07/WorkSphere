@@ -74,7 +74,7 @@ jobs:
               }
 
               // Assign labels logically based on modified files
-              const labelsToAdd = ["OSCI'26", "wocs"];
+              const labelsToAdd = ["wocs"];
               
               if (hasBackend) {
                 labelsToAdd.push('good-backend');

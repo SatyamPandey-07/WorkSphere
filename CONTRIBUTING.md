@@ -72,9 +72,9 @@ Before starting work, claim an available issue by commenting `/claim` on GitHub 
 git remote add upstream https://github.com/SatyamPandey-07/WorkSphere.git
 ```
 
-### 1.1 OSCI'26 Issue Assignment & Claiming Policy (/claim)
+### 1.1 Program Participation & Issue Claiming Policy (/claim)
 
-WorkSphere is an official selected project for **OSCI'26** (Open Source Contribution India) and **ECSoC 2026**. Contributor issue tracking and assignment are automated via GitHub Actions to ensure a transparent, fair, and high-velocity workflow.
+WorkSphere is an official selected project for **OSCI'26** (Open Source Contribution India), **ECSoC 2026**, and **Winter of Code Social 2026 (WOCS'26)** by **Code Social**. Contributor issue tracking and assignment are automated via GitHub Actions to ensure a transparent, fair, and high-velocity workflow.
 
 - **Claiming an Issue**: Find any unassigned, open issue and post a comment containing exactly:
   ```text
@@ -89,11 +89,25 @@ WorkSphere is an official selected project for **OSCI'26** (Open Source Contribu
   /unclaim
   ```
 - **6-Day Resolution Window (SLA)**: Once assigned, you have exactly **6 days** to implement your solution and open a corresponding Pull Request.
-  - **Automated Expiration**: If the 6-day threshold expires without a linked pull request or a recorded progress update, the automated triage workflow unassigns the issue and returns it to the open pool for other OSCI'26 participants.
+  - **Automated Expiration**: If the 6-day threshold expires without a linked pull request or a recorded progress update, the automated triage workflow unassigns the issue and returns it to the open pool for other participants.
   - **Requesting an Extension**: If you need additional time due to technical complexity, post a progress comment on the issue describing your current status, blockers, and expected timeline before the 6th day.
-- **Maximum Assigned Issue Cap (10 Issues)**: To prevent issue hoarding and ensure fair opportunity across all OSCI'26 participants, each contributor may hold at most **10 active assigned issues** simultaneously. Additional `/claim` attempts will be automatically rejected until existing assignments are resolved or unclaimed.
+- **Maximum Assigned Issue Cap (10 Issues)**: To prevent issue hoarding and ensure fair opportunity across all participants, each contributor may hold at most **10 active assigned issues** simultaneously. Additional `/claim` attempts will be automatically rejected until existing assignments are resolved or unclaimed.
 
-### 1.2 Pull Request Title Conventions & Format
+### 1.2 Winter of Code Social (WOCS 2026) Guidelines & Points System
+
+WorkSphere is officially participating in [Winter of Code Social 2026](https://woc.codesocial.tech), hosted by **Code Social**!
+
+- **Registration**: All contributors must register on the [WOCS Portal](https://woc.codesocial.tech).
+- **Leaderboard**: Track your live standings on the [WOCS Leaderboard](https://woc.codesocial.tech/leaderboard).
+- **Discord Community**: Join the official [Code Social Discord Server](https://discord.gg/MSTNyRSPYW) and communicate in the WorkSphere project forum in `#find-a-project`.
+- **Labeling Requirements**: Every eligible PR must have the `wocs` label and exactly one difficulty level label applied prior to merge:
+  - `level 1` — **2 points** (Beginner-friendly fixes, documentation updates, minor UI tweaks)
+  - `level 2` — **5 points** (Feature enhancements, component implementations, test coverage)
+  - `level 3` — **11 points** (Complex architecture, agent workflows, backend endpoints)
+- **Automatic Tracking**: Merged pull requests with the proper labels trigger the WOCS real-time webhook and automatically credit points to your account.
+- **AI Policy**: AI-assisted tooling is permitted provided that the contributor thoroughly understands and verifies the code, writes authentic tests, and adheres to our quality standards. Hallucinated or non-functional submissions will be rejected.
+
+### 1.3 Pull Request Title Conventions & Format
 
 All Pull Request titles must follow the strict machine-parseable convention:
 
@@ -111,7 +125,7 @@ docs: document NIOSH daily sound exposure calculation and formula reference (clo
 
 > **Mandatory Rule**: The `(closes #<issue_number>)` suffix is strictly required. It enables automated GitHub issue linking and closes the associated issue upon merge. Never invent dummy issue numbers or reference unrelated issues.
 
-### 1.3 Conventional Commit Standards
+### 1.4 Conventional Commit Standards
 
 WorkSphere enforces the [Conventional Commits](https://www.conventionalcommits.org/) specification for all git commit messages. Commit messages must be structured as:
 
@@ -141,7 +155,7 @@ WorkSphere enforces the [Conventional Commits](https://www.conventionalcommits.o
 - **Atomic Commits**: Keep each commit focused on one cohesive logical change. Avoid monolithic commits that mix unrelated bug fixes and UI updates.
 - **No Unrelated Changes**: Do not bundle stylistic reformatting of unrelated files or unnecessary dependency updates in a bug-fix PR.
 
-### 1.4 AI Coding Assistant & Subagent Guidelines
+### 1.5 AI Coding Assistant & Subagent Guidelines
 
 If you are developing using AI coding assistants (such as Cursor, Gemini, or custom terminal subagents):
 
@@ -155,7 +169,7 @@ If you are developing using AI coding assistants (such as Cursor, Gemini, or cus
 3. **No Unrequested Refactoring**: Do not allow AI tools to refactor or rewrite files outside the target scope of the issue. This creates massive diffs and complicates PR reviews.
 4. **JSDoc & Comments Retention**: Ensure the assistant does not clean up or delete existing codebase comments, JSDoc annotations, or architecture docs unless explicitly requested.
 
-### 1.5 Local Development via Docker Compose
+### 1.6 Local Development via Docker Compose
 
 To lower contributor onboarding friction, WorkSphere provides a local development environment powered by Docker Compose. This packages PostgreSQL (with the `pgvector` extension) and Redis.
 

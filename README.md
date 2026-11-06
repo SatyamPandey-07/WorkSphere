@@ -12,10 +12,12 @@
   <img src="public/images/ecsoc-logo.png" alt="ECSoC 2026 - Elite Coders Summer of Code" height="56" />
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <img src="public/images/osci-logo.png" alt="OSCI 2026 - Open Source Contribution India" height="56" />
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="public/images/wocs-logo.png" alt="WOCS 2026 - Winter of Code Social (Code Social)" height="56" />
 </p>
 
 <p align="center">
-  <b>🌟 Official Selected Project for <a href="https://github.com/SatyamPandey-07/WorkSphere">ECSoC 2026</a> (Elite Coders Summer of Code) &amp; <a href="https://github.com/SatyamPandey-07/WorkSphere">OSCI 2026</a> (Open Source Contribution India) 🌟</b>
+  <b>🌟 Official Selected Project for <a href="https://github.com/SatyamPandey-07/WorkSphere">ECSoC 2026</a> (Elite Coders Summer of Code), <a href="https://github.com/SatyamPandey-07/WorkSphere">OSCI 2026</a> (Open Source Contribution India) &amp; <a href="https://woc.codesocial.tech">WOCS 2026</a> (Winter of Code Social by Code Social) 🌟</b>
 </p>
 
 [![Next.js](https://img.shields.io/badge/Next.js-15.5-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
@@ -34,6 +36,8 @@
 [![Contributors](https://img.shields.io/badge/Contributors-115%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
+[![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
+[![Code Social](https://img.shields.io/badge/Code%20Social-WOCS%202026-F97316?style=flat-square)](https://woc.codesocial.tech)
 [![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?style=flat-square&logo=githubactions)](https://github.com/SatyamPandey-07/WorkSphere/actions)
 [![Live Demo](https://img.shields.io/badge/Live-Deployment-success?style=flat-square&logo=vercel)](https://work-sphere-one.vercel.app/)
 

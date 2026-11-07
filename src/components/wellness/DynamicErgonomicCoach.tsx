@@ -32,11 +32,10 @@ import {
   MICRO_STRETCH_CATALOG,
   ErgonomicCoachEngine,
 } from "@/lib/wellness/ergonomicCoachEngine";
+import { ErgonomicChimeSynthesizer } from "@/lib/audio/ErgonomicChimeSynthesizer";
 import { FocusTrap } from "@/components/ui/FocusTrap";
 import SitStandRatioAnalytics from "@/components/wellness/SitStandRatioAnalytics";
 import { calculateSitStandRatio } from "@/lib/wellness/deskPostureAnalytics";
-
-const STRETCH_BREAK_PRESETS_MINUTES = [25, 45, 60] as const;
 
 export default function DynamicErgonomicCoach() {
   const [session, setSession] = useState<ErgonomicSessionState>({
@@ -75,11 +74,14 @@ export default function DynamicErgonomicCoach() {
   const [eyeCountdown, setEyeCountdown] = useState(20 * 60); // 20 min in seconds
   const [eyeBreakActive, setEyeBreakActive] = useState(false);
   const [eyeBreakSecondsLeft, setEyeBreakSecondsLeft] = useState(20);
-  const [stretchBreakDurationMinutes, setStretchBreakDurationMinutes] = useState(25);
+  const [focusDurationMinutes, setFocusDurationMinutes] = useState(25);
+  const [stretchDurationMinutes, setStretchDurationMinutes] = useState(5);
   const [stretchBreakSecondsLeft, setStretchBreakSecondsLeft] = useState(25 * 60);
   const [stretchBreakActive, setStretchBreakActive] = useState(false);
+  const [stretchBreakPhase, setStretchBreakPhase] = useState<"focus" | "break">("focus");
   const [stretchBreakChimeEnabled, setStretchBreakChimeEnabled] = useState(true);
   const [showStretchBreakSuggestions, setShowStretchBreakSuggestions] = useState(false);
+  const ergonomicChimeRef = useRef<ErgonomicChimeSynthesizer | null>(null);
 
   // Sound Notification settings
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -93,6 +95,18 @@ export default function DynamicErgonomicCoach() {
   });
 
   const [lastCheckInResult, setLastCheckInResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
 
   // Load sound preferences from localStorage on mount
   useEffect(() => {
@@ -269,33 +283,67 @@ export default function DynamicErgonomicCoach() {
   }, [stretchTimerActive, selectedStretch, soundEnabled, audioCues.stretchTimers]);
 
   useEffect(() => {
-    if (!stretchBreakActive) return;
+    if (!stretchBreakActive) {
+      return;
+    }
 
-    const timer = setInterval(() => {
-      setStretchBreakSecondsLeft((remaining) => Math.max(0, remaining - 1));
-    }, 1000);
+    const deadline = Date.now() + stretchBreakSecondsLeft * 1000;
+    const updateRemainingTime = () => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setStretchBreakSecondsLeft(remaining);
+    };
+    updateRemainingTime();
 
-    return () => clearInterval(timer);
-  }, [stretchBreakActive]);
+    const timer = window.setInterval(updateRemainingTime, 250);
+    return () => window.clearInterval(timer);
+  }, [stretchBreakActive, stretchBreakPhase]);
 
   useEffect(() => {
     if (!stretchBreakActive || stretchBreakSecondsLeft !== 0) return;
 
-    setStretchBreakActive(false);
-    setShowStretchBreakSuggestions(true);
-    if (stretchBreakChimeEnabled) {
-      playChime("bell");
-    }
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-      try {
-        new Notification("Time for a stretch break", {
-          body: "Take a moment to reset with a quick ergonomic stretch.",
-        });
-      } catch (error) {
-        console.warn("Could not display stretch break notification:", error);
+    const playTimerChime = () => {
+      if (!stretchBreakChimeEnabled || !soundEnabled || !ergonomicChimeRef.current) return;
+      void ergonomicChimeRef.current.playGentleChime(soundVolume).catch((error: unknown) => {
+        console.warn("Could not play ergonomic break chime:", error);
+      });
+    };
+
+    if (stretchBreakPhase === "focus") {
+      setStretchBreakPhase("break");
+      setStretchBreakSecondsLeft(stretchDurationMinutes * 60);
+      setShowStretchBreakSuggestions(true);
+      playTimerChime();
+
+      if (
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          new Notification("Time for a stretch break", {
+            body: `Your ${focusDurationMinutes}-minute focus interval is complete. Take a ${stretchDurationMinutes}-minute movement break.`,
+          });
+        } catch (error) {
+          console.warn("Could not display stretch break notification:", error);
+        }
       }
+      return;
     }
-  }, [stretchBreakActive, stretchBreakSecondsLeft, stretchBreakChimeEnabled, soundEnabled]);
+
+    setStretchBreakPhase("focus");
+    setStretchBreakSecondsLeft(focusDurationMinutes * 60);
+    setShowStretchBreakSuggestions(false);
+    playTimerChime();
+  }, [
+    focusDurationMinutes,
+    soundEnabled,
+    soundVolume,
+    stretchBreakActive,
+    stretchBreakChimeEnabled,
+    stretchBreakPhase,
+    stretchBreakSecondsLeft,
+    stretchDurationMinutes,
+  ]);
 
   // Cleanup and reset state on unmount/dismissal
   useEffect(() => {
@@ -380,34 +428,53 @@ export default function DynamicErgonomicCoach() {
     setStretchSecondsLeft(routine.durationSeconds);
   };
 
-  const selectStretchBreakDuration = (minutes: number) => {
+  const selectFocusDuration = (minutes: number) => {
     if (stretchBreakActive) return;
-    setStretchBreakDurationMinutes(minutes);
-    setStretchBreakSecondsLeft(minutes * 60);
+    setFocusDurationMinutes(minutes);
+    if (stretchBreakPhase === "focus") {
+      setStretchBreakSecondsLeft(minutes * 60);
+    }
   };
 
-  const handleStretchBreakToggle = async () => {
+  const selectStretchDuration = (minutes: number) => {
+    if (stretchBreakActive) return;
+    setStretchDurationMinutes(minutes);
+    if (stretchBreakPhase === "break") {
+      setStretchBreakSecondsLeft(minutes * 60);
+    }
+  };
+
+  const handleStretchBreakToggle = () => {
     if (stretchBreakActive) {
       setStretchBreakActive(false);
       return;
     }
 
     if (stretchBreakSecondsLeft === 0) {
-      setStretchBreakSecondsLeft(stretchBreakDurationMinutes * 60);
+      setStretchBreakSecondsLeft(
+        (stretchBreakPhase === "focus" ? focusDurationMinutes : stretchDurationMinutes) * 60
+      );
     }
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
-      try {
-        await Notification.requestPermission();
-      } catch (error) {
+    void ergonomicChimeRef.current?.prepare().catch((error: unknown) => {
+      console.warn("Could not prepare ergonomic break chime:", error);
+    });
+    if (
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      Notification.permission === "default"
+    ) {
+      void Notification.requestPermission().catch((error: unknown) => {
         console.warn("Could not request desktop notification permission:", error);
-      }
+      });
     }
     setStretchBreakActive(true);
   };
 
   const resetStretchBreakTimer = () => {
     setStretchBreakActive(false);
-    setStretchBreakSecondsLeft(stretchBreakDurationMinutes * 60);
+    setStretchBreakPhase("focus");
+    setStretchBreakSecondsLeft(focusDurationMinutes * 60);
+    setShowStretchBreakSuggestions(false);
   };
 
   const formatTime = (seconds: number) => {
@@ -933,38 +1000,72 @@ export default function DynamicErgonomicCoach() {
                     Focus & Stretch Break Timer
                   </h3>
                   <p className="mt-1 text-xs text-slate-400">
-                    Choose a focus interval, then take a short movement break.
+                    Customize your focus interval and the movement break that follows.
                   </p>
                 </div>
                 <div
                   role="timer"
                   aria-live="off"
-                  aria-label={`${Math.floor(stretchBreakSecondsLeft / 60)} minutes and ${stretchBreakSecondsLeft % 60} seconds remaining`}
+                  aria-label={`${stretchBreakPhase === "focus" ? "Focus" : "Stretch break"}: ${Math.floor(stretchBreakSecondsLeft / 60)} minutes and ${stretchBreakSecondsLeft % 60} seconds remaining`}
                   className="font-mono text-3xl font-black tabular-nums text-violet-300"
                 >
                   {formatTime(stretchBreakSecondsLeft)}
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="mr-1 text-xs text-slate-400">Duration:</span>
-                {STRETCH_BREAK_PRESETS_MINUTES.map((minutes) => (
-                  <button
-                    key={minutes}
-                    type="button"
-                    aria-pressed={stretchBreakDurationMinutes === minutes}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2 text-xs text-slate-300">
+                  <span className="flex items-center justify-between">
+                    <span>Focus duration</span>
+                    <span className="font-mono font-bold text-violet-200">{focusDurationMinutes}m</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={10}
+                    max={90}
+                    step={5}
+                    value={focusDurationMinutes}
                     disabled={stretchBreakActive}
-                    onClick={() => selectStretchBreakDuration(minutes)}
-                    className={`rounded-lg border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      stretchBreakDurationMinutes === minutes
-                        ? "border-violet-400 bg-violet-500/20 text-violet-200"
-                        : "border-slate-700 bg-slate-800 text-slate-300 hover:border-violet-400/60"
-                    }`}
-                  >
-                    {minutes}m
-                  </button>
-                ))}
-                <label className="ml-auto inline-flex items-center gap-2 text-xs text-slate-300">
+                    onChange={(event) => selectFocusDuration(Number(event.target.value))}
+                    aria-label="Focus duration in minutes"
+                    aria-valuetext={`${focusDurationMinutes} minutes`}
+                    className="w-full accent-violet-500 disabled:opacity-50"
+                  />
+                  <span className="flex justify-between text-[10px] text-slate-500">
+                    <span>10 min</span>
+                    <span>90 min</span>
+                  </span>
+                </label>
+                <label className="space-y-2 text-xs text-slate-300">
+                  <span className="flex items-center justify-between">
+                    <span>Stretch duration</span>
+                    <span className="font-mono font-bold text-violet-200">{stretchDurationMinutes}m</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={30}
+                    step={1}
+                    value={stretchDurationMinutes}
+                    disabled={stretchBreakActive}
+                    onChange={(event) => selectStretchDuration(Number(event.target.value))}
+                    aria-label="Stretch duration in minutes"
+                    aria-valuetext={`${stretchDurationMinutes} minutes`}
+                    className="w-full accent-violet-500 disabled:opacity-50"
+                  />
+                  <span className="flex justify-between text-[10px] text-slate-500">
+                    <span>1 min</span>
+                    <span>30 min</span>
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-slate-300">
+                  {stretchBreakPhase === "focus" ? "Focus time" : "Stretch break"}
+                  {stretchBreakActive ? " · running" : " · paused"}
+                </span>
+                <label className="inline-flex items-center gap-2 text-xs text-slate-300">
                   <input
                     type="checkbox"
                     checked={stretchBreakChimeEnabled}
@@ -1001,8 +1102,8 @@ export default function DynamicErgonomicCoach() {
               </div>
               <p className="sr-only" aria-live="polite">
                 {stretchBreakActive
-                  ? "Stretch break timer running"
-                  : "Stretch break timer paused"}
+                  ? `${stretchBreakPhase === "focus" ? "Focus timer" : "Stretch break timer"} running`
+                  : `${stretchBreakPhase === "focus" ? "Focus timer" : "Stretch break timer"} paused`}
               </p>
             </section>
 

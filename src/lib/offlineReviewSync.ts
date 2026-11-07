@@ -4,10 +4,20 @@ import { withWebLock, OFFLINE_WRITE_LOCK } from "./webLock";
 import { syncQueueManager } from "./offline/SyncQueueManager";
 
 export const DB_NAME = "worksphere-offline";
-export const DB_VERSION = 7;
+export const DB_VERSION = 9;
 export const REVIEW_STORE_NAME = "pendingReviews";
 export const QUEUED_REVIEWS_STORE_NAME = "queued_reviews";
+export const UNSYNCED_REVIEW_DRAFTS_STORE_NAME = "unsyncedReviewDrafts";
 export const REVIEW_SYNC_CHANNEL = "worksphere:review-sync";
+export const MAX_REVIEW_SYNC_RETRIES = 5;
+
+export interface UnsyncedReviewDraft {
+  id: string;
+  review: QueuedVenueReview;
+  quarantinedAt: number;
+  retryCount: number;
+  error: string;
+}
 
 // Register review sync handler with consolidated SyncQueueManager
 syncQueueManager.registerHandler("review", async (item) => {
@@ -78,7 +88,11 @@ syncQueueManager.registerHandler("review", async (item) => {
     return false;
   }
 
-  throw new Error(`Review sync HTTP error: ${res.status}`);
+  const error = `Review sync HTTP error: ${res.status}`;
+  if ((item.retryCount ?? 0) + 1 >= MAX_REVIEW_SYNC_RETRIES) {
+    await quarantineQueuedReview(review.id, error, MAX_REVIEW_SYNC_RETRIES);
+  }
+  throw new Error(error);
 });
 
 export type QueuedReviewStatus =
@@ -168,7 +182,7 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Open worksphere-offline IndexedDB ensuring version 7 schema upgrade.
+ * Open worksphere-offline IndexedDB ensuring version 9 schema upgrade.
  */
 export function openReviewDB(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
@@ -319,6 +333,18 @@ export function openReviewDB(): Promise<IDBDatabase> {
           queuedStore.createIndex("venueId", "venueId", { unique: false });
           queuedStore.createIndex("status", "status", { unique: false });
           queuedStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+        if (!db.objectStoreNames.contains(UNSYNCED_REVIEW_DRAFTS_STORE_NAME)) {
+          const draftsStore = db.createObjectStore(
+            UNSYNCED_REVIEW_DRAFTS_STORE_NAME,
+            { keyPath: "id" },
+          );
+          draftsStore.createIndex("venueId", "review.venueId", {
+            unique: false,
+          });
+          draftsStore.createIndex("quarantinedAt", "quarantinedAt", {
+            unique: false,
+          });
         }
       };
     } catch (err) {
@@ -488,6 +514,146 @@ export async function removeQueuedReview(id: string): Promise<void> {
       id,
     });
   }, OFFLINE_WRITE_LOCK);
+}
+
+/**
+ * Move an exhausted review out of the active queue without discarding its data.
+ */
+export async function quarantineQueuedReview(
+  id: string,
+  error: string,
+  retryCount: number,
+): Promise<UnsyncedReviewDraft | null> {
+  const draft = await withWebLock(async () => {
+    const db = await openReviewDB();
+    return new Promise<UnsyncedReviewDraft | null>(
+      (resolve, reject) => {
+        const tx = db.transaction(
+          [REVIEW_STORE_NAME, UNSYNCED_REVIEW_DRAFTS_STORE_NAME],
+          "readwrite",
+        );
+        const reviewsStore = tx.objectStore(REVIEW_STORE_NAME);
+        const draftsStore = tx.objectStore(UNSYNCED_REVIEW_DRAFTS_STORE_NAME);
+        const getRequest = reviewsStore.get(id);
+        let archivedDraft: UnsyncedReviewDraft | null = null;
+
+        getRequest.onsuccess = () => {
+          const review = getRequest.result as QueuedVenueReview | undefined;
+          if (!review) {
+            resolve(null);
+            return;
+          }
+
+          archivedDraft = {
+            id: review.id,
+            review: { ...review, status: "FAILED", retryCount },
+            quarantinedAt: Date.now(),
+            retryCount,
+            error,
+          };
+          draftsStore.put(archivedDraft);
+          reviewsStore.delete(id);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+        tx.oncomplete = () => resolve(archivedDraft);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error("Review quarantine aborted"));
+      },
+    );
+  }, OFFLINE_WRITE_LOCK);
+
+  if (!draft) return null;
+
+  await syncQueueManager.dequeue(id);
+  broadcastReviewSyncEvent({
+    type: "REVIEW_SYNC_FAILED",
+    id: draft.id,
+    venueId: draft.review.venueId,
+    venueName: draft.review.venueName,
+    error: draft.error,
+  });
+  return draft;
+}
+
+/**
+ * Retrieve drafts retained after their automatic sync retries were exhausted.
+ */
+export async function getUnsyncedReviewDrafts(): Promise<UnsyncedReviewDraft[]> {
+  const db = await openReviewDB();
+  return new Promise<UnsyncedReviewDraft[]>((resolve, reject) => {
+    const tx = db.transaction([UNSYNCED_REVIEW_DRAFTS_STORE_NAME], "readonly");
+    const request = tx
+      .objectStore(UNSYNCED_REVIEW_DRAFTS_STORE_NAME)
+      .getAll();
+    request.onsuccess = () => {
+      const drafts = (request.result || []) as UnsyncedReviewDraft[];
+      drafts.sort((a, b) => b.quarantinedAt - a.quarantinedAt);
+      resolve(drafts);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Restore a quarantined review after editing so it can be synced again.
+ */
+export async function restoreUnsyncedReviewDraft(
+  id: string,
+  editedData?: QueuedVenueReview["data"],
+): Promise<QueuedVenueReview | null> {
+  const review = await withWebLock(async () => {
+    const db = await openReviewDB();
+    return new Promise<QueuedVenueReview | null>((resolve, reject) => {
+      const tx = db.transaction(
+        [REVIEW_STORE_NAME, UNSYNCED_REVIEW_DRAFTS_STORE_NAME],
+        "readwrite",
+      );
+      const reviewsStore = tx.objectStore(REVIEW_STORE_NAME);
+      const draftsStore = tx.objectStore(UNSYNCED_REVIEW_DRAFTS_STORE_NAME);
+      const getRequest = draftsStore.get(id);
+      let restoredReview: QueuedVenueReview | null = null;
+
+      getRequest.onsuccess = () => {
+        const draft = getRequest.result as UnsyncedReviewDraft | undefined;
+        if (!draft) {
+          resolve(null);
+          return;
+        }
+
+        restoredReview = {
+          ...draft.review,
+          data: editedData ?? draft.review.data,
+          createdAt: Date.now(),
+          retryCount: 0,
+          status: "PENDING",
+        };
+        reviewsStore.put(restoredReview);
+        draftsStore.delete(id);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+      tx.oncomplete = () => resolve(restoredReview);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error("Draft restore aborted"));
+    });
+  }, OFFLINE_WRITE_LOCK);
+
+  if (!review) return null;
+
+  await syncQueueManager.enqueue<QueuedVenueReview>({
+    id: review.id,
+    entity: "review",
+    action: review.reviewId ? "update" : "create",
+    payload: review,
+    timestamp: review.createdAt,
+  });
+  await requestReviewBackgroundSync();
+  broadcastReviewSyncEvent({
+    type: "REVIEW_QUEUED",
+    id: review.id,
+    venueId: review.venueId,
+    venueName: review.venueName,
+  });
+  return review;
 }
 
 /**
@@ -663,11 +829,15 @@ export async function flushPendingReviewsClientFallback(
         break;
       }
 
-      if (res.status >= 500) {
-        failures++;
-        const nextRetry = (item.retryCount || 0) + 1;
-        const newStatus: QueuedReviewStatus =
-          nextRetry >= 3 ? "FAILED" : "PENDING";
+      failures++;
+      const nextRetry = (item.retryCount || 0) + 1;
+      const error =
+        res.status >= 400 && res.status < 500
+          ? `Validation error (HTTP ${res.status})`
+          : `Review sync HTTP error: ${res.status}`;
+      if (nextRetry >= MAX_REVIEW_SYNC_RETRIES) {
+        await quarantineQueuedReview(item.id, error, nextRetry);
+      } else {
         await withWebLock(async () => {
           const db = await openReviewDB();
           const tx = db.transaction([REVIEW_STORE_NAME], "readwrite");
@@ -676,24 +846,13 @@ export async function flushPendingReviewsClientFallback(
             const req = store.put({
               ...item,
               retryCount: nextRetry,
-              status: newStatus,
+              status: "FAILED",
             });
             req.onsuccess = () => resolve();
             req.onerror = () => reject(req.error);
           });
         });
-        continue;
       }
-
-      // 400, 422 etc
-      failures++;
-      await updateQueuedReviewStatus(item.id, "FAILED");
-      broadcastReviewSyncEvent({
-        type: "REVIEW_SYNC_FAILED",
-        id: item.id,
-        venueId: item.venueId,
-        error: "Validation error",
-      });
     } catch (err: any) {
       const isNetError =
         err?.name === "TypeError" ||
@@ -705,7 +864,29 @@ export async function flushPendingReviewsClientFallback(
         break;
       }
       failures++;
-      await updateQueuedReviewStatus(item.id, "FAILED");
+      const nextRetry = (item.retryCount || 0) + 1;
+      if (nextRetry >= MAX_REVIEW_SYNC_RETRIES) {
+        await quarantineQueuedReview(
+          item.id,
+          err instanceof Error ? err.message : "Unknown review sync error",
+          nextRetry,
+        );
+      } else {
+        await withWebLock(async () => {
+          const db = await openReviewDB();
+          const tx = db.transaction([REVIEW_STORE_NAME], "readwrite");
+          const store = tx.objectStore(REVIEW_STORE_NAME);
+          await new Promise<void>((resolve, reject) => {
+            const req = store.put({
+              ...item,
+              retryCount: nextRetry,
+              status: "FAILED" satisfies QueuedReviewStatus,
+            });
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+          });
+        });
+      }
     }
   }
 
@@ -1010,5 +1191,3 @@ export async function submitReviewWithOfflineSync(
     message: "Online",
   };
 }
-
-

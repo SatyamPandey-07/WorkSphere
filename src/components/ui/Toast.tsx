@@ -229,6 +229,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let reviewSyncChannel: BroadcastChannel | null = null;
     const handleRateLimit = (e: Event) => {
       const customEvent = e as CustomEvent<{
         retryAfter: number;
@@ -246,13 +247,71 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       );
     };
 
+    const handleReviewSyncFailure = (event: Event) => {
+      const detail = "data" in event
+        ? (event as MessageEvent).data
+        : (event as CustomEvent).detail;
+      const reviewId: string | undefined = detail?.id;
+      if (detail?.type !== "REVIEW_SYNC_FAILED" || !reviewId) return;
+
+      const venueName = detail.venueName || "this venue";
+      addToast(
+        `Could not sync your offline review for ${venueName}. Click to edit and resend.`,
+        "error",
+        {
+          key: `offline-review-failed:${reviewId}`,
+          duration: 12000,
+          action: {
+            label: "Edit & resend",
+            onClick: () => {
+              window.dispatchEvent(
+                new CustomEvent("worksphere:offline-review-edit-requested", {
+                  detail: {
+                    id: reviewId,
+                    venueId: detail.venueId,
+                    venueName: detail.venueName,
+                  },
+                }),
+              );
+              if (detail.venueId) {
+                window.location.assign(
+                  `/venues/${encodeURIComponent(detail.venueId)}?reviewDraft=${encodeURIComponent(reviewId)}`,
+                );
+              }
+            },
+          },
+        },
+      );
+    };
+
     if (typeof window !== "undefined") {
       window.addEventListener("rate-limit-triggered", handleRateLimit);
+      window.addEventListener(
+        "worksphere:review-sync-event",
+        handleReviewSyncFailure,
+      );
+    }
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        reviewSyncChannel = new BroadcastChannel("worksphere:review-sync");
+        reviewSyncChannel.addEventListener("message", handleReviewSyncFailure);
+      } catch (error) {
+        console.warn("Could not listen for offline review sync events:", error);
+      }
     }
     return () => {
       if (typeof window !== "undefined") {
         window.removeEventListener("rate-limit-triggered", handleRateLimit);
+        window.removeEventListener(
+          "worksphere:review-sync-event",
+          handleReviewSyncFailure,
+        );
       }
+      reviewSyncChannel?.removeEventListener(
+        "message",
+        handleReviewSyncFailure,
+      );
+      reviewSyncChannel?.close();
     };
   }, [addToast]);
 

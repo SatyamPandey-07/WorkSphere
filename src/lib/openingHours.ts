@@ -41,26 +41,60 @@ export function parseStructuredHours(hoursStr: string | null | undefined): Struc
   if (!hoursStr) return null;
   try {
     const parsed = JSON.parse(hoursStr);
-    if (parsed && typeof parsed === "object" && parsed.periods) {
-      return {
-        timezone: typeof parsed.timezone === "string" && parsed.timezone.trim() ? parsed.timezone.trim() : "UTC",
-        periods: parsed.periods,
-      };
+    if (parsed && typeof parsed === "object") {
+      if (parsed.periods && typeof parsed.periods === "object") {
+        return {
+          timezone: typeof parsed.timezone === "string" && parsed.timezone.trim() ? parsed.timezone.trim() : "UTC",
+          periods: parsed.periods,
+        };
+      }
+      const hasDayKeys = DAYS_OF_WEEK.some((day) => day in parsed);
+      if (hasDayKeys) {
+        return {
+          timezone: typeof parsed.timezone === "string" && parsed.timezone.trim() ? parsed.timezone.trim() : "UTC",
+          periods: parsed,
+        };
+      }
     }
   } catch {}
   return null;
 }
 
 /**
- * Formats a time string like "09:00" into 12-hour format "9:00 AM"
+ * Checks if a string represents a 24/7 operating venue.
+ */
+export function is24HoursText(hoursStr: string | null | undefined): boolean {
+  if (!hoursStr || typeof hoursStr !== "string") return false;
+  const normalized = hoursStr.trim().toLowerCase();
+  return (
+    normalized === "24/7" ||
+    normalized === "open 24 hours" ||
+    normalized === "open 24/7" ||
+    normalized === "24 hours" ||
+    normalized === "24 hour" ||
+    normalized === "all day" ||
+    normalized === "00:00 - 24:00" ||
+    normalized === "00:00-24:00" ||
+    normalized === "00:00 - 00:00" ||
+    normalized === "00:00-00:00" ||
+    normalized.includes("open 24") ||
+    normalized.includes("24/7")
+  );
+}
+
+/**
+ * Formats a time string like "09:00" into 12-hour format "9:00 AM".
+ * Supports "24:00" representing midnight at the end of the operating day ("12:00 AM").
  */
 export function formatTime12h(time24: string): string {
   if (!time24 || typeof time24 !== "string") return "";
   const parts = time24.trim().split(":");
   if (parts.length < 2) return time24;
-  const h = Number(parts[0]);
+  let h = Number(parts[0]);
   const m = Number(parts[1]);
-  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return time24;
+  if (isNaN(h) || isNaN(m) || h < 0 || h > 24 || m < 0 || m > 59) return time24;
+  if (h === 24 && m !== 0) return time24;
+  if (h === 24) h = 0;
   const ampm = h >= 12 ? "PM" : "AM";
   const displayH = h % 12 || 12;
   const displayM = String(m).padStart(2, "0");
@@ -81,6 +115,13 @@ export function getOpeningHoursStatus(
 } {
   const structured = parseStructuredHours(hoursStr);
   if (!structured) {
+    if (hoursStr && is24HoursText(hoursStr)) {
+      return {
+        isOpen: true,
+        displayString: "Open 24 Hours",
+        isStructured: false,
+      };
+    }
     return {
       isOpen: false,
       displayString: hoursStr || "Hours not available",
@@ -127,14 +168,16 @@ export function getOpeningHoursStatus(
       }
     }
 
+    let is24Hours = false;
     if (!isOpen && period && !period.closed && typeof period.open === "string" && typeof period.close === "string") {
       const [openH, openM] = period.open.split(":").map(Number);
       const [closeH, closeM] = period.close.split(":").map(Number);
       const openMin = openH * 60 + openM;
       const closeMin = closeH * 60 + closeM;
 
-      if (openMin === closeMin && openMin === 0) {
+      if ((openMin === closeMin && openMin === 0) || (openMin === 0 && (period.close.trim() === "24:00" || closeMin === 1440))) {
         isOpen = true;
+        is24Hours = true;
       } else if (closeMin < openMin) {
         isOpen = currentMinutes >= openMin || currentMinutes < closeMin;
       } else {
@@ -149,6 +192,8 @@ export function getOpeningHoursStatus(
       displayString = prev?.close
         ? `Open until ${formatTime12h(prev.close)} (${timezone})`
         : `Closed Today (${timezone})`;
+    } else if (is24Hours) {
+      displayString = `Open 24 Hours (${timezone})`;
     } else if (
       period &&
       !period.closed &&

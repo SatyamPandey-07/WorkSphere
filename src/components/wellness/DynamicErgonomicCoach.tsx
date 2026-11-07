@@ -34,6 +34,8 @@ import {
 } from "@/lib/wellness/ergonomicCoachEngine";
 import { ErgonomicChimeSynthesizer } from "@/lib/audio/ErgonomicChimeSynthesizer";
 import { FocusTrap } from "@/components/ui/FocusTrap";
+import SitStandRatioAnalytics from "@/components/wellness/SitStandRatioAnalytics";
+import { calculateSitStandRatio } from "@/lib/wellness/deskPostureAnalytics";
 
 export default function DynamicErgonomicCoach() {
   const [session, setSession] = useState<ErgonomicSessionState>({
@@ -43,20 +45,24 @@ export default function DynamicErgonomicCoach() {
     sessionStartTime: Date.now() - 45 * 60 * 1000,
     lastPostureStateChange: Date.now() - 25 * 60 * 1000,
     totalSittingSeconds: 2700,
-    totalStandingSeconds: 0,
+    totalStandingSeconds: 900,
     completedStretches: ["neck-chin-tuck"],
     postureCheckIns: [{ timestamp: Date.now() - 20 * 60 * 1000, rating: "aligned" }],
     waterIntakeMl: 500,
     waterTargetMl: 2000,
     eyeBreaksCompleted: 2,
     skippedBreaksCount: 0,
+    transitionsCount: 3,
+    targetSitStandRatio: 2.0,
   });
 
   const [strainScore, setStrainScore] = useState<ErgonomicStrainScore>(() =>
     ErgonomicCoachEngine.calculateStrainScore(session)
   );
 
-  const [activeTab, setActiveTab] = useState<"coach" | "stretches" | "checklist">("coach");
+  const [activeTab, setActiveTab] = useState<
+    "coach" | "ratio_analytics" | "stretches" | "checklist"
+  >("coach");
   const [selectedStretch, setSelectedStretch] = useState<MicroStretchRoutine>(
     MICRO_STRETCH_CATALOG[0]
   );
@@ -356,6 +362,7 @@ export default function DynamicErgonomicCoach() {
         ...prev,
         currentPostureState: nextState,
         lastPostureStateChange: Date.now(),
+        transitionsCount: (prev.transitionsCount || 0) + 1,
       };
       setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
       return updated;
@@ -560,18 +567,23 @@ export default function DynamicErgonomicCoach() {
             <Settings2 className="w-4 h-4" />
           </button>
 
-          <div className="flex bg-slate-800/80 p-1 rounded-xl border border-slate-700/60">
-            {(["coach", "stretches", "checklist"] as const).map((tab) => (
+          <div className="flex flex-wrap bg-slate-800/80 p-1 rounded-xl border border-slate-700/60 gap-0.5">
+            {[
+              { id: "coach", label: "Coach" },
+              { id: "ratio_analytics", label: "Sit-Stand Analytics" },
+              { id: "stretches", label: "Stretches" },
+              { id: "checklist", label: "Checklist" },
+            ].map((tab) => (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
-                  activeTab === tab
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                  activeTab === tab.id
                     ? "bg-emerald-600 text-white shadow-md"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
-                {tab}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -841,12 +853,53 @@ export default function DynamicErgonomicCoach() {
                 </div>
               </div>
 
+              {/* Live Sit-to-Stand Duration Ratio */}
+              {(() => {
+                const ratio = calculateSitStandRatio(
+                  session.totalSittingSeconds,
+                  session.totalStandingSeconds
+                );
+                return (
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">Sit-Stand Ratio:</span>
+                      <span className="font-mono text-emerald-400 font-bold">{ratio.display}</span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-lg h-2.5 overflow-hidden flex border border-slate-700/60">
+                      <div
+                        style={{ width: `${ratio.sittingPct}%` }}
+                        className="bg-indigo-500 h-full transition-all duration-500"
+                        title={`Sitting: ${ratio.sittingPct}%`}
+                      />
+                      <div
+                        style={{ width: `${ratio.standingPct}%` }}
+                        className="bg-emerald-400 h-full transition-all duration-500"
+                        title={`Standing: ${ratio.standingPct}%`}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>{ratio.sittingPct}% Seated</span>
+                      <span>{session.transitionsCount || 0} Shifts</span>
+                      <span>{ratio.standingPct}% Standing</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <button
                 onClick={togglePostureState}
                 className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
               >
                 <Zap className="w-4 h-4" />
                 Switch to {session.currentPostureState === "sitting" ? "Standing" : "Sitting"} Mode
+              </button>
+
+              <button
+                onClick={() => setActiveTab("ratio_analytics")}
+                className="w-full py-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white font-semibold text-xs rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>Open Weekly Summary Analytics</span>
+                <ChevronRight className="w-3.5 h-3.5 text-emerald-400" />
               </button>
             </div>
           </div>
@@ -1197,6 +1250,24 @@ export default function DynamicErgonomicCoach() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* TAB: SIT-TO-STAND DURATION RATIO & WEEKLY SUMMARY ANALYTICS */}
+      {activeTab === "ratio_analytics" && (
+        <SitStandRatioAnalytics
+          currentSittingSeconds={session.totalSittingSeconds}
+          currentStandingSeconds={session.totalStandingSeconds}
+          currentPostureState={session.currentPostureState}
+          transitionsCount={session.transitionsCount || 0}
+          onTogglePosture={togglePostureState}
+          onUpdateTimes={(sit, stand) =>
+            setSession((s) => ({
+              ...s,
+              totalSittingSeconds: sit,
+              totalStandingSeconds: stand,
+            }))
+          }
+        />
       )}
 
       {/* TAB 2: MICRO-STRETCH CATALOG */}

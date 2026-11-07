@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   HardDrive,
   Layers,
@@ -49,32 +49,51 @@ export function OfflineStorageUsageMeter({
   const [storageError, setStorageError] = useState<string | null>(null);
   const [cleanupError, setCleanupError] = useState<string | null>(null);
 
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const fetchStats = useCallback(async () => {
     try {
       const data = await getCachedFloorPlanStorageStats();
+      if (!isMountedRef.current) return;
       setStats(data);
       setStorageError(null);
       onStatsUpdated?.(data);
     } catch (err) {
+      if (!isMountedRef.current) return;
       console.error("[OfflineStorageUsageMeter] Failed to fetch storage stats:", err);
       setStorageError("Unable to refresh offline storage usage.");
     } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [onStatsUpdated]);
 
   const fetchStaleStats = useCallback(async () => {
-    setIsCalculatingStale(true);
+    if (isMountedRef.current) {
+      setIsCalculatingStale(true);
+    }
     try {
       const data = await getStaleFloorPlanCacheStats();
+      if (!isMountedRef.current) return;
       setStaleStats(data);
       setCleanupError(null);
     } catch (err) {
+      if (!isMountedRef.current) return;
       console.error("[OfflineStorageUsageMeter] Failed to calculate stale cache:", err);
       setCleanupError("Unable to inspect stale floor plans. Please try again.");
     } finally {
-      setIsCalculatingStale(false);
+      if (isMountedRef.current) {
+        setIsCalculatingStale(false);
+      }
     }
   }, []);
 
@@ -83,24 +102,44 @@ export function OfflineStorageUsageMeter({
     fetchStaleStats();
   }, [fetchStats, fetchStaleStats, refreshTrigger]);
 
+  // Handle keyboard Escape dismissal on confirmation modal
+  useEffect(() => {
+    if (!showCleanConfirmation) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isPurgingStale) {
+        setShowCleanConfirmation(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showCleanConfirmation, isPurgingStale]);
+
   const handleRefresh = async () => {
+    if (!isMountedRef.current) return;
     setIsRefreshing(true);
     setStorageError(null);
     await Promise.all([fetchStats(), fetchStaleStats()]);
   };
 
   const handlePurgeStaleCache = async () => {
+    if (!isMountedRef.current) return;
     setIsPurgingStale(true);
     setCleanupError(null);
     try {
       await purgeStaleFloorPlanCache();
+      if (!isMountedRef.current) return;
       setShowCleanConfirmation(false);
       await Promise.all([fetchStats(), fetchStaleStats()]);
     } catch (err) {
+      if (!isMountedRef.current) return;
       console.error("[OfflineStorageUsageMeter] Failed to purge stale floorplans:", err);
       setCleanupError("Unable to clean stale floor plans. Please try again.");
     } finally {
-      setIsPurgingStale(false);
+      if (isMountedRef.current) {
+        setIsPurgingStale(false);
+      }
     }
   };
 
@@ -110,6 +149,7 @@ export function OfflineStorageUsageMeter({
         className={`p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 animate-pulse ${className}`}
         aria-busy="true"
         aria-label="Loading storage usage meter"
+        data-testid="storage-meter-loading"
       >
         <div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-1/3 mb-3" />
         <div className="h-3 bg-zinc-200 dark:bg-zinc-800 rounded-full w-full mb-2" />
@@ -128,6 +168,31 @@ export function OfflineStorageUsageMeter({
     isEstimateAvailable = false,
   } = stats || {};
 
+  const safeUsageBytes =
+    typeof usageBytes === "number" && Number.isFinite(usageBytes) && usageBytes >= 0
+      ? usageBytes
+      : 0;
+  const safeQuotaBytes =
+    typeof quotaBytes === "number" && Number.isFinite(quotaBytes) && quotaBytes >= 0
+      ? quotaBytes
+      : 0;
+  const safeUsagePercent =
+    typeof usagePercent === "number" && Number.isFinite(usagePercent)
+      ? Math.max(0, Math.min(100, usagePercent))
+      : 0;
+  const safeFloorPlanBytes =
+    typeof floorPlanBytes === "number" && Number.isFinite(floorPlanBytes) && floorPlanBytes >= 0
+      ? floorPlanBytes
+      : 0;
+  const safeFloorPlanCount =
+    typeof floorPlanCount === "number" && Number.isFinite(floorPlanCount) && floorPlanCount >= 0
+      ? floorPlanCount
+      : 0;
+  const safeFloorPlanPercentOfUsage =
+    typeof floorPlanPercentOfUsage === "number" && Number.isFinite(floorPlanPercentOfUsage)
+      ? Math.max(0, Math.min(100, floorPlanPercentOfUsage))
+      : 0;
+
   // Color thresholds based on quota utilization
   const getProgressColor = (percent: number) => {
     if (percent > 90) return "bg-red-500 shadow-red-500/30";
@@ -136,32 +201,41 @@ export function OfflineStorageUsageMeter({
   };
 
   const getStatusBadge = () => {
-    if (usagePercent > 90) {
+    if (safeUsagePercent > 90) {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/50">
+        <span
+          data-testid="storage-meter-status-badge"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-900/50"
+        >
           <AlertTriangle className="w-3 h-3" /> Quota Warning
         </span>
       );
     }
-    if (usagePercent > 70) {
+    if (safeUsagePercent > 70) {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50">
+        <span
+          data-testid="storage-meter-status-badge"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/50"
+        >
           <AlertTriangle className="w-3 h-3" /> Heavy Usage
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50">
+      <span
+        data-testid="storage-meter-status-badge"
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50"
+      >
         <CheckCircle2 className="w-3 h-3" /> Healthy
       </span>
     );
   };
 
-  const otherUsageBytes = Math.max(0, usageBytes - floorPlanBytes);
-  const formattedFloorPlanBytes = formatBytes(floorPlanBytes);
-  const formattedTotalUsage = formatBytes(usageBytes);
-  const formattedQuota = quotaBytes > 0 ? formatBytes(quotaBytes) : "Unlimited";
-  const formattedUsagePercent = usagePercent.toFixed(1);
+  const otherUsageBytes = Math.max(0, safeUsageBytes - safeFloorPlanBytes);
+  const formattedFloorPlanBytes = formatBytes(safeFloorPlanBytes);
+  const formattedTotalUsage = formatBytes(safeUsageBytes);
+  const formattedQuota = safeQuotaBytes > 0 ? formatBytes(safeQuotaBytes) : "Unlimited";
+  const formattedUsagePercent = safeUsagePercent.toFixed(1);
 
   return (
     <div
@@ -184,6 +258,7 @@ export function OfflineStorageUsageMeter({
           {getStatusBadge()}
           <button
             type="button"
+            data-testid="storage-meter-refresh-btn"
             onClick={handleRefresh}
             disabled={isRefreshing}
             title="Refresh storage quota estimation"
@@ -208,7 +283,8 @@ export function OfflineStorageUsageMeter({
         {/* Visual Multi-Segment Bar */}
         <div
           role="progressbar"
-          aria-valuenow={Math.round(usagePercent)}
+          data-testid="storage-meter-progressbar"
+          aria-valuenow={Math.round(safeUsagePercent)}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-label="Browser offline storage quota usage"
@@ -217,10 +293,10 @@ export function OfflineStorageUsageMeter({
           {/* Progress bar container */}
           <div
             className={`h-full rounded-full transition-all duration-500 ease-out ${getProgressColor(
-              usagePercent,
+              safeUsagePercent,
             )}`}
             style={{
-              width: `${Math.min(100, Math.max(usagePercent > 0 ? usagePercent : 1, 0))}%`,
+              width: `${Math.min(100, Math.max(safeUsagePercent > 0 ? safeUsagePercent : 1, 0))}%`,
             }}
           />
         </div>
@@ -229,7 +305,10 @@ export function OfflineStorageUsageMeter({
       {/* Breakdown Metrics */}
       <div className="grid grid-cols-2 gap-2.5 mt-3 pt-3 border-t border-zinc-200/80 dark:border-zinc-800/80">
         {/* Floor Plans Card */}
-        <div className="bg-white dark:bg-zinc-800/70 rounded-xl p-2.5 border border-zinc-200/70 dark:border-zinc-700/50 flex flex-col justify-between">
+        <div
+          data-testid="storage-meter-floorplan-card"
+          className="bg-white dark:bg-zinc-800/70 rounded-xl p-2.5 border border-zinc-200/70 dark:border-zinc-700/50 flex flex-col justify-between"
+        >
           <div className="flex items-center justify-between text-xs text-indigo-600 dark:text-indigo-400 font-medium mb-1">
             <span className="flex items-center gap-1">
               <Layers className="w-3.5 h-3.5 text-indigo-500" />
@@ -241,10 +320,10 @@ export function OfflineStorageUsageMeter({
               {formattedFloorPlanBytes}
             </div>
             <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 flex items-center justify-between">
-              <span>{floorPlanCount} plan{floorPlanCount === 1 ? "" : "s"} saved</span>
-              {usageBytes > 0 && (
+              <span>{safeFloorPlanCount} plan{safeFloorPlanCount === 1 ? "" : "s"} saved</span>
+              {safeUsageBytes > 0 && (
                 <span className="font-medium text-indigo-600 dark:text-indigo-300">
-                  {floorPlanPercentOfUsage.toFixed(0)}% of cache
+                  {safeFloorPlanPercentOfUsage.toFixed(0)}% of cache
                 </span>
               )}
             </div>
@@ -252,7 +331,10 @@ export function OfflineStorageUsageMeter({
         </div>
 
         {/* Total Cache / Other Store Card */}
-        <div className="bg-white dark:bg-zinc-800/70 rounded-xl p-2.5 border border-zinc-200/70 dark:border-zinc-700/50 flex flex-col justify-between">
+        <div
+          data-testid="storage-meter-total-card"
+          className="bg-white dark:bg-zinc-800/70 rounded-xl p-2.5 border border-zinc-200/70 dark:border-zinc-700/50 flex flex-col justify-between"
+        >
           <div className="flex items-center justify-between text-xs text-blue-600 dark:text-blue-400 font-medium mb-1">
             <span className="flex items-center gap-1">
               <Database className="w-3.5 h-3.5 text-blue-500" />
@@ -274,7 +356,11 @@ export function OfflineStorageUsageMeter({
       </div>
 
       {storageError && (
-        <p className="mt-3 text-xs text-red-600 dark:text-red-400" role="alert">
+        <p
+          data-testid="storage-meter-storage-error"
+          className="mt-3 text-xs text-red-600 dark:text-red-400"
+          role="alert"
+        >
           {storageError}
         </p>
       )}
@@ -300,6 +386,7 @@ export function OfflineStorageUsageMeter({
           </div>
           <button
             type="button"
+            data-testid="storage-meter-clean-btn"
             onClick={() => {
               setCleanupError(null);
               setShowCleanConfirmation(true);
@@ -312,7 +399,11 @@ export function OfflineStorageUsageMeter({
           </button>
         </div>
         {cleanupError && (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400" role="alert">
+          <p
+            data-testid="storage-meter-cleanup-error"
+            className="mt-2 text-xs text-red-600 dark:text-red-400"
+            role="alert"
+          >
             {cleanupError}
           </p>
         )}
@@ -331,6 +422,7 @@ export function OfflineStorageUsageMeter({
 
       {showCleanConfirmation && (
         <div
+          data-testid="clean-stale-cache-overlay"
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           role="presentation"
           onMouseDown={(event) => {
@@ -340,6 +432,7 @@ export function OfflineStorageUsageMeter({
           }}
         >
           <div
+            data-testid="clean-stale-cache-dialog"
             className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
             role="dialog"
             aria-modal="true"
@@ -363,13 +456,18 @@ export function OfflineStorageUsageMeter({
               reclaimed. Cached venue details will be kept.
             </p>
             {cleanupError && (
-              <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+              <p
+                data-testid="clean-stale-cache-error"
+                className="mt-3 text-sm text-red-600 dark:text-red-400"
+                role="alert"
+              >
                 {cleanupError}
               </p>
             )}
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
+                data-testid="clean-stale-cancel-btn"
                 onClick={() => setShowCleanConfirmation(false)}
                 disabled={isPurgingStale}
                 className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"
@@ -378,6 +476,7 @@ export function OfflineStorageUsageMeter({
               </button>
               <button
                 type="button"
+                data-testid="clean-stale-confirm-btn"
                 onClick={handlePurgeStaleCache}
                 disabled={isPurgingStale}
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50 dark:focus-visible:ring-offset-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"

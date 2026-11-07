@@ -20,7 +20,7 @@ export interface AudioAnalysis {
 
 export class AmbientMixerEngine {
     private audioContext: AudioContext | null = null;
-    private playlistSource: AudioBufferSourceNode | MediaElementAudioSourceNode | null = null;
+    private playlistSource: AudioBufferSourceNode | null = null;
     private maskingSource: AudioBufferSourceNode | null = null;
     private brownNoiseSource: AudioBufferSourceNode | null = null;
 

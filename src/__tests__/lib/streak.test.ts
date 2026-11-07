@@ -6,6 +6,7 @@ import {
   yesterdayUTC,
   normalizeToUTCMidnight,
   getCalendarDayDifference,
+  dateInTimeZone,
 } from "@/lib/streak";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -370,5 +371,65 @@ describe("getCalendarDayDifference", () => {
 
   it("returns > 1 for skipped calendar days", () => {
     expect(getCalendarDayDifference("2024-02-28", "2024-03-01")).toBe(2);
+  });
+});
+
+
+describe("extended streak resilience and timezone travel (#6724)", () => {
+  it("preserves streak and does not reset to 1 when lastCheckInDate is in the future due to westward timezone travel", () => {
+    // User checked in on 2026-10-26 in Tokyo (UTC+9), then checks in on 2026-10-25 in Honolulu (UTC-10)
+    const result = calculateStreak(
+      "2026-10-26",
+      15,
+      15,
+      "Pacific/Honolulu",
+      new Date("2026-10-25T18:00:00Z"),
+    );
+
+    expect(result.currentStreak).toBe(15);
+    expect(result.longestStreak).toBe(15);
+    expect(result.lastCheckInDate).toBe("2026-10-26");
+    expect(result.incremented).toBe(false);
+    expect(result.newMilestones).toHaveLength(0);
+  });
+
+  it("preserves future lastCheckInDate when day difference is negative and maintains longestStreak", () => {
+    const result = calculateStreak(
+      "2026-11-01",
+      7,
+      10,
+      "UTC",
+      new Date("2026-10-25T10:00:00Z"),
+    );
+
+    expect(result.currentStreak).toBe(7);
+    expect(result.longestStreak).toBe(10);
+    expect(result.lastCheckInDate).toBe("2026-11-01");
+    expect(result.incremented).toBe(false);
+  });
+
+  it("safely handles invalid Date in dateInTimeZone without throwing RangeError", () => {
+    const invalidDate = new Date("invalid-timestamp");
+    expect(() => dateInTimeZone(invalidDate, "UTC")).not.toThrow();
+    const formatted = dateInTimeZone(invalidDate, "UTC");
+    expect(formatted).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("safely handles invalid date strings in shiftDateString without throwing", () => {
+    expect(() => shiftDateString("not-a-date", 1)).not.toThrow();
+    const shifted = shiftDateString("not-a-date", 1);
+    expect(shifted).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("safely handles malformed strings in normalizeToUTCMidnight", () => {
+    const fallback = normalizeToUTCMidnight("malformed");
+    expect(fallback instanceof Date).toBe(true);
+    expect(isNaN(fallback.getTime())).toBe(false);
+  });
+
+  it("sanitizes negative, float, and NaN currentStreak and longestStreak inputs", () => {
+    const result = calculateStreak(null, -5, NaN, "UTC", new Date("2026-10-25T12:00:00Z"));
+    expect(result.currentStreak).toBe(1);
+    expect(result.longestStreak).toBe(1);
   });
 });

@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 import type { RemoteCursor } from "@/hooks/useCanvasWhiteboard";
 import { useSmoothCursor } from "@/hooks/useSmoothCursor";
 
-interface RemoteCursorsProps {
-  cursors: RemoteCursor[];
+export interface RemoteCursorsProps {
+  cursors?: RemoteCursor[];
+  className?: string;
+  "data-testid"?: string;
 }
 
 function RemoteCursorItem({ cursor }: { cursor: RemoteCursor }) {
@@ -30,6 +33,7 @@ function RemoteCursorItem({ cursor }: { cursor: RemoteCursor }) {
 
   return (
     <div
+      data-testid={`remote-cursor-${cursor.userId}`}
       className="absolute transition-opacity duration-500 ease-in-out"
       style={{
         left: state.x,
@@ -65,11 +69,18 @@ function RemoteCursorItem({ cursor }: { cursor: RemoteCursor }) {
   );
 }
 
-export function RemoteCursors({ cursors }: RemoteCursorsProps) {
-  if (cursors.length === 0) return null;
+export function RemoteCursors({
+  cursors = [],
+  className,
+  "data-testid": dataTestId = "remote-cursors-layer",
+}: RemoteCursorsProps) {
+  if (!cursors || cursors.length === 0) return null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10">
+    <div
+      data-testid={dataTestId}
+      className={cn("pointer-events-none absolute inset-0 z-10", className)}
+    >
       {cursors.map((cursor) => (
         <RemoteCursorItem key={cursor.userId} cursor={cursor} />
       ))}

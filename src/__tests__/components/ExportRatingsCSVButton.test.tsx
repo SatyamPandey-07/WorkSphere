@@ -29,6 +29,7 @@ describe("ExportRatingsCSVButton", () => {
   });
 
   afterEach(() => {
+    jest.clearAllTimers();
     jest.useRealTimers();
   });
 

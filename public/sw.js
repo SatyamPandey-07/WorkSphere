@@ -16,6 +16,7 @@ const CACHE_NAME = "worksphere-v3";
 const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
+const VENUE_PHOTO_CACHE_NAME = "worksphere-venue-photos-v1";
 const PREFETCH_CACHE_NAME = "worksphere-prefetch-v1";
 const OFFLINE_URL = "/offline";
 const AVAILABILITY_SYNC_TAG = "availability-sync";
@@ -215,6 +216,9 @@ async function handleFetch(request, event) {
     request.url.includes("tile.openstreetmap.org") ||
     request.url.includes("basemaps.cartocdn.com");
   const isExternalAsset = request.url.includes("images.unsplash.com");
+  const isVenuePhoto =
+    request.url.includes("res.cloudinary.com") ||
+    request.url.includes("images.pexels.com");
 
   if (isVenuesApi || isReservationsApi) {
     try {
@@ -260,6 +264,27 @@ async function handleFetch(request, event) {
     } catch {
       return new Response("Map Tile Offline", { status: 503 });
     }
+  } else if (isVenuePhoto) {
+    const cache = await caches.open(VENUE_PHOTO_CACHE_NAME);
+    const cached = await cache.match(request);
+    const revalidatePromise = fetch(request)
+      .then(async (networkResponse) => {
+        if (networkResponse && (networkResponse.status === 200 || networkResponse.status === 0)) {
+          await cache.put(request, networkResponse.clone());
+        }
+        return networkResponse;
+      })
+      .catch(() => null);
+
+    if (cached) {
+      if (event && event.waitUntil) {
+        event.waitUntil(revalidatePromise);
+      }
+      return cached;
+    }
+    const fresh = await revalidatePromise;
+    if (fresh) return fresh;
+    return new Response("Photo Offline", { status: 504 });
   } else if (isExternalAsset) {
     const cache = await caches.open(IMAGE_CACHE_NAME);
     const cached = await cache.match(request);

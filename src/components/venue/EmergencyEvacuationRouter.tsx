@@ -20,23 +20,28 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type {
   EvacuationPlan,
   EmergencyType,
 } from "@/lib/safety/evacuationRouter";
 
-interface EmergencyEvacuationRouterProps {
+export interface EmergencyEvacuationRouterProps {
   venueId?: string;
   venueName?: string;
   userSeatNumber?: string;
   userCoordinates?: { x: number; y: number } | null;
+  initialPlan?: EvacuationPlan | null;
+  className?: string;
 }
 
-export default function EmergencyEvacuationRouter({
+export function EmergencyEvacuationRouter({
   venueId = "venue-sf-01",
   venueName = "Mission Focus Coworking & Cafe",
   userSeatNumber: initialSeatNumber = "Desk A-14 (2nd Floor West)",
   userCoordinates: initialCoordinates = null,
+  initialPlan = null,
+  className,
 }: EmergencyEvacuationRouterProps) {
   const [emergencyType, setEmergencyType] = useState<EmergencyType>("FIRE_ALARM");
   const [userSeatNumber, setUserSeatNumber] = useState<string>(initialSeatNumber);
@@ -44,8 +49,16 @@ export default function EmergencyEvacuationRouter({
     initialCoordinates
   );
   const [geolocationDenied, setGeolocationDenied] = useState<boolean>(false);
-  const [plan, setPlan] = useState<EvacuationPlan | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [plan, setPlan] = useState<EvacuationPlan | null>(initialPlan);
+  const [loading, setLoading] = useState<boolean>(!initialPlan);
+  const isMountedRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isPlayingChime, setIsPlayingChime] = useState<boolean>(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -64,7 +77,9 @@ export default function EmergencyEvacuationRouter({
       }
       audioCtxRef.current = null;
     }
-    setIsPlayingChime(false);
+    if (isMountedRef.current) {
+      setIsPlayingChime(false);
+    }
   }, []);
 
   const toggleChime = useCallback(() => {
@@ -128,11 +143,15 @@ export default function EmergencyEvacuationRouter({
     const targetCoords = coords !== undefined ? coords : userCoordinates;
     if (!targetCoords) {
       console.warn("Cannot calculate evacuation route: User coordinates evaluate to null or undefined.");
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
       return;
     }
 
-    setLoading(true);
+    if (isMountedRef.current) {
+      setLoading(true);
+    }
     try {
       const res = await fetch(`/api/venues/${venueId}/evacuation`, {
         method: "POST",
@@ -145,18 +164,26 @@ export default function EmergencyEvacuationRouter({
         }),
       });
       const data = await res.json();
-      if (data.success && data.evacuationPlan) {
+      if (isMountedRef.current && data.success && data.evacuationPlan) {
         setPlan(data.evacuationPlan);
         setCurrentStep(0);
       }
     } catch (err) {
       console.error("Failed to load evacuation plan:", err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    if (initialPlan) {
+      setPlan(initialPlan);
+      setLoading(false);
+      return;
+    }
+
     if (initialCoordinates) {
       setUserCoordinates(initialCoordinates);
       fetchEvacuationPlan(emergencyType, initialCoordinates);
@@ -166,6 +193,7 @@ export default function EmergencyEvacuationRouter({
     if (typeof window !== "undefined" && "geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
+          if (!isMountedRef.current) return;
           const coords = {
             x: Math.round((pos.coords.longitude + 180) % 100),
             y: Math.round((pos.coords.latitude + 90) % 100),
@@ -175,6 +203,7 @@ export default function EmergencyEvacuationRouter({
           fetchEvacuationPlan(emergencyType, coords);
         },
         (err) => {
+          if (!isMountedRef.current) return;
           console.warn("Geolocation access delayed or denied:", err.message);
           setGeolocationDenied(true);
           setUserCoordinates(null);
@@ -183,14 +212,16 @@ export default function EmergencyEvacuationRouter({
         { timeout: 5000 }
       );
     } else {
-      setGeolocationDenied(true);
-      setUserCoordinates(null);
-      setLoading(false);
+      if (isMountedRef.current) {
+        setGeolocationDenied(true);
+        setUserCoordinates(null);
+        setLoading(false);
+      }
     }
-  }, [initialCoordinates, venueId]);
+  }, [initialCoordinates, initialPlan, venueId]);
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-6">
+    <div className={cn("w-full max-w-5xl mx-auto space-y-6", className)} data-testid="emergency-evacuation-router">
       {/* High-Contrast Emergency Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-950 via-slate-900 to-rose-950 border-2 border-rose-500/60 p-6 md:p-8 shadow-2xl backdrop-blur-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -240,6 +271,7 @@ export default function EmergencyEvacuationRouter({
               {(["FIRE_ALARM", "EARTHQUAKE", "POWER_OUTAGE"] as EmergencyType[]).map((type) => (
                 <button
                   key={type}
+                  data-testid={`simulate-emergency-${type.toLowerCase()}`}
                   onClick={() => {
                     setEmergencyType(type);
                     if (userCoordinates) {
@@ -288,6 +320,7 @@ export default function EmergencyEvacuationRouter({
         <div className="flex items-center gap-3 shrink-0">
           {!userCoordinates && (
             <select
+              data-testid="starting-desk-select"
               aria-label="Select Starting Desk Location"
               onChange={(e) => {
                 const val = e.target.value;
@@ -331,12 +364,12 @@ export default function EmergencyEvacuationRouter({
       </div>
 
       {loading ? (
-        <div className="p-12 rounded-3xl bg-slate-900/40 border border-slate-800 flex flex-col items-center justify-center gap-3 text-slate-400">
+        <div data-testid="evacuation-loading-indicator" className="p-12 rounded-3xl bg-slate-900/40 border border-slate-800 flex flex-col items-center justify-center gap-3 text-slate-400">
           <RefreshCw className="w-6 h-6 animate-spin text-rose-400" />
           <p className="text-sm">Calculating unobstructed egress path and safety resource bearings...</p>
         </div>
-      ) : !userCoordinates ? (
-        <div className="p-8 rounded-3xl bg-amber-950/20 border border-amber-500/30 flex flex-col items-center justify-center text-center gap-3">
+      ) : (!userCoordinates && !plan) ? (
+        <div data-testid="geolocation-missing-banner" className="p-8 rounded-3xl bg-amber-950/20 border border-amber-500/30 flex flex-col items-center justify-center text-center gap-3">
           <AlertTriangle className="w-8 h-8 text-amber-400 animate-bounce" />
           <h2 className="text-base font-bold text-white">Geolocation Access Required</h2>
           <p className="text-xs text-amber-200/80 max-w-lg">
@@ -348,7 +381,7 @@ export default function EmergencyEvacuationRouter({
           {/* Top 3 Core Emergency Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Nearest Fire Exit */}
-            <div className="p-5 rounded-3xl bg-slate-900/90 border-2 border-emerald-500/60 space-y-2 backdrop-blur-md shadow-lg shadow-emerald-950/30">
+            <div data-testid="emergency-stat-nearest-exit" className="p-5 rounded-3xl bg-slate-900/90 border-2 border-emerald-500/60 space-y-2 backdrop-blur-md shadow-lg shadow-emerald-950/30">
               <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5" /> Nearest Verified Exit
               </span>
@@ -364,7 +397,7 @@ export default function EmergencyEvacuationRouter({
             </div>
 
             {/* Outdoor Muster Point */}
-            <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-2 backdrop-blur-md shadow-lg">
+            <div data-testid="emergency-stat-muster-point" className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-2 backdrop-blur-md shadow-lg">
               <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5" /> Outdoor Assembly Muster Point
               </span>
@@ -373,7 +406,7 @@ export default function EmergencyEvacuationRouter({
             </div>
 
             {/* Direct SOS Dispatch */}
-            <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-3 backdrop-blur-md shadow-lg flex flex-col justify-between">
+            <div data-testid="emergency-stat-sos" className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-3 backdrop-blur-md shadow-lg flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
                   <PhoneCall className="w-3.5 h-3.5" /> Direct Emergency SOS
@@ -402,7 +435,7 @@ export default function EmergencyEvacuationRouter({
             </div>
 
             {/* Waypoints List */}
-            <div className="space-y-3">
+            <div data-testid="evacuation-steps-container" className="space-y-3">
               {plan.waypoints.map((step, idx) => {
                 const isCurrent = currentStep === idx;
                 const isCompleted = currentStep > idx;
@@ -410,6 +443,7 @@ export default function EmergencyEvacuationRouter({
                 return (
                   <div
                     key={step.stepIndex}
+                    data-testid={`evacuation-step-${step.stepIndex}`}
                     onClick={() => setCurrentStep(idx)}
                     className={`p-4 rounded-2xl border flex items-start gap-4 transition-all cursor-pointer ${
                       isCurrent
@@ -457,10 +491,11 @@ export default function EmergencyEvacuationRouter({
               <HeartPulse className="w-5 h-5 text-rose-400" /> On-Site Safety Equipment & Defibrillators
             </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div data-testid="safety-resources-grid" className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {plan.nearbySafetyResources.map((res) => (
                 <div
                   key={res.id}
+                  data-testid={`safety-resource-${res.id}`}
                   className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2"
                 >
                   <div className="flex items-center justify-between">
@@ -485,3 +520,5 @@ export default function EmergencyEvacuationRouter({
     </div>
   );
 }
+
+export default EmergencyEvacuationRouter;

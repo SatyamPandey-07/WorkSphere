@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Star, Bell, BellRing, Check, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { DeskFavorite } from "@/lib/venues/deskFavoritesService";
 
-interface DeskFavoriteAlertButtonProps {
+export interface DeskFavoriteAlertButtonProps {
   venueId: string;
   venueName?: string;
   deskId: string;
@@ -15,6 +16,8 @@ interface DeskFavoriteAlertButtonProps {
   isOccupied?: boolean;
   onUpdate?: () => void;
   variant?: "compact" | "full";
+  className?: string;
+  "data-testid"?: string;
 }
 
 export function DeskFavoriteAlertButton({
@@ -28,15 +31,32 @@ export function DeskFavoriteAlertButton({
   isOccupied = false,
   onUpdate,
   variant = "compact",
+  className = "",
+  "data-testid": testId = "desk-favorite-alert-button",
 }: DeskFavoriteAlertButtonProps) {
   const [isFavorited, setIsFavorited] = useState(false);
   const [isAlertActive, setIsAlertActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   const showToast = (msg: string) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 3000);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMsg(null);
+      toastTimerRef.current = null;
+    }, 3000);
   };
 
   const handleToggleFavorite = async (e: React.MouseEvent) => {
@@ -110,31 +130,38 @@ export function DeskFavoriteAlertButton({
 
   if (variant === "compact") {
     return (
-      <div className="relative inline-flex items-center gap-1">
+      <div
+        data-testid={testId}
+        className={cn("relative inline-flex items-center gap-1", className)}
+      >
         <button
           type="button"
+          data-testid="toggle-favorite-btn"
           onClick={handleToggleFavorite}
           disabled={loading}
-          className={`p-1.5 rounded-lg transition-all ${
+          className={cn(
+            "p-1.5 rounded-lg transition-all",
             isFavorited
               ? "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
               : "bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
-          }`}
+          )}
           title={isFavorited ? "Remove from favorite desks" : "Star as favorite desk"}
         >
-          <Star className={`w-3.5 h-3.5 ${isFavorited ? "fill-amber-400 text-amber-400" : ""}`} />
+          <Star className={cn("w-3.5 h-3.5", isFavorited && "fill-amber-400 text-amber-400")} />
         </button>
 
         {isOccupied && (
           <button
             type="button"
+            data-testid="toggle-alert-btn"
             onClick={handleToggleAlert}
             disabled={loading}
-            className={`p-1.5 rounded-lg transition-all ${
+            className={cn(
+              "p-1.5 rounded-lg transition-all",
               isAlertActive
                 ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 ring-1 ring-blue-500/40 animate-pulse"
                 : "bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
-            }`}
+            )}
             title={isAlertActive ? "Vacancy alert active" : "Notify me when this desk is free"}
           >
             {isAlertActive ? (
@@ -159,29 +186,38 @@ export function DeskFavoriteAlertButton({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div
+      data-testid={testId}
+      className={cn("flex items-center gap-2", className)}
+    >
       <button
         type="button"
+        data-testid="toggle-favorite-btn"
         onClick={handleToggleFavorite}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+        disabled={loading}
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border",
           isFavorited
             ? "bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-xs"
             : "bg-zinc-800/60 text-zinc-300 border-zinc-700/60 hover:bg-zinc-800"
-        }`}
+        )}
       >
-        <Star className={`w-3.5 h-3.5 ${isFavorited ? "fill-amber-400 text-amber-400" : ""}`} />
+        <Star className={cn("w-3.5 h-3.5", isFavorited && "fill-amber-400 text-amber-400")} />
         <span>{isFavorited ? "Favorited" : "Favorite Desk"}</span>
       </button>
 
       {isOccupied && (
         <button
           type="button"
+          data-testid="toggle-alert-btn"
           onClick={handleToggleAlert}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+          disabled={loading}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border",
             isAlertActive
               ? "bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-900/40 ring-2 ring-blue-500/30 animate-pulse"
               : "bg-zinc-800/60 text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
-          }`}
+          )}
         >
           {isAlertActive ? (
             <>
@@ -198,10 +234,15 @@ export function DeskFavoriteAlertButton({
       )}
 
       {toastMsg && (
-        <span className="text-[11px] text-emerald-400 font-semibold animate-in fade-in">
+        <span
+          data-testid="desk-favorite-toast"
+          className="text-[11px] text-emerald-400 font-semibold animate-in fade-in"
+        >
           ✓ {toastMsg}
         </span>
       )}
     </div>
   );
 }
+
+export default DeskFavoriteAlertButton;

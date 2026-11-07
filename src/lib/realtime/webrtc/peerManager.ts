@@ -709,7 +709,7 @@ export class WebRTCPeerManager {
             destination,
             visited: [this.localPeerId],
             hops: 0,
-            payload: packetPayload,
+            payload: packetPayload as any,
           });
         }
         return;

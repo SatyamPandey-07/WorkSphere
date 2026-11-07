@@ -48,7 +48,7 @@ export function exportAnalyticsToCSV(data: AnalyticsMetric[]): string {
       header: "Timestamp",
       accessor: (m) =>
         m.timestamp instanceof Date
-          ? m.timestamp.toISOString()
+          ? (isNaN(m.timestamp.getTime()) ? "" : m.timestamp.toISOString())
           : (m.timestamp ?? ""),
     },
     { header: "Visitor Count", accessor: (m) => m.visitorCount ?? 0 },
@@ -122,12 +122,12 @@ export function generateAnalyticsCSV(data: AnalyticsExportData): string {
   builder.addRawLine(
     "Rank,Venue ID,Venue Name,Category,Views,Bookings,Rating,Score",
   );
-  data.venueLeaderboard.forEach((v, index) => {
-    const cleanName = escapeCSVField(v.name);
+  (data.venueLeaderboard || []).forEach((v, index) => {
+    const cleanName = `"${(v.name || "").replace(/"/g, '""')}"`;
     const ratingStr =
       v.rating != null && !isNaN(v.rating) ? v.rating.toFixed(1) : "0.0";
     builder.addRawLine(
-      `${index + 1},${v.id},${cleanName},${escapeCSVField(v.category)},${v.views},${v.bookings},${ratingStr},${v.score}`,
+      `${index + 1},${v.id},${cleanName},${v.category},${v.views},${v.bookings},${ratingStr},${v.score}`,
     );
   });
   builder.addBlankLine();
@@ -155,16 +155,16 @@ export function generateAnalyticsCSV(data: AnalyticsExportData): string {
   // Section 4: Requested Amenities
   builder.addSectionHeader("REQUESTED AMENITIES");
   builder.addRawLine("Amenity,Count");
-  data.amenities.forEach((a) => {
-    builder.addRawLine(`${escapeCSVField(a.amenity)},${a.count}`);
+  (data.amenities || []).forEach((a) => {
+    builder.addRawLine(`"${(a.amenity || "").replace(/"/g, '""')}",${a.count}`);
   });
   builder.addBlankLine();
 
   // Section 5: Top Search Terms
   builder.addSectionHeader("TOP SEARCH TERMS");
   builder.addRawLine("Search Term,Count");
-  data.searchTerms.forEach((s) => {
-    builder.addRawLine(`${escapeCSVField(s.term)},${s.count}`);
+  (data.searchTerms || []).forEach((s) => {
+    builder.addRawLine(`"${(s.term || "").replace(/"/g, '""')}",${s.count}`);
   });
 
   return builder.build();
@@ -243,9 +243,10 @@ export async function generateAnalyticsPdfReport(
     titleSize: 13,
   });
 
-  data.venueLeaderboard.slice(0, 5).forEach((v, i) => {
+  (data.venueLeaderboard || []).forEach((v, i) => {
     pdfBuilder.ensureSpace(20);
-    const rowText = `${i + 1}. ${truncateText(v.name, boldFont, 10, 200)} (${v.category}) — ${v.views} views, ${v.bookings} bookings, ★ ${v.rating.toFixed(1)}`;
+    const ratingVal = typeof v.rating === "number" && !isNaN(v.rating) ? v.rating.toFixed(1) : "0.0";
+    const rowText = `${i + 1}. ${truncateText(v.name, boldFont, 10, 200)} (${v.category}) — ${v.views} views, ${v.bookings} bookings, ★ ${ratingVal}`;
     pdfBuilder.drawText(rowText, { size: 9, font });
   });
 

@@ -10,7 +10,7 @@ import {
   validateBreakDuration,
   type TransitConstraintOptions,
 } from "./TimeWindowConstraint";
-import type { TransitEdge } from "./ItineraryGraph";
+import type { TransitEdge, MobilityMode } from "./ItineraryGraph";
 
 export interface ItinerarySolution {
   sequence: string[]; // Ordered list of venue IDs
@@ -99,7 +99,16 @@ export class TransitSolver {
     }
 
     // Search state for Branch-and-Bound recursion
-    const initialScheduleItem = {
+    const initialScheduleItem: {
+      venueId: string;
+      venueName: string;
+      arrivalTime: Date;
+      departureTime: Date;
+      waitTimeMinutes: number;
+      breakTimeMinutes: number;
+      carbonGrams: number;
+      mode?: MobilityMode;
+    } = {
       venueId: startVenueId,
       venueName: startNode.name,
       arrivalTime: startTime,

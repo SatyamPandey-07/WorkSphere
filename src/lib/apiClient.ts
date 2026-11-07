@@ -299,7 +299,8 @@ export function getRateLimitQuota(bucket: string): RateLimitQuota | undefined {
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input;
   if (input instanceof URL) return input.toString();
-  if (typeof Request !== "undefined" && input instanceof Request) return input.url;
+  if (typeof Request !== "undefined" && input instanceof Request)
+    return input.url;
   return "";
 }
 
@@ -319,7 +320,11 @@ function pathnameOf(url: string): string {
 export function classifyEndpoint(url: string): RateLimitEndpoint {
   const path = pathnameOf(url);
   // Path only: a query like ?next=/book must not change the bucket.
-  if (path.includes("/book") || path.includes("/confirm") || path.includes("/reservations")) {
+  if (
+    path.includes("/book") ||
+    path.includes("/confirm") ||
+    path.includes("/reservations")
+  ) {
     return "book";
   }
   if (path === "/api/chat" || path.startsWith("/api/chat/")) return "chat";
@@ -363,7 +368,11 @@ export async function retryAfterSeconds(response: Response): Promise<number> {
     return 60;
   }
 
-  const reset = headerNumber(response.headers, "X-RateLimit-Reset", "RateLimit-Reset");
+  const reset = headerNumber(
+    response.headers,
+    "X-RateLimit-Reset",
+    "RateLimit-Reset",
+  );
   if (reset !== null && reset > 0) {
     return Math.max(1, Math.ceil((resetToEpochMs(reset, now) - now) / 1000));
   }
@@ -380,13 +389,34 @@ export async function retryAfterSeconds(response: Response): Promise<number> {
 }
 
 /** Record quota headers (any status) so useRateLimit can show usage. */
-function recordQuota(bucket: string, response: Response, retryAt: number | null): void {
+function recordQuota(
+  bucket: string,
+  response: Response,
+  retryAt: number | null,
+): void {
   const now = Date.now();
-  const limit = headerNumber(response.headers, "X-RateLimit-Limit", "RateLimit-Limit");
-  const remaining = headerNumber(response.headers, "X-RateLimit-Remaining", "RateLimit-Remaining");
-  const reset = headerNumber(response.headers, "X-RateLimit-Reset", "RateLimit-Reset");
+  const limit = headerNumber(
+    response.headers,
+    "X-RateLimit-Limit",
+    "RateLimit-Limit",
+  );
+  const remaining = headerNumber(
+    response.headers,
+    "X-RateLimit-Remaining",
+    "RateLimit-Remaining",
+  );
+  const reset = headerNumber(
+    response.headers,
+    "X-RateLimit-Reset",
+    "RateLimit-Reset",
+  );
   const prev = quotas.get(bucket);
-  if (limit === null && remaining === null && reset === null && retryAt === null) {
+  if (
+    limit === null &&
+    remaining === null &&
+    reset === null &&
+    retryAt === null
+  ) {
     // A non-429 proves the bucket accepts requests again: drop a stale block.
     if (prev?.retryAt) {
       quotas.set(bucket, { ...prev, retryAt: null });
@@ -399,8 +429,12 @@ function recordQuota(bucket: string, response: Response, retryAt: number | null)
     bucket,
     limit: limit ?? prev?.limit ?? null,
     remaining: retryAt !== null ? 0 : (remaining ?? prev?.remaining ?? null),
-    resetAt: reset !== null && reset > 0 ? resetToEpochMs(reset, now) : (prev?.resetAt ?? null),
-    retryAt: retryAt ?? (prev?.retryAt && prev.retryAt > now ? prev.retryAt : null),
+    resetAt:
+      reset !== null && reset > 0
+        ? resetToEpochMs(reset, now)
+        : (prev?.resetAt ?? null),
+    retryAt:
+      retryAt ?? (prev?.retryAt && prev.retryAt > now ? prev.retryAt : null),
   });
   emitQuotaChange();
 }
@@ -438,11 +472,20 @@ export async function apiFetch(
   const bucket = bucketFor(url);
 
   const retry = options.retryOnRateLimit;
-  const maxRetries = !retry ? 0 : retry === true ? DEFAULT_MAX_RETRIES : (retry.maxRetries ?? DEFAULT_MAX_RETRIES);
+  const maxRetries = !retry
+    ? 0
+    : retry === true
+      ? DEFAULT_MAX_RETRIES
+      : (retry.maxRetries ?? DEFAULT_MAX_RETRIES);
   const maxWaitSeconds =
-    retry && retry !== true ? (retry.maxWaitSeconds ?? DEFAULT_MAX_WAIT_SECONDS) : DEFAULT_MAX_WAIT_SECONDS;
+    retry && retry !== true
+      ? (retry.maxWaitSeconds ?? DEFAULT_MAX_WAIT_SECONDS)
+      : DEFAULT_MAX_WAIT_SECONDS;
   const signal =
-    init?.signal ?? (typeof Request !== "undefined" && input instanceof Request ? input.signal : null);
+    init?.signal ??
+    (typeof Request !== "undefined" && input instanceof Request
+      ? input.signal
+      : null);
 
   for (let attempt = 0; ; attempt++) {
     // When retrying, don't hit the server again before its quota resets.
@@ -454,7 +497,9 @@ export async function apiFetch(
 
     // A Request body can only be read once; send a fresh clone per attempt.
     const attemptInput =
-      typeof Request !== "undefined" && input instanceof Request && maxRetries > 0
+      typeof Request !== "undefined" &&
+      input instanceof Request &&
+      maxRetries > 0
         ? input.clone()
         : input;
     const response = await sendWithCsrf(attemptInput, init);
@@ -512,3 +557,74 @@ export function _setCsrfTokenForTesting(
   _csrfFetchedAt = fetchedAt;
   _csrfRefreshPromise = null;
 }
+
+// ─── Legacy / Unified apiClient helper ─────────────────────────────────────
+
+export interface ApiClientOptions extends RequestInit {
+  maxRetries?: number;
+  baseDelayMs?: number;
+}
+
+export function parseRetryAfterHeader(retryAfterHeader: string | null): number {
+  if (!retryAfterHeader) return 1000;
+  const seconds = parseInt(retryAfterHeader, 10);
+  if (!isNaN(seconds)) return seconds * 1000;
+  const parsedDate = Date.parse(retryAfterHeader);
+  if (!isNaN(parsedDate)) {
+    const deltaMs = parsedDate - Date.now();
+    return Math.max(0, deltaMs);
+  }
+  return 1000;
+}
+
+export async function apiClient<T = any>(
+  url: string,
+  options: ApiClientOptions = {},
+): Promise<T> {
+  const maxRetries = options.maxRetries ?? 3;
+  const baseDelayMs = options.baseDelayMs ?? 1000;
+
+  let attempt = 0;
+
+  while (true) {
+    try {
+      const response = await apiFetch(url, options);
+
+      if (response.status === 429 && attempt < maxRetries) {
+        attempt++;
+        const retryAfterHeader = response.headers.get("Retry-After");
+        const parsedRetryAfterMs = parseRetryAfterHeader(retryAfterHeader);
+
+        const exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1);
+        const jitter = Math.random() * 300;
+        const delay = Math.max(parsedRetryAfterMs, exponentialDelay) + jitter;
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `API Request failed with status ${response.status}: ${response.statusText}`,
+        );
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        return await response.json();
+      }
+
+      return (await response.text()) as unknown as T;
+    } catch (error: any) {
+      if (attempt >= maxRetries) {
+        throw error;
+      }
+      attempt++;
+      const delay =
+        baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 200;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+export default apiClient;

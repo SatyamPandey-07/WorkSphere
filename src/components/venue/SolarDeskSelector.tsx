@@ -17,17 +17,22 @@ import {
   Calendar,
 } from "lucide-react";
 import type { DeskSolarExposure, SolarCoordinates } from "@/lib/geo/solarPosition";
+import { cn } from "@/lib/utils";
 
-interface SolarDeskSelectorProps {
+export interface SolarDeskSelectorProps {
   venueId?: string;
   venueName?: string;
   onSelectDesk?: (deskId: string) => void;
+  className?: string;
+  "data-testid"?: string;
 }
 
-export default function SolarDeskSelector({
+export function SolarDeskSelector({
   venueId = "venue-sf-01",
   venueName = "Mission Focus Coworking & Cafe",
   onSelectDesk,
+  className = "",
+  ...props
 }: SolarDeskSelectorProps) {
   const [selectedHour, setSelectedHour] = useState<number>(14); // 2:00 PM
   const [solarData, setSolarData] = useState<{
@@ -92,7 +97,10 @@ export default function SolarDeskSelector({
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-6">
+    <div
+      data-testid={props["data-testid"] || "solar-desk-selector"}
+      className={cn("w-full max-w-5xl mx-auto space-y-6", className)}
+    >
       {/* Header Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-amber-950/40 to-slate-900 border border-amber-500/20 p-6 md:p-8 backdrop-blur-xl shadow-2xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -137,6 +145,8 @@ export default function SolarDeskSelector({
 
           <input
             type="range"
+            data-testid="solar-time-slider"
+            aria-label="Simulated Time of Day"
             min={8}
             max={20}
             step={1}
@@ -256,6 +266,7 @@ export default function SolarDeskSelector({
                 return (
                   <button
                     key={desk.seatId}
+                    data-testid="solar-desk-card"
                     onClick={() => {
                       setSelectedDeskId(desk.seatId);
                       onSelectDesk?.(desk.seatId);
@@ -353,3 +364,5 @@ export default function SolarDeskSelector({
     </div>
   );
 }
+
+export default SolarDeskSelector;

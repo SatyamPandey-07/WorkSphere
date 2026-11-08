@@ -147,9 +147,12 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
-  const tileLayerUrl = isHighContrast
-    ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
+  const tileLayerUrl = cartoKey
+    ? isHighContrast
+      ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+      : `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
@@ -226,15 +229,7 @@ export function InteractiveMap({
         style={{ height: "100%", width: "100%", zIndex: 0 }}
       >
         <TileLayer
- fix/map-contrast-slider-overlap
           url={tileLayerUrl}
-
-          url={
-            process.env.NEXT_PUBLIC_CARTO_KEY
-              ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${process.env.NEXT_PUBLIC_CARTO_KEY}`
-              : "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          }
- main
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
         {spiderfiedMarkers.map((marker, idx) => {

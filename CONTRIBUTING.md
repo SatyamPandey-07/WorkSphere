@@ -9,6 +9,9 @@ Thank you for your interest in contributing to WorkSphere! This document details
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to help maintain a welcoming and respectful community.
 
 ---
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
 
 ## 📋 Table of Contents
 

@@ -103,10 +103,10 @@ export default async function RootLayout({
             <IdleSessionDialog />
             <StorageQuotaWarningBanner />
             <I18nProvider>{children}</I18nProvider>
+            <SyncManager />
           </CurrencyProvider>
         </ToastProvider>
       </SoundProvider>
-      <SyncManager />
     </ThemeProvider>
   );
 

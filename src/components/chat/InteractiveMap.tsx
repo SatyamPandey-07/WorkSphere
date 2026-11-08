@@ -147,6 +147,8 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+ feature/hybrid-search
+
  docs/multi-agent-consensus-diagram
 
  docs/testing-playbook
@@ -169,9 +171,12 @@ export function InteractiveMap({
  main
  main
 main
+main
   const tileLayerUrl = isHighContrast
     ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
+ feature/hybrid-search
 
  docs/multi-agent-consensus-diagram
 
@@ -200,6 +205,7 @@ main
 main
  main
 main
+ main
  main
  main
   // Fallback empty view

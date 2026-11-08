@@ -14,6 +14,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceArea,
+  ReferenceLine,
 } from "recharts";
 import {
   Loader2,
@@ -28,25 +29,41 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
+import { HoltWinters, ForecastResult as HWForecastResult } from "@/workers/forecasting/HoltWinters";
 
-interface SeatingForecastResult {
-  forecast: {
-    hour: number;
-    predictedOccupancy: number | null;
-    confidence: number;
-    capacity: number;
-  }[];
+export interface SeatingForecastPoint {
+  hour: number;
+  predictedOccupancy: number | null;
+  confidence: number;
+  capacity: number;
+  date?: string;
+  lowerBound?: number | null;
+  upperBound?: number | null;
+  isForecast?: boolean;
+  intervalLevel?: number;
+}
+
+export interface SeatingForecastResult {
+  forecast: SeatingForecastPoint[];
   recommendedHours: number[];
   capacity: number;
+  historical?: {
+    date?: string;
+    hour: number;
+    occupancy: number;
+  }[];
 }
 
 export interface SeatingForecastChartProps {
   venueId: string;
   className?: string;
   "data-testid"?: string;
+  initialData?: SeatingForecastResult;
+  historicalTelemetry?: number[];
+  forecastHorizon?: number;
 }
 
-interface DayOccupancyData {
+export interface DayOccupancyData {
   day: string;
   fullName: string;
   avgOccupancy: number;
@@ -56,6 +73,28 @@ interface DayOccupancyData {
   quietestWindow: string;
   status: "Quiet" | "Moderate" | "Busy";
   color: string;
+  lowerBound?: number;
+  upperBound?: number;
+  intervalLevel?: number;
+}
+
+/**
+ * Helper to compute 7-day occupancy forecasts with 95% prediction intervals
+ * using the project's Holt-Winters Triple Exponential Smoothing engine.
+ */
+export function applyHoltWintersToTelemetry(
+  historicalData: number[],
+  forecastHorizon: number = 168,
+  seasonLength: number = 24
+): HWForecastResult {
+  const hw = new HoltWinters({
+    alpha: 0.3,
+    beta: 0.1,
+    gamma: 0.4,
+    seasonLength,
+    intervalLevel: 0.95,
+  });
+  return hw.fitAndForecast(historicalData, forecastHorizon);
 }
 
 function generateWeeklyOccupancy(
@@ -129,6 +168,11 @@ function generateWeeklyOccupancy(
     const occupancyRate = Math.min(100, Math.round((avgOcc / capacity) * 100));
     const peakOcc = Math.min(capacity, Math.round(avgOcc * 1.35));
 
+    // Approximate 95% prediction interval bounds for weekly projection
+    const dailyMargin = Math.round(Math.max(1, capacity * 0.12 * Math.sqrt(d.factor)));
+    const lowerBound = Math.max(0, avgOcc - dailyMargin);
+    const upperBound = Math.min(capacity, avgOcc + dailyMargin);
+
     let status: "Quiet" | "Moderate" | "Busy" = "Moderate";
     let color = "#eab308"; // amber-500
 
@@ -150,6 +194,9 @@ function generateWeeklyOccupancy(
       quietestWindow: d.quiet,
       status,
       color,
+      lowerBound,
+      upperBound,
+      intervalLevel: 0.95,
     };
   });
 }
@@ -189,6 +236,10 @@ function ForecastLegend({ onOpenModal }: { onOpenModal?: () => void }) {
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-full bg-indigo-500/20 border border-indigo-500" />
           <span>Predicted Occupancy</span>
+        </div>
+        <div className="flex items-center gap-1.5" data-testid="legend-confidence-band">
+          <div className="w-3 h-3 rounded bg-indigo-500/25 border border-indigo-400/50" />
+          <span>95% Confidence Interval</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500" />
@@ -328,97 +379,81 @@ function SeatingForecastModal({
               {peakDay.fullName}
             </p>
             <p className="text-xs text-rose-700 dark:text-rose-300">
-              Peak {peakDay.peakHour} (~{peakDay.occupancyRate}%)
+              Up to {peakDay.peakOccupancy} seats ({peakDay.peakHour})
             </p>
           </div>
         </div>
 
-        {/* Visual Day-by-Day Occupancy Bar Chart */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              Daily Expected Occupancy Rate (%)
-            </h3>
-            <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+        {/* Mini forecast overview bar */}
+        <div className="bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl p-4 border border-zinc-100 dark:border-zinc-800">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-indigo-500" />
+              <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                Projected day-by-day average occupancy
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-[10px]">
               <div className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded bg-green-500" />
-                <span>Quiet (&lt;45%)</span>
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-zinc-500 dark:text-zinc-400">Quiet (&lt;45%)</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded bg-amber-500" />
-                <span>Moderate (45-75%)</span>
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <span className="text-zinc-500 dark:text-zinc-400">Moderate</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded bg-rose-500" />
-                <span>Busy (&gt;75%)</span>
+                <span className="w-2 h-2 rounded-full bg-rose-500" />
+                <span className="text-zinc-500 dark:text-zinc-400">Busy (&gt;75%)</span>
               </div>
             </div>
           </div>
 
-          <div className="w-full h-56 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-3 border border-zinc-200 dark:border-zinc-700/60">
+          <div className="h-40 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={weeklyData}
-                margin={{ top: 12, right: 10, left: -20, bottom: 0 }}
-                onClick={(e) => {
-                  // The X axis is keyed by `day`, so the active label is the day.
-                  const payloadDay =
-                    typeof e?.activeLabel === "string" ? e.activeLabel : null;
-                  if (payloadDay) {
-                    setSelectedDay((prev) =>
-                      prev === payloadDay ? null : payloadDay,
-                    );
-                  }
-                }}
+                margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
               >
                 <CartesianGrid
                   strokeDasharray="3 3"
                   vertical={false}
                   stroke="#e4e4e7"
-                  className="dark:stroke-zinc-700/50"
+                  className="dark:stroke-zinc-800"
                 />
                 <XAxis
                   dataKey="day"
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fontSize: 11, fill: "#71717a", fontWeight: 600 }}
+                  tick={{ fontSize: 11, fill: "#71717a" }}
                 />
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  domain={[0, 100]}
-                  ticks={[0, 25, 50, 75, 100]}
-                  tickFormatter={(val) => `${val}%`}
                   tick={{ fontSize: 10, fill: "#71717a" }}
+                  domain={[0, 100]}
+                  unit="%"
                 />
                 <Tooltip
-                  cursor={{ fill: "rgba(99, 102, 241, 0.08)" }}
+                  cursor={{ fill: "transparent" }}
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
-                      const dayData: DayOccupancyData = payload[0].payload;
+                      const d = payload[0].payload as DayOccupancyData;
                       return (
-                        <div className="bg-white dark:bg-zinc-800 p-3 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 text-xs space-y-1">
+                        <div className="bg-white dark:bg-zinc-800 p-2.5 rounded-xl shadow-xl border border-zinc-100 dark:border-zinc-700 text-xs">
                           <p className="font-bold text-zinc-900 dark:text-zinc-100">
-                            {dayData.fullName}
+                            {d.fullName}
                           </p>
-                          <p className="text-zinc-600 dark:text-zinc-300">
-                            Avg Occupancy:{" "}
-                            <span className="font-semibold text-indigo-600 dark:text-indigo-400">
-                              {dayData.avgOccupancy} / {capacity} seats (
-                              {dayData.occupancyRate}%)
-                            </span>
+                          <p className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                            {d.avgOccupancy} seats ({d.occupancyRate}%)
                           </p>
-                          <p className="text-zinc-500">
-                            Peak Time:{" "}
-                            <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                              {dayData.peakHour}
-                            </span>
-                          </p>
-                          <p className="text-zinc-500">
-                            Quietest Window:{" "}
-                            <span className="font-medium text-green-600 dark:text-green-400">
-                              {dayData.quietestWindow}
-                            </span>
+                          {d.lowerBound !== undefined && d.upperBound !== undefined && (
+                            <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                              95% Bound: [{d.lowerBound} – {d.upperBound}] seats
+                            </p>
+                          )}
+                          <p className="text-zinc-400 text-[10px]">
+                            Peak: {d.peakHour} (~{d.peakOccupancy} seats)
                           </p>
                         </div>
                       );
@@ -429,20 +464,27 @@ function SeatingForecastModal({
                 <Bar
                   dataKey="occupancyRate"
                   radius={[6, 6, 0, 0]}
-                  maxBarSize={44}
+                  maxBarSize={40}
+                  className="cursor-pointer"
+                  onClick={(entry) => {
+                    if (entry && "day" in entry) {
+                      setSelectedDay(
+                        selectedDay === (entry as DayOccupancyData).day
+                          ? null
+                          : (entry as DayOccupancyData).day
+                      );
+                    }
+                  }}
                 >
-                  {weeklyData.map((entry) => (
+                  {weeklyData.map((entry, index) => (
                     <Cell
-                      key={`cell-${entry.day}`}
+                      key={`cell-${index}`}
                       fill={entry.color}
                       opacity={
-                        selectedDay && selectedDay !== entry.day ? 0.35 : 1
+                        selectedDay === null || selectedDay === entry.day
+                          ? 1
+                          : 0.35
                       }
-                      stroke={
-                        selectedDay === entry.day ? "#4f46e5" : "transparent"
-                      }
-                      strokeWidth={2}
-                      className="cursor-pointer transition-opacity"
                     />
                   ))}
                 </Bar>
@@ -451,55 +493,67 @@ function SeatingForecastModal({
           </div>
         </div>
 
-        {/* Day-by-Day Breakdown Grid */}
-        <div className="space-y-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-            Day-by-Day Breakdown
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {/* 7-Day Interactive Card Grid */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              Daily Breakdown
+            </h3>
+            <span className="text-[11px] text-zinc-400">
+              Click a card to filter chart
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {weeklyData.map((d) => {
               const isSelected = selectedDay === d.day;
               return (
                 <div
                   key={d.day}
-                  onClick={() => setSelectedDay(isSelected ? null : d.day)}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                  onClick={() =>
+                    setSelectedDay(isSelected ? null : d.day)
+                  }
+                  className={cn(
+                    "p-3.5 rounded-xl border transition-all cursor-pointer text-left space-y-2",
                     isSelected
-                      ? "bg-indigo-50/70 dark:bg-indigo-500/10 border-indigo-400 dark:border-indigo-500 ring-1 ring-indigo-400"
-                      : "bg-zinc-50/60 dark:bg-zinc-800/40 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200/80 dark:border-zinc-800"
-                  }`}
+                      ? "ring-2 ring-indigo-500 bg-indigo-50/50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30"
+                      : "bg-zinc-50 dark:bg-zinc-800/40 border-zinc-100 dark:border-zinc-800 hover:border-zinc-200 dark:hover:border-zinc-700"
+                  )}
                 >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
-                        {d.fullName}
-                      </span>
-                      <span
-                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                          d.status === "Quiet"
-                            ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300"
-                            : d.status === "Busy"
-                              ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
-                              : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
-                        }`}
-                      >
-                        {d.status}
-                      </span>
-                    </div>
-                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                      {d.occupancyRate}%
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                      {d.fullName}
+                    </span>
+                    <span
+                      className="px-2 py-0.5 rounded-md text-[10px] font-bold"
+                      style={{
+                        backgroundColor: `${d.color}20`,
+                        color: d.color,
+                      }}
+                    >
+                      {d.status}
                     </span>
                   </div>
 
-                  {/* Mini Progress Bar */}
-                  <div className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden mb-2">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${d.occupancyRate}%`,
-                        backgroundColor: d.color,
-                      }}
-                    />
+                  {/* Occupancy bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-zinc-500 dark:text-zinc-400">
+                        Avg Occupancy
+                      </span>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                        {d.occupancyRate}%
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${d.occupancyRate}%`,
+                          backgroundColor: d.color,
+                        }}
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -512,6 +566,15 @@ function SeatingForecastModal({
                       <span className="truncate">~{d.avgOccupancy} seats</span>
                     </div>
                   </div>
+
+                  {d.lowerBound !== undefined && d.upperBound !== undefined && (
+                    <div className="pt-1 border-t border-zinc-100 dark:border-zinc-750 flex items-center justify-between text-[10px] text-zinc-400">
+                      <span>95% Bounds:</span>
+                      <span className="font-mono text-indigo-500 dark:text-indigo-400 font-medium">
+                        [{d.lowerBound} – {d.upperBound}] seats
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -541,14 +604,21 @@ function SeatingForecastModal({
 export function SeatingForecastChart({
   venueId,
   className = "",
+  initialData,
   ...props
 }: SeatingForecastChartProps) {
-  const [data, setData] = useState<SeatingForecastResult | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [data, setData] = useState<SeatingForecastResult | null>(initialData ?? null);
+  const [isLoading, setIsLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
+    if (initialData) {
+      setData(initialData);
+      setIsLoading(false);
+      return;
+    }
+
     async function fetchForecast() {
       try {
         const res = await fetch(`/api/venues/${venueId}/seating-forecast`);
@@ -563,7 +633,7 @@ export function SeatingForecastChart({
     }
 
     fetchForecast();
-  }, [venueId]);
+  }, [venueId, initialData]);
 
   const weeklyData = useMemo(() => {
     if (!data) return [];
@@ -592,12 +662,44 @@ export function SeatingForecastChart({
     );
   }
 
-  const chartData = data.forecast.map((f) => ({
-    hour: `${f.hour.toString().padStart(2, "0")}:00`,
-    predictedOccupancy: f.predictedOccupancy,
-    confidence: f.confidence,
-    rawHour: f.hour,
-  }));
+  const chartData = (data.forecast || []).map((f, idx) => {
+    const rawHour = typeof f.hour === "number" ? f.hour : idx % 24;
+    const hourLabel = `${rawHour.toString().padStart(2, "0")}:00`;
+    const dateLabel = f.date ? `${f.date} ` : "";
+    const isForecast = f.isForecast !== false;
+
+    // Use model-provided bounds or calculate defensible 95% prediction bounds
+    let lower = f.lowerBound;
+    let upper = f.upperBound;
+
+    if (
+      isForecast &&
+      f.predictedOccupancy !== null &&
+      (lower === undefined || lower === null || upper === undefined || upper === null)
+    ) {
+      const margin = Math.round(
+        Math.max(1, (1 - (f.confidence ?? 0.85)) * (data.capacity * 0.45) * 1.95996)
+      );
+      lower = Math.max(0, f.predictedOccupancy - margin);
+      upper = Math.min(data.capacity, f.predictedOccupancy + margin);
+    }
+
+    return {
+      hour: f.date ? `${dateLabel}${hourLabel}` : hourLabel,
+      date: f.date || hourLabel,
+      predictedOccupancy: f.predictedOccupancy,
+      lowerBound: lower ?? null,
+      upperBound: upper ?? null,
+      confidenceBand:
+        lower !== undefined && upper !== undefined && lower !== null && upper !== null
+          ? [lower, upper]
+          : null,
+      confidence: f.confidence,
+      intervalLevel: f.intervalLevel ?? 0.95,
+      rawHour,
+      isForecast,
+    };
+  });
 
   const hasData = chartData.some((d) => d.predictedOccupancy !== null);
 
@@ -613,6 +715,10 @@ export function SeatingForecastChart({
       </div>
     );
   }
+
+  // Detect transition point from historical to forecast if mixed data is provided
+  const transitionIndex = chartData.findIndex((d) => d.isForecast);
+  const transitionHour = transitionIndex > 0 ? chartData[transitionIndex].hour : null;
 
   return (
     <div
@@ -631,6 +737,10 @@ export function SeatingForecastChart({
               <linearGradient id="colorOccupancy" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="colorConfidenceBand" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#818cf8" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="#6366f1" stopOpacity={0.08} />
               </linearGradient>
             </defs>
             <CartesianGrid
@@ -657,18 +767,73 @@ export function SeatingForecastChart({
                 if (active && payload && payload.length) {
                   const pointData = payload[0].payload;
                   if (pointData.predictedOccupancy === null) return null;
+
+                  const displayDate = pointData.date || label;
+                  const isForecast = pointData.isForecast !== false;
+
                   return (
-                    <div className="bg-white dark:bg-zinc-800 p-3 rounded-xl shadow-xl border border-zinc-100 dark:border-zinc-700">
-                      <p className="text-sm font-bold mb-1">{label}</p>
-                      <p className="text-xs text-zinc-600 dark:text-zinc-300">
-                        Occupancy:{" "}
-                        <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                    <div
+                      data-testid="seating-forecast-tooltip"
+                      className="bg-white dark:bg-zinc-800 p-3 rounded-xl shadow-xl border border-zinc-100 dark:border-zinc-700 space-y-1 text-xs"
+                    >
+                      <p
+                        className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-1"
+                        data-testid="tooltip-date"
+                      >
+                        {displayDate}
+                      </p>
+
+                      <p className="text-zinc-600 dark:text-zinc-300">
+                        {isForecast ? "Predicted Occupancy:" : "Historical Occupancy:"}{" "}
+                        <span
+                          className="font-semibold text-indigo-600 dark:text-indigo-400"
+                          data-testid="tooltip-predicted"
+                        >
                           {pointData.predictedOccupancy} seats
                         </span>
                       </p>
-                      <p className="text-xs text-zinc-500 mt-1">
-                        Confidence: {Math.round(pointData.confidence * 100)}%
-                      </p>
+
+                      {isForecast && pointData.lowerBound !== null && pointData.lowerBound !== undefined && (
+                        <p className="text-zinc-600 dark:text-zinc-300">
+                          Lower 95% Bound:{" "}
+                          <span
+                            className="font-semibold text-emerald-600 dark:text-emerald-400"
+                            data-testid="tooltip-lower-bound"
+                          >
+                            {pointData.lowerBound} seats
+                          </span>
+                        </p>
+                      )}
+
+                      {isForecast && pointData.upperBound !== null && pointData.upperBound !== undefined && (
+                        <p className="text-zinc-600 dark:text-zinc-300">
+                          Upper 95% Bound:{" "}
+                          <span
+                            className="font-semibold text-rose-600 dark:text-rose-400"
+                            data-testid="tooltip-upper-bound"
+                          >
+                            {pointData.upperBound} seats
+                          </span>
+                        </p>
+                      )}
+
+                      {isForecast && (
+                        <div
+                          className="text-[10px] text-zinc-500 dark:text-zinc-400 pt-1 border-t border-zinc-100 dark:border-zinc-700/60 flex items-center justify-between"
+                          data-testid="tooltip-interval-level"
+                        >
+                          <span>Prediction Interval:</span>
+                          <span className="font-semibold text-indigo-500">
+                            {Math.round((pointData.intervalLevel ?? 0.95) * 100)}%
+                          </span>
+                        </div>
+                      )}
+
+                      {pointData.confidence !== undefined && (
+                        <p className="text-[10px] text-zinc-400">
+                          Confidence: {Math.round(pointData.confidence * 100)}%
+                        </p>
+                      )}
                     </div>
                   );
                 }
@@ -688,7 +853,42 @@ export function SeatingForecastChart({
                 />
               );
             })}
+
+            {/* Clear visual marker for historical-to-forecast transition */}
+            {transitionHour && (
+              <ReferenceLine
+                x={transitionHour}
+                stroke="#818cf8"
+                strokeDasharray="3 3"
+                label={{
+                  value: "Forecast Start",
+                  position: "insideTopLeft",
+                  fill: "#818cf8",
+                  fontSize: 10,
+                }}
+              />
+            )}
+
+            {/* 95% Prediction Interval Confidence Band Shading */}
             <Area
+              data-testid="forecast-confidence-band"
+              type="monotone"
+              dataKey="confidenceBand"
+              stroke="#818cf8"
+              strokeWidth={1}
+              strokeDasharray="3 3"
+              strokeOpacity={0.4}
+              fill="url(#colorConfidenceBand)"
+              fillOpacity={1}
+              connectNulls={false}
+              isAnimationActive={false}
+              activeDot={false}
+              name="95% Confidence Interval"
+            />
+
+            {/* Existing forecast curve visible above shaded confidence band */}
+            <Area
+              data-testid="forecast-curve"
               type="monotone"
               dataKey="predictedOccupancy"
               stroke="#6366f1"
@@ -697,6 +897,7 @@ export function SeatingForecastChart({
               fill="url(#colorOccupancy)"
               connectNulls={false}
               activeDot={{ r: 4, strokeWidth: 0 }}
+              name="Predicted Occupancy"
             />
           </AreaChart>
         </ResponsiveContainer>

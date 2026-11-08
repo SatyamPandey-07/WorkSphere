@@ -226,7 +226,15 @@ export function InteractiveMap({
         style={{ height: "100%", width: "100%", zIndex: 0 }}
       >
         <TileLayer
+ fix/map-contrast-slider-overlap
           url={tileLayerUrl}
+
+          url={
+            process.env.NEXT_PUBLIC_CARTO_KEY
+              ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${process.env.NEXT_PUBLIC_CARTO_KEY}`
+              : "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          }
+ main
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
         {spiderfiedMarkers.map((marker, idx) => {

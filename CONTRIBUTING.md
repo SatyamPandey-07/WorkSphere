@@ -734,3 +734,6 @@ Once all eight steps pass:
 - [ ] `npm run build` completes successfully
 - [ ] PR title follows the Conventional Commits format (`feat:`, `fix:`, `docs:`, etc.)
 - [ ] PR description explains **what** changed and **why**, and references the issue (`Closes #N`)
+
+## Architecture Documentation
+For details on multi-agent scoring and consensus workflows, see [docs/architecture/multi-agent-consensus.md](docs/architecture/multi-agent-consensus.md).

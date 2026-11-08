@@ -147,6 +147,8 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+ docs/multi-agent-consensus-diagram
+
  docs/testing-playbook
 
  feature/edge-bloom-limiter
@@ -166,9 +168,12 @@ export function InteractiveMap({
  main
  main
  main
+main
   const tileLayerUrl = isHighContrast
     ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
+ docs/multi-agent-consensus-diagram
 
  docs/testing-playbook
 
@@ -195,6 +200,7 @@ main
 main
  main
 main
+ main
  main
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {

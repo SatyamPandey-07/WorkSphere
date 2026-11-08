@@ -1,8 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import Redis from "ioredis";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+import { getGeminiClient, isGeminiConfigured } from "@/lib/ai/gemini";
+import { getRedis } from "@/lib/redis";
 
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
 
@@ -18,27 +15,47 @@ export interface HybridSearchResult {
  */
 export async function getQueryEmbedding(query: string): Promise<number[]> {
   const cacheKey = `embedding:${Buffer.from(query.toLowerCase().trim()).toString("base64")}`;
+  const redis = getRedis();
 
-  try {
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached);
+  if (redis) {
+    try {
+      const cached = await redis.get<string | number[]>(cacheKey);
+      if (cached) {
+        return typeof cached === "string" ? JSON.parse(cached) : (cached as number[]);
+      }
+    } catch (err) {
+      console.warn("[Redis Cache Miss/Error]:", err);
     }
-  } catch (err) {
-    console.warn("[Redis Cache Miss/Error]:", err);
   }
 
-  const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
-  const result = await model.embedContent(query);
-  const embedding = result.embedding.values;
+  if (!isGeminiConfigured()) {
+    return new Array(768).fill(0);
+  }
 
   try {
-    await redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(embedding));
-  } catch (err) {
-    console.warn("[Redis Set Error]:", err);
-  }
+    const gemini = getGeminiClient();
+    const result = await gemini.models.embedContent({
+      model: "text-embedding-004",
+      contents: query,
+    });
+    const embedding =
+      result.embeddings?.[0]?.values ||
+      (result as any).embedding?.values ||
+      [];
 
-  return embedding;
+    if (redis && embedding.length > 0) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(embedding), { ex: CACHE_TTL_SECONDS });
+      } catch (err) {
+        console.warn("[Redis Set Error]:", err);
+      }
+    }
+
+    return embedding;
+  } catch (err) {
+    console.warn("[Gemini Embedding Error]:", err);
+    return new Array(768).fill(0);
+  }
 }
 
 /**

@@ -468,10 +468,11 @@ function SeatingForecastModal({
                   className="cursor-pointer"
                   onClick={(entry) => {
                     if (entry && "day" in entry) {
+                      const dayVal = (entry as unknown as DayOccupancyData).day;
                       setSelectedDay(
-                        selectedDay === (entry as DayOccupancyData).day
+                        selectedDay === dayVal
                           ? null
-                          : (entry as DayOccupancyData).day
+                          : dayVal
                       );
                     }
                   }}

@@ -147,13 +147,18 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+ feature/dtn-bundle-protocol
+
  fix/webgl-heatmap-renderer-palette
 
  feature/partykit-agent-monitor
  main
+ main
   const tileLayerUrl = isHighContrast
     ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
+feature/dtn-bundle-protocol
 
  fix/webgl-heatmap-renderer-palette
 
@@ -166,6 +171,7 @@ export function InteractiveMap({
  main
 
  main
+main
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
     return (

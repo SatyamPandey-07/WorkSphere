@@ -91,20 +91,105 @@ function installCsrfFetchInterceptor() {
   };
 }
 
-async function fetchFreshToken(): Promise<string | null> {
-  try {
-    const res = await fetch("/api/auth/csrf-token", {
-      credentials: "same-origin",
-    });
-    if (!res.ok) return null;
-    const contentType = res.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) return null;
-    const data = await res.json();
-    currentCsrfToken = data.csrfToken ?? null;
-    return currentCsrfToken;
-  } catch {
-    return currentCsrfToken;
+const MAX_RETRIES = 3;
+const BACKOFF_DELAYS = [500, 1000, 2000] as const;
+const MAX_RETRY_AFTER_MS = 60_000;
+
+let inFlightRefreshPromise: Promise<string | null> | null = null;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null;
+  const trimmed = header.trim();
+  if (!trimmed) return null;
+
+  // Delta-seconds format (e.g., "5" or "5.5")
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const seconds = parseFloat(trimmed);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(Math.round(seconds * 1000), MAX_RETRY_AFTER_MS);
+    }
   }
+
+  // HTTP-date format (e.g., "Wed, 21 Oct 2026 07:28:00 GMT")
+  const dateMs = Date.parse(trimmed);
+  if (!isNaN(dateMs)) {
+    const deltaMs = dateMs - Date.now();
+    return Math.min(Math.max(0, deltaMs), MAX_RETRY_AFTER_MS);
+  }
+
+  return null;
+}
+
+function getBackoffDelay(attempt: number): number {
+  const index = Math.min(Math.max(0, attempt - 1), BACKOFF_DELAYS.length - 1);
+  const baseDelay = BACKOFF_DELAYS[index];
+  const maxJitter = Math.floor(baseDelay * 0.2);
+  const jitter = Math.round(Math.random() * maxJitter);
+  return baseDelay + jitter;
+}
+
+async function executeFetchFreshToken(): Promise<string | null> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch("/api/auth/csrf-token", {
+        credentials: "same-origin",
+      });
+
+      if (res.status === 429) {
+        if (attempt >= MAX_RETRIES) {
+          currentCsrfToken = null;
+          return null;
+        }
+
+        const retryAfterHeader = res.headers.get("Retry-After");
+        const retryAfterMs = parseRetryAfter(retryAfterHeader);
+        const delayMs =
+          retryAfterMs !== null
+            ? retryAfterMs
+            : getBackoffDelay(attempt + 1);
+
+        await sleep(delayMs);
+        continue;
+      }
+
+      if (!res.ok) {
+        currentCsrfToken = null;
+        return null;
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        currentCsrfToken = null;
+        return null;
+      }
+
+      const data = await res.json();
+      currentCsrfToken = data?.csrfToken ?? null;
+      return currentCsrfToken;
+    } catch {
+      currentCsrfToken = null;
+      return null;
+    }
+  }
+
+  currentCsrfToken = null;
+  return null;
+}
+
+async function fetchFreshToken(): Promise<string | null> {
+  if (inFlightRefreshPromise) {
+    return inFlightRefreshPromise;
+  }
+
+  inFlightRefreshPromise = executeFetchFreshToken().finally(() => {
+    inFlightRefreshPromise = null;
+  });
+
+  return inFlightRefreshPromise;
 }
 
 /**
@@ -122,6 +207,9 @@ export async function refreshCsrfToken(): Promise<string | null> {
  * where mobile browsers arrive at the OTP screen without a token.
  */
 export async function ensureCsrfToken(): Promise<string | null> {
+  if (inFlightRefreshPromise) {
+    return inFlightRefreshPromise;
+  }
   if (currentCsrfToken) return currentCsrfToken;
   return fetchFreshToken();
 }

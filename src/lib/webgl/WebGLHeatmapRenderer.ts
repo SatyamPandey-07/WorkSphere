@@ -85,9 +85,6 @@ export class WebGLHeatmapRenderer {
 
   private initGL() {
     try {
-      // Defensive cleanup: if initGL() ever runs more than once (e.g. the
-      // context-recovery callback fires without a true context loss), free
-      // the previous program/buffer first so we never leak GPU resources.
       if (this.gl) {
         if (this.program) this.gl.deleteProgram(this.program);
         if (this.vbo) this.gl.deleteBuffer(this.vbo);

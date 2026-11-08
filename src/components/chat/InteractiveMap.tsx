@@ -147,10 +147,15 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+ fix/webgl-heatmap-renderer-palette
+
  feature/partykit-agent-monitor
+ main
   const tileLayerUrl = isHighContrast
     ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
+ fix/webgl-heatmap-renderer-palette
 
   const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
   const tileLayerUrl = cartoKey
@@ -160,6 +165,7 @@ export function InteractiveMap({
     : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
  main
 
+ main
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
     return (

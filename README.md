@@ -950,6 +950,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 ### 🚀 Performance & Reliability
 
 - **Rate Limiting**: API protection with configurable limits
+- **Security Architecture**: CSP nonces, signed double-submit CSRF cookies and multi-tier token bucket rate limiting, explained end to end in [docs/security/SECURITY_OVERVIEW.md](./docs/security/SECURITY_OVERVIEW.md)
 - **Data Caching**: Multi-layer caching with TTL support
 - **Error Boundaries**: Graceful error handling prevents crashes
 - **Loading Skeletons**: Smooth loading states for better UX

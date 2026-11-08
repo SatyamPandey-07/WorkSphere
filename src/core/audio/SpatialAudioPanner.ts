@@ -4,6 +4,17 @@
  * based on desk layouts. Sanitizes and clamps gain coefficients to [0.0, 1.0] to prevent audio clipping (#5597).
  */
 
+import {
+    ProximityBoundaryZoneConfig,
+    DEFAULT_PROXIMITY_ZONE_CONFIG,
+    PROXIMITY_ZONE_PRESETS,
+    ProximityZonePresetId,
+    calculateProximityFadeGain,
+    sanitizeProximityZoneConfig,
+} from './ProximityBoundaryZone';
+
+export * from './ProximityBoundaryZone';
+
 export type DistanceAttenuationCurve = 'linear' | 'inverse';
 export type DistanceAttenuationModel = DistanceAttenuationCurve;
 
@@ -21,6 +32,7 @@ export class SpatialAudioPanner {
     private listener: AudioListener;
     private listenerPosition: { x: number; y: number; z: number };
     private distanceModel: DistanceAttenuationCurve;
+    private proximityZoneConfig: ProximityBoundaryZoneConfig;
 
     private masterGainNode: GainNode;
     private isMuted: boolean = false;
@@ -29,12 +41,17 @@ export class SpatialAudioPanner {
     public readonly maxDistance = 100;
     public readonly rolloffFactor = 1;
 
-    constructor(audioContext: AudioContext, initialDistanceModel: DistanceAttenuationCurve = 'inverse') {
+    constructor(
+        audioContext: AudioContext,
+        initialDistanceModel: DistanceAttenuationCurve = 'inverse',
+        proximityZoneConfig?: Partial<ProximityBoundaryZoneConfig>
+    ) {
         this.audioContext = audioContext;
         this.peers = new Map();
         this.listener = audioContext.listener;
         this.listenerPosition = { x: 0, y: 0, z: 0 };
         this.distanceModel = initialDistanceModel;
+        this.proximityZoneConfig = sanitizeProximityZoneConfig(proximityZoneConfig);
 
         // Initialize master listener GainNode routed to destination
         this.masterGainNode = audioContext.createGain();
@@ -75,8 +92,42 @@ export class SpatialAudioPanner {
     }
 
     /**
+     * Updates configurable proximity boundary zone parameters and recalculates active peer gains.
+     */
+    public setProximityBoundaryZone(config: Partial<ProximityBoundaryZoneConfig>): ProximityBoundaryZoneConfig {
+        this.proximityZoneConfig = sanitizeProximityZoneConfig({
+            ...this.proximityZoneConfig,
+            ...config,
+        });
+        this.recalculateAllPeerAttenuations();
+        return this.getProximityBoundaryZone();
+    }
+
+    public getProximityBoundaryZone(): ProximityBoundaryZoneConfig {
+        return { ...this.proximityZoneConfig };
+    }
+
+    public setProximityZonePreset(presetId: ProximityZonePresetId): ProximityBoundaryZoneConfig {
+        if (presetId in PROXIMITY_ZONE_PRESETS) {
+            const preset = PROXIMITY_ZONE_PRESETS[presetId as keyof typeof PROXIMITY_ZONE_PRESETS];
+            return this.setProximityBoundaryZone(preset);
+        }
+        return this.getProximityBoundaryZone();
+    }
+
+    public recalculateAllPeerAttenuations(): void {
+        for (const peer of this.peers.values()) {
+            if (peer.gainNode) {
+                const clampedGain = this.calculateDistanceAttenuation(peer.position, this.listenerPosition);
+                peer.gainNode.gain.setValueAtTime(clampedGain, this.audioContext.currentTime);
+            }
+        }
+    }
+
+    /**
      * Calculates distance attenuation gain clamped strictly between 0.0 and 1.0.
-     * Supports both 'linear' and 'inverse' attenuation curves.
+     * Supports both 'linear' and 'inverse' attenuation curves combined with
+     * configurable audio proximity fade-out boundary zones.
      * Guards against negative values when distance exceeds max range, and protects against NaN (#5597).
      */
     public calculateDistanceAttenuation(
@@ -113,6 +164,12 @@ export class SpatialAudioPanner {
             // gain = refDistance / (refDistance + rolloffFactor * (max(distance, refDistance) - refDistance))
             const clampedDistance = Math.min(Math.max(distance, this.refDistance), this.maxDistance);
             calculatedGain = this.refDistance / (this.refDistance + this.rolloffFactor * (clampedDistance - this.refDistance));
+        }
+
+        // Apply configurable audio proximity fade-out boundary zone
+        if (this.proximityZoneConfig && this.proximityZoneConfig.enabled) {
+            const proximityFactor = calculateProximityFadeGain(distance, this.proximityZoneConfig);
+            calculatedGain = calculatedGain * proximityFactor;
         }
 
         // Strict clamp to [0.0, 1.0] and NaN check

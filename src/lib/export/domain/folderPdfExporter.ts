@@ -10,6 +10,7 @@ import {
   safeText,
 } from "../pdfBuilder";
 import { rgb } from "pdf-lib";
+import { wrapText } from "@/lib/pdf/generateBookingPdf";
 
 export type FolderPdfVenue = {
   name: string;
@@ -19,12 +20,21 @@ export type FolderPdfVenue = {
   address?: string | null;
 };
 
-export async function generateFolderSummaryPdf(options: {
-  folderName: string;
+export async function generateFolderSummaryPdf(options?: {
+  folderName?: string;
   folderDescription?: string | null;
-  venues: FolderPdfVenue[];
+  venues?: FolderPdfVenue[];
 }): Promise<Uint8Array> {
-  const { folderName, folderDescription, venues } = options;
+  const safeOptions = options || {};
+  const folderName = safeOptions.folderName
+    ? String(safeOptions.folderName).trim()
+    : "Workspace Collection";
+  const folderDescription = safeOptions.folderDescription
+    ? String(safeOptions.folderDescription).trim()
+    : null;
+  const venues = Array.isArray(safeOptions.venues)
+    ? safeOptions.venues.filter((v): v is FolderPdfVenue => v != null)
+    : [];
 
   const builder = await PdfDocumentBuilder.create({
     accentColor: { r: 0.23, g: 0.51, b: 0.96 },
@@ -34,6 +44,7 @@ export async function generateFolderSummaryPdf(options: {
 
   const { boldFont, font } = builder;
   const margin = builder.margin;
+  const availableWidth = builder.pageWidth - margin * 2;
 
   // Header Title
   builder.drawHeading("WorkSphere Collection Report", undefined, {
@@ -48,11 +59,21 @@ export async function generateFolderSummaryPdf(options: {
   });
 
   if (folderDescription) {
-    builder.drawText(safeText(folderDescription).slice(0, 90), {
-      size: 10,
+    const descLines = wrapText(
+      safeText(folderDescription),
       font,
-      color: rgb(0.4, 0.4, 0.4),
-    });
+      10,
+      availableWidth,
+    );
+    for (const dLine of descLines) {
+      builder.ensureSpace(14);
+      builder.drawText(dLine, {
+        size: 10,
+        font,
+        color: rgb(0.4, 0.4, 0.4),
+        decrementY: 14,
+      });
+    }
   }
 
   builder.drawText(
@@ -66,17 +87,33 @@ export async function generateFolderSummaryPdf(options: {
 
   builder.drawDivider();
 
+  if (venues.length === 0) {
+    builder.ensureSpace(50);
+    builder.drawText("No venues saved in this collection yet.", {
+      size: 10,
+      font,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+    builder.addPageNumbers();
+    return await builder.build();
+  }
+
   // Venues List
   for (const v of venues) {
-    builder.ensureSpace(55);
+    builder.ensureSpace(50);
 
-    builder.drawText(safeText(v.name), {
+    const venueName = v.name ? String(v.name) : "Unnamed Workspace";
+    builder.drawText(safeText(venueName), {
       size: 11,
       font: boldFont,
       color: rgb(0.1, 0.1, 0.1),
     });
 
-    const wifiStr = v.wifiQuality ? `★ ${v.wifiQuality}/5 WiFi` : "WiFi: N/A";
+    const isNumericWifi =
+      typeof v.wifiQuality === "number" &&
+      Number.isFinite(v.wifiQuality) &&
+      v.wifiQuality >= 0;
+    const wifiStr = isNumericWifi ? `★ ${v.wifiQuality}/5 WiFi` : "WiFi: N/A";
     const outletStr = v.hasOutlets ? "Power Outlets Available" : "No Outlets";
     builder.drawText(`${wifiStr}  ·  ${outletStr}`, {
       size: 9,
@@ -85,19 +122,43 @@ export async function generateFolderSummaryPdf(options: {
     });
 
     if (v.address) {
-      builder.drawText(safeText(v.address).slice(0, 80), {
-        size: 8,
+      const addressStr =
+        typeof v.address === "string" ? v.address : String(v.address);
+      const addressLines = wrapText(
+        safeText(addressStr),
         font,
-        color: rgb(0.5, 0.5, 0.5),
-      });
+        8,
+        availableWidth,
+      );
+      for (const aLine of addressLines) {
+        builder.ensureSpace(12);
+        builder.drawText(aLine, {
+          size: 8,
+          font,
+          color: rgb(0.5, 0.5, 0.5),
+          decrementY: 12,
+        });
+      }
     }
 
     if (v.notes) {
-      builder.drawText(`Notes: ${safeText(v.notes).slice(0, 100)}`, {
-        size: 8,
+      const notesStr =
+        typeof v.notes === "string" ? v.notes : String(v.notes);
+      const noteLines = wrapText(
+        safeText(`Notes: ${notesStr}`),
         font,
-        color: rgb(0.35, 0.35, 0.35),
-      });
+        8,
+        availableWidth,
+      );
+      for (const nLine of noteLines) {
+        builder.ensureSpace(12);
+        builder.drawText(nLine, {
+          size: 8,
+          font,
+          color: rgb(0.35, 0.35, 0.35),
+          decrementY: 12,
+        });
+      }
     }
 
     builder.currentY -= 6;

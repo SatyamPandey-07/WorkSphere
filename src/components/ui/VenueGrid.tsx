@@ -2,6 +2,7 @@
 
 import React, { ReactNode } from "react";
 import { motion, MotionProps } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 /**
  * ARCHITECTURAL FIX: Issue #1037
@@ -21,26 +22,28 @@ import { motion, MotionProps } from "framer-motion";
  *    This decouples motion calculations from fluid grid item reflows while maintaining perfect visual bounds.
  */
 
-interface LayoutBoundaryProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface LayoutBoundaryProps extends React.HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   className?: string;
   /** Height or aspect ratio configuration to preserve static space during layout transitions */
   minHeight?: string | number;
+  "data-testid"?: string;
 }
 
 export const LayoutBoundary = React.forwardRef<
   HTMLDivElement,
   LayoutBoundaryProps
->(({ children, className = "", minHeight, style, ...props }, ref) => {
+>(({ children, className = "", minHeight, style, "data-testid": dataTestId = "layout-boundary", ...props }, ref) => {
   return (
     <div
       ref={ref}
+      data-testid={dataTestId}
       style={{
         position: "relative",
         minHeight,
         ...style,
       }}
-      className={`w-full min-w-0 ${className}`}
+      className={cn("w-full min-w-0", className)}
       {...props}
     >
       {children}
@@ -49,22 +52,24 @@ export const LayoutBoundary = React.forwardRef<
 });
 LayoutBoundary.displayName = "LayoutBoundary";
 
-interface AnimatedLayoutChildProps
+export interface AnimatedLayoutChildProps
   extends
     MotionProps,
     Omit<React.HTMLAttributes<HTMLDivElement>, keyof MotionProps> {
   children: ReactNode;
   className?: string;
   layoutId?: string;
+  "data-testid"?: string;
 }
 
 export const AnimatedLayoutChild = React.forwardRef<
   HTMLDivElement,
   AnimatedLayoutChildProps
->(({ children, className = "", layoutId, style, ...props }, ref) => {
+>(({ children, className = "", layoutId, style, "data-testid": dataTestId = "animated-layout-child", ...props }, ref) => {
   return (
     <motion.div
       ref={ref}
+      data-testid={dataTestId}
       layoutId={layoutId}
       layout
       style={{
@@ -74,7 +79,7 @@ export const AnimatedLayoutChild = React.forwardRef<
         height: "100%",
         ...style,
       }}
-      className={`min-w-0 [transform:translate3d(0,0,0)] ${className}`}
+      className={cn("min-w-0 [transform:translate3d(0,0,0)]", className)}
       {...props}
     >
       {children}
@@ -91,11 +96,12 @@ AnimatedLayoutChild.displayName = "AnimatedLayoutChild";
  * - Enables CSS `subgrid` for rows when supported, aligning header, body, and action buttons across rows
  * - Safe fallback for browsers without subgrid
  */
-interface VenueGridProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface VenueGridProps extends React.HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   viewMode?: "card" | "list";
   useSubgrid?: boolean;
   className?: string;
+  "data-testid"?: string;
 }
 
 export function VenueGrid({
@@ -103,11 +109,16 @@ export function VenueGrid({
   viewMode = "card",
   useSubgrid = true,
   className = "",
+  "data-testid": dataTestId,
   ...props
 }: VenueGridProps) {
   if (viewMode === "list") {
     return (
-      <div className={`space-y-2 w-full min-w-0 ${className}`} {...props}>
+      <div
+        data-testid={dataTestId || "venue-listings-list"}
+        className={cn("space-y-2 w-full min-w-0", className)}
+        {...props}
+      >
         {children}
       </div>
     );
@@ -120,8 +131,12 @@ export function VenueGrid({
 
   return (
     <div
-      className={`@container min-w-0 w-full [transform:translate3d(0,0,0)] ${gridClasses} ${className}`}
-      data-testid="venue-listings-grid"
+      data-testid={dataTestId || "venue-listings-grid"}
+      className={cn(
+        "@container min-w-0 w-full [transform:translate3d(0,0,0)]",
+        gridClasses,
+        className
+      )}
       {...props}
     >
       {children}
@@ -132,22 +147,24 @@ export function VenueGrid({
 /**
  * Subgrid Cell Wrapper for Cards inside VenueGrid
  */
-interface SubgridCellProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface SubgridCellProps extends React.HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   className?: string;
+  "data-testid"?: string;
 }
 
 export const SubgridCell = React.forwardRef<HTMLDivElement, SubgridCellProps>(
-  ({ children, className = "", style, ...props }, ref) => {
+  ({ children, className = "", style, "data-testid": dataTestId = "subgrid-cell", ...props }, ref) => {
     return (
       <div
         ref={ref}
+        data-testid={dataTestId}
         style={{
           // Use subgrid rows when enabled in browser
           gridRow: "span 1",
           ...style,
         }}
-        className={`w-full min-w-0 ${className}`}
+        className={cn("w-full min-w-0", className)}
         {...props}
       >
         {children}
@@ -156,3 +173,5 @@ export const SubgridCell = React.forwardRef<HTMLDivElement, SubgridCellProps>(
   },
 );
 SubgridCell.displayName = "SubgridCell";
+
+export default VenueGrid;

@@ -23,19 +23,20 @@ export class TokenBucketLimiter implements IRateLimiter {
   private memoryStore: MemoryRateLimitStore;
 
   constructor(options: TokenBucketOptions) {
-    this.limit = options.limit;
-    this.windowMs = options.windowMs;
+    this.limit = Number.isFinite(options.limit) && options.limit > 0 ? options.limit : 10;
+    this.windowMs = Number.isFinite(options.windowMs) && options.windowMs > 0 ? options.windowMs : 60_000;
     this.interval = options.interval || "1 m";
     this.name = options.name || "default";
     this.memoryStore = options.store || defaultMemoryStore;
   }
 
   async consume(key: string, points = 1): Promise<RateLimitResult> {
-    const distributedResult = await this.checkDistributed(key, points);
+    const safePoints = Number.isFinite(points) && points >= 1 ? Math.floor(points) : 1;
+    const distributedResult = await this.checkDistributed(key, safePoints);
     if (distributedResult !== null) {
       return distributedResult;
     }
-    return this.consumeMemory(key, points);
+    return this.consumeMemory(key, safePoints);
   }
 
   private async checkDistributed(
@@ -209,7 +210,8 @@ export class TokenBucketLimiter implements IRateLimiter {
     );
 
     const remaining = Math.max(0, Math.floor(currentTokens));
-    const timeToNextTokenMs = Math.ceil(((Math.max(1, 1 - currentTokens)) / this.limit) * this.windowMs);
+    const needed = Math.max(0, 1 - currentTokens);
+    const timeToNextTokenMs = Math.ceil((needed / this.limit) * this.windowMs);
     return {
       success: currentTokens >= 1,
       limit: this.limit,

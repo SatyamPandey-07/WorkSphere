@@ -87,3 +87,4 @@ describe("VenueFilterBar Component", () => {
     });
   });
 });
+

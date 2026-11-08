@@ -34,6 +34,8 @@ import {
 } from "@/lib/wellness/ergonomicCoachEngine";
 import { ErgonomicChimeSynthesizer } from "@/lib/audio/ErgonomicChimeSynthesizer";
 import { FocusTrap } from "@/components/ui/FocusTrap";
+import { calculateSitStandRatio } from "@/lib/wellness/deskPostureAnalytics";
+import SitStandRatioAnalytics from "./SitStandRatioAnalytics";
 
 export default function DynamicErgonomicCoach() {
   const [session, setSession] = useState<ErgonomicSessionState>({
@@ -1258,7 +1260,7 @@ export default function DynamicErgonomicCoach() {
           currentPostureState={session.currentPostureState}
           transitionsCount={session.transitionsCount || 0}
           onTogglePosture={togglePostureState}
-          onUpdateTimes={(sit, stand) =>
+          onUpdateTimes={(sit: number, stand: number) =>
             setSession((s) => ({
               ...s,
               totalSittingSeconds: sit,

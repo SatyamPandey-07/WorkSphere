@@ -58,7 +58,7 @@
     "pg": "^8.23.0",
     "prisma": "^7.10.1",
     "radix-ui": "^1.6.7",
-    "react": "19.3.0",
+    "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-easy-crop": "^6.2.4",
     "react-i18next": "^17.0.15",

@@ -147,12 +147,18 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+ feature/partykit-agent-monitor
+  const tileLayerUrl = isHighContrast
+    ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
   const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
   const tileLayerUrl = cartoKey
     ? isHighContrast
       ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
     : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+ main
 
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {

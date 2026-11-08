@@ -1,18 +1,26 @@
 pragma circom 2.0.0;
 
-// Prove knowledge of a private identity token that binds to a public
-// membership commitment — token never leaves the prover.
+include "circomlib/circuits/poseidon.circom";
+
 template PremiumMembership() {
     signal input identityToken;
     signal input expectedCommit;
 
-    signal t2;
-    t2 <== identityToken * identityToken;
+    component hash = Poseidon(1);
+    hash.inputs[0] <== identityToken;
+    expectedCommit === hash.out;
+}
 
-    // commit = token^2 + 5*token + 17
-    signal commit;
-    commit <== t2 + identityToken * 5 + 17;
-    expectedCommit === commit;
+template MultiVenueClusterMembership(nVenues) {
+    signal input venueIds[nVenues];
+    signal input clusterMerkleRoot;
+    signal output validClusterHash;
+
+    component poseidon = Poseidon(nVenues);
+    for (var i = 0; i < nVenues; i++) {
+        poseidon.inputs[i] <== venueIds[i];
+    }
+    validClusterHash <== poseidon.out;
 }
 
 component main {public [expectedCommit]} = PremiumMembership();

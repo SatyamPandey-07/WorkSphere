@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
-import { checkPartitionHealth } from "../../../../../lib/partitionMaintenance";
+import { getAllVenuePartitions } from "@/lib/adminPartitionService";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const healthReport = await checkPartitionHealth();
+    const summary = await getAllVenuePartitions();
+    const statusCode = summary.status === "CRITICAL" ? 500 : 200;
 
-    const statusCode = healthReport.status === "CRITICAL" ? 500 : 200;
-
-    return NextResponse.json(healthReport, { status: statusCode });
+    return NextResponse.json(summary, { status: statusCode });
   } catch (error) {
-    console.error("Failed to fetch partition health report:", error);
+    console.error("Failed to fetch partition summary report:", error);
     return NextResponse.json(
       { error: "Internal Server Error monitoring partitions" },
       { status: 500 },

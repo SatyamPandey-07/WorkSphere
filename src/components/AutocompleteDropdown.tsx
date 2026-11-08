@@ -77,6 +77,18 @@ const SUGGESTION_CATEGORIES = {
   },
 };
 
+/**
+ * Escapes regex reserved characters in user query strings to prevent SyntaxErrors
+ * when constructing dynamic regular expressions.
+ */
+export function escapeRegex(query: string): string {
+  if (typeof query !== "string") return "";
+  return query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export const escapeRegExp = escapeRegex;
+export const sanitizeQuery = escapeRegex;
+
 export function AutocompleteDropdown({
   input,
   isOpen,
@@ -102,17 +114,33 @@ export function AutocompleteDropdown({
       return;
     }
 
+    const sanitized = escapeRegex(input.trim());
+    let regex: RegExp;
+    try {
+      regex = new RegExp(sanitized, "i");
+    } catch {
+      regex = new RegExp(escapeRegex(input.trim()), "i");
+    }
+
     const lowerInput = input.toLowerCase();
     const filtered: typeof filteredSuggestions = [];
 
     Object.entries(SUGGESTION_CATEGORIES).forEach(([categoryKey, category]) => {
-      const matchingSuggestions = category.suggestions.filter((suggestion) =>
-        suggestion.keywords.some(
+      const matchingSuggestions = category.suggestions.filter((suggestion) => {
+        const textMatches =
+          regex.test(suggestion.text) ||
+          suggestion.text.toLowerCase().includes(lowerInput) ||
+          lowerInput.includes(suggestion.text.toLowerCase());
+
+        const keywordMatches = suggestion.keywords.some(
           (keyword) =>
+            regex.test(keyword) ||
             keyword.toLowerCase().includes(lowerInput) ||
             lowerInput.includes(keyword.toLowerCase()),
-        ),
-      );
+        );
+
+        return textMatches || keywordMatches;
+      });
 
       if (matchingSuggestions.length > 0) {
         filtered.push({

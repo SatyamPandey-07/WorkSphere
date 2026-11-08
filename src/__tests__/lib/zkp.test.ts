@@ -3,12 +3,14 @@
  */
 import crypto from "crypto";
 import { computeMembershipCommit } from "@/lib/zkp/commitment";
+import { poseidonHash, BN254_SCALAR_FIELD } from "@/lib/zkp/poseidon";
 import { isAllowedCommit, isPremiumVenue } from "@/lib/zkp/membership";
 import { proveMembership, verifyMembershipProof } from "@/lib/zkp/verify";
 import {
   hashPair,
   buildMerkleTree,
   isCommitmentRevokedDirectly,
+  REVOKED_CREDENTIAL_HASHES,
 } from "@/lib/zkp/revocation";
 
 afterAll(async () => {
@@ -18,24 +20,61 @@ afterAll(async () => {
   if (g.curve_bn128) await g.curve_bn128.terminate();
 });
 
+describe("poseidon hash", () => {
+  // Published circomlib / circomlibjs test vectors. If these fail, the TypeScript
+  // hash no longer matches circuits/premium_membership.circom.
+  it("matches the circomlib vector for Poseidon([1])", () => {
+    expect(poseidonHash([1n]).toString()).toBe(
+      "18586133768512220936620570745912940619677854269274689475585506675881198879027",
+    );
+  });
+
+  it("matches the circomlib vector for Poseidon([1, 2])", () => {
+    expect(poseidonHash([1n, 2n]).toString()).toBe(
+      "7853200120776062878684798364095072458815029376092732009249414926327459813530",
+    );
+  });
+
+  it("reduces inputs into the field like a circom signal", () => {
+    expect(poseidonHash([-1n])).toBe(poseidonHash([BN254_SCALAR_FIELD - 1n]));
+    expect(poseidonHash([5n])).toBe(poseidonHash([5n + BN254_SCALAR_FIELD]));
+  });
+
+  it("rejects empty and unsupported-width inputs", () => {
+    expect(() => poseidonHash([])).toThrow();
+    expect(() => poseidonHash([1n, 2n, 3n, 4n, 5n])).toThrow();
+  });
+});
+
 describe("zkp commitment", () => {
-  it("matches the circom binding for a known token", () => {
-    // 42^2 + 5*42 + 17 = 1764 + 210 + 17 = 1991
-    expect(computeMembershipCommit(42)).toBe("1991");
+  it("matches the circom binding (Poseidon) for a known token", () => {
+    expect(computeMembershipCommit(42)).toBe(
+      "12326503012965816391338144612242952408728683609716147019497703475006801258307",
+    );
+  });
+
+  it("is exactly Poseidon(token), the value the circuit constrains", () => {
+    expect(computeMembershipCommit(1)).toBe(poseidonHash([1n]).toString());
   });
 
   it("handles zero token", () => {
-    // 0^2 + 5*0 + 17 = 17
-    expect(computeMembershipCommit(0)).toBe("17");
+    expect(computeMembershipCommit(0)).toBe(
+      "19014214495641488759237505126948346942972912379615652741039992445865937985820",
+    );
   });
 
   it("handles string input", () => {
-    expect(computeMembershipCommit("42")).toBe("1991");
+    expect(computeMembershipCommit("42")).toBe(computeMembershipCommit(42));
   });
 
-  it("handles negative token", () => {
-    // (-1)^2 + 5*(-1) + 17 = 1 - 5 + 17 = 13
-    expect(computeMembershipCommit(-1)).toBe("13");
+  it("handles negative token by reducing into the field", () => {
+    expect(computeMembershipCommit(-1)).toBe(
+      computeMembershipCommit(BN254_SCALAR_FIELD - 1n),
+    );
+  });
+
+  it("is not the old invertible polynomial t^2 + 5t + 17", () => {
+    expect(computeMembershipCommit(42)).not.toBe("1991");
   });
 });
 
@@ -127,7 +166,14 @@ describe("revocation", () => {
     // The dummy revoked hash
     expect(isCommitmentRevokedDirectly("12345678901234567890")).toBe(true);
     // The commitment for token 12345678
-    expect(isCommitmentRevokedDirectly("152415827008091")).toBe(true);
+    expect(
+      isCommitmentRevokedDirectly(computeMembershipCommit(12345678)),
+    ).toBe(true);
+    expect(REVOKED_CREDENTIAL_HASHES).toContain(
+      computeMembershipCommit(12345678),
+    );
+    // The retired polynomial commitment must no longer be treated as revoked
+    expect(isCommitmentRevokedDirectly("152415827008091")).toBe(false);
     // A random non-revoked commitment
     expect(isCommitmentRevokedDirectly("999999999")).toBe(false);
   });

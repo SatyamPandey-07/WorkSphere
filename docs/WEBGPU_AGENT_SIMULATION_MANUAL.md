@@ -124,6 +124,64 @@ struct Agent {
 
 The compute shader runs one thread per agent at `@workgroup_size(256)`. Each thread reads from `agentsIn` and writes to `agentsOut` (ping-pong buffers).
 
+### Compute Pass Workgroup Architecture
+
+```mermaid
+flowchart TD
+    A["CPU: encoder.beginComputePass()"] --> B["setPipeline(crowdComputePipeline)"]
+    B --> C["setBindGroup(0, bindGroupEven)"]
+    C --> D["dispatchWorkgroups(⌈agentCount / 256⌉, 1, 1)"]
+    D --> E["Each workgroup: 256 threads"]
+    E --> F1["Thread 0–255: read agentsIn[id]"]
+    E --> F2["Thread 0–255: read SimParams uniform"]
+    F1 --> G["Compute Boids forces\n(separation + alignment + cohesion)"]
+    F2 --> G
+    G --> H["Apply flow-field force toward nearest exit"]
+    H --> I["Integrate velocity → new position"]
+    I --> J["Write to agentsOut[id]"]
+    J --> K["encoder.endComputePass()"]
+    K --> L["Swap ping-pong buffers\n(even → odd, odd → even)"]
+```
+
+### Buffer Layout
+
+Each agent occupies **32 bytes** in the `agentsIn` / `agentsOut` storage buffers:
+
+| Offset | Size | Type | Field | Description |
+|--------|------|------|-------|-------------|
+| 0 | 4 | `f32` | `posX` | World-space X position |
+| 4 | 4 | `f32` | `posY` | World-space Y position |
+| 8 | 4 | `f32` | `velX` | Velocity X (px/frame) |
+| 12 | 4 | `f32` | `velY` | Velocity Y (px/frame) |
+| 16 | 4 | `f32` | `exitVecX` | Pre-computed flow-field X |
+| 20 | 4 | `f32` | `exitVecY` | Pre-computed flow-field Y |
+| 24 | 4 | `u32` | `state` | 0=active, 1=exiting, 2=evacuated |
+| 28 | 4 | `f32` | `_pad` | Alignment padding |
+
+The `SimParams` uniform buffer layout:
+
+| Offset | Size | Type | Field |
+|--------|------|------|-------|
+| 0 | 4 | `f32` | `separationRadius` |
+| 4 | 4 | `f32` | `alignmentRadius` |
+| 8 | 4 | `f32` | `cohesionRadius` |
+| 12 | 4 | `f32` | `maxSpeed` |
+| 16 | 4 | `f32` | `maxForce` |
+| 20 | 4 | `f32` | `exitAttractionWeight` |
+| 24 | 4 | `u32` | `agentCount` |
+| 28 | 4 | `f32` | `deltaTime` |
+
+### Boids Simulation Constants
+
+| Constant | Default | Effect |
+|----------|---------|--------|
+| `separationRadius` | 15.0 | Distance below which agents push apart |
+| `alignmentRadius` | 30.0 | Distance within which velocities are averaged |
+| `cohesionRadius` | 30.0 | Distance for center-of-mass attraction |
+| `maxSpeed` | 2.5 | Maximum agent velocity (world units/frame) |
+| `maxForce` | 0.2 | Maximum steering force per frame |
+| `exitAttractionWeight` | 1.5 | Relative weight of exit flow vs. Boids forces |
+
 ### Bindings
 
 | Binding       | Type                  | Content                                      |

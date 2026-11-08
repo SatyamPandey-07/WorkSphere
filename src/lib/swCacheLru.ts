@@ -68,6 +68,10 @@ export async function cachePutWithLruLimit(
  * Checks navigator.storage.estimate() to determine if sufficient storage quota is available
  * before performing CacheStorage writes (e.g. pre-fetching venue video tours or large media).
  * Prevents QuotaExceededError crashes on mobile browsers (e.g. Android Chrome).
+ *
+ * iOS Safari in Private Browsing / Strict Privacy mode may reject the estimate() promise or
+ * return unrealistic quota values (e.g. Number.MAX_SAFE_INTEGER). Both cases are handled
+ * gracefully by returning `true` (assume sufficient) when the estimate is unavailable.
  */
 export async function hasSufficientStorageQuota(
   requiredBytes: number = 0,
@@ -79,13 +83,28 @@ export async function hasSufficientStorageQuota(
   ) {
     try {
       const estimate = await navigator.storage.estimate();
-      if (estimate.quota !== undefined && estimate.usage !== undefined) {
-        const availableBytes = estimate.quota - estimate.usage;
+      const quota = estimate.quota;
+      const usage = estimate.usage;
+
+      if (
+        quota !== undefined &&
+        usage !== undefined &&
+        Number.isFinite(quota) &&
+        Number.isFinite(usage) &&
+        quota > 0
+      ) {
+        const availableBytes = quota - usage;
+        // Guard against negative/NaN results from corrupt estimates
+        if (!Number.isFinite(availableBytes) || availableBytes < 0) {
+          return true;
+        }
         const minRequiredBuffer = Math.max(requiredBytes, 5 * 1024 * 1024);
         return availableBytes >= minRequiredBuffer;
       }
     } catch (err) {
-      console.warn("[SW] Failed to estimate storage quota:", err);
+      // iOS Safari Private Browsing and Strict Privacy modes reject the promise.
+      // Fall through to the default `true` so offline caching is not blocked.
+      console.warn("[SW] Failed to estimate storage quota (may be iOS Private Browsing):", err);
     }
   }
   return true;

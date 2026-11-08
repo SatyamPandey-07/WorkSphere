@@ -1,5 +1,7 @@
 import { NextResponse, after } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
+import { randomBytes } from "crypto";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { eventBus } from "@/core/events";
@@ -9,188 +11,232 @@ import "@/core/subscribers/whatsapp";
 import "@/core/subscribers/guests";
 import "@/core/subscribers/telegram";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import {
+  isValidBookingDate,
+  isValidTimeZone,
+  normalizeBookingTime,
+  parseBookingDateTime,
+} from "@/lib/bookingTime";
+import { emitWebhookEvent } from "@/lib/webhooks/deliver";
+import { resolveVenue } from "@/lib/venueResolver";
+
+const MAX_OCCURRENCES = 31;
+// Allow booking a slot that started a few minutes ago (walk-ins).
+const PAST_GRACE_MS = 15 * 60 * 1000;
+
+const venueSchema = z.object({
+  id: z.string().min(1).max(200),
+  placeId: z.string().min(1).max(200).optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+  address: z.string().max(500).nullable().optional(),
+  category: z.string().max(50).optional(),
+  latitude: z.number().finite().optional(),
+  longitude: z.number().finite().optional(),
+  lat: z.number().finite().optional(),
+  lng: z.number().finite().optional(),
+});
+
+const bodySchema = z.object({
+  venue: venueSchema,
+  date: z.string().optional(),
+  dates: z.array(z.string()).max(MAX_OCCURRENCES).optional(),
+  time: z.string().min(1),
+  timeZone: z.string().optional(),
+  customerEmail: z.string().trim().max(254).optional().nullable(),
+  customerPhone: z.string().trim().max(32).optional().nullable(),
+  projectBillingCode: z.string().trim().max(64).optional().nullable(),
+});
+
+function newConfirmationId(): string {
+  return `WS-${randomBytes(4).toString("hex").toUpperCase()}`;
+}
+
+function badRequest(error: string) {
+  return NextResponse.json({ success: false, error }, { status: 400 });
+}
 
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();
-    const forwarded = req.headers.get("x-forwarded-for");
-    const identifier = `book:${userId || forwarded?.split(",")[0] || "anonymous"}`;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
+    const identifier = `book:${userId}`;
     if (!(await rateLimit(identifier, 5))) {
       const info = await getRateLimitInfo(identifier, 5);
       const retryAfter = info?.resetTime
         ? Math.ceil((info.resetTime - Date.now()) / 1000)
         : 60;
-      const resetTimeSec = info?.resetTime
-        ? Math.ceil(info.resetTime / 1000)
-        : Math.ceil((Date.now() + 60000) / 1000);
-
       return NextResponse.json(
         {
           error:
-            "Rate limit exceeded. Please wait before making more bookings.",
-          retryAfterSeconds: retryAfter,
+            "Rate limit exceeded. Too many bookings in a short time — please wait a moment.",
           retryAfter,
+          retryAfterSeconds: retryAfter,
         },
         {
           status: 429,
           headers: {
             "Retry-After": String(retryAfter),
-            "X-RateLimit-Reset": String(resetTimeSec),
+            "X-RateLimit-Reset": String(
+              Math.ceil(Date.now() / 1000) + retryAfter,
+            ),
           },
         },
       );
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // 0. Ensure Identity 💎
     await ensureUserExists(userId);
 
-    const {
-      venue,
-      date,
-      dates: inputDates,
-      time,
-      customerEmail,
-      customerPhone,
-      projectBillingCode,
-    } = await req.json();
+    const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return badRequest("Please check the booking details and try again.");
+    }
+    const body = parsed.data;
 
+    const time = normalizeBookingTime(body.time);
+    if (!time) return badRequest("Please choose a valid arrival time.");
+
+    const timeZone = isValidTimeZone(body.timeZone) ? body.timeZone : "UTC";
+    const dates = Array.from(
+      new Set(body.dates?.length ? body.dates : body.date ? [body.date] : []),
+    );
+    if (dates.length === 0) return badRequest("Please choose a date.");
+    if (!dates.every(isValidBookingDate)) {
+      return badRequest("One of the selected dates is invalid.");
+    }
+
+    const earliest = Date.now() - PAST_GRACE_MS;
+    for (const date of dates) {
+      const startsAt = parseBookingDateTime(date, time, timeZone);
+      if (!startsAt || startsAt.getTime() < earliest) {
+        return badRequest("You can't book a time in the past.");
+      }
+    }
+
+    let customerEmail = body.customerEmail?.trim() || "";
+    if (!customerEmail) {
+      const user = await currentUser();
+      customerEmail = user?.primaryEmailAddress?.emailAddress ?? "";
+    }
+    if (!z.string().email().safeParse(customerEmail).success) {
+      return badRequest("Please enter a valid email for your confirmation.");
+    }
+
+    const venue = await resolveVenue(body.venue);
     if (!venue) {
-      return NextResponse.json(
-        { error: "Missing venue data" },
-        { status: 400 },
-      );
+      return badRequest("We couldn't find that venue. Please search again.");
     }
 
-    const bookingDates = inputDates || (date ? [date] : []);
-    if (bookingDates.length === 0) {
-      return NextResponse.json(
-        { error: "Missing booking dates" },
-        { status: 400 },
-      );
-    }
-
-    const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
-    const targetPlaceId = venue.placeId || venue.id;
-
-    // --- CONCURRENCY FIX IMPLEMENTATION ---
-    // Wrap database steps inside an interactive transaction to prevent key collisions
-    const { bookings, dbVenue } = await prisma.$transaction(async (tx) => {
-      // 0.5 Ensure Venue exists in local ledger via transaction client
-      const localVenue = await tx.venue.upsert({
-        where: { placeId: targetPlaceId },
-        update: {
-          name: venue.name || "Unknown Venue",
-          address: venue.address || null,
-          category: venue.category || "other",
-        },
-        create: {
-          placeId: targetPlaceId,
-          name: venue.name || "Unknown Venue",
-          latitude: venue.latitude || venue.lat || 0,
-          longitude: venue.longitude || venue.lng || 0,
-          category: venue.category || "other",
-          address: venue.address || null,
-        },
-      });
-
-      // Double check race condition inside the isolated transaction window
-      const existingBookings = await tx.booking.findMany({
+    const bookings = await prisma.$transaction(async (tx) => {
+      const duplicates = await tx.booking.findMany({
         where: {
-          venueId: localVenue.id,
-          date: { in: bookingDates },
-          time: time,
+          userId,
+          venueId: venue.id,
+          date: { in: dates },
+          time,
+          status: { not: "CANCELLED" },
         },
+        select: { date: true },
       });
+      if (duplicates.length > 0) {
+        throw new DuplicateBookingError(duplicates.map((d) => d.date));
+      }
 
-      if (existingBookings.length > 0) {
-        throw new Error(
-          "COLLISION: One or more workspace slots have already been claimed by another runtime thread.",
+      const recurringGroupId =
+        dates.length > 1 ? `rg_${randomBytes(8).toString("hex")}` : null;
+
+      const created = [];
+      for (const date of dates.sort()) {
+        created.push(
+          await tx.booking.create({
+            data: {
+              userId,
+              venueId: venue.id,
+              date,
+              time,
+              timeZone,
+              customerEmail,
+              customerPhone: body.customerPhone || null,
+              projectBillingCode: body.projectBillingCode || null,
+              confirmationId: newConfirmationId(),
+              recurringGroupId,
+              status: "CONFIRMED",
+            },
+          }),
         );
       }
-
-      // 1. Persist to Database safely using transaction context
-      const createdBookings = [];
-      for (const d of bookingDates) {
-        const newBooking = await (tx as any).booking.create({
-          data: {
-            userId,
-            venueId: localVenue.id,
-            date: d,
-            time,
-            customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
-            customerPhone: customerPhone || null,
-            projectBillingCode: projectBillingCode || null,
-            confirmationId,
-          },
-        });
-        createdBookings.push(newBooking);
-      }
-
-      return { bookings: createdBookings, dbVenue: localVenue };
+      return created;
     });
-    // --- END OF FIX ---
 
-    // 2. Emit Booking Confirmed Event to handle Side-Effects (PDF, Email, Analytics)
-    // --- ASYNC PDF FIX IMPLEMENTATION (#518) ---
+    // Side effects (receipt email, chat integrations, webhooks) run after the response.
     const runBackground = async () => {
-      try {
-        for (const booking of bookings) {
+      for (const booking of bookings) {
+        try {
           await eventBus.emit("booking:confirmed", {
             bookingId: booking.id,
-            confirmationId,
+            confirmationId: booking.confirmationId,
             venue: {
-              id: dbVenue.id,
-              name: venue.name || "Unknown Venue",
-              category: venue.category || "other",
+              id: venue.id,
+              name: venue.name,
+              category: venue.category,
               address: venue.address || undefined,
             },
-            customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
+            customerEmail,
             date: booking.date,
             time,
           });
+        } catch (err) {
+          console.error("[bookings/confirm] event handler failed:", err);
         }
-      } catch (backgroundError) {
-        console.error("[Background Event Bus Error]:", backgroundError);
       }
     };
-
     try {
       after(runBackground);
     } catch {
       void runBackground();
     }
-    // --- END OF ASYNC PDF FIX ---
+
+    for (const booking of bookings) {
+      emitWebhookEvent(userId, "BOOKING_CONFIRMED", {
+        bookingId: booking.id,
+        confirmationId: booking.confirmationId,
+        venue: { id: venue.id, name: venue.name, address: venue.address },
+        date: booking.date,
+        time: booking.time,
+        timeZone,
+      });
+    }
 
     return NextResponse.json({
       success: true,
       bookingId: bookings[0].id,
-      bookingIds: bookings.map((b: any) => b.id),
-      confirmationId,
+      bookingIds: bookings.map((b) => b.id),
+      confirmationId: bookings[0].confirmationId,
+      confirmationIds: bookings.map((b) => b.confirmationId),
+      venueId: venue.id,
     });
-  } catch (error: any) {
-    console.error("[Booking API Critical Failure]:", error);
-
-    if (error.code === "P2002" || error.message?.includes("COLLISION")) {
+  } catch (error) {
+    if (error instanceof DuplicateBookingError) {
       return NextResponse.json(
         {
           success: false,
-          error: "This time slot was just booked. Please select another.",
+          error: `You already have a booking here at that time (${error.dates.join(", ")}).`,
         },
         { status: 409 },
       );
     }
-
+    console.error("[bookings/confirm] failed:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Confirmation failed. Please try again.",
-      },
+      { success: false, error: "Booking failed. Please try again." },
       { status: 500 },
     );
+  }
+}
+
+class DuplicateBookingError extends Error {
+  constructor(public dates: string[]) {
+    super("Duplicate booking");
   }
 }

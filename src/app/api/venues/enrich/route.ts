@@ -3,6 +3,36 @@ import {
   searchAndEnrichVenues, 
   getVenueDetails,
 } from "@/lib/venues";
+import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+
+function clientIp(req: NextRequest): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    req.headers.get("x-real-ip") ??
+    "anonymous"
+  );
+}
+
+/**
+ * Applies an IP-keyed rate limit and returns a 429 response when exceeded,
+ * otherwise null. The endpoint is public, so it is throttled to protect the
+ * upstream geocoding/photo services from abuse.
+ */
+async function enforceRateLimit(
+  identifier: string,
+  limit: number,
+): Promise<NextResponse | null> {
+  if (await rateLimit(identifier, limit)) return null;
+
+  const info = await getRateLimitInfo(identifier, limit);
+  const retryAfter = info?.resetTime
+    ? Math.ceil((info.resetTime - Date.now()) / 1000)
+    : 60;
+  return NextResponse.json(
+    { error: "Too many enrichment requests. Please try again later.", retryAfter },
+    { status: 429, headers: { "Retry-After": String(retryAfter) } },
+  );
+}
 
 /**
  * GET /api/venues/enrich - Enrich venue with OSM + Unsplash data (FREE, no card)
@@ -13,6 +43,9 @@ import {
  */
 export async function GET(req: NextRequest) {
   try {
+    const limited = await enforceRateLimit(`venues-enrich:${clientIp(req)}`, 30);
+    if (limited) return limited;
+
     const { searchParams } = new URL(req.url);
     const name = searchParams.get("name");
     const lat = searchParams.get("lat");
@@ -62,8 +95,8 @@ export async function GET(req: NextRequest) {
       console.log('[Enrich] No venues found, returning fallback');
       // Return fallback photos even if no venue found
       const fallbackPhotos = [
-        `https://source.unsplash.com/800x600/?cafe-workspace&sig=${Date.now()}`,
-        `https://source.unsplash.com/800x600/?coffee-laptop&sig=${Date.now() + 1}`,
+        `https://picsum.photos/seed/cafe-workspace/800/600`,
+        `https://picsum.photos/seed/coffee-laptop/800/600`,
       ];
       return NextResponse.json({ 
         found: false,
@@ -105,6 +138,12 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
+    const limited = await enforceRateLimit(
+      `venues-enrich-bulk:${clientIp(req)}`,
+      10,
+    );
+    if (limited) return limited;
+
     const body = await req.json();
     const { venues } = body;
 
@@ -130,7 +169,7 @@ export async function POST(req: NextRequest) {
             ...venue, 
             enriched: false,
             photos: [
-              `https://source.unsplash.com/800x600/?workspace&sig=${Date.now()}`,
+              `https://picsum.photos/seed/workspace/800/600`,
             ],
           };
         }

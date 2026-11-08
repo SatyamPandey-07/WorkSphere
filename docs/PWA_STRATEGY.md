@@ -17,7 +17,7 @@ graph TD
 
     subgraph Service Worker (Background)
         SW[sw.js Service Worker]
-        Cache[(Cache Storage: worksphere-v2)]
+        Cache[(Cache Storage: worksphere-v3)]
     end
 
     subgraph Backend Server
@@ -43,7 +43,7 @@ graph TD
 
 ## 2. Service Worker Caching Strategies
 
-The service worker file [sw.js](file:///C:/Users/Rajasekar/.gemini/antigravity/scratch/WorkSphere/public/sw.js) implements cache management using target-specific strategies under the cache namespace `worksphere-v2`.
+The service worker file [sw.js](public/sw.js) implements cache management using target-specific strategies under the cache namespace `worksphere-v3`.
 
 ### Static Asset Precaching
 During the `install` phase, the service worker pre-fetches and caches critical shell assets required to load the application layout:
@@ -57,8 +57,8 @@ For dynamic requests, the fetch listener routes traffic using two primary cachin
 
 | Strategy | Target Assets | Description |
 | :--- | :--- | :--- |
-| **Cache-First** | `tile.openstreetmap.org`<br>`images.unsplash.com` | Maps tile sheets and venue placeholder images are served directly from the cache if present. If absent, they are fetched, written to `worksphere-v2`, and returned. |
-| **Network-First** | Next.js routes, API GET requests, local assets | Requests hit the internet first to retrieve fresh real-time data. On network failure, it falls back to matching cached items, or displays the [offline route](file:///C:/Users/Rajasekar/.gemini/antigravity/scratch/WorkSphere/src/app/offline/page.tsx) for navigation commands. |
+| **Cache-First** | `tile.openstreetmap.org`<br>`images.unsplash.com` | Maps tile sheets and venue placeholder images are served directly from the cache if present. If absent, they are fetched, written to `worksphere-v3`, and returned. |
+| **Network-First** | Next.js routes, API GET requests, local assets | Requests hit the internet first to retrieve fresh real-time data. On network failure, it falls back to matching cached items, or displays the [offline route](src/app/offline/page.tsx) for navigation commands. |
 
 > [!NOTE]
 > All non-`GET` HTTP methods (e.g. `POST`, `PUT`, `DELETE` operations) bypass the Service Worker cache completely to ensure mutations are not intercepted or stale-served.
@@ -67,7 +67,7 @@ For dynamic requests, the fetch listener routes traffic using two primary cachin
 
 ## 3. Offline IndexedDB Storage
 
-WorkSphere stores offline-capable data in the browser’s IndexedDB database named `worksphere-offline` (Version 1). The IndexedDB engine is initialized and managed by [offlineStorage.ts](file:///C:/Users/Rajasekar/.gemini/antigravity/scratch/WorkSphere/src/lib/offlineStorage.ts).
+WorkSphere stores offline-capable data in the browser’s IndexedDB database named `worksphere-offline` (Version 1). The IndexedDB engine is initialized and managed by [offlineStorage.ts](src/lib/offlineStorage.ts).
 
 ### Object Stores Breakdown
 
@@ -104,7 +104,7 @@ Offline mutations are resolved securely using **Yjs CRDTs** to avoid version con
    });
    ```
 5. **Background Transmission**: Once the browser detects active internet connection, the Service Worker fires the `sync` event, aggregates all base64-encoded updates, and POSTs them to `/api/sync`.
-6. **Server Integration**: The sync API route [route.ts](file:///C:/Users/Rajasekar/.gemini/antigravity/scratch/WorkSphere/src/app/api/sync/route.ts) fetches the user's historical state from the PostgreSQL database, applies client increments to the reconstructed `Y.Doc`, and updates the `crdtState` database field.
+6. **Server Integration**: The sync API route [route.ts](src/app/api/sync/route.ts) fetches the user's historical state from the PostgreSQL database, applies client increments to the reconstructed `Y.Doc`, and updates the `crdtState` database field.
 
 ---
 
@@ -120,7 +120,7 @@ Developing and inspecting PWA capabilities requires specialized tooling configur
   3. Toggle **Offline** checkbox to simulate network disconnects directly inside the page request chain.
 * **Cache Storage**:
   1. Expand **Cache Storage** in the Application sidebar.
-  2. Click `worksphere-v2` to inspect cached map tiles, assets, and page routes.
+  2. Click `worksphere-v3` to inspect cached map tiles, assets, and page routes.
 * **IndexedDB Databases**:
   1. Expand **IndexedDB** -> Click `worksphere-offline`.
   2. Inspect cached venues, queries, or check staged entries in `pendingActions` prior to background sync.

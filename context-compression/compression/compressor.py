@@ -1,8 +1,13 @@
+import asyncio
 import hashlib
-from typing import Dict, List, Optional, Tuple
+from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
-from ..embedding.embedder import Embedder
-from ..index.hnsw_index import HNSWIndex
+try:
+    from ..embedding.embedder import Embedder
+    from ..index.hnsw_index import HNSWIndex
+except (ImportError, ValueError):
+    from embedding.embedder import Embedder
+    from index.hnsw_index import HNSWIndex
 
 
 class ContextCompressor:
@@ -121,6 +126,46 @@ class ContextCompressor:
         compressed.sort(key=lambda x: x["similarity"], reverse=True)
 
         return compressed, total_tokens
+
+    async def compress_context_stream(
+        self, query: str, max_tokens: Optional[int] = None
+    ) -> AsyncGenerator[Dict, None]:
+        """
+        Asynchronously stream compressed context messages one by one as each chunk is processed
+        and verified against the token budget. Yields control to event loop to support
+        client disconnection and early abortion.
+        """
+        if max_tokens is None:
+            max_tokens = self.max_tokens
+
+        query_vector = self.embedder.embed(query)
+
+        k = min(len(self._messages), 50) if self._messages else 0
+        if k == 0:
+            return
+
+        results = self.index.search(query_vector, k=k)
+        sorted_results = sorted(results, key=lambda x: x[0], reverse=True)
+
+        total_tokens = 0
+        for similarity, node_id, metadata in sorted_results:
+            msg = self._messages.get(node_id)
+            if msg is None:
+                continue
+            if total_tokens + msg["tokens"] > max_tokens:
+                continue
+
+            total_tokens += msg["tokens"]
+            chunk = {
+                "node_id": node_id,
+                "similarity": similarity,
+                "role": msg["role"],
+                "content": msg["content"],
+                "tokens": msg["tokens"],
+                "total_tokens": total_tokens,
+            }
+            yield chunk
+            await asyncio.sleep(0)
 
     def deduplicate(
         self, threshold: Optional[float] = None

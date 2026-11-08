@@ -9,14 +9,207 @@ Thank you for your interest in contributing to WorkSphere! This document details
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to help maintain a welcoming and respectful community.
 
 ---
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
+
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
+
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
 
 ## 📋 Table of Contents
+
+- [5-Minute Quickstart for WOCS 2026 Contributors](#5-minute-quickstart-for-wocs-2026-contributors)
+  - [Common Setup FAQs](#common-setup-faqs)
 
 1. [Git Workflow & PRs](#1-git-workflow--prs)
 2. [Code Style & Quality Checks](#2-code-style--quality-checks)
 3. [Testing Conventions (Jest & RTL)](#3-testing-conventions-jest--rtl)
 4. [E2E Testing (Playwright)](#4-e2e-testing-playwright)
 5. [Pre-Commit Quality Verification Checklist](#5-pre-commit-quality-verification-checklist)
+6. [Windows Husky & Git Hooks Troubleshooting](#6-windows-husky--git-hooks-troubleshooting)
+7. [PR Pre-flight Checklist](#7-pr-pre-flight-checklist)
+
+---
+
+## 5-Minute Quickstart for WOCS 2026 Contributors
+
+Welcome to **Winter of Code Social (WOCS 2026)**! This checklist gets your local development environment up and running in 5 minutes so you can start contributing right away. For competition details and points scoring, refer to the [WOCS Level Evaluation Guide](docs/WOCS_LEVEL_GUIDE.md).
+
+### 1. Fork and Clone
+
+1. **Fork the repository**: Visit [SatyamPandey-07/WorkSphere](https://github.com/SatyamPandey-07/WorkSphere) and click the **Fork** button.
+2. **Clone your fork locally**:
+   ```bash
+   git clone https://github.com/<your-username>/WorkSphere.git
+   cd WorkSphere
+   ```
+3. **Configure the upstream remote**:
+   ```bash
+   git remote add upstream https://github.com/SatyamPandey-07/WorkSphere.git
+   git remote -v
+   ```
+   Confirm that `origin` points to your personal fork and `upstream` points to `SatyamPandey-07/WorkSphere`.
+
+### 2. Node.js Requirements
+
+WorkSphere requires **Node.js v20+** (LTS recommended, configured in `.nvmrc`).
+
+Verify your installed versions:
+
+```bash
+node -v   # Recommended: v20.x.x or higher
+npm -v    # Recommended: v10.x.x or higher
+```
+
+> **Tip:** If you use [nvm](https://github.com/nvm-sh/nvm), run `nvm use` in the repository root to automatically use the Node version defined in `.nvmrc`.
+
+### 3. Install Dependencies and Environment Setup
+
+1. **Install dependencies**:
+
+   ```bash
+   npm install
+   ```
+
+   _(If you encounter peer dependency conflicts, run `npm install --legacy-peer-deps`)._ Note that `prisma generate` runs automatically via the `postinstall` hook.
+
+2. **Configure environment variables**:
+   WorkSphere provides a template `.env.example` file. Copy it to create your local `.env.local`:
+
+   ```bash
+   # On macOS / Linux / Git Bash:
+   cp .env.example .env.local
+
+   # On Windows PowerShell:
+   Copy-Item .env.example .env.local
+   ```
+
+3. **Environment safety**:
+   - The default placeholder values in `.env.example` (such as `DATABASE_URL` and `UPSTASH_REDIS_REST_URL`) are pre-configured for local Docker development.
+   - For basic UI, styling, documentation, or unit test contributions, placeholder values work because test suites mock external APIs.
+   - **Never expose real secrets** or API keys in pull requests.
+   - Do not invent environment variables; use only those defined in `.env.example`.
+
+### 4. Run the Development Server
+
+Start the local Next.js development server:
+
+```bash
+npm run dev
+```
+
+Once compiled, access the application at:
+
+👉 **[http://localhost:3000](http://localhost:3000)**
+
+### 5. Run Tests
+
+Verify that your changes pass existing tests before submitting a PR:
+
+```bash
+# Run unit and integration tests (Jest)
+npm test
+
+# Run tests in watch mode during development
+npm run test:watch
+```
+
+Ensure all pre-commit quality checks pass:
+
+- **Type safety**: `npx tsc --noEmit`
+- **Linting**: `npm run lint`
+- **Production build**: `npm run build`
+
+### 6. Claim Issues and Submit PRs
+
+1. **Claim an issue**: Find an open, unassigned issue and comment exactly:
+   ```text
+   /claim
+   ```
+   The `@github-actions` bot will verify eligibility (up to 10 active assigned issues) and assign it to you. You have **6 days** to submit your PR.
+2. **Create a feature branch**:
+   Always branch from the latest `upstream/main`:
+   ```bash
+   git fetch upstream
+   git switch -c feat/your-feature-name upstream/main
+   ```
+3. **Submit your Pull Request**:
+   - Push your branch to your fork: `git push -u origin feat/your-feature-name`
+   - Open a PR against `main` on the official repository.
+   - **PR Title Format**: Must strictly follow `<type>: <short description> (closes #<issue_number>)`.
+     Example: `fix: prevent duplicate seat check-ins (closes #100)`
+   - **PR Description**: Include `Closes #<number>` (e.g. `Closes #100`) so GitHub automatically links and closes the issue upon merge.
+   - **WOCS Points**: Issues and PRs are scored based on difficulty levels (`level 1` = 2 pts, `level 2` = 5 pts, `level 3` = 11 pts). See the [WOCS Level Evaluation Guide](docs/WOCS_LEVEL_GUIDE.md) for details.
+
+---
+
+### Common Setup FAQs
+
+#### What if Node.js is outdated?
+
+WorkSphere requires Node.js v20+ (see `.nvmrc`). If your Node version is older (e.g., v16 or v18), install and switch to Node 20 using [nvm](https://github.com/nvm-sh/nvm) (Linux/macOS) or [nvm-windows](https://github.com/coreybutler/nvm-windows):
+
+```bash
+nvm install 20
+nvm use 20
+```
+
+Verify with `node -v`.
+
+#### What if npm install fails?
+
+- **Peer dependency conflicts**: Run `npm install --legacy-peer-deps`.
+- **Prisma generation error**: If the `postinstall` hook fails, run `npx prisma generate` directly.
+- **Git hooks on Windows**: If Husky fails during install on Windows, see the [Windows Husky & Git Hooks Troubleshooting Guide](docs/contributing/WINDOWS_HOOKS_TROUBLESHOOTING.md).
+- **Corrupt npm cache**: Clear cache with `npm cache clean --force` and retry.
+
+#### What if `.env` is missing?
+
+Next.js loads variables from `.env.local` during local development. Copy the template:
+
+```bash
+cp .env.example .env.local
+```
+
+For basic UI development and unit testing, you do not need live third-party keys; default placeholder values are sufficient because tests use Jest mocks. Never commit `.env.local` to git.
+
+#### How do I run the application locally?
+
+1. Ensure dependencies are installed (`npm install`).
+2. Run `npm run dev`.
+3. Open your browser to [http://localhost:3000](http://localhost:3000).
+4. _(Optional)_ If working on database-backed features, start PostgreSQL and Redis via Docker with `docker compose up -d` (see [Local Development via Docker Compose](#16-local-development-via-docker-compose)).
+
+#### How do I run tests?
+
+- **Unit & component tests**: Run `npm test`.
+- **Watch mode**: Run `npm run test:watch`.
+- **Specific test file**: Run `npx jest src/__tests__/lib/utils.test.ts`.
+- **E2E tests**: Run `npm run test:e2e` (requires `npx playwright install` first).
+- **Type checks**: Run `npx tsc --noEmit`.
+
+#### How do I claim an issue?
+
+Browse open issues on GitHub. On any unassigned issue, comment:
+
+```text
+/claim
+```
+
+The automated bot verifies your active assignment limit (< 10 issues) and assigns the issue to you. You have 6 days to submit a PR before the assignment expires.
+
+#### How do I link a PR to an issue?
+
+Link your pull request in both the title and description:
+
+- **In the PR title**: Append `(closes #<issue_number>)`, e.g. `feat: add export to csv button (closes #450)`.
+- **In the PR description**: Include the keyword `Closes #<issue_number>` (e.g., `Closes #450`).
+  This ensures GitHub automatically links the PR to the issue and closes it once merged.
 
 ---
 
@@ -26,57 +219,135 @@ To keep the repository clean and manageable, please follow this flow:
 
 1. **Fork** the repository and clone it locally.
 2. **Create a branch** using a descriptive naming convention:
-   - `feature/your-feature-name` for new features.
-   - `bugfix/issue-description` for bug fixes.
+   - `feat/your-feature-name` for new features.
+   - `fix/issue-description` for bug fixes.
    - `docs/topic-name` for documentation updates.
+   - `refactor/topic-name` for code restructuring without behavior changes.
+   - `test/topic-name` for test-related changes.
+
+   Use lowercase words separated by hyphens, and keep the branch name short and descriptive.
+
 3. **Write code** and ensure all [testing](#3-testing-conventions-jest--rtl) and [pre-commit checks](#5-pre-commit-quality-verification-checklist) pass.
 4. **Commit** your changes with clear, structured commit messages (e.g., `feat: add map route coordinates validation`). See below for detailed commit formatting rules.
 5. **Push** to your fork and open a **Pull Request (PR)** against the `main` branch. Ensure the PR title adheres to the strict formatting rules outlined in Section 1.2.
 
-### 1.1 Issue Assignment & Claiming Policy
+### Recommended Terminal Workflow
 
-- **Claiming an Issue**: Contributor issue tracking is claim-based. Find any unassigned, open issue and post a comment containing exactly:
+Use the following commands as a guide. Replace the example branch name with the branch for your task.
+
+```bash
+# 1. Get the latest repository changes
+git fetch upstream
+git switch main
+git rebase upstream/main
+
+# 2. Create a branch for your issue
+git switch -c docs/contributing-guide
+
+# 3. Review your changes
+git status
+git diff
+git diff --check
+
+# 4. Stage and commit your documentation changes
+git add CONTRIBUTING.md
+git commit -m "docs: improve contributing guide"
+
+# 5. Push your branch to your fork
+git push -u origin docs/contributing-guide
+```
+
+Before starting work, claim an available issue by commenting `/claim` on GitHub and wait for the assignment confirmation. If the `upstream` remote is not configured, add it with:
+
+```bash
+git remote add upstream https://github.com/SatyamPandey-07/WorkSphere.git
+```
+
+### 1.1 Program Participation & Issue Claiming Policy (/claim)
+
+WorkSphere is an official selected project for **OSCI'26** (Open Source Contribution India), **ECSoC 2026**, and **Winter of Code Social 2026 (WOCS'26)** by **Code Social**. Contributor issue tracking and assignment are automated via GitHub Actions to ensure a transparent, fair, and high-velocity workflow.
+
+- **Claiming an Issue**: Find any unassigned, open issue and post a comment containing exactly:
   ```text
   /claim
   ```
-  The `@github-actions` bot will automatically verify your eligibility, assign the issue to you, and label it as `in-progress`.
-- **Issue Assignment SLA**: Once assigned, you have exactly **6 days** to implement the changes and open a pull request. If the 6-day threshold is breached without a linked PR or a requested extension (noted via a progress comment on the issue), the bot will automatically unassign you to keep the project active.
-- **Maximum Assigned Issue Cap**: To ensure fair work distribution across the community, contributors are restricted to a maximum of **10 active assigned issues** at any single time. The bot will reject claims if your active assigned count is 10 or more.
+  The automated `@github-actions` bot will immediately evaluate your request:
+  1. Verifies that the issue is not already assigned to another contributor.
+  2. Confirms you have fewer than 10 active assigned issues.
+  3. Assigns you to the issue, attaches the `OSCI'26` and `in-progress` labels, and posts a confirmation greeting.
+- **Unclaiming an Issue**: If you can no longer work on an assigned issue, release it promptly so other contributors can proceed:
+  ```text
+  /unclaim
+  ```
+- **6-Day Resolution Window (SLA)**: Once assigned, you have exactly **6 days** to implement your solution and open a corresponding Pull Request.
+  - **Automated Expiration**: If the 6-day threshold expires without a linked pull request or a recorded progress update, the automated triage workflow unassigns the issue and returns it to the open pool for other participants.
+  - **Requesting an Extension**: If you need additional time due to technical complexity, post a progress comment on the issue describing your current status, blockers, and expected timeline before the 6th day.
+- **Maximum Assigned Issue Cap (10 Issues)**: To prevent issue hoarding and ensure fair opportunity across all participants, each contributor may hold at most **10 active assigned issues** simultaneously. Additional `/claim` attempts will be automatically rejected until existing assignments are resolved or unclaimed.
 
-### 1.2 Pull Request Naming Conventions
+### 1.2 Winter of Code Social (WOCS 2026) Guidelines & Points System
 
-All pull request titles must match the following structured, machine-parseable format:
+WorkSphere is officially participating in [Winter of Code Social 2026](https://woc.codesocial.tech), hosted by **Code Social**!
+
+- **Registration**: All contributors must register on the [WOCS Portal](https://woc.codesocial.tech).
+- **Leaderboard**: Track your live standings on the [WOCS Leaderboard](https://woc.codesocial.tech/leaderboard).
+- **Discord Community**: Join the official [Code Social Discord Server](https://discord.gg/MSTNyRSPYW) and communicate in the WorkSphere project forum in `#find-a-project`.
+- **Labeling Requirements**: Every eligible PR must have the `wocs` label and exactly one difficulty level label applied prior to merge:
+  - `level 1` — **2 points** (Beginner-friendly fixes, documentation updates, minor UI tweaks)
+  - `level 2` — **5 points** (Feature enhancements, component implementations, test coverage)
+  - `level 3` — **11 points** (Complex architecture, agent workflows, backend endpoints)
+  - See the comprehensive [WOCS Level Evaluation Guide](docs/WOCS_LEVEL_GUIDE.md) for full breakdown by directory and complexity.
+- **Automatic Tracking**: Merged pull requests with the proper labels trigger the WOCS real-time webhook and automatically credit points to your account.
+- **AI Policy**: AI-assisted tooling is permitted provided that the contributor thoroughly understands and verifies the code, writes authentic tests, and adheres to our quality standards. Hallucinated or non-functional submissions will be rejected.
+
+### 1.3 Pull Request Title Conventions & Format
+
+All Pull Request titles must follow the strict machine-parseable convention:
 
 ```text
 <type>: <short description> (closes #<issue_number>)
 ```
 
-Use the table below to select the appropriate `<type>` prefix:
+For example:
 
-| PR Prefix Type | When to Use                                                        | Example                                             |
-| :------------- | :----------------------------------------------------------------- | :-------------------------------------------------- |
-| **`feat`**     | Adding a new capability or feature to the workspace                | `feat: integrate Pexels API cache lookup`           |
-| **`fix`**      | Resolving a bug, runtime crash, or styling defect                  | `fix: prevent leaflet null coordinates map crash`   |
-| **`docs`**     | Updating instructions, manuals, or API guides                      | `docs: add noise telemetry ingestion guide`         |
-| **`style`**    | Code formatting changes (Prettier updates, spaces, semi-colons)    | `style: run Prettier formatting across components`  |
-| **`refactor`** | Restructuring code without changing its functional behavior        | `refactor: modularize telemetry calculation checks` |
-| **`perf`**     | Code changes targeting loading speed, latency, or memory usage     | `perf: compress spatial indices for faster maps`    |
-| **`test`**     | Writing unit tests, RTL mocks, or Playwright E2E files             | `test: add unit coverage for favorites handler`     |
-| **`build`**    | Changing build scripts, Next.js configurations, or webpack configs | `build: upgrade Next.js to version 15.5.x`          |
-| **`ci`**       | Modifying GitHub Actions workflows or Vercel build configs         | `ci: adjust check runner permissions`               |
-| **`chore`**    | Updating dependencies, post-installs, or workspace tasks           | `chore: clean up lockfiles and unused deps`         |
-| **`revert`**   | Reverting a previous commit that caused regressions                | `revert: rollback rating distribution safari patch` |
+```text
+fix: handle geolocation access permission denied error gracefully (closes #100)
+feat: add ambient noise decibel trend graph (closes #3955)
+docs: document NIOSH daily sound exposure calculation and formula reference (closes #3946)
+```
 
-_Note: The `(closes #<issue_number>)` suffix is mandatory and must match the issue being resolved. For example:_
-`fix: handle geolocation access permission denied error gracefully (closes #100)`
+> **Mandatory Rule**: The `(closes #<issue_number>)` suffix is strictly required. It enables automated GitHub issue linking and closes the associated issue upon merge. Never invent dummy issue numbers or reference unrelated issues.
 
-### 1.3 Clean & Modular Commit Guidelines
+### 1.4 Conventional Commit Standards
 
-- **Atomic Scope**: Commits must be atomic. Keep changes focused on a single file or a single structural component. Avoid mixing backend optimizations with unrelated styling patches.
-- **Commit Naming conventions**: Follow standard Conventional Commits rules. Write messages in the imperative, present tense (e.g., `add map layers` rather than `added map layers` or `adds map layers`).
-- **Continuous Build Integrity**: Do not push intermediate commits that fail compilation or break the development server. The repository requires a stable main branch at all times.
+WorkSphere enforces the [Conventional Commits](https://www.conventionalcommits.org/) specification for all git commit messages. Commit messages must be structured as:
 
-### 1.4 AI Coding Assistant & Subagent Guidelines
+```text
+<type>: <short description in present tense>
+```
+
+#### Supported Commit Types:
+
+| Commit Type    | Purpose & Scope                                                           | Example Commit Message                                                    |
+| :------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------------ |
+| **`feat`**     | Introducing a new feature, user-facing capability, or algorithm           | `feat: add hourly ambient noise decibel trend graph`                      |
+| **`fix`**      | Patching a bug, crash, calculation error, or broken behavior              | `fix: clamp user distance calculation when latitude exceeds bounds`       |
+| **`docs`**     | Creating or updating documentation, specs, runbooks, or guides            | `docs: document commit message format and PR guidelines for OSCI'26`      |
+| **`perf`**     | Optimizations enhancing execution speed, latency, or memory consumption   | `perf: vectorize audio FFT filter coefficients using WASM SIMD`           |
+| **`test`**     | Adding, updating, or fixing unit tests, RTL mocks, or E2E suites          | `test: add unit coverage for coordinate boundary clamping`                |
+| **`chore`**    | Maintenance, script updates, dependency tweaks, or workspace configs      | `chore: configure dynamic co-authorship attribution in merge workflows`   |
+| **`refactor`** | Restructuring code without altering functional behavior or features       | `refactor: extract geographic distance calculations into modular helpers` |
+| **`style`**    | Code formatting, whitespace, or lint-only fixes with no code logic change | `style: format acoustics module with prettier`                            |
+| **`build`**    | Build system, bundler, Prisma generation, or Next.js config updates       | `build: upgrade prisma adapter and engine configurations`                 |
+| **`ci`**       | GitHub Actions workflow, automation scripts, or deployment pipelines      | `ci: add automated triage and label assignment for OSCI'26 PRs`           |
+| **`revert`**   | Reverting a previous commit that introduced an unintended defect          | `revert: rollback rating distribution safari patch`                       |
+
+#### Commit Best Practices:
+
+- **Imperative Mood**: Use imperative, present tense: `fix: clamp latitude` (not `fixed` or `fixes`).
+- **Atomic Commits**: Keep each commit focused on one cohesive logical change. Avoid monolithic commits that mix unrelated bug fixes and UI updates.
+- **No Unrelated Changes**: Do not bundle stylistic reformatting of unrelated files or unnecessary dependency updates in a bug-fix PR.
+
+### 1.5 AI Coding Assistant & Subagent Guidelines
 
 If you are developing using AI coding assistants (such as Cursor, Gemini, or custom terminal subagents):
 
@@ -90,7 +361,7 @@ If you are developing using AI coding assistants (such as Cursor, Gemini, or cus
 3. **No Unrequested Refactoring**: Do not allow AI tools to refactor or rewrite files outside the target scope of the issue. This creates massive diffs and complicates PR reviews.
 4. **JSDoc & Comments Retention**: Ensure the assistant does not clean up or delete existing codebase comments, JSDoc annotations, or architecture docs unless explicitly requested.
 
-### 1.5 Local Development via Docker Compose
+### 1.6 Local Development via Docker Compose
 
 To lower contributor onboarding friction, WorkSphere provides a local development environment powered by Docker Compose. This packages PostgreSQL (with the `pgvector` extension) and Redis.
 
@@ -245,22 +516,127 @@ jest.mock('leaflet', () => ({
 
 Avoid connecting to actual databases or Redis caches in unit tests. Mock the client modules using `jest.mock`.
 
+#### 4. ZKP (Zero-Knowledge Proof) Module Configuration
+
+WorkSphere includes a student discount verification feature that uses `snarkjs` and `ffjavascript` for zero-knowledge proof generation. These packages ship as ES modules (ESM) but Jest runs in CommonJS (CJS) mode by default.
+
+`jest.config.js` maps both packages to their CJS builds to prevent `SyntaxError: Cannot use import statement` at test time:
+
+```js
+moduleNameMapper: {
+  '^snarkjs$': '<rootDir>/node_modules/snarkjs/build/main.cjs',
+  '^ffjavascript$': '<rootDir>/node_modules/ffjavascript/build/main.cjs',
+  '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
+},
+```
+
+**What contributors should know:**
+
+- Tests that import ZKP-related modules work automatically — no manual mocking needed
+- If you add a new package that ships ESM-only and fails with `SyntaxError: Cannot use import statement`, add a similar entry to `moduleNameMapper` in `jest.config.js`
+- ZKP proof generation is CPU and memory intensive; the config sets `workerIdleMemoryLimit: '256MB'` and `maxWorkers: '50%'` to prevent heap exhaustion during the full test suite
+
+---
+
+#### 5. ZKP Circuit Compilation (`npm run zkp:compile`)
+
+The `zkp:compile` script compiles the [Circom](https://docs.circom.io/) circuit used for student discount verification and generates the Groth16 proving/verification keys.
+
+**When to run it:** Only when you modify `circuits/premium_membership.circom`. You do **not** need to run it for most features — the compiled outputs (`public/zkp/`) are committed and kept up to date.
+
+**Dependencies (install once):**
+
+```bash
+# Circom compiler
+npm install -g @iden3/circom
+
+# snarkjs and openssl must be available in PATH
+npm install                       # snarkjs is already in package.json
+openssl version                   # confirm openssl is installed
+```
+
+**Run the compile script:**
+
+```bash
+npm run zkp:compile
+```
+
+This will:
+
+1. Compile `circuits/premium_membership.circom` → R1CS, WASM, SYM files in `circuits/build/`
+2. Generate a small Powers-of-Tau ceremony (`pot12_final.ptau`) if one doesn't already exist
+3. Run the Groth16 trusted-setup → outputs `premium_membership_final.zkey`
+4. Export the verification key to `public/zkp/verification_key.json`
+5. Copy the WASM prover to `public/zkp/`
+
+**Notes:**
+
+- The build step can take 30–90 seconds on a typical laptop
+- The generated `.ptau` and `.zkey` files are large; they are committed to the repo so other contributors don't need to regenerate them
+- If `npm run zkp:compile` fails with "circom not found", ensure `@iden3/circom` is on your PATH
+
 ---
 
 ## 4. E2E Testing (Playwright)
 
 End-to-end tests simulate actual user interactions inside the browser. These tests are configured in `playwright.config.ts` and reside in the `e2e/` folder.
 
+### Installing Playwright Browsers
+
+Before running E2E tests for the first time, install the required browser binaries (Chromium, Firefox, WebKit):
+
+```bash
+npx playwright install
+```
+
+To install browser system dependencies on Linux/CI environments:
+
+```bash
+npx playwright install-deps
+```
+
 ### Running Playwright Tests
 
 - **Run all E2E tests in headless mode** (runs behind the scenes):
-    `bash
-  npm run test:e2e
-  `
-- **Run E2E tests with Playwright UI** (highly recommended for debugging):
-    `bash
-  npm run test:e2e:ui
-  `
+  ```bash
+  npm run test:e2e
+  ```
+- **Run E2E tests with Playwright Interactive UI Mode** (recommended for debugging and stepping through tests):
+  ```bash
+  npm run test:e2e:ui
+  ```
+- **Run E2E tests in Debug Mode** (launches Playwright Inspector step-by-step):
+  ```bash
+  npx playwright test --debug
+  ```
+
+### Playwright Command Cheat Sheet
+
+| Command                                         | Description                                                     |
+| :---------------------------------------------- | :-------------------------------------------------------------- |
+| `npx playwright install`                        | Download required browser binaries (Chromium, Firefox, WebKit)  |
+| `npm run test:e2e`                              | Run all E2E test suites in headless mode                        |
+| `npm run test:e2e:ui`                           | Open interactive Playwright UI mode with time-travel inspection |
+| `npx playwright test e2e/search.spec.ts`        | Run a specific E2E test file                                    |
+| `npx playwright test -g "filter query"`         | Run tests matching a specific title or pattern                  |
+| `npx playwright test --project=chromium`        | Run E2E tests using only the Chromium browser                   |
+| `npx playwright test --headed`                  | Run tests in visible browser window mode                        |
+| `npx playwright test --debug`                   | Step through test execution using Playwright Inspector          |
+| `npx playwright show-trace <path-to-trace.zip>` | Open Playwright Trace Viewer for failed test runs               |
+
+### Viewing Failure Traces with Playwright Trace Viewer
+
+Playwright automatically records execution traces, DOM snapshots, network logs, and screenshots when a test fails.
+
+1. **Locate the trace archive**: Failed test artifacts are saved in the `test-results/` directory (e.g., `test-results/e2e-search-chromium/trace.zip`).
+2. **Open the Trace Viewer**:
+   ```bash
+   npx playwright show-trace test-results/e2e-search-chromium/trace.zip
+   ```
+3. **Inspect Execution**: The Trace Viewer interface displays:
+   - **Actions Timeline**: Hover over each user action (click, fill, navigate) to view DOM state before and after.
+   - **Console & Network**: Inspect browser console logs and HTTP request/response payloads.
+   - **Source Code**: Step directly into the line of code that triggered the failure.
 
 ### Dev Server Integration
 
@@ -271,10 +647,10 @@ Our E2E suite is configured to automatically launch the Next.js dev server (`npm
 By default, Playwright runs tests in headless mode (no browser window opens).
 
 - To run tests in **headed mode** via command line, pass the `--headed` flag:
-    `bash
-  npx playwright test --headed
-  `
-- To customize browser options or add multiple browsers (e.g., Firefox, WebKit), edit the `projects` section inside [playwright.config.ts](file:///C:/Users/Rajasekar/.gemini/antigravity/scratch/WorkSphere/playwright.config.ts).
+  ```bash
+  npx playwright test --headed
+  ```
+- To customize browser options or add multiple browsers (e.g., Firefox, WebKit), edit the `projects` section inside `playwright.config.ts`.
 
 ---
 
@@ -291,8 +667,96 @@ Before pushing changes to GitHub, you **MUST** verify that all the checks below 
 | `npm test`         | Runs the full Jest test suite to check unit and component logic.    | Fix regressions; do not skip failing tests.                  |
 | `npm run build`    | Simulates a production build (Prisma generation + Next.js compile). | Critical check. Fix any build-blocking errors.               |
 
-### 2. Vercel Build Verification
+> **Note on TypeScript during `npm run build`:** TypeScript strict checking is enforced — `typescript.ignoreBuildErrors` is not set in `next.config.ts` (and must not be added), so type errors in the build graph will cause the build to fail. Run `npx tsc --noEmit` separately for faster, standalone type feedback during development without waiting for Prisma generation and full asset compilation.
+
+### 2. Vercel Build Verification & TypeScript Behavior
 
 Vercel builds use `npm run build` which runs `prisma generate && next build`. If this step fails locally, it **will** fail on Vercel deployment. Make sure you run `npm run build` successfully before submitting your PR!
 
-> **Note:** The current production build does **not** invoke `tsc` as a separate build step. For complete TypeScript type checking, run `npx tsc --noEmit` in addition to `npm run build` before opening a pull request.
+#### TypeScript Build Behavior & Validation
+
+- **What `npm run build` Validates**: `npm run build` runs `prisma generate` to build Prisma client type definitions, followed by `next build --webpack` to compile production application pages and components.
+- **TypeScript Errors Inclusion**: TypeScript errors are **included and enforced** during `npm run build` because Next.js has type checking enabled by default (`ignoreBuildErrors` is not set in `next.config.ts`). Any TypeScript compilation errors in the application build graph will fail the build.
+- **Separate Type-Checking Command**: Because `npm run build` does not run `tsc` as an independent script and involves Prisma code generation plus production asset compilation, contributors should run `npx tsc --noEmit` separately for fast, standalone TypeScript type checking during development.
+
+### 3. Recommended PR Validation Workflow
+
+Before submitting a pull request, run the following validation steps in order:
+
+1. `npm run lint` — Validates code style and ESLint rules.
+2. `npx tsc --noEmit` — Runs standalone TypeScript type-checking across the workspace.
+3. `npm test` — Executes the Jest unit and component test suites.
+4. `npm run build` — Verifies Prisma client generation and Next.js production build compilation.
+
+---
+
+## 6. Windows Husky & Git Hooks Troubleshooting
+
+Contributors developing on Windows environments may encounter execution policy restrictions (`PSSecurityException`) or line-ending mismatches (`CRLF` vs `LF`) when running Husky pre-commit hooks (`lint-staged`).
+
+For complete configuration commands (`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` and `git config --global core.autocrlf true`) and step-by-step FAQ solutions for `.husky/pre-commit: command not found`, refer to our dedicated guide:
+
+👉 **[Windows Husky & Git Hooks Troubleshooting Guide](docs/contributing/WINDOWS_HOOKS_TROUBLESHOOTING.md)**
+
+---
+
+## 7. PR Pre-flight Checklist
+
+Before opening a pull request, work through this checklist top-to-bottom. Each step is a gate — don't move to the next until the current one is green.
+
+```bash
+# 1. Sync your fork with upstream to avoid merge conflicts
+git fetch upstream
+git rebase upstream/main
+
+# 2. Install any new dependencies added since your last sync
+npm install
+
+# 3. Apply any pending Prisma schema migrations
+npx prisma generate
+npx prisma migrate dev   # only if schema.prisma changed
+
+# 4. Run the app locally and verify your change works end-to-end
+npm run dev
+
+# 5. Lint — fix all errors before continuing
+npm run lint
+
+# 6. Type-check — fix any TypeScript errors
+npx tsc --noEmit
+
+# 7. Unit tests — make sure nothing is broken
+npm test
+
+# 8. Production build — the definitive gate before pushing
+npm run build
+```
+
+Once all eight steps pass:
+
+- [ ] Branch is up-to-date with `upstream/main`
+- [ ] Feature/fix works as expected in `npm run dev`
+- [ ] `npm run lint` returns zero errors
+- [ ] `npx tsc --noEmit` returns zero errors
+- [ ] `npm test` passes with no regressions
+- [ ] `npm run build` completes successfully
+- [ ] PR title follows the Conventional Commits format (`feat:`, `fix:`, `docs:`, etc.)
+- [ ] PR description explains **what** changed and **why**, and references the issue (`Closes #N`)
+
+## Architecture Documentation
+ feature/logarithmic-volume-curve
+
+ docs/git-worktree-guide
+main
+
+For details on multi-agent scoring and consensus workflows, see [docs/architecture/multi-agent-consensus.md](docs/architecture/multi-agent-consensus.md).
+
+## Concurrent Development & Worktrees
+
+For guidelines on working on multiple issues concurrently using Git worktrees, see [docs/WORKTREE_GUIDE.md](docs/WORKTREE_GUIDE.md).
+feature/logarithmic-volume-curve
+
+
+For details on multi-agent scoring and consensus workflows, see [docs/architecture/multi-agent-consensus.md](docs/architecture/multi-agent-consensus.md).
+main
+ main

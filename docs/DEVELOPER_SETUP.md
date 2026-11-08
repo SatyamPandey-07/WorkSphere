@@ -43,7 +43,7 @@ npx prisma generate
 ```
 
 ### Step 3: Push Database Schema
-To update your database structure with the models defined in [schema.prisma](file:///C:/Users/Rajasekar/.gemini/antigravity/scratch/WorkSphere/prisma/schema.prisma) without full migrations history (useful for local development/prototyping):
+To update your database structure with the models defined in [schema.prisma](prisma/schema.prisma) without full migrations history (useful for local development/prototyping):
 ```bash
 npx prisma db push
 ```
@@ -65,7 +65,7 @@ Execute the native Prisma seed command:
 npx prisma db seed
 ```
 
-This runs the seed script [seed.js](file:///C:/Users/Rajasekar/.gemini/antigravity/scratch/WorkSphere/prisma/seed.js) which automatically inserts:
+This runs the seed script [seed.js](prisma/seed.js) which automatically inserts:
 * **Mock User**: A test account (`clerk_test_user_1` / `nomad@worksphere.dev`) for rating ownership.
 * **Mock Workspaces**: 5 venues containing complete coordinates, Categories (cafe, coworking, library), WiFi quality ratings, outlet density, and verified download speeds.
 * **Mock Reviews**: Rich comments and verified parameters associated with each workspace.

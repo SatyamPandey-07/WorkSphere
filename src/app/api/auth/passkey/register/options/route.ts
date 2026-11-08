@@ -18,8 +18,12 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // During rotation (#1991) the credential being replaced must not be
+    // excluded, otherwise the same authenticator refuses to mint its successor.
+    const rotatingId = new URL(req.url).searchParams.get("rotate");
+
     const userPasskeys = await prisma.passkeyCredential.findMany({
-      where: { userId },
+      where: rotatingId ? { userId, id: { not: rotatingId } } : { userId },
       select: { credentialId: true, transports: true },
     });
 

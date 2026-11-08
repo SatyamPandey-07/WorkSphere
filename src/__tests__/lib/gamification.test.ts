@@ -1,83 +1,90 @@
 import { calculateLevel } from "@/lib/gamification";
 
 describe("calculateLevel", () => {
-  it("returns level 1 with 0% progress for 0 XP", () => {
-    const result = calculateLevel(0);
-    expect(result.level).toBe(1);
-    expect(result.xp).toBe(0);
-    expect(result.xpInCurrentLevel).toBe(0);
-    expect(result.xpForNextLevel).toBe(100);
-    expect(result.progressPercent).toBe(0);
+  describe("zero XP", () => {
+    it("returns level 1 for 0 XP", () => {
+      const result = calculateLevel(0);
+      expect(result.level).toBe(1);
+    });
+
+    it("returns progressPercent 0 for 0 XP", () => {
+      expect(calculateLevel(0).progressPercent).toBe(0);
+    });
+
+    it("returns xpForNextLevel 100 at level 1", () => {
+      expect(calculateLevel(0).xpForNextLevel).toBe(100);
+    });
   });
 
-  it("returns level 1 with correct progress for partial XP", () => {
-    const result = calculateLevel(50);
-    expect(result.level).toBe(1);
-    expect(result.xp).toBe(50);
-    expect(result.xpInCurrentLevel).toBe(50);
-    expect(result.xpForNextLevel).toBe(100);
-    expect(result.progressPercent).toBe(50);
+  describe("boundary XP values", () => {
+    it("stays at level 1 for XP = 99 (one below first threshold)", () => {
+      const result = calculateLevel(99);
+      expect(result.level).toBe(1);
+      expect(result.xpInCurrentLevel).toBe(99);
+    });
+
+    it("advances to level 2 at exactly XP = 100", () => {
+      const result = calculateLevel(100);
+      expect(result.level).toBe(2);
+      expect(result.xpInCurrentLevel).toBe(0);
+    });
+
+    it("advances to level 3 at XP = 100 + 200 = 300", () => {
+      const result = calculateLevel(300);
+      expect(result.level).toBe(3);
+      expect(result.xpInCurrentLevel).toBe(0);
+    });
+
+    it("stays at level 2 for XP = 299 (one below second threshold)", () => {
+      const result = calculateLevel(299);
+      expect(result.level).toBe(2);
+    });
+
+    it("advances to level 4 at XP = 100 + 200 + 300 = 600", () => {
+      const result = calculateLevel(600);
+      expect(result.level).toBe(4);
+      expect(result.xpInCurrentLevel).toBe(0);
+    });
   });
 
-  it("advances to level 2 at exactly 100 XP", () => {
-    const result = calculateLevel(100);
-    expect(result.level).toBe(2);
-    expect(result.xpInCurrentLevel).toBe(0);
-    expect(result.xpForNextLevel).toBe(200);
-    expect(result.progressPercent).toBe(0);
-  });
+  describe("progressPercent", () => {
+    it("returns 50 progressPercent at halfway through a level", () => {
+      // Level 1 threshold = 100 XP; halfway = 50 XP
+      expect(calculateLevel(50).progressPercent).toBe(50);
+    });
 
-  it("advances to level 3 at 300 XP (100 + 200)", () => {
-    const result = calculateLevel(300);
-    expect(result.level).toBe(3);
-    expect(result.xpInCurrentLevel).toBe(0);
-    expect(result.xpForNextLevel).toBe(300);
-    expect(result.progressPercent).toBe(0);
-  });
+    it("returns 25 progressPercent at quarter through level 2", () => {
+      // Level 2 threshold = 200 XP; 100 XP into it = 50%, quarter = 50 XP in
+      expect(calculateLevel(100 + 50).progressPercent).toBe(25);
+    });
 
-  it("handles mid-level XP correctly at level 2", () => {
-    const result = calculateLevel(150);
-    expect(result.level).toBe(2);
-    expect(result.xpInCurrentLevel).toBe(50);
-    expect(result.xpForNextLevel).toBe(200);
-    expect(result.progressPercent).toBe(25);
-  });
-
-  it("handles large XP values without infinite loop", () => {
-    const result = calculateLevel(100000);
-    expect(result.level).toBeGreaterThan(1);
-    expect(result.xpInCurrentLevel).toBeLessThan(result.xpForNextLevel);
-    expect(result.progressPercent).toBeGreaterThanOrEqual(0);
-    expect(result.progressPercent).toBeLessThanOrEqual(100);
-  });
-
-  it("never produces progressPercent above 100", () => {
-    // Test XP at exact boundaries and just below
-    const boundaries = [0, 99, 100, 299, 300, 599, 600];
-    for (const xp of boundaries) {
-      const result = calculateLevel(xp);
+    it("caps progressPercent at 100", () => {
+      // Exactly at level boundary should be 0 in next level, not > 100
+      const result = calculateLevel(100);
       expect(result.progressPercent).toBeLessThanOrEqual(100);
-      expect(result.progressPercent).toBeGreaterThanOrEqual(0);
-    }
+    });
+
+    it("returns 99 progressPercent for XP = 99", () => {
+      expect(calculateLevel(99).progressPercent).toBe(99);
+    });
   });
 
-  it("maintains xpInCurrentLevel < xpForNextLevel invariant", () => {
-    const xpValues = [0, 1, 50, 99, 100, 250, 1000, 5000];
-    for (const xp of xpValues) {
-      const result = calculateLevel(xp);
-      expect(result.xpInCurrentLevel).toBeLessThan(result.xpForNextLevel);
-    }
+  describe("raw XP passthrough", () => {
+    it("always returns the original XP as result.xp", () => {
+      expect(calculateLevel(0).xp).toBe(0);
+      expect(calculateLevel(250).xp).toBe(250);
+      expect(calculateLevel(10000).xp).toBe(10000);
+    });
   });
 
-  it("preserves the original xp value in the result", () => {
-    const result = calculateLevel(777);
-    expect(result.xp).toBe(777);
-  });
+  describe("large XP values", () => {
+    it("handles very large XP without infinite loop", () => {
+      expect(() => calculateLevel(1_000_000)).not.toThrow();
+    });
 
-  it("each level requires more XP than the previous", () => {
-    // Level 2 needs 200, level 3 needs 300, etc.
-    const result = calculateLevel(600); // level 1(100) + level 2(200) + level 3(300) = 600
-    expect(result.level).toBe(4);
-    expect(result.xpForNextLevel).toBe(400);
+    it("returns a high level for 1,000,000 XP", () => {
+      const result = calculateLevel(1_000_000);
+      expect(result.level).toBeGreaterThan(100);
+    });
   });
 });

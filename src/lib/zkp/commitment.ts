@@ -1,16 +1,19 @@
 /**
  * Commitment binding used by circuits/premium_membership.circom
- * commit = token^2 + COMMIT_LINEAR * token + COMMIT_CONSTANT
+ * commit = Poseidon(identityToken)
  *
- * Only the commitment is ever public. The raw identity token stays on-device.
+ * The circuit constrains `expectedCommit === Poseidon(1)(identityToken)`, so this
+ * function MUST produce the identical BN254 Poseidon hash. Only the commitment is
+ * ever public. The raw identity token stays on-device.
+ *
+ * Note: the previous binding (token^2 + 5*token + 17) was a quadratic that anyone
+ * could invert to recover the token from the public commitment.
  */
 
-const COMMIT_LINEAR = 5n;
-const COMMIT_CONSTANT = 17n;
+import { poseidonHash } from "./poseidon";
 
 export function computeMembershipCommit(
   identityToken: string | number | bigint,
 ): string {
-  const t = BigInt(identityToken);
-  return (t * t + COMMIT_LINEAR * t + COMMIT_CONSTANT).toString();
+  return poseidonHash([BigInt(identityToken)]).toString();
 }

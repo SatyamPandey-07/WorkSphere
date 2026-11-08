@@ -32,13 +32,16 @@ export function generateCodeChallenge(verifier: string): string {
  * @returns boolean indicating if the verifier is valid
  */
 export function validateCodeVerifier(verifier: string, challenge: string): boolean {
-  const expectedChallenge = generateCodeChallenge(verifier);
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(expectedChallenge),
-      Buffer.from(challenge)
-    );
-  } catch {
-    return expectedChallenge === challenge;
+  if (!verifier || !challenge || typeof verifier !== "string" || typeof challenge !== "string") {
+    return false;
   }
+  const expectedChallenge = generateCodeChallenge(verifier);
+  const expectedBuf = Buffer.from(expectedChallenge, "utf8");
+  const challengeBuf = Buffer.from(challenge, "utf8");
+
+  if (expectedBuf.length !== challengeBuf.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(expectedBuf, challengeBuf);
 }

@@ -108,12 +108,48 @@ WorkSphere routes all WebAuthn actions through the `/api/auth/passkey` endpoints
       - `isExpired = now >= expiresAt`
       - `needsRotation = (expiresAt - now) <= 14 days`
     - Returns all credentials with their status payload.
-  - **`POST` (action: "rotate"):**
-    - Authenticates user and checks ownership of the requested `credentialId`.
-    - Rotates the key's sliding window by resetting its virtual lifecyle (updating `lastUsedAt`).
-    - Returns the updated expiration timestamp.
+  - **`POST` (action: "rotate"):** body `{ credentialId, otp, registrationResponse, name? }`
+    - Authenticates the user and checks ownership of `credentialId` (404 otherwise).
+    - Verifies the email OTP issued for `rotate` on that credential (403 otherwise). See §D.
+    - Verifies `registrationResponse` for a **new** credential against the latest challenge (400 otherwise). Get options from `GET /api/auth/passkey/register/options?rotate=<credentialId>`, which leaves the old credential out of `excludeCredentials` so the same authenticator can create its successor.
+    - In **one transaction**: consumes the OTP, deletes the old credential, inserts the new one (keeping the old name unless `name` is given, with a fresh 90-day expiry), and deletes the spent challenge. A replayed OTP or a credential that has already gone returns 409.
+    - Returns `{ success, revokedCredentialId, credential, newExpiresAt }`.
   - **`POST` (action: "cleanup"):**
     - Purges all expired passkey records older than 90 days from the database.
+
+### D. Email OTP Verification for Rotate / Rename / Revoke (#1991)
+
+Sensitive passkey changes in **Settings → Biometric Passkeys** require a one-time code sent to the account's email address. Email verification works even when the user's authenticator is lost, which is when they most need to revoke it.
+
+```mermaid
+sequenceDiagram
+    participant U as User (/settings)
+    participant API as WorkSphere API
+    participant M as SMTP
+    U->>API: POST /api/auth/passkey/otp { action, credentialId }
+    API->>API: Rate limit, ownership check, store HMAC(code)
+    API->>M: Email 6-digit code to account address
+    API-->>U: { sentTo: "a•••h@example.com", expiresAt }
+    U->>API: PATCH / DELETE /credentials/:id  or  POST /rotation  (+ otp)
+    API->>API: Verify code → perform action + consume code in one transaction
+```
+
+| Endpoint | Action | OTP `action` |
+| --- | --- | --- |
+| `POST /api/auth/passkey/otp` | Send a code: `{ action, credentialId }` | — |
+| `PATCH /api/auth/passkey/credentials/:id` | Rename: `{ name, otp }` (name ≤ 64 chars) | `rename` |
+| `DELETE /api/auth/passkey/credentials/:id` | Revoke: `{ otp }` | `revoke` |
+| `POST /api/auth/passkey/rotation` | Rotate: see §C | `rotate` |
+
+**Security properties** (`src/lib/passkey/emailOtp.ts`, table `PasskeyEmailOtp`):
+
+- **Code generation:** 6-digit codes from `crypto.randomInt`. Only an HMAC-SHA256 is stored. The HMAC is keyed with `PASSKEY_OTP_SECRET`, falling back to `CSRF_SECRET` / `CLERK_SECRET_KEY`, and covers `userId:action:credentialId:code`. A code is therefore only valid for the exact action on the exact passkey it was issued for.
+- **Lifetime:** codes expire after **10 minutes** and are **single-use**. Consumption is a conditional update inside the same transaction as the change, so replays and double-submits fail.
+- **Guess limit:** **5 attempts** per code. The attempt counter is claimed atomically *before* comparing, so concurrent guesses can't exceed the limit. The comparison uses `timingSafeEqual`.
+- **Rate limits:** issuing a new code invalidates any outstanding one for the same scope. Sending is limited to one code every **30 s** and **5 per hour** per user.
+- **Delivery:** the recipient always comes from the `User` record, never from the request. The passkey name is HTML-escaped in the email.
+- **Rotation order:** the OTP is checked *before* the WebAuthn ceremony but consumed only *after* it succeeds. A cancelled browser prompt doesn't cost the user their code.
+- **Failed delivery:** if SMTP isn't configured, production returns `503` and voids the code. In development the code is printed to the server console.
 
 ---
 

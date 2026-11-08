@@ -2,7 +2,13 @@ const fs = require("fs");
 const path = require("path");
 
 async function verify() {
-  const wasmPath = path.resolve(__dirname, "..", "public", "noise-processor.wasm");
+  const wasmPath = path.resolve(
+    __dirname,
+    "..",
+    "public",
+    "noise-processor.wasm"
+  );
+
   const bytes = fs.readFileSync(wasmPath);
 
   const wasmModule = await WebAssembly.compile(bytes);
@@ -15,7 +21,9 @@ async function verify() {
   const ptr = malloc(8 * 4);
   console.log("Allocated 8 floats at ptr:", ptr);
 
-  const view = new Float32Array(memory.buffer);
+  // Create the view after allocation
+  let view = new Float32Array(memory.buffer);
+
   view[ptr / 4] = 0.5;
   view[ptr / 4 + 1] = 0.3;
   view[ptr / 4 + 2] = 0.8;
@@ -35,6 +43,9 @@ async function verify() {
   console.log("Allocated 4 floats at ptr:", ptr2);
   console.log("Reused freed memory:", ptr === ptr2);
 
+  // Refresh the view after the new allocation
+  view = new Float32Array(memory.buffer);
+
   view[ptr2 / 4] = 1.0;
   view[ptr2 / 4 + 1] = 0.0;
   view[ptr2 / 4 + 2] = 0.5;
@@ -44,6 +55,7 @@ async function verify() {
   console.log("RMS of second test data:", rms2);
 
   resetHeap();
+
   const ptr3 = malloc(4);
   console.log("After resetHeap, ptr3:", ptr3);
   console.log("Expected initial ptr (1024):", ptr3 === 1024);

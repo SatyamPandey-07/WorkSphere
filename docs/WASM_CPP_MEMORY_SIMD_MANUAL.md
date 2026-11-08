@@ -2,6 +2,46 @@
 
 This manual details the procedures and best practices for compiling C++ to WebAssembly (Wasm) using Emscripten in the WorkSphere project. It covers SIMD 128-bit vectorization, memory pointer allocation (`malloc`/`free`), and alignment rules essential for performance and cross-architecture compatibility (especially 32-bit ARM).
 
+## 0. Emscripten SDK Setup
+
+Before compiling any C++ module, install and activate the Emscripten SDK (emsdk):
+
+```bash
+# Clone the emsdk repository
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+
+# Install and activate the latest release
+./emsdk install latest
+./emsdk activate latest
+
+# Add emcc to your current shell session
+source ./emsdk_env.sh
+```
+
+On **Windows**, replace `source ./emsdk_env.sh` with `emsdk_env.bat`.
+
+Verify the installation:
+
+```bash
+emcc --version
+```
+
+You should see output like `emcc (Emscripten gcc/clang-like replacement ...) 3.x.x`. The `-msimd128` flag used throughout this manual requires emsdk **2.0.18+**.
+
+### Quick compilation test
+
+Verify that WASM SIMD compilation works locally:
+
+```bash
+echo 'int main() { return 0; }' > test.c
+emcc test.c -msimd128 -o test.wasm
+ls -la test.wasm && echo "SIMD compilation OK"
+rm test.c test.wasm
+```
+
+---
+
 ## 1. Emscripten Compiler Flags
 
 When compiling C++ modules for WebAssembly to be used within the browser, specific compiler flags are required to enable advanced features like SIMD, bulk memory operations, and memory growth.

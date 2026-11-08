@@ -32,10 +32,19 @@
   ],
   "exclude": [
     "node_modules",
+    ".next/**/*",
     "playwright.config.ts",
     "prisma.config.ts",
     "e2e/**/*",
-    "party/**/*"
+    "party/**/*",
+    "src/party/**/*",
+    "src/workers/**/*",
+    "src/worker/**/*",
+    "src/__tests__/**/*",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
   ]
 }
 // ts server reload

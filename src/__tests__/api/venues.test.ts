@@ -9,7 +9,13 @@ jest.mock("@/lib/prisma", () => ({
       findMany: jest.fn(),
       count: jest.fn(),
     },
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
   },
+}));
+
+jest.mock("svix", () => ({
+  Webhook: jest.fn(),
 }));
 
 describe("GET /api/venues - Search and Pagination", () => {
@@ -105,6 +111,66 @@ describe("GET /api/venues - Search and Pagination", () => {
         foodValidations: true,
       },
     });
+  });
+
+  it("should filter by text query in fallback mode across valid venue fields (name, address)", async () => {
+    const mockVenues = [
+      { id: "1", name: "Blue Bottle Coffee", address: "123 Main St" },
+    ];
+    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "1", score: 0.03 }]);
+
+    const req = new NextRequest("http://localhost/api/venues?q=coffee");
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.venues).toEqual(mockVenues);
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    const queryTemplate = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
+    const sql = queryTemplate.strings.join(" ");
+    expect(sql).toContain("WITH search_input");
+    expect(sql).toContain("rank_bm25");
+    expect(sql).toContain("rank_vector");
+    expect(sql).toContain("1.0 / (60 + rank_bm25)");
+    expect(sql).toContain("1.0 / (60 + rank_vector)");
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ["1"] } } }),
+    );
+  });
+
+  it("should filter by text query in coordinate mode across valid venue fields (name, address)", async () => {
+    const mockVenues = [
+      { id: "2", name: "Philz Coffee", address: "456 Market St" },
+    ];
+    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "2", score: 0.03 }]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?lat=37.7749&lng=-122.4194&radius=1000&query=coffee",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.venues).toEqual(mockVenues);
+
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            expect.objectContaining({
+              latitude: expect.any(Object),
+              longitude: expect.any(Object),
+            }),
+            { id: { in: ["2"] } },
+          ],
+        },
+      }),
+    );
   });
 
   it("should paginate coordinate-based search results", async () => {

@@ -13,13 +13,22 @@ function toIntensity(avgDb: number): number {
 
 export async function GET() {
   try {
-    const ratings = await prisma.venueRating.findMany({
-      where: { avgDecibels: { not: null } },
-      select: {
-        avgDecibels: true,
-        venue: { select: { latitude: true, longitude: true } },
-      },
-    });
+    const [ratings, telemetryReleases] = await Promise.all([
+      prisma.venueRating.findMany({
+        where: { avgDecibels: { not: null } },
+        select: {
+          avgDecibels: true,
+          venue: { select: { latitude: true, longitude: true } },
+        },
+      }),
+      prisma.noiseTelemetryRelease.findMany({
+        where: { epochKey: new Date().toISOString().slice(0, 10) },
+        select: {
+          avgDecibels: true,
+          venue: { select: { latitude: true, longitude: true } },
+        },
+      }),
+    ]);
 
     const byVenue = new Map<
       string,
@@ -36,6 +45,19 @@ export async function GET() {
         count: 0,
       };
       entry.total += r.avgDecibels;
+      entry.count += 1;
+      byVenue.set(key, entry);
+    }
+
+    for (const release of telemetryReleases) {
+      const key = `${release.venue.latitude},${release.venue.longitude}`;
+      const entry = byVenue.get(key) ?? {
+        lat: release.venue.latitude,
+        lng: release.venue.longitude,
+        total: 0,
+        count: 0,
+      };
+      entry.total += release.avgDecibels;
       entry.count += 1;
       byVenue.set(key, entry);
     }

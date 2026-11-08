@@ -6,6 +6,7 @@
 
 import { LRUCache } from "./cache";
 import { createHash } from "crypto";
+import { formatOsmAddress } from "./formatOsmAddress";
 
 function deterministicId(lat: number, lng: number, name: string): string {
   return createHash("sha256")
@@ -146,10 +147,7 @@ export async function searchVenuesOSM(
             address: tags["addr:street"]
               ? `${tags["addr:housenumber"] || ""} ${tags["addr:street"]}`.trim()
               : undefined,
-            formatted_address:
-              [tags["addr:street"], tags["addr:city"], tags["addr:postcode"]]
-                .filter(Boolean)
-                .join(", ") || undefined,
+            formatted_address: formatOsmAddress(tags),
             locality: tags["addr:city"],
             country: tags["addr:country"],
             lat: elLat,
@@ -179,7 +177,7 @@ export async function searchVenuesOSM(
     let finalResult = landVenues;
     if (query) {
       const q = query.toLowerCase();
-      finalResult = venues.filter(
+      finalResult = landVenues.filter(
         (v) =>
           v.name.toLowerCase().includes(q) ||
           v.categories.some((c) => c.name.toLowerCase().includes(q)),
@@ -404,11 +402,11 @@ function getFallbackPhotos(category: string): string[] {
 
   const query = queries[category] || "workspace";
 
-  // Unsplash Source URLs (free, no API key)
+  // Picsum Photos — stable seeded URLs, no API key required
   return [
-    `https://source.unsplash.com/800x600/?${query}&sig=1`,
-    `https://source.unsplash.com/800x600/?${query}&sig=2`,
-    `https://source.unsplash.com/800x600/?${query}&sig=3`,
+    `https://picsum.photos/seed/${query}-1/800/600`,
+    `https://picsum.photos/seed/${query}-2/800/600`,
+    `https://picsum.photos/seed/${query}-3/800/600`,
   ];
 }
 

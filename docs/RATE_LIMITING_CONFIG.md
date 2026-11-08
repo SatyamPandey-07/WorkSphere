@@ -5,8 +5,7 @@ This document lists the exact rate-limit parameters configured for every rate-li
 public API route in WorkSphere, explains the sliding-window algorithm used, and
 describes how the in-memory fallback behaves when Upstash Redis is not configured.
 
-It complements `docs/RATE_LIMITING.md` (the general guide) by acting as a quick
-lookup table you can check whenever you need the current numbers.
+It complements [`docs/RATE_LIMITING.md`](./RATE_LIMITING.md) (the general guide) and [`docs/RATE_LIMITER_MEMORY_AND_EVICTION_BENCHMARKS.md`](./RATE_LIMITER_MEMORY_AND_EVICTION_BENCHMARKS.md) (memory benchmarks and eviction lifecycle) by acting as a quick lookup table you can check whenever you need the current numbers.
 
 ---
 

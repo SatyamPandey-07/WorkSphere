@@ -175,4 +175,44 @@ describe("WebGPUFloorPlanRenderer Context Loss & Recovery", () => {
       expect.any(Function),
     );
   });
+
+  it("clamps camera pan bounds within defined limits", () => {
+    const renderer = new WebGPUFloorPlanRenderer(canvas);
+    renderer.setPanBounds({ minX: -5, maxX: 5, minY: -4, maxY: 4 });
+
+    // Pan within bounds
+    renderer.pan(2, 3);
+    expect(renderer.getCamera().panX).toBe(2);
+    expect(renderer.getCamera().panY).toBe(3);
+
+    // Pan beyond maximum bounds
+    renderer.pan(10, 10);
+    expect(renderer.getCamera().panX).toBe(5);
+    expect(renderer.getCamera().panY).toBe(4);
+
+    // Pan beyond minimum bounds
+    renderer.pan(-20, -20);
+    expect(renderer.getCamera().panX).toBe(-5);
+    expect(renderer.getCamera().panY).toBe(-4);
+
+    renderer.destroy();
+  });
+
+  it("resets camera view including pan coordinates", () => {
+    const renderer = new WebGPUFloorPlanRenderer(canvas);
+    renderer.setPanBounds({ minX: -10, maxX: 10, minY: -10, maxY: 10 });
+
+    renderer.pan(4, -3);
+    expect(renderer.getCamera().panX).toBe(4);
+    expect(renderer.getCamera().panY).toBe(-3);
+
+    renderer.resetView();
+    expect(renderer.getCamera().panX).toBe(0);
+    expect(renderer.getCamera().panY).toBe(0);
+    expect(renderer.getCamera().rotationX).toBe(-0.8);
+    expect(renderer.getCamera().rotationY).toBe(0.5);
+    expect(renderer.getCamera().distance).toBe(8);
+
+    renderer.destroy();
+  });
 });

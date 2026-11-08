@@ -98,6 +98,16 @@ export async function POST(request: Request) {
       );
     }
 
+    const venue = await prisma.venue.findUnique({
+      where: { id: venueId },
+    });
+    if (!venue) {
+      return NextResponse.json(
+        { success: false, error: "Venue not found" },
+        { status: 404 },
+      );
+    }
+
     const validation = await prisma.amenityValidation.upsert({
       where: { venueId_amenity: { venueId, amenity } },
       update: {},

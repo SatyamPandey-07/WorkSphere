@@ -99,13 +99,17 @@ export async function loadNotesDocState(
 export async function enqueueNotesUpdate(
   roomId: string,
   update: Uint8Array,
-): Promise<void> {
+): Promise<boolean> {
+  if (!roomId || !roomId.trim() || !update || update.length === 0) {
+    return false;
+  }
   const db = await getNotesCrdtDb();
   await db.add(OUTBOX_STORE, {
-    roomId,
+    roomId: roomId.trim(),
     update: Array.from(update),
     createdAt: Date.now(),
   });
+  return true;
 }
 
 export async function listNotesOutbox(

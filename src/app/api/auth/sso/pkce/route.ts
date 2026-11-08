@@ -8,7 +8,7 @@ import { cookies } from "next/headers";
 
 export async function POST(request: Request) {
   try {
-    const { action, verifier, challenge } = await request.json();
+    const { action, verifier } = await request.json();
 
     if (action === "generate") {
       const newVerifier = generateCodeVerifier();
@@ -43,17 +43,23 @@ export async function POST(request: Request) {
       const storedVerifier = cookieStore.get("pkce_verifier")?.value;
       const storedChallenge = cookieStore.get("pkce_challenge")?.value;
 
-      const verifierToUse = verifier || storedVerifier;
-      const challengeToUse = challenge || storedChallenge;
-
-      if (!verifierToUse || !challengeToUse) {
+      if (!storedChallenge) {
         return NextResponse.json(
-          { error: "Missing verifier or challenge for validation" },
+          { error: "Missing stored challenge for validation" },
           { status: 400 },
         );
       }
 
-      const isValid = validateCodeVerifier(verifierToUse, challengeToUse);
+      const verifierToUse = verifier || storedVerifier;
+
+      if (!verifierToUse) {
+        return NextResponse.json(
+          { error: "Missing verifier for validation" },
+          { status: 400 },
+        );
+      }
+
+      const isValid = validateCodeVerifier(verifierToUse, storedChallenge);
 
       if (isValid) {
         // Clear the cookies after successful validation

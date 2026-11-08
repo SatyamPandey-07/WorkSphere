@@ -1,28 +1,19 @@
 import path from 'node:path'
-import { defineConfig } from 'prisma/config'
+import { defineConfig, env } from 'prisma/config'
+import { config } from 'dotenv'
 
 // Load environment variables from .env.local
-import { config } from 'dotenv'
 config({ path: '.env.local' })
 
 export default defineConfig({
-  earlyAccess: true,
-  schema: path.join(__dirname, 'prisma', 'schema.prisma'),
-  datasource: {
-    url: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy'
-  },
+  schema: path.join('prisma', 'schema.prisma'),
+
   migrations: {
-    seed: 'node prisma/seed.js'
-  },
-  migrate: {
+    path: path.join('prisma', 'migrations'),
     seed: 'node prisma/seed.js',
-    adapter: async () => {
-      // Dynamic import for postgres adapter
-      const { PrismaPg } = await import('@prisma/adapter-pg')
-      const { Pool } = await import('pg')
-      const connectionString = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy'
-      const pool = new Pool({ connectionString })
-      return new PrismaPg(pool)
-    }
-  }
+  },
+
+  datasource: {
+    url: env('DATABASE_URL'),
+  },
 })

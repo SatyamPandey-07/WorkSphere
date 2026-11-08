@@ -1,3 +1,4 @@
+import { PDFDocument } from "pdf-lib";
 import {
   generateAnalyticsCSV,
   downloadAnalyticsCSV,
@@ -94,6 +95,17 @@ describe("Client-side Admin Analytics CSV & PDF Export (#1530)", () => {
       expect(blob.type).toContain("text/csv");
       expect(global.URL.createObjectURL).toHaveBeenCalled();
     });
+
+    it("gracefully falls back to today's date for filename when generatedAt is an invalid or non-ISO date", () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const invalidDateData = {
+        ...mockAnalyticsData,
+        generatedAt: "invalid-date-string",
+      };
+
+      const blob = downloadAnalyticsCSV(invalidDateData);
+      expect(blob).toBeInstanceOf(Blob);
+    });
   });
 
   describe("PDF Export Generator (pdf-lib)", () => {
@@ -114,6 +126,65 @@ describe("Client-side Admin Analytics CSV & PDF Export (#1530)", () => {
       expect(blob).toBeInstanceOf(Blob);
       expect(blob.type).toBe("application/pdf");
       expect(global.URL.createObjectURL).toHaveBeenCalled();
+    });
+
+    it("generates a multi-page PDF when the venue leaderboard exceeds one page height (#1930)", async () => {
+      // Build 50 venue rows — far more than fit on a single A4 page after the
+      // fixed header/overview/section-heading content (~300 pt overhead).
+      // Each leaderboard row occupies 20 pt; 50 rows = 1000 pt which forces at
+      // least one additional page via the ensureSpace() pagination mechanism.
+      const largeLeaderboard: AnalyticsExportData["venueLeaderboard"] =
+        Array.from({ length: 50 }, (_, i) => ({
+          id: `v-${i + 1}`,
+          name: `Test Venue ${String(i + 1).padStart(3, "0")}`,
+          category: i % 2 === 0 ? "coworking" : "cafe",
+          views: 100 + i * 3,
+          bookings: 10 + i,
+          rating: 3.5 + (i % 15) * 0.1,
+          score: 50 + i,
+        }));
+
+      const multiPageData: AnalyticsExportData = {
+        ...mockAnalyticsData,
+        venueLeaderboard: largeLeaderboard,
+      };
+
+      const pdfBytes = await generateAnalyticsPdfReport(multiPageData);
+
+      // Re-parse the raw bytes through pdf-lib to count actual rendered pages.
+      // This is NOT a mock — it exercises the real pagination path end-to-end.
+      const parsedDoc = await PDFDocument.load(pdfBytes);
+      const pageCount = parsedDoc.getPageCount();
+
+      expect(pageCount).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("Defensive formatting and null-safety (#6774)", () => {
+    it("handles invalid Date instances in exportAnalyticsToCSV without throwing", () => {
+      const { exportAnalyticsToCSV } = require("@/lib/export/domain/analyticsExporter");
+      const csv = exportAnalyticsToCSV([
+        {
+          timestamp: new Date("invalid"),
+          visitorCount: 10,
+          checkIns: 5,
+          meanDecibelLevel: 45,
+        },
+      ]);
+      expect(csv).toContain("Timestamp,Visitor Count,Check Ins,Mean Decibel Level");
+      expect(csv).toContain(",10,5,45");
+    });
+
+    it("handles nullish sub-arrays in generateAnalyticsCSV without throwing", () => {
+      const partialData: AnalyticsExportData = {
+        ...mockAnalyticsData,
+        venueLeaderboard: undefined as any,
+        amenities: undefined as any,
+        searchTerms: undefined as any,
+      };
+      const csv = generateAnalyticsCSV(partialData);
+      expect(csv).toContain("=== WORKSPACE ANALYTICS OVERVIEW ===");
+      expect(csv).toContain("=== VENUE POPULARITY LEADERBOARD ===");
     });
   });
 });

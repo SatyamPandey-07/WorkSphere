@@ -17,74 +17,12 @@ import { ToastProvider } from "../components/ui/Toast";
 import { PWAUpdateListener } from "../components/PWAUpdateListener";
 import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
 import { CommandPalette } from "../components/CommandPalette";
-
-const THEME_INIT_SCRIPT = `
-(function () {
-  try {
-    var stored = localStorage.getItem("worksphere-theme");
-    var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var theme = stored === "light" || stored === "dark" || stored === "cyberpunk"
-      ? stored
-      : (prefersDark ? "dark" : "light");
-
-    var root = document.documentElement;
-    root.classList.remove("dark", "cyberpunk");
-
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else if (theme === "cyberpunk") {
-      root.classList.add("cyberpunk");
-    }
-
-    root.style.colorScheme = theme === "light" ? "light" : "dark";
-
-    // ─── Inline background/foreground to prevent white flash ───
-    // Set colors directly on <html> before external CSS loads
-    if (theme === "dark") {
-      root.style.backgroundColor = "#0a0a0a";
-      root.style.color = "#ededed";
-    } else if (theme === "cyberpunk") {
-      root.style.backgroundColor = "#090014";
-      root.style.color = "#f4f4ff";
-    } else {
-      root.style.backgroundColor = "#ffffff";
-      root.style.color = "#171717";
-    }
-
-    if (document.cookie.indexOf("worksphere-theme=") === -1) {
-      document.cookie =
-        "worksphere-theme=" +
-        theme +
-        "; path=/; max-age=31536000; SameSite=Lax";
-    }
-  } catch (e) {}
-
-  try {
-    var accentStored = localStorage.getItem("worksphere-accent");
-    var accentColors = {
-      blue: "#3b82f6",
-      purple: "#a855f7",
-      emerald: "#10b981",
-      amber: "#f59e0b"
-    };
-    var accent = accentColors[accentStored] || accentColors.blue;
-    document.documentElement.style.setProperty("--primary-accent", accent);
-  } catch {}
-
-  try {
-    window.addEventListener("error", function (event) {
-      if (
-        event.message &&
-        (event.message.indexOf("ResizeObserver") >= 0 ||
-          event.message.indexOf("Resize observer") >= 0)
-      ) {
-        event.stopImmediatePropagation();
-      }
-    });
-  } catch {}
-
-})();
-`;
+import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";
+import { StorageQuotaWarningBanner } from "../components/ui/StorageQuotaWarningBanner";
+import { OfflineBanner } from "../components/ui/OfflineBanner";
+import { RateLimitBanner } from "../components/ui/RateLimitBanner";
+import { THEME_INIT_SCRIPT } from "../lib/theme-init-script";
+import { parseAccentColor, type AccentColor } from "../lib/constants/theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -97,6 +35,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://work-sphere-one.vercel.app",
+  ),
   title: "WorkSphere - AI-Powered Remote Workspace Finder",
   description:
     "Discover cafes, coworking spaces, and libraries with great WiFi, power outlets, and the perfect atmosphere for your work style.",
@@ -135,10 +76,6 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const publishableKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-    "pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ";
-
   const cookieStore = await cookies();
   const headersList = await headers();
   const nonce = headersList.get("x-csp-nonce") ?? "";
@@ -151,34 +88,31 @@ export default async function RootLayout({
       : "light";
 
   const storedAccent = cookieStore.get("worksphere-accent")?.value;
-  const accent: "blue" | "purple" | "emerald" | "amber" =
-    storedAccent === "blue" ||
-    storedAccent === "purple" ||
-    storedAccent === "emerald" ||
-    storedAccent === "amber"
-      ? storedAccent
-      : "blue";
+  const accent: AccentColor = parseAccentColor(storedAccent ?? null);
 
   const appContent = (
-    <ThemeProvider initialTheme={theme as any} initialAccent={accent}>
+    <ThemeProvider initialTheme={theme} initialAccent={accent}>
       <SoundProvider>
         <ToastProvider>
           <CurrencyProvider>
+            <OfflineBanner />
+            <RateLimitBanner />
             <PWAUpdateListener />
             <KeyboardShortcutsModal />
             <CommandPalette />
+            <IdleSessionDialog />
+            <StorageQuotaWarningBanner />
             <I18nProvider>{children}</I18nProvider>
+            <SyncManager />
           </CurrencyProvider>
         </ToastProvider>
       </SoundProvider>
-      <SyncManager />
     </ThemeProvider>
   );
 
   const bodyContent = (
     <ClerkProvider
       afterSignOutUrl="/"
-      publishableKey={publishableKey}
       appearance={{
         elements: {
           formButtonPrimary: "accent-bg hover:opacity-90",
@@ -193,12 +127,13 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
+      data-theme={theme}
       className={
         theme === "dark" ? "dark" : theme === "cyberpunk" ? "cyberpunk" : ""
       }
       suppressHydrationWarning
     >
-      <head>
+      <head suppressHydrationWarning>
         <script
           id="theme-init"
           suppressHydrationWarning
@@ -216,7 +151,6 @@ export default async function RootLayout({
       >
         <ScrollProgress />
         <ScrollToTopButton />
-        <SyncManager />
         {bodyContent}
         <CookieBanner />
       </body>

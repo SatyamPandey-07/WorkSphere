@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface FAQItem {
   question: string;
@@ -52,7 +53,12 @@ const faqs: FAQItem[] = [
   },
 ];
 
-export default function FAQAccordion() {
+interface FAQAccordionProps {
+  /** Optional Tailwind classes to override or extend the outer wrapper */
+  className?: string;
+}
+
+export default function FAQAccordion({ className }: FAQAccordionProps = {}) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   const toggleItem = (index: number) => {
@@ -60,7 +66,7 @@ export default function FAQAccordion() {
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto my-24 px-6">
+    <div className={cn("w-full max-w-3xl mx-auto my-24 px-6", className)}>
       <div className="text-center mb-12">
         <span className="text-xs font-semibold tracking-widest text-blue-600 dark:text-blue-400 uppercase">
           Got Questions?
@@ -79,10 +85,16 @@ export default function FAQAccordion() {
             >
               <button
                 onClick={() => toggleItem(index)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleItem(index);
+                  }
+                }}
                 className="w-full px-6 cursor-pointer py-5 flex items-center justify-between text-left focus:outline-none focus-visible:ring-2 accent-ring rounded-2xl"
                 aria-expanded={isOpen}
-                aria-controls={`faq-answer-${index}`}
-                id={`faq-question-${index}`}
+                aria-controls={`faq-panel-${index}`}
+                id={`faq-header-${index}`}
               >
                 <span className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
                   {faq.question}
@@ -99,9 +111,9 @@ export default function FAQAccordion() {
               <AnimatePresence initial={false}>
                 {isOpen && (
                   <motion.div
-                    id={`faq-answer-${index}`}
+                    id={`faq-panel-${index}`}
                     role="region"
-                    aria-labelledby={`faq-question-${index}`}
+                    aria-labelledby={`faq-header-${index}`}
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}

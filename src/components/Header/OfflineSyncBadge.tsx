@@ -22,8 +22,24 @@ export function OfflineSyncBadge() {
     return null;
   }
 
+  let statusText = "Offline";
+  if (isOffline && hasPendingChanges) {
+    statusText = "Offline (Pending Sync)";
+  } else if (isOffline && !hasPendingChanges) {
+    statusText = "Offline";
+  } else if (!isOffline && isSyncing) {
+    statusText = "Syncing...";
+  } else if (!isOffline && !isSyncing && hasPendingChanges) {
+    statusText = "Pending Sync";
+  }
+
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-all">
+    <div
+      role="status"
+      aria-label={statusText}
+      title={statusText}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-all"
+    >
       {isOffline && hasPendingChanges && (
         <>
           <CloudOff className="w-3.5 h-3.5" />

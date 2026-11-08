@@ -6,6 +6,9 @@ const mockPrefetch = jest.fn();
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ prefetch: mockPrefetch }),
 }));
+jest.mock("@/context/CurrencyContext", () => ({
+  useCurrency: () => ({ currency: "USD", setCurrency: jest.fn() }),
+}));
 
 const mockVenue = {
   id: "test-venue-1",
@@ -67,6 +70,20 @@ describe("VenueCard", () => {
     await renderVenueCard();
 
     expect(screen.getAllByText(/Outlets/)[0]).toBeInTheDocument();
+  });
+
+  it("renders Mach Speed classification badge when venue has wifiSpeed", async () => {
+    const venueWithSpeed = {
+      ...mockVenue,
+      id: "venue-mach-speed",
+      wifiSpeed: 300,
+    };
+    await renderVenueCard(venueWithSpeed);
+
+    expect(
+      screen.getByText("Hypersonic Mach 5 (>250 Mbps)"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("jet-icon")).toBeInTheDocument();
   });
 
   it("calls onGetDirections when Directions button is clicked", async () => {
@@ -167,5 +184,77 @@ describe("VenueCard", () => {
     const claimedVenue = { ...mockVenue, isClaimed: true };
     await renderVenueCard(claimedVenue);
     expect(screen.getByTitle("Verified Host")).toBeInTheDocument();
+  });
+
+  it("prevents stale venue data from overwriting state when rapidly switching venues", async () => {
+    const originalFetch = global.fetch;
+    let resolveVenueA: (value: any) => void = () => {};
+    let resolveVenueB: (value: any) => void = () => {};
+
+    const mockFetch = jest.fn().mockImplementation((url: string) => {
+      const decodedUrl = decodeURIComponent(url.replace(/\+/g, " "));
+      if (decodedUrl.includes("Venue A")) {
+        return new Promise((resolve) => {
+          resolveVenueA = (data: any) =>
+            resolve({ ok: true, json: () => Promise.resolve(data) });
+        });
+      } else if (decodedUrl.includes("Venue B")) {
+        return new Promise((resolve) => {
+          resolveVenueB = (data: any) =>
+            resolve({ ok: true, json: () => Promise.resolve(data) });
+        });
+      } else {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ metrics: {} }),
+        });
+      }
+    });
+
+    global.fetch = mockFetch as any;
+
+    try {
+      const venueA = {
+        ...mockVenue,
+        id: "test-venue-A",
+        name: "Venue A",
+        position: { lat: 1, lng: 1 },
+      };
+      const venueB = {
+        ...mockVenue,
+        id: "test-venue-B",
+        name: "Venue B",
+        position: { lat: 2, lng: 2 },
+      };
+
+      const { rerender } = render(<VenueCard venue={venueA} />);
+
+      // Switch rapidly to Venue B before Venue A resolves
+      rerender(<VenueCard venue={venueB} />);
+
+      // Resolve Venue B first
+      await act(async () => {
+        resolveVenueB({
+          photos: ["https://example.com/b.jpg"],
+          categories: ["Category B"],
+        });
+      });
+
+      expect(screen.getByText("Category B")).toBeInTheDocument();
+
+      // Resolve Venue A's stale response afterward
+      await act(async () => {
+        resolveVenueA({
+          photos: ["https://example.com/a.jpg"],
+          categories: ["Stale Category A"],
+        });
+      });
+
+      // Stale data from Venue A must not overwrite Venue B's data
+      expect(screen.queryByText("Stale Category A")).not.toBeInTheDocument();
+      expect(screen.getByText("Category B")).toBeInTheDocument();
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

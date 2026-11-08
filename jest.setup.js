@@ -49,7 +49,7 @@ if (typeof global.MessageChannel === "undefined") {
 // globals (backed by its own bundled fetch implementation), so this is only
 // reached on a runtime that predates them. Requiring the standalone `undici`
 // package unconditionally breaks on Node versions older than it supports
-// (it needs >=22.19) even though its exports are never actually used there.
+// (it needs >=20.18.1) even though its exports are never actually used there.
 if (
   typeof global.Request === "undefined" ||
   typeof global.Response === "undefined" ||

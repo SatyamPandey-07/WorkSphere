@@ -6,34 +6,59 @@ import {
 } from "@/lib/preferenceVector";
 import { rerankVenues, RerankedVenue } from "@/lib/recommendation";
 
-const MOCK_HISTORY: UserHistoryItem[] = [
-  {
-    venue: {
-      id: "mock-1",
-      name: "Quiet Cafe",
-      lat: 0,
-      lng: 0,
-      category: "cafe",
-      wifi: true,
-      noiseLevel: "quiet",
-      hasOutlets: true,
-    },
-    weight: 1.5,
-  },
-  {
-    venue: {
-      id: "mock-2",
-      name: "Tech Hub",
-      lat: 0,
-      lng: 0,
-      category: "coworking",
-      wifi: true,
-      noiseLevel: "moderate",
-      hasOutlets: true,
-    },
-    weight: 1.0,
-  },
-];
+/** Weight of a saved venue when building the user's taste profile. */
+const SAVED_VENUE_WEIGHT = 1.2;
+
+interface FavoriteVenue {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  category: string;
+  wifiQuality: number | null;
+  wifiSpeed: number | null;
+  hasOutlets: boolean;
+  noiseLevel: string | null;
+}
+
+/** Loads the signed-in user's saved venues as preference history. */
+function useSavedVenueHistory(enabled: boolean): UserHistoryItem[] {
+  const [history, setHistory] = useState<UserHistoryItem[]>([]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    fetch("/api/favorites")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !Array.isArray(data?.favorites)) return;
+        setHistory(
+          data.favorites
+            .map((f: { venue: FavoriteVenue | null }) => f.venue)
+            .filter(Boolean)
+            .map((v: FavoriteVenue) => ({
+              venue: {
+                id: v.id,
+                name: v.name,
+                lat: v.latitude,
+                lng: v.longitude,
+                category: v.category,
+                wifi: (v.wifiQuality ?? 0) >= 3 || (v.wifiSpeed ?? 0) > 0,
+                hasOutlets: v.hasOutlets,
+                noiseLevel: (v.noiseLevel ?? undefined) as Venue["noiseLevel"],
+              },
+              weight: SAVED_VENUE_WEIGHT,
+            })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+
+  return history;
+}
 
 export function usePreferenceReranking(results: Venue[]) {
   const [personalizationEnabled, setPersonalizationEnabled] = useState(false);
@@ -54,9 +79,11 @@ export function usePreferenceReranking(results: Venue[]) {
     });
   }, []);
 
-  const userVector = useMemo(() => {
-    return buildUserPreferenceVector(MOCK_HISTORY);
-  }, []); // Recompute if history changes (in a real app)
+  const history = useSavedVenueHistory(personalizationEnabled);
+  const userVector = useMemo(
+    () => buildUserPreferenceVector(history),
+    [history],
+  );
 
   const rerankedResults = useMemo(() => {
     if (!personalizationEnabled) {

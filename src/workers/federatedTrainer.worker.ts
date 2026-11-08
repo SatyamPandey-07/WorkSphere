@@ -1,7 +1,7 @@
 /**
  * Federated venue trainer Web Worker (#1022).
  *
- * Runs SGD gradient updates + personalized scoring off the main thread.
+ * Runs DP-SGD gradient updates (#1563) + personalized scoring off the main thread.
  * Model weights persist in IndexedDB; raw telemetry never leaves the device.
  */
 
@@ -10,21 +10,36 @@ import {
   featuresToOnnxTensor,
   warmupOnnxWasm,
 } from "../lib/federated/onnxBridge";
+import { resolveDpConfig } from "../lib/federated/differentialPrivacy";
 import {
   createInitialModel,
   featuresFromArray,
   scoreVenue,
-  trainBatch,
   type LinearVenueModelState,
 } from "../lib/federated/linearVenueModel";
-import { loadWeights, saveWeights } from "../lib/federated/weightDb";
+import {
+  loadPrivacyState,
+  loadWeights,
+  savePrivacyState,
+  saveWeights,
+} from "../lib/federated/weightDb";
+import { DpTrainingSession } from "../lib/federated/dpTrainingSession";
 import {
   FEATURE_DIM,
+  type DifferentialPrivacyConfig,
   type FederatedWorkerRequest,
   type FederatedWorkerResponse,
 } from "../lib/federated/types";
 
 let model: LinearVenueModelState | null = null;
+let dpConfig: DifferentialPrivacyConfig = resolveDpConfig();
+let session: DpTrainingSession | null = null;
+
+/** DP session restored from the persisted privacy ledger (#3359). */
+async function ensureSession(): Promise<DpTrainingSession> {
+  if (!session) session = new DpTrainingSession(dpConfig, await loadPrivacyState());
+  return session;
+}
 
 async function ensureModel(learningRate?: number): Promise<LinearVenueModelState> {
   configureOnnxWasm();
@@ -67,6 +82,10 @@ self.onmessage = async (event: MessageEvent<FederatedWorkerRequest>) => {
   try {
     switch (msg.type) {
       case "init": {
+        if (msg.dp) {
+          dpConfig = resolveDpConfig(msg.dp);
+          session = null; // rebuilt with the new config; the ledger is kept
+        }
         const m = await ensureModel(msg.learningRate);
         reply({ type: "ready", id: msg.id, weightCount: m.weights.length });
         break;
@@ -96,9 +115,27 @@ self.onmessage = async (event: MessageEvent<FederatedWorkerRequest>) => {
           features: featuresFromArray(ex.features),
           label: ex.label,
         }));
-        const steps = trainBatch(m, examples);
+        const s = await ensureSession();
+        // Throws PrivacyBudgetExhaustedError (→ error reply) before training
+        // when a configured (ε, δ) budget would be exceeded.
+        const outcome = s.runRound(m, examples);
+        // Ledger first: if we crash between the writes, the ledger
+        // over-counts rather than under-counts spent privacy.
+        await savePrivacyState(s.state());
         await persist();
-        reply({ type: "trained", id: msg.id, steps });
+        reply({
+          type: "trained",
+          id: msg.id,
+          steps: outcome.steps,
+          privacy: outcome.privacy,
+          clipNorm: outcome.clipNorm,
+        });
+        break;
+      }
+
+      case "privacy": {
+        const s = await ensureSession();
+        reply({ type: "privacy", id: msg.id, privacy: s.report(), clipNorm: s.currentClipNorm });
         break;
       }
 

@@ -1,64 +1,49 @@
 "use client";
 
-import React from "react";
-import { MapPin, Clock, Wifi, Calendar } from "lucide-react";
-import { TimezoneClock } from "@/components/bookings/TimezoneClock";
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { MapPin, Wifi, Calendar, Download, Loader2 } from "lucide-react";
 
-interface CheckIn {
+interface CheckInRecord {
   id: string;
-  date: string;
-  location: string;
-  hoursSpent: number;
-  wifiStatus: "Excellent" | "Good" | "Fair" | "Poor";
-  thumbnail?: string;
-  /** IANA timezone of the venue (e.g. "America/New_York") */
-  timezone?: string;
+  checkedInAt: string;
+  expiresAt: string;
+  active: boolean;
+  venue: {
+    id: string;
+    name: string;
+    address: string | null;
+    category: string;
+    wifiQuality: number | null;
+    wifiSpeed: number | null;
+  };
 }
 
-const mockCheckIns: CheckIn[] = [
-  {
-    id: "1",
-    date: "Today, 9:00 AM",
-    location: "The Roasted Bean Cafe",
-    hoursSpent: 4.5,
-    wifiStatus: "Excellent",
-    timezone: "America/New_York",
-  },
-  {
-    id: "2",
-    date: "Yesterday, 2:30 PM",
-    location: "WeWork Downtown",
-    hoursSpent: 3,
-    wifiStatus: "Good",
-    timezone: "America/Chicago",
-  },
-  {
-    id: "3",
-    date: "Oct 15, 10:15 AM",
-    location: "Central Library Co-working",
-    hoursSpent: 6,
-    wifiStatus: "Excellent",
-    timezone: "America/Los_Angeles",
-  },
-  {
-    id: "4",
-    date: "Oct 12, 1:00 PM",
-    location: "Oceanview Tech Hub",
-    hoursSpent: 2.5,
-    wifiStatus: "Fair",
-    timezone: "Europe/London",
-  },
-  {
-    id: "5",
-    date: "Oct 10, 8:45 AM",
-    location: "Startup Village",
-    hoursSpent: 8,
-    wifiStatus: "Excellent",
-    timezone: "Asia/Kolkata",
-  },
-];
+type WifiStatus = "Excellent" | "Good" | "Fair" | "Poor" | "Unknown";
 
-const getWifiBadgeStyle = (status: CheckIn["wifiStatus"]) => {
+function wifiStatus(venue: CheckInRecord["venue"]): WifiStatus {
+  if (venue.wifiSpeed) {
+    return venue.wifiSpeed >= 100
+      ? "Excellent"
+      : venue.wifiSpeed >= 30
+        ? "Good"
+        : venue.wifiSpeed >= 10
+          ? "Fair"
+          : "Poor";
+  }
+  if (venue.wifiQuality) {
+    return venue.wifiQuality >= 5
+      ? "Excellent"
+      : venue.wifiQuality >= 4
+        ? "Good"
+        : venue.wifiQuality >= 3
+          ? "Fair"
+          : "Poor";
+  }
+  return "Unknown";
+}
+
+const getWifiBadgeStyle = (status: WifiStatus) => {
   switch (status) {
     case "Excellent":
       return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30";
@@ -69,77 +54,135 @@ const getWifiBadgeStyle = (status: CheckIn["wifiStatus"]) => {
     case "Poor":
       return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400 border-red-200 dark:border-red-500/30";
     default:
-      return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700";
+      return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700";
   }
 };
 
+function formatWhen(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const time = date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (date.toDateString() === today.toDateString()) return `Today, ${time}`;
+  if (date.toDateString() === yesterday.toDateString())
+    return `Yesterday, ${time}`;
+  return `${date.toLocaleDateString([], { month: "short", day: "numeric" })}, ${time}`;
+}
+
+function downloadAsJson(checkIns: CheckInRecord[]) {
+  const records = checkIns.map((c) => ({
+    venue: c.venue.name,
+    address: c.venue.address,
+    checkedInAt: c.checkedInAt,
+  }));
+  const blob = new Blob([JSON.stringify(records, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "worksphere-check-ins.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function CheckInHistory() {
+  const [checkIns, setCheckIns] = useState<CheckInRecord[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/user/check-ins")
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => {
+        if (!cancelled) setCheckIns(data.checkIns ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col h-[500px]">
+    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[500px]">
       <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <MapPin className="w-5 h-5 text-blue-600" />
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Check-In History
+            Check-in history
           </h2>
         </div>
-        <span className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">
-          {mockCheckIns.length} Recent
-        </span>
+        {checkIns && checkIns.length > 0 && (
+          <button
+            type="button"
+            onClick={() => downloadAsJson(checkIns)}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 transition-colors"
+            aria-label="Export check-in history (JSON)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export
+          </button>
+        )}
       </div>
 
       <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-        <div className="relative border-l-2 border-zinc-100 dark:border-zinc-800 ml-3 space-y-8">
-          {mockCheckIns.map((checkIn) => (
-            <div key={checkIn.id} className="relative pl-6 group">
-              {/* Timeline dot */}
-              <div className="absolute w-4 h-4 rounded-full bg-white dark:bg-zinc-900 border-2 accent-border -left-[9px] top-1.5 group-hover:scale-110 group-hover:bg-[var(--primary-accent)] transition-all duration-300" />
-
-              <div className="flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  {/* Left: venue name + date + live timezone clock */}
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50 group-hover:text-[var(--primary-accent)] dark:group-hover:text-[var(--primary-accent)] transition-colors truncate">
-                      {checkIn.location}
-                    </h3>
-
-                    {/* Booking date — standardized alignment */}
-                    <div className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                      <Calendar className="w-3.5 h-3.5 shrink-0" />
-                      <span>{checkIn.date}</span>
+        {error ? (
+          <p className="text-sm text-red-600">
+            Couldn&apos;t load your check-ins.
+          </p>
+        ) : checkIns === null ? (
+          <div className="flex justify-center py-8" role="status">
+            <Loader2 className="w-6 h-6 animate-spin accent-text" />
+          </div>
+        ) : checkIns.length === 0 ? (
+          <p className="text-sm text-zinc-500 text-center py-8">
+            No check-ins yet. Check in from a venue page when you start working
+            there to build your streak.
+          </p>
+        ) : (
+          <div className="relative border-l-2 border-zinc-100 dark:border-zinc-800 ml-3 space-y-6">
+            {checkIns.map((checkIn) => {
+              const status = wifiStatus(checkIn.venue);
+              return (
+                <div key={checkIn.id} className="relative pl-6 group">
+                  <div className="absolute w-4 h-4 rounded-full bg-white dark:bg-zinc-900 border-2 accent-border -left-[9px] top-1.5" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/venues/${checkIn.venue.id}`}
+                        className="text-base font-semibold text-zinc-900 dark:text-zinc-50 hover:text-[var(--primary-accent)] transition-colors truncate block"
+                      >
+                        {checkIn.venue.name}
+                      </Link>
+                      <div className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                        <Calendar className="w-3.5 h-3.5 shrink-0" />
+                        <span>{formatWhen(checkIn.checkedInAt)}</span>
+                        {checkIn.active && (
+                          <span className="ml-1 text-xs font-semibold text-green-600 dark:text-green-400">
+                            · Here now
+                          </span>
+                        )}
+                      </div>
                     </div>
-
-                    {/* Live localized clock for the venue's timezone */}
-                    {checkIn.timezone && (
-                      <TimezoneClock timeZone={checkIn.timezone} />
+                    {status !== "Unknown" && (
+                      <div
+                        className={`shrink-0 px-2.5 py-1 rounded-full border text-xs font-semibold flex items-center gap-1.5 ${getWifiBadgeStyle(status)}`}
+                      >
+                        <Wifi className="w-3 h-3" />
+                        {status}
+                      </div>
                     )}
                   </div>
-
-                  {/* Right: WiFi badge — vertically aligned with venue name */}
-                  <div
-                    className={`shrink-0 px-2.5 py-1 rounded-full border text-xs font-semibold flex items-center gap-1.5 ${getWifiBadgeStyle(checkIn.wifiStatus)}`}
-                  >
-                    <Wifi className="w-3 h-3" />
-                    {checkIn.wifiStatus}
-                  </div>
                 </div>
-
-                {/* Hours spent row */}
-                <div className="flex items-center gap-4 text-sm bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800/80">
-                  <div className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
-                    <Clock className="w-4 h-4 text-zinc-400 shrink-0" />
-                    <span>
-                      <strong className="text-zinc-900 dark:text-zinc-100">
-                        {checkIn.hoursSpent}
-                      </strong>{" "}
-                      hours spent
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -5,6 +5,7 @@
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import { WEIGHT_DB_NAME, WEIGHT_KEY, WEIGHT_STORE } from "./types";
+import type { PrivacyLedgerState } from "./privacyAccountant";
 
 export type WeightBlob = {
   weights: Float32Array;
@@ -21,16 +22,37 @@ interface FederatedWeightDB extends DBSchema {
       updatedAt: number;
     };
   };
+  /**
+   * Privacy ledger (#3359). A separate store on purpose: purgeStaleWeights
+   * must never reset the spent privacy budget.
+   */
+  privacyLedger: {
+    key: string;
+    value: TrainerPrivacyState;
+  };
 }
+
+/** Persisted DP state: spent budget + current adaptive clip bound. */
+export type TrainerPrivacyState = {
+  ledger: PrivacyLedgerState;
+  clipNorm: number;
+  updatedAt: number;
+};
+
+const LEDGER_STORE = "privacyLedger";
+const LEDGER_KEY = "ledger";
 
 let dbPromise: Promise<IDBPDatabase<FederatedWeightDB>> | null = null;
 
 export async function getWeightDb(): Promise<IDBPDatabase<FederatedWeightDB>> {
   if (!dbPromise) {
-    dbPromise = openDB<FederatedWeightDB>(WEIGHT_DB_NAME, 1, {
+    dbPromise = openDB<FederatedWeightDB>(WEIGHT_DB_NAME, 2, {
       upgrade(db) {
         if (!db.objectStoreNames.contains(WEIGHT_STORE)) {
           db.createObjectStore(WEIGHT_STORE);
+        }
+        if (!db.objectStoreNames.contains(LEDGER_STORE)) {
+          db.createObjectStore(LEDGER_STORE);
         }
       },
     });
@@ -60,6 +82,16 @@ export async function loadWeights(): Promise<WeightBlob | null> {
     bias: row.bias,
     updatedAt: row.updatedAt,
   };
+}
+
+export async function savePrivacyState(state: TrainerPrivacyState): Promise<void> {
+  const db = await getWeightDb();
+  await db.put(LEDGER_STORE, state, LEDGER_KEY);
+}
+
+export async function loadPrivacyState(): Promise<TrainerPrivacyState | null> {
+  const db = await getWeightDb();
+  return (await db.get(LEDGER_STORE, LEDGER_KEY)) ?? null;
 }
 
 export const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;

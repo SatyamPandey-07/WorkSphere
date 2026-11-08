@@ -65,27 +65,80 @@ Public (Session optional)
 
 ### Query Parameters
 
-| Parameter      | Type    | Required | Default | Validation                            | Description                                     |
-| -------------- | ------- | -------- | ------- | ------------------------------------- | ----------------------------------------------- |
-| `lat`          | Float   | ✅ Yes   | —       | `-90` to `90`                         | Coordinate latitude                             |
-| `lng`          | Float   | ✅ Yes   | —       | `-180` to `180`                       | Coordinate longitude                            |
-| `radius`       | Integer | No       | `5000`  | `100–50000` meters                    | Approximate search radius                       |
-| `category`     | String  | No       | —       | `cafe`, `coworking`, `library`, `all` | Workspace category                              |
-| `wifi`         | Boolean | No       | —       | `true` / `false`                      | Filter venues with good Wi-Fi                   |
-| `outlets`      | Boolean | No       | —       | `true` / `false`                      | Filter venues with power outlets                |
-| `quiet`        | Boolean | No       | —       | `true` / `false`                      | Filter quiet venues                             |
-| `hasQuietZone` | Boolean | No       | `false` | `true` / `false`                      | Filter venues that provide verified quiet zones |
+The `/api/venues` endpoint supports geographic bounding-box searches, pagination, text search, and numerous amenity and workspace attribute filters.
 
-### Search Bar Quick Filters (Pills)
+#### Geographic & Search Parameters
 
-The venue search interface includes quick filter pills.
+| Parameter  | Type    | Required | Default | Validation                            | Description                                                        |
+| ---------- | ------- | -------- | ------- | ------------------------------------- | ------------------------------------------------------------------ |
+| `lat`      | Float   | No*      | —       | `-90` to `90`                         | Coordinate latitude (*required for geo-radius search)              |
+| `lng`      | Float   | No*      | —       | `-180` to `180`                       | Coordinate longitude (*required for geo-radius search)             |
+| `radius`   | Integer | No       | `5000`  | `100–50000` meters                    | Approximate search radius around coordinates                       |
+| `query`    | String  | No       | —       | 1–100 characters                      | Case-insensitive keyword search matching name, address, or summary |
+| `q`        | String  | No       | —       | 1–100 characters                      | Alias for `query`                                                  |
+| `cities`   | String  | No       | —       | Comma-separated strings               | Filter venues by one or more cities/locations                      |
+| `category` | String  | No       | `all`   | `cafe`, `coworking`, `library`, `all` | Workspace venue category                                           |
+| `page`     | Integer | No       | `1`     | `≥ 1`                                 | Page number for paginated search results                           |
+| `limit`    | Integer | No       | `50`    | `1–100`                               | Number of venues returned per page (max 100)                       |
 
-#### Quiet Zone
+*\* Note: If `lat` and `lng` are omitted, the endpoint falls back to returning all venues matching optional `cities`, `query`, and pagination parameters.*
 
-When the **Quiet Zone** pill is enabled:
-- The active search filter is updated.
-- The client automatically re-fetches venue data.
-- The API request includes: `hasQuietZone=true`
+#### Workspace & Environment Filters
+
+| Parameter             | Type    | Required | Default | Allowed Values / Validation                                   | Description                                             |
+| --------------------- | ------- | -------- | ------- | -------------------------------------------------------------- | ------------------------------------------------------- |
+| `wifi`                | Boolean | No       | `false` | `true`, `false`                                                | Filter venues with strong Wi-Fi (Wi-Fi quality rating ≥ 3) |
+| `wifiSpeedBand`       | String  | No       | `all`   | `basic` (≥10 Mbps), `fast` (≥50 Mbps), `ultra` (≥100 Mbps), `all` | Filter by verified minimum Wi-Fi download speed         |
+| `outlets`             | Boolean | No       | `false` | `true`, `false`                                                | Filter venues with power outlets available              |
+| `outletDensity`       | String  | No       | `none`  | `every_table`, `some_tables`, `wall_seats`, `none`             | Filter by density and distribution of power outlets     |
+| `quiet`               | Boolean | No       | `false` | `true`, `false`                                                | Filter quiet venues (`noiseLevel = "quiet"`)           |
+| `hasQuietZone`        | Boolean | No       | `false` | `true`, `false`                                                | Filter venues with verified dedicated quiet zones       |
+| `hasNoMusic`          | Boolean | No       | `false` | `true`, `false`                                                | Filter venues that do not play background music         |
+| `musicStyle`          | String  | No       | `all`   | `lofi`, `classical_jazz`, `no_music`, `all`                   | Filter venues by style of background music played       |
+| `ergonomic`           | Boolean | No       | `false` | `true`, `false`                                                | Filter venues offering ergonomic seating / chairs       |
+| `hasPhoneBooths`      | Boolean | No       | `false` | `true`, `false`                                                | Filter venues equipped with sound-isolated phone booths |
+| `hasAncHeadsetRental` | Boolean | No       | `false` | `true`, `false`                                                | Filter venues offering active noise-cancelling rentals  |
+| `lighting`            | String  | No       | —       | `natural_daylight`, `warm_ambient`, `fluorescent`, `bright_white` | Filter by ambient lighting conditions                   |
+
+#### Food, Beverage & Pet Amenities
+
+| Parameter            | Type    | Required | Default | Allowed Values / Validation | Description                                        |
+| -------------------- | ------- | -------- | ------- | --------------------------- | -------------------------------------------------- |
+| `singleOriginBeans`  | Boolean | No       | `false` | `true`, `false`             | Filter cafes serving single-origin coffee beans    |
+| `specialtyEspresso`  | Boolean | No       | `false` | `true`, `false`             | Filter venues with specialty espresso preparations |
+| `oatAlmondMilk`      | Boolean | No       | `false` | `true`, `false`             | Filter venues offering oat or almond milk options  |
+| `pourOverAvailable`  | Boolean | No       | `false` | `true`, `false`             | Filter venues with pour-over coffee available      |
+| `petsAllowedIndoors` | Boolean | No       | `false` | `true`, `false`             | Filter venues allowing pets indoors                |
+| `dogFriendly`        | Boolean | No       | `false` | `true`, `false`             | Filter dog-friendly workspaces                     |
+| `catsAllowed`        | Boolean | No       | `false` | `true`, `false`             | Filter cat-friendly workspaces                     |
+| `patioOnly`          | Boolean | No       | `false` | `true`, `false`             | Filter venues where pets are permitted on patio only |
+| `waterBowlsProvided` | Boolean | No       | `false` | `true`, `false`             | Filter venues that provide pet water bowls         |
+
+### Rate Limiting
+
+The `/api/venues` search endpoint enforces rate limits using a sliding window algorithm to protect backend databases while allowing interactive search typing:
+
+- **Limit:** 60 requests per 1-minute window (`VENUE_SEARCH_RATE_LIMIT = 60`)
+- **Key Identifier:** `venues-search:${userId || ip}` (keyed per user for authenticated users, per IP for guests)
+
+#### Rate Limit Headers
+
+Every response includes standard rate-limiting headers:
+
+| Header | Type | Description |
+| ------ | ---- | ----------- |
+| `X-RateLimit-Limit` | Integer | Total requests allowed in the rate-limit window (e.g. `60`) |
+| `X-RateLimit-Remaining` | Integer | Remaining requests allowed in the current window |
+| `X-RateLimit-Reset` | Unix timestamp (s) | Epoch timestamp when the current rate limit window resets |
+| `Retry-After` | Integer (seconds) | Sent on `429 Too Many Requests` indicating wait seconds |
+
+### Example Request
+
+```http
+GET /api/venues?lat=40.7128&lng=-74.0060&radius=3000&category=cafe&wifi=true&outlets=true&outletDensity=every_table&wifiSpeedBand=fast&quiet=true&hasQuietZone=true&page=1&limit=10 HTTP/1.1
+Host: worksphere.app
+Accept: application/json
+```
 
 ### Success Response (200 OK)
 
@@ -102,26 +155,57 @@ When the **Quiet Zone** pill is enabled:
       "address": "476 5th Ave, New York, NY 10018",
       "rating": 4.5,
       "wifiQuality": 4,
+      "wifiSpeed": 85,
       "hasOutlets": true,
+      "outletDensity": "every_table",
       "noiseLevel": "quiet",
       "hasQuietZone": true,
+      "hasPhoneBooths": true,
+      "hasErgonomic": true,
       "crowdsourced": true,
       "createdAt": "2026-07-09T05:00:55.000Z",
       "updatedAt": "2026-07-10T10:00:00.000Z",
       "_count": {
         "favorites": 12,
         "ratings": 8
-      }
+      },
+      "foodValidations": []
     }
-  ]
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 1,
+    "totalPages": 1,
+    "hasNextPage": false
+  }
 }
 ```
 
 ### Error Response (400 Bad Request)
 
+Returned when query parameters fail validation (e.g., coordinates out of bounds or invalid enum):
+
 ```json
 {
   "error": "lat: Number must be greater than or equal to -90, radius: Number must be less than or equal to 50000"
+}
+```
+
+### Error Response (429 Too Many Requests)
+
+Returned when request rate exceeds 60 requests per minute:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 45
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 0
+Content-Type: application/json
+
+{
+  "error": "Too many search requests. Please slow down and try again.",
+  "retryAfter": 45
 }
 ```
 
@@ -733,3 +817,81 @@ Before rendering, the engine filters the input `venues` array for each selected 
 - **Graphics Fallbacks**: Simple shapes (rectangles and lines) are drawn with solid colors as fallbacks if external image assets fail to load.
 
 # End of API Reference
+
+---
+
+# Rate Limiting & Throttling
+
+WorkSphere enforces per-user and per-IP rate limits on all API endpoints to prevent abuse. Rate limiting uses a **sliding-window** algorithm backed by Upstash Redis (with an in-memory fallback for local development).
+
+## Rate Limit Response Headers
+
+Every API response includes the following headers:
+
+| Header | Type | Description |
+|--------|------|-------------|
+| `X-RateLimit-Limit` | integer | Maximum number of requests allowed in the window |
+| `X-RateLimit-Remaining` | integer | Requests remaining before the limit is hit |
+| `X-RateLimit-Reset` | Unix timestamp (s) | When the current window resets |
+| `Retry-After` | integer (seconds) | **Only on 429 responses** — seconds until the next request is allowed |
+
+## 429 Too Many Requests
+
+When the rate limit is exceeded, the API returns:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 42
+X-RateLimit-Reset: 1727000000
+Content-Type: application/json
+
+{
+  "error": "Rate limit exceeded. Please wait before making more requests.",
+  "retryAfterSeconds": 42,
+  "retryAfter": 42
+}
+```
+
+## Client Retry with Exponential Backoff
+
+Do not immediately retry a 429 response — use exponential backoff with jitter to avoid thundering-herd conditions:
+
+```typescript
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  maxAttempts = 4,
+): Promise<Response> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const response = await fetch(url, options);
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    const retryAfterHeader = response.headers.get("Retry-After");
+    const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 60;
+
+    if (attempt === maxAttempts - 1) {
+      return response; // Exhausted retries — surface the 429 to the caller
+    }
+
+    // Exponential backoff: base 1s, doubles each attempt, +rand(0,500ms) jitter
+    const baseMs = Math.min(retryAfterSec * 1000, 1000 * Math.pow(2, attempt));
+    const jitter = Math.random() * 500;
+    await new Promise((resolve) => setTimeout(resolve, baseMs + jitter));
+  }
+
+  return fetch(url, options); // Final attempt
+}
+```
+
+## Per-Route Limits
+
+| Route | Limit | Window |
+|-------|-------|--------|
+| `POST /api/reservations/book` | 5 requests | 60 s per user |
+| `POST /api/chat` | 10 requests | 60 s per user |
+| `POST /api/partykit/auth` | 30 requests | 60 s per IP |
+| All other authenticated routes | 100 requests | 60 s per user |
+| Unauthenticated routes | 20 requests | 60 s per IP |

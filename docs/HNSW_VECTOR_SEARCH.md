@@ -479,3 +479,5 @@ function batchInsert(
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | `src/lib/hnsw/hnsw.ts`  | HNSWIndex class implementation (322 lines)                                                    |
 | `src/lib/hnsw/types.ts` | TypeScript interfaces for HnswNode, SearchResult, HnswConfig, CompressedContext, ContextChunk |
+| `src/lib/agents/MemoryAgent.ts` | MemoryAgent episodic memory extraction, deduplication, and compaction pipeline |
+| `docs/ai/memory-agent-pipeline.md` | MemoryAgent vector embedding batching and HNSW indexing thresholds reference guide |

@@ -615,33 +615,104 @@ const rotY90 = new Float32Array([
 
 ---
 
-## Coordinate Systems
+## Coordinate Systems & Transformation Matrix Diagrams
 
 ### WebXR Coordinate System
 
-WebXR uses a right-handed coordinate system:
+WebXR uses a right-handed Cartesian coordinate system:
 
-- **+X**: Right
-- **+Y**: Up
-- **-Z**: Forward (into the screen)
+- **+X**: Right (lateral axis)
+- **+Y**: Up (vertical elevation axis)
+- **-Z**: Forward (line of sight / depth into the scene)
 
 ```mermaid
 graph LR
-    subgraph "WebXR Coordinates"
-        X["+X Right"] --- Origin((0,0,0))
-        Y["+Y Up"] --- Origin
-        Z["-Z Forward"] --- Origin
+    subgraph "WebXR Right-Handed Coordinate System"
+        X["+X Right (Horizontal)"] --- Origin((0,0,0 Origin))
+        Y["+Y Up (Altitude)"] --- Origin
+        Z["-Z Forward (Depth / View Target)"] --- Origin
+    end
+```
+
+### Coordinate Frame Transformation Chain
+
+In WorkSphere, spatial anchors and AR markers are positioned by resolving transformations across five distinct coordinate frames:
+
+```mermaid
+graph TD
+    V["Venue / CAD Building Frame (V)"] -->|"T_V_to_W (Calibration Origin Offset)"| W["WebXR World / Reference Frame (W)"]
+    W -->|"T_W_to_C (XRViewerPose.transform)"| C["Camera / Device View Frame (C)"]
+    C -->|"T_C_to_M (Fiducial / Image Tracking PnP)"| M["Physical AR Marker Frame (M)"]
+    M -->|"T_M_to_A (Known Physical Desk CAD Offset)"| A["Desk Spatial Anchor Frame (A)"]
+    W -.->|"T_W_to_A = T_W_to_C * T_C_to_M * T_M_to_A"| A
+```
+
+#### Coordinate Frame Definitions:
+
+1. **Venue Frame ($\mathcal{V}$)**: The global building coordinate space (meters from architectural origin / CAD datum).
+2. **World Frame ($\mathcal{W}$)**: WebXR reference space (`'local-floor'` or `'unbounded'`), established when the XR session begins.
+3. **Camera Frame ($\mathcal{C}$)**: Dynamic viewer pose tracked by visual-inertial odometry (`XRViewerPose`).
+4. **Marker Frame ($\mathcal{M}$)**: Coordinate system centered on the physical QR/AprilTag/ArUco marker on the desk surface (+Z normal to desk surface).
+5. **Anchor Frame ($\mathcal{A}$)**: Coordinate frame of the persistent virtual asset / desk UI overlay.
+
+### Transformation Matrix Math & Derivation
+
+The transformation matrix $T_{A \to B}$ is represented as a $4 \times 4$ homogeneous transformation matrix:
+
+$$
+T_{A \to B} = \begin{bmatrix} 
+R_{11} & R_{12} & R_{13} & t_x \\
+R_{21} & R_{22} & R_{23} & t_y \\
+R_{31} & R_{32} & R_{33} & t_z \\
+0 & 0 & 0 & 1 
+\end{bmatrix}
+$$
+
+#### 1. Spatial Anchor Pose from AR Marker Detection
+When a user scans a physical desk marker, computer vision (WebXR Image Tracking or OpenCV/ZXing) solves Perspective-n-Point (PnP) to yield $T_{\mathcal{C} \to \mathcal{M}}$. The persistent world anchor pose $T_{\mathcal{W} \to \mathcal{A}}$ is computed as:
+
+$$T_{\mathcal{W} \to \mathcal{A}} = T_{\mathcal{W} \to \mathcal{C}} \cdot T_{\mathcal{C} \to \mathcal{M}} \cdot T_{\mathcal{M} \to \mathcal{A}}$$
+
+Where:
+- $T_{\mathcal{W} \to \mathcal{C}}$ is obtained directly from `XRFrame.getViewerPose(referenceSpace).transform.matrix`.
+- $T_{\mathcal{C} \to \mathcal{M}}$ is the detected relative marker transform.
+- $T_{\mathcal{M} \to \mathcal{A}}$ is the predefined CAD offset from the physical marker to the center of the desk.
+
+#### 2. Relative View Transform for Rendering
+To render the virtual desk bounding box and availability badge relative to the camera in each frame:
+
+$$T_{\mathcal{C} \to \mathcal{A}} = (T_{\mathcal{W} \to \mathcal{C}})^{-1} \cdot T_{\mathcal{W} \to \mathcal{A}}$$
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Camera as Device Camera (Frame C)
+    participant Tracker as WebXR Image / Marker Tracker
+    participant Session as XRFrame / Reference Space (Frame W)
+    participant Store as Anchor Persistence (IndexedDB)
+    participant Renderer as Three.js / WebGL Scene
+
+    Camera->>Tracker: Feed video frame with AR fiducial marker
+    Tracker->>Tracker: Solve PnP -> Compute T_C_to_M
+    Session->>Tracker: Query Viewer Pose -> T_W_to_C
+    Tracker->>Session: Compute T_W_to_A = T_W_to_C * T_C_to_M * T_M_to_A
+    Session->>Session: frame.createAnchor(T_W_to_A, referenceSpace)
+    Session->>Store: Serialize and persist normalized 4x4 matrix
+    loop Every Render Frame (60-90Hz)
+        Session->>Renderer: frame.getPose(anchor.anchorSpace, referenceSpace)
+        Renderer->>Renderer: Update desk model matrix (T_C_to_A)
+        Renderer->>Renderer: Draw WebGL desk indicator & occupancy ring
     end
 ```
 
 ### Reference Space Types
 
-| Space Type      | Origin                      | Use Case       |
-| --------------- | --------------------------- | -------------- |
-| `local`         | First pose at session start | Most AR        |
-| `local-floor`   | Floor below first pose      | Room-scale     |
-| `bounded-floor` | Floor with tracked boundary | Room w/ limits |
-| `unbounded`     | Continuously drifts         | Outdoor        |
+| Space Type      | Origin                      | Continuity | Use Case                          |
+| --------------- | --------------------------- | ---------- | --------------------------------- |
+| `local`         | Viewer pose at session init | Discontinuous on reset | Seated or standing AR preview |
+| `local-floor`   | Floor level below init pose | Stable ground plane | Room-scale indoor AR desk check-in |
+| `bounded-floor` | Floor center with play area | Strict perimeter boundary | Booths and enclosed meeting rooms |
+| `unbounded`     | Visual-Inertial Odometry origin | Continuous SLAM drift correction | Multi-room & venue-wide navigation |
 
 ---
 
@@ -676,13 +747,12 @@ function anchorToWorld(
 
 ### Calibration for World Space
 
-World space requires calibration against known
-physical points:
+World space requires calibration against known physical points:
 
-1. **QR Marker Calibration**: Scan known marker
-2. **Geographic Calibration**: Use GPS + coordinates
-3. **Manual Calibration**: User places marker
-4. **Multi-User Calibration**: Shared reference points
+1. **QR / AprilTag Marker Calibration**: Optical fiducial scan with known physical dimensions
+2. **Spatial Feature Calibration**: Point cloud alignment against pre-mapped 3D point clouds
+3. **Multi-User Calibration**: Peer-to-peer relative pose triangulation
+4. **Geographic Calibration**: High-precision indoor BLE beacons + GPS floor plan projection
 
 ---
 
@@ -984,27 +1054,29 @@ interface PrivacySettings {
 
 ## Browser Compatibility Table
 
-| Browser          | WebXR   | Anchors | Hit-Test | Notes          |
-| ---------------- | ------- | ------- | -------- | -------------- |
-| Chrome 79+       | Full    | Yes     | Yes      | Primary        |
-| Edge 79+         | Full    | Yes     | Yes      | Chromium-based |
-| Samsung Internet | Partial | Varies  | Varies   | Device-dep.    |
-| Firefox          | Exper.  | No      | No       | Behind flag    |
-| Safari (iOS)     | Limited | No      | No       | No immersive   |
-| Quest Browser    | Full    | Yes     | Yes      | Native XR      |
+| Browser | Platform | WebXR `immersive-ar` | Anchors (`'anchors'`) | Hit-Test (`'hit-test'`) | Image Tracking (`'image-tracking'`) | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Meta Quest Browser** (v30+) | Meta Quest 3 / Quest Pro / Quest 2 | Full | Full Support | Full Support | Full Support | Primary target for spatial computing. Passthrough enabled. |
+| **visionOS Safari** (1.1+) | Apple Vision Pro | Full (`transient-pointer`) | Full (`XRAnchor`) | Full (`local-floor`) | Partial (requires manual fiducial CV) | WebXR feature flags enabled in Safari Advanced Settings. |
+| **Google Chrome Mobile** (81+) | Android (ARCore supported) | Full | Full Support | Full Support | Full Support | Standard for mobile AR desk check-ins. |
+| **Microsoft Edge Mobile** (81+) | Android (ARCore supported) | Full | Full Support | Full Support | Full Support | Chromium WebXR implementation. |
+| **Samsung Internet** (16+) | Android (Galaxy devices) | Full | Full Support | Full Support | Varies | Device-dependent ARCore integration. |
+| **Firefox Reality / Wolvic** (1.4+) | Pico 4 / Vive Focus 3 / Meta Quest | Full | Full Support | Full Support | Experimental | Open-source XR browser based on Gecko/Chromium. |
+| **Safari Mobile** (iOS 17+) | iPhone / iPad (LiDAR & A-series) | Polyfill / WebXR Viewer | Polyfill | Polyfill | WebAssembly (ZXing/OpenCV) | Native WebXR requires Mozilla WebXR Viewer or WebXR Polyfill. |
+| **Desktop Chrome / Edge** | Windows / macOS / Linux | WebXR Emulator Extension | Emulated | Emulated | Emulated | Used for local developer debugging and matrix unit tests. |
 
 ---
 
 ## Device Compatibility Table
 
-| Device Category     | Immersive AR | Anchors | Hit-Test | Performance |
-| ------------------- | ------------ | ------- | -------- | ----------- |
-| Android (ARCore)    | Yes          | Yes     | Yes      | High        |
-| Android (no ARCore) | Limited      | No      | No       | Low         |
-| iOS                 | No           | No      | No       | N/A         |
-| Desktop             | No           | No      | No       | N/A         |
-| VR Headsets         | Yes          | Yes     | Yes      | High        |
-| HoloLens            | Yes          | Yes     | Yes      | High        |
+| Hardware Device Category | Primary XR Runtime | Tracking DOF | Spatial Anchors Support | Typical Latency | Recommended Use Case |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Meta Quest 3 & Quest Pro** | Meta Horizon OS / OpenXR | 6-DOF Inside-Out (Color Passthrough) | Native WebXR Spatial Anchors + Horizon Cloud Spatial Anchors | < 12 ms | Multi-user desk calibration, immersive venue layout |
+| **Apple Vision Pro** | visionOS / ARKit | 6-DOF Inside-Out (High-Res Video See-Through) | Native visionOS Anchor Spaces | < 10 ms | Spatial workspace exploration & real-time collaboration |
+| **Magic Leap 2** | Android AOSP / OpenXR | 6-DOF Optical See-Through | Native OpenXR Spatial Anchors | < 15 ms | Enterprise desk management & facility maintenance |
+| **Android Smartphones (ARCore)** | Google Play Services for AR | 6-DOF Monocular / LiDAR SLAM | WebXR Anchors API (`XRSession`) | < 25 ms | Desk QR check-in, quick wayfinding |
+| **iOS Devices (iPhone 12-16 Pro)** | ARKit via WebXR Polyfill / WebXR Viewer | 6-DOF LiDAR + Scene Geometry | IndexedDB Persistent Matrices + ARKit Anchors | < 20 ms | Mobile AR inspection & floor plan verification |
+| **Standalone Android (Non-ARCore)** | Accelerometer / Gyroscope (Fallback) | 3-DOF Orientation Only | 2D Map Coordinate Projection Fallback | N/A | Graceful 2D floor plan fallback with compass heading |
 
 ---
 

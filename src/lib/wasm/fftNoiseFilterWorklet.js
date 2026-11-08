@@ -24,6 +24,10 @@ class FFTNoiseFilterProcessor extends AudioWorkletProcessor {
     this.numBins = 513;
     this.accumulated = 0;
     this.inputBuffer = new Float32Array(this.fftSize);
+    this.lowPowerMode = false;
+    this.telemetryIntervalMs = 16;
+    this.enableTelemetry = true;
+    this.lastTelemetryTime = 0;
     this.port.onmessage = this.handleMessage.bind(this);
   }
 
@@ -55,6 +59,15 @@ class FFTNoiseFilterProcessor extends AudioWorkletProcessor {
     switch (type) {
       case "init":
         await this.initWasm(wasmBinary);
+        break;
+      case "setLowPowerMode":
+        this.lowPowerMode = Boolean(data.enabled);
+        if (data.telemetryIntervalMs) {
+          this.telemetryIntervalMs = data.telemetryIntervalMs;
+        }
+        if (typeof data.enableTelemetry === "boolean") {
+          this.enableTelemetry = data.enableTelemetry;
+        }
         break;
       case "setSensitivity":
         if (this.wasmExports) {
@@ -231,11 +244,18 @@ class FFTNoiseFilterProcessor extends AudioWorkletProcessor {
           outputChannel.fill(0, writeLen);
         }
 
-        this.port.postMessage({
-          type: "frameProcessed",
-          rms,
-          processingTimeMs,
-        });
+        if (this.enableTelemetry) {
+          const now = typeof currentTime !== "undefined" ? currentTime * 1000 : Date.now();
+          const interval = this.lowPowerMode ? this.telemetryIntervalMs : 16;
+          if (now - this.lastTelemetryTime >= interval) {
+            this.port.postMessage({
+              type: "frameProcessed",
+              rms,
+              processingTimeMs,
+            });
+            this.lastTelemetryTime = now;
+          }
+        }
       } catch (err) {
         outputChannel.set(inputChannel);
         this.port.postMessage({ type: "error", error: err.message });

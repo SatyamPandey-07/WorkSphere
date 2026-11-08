@@ -49,6 +49,12 @@ export interface AppEvents {
     userId: string;
     status: string;
   };
+  "session:promoted": {
+    sessionId: string;
+    rsvpId: string;
+    userId: string;
+    previousStatus: string;
+  };
 }
 
 export type EventName = keyof AppEvents;
@@ -59,7 +65,9 @@ export type EventHandler<T extends EventName> = (
 
 export class EventBus {
   private static instance: EventBus;
-  private listeners: { [K in EventName]?: Set<EventHandler<K>> } = {};
+  private listeners: {
+    [K in EventName]?: Set<EventHandler<K>>;
+  } = {};
 
   private constructor() {}
 
@@ -76,11 +84,18 @@ export class EventBus {
   /**
    * Subscribe to an event.
    */
-  public on<T extends EventName>(event: T, handler: EventHandler<T>): void {
-    if (!this.listeners[event]) {
-      this.listeners[event] = new Set() as any;
+  public on<T extends EventName>(
+    event: T,
+    handler: EventHandler<T>,
+  ): void {
+    let handlers = this.listeners[event] as Set<EventHandler<T>> | undefined;
+  
+    if (!handlers) {
+      handlers = new Set<EventHandler<T>>();
+      (this.listeners[event] as any) = handlers;
     }
-    (this.listeners[event] as any).add(handler);
+  
+    handlers.add(handler);
   }
 
   /**
@@ -116,7 +131,16 @@ export class EventBus {
       });
 
       // Wait for all async handlers to finish
-      await Promise.allSettled(promises);
+      const results = await Promise.allSettled(promises);
+
+      results.forEach((result) => {
+        if (result.status === "rejected") {
+          console.error(
+            `[EventBus] Error in handler for event '${event}':`,
+            result.reason,
+          );
+        }
+      });
     }
   }
 

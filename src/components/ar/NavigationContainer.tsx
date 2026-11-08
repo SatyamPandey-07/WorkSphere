@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useWebXR } from "@/hooks/useWebXR";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import ARNavigation from "./ARNavigation";
 import CompassFallback from "./CompassFallback";
-import { View } from "lucide-react";
+import { IndoorPositioningMap } from "@/components/spatial/IndoorPositioningMap";
+import { View, Map, Compass, X } from "lucide-react";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
+import { todayInTimeZone } from "@/lib/bookingTime";
 
-interface SeatData {
+export interface SeatData {
   id: string;
   seatNumber: string;
   type: string;
@@ -15,7 +18,7 @@ interface SeatData {
   y: number;
 }
 
-interface AnchorData {
+export interface AnchorData {
   id: string;
   anchorPersistId: string;
   seatId: string | null;
@@ -25,16 +28,37 @@ interface AnchorData {
   seat: { id: string; seatNumber: string; type: string } | null;
 }
 
-interface NavigationContainerProps {
-  venueId: string;
+export interface VenueLocation {
+  name?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
-export default function NavigationContainer({
+export interface NavigationContainerProps {
+  venueId: string;
+  venue?: VenueLocation | null;
+  onClose?: () => void;
+  trapFocus?: boolean;
+  className?: string;
+}
+
+export function NavigationContainer({
   venueId,
+  venue,
+  onClose,
+  trapFocus = true,
+  className = "",
 }: NavigationContainerProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(containerRef, {
+    isActive: trapFocus,
+    onEscape: onClose,
+  });
   const { isSupported, requestSession } = useWebXR();
   const [session, setSession] = useState<XRSession | null>(null);
   const [useFallback, setUseFallback] = useState(false);
+  const [fallbackMode, setFallbackMode] = useState<"ekf" | "compass">("ekf");
   const [seats, setSeats] = useState<SeatData[]>([]);
   const [anchors, setAnchors] = useState<AnchorData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,22 +93,23 @@ export default function NavigationContainer({
       try {
         const now = new Date();
         const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-        const dateStr = now.toISOString().slice(0, 10);
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const dateStr = todayInTimeZone(timeZone, now);
         const [seatsRes, anchorsRes] = await Promise.all([
           fetch(
-            `/api/reservations/availability?venueId=${venueId}&date=${dateStr}&time=${timeStr}&duration=60`,
+            `/api/reservations/availability?venueId=${venueId}&date=${dateStr}&time=${timeStr}&duration=60&timeZone=${encodeURIComponent(timeZone)}`,
           ),
           fetch(`/api/ar/anchors?venueId=${venueId}`),
         ]);
 
         if (!cancelled && seatsRes.ok) {
           const seatsData = await seatsRes.json();
-          setSeats(seatsData.seats ?? []);
+          setSeats(Array.isArray(seatsData?.seats) ? seatsData.seats : []);
         }
 
         if (!cancelled && anchorsRes.ok) {
           const anchorsData = await anchorsRes.json();
-          setAnchors(anchorsData.data ?? []);
+          setAnchors(Array.isArray(anchorsData?.data) ? anchorsData.data : []);
         }
       } catch (err) {
         console.error("Failed to fetch venue data for AR:", err);
@@ -183,11 +208,112 @@ export default function NavigationContainer({
   }
 
   if (useFallback || isSupported === false) {
-    return <CompassFallback />;
+    return (
+      <div
+        ref={containerRef}
+        role="region"
+        aria-label="AR Fallback Navigation"
+        data-testid="navigation-container-fallback"
+        tabIndex={-1}
+        className={`flex flex-col w-full h-full space-y-4 focus:outline-none ${className}`.trim()}
+      >
+        <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 p-2.5 rounded-xl">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="mode-ekf-btn"
+              onClick={() => setFallbackMode("ekf")}
+              aria-pressed={fallbackMode === "ekf"}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                fallbackMode === "ekf"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <Map className="w-3.5 h-3.5" />
+              <span>2D EKF Indoor Fusion</span>
+            </button>
+            <button
+              type="button"
+              data-testid="mode-compass-btn"
+              onClick={() => setFallbackMode("compass")}
+              aria-pressed={fallbackMode === "compass"}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                fallbackMode === "compass"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>Compass Heading</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isSupported && (
+              <button
+                type="button"
+                data-testid="switch-to-ar-btn"
+                onClick={() => setUseFallback(false)}
+                className="text-xs text-blue-400 hover:text-blue-300 font-bold px-3 py-1.5"
+              >
+                Switch to AR
+              </button>
+            )}
+
+            {onClose && (
+              <button
+                type="button"
+                data-testid="close-navigation-btn"
+                onClick={onClose}
+                aria-label="Close navigation"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {fallbackMode === "ekf" ? (
+          <IndoorPositioningMap
+            venueName={venue?.name || "Venue Navigation"}
+            className="flex-1"
+          />
+        ) : (
+          <CompassFallback
+            destinationLat={venue?.latitude}
+            destinationLng={venue?.longitude}
+            destinationName={venue?.name}
+            onRetryAR={isSupported ? () => setUseFallback(false) : undefined}
+            onClose={onClose}
+          />
+        )}
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] w-full bg-slate-900 rounded-lg p-6 text-white border border-slate-800">
+    <div
+      ref={containerRef}
+      role="region"
+      aria-label="AR Desk Finder"
+      data-testid="navigation-container-launch"
+      tabIndex={-1}
+      className={`flex flex-col items-center justify-center min-h-[400px] w-full bg-slate-900 rounded-lg p-6 text-white border border-slate-800 relative focus:outline-none ${className}`.trim()}
+    >
+      {onClose && (
+        <button
+          type="button"
+          data-testid="close-navigation-btn"
+          onClick={onClose}
+          aria-label="Close AR Desk Finder"
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      )}
+
       <div className="bg-blue-500/20 p-4 rounded-full mb-6">
         <View className="w-12 h-12 text-blue-400" />
       </div>
@@ -199,7 +325,10 @@ export default function NavigationContainer({
       </p>
 
       {isSupported === null || loading ? (
-        <div className="animate-pulse text-slate-500">
+        <div
+          data-testid="navigation-loading-state"
+          className="animate-pulse text-slate-500"
+        >
           {loading
             ? "Loading venue data..."
             : "Checking device compatibility..."}
@@ -207,12 +336,16 @@ export default function NavigationContainer({
       ) : (
         <div className="flex flex-col sm:flex-row gap-4">
           <button
+            type="button"
+            data-testid="start-ar-btn"
             onClick={startAR}
             className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-md font-medium transition-colors shadow-lg shadow-blue-500/20"
           >
             Start AR Session
           </button>
           <button
+            type="button"
+            data-testid="use-2d-map-btn"
             onClick={() => setUseFallback(true)}
             className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-8 py-3 rounded-md font-medium transition-colors border border-slate-700"
           >
@@ -222,7 +355,10 @@ export default function NavigationContainer({
       )}
 
       {anchors.length > 0 && (
-        <div className="mt-6 text-sm text-slate-500">
+        <div
+          data-testid="anchor-count-badge"
+          className="mt-6 text-sm text-slate-500"
+        >
           {anchors.length} anchor{anchors.length !== 1 ? "s" : ""} saved for
           this venue
         </div>
@@ -230,3 +366,5 @@ export default function NavigationContainer({
     </div>
   );
 }
+
+export default NavigationContainer;

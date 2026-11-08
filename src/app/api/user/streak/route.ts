@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { calculateStreak, getUnlockedMilestones } from "@/lib/streak";
+import { ensureUserExists } from "@/lib/auth";
 
 // ─── GET /api/user/streak ─────────────────────────────────────────────────────
 // Returns the current streak data for the authenticated user.
@@ -12,12 +13,15 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    await ensureUserExists(userId);
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
         currentStreak: true,
         longestStreak: true,
         lastCheckInDate: true,
+        timezone: true,
       },
     });
 
@@ -29,6 +33,7 @@ export async function GET() {
       currentStreak: user.currentStreak,
       longestStreak: user.longestStreak,
       lastCheckInDate: user.lastCheckInDate,
+      timezone: user.timezone || "UTC",
       unlockedMilestones: getUnlockedMilestones(user.currentStreak),
     });
   } catch (error) {
@@ -50,6 +55,8 @@ export async function POST() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    await ensureUserExists(userId);
+
     // Fetch current streak state
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -57,6 +64,7 @@ export async function POST() {
         currentStreak: true,
         longestStreak: true,
         lastCheckInDate: true,
+        timezone: true,
       },
     });
 
@@ -69,6 +77,7 @@ export async function POST() {
       user.lastCheckInDate,
       user.currentStreak,
       user.longestStreak,
+      user.timezone || "UTC",
     );
 
     // Only write to DB if the streak actually changed (not a same-day duplicate)
@@ -87,6 +96,7 @@ export async function POST() {
       currentStreak: result.currentStreak,
       longestStreak: result.longestStreak,
       lastCheckInDate: result.lastCheckInDate,
+      timezone: user.timezone || "UTC",
       incremented: result.incremented,
       newMilestones: result.newMilestones,
       unlockedMilestones: getUnlockedMilestones(result.currentStreak),

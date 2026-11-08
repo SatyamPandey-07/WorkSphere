@@ -191,6 +191,52 @@ describe("Client-side Offline Sync", () => {
     });
   });
 
+  it("retains tag mutation in queue and increments retryCount on failed 409 retry", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      value: true,
+      configurable: true,
+    });
+    await queueFavoriteTagMutation("tag-retry-1", "UPDATE", {
+      name: "Existing Name",
+    });
+
+    global.fetch = jest
+      .fn()
+      // 1. Initial sync fails with 409
+      .mockResolvedValueOnce({ ok: false, status: 409 })
+      // 2. Fetch latest tags fails
+      .mockResolvedValueOnce({ ok: false, status: 500 });
+
+    await processTagMutationsQueue();
+
+    const queued = await getQueuedTagMutations();
+    expect(queued).toHaveLength(1);
+    expect(queued[0].tagId).toBe("tag-retry-1");
+    expect(queued[0].retryCount).toBe(1);
+  });
+
+  it("dequeues tag mutation on failed 409 retry when MAX_SYNC_RETRIES is reached", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      value: true,
+      configurable: true,
+    });
+    await queueFavoriteTagMutation("tag-retry-2", "UPDATE", {
+      name: "Existing Name",
+    });
+
+    // Simulate 5 attempts (MAX_SYNC_RETRIES = 5)
+    for (let i = 0; i < 5; i++) {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 409 })
+        .mockResolvedValueOnce({ ok: false, status: 500 });
+      await processTagMutationsQueue();
+    }
+
+    const queued = await getQueuedTagMutations();
+    expect(queued).toHaveLength(0);
+  });
+
   describe("Web Locks API & BroadcastChannel Cross-Tab Synchronization (#1382)", () => {
     it("acquires Exclusive Web Lock when navigator.locks is available", async () => {
       const mockRequest = jest.fn((name, options, callback) => {

@@ -21,7 +21,7 @@ describe("PDF Generator", () => {
     confirmationId: "WS-12345",
     date: "2026-07-15",
     time: "19:00",
-    duration: 3,
+    duration: 180,
     projectBillingCode: "BILL-456",
     customerEmail: "customer@example.com",
     user: { firstName: "Jane", lastName: "Smith" },

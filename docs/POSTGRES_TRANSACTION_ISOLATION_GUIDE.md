@@ -280,24 +280,33 @@ When using `Repeatable Read` or `Serializable` isolation, PostgreSQL may abort a
 
 ### 5.1 The Retry Pattern
 
-The following pattern (based on the `folders.ts` implementation) provides bounded retries with linear backoff:
+The following pattern provides bounded retries with **exponential backoff and randomized jitter** to avoid thundering-herd under high concurrent load. It also logs each retry attempt to the application logger for telemetry visibility.
 
 ```typescript
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 const MAX_RETRIES = 3;
-const RETRY_BACKOFF_MS = 50;
+/** Base delay in ms — doubles each attempt: 100ms, 200ms, 400ms */
+const RETRY_BASE_MS = 100;
+/** Max jitter added per attempt to spread retries under high contention */
+const RETRY_JITTER_MS = 50;
 
 function isTransientWriteConflict(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2034"
+    (error.code === "P2034" || // Serialization failure (REPEATABLE READ / SERIALIZABLE)
+      error.code === "P2028")  // Transaction timeout
   );
 }
 
+/** Exponential backoff with jitter: base * 2^attempt + rand(0, jitter) */
+function backoffMs(attempt: number): number {
+  return RETRY_BASE_MS * Math.pow(2, attempt) + Math.random() * RETRY_JITTER_MS;
+}
+
 async function runWithRetry<T>(
-  fn: (tx: any) => Promise<T>,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
   isolationLevel: Prisma.TransactionIsolationLevel =
     Prisma.TransactionIsolationLevel.ReadCommitted,
 ): Promise<T> {
@@ -314,14 +323,25 @@ async function runWithRetry<T>(
       if (!isTransientWriteConflict(error) || attempt > MAX_RETRIES) {
         throw error;
       }
-      // Linear backoff: 50ms, 100ms, 150ms
-      await new Promise((resolve) =>
-        setTimeout(resolve, RETRY_BACKOFF_MS * attempt),
+      const delay = backoffMs(attempt - 1);
+      // Log retry to telemetry for visibility (e.g. high contention monitoring)
+      console.warn(
+        `[db/retry] P2034 serialization conflict — attempt ${attempt}/${MAX_RETRIES}, ` +
+        `retrying in ${delay.toFixed(0)}ms`,
       );
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 }
 ```
+
+**Backoff schedule** (base 100ms, `attempt` is 0-indexed):
+
+| Retry | Base delay | Max jitter | Worst-case |
+|-------|-----------|------------|------------|
+| 1st | 100ms | +50ms | 150ms |
+| 2nd | 200ms | +50ms | 250ms |
+| 3rd | 400ms | +50ms | 450ms |
 
 ### 5.2 When to Retry vs. When to Fail
 

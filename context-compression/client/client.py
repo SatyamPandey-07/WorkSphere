@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -8,16 +9,23 @@ logger = logging.getLogger(__name__)
 
 
 class CompressionClient:
-    def __init__(self, server_url: str = "http://127.0.0.1:8890"):
+    def __init__(
+        self,
+        server_url: str = "http://127.0.0.1:8890",
+        api_key: Optional[str] = None,
+    ):
         self.server_url = server_url.rstrip("/")
+        self.api_key = api_key or os.environ.get("COMPRESSION_API_KEY")
 
     def _request(
         self, method: str, path: str, data: Optional[Dict] = None
     ) -> Any:
         url = f"{self.server_url}{path}"
-        body = json.dumps(data).encode() if data else None
+        body = json.dumps(data).encode() if data is not None else None
         req = Request(url, data=body, method=method)
         req.add_header("Content-Type", "application/json")
+        if self.api_key:
+            req.add_header("Authorization", f"Bearer {self.api_key}")
         try:
             with urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode())
@@ -49,10 +57,40 @@ class CompressionClient:
     def compress_context(
         self, query: str, max_tokens: Optional[int] = None
     ) -> Dict:
-        body = {"query": query}
+        body: Dict[str, Any] = {"query": query}
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
         return self._request("POST", "/api/compress", body)
+
+    def compress_context_stream(
+        self, query: str, max_tokens: Optional[int] = None
+    ):
+        url = f"{self.server_url}/api/compress/stream"
+        body = {"query": query}
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+        data = json.dumps(body).encode()
+        req = Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "text/event-stream")
+        try:
+            with urlopen(req, timeout=60) as resp:
+                for line in resp:
+                    line_str = line.decode("utf-8").strip()
+                    if line_str.startswith("data: "):
+                        content = line_str[6:]
+                        if content == "[DONE]":
+                            break
+                        try:
+                            yield json.loads(content)
+                        except json.JSONDecodeError:
+                            yield {"data": content}
+        except URLError as e:
+            logger.error(f"Streaming request failed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected streaming error: {e}")
+            raise
 
     def search_context(self, query: str, k: int = 10) -> List[Dict]:
         result = self._request(
@@ -61,7 +99,7 @@ class CompressionClient:
         return result["results"]
 
     def deduplicate(self, threshold: Optional[float] = None) -> int:
-        body = {}
+        body: Dict[str, Any] = {}
         if threshold is not None:
             body["threshold"] = threshold
         result = self._request("POST", "/api/deduplicate", body)

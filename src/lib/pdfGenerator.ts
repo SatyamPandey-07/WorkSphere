@@ -1,342 +1,318 @@
-import {
-  PDFDocument,
-  rgb,
-  StandardFonts,
-  PDFPageDrawTextOptions,
-  breakTextIntoLines,
-} from "pdf-lib";
-import { safeText } from "./pdfHelpers";
-import { sanitizeMathSymbols } from "./pdfUtils";
+/**
+ * PDF Generator re-export bridge and receipt/guest list generator.
+ */
 
-// Using the same drawSafeText as the export route, but we will duplicate the helper signature for local use here
-export async function generateTaxExportPdf(
-  bookings: any[],
-): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.create();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { wrapText, drawVectorQrMatrix } from "./pdf/generateBookingPdf";
+import { generateQRMatrix } from "./qr/svgQr";
+import crypto from "crypto";
 
-  // Summary page
-  const summaryPage = pdfDoc.addPage([595, 842]);
-  const { width, height } = summaryPage.getSize();
-  let y = height - 50;
+export { generateTaxExportPdf } from "./export/domain/taxExporter";
+export {
+  generateBookingItineraryPdf,
+  type BookingItineraryData,
+} from "./export/domain/itineraryExporter";
+export {
+  generateBookingPdf,
+  wrapText,
+  type BookingPdfData,
+  type BookingPdfOptions,
+} from "./pdf/generateBookingPdf";
+export { PdfDocumentBuilder } from "./export/pdfBuilder";
 
-  summaryPage.drawRectangle({
-    x: 0,
-    y: height - 10,
-    width,
-    height: 10,
-    color: rgb(0.23, 0.51, 0.96),
-  });
-  y -= 60;
-
-  // Local helper just for StandardFonts (as pdfHelpers uses custom interface)
-  const drawText = (page: any, text: string, options: any) => {
-    const sanitized = sanitizeMathSymbols(text);
-    try {
-      page.drawText(sanitized, options);
-    } catch {
-      const strictText = sanitized.replace(/[^\x20-\x7E]/g, "");
-      try {
-        page.drawText(strictText, options);
-      } catch {}
-    }
-  };
-
-  drawText(summaryPage, "WORKSPHERE EXPENSE SUMMARY", {
-    x: 130,
-    y,
-    size: 22,
-    font: boldFont,
-    color: rgb(0, 0, 0),
-  });
-  y -= 15;
-  drawText(summaryPage, "CONSOLIDATED NEURAL LEDGER EXPORT", {
-    x: 165,
-    y,
-    size: 8,
-    font,
-    color: rgb(0.5, 0.5, 0.5),
-  });
-  y -= 12;
-  drawText(
-    summaryPage,
-    "ESTIMATE ONLY - $15/HR FLAT RATE, 8% FLAT TAX - VERIFY AGAINST YOUR INVOICES",
-    { x: 50, y, size: 7, font, color: rgb(0.6, 0.2, 0.2) },
-  );
-  y -= 50;
-
-  drawText(summaryPage, `TOTAL BOOKINGS: ${bookings.length}`, {
-    x: 50,
-    y,
-    size: 12,
-    font: boldFont,
-  });
-  y -= 20;
-
-  let overallSubtotal = 0;
-  let overallTax = 0;
-  let overallTotal = 0;
-  for (const booking of bookings) {
-    const hours = booking.duration || 1;
-    const price = hours * 15;
-    const tax = Number((price * 0.08).toFixed(2));
-    const total = Number((price + tax).toFixed(2));
-    overallSubtotal += price;
-    overallTax += tax;
-    overallTotal += total;
+/**
+ * Formats address components cleanly without printing nullish or undefined values.
+ * Drops null/undefined/empty components, joins valid parts, or defaults to "No address provided".
+ */
+export function formatUserAddress(address: any): string {
+  if (address === null || address === undefined) {
+    return "No address provided";
   }
 
-  drawText(
-    summaryPage,
-    `SUBTOTAL: $${overallSubtotal.toFixed(2)}  |  TAX (8%): $${overallTax.toFixed(2)}  |  TOTAL: $${overallTotal.toFixed(2)}`,
-    { x: 50, y, size: 10, font: boldFont },
-  );
-  y -= 30;
-  drawText(summaryPage, "-".repeat(60), { x: 50, y, size: 10, font });
-  y -= 25;
-
-  let currentPage = summaryPage;
-  for (const booking of bookings) {
-    if (y < 80) {
-      // Create a new page on overflow to prevent text overlapping on a single summary page (fixes #532)
-      currentPage = pdfDoc.addPage([595, 842]);
-      y = height - 50;
+  if (typeof address === "string") {
+    const trimmed = address.trim();
+    if (
+      !trimmed ||
+      trimmed.toLowerCase() === "null" ||
+      trimmed.toLowerCase() === "undefined"
+    ) {
+      return "No address provided";
     }
-    const hours = booking.duration || 1;
-    const price = hours * 15;
-    const tax = Number((price * 0.08).toFixed(2));
-    const total = Number((price + tax).toFixed(2));
+    const parts = trimmed
+      .split(/[,\n]+/)
+      .map((p) => p.trim())
+      .filter(
+        (p) =>
+          p && p.toLowerCase() !== "null" && p.toLowerCase() !== "undefined",
+      );
 
-    drawText(
-      currentPage,
-      `${safeText(booking.confirmationId || `WS-#${booking.id}`)}  |  ${safeText(booking.venue.name)}  |  CODE: ${safeText(booking.projectBillingCode || "N/A")}  |  $${total.toFixed(2)}`,
-      { x: 50, y, size: 9, font },
-    );
-    y -= 18;
+    return parts.length > 0 ? parts.join(", ") : "No address provided";
   }
 
-  // One detailed page per booking
-  for (const booking of bookings) {
-    const page = pdfDoc.addPage([595, 842]);
-    const { width: w, height: h } = page.getSize();
-    let py = h - 50;
+  if (Array.isArray(address)) {
+    const parts = address
+      .map((item) =>
+        typeof item === "string" ? item.trim() : formatUserAddress(item),
+      )
+      .filter(
+        (p) =>
+          p &&
+          p !== "No address provided" &&
+          p.toLowerCase() !== "null" &&
+          p.toLowerCase() !== "undefined",
+      );
 
-    const customerName = booking.user
-      ? `${booking.user.firstName || ""} ${booking.user.lastName || ""}`.trim()
-      : "";
-
-    page.drawRectangle({
-      x: 0,
-      y: h - 10,
-      width: w,
-      height: 10,
-      color: rgb(0.23, 0.51, 0.96),
-    });
-    py -= 60;
-
-    drawText(page, "WORKSPHERE CONFIRMATION", {
-      x: 150,
-      y: py,
-      size: 24,
-      font: boldFont,
-      color: rgb(0, 0, 0),
-    });
-    py -= 15;
-    drawText(page, "SECURE TRANSACTION RECEIPT", {
-      x: 190,
-      y: py,
-      size: 8,
-      font,
-      color: rgb(0.5, 0.5, 0.5),
-    });
-    py -= 50;
-
-    drawText(page, "BOOKING DETAILS:", {
-      x: 50,
-      y: py,
-      size: 12,
-      font: boldFont,
-    });
-    py -= 15;
-    drawText(page, "-".repeat(50), { x: 50, y: py, size: 10, font });
-    py -= 20;
-    drawText(
-      page,
-      `REFERENCE ID: ${safeText(booking.confirmationId || `WS-#${booking.id}`)}`,
-      { x: 50, y: py, size: 10, font },
-    );
-    py -= 18;
-    const venueText = `VENUE: ${safeText(booking.venue.name)}`;
-    const venueLines = breakTextIntoLines(
-      venueText,
-      [" ", ",", "-"],
-      495,
-      (t) => font.widthOfTextAtSize(t, 10),
-    );
-
-    for (const line of venueLines) {
-      drawText(page, line, {
-        x: 50,
-        y: py,
-        size: 10,
-        font,
-      });
-      py -= 12;
-    }
-    py -= 6;
-    drawText(
-      page,
-      `CATEGORY: ${safeText(booking.venue.category?.toUpperCase() || "WORKSPACE")}`,
-      { x: 50, y: py, size: 10, font },
-    );
-    py -= 18;
-    drawText(
-      page,
-      `ADDRESS: ${safeText(booking.venue.address || "Verified Workspace")}`,
-      { x: 50, y: py, size: 10, font },
-    );
-    py -= 18;
-    drawText(
-      page,
-      `SCHEDULE: ${safeText(booking.date)} @ ${safeText(booking.time)}`,
-      { x: 50, y: py, size: 10, font },
-    );
-    py -= 18;
-    drawText(
-      page,
-      `BILLING CODE: ${safeText(booking.projectBillingCode || "N/A")}`,
-      { x: 50, y: py, size: 10, font },
-    );
-    py -= 18;
-    drawText(
-      page,
-      `CUSTOMER: ${safeText(customerName || booking.customerEmail || "N/A")}`,
-      { x: 50, y: py, size: 10, font },
-    );
-    py -= 30;
-
-    const hours = booking.duration || 1;
-    const price = hours * 15;
-    const tax = Number((price * 0.08).toFixed(2));
-    const total = Number((price + tax).toFixed(2));
-
-    drawText(page, "PRICING & MEMBERSHIP CHARGES:", {
-      x: 50,
-      y: py,
-      size: 12,
-      font: boldFont,
-    });
-    py -= 15;
-    drawText(page, "-".repeat(50), { x: 50, y: py, size: 10, font });
-    py -= 20;
-    drawText(page, `HOURLY RATE: $15.00/hr (DURATION: ${hours} hrs)`, {
-      x: 50,
-      y: py,
-      size: 10,
-      font,
-    });
-    py -= 18;
-    drawText(page, `SUBTOTAL: $${price.toFixed(2)}`, {
-      x: 50,
-      y: py,
-      size: 10,
-      font,
-    });
-    py -= 18;
-    drawText(page, `TAX (8%): $${tax.toFixed(2)}`, {
-      x: 50,
-      y: py,
-      size: 10,
-      font,
-    });
-    py -= 18;
-    drawText(page, `TOTAL EXPENSED: $${total.toFixed(2)}`, {
-      x: 50,
-      y: py,
-      size: 10,
-      font: boldFont,
-    });
-    py -= 40;
-
-    drawText(page, "SECURITY PROTOCOL:", {
-      x: 50,
-      y: py,
-      size: 12,
-      font: boldFont,
-    });
-    py -= 18;
-    drawText(page, "MEMBERSHIP EXPENSE VALIDATION ACTIVE", {
-      x: 50,
-      y: py,
-      size: 10,
-      font,
-    });
-    py -= 18;
-    drawText(page, "ENCRYPTED VIA WORKSPHERE SECURE PROT", {
-      x: 50,
-      y: py,
-      size: 10,
-      font,
-    });
+    return parts.length > 0 ? parts.join(", ") : "No address provided";
   }
 
-  const pdfBytes = await pdfDoc.save();
-  return pdfBytes;
+  if (typeof address === "object") {
+    const {
+      street,
+      streetAddress,
+      addressLine1,
+      line1,
+      addressLine2,
+      line2,
+      suite,
+      unit,
+      apt,
+      city,
+      state,
+      province,
+      region,
+      postalCode,
+      zipCode,
+      zip,
+      postcode,
+      country,
+      ...rest
+    } = address;
+
+    const line1Part = [street, streetAddress, addressLine1, line1]
+      .find(
+        (v) =>
+          typeof v === "string" &&
+          v.trim() &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      ?.trim();
+
+    const line2Part = [addressLine2, line2, suite, unit, apt]
+      .find(
+        (v) =>
+          typeof v === "string" &&
+          v.trim() &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      ?.trim();
+
+    const cityPart =
+      typeof city === "string" &&
+      city.trim() &&
+      city.trim().toLowerCase() !== "null" &&
+      city.trim().toLowerCase() !== "undefined"
+        ? city.trim()
+        : undefined;
+
+    const statePart = [state, province, region]
+      .find(
+        (v) =>
+          typeof v === "string" &&
+          v.trim() &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      ?.trim();
+
+    const zipPart = [postalCode, zipCode, zip, postcode]
+      .find(
+        (v) =>
+          typeof v === "string" &&
+          v.trim() &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      ?.trim();
+
+    const countryPart =
+      typeof country === "string" &&
+      country.trim() &&
+      country.trim().toLowerCase() !== "null" &&
+      country.trim().toLowerCase() !== "undefined"
+        ? country.trim()
+        : undefined;
+
+    const otherParts = Object.values(rest)
+      .filter(
+        (v): v is string =>
+          typeof v === "string" &&
+          Boolean(v.trim()) &&
+          v.trim().toLowerCase() !== "null" &&
+          v.trim().toLowerCase() !== "undefined",
+      )
+      .map((v) => v.trim());
+
+    const cityStateZip = [cityPart, statePart, zipPart]
+      .filter(Boolean)
+      .join(" ");
+
+    const allOrderedParts = [
+      line1Part,
+      line2Part,
+      cityStateZip || undefined,
+      countryPart,
+      ...otherParts,
+    ].filter(Boolean);
+
+    if (allOrderedParts.length === 0) {
+      const genericValues = Object.values(address)
+        .map((v) => {
+          if (v === null || v === undefined) return null;
+          if (typeof v === "string") {
+            const t = v.trim();
+            return t &&
+              t.toLowerCase() !== "null" &&
+              t.toLowerCase() !== "undefined"
+              ? t
+              : null;
+          }
+          if (typeof v === "number") return String(v);
+          return null;
+        })
+        .filter((v): v is string => Boolean(v));
+
+      return genericValues.length > 0
+        ? genericValues.join(", ")
+        : "No address provided";
+    }
+
+    return allOrderedParts.join(", ");
+  }
+
+  return "No address provided";
 }
 
-import fs from "fs";
-import path from "path";
-import fontkit from "@pdf-lib/fontkit";
+export const formatAddress = formatUserAddress;
 
-export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
+export interface ReceiptHmacMetadata {
+  bookingId: string | number;
+  amount: string | number;
+  date: string;
+  venueId?: string | number | null;
+  userHash?: string | null;
+}
+
+export interface ReceiptPdfOptions {
+  secret?: string;
+  baseUrl?: string;
+}
+
+/**
+ * Computes a deterministic 16-character SHA-256 hash slice of a user identifier
+ * to preserve privacy while maintaining tamper verification.
+ */
+export function computeUserHash(identifier?: string | number | null): string {
+  if (!identifier) return "anonymous";
+  return crypto
+    .createHash("sha256")
+    .update(String(identifier).trim().toLowerCase())
+    .digest("hex")
+    .slice(0, 16);
+}
+
+/**
+ * Computes an HMAC-SHA256 verification digest of receipt metadata
+ * (bookingId, amount, date, venueId, userHash) using a server secret.
+ */
+export function computeReceiptHmacSha256(
+  metadata: ReceiptHmacMetadata,
+  secret: string = process.env.RECEIPT_VERIFICATION_SECRET ||
+    process.env.HMAC_SECRET ||
+    "worksphere-receipt-tamper-secret-key-2026",
+): string {
+  const payload = [
+    String(metadata.bookingId ?? ""),
+    String(metadata.amount ?? ""),
+    String(metadata.date ?? ""),
+    String(metadata.venueId ?? ""),
+    String(metadata.userHash ?? ""),
+  ].join(":");
+
+  return crypto
+    .createHmac("sha256", secret)
+    .update(payload)
+    .digest("hex");
+}
+
+/**
+ * Verifies the authenticity and provenance of a receipt's HMAC-SHA256 digest.
+ */
+export function verifyReceiptHmacSha256(
+  metadata: ReceiptHmacMetadata,
+  signature: string,
+  secret?: string,
+): boolean {
+  if (!signature || typeof signature !== "string") return false;
+  const expected = computeReceiptHmacSha256(metadata, secret);
+  if (expected.length !== signature.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+
+export async function generateReceiptPdf(
+  booking: any,
+  options?: ReceiptPdfOptions,
+): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  pdfDoc.registerFontkit(fontkit);
   const page = pdfDoc.addPage([595, 842]);
-
-  const regularFontPath = path.join(
-    process.cwd(),
-    "public",
-    "fonts",
-    "NotoSans-Regular.ttf",
-  );
-  const boldFontPath = path.join(
-    process.cwd(),
-    "public",
-    "fonts",
-    "NotoSans-Bold.ttf",
-  );
-
-  let font: any;
-  let boldFont: any;
-
-  try {
-    const [regularFontBytes, boldFontBytes] = await Promise.all([
-      fs.promises.readFile(regularFontPath),
-      fs.promises.readFile(boldFontPath),
-    ]);
-    font = await pdfDoc.embedFont(regularFontBytes);
-    boldFont = await pdfDoc.embedFont(boldFontBytes);
-  } catch {
-    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  }
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const courierFont = await pdfDoc.embedFont(StandardFonts.Courier);
 
   const { width, height } = page.getSize();
   let yPosition = height - 50;
 
+  const rawId = booking.id || booking.confirmationId || "UNKNOWN";
+  const amount = booking.totalAmount ?? booking.amount ?? booking.price ?? 0;
+  const date =
+    booking.date ||
+    (booking.createdAt
+      ? typeof booking.createdAt === "string"
+        ? booking.createdAt.split("T")[0]
+        : new Date(booking.createdAt).toISOString().split("T")[0]
+      : "");
+  const venueId = booking.venueId || booking.venue?.id || "";
+  const userIdentifier =
+    booking.userId ||
+    booking.user?.id ||
+    booking.user?.email ||
+    booking.customerEmail ||
+    "";
+  const userHash = computeUserHash(userIdentifier);
+
+  const hmacSignature = computeReceiptHmacSha256(
+    {
+      bookingId: rawId,
+      amount,
+      date,
+      venueId,
+      userHash,
+    },
+    options?.secret,
+  );
+
   const customerName = booking.user
     ? `${booking.user.firstName || ""} ${booking.user.lastName || ""}`.trim()
-    : "";
+    : booking.customerEmail || "N/A";
 
-  const drawText = (text: string, options: PDFPageDrawTextOptions) => {
-    const sanitized = sanitizeMathSymbols(text);
+  const drawText = (text: string, opts: any) => {
     try {
-      page.drawText(sanitized, options);
+      page.drawText(text, opts);
     } catch {
-      const strictText = sanitized.replace(/[^\x20-\x7E]/g, "");
+      const strictText = text.replace(/[^\x20-\x7E]/g, "?");
       try {
-        page.drawText(strictText, options);
+        page.drawText(strictText, opts);
       } catch {}
     }
   };
@@ -358,7 +334,7 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
     color: rgb(0, 0, 0),
   });
   yPosition -= 15;
-  drawText("SECURE NEURAL TRANSACTION RECEIPT", {
+  drawText("SECURE TRANSACTION RECEIPT", {
     x: 180,
     y: yPosition,
     size: 8,
@@ -383,36 +359,56 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
     font,
   });
   yPosition -= 18;
-  const venueText = `VENUE: ${booking.venue.name}`;
-  const venueLines = breakTextIntoLines(
-    venueText,
-    [" ", ",", "-"],
-    495,
-    (t) => font.widthOfTextAtSize(t, 10),
-  );
-
-  for (const line of venueLines) {
-    drawText(line, {
-      x: 50,
-      y: yPosition,
-      size: 10,
-      font,
-    });
-    yPosition -= 12;
-  }
-  yPosition -= 6;
-  drawText(
-    `CATEGORY: ${booking.venue.category?.toUpperCase() || "WORKSPACE"}`,
-    { x: 50, y: yPosition, size: 10, font },
-  );
-  yPosition -= 18;
-  drawText(`ADDRESS: ${booking.venue.address || "Verified Workspace"}`, {
+  drawText(`VENUE: ${booking.venue?.name || "Workspace"}`, {
     x: 50,
     y: yPosition,
     size: 10,
     font,
   });
   yPosition -= 18;
+  drawText(
+    `CATEGORY: ${booking.venue?.category?.toUpperCase() || "WORKSPACE"}`,
+    { x: 50, y: yPosition, size: 10, font },
+  );
+  yPosition -= 18;
+
+  const venueAddress = booking.venue?.address
+    ? formatAddress(booking.venue.address) === "No address provided"
+      ? "Verified Workspace"
+      : formatAddress(booking.venue.address)
+    : "Verified Workspace";
+
+  const addressLabel = "ADDRESS: ";
+  const addressLines = wrapText(venueAddress, font, 10, 480);
+  if (addressLines.length === 0) {
+    drawText(`${addressLabel}Verified Workspace`, {
+      x: 50,
+      y: yPosition,
+      size: 10,
+      font,
+    });
+    yPosition -= 18;
+  } else {
+    for (let i = 0; i < addressLines.length; i++) {
+      if (i === 0) {
+        drawText(`${addressLabel}${addressLines[0]}`, {
+          x: 50,
+          y: yPosition,
+          size: 10,
+          font,
+        });
+      } else {
+        drawText(`         ${addressLines[i]}`, {
+          x: 50,
+          y: yPosition,
+          size: 10,
+          font,
+        });
+      }
+      yPosition -= 14;
+    }
+    yPosition -= 4;
+  }
   drawText(`SCHEDULE: ${booking.date} @ ${booking.time}`, {
     x: 50,
     y: yPosition,
@@ -420,46 +416,125 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
     font,
   });
   yPosition -= 18;
-  drawText(`BILLING CODE: ${booking.projectBillingCode || "N/A"}`, {
+  drawText(`CUSTOMER: ${customerName}`, {
     x: 50,
     y: yPosition,
     size: 10,
     font,
   });
-  yPosition -= 18;
-  drawText(`CUSTOMER: ${customerName || booking.customerEmail || "N/A"}`, {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
-  yPosition -= 40;
 
-  drawText("SECURITY PROTOCOL:", {
-    x: 50,
-    y: yPosition,
-    size: 12,
+  const rawUserAddress =
+    booking.user?.address ??
+    booking.userAddress ??
+    booking.customerAddress ??
+    booking.billingAddress ??
+    (booking.user &&
+    (booking.user.street ||
+      booking.user.streetAddress ||
+      booking.user.addressLine1 ||
+      booking.user.city ||
+      booking.user.zipCode ||
+      booking.user.postalCode)
+      ? {
+          street:
+            booking.user.street ||
+            booking.user.streetAddress ||
+            booking.user.addressLine1,
+          city: booking.user.city,
+          state: booking.user.state,
+          zip:
+            booking.user.zipCode || booking.user.postalCode || booking.user.zip,
+          country: booking.user.country,
+        }
+      : undefined);
+
+  if (rawUserAddress !== undefined) {
+    const formattedUserAddress = formatUserAddress(rawUserAddress);
+    yPosition -= 18;
+    drawText(`CUSTOMER ADDRESS: ${formattedUserAddress}`, {
+      x: 50,
+      y: yPosition,
+      size: 10,
+      font,
+    });
+  }
+
+  if (amount !== undefined && amount !== null && amount !== 0) {
+    const currency = booking.currency || "USD";
+    const formattedAmount =
+      typeof amount === "number" ? amount.toFixed(2) : String(amount);
+    yPosition -= 18;
+    drawText(`AMOUNT: ${currency} ${formattedAmount}`, {
+      x: 50,
+      y: yPosition,
+      size: 10,
+      font: boldFont,
+    });
+  }
+
+  // --- Tamper-Evident Footer: Cryptographic HMAC-SHA256 & QR Code ---
+  page.drawLine({
+    start: { x: 50, y: 110 },
+    end: { x: width - 50, y: 110 },
+    thickness: 1,
+    color: rgb(0.85, 0.85, 0.85),
+  });
+
+  const baseUrl = options?.baseUrl || "https://worksphere.app";
+  const verificationUrl = `${baseUrl.replace(/\/+$/, "")}/api/receipts/verify?id=${encodeURIComponent(String(rawId))}&sig=${hmacSignature}`;
+
+  try {
+    const qrMatrix = generateQRMatrix(verificationUrl);
+    drawVectorQrMatrix(page, qrMatrix, 50, 42, 58);
+  } catch {
+    // If QR matrix generation encounters an edge case, proceed with text verification
+  }
+
+  const textX = 120;
+  drawText("CRYPTOGRAPHIC AUTHENTICITY & PROVENANCE VERIFICATION", {
+    x: textX,
+    y: 92,
+    size: 8,
     font: boldFont,
+    color: rgb(0.1, 0.15, 0.25),
   });
-  yPosition -= 18;
-  drawText("ZERO-FEE ACCESS PROTOCOL ACTIVE", {
-    x: 50,
-    y: yPosition,
-    size: 10,
+
+  drawText("HMAC-SHA256 Verification Hash (Tamper-Evident Receipt Digest):", {
+    x: textX,
+    y: 80,
+    size: 7,
     font,
+    color: rgb(0.35, 0.4, 0.45),
   });
-  yPosition -= 18;
-  drawText("ENCRYPTED VIA WORKSPHERE L3", {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
+
+  drawText(hmacSignature, {
+    x: textX,
+    y: 69,
+    size: 6.5,
+    font: courierFont,
+    color: rgb(0.05, 0.05, 0.05),
   });
-  yPosition -= 80;
 
   drawText(
-    "Thank you for choosing WorkSphere. Your workspace is ready for you.",
-    { x: 100, y: yPosition, size: 8, font, color: rgb(0.4, 0.4, 0.4) },
+    `Payload: [ID: ${rawId} | AMT: ${amount} | DATE: ${date} | VENUE: ${venueId || "N/A"} | USER: ${userHash}]`,
+    {
+      x: textX,
+      y: 57,
+      size: 6,
+      font,
+      color: rgb(0.45, 0.45, 0.5),
+    },
+  );
+
+  drawText(
+    "Auditors: Scan QR or verify HMAC-SHA256 digest against server key without external database query.",
+    {
+      x: textX,
+      y: 47,
+      size: 5.5,
+      font,
+      color: rgb(0.55, 0.55, 0.6),
+    },
   );
 
   return await pdfDoc.save();
@@ -470,192 +545,68 @@ export async function generateGuestListPdf(
   guests: any[],
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  pdfDoc.registerFontkit(fontkit);
+  const page = pdfDoc.addPage([595, 842]);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  const regularFontPath = path.join(
-    process.cwd(),
-    "public",
-    "fonts",
-    "NotoSans-Regular.ttf",
-  );
-  const boldFontPath = path.join(
-    process.cwd(),
-    "public",
-    "fonts",
-    "NotoSans-Bold.ttf",
-  );
+  const { width, height } = page.getSize();
+  let yPosition = height - 50;
 
-  let font: any;
-  let boldFont: any;
+  page.drawRectangle({
+    x: 0,
+    y: height - 10,
+    width,
+    height: 10,
+    color: rgb(0.23, 0.51, 0.96),
+  });
+  yPosition -= 40;
 
-  try {
-    const [regularFontBytes, boldFontBytes] = await Promise.all([
-      fs.promises.readFile(regularFontPath),
-      fs.promises.readFile(boldFontPath),
-    ]);
-    font = await pdfDoc.embedFont(regularFontBytes);
-    boldFont = await pdfDoc.embedFont(boldFontBytes);
-  } catch {
-    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  }
+  page.drawText("GUEST LIST", {
+    x: 50,
+    y: yPosition,
+    size: 24,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
 
-  const customerName = booking.user
-    ? `${booking.user.firstName || ""} ${booking.user.lastName || ""}`.trim()
-    : booking.customerEmail || "N/A";
+  page.drawText(booking.venue?.name || "Verified Workspace", {
+    x: 350,
+    y: yPosition + 5,
+    size: 14,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
 
-  const addPage = (pageNum: number, totalPages: number) => {
-    const page = pdfDoc.addPage([595, 842]);
-    const { width, height } = page.getSize();
-    let yPosition = height - 50;
+  yPosition -= 30;
 
-    const drawText = (text: string, options: PDFPageDrawTextOptions) => {
-      const sanitized = sanitizeMathSymbols(text);
-      try {
-        page.drawText(sanitized, options);
-      } catch {
-        const strictText = sanitized.replace(/[^\x20-\x7E]/g, "");
-        try {
-          page.drawText(strictText, options);
-        } catch {}
-      }
-    };
+  // Table Header
+  page.drawText("Name", { x: 50, y: yPosition, size: 10, font: boldFont });
+  page.drawText("Email", { x: 200, y: yPosition, size: 10, font: boldFont });
+  page.drawText("Status", { x: 420, y: yPosition, size: 10, font: boldFont });
 
-    // Header blue bar
-    page.drawRectangle({
-      x: 0,
-      y: height - 10,
-      width,
-      height: 10,
-      color: rgb(0.23, 0.51, 0.96),
-    });
-    yPosition -= 40;
+  yPosition -= 15;
+  page.drawLine({
+    start: { x: 50, y: yPosition + 5 },
+    end: { x: 545, y: yPosition + 5 },
+    thickness: 1,
+    color: rgb(0.8, 0.8, 0.8),
+  });
 
-    // Header content
-    drawText("GUEST LIST", {
-      x: 50,
+  yPosition -= 15;
+  for (const guest of guests.slice(0, 30)) {
+    page.drawText(guest.name || "N/A", { x: 50, y: yPosition, size: 9, font });
+    const email = guest.email || "N/A";
+    const displayEmail =
+      email.length > 25 ? email.substring(0, 22) + "..." : email;
+    page.drawText(displayEmail, { x: 200, y: yPosition, size: 9, font });
+    page.drawText(guest.status || "PENDING", {
+      x: 420,
       y: yPosition,
-      size: 24,
+      size: 9,
       font: boldFont,
-      color: rgb(0, 0, 0),
     });
-
-    drawText(booking.venue?.name || "Verified Workspace", {
-      x: 400,
-      y: yPosition + 5,
-      size: 14,
-      font: boldFont,
-      color: rgb(0, 0, 0),
-    });
-
     yPosition -= 20;
-
-    drawText(
-      `CONFIRMATION ID: ${booking.confirmationId || "WS-#" + booking.id}`,
-      {
-        x: 50,
-        y: yPosition,
-        size: 10,
-        font,
-        color: rgb(0.3, 0.3, 0.3),
-      },
-    );
-
-    drawText(`EVENT DATE: ${booking.date} @ ${booking.time}`, {
-      x: 400,
-      y: yPosition,
-      size: 10,
-      font,
-      color: rgb(0.3, 0.3, 0.3),
-    });
-
-    yPosition -= 15;
-
-    drawText(`HOST: ${customerName}`, {
-      x: 50,
-      y: yPosition,
-      size: 10,
-      font,
-      color: rgb(0.3, 0.3, 0.3),
-    });
-
-    yPosition -= 30;
-
-    // Footer
-    const timestamp = new Date().toISOString();
-    drawText(`Generated on ${timestamp}`, {
-      x: 50,
-      y: 30,
-      size: 8,
-      font,
-      color: rgb(0.5, 0.5, 0.5),
-    });
-
-    drawText(`Page ${pageNum} of ${totalPages}`, {
-      x: 500,
-      y: 30,
-      size: 8,
-      font,
-      color: rgb(0.5, 0.5, 0.5),
-    });
-
-    return { page, drawText, yPosition };
-  };
-
-  // Pagination logic
-  const itemsPerPage = 30;
-  const totalPages = Math.max(1, Math.ceil(guests.length / itemsPerPage));
-
-  for (let p = 0; p < totalPages; p++) {
-    const { page, drawText, yPosition: initialY } = addPage(p + 1, totalPages);
-    let currentY = initialY;
-
-    // Table Header
-    drawText("Name", { x: 50, y: currentY, size: 10, font: boldFont });
-    drawText("Email", { x: 200, y: currentY, size: 10, font: boldFont });
-    drawText("Phone", { x: 380, y: currentY, size: 10, font: boldFont });
-    drawText("Status", { x: 480, y: currentY, size: 10, font: boldFont });
-
-    currentY -= 15;
-
-    page.drawLine({
-      start: { x: 50, y: currentY + 5 },
-      end: { x: 545, y: currentY + 5 },
-      thickness: 1,
-      color: rgb(0.8, 0.8, 0.8),
-    });
-
-    currentY -= 10;
-
-    // Table Rows
-    const startIndex = p * itemsPerPage;
-    const pageGuests = guests.slice(startIndex, startIndex + itemsPerPage);
-
-    for (const guest of pageGuests) {
-      drawText(guest.name || "N/A", { x: 50, y: currentY, size: 9, font });
-
-      // truncate email if too long
-      const email = guest.email || "N/A";
-      const displayEmail =
-        email.length > 28 ? email.substring(0, 25) + "..." : email;
-      drawText(displayEmail, { x: 200, y: currentY, size: 9, font });
-
-      drawText(guest.phone || "N/A", { x: 380, y: currentY, size: 9, font });
-
-      let statusColor = rgb(0.5, 0.5, 0.5);
-      if (guest.status === "ACCEPTED") statusColor = rgb(0.1, 0.6, 0.1);
-      if (guest.status === "DECLINED") statusColor = rgb(0.8, 0.1, 0.1);
-
-      drawText(guest.status || "PENDING", {
-        x: 480,
-        y: currentY,
-        size: 9,
-        font: boldFont,
-        color: statusColor,
-      });
-
-      currentY -= 20;
-    }
+    if (yPosition < 50) break;
   }
 
   return await pdfDoc.save();

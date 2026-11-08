@@ -447,4 +447,3 @@ int process_hrtf_block(
 
 } // extern "C"
 
-} // extern "C"

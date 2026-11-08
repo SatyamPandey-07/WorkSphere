@@ -5,15 +5,23 @@ import { Save, Loader2, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks/useDebounce";
 
-const MAX_CHARS = 2000;
+const DEFAULT_MAX_CHARS = 500;
 const AUTOSAVE_DELAY = 1500;
 
 interface NoteEditorProps {
   initialNotes: string | null;
   onSave: (notes: string) => Promise<void>;
+  maxLength?: number;
+  maxChars?: number;
 }
 
-export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
+export function NoteEditor({
+  initialNotes,
+  onSave,
+  maxLength,
+  maxChars,
+}: NoteEditorProps) {
+  const maxLimit = maxLength ?? maxChars ?? DEFAULT_MAX_CHARS;
   const [notes, setNotes] = useState(initialNotes || "");
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -102,8 +110,9 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
             <textarea
               ref={textareaRef}
               value={notes}
+              maxLength={maxLimit}
               onChange={(e) => {
-                if (e.target.value.length <= MAX_CHARS) {
+                if (e.target.value.length <= maxLimit) {
                   setNotes(e.target.value);
                 }
                 autoResize();
@@ -121,13 +130,15 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
             <span
               id="notes-char-count"
               className={cn(
-                "text-xs",
-                notes.length > MAX_CHARS * 0.9
-                  ? "text-amber-500"
-                  : "text-zinc-400 dark:text-zinc-500",
+                "text-xs transition-colors",
+                notes.length >= maxLimit
+                  ? "text-red-500 font-semibold"
+                  : notes.length >= maxLimit - 20 || notes.length >= maxLimit * 0.9
+                    ? "text-amber-500 font-medium"
+                    : "text-zinc-400 dark:text-zinc-500",
               )}
             >
-              {notes.length}/{MAX_CHARS}
+              {notes.length} / {maxLimit} characters
             </span>
 
             <div className="flex items-center gap-2">
@@ -161,7 +172,7 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={!hasChanges || isSaving}
+                disabled={!hasChanges || isSaving || notes.length > maxLimit}
                 className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium accent-bg accent-bg-hover text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 aria-label="Save notes"
               >

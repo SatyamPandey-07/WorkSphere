@@ -7,7 +7,10 @@
  */
 
 import { allocateCanvasDrawingBuffer } from "./canvasBufferSize";
-import { WebGLContextRecoveryManager } from "./WebGLContextRecoveryManager";
+import {
+  WebGLContextRecoveryManager,
+  type WebGLContextRecoveryOptions,
+} from "./WebGLContextRecoveryManager";
 
 export interface WebGLBufferAttributes {
   positionBuffer?: WebGLBuffer | null;
@@ -43,8 +46,11 @@ export function attachWebGLContextRecovery(
     gl: WebGLRenderingContext | WebGL2RenderingContext,
   ) => void,
   onLostCallback?: () => void,
+  /** Render-loop pause/resume, failure handling and timeouts (#1729). */
+  options: Omit<WebGLContextRecoveryOptions, "onRestore" | "onLost"> = {},
 ): () => void {
   const manager = new WebGLContextRecoveryManager(canvas, {
+    ...options,
     onRestore: (gl) => {
       if (onRestoreCallback) {
         onRestoreCallback(gl);

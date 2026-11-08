@@ -49,6 +49,19 @@ describe("pickBitrateTier", () => {
       }).label,
     ).toBe("low");
   });
+
+  it("handles null, undefined, and non-object inputs by defaulting to medium", () => {
+    expect(pickBitrateTier(null).label).toBe("medium");
+    expect(pickBitrateTier(undefined).label).toBe("medium");
+    expect(pickBitrateTier({}).label).toBe("high");
+  });
+
+  it("conservatively falls back to medium on corrupted or non-finite telemetry", () => {
+    expect(pickBitrateTier({ rttMs: NaN }).label).toBe("medium");
+    expect(pickBitrateTier({ jitterMs: Infinity }).label).toBe("medium");
+    expect(pickBitrateTier({ packetsLost: NaN, packetsSent: 100 }).label).toBe("medium");
+    expect(pickBitrateTier({ rttMs: -10, packetsSent: -100 }).label).toBe("high");
+  });
 });
 
 describe("readNetworkHints", () => {
@@ -85,22 +98,45 @@ describe("readNetworkHints", () => {
       jitterMs: 25,
     });
   });
+
+  it("handles nullish reports and skips invalid or negative values", () => {
+    expect(readNetworkHints(null)).toEqual({});
+    expect(readNetworkHints(undefined)).toEqual({});
+    expect(readNetworkHints({} as any)).toEqual({});
+
+    const rows = [
+      null,
+      undefined,
+      { type: "candidate-pair", state: "succeeded", currentRoundTripTime: -0.5 },
+      { type: "candidate-pair", state: "succeeded", currentRoundTripTime: NaN },
+      { type: "remote-inbound-rtp", jitter: -0.1, packetsLost: -5 },
+    ];
+    const report = {
+      forEach(cb: (stat: any) => void) {
+        rows.forEach(cb);
+      },
+    } as unknown as RTCStatsReport;
+
+    expect(readNetworkHints(report)).toEqual({});
+  });
 });
 
 describe("adaptVideoBitrate", () => {
   it("adaptively adjusts maxBitrate for both video and audio senders", async () => {
     const videoSetParams = jest.fn().mockResolvedValue(undefined);
     const audioSetParams = jest.fn().mockResolvedValue(undefined);
+    const videoParams: RTCRtpSendParameters = { encodings: [{}] };
+    const audioParams: RTCRtpSendParameters = { encodings: [{}] };
 
     const videoSender = {
       track: { kind: "video" },
-      getParameters: jest.fn().mockReturnValue({ encodings: [{}] }),
+      getParameters: jest.fn().mockReturnValue(videoParams),
       setParameters: videoSetParams,
     };
 
     const audioSender = {
       track: { kind: "audio" },
-      getParameters: jest.fn().mockReturnValue({ encodings: [{}] }),
+      getParameters: jest.fn().mockReturnValue(audioParams),
       setParameters: audioSetParams,
     };
 
@@ -111,16 +147,113 @@ describe("adaptVideoBitrate", () => {
     const pc = {
       getSenders: () => [videoSender, audioSender],
       getStats: jest.fn().mockResolvedValue({
-        forEach: (cb: any) => mockReport.forEach(cb),
+        forEach: (callback: (stat: (typeof mockReport)[number]) => void) =>
+          mockReport.forEach(callback),
       }),
     } as unknown as RTCPeerConnection;
 
     const tier = await adaptVideoBitrate(pc);
 
     expect(tier?.label).toBe("low");
-    expect(videoSender.getParameters().encodings[0].maxBitrate).toBe(400_000);
-    expect(audioSender.getParameters().encodings[0].maxBitrate).toBe(16_000);
+    expect(videoParams.encodings?.[0]?.maxBitrate).toBe(400_000);
+    expect(audioParams.encodings?.[0]?.maxBitrate).toBe(16_000);
     expect(videoSetParams).toHaveBeenCalled();
     expect(audioSetParams).toHaveBeenCalled();
+  });
+
+  it("caps outbound video bitrate in data saver mode", async () => {
+    const params: RTCRtpSendParameters = { encodings: [{}, {}] };
+    const videoSender = {
+      track: { kind: "video" },
+      getParameters: jest.fn().mockReturnValue(params),
+      setParameters: jest.fn().mockResolvedValue(undefined),
+    };
+    const pc = {
+      getSenders: () => [videoSender],
+      getStats: jest.fn().mockResolvedValue({
+        forEach: (callback: (stat: object) => void) =>
+          callback({
+            type: "candidate-pair",
+            state: "succeeded",
+            currentRoundTripTime: 0.04,
+          }),
+      }),
+    } as unknown as RTCPeerConnection;
+
+    await adaptVideoBitrate(pc, { dataSaverMode: true });
+
+    expect(params.encodings?.map((encoding) => encoding.maxBitrate)).toEqual([
+      450_000,
+      450_000,
+    ]);
+    expect(videoSender.setParameters).toHaveBeenCalledWith(params);
+  });
+
+  it.each([
+    {
+      roundTripTime: 0.15,
+      tierMaxBitrate: 1_000_000,
+      maxBitrate: 360_000,
+    },
+    { roundTripTime: 0.3, tierMaxBitrate: 400_000, maxBitrate: 144_000 },
+  ])(
+    "keeps Data Saver bitrate below 40% of the $tierMaxBitrate adaptive tier",
+    async ({ roundTripTime, tierMaxBitrate, maxBitrate }) => {
+      const params: RTCRtpSendParameters = { encodings: [{}] };
+      const videoSender = {
+        track: { kind: "video" },
+        getParameters: jest.fn().mockReturnValue(params),
+        setParameters: jest.fn().mockResolvedValue(undefined),
+      };
+      const pc = {
+        getSenders: () => [videoSender],
+        getStats: jest.fn().mockResolvedValue({
+          forEach: (callback: (stat: object) => void) =>
+            callback({
+              type: "candidate-pair",
+              state: "succeeded",
+              currentRoundTripTime: roundTripTime,
+            }),
+        }),
+      } as unknown as RTCPeerConnection;
+
+      await adaptVideoBitrate(pc, { dataSaverMode: true });
+
+      expect(params.encodings?.[0]?.maxBitrate).toBe(maxBitrate);
+      expect(maxBitrate).toBeLessThan(tierMaxBitrate * 0.4);
+    },
+  );
+
+  it("handles null, undefined, or closed RTCPeerConnection safely", async () => {
+    expect(await adaptVideoBitrate(null)).toBeNull();
+    expect(await adaptVideoBitrate(undefined)).toBeNull();
+    expect(await adaptVideoBitrate({ signalingState: "closed" } as any)).toBeNull();
+    expect(await adaptVideoBitrate({ connectionState: "closed" } as any)).toBeNull();
+  });
+
+  it("enforces minimum bitrate floors for video and audio", async () => {
+    const videoParams: RTCRtpSendParameters = { encodings: [{}, {}] };
+    const audioParams: RTCRtpSendParameters = { encodings: [{}] };
+    const videoSender = {
+      track: { kind: "video" },
+      getParameters: jest.fn().mockReturnValue(videoParams),
+      setParameters: jest.fn().mockResolvedValue(undefined),
+    };
+    const audioSender = {
+      track: { kind: "audio" },
+      getParameters: jest.fn().mockReturnValue(audioParams),
+      setParameters: jest.fn().mockResolvedValue(undefined),
+    };
+    const pc = {
+      getSenders: () => [videoSender, audioSender],
+      getStats: jest.fn().mockResolvedValue({
+        forEach: (cb: (s: any) => void) =>
+          cb({ type: "candidate-pair", state: "succeeded", currentRoundTripTime: 0.5 }),
+      }),
+    } as unknown as RTCPeerConnection;
+
+    await adaptVideoBitrate(pc, { dataSaverMode: true });
+    expect(videoParams.encodings?.[0]?.maxBitrate).toBeGreaterThanOrEqual(50_000);
+    expect(audioParams.encodings?.[0]?.maxBitrate).toBeGreaterThanOrEqual(8_000);
   });
 });

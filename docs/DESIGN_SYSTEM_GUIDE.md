@@ -2097,5 +2097,6 @@ import { Button } from "@/components/ui/button";
 | [`ANIMATION_STANDARDS.md`](./ANIMATION_STANDARDS.md) | Animation timing and easing standards |
 | [`RESPONSIVE_DESIGN_STANDARDS.md`](./RESPONSIVE_DESIGN_STANDARDS.md) | Responsive design strategy and breakpoints |
 | [`ACCESSIBILITY_GUIDELINE.md`](./ACCESSIBILITY_GUIDELINE.md) | Accessibility standards for custom modals |
+| [`KEYBOARD_NAVIGATION_AND_COLOR_CONTRAST_GUIDELINES.md`](./KEYBOARD_NAVIGATION_AND_COLOR_CONTRAST_GUIDELINES.md) | Keyboard navigation checklist & WCAG AA color contrast guidelines |
 | [`ICON_USAGE-GUIDE.md`](./ICON_USAGE-GUIDE.md) | Lucide React icon usage guide |
 

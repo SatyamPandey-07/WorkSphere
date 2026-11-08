@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
+import { Breadcrumb as BreadcrumbNav } from "@/components/ui/Breadcrumb";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -18,6 +19,7 @@ import {
 import usePartySocket from "@/hooks/usePartySocketReconnect";
 import Image from "next/image";
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
+import { CollectionNotesEditor } from "@/components/collections/CollectionNotesEditor";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 interface ShortLink {
@@ -379,6 +381,10 @@ export default function FolderDetailsPage({
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8 pt-8">
       <div className="max-w-[1600px] mx-auto">
+        <BreadcrumbNav items={[
+          { label: "Collections", href: "/collections" },
+          { label: folder.name },
+        ]} className="mb-4" />
         <div className="flex items-start justify-between mb-8">
           <div className="flex items-center gap-4">
             <Link
@@ -404,10 +410,20 @@ export default function FolderDetailsPage({
                   {folder.color || "#3b82f6"}
                 </span>
               </div>
-              {folder.description && (
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                  {folder.description}
-                </p>
+              {userRole ? (
+                // Shared, conflict-free notes (#3360) replace the
+                // last-write-wins description field.
+                <CollectionNotesEditor
+                  folderId={id}
+                  initialText={folder.description ?? null}
+                  canEdit={userRole === "OWNER" || userRole === "EDITOR"}
+                />
+              ) : (
+                folder.description && (
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                    {folder.description}
+                  </p>
+                )
               )}
             </div>
           </div>

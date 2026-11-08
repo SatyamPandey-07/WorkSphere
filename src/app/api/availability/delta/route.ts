@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 
-const STATUS_THRESHOLD: Record<string, number> = {
-  green: 0.6,
-  yellow: 1,
+export const STATUS_THRESHOLD: Record<string, number> = {
+  yellow: 0.6,
+  red: 1,
 };
 
-function computeStatus(count: number, capacity: number): string {
+export function computeStatus(count: number, capacity: number): string {
   if (capacity <= 0) return "red";
   const ratio = count / capacity;
   if (ratio >= STATUS_THRESHOLD.red) return "red";

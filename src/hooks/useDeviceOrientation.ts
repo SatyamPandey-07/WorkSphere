@@ -1,47 +1,201 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
-export function useDeviceOrientation() {
+export interface DeviceOrientationState {
+  heading: number | null;
+  accuracy: number | null;
+  alpha: number | null;
+  beta: number | null;
+  gamma: number | null;
+  error: string | null;
+  isSupported: boolean;
+  permissionState: "prompt" | "granted" | "denied" | "unsupported";
+  requestPermission: () => Promise<boolean>;
+}
+
+export function useDeviceOrientation(): DeviceOrientationState {
   const [heading, setHeading] = useState<number | null>(null);
-  const [error] = useState<string | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [alpha, setAlpha] = useState<number | null>(null);
+  const [beta, setBeta] = useState<number | null>(null);
+  const [gamma, setGamma] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState<boolean>(true);
+  const [permissionState, setPermissionState] = useState<
+    "prompt" | "granted" | "denied" | "unsupported"
+  >("prompt");
+  const listenerAttachedRef = useRef(false);
+
+  const handleOrientation = useCallback((event: DeviceOrientationEvent) => {
+    let h: number | null = null;
+    let acc: number | null = null;
+
+    const evAlpha =
+      event.alpha !== null &&
+      event.alpha !== undefined &&
+      Number.isFinite(event.alpha)
+        ? event.alpha
+        : null;
+    const evBeta =
+      event.beta !== null &&
+      event.beta !== undefined &&
+      Number.isFinite(event.beta)
+        ? event.beta
+        : null;
+    const evGamma =
+      event.gamma !== null &&
+      event.gamma !== undefined &&
+      Number.isFinite(event.gamma)
+        ? event.gamma
+        : null;
+
+    setAlpha(evAlpha);
+    setBeta(evBeta);
+    setGamma(evGamma);
+
+    // iOS Safari provides webkitCompassHeading directly (degrees from true north)
+    // and webkitCompassAccuracy representing deviation tolerance in degrees
+    const webkitAcc = (event as any).webkitCompassAccuracy;
+    if (typeof webkitAcc === "number" && webkitAcc >= 0) {
+      // Map 0° deviation to 1.0 (highest confidence), >= 60° deviation to 0.01 (low confidence)
+      acc = Math.max(0.01, 1 - Math.min(webkitAcc, 60) / 60);
+    }
+
+    if (
+      (event as any).webkitCompassHeading !== undefined &&
+      (event as any).webkitCompassHeading !== null
+    ) {
+      h = (event as any).webkitCompassHeading;
+    } else if (
+      event.alpha !== null &&
+      event.alpha !== undefined &&
+      Number.isFinite(event.alpha)
+    ) {
+      // Standard DeviceOrientationEvent: alpha is rotation around z-axis
+      // True compass heading = (360 - alpha) % 360
+      h = (((360 - event.alpha) % 360) + 360) % 360;
+    } else {
+      // Device without hardware magnetometer emits null/undefined alpha
+      // Gracefully fall back to stationary 0-degree heading without polluting calculation with NaN
+      h = 0;
+    }
+
+    if (h !== null && !isNaN(h)) {
+      setHeading(Math.round(h * 10) / 10);
+      setAccuracy(acc);
+    }
+  }, []);
+
+  const attachListener = useCallback(() => {
+    if (listenerAttachedRef.current || typeof window === "undefined") return;
+
+    if ("ondeviceorientationabsolute" in window) {
+      window.addEventListener(
+        "deviceorientationabsolute" as any,
+        handleOrientation,
+        true,
+      );
+    }
+    window.addEventListener("deviceorientation", handleOrientation, true);
+    listenerAttachedRef.current = true;
+  }, [handleOrientation]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (!window.DeviceOrientationEvent) {
+    const hasOrientationSupport =
+      typeof window !== "undefined" &&
+      ("DeviceOrientationEvent" in window || "DeviceMotionEvent" in window) &&
+      Boolean((window as any).DeviceOrientationEvent);
+
+    if (!hasOrientationSupport) {
       setIsSupported(false);
+      setPermissionState("unsupported");
       return;
     }
 
-    const handleOrientation = (event: DeviceOrientationEvent) => {
-      let h = null;
+    setIsSupported(true);
 
-      // iOS devices provide webkitCompassHeading
-      if ((event as any).webkitCompassHeading !== undefined) {
-        h = (event as any).webkitCompassHeading;
-      } else if (event.alpha !== null) {
-        // Absolute orientation, alpha is rotation around z axis
-        // The compass heading is 360 - alpha
-        if ((event as any).absolute) {
-          h = 360 - event.alpha;
-        } else {
-          // If not absolute, we cannot determine true north reliably without additional processing
-          // But we'll use 360 - alpha as a relative bearing
-          h = 360 - event.alpha;
-        }
-      }
+    const DeviceOrientation =
+      typeof window !== "undefined" && "DeviceOrientationEvent" in window
+        ? ((window as any).DeviceOrientationEvent as {
+            requestPermission?: () => Promise<"granted" | "denied">;
+          })
+        : undefined;
 
-      if (h !== null) {
-        setHeading(h);
-      }
-    };
-
-    window.addEventListener("deviceorientation", handleOrientation, true);
+    // iOS 13+ requires user interaction to call requestPermission
+    if (typeof DeviceOrientation?.requestPermission === "function") {
+      setPermissionState("prompt");
+    } else {
+      // Non-iOS browsers do not require explicit requestPermission
+      setPermissionState("granted");
+      attachListener();
+    }
 
     return () => {
-      window.removeEventListener("deviceorientation", handleOrientation, true);
+      if (typeof window !== "undefined") {
+        window.removeEventListener(
+          "deviceorientationabsolute" as any,
+          handleOrientation,
+          true,
+        );
+        window.removeEventListener(
+          "deviceorientation",
+          handleOrientation,
+          true,
+        );
+        listenerAttachedRef.current = false;
+      }
     };
-  }, []);
+  }, [attachListener, handleOrientation]);
 
-  return { heading, error, isSupported };
+  const requestPermission = useCallback(async (): Promise<boolean> => {
+    if (typeof window === "undefined") return false;
+
+    const DeviceOrientation =
+      typeof window !== "undefined" && "DeviceOrientationEvent" in window
+        ? ((window as any).DeviceOrientationEvent as {
+            requestPermission?: () => Promise<"granted" | "denied">;
+          })
+        : undefined;
+
+    if (typeof DeviceOrientation?.requestPermission === "function") {
+      try {
+        const response = await DeviceOrientation.requestPermission();
+        if (response === "granted") {
+          setPermissionState("granted");
+          setError(null);
+          attachListener();
+          return true;
+        } else {
+          setPermissionState("denied");
+          setError("Permission to access compass orientation was denied.");
+          return false;
+        }
+      } catch (err: any) {
+        setPermissionState("denied");
+        setError(
+          err?.message || "Failed to request device orientation permission.",
+        );
+        return false;
+      }
+    }
+
+    // Automatically granted if not iOS
+    setPermissionState("granted");
+    setError(null);
+    attachListener();
+    return true;
+  }, [attachListener]);
+
+  return {
+    heading,
+    accuracy,
+    alpha,
+    beta,
+    gamma,
+    error,
+    isSupported,
+    permissionState,
+    requestPermission,
+  };
 }

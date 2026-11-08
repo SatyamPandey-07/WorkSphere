@@ -1,4 +1,8 @@
-import { issueCsrfToken, verifyCsrfToken } from "../../lib/csrf";
+import {
+  issueCsrfToken,
+  verifyCsrfToken,
+  isCsrfProtectedMethod,
+} from "../../lib/csrf";
 
 describe("CSRF token utilities", () => {
   it("issues a signed token containing a raw part and a signature part", async () => {
@@ -42,5 +46,29 @@ describe("CSRF token utilities", () => {
     const first = await issueCsrfToken();
     const second = await issueCsrfToken();
     expect(first.raw).not.toEqual(second.raw);
+  });
+
+  describe("isCsrfProtectedMethod", () => {
+    it("identifies mutating HTTP methods in a case-insensitive manner", () => {
+      expect(isCsrfProtectedMethod("post")).toBe(true);
+      expect(isCsrfProtectedMethod("POST")).toBe(true);
+      expect(isCsrfProtectedMethod("put")).toBe(true);
+      expect(isCsrfProtectedMethod("PUT")).toBe(true);
+      expect(isCsrfProtectedMethod("patch")).toBe(true);
+      expect(isCsrfProtectedMethod("PATCH")).toBe(true);
+      expect(isCsrfProtectedMethod("delete")).toBe(true);
+      expect(isCsrfProtectedMethod("DELETE")).toBe(true);
+    });
+
+    it("returns false for safe HTTP methods and null/undefined", () => {
+      expect(isCsrfProtectedMethod("get")).toBe(false);
+      expect(isCsrfProtectedMethod("GET")).toBe(false);
+      expect(isCsrfProtectedMethod("head")).toBe(false);
+      expect(isCsrfProtectedMethod("HEAD")).toBe(false);
+      expect(isCsrfProtectedMethod("options")).toBe(false);
+      expect(isCsrfProtectedMethod("OPTIONS")).toBe(false);
+      expect(isCsrfProtectedMethod(undefined)).toBe(false);
+      expect(isCsrfProtectedMethod(null)).toBe(false);
+    });
   });
 });

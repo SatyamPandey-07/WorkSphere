@@ -16,7 +16,13 @@ This specification documents WorkSphere's **full-mesh WebRTC RTCDataChannel** ne
 8. [Per-User Undo/Redo Tree History](#8-per-user-undoredo-tree-history)
 9. [Failure Modes & Recovery](#9-failure-modes--recovery)
 10. [Performance Characteristics](#10-performance-characteristics)
-11. [Security Considerations](#11-security-considerations)
+11. [Byzantine Fault Tolerance & Mesh Security Architecture](#11-byzantine-fault-tolerance--mesh-security-architecture)
+    - [11.1 Ed25519 Operation Signature Verification Protocol](#111-ed25519-operation-signature-verification-protocol)
+    - [11.2 Peer Rate-Limiting & Poison Message Rejection Rules](#112-peer-rate-limiting--poison-message-rejection-rules)
+    - [11.3 Peer Reputation Scoring & Dynamic Penalty Matrix](#113-peer-reputation-scoring--dynamic-penalty-matrix)
+    - [11.4 Automatic WebRTC Channel Termination & Eviction Flow](#114-automatic-webrtc-channel-termination--eviction-flow)
+    - [11.5 Authentication & Transport Layer Security](#115-authentication--transport-layer-security)
+    - [11.6 Threat Model & Mitigation Matrix](#116-threat-model--mitigation-matrix)
 12. [Implementation Checklist](#12-implementation-checklist)
 
 ---
@@ -66,13 +72,13 @@ When the WebRTC mesh is active, Yjs updates are simultaneously sent to the Party
 
 ### Component Responsibilities
 
-| Component | Responsibility | Source File |
-|-----------|---------------|-------------|
-| `useMeshCanvasWhiteboard` | Orchestrates dual-path Yjs sync (PartyKit + mesh) | `src/hooks/useMeshCanvasWhiteboard.ts` |
-| `useCanvasWhiteboard` | Yjs Doc, shapes array, UndoManager, Awareness | `src/hooks/useCanvasWhiteboard.ts` |
-| `useMeshDataChannels` | WebRTC mesh connection management, binary send/receive | `src/hooks/useMeshDataChannels.ts` |
-| `WorkspaceServer` | PartyKit signaling relay, Yjs server sync | `party/server.ts` |
-| `FailoverSyncManager` | State recovery after edge failover | `src/lib/edge/failoverSync.ts` |
+| Component                 | Responsibility                                         | Source File                            |
+| ------------------------- | ------------------------------------------------------ | -------------------------------------- |
+| `useMeshCanvasWhiteboard` | Orchestrates dual-path Yjs sync (PartyKit + mesh)      | `src/hooks/useMeshCanvasWhiteboard.ts` |
+| `useCanvasWhiteboard`     | Yjs Doc, shapes array, UndoManager, Awareness          | `src/hooks/useCanvasWhiteboard.ts`     |
+| `useMeshDataChannels`     | WebRTC mesh connection management, binary send/receive | `src/hooks/useMeshDataChannels.ts`     |
+| `WorkspaceServer`         | PartyKit signaling relay, Yjs server sync              | `party/server.ts`                      |
+| `FailoverSyncManager`     | State recovery after edge failover                     | `src/lib/edge/failoverSync.ts`         |
 
 ---
 
@@ -86,13 +92,13 @@ $$
 C = \frac{n(n-1)}{2}
 $$
 
-| Peers ($n$) | Connections ($C$) | Max per peer | Recommended? |
-|:-----------:|:-----------------:|:------------:|:------------:|
-| 2 | 1 | 1 | Yes |
-| 3 | 3 | 2 | Yes |
-| 4 | 6 | 3 | Yes |
-| 5 | 10 | 4 | Yes (max) |
-| 6 | 15 | 5 | No (exceeds limit) |
+| Peers ($n$) | Connections ($C$) | Max per peer |    Recommended?    |
+| :---------: | :---------------: | :----------: | :----------------: |
+|      2      |         1         |      1       |        Yes         |
+|      3      |         3         |      2       |        Yes         |
+|      4      |         6         |      3       |        Yes         |
+|      5      |        10         |      4       |     Yes (max)      |
+|      6      |        15         |      5       | No (exceeds limit) |
 
 > **WorkSphere enforces a maximum of 5 peers** per mesh session.
 
@@ -141,9 +147,9 @@ Each peer is identified by a `connectionId` assigned by PartyKit on WebSocket co
 
 ```typescript
 interface MeshPeer {
-  connectionId: string;   // PartyKit-assigned ID
-  userId: string;         // Clerk user ID
-  displayName: string;    // User-facing name
+  connectionId: string; // PartyKit-assigned ID
+  userId: string; // Clerk user ID
+  displayName: string; // User-facing name
   rtcConnection: RTCPeerConnection;
   dataChannel: RTCDataChannel;
   state: "connecting" | "connected" | "disconnected";
@@ -181,19 +187,19 @@ ICE candidates exchanged via PartyKit
 
 ```typescript
 const dataChannel = rtcConnection.createDataChannel("yjs-sync", {
-  ordered: true,           // Guaranteed ordering for CRDT consistency
+  ordered: true, // Guaranteed ordering for CRDT consistency
   maxRetransmits: undefined, // Use SCTP reliable delivery
 });
 
 dataChannel.binaryType = "arraybuffer"; // Yjs updates are ArrayBuffers
 ```
 
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Label | `"yjs-sync"` | Identifies the channel purpose |
-| Ordered | `true` | CRDT deltas require causal ordering |
-| Binary type | `"arraybuffer"` | Yjs encode/decode uses `Uint8Array` |
-| Protocol | `"crdt-v1"` | Version identifier for future extensibility |
+| Parameter   | Value           | Rationale                                   |
+| ----------- | --------------- | ------------------------------------------- |
+| Label       | `"yjs-sync"`    | Identifies the channel purpose              |
+| Ordered     | `true`          | CRDT deltas require causal ordering         |
+| Binary type | `"arraybuffer"` | Yjs encode/decode uses `Uint8Array`         |
+| Protocol    | `"crdt-v1"`     | Version identifier for future extensibility |
 
 ### 3.3 SDP Offer/Answer with DataChannel
 
@@ -203,13 +209,15 @@ const offer = await rtcConnection.createOffer();
 await rtcConnection.setLocalDescription(offer);
 
 // Send offer via PartyKit signaling
-partySocket.send(JSON.stringify({
-  type: "webrtc-signal",
-  signalType: "offer",
-  to: targetPeerId,
-  from: localConnectionId,
-  sdp: rtcConnection.localDescription,
-}));
+partySocket.send(
+  JSON.stringify({
+    type: "webrtc-signal",
+    signalType: "offer",
+    to: targetPeerId,
+    from: localConnectionId,
+    sdp: rtcConnection.localDescription,
+  }),
+);
 
 // Responder receives offer
 await rtcConnection.setRemoteDescription(signal.sdp);
@@ -217,13 +225,15 @@ const answer = await rtcConnection.createAnswer();
 await rtcConnection.setLocalDescription(answer);
 
 // Send answer back
-partySocket.send(JSON.stringify({
-  type: "webrtc-signal",
-  signalType: "answer",
-  to: signal.from,
-  from: localConnectionId,
-  sdp: rtcConnection.localDescription,
-}));
+partySocket.send(
+  JSON.stringify({
+    type: "webrtc-signal",
+    signalType: "answer",
+    to: signal.from,
+    from: localConnectionId,
+    sdp: rtcConnection.localDescription,
+  }),
+);
 ```
 
 ### 3.4 ICE Candidate Exchange
@@ -231,13 +241,15 @@ partySocket.send(JSON.stringify({
 ```typescript
 rtcConnection.onicecandidate = (event) => {
   if (event.candidate) {
-    partySocket.send(JSON.stringify({
-      type: "webrtc-signal",
-      signalType: "ice-candidate",
-      to: targetPeerId,
-      from: localConnectionId,
-      candidate: event.candidate,
-    }));
+    partySocket.send(
+      JSON.stringify({
+        type: "webrtc-signal",
+        signalType: "ice-candidate",
+        to: targetPeerId,
+        from: localConnectionId,
+        candidate: event.candidate,
+      }),
+    );
   }
 };
 
@@ -275,12 +287,12 @@ dataChannel.onmessage = (event) => {
 
 PartyKit relays WebRTC signaling messages between peers. The server does not inspect or modify SDP/ICE payloads.
 
-| Message Type | Direction | Payload | Purpose |
-|-------------|-----------|---------|---------|
-| `peer:join` | Server → All | `{ userId, displayName }` | Notify peers of new participant |
-| `peer:leave` | Server → All | `{ connectionId }` | Notify peers of departure |
-| `webrtc-signal` | Client → Server → Client | SDP/ICE data | Relay signaling messages |
-| `mesh:state` | Client → Server → All | `{ peerStates }` | Broadcast mesh connection states |
+| Message Type    | Direction                | Payload                   | Purpose                          |
+| --------------- | ------------------------ | ------------------------- | -------------------------------- |
+| `peer:join`     | Server → All             | `{ userId, displayName }` | Notify peers of new participant  |
+| `peer:leave`    | Server → All             | `{ connectionId }`        | Notify peers of departure        |
+| `webrtc-signal` | Client → Server → Client | SDP/ICE data              | Relay signaling messages         |
+| `mesh:state`    | Client → Server → All    | `{ peerStates }`          | Broadcast mesh connection states |
 
 ### 4.2 Signaling Message Schema
 
@@ -288,10 +300,10 @@ PartyKit relays WebRTC signaling messages between peers. The server does not ins
 interface WebRTCSignalMessage {
   type: "webrtc-signal";
   signalType: "offer" | "answer" | "ice-candidate";
-  from: string;    // sender connectionId
-  to: string;      // recipient connectionId
-  sdp?: RTCSessionDescriptionInit;   // for offer/answer
-  candidate?: RTCIceCandidateInit;   // for ice-candidate
+  from: string; // sender connectionId
+  to: string; // recipient connectionId
+  sdp?: RTCSessionDescriptionInit; // for offer/answer
+  candidate?: RTCIceCandidateInit; // for ice-candidate
 }
 ```
 
@@ -309,9 +321,7 @@ if (msg.type === "webrtc-signal") {
   }
 
   // Forward to target peer
-  const target = this.getConnections().find(
-    (c) => c.id === msg.to
-  );
+  const target = this.getConnections().find((c) => c.id === msg.to);
   if (target) {
     target.send(JSON.stringify(msg));
   }
@@ -394,10 +404,10 @@ meshDataChannels.onMessage((peerId: string, data: ArrayBuffer) => {
 
 ### 5.4 Sync Precedence
 
-| Source | Origin Tag | Priority | Use Case |
-|--------|-----------|----------|----------|
-| Local user edit | `null` | — | Originates here |
-| WebRTC mesh peer | `"mesh"` | 1 (fastest) | Direct P2P relay |
+| Source             | Origin Tag   | Priority     | Use Case                 |
+| ------------------ | ------------ | ------------ | ------------------------ |
+| Local user edit    | `null`       | —            | Originates here          |
+| WebRTC mesh peer   | `"mesh"`     | 1 (fastest)  | Direct P2P relay         |
 | PartyKit WebSocket | `"partykit"` | 2 (fallback) | Server-synced, late-join |
 
 Updates from `"mesh"` or `"partykit"` origin are **never re-broadcast** to prevent infinite echo loops.
@@ -472,11 +482,11 @@ dataChannel.onmessage = (event) => {
 
 ### 6.5 State Vector vs. Full Update
 
-| Operation | Binary Size | Use Case |
-|-----------|-------------|----------|
-| `Y.encodeStateVector(doc)` | ~8 bytes × client count | Requesting missing data |
+| Operation                        | Binary Size                 | Use Case                     |
+| -------------------------------- | --------------------------- | ---------------------------- |
+| `Y.encodeStateVector(doc)`       | ~8 bytes × client count     | Requesting missing data      |
 | `Y.encodeStateAsUpdate(doc, sv)` | Proportional to missing ops | Sending only what peer lacks |
-| `Y.encodeStateAsUpdate(doc)` | Full document state | Complete snapshot (rare) |
+| `Y.encodeStateAsUpdate(doc)`     | Full document state         | Complete snapshot (rare)     |
 
 > **Optimization:** The mesh only sends the diff, not the full document. This keeps bandwidth proportional to the number of new operations, not document size.
 
@@ -532,12 +542,12 @@ deterministically resolves by client ID ordering.
 
 ### 7.5 Conflict Resolution Guarantees
 
-| Property | Description |
-|----------|-------------|
-| **Commutativity** | Applying updates in any order yields the same result |
-| **Idempotency** | Applying the same update twice has no additional effect |
-| **Convergence** | All peers reach the same document state after sync |
-| **No data loss** | Concurrent edits to different fields are preserved |
+| Property          | Description                                             |
+| ----------------- | ------------------------------------------------------- |
+| **Commutativity** | Applying updates in any order yields the same result    |
+| **Idempotency**   | Applying the same update twice has no additional effect |
+| **Convergence**   | All peers reach the same document state after sync      |
+| **No data loss**  | Concurrent edits to different fields are preserved      |
 
 ---
 
@@ -549,7 +559,7 @@ Each peer maintains a local `Y.UndoManager` that tracks their own operations:
 
 ```typescript
 const um = new Y.UndoManager(shapes, {
-  captureTimeout: 500,  // Group ops within 500ms into one undo step
+  captureTimeout: 500, // Group ops within 500ms into one undo step
 });
 ```
 
@@ -615,10 +625,10 @@ Yjs propagates to all peers
 
 ```typescript
 interface UndoManagerState {
-  canUndo: boolean;          // um.undoStack.length > 0
-  canRedo: boolean;          // um.redoStack.length > 0
-  undoDepth: number;         // um.undoStack.length
-  redoDepth: number;         // um.redoStack.length
+  canUndo: boolean; // um.undoStack.length > 0
+  canRedo: boolean; // um.redoStack.length > 0
+  undoDepth: number; // um.undoStack.length
+  redoDepth: number; // um.redoStack.length
 }
 ```
 
@@ -638,11 +648,11 @@ doc.on("update", (update: Uint8Array, origin: unknown) => {
 
 ### 8.7 Capture Timeout Behavior
 
-| Timeout Window | Behavior |
-|---------------|----------|
+| Timeout Window       | Behavior                      |
+| -------------------- | ----------------------------- |
 | < 500 ms between ops | Grouped into single undo step |
-| > 500 ms gap | New undo step created |
-| User switches tool | Forces new undo step |
+| > 500 ms gap         | New undo step created         |
+| User switches tool   | Forces new undo step          |
 
 ---
 
@@ -709,12 +719,12 @@ On reconnection: full state vector exchange + catch-up
 
 ### 9.4 State Drift Prevention
 
-| Mechanism | Description | Implementation |
-|-----------|-------------|----------------|
-| State vector exchange | Periodic reconciliation | On mesh connect + reconnect |
-| PartyKit authoritative | Server state is source of truth | `y-partykit` GC-enabled |
-| FailoverSync snapshot | Full state recovery after edge failover | `failoverSync.ts` |
-| IndexedDB persistence | Crash recovery | `offlineStorage.ts` |
+| Mechanism              | Description                             | Implementation              |
+| ---------------------- | --------------------------------------- | --------------------------- |
+| State vector exchange  | Periodic reconciliation                 | On mesh connect + reconnect |
+| PartyKit authoritative | Server state is source of truth         | `y-partykit` GC-enabled     |
+| FailoverSync snapshot  | Full state recovery after edge failover | `failoverSync.ts`           |
+| IndexedDB persistence  | Crash recovery                          | `offlineStorage.ts`         |
 
 ---
 
@@ -722,28 +732,28 @@ On reconnection: full state vector exchange + catch-up
 
 ### 10.1 Latency Comparison
 
-| Path | Typical Latency | Use Case |
-|------|:---------------:|----------|
-| WebRTC mesh (LAN) | 2–10 ms | Same-network peers |
-| WebRTC mesh (WAN) | 20–80 ms | Cross-region peers |
-| PartyKit WebSocket | 50–150 ms | All peers (baseline) |
-| PartyKit + edge routing | 30–100 ms | Nearest edge node |
+| Path                    | Typical Latency | Use Case             |
+| ----------------------- | :-------------: | -------------------- |
+| WebRTC mesh (LAN)       |     2–10 ms     | Same-network peers   |
+| WebRTC mesh (WAN)       |    20–80 ms     | Cross-region peers   |
+| PartyKit WebSocket      |    50–150 ms    | All peers (baseline) |
+| PartyKit + edge routing |    30–100 ms    | Nearest edge node    |
 
 ### 10.2 Bandwidth per Peer
 
-| Operation | Size | Frequency |
-|-----------|:----:|:---------:|
-| Yjs delta (single shape edit) | ~50–200 bytes | Per edit |
-| State vector request | ~8 bytes × clients | On connect |
-| State vector response | Proportional to diff | On connect |
-| Heartbeat / keepalive | ~4 bytes | Every 30s |
+| Operation                     |         Size         | Frequency  |
+| ----------------------------- | :------------------: | :--------: |
+| Yjs delta (single shape edit) |    ~50–200 bytes     |  Per edit  |
+| State vector request          |  ~8 bytes × clients  | On connect |
+| State vector response         | Proportional to diff | On connect |
+| Heartbeat / keepalive         |       ~4 bytes       | Every 30s  |
 
 ### 10.3 Mesh Overhead
 
-| Metric | 3 Peers | 5 Peers |
-|--------|--------:|--------:|
-| Active connections | 3 | 10 |
-| Max simultaneous sends | 2 | 4 |
+| Metric                       | 3 Peers |  5 Peers |
+| ---------------------------- | ------: | -------: |
+| Active connections           |       3 |       10 |
+| Max simultaneous sends       |       2 |        4 |
 | Total bandwidth (10 edits/s) | ~6 KB/s | ~10 KB/s |
 
 ### 10.4 Adaptive Quality
@@ -752,39 +762,355 @@ The mesh data channel uses **ordered delivery** for CRDT consistency. For latenc
 
 ---
 
-## 11. Security Considerations
+## 11. Byzantine Fault Tolerance & Mesh Security Architecture
 
-### 11.1 Authentication
+While standard WebRTC DTLS transport encryption prevents third-party eavesdropping and man-in-the-middle attacks on the network wire, full-mesh peer-to-peer topologies remain inherently susceptible to **Byzantine participants**. A malicious peer admitted to an authenticated room can attempt to disrupt collaborative state by broadcasting malformed CRDT deltas, forging identity operations, replaying historical messages, or launching denial-of-service state flooding attacks.
 
-| Layer | Mechanism |
-|-------|-----------|
-| PartyKit room access | Clerk JWT token in query params |
-| WebRTC signaling | Forwarded through authenticated PartyKit connection |
-| Data channel content | No additional encryption (relies on DTLS) |
+To protect room state and uncompromised peers, WorkSphere enforces an in-depth security architecture featuring **Ed25519 cryptographic operation signing**, **zero-trust pre-application validation**, **token-bucket rate limiting**, **dynamic peer reputation scoring**, and **immediate fail-close WebRTC channel termination**.
 
-### 11.2 Data Channel Security
+```
++---------------------------------------------------------------------------------------------------------+
+|                                    BYZANTINE INGRESS VALIDATION PIPELINE                                |
+|                                                                                                         |
+|  Incoming RTCDataChannel Message ("yjs-sync")                                                           |
+|       |                                                                                                 |
+|       v                                                                                                 |
+|  [Step 1: Size & Rate Limiter] ---> (>64 KB or >50 ops/sec) ---------> DROP + Penalize Reputation (-15) |
+|       |                                                                                                 |
+|       v                                                                                                 |
+|  [Step 2: Replay & Monotonicity] -> (Sequence <= lastSeen or |dt| > 5s) -> DROP + Penalize (-50)        |
+|       |                                                                                                 |
+|       v                                                                                                 |
+|  [Step 3: Ed25519 Signature Verification] -> (Invalid signature) ------> TERMINATE CHANNEL (-100)       |
+|       |                                                                  (Immediate Peer Eviction)      |
+|       v                                                                                                 |
+|  [Step 4: CRDT Binary Decoding Sandbox] ---> (DecoderException) -------> DROP + Poison Rejection (-35)  |
+|       |                                                                                                 |
+|       v (All Guards Passed)                                                                             |
+|  Apply to local Y.Doc via Y.applyUpdate(doc, update, origin)                                            |
+|  Relay to downstream mesh peers (if originator score > 75)                                              |
++---------------------------------------------------------------------------------------------------------+
+```
 
-WebRTC data channels are encrypted by default via **DTLS** (Datagram Transport Layer Security). All mesh traffic is encrypted in transit without application-level encryption.
+---
 
-### 11.3 Signaling Integrity
+### 11.1 Ed25519 Operation Signature Verification Protocol
 
-PartyKit verifies the `from` field of `webrtc-signal` messages matches the authenticated `connectionId`:
+All CRDT mutation deltas transmitted over WebRTC data channels must be wrapped in a cryptographically signed binary envelope before transmission. Operations lacking a valid cryptographic signature are discarded immediately prior to witness processing or state insertion.
+
+#### 11.1.1 Signed Operation Envelope Structure
 
 ```typescript
-if (msg.from !== conn.id) {
-  // Reject: sender impersonation attempt
-  return;
+export interface CrdtSignedEnvelope {
+  /** Authenticated sender peer identifier (bound to Clerk user session) */
+  peerId: string;
+
+  /** 32-byte Ed25519 public key in hexadecimal representation (64 characters) */
+  publicKeyHex: string;
+
+  /** Monotonically increasing sequence number per peer to prevent replay/reordering */
+  sequenceNumber: number;
+
+  /** Generation epoch millisecond timestamp (used for drift validation) */
+  timestamp: number;
+
+  /** Unique collaborative document/room identifier */
+  documentId: string;
+
+  /** Base64 or binary Uint8Array containing Yjs state update delta */
+  payloadBase64: string;
+
+  /** 64-byte Ed25519 signature in hexadecimal representation (128 characters) */
+  signatureHex: string;
 }
 ```
 
-### 11.4 Threat Model
+#### 11.1.2 Canonical Serialization for Cryptographic Signing
 
-| Threat | Mitigation |
-|--------|------------|
-| Unauthorized room access | Clerk JWT required for PartyKit connection |
-| Signaling message tampering | DTLS encryption on data channels |
-| Peer impersonation | `from` field validated against `conn.id` |
-| Mesh replay attack | Yjs state vectors prevent replay; ops are idempotent |
+To eliminate field reordering ambiguities across heterogeneous JavaScript runtime engines, the canonical byte payload for signing is defined as:
+
+$$\text{CanonicalBytes} = \text{UTF-8}(\text{peerId} \mathbin{\Vert} \text{documentId} \mathbin{\Vert} \text{sequenceNumber} \mathbin{\Vert} \text{timestamp}) \mathbin{\Vert} \text{RawPayloadBytes}$$
+
+```typescript
+export function computeCanonicalPayload(envelope: {
+  peerId: string;
+  documentId: string;
+  sequenceNumber: number;
+  timestamp: number;
+  payloadBytes: Uint8Array;
+}): Uint8Array {
+  const headerString = `${envelope.peerId}:${envelope.documentId}:${envelope.sequenceNumber}:${envelope.timestamp}:`;
+  const headerBytes = new TextEncoder().encode(headerString);
+
+  const merged = new Uint8Array(
+    headerBytes.length + envelope.payloadBytes.length,
+  );
+  merged.set(headerBytes, 0);
+  merged.set(envelope.payloadBytes, headerBytes.length);
+  return merged;
+}
+```
+
+#### 11.1.3 Cryptographic Verification Routine
+
+When an envelope is received on the `RTCDataChannel`, the recipient verifies the signature using the Web Crypto API (`Ed25519` key algorithm) or `@noble/ed25519`:
+
+```typescript
+import * as ed from "@noble/ed25519";
+
+export async function verifyCrdtOperation(
+  envelope: CrdtSignedEnvelope,
+  lastSeenSequence: number,
+  expectedPeerId: string,
+): Promise<{ valid: boolean; failureReason?: string }> {
+  // 1. Peer Identity Binding Check
+  if (envelope.peerId !== expectedPeerId) {
+    return { valid: false, failureReason: "PEER_IDENTITY_MISMATCH" };
+  }
+
+  // 2. Monotonic Sequence Number Check (Replay Protection)
+  if (envelope.sequenceNumber <= lastSeenSequence) {
+    return { valid: false, failureReason: "REPLAYED_SEQUENCE_NUMBER" };
+  }
+
+  // 3. Clock Skew Bounds Check (Maximum 5000ms drift window)
+  const currentTimestamp = Date.now();
+  if (Math.abs(currentTimestamp - envelope.timestamp) > 5000) {
+    return { valid: false, failureReason: "EXCESSIVE_CLOCK_SKEW" };
+  }
+
+  // 4. Ed25519 Cryptographic Signature Verification
+  const payloadBytes = Uint8Array.from(atob(envelope.payloadBase64), (c) =>
+    c.charCodeAt(0),
+  );
+  const canonicalBytes = computeCanonicalPayload({
+    peerId: envelope.peerId,
+    documentId: envelope.documentId,
+    sequenceNumber: envelope.sequenceNumber,
+    timestamp: envelope.timestamp,
+    payloadBytes,
+  });
+
+  const isValidSignature = await ed.verify(
+    envelope.signatureHex,
+    canonicalBytes,
+    envelope.publicKeyHex,
+  );
+
+  if (!isValidSignature) {
+    return { valid: false, failureReason: "INVALID_ED25519_SIGNATURE" };
+  }
+
+  return { valid: true };
+}
+```
+
+---
+
+### 11.2 Peer Rate-Limiting & Poison Message Rejection Rules
+
+Byzantine actors may attempt state amplification or denial-of-service (DoS) attacks by flooding legitimate peers with millions of empty operations or malformed byte sequences designed to trigger out-of-memory (OOM) crashes in the Yjs decoder.
+
+#### 11.2.1 Token-Bucket Rate Limiter per Peer
+
+Each peer maintains a dedicated token-bucket rate limiter per data channel:
+
+| Rate Limiter Parameter       | Threshold Ceiling   | Description                                     | Action on Violation |
+| :--------------------------- | :------------------ | :---------------------------------------------- | :------------------ |
+| **Sustained Operation Rate** | $50\text{ ops/sec}$ | Continuous allowed operations per second        | Queue throttle      |
+| **Burst Capacity**           | $100\text{ ops}$    | Maximum token reservoir for rapid user strokes  | Drop excess deltas  |
+| **Payload Size Ceiling**     | $64\text{ KB}$      | Maximum size for an individual Yjs update delta | Immediate reject    |
+| **Bandwidth Ceiling**        | $512\text{ KB/sec}$ | Aggregate inbound data budget per peer          | Throttle connection |
+
+```typescript
+export class PeerRateLimiter {
+  private tokens: number = 100;
+  private readonly maxTokens: number = 100;
+  private readonly refillRatePerMs: number = 50 / 1000; // 50 tokens/sec
+  private lastRefillTimestamp: number = Date.now();
+
+  public tryConsume(cost: number = 1): boolean {
+    const now = Date.now();
+    const elapsed = now - this.lastRefillTimestamp;
+    this.tokens = Math.min(
+      this.maxTokens,
+      this.tokens + elapsed * this.refillRatePerMs,
+    );
+    this.lastRefillTimestamp = now;
+
+    if (this.tokens >= cost) {
+      this.tokens -= cost;
+      return true;
+    }
+    return false; // Rate limit exceeded
+  }
+}
+```
+
+#### 11.2.2 Poison Message Rejection Rules
+
+A **poison message** is an update payload crafted to exploit decoder parsing bugs or cause fatal crashes in the CRDT engine. WorkSphere isolates update decoding inside a defensive sandbox:
+
+1. **Decoding Isolation:** Inbound byte sequences are decoded using a trial reader (`Y.readUpdate` / `lib0.decoding`) within an isolated `try/catch` block before being applied to the document.
+2. **Structural Depth Ceiling:** Updates attempting to create nested structures deeper than $32$ levels or containing $>10,000$ deleted items in a single delta are rejected as structural denial-of-service attempts.
+3. **Zero-Propagation Rule:** Malformed, unparseable, or rejected updates are **never re-broadcast** to downstream mesh peers, halting cascading contamination across the cluster.
+
+```typescript
+export function safelyApplyPeerUpdate(
+  doc: Y.Doc,
+  rawUpdateBytes: Uint8Array,
+  peerId: string,
+): { success: boolean; error?: string } {
+  try {
+    // 1. Pre-validation: Ensure payload has valid lib0 encoding header
+    if (rawUpdateBytes.length === 0 || rawUpdateBytes.length > 65536) {
+      return { success: false, error: "PAYLOAD_SIZE_OUT_OF_BOUNDS" };
+    }
+
+    // 2. Safe trial execution inside local transaction
+    Y.applyUpdate(doc, rawUpdateBytes, `mesh-peer:${peerId}`);
+    return { success: true };
+  } catch (decodingError) {
+    // Poison message caught without crashing the application runtime
+    console.error(
+      `[ByzantineGuard] Poison message detected from peer ${peerId}:`,
+      decodingError,
+    );
+    return { success: false, error: "CRDT_DECODER_EXCEPTION" };
+  }
+}
+```
+
+---
+
+### 11.3 Peer Reputation Scoring & Dynamic Penalty Matrix
+
+WorkSphere tracks a dynamic **Reputation Score** $R \in [0, 100]$ for each active mesh participant. Peers start with an initial score of $R_0 = 100$.
+
+#### 11.3.1 Penalty and Reward Matrix
+
+| Event / Behavioral Trigger                    | Reputation Impact | Action Taken                                     |
+| :-------------------------------------------- | :---------------- | :----------------------------------------------- |
+| **Valid Signed Update Applied**               | $+0.1$ points     | Gradual score recovery (capped at $100$)         |
+| **Rate Limit Burst Violation**                | $-15$ points      | Temporary message throttling for $2000\text{ms}$ |
+| **Clock Skew / Timestamp Anomaly**            | $-25$ points      | Delta discarded                                  |
+| **Poison Message (Unparseable Yjs Bytecode)** | $-35$ points      | Delta discarded; quarantine evaluation           |
+| **Replayed Sequence Number**                  | $-50$ points      | Immediate delta drop                             |
+| **Invalid Ed25519 Cryptographic Signature**   | **$-100$ points** | **Instant critical fault $\to$ Eviction**        |
+| **Identity / Public Key Impersonation**       | **$-100$ points** | **Instant critical fault $\to$ Eviction**        |
+
+#### 11.3.2 Reputation Degradation Thresholds
+
+```
+Score: 100 ---------- 75 ------------------ 40 ------------------- 0
+State:     [NORMAL]    |    [THROTTLED]      |     [QUARANTINED]   | [EVICTED]
+Action:  Full relay    | Rate limit -50%     | No relay to others  | Immediate disconnect
+                       | Drops cursor sync   | Local audit only    | WebRTC tear-down
+```
+
+- **Normal State ($75 < R \le 100$):** Peer updates are processed and forwarded to all connected mesh peers.
+- **Throttled State ($40 < R \le 75$):** Token-bucket refill rate is reduced by $50\%$. High-frequency non-critical updates (e.g., mouse presence, typing indicators) are dropped.
+- **Quarantined State ($0 < R \le 40$):** Updates from this peer are applied locally only if strictly verified; updates are **never relayed** to other mesh peers.
+- **Evicted State ($R \le 0$):** Peer connection is immediately torn down and blacklisted.
+
+---
+
+### 11.4 Automatic WebRTC Channel Termination & Eviction Flow
+
+When a peer incurs a critical fault (such as an invalid Ed25519 signature) or their reputation score drops to $0$, the node initiates an **automated fail-close eviction sequence**:
+
+#### 11.4.1 Eviction Protocol Steps
+
+1. **Channel Tear-down:** Close the `"yjs-sync"` `RTCDataChannel` immediately (`dataChannel.close()`).
+2. **Peer Connection Termination:** Close the underlying `RTCPeerConnection` (`peerConnection.close()`).
+3. **Local Blacklist Insertion:** Place the peer ID and public key into a local eviction blacklist for $30\text{ minutes}$ ($1,800,000\text{ms}$). Inbound reconnection attempts from this peer are rejected automatically during this window.
+4. **Signaling Server Eviction Notice:** Transmit an authenticated `webrtc-peer-evicted` payload to the PartyKit signaling server:
+
+```typescript
+export interface PeerEvictionNotification {
+  type: "webrtc-peer-evicted";
+  room: string;
+  evictedPeerId: string;
+  reason:
+    "INVALID_ED25519_SIGNATURE" | "POISON_MESSAGE" | "RATE_LIMIT_EXHAUSTED";
+  timestamp: number;
+  evidence: {
+    sequenceNumber: number;
+    signatureHex: string;
+    payloadHash: string;
+  };
+}
+```
+
+5. **Mesh Rerouting & Catch-up:** Reroute active data channels to bypass the evicted node. If local state integrity was threatened, request an authoritative state vector catch-up from the PartyKit server.
+
+#### 11.4.2 Automated Termination Implementation
+
+```typescript
+export function terminateByzantinePeer(
+  peerId: string,
+  reason:
+    "INVALID_ED25519_SIGNATURE" | "POISON_MESSAGE" | "RATE_LIMIT_EXHAUSTED",
+  peerConnection?: RTCPeerConnection,
+  dataChannel?: RTCDataChannel,
+  partykitSocket?: WebSocket,
+): void {
+  console.warn(
+    `[ByzantineEviction] Terminating rogue peer ${peerId}. Reason: ${reason}`,
+  );
+
+  // 1. Close RTCDataChannel
+  try {
+    dataChannel?.close();
+  } catch (err) {
+    // Ignore close errors
+  }
+
+  // 2. Close RTCPeerConnection
+  try {
+    peerConnection?.getSenders().forEach((sender) => sender.track?.stop());
+    peerConnection?.close();
+  } catch (err) {
+    // Ignore close errors
+  }
+
+  // 3. Notify signaling server
+  if (partykitSocket && partykitSocket.readyState === WebSocket.OPEN) {
+    partykitSocket.send(
+      JSON.stringify({
+        type: "webrtc-peer-evicted",
+        evictedPeerId: peerId,
+        reason,
+        timestamp: Date.now(),
+      }),
+    );
+  }
+}
+```
+
+---
+
+### 11.5 Authentication & Transport Layer Security
+
+| Layer                   | Mechanism                        | Scope                                                                 |
+| :---------------------- | :------------------------------- | :-------------------------------------------------------------------- |
+| **Room Admission**      | Clerk JWT Bearer Token           | Verified at PartyKit WebSocket connection upgrade                     |
+| **Signaling Integrity** | Connection ID Binding            | Server rejects signals where `from !== conn.id`                       |
+| **Wire Encryption**     | WebRTC DTLS 1.2 / 1.3            | Encrypts all packets between browsers over UDP/TCP                    |
+| **Application Signing** | Ed25519 Cryptographic Signatures | Guarantees non-repudiation and tampering detection per CRDT operation |
+
+---
+
+### 11.6 Threat Model & Mitigation Matrix
+
+| Byzantine Threat Vector        | Attack Mechanism                                                | Protocol Mitigation                                                                                            |
+| :----------------------------- | :-------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
+| **State Forgery**              | Attacker broadcasts fake edits claiming to be another user      | **Ed25519 signature validation** rejects any delta not signed with the authentic user's private key.           |
+| **CRDT State Bomb**            | Attacker crafts a corrupted binary delta to crash peer runtimes | **Decoding sandbox** catches lib0 parser exceptions; payload is discarded without application or relay.        |
+| **Denial of Service Flooding** | Attacker floods 10,000 updates/second to exhaust memory         | **Token-bucket rate limiter** caps operations to 50 ops/sec; offenders are throttled and evicted.              |
+| **Replay Attacks**             | Attacker replays valid historical edit operations out of order  | **Monotonic sequence numbers** and $\pm 5000\text{ms}$ timestamp validation reject repeated or stale messages. |
+| **Cascade Poisoning**          | Byzantine peer attempts to turn benign peers into poison relays | **Zero-propagation rule** prohibits re-broadcasting any unverified, throttled, or unparseable updates.         |
+| **Evasion via Reconnection**   | Evicted peer reconnects under fresh WebRTC offer                | **30-minute eviction blacklist** rejects re-negotiation attempts from the evicted peer ID or public key.       |
 
 ---
 
@@ -792,6 +1118,14 @@ if (msg.from !== conn.id) {
 
 - [ ] Ensure `src/hooks/useMeshDataChannels.ts` creates `"yjs-sync"` data channel with `ordered: true`.
 - [ ] Verify `src/hooks/useMeshCanvasWhiteboard.ts` broadcasts Yjs updates via `meshDataChannels.sendToAll()` with origin guards.
+- [ ] Implement Ed25519 canonical message envelope signing before dispatching Yjs deltas over data channels.
+- [ ] Implement pre-application signature and monotonicity checks in `useMeshDataChannels.ts` before calling `Y.applyUpdate`.
+- [ ] Enforce token-bucket rate limiter ($50\text{ ops/sec}$, max $64\text{ KB}$ per payload) per data channel.
+- [ ] Implement poison message isolation sandbox around `Y.applyUpdate` to prevent crash propagation.
+- [ ] Maintain per-peer reputation scoring matrix with dynamic throttling ($R \le 75$) and quarantine ($R \le 40$).
+- [ ] Trigger automated WebRTC data channel termination and RTCPeerConnection tear-down on signature failure or $R \le 0$.
+- [ ] Dispatch `webrtc-peer-evicted` signaling notification to PartyKit on peer termination.
+- [ ] Maintain a 30-minute local blacklist preventing re-negotiation from evicted peers.
 - [ ] Confirm PartyKit `party/server.ts` forwards `webrtc-signal` messages with `from` validation.
 - [ ] Validate state vector exchange on mesh channel open for initial sync.
 - [ ] Ensure `Y.UndoManager` capture timeout is 500ms and undo/redo propagates to all peers.

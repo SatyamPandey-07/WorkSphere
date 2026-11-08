@@ -105,8 +105,16 @@ function generateNonce(): string {
 // ---------------------------------------------------------------------------
 
 function base64UrlEncode(str: string): string {
-  // btoa is available in all modern runtimes (browsers, Workers, Node ≥ 16)
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(str, "utf-8").toString("base64url");
+  }
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 8192) {
+    const chunk = bytes.subarray(i, i + 8192);
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function base64UrlDecode(encoded: string): string {
@@ -114,7 +122,15 @@ function base64UrlDecode(encoded: string): string {
   while (base64.length % 4 !== 0) {
     base64 += "=";
   }
-  return atob(base64);
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(base64, "base64").toString("utf-8");
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 // ---------------------------------------------------------------------------

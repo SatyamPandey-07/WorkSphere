@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Download, Sparkles } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { purgeStaleWeights } from "@/lib/federated/weightDb";
+import { useWorkerTokenRefresh } from "@/hooks/useWorkerTokenRefresh";
+import { flushPendingReviewsClientFallback } from "@/lib/offlineReviewSync";
+import { useReviewConflictWorker } from "@/hooks/useReviewConflictWorker";
+import { ReviewConflictResolutionDialog } from "@/components/offline/ReviewConflictResolutionDialog";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -10,16 +15,29 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function useSyncWorker() {
+  const { getToken } = useAuth();
+  const workerRef = useRef<Worker | null>(null);
+
+  // Handle AUTH_EXPIRED messages from the worker: refresh the Clerk session
+  // token on the main thread and send it back as TOKEN_REFRESH.
+  useWorkerTokenRefresh(workerRef);
+
+  // Keep a stable ref to getToken so the effect closure stays fresh without
+  // re-running the entire effect on every render.
+  const getTokenRef = useRef(getToken);
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
   useEffect(() => {
     if (typeof window === "undefined" || !window.Worker) return;
 
-    // Next.js Webpack automatically bundles this worker
+    // Next.js Webpack automatically bundles this worker.
     const worker = new Worker(
       new URL("../workers/sync.worker.ts", import.meta.url),
-      {
-        type: "module",
-      },
+      { type: "module" },
     );
+    workerRef.current = worker;
 
     const handleMessage = (event: MessageEvent) => {
       const msg = event.data;
@@ -47,21 +65,36 @@ export function useSyncWorker() {
 
     worker.addEventListener("message", handleMessage);
 
-    // Initial wake up to process any pending offline actions
-    worker.postMessage({ type: "WAKE_UP" });
+    // Forward the current Clerk JWT to the worker on each wake-up so it can
+    // attach it as an Authorization header when syncing favorites.
+    const sendWakeUp = () => {
+      getTokenRef.current()
+        .then((token) => {
+          worker.postMessage({ type: "WAKE_UP", token: token ?? undefined });
+        })
+        .catch(() => {
+          // Not signed in — wake the worker without a token.
+          worker.postMessage({ type: "WAKE_UP" });
+        });
+    };
 
-    // Wake up worker when connection is restored or manually triggered
-    const handleWakeUp = () => worker.postMessage({ type: "WAKE_UP" });
-    window.addEventListener("online", handleWakeUp);
-    window.addEventListener("trigger-sync", handleWakeUp);
+    // Initial wake-up to process any pending offline actions.
+    sendWakeUp();
+
+    // Wake up worker when connection is restored or manually triggered.
+    window.addEventListener("online", sendWakeUp);
+    window.addEventListener("trigger-sync", sendWakeUp);
 
     return () => {
+      workerRef.current = null;
       worker.removeEventListener("message", handleMessage);
-      window.removeEventListener("online", handleWakeUp);
-      window.removeEventListener("trigger-sync", handleWakeUp);
+      window.removeEventListener("online", sendWakeUp);
+      window.removeEventListener("trigger-sync", sendWakeUp);
       worker.terminate();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // getToken identity is stable across Clerk re-renders; the getTokenRef above
+  // ensures we always call the latest version without restarting the worker.
 }
 
 /**
@@ -72,13 +105,48 @@ export function useSyncWorker() {
 export function SyncManager() {
   useSyncWorker();
   usePeriodicAvailabilitySync();
+  usePeriodicFavoriteVenuesSync();
+  const { activeConflict, setActiveConflict, resolveConflict } = useReviewConflictWorker();
 
   useEffect(() => {
     // Non-blocking purge of stale federated learning model weights on startup
     purgeStaleWeights().catch(() => {});
   }, []);
 
-  return null;
+  useEffect(() => {
+    // Client fallback sync for pending reviews when Background Sync API is unavailable
+    const handleReconnect = () => {
+      flushPendingReviewsClientFallback().catch((err) => {
+        console.error("[SyncManager] Fallback review sync failed:", err);
+      });
+    };
+
+    if (navigator.onLine) {
+      handleReconnect();
+    }
+
+    window.addEventListener("online", handleReconnect);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        handleReconnect();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("online", handleReconnect);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, []);
+
+  return (
+    <ReviewConflictResolutionDialog
+      isOpen={Boolean(activeConflict)}
+      conflictItem={activeConflict}
+      onClose={() => setActiveConflict(null)}
+      onResolve={resolveConflict}
+    />
+  );
 }
 
 /**
@@ -89,6 +157,7 @@ export function useServiceWorker() {
   const [isOnline, setIsOnline] = useState(true);
   const [registration, setRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
+  const controllerChangeHandlerRef = useRef<(() => void) | null>(null);
 
   // Initialize the dedicated sync worker
   useSyncWorker();
@@ -144,12 +213,17 @@ export function useServiceWorker() {
 
       // Handle controller change (e.g. after skipWaiting)
       let refreshing = false;
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
+      const handleControllerChange = () => {
         if (!refreshing) {
           refreshing = true;
           window.location.reload();
         }
-      });
+      };
+      navigator.serviceWorker.addEventListener(
+        "controllerchange",
+        handleControllerChange,
+      );
+      controllerChangeHandlerRef.current = handleControllerChange;
     } else if (
       "serviceWorker" in navigator &&
       process.env.NODE_ENV === "development"
@@ -174,6 +248,13 @@ export function useServiceWorker() {
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      if (controllerChangeHandlerRef.current && "serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener(
+          "controllerchange",
+          controllerChangeHandlerRef.current,
+        );
+        controllerChangeHandlerRef.current = null;
+      }
     };
   }, []);
 
@@ -661,7 +742,9 @@ export function PWABanner() {
 
 const AVAILABILITY_SYNC_TAG = "availability-sync";
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
+const PERIODIC_FAVORITES_TAG = "refresh-favorite-venues";
 const SYNC_INTERVAL_MS = 30 * 60 * 1000;
+const FAVORITES_SYNC_INTERVAL_MS = 12 * 60 * 60 * 1000;
 
 /**
  * Registers Periodic Background Sync for workspace seat availability
@@ -694,7 +777,7 @@ export function usePeriodicAvailabilitySync() {
               minInterval: SYNC_INTERVAL_MS,
             });
             console.log("[PWA] Periodic availability sync registered");
-            return;
+            return true;
           }
         }
       } catch (error) {
@@ -704,7 +787,7 @@ export function usePeriodicAvailabilitySync() {
         );
       }
 
-      registerOneShotFallback();
+      return false;
     }
 
     function registerOneShotFallback() {
@@ -742,12 +825,55 @@ export function usePeriodicAvailabilitySync() {
     }
 
     let cleanup: (() => void) | undefined;
-    registerPeriodicSync().then(() => {
-      cleanup = registerOneShotFallback();
+    registerPeriodicSync().then((periodicOk) => {
+      if (!periodicOk) {
+        cleanup = registerOneShotFallback();
+      }
     });
 
     return () => {
       cleanup?.();
     };
+  }, [registration]);
+}
+
+/**
+ * Registers Periodic Background Sync for favorite venue occupancy cache updates
+ * every 12 hours (Issue #3957).
+ */
+export function usePeriodicFavoriteVenuesSync() {
+  const { registration } = useServiceWorker();
+
+  useEffect(() => {
+    if (!registration) return;
+
+    async function registerPeriodicSync() {
+      try {
+        const reg = registration as ServiceWorkerRegistration & {
+          periodicSync?: {
+            register: (
+              tag: string,
+              options?: { minInterval?: number },
+            ) => Promise<void>;
+          };
+        };
+
+        if (reg.periodicSync) {
+          const status = await navigator.permissions.query({
+            name: "periodic-background-sync" as PermissionName,
+          });
+          if (status.state === "granted") {
+            await reg.periodicSync.register(PERIODIC_FAVORITES_TAG, {
+              minInterval: FAVORITES_SYNC_INTERVAL_MS,
+            });
+            console.log("[PWA] Periodic favorite venues sync registered (12h)");
+          }
+        }
+      } catch (error) {
+        console.warn("[PWA] Periodic favorite venues sync registration failed:", error);
+      }
+    }
+
+    registerPeriodicSync();
   }, [registration]);
 }

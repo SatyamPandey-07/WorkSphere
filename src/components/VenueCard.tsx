@@ -30,18 +30,45 @@ import {
   PawPrint,
   BadgeCheck,
   Music,
+  Sunset,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
-import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
+import dynamic from "next/dynamic";
+
+const NoiseTimeChart = dynamic(
+  () => import("@/components/noise/NoiseTimeChart"),
+  {
+    ssr: false,
+    loading: () => <div className="h-16 animate-pulse bg-muted rounded" />,
+  },
+);
+
+const AmbientSoundPlayer = dynamic(
+  () => import("@/components/noise/AmbientSoundPlayer"),
+  {
+    ssr: false,
+  },
+);
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
+import { MachSpeedBadge } from "@/components/ui/NoiseLevelBadge";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
-import { getOpeningHoursStatus } from "@/lib/openingHours";
+import { getVenueHoursStatus } from "@/lib/venueHours";
 import { MUSIC_GENRE_EMOJI, type MusicGenre } from "@/hooks/useLiveVenueData";
+import { HighlightedText } from "@/components/ui/HighlightedText";
+import { useSeatAvailability } from "@/hooks/useSeatAvailability";
+import { formatWalkingTimeBadge, haversineKm } from "@/lib/distance";
+import { generateBlurSvgDataUri } from "@/lib/image/blurPlaceholder";
+import {
+  calculateVenueSolarPhase,
+  supportsCircadianLighting,
+} from "@/lib/geo/circadianLighting";
+import { useDataSaver } from "@/hooks/useDataSaver";
 
 interface VenueEnrichData {
   found: boolean;
@@ -62,6 +89,116 @@ interface VenueEnrichData {
   categories?: string[];
 }
 
+/**
+ * Formats latitude and longitude coordinates into military aviation waypoint format:
+ * WP-<hash> // <lat>°N/S <lng>°E/W
+ */
+export function formatTacticalWaypoint(
+  lat: number,
+  lng: number,
+): {
+  waypointCode: string;
+  gridCoordinate: string;
+  formatted: string;
+  fullDecimal: string;
+} {
+  // Deterministic 4-digit aviation waypoint hash
+  const latFactor = Math.abs(Math.round(lat * 1000));
+  const lngFactor = Math.abs(Math.round(lng * 1000));
+  const hash = String(((latFactor * 37 + lngFactor * 17) % 9000) + 1000);
+  const waypointCode = `WP-${hash}`;
+
+  const latDir = lat >= 0 ? "N" : "S";
+  const lngDir = lng >= 0 ? "E" : "W";
+  const latFormatted = `${Math.abs(lat).toFixed(2)}°${latDir}`;
+  const lngFormatted = `${Math.abs(lng).toFixed(2)}°${lngDir}`;
+  const gridCoordinate = `${latFormatted} ${lngFormatted}`;
+  const formatted = `${waypointCode} // ${gridCoordinate}`;
+  const fullDecimal = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+  return {
+    waypointCode,
+    gridCoordinate,
+    formatted,
+    fullDecimal,
+  };
+}
+
+export interface TacticalWaypointPillProps {
+  latitude: number;
+  longitude: number;
+  className?: string;
+  venueName?: string;
+}
+
+/**
+ * TacticalWaypointPill: Renders military aviation grid coordinates with emerald monospaced typography.
+ * Flips on hover/focus to display tactical waypoint navigation symbology.
+ */
+export function TacticalWaypointPill({
+  latitude,
+  longitude,
+  className = "",
+  venueName,
+}: TacticalWaypointPillProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const { waypointCode, gridCoordinate, formatted, fullDecimal } =
+    formatTacticalWaypoint(latitude, longitude);
+
+  return (
+    <div
+      role="status"
+      tabIndex={0}
+      data-testid="tactical-waypoint-pill"
+      aria-label={`Tactical Waypoint ${waypointCode}: ${fullDecimal}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
+      className={`group relative inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-emerald-500/30 bg-emerald-950/40 text-emerald-400 font-mono text-[11px] tracking-tight transition-all duration-300 hover:border-emerald-400 hover:bg-emerald-900/40 hover:shadow-sm hover:shadow-emerald-500/20 cursor-crosshair select-none ${className}`}
+    >
+      {/* Test pilot symbology target icon */}
+      <span className="relative flex h-2 w-2 shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+      </span>
+
+      {/* Monospaced aviation waypoint code & grid coordinates with flip transition */}
+      <span className="font-mono font-bold tracking-wider text-emerald-300">
+        {isHovered ? formatted : waypointCode}
+      </span>
+      {!isHovered && (
+        <span className="text-[10px] text-emerald-500/70 font-mono">
+          {gridCoordinate}
+        </span>
+      )}
+
+      {/* Accessible Tooltip with full decimal coordinates */}
+      <div
+        role="tooltip"
+        data-testid="tactical-waypoint-tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex group-focus-within:flex flex-col gap-1 w-64 p-2.5 rounded-lg bg-zinc-900 text-zinc-100 text-xs shadow-xl border border-emerald-500/30 z-50 transition-opacity"
+      >
+        <div className="font-mono font-bold text-emerald-400 flex items-center justify-between">
+          <span>🎯 {waypointCode}</span>
+          <span className="text-[10px] text-zinc-400 uppercase font-sans">
+            Aviation Grid
+          </span>
+        </div>
+        <div className="text-[11px] text-zinc-300 font-mono">{gridCoordinate}</div>
+        <div className="text-[10px] text-emerald-300/80 font-mono mt-0.5 pt-1 border-t border-zinc-800">
+          GPS: {fullDecimal}
+        </div>
+        {venueName && (
+          <div className="text-[10px] text-zinc-400 truncate">
+            Target: {venueName}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface VenueCardProps {
   venue: MapMarker;
   onGetDirections?: (venue: MapMarker) => void;
@@ -78,6 +215,14 @@ interface VenueCardProps {
   };
   checkedInVenueId?: string | null;
   onReportMusicGenre?: (genre: MusicGenre) => void;
+  /** Active search query — matching terms are highlighted in the venue name */
+  searchQuery?: string;
+  /** Optional timestamp override for computing local solar phase */
+  currentTimestamp?: Date | number;
+  /** Optional override for Data Saver mode */
+  isDataSaver?: boolean;
+  /** Optional tactical waypoint pill display */
+  showTacticalWaypoint?: boolean;
 }
 
 interface VoteMetricState {
@@ -99,18 +244,73 @@ export function VenueCard({
   liveData,
   checkedInVenueId,
   onReportMusicGenre,
+  searchQuery = "",
+  currentTimestamp,
+  isDataSaver: isDataSaverProp,
+  showTacticalWaypoint,
 }: VenueCardProps) {
+  const { isDataSaver: globalDataSaver } = useDataSaver();
+  const effectiveDataSaver =
+    typeof isDataSaverProp === "boolean" ? isDataSaverProp : globalDataSaver;
+
   const [isFavorited, setIsFavorited] = useState(false);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
   const [enrichData, setEnrichData] = useState<VenueEnrichData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const { availability } = useSeatAvailability();
+  const liveOccupancy = availability[venue.id];
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [photoError, setPhotoError] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
   const [showGenreDropdown, setShowGenreDropdown] = useState(false);
+  const [userLocation, setUserLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          setUserLocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          }),
+        () => setUserLocation(null),
+        { maximumAge: 60000, timeout: 5000 },
+      );
+    }
+  }, []);
+
+  const distanceKm = userLocation
+    ? haversineKm(
+        userLocation.lat,
+        userLocation.lng,
+        venue.position.lat,
+        venue.position.lng,
+      )
+    : null;
 
   const isCheckedInHere = checkedInVenueId === venue.id;
   const activeMusicGenre = liveData?.musicGenre ?? null;
+
+  const isCircadianSupported = supportsCircadianLighting(venue);
+  const circadianStatus = isCircadianSupported
+    ? calculateVenueSolarPhase(
+        venue.position?.lat ?? 0,
+        currentTimestamp ?? new Date(),
+        venue.position?.lng ?? 0,
+      )
+    : null;
+
+  // Defer time-dependent rendering (open/closed status) to after hydration to
+  // prevent SSR/client mismatch caused by new Date() producing different values
+  // on server vs. client.
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const { currency } = useCurrency();
   const router = useRouter();
@@ -259,18 +459,26 @@ export function VenueCard({
 
   // Load real vote metrics from the database on mount
   useEffect(() => {
+    let ignore = false;
     async function loadVoteMetrics() {
       try {
         const response = await fetch(`/api/venues/${venue.id}/amenity-votes`);
         if (response.ok) {
           const data = await response.json();
-          setVoteMetrics((prev) => ({ ...prev, ...data.metrics }));
+          if (!ignore) {
+            setVoteMetrics((prev) => ({ ...prev, ...data.metrics }));
+          }
         }
       } catch (error) {
-        console.error("Failed to load amenity vote metrics:", error);
+        if (!ignore) {
+          console.error("Failed to load amenity vote metrics:", error);
+        }
       }
     }
     loadVoteMetrics();
+    return () => {
+      ignore = true;
+    };
   }, [venue.id]);
 
   useEffect(() => {
@@ -327,6 +535,7 @@ export function VenueCard({
 
   // Fetch venue data from OSM + Unsplash (FREE)
   useEffect(() => {
+    let ignore = false;
     async function enrichVenue() {
       if (!venue.position) return;
 
@@ -341,16 +550,25 @@ export function VenueCard({
         const response = await fetch(`/api/venues/enrich?${params}`);
         if (response.ok) {
           const data = await response.json();
-          setEnrichData(data);
+          if (!ignore) {
+            setEnrichData(data);
+          }
         }
       } catch (error) {
-        console.error("Failed to enrich venue:", error);
+        if (!ignore) {
+          console.error("Failed to enrich venue:", error);
+        }
       } finally {
-        setIsLoading(false);
+        if (!ignore) {
+          setIsLoading(false);
+        }
       }
     }
 
     enrichVenue();
+    return () => {
+      ignore = true;
+    };
   }, [venue.name, venue.position]);
 
   const handleFavorite = async () => {
@@ -373,11 +591,12 @@ export function VenueCard({
   const nextPhoto = () => {
     if (enrichData?.photos && enrichData.photos.length > 1) {
       setPhotoIndex((prev) => (prev + 1) % enrichData.photos!.length);
+      setPhotoError(false);
     }
   };
 
   const displayRating = enrichData?.rating ?? venue.rating ?? 0;
-  const photos = enrichData?.photos || [];
+  const photos = enrichData?.photos || venue.photos || [];
   const amenities = enrichData?.amenities;
 
   // Determine low confidence threshold parameters to trigger notice blocks
@@ -448,15 +667,28 @@ export function VenueCard({
       {/* Photo Section */}
       {photos.length > 0 && (
         <div
-          className="relative h-32 bg-zinc-100 dark:bg-zinc-800 cursor-pointer"
+          className="relative h-32 bg-zinc-100 dark:bg-zinc-800 cursor-pointer overflow-hidden"
           onClick={nextPhoto}
         >
           <Image
-            src={photos[photoIndex]}
+            src={
+              photoError ? "/images/venue-placeholder.svg" : photos[photoIndex]
+            }
             alt={"Photo of " + venue.name}
             fill
-            className="object-cover"
+            className="object-cover transition-opacity duration-300 ease-in-out"
+            placeholder="blur"
+            blurDataURL={generateBlurSvgDataUri(
+              photos[photoIndex] || venue.name,
+            )}
             unoptimized // External URLs from Foursquare
+            quality={effectiveDataSaver ? 30 : 75}
+            data-quality={effectiveDataSaver ? "low" : "high"}
+            data-datasaver={effectiveDataSaver ? "true" : "false"}
+            onError={() => setPhotoError(true)}
+            style={{
+              viewTransitionName: getVenueCoverTransitionName(venue.id),
+            }}
           />
           {photos.length > 1 && (
             <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 rounded-full text-xs text-white">
@@ -525,7 +757,16 @@ export function VenueCard({
         <div className="flex items-start justify-between mb-2 mt-4">
           <div className="flex-1">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-              <span>{venue.name}</span>
+              {venue.id ? (
+                <Link
+                  href={`/venues/${venue.id}`}
+                  className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                >
+                  <HighlightedText text={venue.name} query={searchQuery} />
+                </Link>
+              ) : (
+                <HighlightedText text={venue.name} query={searchQuery} />
+              )}
               {venue.isClaimed && (
                 <span title="Verified Host" className="inline-flex shrink-0">
                   <BadgeCheck className="w-4 h-4 text-green-500 shrink-0" />
@@ -538,6 +779,57 @@ export function VenueCard({
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {venue.address || "Address not available"}
             </p>
+            {distanceKm !== null && (
+              <div className="mt-1.5 mb-1 flex items-center">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-100 dark:border-blue-800/50">
+                  <Navigation className="w-3 h-3" />
+                  {formatWalkingTimeBadge(distanceKm)}
+                </span>
+              </div>
+            )}
+            {(showTacticalWaypoint || (venue as any)?.showTacticalWaypoint) &&
+              venue.position?.lat != null &&
+              venue.position?.lng != null && (
+                <div className="mt-1.5 mb-1 flex items-center">
+                  <TacticalWaypointPill
+                    latitude={venue.position.lat}
+                    longitude={venue.position.lng}
+                    venueName={venue.name}
+                  />
+                </div>
+              )}
+            {liveOccupancy && liveOccupancy.count > 0 && (
+              <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {liveOccupancy.count}{" "}
+                {liveOccupancy.count === 1 ? "person" : "people"} here now
+              </span>
+            )}
+            {liveOccupancy &&
+              (() => {
+                // Crowding badge: Quiet (<40%), Moderate (40-75%), Busy (>75%)
+                const pct =
+                  liveOccupancy.capacity > 0
+                    ? (liveOccupancy.count / liveOccupancy.capacity) * 100
+                    : 0;
+                const label =
+                  pct < 40 ? "Quiet" : pct <= 75 ? "Moderate" : "Busy";
+                const style =
+                  pct < 40
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : pct <= 75
+                      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                      : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
+                return (
+                  <span
+                    className={`mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
+                    title={`${Math.round(pct)}% occupancy — ${label}`}
+                    aria-label={`Venue is currently ${label} — ${Math.round(pct)}% occupied`}
+                  >
+                    {label}
+                  </span>
+                );
+              })()}
           </div>
           <button
             onClick={handleFavorite}
@@ -624,79 +916,49 @@ export function VenueCard({
           </div>
         )}
 
+        {/* Aerospace Mach Speed Classification Badge (#6175) */}
+        {venue.amenities?.wifiSpeed ? (
+          <div className="flex items-center gap-2 mb-3">
+            <MachSpeedBadge downloadMbps={venue.amenities.wifiSpeed} size="sm" />
+          </div>
+        ) : null}
+
         {/* Hours */}
         {(() => {
           const hoursStr = enrichData?.opening_hours || venue.openingHours;
           if (!hoursStr) return null;
 
-          const status = getOpeningHoursStatus(hoursStr);
+          const operatingStatus = getVenueHoursStatus(hoursStr);
+          if (!operatingStatus.isAvailable && !operatingStatus.badgeText)
+            return null;
 
-          if (status.isStructured) {
-            return (
-              <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
-                <Clock className="w-3 h-3 shrink-0" />
-                <span
-                  className="truncate max-w-[200px]"
-                  title={status.displayString}
-                >
-                  {status.displayString}
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
-                    status.isOpen
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                  }`}
-                  title={status.isOpen ? "Open Now" : "Closed"}
-                >
-                  {status.isOpen ? "Open Now" : "Closed"}
-                </span>
-              </div>
-            );
-          }
-
-          // Legacy parsing
-          const match = hoursStr.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
-          if (!match) {
-            return (
-              <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
-                <Clock className="w-3 h-3 shrink-0" />
-                <span className="truncate">{hoursStr}</span>
-              </div>
-            );
-          }
-
-          const now = new Date();
-          const currentMinutes = now.getHours() * 60 + now.getMinutes();
-          const [openH, openM] = match[1].split(":").map(Number);
-          const [closeH, closeM] = match[2].split(":").map(Number);
-
-          const openMinutes = openH * 60 + openM;
-          const closeMinutes = closeH * 60 + closeM;
-
-          let legacyOpen = false;
-          if (closeMinutes < openMinutes) {
-            legacyOpen =
-              currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
-          } else {
-            legacyOpen =
-              currentMinutes >= openMinutes && currentMinutes < closeMinutes;
-          }
+          const isOpen = operatingStatus.isOpen;
+          const is24Hours = operatingStatus.is24Hours;
 
           return (
             <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
-              <Clock className="w-3 h-3 shrink-0" />
-              <span>{hoursStr}</span>
-              <span
-                className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
-                  legacyOpen
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                }`}
-                title={legacyOpen ? "Open Now" : "Closed"}
-              >
-                {legacyOpen ? "Open Now" : "Closed"}
-              </span>
+              <Clock className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+              {isClient && operatingStatus.badgeText ? (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight ${
+                    isOpen || is24Hours
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
+                      : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200/60 dark:border-zinc-700/50"
+                  }`}
+                  title={operatingStatus.badgeText}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      isOpen || is24Hours
+                        ? "bg-emerald-500"
+                        : "bg-zinc-400 dark:bg-zinc-500"
+                    }`}
+                  />
+                  {operatingStatus.badgeText}
+                </span>
+              ) : (
+                <span className="truncate">{hoursStr}</span>
+              )}
             </div>
           );
         })()}
@@ -756,6 +1018,51 @@ export function VenueCard({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Real-time Circadian Lighting Status Badge */}
+        {circadianStatus && (
+          <div className="flex items-center gap-2 mb-3">
+            <div
+              data-testid="circadian-lighting-badge"
+              role="status"
+              className={`group relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-all cursor-help ${
+                circadianStatus.mode === "Bright Daylight Work"
+                  ? "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200"
+                  : "border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 text-orange-800 dark:text-orange-200"
+              }`}
+              title={circadianStatus.tooltip}
+              aria-label={`Circadian lighting: ${circadianStatus.mode}`}
+            >
+              {circadianStatus.mode === "Bright Daylight Work" ? (
+                <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              ) : (
+                <Sunset className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+              )}
+              <span className="truncate">{circadianStatus.mode}</span>
+              <span className="text-[10px] opacity-75 font-normal">
+                ({circadianStatus.colorTemperature}K)
+              </span>
+
+              {/* Tooltip explaining circadian lighting capabilities */}
+              <div
+                role="tooltip"
+                data-testid="circadian-tooltip"
+                className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex group-focus-within:flex flex-col gap-1 w-64 p-2.5 rounded-lg bg-zinc-900 text-zinc-100 text-xs shadow-xl border border-zinc-700 z-50 transition-opacity"
+              >
+                <div className="font-semibold flex items-center gap-1.5 text-zinc-200">
+                  <span>✨ Circadian Lighting</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono">
+                    {circadianStatus.mode}
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-300 leading-relaxed font-normal">
+                  {circadianStatus.tooltip}
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] text-zinc-400">circadian</span>
           </div>
         )}
 

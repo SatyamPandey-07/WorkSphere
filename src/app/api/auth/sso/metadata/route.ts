@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { resolveIdpMetadata } from "@/lib/auth/sso/metadataResolver";
+import {
+  resolveIdpMetadata,
+  UnsafeMetadataUrlError,
+} from "@/lib/auth/sso/metadataResolver";
 
 export async function GET(request: Request) {
   try {
@@ -19,8 +22,17 @@ export async function GET(request: Request) {
       success: true,
       metadata,
     });
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof UnsafeMetadataUrlError) {
+      return NextResponse.json(
+        { error: "Metadata URL is not allowed." },
+        { status: 400 },
+      );
+    }
     console.error("Failed to resolve IDP metadata:", error);
-    return NextResponse.json({ error: error.message || "Failed to resolve metadata" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to resolve metadata" },
+      { status: 500 },
+    );
   }
 }

@@ -1,0 +1,82 @@
+export const THEME_INIT_SCRIPT = `
+(function () {
+  // Apply the saved or system theme before the browser paints the page.
+  var theme = null;
+  try {
+    var stored = localStorage.getItem("worksphere-theme");
+    if (stored === "light" || stored === "dark" || stored === "cyberpunk") {
+      theme = stored;
+    }
+  } catch (e) {}
+
+  if (!theme) {
+    try {
+      theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+    } catch (e) {
+      theme = "light";
+    }
+  }
+
+  var root = document.documentElement;
+  // Suppress transitions until first paint so initial load never animates.
+  root.classList.add("preload");
+  window.addEventListener("load", function () {
+    window.requestAnimationFrame(function () {
+      root.classList.remove("preload");
+    });
+  });
+  root.classList.remove("dark", "cyberpunk");
+
+  if (theme === "dark") {
+    root.classList.add("dark");
+  } else if (theme === "cyberpunk") {
+    root.classList.add("cyberpunk");
+  }
+
+  root.setAttribute("data-theme", theme);
+  root.style.colorScheme = theme === "light" ? "light" : "dark";
+  var bg = theme === "dark" ? "#0a0a0a" : theme === "cyberpunk" ? "#090014" : "#ffffff";
+  var fg = theme === "dark" ? "#ededed" : theme === "cyberpunk" ? "#f4f4ff" : "#171717";
+
+  root.style.backgroundColor = bg;
+  root.style.color = fg;
+  root.style.setProperty("--background", bg);
+  root.style.setProperty("--foreground", fg);
+
+  try {
+    document.cookie =
+      "worksphere-theme=" + theme + "; path=/; max-age=31536000; SameSite=Lax";
+  } catch (e) {}
+
+  try {
+    var accentStored = localStorage.getItem("worksphere-accent");
+    var accentColors = {
+      blue: "#3b82f6",
+      purple: "#a855f7",
+      emerald: "#10b981",
+      amber: "#f59e0b",
+      "lantern-emerald": "#00ff88"
+    };
+    var accent = accentColors[accentStored] || accentColors.blue;
+    document.documentElement.style.setProperty("--primary-accent", accent);
+    if (accentStored === "lantern-emerald") {
+      document.documentElement.style.setProperty("--accent-lantern", "#00ff88");
+    }
+  } catch {}
+
+  try {
+    window.addEventListener("error", function (event) {
+      if (
+        event.message &&
+        (event.message.indexOf("ResizeObserver") >= 0 ||
+          event.message.indexOf("Resize observer") >= 0)
+      ) {
+        event.stopImmediatePropagation();
+      }
+    });
+  } catch {}
+
+})();
+`;

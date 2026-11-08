@@ -3,16 +3,27 @@
 import React, { useEffect, useState } from "react";
 import { Star, Wifi, Zap, Volume2, X } from "lucide-react";
 
-interface Review {
+import { ExportRatingsCSVButton } from "@/components/analytics/ExportRatingsCSVButton";
+
+export interface Review {
+  id?: string;
+  createdAt?: string;
+  date?: string;
+  userName?: string;
+  user?: any;
+  venueName?: string;
   wifiQuality: number;
   hasOutlets: boolean;
   noiseLevel: string;
   outletDensity?: string | null;
+  comment?: string | null;
+  reviewText?: string | null;
 }
 
-interface RatingDistributionProps {
+export interface RatingDistributionProps {
   reviews: Review[];
   activeMetric: "wifi" | "outlets" | "noise";
+  venueName?: string;
   onClose?: () => void;
 }
 
@@ -135,6 +146,7 @@ function MetricChart({
 export function RatingDistribution({
   reviews,
   activeMetric,
+  venueName,
   onClose,
 }: RatingDistributionProps) {
   const totalReviews = reviews.length;
@@ -206,15 +218,24 @@ export function RatingDistribution({
             </>
           )}
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 rounded-full transition-colors active:scale-95"
-            aria-label="Close distribution details"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {reviews.length > 0 && (
+            <ExportRatingsCSVButton
+              ratings={reviews}
+              venueName={venueName}
+              variant="compact"
+            />
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 rounded-full transition-colors active:scale-95"
+              aria-label="Close distribution details"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {totalReviews === 0 ? (

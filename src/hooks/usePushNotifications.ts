@@ -38,6 +38,14 @@ export function usePushNotifications() {
     if (!isSupported || !userId) return;
 
     const checkSubscription = async () => {
+      // If the user has denied notifications, mark as unsubscribed immediately
+      // to keep the UI toggle in sync without an unnecessary pushManager call.
+      if (Notification.permission === "denied") {
+        setPermission("denied");
+        setIsSubscribed(false);
+        return;
+      }
+
       try {
         const reg = await navigator.serviceWorker.ready;
         const subscription = await reg.pushManager.getSubscription();
@@ -48,6 +56,22 @@ export function usePushNotifications() {
     };
 
     checkSubscription();
+
+    // Listen for permission changes via the Permissions API (Chromium only)
+    if ("permissions" in navigator) {
+      navigator.permissions.query({ name: "notifications" as PermissionName })
+        .then((status) => {
+          const onChange = () => {
+            setPermission(status.state as NotificationPermission);
+            if (status.state === "denied") {
+              setIsSubscribed(false);
+            }
+          };
+          status.addEventListener("change", onChange);
+          return () => status.removeEventListener("change", onChange);
+        })
+        .catch(() => {});
+    }
   }, [isSupported, userId]);
 
   const subscribe = useCallback(async () => {
@@ -117,6 +141,16 @@ export function usePushNotifications() {
   const unsubscribe = useCallback(async () => {
     if (!isSupported) return false;
     setIsLoading(true);
+
+    // If permissions were revoked, the push subscription is already invalid.
+    // Calling subscription.unsubscribe() throws a DOMException in this state.
+    // Mark as unsubscribed and skip the Web Push API call.
+    if (Notification.permission === "denied") {
+      setPermission("denied");
+      setIsSubscribed(false);
+      setIsLoading(false);
+      return true;
+    }
 
     try {
       const reg = await navigator.serviceWorker.ready;

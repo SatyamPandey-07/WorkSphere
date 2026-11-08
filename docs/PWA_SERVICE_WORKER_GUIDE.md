@@ -538,7 +538,12 @@ if (isVenuesApi) {
 
 ### Images
 
-External images from `images.unsplash.com` are cached using the Cache-First strategy in the `worksphere-images-v4` cache. Each cached image is tracked in the `imageCacheLRU` IndexedDB store with a timestamp and estimated size to support LRU eviction.
+External venue images are cached using the Cache-First strategy in the `worksphere-images-v4` cache. The app uses two image providers:
+
+- **Pexels** (`images.pexels.com`) — enriched venue photos fetched via the server-side Pexels API proxy.
+- **Unsplash** (`images.unsplash.com`) — fallback category images shown when a venue has no Pexels photo.
+
+Each cached image is tracked in the `imageCacheLRU` IndexedDB store with a timestamp and estimated size to support LRU eviction.
 
 ### Third-Party Assets
 
@@ -547,7 +552,8 @@ External resources (map tiles, images) are cached separately from local applicat
 | Resource | Domain | Cache Strategy |
 | :--- | :--- | :--- |
 | Map tiles | `tile.openstreetmap.org` | Cache-First |
-| Venue images | `images.unsplash.com` | Cache-First |
+| Venue photos (Pexels) | `images.pexels.com` | Cache-First |
+| Fallback images (Unsplash) | `images.unsplash.com` | Cache-First |
 
 ### Fonts
 

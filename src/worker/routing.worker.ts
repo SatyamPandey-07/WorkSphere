@@ -42,31 +42,65 @@ async function initWasm() {
 }
 
 async function handleLoadGraph(req: LoadGraphRequest) {
-  await initWasm();
+  try {
+    graphLoaded = false;
 
-  const { nodes, edges } = req;
-  const numNodes = nodes.length;
+    await initWasm();
 
-  wasmModule._init_graph(numNodes);
+    const { nodes, edges } = req;
 
-  for (let i = 0; i < numNodes; i++) {
-    wasmModule._set_node(i, nodes[i].lat, nodes[i].lng);
+    if (nodes.length === 0) {
+      throw new Error("Routing graph contains no nodes.");
+    }
+
+    for (const edge of edges) {
+      if (
+        edge.source < 0 ||
+        edge.source >= nodes.length ||
+        edge.target < 0 ||
+        edge.target >= nodes.length
+      ) {
+        throw new Error("Routing graph contains an invalid edge.");
+      }
+    }
+
+    const numNodes = nodes.length;
+
+    wasmModule._init_graph(numNodes);
+
+    for (let i = 0; i < numNodes; i++) {
+      wasmModule._set_node(i, nodes[i].lat, nodes[i].lng);
+    }
+
+    for (const edge of edges) {
+      wasmModule._add_edge(
+        edge.source,
+        edge.target,
+        edge.weight,
+      );
+    }
+
+    // Update JS state only after WASM graph loading succeeds.
+    jsNodes = nodes.map((node) => ({
+      lat: node.lat,
+      lng: node.lng,
+    }));
+
+    graphLoaded = true;
+
+    self.postMessage({ type: "GRAPH_LOADED" });
+  } catch (error) {
+    graphLoaded = false;
+    jsNodes = [];
+
+    self.postMessage({
+      type: "GRAPH_LOAD_ERROR",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to load routing graph.",
+    });
   }
-
-  for (const edge of edges) {
-    wasmModule._add_edge(edge.source, edge.target, edge.weight);
-  }
-
-  graphLoaded = true;
-  self.postMessage({ type: "GRAPH_LOADED" });
-}
-
-// Find closest node ID in a simplified manner (since spatial index is not in C++ for brevity)
-function _findClosestNode(_lat: number, _lng: number): number | null {
-  if (!wasmModule || !graphLoaded) return null;
-  const _numNodes = wasmModule._get_last_path_size(); // Actually we need total nodes, let's just search
-  // Wait, we didn't export `get_num_nodes`, so we'll just track it in JS for finding closest node
-  return -1; // Handled below
 }
 
 // Keep track of nodes in JS to find closest node quickly

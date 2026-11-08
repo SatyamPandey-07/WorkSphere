@@ -13,7 +13,7 @@ import L from "leaflet";
 import {
   WebGLHeatmapRenderer,
   HeatmapPoint,
-} from "@/lib/webgl/webglHeatmapRenderer";
+} from "@/lib/webgl/WebGLHeatmapRenderer";
 
 export interface GeoTelemetryPoint {
   lat: number;
@@ -136,7 +136,12 @@ export function WebGLHeatmapLayer({
     overlayPane.appendChild(canvas);
     canvasRef.current = canvas;
 
-    const renderer = new WebGLHeatmapRenderer(canvas, { opacity, blur });
+    const renderer = new WebGLHeatmapRenderer(canvas, {
+      opacity,
+      blur,
+      // Redraw immediately after GPU context recovery instead of waiting for a pan/zoom.
+      onContextRestored: () => renderFrame(),
+    });
     rendererRef.current = renderer;
 
     map.on("move", renderFrame);

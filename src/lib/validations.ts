@@ -1,5 +1,141 @@
 import { z } from "zod";
 import { buildVenueSearchSchema } from "@/lib/filters";
+import {
+  sanitizeDisplayName,
+  sanitizeUsername,
+  MIN_USERNAME_LENGTH,
+  MAX_USERNAME_LENGTH,
+} from "@/lib/profileSanitizer";
+
+// =========================================================================
+// RESERVATION SCHEMAS
+// =========================================================================
+
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
+  .refine((v) => {
+    const [y, m, d] = v.split("-").map(Number);
+    const probe = new Date(Date.UTC(y, m - 1, d));
+    return (
+      probe.getUTCFullYear() === y &&
+      probe.getUTCMonth() === m - 1 &&
+      probe.getUTCDate() === d
+    );
+  }, "Invalid calendar date");
+
+const hhMm = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must be HH:mm");
+
+export const bookingRequestSchema = z.object({
+  venueId: z.string().min(1, "venueId is required"),
+  seatId: z
+    .string()
+    .min(1, "seatId is required")
+    .or(z.array(z.string().min(1)).min(1, "at least one seatId required")),
+  date: isoDate,
+  time: hhMm,
+  duration: z
+    .number()
+    .int("duration must be an integer")
+    .min(30, "duration must be at least 30 minutes")
+    .max(480, "duration cannot exceed 480 minutes"),
+  amenitiesNeeded: z.array(z.string()).max(10).optional(),
+  guests: z
+    .array(
+      z.object({
+        email: z.string().email("Invalid guest email"),
+        name: z.string().max(100).optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
+  customerEmail: z.string().email().optional(),
+  customerPhone: z.string().max(20).optional(),
+  projectBillingCode: z.string().max(100).optional(),
+});
+
+export const recurringBookingSchema = bookingRequestSchema
+  .omit({ seatId: true })
+  .extend({
+    seatId: z.string().min(1, "seatId is required"),
+    frequency: z.enum(["daily", "weekly", "monthly"]),
+    endDate: isoDate.optional(),
+    occurrences: z.number().int().min(1).max(52).optional(),
+  })
+  .refine(
+    (d) => d.endDate !== undefined || d.occurrences !== undefined,
+    "Provide either endDate or occurrences",
+  );
+
+export type BookingRequestInput = z.infer<typeof bookingRequestSchema>;
+export type RecurringBookingInput = z.infer<typeof recurringBookingSchema>;
+
+// =========================================================================
+// USER SETTINGS SCHEMA
+// =========================================================================
+
+export const userSettingsSchema = z.object({
+  username: z
+    .string()
+    .transform((val) => sanitizeUsername(val))
+    .refine(
+      (val) => val.length >= MIN_USERNAME_LENGTH,
+      `Username must be at least ${MIN_USERNAME_LENGTH} characters long`,
+    )
+    .refine(
+      (val) => val.length <= MAX_USERNAME_LENGTH,
+      `Username cannot exceed ${MAX_USERNAME_LENGTH} characters`,
+    )
+    .optional(),
+  displayName: z
+    .string()
+    .transform((val) => sanitizeDisplayName(val))
+    .refine(
+      (val) => val.length > 0,
+      "Display name cannot be empty or contain only whitespace",
+    )
+    .optional(),
+  phoneNumber: z.string().max(20).optional(),
+  smsAlertsEnabled: z.boolean().optional(),
+  whatsappWebhookUrl: z
+    .string()
+    .url("Invalid WhatsApp webhook URL")
+    .or(z.literal(""))
+    .optional(),
+  telegramWebhookUrl: z
+    .string()
+    .url("Invalid Telegram webhook URL")
+    .or(z.literal(""))
+    .optional(),
+  notificationStart: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "notificationStart must be HH:mm")
+    .or(z.literal(""))
+    .optional(),
+  notificationEnd: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "notificationEnd must be HH:mm")
+    .or(z.literal(""))
+    .optional(),
+  quietHoursStart: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "quietHoursStart must be HH:mm")
+    .or(z.literal(""))
+    .optional(),
+  quietHoursEnd: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "quietHoursEnd must be HH:mm")
+    .or(z.literal(""))
+    .optional(),
+  timezone: z.string().max(64).optional(),
+  imageUrl: z.string().url("Invalid image URL").or(z.literal("")).optional(),
+  workStyleProfile: z.string().max(2000).optional(),
+  distanceUnit: z.enum(["METRIC", "IMPERIAL"]).optional(),
+});
+
+export type UserSettingsInput = z.infer<typeof userSettingsSchema>;
 
 // =========================================================================
 // CORE SCHEMAS
@@ -65,7 +201,15 @@ export const venueRatingSchema = z.object({
   powerTypes: z.array(z.string()).optional(),
   outletLocations: z.array(z.string()).optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]),
-  comment: z.string().max(1000).optional(),
+  comment: z
+    .string()
+    .trim()
+    .max(1000)
+    .refine((val) => val.length === 0 || val.length >= 3, {
+      message: "Comment must be at least 3 characters if provided",
+    })
+    .optional()
+    .nullable(),
   hasErgonomic: z.boolean().optional().default(false),
   outletDensity: z
     .enum(["every_table", "some_tables", "wall_seats", "none"])
@@ -115,9 +259,19 @@ export const favoriteSchema = z.object({
   venueId: z.string().min(1),
 });
 
-// Favorite notes schema
+// Favorite notes schema - supports plaintext or zero-knowledge encrypted payload
 export const favoriteNotesSchema = z.object({
-  notes: z.string().max(2000).nullable(),
+  notes: z.union([
+    z.string().max(8000).nullable(),
+    z.object({
+      ciphertext: z.string(),
+      iv: z.string(),
+      authTag: z.string(),
+      algorithm: z.literal("AES-GCM-256"),
+      keyDerivation: z.enum(["WEBAUTHN-PRF", "PBKDF2-FALLBACK"]),
+      salt: z.string(),
+    }),
+  ]),
 });
 
 // Favorite tag schemas
@@ -255,6 +409,16 @@ export const xrAnchorQuerySchema = z.object({
   venueId: z.string().min(1),
 });
 
+export const expenseAllocationSchema = z.object({
+  bookingId: z.string().optional(),
+  venueName: z.string().min(1, "Valid venue name is required"),
+  category: z.string().optional(),
+  department: z.string().optional(),
+  costCenter: z.string().optional(),
+  amount: z.number().positive("Amount must be greater than zero"),
+});
+
+export type ExpenseAllocationInput = z.infer<typeof expenseAllocationSchema>;
 export type XRAnchorCreate = z.infer<typeof xrAnchorCreateSchema>;
 export type XRAnchorUpdate = z.infer<typeof xrAnchorUpdateSchema>;
 export type XRAnchorQuery = z.infer<typeof xrAnchorQuerySchema>;
@@ -272,6 +436,9 @@ export function validateRequest<T>(
       success: false;
       error: string;
     } {
+  if (!schema) {
+    return { success: false, error: "Validation schema is required" };
+  }
   const result = schema.safeParse(data);
   if (result.success) {
     return { success: true, data: result.data };

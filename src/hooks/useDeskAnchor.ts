@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { DeskAnchor } from "../types/ar";
+import { DeskAnchor, isFiniteVector3 } from "../types/ar";
 
 export function useDeskAnchor(deskId: string | null) {
   const [anchor, setAnchor] = useState<DeskAnchor | undefined>();
@@ -21,6 +21,9 @@ export function useDeskAnchor(deskId: string | null) {
         }
         const data = await response.json();
         if (mounted) {
+          if (!isFiniteVector3(data?.position)) {
+            throw new Error("Anchor coordinates must be finite numbers");
+          }
           setAnchor(data);
         }
       } catch (err: any) {

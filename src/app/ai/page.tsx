@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  Suspense,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
@@ -32,9 +39,19 @@ import {
   getAllVenuesOffline,
   OfflineVenue,
 } from "@/lib/offlineStorage";
+import { queueOfflineReview } from "@/lib/offlineReviewSync";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
+import { VenueSearchEmptyState } from "@/components/venues/VenueSearchEmptyState";
 import { Venue } from "@/components/chat/ChatMessages";
 import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
+import { useBatteryStatus } from "@/hooks/useBatteryStatus";
+import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
+import {
+  usePlatformModifier,
+  TOGGLE_CHATBOT_EVENT,
+} from "@/hooks/usePlatformModifier";
+import { useUserLocation } from "@/hooks/useUserLocation";
+import { GeolocationFallbackBanner } from "@/components/venues/GeolocationFallbackBanner";
 
 // Dynamically import EnhancedChatbot to isolate WASM loading / client effects during streaming SSR and prevent hydration mismatches
 const EnhancedChatbot = dynamic(
@@ -83,11 +100,20 @@ const Map = dynamic(() => import("@/components/Map"), {
   ),
 });
 
+// Wi-Fi/cell positioning on laptops is often 50–500 m; IP geolocation is
+// usually several km off, so only discard browser fixes that are worse than that.
+const MAX_USABLE_ACCURACY_M = 3000;
+
 function AppPage() {
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  const {
+    location,
+    locationName,
+    permissionState,
+    isDenied: isLocationDenied,
+    isLoading: isLoadingLocation,
+    setLocation,
+    setManualLocation,
+  } = useUserLocation();
   const [markers, setMarkers] = useState<MapMarker[]>([]);
   const [routes, setRoutes] = useState<MapRoute[]>([]);
   const [mapView, setMapView] = useState<MapView | null>(null);
@@ -97,7 +123,7 @@ function AppPage() {
   }>({ isOpen: false, venue: null });
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const battery = useBatteryStatus();
   const [toast, setToast] = useState<{
     message: string;
     type: "error" | "warning" | "success";
@@ -116,12 +142,44 @@ function AppPage() {
 
   // Sidebar toggle state
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const { formatShortcut, getAriaKeyshortcuts } = usePlatformModifier();
+
+  // Keyboard shortcut listener to toggle chatbot (Ctrl + / or Cmd + /)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isTyping =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.getAttribute("contenteditable") === "true");
+
+      if (isTyping) return;
+
+      if ((e.ctrlKey || e.metaKey) && (e.key === "/" || e.code === "Slash")) {
+        e.preventDefault();
+        setIsSidebarOpen((prev) => !prev);
+      }
+    };
+
+    const handleToggleChatbot = () => {
+      setIsSidebarOpen((prev) => !prev);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(TOGGLE_CHATBOT_EVENT, handleToggleChatbot);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(TOGGLE_CHATBOT_EVENT, handleToggleChatbot);
+    };
+  }, []);
 
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
   const [routeProfile, setRouteProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
+  const routeRequestId = useRef(0);
 
   // Stable venueIds reference — must be memoised or a new array every render
   // causes the SSE connection to be torn down and recreated on every render.
@@ -165,31 +223,37 @@ function AppPage() {
   // persists venues — the IndexedDB data is shared per-origin.
   useEffect(() => {
     if (markers.length > 0 && isOnline) {
-      if (
-        typeof window !== "undefined" &&
-        typeof (window as any).withLeaderLock === "function"
-      ) {
-        (window as any).withLeaderLock(
-          "worksphere-venue-cache-leader",
-          async () => {
-            await Promise.all(
-              markers.map(async (marker) => {
-                try {
-                  await saveVenueOffline({
-                    id: marker.id,
-                    name: marker.name,
-                    latitude: marker.position.lat,
-                    longitude: marker.position.lng,
-                    category: marker.category,
-                    address: marker.address,
-                  });
-                } catch (err) {
-                  console.warn("Failed to cache venue locally:", err);
-                }
-              }),
-            );
-          },
+      const cacheVenues = async () => {
+        await Promise.all(
+          markers.map(async (marker) => {
+            try {
+              await saveVenueOffline({
+                id: marker.id,
+                name: marker.name,
+                latitude: marker.position.lat,
+                longitude: marker.position.lng,
+                category: marker.category,
+                address: marker.address,
+              });
+            } catch (err) {
+              console.warn("Failed to cache venue locally:", err);
+            }
+          }),
         );
+      };
+
+      // IndexedDB is shared per origin, so let only one tab write at a time
+      // when the Web Locks API is available; otherwise just write.
+      if (typeof navigator !== "undefined" && navigator.locks?.request) {
+        navigator.locks
+          .request(
+            "worksphere-venue-cache-leader",
+            { ifAvailable: true },
+            (lock) => (lock ? cacheVenues() : undefined),
+          )
+          .catch(() => void cacheVenues());
+      } else {
+        void cacheVenues();
       }
     }
   }, [markers, isOnline]);
@@ -221,94 +285,6 @@ function AppPage() {
   useEffect(() => {
     loadOfflineVenues();
   }, [loadOfflineVenues]);
-
-  // Get user location on mount with API fallback
-  useEffect(() => {
-    const getLocation = async () => {
-      setIsLoadingLocation(true);
-
-      // Try browser geolocation first
-      if ("geolocation" in navigator) {
-        try {
-          const fallbackToIp = async () => {
-            try {
-              const response = await fetch("/api/location");
-              if (response.ok) {
-                const data = await response.json();
-                setLocation({ latitude: data.lat, longitude: data.lng });
-                console.log(
-                  `[Location] Using ${data.source}: ${data.city}, ${data.region}`,
-                );
-              } else {
-                throw new Error("Location API failed");
-              }
-            } catch (apiError) {
-              console.error("Location API error:", apiError);
-              // Ultimate fallback to San Francisco
-              setLocation({ latitude: 37.7749, longitude: -122.4194 });
-            }
-            setIsLoadingLocation(false);
-          };
-
-          navigator.geolocation.getCurrentPosition(
-            async (position) => {
-              if (
-                position.coords.accuracy !== undefined &&
-                position.coords.accuracy > 50
-              ) {
-                console.warn(
-                  `GPS accuracy too low on mount (${position.coords.accuracy}m). Falling back to IP location.`,
-                );
-                await fallbackToIp();
-                return;
-              }
-              setLocation({
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-              });
-              setIsLoadingLocation(false);
-            },
-            async (error) => {
-              console.warn("Geolocation error:", error);
-              await fallbackToIp();
-            },
-            { timeout: 5000, enableHighAccuracy: false },
-          );
-        } catch (err) {
-          console.warn("Geolocation synchronous error on mount:", err);
-          // Fallback to IP-based location API
-          try {
-            const response = await fetch("/api/location");
-            if (response.ok) {
-              const data = await response.json();
-              setLocation({ latitude: data.lat, longitude: data.lng });
-            } else {
-              setLocation({ latitude: 37.7749, longitude: -122.4194 });
-            }
-          } catch {
-            setLocation({ latitude: 37.7749, longitude: -122.4194 });
-          }
-          setIsLoadingLocation(false);
-        }
-      } else {
-        // No geolocation support - use API fallback
-        try {
-          const response = await fetch("/api/location");
-          if (response.ok) {
-            const data = await response.json();
-            setLocation({ latitude: data.lat, longitude: data.lng });
-          } else {
-            setLocation({ latitude: 37.7749, longitude: -122.4194 });
-          }
-        } catch {
-          setLocation({ latitude: 37.7749, longitude: -122.4194 });
-        }
-        setIsLoadingLocation(false);
-      }
-    };
-
-    getLocation();
-  }, []);
 
   // Map update interface
   interface MapUpdateData {
@@ -472,7 +448,7 @@ function AppPage() {
                 (position) => {
                   if (
                     position.coords.accuracy !== undefined &&
-                    position.coords.accuracy > 50
+                    position.coords.accuracy > MAX_USABLE_ACCURACY_M
                   ) {
                     console.warn(
                       `GPS accuracy too low during directions request (${position.coords.accuracy}m). Falling back.`,
@@ -663,40 +639,76 @@ function AppPage() {
       ),
     );
 
+    const venuePayload = {
+      ...rating,
+      downloadSpeed: rating.downloadSpeed,
+      uploadSpeed: rating.uploadSpeed,
+      latency: rating.latency,
+      crowdLevel: rating.crowdLevel,
+      venue: {
+        placeId: ratingDialog.venue.id,
+        name: ratingDialog.venue.name,
+        lat: ratingDialog.venue.position.lat,
+        lng: ratingDialog.venue.position.lng,
+        category: ratingDialog.venue.category,
+        address: ratingDialog.venue.address,
+      },
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      try {
+        await queueOfflineReview({
+          venueId: ratingDialog.venue.id,
+          venueName: ratingDialog.venue.name,
+          data: venuePayload,
+        });
+        alert(
+          "Review saved offline. It will automatically sync when you reconnect.",
+        );
+      } catch (err) {
+        console.error("Failed to queue review offline:", err);
+        setMarkers(prevMarkers);
+        alert("Failed to save review offline. Please try again.");
+      }
+      return;
+    }
+
     try {
       const response = await fetch(
-        `/api/venues/${ratingDialog.venue.id}/rate`,
+        `/api/venues/${encodeURIComponent(ratingDialog.venue.id)}/reviews`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...rating,
-            downloadSpeed: rating.downloadSpeed,
-            uploadSpeed: rating.uploadSpeed,
-            latency: rating.latency,
-            crowdLevel: rating.crowdLevel,
-            venue: {
-              placeId: ratingDialog.venue.id,
-              name: ratingDialog.venue.name,
-              lat: ratingDialog.venue.position.lat,
-              lng: ratingDialog.venue.position.lng,
-              category: ratingDialog.venue.category,
-              address: ratingDialog.venue.address,
-            },
-          }),
+          body: JSON.stringify(venuePayload),
         },
       );
 
       if (!response.ok) {
+        if (response.status === 409) {
+          alert("A newer review exists for this venue on the server.");
+          return;
+        }
         throw new Error("Failed to submit rating");
       }
 
       console.log("Rating submitted successfully");
       alert("Rating submitted! Thank you for helping the community.");
     } catch (error) {
-      setMarkers(prevMarkers);
-      console.error("Error submitting rating:", error);
-      alert("Failed to submit rating. Please try again.");
+      // Network failure / offline transition: queue review offline
+      try {
+        await queueOfflineReview({
+          venueId: ratingDialog.venue.id,
+          venueName: ratingDialog.venue.name,
+          data: venuePayload,
+        });
+        alert(
+          "Review saved offline. It will automatically sync when you reconnect.",
+        );
+      } catch (queueErr) {
+        setMarkers(prevMarkers);
+        console.error("Error submitting and queueing rating:", error, queueErr);
+        alert("Failed to submit rating. Please try again.");
+      }
     }
   };
 
@@ -757,6 +769,9 @@ function AppPage() {
       <div className="lg:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
           onClick={() => setMobileView("chat")}
+          aria-label={`Chat (${formatShortcut("/")})`}
+          aria-keyshortcuts={getAriaKeyshortcuts("/")}
+          title={`Chat (${formatShortcut("/")})`}
           className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
             mobileView === "chat"
               ? "accent-text accent-bg-10 accent-bg-dark-20 border-b-2 accent-border"
@@ -799,10 +814,46 @@ function AppPage() {
           lg:flex flex-1 lg:flex-[7] relative
         `}
         >
+          {/* Fallback Banner for Geolocation Permission Prompt / Denied */}
+          {(isLocationDenied || permissionState === "prompt") && (
+            <div className="absolute top-4 left-4 right-4 z-20 max-w-xl mx-auto pointer-events-auto">
+              <GeolocationFallbackBanner
+                status={permissionState}
+                currentLocationName={locationName}
+                onLocationSelected={(geocoded) => {
+                  setManualLocation(
+                    geocoded.lat,
+                    geocoded.lng,
+                    geocoded.displayName,
+                  );
+                  setMapView({
+                    center: { lat: geocoded.lat, lng: geocoded.lng },
+                    zoom: 14,
+                    animate: true,
+                  });
+                }}
+              />
+            </div>
+          )}
+
+          {markers.length === 0 && !isLoadingLocation && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-2xl shadow-xl pointer-events-auto max-w-xs w-full mx-4">
+                <VenueSearchEmptyState />
+              </div>
+            </div>
+          )}
           <MapErrorBoundary>
             <Map
               location={location}
-              markers={markers}
+              markers={
+                // Battery Panic Mode: show only venues with outlets when battery is critical
+                battery.isPanic && !battery.charging
+                  ? markers.filter((m) => m.hasOutlets).length > 0
+                    ? markers.filter((m) => m.hasOutlets)
+                    : markers
+                  : markers
+              }
               routes={routes}
               mapView={mapView}
               roomId={sessionId}
@@ -830,12 +881,24 @@ function AppPage() {
               `}
             >
               {/* Sidebar Toggle Button - Attached to the left edge of the sidebar */}
-              <button
-                onClick={() => setIsSidebarOpen(false)}
-                className="hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 -ml-8 z-50 items-center justify-center w-8 h-16 bg-zinc-900 hover:bg-zinc-800 border border-r-0 border-zinc-700 rounded-l-xl text-white transition-all shadow-lg pl-1"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
+              <div className="hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 -ml-8 z-50">
+                <ShortcutTooltip
+                  content="Close AI Chat"
+                  shortcut="/"
+                  position="right"
+                >
+                  <button
+                    type="button"
+                    data-testid="chatbot-toggle-close"
+                    onClick={() => setIsSidebarOpen(false)}
+                    aria-label={`Close AI Chat (${formatShortcut("/")})`}
+                    aria-keyshortcuts={getAriaKeyshortcuts("/")}
+                    className="flex items-center justify-center w-8 h-16 bg-zinc-900 hover:bg-zinc-800 border border-r-0 border-zinc-700 rounded-l-xl text-white transition-all shadow-lg pl-1"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </ShortcutTooltip>
+              </div>
               {/* Route Profile Toggle Widget */}
               {routes.length > 0 && (
                 <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
@@ -857,14 +920,17 @@ function AppPage() {
                           key={profile}
                           onClick={async () => {
                             setRouteProfile(profile);
-                            // Re-calculate route with new profile
+
                             if (routes.length > 0 && location) {
+                              const currentRequest = ++routeRequestId.current;
+
                               const { getRoute } =
                                 await import("@/lib/routing");
                               const lastRoute = routes[0];
-                              // We need the original destination. For now, we take the last point of the path.
+
                               const destination =
                                 lastRoute.path[lastRoute.path.length - 1];
+
                               const routeData = await getRoute(
                                 {
                                   lat: location.latitude,
@@ -873,6 +939,12 @@ function AppPage() {
                                 destination,
                                 profile,
                               );
+
+                              // Ignore older route requests
+                              if (currentRequest !== routeRequestId.current) {
+                                return;
+                              }
+
                               if (routeData) {
                                 setRoutes([
                                   {
@@ -936,7 +1008,7 @@ function AppPage() {
                         outlets: v.hasOutlets,
                         quiet: v.noiseLevel === "quiet",
                         hasErgonomic: v.hasErgonomic,
-                        outletDensity: v.outletDensity,
+                        outletDensity: v.outletDensity ?? undefined,
                         wifiSpeed: v.wifiSpeed,
                       },
                       score: v.score,
@@ -961,16 +1033,27 @@ function AppPage() {
         {/* Floating Open Button (visible only when sidebar is closed) */}
         <AnimatePresence>
           {!isSidebarOpen && (
-            <motion.button
-              initial={{ x: 100, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 100, opacity: 0 }}
-              transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-              onClick={() => setIsSidebarOpen(true)}
-              className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-50 items-center justify-center w-8 h-16 bg-zinc-900 hover:bg-zinc-800 border border-r-0 border-zinc-700 rounded-l-xl text-white shadow-lg pl-1"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </motion.button>
+            <div className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-50">
+              <ShortcutTooltip
+                content="Open AI Chat"
+                shortcut="/"
+                position="left"
+              >
+                <motion.button
+                  data-testid="chatbot-toggle-open"
+                  initial={{ x: 100, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: 100, opacity: 0 }}
+                  transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                  onClick={() => setIsSidebarOpen(true)}
+                  aria-label={`Open AI Chat (${formatShortcut("/")})`}
+                  aria-keyshortcuts={getAriaKeyshortcuts("/")}
+                  className="flex items-center justify-center w-8 h-16 bg-zinc-900 hover:bg-zinc-800 border border-r-0 border-zinc-700 rounded-l-xl text-white shadow-lg pl-1"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </motion.button>
+              </ShortcutTooltip>
+            </div>
           )}
         </AnimatePresence>
       </div>
@@ -1048,6 +1131,15 @@ function AppPage() {
 
       {/* PWA Install Banner */}
       <PWABanner />
+
+      {/* Battery Panic Mode Banner */}
+      {battery.isPanic && !battery.charging && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-2 px-4 py-2.5 rounded-full bg-red-600 text-white text-xs font-semibold shadow-xl animate-in slide-in-from-top duration-300">
+          <span aria-hidden="true">🔋</span>
+          Battery critical ({Math.round((battery.level ?? 0) * 100)}%) — showing
+          only venues with outlets nearby
+        </div>
+      )}
 
       {/* Glassmorphic Toast Warning Card */}
       {toast && (

@@ -20,6 +20,10 @@ import {
   DEFAULT_TIMEZONES,
   DAYS_OF_WEEK,
 } from "@/lib/openingHours";
+import { OccupancyTrendChart } from "@/components/analytics/OccupancyTrendChart";
+import { BeaconCalibrationDialog } from "@/components/venue/BeaconCalibrationDialog";
+import { PowerGridPhaseMeter } from "@/components/admin/PowerGridPhaseMeter";
+import type { BeaconCalibration } from "@/lib/beaconCalibration";
 
 function VenueAdminContent() {
   const { isLoaded, isSignedIn } = useUser();
@@ -34,6 +38,7 @@ function VenueAdminContent() {
   const [claiming, setClaiming] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [selectedVenue, setSelectedVenue] = useState<any | null>(null);
+  const [beaconCalibrationOpen, setBeaconCalibrationOpen] = useState(false);
 
   // Form edit states
   const [editName, setEditName] = useState("");
@@ -411,7 +416,37 @@ function VenueAdminContent() {
                       Modify details for your verified listing.
                     </p>
                   </div>
+                  <button
+                    className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-xs font-bold text-blue-300 transition-colors hover:bg-blue-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"
+                    onClick={() => setBeaconCalibrationOpen(true)}
+                    type="button"
+                  >
+                    Calibrate Bluetooth beacon
+                  </button>
                 </div>
+
+                <BeaconCalibrationDialog
+                  currentPathLossExponent={
+                    selectedVenue.beaconPathLossExponent
+                  }
+                  currentReferenceRssi={selectedVenue.beaconReferenceRssi}
+                  onClose={() => setBeaconCalibrationOpen(false)}
+                  onSaved={(calibration: BeaconCalibration) => {
+                    const updatedVenue = {
+                      ...selectedVenue,
+                      beaconReferenceRssi: calibration.referenceRssi,
+                      beaconPathLossExponent: calibration.pathLossExponent,
+                    };
+                    setSelectedVenue(updatedVenue);
+                    setManagedVenues((previous) =>
+                      previous.map((venue) =>
+                        venue.id === selectedVenue.id ? updatedVenue : venue,
+                      ),
+                    );
+                  }}
+                  open={beaconCalibrationOpen}
+                  venueId={selectedVenue.id}
+                />
 
                 <div className="space-y-4">
                   {/* Host Message Section */}
@@ -608,6 +643,22 @@ function VenueAdminContent() {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Monthly Average Seat Occupancy Analytics */}
+                  <div className="pt-2">
+                    <OccupancyTrendChart
+                      venueId={selectedVenue.id}
+                      venueCapacity={selectedVenue.maxCapacity || 50}
+                    />
+                  </div>
+
+                  {/* Real-Time 3-Phase Power Grid Load Distribution Meter */}
+                  <div className="pt-4">
+                    <PowerGridPhaseMeter
+                      panelName={`${selectedVenue.name || "Venue"} Electrical Service Panel (MDP-1)`}
+                      ratedBreakerCapacity={100}
+                    />
                   </div>
                 </div>
 

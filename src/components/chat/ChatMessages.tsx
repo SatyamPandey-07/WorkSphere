@@ -54,7 +54,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ComparisonDrawer } from "@/components/ComparisonDrawer";
 import { ChatMessageSkeleton } from "@/components/ui/skeleton";
 import { ReadAloudButton } from "./ReadAloudButton";
+import { TranslatedMessage } from "./TranslatedMessage";
 import { RecentlyViewedVenues } from "@/components/venues/RecentlyViewedVenues";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
+import { getVenueHoursStatus } from "@/lib/venueHours";
 import {
   VenueGrid,
   LayoutBoundary,
@@ -63,41 +66,18 @@ import {
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
-export interface Venue {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  category: string;
-  foodTags?: string[];
-  mealPrice?: string;
-  lunchDealSchedule?: string;
-  address?: string;
-  wifi?: boolean;
-  hasOutlets?: boolean;
-  noiseLevel?: "quiet" | "moderate" | "loud";
-  score?: number;
-  description?: string;
-  hasErgonomic?: boolean;
-  outletDensity?: string;
-  lighting?: string;
-  wifiSpeed?: number | null;
-  musicStyle?: string;
-  hasPhoneBooths?: boolean;
-  hasNoMusic?: boolean;
-  hasQuietZone?: boolean;
-  hasAncHeadsetRental?: boolean;
-  outletLocations?: string[];
-  openingHours?: string;
-  isClaimed?: boolean;
-  ownerId?: string | null;
-  hostMessage?: string | null;
-}
+import type { Venue, ClientVenue } from "@/types/venue";
+
+/**
+ * @deprecated Venue has moved to `@/types/venue`. Import Venue or ClientVenue from `@/types/venue` instead.
+ */
+export type { Venue, ClientVenue };
 
 export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  timestamp?: number | string;
   name?: string;
   venues?: Venue[];
   agentSteps?: Array<{
@@ -260,6 +240,9 @@ export function VenueChatCard({
                 src={displayPhoto}
                 alt={venue.name}
                 className="w-full h-full object-cover"
+                style={{
+                  viewTransitionName: getVenueCoverTransitionName(venue.id),
+                }}
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = venueFallbacks.default;
                 }}
@@ -294,41 +277,23 @@ export function VenueChatCard({
             <div className="flex items-center gap-2 shrink-0">
               {venue.openingHours &&
                 (() => {
-                  const match = venue.openingHours.match(
-                    /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
-                  );
-                  if (!match) return null;
-                  const now = new Date();
-                  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-                  const [openH, openM] = match[1].split(":").map(Number);
-                  const [closeH, closeM] = match[2].split(":").map(Number);
-                  const openMinutes = openH * 60 + openM;
-                  const closeMinutes = closeH * 60 + closeM;
-                  let isOpen = false;
-                  if (closeMinutes < openMinutes) {
-                    isOpen =
-                      currentMinutes >= openMinutes ||
-                      currentMinutes <= closeMinutes;
-                  } else {
-                    isOpen =
-                      currentMinutes >= openMinutes &&
-                      currentMinutes < closeMinutes;
-                  }
+                  const status = getVenueHoursStatus(venue.openingHours);
+                  if (!status.isAvailable || !status.badgeText) return null;
+                  const isOpen = status.isOpen || status.is24Hours;
                   return (
                     <div
                       className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${
                         isOpen
-                          ? "bg-green-500/10 border-green-500/20"
-                          : "bg-red-500/10 border-red-500/20"
+                          ? "bg-green-500/10 border-green-500/20 text-green-600"
+                          : "bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400"
                       }`}
+                      title={status.badgeText}
                     >
                       <Clock
-                        className={`w-3 h-3 ${isOpen ? "text-green-600" : "text-red-600"}`}
+                        className={`w-3 h-3 ${isOpen ? "text-green-600" : "text-amber-600"}`}
                       />
-                      <span
-                        className={`text-[9px] font-bold uppercase ${isOpen ? "text-green-600" : "text-red-600"}`}
-                      >
-                        {isOpen ? "Open Now" : "Closed"}
+                      <span className="text-[9px] font-bold uppercase">
+                        {status.badgeText}
                       </span>
                     </div>
                   );
@@ -457,6 +422,9 @@ export function VenueChatCard({
               src={displayPhoto}
               alt={venue.name}
               className="w-full h-full object-cover transition-transform duration-500 group-hover/photo:scale-110"
+              style={{
+                viewTransitionName: getVenueCoverTransitionName(venue.id),
+              }}
               onError={(e) => {
                 (e.target as HTMLImageElement).src = venueFallbacks.default;
               }}
@@ -529,42 +497,23 @@ export function VenueChatCard({
               <div className="flex flex-wrap items-center gap-2 mt-2">
                 {venue.openingHours &&
                   (() => {
-                    const match = venue.openingHours.match(
-                      /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
-                    );
-                    if (!match) return null;
-                    const now = new Date();
-                    const currentMinutes =
-                      now.getHours() * 60 + now.getMinutes();
-                    const [openH, openM] = match[1].split(":").map(Number);
-                    const [closeH, closeM] = match[2].split(":").map(Number);
-                    const openMinutes = openH * 60 + openM;
-                    const closeMinutes = closeH * 60 + closeM;
-                    let isOpen = false;
-                    if (closeMinutes < openMinutes) {
-                      isOpen =
-                        currentMinutes >= openMinutes ||
-                        currentMinutes <= closeMinutes;
-                    } else {
-                      isOpen =
-                        currentMinutes >= openMinutes &&
-                        currentMinutes < closeMinutes;
-                    }
+                    const status = getVenueHoursStatus(venue.openingHours);
+                    if (!status.isAvailable || !status.badgeText) return null;
+                    const isOpen = status.isOpen || status.is24Hours;
                     return (
                       <div
                         className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border ${
                           isOpen
-                            ? "bg-green-500/10 border-green-500/20"
-                            : "bg-red-500/10 border-red-500/20"
+                            ? "bg-green-500/10 border-green-500/20 text-green-600"
+                            : "bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400"
                         }`}
+                        title={status.badgeText}
                       >
                         <Clock
-                          className={`w-3 h-3 ${isOpen ? "text-green-600" : "text-red-600"}`}
+                          className={`w-3 h-3 ${isOpen ? "text-green-600" : "text-amber-600"}`}
                         />
-                        <span
-                          className={`text-[10px] font-bold uppercase ${isOpen ? "text-green-600" : "text-red-600"}`}
-                        >
-                          {isOpen ? "Open Now" : "Closed"}
+                        <span className="text-[10px] font-bold uppercase">
+                          {status.badgeText}
                         </span>
                       </div>
                     );
@@ -1132,43 +1081,92 @@ export function MessageList({
 
   const { speakingMessageId, speakingSentenceIndex } = useSpeechSynthesis();
 
-  const scrollToBottomIfNeeded = useCallback(() => {
+  const prevMessageCountRef = useRef(messages.length);
+  const isNearBottomRef = useRef(true);
+  const [hasNewMessagesBelow, setHasNewMessagesBelow] = useState(false);
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
+
+  const checkIsNearBottom = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return true;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    return distanceFromBottom <= 100;
+  }, []);
+
+  const handleScroll = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    const isAtBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight <
-      200;
-    if (isAtBottom || isLoading) {
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    const nearBottom = distanceFromBottom <= 100;
+    isNearBottomRef.current = nearBottom;
+
+    if (nearBottom) {
+      setHasNewMessagesBelow(false);
+      setShowScrollToLatest(false);
+    } else {
+      setShowScrollToLatest(true);
+    }
+  }, []);
+
+  const handleScrollToLatest = useCallback(() => {
+    setHasNewMessagesBelow(false);
+    setShowScrollToLatest(false);
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView?.({ behavior: "smooth" });
+    } else if (containerRef.current) {
+      containerRef.current.scrollTo?.({
+        top: containerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [messagesEndRef]);
+
+  // Handle messages changes and auto-scroll logic
+  useEffect(() => {
+    const container = containerRef.current;
+    const isNewMessage = messages.length > prevMessageCountRef.current;
+    prevMessageCountRef.current = messages.length;
+
+    if (!container) return;
+
+    if (isNearBottomRef.current || isLoading) {
       requestAnimationFrame(() => {
         container.scrollTop = container.scrollHeight;
       });
+      setHasNewMessagesBelow(false);
+      setShowScrollToLatest(false);
+    } else if (isNewMessage) {
+      // User is scrolled up and a new message arrived
+      setHasNewMessagesBelow(true);
+      setShowScrollToLatest(true);
     }
-  }, [isLoading]);
+  }, [messages, isLoading]);
 
-  // Re-check scroll position whenever messages change or loading state changes
-  useEffect(() => {
-    scrollToBottomIfNeeded();
-  }, [messages, isLoading, scrollToBottomIfNeeded]);
-
-  // Also re-check whenever the container's own size changes (e.g. the input
-  // box growing to multiple lines shrinks the visible message area, which
-  // previously left new messages hidden below the fold)
+  // Also re-check whenever the container's own size changes
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const resizeObserver = new ResizeObserver(() => {
-      scrollToBottomIfNeeded();
+      if (isNearBottomRef.current || isLoading) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
+        });
+      }
     });
     resizeObserver.observe(container);
     return () => resizeObserver.disconnect();
-  }, [scrollToBottomIfNeeded]);
+  }, [isLoading]);
 
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 overflow-y-auto p-4 space-y-4"
-      style={{ scrollbarGutter: "stable" }}
-    >
+    <div className="relative flex-1 min-h-0 flex flex-col">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-4"
+        style={{ scrollbarGutter: "stable" }}
+      >
       {messages.length === 0 && (
         <div className="text-center py-8">
           <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
@@ -1237,9 +1235,10 @@ export function MessageList({
                       )}
                     </div>
                   ) : (
-                    <span className="whitespace-pre-wrap">
-                      {message.content}
-                    </span>
+                    <TranslatedMessage
+                      messageId={message.id}
+                      text={message.content}
+                    />
                   )}
                 </div>
               </div>
@@ -1357,6 +1356,30 @@ export function MessageList({
       )}
 
       <div ref={messagesEndRef} />
+      </div>
+
+      {showScrollToLatest && messages.length > 0 && (
+        <button
+          type="button"
+          onClick={handleScrollToLatest}
+          aria-label={hasNewMessagesBelow ? "New messages below" : "Scroll to latest message"}
+          title={hasNewMessagesBelow ? "New messages below" : "Scroll to latest"}
+          className={`absolute bottom-3 z-10 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
+            hasNewMessagesBelow
+              ? "left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg text-xs font-bold flex items-center gap-1.5 animate-bounce"
+              : "right-4 p-2 rounded-full bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 shadow-md border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white"
+          }`}
+        >
+          {hasNewMessagesBelow ? (
+            <>
+              <span>New messages below</span>
+              <span aria-hidden="true">↓</span>
+            </>
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
+        </button>
+      )}
     </div>
   );
 }

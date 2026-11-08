@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  extensions = [vector]
+  extensions = [vector, pg_trgm]
 }
 
 model User {
@@ -40,6 +40,8 @@ model User {
   smsAlertsEnabled   Boolean            @default(false)
   notificationStart  String?
   notificationEnd    String?
+  quietHoursStart    String?
+  quietHoursEnd      String?
   timezone           String?            @default("UTC")
   folderUpvotes      FolderUpvote[]
   sentFolderInvites  FolderInvite[]     @relation("FolderInviteSender")
@@ -57,9 +59,14 @@ model User {
   longestStreak      Int                @default(0)
   lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
   passkeys           PasskeyCredential[]
+  passkeyEmailOtps   PasskeyEmailOtp[]
   isVerifiedStudent  Boolean            @default(false)
   accurateVotes      Int                @default(0)
   badges             UserBadge[]
+  seatWaitlists      VenueSeatWaitlist[]
+  liveFeedbacks      VenueLiveFeedback[]
+  // Running total of verified deep-work minutes (see /api/zkp/deepwork)
+  totalDeepWorkMinutes Int              @default(0)
 }
 
 model UserBadge {
@@ -77,6 +84,8 @@ model Venue {
   id                  String              @id @default(cuid())
   placeId             String              @unique
   name                String
+  searchVector        Unsupported("tsvector")?
+  searchEmbedding     Unsupported("vector(1024)")?
   latitude            Float
   longitude           Float
   category            String // cafe, coworking, library
@@ -95,6 +104,10 @@ model Venue {
   hasQuietZone        Boolean             @default(false)
   hasAncHeadsetRental Boolean             @default(false)
   petsAllowedIndoors  Boolean             @default(false)
+  largeDogsAllowed    Boolean             @default(false)
+  smallDogsOnly       Boolean             @default(false)
+  servicePetsOnly     Boolean             @default(false)
+  outdoorPetsOnly     Boolean             @default(false)
   patioOnly           Boolean             @default(false)
   waterBowlsProvided  Boolean             @default(false)
   dogFriendly         Boolean             @default(false)
@@ -103,6 +116,8 @@ model Venue {
   powerTypes          String[]            @default([])
   outletLocations     String[]            @default([])
   wifiSpeed           Int? // in Mbps
+  tableSize           String?  // "small", "medium", "large", "xl" — crowdsourced desk/table dimensions
+  equipmentLoadout    String?  // "minimal", "standard", "heavy" — typical equipment profile of regulars
   crowdsourced        Boolean             @default(false)
   requiresReview      Boolean             @default(false)
   imageUrl            String?
@@ -116,6 +131,9 @@ model Venue {
   updatedAt           DateTime            @updatedAt
   lighting            String?
   musicStyle          String?
+  isWellLit           Boolean             @default(false) // OSM lit=yes along walking route
+  hasCCTV             Boolean             @default(false) // CCTV visible on premises
+  safetyScore         Int?     // 1-5 crowdsourced safety rating for night workers
   ratings             VenueRating[]
   favorites           Favorite[]
   bookings            Booking[]
@@ -125,6 +143,7 @@ model Venue {
   sessions            CoworkingSession[]
   seats               VenueSeat[]
   wifiTelemetry       WifiTelemetry[]
+  telemetryRecords    TelemetryRecord[]
   validations         AmenityValidation[]
   foodValidations     FoodValidation[]
   folderVenues        FolderVenue[]
@@ -132,13 +151,48 @@ model Venue {
   maxCapacity         Int                 @default(50)
   checkIns            CheckIn[]
   xrAnchors           XRAnchor[]
+  noiseTelemetryReleases NoiseTelemetryRelease[]
   isClaimed           Boolean             @default(false)
   ownerId             String?
   hostMessage         String?
+  photos              VenuePhoto[]
   openingHours        String?
+  beaconReferenceRssi Float?
+  beaconPathLossExponent Float?
+  seatWaitlists       VenueSeatWaitlist[]
+  liveFeedbacks       VenueLiveFeedback[]
 
   @@index([latitude, longitude])
   @@index([category])
+}
+
+model VenueLiveFeedback {
+  id                String   @id @default(cuid())
+  venueId           String
+  venue             Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  userId            String?
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  vibe              String   // "silent_focus" | "moderate_buzz" | "lively"
+  noiseLevel        String?  // "quiet" | "moderate" | "loud"
+  isVerifiedCheckIn Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  expiresAt         DateTime
+
+  @@index([venueId, expiresAt])
+  @@index([venueId, createdAt])
+  @@index([userId])
+}
+
+model VenuePhoto {
+  id        String   @id @default(cuid())
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  url       String
+  blurhash  String?  @db.VarChar(32)
+  caption   String?
+  createdAt DateTime @default(now())
+
+  @@index([venueId])
 }
 
 model VenueRating {
@@ -153,6 +207,8 @@ model VenueRating {
   specialtyEspresso  Boolean  @default(false)
   oatAlmondMilk      Boolean  @default(false)
   pourOverAvailable  Boolean  @default(false)
+  downloadMbps       Float?   // User-measured download speed in Mbps (optional)
+  uploadMbps         Float?   // User-measured upload speed in Mbps (optional)
   noiseLevel         String // quiet, moderate, loud
   hasErgonomic       Boolean  @default(false)
   hasPhoneBooths     Boolean  @default(false)
@@ -165,6 +221,7 @@ model VenueRating {
   comment            String?
   speedtestPhoto     String?
   createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
   avgDecibels        Float?
   peakDecibels       Float?
   lighting           String?
@@ -174,10 +231,24 @@ model VenueRating {
   waterBowlsProvided Boolean  @default(false)
   dogFriendly        Boolean  @default(false)
   catsAllowed        Boolean  @default(false)
+  tableSize          String?  // crowdsourced: "small", "medium", "large", "xl"
 
   @@unique([userId, venueId])
   @@index([venueId])
   @@index([createdAt])
+}
+
+model NoiseTelemetryRelease {
+  venueId      String
+  venue        Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  epochKey     String
+  avgDecibels  Float
+  rdpCosts     Json
+  submissions  Int      @default(1)
+  updatedAt    DateTime @updatedAt
+
+  @@id([venueId, epochKey])
+  @@index([epochKey])
 }
 
 model Favorite {
@@ -193,6 +264,7 @@ model Favorite {
 
   @@unique([userId, venueId])
   @@index([userId])
+  @@index([venueId])
 }
 
 model FavoriteTag {
@@ -240,6 +312,7 @@ model Booking {
   venue              Venue          @relation(fields: [venueId], references: [id], onDelete: Cascade)
   date               String
   time               String
+  timeZone           String? // IANA zone the date/time were chosen in (e.g. "Asia/Kolkata")
   customerEmail      String
   customerPhone      String?
   status             BookingStatus  @default(CONFIRMED)
@@ -254,12 +327,16 @@ model Booking {
   guests             BookingGuest[]
   recurringGroupId   String?
   frequency          String?
+  guestCount         Int?
 
   @@index([userId])
   @@index([venueId])
   @@index([seatId])
   @@index([createdAt])
   @@index([recurringGroupId])
+  // Composite index for availability range queries: venueId + date + status
+  // Supports /api/reservations/availability which filters by venueId, date range, and status
+  @@index([venueId, date, status])
 }
 
 model BookingGuest {
@@ -272,6 +349,11 @@ model BookingGuest {
   status      GuestStatus @default(PENDING)
   calendarUid String?
   sentAt      DateTime?
+  // Split-bill payment state. `status = ACCEPTED` only means the guest RSVP'd
+  // "yes"; a guest has paid if and only if `paidAt` is set.
+  paidAt          DateTime?
+  paidAmountCents Int?
+  paidCurrency    String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -291,7 +373,9 @@ enum GuestStatus {
 enum BookingStatus {
   CONFIRMED
   PENDING
+  CHECKED_IN
   CANCELLED
+  COMPLETED
 }
 
 model UserMemory {
@@ -419,12 +503,15 @@ model VenueSeat {
 
   amenities String[] @default([])
   isEnabled Boolean  @default(true)
+  isQuietZone Boolean @default(false) // seat is in a designated quiet zone
+  zoneName    String? // e.g. "Quiet Reading Room", "Collaborative Area"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   bookings Booking[]
   xrAnchors XRAnchor[]
+  waitlistEntries VenueSeatWaitlist[]
 
   @@unique([venueId, seatNumber])
   @@index([venueId])
@@ -456,8 +543,9 @@ model XRAnchor {
   @@index([anchorPersistId])
 }
 
+/// Range-partitioned monthly on `timestamp` (#3362); PK must include the partition key.
 model WifiTelemetry {
-  id         String   @id @default(cuid())
+  id         String   @default(cuid())
   venueId    String
   venue      Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
   download   Float
@@ -466,6 +554,26 @@ model WifiTelemetry {
   crowdLevel String
   timestamp  DateTime @default(now())
 
+  @@id([id, timestamp])
+  @@index([venueId])
+  @@index([timestamp])
+  @@index([venueId, timestamp])
+}
+
+model TelemetryRecord {
+  id         String   @default(cuid())
+  venueId    String
+  venue      Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  download   Float?
+  upload     Float?
+  latency    Float?
+  noiseLevel Float?
+  occupancy  Int?
+  presence   Boolean? @default(true)
+  crowdLevel String?
+  timestamp  DateTime @default(now())
+
+  @@id([id, timestamp])
   @@index([venueId])
   @@index([timestamp])
   @@index([venueId, timestamp])
@@ -497,8 +605,9 @@ model FlaggedItem {
   @@index([itemId])
 }
 
+/// Range-partitioned monthly on `createdAt` (#3362); PK must include the partition key.
 model AdminAuditLog {
-  id         String   @id @default(cuid())
+  id         String   @default(cuid())
   adminId    String
   admin      User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
   action     String
@@ -507,6 +616,7 @@ model AdminAuditLog {
   details    String?
   createdAt  DateTime @default(now())
 
+  @@id([id, createdAt])
   @@index([createdAt])
 }
 
@@ -584,6 +694,9 @@ enum WebhookEventType {
   MAP_GEOFENCE_BREACHED
   VENUE_CREATED
   REVIEW_SUBMITTED
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  BOOKING_RESCHEDULED
 }
 
 model WebhookEndpoint {
@@ -593,6 +706,7 @@ model WebhookEndpoint {
   url        String
   secret     String // For Svix HMAC signing
   eventTypes WebhookEventType[] // Array of subscribed events
+  headers    Json? // Extra request headers sent with every delivery (e.g. receiver auth)
   isActive   Boolean            @default(true)
   createdAt  DateTime           @default(now())
   updatedAt  DateTime           @updatedAt
@@ -690,6 +804,26 @@ model PasskeyCredential {
   @@index([userId])
 }
 
+/// Single-use email OTP gating sensitive passkey actions (#1991).
+/// Only an HMAC of the code is stored; rows are scoped to one action on one credential.
+model PasskeyEmailOtp {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "rotate" | "rename" | "revoke"
+  action       String
+  /// PasskeyCredential.id the code authorises
+  credentialId String
+  codeHash     String
+  attempts     Int       @default(0)
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, action, credentialId])
+  @@index([expiresAt])
+}
+
 model PasskeyChallenge {
   id        String   @id @default(cuid())
   userId    String?
@@ -758,3 +892,225 @@ model FoodVote {
   @@unique([userId, validationId])
 }
 
+model UniversityMerkleRoot {
+  id         String   @id @default(cuid())
+  university String
+  campus     String?
+  epoch      Int      @default(2026)
+  merkleRoot String   @unique
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([merkleRoot, isActive])
+  @@index([university, epoch])
+}
+
+model StudentPassNullifier {
+  id            String   @id @default(cuid())
+  nullifierHash String   @unique
+  epoch         Int      @default(2026)
+  claimedAt     DateTime @default(now())
+
+  @@index([nullifierHash])
+  @@index([epoch])
+}
+
+model StudentClaimNullifier {
+  id            String   @id @default(cuid())
+  nullifierHash String   @unique
+  epoch         Int      @default(2026)
+  claimedAt     DateTime @default(now())
+
+  @@index([nullifierHash])
+  @@index([epoch])
+}
+
+
+enum WaitlistStatus {
+  ACTIVE
+  NOTIFIED
+  CLAIMED
+  EXPIRED
+  CANCELLED
+}
+
+model VenueSeatWaitlist {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId         String
+  venue           Venue          @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  seatId          String?
+  seat            VenueSeat?     @relation(fields: [seatId], references: [id], onDelete: SetNull)
+  seatType        SeatType?
+  date            String         // YYYY-MM-DD
+  time            String         // HH:MM
+  duration        Int            @default(60) // in minutes
+  timeZone        String?        @default("UTC")
+  requiresQuiet   Boolean        @default(false)
+  requiresOutlets Boolean        @default(false)
+  status          WaitlistStatus @default(ACTIVE)
+  notifiedAt      DateTime?
+  claimExpiresAt  DateTime?
+  claimedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([venueId, date, status])
+  @@index([userId, status])
+  @@index([seatId])
+  @@index([status, claimExpiresAt])
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Models used by API routes that previously had no backing table. Shapes are
+// derived from how each route reads/writes them.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// /api/audio/jammer
+model PrivacyJammerSession {
+  id              String   @id @default(cuid())
+  userId          String
+  venueId         String
+  durationMinutes Float
+  averageDelayMs  Float
+  completedAt     DateTime @default(now())
+
+  @@index([userId, completedAt])
+}
+
+/// /api/ergonomics/avatar
+model ErgonomicSession {
+  id                 String   @id @default(cuid())
+  userId             String
+  durationMinutes    Float
+  averageStrainScore Float
+  peakStrainJoint    String   @default("unknown")
+  completedAt        DateTime @default(now())
+
+  @@index([userId, completedAt])
+}
+
+/// /api/events/match — populated by the event ingestion worker
+model LocalEvent {
+  id            String   @id @default(cuid())
+  title         String
+  description   String   @default("")
+  startTime     DateTime
+  endTime       DateTime
+  venueName     String
+  venueLat      Float
+  venueLng      Float
+  tags          String[] @default([])
+  attendeeCount Int      @default(0)
+  sourceUrl     String   @default("")
+  createdAt     DateTime @default(now())
+
+  @@index([startTime])
+}
+
+/// /api/events/match
+model MatchmakingSession {
+  id           String   @id @default(cuid())
+  userId       String
+  matchesFound Int
+  topRoiScore  Float
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// /api/health/jetlag
+model JetLagProtocol {
+  id                  String   @id @default(cuid())
+  userId              String
+  originTimezone      String
+  destinationTimezone String
+  protocolData        String
+  summary             String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([userId, originTimezone, destinationTimezone])
+}
+
+/// /api/iot/orchestrate
+model IoTOrchestrationLog {
+  id             String   @id @default(cuid())
+  userId         String
+  zoneId         String
+  deskId         String
+  sessionState   String
+  commandsIssued Int
+  executedAt     DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// /api/network/multiplex
+model MeshSession {
+  id             String   @id @default(cuid())
+  userId         String
+  venueId        String
+  role           String
+  meshToken      String   @unique
+  expiresAt      DateTime
+  contributionMb Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// /api/network/survival
+model EmergencyMessage {
+  id               String   @id
+  senderId         String
+  encryptedPayload String
+  gpsLat           Float?
+  gpsLng           Float?
+  hopCount         Int      @default(0)
+  createdAt        DateTime @default(now())
+  lastSyncedAt     DateTime @default(now())
+
+  @@index([senderId])
+}
+
+/// /api/twin/sync
+model VenueTelemetry {
+  id         String   @id @default(cuid())
+  venueId    String
+  roomId     String
+  sensorId   String
+  type       String
+  value      Float
+  recordedAt DateTime @default(now())
+
+  @@unique([sensorId, recordedAt])
+  @@index([venueId, roomId, recordedAt])
+}
+
+/// /api/twin/sync
+model VenueStateSnapshot {
+  id        String   @id @default(cuid())
+  venueId   String
+  stateJson String
+  createdAt DateTime @default(now())
+
+  @@index([venueId, createdAt])
+}
+
+/// /api/zkp/deepwork
+model DeepWorkCredential {
+  id              String   @id @default(cuid())
+  userId          String
+  sessionId       String   @unique
+  durationMinutes Int
+  focusThreshold  Float
+  commitmentHash  String
+  proofData       String
+  mintedAt        DateTime @default(now())
+
+  @@index([userId, mintedAt])
+}

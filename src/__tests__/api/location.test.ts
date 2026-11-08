@@ -6,6 +6,8 @@ import { NextRequest } from "next/server";
 describe("GET /api/location — Multi-Provider Geolocation & Fallback (#1113, #1655)", () => {
   const originalFetch = global.fetch;
   const originalAbortSignalTimeout = AbortSignal.timeout;
+  const originalUpstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const originalUpstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 
   beforeAll(() => {
     if (!AbortSignal.timeout) {
@@ -14,12 +16,24 @@ describe("GET /api/location — Multi-Provider Geolocation & Fallback (#1113, #1
         return controller.signal;
       }) as any;
     }
+    // Force the in-memory rate-limit fallback: the Upstash REST client also
+    // talks over global fetch, so leaving these set (CI provides dummy
+    // values) makes it consume the fetch mocks these tests set up for the
+    // location providers themselves.
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
   });
 
   afterAll(() => {
     if (!originalAbortSignalTimeout) {
       // @ts-expect-error - JSDOM Node environment may not have AbortSignal.timeout
       delete AbortSignal.timeout;
+    }
+    if (originalUpstashUrl !== undefined) {
+      process.env.UPSTASH_REDIS_REST_URL = originalUpstashUrl;
+    }
+    if (originalUpstashToken !== undefined) {
+      process.env.UPSTASH_REDIS_REST_TOKEN = originalUpstashToken;
     }
   });
 

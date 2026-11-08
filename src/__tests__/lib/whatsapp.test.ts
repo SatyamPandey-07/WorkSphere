@@ -1,22 +1,40 @@
-import { isPrivateIp, isValidWebhookUrl, whatsAppService } from "@/lib/whatsapp";
+import {
+  isPrivateIp,
+  isValidWebhookUrl,
+  resolveSafeAddress,
+  whatsAppService,
+} from "@/lib/whatsapp";
 import dns from "dns";
 import https from "https";
 
 jest.mock("dns", () => {
+  const record = (address: string) => ({ address, family: 4 });
+
   return {
     promises: {
-      lookup: jest.fn().mockImplementation((hostname: string) => {
-        if (hostname === "example.com" || hostname === "safe-domain.org") {
-          return { address: "93.184.216.34" }; // Safe public IP
-        }
-        if (hostname === "bypass.nip.io") {
-          return { address: "127.0.0.1" }; // Bypassed IP
-        }
-        if (hostname === "internal.localdomain") {
-          return { address: "10.0.0.5" }; // Private IP
-        }
-        throw new Error("DNS resolution failed");
-      }),
+      lookup: jest
+        .fn()
+        .mockImplementation(
+          (hostname: string, options?: { all?: boolean }) => {
+            const respond = (address: string) =>
+              options?.all ? [record(address)] : record(address);
+
+            if (hostname === "example.com" || hostname === "safe-domain.org") {
+              return respond("93.184.216.34"); // Safe public IP
+            }
+            if (hostname === "bypass.nip.io") {
+              return respond("127.0.0.1"); // Bypassed IP
+            }
+            if (hostname === "internal.localdomain") {
+              return respond("10.0.0.5"); // Private IP
+            }
+            if (hostname === "mixed.example.com") {
+              // A public record first, a private one after it.
+              return [record("93.184.216.34"), record("10.0.0.5")];
+            }
+            throw new Error("DNS resolution failed");
+          },
+        ),
     },
   };
 });
@@ -118,7 +136,14 @@ describe("isValidWebhookUrl", () => {
     // Rebinding / nip.io bypass
     const res = await isValidWebhookUrl("https://bypass.nip.io/webhook");
     expect(res).toBe(false);
-    expect(dns.promises.lookup).toHaveBeenCalledWith("bypass.nip.io");
+    expect(dns.promises.lookup).toHaveBeenCalledWith("bypass.nip.io", {
+      all: true,
+    });
+  });
+
+  it("should reject a hostname that publishes a public and a private record", async () => {
+    const res = await isValidWebhookUrl("https://mixed.example.com/webhook");
+    expect(res).toBe(false);
   });
 
   it("should return false if DNS resolution fails", async () => {
@@ -126,6 +151,25 @@ describe("isValidWebhookUrl", () => {
       "https://nonexistent-domain.xyz/webhook",
     );
     expect(res).toBe(false);
+  });
+});
+
+describe("resolveSafeAddress", () => {
+  it("returns the public address when every record is public", async () => {
+    await expect(resolveSafeAddress("example.com")).resolves.toBe(
+      "93.184.216.34",
+    );
+  });
+
+  it("returns null when one of the records is private", async () => {
+    await expect(resolveSafeAddress("mixed.example.com")).resolves.toBeNull();
+    await expect(resolveSafeAddress("internal.localdomain")).resolves.toBeNull();
+  });
+
+  it("returns null when the hostname does not resolve", async () => {
+    await expect(
+      resolveSafeAddress("nonexistent-domain.xyz"),
+    ).resolves.toBeNull();
   });
 });
 

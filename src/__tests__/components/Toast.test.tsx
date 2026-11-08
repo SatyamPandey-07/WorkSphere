@@ -17,6 +17,7 @@ jest.mock("lucide-react", () => ({
   AlertTriangle: (props: any) => (
     <svg data-testid="icon-alert-triangle" {...props} />
   ),
+  Info: (props: any) => <svg data-testid="icon-info" {...props} />,
 }));
 
 // Mock cn helper
@@ -185,7 +186,7 @@ describe("Toast functionality", () => {
     fireEvent.click(screen.getByText("Show Error"));
     const icon = screen
       .getByText("Error occurred")
-      .closest("[role='status']")!
+      .closest("[role='alert']")!
       .querySelector(".text-red-500");
     expect(icon).toBeInTheDocument();
   });
@@ -273,5 +274,107 @@ describe("Toast functionality", () => {
     expect(
       screen.getByText("Rate limit reached. Try again in 10 seconds"),
     ).toBeInTheDocument();
+  });
+
+  it("auto-dismisses warning toasts after 5 seconds", () => {
+    function WarningButton() {
+      const { toast } = useToast();
+      return (
+        <button onClick={() => toast("Network unstable warning", "warning")}>
+          Show Warning
+        </button>
+      );
+    }
+
+    render(
+      <Wrapper>
+        <WarningButton />
+      </Wrapper>,
+    );
+
+    fireEvent.click(screen.getByText("Show Warning"));
+    expect(screen.getByText("Network unstable warning")).toBeInTheDocument();
+
+    // At 4 seconds, warning toast should still be visible
+    act(() => {
+      jest.advanceTimersByTime(4000);
+    });
+    expect(screen.getByText("Network unstable warning")).toBeInTheDocument();
+
+    // At 5 seconds, warning toast should be dismissed
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(
+      screen.queryByText("Network unstable warning"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("auto-dismisses info toasts after 5 seconds", () => {
+    function InfoButton() {
+      const { toast } = useToast();
+      return (
+        <button onClick={() => toast("Sync triggered info", "info")}>
+          Show Info
+        </button>
+      );
+    }
+
+    render(
+      <Wrapper>
+        <InfoButton />
+      </Wrapper>,
+    );
+
+    fireEvent.click(screen.getByText("Show Info"));
+    expect(screen.getByText("Sync triggered info")).toBeInTheDocument();
+
+    // At 4 seconds, info toast should still be visible
+    act(() => {
+      jest.advanceTimersByTime(4000);
+    });
+    expect(screen.getByText("Sync triggered info")).toBeInTheDocument();
+
+    // At 5 seconds, info toast should be dismissed
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByText("Sync triggered info")).not.toBeInTheDocument();
+  });
+
+  it("auto-dismisses with custom duration when duration option is provided", () => {
+    function CustomDurationButton() {
+      const { toast } = useToast();
+      return (
+        <button
+          onClick={() =>
+            toast("Custom duration toast", "success", { duration: 2500 })
+          }
+        >
+          Show Custom
+        </button>
+      );
+    }
+
+    render(
+      <Wrapper>
+        <CustomDurationButton />
+      </Wrapper>,
+    );
+
+    fireEvent.click(screen.getByText("Show Custom"));
+    expect(screen.getByText("Custom duration toast")).toBeInTheDocument();
+
+    // At 2400ms, should still be in the document
+    act(() => {
+      jest.advanceTimersByTime(2400);
+    });
+    expect(screen.getByText("Custom duration toast")).toBeInTheDocument();
+
+    // At 2500ms, should be dismissed
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(screen.queryByText("Custom duration toast")).not.toBeInTheDocument();
   });
 });

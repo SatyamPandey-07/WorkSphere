@@ -11,8 +11,11 @@ import {
   Camera,
   User,
   X,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import Cropper from "react-easy-crop";
+import { useSound } from "@/components/SoundProvider";
 import type { Area } from "react-easy-crop";
 
 const getCroppedImg = async (
@@ -59,6 +62,7 @@ const getCroppedImg = async (
 };
 
 export function NotificationSettings() {
+  const { soundEnabled, toggleSound } = useSound();
   const [phoneNumber, setPhoneNumber] = useState("");
   const [smsAlertsEnabled, setSmsAlertsEnabled] = useState(false);
   const [whatsappWebhookUrl, setWhatsappWebhookUrl] = useState("");
@@ -437,6 +441,43 @@ export function NotificationSettings() {
             Specify the start and end of the daily window during which reminders
             and webhooks can be sent. Leave blank to receive alerts at any time.
           </p>
+        </div>
+
+        {/* Sound Effects toggle */}
+        <div className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-3">
+            {soundEnabled ? (
+              <Volume2 className="w-5 h-5 text-zinc-500 dark:text-zinc-400 shrink-0" />
+            ) : (
+              <VolumeX className="w-5 h-5 text-zinc-500 dark:text-zinc-400 shrink-0" />
+            )}
+            <div>
+              <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                Sound Effects
+              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                Play audio chimes for notification events and interactions.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={soundEnabled}
+            aria-label={soundEnabled ? "Disable sound effects" : "Enable sound effects"}
+            onClick={toggleSound}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] ${
+              soundEnabled
+                ? "bg-[var(--primary-accent,#2563eb)]"
+                : "bg-zinc-300 dark:bg-zinc-600"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                soundEnabled ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
         </div>
 
         {/* SMS opt-in */}

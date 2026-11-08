@@ -27,6 +27,16 @@ class _HNSWNode:
         self.neighbors: Dict[int, List[int]] = {}
 
 
+def _node_level(node: "_HNSWNode") -> int:
+    """Highest layer a node lives on.
+
+    ``add`` creates an adjacency list for every layer ``0..level`` of a new
+    node, so the level can be recovered from the neighbor map without storing
+    it separately (keeps the pickled ``VectorStore`` format unchanged).
+    """
+    return max(node.neighbors) if node.neighbors else 0
+
+
 class HNSWIndex:
     def __init__(
         self,
@@ -110,14 +120,19 @@ class HNSWIndex:
         node = _HNSWNode(node_id, vector, metadata)
         level = self._random_level()
 
+        # Give the node an adjacency list on every layer it lives on, not only
+        # the layers it gets linked on below. Layers above the previous
+        # ``_max_level`` are otherwise never created, which hides the node's
+        # real level from ``remove`` when it has to pick a new entry point.
+        for lvl in range(level + 1):
+            node.neighbors[lvl] = []
+
         self._nodes[node_id] = node
         self._size += 1
 
         if self._entry_point is None:
             self._entry_point = node_id
             self._max_level = level
-            for lvl in range(level + 1):
-                node.neighbors[lvl] = []
             return node_id
 
         ep = self._entry_point
@@ -146,7 +161,11 @@ class HNSWIndex:
                     }
                     sorted_nbrs = sorted(dists, key=lambda k: dists[k])
                     self._nodes[neighbor_id].neighbors[lvl] = sorted_nbrs[:m_max_lvl]
-            ep = node_id
+            # The closest element found on this layer seeds the search on the
+            # next layer down (Malkov & Yashunin, Algorithm 1). Seeding it with
+            # the node being inserted is wrong: that node has no links on the
+            # lower layers yet, so the search could only ever return itself.
+            ep = min(result, key=lambda k: result[k])
 
         if level > self._max_level:
             self._max_level = level
@@ -185,19 +204,57 @@ class HNSWIndex:
         return {"id": node.id, "vector": node.vector, "metadata": node.metadata}
 
     def remove(self, node_id: int) -> bool:
-        if node_id not in self._nodes:
+        node = self._nodes.get(node_id)
+        if node is None:
             return False
+
+        # Layer -> the removed node's own neighbors. After the node is gone
+        # these are the natural bridge candidates for whoever linked *to* it.
+        bridges = {
+            lvl: [n for n in nbrs if n != node_id and n in self._nodes]
+            for lvl, nbrs in node.neighbors.items()
+        }
+
         del self._nodes[node_id]
         self._size -= 1
-        if self._entry_point == node_id:
-            if self._size > 0:
-                self._entry_point = next(iter(self._nodes))
-            else:
-                self._entry_point = None
-        for node in self._nodes.values():
-            for lvl in list(node.neighbors.keys()):
-                if node_id in node.neighbors[lvl]:
-                    node.neighbors[lvl].remove(node_id)
+
+        # Links are directed once neighbor lists have been pruned, so the
+        # removed node's own neighbor lists don't say who points at it. Scrub
+        # every inbound edge and remember which nodes lost one per layer.
+        lost_edge: Dict[int, List[int]] = {}
+        for other in self._nodes.values():
+            for lvl, nbrs in other.neighbors.items():
+                if node_id in nbrs:
+                    other.neighbors[lvl] = [n for n in nbrs if n != node_id]
+                    lost_edge.setdefault(lvl, []).append(other.id)
+
+        # Re-link each node that lost an edge to the closest former neighbors
+        # of the removed node, so paths that went through it are not cut.
+        for lvl, holders in lost_edge.items():
+            m_max_lvl = self.m_max0 if lvl == 0 else self.m_max
+            for holder_id in holders:
+                holder = self._nodes[holder_id]
+                current = holder.neighbors[lvl]
+                free = m_max_lvl - len(current)
+                if free <= 0:
+                    continue
+                candidates = {
+                    cid: self._distance(holder.vector, self._nodes[cid].vector)
+                    for cid in bridges.get(lvl, [])
+                    if cid != holder_id and cid not in current
+                }
+                current.extend(self._select_neighbors_simple(candidates, free))
+
+        if self._size == 0:
+            self._entry_point = None
+            self._max_level = 0
+        elif self._entry_point == node_id:
+            # Keep the entry point on the highest remaining layer and keep
+            # ``_max_level`` in sync with it. Falling back to an arbitrary node
+            # starts every search from a node with no upper-layer links.
+            top = max(self._nodes.values(), key=_node_level)
+            self._entry_point = top.id
+            self._max_level = _node_level(top)
         return True
 
     def size(self) -> int:

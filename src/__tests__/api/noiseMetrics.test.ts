@@ -96,6 +96,22 @@ describe("POST /api/venues/[venueId]/noise-metrics", () => {
     expect(resOver.status).toBe(400);
   });
 
+  it("returns 401 without an authenticated session", async () => {
+    const { auth } = await import("@clerk/nextjs/server");
+    (auth as jest.Mock).mockResolvedValueOnce({});
+
+    const res = await POST(
+      new Request("http://localhost/api/venues/v1/noise-metrics", {
+        method: "POST",
+        body: JSON.stringify({ decibels: 55 }),
+      }),
+      { params: Promise.resolve({ venueId: "v1" }) },
+    );
+    expect(res.status).toBe(401);
+    const data = await res.json();
+    expect(data.error).toBe("Unauthorized");
+  });
+
   it("records noise telemetry and updates venue for valid reading", async () => {
     (prisma.venue.findFirst as jest.Mock).mockResolvedValue({ id: "v1" });
     (prisma.user.upsert as jest.Mock).mockResolvedValue({});

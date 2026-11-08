@@ -20,8 +20,12 @@ export async function getAdminUser() {
     .filter(Boolean);
 
   if (adminEmails.length > 0) {
+    // Only verified addresses count — anyone can attach an unverified address
+    // to their own Clerk profile, so matching those would let users self-promote.
     const userEmails =
-      user.emailAddresses?.map((e) => e.emailAddress.toLowerCase()) ?? [];
+      user.emailAddresses
+        ?.filter((e) => e.verification?.status === "verified")
+        .map((e) => e.emailAddress.toLowerCase()) ?? [];
     if (userEmails.some((email) => adminEmails.includes(email))) {
       return user;
     }

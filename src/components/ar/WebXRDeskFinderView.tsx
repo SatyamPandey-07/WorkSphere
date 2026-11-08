@@ -1,0 +1,1433 @@
+"use client";
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
+import * as THREE from "three";
+import CompassCalibrationModal from "./CompassCalibrationModal";
+import {
+  Camera,
+  Navigation,
+  Compass,
+  CheckCircle2,
+  Layers,
+  ArrowUp,
+  Footprints,
+  RotateCcw,
+  Target,
+  Crosshair,
+  Anchor,
+  Scan,
+  CircleDot,
+  Zap,
+} from "lucide-react";
+import {
+  calculate3DDistance,
+  clampCameraOrientation,
+  AdaptiveWayfindingKalmanFilter,
+  type ARNavigationPath,
+  type ARCameraFallbackMode,
+  type Vector3D,
+  type PositioningSensorMetrics,
+  type PositioningSourceMode,
+} from "@/lib/spatial/arWayfindingEngine";
+import { create3DDirectionArrowGroup } from "./DirectionArrow";
+
+/**
+ * Depth sensing mesh parameters and constants.
+ */
+export const DEPTH_MESH_GRID_SIZE = 32;
+export const MAX_DEPTH_METERS = 8.0;
+export const MIN_DEPTH_METERS = 0.1;
+export const DEPTH_DISCONTINUITY_THRESHOLD = 0.3;
+
+/**
+ * Creates an invisible real-world depth mesh for WebGL depth buffer occlusion.
+ * Configured with colorWrite: false, depthWrite: true, depthTest: true so that
+ * physical surfaces write directly into the depth buffer without occluding the
+ * camera video feed.
+ */
+export function createDepthOcclusionMesh(
+  gridSize: number = DEPTH_MESH_GRID_SIZE,
+): THREE.Mesh {
+  const vertexCount = gridSize * gridSize;
+  const positions = new Float32Array(vertexCount * 3);
+
+  // Pre-allocate maximum possible indices: (gridSize - 1)^2 quads * 2 triangles * 3 indices
+  const maxQuads = (gridSize - 1) * (gridSize - 1);
+  const indices = new Uint16Array(maxQuads * 6);
+
+  let geometry: THREE.BufferGeometry;
+  if (typeof (THREE as any).BufferGeometry === "function") {
+    geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(positions, 3),
+    );
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  } else {
+    geometry = {
+      setAttribute: () => {},
+      setIndex: () => {},
+      getAttribute: () => ({ array: positions, needsUpdate: false }),
+      getIndex: () => ({ array: indices, needsUpdate: false }),
+      setDrawRange: () => {},
+    } as any;
+  }
+
+  let material: THREE.Material;
+  if (typeof (THREE as any).MeshBasicMaterial === "function") {
+    material = new THREE.MeshBasicMaterial({
+      colorWrite: false, // Prevents drawing color (camera background stays visible)
+      depthWrite: true,  // Writes physical distance into the WebGL depth buffer
+      depthTest: true,   // Participates in depth tests
+    });
+  } else {
+    material = {
+      colorWrite: false,
+      depthWrite: true,
+      depthTest: true,
+    } as any;
+  }
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "webxr-depth-occlusion-mesh";
+  mesh.renderOrder = -1; // Render before virtual scene objects
+  mesh.frustumCulled = false;
+  mesh.visible = false;
+
+  return mesh;
+}
+
+/**
+ * Maps normalized view coordinates (uv) [0, 1] into normalized depth buffer coordinates
+ * using the normDepthBufferFromNormView transform matrix per the W3C WebXR Depth Sensing spec.
+ */
+export function mapViewToDepthUV(
+  u_v: number,
+  v_v: number,
+  normMatrix?: Float32Array | number[],
+): [number, number] {
+  if (!normMatrix || normMatrix.length < 16) {
+    return [u_v, v_v];
+  }
+  // normDepthBufferFromNormView matrix maps view UV [0,1] to depth UV [0,1]
+  // In column-major 4x4 matrix:
+  // [0]: M00, [1]: M10, [4]: M01, [5]: M11, [12]: M03, [13]: M13
+  const u_d = normMatrix[0] * u_v + normMatrix[4] * v_v + normMatrix[12];
+  const v_d = normMatrix[1] * u_v + normMatrix[5] * v_v + normMatrix[13];
+  return [u_d, v_d];
+}
+
+/**
+ * Unprojects a normalized view coordinate and metric depth into 3D camera eye-space coordinates
+ * using closed-form analytical perspective inversion.
+ */
+export function unprojectDepthPoint(
+  u_v: number,
+  v_v: number,
+  depthMeters: number,
+  proj: Float32Array | number[],
+): [number, number, number] {
+  if (!proj || proj.length < 16) {
+    return [0, 0, -depthMeters];
+  }
+  const P00 = proj[0];
+  const P11 = proj[5];
+  const P20 = proj[8];
+  const P21 = proj[9];
+
+  if (P00 === 0 || P11 === 0 || !Number.isFinite(P00) || !Number.isFinite(P11)) {
+    return [0, 0, -depthMeters];
+  }
+
+  const ndcX = 2 * u_v - 1;
+  const ndcY = 1 - 2 * v_v;
+
+  const xEye = ((ndcX + P20) / P00) * depthMeters;
+  const yEye = ((ndcY + P21) / P11) * depthMeters;
+  const zEye = -depthMeters;
+
+  return [
+    Number.isFinite(xEye) ? xEye : 0,
+    Number.isFinite(yEye) ? yEye : 0,
+    Number.isFinite(zEye) ? zEye : -depthMeters,
+  ];
+}
+
+/**
+ * Updates the depth occlusion mesh vertex positions and triangle index list from CPU depth information.
+ * Triangles spanning large depth discontinuities are pruned to prevent occlusion skinning artifacts.
+ */
+export function updateDepthOcclusionGeometry(
+  mesh: THREE.Mesh,
+  depthInfo: XRCPUDepthInformation,
+  projMatrix: Float32Array | number[],
+  gridSize: number = DEPTH_MESH_GRID_SIZE,
+): boolean {
+  if (!mesh || !depthInfo || !projMatrix) return false;
+  const geometry = mesh.geometry as THREE.BufferGeometry;
+  if (!geometry || !geometry.getAttribute) return false;
+
+  const posAttr = geometry.getAttribute("position") as any;
+  const indexAttr = geometry.getIndex() as any;
+  if (!posAttr || !indexAttr) return false;
+
+  const positions = posAttr.array as Float32Array;
+  const indices = indexAttr.array as Uint16Array;
+  const width = depthInfo.width;
+  const height = depthInfo.height;
+  const normMatrix = depthInfo.normDepthBufferFromNormView?.matrix;
+
+  if (!width || !height || width <= 0 || height <= 0) return false;
+
+  const depthGrid = new Float32Array(gridSize * gridSize);
+
+  for (let i = 0; i < gridSize; i++) {
+    const v_v = i / (gridSize - 1);
+    for (let j = 0; j < gridSize; j++) {
+      const u_v = j / (gridSize - 1);
+      const vertexIdx = i * gridSize + j;
+
+      const [u_d, v_d] = mapViewToDepthUV(u_v, v_v, normMatrix);
+
+      if (u_d < 0 || u_d > 1 || v_d < 0 || v_d > 1) {
+        depthGrid[vertexIdx] = 0;
+        positions[vertexIdx * 3] = 0;
+        positions[vertexIdx * 3 + 1] = 0;
+        positions[vertexIdx * 3 + 2] = 0;
+        continue;
+      }
+
+      const pixelX = Math.min(width - 1, Math.max(0, Math.floor(u_d * width)));
+      const pixelY = Math.min(height - 1, Math.max(0, Math.floor(v_d * height)));
+
+      let depthMeters = 0;
+      try {
+        if (typeof depthInfo.getDepthInMeters === "function") {
+          depthMeters = depthInfo.getDepthInMeters(pixelX, pixelY);
+        } else if (depthInfo.data) {
+          const rawVal = new DataView(depthInfo.data).getUint16(
+            (pixelY * width + pixelX) * 2,
+            true,
+          );
+          depthMeters = rawVal * (depthInfo.rawValueToMeters || 0.001);
+        }
+      } catch {
+        depthMeters = 0;
+      }
+
+      if (
+        !Number.isFinite(depthMeters) ||
+        depthMeters < MIN_DEPTH_METERS ||
+        depthMeters > MAX_DEPTH_METERS
+      ) {
+        depthGrid[vertexIdx] = 0;
+        positions[vertexIdx * 3] = 0;
+        positions[vertexIdx * 3 + 1] = 0;
+        positions[vertexIdx * 3 + 2] = 0;
+      } else {
+        depthGrid[vertexIdx] = depthMeters;
+        const [xEye, yEye, zEye] = unprojectDepthPoint(
+          u_v,
+          v_v,
+          depthMeters,
+          projMatrix,
+        );
+        positions[vertexIdx * 3] = xEye;
+        positions[vertexIdx * 3 + 1] = yEye;
+        positions[vertexIdx * 3 + 2] = zEye;
+      }
+    }
+  }
+
+  // Populate triangle indices with edge discontinuity pruning
+  let activeIndexCount = 0;
+  for (let i = 0; i < gridSize - 1; i++) {
+    for (let j = 0; j < gridSize - 1; j++) {
+      const v00 = i * gridSize + j;
+      const v01 = i * gridSize + (j + 1);
+      const v10 = (i + 1) * gridSize + j;
+      const v11 = (i + 1) * gridSize + (j + 1);
+
+      const d00 = depthGrid[v00];
+      const d01 = depthGrid[v01];
+      const d10 = depthGrid[v10];
+      const d11 = depthGrid[v11];
+
+      // Triangle 1: (v00, v10, v01)
+      if (
+        d00 > 0 &&
+        d10 > 0 &&
+        d01 > 0 &&
+        Math.abs(d00 - d10) <= DEPTH_DISCONTINUITY_THRESHOLD &&
+        Math.abs(d00 - d01) <= DEPTH_DISCONTINUITY_THRESHOLD &&
+        Math.abs(d10 - d01) <= DEPTH_DISCONTINUITY_THRESHOLD
+      ) {
+        indices[activeIndexCount++] = v00;
+        indices[activeIndexCount++] = v10;
+        indices[activeIndexCount++] = v01;
+      }
+
+      // Triangle 2: (v01, v10, v11)
+      if (
+        d01 > 0 &&
+        d10 > 0 &&
+        d11 > 0 &&
+        Math.abs(d01 - d10) <= DEPTH_DISCONTINUITY_THRESHOLD &&
+        Math.abs(d01 - d11) <= DEPTH_DISCONTINUITY_THRESHOLD &&
+        Math.abs(d10 - d11) <= DEPTH_DISCONTINUITY_THRESHOLD
+      ) {
+        indices[activeIndexCount++] = v01;
+        indices[activeIndexCount++] = v10;
+        indices[activeIndexCount++] = v11;
+      }
+    }
+  }
+
+  if (posAttr) posAttr.needsUpdate = true;
+  if (indexAttr) indexAttr.needsUpdate = true;
+  if (typeof geometry.setDrawRange === "function") {
+    geometry.setDrawRange(0, activeIndexCount);
+  }
+  mesh.visible = activeIndexCount > 0;
+
+  return activeIndexCount > 0;
+}
+
+/**
+ * Custom Emerald Emissive Bloom Shader for Green Lantern Power Ring Construct.
+ */
+export const EmeraldPowerRingShader = {
+  uniforms: {
+    time: { value: 0 },
+    emissiveColor: { value: new THREE.Color(0x10b981) }, // Emerald #10b981
+    coreColor: { value: new THREE.Color(0xa7f3d0) }, // Glowing Core #a7f3d0
+    pulseIntensity: { value: 1.5 },
+  },
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec2 vUv;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float time;
+    uniform vec3 emissiveColor;
+    uniform vec3 coreColor;
+    uniform float pulseIntensity;
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec2 vUv;
+    void main() {
+      vec3 viewDir = normalize(-vPosition);
+      float fresnel = pow(1.0 - max(0.0, dot(viewDir, vNormal)), 2.5);
+      float pulse = 0.8 + 0.3 * sin(time * 3.5);
+      vec3 glow = mix(emissiveColor, coreColor, fresnel * 0.7);
+      float alpha = clamp((0.6 + fresnel * 0.4) * pulse * pulseIntensity, 0.0, 1.0);
+      gl_FragColor = vec4(glow * (1.2 + fresnel), alpha);
+    }
+  `,
+};
+
+/**
+ * Creates 3D Green Lantern Power Ring construct mesh with custom emissive bloom shader
+ * and laser pointer beam projecting onto the targeted desk plane.
+ */
+export function createPowerRingConstructGroup(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "power-ring-construct";
+
+  // Outer primary power ring construct
+  const ringGeo = new THREE.TorusGeometry(0.14, 0.022, 24, 48);
+  const ringMat = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      emissiveColor: { value: new THREE.Color(0x10b981) },
+      coreColor: { value: new THREE.Color(0xa7f3d0) },
+      pulseIntensity: { value: 1.5 },
+    },
+    vertexShader: EmeraldPowerRingShader.vertexShader,
+    fragmentShader: EmeraldPowerRingShader.fragmentShader,
+    transparent: true,
+    side: THREE.DoubleSide,
+  });
+  const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+  ringMesh.name = "power-ring-mesh";
+  group.add(ringMesh);
+
+  // Inner concentric power ring construct
+  const innerGeo = new THREE.TorusGeometry(0.075, 0.012, 16, 32);
+  const innerMesh = new THREE.Mesh(innerGeo, ringMat.clone());
+  innerMesh.name = "power-ring-inner-mesh";
+  group.add(innerMesh);
+
+  // Laser pointer beam projecting down onto the targeted desk plane
+  const beamLength = 0.8;
+  const beamGeo = new THREE.CylinderGeometry(0.003, 0.016, beamLength, 16);
+  beamGeo.translate(0, -beamLength / 2, 0); // Origin at top of laser beam
+  const beamMat = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      emissiveColor: { value: new THREE.Color(0x34d399) },
+      coreColor: { value: new THREE.Color(0xecfdf5) },
+      pulseIntensity: { value: 1.8 },
+    },
+    vertexShader: EmeraldPowerRingShader.vertexShader,
+    fragmentShader: EmeraldPowerRingShader.fragmentShader,
+    transparent: true,
+  });
+  const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+  beamMesh.name = "power-ring-laser-beam";
+  group.add(beamMesh);
+
+  return group;
+}
+
+/**
+ * Calculates HUD badge opacity smoothly fading when distance <= 1.5m.
+ */
+export function calculateDeskBadgeOpacity(distanceMeters: number): number {
+  if (distanceMeters <= 0) return 0;
+  if (distanceMeters >= 1.5) return 1;
+  return Number((distanceMeters / 1.5).toFixed(3));
+}
+
+/**
+ * Calculates estimated indoor walking time in seconds based on Euclidean distance.
+ */
+export function calculateEstimatedWalkingSeconds(
+  distanceMeters: number,
+  paceMps = 1.1,
+): number {
+  if (distanceMeters <= 0) return 0;
+  return Math.max(0, Math.round(distanceMeters / paceMps));
+}
+
+export interface HitTestSurfaceResult {
+  position: Vector3D;
+  normal: Vector3D;
+  surfaceType: "tabletop" | "floor" | "horizontal_plane";
+  confidence: number;
+  distanceMeters: number;
+  matrix?: number[];
+}
+
+/**
+ * Calculates surface normal from a 4x4 transform matrix, falling back to horizontal up normal [0, 1, 0].
+ */
+export function calculateSurfaceNormal(
+  matrix?: number[] | Float32Array,
+): Vector3D {
+  if (!matrix || matrix.length < 16) {
+    return { x: 0, y: 1, z: 0 };
+  }
+  const nx = matrix[4];
+  const ny = matrix[5];
+  const nz = matrix[6];
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+  if (len === 0 || !Number.isFinite(len)) {
+    return { x: 0, y: 1, z: 0 };
+  }
+  return {
+    x: Number((nx / len).toFixed(3)),
+    y: Number((ny / len).toFixed(3)),
+    z: Number((nz / len).toFixed(3)),
+  };
+}
+
+export interface WebXRDeskFinderViewProps {
+  venueId?: string;
+  venueName?: string;
+  targetSeatNumber?: string;
+  initialSensorMetrics?: PositioningSensorMetrics;
+  autoStartHitTest?: boolean;
+  enableDepthSensing?: boolean;
+  onAnchorConfirmed?: (coords: Vector3D) => void;
+  onDepthStatusChange?: (active: boolean) => void;
+}
+
+export default function WebXRDeskFinderView({
+  venueId = "venue-sf-hub",
+  venueName: _venueName = "Mission Bay Coworking Hub",
+  targetSeatNumber = "Desk B-08 (Window Pod)",
+  initialSensorMetrics = {
+    gpsHdop: 1.2,
+    gpsAccuracyMeters: 3.5,
+    wifiRssiVariance: 4.0,
+    beaconCount: 3,
+  },
+  autoStartHitTest = false,
+  enableDepthSensing = true,
+  onAnchorConfirmed,
+  onDepthStatusChange,
+}: WebXRDeskFinderViewProps) {
+  const [currentStep, setCurrentStep] = useState<number>(0);
+  const [userPose, setUserPose] = useState<Vector3D>({ x: 0, y: 0, z: 0 });
+  const [cameraOffset, setCameraOffset] = useState<Vector3D>({
+    x: 0,
+    y: 0,
+    z: 0,
+  });
+  const [navPath, setNavPath] = useState<ARNavigationPath | null>(null);
+  const [_loading, setLoading] = useState(true);
+  const [_arActive, _setArActive] = useState(true);
+  const [_arSupported, setArSupported] = useState(true);
+  const [bearingDeg, setBearingDeg] = useState(35); // simulated bearing to target
+  const [_fallbackMode, setFallbackMode] =
+    useState<ARCameraFallbackMode>("horizon_locked");
+  const [isCompassReliable, setIsCompassReliable] = useState<boolean>(true);
+  const [isCalibrationOpen, setIsCalibrationOpen] = useState<boolean>(false);
+  const [positioningMode, setPositioningMode] =
+    useState<PositioningSourceMode>("GPS_DOMINANT");
+  const [sensorMetrics] =
+    useState<PositioningSensorMetrics>(initialSensorMetrics);
+
+  // WebXR Hit-Test and Anchoring State
+  const [isWebXRMode, setIsWebXRMode] = useState<boolean>(false);
+  const [hitTestActive, setHitTestActive] = useState<boolean>(autoStartHitTest);
+  const [hitTestResult, setHitTestResult] =
+    useState<HitTestSurfaceResult | null>(null);
+  const [anchoredPosition, setAnchoredPosition] = useState<Vector3D | null>(
+    null,
+  );
+  const [isAnchored, setIsAnchored] = useState<boolean>(false);
+  const [isDepthSensingActive, setIsDepthSensingActive] =
+    useState<boolean>(false);
+
+  const xrSessionRef = useRef<any>(null);
+  const hitTestSourceRef = useRef<any>(null);
+  const referenceSpaceRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const threeGroupRef = useRef<THREE.Group | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const depthMeshRef = useRef<THREE.Mesh | null>(null);
+  const arrowMeshRef = useRef<THREE.Group | null>(null);
+
+  const kalmanFilterRef = useRef<AdaptiveWayfindingKalmanFilter | null>(null);
+  if (!kalmanFilterRef.current) {
+    kalmanFilterRef.current = new AdaptiveWayfindingKalmanFilter({
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+  }
+
+  // Video feed ref for real camera if permissions granted
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Three.js 3D WebGL Scene & Power Ring Construct Setup
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof window === "undefined") return;
+
+    let renderer: THREE.WebGLRenderer | null = null;
+    let animId: number | null = null;
+
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true,
+        antialias: true,
+      });
+      renderer.setSize(canvas.clientWidth || 800, canvas.clientHeight || 520);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+      if (renderer.xr) {
+        renderer.xr.enabled = true;
+      }
+      rendererRef.current = renderer;
+
+      const scene = new THREE.Scene();
+      sceneRef.current = scene;
+
+      const camera = new THREE.PerspectiveCamera(
+        60,
+        (canvas.clientWidth || 800) / (canvas.clientHeight || 520),
+        0.1,
+        100,
+      );
+      camera.position.set(0, 0, 1.8);
+      cameraRef.current = camera;
+
+      // Add depth occlusion mesh to camera view space
+      try {
+        const depthMesh = createDepthOcclusionMesh();
+        depthMeshRef.current = depthMesh;
+        camera.add(depthMesh);
+        scene.add(camera);
+      } catch {
+        // Fallback for limited test mocks
+      }
+
+      // Add Power Ring Construct Group (Desk 3D marker)
+      const group = createPowerRingConstructGroup();
+      threeGroupRef.current = group;
+      scene.add(group);
+
+      // Add 3D Wayfinding Direction Arrow Group
+      try {
+        const arrowGroup = create3DDirectionArrowGroup(
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0, -1.8),
+          targetSeatNumber,
+        );
+        arrowMeshRef.current = arrowGroup;
+        scene.add(arrowGroup);
+      } catch {
+        // Fallback for limited test mocks
+      }
+
+      const clock = new THREE.Clock();
+
+      const renderFrame = (_time: number, frame?: any) => {
+        const delta = clock.getDelta();
+        const elapsed = clock.getElapsedTime();
+
+        // Animate custom shader uniforms for emissive bloom pulse
+        group.traverse((obj) => {
+          if ((obj as THREE.Mesh).material) {
+            const mat = (obj as THREE.Mesh).material as THREE.ShaderMaterial;
+            if (mat.uniforms && mat.uniforms.time) {
+              mat.uniforms.time.value = elapsed;
+            }
+          }
+        });
+
+        // Float and pulse power ring in 3D camera space
+        group.rotation.y += delta * 0.8;
+        group.rotation.z = Math.sin(elapsed * 2.0) * 0.15;
+
+        // Position: tracks tabletop plane coordinates from WebXR hit test or snaps when anchored
+        const targetPos = isAnchored
+          ? anchoredPosition
+          : (hitTestResult?.position ?? { x: 0, y: -0.4, z: -1.8 });
+
+        if (targetPos) {
+          const hoverY = isAnchored
+            ? targetPos.y + 0.15
+            : targetPos.y + 0.35 + Math.sin(elapsed * 3.0) * 0.05;
+          group.position.set(targetPos.x * 0.5, hoverY, targetPos.z * 0.5);
+
+          if (arrowMeshRef.current) {
+            const arrowPos = new THREE.Vector3(
+              targetPos.x * 0.3,
+              hoverY - 0.15,
+              targetPos.z * 0.5,
+            );
+            arrowMeshRef.current.position.copy(arrowPos);
+            arrowMeshRef.current.rotation.y = (bearingDeg * Math.PI) / 180;
+          }
+        }
+
+        // WebXR Frame Depth Information Query
+        if (frame && typeof frame.getViewerPose === "function") {
+          const refSpace = referenceSpaceRef.current;
+          const pose = refSpace ? frame.getViewerPose(refSpace) : null;
+          if (pose && pose.views && pose.views.length > 0) {
+            const view = pose.views[0];
+            const depthInfo =
+              typeof frame.getDepthInformation === "function"
+                ? frame.getDepthInformation(view)
+                : null;
+
+            if (depthInfo && depthMeshRef.current && view.projectionMatrix) {
+              const updated = updateDepthOcclusionGeometry(
+                depthMeshRef.current,
+                depthInfo,
+                view.projectionMatrix,
+              );
+              if (updated) {
+                setIsDepthSensingActive(true);
+                onDepthStatusChange?.(true);
+              }
+            } else if (depthMeshRef.current) {
+              depthMeshRef.current.visible = false;
+            }
+          }
+        }
+
+        renderer?.render(scene, camera);
+      };
+
+      if (typeof renderer.setAnimationLoop === "function") {
+        renderer.setAnimationLoop(renderFrame);
+      } else {
+        const animate = () => {
+          renderFrame(performance.now() * 0.001);
+          animId = requestAnimationFrame(animate);
+        };
+        animId = requestAnimationFrame(animate);
+      }
+    } catch {
+      // Non-WebGL / test environment fallback
+    }
+
+    return () => {
+      if (typeof renderer?.setAnimationLoop === "function") {
+        renderer.setAnimationLoop(null);
+      }
+      if (animId) cancelAnimationFrame(animId);
+      if (xrSessionRef.current) {
+        try {
+          xrSessionRef.current.end();
+        } catch {
+          // safe
+        }
+      }
+      try {
+        renderer?.dispose();
+      } catch {
+        // cleanup safe
+      }
+    };
+  }, [
+    isAnchored,
+    anchoredPosition,
+    hitTestResult,
+    bearingDeg,
+    targetSeatNumber,
+    onDepthStatusChange,
+  ]);
+
+  const fetchARRoute = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/ar/wayfinding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          venueId,
+          currentPosition: userPose,
+          targetSeatNumber,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.route) {
+        setNavPath(data.route);
+      }
+    } catch (err) {
+      console.error("Failed to load AR route:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [venueId, userPose, targetSeatNumber]);
+
+  useEffect(() => {
+    fetchARRoute();
+  }, [fetchARRoute]);
+
+  // Request real camera stream if available in browser
+  useEffect(() => {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.mediaDevices?.getUserMedia
+    ) {
+      navigator.mediaDevices
+        .getUserMedia({ video: { facingMode: "environment" } })
+        .then((stream) => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        })
+        .catch(() => {
+          // Camera permission denied or mock environment fallback
+          setArSupported(false);
+        });
+    }
+  }, []);
+
+  // Request WebXR session with hit-test feature and optional depth-sensing
+  const enterWebXRMode = async () => {
+    if (
+      typeof navigator !== "undefined" &&
+      "xr" in navigator &&
+      (navigator as any).xr
+    ) {
+      try {
+        const sessionOptions: any = {
+          requiredFeatures: ["hit-test"],
+          optionalFeatures: [
+            "local-floor",
+            "anchors",
+            "dom-overlay",
+            ...(enableDepthSensing ? ["depth-sensing"] : []),
+          ],
+          ...(enableDepthSensing
+            ? {
+                depthSensing: {
+                  usagePreference: ["cpu-optimized"],
+                  dataFormatPreference: ["float32", "luminance-alpha"],
+                },
+              }
+            : {}),
+        };
+
+        let session: any = null;
+        try {
+          session = await (navigator as any).xr.requestSession(
+            "immersive-ar",
+            sessionOptions,
+          );
+        } catch (depthErr) {
+          // If session with depth-sensing is rejected, fall back to standard session
+          if (enableDepthSensing) {
+            console.warn(
+              "[WebXR] Session with depth-sensing rejected, falling back to standard AR session:",
+              depthErr,
+            );
+            session = await (navigator as any).xr.requestSession(
+              "immersive-ar",
+              {
+                requiredFeatures: ["hit-test"],
+                optionalFeatures: ["local-floor", "anchors", "dom-overlay"],
+              },
+            );
+          } else {
+            throw depthErr;
+          }
+        }
+
+        xrSessionRef.current = session;
+        setIsWebXRMode(true);
+        setHitTestActive(true);
+
+        // Verify actual negotiated depth capability
+        const isDepthNegotiated = session?.depthUsage === "cpu-optimized";
+        setIsDepthSensingActive(isDepthNegotiated);
+        onDepthStatusChange?.(isDepthNegotiated);
+
+        // Connect WebXR session to Three.js renderer
+        if (rendererRef.current?.xr) {
+          rendererRef.current.xr.enabled = true;
+          try {
+            await rendererRef.current.xr.setSession(session);
+          } catch (bindErr) {
+            console.warn(
+              "[WebXR] Failed to bind session to Three.js renderer:",
+              bindErr,
+            );
+          }
+        }
+
+        // Request Reference Space and Hit Test Source
+        try {
+          let refSpace: any = null;
+          try {
+            refSpace = await session.requestReferenceSpace("local-floor");
+          } catch {
+            try {
+              refSpace = await session.requestReferenceSpace("local");
+            } catch {
+              refSpace = await session.requestReferenceSpace("viewer");
+            }
+          }
+          referenceSpaceRef.current = refSpace;
+
+          const viewerSpace = await session.requestReferenceSpace("viewer");
+          const source = await session.requestHitTestSource({
+            space: viewerSpace,
+            entityTypes: ["plane", "point"],
+          });
+          hitTestSourceRef.current = source;
+        } catch (srcErr) {
+          console.warn(
+            "[WebXR] Hit test source request deferred or unsupported:",
+            srcErr,
+          );
+        }
+
+        session.addEventListener("end", () => {
+          xrSessionRef.current = null;
+          hitTestSourceRef.current = null;
+          referenceSpaceRef.current = null;
+          setIsWebXRMode(false);
+          setHitTestActive(false);
+          setIsDepthSensingActive(false);
+          onDepthStatusChange?.(false);
+          if (depthMeshRef.current) {
+            depthMeshRef.current.visible = false;
+          }
+          if (rendererRef.current?.xr) {
+            rendererRef.current.xr.setSession(null).catch(() => {});
+          }
+        });
+      } catch (err) {
+        console.warn(
+          "[WebXR] immersive-ar session request failed, running simulated WebXR mode:",
+          err,
+        );
+        setIsWebXRMode(true);
+        setHitTestActive(true);
+      }
+    } else {
+      // Fallback for non-XR browsers/mocks
+      setIsWebXRMode(true);
+      setHitTestActive(true);
+    }
+  };
+
+  // Compute or simulate surface hit test coordinates on camera / pointer move
+  const updateHitTestSurface = useCallback((offset: Vector3D) => {
+    // Horizontal tabletop plane ~0.4m below camera, ~1.8m ahead
+    const simulatedPosition: Vector3D = {
+      x: Number((offset.x * 1.5).toFixed(2)),
+      y: -0.4,
+      z: Number((-1.8 + offset.y * 0.8).toFixed(2)),
+    };
+    const normal: Vector3D = { x: 0, y: 1, z: 0 }; // detected horizontal surface normal
+    const dist = Math.sqrt(
+      simulatedPosition.x * simulatedPosition.x +
+        simulatedPosition.y * simulatedPosition.y +
+        simulatedPosition.z * simulatedPosition.z,
+    );
+
+    setHitTestResult({
+      position: simulatedPosition,
+      normal,
+      surfaceType: "tabletop",
+      confidence: 0.94,
+      distanceMeters: Number(dist.toFixed(2)),
+    });
+  }, []);
+
+  // Real-time camera movement tracking (pointer and device orientation)
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const clientX = Number.isFinite(e.clientX) ? e.clientX : 0;
+    const clientY = Number.isFinite(e.clientY) ? e.clientY : 0;
+    const relX = (clientX - rect.left) / rect.width - 0.5;
+    const relY = (clientY - rect.top) / rect.height - 0.5;
+
+    // Convert pointer delta into bounded simulated tilt angles
+    const simBeta = -relY * 60; // Pitch clamped [-30°, 30°]
+    const simGamma = relX * 60; // Roll clamped [-30°, 30°]
+    const clamped = clampCameraOrientation(simBeta, simGamma);
+
+    setCameraOffset(clamped.offset);
+    setFallbackMode(clamped.fallbackMode);
+    setIsCompassReliable(true);
+
+    if (hitTestActive && !isAnchored) {
+      updateHitTestSurface(clamped.offset);
+    }
+  };
+
+  useEffect(() => {
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      const clamped = clampCameraOrientation(e.beta, e.gamma);
+      setCameraOffset(clamped.offset);
+      setFallbackMode(clamped.fallbackMode);
+      setIsCompassReliable(clamped.isCompassReliable);
+      if (hitTestActive && !isAnchored) {
+        updateHitTestSurface(clamped.offset);
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("deviceorientation", handleOrientation);
+      return () => {
+        window.removeEventListener("deviceorientation", handleOrientation);
+      };
+    }
+  }, [hitTestActive, isAnchored, updateHitTestSurface]);
+
+  // Initial surface calculation when hit-testing is activated
+  useEffect(() => {
+    if (hitTestActive && !hitTestResult) {
+      updateHitTestSurface(cameraOffset);
+    }
+  }, [hitTestActive, hitTestResult, cameraOffset, updateHitTestSurface]);
+
+  // Anchor 3D desk reservation badge onto confirmed hit test coordinates
+  const handleAnchorToSurface = () => {
+    const coords = hitTestResult?.position ?? {
+      x: Number((cameraOffset.x * 1.5).toFixed(2)),
+      y: -0.4,
+      z: -1.8,
+    };
+    setAnchoredPosition(coords);
+    setIsAnchored(true);
+    onAnchorConfirmed?.(coords);
+  };
+
+  const handleResetAnchor = () => {
+    setIsAnchored(false);
+    setAnchoredPosition(null);
+    updateHitTestSurface(cameraOffset);
+  };
+
+  // Simulate walking along the AR waypoints
+  const handleNextStep = () => {
+    if (!navPath) return;
+    if (currentStep < navPath.waypoints.length - 1) {
+      const nextIdx = currentStep + 1;
+      setCurrentStep(nextIdx);
+      const nextWaypoint = navPath.waypoints[nextIdx];
+
+      // Update position through adaptive Kalman filter to eliminate GPS/WiFi transition drift
+      if (kalmanFilterRef.current) {
+        kalmanFilterRef.current.predict();
+        const updateResult = kalmanFilterRef.current.update({
+          wifiPosition: nextWaypoint.position,
+          gpsPosition: nextWaypoint.position,
+          metrics: sensorMetrics,
+        });
+        setUserPose(updateResult.filteredPosition);
+        setPositioningMode(updateResult.covarianceWeights.mode);
+      } else {
+        setUserPose(nextWaypoint.position);
+      }
+
+      // Reduce distance and adjust angle
+      setBearingDeg((prev) => Math.max(0, prev - 15));
+    }
+  };
+
+  const handleResetWalk = () => {
+    setCurrentStep(0);
+    setUserPose({ x: 0, y: 0, z: 0 });
+    setCameraOffset({ x: 0, y: 0, z: 0 });
+    setBearingDeg(35);
+    setIsAnchored(false);
+    setAnchoredPosition(null);
+    if (kalmanFilterRef.current) {
+      kalmanFilterRef.current.reset({ x: 0, y: 0, z: 0 });
+    }
+  };
+
+  const activeWaypoint = navPath?.waypoints[currentStep];
+  const isArrived =
+    activeWaypoint?.turnAction === "ARRIVED" ||
+    currentStep === (navPath?.waypoints.length ?? 1) - 1;
+
+  // Real-time Euclidean distance recalculation on camera move
+  const currentCameraPosition: Vector3D = {
+    x: userPose.x + cameraOffset.x,
+    y: userPose.y + cameraOffset.y,
+    z: userPose.z + cameraOffset.z,
+  };
+  const targetPosition: Vector3D = navPath?.targetPosition ?? {
+    x: 5.4,
+    y: 0,
+    z: -8.2,
+  };
+  const rawRemainingDistance = calculate3DDistance(
+    currentCameraPosition,
+    targetPosition,
+  );
+  const remainingDistanceMeters = isArrived
+    ? 0
+    : Math.max(0, Number(rawRemainingDistance.toFixed(1)));
+  const estimatedWalkingSeconds = calculateEstimatedWalkingSeconds(
+    remainingDistanceMeters,
+  );
+  const badgeOpacity = isArrived
+    ? 0
+    : calculateDeskBadgeOpacity(remainingDistanceMeters);
+
+  // Surface hit test display position
+  const activeSurfacePos = isAnchored
+    ? anchoredPosition
+    : (hitTestResult?.position ?? null);
+
+  return (
+    <div className="w-full max-w-4xl mx-auto space-y-6">
+      {/* Top Banner */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 p-6 md:p-8 backdrop-blur-xl shadow-2xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold uppercase tracking-wider">
+              <Camera className="w-3.5 h-3.5 animate-pulse" /> WebXR Indoor AR
+              Wayfinding
+            </div>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+              Indoor AR Desk Finder & Waypoint HUD
+            </h1>
+            <p className="text-xs md:text-sm text-slate-300 max-w-2xl">
+              Spatial anchor positioning and directional 3D path vectors guide
+              you from the venue entrance directly to your reserved desk.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {/* Enter WebXR Mode / Hit-Test Button */}
+            {!isWebXRMode && (
+              <button
+                type="button"
+                data-testid="enter-webxr-btn"
+                onClick={enterWebXRMode}
+                className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 transition active:scale-95"
+              >
+                <Scan className="w-4 h-4" />
+                Enter WebXR AR
+              </button>
+            )}
+
+            <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs font-mono space-y-1">
+              <span className="text-slate-500 block text-[10px]">
+                Target Destination
+              </span>
+              <strong className="text-cyan-400 text-sm block">
+                {targetSeatNumber}
+              </strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main AR Viewport Container */}
+      <div
+        onPointerMove={handlePointerMove}
+        className="relative w-full h-[520px] rounded-3xl bg-slate-950 border border-slate-800 overflow-hidden shadow-2xl flex flex-col justify-between"
+      >
+        {/* Background Camera Feed / Mock Workspace Canvas */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover opacity-60"
+          />
+
+          {/* Perspective 3D Hallway Grid Simulation */}
+          <div className="absolute inset-0 bg-[radial-gradient(#0ea5e9_1px,transparent_1px)] [background-size:24px_24px] opacity-20 pointer-events-none" />
+
+          {/* 3D WebGL Holographic Power Ring Canvas */}
+          <canvas
+            ref={canvasRef}
+            data-testid="webxr-power-ring-canvas"
+            className="absolute inset-0 w-full h-full pointer-events-none z-10"
+          />
+
+          {/* 3D Holographic Power Ring Construct Reticle Floating in 3D Camera Space */}
+          {hitTestActive && !isAnchored && (
+            <div
+              data-testid="power-ring-construct-reticle"
+              style={{
+                transform: `perspective(600px) translate3d(${cameraOffset.x * 35}px, ${cameraOffset.y * 20 - 35}px, 0)`,
+              }}
+              className="absolute top-24 flex flex-col items-center justify-center pointer-events-none transition-transform duration-200 z-10"
+            >
+              {/* Floating Pulsing 3D Power Ring Torus Construct */}
+              <div className="relative flex items-center justify-center w-28 h-28 rounded-full border-2 border-emerald-400 bg-emerald-500/10 shadow-[0_0_35px_rgba(16,185,129,0.8)] animate-pulse">
+                <div className="w-16 h-16 rounded-full border border-emerald-300/80 flex items-center justify-center">
+                  <CircleDot
+                    className="w-8 h-8 text-emerald-300 animate-spin"
+                    style={{ animationDuration: "10s" }}
+                  />
+                </div>
+                {/* Halo pulse ring */}
+                <span className="absolute -inset-2 rounded-full border border-emerald-400/40 animate-ping" />
+              </div>
+
+              {/* Laser Pointer Beam Projecting Down onto Targeted Desk Plane */}
+              <div
+                data-testid="power-ring-laser-beam"
+                className="w-1 h-32 bg-gradient-to-b from-emerald-400 via-emerald-300/80 to-transparent shadow-[0_0_15px_rgba(52,211,153,0.9)] animate-pulse"
+              />
+
+              {/* Power Ring Construct Telemetry Banner */}
+              <div className="mt-1 px-3 py-1 rounded-full bg-slate-950/90 border border-emerald-400/60 text-emerald-300 text-[10px] font-mono font-bold shadow-lg shadow-emerald-950/60 flex items-center gap-1.5 backdrop-blur-md">
+                <Zap className="w-3 h-3 text-emerald-400 animate-pulse" />
+                <span>POWER RING CONSTRUCT // EMERALD EMISSIVE BLOOM</span>
+              </div>
+            </div>
+          )}
+
+          {/* Floating Glowing AR Waypoint Markers */}
+          <div className="absolute flex flex-col items-center justify-center space-y-3 transition-all duration-500">
+            {/* Floating Distance & Estimated Walking Time HUD Badge above the Target Desk */}
+            <div
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-cyan-400/50 text-cyan-300 text-xs font-mono shadow-lg shadow-cyan-950/60 backdrop-blur-md transition-opacity duration-300 pointer-events-none"
+              style={{ opacity: badgeOpacity }}
+              data-testid="desk-hud-distance-badge"
+              aria-label={`Distance ${remainingDistanceMeters.toFixed(1)} meters, ${estimatedWalkingSeconds} seconds walking time`}
+            >
+              <Footprints className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+              <span className="font-bold text-white font-mono">
+                {remainingDistanceMeters.toFixed(1)}m
+              </span>
+              <span className="text-slate-400">•</span>
+              <span className="text-cyan-200 font-mono">
+                {estimatedWalkingSeconds}s walk
+              </span>
+            </div>
+
+            {/* 3D Glowing AR Arrow */}
+            <div
+              className={`flex items-center justify-center w-20 h-20 rounded-full transition-transform duration-500 ${
+                isArrived
+                  ? "bg-emerald-500/20 border-2 border-emerald-400 text-emerald-400 scale-125 shadow-lg shadow-emerald-500/40"
+                  : "bg-cyan-500/20 border-2 border-cyan-400 text-cyan-300 animate-bounce shadow-lg shadow-cyan-500/30"
+              }`}
+              style={{
+                transform: `rotate(${isArrived ? 0 : bearingDeg}deg)`,
+              }}
+            >
+              {isArrived ? (
+                <CheckCircle2 className="w-10 h-10" />
+              ) : (
+                <ArrowUp className="w-10 h-10 stroke-[2.5]" />
+              )}
+            </div>
+
+            {/* Glowing Desk Bounding Box (when not yet anchored to physical surface) */}
+            {!isAnchored && (
+              <div
+                className={`px-6 py-4 rounded-2xl border-2 backdrop-blur-md transition-all duration-300 text-center ${
+                  isArrived
+                    ? "bg-emerald-950/80 border-emerald-400 shadow-xl shadow-emerald-950/50"
+                    : "bg-slate-900/80 border-cyan-400 shadow-xl shadow-cyan-950/40"
+                }`}
+              >
+                <span className="text-[10px] uppercase font-bold tracking-widest text-cyan-300 block">
+                  {isArrived ? "DESTINATION REACHED" : "SPATIAL ANCHOR LOCKED"}
+                </span>
+                <h3 className="text-base font-extrabold text-white">
+                  {targetSeatNumber}
+                </h3>
+                <span className="text-xs font-mono text-slate-300">
+                  {isArrived
+                    ? "Checked In at Desk"
+                    : `~${remainingDistanceMeters.toFixed(1)}m Ahead (${estimatedWalkingSeconds}s)`}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* WebXR Hit-Testing Holographic Surface Reticle */}
+          {hitTestActive && !isAnchored && (
+            <div
+              data-testid="ar-hit-test-reticle"
+              onClick={handleAnchorToSurface}
+              style={{
+                transform: `perspective(600px) rotateX(70deg) translate3d(${cameraOffset.x * 40}px, ${cameraOffset.y * 20}px, 0)`,
+              }}
+              className="absolute bottom-16 flex flex-col items-center justify-center cursor-pointer group transition-transform duration-200"
+            >
+              {/* Directional Shadow Plane beneath Reticle on Tabletop/Floor */}
+              <div
+                data-testid="reticle-shadow-plane"
+                className="absolute w-44 h-44 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.65)_0%,rgba(0,0,0,0)_70%)] pointer-events-none scale-y-50"
+              />
+
+              {/* Holographic Concentric Reticle Rings */}
+              <div className="relative flex items-center justify-center w-36 h-36 rounded-full border-2 border-cyan-400/80 shadow-[0_0_25px_rgba(6,182,212,0.6)] animate-pulse">
+                <div className="w-24 h-24 rounded-full border border-cyan-300/60 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full border border-dashed border-cyan-200/90 flex items-center justify-center">
+                    <Crosshair className="w-6 h-6 text-cyan-300" />
+                  </div>
+                </div>
+
+                {/* 4 Orientation Target Brackets */}
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 w-2.5 h-1 bg-cyan-300 rounded" />
+                <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-2.5 h-1 bg-cyan-300 rounded" />
+                <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-2.5 bg-cyan-300 rounded" />
+                <div className="absolute right-1 top-1/2 -translate-y-1/2 w-1 h-2.5 bg-cyan-300 rounded" />
+              </div>
+
+              {/* Surface Snap Pill */}
+              <div className="mt-3 px-3 py-1 rounded-full bg-slate-950/90 border border-cyan-400/70 text-cyan-300 text-[10px] font-mono font-bold shadow-lg backdrop-blur flex items-center gap-1.5 pointer-events-none">
+                <Target className="w-3 h-3 text-cyan-400" />
+                <span>Tabletop Normal Aligned [0, 1, 0]</span>
+              </div>
+            </div>
+          )}
+
+          {/* Anchored 3D Desk Reservation Badge on Confirmed Hit Test Surface */}
+          {isAnchored && activeSurfacePos && (
+            <div
+              data-testid="anchored-desk-badge"
+              style={{
+                transform: `perspective(600px) translate3d(${activeSurfacePos.x * 20}px, ${activeSurfacePos.y * 20}px, 0)`,
+              }}
+              className="absolute bottom-20 flex flex-col items-center justify-center transition-all duration-300"
+            >
+              {/* Directional Shadow Plane beneath Anchored Badge */}
+              <div
+                data-testid="anchored-shadow-plane"
+                className="absolute -bottom-8 w-56 h-28 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.85)_0%,rgba(0,0,0,0)_75%)] pointer-events-none"
+              />
+
+              {/* 3D Holographic Marker Card */}
+              <div className="relative px-6 py-4 rounded-2xl bg-slate-900/95 border-2 border-emerald-400 shadow-2xl shadow-emerald-950/60 backdrop-blur-xl text-center space-y-2 z-10">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/40">
+                  <Anchor className="w-3 h-3 text-emerald-400" />
+                  <span>TABLETOP ANCHOR CONFIRMED</span>
+                </div>
+                <div
+                  data-testid="power-ring-construct-snapped"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/50"
+                >
+                  <Zap className="w-3 h-3 text-emerald-400" />
+                  <span>CONSTRUCT SNAPPED TO DESK COORDINATES</span>
+                </div>
+                <h3 className="text-base font-extrabold text-white">
+                  {targetSeatNumber}
+                </h3>
+                <p className="text-[11px] font-mono text-slate-300">
+                  Pos: ({activeSurfacePos.x.toFixed(2)}m,{" "}
+                  {activeSurfacePos.y.toFixed(2)}m,{" "}
+                  {activeSurfacePos.z.toFixed(2)}m)
+                </p>
+                <div className="pt-1 flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="reset-anchor-btn"
+                    onClick={handleResetAnchor}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold transition"
+                  >
+                    Re-anchor
+                  </button>
+                  <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Surface Anchored
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Top HUD Overlay */}
+        <div className="relative z-10 p-4 md:p-6 flex items-center justify-between pointer-events-none">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700 text-xs font-semibold text-slate-200 backdrop-blur-md">
+            <Compass className="w-4 h-4 text-cyan-400" />
+            <span>
+              AR Heading:{" "}
+              <strong className="font-mono text-cyan-300">
+                {bearingDeg}° NNE
+              </strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsCalibrationOpen(true)}
+              className="pointer-events-auto ml-1 p-1 rounded-full text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-400"
+              title="Calibrate Compass Sensors"
+              aria-label="Calibrate Compass Sensors"
+              data-testid="open-compass-calibration-modal"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </button>
+            {!isCompassReliable && (
+              <span
+                data-testid="ar-fallback-indicator"
+                className="ml-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-sans font-medium"
+              >
+                Horizon Lock
+              </span>
+            )}
+            <span
+              data-testid="positioning-mode-indicator"
+              className="ml-1 px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-sans font-medium"
+            >
+              {positioningMode === "WIFI_BEACON_DOMINANT"
+                ? "WiFi Beacons"
+                : positioningMode === "GPS_DOMINANT"
+                  ? "GPS Fix"
+                  : "Sensor Fusion"}
+            </span>
+            {hitTestActive && (
+              <span
+                data-testid="hit-test-status-indicator"
+                className="ml-1 px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-sans font-medium flex items-center gap-1"
+              >
+                <Target className="w-3 h-3 text-cyan-400" /> Hit-Test Active
+              </span>
+            )}
+            {isDepthSensingActive && (
+              <span
+                data-testid="depth-sensing-status-indicator"
+                className="ml-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-sans font-medium flex items-center gap-1"
+              >
+                <Scan className="w-3 h-3 text-emerald-400 animate-pulse" /> Depth Occlusion Active
+              </span>
+            )}
+          </div>
+
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-slate-700 text-xs font-mono text-slate-200 backdrop-blur-md">
+            <Layers className="w-4 h-4 text-indigo-400" />
+            <span>Floor 2 • West Wing</span>
+          </div>
+        </div>
+
+        {/* Bottom Turn-by-Turn Instruction Banner & WebXR Hit-Test Controls */}
+        <div className="relative z-10 p-4 md:p-6 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-8 space-y-4">
+          <div className="p-4 rounded-2xl bg-slate-900/95 border border-slate-800 backdrop-blur-xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold shrink-0">
+                {isArrived ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <Navigation className="w-5 h-5" />
+                )}
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Step {currentStep + 1} of {navPath?.waypoints.length || 3}
+                </span>
+                <p className="text-sm font-bold text-white">
+                  {activeWaypoint?.instruction ||
+                    "Follow AR trajectory to reserved workspace"}
+                </p>
+              </div>
+            </div>
+
+            {/* Navigation Stepper & Hit Test Anchor Controls */}
+            <div className="flex items-center gap-2 shrink-0">
+              {hitTestActive && !isAnchored && (
+                <button
+                  type="button"
+                  data-testid="anchor-desk-badge-btn"
+                  onClick={handleAnchorToSurface}
+                  className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-md shadow-cyan-600/30 flex items-center gap-1.5 transition"
+                >
+                  <Anchor className="w-3.5 h-3.5" /> Anchor to Tabletop
+                </button>
+              )}
+
+              <button
+                onClick={handleResetWalk}
+                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition"
+                title="Reset simulation"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+
+              {!isArrived ? (
+                <button
+                  onClick={handleNextStep}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 flex items-center gap-2 transition"
+                >
+                  <Footprints className="w-4 h-4" /> Advance Step
+                </button>
+              ) : (
+                <Link
+                  href="/venues"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Done & Unlocked
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <CompassCalibrationModal
+        isOpen={isCalibrationOpen}
+        onClose={() => setIsCalibrationOpen(false)}
+        onComplete={() => setIsCalibrationOpen(false)}
+        heading={bearingDeg}
+      />
+    </div>
+  );
+}

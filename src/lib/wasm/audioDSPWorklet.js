@@ -14,6 +14,10 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
     this.outputBufferPtr = 0;
     this.noiseProfilePtr = 0;
     this.frameSize = 256;
+    this.lowPowerMode = false;
+    this.telemetryIntervalMs = 16;
+    this.enableTelemetry = true;
+    this.lastTelemetryTime = 0;
     this.port.onmessage = this.handleMessage.bind(this);
   }
 
@@ -53,6 +57,15 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
     switch (type) {
       case "init":
         await this.initWasm(wasmBinary);
+        break;
+      case "setLowPowerMode":
+        this.lowPowerMode = Boolean(data.enabled);
+        if (data.telemetryIntervalMs) {
+          this.telemetryIntervalMs = data.telemetryIntervalMs;
+        }
+        if (typeof data.enableTelemetry === "boolean") {
+          this.enableTelemetry = data.enableTelemetry;
+        }
         break;
       case "setSensitivity":
         if (this.wasmExports) {
@@ -183,7 +196,14 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
       );
       outputChannel.set(outputView);
 
-      this.port.postMessage({ type: "rms", rms });
+      if (this.enableTelemetry) {
+        const now = typeof currentTime !== "undefined" ? currentTime * 1000 : Date.now();
+        const interval = this.lowPowerMode ? this.telemetryIntervalMs : 16;
+        if (now - this.lastTelemetryTime >= interval) {
+          this.port.postMessage({ type: "rms", rms });
+          this.lastTelemetryTime = now;
+        }
+      }
     } catch (err) {
       outputChannel.set(inputChannel);
       this.port.postMessage({ type: "error", error: err.message });

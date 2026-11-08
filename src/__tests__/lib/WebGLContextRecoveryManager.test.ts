@@ -117,4 +117,101 @@ describe("WebGLContextRecoveryManager", () => {
       expect(banner).toBeNull();
     }
   });
+
+  it("should call preventDefault() synchronously before consumer callbacks during webglcontextlost", () => {
+    let preventDefaultCalledFirst = false;
+    const lostEvent = new Event("webglcontextlost", {
+      cancelable: true,
+      bubbles: true,
+    });
+
+    const onLostSpy = jest.fn(() => {
+      // Check if defaultPrevented is already set when onLost is invoked
+      preventDefaultCalledFirst = lostEvent.defaultPrevented;
+    });
+
+    const manager = new WebGLContextRecoveryManager(canvas, {
+      onRestore,
+      onLost: onLostSpy,
+    });
+
+    canvas.dispatchEvent(lostEvent);
+
+    expect(lostEvent.defaultPrevented).toBe(true);
+    expect(onLostSpy).toHaveBeenCalledTimes(1);
+    expect(preventDefaultCalledFirst).toBe(true);
+
+    manager.destroy();
+  });
+
+  it("should handle rapid tab visibility changes with context loss and re-bind resources before render loop", () => {
+    const executionOrder: string[] = [];
+
+    const mockVBO = {} as WebGLBuffer;
+    const mockTexture = {} as WebGLTexture;
+    const mockContext = {
+      viewport: jest.fn(),
+      bindBuffer: jest.fn(() => executionOrder.push("bindBuffer:vbo")),
+      bindTexture: jest.fn(() => executionOrder.push("bindTexture:tex")),
+      ARRAY_BUFFER: 0x8892,
+      TEXTURE_2D: 0x0de1,
+    } as any;
+
+    jest.spyOn(canvas, "getContext").mockReturnValue(mockContext);
+
+    const renderLoop = {
+      start: jest.fn(() => executionOrder.push("renderLoop:start")),
+      stop: jest.fn(() => executionOrder.push("renderLoop:stop")),
+    };
+
+    const onRestoreWithBindings = jest.fn((gl: WebGLRenderingContext) => {
+      executionOrder.push("onRestore:rebind");
+      gl.bindBuffer(gl.ARRAY_BUFFER, mockVBO);
+      gl.bindTexture(gl.TEXTURE_2D, mockTexture);
+    });
+
+    const manager = new WebGLContextRecoveryManager(canvas, {
+      onRestore: onRestoreWithBindings,
+      renderLoop,
+    });
+
+    // Simulate 3 rapid tab switching cycles (visible -> hidden -> visible)
+    for (let cycle = 0; cycle < 3; cycle++) {
+      executionOrder.length = 0;
+
+      // User switches to background tab
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      // Background tab triggers context loss
+      const lostEvent = new Event("webglcontextlost", { cancelable: true });
+      canvas.dispatchEvent(lostEvent);
+
+      expect(lostEvent.defaultPrevented).toBe(true);
+      expect(manager.state).toBe("lost");
+      expect(renderLoop.stop).toHaveBeenCalled();
+
+      // User returns to foreground tab
+      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      // Browser restores WebGL context
+      const restoreEvent = new Event("webglcontextrestored", { cancelable: true });
+      canvas.dispatchEvent(restoreEvent);
+
+      expect(manager.state).toBe("active");
+      expect(onRestoreWithBindings).toHaveBeenCalled();
+
+      // Ensure VBOs and textures were re-bound BEFORE the render loop was resumed
+      expect(executionOrder).toEqual([
+        "renderLoop:stop",
+        "onRestore:rebind",
+        "bindBuffer:vbo",
+        "bindTexture:tex",
+        "renderLoop:start",
+      ]);
+    }
+
+    manager.destroy();
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -25,11 +25,12 @@ import {
   YAxis,
 } from "recharts";
 import type { PerformanceSummary } from "@/lib/performanceTelemetry";
+import { WebVitalsWidget } from "@/components/admin/WebVitalsWidget";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMs(value: number) {
-  if (!value) return "—";
+  if (value === 0) return "0 ms";
   if (value < 1000) return `${Math.round(value)} ms`;
   return `${(value / 1000).toFixed(2)} s`;
 }
@@ -134,23 +135,36 @@ export default function AdminPerformanceDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  async function loadData() {
-    setLoading(true);
-    setError("");
-    try {
+  const requestId = useRef(0);
+
+async function loadData() {
+  const currentRequest = ++requestId.current;
+
+  setLoading(true);
+  setError("");
+
+  try {
       const res = await fetch("/api/admin/performance", { cache: "no-store" });
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
         throw new Error(payload?.error ?? "Failed to load performance data");
       }
-      setData(await res.json());
+     const result = await res.json();
+
+if (currentRequest !== requestId.current) return;
+
+setData(result);
     } catch (err) {
+      if (currentRequest === requestId.current) {
       setError(
         err instanceof Error ? err.message : "Failed to load performance data",
       );
-    } finally {
-      setLoading(false);
     }
+    } finally {
+  if (currentRequest === requestId.current) {
+    setLoading(false);
+  }
+}
   }
 
   useEffect(() => {
@@ -268,6 +282,8 @@ export default function AdminPerformanceDashboard() {
             </>
           )}
         </section>
+
+        <WebVitalsWidget className="mt-8" />
 
         {/* ── Cold-Start / Latency Trend Chart ───────────────────────────── */}
         <section

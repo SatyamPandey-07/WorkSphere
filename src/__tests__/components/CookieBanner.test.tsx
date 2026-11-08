@@ -36,13 +36,17 @@ describe("CookieBanner", () => {
 
   it("renders the banner when no consent is stored", () => {
     render(<CookieBanner />);
-    expect(screen.getByRole("dialog", { name: /cookie consent/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: /cookie consent/i }),
+    ).toBeInTheDocument();
   });
 
   it("does NOT render when consent is already stored", () => {
     localStorage.setItem(STORAGE_KEY, "granted");
     render(<CookieBanner />);
-    expect(screen.queryByRole("dialog", { name: /cookie consent/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: /cookie consent/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the banner and stores 'granted' when Accept is clicked", () => {
@@ -63,5 +67,71 @@ describe("CookieBanner", () => {
     render(<CookieBanner />);
     const link = screen.getByRole("link", { name: /privacy policy/i });
     expect(link).toHaveAttribute("href", "/privacy");
+  });
+
+  describe("prefers-reduced-motion compliance", () => {
+    const originalMatchMedia = window.matchMedia;
+
+    afterEach(() => {
+      window.matchMedia = originalMatchMedia;
+    });
+
+    it("detects prefers-reduced-motion: reduce via window.matchMedia and disables transform motion", () => {
+      window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+        matches: query.includes("prefers-reduced-motion: reduce"),
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      }));
+
+      render(<CookieBanner />);
+      const dialog = screen.getByRole("dialog", { name: /cookie consent/i });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAttribute("data-reduced-motion", "true");
+    });
+
+    it("enables standard motion when prefers-reduced-motion is not requested", () => {
+      window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      }));
+
+      render(<CookieBanner />);
+      const dialog = screen.getByRole("dialog", { name: /cookie consent/i });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAttribute("data-reduced-motion", "false");
+    });
+
+    it("respects explicit reducedMotion prop override", () => {
+      render(<CookieBanner reducedMotion={true} />);
+      const dialog = screen.getByRole("dialog", { name: /cookie consent/i });
+      expect(dialog).toHaveAttribute("data-reduced-motion", "true");
+    });
+  });
+
+  describe("automated accessibility (axe-core)", () => {
+    it("satisfies axe-core accessibility compliance without violations", async () => {
+      const axe = await import("axe-core");
+      const { container } = render(<CookieBanner />);
+      const results = await axe.run(container);
+      expect(results.violations).toEqual([]);
+    });
+
+    it("satisfies axe-core accessibility compliance in reduced-motion mode", async () => {
+      const axe = await import("axe-core");
+      const { container } = render(<CookieBanner reducedMotion={true} />);
+      const results = await axe.run(container);
+      expect(results.violations).toEqual([]);
+    });
   });
 });

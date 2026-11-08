@@ -8,6 +8,15 @@ interface EmptyStateProps {
   message: string;
   description?: string;
   action?: React.ReactNode;
+  /**
+   * Styling variant.
+   * - `"default"` — standard card (white / dark surface, rounded-2xl)
+   * - `"hud"` — aerospace angular cockpit bevel: chamfered corners via
+   *   clip-path polygon, glowing emerald corner-bracket HUD frame overlays,
+   *   and a radar-crosshair background grid (issue #6173)
+   */
+  variant?: "default" | "hud";
+  className?: string;
 }
 
 const SearchIllustration = () => {
@@ -414,16 +423,108 @@ const ChatIllustration = () => {
   );
 };
 
+// ============================================================================
+// HUD corner-bracket overlay — four L-shaped glowing emerald brackets
+// positioned at each corner of the card to evoke fighter-jet HUD frames.
+// ============================================================================
+const HUDCornerBrackets = ({ reduced }: { reduced: boolean }) => (
+  <svg
+    aria-hidden="true"
+    data-testid="hud-corner-brackets"
+    className="pointer-events-none absolute inset-0 w-full h-full"
+    viewBox="0 0 400 320"
+    preserveAspectRatio="none"
+  >
+    <defs>
+      <filter id="hudGlow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="2" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+    {/* Top-left bracket */}
+    <polyline
+      points="32,10 10,10 10,48"
+      fill="none"
+      stroke="#10b981"
+      strokeWidth="2.5"
+      strokeLinecap="square"
+      filter="url(#hudGlow)"
+      className={reduced ? "" : "opacity-90"}
+    />
+    {/* Top-right bracket */}
+    <polyline
+      points="368,10 390,10 390,48"
+      fill="none"
+      stroke="#10b981"
+      strokeWidth="2.5"
+      strokeLinecap="square"
+      filter="url(#hudGlow)"
+      className={reduced ? "" : "opacity-90"}
+    />
+    {/* Bottom-left bracket */}
+    <polyline
+      points="32,310 10,310 10,272"
+      fill="none"
+      stroke="#10b981"
+      strokeWidth="2.5"
+      strokeLinecap="square"
+      filter="url(#hudGlow)"
+      className={reduced ? "" : "opacity-90"}
+    />
+    {/* Bottom-right bracket */}
+    <polyline
+      points="368,310 390,310 390,272"
+      fill="none"
+      stroke="#10b981"
+      strokeWidth="2.5"
+      strokeLinecap="square"
+      filter="url(#hudGlow)"
+      className={reduced ? "" : "opacity-90"}
+    />
+    {/* Radar crosshair — horizontal */}
+    <line
+      x1="0" y1="160" x2="400" y2="160"
+      stroke="#10b981"
+      strokeWidth="0.5"
+      strokeDasharray="6 10"
+      className="opacity-20"
+    />
+    {/* Radar crosshair — vertical */}
+    <line
+      x1="200" y1="0" x2="200" y2="320"
+      stroke="#10b981"
+      strokeWidth="0.5"
+      strokeDasharray="6 10"
+      className="opacity-20"
+    />
+  </svg>
+);
+
 export function EmptyState({
   illustration,
   message,
   description,
   action,
+  variant = "default",
+  className = "",
 }: EmptyStateProps) {
   const shouldReduceMotion = useReducedMotion();
+  const isHUD = variant === "hud";
+
+  // Chamfered polygon — 18px bevel cut at all four corners, matching a
+  // fighter-jet HUD panel aesthetic.
+  const HUD_CLIP =
+    "polygon(18px 0%, calc(100% - 18px) 0%, 100% 18px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%, 0% calc(100% - 18px), 0% 18px)";
 
   return (
     <motion.div
+      role="status"
+      aria-live="polite"
+      data-testid="empty-state"
+      data-variant={variant}
       initial={{
         opacity: 0,
         scale: shouldReduceMotion ? 1 : 0.9,
@@ -440,23 +541,57 @@ export function EmptyState({
         damping: 11,
         mass: 1,
       }}
-      className="flex flex-col items-center justify-center p-8 text-center bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl shadow-inner max-w-lg mx-auto"
+      style={isHUD ? { clipPath: HUD_CLIP } : undefined}
+      className={[
+        "flex flex-col items-center justify-center p-8 text-center max-w-lg mx-auto relative overflow-hidden",
+        isHUD
+          ? // HUD variant: dark aerospace surface, emerald border, no border-radius
+            "bg-zinc-950 border-2 border-emerald-500/60 shadow-[0_0_24px_rgba(16,185,129,0.18),inset_0_0_32px_rgba(16,185,129,0.04)]"
+          : // Default variant: standard light/dark card
+            "bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl shadow-inner",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
+      {/* HUD corner bracket decorators */}
+      {isHUD && <HUDCornerBrackets reduced={!!shouldReduceMotion} />}
+
       {illustration === "search" && <SearchIllustration />}
       {illustration === "collection" && <CollectionIllustration />}
       {illustration === "chat" && <ChatIllustration />}
 
-      <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900 dark:text-white mb-1.5">
+      <h3
+        data-testid="empty-state-message"
+        className={[
+          "text-sm font-black uppercase tracking-wider mb-1.5",
+          isHUD
+            ? "text-emerald-300"
+            : "text-zinc-900 dark:text-white",
+        ].join(" ")}
+      >
         {message}
       </h3>
 
       {description && (
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mb-4 leading-relaxed">
+        <p
+          data-testid="empty-state-description"
+          className={[
+            "text-xs max-w-sm mb-4 leading-relaxed",
+            isHUD
+              ? "text-emerald-400/70"
+              : "text-zinc-500 dark:text-zinc-400",
+          ].join(" ")}
+        >
           {description}
         </p>
       )}
 
-      {action && <div className="mt-1">{action}</div>}
+      {action && (
+        <div data-testid="empty-state-action" className="mt-1">
+          {action}
+        </div>
+      )}
     </motion.div>
   );
 }

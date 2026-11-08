@@ -34,6 +34,7 @@ import { ThemeToggle } from "../ThemeToggle";
 import { EmptyState } from "../ui/EmptyState";
 import { useCurrency } from "@/context/CurrencyContext";
 import usePartySocket from "partysocket/react";
+import { Lock, Radio } from "lucide-react";
 
 interface Conversation {
   id: string;
@@ -78,6 +79,37 @@ interface ChatHeaderProps {
   onShowBookings: () => void;
   roomId?: string | null;
   onShareSession?: () => void;
+}
+
+/* ─── Tactical HUD helpers ────────────────────────────────────────────── */
+
+const HEX_CLIP = "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)";
+
+/** Derive a stable "pilot callsign" tag like HQ-01 from the room id. */
+function getCallsign(roomId: string | null | undefined): string {
+  if (!roomId || roomId === "default") return "HQ-01";
+  const prefix = roomId.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase() || "SQ";
+  let hash = 0;
+  for (let i = 0; i < roomId.length; i++) {
+    hash = (hash * 31 + roomId.charCodeAt(i)) % 100;
+  }
+  return `${prefix}-${String(hash).padStart(2, "0")}`;
+}
+
+/** Format coordinates as a compact sector code, e.g. "Sector 2814". */
+function formatSector(userLocation: { lat: number; lng: number } | undefined): string {
+  if (!userLocation) return "Sector 0000";
+  const latCode = Math.abs(Math.round(userLocation.lat * 100))
+    .toString(16)
+    .toUpperCase()
+    .slice(0, 2)
+    .padStart(2, "0");
+  const lngCode = Math.abs(Math.round(userLocation.lng * 100))
+    .toString(16)
+    .toUpperCase()
+    .slice(0, 2)
+    .padStart(2, "0");
+  return `Sector ${latCode}${lngCode}`;
 }
 
 const GLOBAL_HUBS = [
@@ -227,6 +259,92 @@ export function ChatHeader({
               </span>
             </div>
           </div>
+        </div>
+
+        {/* Tactical HUD telemetry strip */}
+        <div
+          className="flex items-center gap-3 px-3 py-2 bg-zinc-50 dark:bg-zinc-900/80 border border-emerald-500/30 rounded-xl"
+          data-testid="tactical-hud-strip"
+        >
+          {/* Hexagonal cockpit avatar with emerald HUD ring */}
+          <div
+            className="relative shrink-0 w-11 h-12"
+            style={{ clipPath: HEX_CLIP, backgroundColor: "rgba(52,211,153,0.25)" }}
+            role="img"
+            aria-label="Pilot avatar in hexagonal HUD frame"
+          >
+            <div
+              className="absolute inset-[2px] overflow-hidden bg-zinc-200 dark:bg-zinc-800"
+              style={{ clipPath: HEX_CLIP }}
+            >
+              <div className="w-full h-full flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                <Headphones className="w-5 h-5" aria-hidden="true" />
+              </div>
+            </div>
+            <span className="sr-only">Pilot avatar</span>
+          </div>
+
+          {/* Callsign + sector coordinates */}
+          <div className="min-w-0 flex flex-col justify-center">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[11px] font-black uppercase tracking-wider text-zinc-900 dark:text-emerald-300 truncate">
+                [{getCallsign(_roomId)}] Hal Jordan
+              </span>
+              <span
+                className="hidden sm:inline text-[10px] font-mono tracking-wide text-emerald-600 dark:text-emerald-400 truncate"
+                title={formatSector(userLocation)}
+              >
+                • {formatSector(userLocation)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span
+                className="flex items-center gap-1"
+                role="status"
+                aria-label={
+                  connectionStatus === "connected"
+                    ? "Live telemetry ping active"
+                    : "Telemetry ping offline"
+                }
+              >
+                <Radio
+                  className={`w-3 h-3 ${
+                    connectionStatus === "connected"
+                      ? "text-emerald-500 animate-pulse"
+                      : "text-zinc-400"
+                  }`}
+                  aria-hidden="true"
+                />
+                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                  {connectionStatus === "connected" ? "PING OK" : "NO PING"}
+                </span>
+              </span>
+              <span
+                className="flex items-center gap-1"
+                role="status"
+                aria-label="Participant count and active status"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-300">
+                  {conversations.length} ACTIVE
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <span
+            className="ml-auto shrink-0 flex items-center gap-1 px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+            role="status"
+            aria-label="Encrypted channel active"
+          >
+            <Lock className="w-3 h-3" aria-hidden="true" />
+            <span className="hidden sm:inline text-[8px] font-black uppercase tracking-widest">
+              ENC-CH ACTIVE
+            </span>
+            <span className="sm:hidden text-[8px] font-black uppercase tracking-widest">
+              ENC
+            </span>
+          </span>
         </div>
 
         {/* Main Actions Area */}

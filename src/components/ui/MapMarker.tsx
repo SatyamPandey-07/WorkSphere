@@ -3,13 +3,17 @@
 import { Marker, Popup } from "react-leaflet";
 import type { Marker as LeafletMarker } from "leaflet";
 import { useCallback, useEffect, useRef, memo } from "react";
+import { getVenueShape } from "@/lib/mapAccessibility";
 
-interface AccessibleMarkerProps {
+export interface AccessibleMarkerProps {
   position: [number, number];
   icon: L.DivIcon | L.Icon;
   name: string;
   category?: string;
+  rating?: number;
+  score?: number;
   isDestination?: boolean;
+  isHighContrast?: boolean;
   children?: React.ReactNode;
   telemetryData?: {
     seatCount?: number;
@@ -27,38 +31,95 @@ export const AccessibleMarker = memo(
     icon,
     name,
     category,
+    rating,
+    score,
     isDestination,
+    isHighContrast = false,
     children,
     telemetryData: _telemetryData,
     zIndexOffset = 0,
     onClick,
   }: AccessibleMarkerProps) {
-    console.count(`Rendered marker: ${name}`);
     const markerRef = useRef<LeafletMarker | null>(null);
 
-    const handleKeyDown = useCallback((e: L.LeafletKeyboardEvent) => {
-      if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
-        e.originalEvent.preventDefault();
-        e.target.openPopup();
+    const popupEscapeHandlerRef = useRef<
+      ((event: KeyboardEvent) => void) | null
+    >(null);
+
+    // Formats a WCAG 2.1 AA descriptive accessibility label
+    const buildAriaLabel = useCallback(() => {
+      if (isDestination) {
+        return `Destination: ${name}`;
       }
-      if (e.originalEvent.key === "Escape") {
-        e.target.closePopup();
+      let label = `Venue: ${name}`;
+      if (category) {
+        label += `, ${category}`;
       }
-    }, []);
+      const ratingValue = rating ?? score;
+      if (ratingValue != null && !isNaN(Number(ratingValue))) {
+        label += `, Rating: ${ratingValue}`;
+      }
+      return label;
+    }, [name, category, rating, score, isDestination]);
+
+    const handleKeyDown = useCallback(
+      (e: L.LeafletKeyboardEvent) => {
+        const key = e.originalEvent?.key;
+        if (key === "Enter" || key === " " || key === "Spacebar") {
+          e.originalEvent?.preventDefault();
+          if (onClick) onClick();
+          e.target.openPopup();
+        }
+        if (key === "Escape") {
+          e.originalEvent?.preventDefault();
+          e.target.closePopup();
+        }
+      },
+      [onClick],
+    );
+
+    const applyAccessibilityAttributes = useCallback(
+      (el: HTMLElement) => {
+        const label = buildAriaLabel();
+        el.setAttribute("aria-label", label);
+        el.setAttribute("role", "button");
+        el.setAttribute("tabindex", "0");
+        el.classList.add("interactive-map-pin");
+        if (isHighContrast) {
+          el.setAttribute("data-high-contrast", "true");
+          const shape = getVenueShape(category);
+          el.setAttribute("data-shape", shape);
+          el.classList.add("high-contrast-pin", `hc-shape-${shape}`);
+        } else {
+          el.removeAttribute("data-high-contrast");
+          el.removeAttribute("data-shape");
+          el.classList.remove(
+            "high-contrast-pin",
+            "hc-shape-circle",
+            "hc-shape-square",
+            "hc-shape-diamond",
+          );
+        }
+      },
+      [buildAriaLabel, isHighContrast, category],
+    );
 
     const handleAdd = useCallback(
       (e: any) => {
         const el = e.target.getElement();
         if (!el) return;
-        const label = isDestination
-          ? `Destination: ${name}`
-          : `Venue: ${name}${category ? `, ${category}` : ""}`;
-        el.setAttribute("aria-label", label);
-        el.setAttribute("role", "button");
-        el.setAttribute("tabindex", "0");
+        applyAccessibilityAttributes(el);
       },
-      [name, category, isDestination],
+      [applyAccessibilityAttributes],
     );
+
+    // Keep DOM attributes synchronized if props change after mounting
+    useEffect(() => {
+      const el = markerRef.current?.getElement();
+      if (el) {
+        applyAccessibilityAttributes(el);
+      }
+    }, [applyAccessibilityAttributes]);
 
     const handlePopupOpen = useCallback(
       (e: any) => {
@@ -68,13 +129,42 @@ export const AccessibleMarker = memo(
           popupEl.setAttribute("aria-modal", "true");
           popupEl.setAttribute("aria-label", name);
         }
+
+        popupEscapeHandlerRef.current = (event: KeyboardEvent) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            e.target.closePopup();
+          }
+        };
+        document.addEventListener("keydown", popupEscapeHandlerRef.current);
       },
       [name],
     );
 
     const handlePopupClose = useCallback(() => {
-      markerRef.current?.getElement()?.focus();
+      if (popupEscapeHandlerRef.current) {
+        document.removeEventListener("keydown", popupEscapeHandlerRef.current);
+        popupEscapeHandlerRef.current = null;
+      }
+      const marker = markerRef.current;
+      const element = marker?.getElement();
+
+      if (element?.isConnected) {
+        element.focus();
+      }
     }, []);
+
+    useEffect(
+      () => () => {
+        if (popupEscapeHandlerRef.current) {
+          document.removeEventListener(
+            "keydown",
+            popupEscapeHandlerRef.current,
+          );
+        }
+      },
+      [],
+    );
 
     // Direct Leaflet element updates to prevent map pin flicker
     useEffect(() => {
@@ -88,10 +178,15 @@ export const AccessibleMarker = memo(
 
     useEffect(() => {
       const marker = markerRef.current;
-      if (marker && icon) {
-        marker.setIcon(icon);
+      if (!marker || !icon) return;
+
+      marker.setIcon(icon);
+
+      const el = marker.getElement();
+      if (el) {
+        applyAccessibilityAttributes(el);
       }
-    }, [icon]);
+    }, [icon, applyAccessibilityAttributes]);
 
     return (
       <Marker
@@ -131,7 +226,10 @@ export const AccessibleMarker = memo(
       prevProps.icon !== nextProps.icon ||
       prevProps.name !== nextProps.name ||
       prevProps.category !== nextProps.category ||
-      prevProps.isDestination !== nextProps.isDestination
+      prevProps.rating !== nextProps.rating ||
+      prevProps.score !== nextProps.score ||
+      prevProps.isDestination !== nextProps.isDestination ||
+      prevProps.isHighContrast !== nextProps.isHighContrast
     ) {
       return false;
     }

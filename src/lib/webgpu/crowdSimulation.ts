@@ -497,13 +497,21 @@ export class CrowdSimulationEngine {
     if (!this.device) return;
 
     const { exitPositions, wallSegments } = this.config;
-    this.allocatedCapacity = Math.max(this.config.agentCount, 10000);
-
-    // Validate memory limits
-    const agentSize = this.allocatedCapacity * AGENT_STRIDE;
+    // On mobile GPUs with low VRAM, cap the agent count to avoid OOM crashes.
+    // The device limits guide the cap; fall back to a conservative 1 000 agents
+    // when limits are unavailable (e.g. some mobile WebGPU implementations).
     const maxBindingSize =
       this.device.limits?.maxStorageBufferBindingSize || 134217728;
     const maxBufferSize = this.device.limits?.maxBufferSize || 268435456;
+    const safeLimit = Math.min(maxBindingSize, maxBufferSize);
+    const maxSafeAgents = Math.floor(safeLimit / AGENT_STRIDE);
+    this.allocatedCapacity = Math.min(
+      Math.max(this.config.agentCount, 1000),
+      maxSafeAgents,
+    );
+
+    // Validate memory limits
+    const agentSize = this.allocatedCapacity * AGENT_STRIDE;
 
     if (agentSize > maxBindingSize || agentSize > maxBufferSize) {
       console.warn(
@@ -514,7 +522,9 @@ export class CrowdSimulationEngine {
       );
     }
 
-    // Agent buffers (ping-pong)
+    // Agent buffers (ping-pong) — wrapped individually to surface OOM errors
+    // as catchable exceptions instead of GPU process crashes on low-VRAM mobile.
+    try {
     this.agentBufferA = this.device.createBuffer({
       size: agentSize,
       usage: BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
@@ -665,6 +675,15 @@ export class CrowdSimulationEngine {
       magFilter: "linear",
       minFilter: "linear",
     });
+    } catch (oomErr) {
+      // Wrap GPU buffer allocation errors so they propagate as catchable
+      // JavaScript errors rather than crashing the GPU process on low-VRAM
+      // mobile devices (e.g. iOS Safari WebGPU).
+      console.error("[CrowdSim] GPU buffer allocation failed (likely OOM):", oomErr);
+      throw new Error(
+        `WebGPU buffer allocation failed — switching to 2D Canvas fallback. (${oomErr instanceof Error ? oomErr.message : oomErr})`,
+      );
+    }
   }
 
   private async createPipelines(format: GPUTextureFormat): Promise<void> {

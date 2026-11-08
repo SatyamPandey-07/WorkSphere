@@ -1,0 +1,390 @@
+import {
+  formatTimeBadge,
+  getVenueHoursStatus,
+  is24HoursString,
+  resolveTimezone,
+} from "@/lib/venueHours";
+
+describe("venueHours utility", () => {
+  describe("formatTimeBadge", () => {
+    it("formats 24-hour time strings to badge friendly 12-hour strings", () => {
+      expect(formatTimeBadge("08:00")).toBe("8 AM");
+      expect(formatTimeBadge("20:00")).toBe("8 PM");
+      expect(formatTimeBadge("12:00")).toBe("12 PM");
+      expect(formatTimeBadge("00:00")).toBe("12 AM");
+      expect(formatTimeBadge("24:00")).toBe("12 AM");
+      expect(formatTimeBadge("09:30")).toBe("9:30 AM");
+      expect(formatTimeBadge("17:45")).toBe("5:45 PM");
+      expect(formatTimeBadge("02:00")).toBe("2 AM");
+    });
+
+    it("handles invalid or empty inputs gracefully", () => {
+      expect(formatTimeBadge("")).toBe("");
+      expect(formatTimeBadge("invalid")).toBe("invalid");
+    });
+  });
+
+  describe("is24HoursString", () => {
+    it("recognizes various 24/7 string patterns", () => {
+      expect(is24HoursString("Open 24 Hours")).toBe(true);
+      expect(is24HoursString("open 24 hours")).toBe(true);
+      expect(is24HoursString("24/7")).toBe(true);
+      expect(is24HoursString("Open 24/7")).toBe(true);
+      expect(is24HoursString("00:00 - 24:00")).toBe(true);
+      expect(is24HoursString("00:00-00:00")).toBe(true);
+      expect(is24HoursString("All Day")).toBe(true);
+    });
+
+    it("returns false for non-24-hour ranges", () => {
+      expect(is24HoursString("08:00 - 20:00")).toBe(false);
+      expect(is24HoursString("10:00 - 18:00")).toBe(false);
+    });
+  });
+
+  describe("Daylight hours calculations (e.g. 08:00 - 20:00)", () => {
+    const hours = "08:00 - 20:00";
+
+    it("returns 'Open Now · Closes 8 PM' during operating hours", () => {
+      // 14:30 (2:30 PM)
+      const testDate = new Date(2026, 9, 8, 14, 30);
+      const status = getVenueHoursStatus(hours, testDate);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open Now · Closes 8 PM");
+      expect(status.closesAt).toBe("8 PM");
+      expect(status.status).toBe("open");
+    });
+
+    it("returns 'Closed · Opens 8 AM' before morning opening time", () => {
+      // 06:15 (6:15 AM)
+      const testDate = new Date(2026, 9, 8, 6, 15);
+      const status = getVenueHoursStatus(hours, testDate);
+      expect(status.isOpen).toBe(false);
+      expect(status.badgeText).toBe("Closed · Opens 8 AM");
+      expect(status.opensAt).toBe("8 AM");
+      expect(status.status).toBe("closed");
+    });
+
+    it("returns 'Closed · Opens 8 AM tomorrow' after evening closing time", () => {
+      // 21:00 (9:00 PM)
+      const testDate = new Date(2026, 9, 8, 21, 0);
+      const status = getVenueHoursStatus(hours, testDate);
+      expect(status.isOpen).toBe(false);
+      expect(status.badgeText).toBe("Closed · Opens 8 AM tomorrow");
+      expect(status.opensAt).toBe("8 AM");
+      expect(status.status).toBe("closed");
+    });
+  });
+
+  describe("Late-night / Overnight hours calculations (e.g. 18:00 - 02:00)", () => {
+    const hours = "18:00 - 02:00";
+
+    it("returns 'Open Now · Closes 2 AM' before midnight", () => {
+      // 22:45 (10:45 PM)
+      const testDate = new Date(2026, 9, 8, 22, 45);
+      const status = getVenueHoursStatus(hours, testDate);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open Now · Closes 2 AM");
+      expect(status.closesAt).toBe("2 AM");
+      expect(status.status).toBe("open");
+    });
+
+    it("returns 'Open Now · Closes 2 AM' past midnight before closing", () => {
+      // 01:15 (1:15 AM)
+      const testDate = new Date(2026, 9, 8, 1, 15);
+      const status = getVenueHoursStatus(hours, testDate);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open Now · Closes 2 AM");
+      expect(status.closesAt).toBe("2 AM");
+      expect(status.status).toBe("open");
+    });
+
+    it("returns 'Closed · Opens 6 PM' in the morning after late-night close", () => {
+      // 04:30 (4:30 AM)
+      const testDate = new Date(2026, 9, 8, 4, 30);
+      const status = getVenueHoursStatus(hours, testDate);
+      expect(status.isOpen).toBe(false);
+      expect(status.badgeText).toBe("Closed · Opens 6 PM");
+      expect(status.opensAt).toBe("6 PM");
+      expect(status.status).toBe("closed");
+    });
+  });
+
+  describe("24/7 venues", () => {
+    it("returns 'Open 24 Hours' and isOpen: true for 24/7 venues at any hour", () => {
+      const times = [
+        new Date(2026, 9, 8, 3, 0),
+        new Date(2026, 9, 8, 12, 0),
+        new Date(2026, 9, 8, 23, 59),
+      ];
+
+      for (const time of times) {
+        const status = getVenueHoursStatus("Open 24 Hours", time);
+        expect(status.isOpen).toBe(true);
+        expect(status.badgeText).toBe("Open 24 Hours");
+        expect(status.is24Hours).toBe(true);
+        expect(status.status).toBe("24/7");
+      }
+    });
+
+    it("evaluates identical start and end times as 24-hour open span", () => {
+      const times = [
+        new Date(2026, 9, 8, 4, 15),
+        new Date(2026, 9, 8, 8, 0),
+        new Date(2026, 9, 8, 14, 30),
+        new Date(2026, 9, 8, 23, 0),
+      ];
+
+      for (const time of times) {
+        const status1 = getVenueHoursStatus("08:00 - 08:00", time);
+        expect(status1.isOpen).toBe(true);
+        expect(status1.status).toBe("24/7");
+        expect(status1.badgeText).toBe("Open 24 Hours");
+
+        const status2 = getVenueHoursStatus("09:30 - 09:30", time);
+        expect(status2.isOpen).toBe(true);
+        expect(status2.status).toBe("24/7");
+        expect(status2.badgeText).toBe("Open 24 Hours");
+      }
+    });
+  });
+
+  describe("Weekend & Structured weekly schedule", () => {
+    const weeklySchedule = JSON.stringify({
+      periods: {
+        monday: { open: "08:00", close: "18:00", closed: false },
+        tuesday: { open: "08:00", close: "18:00", closed: false },
+        wednesday: { open: "08:00", close: "18:00", closed: false },
+        thursday: { open: "08:00", close: "18:00", closed: false },
+        friday: { open: "08:00", close: "18:00", closed: false },
+        saturday: { open: "10:00", close: "16:00", closed: false },
+        sunday: { open: "00:00", close: "00:00", closed: true },
+      },
+    });
+
+    it("shows Saturday hours correctly when open on Saturday", () => {
+      // Saturday Oct 10, 2026 at 11:30 AM
+      const saturdayNoon = new Date(2026, 9, 10, 11, 30);
+      const status = getVenueHoursStatus(weeklySchedule, saturdayNoon);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open Now · Closes 4 PM");
+    });
+
+    it("shows opening on Monday when closed on Sunday", () => {
+      // Sunday Oct 11, 2026 at 14:00
+      const sundayAfternoon = new Date(2026, 9, 11, 14, 0);
+      const status = getVenueHoursStatus(weeklySchedule, sundayAfternoon);
+      expect(status.isOpen).toBe(false);
+      expect(status.badgeText).toBe("Closed · Opens 8 AM tomorrow");
+    });
+
+    it("shows opening on Saturday tomorrow when closed Friday evening", () => {
+      // Friday Oct 9, 2026 at 20:00
+      const fridayEvening = new Date(2026, 9, 9, 20, 0);
+      const status = getVenueHoursStatus(weeklySchedule, fridayEvening);
+      expect(status.isOpen).toBe(false);
+      expect(status.badgeText).toBe("Closed · Opens 10 AM tomorrow");
+    });
+  });
+
+  describe("Missing or malformed metadata edge cases", () => {
+    it("handles null, undefined, and empty string without breaking", () => {
+      expect(getVenueHoursStatus(null)).toEqual({
+        isOpen: false,
+        badgeText: "",
+        status: "unknown",
+        isAvailable: false,
+      });
+
+      expect(getVenueHoursStatus(undefined)).toEqual({
+        isOpen: false,
+        badgeText: "",
+        status: "unknown",
+        isAvailable: false,
+      });
+
+      expect(getVenueHoursStatus("")).toEqual({
+        isOpen: false,
+        badgeText: "",
+        status: "unknown",
+        isAvailable: false,
+      });
+    });
+
+    it("falls back gracefully for unstructured custom text", () => {
+      const status = getVenueHoursStatus("By appointment only");
+      expect(status.isAvailable).toBe(true);
+      expect(status.badgeText).toBe("By appointment only");
+      expect(status.status).toBe("unknown");
+    });
+
+    it("handles null, undefined, empty, or invalid timezone without throwing RangeError", () => {
+      const testDate = new Date(2026, 9, 8, 14, 30);
+      const hours = "08:00 - 20:00";
+
+      // Null, undefined, empty string timezone
+      expect(() => getVenueHoursStatus(hours, testDate, null)).not.toThrow();
+      expect(() => getVenueHoursStatus(hours, testDate, undefined)).not.toThrow();
+      expect(() => getVenueHoursStatus(hours, testDate, "")).not.toThrow();
+      expect(() => getVenueHoursStatus(hours, testDate, "   ")).not.toThrow();
+
+      // Invalid timezone string
+      expect(() => getVenueHoursStatus(hours, testDate, "Invalid/Timezone_Name")).not.toThrow();
+      expect(() => getVenueHoursStatus(hours, testDate, "XYZ/123")).not.toThrow();
+
+      const statusWithInvalidTz = getVenueHoursStatus(hours, testDate, "Invalid/Timezone_Name");
+      expect(statusWithInvalidTz).toBeDefined();
+      expect(typeof statusWithInvalidTz.isOpen).toBe("boolean");
+    });
+
+    it("handles structured JSON with invalid or missing timezone", () => {
+      const testDate = new Date(2026, 9, 8, 14, 30);
+      const invalidTzJson = JSON.stringify({
+        timezone: "Invalid/Zone",
+        periods: {
+          thursday: { open: "08:00", close: "20:00", closed: false },
+        },
+      });
+
+      expect(() => getVenueHoursStatus(invalidTzJson, testDate)).not.toThrow();
+      const status = getVenueHoursStatus(invalidTzJson, testDate);
+      expect(status.isAvailable).toBe(true);
+    });
+
+    it("handles invalid Date object passed as nowInput without throwing RangeError (#6766)", () => {
+      const invalidDate = new Date("invalid_date_string");
+      const hours = "08:00 - 20:00";
+
+      expect(() => getVenueHoursStatus(hours, invalidDate, "America/New_York")).not.toThrow();
+      const status = getVenueHoursStatus(hours, invalidDate, "America/New_York");
+      expect(status).toBeDefined();
+      expect(typeof status.isOpen).toBe("boolean");
+    });
+  });
+
+  describe("resolveTimezone helper", () => {
+    it("returns valid IANA timezones intact", () => {
+      expect(resolveTimezone("America/New_York")).toBe("America/New_York");
+      expect(resolveTimezone("Europe/London")).toBe("Europe/London");
+      expect(resolveTimezone("Asia/Tokyo")).toBe("Asia/Tokyo");
+      expect(resolveTimezone("UTC")).toBe("UTC");
+    });
+
+    it("falls back to UTC for null, undefined, empty, or invalid timezones", () => {
+      expect(resolveTimezone(null)).toBe("UTC");
+      expect(resolveTimezone(undefined)).toBe("UTC");
+      expect(resolveTimezone("")).toBe("UTC");
+      expect(resolveTimezone("   ")).toBe("UTC");
+      expect(resolveTimezone("Mars/Curiosity")).toBe("UTC");
+      expect(resolveTimezone("Fake/Timezone")).toBe("UTC");
+    });
+
+    it("supports custom fallback timezone", () => {
+      expect(resolveTimezone(null, "America/New_York")).toBe("America/New_York");
+      expect(resolveTimezone("Invalid/Tz", "Europe/Paris")).toBe("Europe/Paris");
+    });
+  });
+
+  describe("Structured 24-hour periods, non-Monday schedules, and 12-hour AM/PM formats (#6714)", () => {
+    it("evaluates structured 24-hour period (00:00 - 00:00) as Open 24 Hours", () => {
+      const schedule24 = JSON.stringify({
+        periods: {
+          thursday: { open: "00:00", close: "00:00", closed: false },
+        },
+      });
+      const thursdayAfternoon = new Date(2026, 9, 8, 14, 30);
+      const status = getVenueHoursStatus(schedule24, thursdayAfternoon);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open 24 Hours");
+      expect(status.status).toBe("24/7");
+      expect(status.is24Hours).toBe(true);
+    });
+
+    it("evaluates structured 24-hour period (00:00 - 24:00) as Open 24 Hours", () => {
+      const schedule24 = JSON.stringify({
+        periods: {
+          thursday: { open: "00:00", close: "24:00", closed: false },
+        },
+      });
+      const thursdayMorning = new Date(2026, 9, 8, 3, 15);
+      const status = getVenueHoursStatus(schedule24, thursdayMorning);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open 24 Hours");
+      expect(status.status).toBe("24/7");
+      expect(status.is24Hours).toBe(true);
+    });
+
+    it("parses top-level structured schedules that omit Monday and Tuesday", () => {
+      const weekendOnly = JSON.stringify({
+        friday: { open: "12:00", close: "22:00", closed: false },
+        saturday: { open: "10:00", close: "20:00", closed: false },
+        sunday: { open: "10:00", close: "18:00", closed: false },
+      });
+      const saturdayNoon = new Date(2026, 9, 10, 12, 0);
+      const status = getVenueHoursStatus(weekendOnly, saturdayNoon);
+      expect(status.isOpen).toBe(true);
+      expect(status.badgeText).toBe("Open Now · Closes 8 PM");
+      expect(status.status).toBe("open");
+      expect(status.closesAt).toBe("8 PM");
+    });
+
+    it("parses 12-hour AM/PM text ranges (e.g. 8:00 AM - 8:00 PM)", () => {
+      const hours = "8:00 AM - 8:00 PM";
+      const duringShift = new Date(2026, 9, 8, 14, 0);
+      const statusOpen = getVenueHoursStatus(hours, duringShift);
+      expect(statusOpen.isOpen).toBe(true);
+      expect(statusOpen.badgeText).toBe("Open Now · Closes 8 PM");
+      expect(statusOpen.status).toBe("open");
+      expect(statusOpen.closesAt).toBe("8 PM");
+
+      const beforeShift = new Date(2026, 9, 8, 6, 0);
+      const statusBefore = getVenueHoursStatus(hours, beforeShift);
+      expect(statusBefore.isOpen).toBe(false);
+      expect(statusBefore.badgeText).toBe("Closed · Opens 8 AM");
+      expect(statusBefore.opensAt).toBe("8 AM");
+
+      const afterShift = new Date(2026, 9, 8, 21, 30);
+      const statusAfter = getVenueHoursStatus(hours, afterShift);
+      expect(statusAfter.isOpen).toBe(false);
+      expect(statusAfter.badgeText).toBe("Closed · Opens 8 AM tomorrow");
+    });
+
+    it("supports 12-hour AM/PM strings with 'to' and non-zero minutes", () => {
+      const hours = "9:30 AM to 5:45 PM";
+      const duringShift = new Date(2026, 9, 8, 12, 0);
+      const statusOpen = getVenueHoursStatus(hours, duringShift);
+      expect(statusOpen.isOpen).toBe(true);
+      expect(statusOpen.badgeText).toBe("Open Now · Closes 5:45 PM");
+      expect(statusOpen.closesAt).toBe("5:45 PM");
+    });
+
+    it("evaluates 12:00 AM - 12:00 AM as 24-hour open span", () => {
+      const status = getVenueHoursStatus("12:00 AM - 12:00 AM", new Date(2026, 9, 8, 14, 0));
+      expect(status.isOpen).toBe(true);
+      expect(status.status).toBe("24/7");
+      expect(status.badgeText).toBe("Open 24 Hours");
+      expect(status.is24Hours).toBe(true);
+    });
+
+    it("handles 12-hour overnight shifts (e.g. 6:00 PM - 2:00 AM)", () => {
+      const hours = "6:00 PM - 2:00 AM";
+      const lateNight = new Date(2026, 9, 8, 23, 0);
+      const statusLate = getVenueHoursStatus(hours, lateNight);
+      expect(statusLate.isOpen).toBe(true);
+      expect(statusLate.badgeText).toBe("Open Now · Closes 2 AM");
+      expect(statusLate.closesAt).toBe("2 AM");
+
+      const pastMidnight = new Date(2026, 9, 8, 1, 0);
+      const statusPastMidnight = getVenueHoursStatus(hours, pastMidnight);
+      expect(statusPastMidnight.isOpen).toBe(true);
+      expect(statusPastMidnight.badgeText).toBe("Open Now · Closes 2 AM");
+    });
+
+    it("normalizes 12-hour strings in formatTimeBadge", () => {
+      expect(formatTimeBadge("8:00 PM")).toBe("8 PM");
+      expect(formatTimeBadge("8:30 PM")).toBe("8:30 PM");
+      expect(formatTimeBadge("8 PM")).toBe("8 PM");
+      expect(formatTimeBadge("12:00 AM")).toBe("12 AM");
+      expect(formatTimeBadge("12:15 AM")).toBe("12:15 AM");
+    });
+  });
+});

@@ -1,27 +1,45 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Copy, Check } from "lucide-react";
 
-interface CopyToClipboardButtonProps {
+export interface CopyToClipboardButtonProps {
   textToCopy: string;
   className?: string;
   label?: string;
+  toastMessage?: string;
+  ariaLabel?: string;
+  onCopy?: (text: string) => void;
+  disabled?: boolean;
 }
 
-export function CopyToClipboardButton({ 
-  textToCopy, 
-  className = "", 
-  label = "Copy Address" 
+export function CopyToClipboardButton({
+  textToCopy,
+  className = "",
+  label = "Copy Address",
+  toastMessage = "Address copied!",
+  ariaLabel,
+  onCopy,
+  disabled = false,
 }: CopyToClipboardButtonProps) {
   const [isCopied, setIsCopied] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (feedbackTimerRef.current !== null) {
+        clearTimeout(feedbackTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // Requirement 4: Fallback for legacy browsers without navigator.clipboard
   const fallbackCopyTextToClipboard = (text: string) => {
     const textArea = document.createElement("textarea");
     textArea.value = text;
-    
+
     // Avoid scrolling to bottom on mobile
     textArea.style.top = "0";
     textArea.style.left = "0";
@@ -41,7 +59,11 @@ export function CopyToClipboardButton({
   };
 
   // Requirement 2: Write text using navigator.clipboard
-  const handleCopy = async () => {
+  const handleCopy = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (disabled) return;
+
     if (!navigator.clipboard) {
       fallbackCopyTextToClipboard(textToCopy);
       triggerFeedback();
@@ -61,14 +83,19 @@ export function CopyToClipboardButton({
 
   // Requirement 3: Display temporary checkmark and trigger toast feedback
   const triggerFeedback = () => {
+    if (feedbackTimerRef.current !== null) {
+      clearTimeout(feedbackTimerRef.current);
+    }
     setIsCopied(true);
     setShowToast(true);
-    
-    // Reset back to normal after 2.5 seconds
-    setTimeout(() => {
+    onCopy?.(textToCopy);
+
+    // Reset back to normal after 2 seconds per issue criteria
+    feedbackTimerRef.current = setTimeout(() => {
+      feedbackTimerRef.current = null;
       setIsCopied(false);
       setShowToast(false);
-    }, 2500);
+    }, 2000);
   };
 
   return (
@@ -76,22 +103,39 @@ export function CopyToClipboardButton({
       <button
         onClick={handleCopy}
         type="button"
-        title="Copy to clipboard"
+        disabled={disabled}
+        data-testid="copy-to-clipboard-button"
+        title={ariaLabel || "Copy to clipboard"}
+        aria-label={ariaLabel || "Copy to clipboard"}
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-          isCopied 
-            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
-            : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          disabled
+            ? "opacity-50 cursor-not-allowed bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500"
+            : isCopied
+              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
         } ${className}`}
       >
-        {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-        <span>{isCopied ? "Copied!" : label}</span>
+        <span className="shrink-0">
+          {isCopied ? (
+            <Check className="w-4 h-4" />
+          ) : (
+            <Copy className="w-4 h-4" />
+          )}
+        </span>
+        <span className="whitespace-nowrap max-w-[200px] truncate">
+          {isCopied ? "Copied!" : label}
+        </span>
       </button>
 
       {/* Self-contained Toast Notification */}
       {showToast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 text-sm font-medium text-white bg-zinc-900 dark:bg-zinc-100 dark:text-black rounded-lg shadow-xl animate-in fade-in slide-in-from-bottom-5 duration-300">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 text-sm font-medium text-white bg-zinc-900 dark:bg-zinc-100 dark:text-black rounded-lg shadow-xl animate-in fade-in slide-in-from-bottom-5 duration-300"
+        >
           <Check className="w-4 h-4 text-green-400 dark:text-green-600" />
-          Address copied to clipboard
+          {toastMessage}
         </div>
       )}
     </>

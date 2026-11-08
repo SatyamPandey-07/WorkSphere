@@ -221,10 +221,6 @@ export function useCloudRenderer(
     const initialized = initWebGL();
     if (!initialized) return;
 
-    const cleanupContextRecovery = attachWebGLContextRecovery(canvas, () => {
-      initWebGL();
-    });
-
     const startTime = performance.now();
     let lastFrameTime = startTime;
     let frameCount = 0;
@@ -253,12 +249,30 @@ export function useCloudRenderer(
       const vao = vaoRef.current;
 
       if (gl && program && vao && canvas) {
-        const displayWidth = Math.floor(canvas.clientWidth * resolutionScale);
-        const displayHeight = Math.floor(canvas.clientHeight * resolutionScale);
+        const scale =
+          typeof resolutionScale === "number" &&
+          Number.isFinite(resolutionScale) &&
+          resolutionScale > 0
+            ? resolutionScale
+            : 0.75;
+        const rawW =
+          typeof canvas.clientWidth === "number" &&
+          Number.isFinite(canvas.clientWidth) &&
+          canvas.clientWidth > 0
+            ? canvas.clientWidth
+            : 300;
+        const rawH =
+          typeof canvas.clientHeight === "number" &&
+          Number.isFinite(canvas.clientHeight) &&
+          canvas.clientHeight > 0
+            ? canvas.clientHeight
+            : 150;
+        const targetWidth = Math.max(1, Math.floor(rawW * scale));
+        const targetHeight = Math.max(1, Math.floor(rawH * scale));
 
-        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-          canvas.width = Math.max(1, displayWidth);
-          canvas.height = Math.max(1, displayHeight);
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
           gl.viewport(0, 0, canvas.width, canvas.height);
         }
 
@@ -295,7 +309,9 @@ export function useCloudRenderer(
         // FPS and Telemetry calculation
         frameCount++;
         if (now - fpsTimer >= 1000) {
-          const currentFps = Math.round((frameCount * 1000) / (now - fpsTimer));
+          const elapsed = now - fpsTimer;
+          const currentFps =
+            elapsed > 0 ? Math.round((frameCount * 1000) / elapsed) : 60;
           setFps(currentFps);
 
           // Requirement 3: Telemetry logging every 1 second
@@ -316,16 +332,39 @@ export function useCloudRenderer(
       }
     };
 
-    if (animate) {
-      animFrameIdRef.current = requestAnimationFrame(renderFrame);
-    } else {
-      renderFrame(performance.now());
-    }
+    const renderLoop = {
+      start: () => {
+        if (animate) {
+          animFrameIdRef.current = requestAnimationFrame(renderFrame);
+        } else {
+          renderFrame(performance.now());
+        }
+      },
+      stop: () => {
+        if (animFrameIdRef.current !== null) {
+          cancelAnimationFrame(animFrameIdRef.current);
+          animFrameIdRef.current = null;
+        }
+      },
+    };
+
+    // Pause the loop while the context is lost (no GL calls on a dead
+    // context) and resume only once shaders and buffers are rebuilt (#1729).
+    const cleanupContextRecovery = attachWebGLContextRecovery(
+      canvas,
+      () => {
+        if (!initWebGL()) {
+          throw new Error("[CloudRenderer] Failed to rebuild WebGL resources");
+        }
+      },
+      undefined,
+      { renderLoop },
+    );
+
+    renderLoop.start();
 
     return () => {
-      if (animFrameIdRef.current !== null) {
-        cancelAnimationFrame(animFrameIdRef.current);
-      }
+      renderLoop.stop();
       cleanupContextRecovery();
       cleanupWebGL();
     };

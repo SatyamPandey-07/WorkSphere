@@ -445,7 +445,7 @@ describe("Map Component", () => {
 
       render(<Map {...defaultProps} routes={routes} />);
 
-      expect(screen.getByText(/2\.5 km/)).toBeInTheDocument();
+      expect(screen.getByText(/2\.5 km|1\.6 mi/)).toBeInTheDocument();
     });
 
     it("displays duration in route popup", () => {
@@ -586,6 +586,20 @@ describe("Map Component", () => {
       popups.forEach((popup) => {
         expect(popup.getAttribute("data-autopan-padding")).toBe("[20,20]");
       });
+    });
+  });
+
+  describe("Radar Sweep Search Radius Effect (#6183)", () => {
+    it("renders user marker with radar sweep enabled by default and accepts custom radarRadius", () => {
+      render(<Map {...defaultProps} enableRadarSweep={true} radarRadius={200} />);
+      const markers = screen.getAllByTestId("marker");
+      expect(markers.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("renders user marker without radar sweep when enableRadarSweep is false", () => {
+      render(<Map {...defaultProps} enableRadarSweep={false} />);
+      const markers = screen.getAllByTestId("marker");
+      expect(markers.length).toBeGreaterThanOrEqual(1);
     });
   });
 });

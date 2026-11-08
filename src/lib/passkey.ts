@@ -1,55 +1,5 @@
-import { isMobileWebview } from "@/lib/webauthn";
-
-export const RP_NAME = "WorkSphere";
-
 /**
- * Resolves the Relying Party ID (hostname) from the incoming request.
+ * Compatibility bridge: Re-export passkey configuration and challenge session helpers from @/lib/auth/passkeys.
  */
-export function getRpId(req: Request): string {
-  const host = req.headers.get("host") || "localhost";
-  return host.split(":")[0];
-}
 
-/**
- * Resolves the absolute Origin URL from the incoming request.
- */
-export function getOrigin(req: Request): string {
-  const host = req.headers.get("host") || "localhost:3000";
-  const protocol =
-    req.headers.get("x-forwarded-proto") ||
-    (host.includes("localhost") || host.includes("127.0.0.1")
-      ? "http"
-      : "https");
-  return `${protocol}://${host}`;
-}
-
-/**
- * Resolves the expected origin(s) for WebAuthn response verification.
- * For recognized mobile webview user agent strings, origin checks are relaxed
- * by accepting clientDataOrigin alongside the request origin.
- */
-export function getExpectedOrigin(
-  req: Request,
-  clientDataOrigin?: string,
-): string | string[] {
-  const defaultOrigin = getOrigin(req);
-  const userAgent = req.headers.get("user-agent");
-
-  const expectedOrigins = new Set<string>([defaultOrigin]);
-
-  if (isMobileWebview(userAgent) && clientDataOrigin) {
-    expectedOrigins.add(clientDataOrigin);
-  }
-
-  const allowedEmbedOrigins = (process.env.ALLOWED_EMBED_ORIGINS || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (clientDataOrigin && allowedEmbedOrigins.includes(clientDataOrigin)) {
-    expectedOrigins.add(clientDataOrigin);
-  }
-
-  const origins = Array.from(expectedOrigins);
-  return origins.length === 1 ? origins[0] : origins;
-}
+export * from "@/lib/auth/passkeys";

@@ -1,59 +1,116 @@
-import { useState, useEffect } from "react";
-import { getPendingFavorites } from "@/lib/offlineStorage";
+import { useState, useEffect, useCallback } from "react";
+import { getPendingFavorites, getTotalPendingMutationsCount } from "@/lib/offlineStorage";
+import { globalSyncQueue, generateIdempotencyKey, SyncQueueItem } from "@/lib/offlineSyncQueue";
 
-export function useOfflineSync() {
+export interface UseOfflineSyncReturn {
+  isOffline: boolean;
+  hasPendingChanges: boolean;
+  isSyncing: boolean;
+  pendingCount: number;
+  enqueueMutation: <T = unknown>(type: string, payload: T, options?: { maxRetries?: number; id?: string }) => SyncQueueItem<T>;
+}
+
+/**
+ * Helper utility to enqueue an offline mutation with deterministic idempotency keys
+ * to prevent duplicate queue entries in IndexedDB offline mutation store (#4378).
+ */
+export function enqueueOfflineMutation<T = unknown>(
+  type: string,
+  payload: T,
+  options: { maxRetries?: number; id?: string } = {}
+): SyncQueueItem<T> {
+  const id = options.id || generateIdempotencyKey(type, payload);
+  return globalSyncQueue.enqueue(type, payload, { ...options, id });
+}
+
+export function useOfflineSync(): UseOfflineSyncReturn {
   const [isOffline, setIsOffline] = useState(false);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Track online/offline status
-    const updateOnlineStatus = () => {
-      setIsOffline(!navigator.onLine);
-    };
+    let isMounted = true;
+    let syncTimeout: ReturnType<typeof setTimeout> | undefined;
 
-    updateOnlineStatus();
-
-    window.addEventListener("online", updateOnlineStatus);
-    window.addEventListener("offline", updateOnlineStatus);
-
-    // Track pending changes
     const checkPendingChanges = async () => {
       try {
-        const pending = await getPendingFavorites();
-        setHasPendingChanges(pending.length > 0);
+        let count = 0;
+        try {
+          count = await getTotalPendingMutationsCount();
+        } catch {
+          const pending = await getPendingFavorites();
+          count = pending.length;
+        }
+
+        if (isMounted) {
+          setPendingCount(count);
+          setHasPendingChanges(count > 0);
+        }
       } catch (e) {
-        console.error("Failed to check pending favorites:", e);
+        console.error("Failed to check pending changes:", e);
       }
     };
 
-    checkPendingChanges();
+    const updateOnlineStatus = () => {
+      if (!isMounted) return;
 
-    // Listen for custom trigger-sync events (fired when we queue offline favorites)
-    window.addEventListener("trigger-sync", checkPendingChanges);
+      const offline = !navigator.onLine;
+      setIsOffline(offline);
 
-    // When we come back online, we might be syncing
-    const handleOnline = async () => {
-      setIsSyncing(true);
+      if (!offline) {
+        setIsSyncing(true);
 
-      // Wait for a little bit to allow background sync to process
-      setTimeout(async () => {
-        await checkPendingChanges();
-        setIsSyncing(false);
-      }, 3000);
+        syncTimeout = setTimeout(async () => {
+          await checkPendingChanges();
+
+          if (isMounted) {
+            setIsSyncing(false);
+          }
+        }, 3000);
+      } else {
+        checkPendingChanges();
+      }
     };
 
-    window.addEventListener("online", handleOnline);
+    const handleTriggerSync = () => {
+      checkPendingChanges();
+    };
+
+    updateOnlineStatus();
+    checkPendingChanges();
+
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+    window.addEventListener("trigger-sync", handleTriggerSync);
 
     return () => {
+      isMounted = false;
+
+      if (syncTimeout) {
+        clearTimeout(syncTimeout);
+      }
+
       window.removeEventListener("online", updateOnlineStatus);
       window.removeEventListener("offline", updateOnlineStatus);
-      window.removeEventListener("trigger-sync", checkPendingChanges);
-      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("trigger-sync", handleTriggerSync);
     };
   }, []);
 
-  return { isOffline, hasPendingChanges, isSyncing };
+  const enqueueMutation = useCallback(
+    <T = unknown>(type: string, payload: T, options: { maxRetries?: number; id?: string } = {}) => {
+      return enqueueOfflineMutation(type, payload, options);
+    },
+    []
+  );
+
+  return {
+    isOffline,
+    hasPendingChanges,
+    isSyncing,
+    pendingCount,
+    enqueueMutation,
+  };
 }

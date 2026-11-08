@@ -17,6 +17,10 @@ For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB,
 
 For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
 
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
+
 ## 📋 Table of Contents
 
 - [5-Minute Quickstart for WOCS 2026 Contributors](#5-minute-quickstart-for-wocs-2026-contributors)
@@ -740,13 +744,19 @@ Once all eight steps pass:
 - [ ] PR description explains **what** changed and **why**, and references the issue (`Closes #N`)
 
 ## Architecture Documentation
+ feature/logarithmic-volume-curve
+
  docs/git-worktree-guide
+main
 
 For details on multi-agent scoring and consensus workflows, see [docs/architecture/multi-agent-consensus.md](docs/architecture/multi-agent-consensus.md).
 
 ## Concurrent Development & Worktrees
 
 For guidelines on working on multiple issues concurrently using Git worktrees, see [docs/WORKTREE_GUIDE.md](docs/WORKTREE_GUIDE.md).
+feature/logarithmic-volume-curve
+
 
 For details on multi-agent scoring and consensus workflows, see [docs/architecture/multi-agent-consensus.md](docs/architecture/multi-agent-consensus.md).
 main
+ main

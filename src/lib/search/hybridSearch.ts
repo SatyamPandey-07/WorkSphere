@@ -1,14 +1,20 @@
+ feature/logarithmic-volume-curve
+
 docs/git-worktree-guide
+main
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Redis from "ioredis";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
+ feature/logarithmic-volume-curve
+
 import { getGeminiClient, isGeminiConfigured } from "@/lib/ai/gemini";
 import { getRedis } from "@/lib/redis";
  main
 
+main
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
 
 export interface HybridSearchResult {
@@ -23,7 +29,10 @@ export interface HybridSearchResult {
  */
 export async function getQueryEmbedding(query: string): Promise<number[]> {
   const cacheKey = `embedding:${Buffer.from(query.toLowerCase().trim()).toString("base64")}`;
+ feature/logarithmic-volume-curve
+
  docs/git-worktree-guide
+ main
 
   try {
     const cached = await redis.get(cacheKey);
@@ -45,6 +54,8 @@ export async function getQueryEmbedding(query: string): Promise<number[]> {
   }
 
   return embedding;
+feature/logarithmic-volume-curve
+
 
   const redis = getRedis();
 
@@ -87,6 +98,7 @@ export async function getQueryEmbedding(query: string): Promise<number[]> {
     console.warn("[Gemini Embedding Error]:", err);
     return new Array(768).fill(0);
   }
+ main
  main
 }
 

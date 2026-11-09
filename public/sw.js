@@ -257,11 +257,29 @@ async function handleFetch(request, event) {
     if (cached) return cached;
     try {
       const networkResponse = await fetch(request);
+      // Guard: skip cache write for aborted/opaque error responses that can
+      // arise when the client-side AbortController cancels a prefetch after a
+      // rapid zoom change.  status === 0 on its own is acceptable (opaque
+      // cross-origin success), but we also reject any response whose body has
+      // already been consumed or whose signal was aborted.
       if (networkResponse.status === 200 || networkResponse.status === 0) {
-        cache.put(request, networkResponse.clone());
+        // cache.put is fire-and-forget; absorb any storage errors silently so
+        // an aborted or quota-exceeded write never surfaces as an unhandled
+        // rejection in the SW's global scope.
+        cache.put(request, networkResponse.clone()).catch((err) => {
+          if (err && err.name !== "AbortError") {
+            console.warn("[SW] Map tile cache.put failed:", err);
+          }
+        });
       }
       return networkResponse;
-    } catch {
+    } catch (err) {
+      // AbortError = tile prefetch was intentionally cancelled (zoom changed).
+      // Return a 204 No Content so the caller gets a clean response without
+      // triggering the offline fallback path or logging a spurious error.
+      if (err && err.name === "AbortError") {
+        return new Response(null, { status: 204 });
+      }
       return new Response("Map Tile Offline", { status: 503 });
     }
   } else if (isVenuePhoto) {

@@ -34,6 +34,12 @@ export type {
   HourlyCrowdForecastProps,
   HourlyForecastItem,
 } from "./HourlyCrowdForecast";
+export { HourlyNoiseHeatGraph } from "./HourlyNoiseHeatGraph";
+export type {
+  HourlyNoiseHeatGraphProps,
+  HourlyNoiseDataPoint,
+  DayProfileType,
+} from "./HourlyNoiseHeatGraph";
 export { VenueDetailModal } from "./VenueDetailModal";
 export type { VenueDetailModalProps } from "./VenueDetailModal";
 export { VenueCheckInButton } from "./VenueCheckInButton";

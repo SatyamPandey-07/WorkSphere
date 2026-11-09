@@ -11,6 +11,7 @@
  */
 "use client";
 
+import PartySocket from "partysocket";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
@@ -164,14 +165,21 @@ export function useSeatAvailability(
     setCurrentIntervalMs(initialIntervalMs);
   }, [initialIntervalMs]);
 
+  const requestSnapshot = useCallback((socketInstance: PartySocket | null) => {
+    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
+      socketInstance.send(JSON.stringify({ type: "GET_SNAPSHOT" }));
+    }
+  }, []);
+
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
     room: isMounted ? SEAT_ROOM : "seat-availability",
     startClosed: !isMounted,
     query: token ? { token } : undefined,
-    onOpen() {
+    onOpen(event) {
       setIsConnected(true);
       clearPollingTimer();
+      requestSnapshot(event.target as PartySocket);
     },
     onClose() {
       setIsConnected(false);
@@ -179,8 +187,7 @@ export function useSeatAvailability(
     onMessage(event) {
       try {
         const data = JSON.parse(event.data) as
-          | SeatUpdateMessage
-          | SeatSnapshotMessage;
+          SeatUpdateMessage | SeatSnapshotMessage;
 
         if (data.type !== "seat_update" && data.type !== "seat_snapshot") {
           return;
@@ -231,6 +238,22 @@ export function useSeatAvailability(
       }
     },
   });
+
+  // Reconnect synchronization: request fresh snapshot on ROOM_RECONNECTED
+  const handleReconnect = useCallback(() => {
+    if (socket) {
+      requestSnapshot(socket);
+    }
+  }, [socket, requestSnapshot]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.addEventListener("room_reconnected", handleReconnect);
+    return () => {
+      socket.removeEventListener("room_reconnected", handleReconnect);
+    };
+  }, [socket, handleReconnect]);
 
   const { toast } = useToast();
 
@@ -358,10 +381,10 @@ export function useSeatAvailability(
   const targetPollingVenueId = venueId || checkedInVenueId;
   const shouldPoll = Boolean(
     enabled &&
-      fallbackPolling &&
-      targetPollingVenueId &&
-      !isConnected &&
-      isMounted,
+    fallbackPolling &&
+    targetPollingVenueId &&
+    !isConnected &&
+    isMounted,
   );
 
   const executePoll = useCallback(
@@ -541,7 +564,7 @@ export function useSeatAvailability(
     [availability],
   );
 
-  const venueAvailability = venueId ? availability[venueId] ?? null : null;
+  const venueAvailability = venueId ? (availability[venueId] ?? null) : null;
 
   const connectionMode: "socket" | "polling" | "disconnected" = isConnected
     ? "socket"

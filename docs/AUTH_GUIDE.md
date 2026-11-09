@@ -35,6 +35,8 @@ The middleware executes on every incoming request matching the `config.matcher` 
 4. **Admin Route Authorization (`isAdminRoute`)**: For routes starting with `/admin` or `/api/admin`, the middleware checks whether the authenticated user has an administrative role (`admin`, `super_admin`, `superadmin` in `sessionClaims.metadata.role`) or matches `ADMIN_EMAILS`. Unauthorized requests receive a `403 Forbidden` (for APIs) or are redirected to `/` (for pages).
 5. **Security & Context Headers**: Injects Content Security Policy (CSP) headers with a unique cryptographic nonce, tracks request pathnames via `x-pathname`, and validates CSRF tokens on mutating API calls.
 
+> **Security architecture:** Rate limiting, CSP nonces and CSRF validation run in the same middleware pipeline as authentication. See the [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) for the handler order, sequence diagrams and the exact rules for each layer.
+
 ### Middleware Implementation Example
 
 The core Clerk authentication logic in [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts) is structured as follows:

@@ -117,6 +117,20 @@ export function calculateDistanceKm(
   lat2: number,
   lon2: number,
 ): number {
+  if (
+    !Number.isFinite(lat1) ||
+    !Number.isFinite(lon1) ||
+    !Number.isFinite(lat2) ||
+    !Number.isFinite(lon2)
+  ) {
+    return 0;
+  }
+
+  // Exact same location
+  if (lat1 === lat2 && lon1 === lon2) {
+    return 0;
+  }
+
   const R = 6371; // Earth radius in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -126,7 +140,8 @@ export function calculateDistanceKm(
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const clampedA = Math.min(1, Math.max(0, a));
+  const c = 2 * Math.atan2(Math.sqrt(clampedA), Math.sqrt(1 - clampedA));
   const rawDist = R * c;
 
   // Apply urban road network detour factor (~1.25x straight-line distance)
@@ -135,36 +150,46 @@ export function calculateDistanceKm(
 
 export function estimateCommuteForMode(
   distanceKm: number,
-  mode: CommuteMode,
+  mode: CommuteMode | string,
   workDaysPerWeek: number = 5,
 ): CommuteEstimate {
-  const config = COMMUTE_MODES[mode];
-  if (!Number.isFinite(distanceKm) || distanceKm < 0) {
-    throw new Error("Invalid distance");
-  }
-  const safeDistance = Math.max(0, distanceKm);
+  const normalizedMode =
+    typeof mode === "string" ? (mode.toLowerCase() as CommuteMode) : "transit";
+  const config = COMMUTE_MODES[normalizedMode] || COMMUTE_MODES.transit;
 
-  // Time calculation
-  const travelHours = safeDistance / config.speedKmh;
-  const durationMinutes = Math.max(
-    1,
-    Math.round(travelHours * 60 + config.fixedBufferMinutes),
-  );
-  const durationFormatted =
-    durationMinutes >= 60
-      ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`
-      : `${durationMinutes} min`;
+  const validDistance = Number.isFinite(distanceKm) && distanceKm >= 0 ? distanceKm : 0;
+  const safeDistance = Math.max(0, validDistance);
+
+  const safeWorkDays = Number.isFinite(workDaysPerWeek) && workDaysPerWeek >= 1
+    ? Math.min(7, Math.round(workDaysPerWeek))
+    : 5;
+
+  // Time calculation: 0 distance means on-site (0 min)
+  let durationMinutes = 0;
+  let durationFormatted = "0 min";
+
+  if (safeDistance > 0) {
+    const travelHours = safeDistance / config.speedKmh;
+    durationMinutes = Math.max(
+      1,
+      Math.round(travelHours * 60 + config.fixedBufferMinutes),
+    );
+    durationFormatted =
+      durationMinutes >= 60
+        ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`
+        : `${durationMinutes} min`;
+  }
 
   // Emissions calculation
   const co2GramsPerTrip = Math.round(safeDistance * config.co2GramsPerKm);
   const co2GramsRoundTrip = co2GramsPerTrip * 2;
-  const co2KgWeekly = Math.round((co2GramsRoundTrip * workDaysPerWeek) / 10) / 100;
-  const co2KgAnnual = Math.round((co2KgWeekly * 48 * 10)) / 10;
+  const co2KgWeekly = Math.round((co2GramsRoundTrip * safeWorkDays) / 10) / 100;
+  const co2KgAnnual = Math.round(co2KgWeekly * 48 * 10) / 10;
 
   // Baseline comparison vs gasoline car
   const carCo2GramsRoundTrip = Math.round(safeDistance * 2 * GASOLINE_CAR_BASELINE_CO2_PER_KM);
   const co2SavedVsCarGramsRoundTrip = Math.max(0, carCo2GramsRoundTrip - co2GramsRoundTrip);
-  const carAnnualKg = (carCo2GramsRoundTrip * workDaysPerWeek * 48) / 1000;
+  const carAnnualKg = (carCo2GramsRoundTrip * safeWorkDays * 48) / 1000;
   const co2SavedVsCarAnnualKg = Math.round(Math.max(0, carAnnualKg - co2KgAnnual) * 10) / 10;
 
   const equivalentTreesPlanted =
@@ -197,7 +222,7 @@ export function estimateCommuteForMode(
   }
 
   return {
-    mode,
+    mode: config.id,
     modeLabel: config.label,
     modeIcon: config.icon,
     distanceKm: safeDistance,
@@ -219,13 +244,18 @@ export function estimateCommuteForMode(
 }
 
 export function calculateAllCommuteEstimates(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
+  lat1?: number | null,
+  lon1?: number | null,
+  lat2?: number | null,
+  lon2?: number | null,
   workDaysPerWeek: number = 5,
 ): Record<CommuteMode, CommuteEstimate> {
-  const distanceKm = calculateDistanceKm(lat1, lon1, lat2, lon2);
+  const safeLat1 = typeof lat1 === "number" && Number.isFinite(lat1) ? lat1 : 0;
+  const safeLon1 = typeof lon1 === "number" && Number.isFinite(lon1) ? lon1 : 0;
+  const safeLat2 = typeof lat2 === "number" && Number.isFinite(lat2) ? lat2 : 0;
+  const safeLon2 = typeof lon2 === "number" && Number.isFinite(lon2) ? lon2 : 0;
+
+  const distanceKm = calculateDistanceKm(safeLat1, safeLon1, safeLat2, safeLon2);
   const modes: CommuteMode[] = ["walking", "cycling", "transit", "ev", "motorcycle", "car"];
 
   const results = {} as Record<CommuteMode, CommuteEstimate>;

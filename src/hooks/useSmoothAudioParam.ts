@@ -20,9 +20,14 @@ export function useSmoothAudioParam(
 
         return () => {
             if (controllerRef.current) {
+                controllerRef.current.dispose();
                 // Cancel any pending ramps on unmount to prevent memory leaks or audio context issues
-                if (param) {
-                    param.cancelScheduledValues(param.context.currentTime);
+                if (param && param.context && (param.context as any).state !== "closed") {
+                    try {
+                        param.cancelScheduledValues(param.context.currentTime);
+                    } catch {
+                        // ignore if already destroyed
+                    }
                 }
                 controllerRef.current = null;
             }

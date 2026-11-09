@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
-interface CosmosBackgroundProps {
+export interface CosmosBackgroundProps {
   enabled?: boolean;
 }
 
@@ -128,9 +128,15 @@ export function CosmosBackground({ enabled = true }: CosmosBackgroundProps) {
         console.warn("Unable to read battery status for the cosmos background.", error);
       });
 
+    const hasMatchMedia =
+      typeof window !== "undefined" && typeof window.matchMedia === "function";
     const isMobile =
-      window.innerWidth < 768 || window.matchMedia("(pointer: coarse)").matches;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      (typeof window !== "undefined" && window.innerWidth < 768) ||
+      (hasMatchMedia && window.matchMedia("(pointer: coarse)").matches);
+    const reducedMotion =
+      hasMatchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     const particleCount = isMobile ? 1100 : 1800;
     let renderer: THREE.WebGLRenderer;
     try {
@@ -205,21 +211,26 @@ export function CosmosBackground({ enabled = true }: CosmosBackgroundProps) {
     const targetMouse = new THREE.Vector2();
     const smoothedMouse = new THREE.Vector2();
     const onPointerMove = (event: PointerEvent) => {
+      const width = Math.max(window.innerWidth || 1, 1);
+      const height = Math.max(window.innerHeight || 1, 1);
       targetMouse.set(
-        (event.clientX / window.innerWidth) * 2 - 1,
-        1 - (event.clientY / window.innerHeight) * 2,
+        (event.clientX / width) * 2 - 1,
+        1 - (event.clientY / height) * 2,
       );
     };
     const onPointerLeave = () => targetMouse.set(0, 0);
     const resize = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      camera.aspect = width / Math.max(height, 1);
+      const width = Math.max(window.innerWidth || 1, 1);
+      const height = Math.max(window.innerHeight || 1, 1);
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height, false);
     };
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(container);
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(resize)
+        : null;
+    resizeObserver?.observe(container);
     window.addEventListener("resize", resize, { passive: true });
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("blur", onPointerLeave);
@@ -271,7 +282,7 @@ export function CosmosBackground({ enabled = true }: CosmosBackgroundProps) {
       cancelAnimationFrame(frameId);
       battery?.removeEventListener("levelchange", updateBatteryMode);
       battery?.removeEventListener("chargingchange", updateBatteryMode);
-      resizeObserver.disconnect();
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("blur", onPointerLeave);
@@ -290,8 +301,11 @@ export function CosmosBackground({ enabled = true }: CosmosBackgroundProps) {
   return (
     <div
       ref={containerRef}
+      data-testid="cosmos-background-container"
       aria-hidden="true"
       className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
     />
   );
 }
+
+export default CosmosBackground;

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Plus, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const TAG_COLORS = [
+export const TAG_COLORS = [
   { name: "Blue", value: "#3b82f6" },
   { name: "Green", value: "#22c55e" },
   { name: "Orange", value: "#f97316" },
@@ -17,12 +17,13 @@ const TAG_COLORS = [
   { name: "Rose", value: "#f43f5e" },
 ];
 
-interface TagInputProps {
+export interface TagInputProps {
   onAdd: (name: string, color: string) => Promise<void>;
   existingNames?: string[];
+  className?: string;
 }
 
-export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
+export function TagInput({ onAdd, existingNames = [], className }: TagInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState("");
   const [selectedColor, setSelectedColor] = useState(TAG_COLORS[0].value);
@@ -30,9 +31,19 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
   const [error, setError] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
 
-  const duplicate = existingNames.some(
-    (n) => n.toLowerCase() === name.trim().toLowerCase(),
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const safeExistingNames = Array.isArray(existingNames) ? existingNames : [];
+  const trimmedName = name.trim();
+  const duplicate = safeExistingNames.some(
+    (n) => typeof n === "string" && n.trim().toLowerCase() === trimmedName.toLowerCase(),
   );
 
   const handleSubmit = useCallback(async () => {
@@ -43,22 +54,34 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
     setIsSubmitting(true);
     try {
       await onAdd(trimmed, selectedColor);
+      if (!isMountedRef.current) return;
       setName("");
       setSelectedColor(TAG_COLORS[0].value);
       setIsOpen(false);
       triggerRef.current?.focus();
     } catch (err) {
+      if (!isMountedRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to add tag");
     } finally {
-      setIsSubmitting(false);
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
+      }
     }
   }, [name, selectedColor, duplicate, isSubmitting, onAdd]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
+      e.stopPropagation();
       setIsOpen(false);
       setError(null);
       triggerRef.current?.focus();
+    }
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSubmit();
     }
   };
 
@@ -67,12 +90,18 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
       <button
         ref={triggerRef}
         type="button"
+        data-testid="tag-input-trigger-btn"
         onClick={() => {
           setIsOpen(true);
           setTimeout(() => nameInputRef.current?.focus(), 50);
         }}
-        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:accent-border accent-text-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900"
+        className={cn(
+          "inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:accent-border accent-text-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900",
+          className,
+        )}
         aria-label="Add new tag"
+        aria-haspopup="dialog"
+        aria-expanded={false}
       >
         <Plus className="w-3.5 h-3.5" />
         <span>Add Tag</span>
@@ -82,7 +111,11 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
 
   return (
     <div
-      className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-lg"
+      data-testid="tag-input-dialog"
+      className={cn(
+        "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-lg",
+        className,
+      )}
       onKeyDown={handleKeyDown}
       role="dialog"
       aria-label="Add tag"
@@ -91,11 +124,13 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
         <input
           ref={nameInputRef}
           type="text"
+          data-testid="tag-input-name-field"
           value={name}
           onChange={(e) => {
             setName(e.target.value);
             setError(null);
           }}
+          onKeyDown={handleInputKeyDown}
           placeholder="Tag name..."
           maxLength={50}
           className="flex-1 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:border-[var(--primary-accent)] focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-1 dark:focus:ring-offset-zinc-900 transition-colors text-zinc-900 dark:text-white placeholder:text-zinc-400"
@@ -107,8 +142,10 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
         />
         <button
           type="button"
+          data-testid="tag-input-submit-btn"
           onClick={handleSubmit}
-          disabled={!name.trim() || duplicate || isSubmitting}
+          disabled={!trimmedName || duplicate || isSubmitting}
+          aria-busy={isSubmitting}
           className="shrink-0 p-1.5 rounded-lg accent-bg accent-bg-hover text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900"
           aria-label="Confirm add tag"
         >
@@ -120,6 +157,7 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
         </button>
         <button
           type="button"
+          data-testid="tag-input-cancel-btn"
           onClick={() => {
             setIsOpen(false);
             setName("");
@@ -148,6 +186,7 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
       {duplicate && (
         <p
           id="tag-duplicate-error"
+          data-testid="tag-duplicate-error"
           className="text-xs text-amber-600 dark:text-amber-400 mb-2"
           role="alert"
         >
@@ -157,6 +196,7 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
       {error && !duplicate && (
         <p
           id="tag-error"
+          data-testid="tag-error"
           className="text-xs text-red-600 dark:text-red-400 mb-2"
           role="alert"
         >
@@ -173,6 +213,7 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
           <button
             key={c.value}
             type="button"
+            data-testid={`tag-color-btn-${c.name.toLowerCase()}`}
             onClick={() => setSelectedColor(c.value)}
             className={cn(
               "w-6 h-6 rounded-full transition-all flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900",
@@ -193,3 +234,5 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
     </div>
   );
 }
+
+export default TagInput;

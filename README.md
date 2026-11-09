@@ -12,10 +12,12 @@
   <img src="public/images/ecsoc-logo.png" alt="ECSoC 2026 - Elite Coders Summer of Code" height="56" />
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <img src="public/images/osci-logo.png" alt="OSCI 2026 - Open Source Contribution India" height="56" />
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="public/images/wocs-logo.png" alt="WOCS 2026 - Winter of Code Social (Code Social)" height="56" />
 </p>
 
 <p align="center">
-  <b>🌟 Official Selected Project for <a href="https://github.com/SatyamPandey-07/WorkSphere">ECSoC 2026</a> (Elite Coders Summer of Code) &amp; <a href="https://github.com/SatyamPandey-07/WorkSphere">OSCI 2026</a> (Open Source Contribution India) 🌟</b>
+  <b>🌟 Official Selected Project for <a href="https://github.com/SatyamPandey-07/WorkSphere">ECSoC 2026</a> (Elite Coders Summer of Code), <a href="https://github.com/SatyamPandey-07/WorkSphere">OSCI 2026</a> (Open Source Contribution India) &amp; <a href="https://woc.codesocial.tech">WOCS 2026</a> (Winter of Code Social by Code Social) 🌟</b>
 </p>
 
 [![Next.js](https://img.shields.io/badge/Next.js-15.5-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
@@ -31,9 +33,11 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-110%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-117%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
+[![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
+[![Code Social](https://img.shields.io/badge/Code%20Social-WOCS%202026-F97316?style=flat-square)](https://woc.codesocial.tech)
 [![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?style=flat-square&logo=githubactions)](https://github.com/SatyamPandey-07/WorkSphere/actions)
 [![Live Demo](https://img.shields.io/badge/Live-Deployment-success?style=flat-square&logo=vercel)](https://work-sphere-one.vercel.app/)
 
@@ -47,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-110-active-rockstars"><b>👥 Contributors (110)</b></a> •
+  <a href="#-contributors-117-active-rockstars"><b>👥 Contributors (117)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -70,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (110 Active Rockstars)
+### 🚀 Contributors (117 Active Rockstars)
 
-A massive thank you to all **110 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **117 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -766,6 +770,40 @@ A massive thank you to all **110 brilliant contributors and bots** building Work
         <sub><b>gaurrov</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/shlok926">
+        <img src="https://avatars.githubusercontent.com/u/183689833?v=4" width="55px;" height="55px;" alt="shlok926" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>shlok926</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/shrinivas-sn">
+        <img src="https://avatars.githubusercontent.com/u/211715583?v=4" width="55px;" height="55px;" alt="shrinivas-sn" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>shrinivas-sn</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/reyhaan07">
+        <img src="https://avatars.githubusercontent.com/u/233599318?v=4" width="55px;" height="55px;" alt="reyhaan07" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>reyhaan07</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/saisarans2007">
+        <img src="https://avatars.githubusercontent.com/u/229780243?v=4" width="55px;" height="55px;" alt="saisarans2007" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>saisarans2007</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/harichillin">
+        <img src="https://avatars.githubusercontent.com/u/233400269?v=4" width="55px;" height="55px;" alt="harichillin" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>harichillin</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%"></td>
+    <td align="center" width="14.28%"></td>
     <td align="center" width="14.28%"></td>
     <td align="center" width="14.28%"></td>
   </tr>
@@ -776,13 +814,22 @@ A massive thank you to all **110 brilliant contributors and bots** building Work
 ## 📋 Table of Contents
 
 - [Features](#-features)
+  - [AI & Search Intelligence](#-ai-powered-search)
+  - [Web3, Solana Pay & Smart Escrow](#-web3-solana-pay--smart-escrow)
+  - [Edge Audio & Acoustic Privacy (WASM DSP)](#-edge-audio-processing--acoustic-privacy-wasm-dsp)
+  - [Spatial Computing, WebXR & Ergonomics](#-spatial-computing-webxr--ergonomics)
+  - [Digital Twin & Building IoT Orchestration](#-digital-twin--building-iot-orchestration)
+  - [Decentralized Networking & Survival Mesh](#-decentralized-networking--survival-mesh)
+  - [Nomad Travel, Housing & War Rooms](#-nomad-travel-smart-housing--collab-war-rooms)
+  - [Zero-Knowledge Proofs & Security](#-zero-knowledge-proofs-security--compliance)
+- [Core Platform Capabilities](#-core-platform-capabilities)
 - [Tech Stack](#-tech-stack)
 - [Architecture](#-architecture)
 - [Getting Started](#-getting-started)
 - [Environment Variables](#-environment-variables)
 - [Testing](#-testing)
-- [Pages](#-pages)
-- [API Routes](#-api-routes)
+- [Pages](#-pages-52-interactive-application-views)
+- [API Routes](#-api-routes-300-modular-endpoints)
 - [Multi-Agent System](#-multi-agent-system)
 - [Project Structure](#-project-structure)
 - [Troubleshooting](#-troubleshooting)
@@ -903,6 +950,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 ### 🚀 Performance & Reliability
 
 - **Rate Limiting**: API protection with configurable limits
+- **Security Architecture**: CSP nonces, signed double-submit CSRF cookies and multi-tier token bucket rate limiting, explained end to end in [docs/security/SECURITY_OVERVIEW.md](./docs/security/SECURITY_OVERVIEW.md)
 - **Data Caching**: Multi-layer caching with TTL support
 - **Error Boundaries**: Graceful error handling prevents crashes
 - **Loading Skeletons**: Smooth loading states for better UX
@@ -917,10 +965,64 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🧪 Comprehensive Testing
 
-- **57 Unit Tests**: Full coverage with Jest & React Testing Library
-- **E2E Testing**: Playwright configuration for end-to-end tests
-- **API Tests**: Route handler testing
-- **Component Tests**: UI component validation
+- **838+ Test Suites**: Full coverage with Jest & React Testing Library
+- **E2E Testing**: Playwright configuration for end-to-end user journey tests
+- **API Tests**: Route handler testing with in-memory request simulation
+- **Component Tests**: UI component validation and accessibility audits
+
+### 💸 Web3, Solana Pay & Smart Escrow
+
+- **Solana Pay Engine**: High-contrast QR payment modal with dynamic payment request generation, Screen Wake Lock API integration to prevent display dimming during scan, and verifiable on-chain confirmation (protected against synthetic confirmation spoofing).
+- **Focus Session Bounties & Escrow**: Stake crypto tokens to commit to deep work sessions; automated smart-contract payout release upon verified session completion (`/api/bounties/payout`, `/api/bookings/escrow`).
+- **Virtual Single-Use Cards & Automated Invoicing**: Issue ephemeral corporate cards for workspace booking expenses with automatic OCR receipt reconciliation (`/api/finance/card`).
+- **Nomad Tax Residency Geo-Fence & ZK Ledger**: Automated tracking of border crossings and physical presence duration with zero-knowledge cryptographic proof generation (`/analytics/nomad-tax`).
+- **JSON & CSV Tax Export**: Download complete tax records, workspace rental deductions, and business expense summaries formatted for international digital nomad audits (`/api/bookings/export`).
+
+### 🎧 Edge Audio Processing & Acoustic Privacy (WASM DSP)
+
+- **Dynamic Acoustic Privacy Jammer**: WebAssembly DSP ring buffer applying Delayed Auditory Feedback (DAF) to headphones, scientifically disrupting loud speech and maintaining private conversations in open cafes (`/api/audio/jammer`).
+- **AI Generative Venue Vibe Audio Synthesizer**: Procedural acoustic soundscapes and focus-frequency noise generation tailored in real-time to current venue ambient noise telemetry (`/api/audio/vibe`).
+- **Spatial RT60 Reverberation Analyzer**: In-browser acoustic impulse measurement calculating venue echo decay time (RT60) to grade conference call suitability (`/api/venues/acoustics/rt60`).
+- **Keyboard Acoustic Emanation Shield**: Client-side acoustic masking preventing microphone-based keystroke eavesdropping in public coworking lounges (`/api/security/acoustic`).
+
+### 👓 Spatial Computing, WebXR & Ergonomics
+
+- **WebXR SLAM Venue Scanner & Voxel Octree**: Camera-based spatial mapping for desk geometry, power outlet coordinates, and indoor navigation paths (`/ar/finder`).
+- **Real-Time 3D Desk Ergonomics & ISO Validator**: WebGL 3D avatar posture analysis evaluating chair height, screen angle, and ambient lighting against ISO 9241 standards (`/wellness/ergonomics`).
+- **Automated Audio-Description Spatial Scene Graph**: Real-time accessibility engine converting venue visual layout into navigable spatial audio narration for visually impaired professionals (`/api/accessibility/scene`).
+- **Team Proximity Haptic Feedback & Spatial Anchoring**: Physical team proximity alerts using Gamepad/Web Haptics API and spatial beacon tags (`/api/ar/anchors`).
+
+### 🏢 Digital Twin & Building IoT Orchestration
+
+- **Workspace Digital Twin HVAC & Air Quality Purge**: Live CO2, TVOC, and PM2.5 monitoring triggering automated ventilation requests and threshold breach alerts (`/api/twin/airquality`).
+- **Cafe Power Grid Load Forecasting & Breaker Trip Predictor**: Wattage monitoring preventing sudden cafe circuit breaker trips (`/venues/power-grid`).
+- **Multi-Sensory Focus Environment IoT Controller**: Smart lighting (circadian CCT), desk height, and acoustic masking control via Matter / HomeKit / Zigbee bridges (`/api/iot/orchestrate`).
+- **ASHRAE Standard 55 Thermal Comfort Index**: Predicted Mean Vote (PMV) and Predicted Percentage Dissatisfied (PPD) computed live from ambient temperature and relative humidity sensors.
+
+### 🌐 Decentralized Networking & Survival Mesh
+
+- **Distributed Compute-Burst WebRTC Mesh**: Collaborative local distributed computing offloading code builds and heavy processing across idle laptops on cafe WiFi (`/p2p/mesh-collab`, `/api/compute/burst`).
+- **Offline-First P2P Emergency Mesh Network**: WebRTC DataChannels + Bluetooth Low Energy (BLE) peer discovery maintaining critical comms during cafe ISP outages (`/api/network/survival`).
+- **Offline Medical Emergency Mesh Beacon & First-Aid Router**: Instant SOS broadcasting and automated navigation to the nearest automated external defibrillator (AED) and medical kit (`/api/medical/beacon`).
+- **Bandwidth-Hog Identification & Cooperative QoS**: Local network cooperative monitoring to detect and throttle background stream hogs on public WiFi (`/api/network/qos`).
+
+### ✈️ Nomad Travel, Smart Housing & Collab War Rooms
+
+- **Flight-Delay Itinerary Auto-Rerouting**: Webhook integration with aviation feeds automatically rescheduling booked coworking passes when flights are delayed or cancelled (`/api/travel/reroute`).
+- **Git Merge Conflict Physical War Room & IoT Lockdown**: Automatic physical meeting room booking and IoT access lockdown during critical deployment conflicts (`/api/collab/warroom`).
+- **Decentralized Nomad Housing Swap & Smart-Contract Lease Ledger**: Peer-to-peer apartment and studio exchange protocol backed by decentralized identity and reputation scores (`/api/housing/swap`).
+- **Distributed Luggage Storage P2P Trust & IoT Locker Protocol**: Secure short-term storage locker management with cryptographic token keys and BLE unlock (`/peripherals/locker`, `/api/luggage/store`).
+- **Micro-Climate Pedestrian Routing & Wind-Tunnel Risk Engine**: OSRM routing enriched with real-time micrometeorology, sheltering laptops from rain squalls and wind tunnels (`/api/routing/microclimate`).
+- **Predictive Cafe Inventory Restocking Engine**: Real-time oat milk, specialty bean, and pastry stock forecasting based on check-in velocity (`/venues/cafe-order`, `/api/inventory/restock`).
+
+### 🛡️ Zero-Knowledge Proofs, Security & Compliance
+
+- **Decentralized DID Wallet & ZK-Age / Identity Verification**: Verify KYC and identity requirements without disclosing personal identity documents (`/test-student-zkp`, `/api/identity/verify`).
+- **Client-Side PII Redaction & Document Sanitization Pipeline**: In-browser regex and NER model scrubbing sensitive credentials, emails, and phone numbers before cloud transmission (`/api/documents/sanitize`).
+- **AI-Powered Legal & NDA Redline Assistant**: In-browser automated contract analysis, clause risk scoring, and interactive redlining before booking commercial spaces (`/api/legal/redline`).
+- **Cryptographic Proof-of-Deep-Work Ledger with ZK-SNARKs**: Verifiable proof of undistracted deep-work time for client billing without surveillance (`/api/zkp/deepwork`).
+- **ECDH P-256 + AES-GCM 256 End-to-End Encrypted (E2EE) Chat & SPKI Key Pinning**: Zero-knowledge team communication with SPKI SHA-256 Certificate Public Key Pinning (`/api/auth/passkey/*`).
+- **Audit Log SHA-256 Merkle Tree Verification**: Tamper-evident immutable audit log endpoint (`/api/admin/audit/verify`).
 
 ---
 
@@ -928,37 +1030,46 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 WorkSphere brings together geospatial data, ambient intelligence, and real-time collaboration into a unified, responsive interface:
 
-| Capability                          | Experience                                                                                                      | Technical Highlight                                                                                       |
-| :---------------------------------- | :-------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- |
-| 🗺️ **Interactive Geospatial Map**   | Dynamic CartoDB Dark Matter tiles with color-coded venue noise markers (green=quiet, amber=moderate, red=busy). | Real road routing with OSRM, Haversine proximity, custom Clerk user pins.                                 |
-| 🤖 **Autonomous Multi-Agent AI**    | Conversational discovery agent that reasons across amenities, seating availability, and workspace preferences.  | 5-agent pipeline (Orchestrator → Context → Data → Reasoning → Action) with transparent thought telemetry. |
-| 📡 **Live Presence & Telemetry**    | Real-time seat occupancy badges (Quiet, Moderate, Busy) and collaborative workspace notes.                      | Sub-50ms WebSocket synchronization powered by PartyKit mesh network.                                      |
-| 🔋 **Battery Panic Mode**           | Automatically re-ranks search results when battery drops below 20%, prioritizing verified desk outlets.         | Web Battery API integration with graceful degradation on non-supported viewports.                         |
-| 📴 **Offline-First PWA**            | Browse cached venues, view floor plans, and queue check-ins completely offline.                                 | Service Worker background sync + IndexedDB storage + Web Locks API synchronization.                       |
-| 🧾 **Cryptographic PDF Invoicing**  | Instant one-click PDF receipts generated for verified bookings.                                                 | 100% serverless, zero-filesystem execution via `pdf-lib` with embedded Helvetica glyphs.                  |
-| 🎓 **Zero-Knowledge Student Perks** | Claim verified student discounts without revealing personal academic credentials.                               | Client-side WASM ZKP proof generation with offline localStorage verification caching.                     |
+| Capability                             | Experience                                                                                                      | Technical Highlight                                                                                       |
+| :------------------------------------- | :-------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| 🗺️ **Interactive Geospatial Map**      | Dynamic CartoDB Dark Matter tiles with color-coded venue noise markers (green=quiet, amber=moderate, red=busy). | Real road routing with OSRM, Haversine proximity, custom Clerk user pins.                                 |
+| 🤖 **Autonomous Multi-Agent AI**       | Conversational discovery agent that reasons across amenities, seating availability, and workspace preferences.  | 5-agent pipeline (Orchestrator → Context → Data → Reasoning → Action) with transparent thought telemetry. |
+| 📡 **Live Presence & Telemetry**       | Real-time seat occupancy badges (Quiet, Moderate, Busy) and collaborative workspace notes.                      | Sub-50ms WebSocket synchronization powered by PartyKit mesh network.                                      |
+| 💳 **Solana Pay & Smart Escrow**       | One-click crypto micro-payments, QR scan with Wake Lock, and deep-work bounty escrow payouts.                   | Real-time Solana RPC verification, anti-spoofing transaction filters, smart contract escrow.              |
+| 🎧 **WASM DSP Acoustic Privacy**       | Speech jamming with Delayed Auditory Feedback (DAF) preventing loud calls in public cafes.                      | WebAudio AudioWorklet + WebAssembly C ring buffer for ultra-low latency audio processing.                 |
+| 👓 **WebXR SLAM Spatial Scanner**      | Augmented Reality indoor desk finder, power outlet locator, and millimeter-level wayfinding.                    | WebXR Device API, point cloud voxelization, and SLAM visual-inertial odometry.                            |
+| 🏢 **Digital Twin HVAC & Air Purge**   | Automated indoor environmental air quality purge alerts and smart ventilation orchestration.                    | Real-time CO2/PM2.5 IoT telemetry with threshold anomaly detection and BACnet/MQTT bridge.                |
+| 🌐 **Distributed WebRTC Compute Mesh** | Offload heavy compile and test workloads onto idle peer machines connected to the same cafe WiFi.               | WebRTC DataChannels, P2P work stealing algorithm, and distributed task chunking.                          |
+| 🔋 **Battery Panic Mode**              | Automatically re-ranks search results when battery drops below 20%, prioritizing verified desk outlets.         | Web Battery API integration with graceful degradation on non-supported viewports.                         |
+| 📴 **Offline-First Survival PWA**      | Browse cached venues, floor plans, and queue check-ins completely offline via mesh networking.                  | Service Worker background sync + IndexedDB storage + Web Locks API synchronization.                       |
+| 🧾 **Cryptographic PDF Invoicing**     | Instant one-click PDF receipts with HMAC-SHA256 signatures generated for verified bookings.                     | 100% serverless, zero-filesystem execution via `pdf-lib` with embedded Helvetica glyphs.                  |
+| 🎓 **Zero-Knowledge Identity & Perks** | Claim verified student discounts and KYC clearance without revealing personal identification documents.         | Client-side WASM ZKP proof generation with offline localStorage verification caching.                     |
+| ✈️ **Flight Reroute & IoT War Room**   | Auto-reschedule bookings upon flight delays and lock down physical war rooms on merge conflicts.                | Aviation webhook feeds, automated calendar rebalancing, and IoT smart-lock triggers.                      |
+| 🛡️ **Edge PII Redaction & E2EE**       | Client-side redaction of sensitive credentials and documents before leaving the local browser.                  | Zero-knowledge ECDH P-256 + AES-GCM 256 encryption with SPKI SHA-256 public key pinning.                  |
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Category           | Technology                                                 |
-| ------------------ | ---------------------------------------------------------- |
-| **Framework**      | Next.js 15.5 (App Router)                                  |
-| **Language**       | TypeScript 5.0                                             |
-| **Styling**        | Tailwind CSS 4.0, Custom UI Components                     |
-| **AI/LLM**         | Groq SDK (Llama 3.3 70B)                                   |
-| **Database**       | Neon PostgreSQL + Prisma 7.2 ORM (with @prisma/adapter-pg) |
-| **Authentication** | Clerk                                                      |
-| **Maps**           | React Leaflet + OpenStreetMap                              |
-| **Venue Data**     | OpenStreetMap (Overpass API) - FREE                        |
-| **Venue Photos**   | Pexels API - FREE (20k req/mo)                             |
-| **Real-time**      | Server-Sent Events (SSE)                                   |
-| **Routing**        | OSRM (Open Source Routing Machine) - FREE                  |
-| **PDF Generation** | pdf-lib 2.x (serverless-compatible)                        |
-| **Testing**        | Jest 29, React Testing Library, Playwright                 |
-| **PWA**            | Service Workers + IndexedDB                                |
-| **Deployment**     | Vercel                                                     |
+| Category               | Technology                                                              |
+| ---------------------- | ----------------------------------------------------------------------- |
+| **Framework**          | Next.js 15.5 (App Router with Server Components & Server Actions)       |
+| **Language**           | TypeScript 5.0                                                          |
+| **Styling**            | Tailwind CSS 4.0, Radix UI Primitives, Lucide Icons                     |
+| **AI / Multi-Agent**   | Groq SDK (Llama 3.3 70B Versatile), In-Browser Intent Orchestrator      |
+| **Database**           | Neon Serverless PostgreSQL + Prisma 7.2 ORM (with `@prisma/adapter-pg`) |
+| **Authentication**     | Clerk (JWTs, Webhook Sync, Passkeys & WebAuthn)                         |
+| **Web3 & FinTech**     | Solana Web3.js, Solana Pay Protocol, Smart Contract Escrows             |
+| **Edge Audio / DSP**   | WebAssembly (WASM C DSP), AudioWorklet API, Web Audio Oscillators       |
+| **Spatial & AR**       | WebXR Device API, Three.js / WebGL, Voxel Octrees                       |
+| **Maps & Routing**     | React Leaflet, OpenStreetMap, OSRM Road Machine, CartoDB Dark Matter    |
+| **Real-time & P2P**    | PartyKit WebSockets, Server-Sent Events (SSE), WebRTC DataChannels      |
+| **Digital Twin / IoT** | Matter / HomeKit Bridge, MQTT Telemetry, Web Bluetooth Low Energy (BLE) |
+| **Cryptography / ZKP** | Web Crypto API (SubtleCrypto HMAC-SHA256), WASM ZK-SNARKs (SnarkJS)     |
+| **PDF Generation**     | pdf-lib 2.x (Zero-filesystem serverless execution)                      |
+| **Testing**            | Jest 29, React Testing Library, Playwright E2E (838+ test suites)       |
+| **PWA & Offline**      | Service Workers, IndexedDB, Background Sync API, Web Locks API          |
+| **Deployment**         | Vercel (Edge & Serverless Functions)                                    |
 
 ---
 
@@ -1325,38 +1436,59 @@ For production or multi-instance deployments, configuring Upstash Redis is recom
 
 ---
 
-## Pages
+## 📱 Pages (52 Interactive Application Views)
 
-| Route        | Page                | Description                                               |
-| ------------ | ------------------- | --------------------------------------------------------- |
-| `/`          | Landing Page        | Hero section with product mockup, features showcase, CTAs |
-| `/ai`        | AI Workspace Finder | Main app with 70/30 map/chat split, dark theme            |
-| `/dashboard` | User Dashboard      | Personal dashboard for authenticated users                |
-| `/offline`   | Offline Page        | PWA fallback when network unavailable                     |
-| `/sign-in`   | Sign In             | Clerk authentication sign-in page                         |
-| `/sign-up`   | Sign Up             | Clerk authentication sign-up page                         |
+| Category                         | Route                          | Page                      | Description                                                           |
+| :------------------------------- | :----------------------------- | :------------------------ | :-------------------------------------------------------------------- |
+| **Core AI & Maps**               | `/`                            | Landing Page              | Hero section with product showcase, community stats, and CTAs         |
+|                                  | `/ai`                          | AI Workspace Finder       | Dual-pane 70/30 interactive CartoDB map & multi-agent reasoning chat  |
+|                                  | `/ai/concierge`                | AI Concierge              | Natural-language concierge for itinerary planning & seat reservations |
+|                                  | `/workspace`                   | Workspace Suite           | Multi-window workspace manager with persistent layout state           |
+|                                  | `/compare`                     | Venue Comparison          | Side-by-side metric matrix comparison across multiple venues          |
+| **Social & Collaboration**       | `/social`                      | Nomad Community Hub       | Local digital nomad community feeds, check-ins, and networking        |
+|                                  | `/social/focus-room`           | Virtual Focus Rooms       | Collaborative Pomodoro sessions with synchronized willpower gauges    |
+|                                  | `/social/meet-halfway`         | Meet Halfway Engine       | Geospatial midpoint calculator for distributed team meetings          |
+|                                  | `/social/skill-exchange`       | Skill Barter Hub          | Web-of-trust peer-to-peer knowledge and skill exchange                |
+|                                  | `/bundles/work-hop`            | Work-Hop Pass             | Multi-venue pass bundle purchasing and check-in scanner               |
+| **Web3 & FinTech**               | `/pay/crypto-micro`            | Solana Pay Portal         | Dynamic QR-code crypto micropayment terminal with Wake Lock           |
+|                                  | `/pay/split/[token]`           | Bill Splitting Hub        | Multi-party workspace booking bill split and settlement               |
+|                                  | `/peripherals/locker`          | Smart IoT Locker Grid     | Decentralized luggage & equipment locker rental protocol              |
+| **Spatial & Hardware**           | `/ar/finder`                   | WebXR AR Wayfinding       | Augmented Reality SLAM indoor desk & outlet finder                    |
+|                                  | `/wellness/ergonomics`         | 3D Desk Ergonomics        | Real-time WebGL 3D avatar posture analysis & ISO 9241 evaluation      |
+|                                  | `/venues/sound-gradient`       | Acoustic Heatmap          | Real-time spatial sound level gradient and noise contour map          |
+|                                  | `/venues/power-grid`           | Power Grid Monitor        | Real-time cafe electrical load forecasting & breaker trip alert       |
+|                                  | `/venues/solar-finder`         | Solar Glare & Sun Calc    | Solar angle & natural daylight tracking for glare-free outdoor desks  |
+| **Analytics & Nomad Compliance** | `/analytics`                   | Telemetry Dashboard       | Venue network latency, noise history, and occupancy analytics         |
+|                                  | `/analytics/nomad-tax`         | Nomad Tax & Border Ledger | Zero-knowledge border crossing ledger and tax residency tracker       |
+|                                  | `/analytics/carbon`            | Carbon Footprint Tracker  | Commute and workspace energy consumption offset calculator            |
+|                                  | `/analytics/noise-forecasting` | Predictive Noise Engine   | Prophet-based forecasting for future crowd and decibel levels         |
+| **User & Administration**        | `/dashboard`                   | User Neural Ledger        | Personal dashboard, confirmed bookings, and cryptographic receipts    |
+|                                  | `/dashboard/webhooks`          | Webhook Integrations      | Developer webhook endpoint management and event delivery logs         |
+|                                  | `/user-profile/passport`       | Nomad Digital Passport    | Verifiable credential badges, check-in history, and POAPs             |
+|                                  | `/admin/system`                | Admin System Diagnostics  | Partition maintenance, DB health, and memory telemetry                |
+|                                  | `/admin/performance`           | Core Web Vitals Monitor   | Real-time server latency, TTFB, and route latency heatmaps            |
+|                                  | `/offline`                     | Offline Survival Mode     | Offline-first PWA fallback with cached venues and queue sync          |
+|                                  | `/sign-in`                     | Sign In                   | Clerk authentication sign-in portal                                   |
+|                                  | `/sign-up`                     | Sign Up                   | Clerk authentication sign-up portal                                   |
 
 ---
 
-## 🔌 API Routes
+## 🔌 API Routes (300+ Modular Endpoints)
 
-| Method   | Route                     | Description                            |
-| -------- | ------------------------- | -------------------------------------- |
-| `POST`   | `/api/chat`               | Main chat endpoint with agent pipeline |
-| `GET`    | `/api/venues`             | Search venues                          |
-| `POST`   | `/api/venues`             | Add crowdsourced venue                 |
-| `GET`    | `/api/venues/enrich`      | Enrich venue with OSM + Pexels data    |
-| `POST`   | `/api/venues/[id]/rate`   | Rate a venue                           |
-| `POST`   | `/api/venues/updates`     | Bulk update venue photos               |
-| `GET`    | `/api/favorites`          | Get user's favorites                   |
-| `POST`   | `/api/favorites`          | Add favorite                           |
-| `DELETE` | `/api/favorites`          | Remove favorite                        |
-| `GET`    | `/api/conversations`      | List conversations                     |
-| `POST`   | `/api/conversations`      | Create conversation                    |
-| `GET`    | `/api/conversations/[id]` | Get conversation                       |
-| `DELETE` | `/api/conversations/[id]` | Delete conversation                    |
-| `GET`    | `/api/location`           | IP-based location fallback             |
-| `POST`   | `/api/webhook`            | Clerk webhook for user sync            |
+WorkSphere features a modular API architecture organized across specialized subsystems:
+
+| Subsystem                  | Key Endpoints                                                                                             | Description                                                                                   |
+| :------------------------- | :-------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------- |
+| **🤖 Multi-Agent AI**      | `/api/chat`<br>`/api/ai/concierge`<br>`/api/legal/redline`<br>`/api/scheduling/pod`                       | Multi-agent reasoning pipeline, legal NDA redlining, and meeting pod optimization             |
+| **🎧 WASM Audio & DSP**    | `/api/audio/jammer`<br>`/api/audio/vibe`<br>`/api/venues/acoustics/rt60`<br>`/api/security/acoustic`      | DAF speech jamming, AI ambient soundscapes, RT60 spatial acoustics, and acoustic masking      |
+| **💳 Web3 & Payments**     | `/api/payments/solana/*`<br>`/api/bounties/payout`<br>`/api/bookings/escrow`<br>`/api/finance/card`       | Solana Pay RPC verification, focus bounties escrow, and virtual card issuance                 |
+| **👓 Spatial & WebXR**     | `/api/venues/slam`<br>`/api/ar/anchors`<br>`/api/accessibility/scene`<br>`/api/spatial/beacons`           | SLAM voxel octree, AR anchors, audio-described spatial scene graphs, and team proximity       |
+| **🏢 Digital Twin & IoT**  | `/api/twin/airquality`<br>`/api/venues/powergrid`<br>`/api/iot/orchestrate`<br>`/api/wellness/ergonomics` | HVAC air purge orchestrator, cafe breaker trip prediction, Matter IoT bridges, and ergonomics |
+| **🌐 Mesh & Survival**     | `/api/compute/burst`<br>`/api/network/survival`<br>`/api/medical/beacon`<br>`/api/network/qos`            | WebRTC distributed compute mesh, offline P2P emergency network, and medical beacon            |
+| **🛡️ ZKP & Security**      | `/api/auth/zkp/nomad-proof`<br>`/api/identity/verify`<br>`/api/documents/sanitize`<br>`/api/zkp/deepwork` | Zero-knowledge identity proofs, client-side PII sanitization, and proof-of-deep-work          |
+| **🗺️ Venues & Routing**    | `/api/venues`<br>`/api/venues/enrich`<br>`/api/routing/microclimate`<br>`/api/travel/reroute`             | Venue search & OSM enrichment, micro-climate weather routing, and flight-delay rerouting      |
+| **🧾 Bookings & Receipts** | `/api/bookings`<br>`/api/bookings/[id]/download`<br>`/api/tax/nomad-compliance`<br>`/api/bookings/export` | Serverless PDF receipt generation with HMAC-SHA256 signatures and JSON/CSV tax exports        |
+| **📊 Admin & Diagnostics** | `/api/admin/audit/verify`<br>`/api/admin/performance`<br>`/api/admin/system/latency-heatmap`              | SHA-256 Merkle tree verification, route latency canvas heatmaps, and system diagnostics       |
 
 ---
 

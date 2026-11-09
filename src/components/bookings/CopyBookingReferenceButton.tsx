@@ -10,9 +10,9 @@ export interface CopyBookingReferenceButtonProps {
   label?: string;
   /** Whether to render the reference ID inline inside the button */
   showId?: boolean;
-  /** Custom tooltip text before copying (default: 'Copy reference ID') */
+  /** Custom tooltip text before copying (default: 'Copy confirmation ID') */
   tooltipText?: string;
-  /** Custom tooltip text after copying (default: 'Reference ID copied!') */
+  /** Custom tooltip text after copying (default: 'Copied!') */
   copiedTooltipText?: string;
   /** Tooltip position relative to button */
   tooltipPosition?: "top" | "bottom" | "left" | "right";
@@ -20,6 +20,12 @@ export interface CopyBookingReferenceButtonProps {
   className?: string;
   /** Optional callback fired when successfully copied */
   onCopied?: (referenceId: string) => void;
+  /** Optional callback fired when copying fails */
+  onError?: (error: unknown) => void;
+  /** Duration in milliseconds that the copied state persists (default: 2000) */
+  successDuration?: number;
+  /** Whether the copy button is disabled */
+  disabled?: boolean;
   /** Optional data-testid override */
   testId?: string;
   /** Optional aria-label override */
@@ -35,6 +41,9 @@ export function CopyBookingReferenceButton({
   tooltipPosition = "top",
   className = "",
   onCopied,
+  onError,
+  successDuration = 2000,
+  disabled = false,
   ariaLabel,
   testId,
 }: CopyBookingReferenceButtonProps) {
@@ -42,19 +51,22 @@ export function CopyBookingReferenceButton({
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
   const tooltipId = useId();
 
-  const isTooltipVisible = isHovered || isFocused || isCopied;
+  const isTooltipVisible = !disabled && (isHovered || isFocused || isCopied);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
     };
   }, []);
 
-  const fallbackCopy = (text: string) => {
+  const fallbackCopy = (text: string): boolean => {
     const textArea = document.createElement("textarea");
     textArea.value = text;
     textArea.style.position = "fixed";
@@ -64,40 +76,57 @@ export function CopyBookingReferenceButton({
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
+    let success = false;
     try {
-      document.execCommand("copy");
+      success = document.execCommand("copy");
     } catch (e) {
       console.error("[CopyBookingReferenceButton] Fallback copy failed:", e);
+      onError?.(e);
+      document.body.removeChild(textArea);
+      return false;
     }
     document.body.removeChild(textArea);
+    return success;
   };
 
   const handleCopy = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     e.preventDefault();
 
-    if (!referenceId) return;
+    if (disabled || !referenceId || !referenceId.trim()) return;
 
-    if (navigator?.clipboard?.writeText) {
+    let copySucceeded = false;
+
+    if (typeof navigator !== "undefined" && navigator?.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(referenceId);
-      } catch {
-        fallbackCopy(referenceId);
+        copySucceeded = true;
+      } catch (err) {
+        copySucceeded = fallbackCopy(referenceId);
+        if (!copySucceeded) {
+          onError?.(err);
+        }
       }
     } else {
-      fallbackCopy(referenceId);
+      copySucceeded = fallbackCopy(referenceId);
     }
 
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
+    if (!isMountedRef.current) return;
+
+    if (copySucceeded) {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      setIsCopied(true);
+      onCopied?.(referenceId);
+
+      timeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          setIsCopied(false);
+        }
+      }, successDuration);
     }
-
-    setIsCopied(true);
-    onCopied?.(referenceId);
-
-    timeoutRef.current = setTimeout(() => {
-      setIsCopied(false);
-    }, 2000);
   };
 
   // Tooltip positioning styles
@@ -139,16 +168,20 @@ export function CopyBookingReferenceButton({
     <div className="relative inline-flex items-center">
       <button
         type="button"
+        disabled={disabled}
+        aria-disabled={disabled}
         onClick={handleCopy}
-        onMouseEnter={() => setIsHovered(true)}
+        onMouseEnter={() => !disabled && setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        onFocus={() => setIsFocused(true)}
+        onFocus={() => !disabled && setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         aria-label={computedAriaLabel}
         aria-describedby={isTooltipVisible ? tooltipId : undefined}
         data-testid={testId || "copy-booking-reference-btn"}
         className={`group inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-violet-500/50 ${
-          isCopied
+          disabled
+            ? "opacity-50 cursor-not-allowed bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 border border-zinc-200 dark:border-zinc-800"
+            : isCopied
             ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 font-semibold"
             : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700/60"
         } ${className}`}
@@ -160,12 +193,12 @@ export function CopyBookingReferenceButton({
         )}
 
         {showId && (
-          <span className="font-mono font-semibold tracking-wide">
+          <span className="font-mono font-semibold tracking-wide" data-testid="copy-reference-id-text">
             {referenceId}
           </span>
         )}
 
-        {label && <span>{label}</span>}
+        {label && <span data-testid="copy-reference-label-text">{label}</span>}
       </button>
 
       {/* Accessible Screen Reader Live Announcement */}
@@ -192,7 +225,7 @@ export function CopyBookingReferenceButton({
               : "bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-900"
           }`}
         >
-          <div className="flex items-center gap-1" data-testid="copy-reference-tooltip">
+          <div className="flex items-center gap-1">
             {isCopied && <Check className="w-3 h-3 text-white" />}
             <span data-testid="copied-tooltip-text">{isCopied ? copiedTooltipText : tooltipText}</span>
           </div>

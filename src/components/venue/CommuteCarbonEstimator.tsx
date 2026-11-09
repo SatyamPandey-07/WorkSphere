@@ -4,41 +4,36 @@ import { useState } from "react";
 import {
   Leaf,
   Clock,
-  MapPin,
   Trees,
   Flame,
-  Zap,
   TrendingDown,
   Navigation,
-  Compass,
   Info,
   Calendar,
 } from "lucide-react";
-import {
-  useCommuteEstimator,
-  type UseCommuteEstimatorOptions,
-} from "@/hooks/useCommuteEstimator";
+import { useCommuteEstimator } from "@/hooks/useCommuteEstimator";
 import { COMMUTE_MODES, type CommuteMode } from "@/lib/commute/carbonEstimator";
+import { cn } from "@/lib/utils";
 
 export interface CommuteCarbonEstimatorProps {
   venueLatitude: number;
   venueLongitude: number;
   venueName?: string;
+  className?: string;
 }
 
 export function CommuteCarbonEstimator({
   venueLatitude,
   venueLongitude,
   venueName,
+  className = "",
 }: CommuteCarbonEstimatorProps) {
   const {
     activeMode,
     setActiveMode,
     activeEstimate,
     allEstimates,
-    userCoords,
     isLoadingLocation,
-    locationError,
     requestCurrentLocation,
     showWeeklyProjection,
     setShowWeeklyProjection,
@@ -57,7 +52,13 @@ export function CommuteCarbonEstimator({
   const modes: CommuteMode[] = ["walking", "cycling", "transit", "ev", "motorcycle", "car"];
 
   return (
-    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 shadow-sm overflow-hidden p-5 sm:p-6 space-y-5 transition-all">
+    <div
+      data-testid="commute-carbon-estimator"
+      className={cn(
+        "rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 shadow-sm overflow-hidden p-5 sm:p-6 space-y-5 transition-all",
+        className
+      )}
+    >
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800/80 pb-4">
         <div className="flex items-center gap-2.5">
@@ -77,6 +78,7 @@ export function CommuteCarbonEstimator({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            data-testid="request-location-btn"
             onClick={requestCurrentLocation}
             disabled={isLoadingLocation}
             className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80 px-2.5 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
@@ -92,6 +94,7 @@ export function CommuteCarbonEstimator({
 
           <button
             type="button"
+            data-testid="projection-toggle-btn"
             onClick={() => setShowWeeklyProjection(!showWeeklyProjection)}
             className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold border transition-all ${
               showWeeklyProjection
@@ -116,12 +119,14 @@ export function CommuteCarbonEstimator({
             <button
               key={modeKey}
               type="button"
+              data-testid={`commute-mode-btn-${modeKey}`}
               onClick={() => setActiveMode(modeKey)}
-              className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+              className={cn(
+                "flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all cursor-pointer",
                 isSelected
                   ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500/60 ring-2 ring-emerald-500/20 shadow-sm"
                   : "bg-zinc-50 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700"
-              }`}
+              )}
             >
               <span className="text-xl mb-1">{modeInfo.icon}</span>
               <span
@@ -149,7 +154,10 @@ export function CommuteCarbonEstimator({
             <Clock className="h-3.5 w-3.5 text-blue-500" />
             <span>Estimated Travel Time</span>
           </div>
-          <div className="text-xl font-bold text-zinc-900 dark:text-white">
+          <div
+            data-testid="commute-travel-time"
+            className="text-xl font-bold text-zinc-900 dark:text-white"
+          >
             {activeEstimate.durationFormatted}
           </div>
           <div className="text-[11px] text-zinc-500 font-mono">
@@ -165,14 +173,20 @@ export function CommuteCarbonEstimator({
               {showWeeklyProjection ? "5-Day Weekly CO₂" : "Round-Trip CO₂"}
             </span>
           </div>
-          <div className="text-xl font-bold text-zinc-900 dark:text-white">
+          <div
+            data-testid="commute-co2-metric"
+            className="text-xl font-bold text-zinc-900 dark:text-white"
+          >
             {showWeeklyProjection
               ? `${activeEstimate.co2KgWeekly} kg`
               : `${activeEstimate.co2GramsRoundTrip}g`}
           </div>
           <div className="flex items-center gap-1">
             <span
-              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${activeEstimate.ecoColorClass}`}
+              className={cn(
+                "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border",
+                activeEstimate.ecoColorClass
+              )}
             >
               {activeEstimate.ecoBadgeText}
             </span>
@@ -187,7 +201,10 @@ export function CommuteCarbonEstimator({
                 <Flame className="h-3.5 w-3.5 text-amber-500" />
                 <span>Active Calorie Burn</span>
               </div>
-              <div className="text-xl font-bold text-amber-600 dark:text-amber-400">
+              <div
+                data-testid="commute-active-health-metric"
+                className="text-xl font-bold text-amber-600 dark:text-amber-400"
+              >
                 {showWeeklyProjection
                   ? `${activeEstimate.caloriesBurnedRoundTrip * 5} kcal`
                   : `${activeEstimate.caloriesBurnedRoundTrip} kcal`}
@@ -204,7 +221,10 @@ export function CommuteCarbonEstimator({
                 <TrendingDown className="h-3.5 w-3.5 text-teal-500" />
                 <span>Annual CO₂ Savings vs. Car</span>
               </div>
-              <div className="text-xl font-bold text-teal-600 dark:text-teal-400">
+              <div
+                data-testid="commute-active-health-metric"
+                className="text-xl font-bold text-teal-600 dark:text-teal-400"
+              >
                 {activeEstimate.co2SavedVsCarAnnualKg > 0
                   ? `${activeEstimate.co2SavedVsCarAnnualKg} kg`
                   : "0 kg (Baseline)"}
@@ -221,7 +241,10 @@ export function CommuteCarbonEstimator({
 
       {/* Environmental Offset Banner */}
       {activeEstimate.co2SavedVsCarAnnualKg > 0 && (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-950/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div
+          data-testid="carbon-offset-banner"
+          className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-950/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
               <Trees className="h-5 w-5" />
@@ -266,6 +289,7 @@ export function CommuteCarbonEstimator({
       <div className="pt-1">
         <button
           type="button"
+          data-testid="calculation-info-toggle"
           onClick={() => setExpandedInfo(!expandedInfo)}
           className="inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
         >
@@ -274,7 +298,10 @@ export function CommuteCarbonEstimator({
         </button>
 
         {expandedInfo && (
-          <p className="mt-2 text-[11px] text-zinc-500 leading-relaxed rounded-lg bg-zinc-50 dark:bg-zinc-800/40 p-3 border border-zinc-100 dark:border-zinc-800">
+          <p
+            data-testid="calculation-info-text"
+            className="mt-2 text-[11px] text-zinc-500 leading-relaxed rounded-lg bg-zinc-50 dark:bg-zinc-800/40 p-3 border border-zinc-100 dark:border-zinc-800"
+          >
             Emissions are calculated using standard DEFRA/EPA lifecycle emissions factors: Walking (0g CO₂/km), Cycling (4g CO₂/km), Public Transit (32g CO₂/km), EV (48g CO₂/km), Motorcycle (92g CO₂/km), and Average Gasoline Car baseline (171g CO₂/km). Annual tree offsets are based on mature tree absorption of 21.77 kg CO₂/year.
           </p>
         )}
@@ -282,3 +309,5 @@ export function CommuteCarbonEstimator({
     </div>
   );
 }
+
+export default CommuteCarbonEstimator;

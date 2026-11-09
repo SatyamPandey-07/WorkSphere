@@ -36,3 +36,6 @@ export type {
 } from "./HourlyCrowdForecast";
 export { VenueDetailModal } from "./VenueDetailModal";
 export type { VenueDetailModalProps } from "./VenueDetailModal";
+export { VenueCheckInButton } from "./VenueCheckInButton";
+export type { VenueCheckInButtonProps } from "./VenueCheckInButton";
+

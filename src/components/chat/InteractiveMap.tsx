@@ -147,13 +147,18 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+ feature/booking-concurrency-lock
+
  feature/logarithmic-volume-curve
 
 docs/git-worktree-guide
  main
+ main
   const tileLayerUrl = isHighContrast
     ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
+feature/booking-concurrency-lock
 
  feature/logarithmic-volume-curve
 
@@ -166,6 +171,7 @@ docs/git-worktree-guide
     : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
  main
  main
+main
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
     return (

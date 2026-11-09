@@ -1,3 +1,5 @@
+feature/floorplan-vector-editor
+
  feature/nomad-tax-spring-animation
 
 docs/p2p-dtn-spec
@@ -5,11 +7,14 @@ docs/p2p-dtn-spec
 fix/seat-availability-stale-state
  main
  main
+main
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Redis from "ioredis";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+
+feature/floorplan-vector-editor
 
  feature/nomad-tax-spring-animation
 
@@ -21,6 +26,7 @@ main
 
  main
  main
+main
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
 
 export interface HybridSearchResult {
@@ -35,12 +41,15 @@ export interface HybridSearchResult {
  */
 export async function getQueryEmbedding(query: string): Promise<number[]> {
   const cacheKey = `embedding:${Buffer.from(query.toLowerCase().trim()).toString("base64")}`;
+feature/floorplan-vector-editor
+
  feature/nomad-tax-spring-animation
 
  docs/p2p-dtn-spec
 
  fix/seat-availability-stale-state
 main
+ main
  main
 
   try {
@@ -63,6 +72,8 @@ main
   }
 
   return embedding;
+ feature/floorplan-vector-editor
+
  feature/nomad-tax-spring-animation
 
  docs/p2p-dtn-spec
@@ -109,6 +120,7 @@ main
     console.warn("[Gemini Embedding Error]:", err);
     return new Array(768).fill(0);
   }
+main
 main
 main
 main

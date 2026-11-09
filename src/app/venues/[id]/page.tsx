@@ -73,9 +73,8 @@ export async function generateMetadata({
 
     const imageToUse = venue.imageUrl || fallbackImage;
     const title = `${venue.name} | WorkSphere`;
-    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${
-      venue.address ? ` ${venue.address}` : ""
-    }`;
+    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${venue.address ? ` ${venue.address}` : ""
+      }`;
 
     return {
       title,

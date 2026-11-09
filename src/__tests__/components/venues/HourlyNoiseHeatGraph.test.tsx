@@ -155,3 +155,4 @@ describe("HourlyNoiseHeatGraph Component", () => {
     });
   });
 });
+

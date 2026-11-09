@@ -112,3 +112,4 @@ describe("AwarenessProtocol", () => {
     expect(remainingPeers.has(protocol1.getClientID())).toBe(false);
   });
 });
+

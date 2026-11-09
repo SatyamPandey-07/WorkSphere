@@ -144,3 +144,4 @@ export default class PresenceRoom implements Party.Server {
     }, HEARTBEAT_SWEEP_INTERVAL_MS);
   }
 }
+

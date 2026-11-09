@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Fetch venues from database (simulate data fetching here)
-    const venues: Record<string, unknown>[] = [
+    const venues = [
       // { id: '1', name: 'Coffee House', ... }
     ];
 

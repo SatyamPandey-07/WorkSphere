@@ -1258,7 +1258,7 @@ export default function DynamicErgonomicCoach() {
           currentPostureState={session.currentPostureState}
           transitionsCount={session.transitionsCount || 0}
           onTogglePosture={togglePostureState}
-          onUpdateTimes={(sit, stand) =>
+          onUpdateTimes={(sit: number, stand: number) =>
             setSession((s) => ({
               ...s,
               totalSittingSeconds: sit,

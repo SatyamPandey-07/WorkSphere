@@ -24,3 +24,18 @@ export type {
 } from "./HybridSearchWeightSlider";
 export { VenueList } from "./VenueList";
 export type { VenueListProps } from "./VenueList";
+export { VenueFilterBar } from "./VenueFilterBar";
+export type {
+  VenueFilterBarProps,
+  VenueFilterItem,
+} from "./VenueFilterBar";
+export { HourlyCrowdForecast } from "./HourlyCrowdForecast";
+export type {
+  HourlyCrowdForecastProps,
+  HourlyForecastItem,
+} from "./HourlyCrowdForecast";
+export { VenueDetailModal } from "./VenueDetailModal";
+export type { VenueDetailModalProps } from "./VenueDetailModal";
+export { VenueCheckInButton } from "./VenueCheckInButton";
+export type { VenueCheckInButtonProps } from "./VenueCheckInButton";
+

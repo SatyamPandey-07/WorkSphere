@@ -20,11 +20,15 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.3",
+    feature/postgresql-weekly-partitioning
     "@google/genai": "^2.30.0",
     "@google/generative-ai": "^0.24.1",
+
+    "@google/genai": "^2.32.0",
+ main
     "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.10.0",
-    "@prisma/client": "^7.10.0",
+    "@prisma/client": "^7.10.1",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.7.0",
     "@simplewebauthn/browser": "^14.0.0",
@@ -59,10 +63,10 @@
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.0",
-    "prisma": "^7.10.0",
+    "prisma": "^7.10.1",
     "radix-ui": "^1.6.7",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "react-easy-crop": "^6.2.4",
     "react-i18next": "^17.0.15",
     "react-is": "^19.3.0",

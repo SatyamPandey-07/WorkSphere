@@ -1580,7 +1580,7 @@ export function VenueCard({
 
             {venue.distance && (
               <div
-                className="text-xs text-zinc-500 self-center ml-auto font-medium truncate max-w-[100px]"
+                className="text-xs text-zinc-500 dark:text-zinc-300 self-center ml-auto font-medium truncate max-w-[100px]"
                 title={venue.distance}
               >
                 📏 {venue.distance}
@@ -1653,7 +1653,7 @@ export function VenueCard({
               </div>
             )}
           {venue.outletLocations && venue.outletLocations.length > 0 && (
-            <div className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-300">
               <span
                 className="truncate max-w-[200px]"
                 title={venue.outletLocations

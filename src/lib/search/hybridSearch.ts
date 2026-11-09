@@ -1,9 +1,32 @@
+feature/floorplan-vector-editor
+
+ feature/nomad-tax-spring-animation
+
+docs/p2p-dtn-spec
+
+fix/seat-availability-stale-state
+ main
+ main
+main
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Redis from "ioredis";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
+feature/floorplan-vector-editor
+
+ feature/nomad-tax-spring-animation
+
+docs/p2p-dtn-spec
+
+import { getGeminiClient, isGeminiConfigured } from "@/lib/ai/gemini";
+import { getRedis } from "@/lib/redis";
+main
+
+ main
+ main
+main
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
 
 export interface HybridSearchResult {
@@ -18,6 +41,16 @@ export interface HybridSearchResult {
  */
 export async function getQueryEmbedding(query: string): Promise<number[]> {
   const cacheKey = `embedding:${Buffer.from(query.toLowerCase().trim()).toString("base64")}`;
+feature/floorplan-vector-editor
+
+ feature/nomad-tax-spring-animation
+
+ docs/p2p-dtn-spec
+
+ fix/seat-availability-stale-state
+main
+ main
+ main
 
   try {
     const cached = await redis.get(cacheKey);
@@ -39,6 +72,58 @@ export async function getQueryEmbedding(query: string): Promise<number[]> {
   }
 
   return embedding;
+ feature/floorplan-vector-editor
+
+ feature/nomad-tax-spring-animation
+
+ docs/p2p-dtn-spec
+
+
+  const redis = getRedis();
+
+  if (redis) {
+    try {
+      const cached = await redis.get<string | number[]>(cacheKey);
+      if (cached) {
+        return typeof cached === "string" ? JSON.parse(cached) : (cached as number[]);
+      }
+    } catch (err) {
+      console.warn("[Redis Cache Miss/Error]:", err);
+    }
+  }
+
+  if (!isGeminiConfigured()) {
+    return new Array(768).fill(0);
+  }
+
+  try {
+    const gemini = getGeminiClient();
+    const result = await gemini.models.embedContent({
+      model: "text-embedding-004",
+      contents: query,
+    });
+    const embedding =
+      result.embeddings?.[0]?.values ||
+      (result as any).embedding?.values ||
+      [];
+
+    if (redis && embedding.length > 0) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(embedding), { ex: CACHE_TTL_SECONDS });
+      } catch (err) {
+        console.warn("[Redis Set Error]:", err);
+      }
+    }
+
+    return embedding;
+  } catch (err) {
+    console.warn("[Gemini Embedding Error]:", err);
+    return new Array(768).fill(0);
+  }
+main
+main
+main
+main
 }
 
 /**

@@ -36,37 +36,58 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = "worksphere-theme";
 
+/**
+ * Runs a DOM change with CSS transitions disabled via a temporary
+ * `preload` class on <html>, so theme variables swap instantly instead
+ * of animating through intermediate (white or half styled) frames.
+ */
+function withoutTransitions(change: () => void) {
+  const root = document.documentElement;
+  root.classList.add("preload");
+  change();
+  // Force a reflow so the new styles apply while transitions are off.
+  void window.getComputedStyle(root).opacity;
+  const release = () => root.classList.remove("preload");
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(release));
+  } else {
+    window.setTimeout(release, 50);
+  }
+}
+
 function applyTheme(theme: Theme) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
 
-  root.setAttribute("data-theme", theme);
-  root.classList.remove("dark", "cyberpunk");
+  withoutTransitions(() => {
+    root.setAttribute("data-theme", theme);
+    root.classList.remove("dark", "cyberpunk");
 
-  if (theme === "dark") {
-    root.classList.add("dark");
-  } else if (theme === "cyberpunk") {
-    root.classList.add("cyberpunk");
-  }
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else if (theme === "cyberpunk") {
+      root.classList.add("cyberpunk");
+    }
 
-  const bg =
-    theme === "dark"
-      ? "#0a0a0a"
-      : theme === "cyberpunk"
-        ? "#090014"
-        : "#ffffff";
-  const fg =
-    theme === "dark"
-      ? "#ededed"
-      : theme === "cyberpunk"
-        ? "#f4f4ff"
-        : "#171717";
+    const bg =
+      theme === "dark"
+        ? "#0a0a0a"
+        : theme === "cyberpunk"
+          ? "#090014"
+          : "#ffffff";
+    const fg =
+      theme === "dark"
+        ? "#ededed"
+        : theme === "cyberpunk"
+          ? "#f4f4ff"
+          : "#171717";
 
-  root.style.colorScheme = theme === "light" ? "light" : "dark";
-  root.style.backgroundColor = bg;
-  root.style.color = fg;
-  root.style.setProperty("--background", bg);
-  root.style.setProperty("--foreground", fg);
+    root.style.colorScheme = theme === "light" ? "light" : "dark";
+    root.style.backgroundColor = bg;
+    root.style.color = fg;
+    root.style.setProperty("--background", bg);
+    root.style.setProperty("--foreground", fg);
+  });
 }
 
 function applyHighContrast(enabled: boolean) {

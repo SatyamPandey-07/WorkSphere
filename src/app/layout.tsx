@@ -8,6 +8,7 @@ import "./globals.css";
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
 import { SoundProvider } from "../components/SoundProvider";
+import { SkipToContent } from "../components/ui/SkipToContent";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { ScrollToTopButton } from "../components/ui/ScrollToTopButton";
 import { CookieBanner } from "../components/CookieBanner";
@@ -102,7 +103,11 @@ export default async function RootLayout({
             <CommandPalette />
             <IdleSessionDialog />
             <StorageQuotaWarningBanner />
-            <I18nProvider>{children}</I18nProvider>
+            <I18nProvider>
+              <main id="main-content" tabIndex={-1} className="outline-none">
+                {children}
+              </main>
+            </I18nProvider>
             <SyncManager />
           </CurrencyProvider>
         </ToastProvider>
@@ -149,6 +154,7 @@ export default async function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <SkipToContent />
         <ScrollProgress />
         <ScrollToTopButton />
         {bodyContent}

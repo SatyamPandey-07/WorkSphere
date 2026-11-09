@@ -129,3 +129,4 @@ describe("AcousticSpectrumAnalyzer Component", () => {
     fireEvent.click(resetBtn);
   });
 });
+

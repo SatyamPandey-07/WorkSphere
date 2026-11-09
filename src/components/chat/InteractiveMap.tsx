@@ -147,20 +147,25 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
- feature/booking-concurrency-lock
+feature/floorplan-vector-editor
 
- feature/logarithmic-volume-curve
+ feature/nomad-tax-spring-animation
 
-docs/git-worktree-guide
+ docs/p2p-dtn-spec
+
+ fix/seat-availability-stale-state
  main
- main
+main
+main
   const tileLayerUrl = isHighContrast
     ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
 
-feature/booking-concurrency-lock
+feature/floorplan-vector-editor
 
- feature/logarithmic-volume-curve
+ feature/nomad-tax-spring-animation
+
+ docs/p2p-dtn-spec
 
 
   const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
@@ -169,8 +174,9 @@ feature/booking-concurrency-lock
       ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
     : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
- main
- main
+main
+main
+main
 main
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {

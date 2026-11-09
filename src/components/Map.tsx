@@ -30,16 +30,6 @@ import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
 import RoutingOptimizer from "./map/RoutingOptimizer";
 
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
 export { throttle } from "@/lib/utils";
 export {
   getHighContrastIcon,
@@ -1586,113 +1576,6 @@ const Map = ({
         />
       </MapContainer>
     </>
-  );
-};
-type TileProviderKey = 'carto' | 'osm' | 'wikimedia';
-
-const TILE_PROVIDERS: Record<TileProviderKey, { name: string; url: string; maxZoom: number; attribution: string }> = {
-  carto: {
-    name: 'Carto Positron (Default)',
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-  },
-  osm: {
-    name: 'OpenStreetMap Standard',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  },
-  wikimedia: {
-    name: 'Wikimedia Maps',
-    url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png',
-    maxZoom: 18,
-    attribution: '&copy; Wikimedia maps | OpenStreetMap contributors',
-  },
-};
-
-interface MapProps {
-  center: [number, number];
-  zoom?: number;
-  className?: string;
-}
-
-export const Map: React.FC<MapProps> = ({ center, zoom = 13, className = 'h-[450px] w-full rounded-2xl' }) => {
-  const mapRef = useRef<L.Map | null>(null);
-  const tileLayerRef = useRef<L.TileLayer | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-
-  const [provider, setProvider] = useState<TileProviderKey>('carto');
-  const [hasError, setHasError] = useState(false);
-
-  useEffect(() => {
-    if (!mapContainerRef.current) return;
-
-    if (!mapRef.current) {
-      mapRef.current = L.map(mapContainerRef.current).setView(center, zoom);
-    }
-
-    const currentConfig = TILE_PROVIDERS[provider];
-
-    if (tileLayerRef.current) {
-      mapRef.current.removeLayer(tileLayerRef.current);
-    }
-
-    const layer = L.tileLayer(currentConfig.url, {
-      maxZoom: currentConfig.maxZoom,
-      attribution: currentConfig.attribution,
-      subdomains: 'abcd',
-    });
-
-    // Handle tile loading errors (e.g. 401 Unauthorized / quota limits on Carto)
-    layer.on('tileerror', (event) => {
-      console.warn('Tile load error detected for provider:', provider, event);
-      setHasError(true);
-      if (provider === 'carto') {
-        console.info('Automatically falling back from Carto to OpenStreetMap tiles...');
-        setProvider('osm');
-      }
-    });
-
-    layer.addTo(mapRef.current);
-    tileLayerRef.current = layer;
-
-    return () => {
-      if (tileLayerRef.current && mapRef.current) {
-        mapRef.current.removeLayer(tileLayerRef.current);
-      }
-    };
-  }, [provider, center, zoom]);
-
-  return (
-    <div className="relative">
-      {/* Map Settings / Tile Provider Toggle */}
-      <div className="absolute top-3 right-3 z-[1000] bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 shadow-xl flex items-center gap-2">
-        <span className="text-xs text-slate-300 font-medium px-2">Map Style:</span>
-        <select
-          value={provider}
-          onChange={(e) => {
-            setHasError(false);
-            setProvider(e.target.value as TileProviderKey);
-          }}
-          className="bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-        >
-          {Object.entries(TILE_PROVIDERS).map(([key, val]) => (
-            <option key={key} value={key}>
-              {val.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {hasError && provider !== 'carto' && (
-        <div className="absolute bottom-3 left-3 z-[1000] bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs px-3 py-1.5 rounded-lg backdrop-blur-md">
-          ⚠️ Primary map tiles failed; automatically switched to backup provider.
-        </div>
-      )}
-
-      <div ref={mapContainerRef} className={`${className} border border-slate-800 shadow-2xl`} />
-    </div>
   );
 };
 

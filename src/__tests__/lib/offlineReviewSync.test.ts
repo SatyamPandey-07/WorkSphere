@@ -311,4 +311,83 @@ describe("offlineReviewSync", () => {
     expect(updated?.retryCount).toBe(0);
     expect(updated?.status).toBe("PENDING");
   });
+
+  describe("Network Interceptor & Optimistic Offline Submission (#3469)", () => {
+    const originalOnline = navigator.onLine;
+
+    afterEach(() => {
+      Object.defineProperty(navigator, "onLine", {
+        value: originalOnline,
+        configurable: true,
+      });
+    });
+
+    it("intercepts review when offline and returns optimistic 'Saved offline — will post when connected'", async () => {
+      Object.defineProperty(navigator, "onLine", {
+        value: false,
+        configurable: true,
+      });
+
+      const { submitReviewWithOfflineSync } = await import(
+        "../../lib/offlineReviewSync"
+      );
+
+      const result = await submitReviewWithOfflineSync({
+        venueId: "venue-offline-pill",
+        venueName: "Offline Coworking Space",
+        rating: 5,
+        comment: "Excellent coffee and quiet desks",
+      });
+
+      expect(result.savedOffline).toBe(true);
+      expect(result.message).toBe("Saved offline — will post when connected");
+      expect(result.review).toBeDefined();
+      expect(result.review?.venueId).toBe("venue-offline-pill");
+
+      const pending = await getQueuedReviews();
+      expect(pending.some((r) => r.venueId === "venue-offline-pill")).toBe(true);
+    });
+
+    it("does not intercept when online", async () => {
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+
+      const { submitReviewWithOfflineSync } = await import(
+        "../../lib/offlineReviewSync"
+      );
+
+      const result = await submitReviewWithOfflineSync({
+        venueId: "venue-online",
+        rating: 4,
+      });
+
+      expect(result.savedOffline).toBe(false);
+      expect(result.message).toBe("Online");
+    });
+
+    it("deduplicates queued reviews for the same review id idempotently", async () => {
+      const fixedId = "review-dedup-uuid-123";
+
+      const first = await queueOfflineReview({
+        id: fixedId,
+        venueId: "venue-dedup",
+        data: { wifiQuality: 4, hasOutlets: true, noiseLevel: "quiet" },
+      });
+
+      const duplicate = await queueOfflineReview({
+        id: fixedId,
+        venueId: "venue-dedup",
+        data: { wifiQuality: 5, hasOutlets: true, noiseLevel: "quiet" },
+      });
+
+      expect(first.id).toBe(duplicate.id);
+      const all = await getQueuedReviews();
+      const matches = all.filter((r) => r.id === fixedId);
+      expect(matches).toHaveLength(1);
+      expect(matches[0].data.wifiQuality).toBe(5);
+    });
+  });
 });
+

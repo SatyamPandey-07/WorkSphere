@@ -48,6 +48,7 @@ try:
         MetricsResponse,
         SearchRequest,
         StoreAddRequest,
+        StoreDeleteRequest,
     )
 except (ImportError, ValueError):
     from compression.compressor import ContextCompressor
@@ -62,6 +63,7 @@ except (ImportError, ValueError):
             MetricsResponse,
             SearchRequest,
             StoreAddRequest,
+            StoreDeleteRequest,
         )
     except (ImportError, ValueError):
         from schemas import (
@@ -73,6 +75,7 @@ except (ImportError, ValueError):
             MetricsResponse,
             SearchRequest,
             StoreAddRequest,
+            StoreDeleteRequest,
         )
 
 logger = logging.getLogger(__name__)
@@ -187,7 +190,28 @@ def create_app(
         app.state.start_time = time.monotonic()
         yield
 
-    app = FastAPI(title="Context Compression Server", lifespan=lifespan)
+    openapi_tags = [
+        {
+            "name": "Compression",
+            "description": "routes for text/context compression and deduplication",
+        },
+        {
+            "name": "Storage",
+            "description": "routes for vector index ingestion and nearest-neighbor search",
+        },
+        {
+            "name": "Observability",
+            "description": "/health and /api/metrics",
+        },
+    ]
+
+    app = FastAPI(
+        title="WorkSphere Context Compression Service",
+        version="1.0.0",
+        description="Vector-indexed semantic context compression and deduplication engine for WorkSphere.",
+        openapi_tags=openapi_tags,
+        lifespan=lifespan,
+    )
     app.state.start_time = time.monotonic()
     app.state.compressor = compressor
     app.state.store = store
@@ -237,8 +261,14 @@ def create_app(
             return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
         return await call_next(request)
 
-    @app.get("/health", response_model=HealthResponse)
+    @app.get(
+        "/health",
+        response_model=HealthResponse,
+        tags=["Observability"],
+        summary="Get service health",
+    )
     async def get_health():
+        """Return service health status, uptime, and version."""
         start_time = getattr(app.state, "start_time", None)
         if start_time is None:
             start_time = time.monotonic()
@@ -250,8 +280,14 @@ def create_app(
             version=get_service_version(),
         )
 
-    @app.get("/api/metrics", response_model=MetricsResponse)
+    @app.get(
+        "/api/metrics",
+        response_model=MetricsResponse,
+        tags=["Observability"],
+        summary="Get service metrics",
+    )
     async def get_metrics():
+        """Return operational telemetry metrics including vector count, total messages, dimension, and memory usage."""
         active_store = getattr(app.state, "store", store)
         active_compressor = getattr(app.state, "compressor", compressor)
         v_count = (
@@ -273,36 +309,69 @@ def create_app(
             getattr(active_compressor, "dimension", 128),
         )
         rss = get_memory_rss_mb()
+        cache_metrics = (
+            active_store.get_cache_metrics()
+            if hasattr(active_store, "get_cache_metrics")
+            and callable(active_store.get_cache_metrics)
+            else {}
+        )
         return MetricsResponse(
             vector_count=v_count,
             total_messages=t_messages,
             dimension=dim,
             memory_rss_mb=rss,
+            **cache_metrics,
         )
 
-    @app.get("/api/health")
+    @app.get(
+        "/api/health",
+        tags=["Observability"],
+        summary="Check basic health",
+    )
     async def health():
+        """Return simple health check status ok."""
         return {"status": "ok"}
 
-    @app.get("/api/stats")
+    @app.get(
+        "/api/stats",
+        tags=["Observability"],
+        summary="Get compressor and store statistics",
+    )
     async def stats():
+        """Return aggregated statistics from both compressor and vector store."""
         return {
             "compressor": compressor.get_stats(),
             "store": {"size": store.size()},
         }
 
-    @app.post("/api/add")
+    @app.post(
+        "/api/add",
+        tags=["Compression"],
+        summary="Add message to compression context",
+    )
     async def add_message(request: AddMessageRequest):
+        """Add a conversation message with role, content, and optional metadata to the compression context."""
         node_id = compressor.add_message(request.role, request.content, request.metadata)
         return {"node_id": node_id}
 
-    @app.post("/api/search")
+    @app.post(
+        "/api/search",
+        tags=["Compression"],
+        summary="Search relevant context",
+    )
     async def search(request: SearchRequest):
+        """Search for context nodes relevant to a query."""
         results = compressor.get_relevant_context(request.query, request.k)
         return {"results": results}
 
-    @app.post("/api/compress", response_model=CompressResponse)
+    @app.post(
+        "/api/compress",
+        response_model=CompressResponse,
+        tags=["Compression"],
+        summary="Compress context",
+    )
     async def compress(request: CompressRequest):
+        """Compress context relevant to a query within an optional token limit."""
         result, tokens = compressor.compress_context(
             request.query, max_tokens=request.max_tokens
         )
@@ -312,11 +381,16 @@ def create_app(
             "stats": compressor.get_stats(),
         }
 
-    @app.post("/api/compress/stream")
+    @app.post(
+        "/api/compress/stream",
+        tags=["Compression"],
+        summary="Stream compressed context",
+    )
     async def compress_stream(
         payload: CompressRequest,
         request: Request = None,
     ):
+        """Stream compressed context tokens in real time via server-sent events."""
         if not isinstance(payload, CompressRequest):
             raw_req = payload
             data = await raw_req.json()
@@ -366,26 +440,73 @@ def create_app(
             },
         )
 
-    @app.post("/api/deduplicate")
+    @app.post(
+        "/api/deduplicate",
+        tags=["Compression"],
+        summary="Deduplicate context messages",
+    )
     async def deduplicate(payload: DeduplicateRequest):
+        """Remove duplicate or highly similar context messages based on cosine similarity threshold."""
         removed = compressor.deduplicate(threshold=payload.threshold)
         return {
             "removed": removed,
             "stats": compressor.get_stats(),
         }
 
-    @app.post("/api/store/add")
+    @app.post(
+        "/api/store/add",
+        tags=["Storage"],
+        summary="Add text to vector store",
+    )
     async def store_add(request: StoreAddRequest):
+        """Ingest text and metadata into the vector store index."""
         node_id = store.add(request.text, request.metadata)
         return {"node_id": node_id}
 
-    @app.post("/api/store/search")
+    @app.post(
+        "/api/store/search",
+        tags=["Storage"],
+        summary="Search vector store",
+    )
     async def store_search(request: SearchRequest):
+        """Perform nearest-neighbor search on the vector store index."""
         results = store.search(request.query, request.k)
         return {"results": results}
 
-    @app.delete("/api/clear")
+    @app.delete(
+        "/api/store/delete",
+        tags=["Storage"],
+        summary="Delete from vector store",
+    )
+    async def store_delete(request: Optional[StoreDeleteRequest] = None, node_id: Optional[int] = None):
+        """Delete a specific vector node by ID or clear the entire store."""
+        target_id = node_id if node_id is not None else (request.node_id if request else None)
+        if target_id is not None:
+            removed = store.remove(target_id)
+            return {"success": removed, "node_id": target_id}
+        store.clear()
+        return {"status": "cleared"}
+
+    @app.get(
+        "/api/store/stats",
+        tags=["Storage"],
+        summary="Get vector store statistics",
+    )
+    async def store_stats():
+        """Return vector store size, dimension, and cache metrics."""
+        return {
+            "size": store.size(),
+            "dimension": getattr(store, "dimension", 128),
+            **(store.get_cache_metrics() if hasattr(store, "get_cache_metrics") and callable(store.get_cache_metrics) else {}),
+        }
+
+    @app.delete(
+        "/api/clear",
+        tags=["Compression"],
+        summary="Clear compressor and vector store",
+    )
     async def clear():
+        """Clear all state from both the compressor and the vector store."""
         compressor.clear()
         store.clear()
         return {"status": "cleared"}

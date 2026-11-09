@@ -1,10 +1,33 @@
-import { useState, useEffect } from "react";
-import { getPendingFavorites } from "@/lib/offlineStorage";
+import { useState, useEffect, useCallback } from "react";
+import { getPendingFavorites, getTotalPendingMutationsCount } from "@/lib/offlineStorage";
+import { globalSyncQueue, generateIdempotencyKey, SyncQueueItem } from "@/lib/offlineSyncQueue";
 
-export function useOfflineSync() {
+export interface UseOfflineSyncReturn {
+  isOffline: boolean;
+  hasPendingChanges: boolean;
+  isSyncing: boolean;
+  pendingCount: number;
+  enqueueMutation: <T = unknown>(type: string, payload: T, options?: { maxRetries?: number; id?: string }) => SyncQueueItem<T>;
+}
+
+/**
+ * Helper utility to enqueue an offline mutation with deterministic idempotency keys
+ * to prevent duplicate queue entries in IndexedDB offline mutation store (#4378).
+ */
+export function enqueueOfflineMutation<T = unknown>(
+  type: string,
+  payload: T,
+  options: { maxRetries?: number; id?: string } = {}
+): SyncQueueItem<T> {
+  const id = options.id || generateIdempotencyKey(type, payload);
+  return globalSyncQueue.enqueue(type, payload, { ...options, id });
+}
+
+export function useOfflineSync(): UseOfflineSyncReturn {
   const [isOffline, setIsOffline] = useState(false);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -14,13 +37,20 @@ export function useOfflineSync() {
 
     const checkPendingChanges = async () => {
       try {
-        const pending = await getPendingFavorites();
+        let count = 0;
+        try {
+          count = await getTotalPendingMutationsCount();
+        } catch {
+          const pending = await getPendingFavorites();
+          count = pending.length;
+        }
 
         if (isMounted) {
-          setHasPendingChanges(pending.length > 0);
+          setPendingCount(count);
+          setHasPendingChanges(count > 0);
         }
       } catch (e) {
-        console.error("Failed to check pending favorites:", e);
+        console.error("Failed to check pending changes:", e);
       }
     };
 
@@ -40,6 +70,8 @@ export function useOfflineSync() {
             setIsSyncing(false);
           }
         }, 3000);
+      } else {
+        checkPendingChanges();
       }
     };
 
@@ -67,9 +99,18 @@ export function useOfflineSync() {
     };
   }, []);
 
+  const enqueueMutation = useCallback(
+    <T = unknown>(type: string, payload: T, options: { maxRetries?: number; id?: string } = {}) => {
+      return enqueueOfflineMutation(type, payload, options);
+    },
+    []
+  );
+
   return {
     isOffline,
     hasPendingChanges,
     isSyncing,
+    pendingCount,
+    enqueueMutation,
   };
 }

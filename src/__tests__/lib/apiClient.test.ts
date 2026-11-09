@@ -6,6 +6,7 @@ import {
   CSRF_REFRESH_THRESHOLD_MS,
   _resetCsrfStateForTesting,
   _setCsrfTokenForTesting,
+  refreshSessionToken,
 } from "../../lib/apiClient";
 import { CSRF_HEADER_NAME } from "../../lib/csrf";
 
@@ -523,5 +524,26 @@ describe("apiFetch automated CSRF token auto-refresh before API mutation calls",
     const cachedToken = await ensureCsrfToken();
     expect(cachedToken).toBe("ensured-fresh-token");
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("should attempt silent session refresh and retry on 401 response", async () => {
+    let callCount = 0;
+    global.fetch = jest.fn().mockImplementation(async (url) => {
+      if (url === "/api/auth/session/refresh") {
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }
+      callCount++;
+      if (callCount === 1) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      return new Response("OK", { status: 200 });
+    });
+
+    const res = await apiFetch("/api/protected-resource");
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/auth/session/refresh",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });

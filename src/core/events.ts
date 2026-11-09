@@ -49,6 +49,12 @@ export interface AppEvents {
     userId: string;
     status: string;
   };
+  "session:promoted": {
+    sessionId: string;
+    rsvpId: string;
+    userId: string;
+    previousStatus: string;
+  };
 }
 
 export type EventName = keyof AppEvents;

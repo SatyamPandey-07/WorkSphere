@@ -10,6 +10,8 @@ import {
 } from "@/lib/passkey/rotation";
 import { otpErrorMessage, verifyPasskeyOtp } from "@/lib/passkey/emailOtp";
 import { verifyPasskeyRegistration } from "@/lib/passkey/registration";
+import { passkeyAuditLogService } from "@/lib/auth/passkeys/server/auditLog";
+
 
 export async function GET() {
   try {
@@ -105,6 +107,19 @@ export async function POST(req: Request) {
         otpId: check.otpId,
         registration: registration.registration,
         name: trimmedName || existing.name,
+      });
+
+      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+      const userAgent = req.headers.get("user-agent") || "";
+      passkeyAuditLogService.log({
+        userId,
+        credentialId: credential.credentialId,
+        credentialName: credential.name,
+        action: "ROTATE",
+        status: "SUCCESS",
+        ipAddress: ip,
+        userAgent,
+        details: `Rotated credential "${existing.name}". New key expires ${credential.expiresAt.toISOString().split("T")[0]}`,
       });
 
       return NextResponse.json({

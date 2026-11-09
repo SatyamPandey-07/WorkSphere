@@ -65,6 +65,36 @@ describe("Passkey Rotation API Routes", () => {
       expect(data.credentials[0].needsRotation).toBe(false);
       expect(data.credentials[0].isExpired).toBe(false);
     });
+
+    it("does not flag already expired credentials as needing rotation", async () => {
+      (auth as unknown as jest.Mock).mockResolvedValue({
+        userId: "user_test123",
+      });
+
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 10);
+
+      (prisma.passkeyCredential.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: "cred_expired",
+          credentialId: "cred_id_expired",
+          name: "Expired Passkey",
+          deviceType: "singleDevice",
+          backedUp: false,
+          createdAt: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
+          lastUsedAt: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
+          expiresAt: pastDate,
+        },
+      ]);
+
+      const res = await getRotationStatus();
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.credentials).toHaveLength(1);
+      expect(data.credentials[0].isExpired).toBe(true);
+      expect(data.credentials[0].needsRotation).toBe(false);
+    });
   });
 
   describe("POST /api/auth/passkey/rotation", () => {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
+import { apiError } from "@/lib/apiResponse";
 
 // GET /api/venues/[venueId]/menu - Get all crowdsourced menu photos for a venue
 export async function GET(
@@ -24,10 +25,7 @@ export async function GET(
     return NextResponse.json({ menuPhotos: venue?.menuPhotos || [] });
   } catch (error) {
     console.error("GET /api/venues/[venueId]/menu error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch menu photos" },
-      { status: 500 }
-    );
+    return apiError("Failed to fetch menu photos", 500, "INTERNAL_ERROR");
   }
 }
 
@@ -40,7 +38,7 @@ export async function POST(
     const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
 
     // Ensure Identity exists in DB
@@ -50,7 +48,7 @@ export async function POST(
     const { photoUrl, venue: venueData } = await req.json();
 
     if (!photoUrl) {
-      return NextResponse.json({ error: "photoUrl is required" }, { status: 400 });
+      return apiError("photoUrl is required", 400, "VALIDATION_FAILED");
     }
 
     const targetPlaceId = venueData?.placeId || venueId;
@@ -83,9 +81,6 @@ export async function POST(
     return NextResponse.json({ menuPhotos: updatedVenue.menuPhotos }, { status: 201 });
   } catch (error) {
     console.error("POST /api/venues/[venueId]/menu error:", error);
-    return NextResponse.json(
-      { error: "Failed to add menu photo" },
-      { status: 500 }
-    );
+    return apiError("Failed to add menu photo", 500, "INTERNAL_ERROR");
   }
 }

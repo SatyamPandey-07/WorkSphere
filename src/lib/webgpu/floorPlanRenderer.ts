@@ -37,6 +37,13 @@ export interface FloorPlanMesh {
   indexCount: number;
 }
 
+export interface PanBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
 export interface CameraState {
   rotationX: number;
   rotationY: number;
@@ -173,7 +180,14 @@ export class WebGPUFloorPlanRenderer {
     panX: 0,
     panY: 0,
   };
+  private panBounds: PanBounds = {
+    minX: -10,
+    maxX: 10,
+    minY: -10,
+    maxY: 10,
+  };
   private isDragging = false;
+  private isPanning = false;
   private lastMouse = { x: 0, y: 0 };
   private animationFrame = 0;
   private time = 0;
@@ -197,24 +211,31 @@ export class WebGPUFloorPlanRenderer {
     // available as stable references for removeEventListener in destroy().
     this._onMouseDown = (e: MouseEvent) => {
       this.isDragging = true;
+      this.isPanning = e.button === 2 || e.button === 1 || e.shiftKey;
       this.lastMouse = { x: e.clientX, y: e.clientY };
     };
     this._onMouseMove = (e: MouseEvent) => {
       if (!this.isDragging) return;
       const dx = e.clientX - this.lastMouse.x;
       const dy = e.clientY - this.lastMouse.y;
-      this.camera.rotationY += dx * 0.01;
-      this.camera.rotationX = Math.max(
-        -Math.PI / 2.5,
-        Math.min(-0.1, this.camera.rotationX + dy * 0.01),
-      );
+      if (this.isPanning) {
+        this.pan(-dx * 0.01, dy * 0.01);
+      } else {
+        this.camera.rotationY += dx * 0.01;
+        this.camera.rotationX = Math.max(
+          -Math.PI / 2.5,
+          Math.min(-0.1, this.camera.rotationX + dy * 0.01),
+        );
+      }
       this.lastMouse = { x: e.clientX, y: e.clientY };
     };
     this._onMouseUp = () => {
       this.isDragging = false;
+      this.isPanning = false;
     };
     this._onMouseLeave = () => {
       this.isDragging = false;
+      this.isPanning = false;
     };
     this._onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -226,15 +247,23 @@ export class WebGPUFloorPlanRenderer {
     this._onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
         this.isDragging = true;
+        this.isPanning = false;
         this.lastMouse = {
           x: e.touches[0].clientX,
           y: e.touches[0].clientY,
+        };
+      } else if (e.touches.length === 2) {
+        this.isDragging = true;
+        this.isPanning = true;
+        this.lastMouse = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
         };
       }
     };
     this._onTouchMove = (e: TouchEvent) => {
       e.preventDefault();
-      if (e.touches.length === 1 && this.isDragging) {
+      if (e.touches.length === 1 && this.isDragging && !this.isPanning) {
         const dx = e.touches[0].clientX - this.lastMouse.x;
         const dy = e.touches[0].clientY - this.lastMouse.y;
         this.camera.rotationY += dx * 0.01;
@@ -246,10 +275,18 @@ export class WebGPUFloorPlanRenderer {
           x: e.touches[0].clientX,
           y: e.touches[0].clientY,
         };
+      } else if (e.touches.length === 2 && this.isDragging) {
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const dx = midX - this.lastMouse.x;
+        const dy = midY - this.lastMouse.y;
+        this.pan(-dx * 0.01, dy * 0.01);
+        this.lastMouse = { x: midX, y: midY };
       }
     };
     this._onTouchEnd = () => {
       this.isDragging = false;
+      this.isPanning = false;
     };
     this.setupInteraction();
     this.setupVisibilityHandler();
@@ -343,7 +380,7 @@ export class WebGPUFloorPlanRenderer {
           entryPoint: "vs_main",
           buffers: [
             {
-              arrayStride: 40,
+              arrayStride: 44,
               attributes: [
                 { shaderLocation: 0, offset: 0, format: "float32x3" },
                 { shaderLocation: 1, offset: 12, format: "float32x3" },
@@ -580,6 +617,49 @@ export class WebGPUFloorPlanRenderer {
 
   getDevice(): GPUDevice | null {
     return this.device;
+  }
+
+  setPanBounds(bounds: Partial<PanBounds>): void {
+    this.panBounds = {
+      ...this.panBounds,
+      ...bounds,
+    };
+    this.clampPan();
+  }
+
+  getPanBounds(): PanBounds {
+    return { ...this.panBounds };
+  }
+
+  clampPan(): void {
+    if (!Number.isFinite(this.camera.panX)) this.camera.panX = 0;
+    if (!Number.isFinite(this.camera.panY)) this.camera.panY = 0;
+    this.camera.panX = Math.max(
+      this.panBounds.minX,
+      Math.min(this.panBounds.maxX, this.camera.panX),
+    );
+    this.camera.panY = Math.max(
+      this.panBounds.minY,
+      Math.min(this.panBounds.maxY, this.camera.panY),
+    );
+  }
+
+  pan(dx: number, dy: number): void {
+    this.camera.panX += dx;
+    this.camera.panY += dy;
+    this.clampPan();
+  }
+
+  resetView(): void {
+    this.camera.rotationX = -0.8;
+    this.camera.rotationY = 0.5;
+    this.camera.distance = 8;
+    this.camera.panX = 0;
+    this.camera.panY = 0;
+  }
+
+  getCamera(): CameraState {
+    return { ...this.camera };
   }
 
   destroy(): void {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 import twilio from "twilio";
 import { processUpcomingReservationAlerts } from "@/lib/reminderCron";
 import { prisma } from "@/lib/prisma";
@@ -12,7 +12,7 @@ import { escapeHtml } from "@/lib/html";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function createMailer(): nodemailer.Transporter | null {
+function createMailer(): Transporter | null {
   const { SMTP_USER, SMTP_PASS } = process.env;
   if (!SMTP_USER || !SMTP_PASS) return null;
   return nodemailer.createTransport({

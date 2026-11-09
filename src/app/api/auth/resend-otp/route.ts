@@ -15,7 +15,7 @@ const resendOtpSchema = z.object({
 /**
  * POST /api/auth/resend-otp
  *
- * Rate limit: 3 requests per minute per IP to prevent OTP resend abuse.
+ * Rate limit: 3 requests per 5 minutes per email+IP to prevent OTP resend abuse.
  * Returns HTTP 429 Too Many Requests when the threshold is exceeded.
  *
  * In production, this handler would trigger your OTP delivery service
@@ -54,23 +54,39 @@ export async function POST(req: NextRequest) {
   }
 
   const { email } = validation.data;
+  const normEmail = email.trim().toLowerCase();
 
   // 3. Identify the caller (prefer IP, fall back to forwarded header)
-  const ip =
+  const ip = (
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??
-    "anonymous";
+    "anonymous"
+  ).trim() || "anonymous";
 
-  const identifier = `resend-otp:${email}:${ip}`;
+  const identifier = `resend-otp:${normEmail}:${ip}`;
 
-  // 4. Rate limit — 1 request per 60-second sliding window per email+IP
-  const allowed = await rateLimit(identifier, 1);
+  // 4. Rate limit — 3 requests per 5-minute sliding window per email+IP
+  const OTP_RESEND_MAX_REQUESTS = 3;
+  const OTP_RESEND_WINDOW_MS = 5 * 60 * 1000; // 300,000 ms = 5 minutes
+
+  const allowed = await rateLimit(
+    identifier,
+    OTP_RESEND_MAX_REQUESTS,
+    OTP_RESEND_WINDOW_MS,
+  );
 
   if (!allowed) {
-    const info = await getRateLimitInfo(identifier, 1);
-    const retryAfter = info?.resetTime
-      ? Math.ceil((info.resetTime - Date.now()) / 1000)
-      : 60;
+    const info = await getRateLimitInfo(
+      identifier,
+      OTP_RESEND_MAX_REQUESTS,
+      OTP_RESEND_WINDOW_MS,
+    );
+    const retryAfter = Math.max(
+      1,
+      info?.resetTime
+        ? Math.ceil((info.resetTime - Date.now()) / 1000)
+        : Math.ceil(OTP_RESEND_WINDOW_MS / 1000),
+    );
 
     return NextResponse.json(
       {
@@ -82,7 +98,7 @@ export async function POST(req: NextRequest) {
         status: 429,
         headers: {
           "Retry-After": String(retryAfter),
-          "X-RateLimit-Limit": "1",
+          "X-RateLimit-Limit": String(OTP_RESEND_MAX_REQUESTS),
           "X-RateLimit-Remaining": "0",
         },
       },

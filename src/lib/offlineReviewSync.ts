@@ -1,11 +1,99 @@
 "use client";
 
 import { withWebLock, OFFLINE_WRITE_LOCK } from "./webLock";
+import { syncQueueManager } from "./offline/SyncQueueManager";
 
 export const DB_NAME = "worksphere-offline";
-export const DB_VERSION = 7;
+export const DB_VERSION = 9;
 export const REVIEW_STORE_NAME = "pendingReviews";
+export const QUEUED_REVIEWS_STORE_NAME = "queued_reviews";
+export const UNSYNCED_REVIEW_DRAFTS_STORE_NAME = "unsyncedReviewDrafts";
 export const REVIEW_SYNC_CHANNEL = "worksphere:review-sync";
+export const MAX_REVIEW_SYNC_RETRIES = 5;
+
+export interface UnsyncedReviewDraft {
+  id: string;
+  review: QueuedVenueReview;
+  quarantinedAt: number;
+  retryCount: number;
+  error: string;
+}
+
+// Register review sync handler with consolidated SyncQueueManager
+syncQueueManager.registerHandler("review", async (item) => {
+  const review = item.payload as QueuedVenueReview;
+  if (!review?.venueId) return;
+
+  let csrfToken = "";
+  try {
+    const csrfRes = await fetch("/api/auth/csrf-token");
+    if (csrfRes.ok) {
+      const csrfData = await csrfRes.json();
+      csrfToken = csrfData.csrfToken || "";
+    }
+  } catch {}
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Idempotency-Key": review.id,
+  };
+  if (csrfToken) {
+    headers["x-csrf-token"] = csrfToken;
+  }
+
+  const baseVersionTimestamp =
+    review.baseVersionTimestamp ||
+    review.baseReviewUpdatedAt ||
+    review.baseVenueUpdatedAt;
+
+  const res = await fetch(
+    `/api/venues/${encodeURIComponent(review.venueId)}/reviews`,
+    {
+      method: "POST",
+      headers,
+      credentials: "same-origin",
+      body: JSON.stringify({
+        ...review.data,
+        idempotencyKey: review.id,
+        reviewId: review.reviewId,
+        baseVenueUpdatedAt: review.baseVenueUpdatedAt,
+        baseReviewUpdatedAt: review.baseReviewUpdatedAt || baseVersionTimestamp,
+        baseVersion: review.baseVersion || baseVersionTimestamp,
+        baseVersionTimestamp,
+      }),
+    },
+  );
+
+  if (res.ok) {
+    await removeQueuedReview(review.id);
+    broadcastReviewSyncEvent({
+      type: "REVIEW_SYNC_SUCCESS",
+      id: review.id,
+      venueId: review.venueId,
+      venueName: review.venueName,
+    });
+    return true;
+  }
+
+  if (res.status === 409) {
+    const conflictJson = await res.json().catch(() => ({}));
+    await updateQueuedReviewStatus(review.id, "CONFLICT", conflictJson);
+    broadcastReviewSyncEvent({
+      type: "REVIEW_SYNC_CONFLICT",
+      id: review.id,
+      venueId: review.venueId,
+      venueName: review.venueName,
+      conflictDetails: conflictJson,
+    });
+    return false;
+  }
+
+  const error = `Review sync HTTP error: ${res.status}`;
+  if ((item.retryCount ?? 0) + 1 >= MAX_REVIEW_SYNC_RETRIES) {
+    await quarantineQueuedReview(review.id, error, MAX_REVIEW_SYNC_RETRIES);
+  }
+  throw new Error(error);
+});
 
 export type QueuedReviewStatus =
   | "PENDING"
@@ -21,6 +109,8 @@ export interface QueuedVenueReview {
   reviewId?: string; // Existing review ID if updating
   baseVenueUpdatedAt?: string;
   baseReviewUpdatedAt?: string;
+  baseVersionTimestamp?: string;
+  baseVersion?: string;
   data: {
     wifiQuality: number;
     hasOutlets: boolean;
@@ -92,7 +182,7 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Open worksphere-offline IndexedDB ensuring version 7 schema upgrade.
+ * Open worksphere-offline IndexedDB ensuring version 9 schema upgrade.
  */
 export function openReviewDB(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
@@ -106,21 +196,62 @@ export function openReviewDB(): Promise<IDBDatabase> {
   }
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        dbInstance = null;
+        console.warn("[offlineReviewSync] IndexedDB open timed out (likely Safari Private Browsing)");
+        reject(new DOMException("IndexedDB open timed out", "SecurityError"));
+      }
+    }, 3000);
+
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onblocked = () => {
-        console.warn("[offlineReviewSync] IndexedDB upgrade blocked by open connection");
+        console.warn("[offlineReviewSync] IndexedDB upgrade blocked by open connection, closing inactive connections");
+        if (dbInstance) {
+          try {
+            dbInstance.close();
+          } catch {
+            // ignore
+          }
+          dbInstance = null;
+        }
       };
 
       request.onerror = () => {
-        reject(request.error || new Error("Failed to open IndexedDB"));
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        if (dbInstance) {
+          try {
+            dbInstance.close();
+          } catch {
+            // ignore
+          }
+          dbInstance = null;
+        }
+        const err = request.error || new Error("Failed to open IndexedDB");
+        if (err.name === "AbortError") {
+          console.warn("[offlineReviewSync] Transaction abort error during schema upgrade handled gracefully", err);
+        }
+        reject(err);
       };
 
       request.onsuccess = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         dbInstance = request.result;
         dbInstance.onversionchange = () => {
-          dbInstance?.close();
+          console.warn("[offlineReviewSync] Database version change detected, closing connection gracefully");
+          try {
+            dbInstance?.close();
+          } catch {
+            // ignore
+          }
           dbInstance = null;
         };
         resolve(dbInstance);
@@ -128,6 +259,26 @@ export function openReviewDB(): Promise<IDBDatabase> {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+
+        if (transaction) {
+          transaction.onabort = (e) => {
+            console.warn("[offlineReviewSync] Upgrade transaction aborted", transaction.error || e);
+          };
+          transaction.onerror = (e) => {
+            console.warn("[offlineReviewSync] Upgrade transaction error", transaction.error || e);
+          };
+        }
+
+        db.onversionchange = () => {
+          console.warn("[offlineReviewSync] Database version change during upgrade, closing connection gracefully");
+          try {
+            db.close();
+          } catch {
+            // ignore
+          }
+          dbInstance = null;
+        };
 
         // Existing stores preserved
         if (!db.objectStoreNames.contains("venues")) {
@@ -166,7 +317,7 @@ export function openReviewDB(): Promise<IDBDatabase> {
           db.createObjectStore("preference_rankings", { keyPath: "id" });
         }
 
-        // Dedicated offline reviews store (Issue #3366)
+        // Dedicated offline reviews store (Issue #3366, #3469)
         if (!db.objectStoreNames.contains(REVIEW_STORE_NAME)) {
           const reviewStore = db.createObjectStore(REVIEW_STORE_NAME, {
             keyPath: "id",
@@ -175,8 +326,32 @@ export function openReviewDB(): Promise<IDBDatabase> {
           reviewStore.createIndex("status", "status", { unique: false });
           reviewStore.createIndex("createdAt", "createdAt", { unique: false });
         }
+        if (!db.objectStoreNames.contains(QUEUED_REVIEWS_STORE_NAME)) {
+          const queuedStore = db.createObjectStore(QUEUED_REVIEWS_STORE_NAME, {
+            keyPath: "id",
+          });
+          queuedStore.createIndex("venueId", "venueId", { unique: false });
+          queuedStore.createIndex("status", "status", { unique: false });
+          queuedStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+        if (!db.objectStoreNames.contains(UNSYNCED_REVIEW_DRAFTS_STORE_NAME)) {
+          const draftsStore = db.createObjectStore(
+            UNSYNCED_REVIEW_DRAFTS_STORE_NAME,
+            { keyPath: "id" },
+          );
+          draftsStore.createIndex("venueId", "review.venueId", {
+            unique: false,
+          });
+          draftsStore.createIndex("quarantinedAt", "quarantinedAt", {
+            unique: false,
+          });
+        }
       };
     } catch (err) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      dbInstance = null;
       reject(err);
     }
   });
@@ -227,8 +402,15 @@ export async function queueOfflineReview(
     const db = await openReviewDB();
     const id = item.id || generateClientReviewId();
 
+    const baseVersionTimestamp =
+      item.baseVersionTimestamp ||
+      item.baseReviewUpdatedAt ||
+      item.baseVenueUpdatedAt;
+
     const queuedReview: QueuedVenueReview = {
       ...item,
+      baseVersionTimestamp,
+      baseVersion: item.baseVersion || baseVersionTimestamp,
       id,
       createdAt: Date.now(),
       retryCount: 0,
@@ -255,6 +437,17 @@ export async function queueOfflineReview(
 
     // Request Service Worker Background Sync where supported
     await requestReviewBackgroundSync();
+
+    // Also register with consolidated SyncQueueManager
+    void syncQueueManager
+      .enqueue<QueuedVenueReview>({
+        id: queuedReview.id,
+        entity: "review",
+        action: "create",
+        payload: queuedReview,
+        timestamp: queuedReview.createdAt,
+      })
+      .catch(() => {});
 
     return queuedReview;
   }, OFFLINE_WRITE_LOCK);
@@ -321,6 +514,146 @@ export async function removeQueuedReview(id: string): Promise<void> {
       id,
     });
   }, OFFLINE_WRITE_LOCK);
+}
+
+/**
+ * Move an exhausted review out of the active queue without discarding its data.
+ */
+export async function quarantineQueuedReview(
+  id: string,
+  error: string,
+  retryCount: number,
+): Promise<UnsyncedReviewDraft | null> {
+  const draft = await withWebLock(async () => {
+    const db = await openReviewDB();
+    return new Promise<UnsyncedReviewDraft | null>(
+      (resolve, reject) => {
+        const tx = db.transaction(
+          [REVIEW_STORE_NAME, UNSYNCED_REVIEW_DRAFTS_STORE_NAME],
+          "readwrite",
+        );
+        const reviewsStore = tx.objectStore(REVIEW_STORE_NAME);
+        const draftsStore = tx.objectStore(UNSYNCED_REVIEW_DRAFTS_STORE_NAME);
+        const getRequest = reviewsStore.get(id);
+        let archivedDraft: UnsyncedReviewDraft | null = null;
+
+        getRequest.onsuccess = () => {
+          const review = getRequest.result as QueuedVenueReview | undefined;
+          if (!review) {
+            resolve(null);
+            return;
+          }
+
+          archivedDraft = {
+            id: review.id,
+            review: { ...review, status: "FAILED", retryCount },
+            quarantinedAt: Date.now(),
+            retryCount,
+            error,
+          };
+          draftsStore.put(archivedDraft);
+          reviewsStore.delete(id);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+        tx.oncomplete = () => resolve(archivedDraft);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error("Review quarantine aborted"));
+      },
+    );
+  }, OFFLINE_WRITE_LOCK);
+
+  if (!draft) return null;
+
+  await syncQueueManager.dequeue(id);
+  broadcastReviewSyncEvent({
+    type: "REVIEW_SYNC_FAILED",
+    id: draft.id,
+    venueId: draft.review.venueId,
+    venueName: draft.review.venueName,
+    error: draft.error,
+  });
+  return draft;
+}
+
+/**
+ * Retrieve drafts retained after their automatic sync retries were exhausted.
+ */
+export async function getUnsyncedReviewDrafts(): Promise<UnsyncedReviewDraft[]> {
+  const db = await openReviewDB();
+  return new Promise<UnsyncedReviewDraft[]>((resolve, reject) => {
+    const tx = db.transaction([UNSYNCED_REVIEW_DRAFTS_STORE_NAME], "readonly");
+    const request = tx
+      .objectStore(UNSYNCED_REVIEW_DRAFTS_STORE_NAME)
+      .getAll();
+    request.onsuccess = () => {
+      const drafts = (request.result || []) as UnsyncedReviewDraft[];
+      drafts.sort((a, b) => b.quarantinedAt - a.quarantinedAt);
+      resolve(drafts);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Restore a quarantined review after editing so it can be synced again.
+ */
+export async function restoreUnsyncedReviewDraft(
+  id: string,
+  editedData?: QueuedVenueReview["data"],
+): Promise<QueuedVenueReview | null> {
+  const review = await withWebLock(async () => {
+    const db = await openReviewDB();
+    return new Promise<QueuedVenueReview | null>((resolve, reject) => {
+      const tx = db.transaction(
+        [REVIEW_STORE_NAME, UNSYNCED_REVIEW_DRAFTS_STORE_NAME],
+        "readwrite",
+      );
+      const reviewsStore = tx.objectStore(REVIEW_STORE_NAME);
+      const draftsStore = tx.objectStore(UNSYNCED_REVIEW_DRAFTS_STORE_NAME);
+      const getRequest = draftsStore.get(id);
+      let restoredReview: QueuedVenueReview | null = null;
+
+      getRequest.onsuccess = () => {
+        const draft = getRequest.result as UnsyncedReviewDraft | undefined;
+        if (!draft) {
+          resolve(null);
+          return;
+        }
+
+        restoredReview = {
+          ...draft.review,
+          data: editedData ?? draft.review.data,
+          createdAt: Date.now(),
+          retryCount: 0,
+          status: "PENDING",
+        };
+        reviewsStore.put(restoredReview);
+        draftsStore.delete(id);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+      tx.oncomplete = () => resolve(restoredReview);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error("Draft restore aborted"));
+    });
+  }, OFFLINE_WRITE_LOCK);
+
+  if (!review) return null;
+
+  await syncQueueManager.enqueue<QueuedVenueReview>({
+    id: review.id,
+    entity: "review",
+    action: review.reviewId ? "update" : "create",
+    payload: review,
+    timestamp: review.createdAt,
+  });
+  await requestReviewBackgroundSync();
+  broadcastReviewSyncEvent({
+    type: "REVIEW_QUEUED",
+    id: review.id,
+    venueId: review.venueId,
+    venueName: review.venueName,
+  });
+  return review;
 }
 
 /**
@@ -437,6 +770,11 @@ export async function flushPendingReviewsClientFallback(
         headers["x-csrf-token"] = csrfToken;
       }
 
+      const baseVersionTimestamp =
+        item.baseVersionTimestamp ||
+        item.baseReviewUpdatedAt ||
+        item.baseVenueUpdatedAt;
+
       const res = await fetch(
         `/api/venues/${encodeURIComponent(item.venueId)}/reviews`,
         {
@@ -448,7 +786,9 @@ export async function flushPendingReviewsClientFallback(
             idempotencyKey: item.id,
             reviewId: item.reviewId,
             baseVenueUpdatedAt: item.baseVenueUpdatedAt,
-            baseReviewUpdatedAt: item.baseReviewUpdatedAt,
+            baseReviewUpdatedAt: item.baseReviewUpdatedAt || baseVersionTimestamp,
+            baseVersion: item.baseVersion || baseVersionTimestamp,
+            baseVersionTimestamp,
           }),
         },
       );
@@ -489,29 +829,30 @@ export async function flushPendingReviewsClientFallback(
         break;
       }
 
-      if (res.status >= 500) {
-        failures++;
-        const nextRetry = (item.retryCount || 0) + 1;
-        const newStatus: QueuedReviewStatus =
-          nextRetry >= 3 ? "FAILED" : "PENDING";
+      failures++;
+      const nextRetry = (item.retryCount || 0) + 1;
+      const error =
+        res.status >= 400 && res.status < 500
+          ? `Validation error (HTTP ${res.status})`
+          : `Review sync HTTP error: ${res.status}`;
+      if (nextRetry >= MAX_REVIEW_SYNC_RETRIES) {
+        await quarantineQueuedReview(item.id, error, nextRetry);
+      } else {
         await withWebLock(async () => {
           const db = await openReviewDB();
           const tx = db.transaction([REVIEW_STORE_NAME], "readwrite");
           const store = tx.objectStore(REVIEW_STORE_NAME);
-          store.put({ ...item, retryCount: nextRetry, status: newStatus });
+          await new Promise<void>((resolve, reject) => {
+            const req = store.put({
+              ...item,
+              retryCount: nextRetry,
+              status: "FAILED",
+            });
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+          });
         });
-        continue;
       }
-
-      // 400, 422 etc
-      failures++;
-      await updateQueuedReviewStatus(item.id, "FAILED");
-      broadcastReviewSyncEvent({
-        type: "REVIEW_SYNC_FAILED",
-        id: item.id,
-        venueId: item.venueId,
-        error: "Validation error",
-      });
     } catch (err: any) {
       const isNetError =
         err?.name === "TypeError" ||
@@ -523,7 +864,29 @@ export async function flushPendingReviewsClientFallback(
         break;
       }
       failures++;
-      await updateQueuedReviewStatus(item.id, "FAILED");
+      const nextRetry = (item.retryCount || 0) + 1;
+      if (nextRetry >= MAX_REVIEW_SYNC_RETRIES) {
+        await quarantineQueuedReview(
+          item.id,
+          err instanceof Error ? err.message : "Unknown review sync error",
+          nextRetry,
+        );
+      } else {
+        await withWebLock(async () => {
+          const db = await openReviewDB();
+          const tx = db.transaction([REVIEW_STORE_NAME], "readwrite");
+          const store = tx.objectStore(REVIEW_STORE_NAME);
+          await new Promise<void>((resolve, reject) => {
+            const req = store.put({
+              ...item,
+              retryCount: nextRetry,
+              status: "FAILED" satisfies QueuedReviewStatus,
+            });
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+          });
+        });
+      }
     }
   }
 
@@ -531,11 +894,129 @@ export async function flushPendingReviewsClientFallback(
 }
 
 /**
- * Resolve a review conflict deterministically: "KEEP_LOCAL" or "USE_REMOTE".
+ * Detects whether a concurrent remote update occurred by comparing
+ * client baseVersionTimestamp against server updatedAt.
+ */
+export function detectConcurrentUpdate(
+  baseVersionTimestamp?: string,
+  serverUpdatedAt?: string,
+): boolean {
+  if (!baseVersionTimestamp || !serverUpdatedAt) return false;
+  return new Date(serverUpdatedAt).getTime() > new Date(baseVersionTimestamp).getTime();
+}
+
+export interface ThreeWayMergeOptions {
+  baseData?: Partial<QueuedVenueReview["data"]>;
+  baseVersionTimestamp?: string;
+  serverUpdatedAt?: string;
+  preferNewer?: boolean;
+}
+
+/**
+ * Applies three-way merge or preserves newer edits between local queued edits and server review.
+ */
+export function applyThreeWayMerge(
+  localData: QueuedVenueReview["data"],
+  serverReview: Record<string, unknown>,
+  options: ThreeWayMergeOptions = {},
+): QueuedVenueReview["data"] {
+  const merged: QueuedVenueReview["data"] = { ...localData };
+  const baseData = options.baseData;
+  const isServerNewer =
+    options.preferNewer !== false &&
+    detectConcurrentUpdate(
+      options.baseVersionTimestamp,
+      options.serverUpdatedAt || (serverReview.updatedAt as string),
+    );
+
+  const allKeys = Array.from(
+    new Set([
+      ...Object.keys(localData),
+      ...Object.keys(serverReview),
+      ...(baseData ? Object.keys(baseData) : []),
+    ]),
+  ) as (keyof QueuedVenueReview["data"])[];
+
+  for (const key of allKeys) {
+    if (
+      key === ("id" as any) ||
+      key === ("createdAt" as any) ||
+      key === ("updatedAt" as any) ||
+      key === ("venueId" as any) ||
+      key === ("userId" as any)
+    ) {
+      continue;
+    }
+
+    const localVal = localData[key];
+    const serverVal = serverReview[key as string] as any;
+    const baseVal = baseData ? baseData[key] : undefined;
+
+    if (serverVal === undefined) {
+      if (localVal !== undefined) {
+        (merged as any)[key] = localVal;
+      }
+      continue;
+    }
+
+    if (localVal === undefined) {
+      (merged as any)[key] = serverVal;
+      continue;
+    }
+
+    // Both defined:
+    if (baseData && baseVal !== undefined) {
+      const localChanged =
+        JSON.stringify(localVal) !== JSON.stringify(baseVal);
+      const serverChanged =
+        JSON.stringify(serverVal) !== JSON.stringify(baseVal);
+
+      if (serverChanged && !localChanged) {
+        // Server changed, local did not -> preserve server update
+        (merged as any)[key] = serverVal;
+      } else if (!serverChanged && localChanged) {
+        // Local changed, server did not -> keep local edit
+        (merged as any)[key] = localVal;
+      } else if (serverChanged && localChanged) {
+        // Both changed:
+        if (isServerNewer && key !== "comment") {
+          (merged as any)[key] = serverVal;
+        } else if (
+          key === "comment" &&
+          typeof localVal === "string" &&
+          typeof serverVal === "string"
+        ) {
+          (merged as any)[key] =
+            localVal === serverVal
+              ? localVal
+              : `${localVal} (Server update: ${serverVal})`;
+        } else {
+          (merged as any)[key] = isServerNewer ? serverVal : localVal;
+        }
+      }
+    } else {
+      // Without base data: if server is newer, preserve server update
+      if (isServerNewer) {
+        (merged as any)[key] = serverVal;
+      } else {
+        (merged as any)[key] = localVal !== undefined ? localVal : serverVal;
+      }
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Resolve a review conflict deterministically: "KEEP_LOCAL", "USE_REMOTE", "MERGE_NEWER", or "THREE_WAY_MERGE".
  */
 export async function resolveReviewConflict(
   id: string,
-  resolution: "KEEP_LOCAL" | "USE_REMOTE",
+  resolution: "KEEP_LOCAL" | "USE_REMOTE" | "MERGE_NEWER" | "THREE_WAY_MERGE",
+  options?: {
+    baseData?: Partial<QueuedVenueReview["data"]>;
+    preferNewer?: boolean;
+  },
 ): Promise<boolean> {
   const reviews = await getQueuedReviews();
   const item = reviews.find((r) => r.id === id);
@@ -546,7 +1027,22 @@ export async function resolveReviewConflict(
     return true;
   }
 
-  // KEEP_LOCAL -> submit with forceOverwrite
+  const serverReview = (item.conflictDetails?.serverReview || {}) as Record<string, unknown>;
+  const serverUpdatedAt = (serverReview.updatedAt as string) || undefined;
+  const baseVersionTimestamp = item.baseVersionTimestamp || item.baseReviewUpdatedAt;
+
+  let payloadData: QueuedVenueReview["data"] = item.data;
+
+  if (resolution === "MERGE_NEWER" || resolution === "THREE_WAY_MERGE") {
+    payloadData = applyThreeWayMerge(item.data, serverReview, {
+      baseData: options?.baseData,
+      baseVersionTimestamp,
+      serverUpdatedAt,
+      preferNewer: options?.preferNewer ?? true,
+    });
+  }
+
+  // KEEP_LOCAL or MERGE -> submit with forceOverwrite
   let csrfToken = "";
   try {
     const csrfRes = await fetch("/api/auth/csrf-token");
@@ -571,7 +1067,7 @@ export async function resolveReviewConflict(
       headers,
       credentials: "same-origin",
       body: JSON.stringify({
-        ...item.data,
+        ...payloadData,
         idempotencyKey: item.id,
         forceOverwrite: true,
       }),
@@ -632,3 +1128,66 @@ export function subscribeReviewSyncEvents(
   };
 }
 
+export interface OfflineReviewSubmissionInput {
+  venueId: string;
+  venueName?: string;
+  rating?: number;
+  comment?: string;
+  data?: QueuedVenueReview["data"];
+  reviewId?: string;
+  baseVenueUpdatedAt?: string;
+  baseReviewUpdatedAt?: string;
+  baseVersionTimestamp?: string;
+  baseVersion?: string;
+}
+
+export interface OfflineReviewSubmissionResult {
+  savedOffline: boolean;
+  message: string;
+  review?: QueuedVenueReview;
+}
+
+/**
+ * Intercepts review submissions when offline:
+ * - Checks if !navigator.onLine
+ * - Stores review into IndexedDB queue
+ * - Returns optimistic "Saved offline — will post when connected" pill message
+ * - Registers background sync tag
+ */
+export async function submitReviewWithOfflineSync(
+  input: OfflineReviewSubmissionInput,
+): Promise<OfflineReviewSubmissionResult> {
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+
+  if (isOffline) {
+    const reviewData: QueuedVenueReview["data"] = input.data || {
+      wifiQuality: input.rating || 5,
+      hasOutlets: true,
+      noiseLevel: "moderate",
+      comment: input.comment || "",
+    };
+
+    const queued = await queueOfflineReview({
+      venueId: input.venueId,
+      venueName: input.venueName,
+      reviewId: input.reviewId,
+      baseVenueUpdatedAt: input.baseVenueUpdatedAt,
+      baseReviewUpdatedAt: input.baseReviewUpdatedAt,
+      baseVersionTimestamp: input.baseVersionTimestamp || input.baseReviewUpdatedAt,
+      baseVersion: input.baseVersion,
+      data: reviewData,
+    });
+
+    return {
+      savedOffline: true,
+      message: "Saved offline — will post when connected",
+      review: queued,
+    };
+  }
+
+  // When online, queue or caller can post directly
+  return {
+    savedOffline: false,
+    message: "Online",
+  };
+}

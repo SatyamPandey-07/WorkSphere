@@ -9,6 +9,13 @@ jest.mock("@/lib/prisma", () => ({
       findMany: jest.fn(),
       create: jest.fn(),
     },
+    venue: {
+      findUnique: jest.fn(),
+    },
+    user: {
+      findUnique: jest.fn(),
+      upsert: jest.fn(),
+    },
     $transaction: jest.fn(),
   },
 }));
@@ -297,6 +304,135 @@ describe("API: /api/bookings", () => {
         const response = await POST(request);
         expect(response.status).toBe(200);
       }
+    });
+
+    it("rejects a zero guest count with a descriptive 400", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-10-01",
+          time: "14:00",
+          guestCount: 0,
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toEqual({
+        error: "Guest count must be between 1 and venue capacity",
+      });
+      expect(prisma.booking.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a negative guest count", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-10-01",
+          time: "14:00",
+          guestCount: -3,
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.error).toBe(
+        "Guest count must be between 1 and venue capacity",
+      );
+      expect(prisma.booking.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects a guest count above the venue capacity", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+      (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
+        maxCapacity: 4,
+      });
+
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-10-01",
+          time: "14:00",
+          guestCount: 5,
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.error).toBe(
+        "Guest count must be between 1 and venue capacity",
+      );
+      expect(prisma.booking.create).not.toHaveBeenCalled();
+    });
+
+    it("accepts a guest count within capacity and persists it", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+      (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
+        maxCapacity: 4,
+      });
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (promises: Promise<any>[]) => Promise.all(promises),
+      );
+
+      const capturedCreatePayloads: any[] = [];
+      (prisma.booking.create as jest.Mock).mockImplementation(
+        async ({ data }: any) => {
+          capturedCreatePayloads.push(data);
+          return { id: "b_1", ...data, venue: { id: data.venueId } };
+        },
+      );
+
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-10-01",
+          time: "14:00",
+          guestCount: 2,
+        }),
+      });
+
+      const response = await POST(request);
+
+      expect(response.status).toBe(200);
+      expect(capturedCreatePayloads[0].guestCount).toBe(2);
+    });
+
+    it("does not look up venue capacity when no guest count is supplied", async () => {
+      (currentUser as jest.Mock).mockResolvedValue(mockUser);
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        async (promises: Promise<any>[]) => Promise.all(promises),
+      );
+      (prisma.booking.create as jest.Mock).mockImplementation(
+        async ({ data }: any) => ({ id: "b_1", ...data, venue: {} }),
+      );
+
+      const request = new NextRequest("http://localhost:3000/api/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          venueId: "v_1",
+          date: "2026-10-01",
+          time: "14:00",
+        }),
+      });
+
+      const response = await POST(request);
+
+      expect(response.status).toBe(200);
+      expect(prisma.venue.findUnique).not.toHaveBeenCalled();
     });
 
     it("returns 500 if transaction fails", async () => {

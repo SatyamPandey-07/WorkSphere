@@ -21,29 +21,55 @@ It covers:
 
 ## 1. Architecture overview
 
-```text
-┌──────────────────────────┐
-│ React canvas client A    │
-│ Y.Doc + awareness        │
-└─────────────┬────────────┘
-              │ Yjs updates / awareness messages
-              ▼
-┌──────────────────────────┐
-│ PartyKit room            │
-│ WebSocket fan-out        │
-│ optional update storage  │
-└───────┬───────────┬──────┘
-        │           │
-        ▼           ▼
-┌───────────────┐ ┌───────────────┐
-│ Canvas client │ │ Canvas client │
-│ B             │ │ C             │
-└───────────────┘ └───────────────┘
+```mermaid
+flowchart TB
+    subgraph ClientA["Client A (Browser)"]
+        UI_A["Canvas UI / Drawing Layer"]
+        Hook_A["useCanvasWhiteboard Hook"]
+        Doc_A["Local Y.Doc (CRDT)"]
+        Aw_A["Awareness Instance"]
+        UI_A <--> Hook_A
+        Hook_A <--> Doc_A
+        Hook_A <--> Aw_A
+    end
+
+    subgraph ClientB["Client B (Browser)"]
+        UI_B["Canvas UI / Drawing Layer"]
+        Hook_B["useCanvasWhiteboard Hook"]
+        Doc_B["Local Y.Doc (CRDT)"]
+        Aw_B["Awareness Instance"]
+        UI_B <--> Hook_B
+        Hook_B <--> Doc_B
+        Hook_B <--> Aw_B
+    end
+
+    subgraph PartyKitEdge["PartyKit Edge Infrastructure (Room: canvas-:id)"]
+        Server["WhiteboardPartyServer (party/whiteboard.ts)"]
+        YPartyKit["y-partykit Room Handler"]
+        RoomDoc["In-Memory Room Y.Doc"]
+        PresenceHub["Ephemeral Awareness Hub"]
+        Storage[("Durable Room Storage / Snapshots")]
+
+        Server <--> YPartyKit
+        YPartyKit <--> RoomDoc
+        YPartyKit <--> PresenceHub
+        RoomDoc -. persist: true .-> Storage
+    end
+
+    Doc_A <== "Binary Yjs Updates (WSS)" ==> YPartyKit
+    Aw_A <== "Awareness / Cursors (VarUint)" ==> PresenceHub
+    Doc_B <== "Binary Yjs Updates (WSS)" ==> YPartyKit
+    Aw_B <== "Awareness / Cursors (VarUint)" ==> PresenceHub
+
+    style ClientA fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    style ClientB fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
+    style PartyKitEdge fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    style Storage fill:#334155,stroke:#f59e0b,stroke-width:1px,color:#fff
 ```
 
 Each whiteboard room owns one `Y.Doc`. Every connected client binds its local
 canvas UI to the same shared Yjs types. Clients exchange binary Yjs updates
-through a PartyKit WebSocket room.
+through a PartyKit WebSocket room (`canvas-<canvasId>`).
 
 Yjs shared types merge concurrent operations without requiring clients to agree
 on a global edit order before editing.
@@ -633,6 +659,28 @@ the current CRDT state so the document remains convergent.
 Awareness is ephemeral presence data. It is not part of the persistent Yjs
 document.
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UserA as Collaborator A
+    participant CanvasA as Client A Canvas / Hook
+    participant AwarenessA as Client A Awareness
+    participant PartyRoom as PartyKit Room Server
+    participant AwarenessB as Client B Awareness
+    participant CanvasB as Client B Canvas / RemoteCursors
+
+    UserA->>CanvasA: Pointer moves over canvas
+    CanvasA->>CanvasA: screenToCanvas(clientX, clientY, zoom, viewport)
+    CanvasA->>AwarenessA: setLocalState({ cursor: {x, y}, user, tool })
+    Note over AwarenessA: Throttled/Debounced (20-30Hz)
+    AwarenessA->>PartyRoom: Binary Awareness Update Frame (VarUint)
+    PartyRoom->>PartyRoom: Update Room Presence Table
+    PartyRoom->>AwarenessB: Broadcast Awareness Frame
+    AwarenessB->>AwarenessB: awareness.on("change")
+    AwarenessB->>CanvasB: Update remoteCursors state
+    CanvasB->>CanvasB: Render Remote Cursor & Name Tag Overlay
+```
+
 Recommended state:
 
 ```ts
@@ -748,7 +796,39 @@ Use one PartyKit room per board:
 whiteboard:<boardId>
 ```
 
+or `canvas-<canvasId>`.
+
 The client must not choose an arbitrary board ID without authorization.
+
+### Real-time room synchronization topology
+
+```mermaid
+graph TD
+    subgraph RoomMesh["Real-Time Whiteboard Room Mesh (Room ID: canvas-:boardId)"]
+        Server["PartyKit Edge Server Room Instance<br/>(party/whiteboard.ts)"]
+        Store[("Persistent Room Storage<br/>(persist: true)")]
+
+        ClientA["Client A<br/>(User 1 / Drawer)"]
+        ClientB["Client B<br/>(User 2 / Viewer)"]
+        ClientC["Client C<br/>(User 3 / Editor)"]
+
+        ClientA <== "WSS / Binary Yjs Sync" ==> Server
+        ClientB <== "WSS / Binary Yjs Sync" ==> Server
+        ClientC <== "WSS / Binary Yjs Sync" ==> Server
+
+        Server <--> Store
+
+        ClientA -. "Ephemeral Cursor Broadcast" .-> Server
+        Server -. "Awareness Fan-out" .-> ClientB
+        Server -. "Awareness Fan-out" .-> ClientC
+    end
+
+    style Server fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff
+    style Store fill:#1e293b,stroke:#f59e0b,stroke-width:1px,color:#fff
+    style ClientA fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#fff
+    style ClientB fill:#1e293b,stroke:#60a5fa,stroke-width:2px,color:#fff
+    style ClientC fill:#4c1d95,stroke:#c084fc,stroke-width:2px,color:#fff
+```
 
 Recommended connection flow:
 
@@ -795,6 +875,31 @@ A custom provider typically exchanges:
 - awareness updates.
 
 Do not parse Yjs updates as JSON. They are binary `Uint8Array` values.
+
+### Two-step synchronization handshake flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client A (useCanvasWhiteboard)
+    participant Provider as YProvider (y-partykit)
+    participant Server as PartyKit Server (WhiteboardPartyServer)
+    participant RoomDoc as Server Room Y.Doc
+    participant Store as Durable Storage
+
+    Note over Client,Server: WebSocket Connection Established & Authorized
+    Provider->>Server: Sync Step 1: Send Local State Vector (SV_Client)
+    Server->>RoomDoc: Compute Diff = encodeStateAsUpdate(RoomDoc, SV_Client)
+    Server->>Provider: Sync Step 2: Send Diff Updates (missing on Client)
+    Server->>Provider: Sync Step 1: Send Server State Vector (SV_Server)
+    Provider->>Client: Apply missing updates to local Y.Doc
+    Provider->>Server: Sync Step 2: Send Client Diff = encodeStateAsUpdate(LocalDoc, SV_Server)
+    Server->>RoomDoc: Apply missing updates to Room Y.Doc
+    Server->>Store: Persist consolidated document state
+    Note over Client,Server: Initial Room Synchronization Complete (Both sides Converged)
+    Provider->>Server: Awareness: Broadcast initial user presence & cursor
+    Server-->>Provider: Awareness: Broadcast active room peers presence
+```
 
 Conceptual PartyKit server flow:
 
@@ -845,6 +950,31 @@ Do not blindly broadcast client messages before validating:
 
 Use transaction origins to distinguish provider-applied changes.
 
+### Incremental mutation & echo-prevention lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UserA as User A (Canvas)
+    participant DocA as Client A Y.Doc
+    participant WsA as Client A WebSocket
+    participant Room as PartyKit Room Server
+    participant WsB as Client B WebSocket
+    participant DocB as Client B Y.Doc
+    actor UserB as User B (Canvas)
+
+    UserA->>DocA: addShape(newShape) / doc.transact(..., localUserId)
+    Note over DocA: Local state updated (0ms latency)<br/>Canvas redraws immediately
+    DocA->>WsA: doc.on('update', update, origin)<br/>[origin === localUserId, not PROVIDER_ORIGIN]
+    WsA->>Room: Send Binary Yjs Update
+    Room->>Room: Apply update to in-memory Room Y.Doc & Persist
+    Room->>WsB: Broadcast Binary Update Frame
+    WsB->>DocB: Y.applyUpdate(DocB, update, PROVIDER_ORIGIN)
+    Note over DocB: DocB mutates state & triggers shapes.observe()
+    DocB-->>DocA: [ECHO BLOCKED] origin === PROVIDER_ORIGIN -> No re-broadcast!
+    DocB->>UserB: Reactive Canvas Re-render with new shape
+```
+
 ```ts
 const PROVIDER_ORIGIN = Symbol("partykit-provider");
 
@@ -870,6 +1000,33 @@ and event processing.
 ## 18. Offline editing and reconnection
 
 Yjs allows clients to edit while temporarily disconnected.
+
+### Offline mutation accumulation & reconnection flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor UserA as Client A (Online)
+    participant Server as PartyKit Server
+    actor UserB as Client B (Offline)
+    participant IDB as Client B IndexedDB
+
+    Note over UserB: Client B loses network connection
+    UserA->>Server: addShape(Circle at x:50, y:50)
+    Server->>Server: Apply & Persist Circle to Room Y.Doc
+    UserB->>UserB: addShape(Rectangle at x:200, y:100)
+    Note over UserB: Mutates local Y.Doc in memory
+    UserB->>IDB: Persist local offline update
+    Note over UserB,Server: Network restored -> Reconnection initiated
+    UserB->>Server: WebSocket Connect & Auth Handshake
+    UserB->>Server: Sync Step 1: Send SV_B (State Vector including offline edits)
+    Server->>UserB: Sync Step 2: Send Circle shape updates (missing in B)
+    Server->>UserB: Sync Step 1: Send SV_Server
+    UserB->>Server: Sync Step 2: Send Rectangle shape updates (missing in Server)
+    Server->>Server: Merge Rectangle into Room Y.Doc
+    Server->>UserA: Broadcast Rectangle update to Client A
+    Note over UserA,UserB: Both clients & server converge to identical state: Circle + Rectangle
+```
 
 On reconnection:
 

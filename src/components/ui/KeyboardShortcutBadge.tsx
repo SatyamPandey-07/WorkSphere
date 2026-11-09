@@ -6,6 +6,7 @@ import { usePlatformModifier } from "@/hooks/usePlatformModifier";
 export interface KeyboardShortcutBadgeProps {
   shortcut: string;
   useSymbol?: boolean;
+  withModifier?: boolean;
   className?: string;
   size?: "xs" | "sm" | "md";
   variant?: "default" | "subtle" | "dark";
@@ -17,13 +18,15 @@ export interface KeyboardShortcutBadgeProps {
 export function KeyboardShortcutBadge({
   shortcut,
   useSymbol = true,
+  withModifier = true,
   className = "",
   size = "xs",
   variant = "default",
 }: KeyboardShortcutBadgeProps) {
   const { isMac, modifierSymbol, modifierLabel } = usePlatformModifier();
 
-  const modifier = isMac && useSymbol ? modifierSymbol : isMac ? modifierLabel : "Ctrl";
+  const modifier =
+    isMac && useSymbol ? modifierSymbol : isMac ? modifierLabel : "Ctrl";
 
   const sizeClasses = {
     xs: "text-[10px] px-1.5 py-0.5 min-w-[18px]",
@@ -39,14 +42,22 @@ export function KeyboardShortcutBadge({
     dark: "bg-zinc-900 text-zinc-300 border-zinc-700 shadow-sm",
   }[variant];
 
+  const ariaLabel = withModifier
+    ? `Shortcut: ${isMac ? "Command" : "Control"} plus ${shortcut}`
+    : `Shortcut: ${shortcut}`;
+
   return (
     <kbd
       data-testid="keyboard-shortcut-badge"
       className={`inline-flex items-center justify-center gap-1 font-mono font-semibold rounded border select-none transition-colors ${sizeClasses} ${variantClasses} ${className}`}
-      aria-label={`Shortcut: ${isMac ? "Command" : "Control"} plus ${shortcut}`}
+      aria-label={ariaLabel}
     >
-      <span>{modifier}</span>
-      {(!isMac || !useSymbol) && <span className="opacity-60">+</span>}
+      {withModifier && (
+        <>
+          <span>{modifier}</span>
+          {(!isMac || !useSymbol) && <span className="opacity-60">+</span>}
+        </>
+      )}
       <span className="uppercase">{shortcut}</span>
     </kbd>
   );

@@ -533,3 +533,245 @@ window.addEventListener("partykit:status", (e: Event) => {
   console.log(`PartyKit ${status} — attempt ${attempt}, retry in ${nextRetryMs}ms`);
 });
 ```
+
+---
+
+## Troubleshooting Guide: Multi-Region Failover & Reconnection Timers (#5878)
+
+This guide provides operational runbooks, configuration best practices, retry formulas, and debugging recipes for developers troubleshooting PartySocket connections, multi-region edge failover, and heartbeat timeouts in production and local environments.
+
+### 1. Exponential Backoff Parameters & Mathematical Formulas
+
+`partysocket` utilizes an exponential backoff retry strategy with randomized jitter to prevent the "thundering herd" problem when an edge region restarts or experiences transient degradation.
+
+#### Mathematical Retry Formula
+
+The backoff duration for retry attempt $n$ (where $n \ge 0$) is defined as:
+
+$$\text{Backoff}_n = \min\left(\text{maxTimeout}, \text{minTimeout} \times (\text{multiplier})^n\right) \times (1 + \text{jitter} \times \text{random}(-1, 1))$$
+
+Or with full randomized jitter $\in [0, 1]$:
+
+$$T_{\text{wait}}(n) = \min\left(T_{\max}, T_{\min} \cdot b^n\right) \cdot \left(1 + \mathcal{J} \cdot \operatorname{rand}(-0.5, 0.5)\right)$$
+
+Where:
+- $T_{\min}$ (`minTimeout` / `minDelay`): Base reconnection delay before the first retry (Default: **1,000 ms**).
+- $T_{\max}$ (`maxTimeout` / `maxDelay`): Ceiling cap on retry intervals (Default: **30,000 ms**).
+- $b$ (`multiplier` / `backoffFactor`): Exponential multiplier scaling the backoff (Default: **1.5 – 2.0**).
+- $\mathcal{J}$ (`jitter`): Randomization factor preventing synchronised client reconnection spikes (Recommended: **0.20 – 0.30** or 20–30% variance).
+
+#### Configuration Recommendations
+
+| Parameter | Recommended (Standard Client) | High-Urgency (Live Whiteboard/Audio) | Low-Bandwidth (Background Sync) | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `minTimeout` | `1000` (1s) | `500` (0.5s) | `3000` (3s) | Initial backoff delay for attempt 0 |
+| `maxTimeout` | `30000` (30s) | `10000` (10s) | `60000` (60s) | Maximum ceiling cap for backoff |
+| `multiplier` | `1.5` | `1.4` | `2.0` | Exponential progression rate |
+| `jitter` | `0.25` ($\pm 25\%$) | `0.15` ($\pm 15\%$) | `0.30` ($\pm 30\%$) | Uniform jitter window applied to retry calculation |
+| `maxRetries` | `Infinity` (Auto-heal) | `20` (Failover trigger) | `10` | Number of attempts before triggering hard fallback |
+
+#### Production Client Implementation Example
+
+```typescript
+import PartySocket from "partysocket";
+
+export function createResilientPartySocket(room: string, host: string) {
+  return new PartySocket({
+    host,
+    room,
+    // Reconnection parameters
+    minDelay: 1000,
+    maxDelay: 30000,
+    maxRetries: Infinity,
+    // Add jittered backoff generator
+    reconnectionDelay: (attempt: number) => {
+      const baseDelay = Math.min(30000, 1000 * Math.pow(1.5, attempt));
+      const jitterFactor = 1 + (Math.random() * 0.5 - 0.25); // +/- 25% jitter
+      return Math.round(baseDelay * jitterFactor);
+    },
+  });
+}
+```
+
+---
+
+### 2. WebSocket Heartbeat Ping/Pong & Failure Detection Thresholds
+
+Network middleboxes (NAT routers, enterprise firewalls, cellular towers, and cloud load balancers) routinely drop idle TCP sockets without emitting a TCP `FIN` packet ("silent disconnects" / "half-open sockets").
+
+To reliably detect broken sockets before user interaction fails, WorkSphere employs dual application-layer heartbeat monitors:
+
+#### Heartbeat Parameters & Thresholds
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Client PartySocket
+    participant Server as PartyKit Edge Room
+
+    loop Every 15s (Ping Interval)
+        Client->>Server: JSON { type: "heartbeat_ping", timestamp: 1728000000000 }
+        alt Server Alive
+            Server-->>Client: JSON { type: "heartbeat_pong", timestamp: 1728000000000, serverTime: 1728000000020 }
+            Note over Client: Reset missedPingCount = 0<br/>RTT = now - timestamp
+        else Pong Missed (Timeout > 5000ms)
+            Note over Client: missedPingCount++ (Increment)
+        end
+    end
+
+    Note over Client: If missedPingCount >= 3 (15s total without Pong):<br/>Socket considered DEAD. Call socket.reconnect()
+```
+
+- **Ping Interval (`HEARTBEAT_INTERVAL`)**: **15,000 ms** (15 seconds).
+- **Pong Timeout (`PONG_TIMEOUT`)**: **5,000 ms** (5 seconds).
+- **Failure Threshold (`MAX_MISSED_HEARTBEATS`)**: **3 consecutive pings**.
+  - Total time to detect an ungracefully dropped connection: $3 \times 15\text{s} = 45\text{s}$ (or 15s when tracking individual timeout deadlines).
+- **Grace Period on Reconnect (`RECONNECT_GRACE_PERIOD`)**: **3,000 ms** before resuming heartbeats.
+
+#### Heartbeat Monitor Implementation Recipe
+
+```typescript
+export class HeartbeatMonitor {
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private pongTimeout: ReturnType<typeof setTimeout> | null = null;
+  private missedPings = 0;
+  private readonly maxMissed = 3;
+
+  constructor(
+    private socket: PartySocket,
+    private intervalMs: number = 15000,
+    private timeoutMs: number = 5000,
+    private onDeadSocket: () => void = () => socket.reconnect()
+  ) {}
+
+  public start() {
+    this.stop();
+    this.pingTimer = setInterval(() => this.sendPing(), this.intervalMs);
+  }
+
+  public stop() {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    if (this.pongTimeout) clearTimeout(this.pongTimeout);
+    this.pingTimer = null;
+    this.pongTimeout = null;
+    this.missedPings = 0;
+  }
+
+  private sendPing() {
+    if (this.socket.readyState !== WebSocket.OPEN) return;
+
+    this.socket.send(JSON.stringify({ type: "heartbeat_ping", timestamp: Date.now() }));
+
+    this.pongTimeout = setTimeout(() => {
+      this.missedPings++;
+      console.warn(`[PartyKit Heartbeat] Missed pong count: ${this.missedPings}/${this.maxMissed}`);
+      if (this.missedPings >= this.maxMissed) {
+        console.error("[PartyKit Heartbeat] Heartbeat threshold exceeded. Forcing socket reconnect.");
+        this.stop();
+        this.onDeadSocket();
+      }
+    }, this.timeoutMs);
+  }
+
+  public handlePong() {
+    if (this.pongTimeout) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
+    }
+    this.missedPings = 0;
+  }
+}
+```
+
+---
+
+### 3. Edge Region Failover Behavior
+
+WorkSphere runs across multiple edge regions (`iad` [US-East], `fra` [EU-Central], `sin` [Asia-Pacific]). When an edge node degrades or loses cross-region replication, the client triggers automatic edge failover.
+
+#### Failover Trigger Sequence
+
+1. **Failure Detection**:
+   - Connection drops, or
+   - 3 consecutive heartbeat timeouts occur, or
+   - Region RTT latency measured by `useMultiRegion` exceeds $350\text{ ms}$ for 3 consecutive intervals.
+2. **Region Selection (`geoRouter.ts`)**:
+   - Client queries fallback region list ordered by geographic latency proximity.
+   - Example priority: `sin` $\to$ `fra` $\to$ `iad`.
+3. **Failover Execution (`FailoverSyncManager`)**:
+   - Client switches target host from `sin.partyserver.worksphere.com` to `fra.partyserver.worksphere.com`.
+   - Transitions state machine to `syncing_snapshot`.
+   - Requests full Yjs document snapshot (`request_room_snapshot`) to reconcile state divergence caused by the regional failover.
+   - Replays queued local outbox deltas (`pendingActions`).
+
+---
+
+### 4. Inspecting PartyKit Room State in Production
+
+When diagnosing connectivity, state divergence, or failover issues in live staging or production, follow these debugging recipes:
+
+#### A. Chrome / Edge DevTools Network WebSocket Inspector
+
+1. Open **DevTools** (`F12` or `Ctrl+Shift+I` / `Cmd+Option+I`).
+2. Navigate to the **Network** tab.
+3. Filter by **`WS`** (WebSockets).
+4. Select the active PartyKit connection (e.g. `party.worksphere.com/parties/workspace/folder-123`).
+5. Open the **Messages** sub-tab:
+   - **Green (up arrow)**: Messages sent from client (e.g., `seat_checkin`, `cursor`, `heartbeat_ping`).
+   - **White/Red (down arrow)**: Frames received from edge server (e.g., `seat_update`, `heartbeat_pong`, binary Yjs frames).
+6. **Look for binary frames**: Select binary messages to view byte length. Rapid high-volume binary frames indicate Yjs CRDT synchronization loops.
+
+#### B. Console Inspection via Global Debug Hook
+
+In development and staging, WorkSphere attaches active PartySocket and FailoverSyncManager instances to `window.__PARTYKIT_DEBUG__`:
+
+```javascript
+// Run directly in Browser Console:
+// 1. Check current connection state
+console.log(window.__PARTYKIT_DEBUG__.status);
+// => "synced" | "connecting" | "syncing_snapshot"
+
+// 2. Check active room and edge host
+console.log({
+  room: window.__PARTYKIT_DEBUG__.socket.room,
+  host: window.__PARTYKIT_DEBUG__.socket.host,
+  readyState: window.__PARTYKIT_DEBUG__.socket.readyState, // 1 = OPEN
+});
+
+// 3. Inspect queued local mutations waiting for reconnect
+console.log(window.__PARTYKIT_DEBUG__.failoverManager.getPendingDeltaCount());
+
+// 4. Force a manual failover test
+window.__PARTYKIT_DEBUG__.failoverManager.triggerSimulatedFailover("fra");
+```
+
+#### C. HTTP Room Health & Metrics API
+
+Every PartyKit room exposes a health inspection HTTP endpoint on the edge worker:
+
+```bash
+# Query live room connection count and presence stats
+curl -X GET "https://party.worksphere.com/parties/workspace/room-abc/health" \
+  -H "Authorization: Bearer <ADMIN_OR_SERVICE_TOKEN>"
+
+# Expected JSON response:
+# {
+#   "status": "healthy",
+#   "connections": 4,
+#   "region": "fra",
+#   "lastSyncTimestamp": 1728000000000,
+#   "yDocSize": 45120
+# }
+```
+
+---
+
+### 5. Common Production Issues & Resolution Matrix
+
+| Symptom | Probable Cause | Diagnostic Command / Check | Resolution |
+| :--- | :--- | :--- | :--- |
+| **Error 1006 / Instant Disconnect** | Expired or malformed Clerk JWT token in query parameter `?token=...` | Check DevTools Console: `401 Unauthorized` or `verifyToken failed` in server log | Call `useAuth().getToken({ skipCache: true })` before initiating PartySocket connection. |
+| **Infinite Reconnect Storm** | `minTimeout` configured too low with zero jitter (`minDelay < 100ms`, `jitter = 0`) | Network tab shows 20+ WS connection attempts per second | Configure `minDelay: 1000` and apply `jitter: 0.25` ($\pm 25\%$). |
+| **Silent Freeze / Unresponsive Room** | Mobile sleep or WiFi handover dropped TCP socket without emitting close event | WebSocket state shows `1 (OPEN)` but no message replies received | Enable `HeartbeatMonitor` with 15s ping interval and 3-miss threshold. |
+| **Whiteboard Desynchronization on Reconnect** | Missed room snapshot during edge node transition | `FailoverSyncManager` state remains stuck in `syncing_snapshot` | Verify client emits `request_room_snapshot` upon `onOpen` and handles 3000ms fallback timeout. |
+

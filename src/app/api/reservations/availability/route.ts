@@ -5,11 +5,9 @@ import {
   isValidBookingDate,
   isValidTimeZone,
   normalizeBookingTime,
-} from "@/lib/bookingTime";
-import {
   conflictDateWindow,
   findConflictingBookings,
-} from "@/lib/bookingOverlap";
+} from "@/lib/booking";
 
 export async function GET(request: NextRequest) {
   const venueId = request.nextUrl.searchParams.get("venueId");

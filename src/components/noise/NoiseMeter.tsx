@@ -6,6 +6,8 @@ import {
   processAudioFrame,
   resetNoiseProcessor,
 } from "@/lib/wasm/noiseProcessor";
+import { getMicCalibration, rmsToCalibratedDb } from "@/lib/noise/calibration";
+import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
 
 export type NoiseMeasurement = {
   averageDb: number;
@@ -17,10 +19,7 @@ type Props = {
 };
 
 function rmsToApproxDb(rms: number) {
-  if (rms <= 0.00001) return 20;
-
-  const dbfs = 20 * Math.log10(rms);
-  return Math.max(20, Math.min(120, Math.round((dbfs + 100) * 10) / 10));
+  return rmsToCalibratedDb(rms, getMicCalibration());
 }
 
 // Environment classification mapping helper
@@ -75,6 +74,17 @@ export function NoiseMeter({ onMeasured }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
+  useWebAudioAutoPause({
+    isActive: status === "measuring",
+    onPause: () => {
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
+      }
+      setStatus("error");
+    },
+  });
+
   useEffect(() => {
     return () => cleanupRef.current?.();
   }, []);
@@ -105,6 +115,9 @@ export function NoiseMeter({ onMeasured }: Props) {
       }
 
       const audioContext = new AudioContextClass();
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
       let source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
 
@@ -186,9 +199,8 @@ export function NoiseMeter({ onMeasured }: Props) {
           cleanup();
           cleanupRef.current = null;
           setStatus("error");
+          resetNoiseProcessor();
         }
-        audioContext.close().catch(() => {});
-        resetNoiseProcessor();
       };
 
       document.addEventListener("visibilitychange", handleVisibilityChange);

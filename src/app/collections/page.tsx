@@ -19,9 +19,11 @@ import {
 import Image from "next/image";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FolderColorPicker } from "@/components/collections/FolderColorPicker";
+import { useToast } from "@/components/ui/Toast";
 
 export default function CollectionsPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [folders, setFolders] = useState<any[]>([]);
   const [publicFolders, setPublicFolders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,11 +35,22 @@ export default function CollectionsPage() {
   const [newFolderPublic, setNewFolderPublic] = useState(false);
   const [newFolderColor, setNewFolderColor] = useState("#3b82f6");
   const [activeTab, setActiveTab] = useState<"my" | "public">("my");
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const isDraggingRef = useRef(false);
+
+  // The empty state CTA points at the inline creation form on the left of the
+  // page. There is no modal here, so the button scrolls the form into view and
+  // focuses the name field so the user can start typing straight away.
+  const focusCreateForm = () => {
+    const input = nameInputRef.current;
+    if (!input) return;
+    input.scrollIntoView({ behavior: "smooth", block: "center" });
+    input.focus();
+  };
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
   isDraggingRef.current = true;
@@ -160,6 +173,9 @@ export default function CollectionsPage() {
         } else {
           setActiveTab("my");
         }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast(errData.error || "Failed to create collection", "error");
       }
     } catch (e) {
       console.error(e);
@@ -172,6 +188,11 @@ export default function CollectionsPage() {
   const toggleUpvote = async (folderId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Snapshot previous folder state for rollback
+    const prevFolder = publicFolders.find((f) => f.id === folderId);
+    if (!prevFolder) return;
+
     try {
       setPublicFolders((prev) =>
         prev.map((f) => {
@@ -191,7 +212,8 @@ export default function CollectionsPage() {
       });
 
       if (!res.ok) {
-        fetchPublicFolders();
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to upvote collection");
       } else {
         const data = await res.json();
         setPublicFolders((prev) =>
@@ -207,9 +229,13 @@ export default function CollectionsPage() {
           }),
         );
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      fetchPublicFolders();
+      // Revert to snapshot state
+      setPublicFolders((prev) =>
+        prev.map((f) => (f.id === folderId ? prevFolder : f)),
+      );
+      toast(err?.message || "Failed to update upvote. Please try again.", "error");
     }
   };
 
@@ -278,6 +304,7 @@ export default function CollectionsPage() {
               </h2>
               <form onSubmit={createFolder} className="flex flex-col gap-3">
                 <input
+                  ref={nameInputRef}
                   type="text"
                   placeholder="Collection Name"
                   value={newFolderName}
@@ -352,8 +379,18 @@ export default function CollectionsPage() {
               ) : folders.length === 0 ? (
                 <EmptyState
                   illustration="collection"
-                  message="No collections yet"
+                  message="No Collections Yet"
                   description="Create a collection to start saving your favorite venues."
+                  action={
+                    <button
+                      type="button"
+                      onClick={focusCreateForm}
+                      className="inline-flex items-center gap-2 px-4 py-2 accent-bg hover:opacity-90 text-white font-medium rounded-xl text-sm transition-all"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Create Collection
+                    </button>
+                  }
                 />
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

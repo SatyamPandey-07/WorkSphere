@@ -47,3 +47,8 @@ build() {
 echo "Building WASM audio filter pipeline..."
 build "$OUTPUT_DIR/audio-filter-simd.wasm" -msimd128
 build "$OUTPUT_DIR/audio-filter-scalar.wasm"
+
+echo "Building WASM polyphase sinc resampler..."
+SRC_FILE="$SCRIPT_DIR/resampler.c"
+build "$OUTPUT_DIR/audio-resampler-simd.wasm" -msimd128
+build "$OUTPUT_DIR/audio-resampler-scalar.wasm"

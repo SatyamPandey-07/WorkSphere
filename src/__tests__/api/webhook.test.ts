@@ -1,4 +1,4 @@
-import { POST } from "@/app/api/webhook/route";
+import { POST } from "@/app/api/webhooks/route";
 import { prisma } from "@/lib/prisma";
 
 jest.mock("@/lib/prisma", () => ({
@@ -34,7 +34,7 @@ jest.mock("next/headers", () => ({
   }),
 }));
 
-describe("POST /api/webhook - Clerk User Sync", () => {
+describe("POST /api/webhooks - Clerk User Sync", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.WEBHOOK_SECRET = "test_secret";
@@ -53,7 +53,7 @@ describe("POST /api/webhook - Clerk User Sync", () => {
       },
     };
 
-    const req = new Request("http://localhost/api/webhook", {
+    const req = new Request("http://localhost/api/webhooks", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -92,7 +92,7 @@ describe("POST /api/webhook - Clerk User Sync", () => {
       },
     };
 
-    const req = new Request("http://localhost/api/webhook", {
+    const req = new Request("http://localhost/api/webhooks", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -130,7 +130,7 @@ describe("POST /api/webhook - Clerk User Sync", () => {
       },
     };
 
-    const req = new Request("http://localhost/api/webhook", {
+    const req = new Request("http://localhost/api/webhooks", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -164,7 +164,7 @@ describe("POST /api/webhook - Clerk User Sync", () => {
       },
     };
 
-    const req = new Request("http://localhost/api/webhook", {
+    const req = new Request("http://localhost/api/webhooks", {
       method: "POST",
       body: JSON.stringify(payload),
     });

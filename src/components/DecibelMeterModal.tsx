@@ -1,67 +1,113 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useDecibelMeter } from "@/hooks/useDecibelMeter";
 import { Mic, X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
-interface DecibelMeterModalProps {
+export interface DecibelMeterModalProps {
   venueId: string;
   onClose: () => void;
+  closeOnBackdropClick?: boolean;
 }
 
 export function DecibelMeterModal({
   venueId,
   onClose,
+  closeOnBackdropClick = true,
 }: DecibelMeterModalProps) {
+  const isMountedRef = useRef(true);
+  const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const { start, stop, decibel, isMeasuring, error } = useDecibelMeter();
   const [status, setStatus] = useState<
     "idle" | "measuring" | "submitting" | "success" | "error"
   >("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (autoCloseTimerRef.current) {
+        clearTimeout(autoCloseTimerRef.current);
+        autoCloseTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleStart = async () => {
     setStatus("measuring");
-    await start();
-  };
-
-  const submitMetric = async (finalDecibel: number) => {
-    setStatus("submitting");
     setSubmitError(null);
     try {
-      const res = await fetch(`/api/venues/${venueId}/noise-metrics`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          decibel: finalDecibel,
-          decibels: finalDecibel,
-          duration: 5,
-          device: "browser",
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to submit noise metric");
-      }
-
-      setStatus("success");
-      // Auto close after 2 seconds
-      setTimeout(() => onClose(), 2000);
+      await start();
     } catch (err) {
-      setStatus("error");
-      setSubmitError(err instanceof Error ? err.message : "Submission failed");
+      if (isMountedRef.current) {
+        setStatus("error");
+        setSubmitError(
+          err instanceof Error
+            ? err.message
+            : "Failed to start microphone measurement",
+        );
+      }
     }
   };
+
+  const submitMetric = useCallback(
+    async (finalDecibel: number) => {
+      setStatus("submitting");
+      setSubmitError(null);
+
+      const safeDecibel =
+        typeof finalDecibel === "number" && Number.isFinite(finalDecibel)
+          ? Math.max(0, Math.min(150, Math.round(finalDecibel * 10) / 10))
+          : 0;
+
+      try {
+        const res = await fetch(
+          `/api/venues/${encodeURIComponent(venueId)}/noise-metrics`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              decibel: safeDecibel,
+              decibels: safeDecibel,
+              duration: 5,
+              device: "browser",
+            }),
+          },
+        );
+
+        if (!res.ok) {
+          throw new Error("Failed to submit noise metric");
+        }
+
+        if (!isMountedRef.current) return;
+        setStatus("success");
+        // Auto close after 2 seconds
+        if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
+        autoCloseTimerRef.current = setTimeout(() => {
+          if (isMountedRef.current) {
+            onClose();
+          }
+        }, 2000);
+      } catch (err) {
+        if (!isMountedRef.current) return;
+        setStatus("error");
+        setSubmitError(err instanceof Error ? err.message : "Submission failed");
+      }
+    },
+    [venueId, onClose],
+  );
 
   useEffect(() => {
     // If it stopped measuring and we have a final decibel reading, submit it.
     if (status === "measuring" && !isMeasuring && decibel !== null && !error) {
-      submitMetric(decibel);
+      void submitMetric(decibel);
     } else if (status === "measuring" && error) {
       setStatus("error");
       setSubmitError(error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMeasuring, decibel, error, status]);
+  }, [isMeasuring, decibel, error, status, submitMetric]);
 
   useEffect(() => {
     // Cleanup when component unmounts
@@ -83,22 +129,40 @@ export function DecibelMeterModal({
     };
   }, [stop, onClose, status]);
 
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      e.target === e.currentTarget &&
+      closeOnBackdropClick &&
+      status !== "submitting"
+    ) {
+      stop();
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div
+      onClick={handleBackdropClick}
+      data-testid="decibel-meter-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="decibel-meter-title"
+        data-testid="decibel-meter-modal"
         className="bg-white dark:bg-zinc-900 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col relative"
       >
         <button
+          type="button"
           onClick={() => {
             stop();
             onClose();
           }}
-          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors cursor-pointer"
           disabled={status === "submitting"}
           aria-label="Close modal"
+          data-testid="decibel-meter-close-btn"
         >
           <X className="w-5 h-5" />
         </button>
@@ -108,47 +172,65 @@ export function DecibelMeterModal({
             <Mic className="w-8 h-8" />
           </div>
 
-          <h2 id="decibel-meter-title" className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
+          <h2
+            id="decibel-meter-title"
+            className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-2"
+          >
             Measure Ambient Noise
           </h2>
 
           {status === "idle" && (
-            <>
+            <div data-testid="decibel-meter-idle-state">
               <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-6">
                 Help others find the perfect workspace by anonymously measuring
                 the ambient noise level. We&apos;ll sample audio for 5 seconds
                 locally—no audio is ever recorded or saved.
               </p>
               <button
+                type="button"
                 onClick={handleStart}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
+                data-testid="start-measuring-btn"
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors cursor-pointer"
               >
                 Start Measuring
               </button>
-            </>
+            </div>
           )}
 
           {status === "measuring" && (
-            <>
+            <div data-testid="decibel-meter-measuring-state">
               <p className="text-zinc-500 dark:text-zinc-400 text-sm mb-6">
                 Please stay quiet for 5 seconds while we measure the ambient
                 noise...
               </p>
-              <div className="text-4xl font-bold text-zinc-900 dark:text-white mb-6 tracking-tight tabular-nums">
+              <div
+                data-testid="measuring-decibel-display"
+                className="text-4xl font-bold text-zinc-900 dark:text-white mb-6 tracking-tight tabular-nums"
+              >
                 {decibel !== null ? `${decibel} dB` : "-- dB"}
               </div>
-              <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2 rounded-full overflow-hidden">
+              <div
+                data-testid="measuring-progress-container"
+                className="w-full bg-zinc-100 dark:bg-zinc-800 h-2 rounded-full overflow-hidden"
+              >
                 <div
+                  data-testid="measuring-progress-bar"
                   className="bg-blue-600 h-full animate-[progress_5s_linear_forwards]"
                   style={{ width: "100%" }}
                 />
               </div>
-            </>
+            </div>
           )}
 
           {status === "submitting" && (
-            <div className="py-8 flex flex-col items-center">
-              <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
+            <div
+              data-testid="decibel-meter-submitting-state"
+              className="py-8 flex flex-col items-center"
+            >
+              <Loader2
+                data-testid="submitting-spinner"
+                className="w-8 h-8 text-blue-600 animate-spin mb-4"
+              />
               <p className="text-zinc-500 dark:text-zinc-400">
                 Submitting reading...
               </p>
@@ -156,7 +238,10 @@ export function DecibelMeterModal({
           )}
 
           {status === "success" && (
-            <div className="py-8 flex flex-col items-center">
+            <div
+              data-testid="decibel-meter-success-state"
+              className="py-8 flex flex-col items-center"
+            >
               <CheckCircle2 className="w-12 h-12 text-emerald-500 mb-4" />
               <p className="text-zinc-900 dark:text-zinc-50 font-medium">
                 Measurement submitted!
@@ -168,7 +253,10 @@ export function DecibelMeterModal({
           )}
 
           {status === "error" && (
-            <div className="py-6 flex flex-col items-center">
+            <div
+              data-testid="decibel-meter-error-state"
+              className="py-6 flex flex-col items-center"
+            >
               <AlertCircle className="w-10 h-10 text-red-500 mb-4" />
               <p className="text-red-500 font-medium mb-2">
                 Measurement failed
@@ -177,8 +265,10 @@ export function DecibelMeterModal({
                 {submitError}
               </p>
               <button
+                type="button"
                 onClick={handleStart}
-                className="w-full py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 rounded-xl font-medium transition-colors"
+                data-testid="measurement-try-again-btn"
+                className="w-full py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 rounded-xl font-medium transition-colors cursor-pointer"
               >
                 Try Again
               </button>
@@ -199,3 +289,5 @@ export function DecibelMeterModal({
     </div>
   );
 }
+
+export default DecibelMeterModal;

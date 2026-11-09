@@ -9,6 +9,7 @@ It covers:
 - Route-specific rate limits (e.g., chat and authentication APIs)
 - Handling rate limit exceptions (HTTP 429, retry headers)
 - Modifying limits and adding protection to new routes
+- [In-Memory Memory Footprint Benchmarks & Eviction Policies](./RATE_LIMITER_MEMORY_AND_EVICTION_BENCHMARKS.md)
 
 ---
 

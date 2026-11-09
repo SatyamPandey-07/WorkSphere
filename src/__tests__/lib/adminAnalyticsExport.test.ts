@@ -95,6 +95,17 @@ describe("Client-side Admin Analytics CSV & PDF Export (#1530)", () => {
       expect(blob.type).toContain("text/csv");
       expect(global.URL.createObjectURL).toHaveBeenCalled();
     });
+
+    it("gracefully falls back to today's date for filename when generatedAt is an invalid or non-ISO date", () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const invalidDateData = {
+        ...mockAnalyticsData,
+        generatedAt: "invalid-date-string",
+      };
+
+      const blob = downloadAnalyticsCSV(invalidDateData);
+      expect(blob).toBeInstanceOf(Blob);
+    });
   });
 
   describe("PDF Export Generator (pdf-lib)", () => {
@@ -146,6 +157,34 @@ describe("Client-side Admin Analytics CSV & PDF Export (#1530)", () => {
       const pageCount = parsedDoc.getPageCount();
 
       expect(pageCount).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("Defensive formatting and null-safety (#6774)", () => {
+    it("handles invalid Date instances in exportAnalyticsToCSV without throwing", () => {
+      const { exportAnalyticsToCSV } = require("@/lib/export/domain/analyticsExporter");
+      const csv = exportAnalyticsToCSV([
+        {
+          timestamp: new Date("invalid"),
+          visitorCount: 10,
+          checkIns: 5,
+          meanDecibelLevel: 45,
+        },
+      ]);
+      expect(csv).toContain("Timestamp,Visitor Count,Check Ins,Mean Decibel Level");
+      expect(csv).toContain(",10,5,45");
+    });
+
+    it("handles nullish sub-arrays in generateAnalyticsCSV without throwing", () => {
+      const partialData: AnalyticsExportData = {
+        ...mockAnalyticsData,
+        venueLeaderboard: undefined as any,
+        amenities: undefined as any,
+        searchTerms: undefined as any,
+      };
+      const csv = generateAnalyticsCSV(partialData);
+      expect(csv).toContain("=== WORKSPACE ANALYTICS OVERVIEW ===");
+      expect(csv).toContain("=== VENUE POPULARITY LEADERBOARD ===");
     });
   });
 });

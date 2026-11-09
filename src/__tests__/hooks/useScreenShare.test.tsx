@@ -25,8 +25,14 @@ describe("useScreenShare", () => {
   const stop = jest.fn();
   let videoTrack: {
     kind: string;
+    readyState: MediaStreamTrackState;
+    getConstraints: jest.Mock;
+    applyConstraints: jest.Mock;
     stop: jest.Mock;
     onended: ((ev?: Event) => void) | null;
+  };
+  const originalConstraints: MediaTrackConstraints = {
+    frameRate: { ideal: 30 },
   };
 
   beforeEach(() => {
@@ -34,7 +40,14 @@ describe("useScreenShare", () => {
     send.mockClear();
     socketOpts = {};
 
-    videoTrack = { kind: "video", stop, onended: null };
+    videoTrack = {
+      kind: "video",
+      readyState: "live",
+      getConstraints: jest.fn(() => originalConstraints),
+      applyConstraints: jest.fn().mockResolvedValue(undefined),
+      stop,
+      onended: null,
+    };
 
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -117,6 +130,72 @@ describe("useScreenShare", () => {
     );
     expect(stop).toHaveBeenCalled();
     expect(result.current.sharing).toBe(false);
+  });
+
+  it("applies Data Saver constraints and restores the original constraints", async () => {
+    const { result } = renderHook(() =>
+      useScreenShare({
+        roomId: "session-demo",
+        userId: "host-1",
+        isHost: true,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.startShare();
+      await result.current.setDataSaverMode(true);
+    });
+
+    expect(videoTrack.applyConstraints).toHaveBeenNthCalledWith(1, {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 15 },
+    });
+    expect(result.current.dataSaverMode).toBe(true);
+
+    await act(async () => {
+      await result.current.setDataSaverMode(false);
+    });
+
+    expect(videoTrack.applyConstraints).toHaveBeenNthCalledWith(
+      2,
+      originalConstraints,
+    );
+    expect(result.current.dataSaverMode).toBe(false);
+  });
+
+  it("reports inactive or restricted tracks without enabling Data Saver Mode", async () => {
+    const { result } = renderHook(() =>
+      useScreenShare({
+        roomId: "session-demo",
+        userId: "host-1",
+        isHost: true,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.startShare();
+    });
+
+    videoTrack.readyState = "ended";
+    await act(async () => {
+      await result.current.setDataSaverMode(true);
+    });
+
+    expect(videoTrack.applyConstraints).not.toHaveBeenCalled();
+    expect(result.current.dataSaverMode).toBe(false);
+    expect(result.current.error).toMatch(/active screen-share video track/i);
+
+    videoTrack.readyState = "live";
+    videoTrack.applyConstraints.mockRejectedValueOnce(
+      new Error("constraint is not supported"),
+    );
+    await act(async () => {
+      await result.current.setDataSaverMode(true);
+    });
+
+    expect(result.current.dataSaverMode).toBe(false);
+    expect(result.current.error).toMatch(/could not be applied/i);
   });
 
   it("viewers reply viewer-ready when the host starts sharing", async () => {

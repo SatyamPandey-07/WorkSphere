@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 describe("ThemeToggle", () => {
   afterEach(() => {
     document.documentElement.classList.remove("dark", "cyberpunk");
+    document.documentElement.removeAttribute("data-theme");
     window.localStorage.clear();
   });
 
@@ -53,6 +54,7 @@ describe("ThemeToggle", () => {
 
     unmount();
     document.documentElement.classList.remove("dark", "cyberpunk");
+    document.documentElement.removeAttribute("data-theme");
 
     render(
       <ThemeProvider initialTheme="cyberpunk">

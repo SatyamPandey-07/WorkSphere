@@ -1,12 +1,12 @@
 import { eventBus } from "../events";
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 import { trackEvent } from "@/lib/analytics";
 import { prisma } from "@/lib/prisma";
 import { generateReceiptPdf } from "@/lib/pdfGenerator";
 import { appUrl } from "@/lib/appUrl";
 import { escapeHtml } from "@/lib/html";
 
-function createTransport(): nodemailer.Transporter | null {
+function createTransport(): Transporter | null {
   const { SMTP_USER, SMTP_PASS } = process.env;
   if (!SMTP_USER || !SMTP_PASS) return null;
   const port = parseInt(process.env.SMTP_PORT || "465");

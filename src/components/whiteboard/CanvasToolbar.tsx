@@ -1,23 +1,39 @@
 "use client";
 
-import type { ToolType } from "@/hooks/useCanvasWhiteboard";
+import { useState } from "react";
+import { cn } from "@/lib/utils";
+import {
+  WHITEBOARD_COLOR_SWATCHES,
+  type ToolType,
+  type WhiteboardParticipant,
+} from "@/hooks/useCanvasWhiteboard";
 
-interface CanvasToolbarProps {
+import type { ConstructType } from "@/lib/whiteboard/constructGenerator";
+
+export interface CanvasToolbarProps {
   tool: ToolType;
   color: string;
   strokeWidth: number;
   canUndo: boolean;
   canRedo: boolean;
   isConnected: boolean;
+  participants?: WhiteboardParticipant[];
+  constructType?: ConstructType;
   onToolChange: (tool: ToolType) => void;
   onColorChange: (color: string) => void;
   onStrokeWidthChange: (width: number) => void;
+  onConstructTypeChange?: (constructType: ConstructType) => void;
   onUndo: () => void;
   onRedo: () => void;
   onClear: () => void;
+  onOpenShortcuts?: () => void;
+  onExportPNG?: (ratio?: 1 | 2 | 4) => void;
+  onExportSVG?: () => void;
+  className?: string;
+  "data-testid"?: string;
 }
 
-const TOOLS: { id: ToolType; label: string; icon: string }[] = [
+export const TOOLS: { id: ToolType; label: string; icon: string }[] = [
   {
     id: "pen",
     label: "Pen",
@@ -35,17 +51,16 @@ const TOOLS: { id: ToolType; label: string; icon: string }[] = [
     icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z",
   },
   { id: "line", label: "Line", icon: "M3 17.25L20.25 4l-3.75 13.25L3 17.25z" },
-];
-
-const PRESET_COLORS = [
-  "#ffffff",
-  "#f43f5e",
-  "#f97316",
-  "#eab308",
-  "#22c55e",
-  "#06b6d4",
-  "#3b82f6",
-  "#a855f7",
+  {
+    id: "construct",
+    label: "Construct Generator",
+    icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-4-8a4 4 0 1 1 8 0 4 4 0 0 1-8 0zm-2-4h12v2H6zm0 6h12v2H6z",
+  },
+  {
+    id: "sticky",
+    label: "Sticky Note",
+    icon: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z",
+  },
 ];
 
 export function CanvasToolbar({
@@ -55,21 +70,44 @@ export function CanvasToolbar({
   canUndo,
   canRedo,
   isConnected,
+  participants,
+  constructType = "shield",
   onToolChange,
   onColorChange,
   onStrokeWidthChange,
+  onConstructTypeChange,
   onUndo,
   onRedo,
   onClear,
+  onOpenShortcuts,
+  onExportPNG,
+  onExportSVG,
+  className,
+  "data-testid": testId = "canvas-toolbar",
 }: CanvasToolbarProps) {
+  const [exportRatio, setExportRatio] = useState<1 | 2 | 4>(2);
+
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-zinc-900/90 px-3 py-2 shadow-lg backdrop-blur-sm">
+    <div
+      data-testid={testId}
+      className={cn(
+        "flex flex-wrap items-center gap-2 rounded-lg bg-zinc-900/90 px-3 py-2 shadow-lg backdrop-blur-sm",
+        className,
+      )}
+    >
       {TOOLS.map((t) => (
         <button
           key={t.id}
           type="button"
+          data-testid={`tool-${t.id}`}
           title={t.label}
-          onClick={() => onToolChange(t.id)}
+          aria-label={t.id === "construct" ? "Emerald Construct" : t.label}
+          onClick={() => {
+            onToolChange(t.id);
+            if (t.id === "construct") {
+              onColorChange("#00FF88");
+            }
+          }}
           className={`rounded-md p-1.5 transition-colors ${
             tool === t.id
               ? "bg-zinc-700 text-white"
@@ -88,20 +126,93 @@ export function CanvasToolbar({
         </button>
       ))}
 
+      {tool === "construct" && (
+        <div
+          data-testid="construct-subtypes-bar"
+          className="flex items-center gap-1 rounded-md bg-emerald-950/60 p-1 border border-emerald-500/30 text-xs font-semibold text-emerald-400"
+        >
+          <button
+            type="button"
+            data-testid="construct-type-shield"
+            title="Hard-Light Shield"
+            onClick={() => onConstructTypeChange?.("shield")}
+            className={`rounded px-2 py-0.5 transition ${
+              constructType === "shield"
+                ? "bg-emerald-600 text-white shadow"
+                : "text-emerald-300 hover:bg-emerald-900/50"
+            }`}
+          >
+            Shield
+          </button>
+          <button
+            type="button"
+            data-testid="construct-type-hexagon"
+            title="Energy Hexagon"
+            onClick={() => onConstructTypeChange?.("hexagon")}
+            className={`rounded px-2 py-0.5 transition ${
+              constructType === "hexagon"
+                ? "bg-emerald-600 text-white shadow"
+                : "text-emerald-300 hover:bg-emerald-900/50"
+            }`}
+          >
+            Hexagon
+          </button>
+          <button
+            type="button"
+            data-testid="construct-type-flightArrow"
+            title="Flight Arrow"
+            onClick={() => onConstructTypeChange?.("flightArrow")}
+            className={`rounded px-2 py-0.5 transition ${
+              constructType === "flightArrow"
+                ? "bg-emerald-600 text-white shadow"
+                : "text-emerald-300 hover:bg-emerald-900/50"
+            }`}
+          >
+            Flight Arrow
+          </button>
+        </div>
+      )}
+
       <div className="mx-1 h-6 w-px bg-zinc-700" />
 
-      {PRESET_COLORS.map((c) => (
-        <button
-          key={c}
-          type="button"
-          title={c}
-          onClick={() => onColorChange(c)}
-          className={`h-5 w-5 rounded-full border-2 transition-transform ${
-            color === c ? "scale-125 border-white" : "border-transparent"
-          }`}
-          style={{ backgroundColor: c }}
-        />
-      ))}
+      <div
+        className="flex items-center gap-1.5"
+        role="radiogroup"
+        aria-label="Color palette"
+        data-testid="color-palette-picker"
+      >
+        {WHITEBOARD_COLOR_SWATCHES.map((swatch) => {
+          const isActive = color.toLowerCase() === swatch.hex.toLowerCase();
+          return (
+            <button
+              key={swatch.hex}
+              type="button"
+              role="radio"
+              aria-checked={isActive}
+              aria-label={`Select ${swatch.name} color`}
+              title={`${swatch.name} (${swatch.hex})`}
+              onClick={() => onColorChange(swatch.hex)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onColorChange(swatch.hex);
+                }
+              }}
+              data-testid={`color-swatch-${swatch.name.toLowerCase()}`}
+              className={`relative h-6 w-6 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-zinc-900 ${
+                isActive
+                  ? "scale-110 border-2 border-white ring-2 ring-blue-500 ring-offset-1 ring-offset-zinc-900"
+                  : "border border-zinc-700 hover:scale-105 hover:border-zinc-500"
+              }`}
+              style={{ backgroundColor: swatch.hex }}
+            >
+              {isActive && (
+                <span className="absolute inset-0 m-auto h-1.5 w-1.5 rounded-full bg-white shadow-sm" />
+              )}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="mx-1 h-6 w-px bg-zinc-700" />
 
@@ -112,9 +223,11 @@ export function CanvasToolbar({
           min={1}
           max={20}
           value={strokeWidth}
+          data-testid="whiteboard-stroke-width-slider"
           onChange={(e) => onStrokeWidthChange(Number(e.target.value))}
           className="h-1 w-16 cursor-pointer accent-blue-500"
           title="Stroke width"
+          aria-label="Stroke width"
         />
       </div>
 
@@ -123,6 +236,8 @@ export function CanvasToolbar({
       <button
         type="button"
         title="Undo"
+        aria-label="Undo"
+        data-testid="whiteboard-undo-btn"
         onClick={onUndo}
         disabled={!canUndo}
         className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
@@ -142,6 +257,8 @@ export function CanvasToolbar({
       <button
         type="button"
         title="Redo"
+        aria-label="Redo"
+        data-testid="whiteboard-redo-btn"
         onClick={onRedo}
         disabled={!canRedo}
         className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
@@ -161,6 +278,8 @@ export function CanvasToolbar({
       <button
         type="button"
         title="Clear canvas"
+        aria-label="Clear canvas"
+        data-testid="whiteboard-clear-btn"
         onClick={onClear}
         className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
       >
@@ -175,9 +294,151 @@ export function CanvasToolbar({
         </svg>
       </button>
 
+      {onExportPNG && (
+        <div className="flex items-center gap-1">
+          <select
+            value={exportRatio}
+            onChange={(e) =>
+              setExportRatio(Number(e.target.value) as 1 | 2 | 4)
+            }
+            className="rounded bg-zinc-800 px-1 py-1 text-[10px] text-zinc-300 hover:bg-zinc-700"
+            title="Export quality (DPI multiplier)"
+            aria-label="Export quality multiplier"
+            data-testid="export-dpi-select"
+          >
+            <option value={1}>1x</option>
+            <option value={2}>2x</option>
+            <option value={4}>4x</option>
+          </select>
+          <button
+            type="button"
+            title={`Export as transparent PNG (${exportRatio}x DPI)`}
+            aria-label="Export as transparent PNG"
+            onClick={() => onExportPNG(exportRatio)}
+            data-testid="export-png-btn"
+            className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {onExportSVG && (
+        <button
+          type="button"
+          title="Export as SVG"
+          aria-label="Export as SVG"
+          onClick={onExportSVG}
+          data-testid="export-svg-btn"
+          className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        </button>
+      )}
+
+      {onOpenShortcuts && (
+        <button
+          type="button"
+          title="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+          onClick={onOpenShortcuts}
+          data-testid="whiteboard-shortcuts-btn"
+          className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </button>
+      )}
+
+      {participants && participants.length > 0 && (
+        <>
+          <div className="mx-1 h-6 w-px bg-zinc-700" />
+          <div
+            className="flex items-center -space-x-1.5"
+            data-testid="whiteboard-participants"
+            aria-label="Room participants"
+          >
+            {participants.map((p) => {
+              const isIdle = p.status === "idle";
+              return (
+                <div
+                  key={p.clientId}
+                  className="group relative"
+                  data-testid={`participant-${p.clientId}`}
+                >
+                  <div
+                    className={`relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border-2 bg-zinc-800 text-xs font-semibold text-white shadow-sm transition-opacity ${
+                      isIdle ? "opacity-50" : "opacity-100"
+                    }`}
+                    style={{ borderColor: p.color }}
+                    title={`${p.name}${isIdle ? " (Idle)" : ""}`}
+                    data-testid={`avatar-ring-${p.clientId}`}
+                  >
+                    {p.avatar ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={p.avatar}
+                        alt={p.name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span>{p.name.charAt(0).toUpperCase()}</span>
+                    )}
+                    {isIdle && (
+                      <span
+                        className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-amber-500 ring-1 ring-zinc-900"
+                        title="Idle"
+                        data-testid={`idle-badge-${p.clientId}`}
+                      />
+                    )}
+                  </div>
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded bg-zinc-800 px-2 py-0.5 text-xs text-white shadow-md group-hover:block">
+                    <span>{p.name}</span>
+                    {isIdle && (
+                      <span className="ml-1 text-zinc-400">(Idle)</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
       <div className="mx-1 h-6 w-px bg-zinc-700" />
 
-      <div className="flex items-center gap-1.5 text-xs">
+      <div
+        data-testid="whiteboard-connection-status"
+        className="flex items-center gap-1.5 text-xs"
+      >
         <span
           className={`inline-block h-2 w-2 rounded-full ${
             isConnected ? "bg-green-500" : "bg-amber-500"
@@ -190,3 +451,5 @@ export function CanvasToolbar({
     </div>
   );
 }
+
+export default CanvasToolbar;

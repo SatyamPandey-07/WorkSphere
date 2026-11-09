@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Process /claim or /unclaim command
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             try {
@@ -34,6 +34,21 @@ jobs:
               
               // Ignore bot comments
               if (context.payload.comment.user.type === 'Bot') return;
+
+              // Check for blocked/banned contributors
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+              if (BLOCKED_USERS.some(u => u.toLowerCase() === commenter.toLowerCase())) {
+                console.log(`Blocked contributor @${commenter} attempted to interact with issue #${issueNumber}`);
+                if (isClaim) {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issueNumber,
+                    body: `🚫 @${commenter} You are blocked from claiming issues or contributing to this repository.`
+                  }).catch(e => console.warn('Block notification comment warning:', e.message));
+                }
+                return;
+              }
 
               // ==========================================
               // Handle /unclaim

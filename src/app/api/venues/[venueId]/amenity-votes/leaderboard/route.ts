@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { apiError } from "@/lib/apiResponse";
 
 export async function GET(
   _req: NextRequest,
@@ -12,10 +13,7 @@ export async function GET(
       where: { id: venueId },
     });
     if (!venue) {
-      return NextResponse.json(
-        { success: false, error: "Venue not found" },
-        { status: 404 },
-      );
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     const validations = await prisma.amenityValidation.findMany({
@@ -107,9 +105,10 @@ export async function GET(
       "GET /api/venues/[venueId]/amenity-votes/leaderboard error:",
       error,
     );
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 },
+    return apiError(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      "INTERNAL_ERROR",
     );
   }
 }

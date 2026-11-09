@@ -25,6 +25,7 @@ import {
   YAxis,
 } from "recharts";
 import type { PerformanceSummary } from "@/lib/performanceTelemetry";
+import { WebVitalsWidget } from "@/components/admin/WebVitalsWidget";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -281,6 +282,8 @@ setData(result);
             </>
           )}
         </section>
+
+        <WebVitalsWidget className="mt-8" />
 
         {/* ── Cold-Start / Latency Trend Chart ───────────────────────────── */}
         <section

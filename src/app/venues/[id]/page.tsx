@@ -9,72 +9,117 @@ import PremiumZkpGate from "@/components/venues/PremiumZkpGate";
 import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
+import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
 import { SeatingForecastChart } from "@/components/venue/SeatingForecastChart";
+import { OccupancyTrendChart } from "@/components/analytics/OccupancyTrendChart";
 import { RecentlyViewedTracker } from "@/components/venues/RecentlyViewedTracker";
 
 import { CollaborativeNotes } from "@/components/bookings/CollaborativeNotes"; // <-- 1. Imported your new component here!
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { VenueSummary } from "@/components/venue/VenueSummary";
+import { VenueAccordion } from "@/components/venue/VenueAccordion";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
+import { VenueShareModal } from "@/components/venue/VenueShareModal";
+import { generateVenueJsonLd } from "@/lib/seo/venueJsonLd";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
+import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
+import { ColleaguePresenceIndicator } from "@/components/social/ColleaguePresenceIndicator";
+import { VenueWifiCard } from "@/components/venue/VenueWifiCard";
+import { AmenityStatusIncidentTracker } from "@/components/venue/AmenityStatusIncidentTracker";
+import { FavoriteDesksDrawer } from "@/components/venue/FavoriteDesksDrawer";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+const NOT_FOUND_METADATA: Metadata = {
+  title: "Venue Not Found | WorkSphere",
+  description: "The requested venue could not be found.",
+  openGraph: {
+    title: "Venue Not Found | WorkSphere",
+    description: "The requested venue could not be found.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Venue Not Found | WorkSphere",
+    description: "The requested venue could not be found.",
+  },
+};
+
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
-  const { id } = await params;
-  const venue = await prisma.venue.findUnique({
-    where: { id },
-  });
+  try {
+    const { id } = await params;
+    const venue = await prisma.venue.findUnique({
+      where: { id },
+    });
 
-  if (!venue) {
+    if (!venue) {
+      return NOT_FOUND_METADATA;
+    }
+
+    const categoryLabel = venue.category.replace(/_/g, " ");
+    const fallbackImage =
+      venue.category === "cafe"
+        ? "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=1200"
+        : venue.category === "library"
+          ? "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=1200"
+          : venue.category === "coworking_space"
+            ? "https://images.unsplash.com/photo-1527192491265-7e15c55b1ed2?auto=format&fit=crop&q=80&w=1200"
+            : "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1200";
+
+    const imageToUse = venue.imageUrl || fallbackImage;
+    const title = `${venue.name} | WorkSphere`;
+    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${
+      venue.address ? ` ${venue.address}` : ""
+    }`;
+
     return {
-      title: "Venue Not Found | WorkSphere",
-      description: "The requested venue could not be found.",
+      title,
+      description,
+      openGraph: {
+        title,
+        description,
+        url: `/venues/${venue.id}`,
+        images: [
+          { url: imageToUse, width: 1200, height: 630, alt: venue.name },
+        ],
+        type: "website",
+      },
+      twitter: {
+        card: "summary_large_image",
+        title,
+        description,
+        images: [imageToUse],
+      },
     };
+  } catch (error) {
+    console.error("generateMetadata error (venue page):", error);
+    return NOT_FOUND_METADATA;
   }
-
-  const categoryLabel = venue.category.replace("_", " ");
-  const fallbackImage =
-    venue.category === "cafe"
-      ? "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=1200"
-      : venue.category === "library"
-        ? "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=1200"
-        : venue.category === "coworking_space"
-          ? "https://images.unsplash.com/photo-1527192491265-7e15c55b1ed2?auto=format&fit=crop&q=80&w=1200"
-          : "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1200";
-
-  const imageToUse = venue.imageUrl || fallbackImage;
-
-  return {
-    title: `${venue.name} | WorkSphere`,
-    description: `Check out ${venue.name}, a ${categoryLabel} perfect for remote work. ${venue.address || ""}`,
-    openGraph: {
-      title: `${venue.name} | WorkSphere`,
-      description: `Check out ${venue.name}, a ${categoryLabel} perfect for remote work. ${venue.address || ""}`,
-      images: [{ url: imageToUse, width: 1200, height: 630, alt: venue.name }],
-      type: "website",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: `${venue.name} | WorkSphere`,
-      description: `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.`,
-      images: [imageToUse],
-    },
-  };
 }
 
 export default async function VenuePage({ params }: PageProps) {
   const { id } = await params;
   const venue = await prisma.venue.findUnique({
     where: { id },
+    include: {
+      ratings: {
+        select: {
+          id: true,
+          wifiQuality: true,
+        },
+      },
+    },
   });
 
   if (!venue) {
     notFound();
   }
+
+  const jsonLd = generateVenueJsonLd(venue);
 
   const CategoryIcon =
     venue.category === "cafe"
@@ -98,6 +143,10 @@ export default async function VenuePage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 flex flex-col font-sans">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <RecentlyViewedTracker
         venue={{
           id: venue.id,
@@ -105,15 +154,26 @@ export default async function VenuePage({ params }: PageProps) {
           address: venue.address,
           category: venue.category,
           imageUrl: venue.imageUrl,
+          rating: venue.rating,
+          latitude: venue.latitude,
+          longitude: venue.longitude,
+          wifiQuality: venue.wifiQuality,
+          hasOutlets: venue.hasOutlets,
+          amenities: [
+            venue.wifiQuality ? "WiFi" : null,
+            venue.hasOutlets ? "Power Outlets" : null,
+            venue.hasQuietZone ? "Quiet Zone" : null,
+            venue.hasPhoneBooths ? "Phone Booths" : null,
+            venue.hasErgonomic ? "Ergonomic Chairs" : null,
+            venue.hasAncHeadsetRental ? "ANC Headset Rental" : null,
+            venue.dogFriendly ? "Dog Friendly" : null,
+          ].filter(Boolean) as string[],
         }}
       />
       <TopNav hideAuth />
       <div className="max-w-2xl mx-auto w-full px-4 pt-3">
         <Breadcrumb
-          items={[
-            { label: "Explore", href: "/ai" },
-            { label: venue.name },
-          ]}
+          items={[{ label: "Explore", href: "/ai" }, { label: venue.name }]}
         />
       </div>
       <main className="flex-grow flex items-center justify-center p-4">
@@ -124,8 +184,23 @@ export default async function VenuePage({ params }: PageProps) {
               src={displayPhoto}
               alt={venue.name}
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              style={{
+                viewTransitionName: getVenueCoverTransitionName(venue.id),
+              }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+            <div className="absolute top-4 right-4 z-10">
+              <VenueShareModal
+                venue={{
+                  id: venue.id,
+                  name: venue.name,
+                  address: venue.address,
+                  category: venue.category,
+                  imageUrl: displayPhoto,
+                }}
+                variant="hero"
+              />
+            </div>
             <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
               <div>
                 <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-white/90 mb-2 drop-shadow-md">
@@ -150,6 +225,13 @@ export default async function VenuePage({ params }: PageProps) {
           </div>
 
           <div className="p-6 sm:p-8 space-y-8">
+            <ColleaguePresenceIndicator
+              venueId={venue.id}
+              venueName={venue.name}
+            />
+
+            <VenueLiveVibeWidget venueId={venue.id} />
+
             {venue.address && (
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
@@ -165,9 +247,13 @@ export default async function VenuePage({ params }: PageProps) {
                     </p>
                   </div>
                 </div>
-                <CopyToClipboardButton textToCopy={venue.address} />
+                <CopyToClipboardButton
+                  textToCopy={venue.address}
+                  ariaLabel="Copy venue address"
+                />
               </div>
             )}
+            <VenueWifiCard venue={venue} />
             <div className="grid grid-cols-2 gap-4">
               {venue.wifiQuality ? (
                 <div className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
@@ -199,11 +285,36 @@ export default async function VenuePage({ params }: PageProps) {
 
             <VenueSummary venueId={venue.id} />
 
+            <VenueAccordion
+              amenities={
+                [
+                  venue.wifiQuality ? "High-Speed Wi-Fi" : null,
+                  venue.hasOutlets ? "Power Outlets Available" : null,
+                  venue.hasQuietZone ? "Dedicated Quiet Zone" : null,
+                  venue.hasPhoneBooths ? "Soundproof Phone Booths" : null,
+                  venue.hasErgonomic ? "Ergonomic Office Chairs" : null,
+                  venue.hasAncHeadsetRental ? "ANC Headset Rental" : null,
+                  venue.dogFriendly ? "Pet Friendly / Dogs Allowed" : null,
+                ].filter(Boolean) as string[]
+              }
+              openingHours={venue.openingHours}
+            />
+
+            <AmenityStatusIncidentTracker
+              venueId={venue.id}
+              venueName={venue.name}
+            />
+
+            <FavoriteDesksDrawer venueId={venue.id} venueName={venue.name} />
+
             <div className="pt-2">
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
                 <span>Expected Noise Levels</span>
               </h3>
-              <NoiseForecastChart venueId={venue.id} />
+              <AmbientNoiseTrendGraph venueId={venue.id} />
+              <div className="mt-4">
+                <NoiseForecastChart venueId={venue.id} />
+              </div>
             </div>
             {/* Seating Availability Forecast */}
             <div className="pt-2">
@@ -211,6 +322,12 @@ export default async function VenuePage({ params }: PageProps) {
                 <span>Seating Availability Forecast</span>
               </h3>
               <SeatingForecastChart venueId={venue.id} />
+              <div className="mt-4">
+                <OccupancyTrendChart
+                  venueId={venue.id}
+                  venueCapacity={venue.maxCapacity || 50}
+                />
+              </div>
             </div>
             {/* Live WebGL 3D Volumetric Cloud Weather Visualizer for Outdoor Workspaces */}
             <div className="pt-2">
@@ -227,6 +344,7 @@ export default async function VenuePage({ params }: PageProps) {
             {/* Collaborative venue notes */}
             <CollaborativeNotes
               roomId={venue.id}
+              venueName={venue.name}
               placeholder={`Shared notes for ${venue.name}...`}
             />
             <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800 space-y-4">

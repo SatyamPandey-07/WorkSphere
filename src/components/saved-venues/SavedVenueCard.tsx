@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   MapPin,
   Star,
@@ -14,9 +15,10 @@ import { cn } from "@/lib/utils";
 import { TagChip } from "./TagChip";
 import { TagInput } from "./TagInput";
 import { NoteEditor } from "./NoteEditor";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import type { SavedVenue, FavoriteTag } from "@/hooks/useSavedVenues";
 
-interface SavedVenueCardProps {
+export interface SavedVenueCardProps {
   favorite: SavedVenue;
   onUpdateNotes: (favoriteId: string, notes: string) => Promise<void>;
   onAddTag: (
@@ -31,6 +33,8 @@ interface SavedVenueCardProps {
   ) => Promise<void>;
   onDeleteTag: (favoriteId: string, tagId: string) => Promise<void>;
   onRemoveFavorite: (venueId: string) => Promise<void>;
+  className?: string;
+  "data-testid"?: string;
 }
 
 export const SavedVenueCard = memo(function SavedVenueCard({
@@ -40,28 +44,38 @@ export const SavedVenueCard = memo(function SavedVenueCard({
   onUpdateTag,
   onDeleteTag,
   onRemoveFavorite,
+  className,
+  "data-testid": testId = "saved-venue-card",
 }: SavedVenueCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
   const [editingTagName, setEditingTagName] = useState("");
-  const { venue, tags } = favorite;
 
-  const handleRemove = useCallback(async () => {
+  const venue = favorite?.venue ?? ({} as any);
+  const tags = Array.isArray(favorite?.tags) ? favorite.tags : [];
+
+  // The trash button only opens the confirmation; the favourite is removed once
+  // the user confirms explicitly, so an accidental click no longer deletes it.
+  const confirmRemove = useCallback(async () => {
     if (isRemoving) return;
     setIsRemoving(true);
     try {
       await onRemoveFavorite(venue.placeId || venue.id);
     } catch {
       setIsRemoving(false);
+      setConfirmingRemove(false);
     }
   }, [isRemoving, venue, onRemoveFavorite]);
+
+  const cancelRemove = useCallback(() => setConfirmingRemove(false), []);
 
   const handleAddTag = useCallback(
     async (name: string, color: string) => {
       await onAddTag(favorite.id, name, color);
     },
-    [favorite.id, onAddTag],
+    [favorite?.id, onAddTag],
   );
 
   const handleRenameTag = useCallback((tag: FavoriteTag) => {
@@ -82,7 +96,7 @@ export const SavedVenueCard = memo(function SavedVenueCard({
       // Error handled by hook
     }
     setEditingTagId(null);
-  }, [editingTagId, editingTagName, favorite.id, onUpdateTag]);
+  }, [editingTagId, editingTagName, favorite?.id, onUpdateTag]);
 
   const categoryColor =
     venue.category === "cafe"
@@ -93,15 +107,39 @@ export const SavedVenueCard = memo(function SavedVenueCard({
 
   return (
     <article
-      className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:accent-border-30 hover:shadow-lg hover:accent-shadow-sm transition-all"
-      aria-label={`Saved venue: ${venue.name}`}
+      data-testid={testId}
+      className={cn(
+        "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:accent-border-30 hover:shadow-lg hover:accent-shadow-sm transition-all",
+        className,
+      )}
+      aria-label={`Saved venue: ${venue.name || "Workspace"}`}
     >
       {/* Card Header */}
       <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
+          {venue.imageUrl && (
+            <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 bg-zinc-100 dark:bg-zinc-800">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={venue.imageUrl}
+                alt={venue.name || "Venue"}
+                className="w-full h-full object-cover"
+                style={{
+                  viewTransitionName: getVenueCoverTransitionName(
+                    venue.placeId || venue.id || "venue",
+                  ),
+                }}
+              />
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <h3 className="text-base font-bold text-zinc-900 dark:text-white truncate">
-              {venue.name}
+              <Link
+                href={`/venues/${venue.placeId || venue.id || ""}`}
+                className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] rounded"
+              >
+                {venue.name || "Unnamed Venue"}
+              </Link>
             </h3>
             {venue.address && (
               <p className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 mt-1 truncate">
@@ -112,25 +150,68 @@ export const SavedVenueCard = memo(function SavedVenueCard({
           </div>
           <button
             type="button"
-            onClick={handleRemove}
+            data-testid="saved-venue-remove-button"
+            onClick={() => setConfirmingRemove(true)}
             disabled={isRemoving}
             className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
-            aria-label={`Remove ${venue.name} from saved venues`}
+            aria-label={`Remove ${venue.name || "venue"} from saved venues`}
           >
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
 
+        {confirmingRemove && (
+          <div
+            role="alertdialog"
+            data-testid="saved-venue-confirm-dialog"
+            aria-label={`Remove ${venue.name || "workspace"} from saved workspaces?`}
+            className="mt-3 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 p-3"
+            onKeyDown={(e) => {
+              // Enter confirms through the auto-focused button; Escape backs out.
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                cancelRemove();
+              }
+            }}
+          >
+            <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
+              Remove from saved workspaces?
+            </p>
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                data-testid="saved-venue-cancel-remove-button"
+                onClick={cancelRemove}
+                className="px-3 py-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-1 dark:focus:ring-offset-zinc-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="saved-venue-confirm-remove-button"
+                onClick={confirmRemove}
+                disabled={isRemoving}
+                autoFocus
+                className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 dark:focus:ring-offset-zinc-900"
+              >
+                {isRemoving ? "Removing..." : "Remove"}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Venue meta */}
         <div className="flex items-center gap-3 mt-3 flex-wrap">
-          <span
-            className={cn(
-              "text-xs font-semibold uppercase tracking-wider",
-              categoryColor,
-            )}
-          >
-            {venue.category}
-          </span>
+          {venue.category && (
+            <span
+              className={cn(
+                "text-xs font-semibold uppercase tracking-wider",
+                categoryColor,
+              )}
+            >
+              {venue.category}
+            </span>
+          )}
           <span className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
             <Star
               className={`w-3 h-3 ${
@@ -143,7 +224,7 @@ export const SavedVenueCard = memo(function SavedVenueCard({
               ? "0.0"
               : Number(venue.rating ?? 0).toFixed(1)}
           </span>
-          {venue.wifiQuality && (
+          {venue.wifiQuality != null && (
             <span className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
               <Wifi className="w-3 h-3" />
               {venue.wifiQuality}/5
@@ -198,9 +279,10 @@ export const SavedVenueCard = memo(function SavedVenueCard({
         </div>
 
         {/* Notes preview / expand */}
-        {favorite.notes && !isExpanded && (
+        {favorite?.notes && !isExpanded && (
           <button
             type="button"
+            data-testid="saved-venue-notes-preview-button"
             onClick={() => setIsExpanded(true)}
             className="w-full mt-3 text-left px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/50 text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap line-clamp-2 hover:accent-border-30 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
             aria-label="Show note"
@@ -214,6 +296,7 @@ export const SavedVenueCard = memo(function SavedVenueCard({
       <div className="px-4 sm:px-5 pb-4 sm:pb-5">
         <button
           type="button"
+          data-testid="saved-venue-expand-button"
           onClick={() => setIsExpanded(!isExpanded)}
           className="w-full flex items-center justify-center gap-1 py-1.5 text-xs text-zinc-400 accent-text-hover transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-zinc-900 rounded-lg"
           aria-expanded={isExpanded}
@@ -239,7 +322,7 @@ export const SavedVenueCard = memo(function SavedVenueCard({
                 Private Notes
               </h4>
               <NoteEditor
-                initialNotes={favorite.notes}
+                initialNotes={favorite?.notes}
                 onSave={(notes) => onUpdateNotes(favorite.id, notes)}
               />
             </div>
@@ -249,3 +332,5 @@ export const SavedVenueCard = memo(function SavedVenueCard({
     </article>
   );
 });
+
+export default SavedVenueCard;

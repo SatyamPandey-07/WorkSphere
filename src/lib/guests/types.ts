@@ -102,6 +102,9 @@ export interface BookingGuestRecord {
   status: "PENDING" | "SENT" | "FAILED" | "CANCELLED" | "ACCEPTED" | "DECLINED";
   calendarUid?: string | null;
   sentAt?: Date | null;
+  paidAt?: Date | null;
+  paidAmountCents?: number | null;
+  paidCurrency?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

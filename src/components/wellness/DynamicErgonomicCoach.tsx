@@ -1,0 +1,1516 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+import {
+  Activity,
+  Heart,
+  Eye,
+  Droplets,
+  AlertTriangle,
+  CheckCircle2,
+  Play,
+  Pause,
+  RotateCcw,
+  Sparkles,
+  Zap,
+  Volume2,
+  VolumeX,
+  Volume1,
+  Bell,
+  BellOff,
+  ChevronRight,
+  UserCheck,
+  ShieldAlert,
+  ArrowUpRight,
+  TrendingUp,
+  Settings2,
+} from "lucide-react";
+import {
+  ErgonomicSessionState,
+  ErgonomicStrainScore,
+  MicroStretchRoutine,
+  MICRO_STRETCH_CATALOG,
+  ErgonomicCoachEngine,
+} from "@/lib/wellness/ergonomicCoachEngine";
+import { ErgonomicChimeSynthesizer } from "@/lib/audio/ErgonomicChimeSynthesizer";
+import { FocusTrap } from "@/components/ui/FocusTrap";
+import { calculateSitStandRatio } from "@/lib/wellness/deskPostureAnalytics";
+import SitStandRatioAnalytics from "./SitStandRatioAnalytics";
+
+export default function DynamicErgonomicCoach() {
+  const [session, setSession] = useState<ErgonomicSessionState>({
+    sessionId: "live-session",
+    deskType: "height_adjustable_sit_stand",
+    currentPostureState: "sitting",
+    sessionStartTime: Date.now() - 45 * 60 * 1000,
+    lastPostureStateChange: Date.now() - 25 * 60 * 1000,
+    totalSittingSeconds: 2700,
+    totalStandingSeconds: 900,
+    completedStretches: ["neck-chin-tuck"],
+    postureCheckIns: [{ timestamp: Date.now() - 20 * 60 * 1000, rating: "aligned" }],
+    waterIntakeMl: 500,
+    waterTargetMl: 2000,
+    eyeBreaksCompleted: 2,
+    skippedBreaksCount: 0,
+    transitionsCount: 3,
+    targetSitStandRatio: 2.0,
+  });
+
+  const [strainScore, setStrainScore] = useState<ErgonomicStrainScore>(() =>
+    ErgonomicCoachEngine.calculateStrainScore(session)
+  );
+
+  const [activeTab, setActiveTab] = useState<
+    "coach" | "ratio_analytics" | "stretches" | "checklist"
+  >("coach");
+  const [selectedStretch, setSelectedStretch] = useState<MicroStretchRoutine>(
+    MICRO_STRETCH_CATALOG[0]
+  );
+  const [stretchTimerActive, setStretchTimerActive] = useState(false);
+  const [stretchSecondsLeft, setStretchSecondsLeft] = useState(
+    MICRO_STRETCH_CATALOG[0].durationSeconds
+  );
+
+  const [eyeCountdown, setEyeCountdown] = useState(20 * 60); // 20 min in seconds
+  const [eyeBreakActive, setEyeBreakActive] = useState(false);
+  const [eyeBreakSecondsLeft, setEyeBreakSecondsLeft] = useState(20);
+  const [focusDurationMinutes, setFocusDurationMinutes] = useState(25);
+  const [stretchDurationMinutes, setStretchDurationMinutes] = useState(5);
+  const [stretchBreakSecondsLeft, setStretchBreakSecondsLeft] = useState(25 * 60);
+  const [stretchBreakActive, setStretchBreakActive] = useState(false);
+  const [stretchBreakPhase, setStretchBreakPhase] = useState<"focus" | "break">("focus");
+  const [stretchBreakChimeEnabled, setStretchBreakChimeEnabled] = useState(true);
+  const [showStretchBreakSuggestions, setShowStretchBreakSuggestions] = useState(false);
+  const ergonomicChimeRef = useRef<ErgonomicChimeSynthesizer | null>(null);
+
+  // Sound Notification settings
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundVolume, setSoundVolume] = useState(0.8);
+  const [showAudioSettings, setShowAudioSettings] = useState(false);
+  const [audioCues, setAudioCues] = useState({
+    postureAlerts: true,
+    eyeBreakReminders: true,
+    sitStandPrompts: true,
+    stretchTimers: true,
+  });
+
+  const [lastCheckInResult, setLastCheckInResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  // Load sound preferences from localStorage on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedMaster = localStorage.getItem("worksphere_ergo_sound_enabled");
+      if (savedMaster !== null) setSoundEnabled(savedMaster === "true");
+      const savedCues = localStorage.getItem("worksphere_ergo_audio_cues");
+      if (savedCues) setAudioCues(JSON.parse(savedCues));
+    } catch {
+      // Ignore localStorage access restrictions
+    }
+  }, []);
+
+  const handleToggleMasterSound = (enabled: boolean) => {
+    setSoundEnabled(enabled);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("worksphere_ergo_sound_enabled", String(enabled));
+      } catch {}
+    }
+    if (enabled) {
+      playChime("bell", true);
+    }
+  };
+
+  const handleToggleCue = (key: keyof typeof audioCues) => {
+    setAudioCues((prev) => {
+      const updated = { ...prev, [key]: !prev[key] };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("worksphere_ergo_audio_cues", JSON.stringify(updated));
+        } catch {}
+      }
+      return updated;
+    });
+  };
+
+  // Audio chime synthesizer using Web Audio API
+  const playChime = (type: "bell" | "success" | "alert", forcePlay = false) => {
+    if ((!soundEnabled && !forcePlay) || typeof window === "undefined") return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+
+      if (type === "bell") {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+        gain.gain.setValueAtTime(0.2 * soundVolume, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 1.2);
+      } else if (type === "success") {
+        const notes = [523.25, 659.25, 783.99, 1046.5]; // C E G C
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
+          gain.gain.setValueAtTime(0.15 * soundVolume, ctx.currentTime + idx * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.08 + 0.4);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + idx * 0.08);
+          osc.stop(ctx.currentTime + idx * 0.08 + 0.45);
+        });
+      } else if (type === "alert") {
+        // Soft dual-pulse alert tone
+        [440, 349.23].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.15);
+          gain.gain.setValueAtTime(0.18 * soundVolume, ctx.currentTime + idx * 0.15);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.15 + 0.25);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + idx * 0.15);
+          osc.stop(ctx.currentTime + idx * 0.15 + 0.28);
+        });
+      }
+
+      // Schedule clean AudioContext closure after chime decay
+      setTimeout(() => {
+        if (ctx.state !== "closed") {
+          ctx.close().catch(() => {});
+        }
+      }, 1500);
+    } catch {
+      // Graceful fallback if Web Audio is blocked
+    }
+  };
+
+  // Main session and eye timer tick
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSession((prev) => {
+        const updated = {
+          ...prev,
+          totalSittingSeconds:
+            prev.currentPostureState === "sitting"
+              ? prev.totalSittingSeconds + 1
+              : prev.totalSittingSeconds,
+          totalStandingSeconds:
+            prev.currentPostureState === "standing"
+              ? prev.totalStandingSeconds + 1
+              : prev.totalStandingSeconds,
+        };
+        setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
+        return updated;
+      });
+
+      // 20-20-20 countdown
+      if (!eyeBreakActive) {
+        setEyeCountdown((prev) => {
+          if (prev <= 1) {
+            if (audioCues.eyeBreakReminders) playChime("bell");
+            setEyeBreakActive(true);
+            setEyeBreakSecondsLeft(20);
+            return 20 * 60;
+          }
+          return prev - 1;
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [eyeBreakActive, soundEnabled, audioCues.eyeBreakReminders]);
+
+  // Eye break active countdown
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (eyeBreakActive) {
+      timer = setInterval(() => {
+        setEyeBreakSecondsLeft((prev) => {
+          if (prev <= 1) {
+            if (audioCues.eyeBreakReminders) playChime("success");
+            setEyeBreakActive(false);
+            setSession((s) => ({ ...s, eyeBreaksCompleted: s.eyeBreaksCompleted + 1 }));
+            return 20;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [eyeBreakActive, soundEnabled, audioCues.eyeBreakReminders]);
+
+  // Guided stretch timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (stretchTimerActive) {
+      timer = setInterval(() => {
+        setStretchSecondsLeft((prev) => {
+          if (prev <= 1) {
+            if (audioCues.stretchTimers) playChime("success");
+            setStretchTimerActive(false);
+            handleCompleteStretch(selectedStretch.id);
+            return selectedStretch.durationSeconds;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [stretchTimerActive, selectedStretch, soundEnabled, audioCues.stretchTimers]);
+
+  useEffect(() => {
+    if (!stretchBreakActive) {
+      return;
+    }
+
+    const deadline = Date.now() + stretchBreakSecondsLeft * 1000;
+    const updateRemainingTime = () => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setStretchBreakSecondsLeft(remaining);
+    };
+    updateRemainingTime();
+
+    const timer = window.setInterval(updateRemainingTime, 250);
+    return () => window.clearInterval(timer);
+  }, [stretchBreakActive, stretchBreakPhase]);
+
+  useEffect(() => {
+    if (!stretchBreakActive || stretchBreakSecondsLeft !== 0) return;
+
+    const playTimerChime = () => {
+      if (!stretchBreakChimeEnabled || !soundEnabled || !ergonomicChimeRef.current) return;
+      void ergonomicChimeRef.current.playGentleChime(soundVolume).catch((error: unknown) => {
+        console.warn("Could not play ergonomic break chime:", error);
+      });
+    };
+
+    if (stretchBreakPhase === "focus") {
+      setStretchBreakPhase("break");
+      setStretchBreakSecondsLeft(stretchDurationMinutes * 60);
+      setShowStretchBreakSuggestions(true);
+      playTimerChime();
+
+      if (
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          new Notification("Time for a stretch break", {
+            body: `Your ${focusDurationMinutes}-minute focus interval is complete. Take a ${stretchDurationMinutes}-minute movement break.`,
+          });
+        } catch (error) {
+          console.warn("Could not display stretch break notification:", error);
+        }
+      }
+      return;
+    }
+
+    setStretchBreakPhase("focus");
+    setStretchBreakSecondsLeft(focusDurationMinutes * 60);
+    setShowStretchBreakSuggestions(false);
+    playTimerChime();
+  }, [
+    focusDurationMinutes,
+    soundEnabled,
+    soundVolume,
+    stretchBreakActive,
+    stretchBreakChimeEnabled,
+    stretchBreakPhase,
+    stretchBreakSecondsLeft,
+    stretchDurationMinutes,
+  ]);
+
+  // Cleanup and reset state on unmount/dismissal
+  useEffect(() => {
+    return () => {
+      setStretchTimerActive(false);
+      setStretchSecondsLeft(MICRO_STRETCH_CATALOG[0].durationSeconds);
+      setEyeBreakActive(false);
+      setEyeBreakSecondsLeft(20);
+    };
+  }, []);
+
+  const togglePostureState = () => {
+    setSession((prev) => {
+      const nextState = prev.currentPostureState === "sitting" ? "standing" : "sitting";
+      const updated: ErgonomicSessionState = {
+        ...prev,
+        currentPostureState: nextState,
+        lastPostureStateChange: Date.now(),
+        transitionsCount: (prev.transitionsCount || 0) + 1,
+      };
+      setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
+      return updated;
+    });
+    if (audioCues.sitStandPrompts) {
+      playChime("bell");
+    }
+  };
+
+  const handlePostCheckIn = (rating: "aligned" | "slouching" | "stiff") => {
+    setSession((prev) => {
+      const updated: ErgonomicSessionState = {
+        ...prev,
+        postureCheckIns: [...prev.postureCheckIns, { timestamp: Date.now(), rating }],
+      };
+      setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
+      return updated;
+    });
+    setLastCheckInResult(
+      rating === "aligned"
+        ? "Awesome alignment! Keep chest open and shoulders soft."
+        : rating === "slouching"
+        ? "Slouch recorded. Reset your chin back & align your earlobes over shoulders."
+        : "Muscular stiffness noted. We recommend a quick thoracic twist."
+    );
+    if (audioCues.postureAlerts) {
+      if (rating === "aligned") {
+        playChime("success");
+      } else {
+        playChime("alert");
+      }
+    }
+  };
+
+  const handleLogWater = (ml: number) => {
+    setSession((prev) => {
+      const updated = {
+        ...prev,
+        waterIntakeMl: prev.waterIntakeMl + ml,
+      };
+      setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
+      return updated;
+    });
+    if (audioCues.postureAlerts) {
+      playChime("bell");
+    }
+  };
+
+  const handleCompleteStretch = (stretchId: string) => {
+    setSession((prev) => {
+      const updated = {
+        ...prev,
+        completedStretches: [...prev.completedStretches, stretchId],
+      };
+      setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
+      return updated;
+    });
+  };
+
+  const selectRoutine = (routine: MicroStretchRoutine) => {
+    setSelectedStretch(routine);
+    setStretchTimerActive(false);
+    setStretchSecondsLeft(routine.durationSeconds);
+  };
+
+  const selectFocusDuration = (minutes: number) => {
+    if (stretchBreakActive) return;
+    setFocusDurationMinutes(minutes);
+    if (stretchBreakPhase === "focus") {
+      setStretchBreakSecondsLeft(minutes * 60);
+    }
+  };
+
+  const selectStretchDuration = (minutes: number) => {
+    if (stretchBreakActive) return;
+    setStretchDurationMinutes(minutes);
+    if (stretchBreakPhase === "break") {
+      setStretchBreakSecondsLeft(minutes * 60);
+    }
+  };
+
+  const handleStretchBreakToggle = () => {
+    if (stretchBreakActive) {
+      setStretchBreakActive(false);
+      return;
+    }
+
+    if (stretchBreakSecondsLeft === 0) {
+      setStretchBreakSecondsLeft(
+        (stretchBreakPhase === "focus" ? focusDurationMinutes : stretchDurationMinutes) * 60
+      );
+    }
+    void ergonomicChimeRef.current?.prepare().catch((error: unknown) => {
+      console.warn("Could not prepare ergonomic break chime:", error);
+    });
+    if (
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      Notification.permission === "default"
+    ) {
+      void Notification.requestPermission().catch((error: unknown) => {
+        console.warn("Could not request desktop notification permission:", error);
+      });
+    }
+    setStretchBreakActive(true);
+  };
+
+  const resetStretchBreakTimer = () => {
+    setStretchBreakActive(false);
+    setStretchBreakPhase("focus");
+    setStretchBreakSecondsLeft(focusDurationMinutes * 60);
+    setShowStretchBreakSuggestions(false);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const formatHoursMins = (totalSecs: number) => {
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    if (hrs > 0) return `${hrs}h ${mins}m`;
+    return `${mins}m`;
+  };
+
+  const getTierColor = (tier: ErgonomicStrainScore["tier"]) => {
+    switch (tier) {
+      case "optimal":
+        return "text-emerald-400 border-emerald-500/30 bg-emerald-950/20";
+      case "good":
+        return "text-cyan-400 border-cyan-500/30 bg-cyan-950/20";
+      case "mild_strain":
+        return "text-amber-400 border-amber-500/30 bg-amber-950/20";
+      case "high_strain":
+        return "text-orange-400 border-orange-500/30 bg-orange-950/20";
+      case "critical_fatigue":
+        return "text-rose-400 border-rose-500/30 bg-rose-950/20";
+    }
+  };
+
+  return (
+    <div className="w-full max-w-6xl mx-auto space-y-6 text-slate-100">
+      {/* Header Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 shadow-xl">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 shadow-sm">
+              <Activity className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                Biometric Ergonomic & Break Coach
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">
+                  LIVE TELEMETRY
+                </span>
+              </h2>
+              <p className="text-sm text-slate-400">
+                Continuous biomechanical posture, 20-20-20 eye strain, and sit-stand balance monitor
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* Master Sound Toggle Button with Audio Indicator */}
+          <button
+            onClick={() => handleToggleMasterSound(!soundEnabled)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition-all ${
+              soundEnabled
+                ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50 shadow-sm shadow-emerald-900/20"
+                : "bg-rose-950/40 border-rose-800/40 text-rose-400 hover:bg-rose-900/50"
+            }`}
+            title={soundEnabled ? "Sound notifications enabled — click to mute" : "Sound notifications muted — click to enable"}
+            aria-label={soundEnabled ? "Mute sound notifications" : "Enable sound notifications"}
+          >
+            {soundEnabled ? (
+              <>
+                <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />
+                <span>Sound: ON</span>
+              </>
+            ) : (
+              <>
+                <VolumeX className="w-4 h-4 text-rose-400" />
+                <span>Sound: MUTED</span>
+              </>
+            )}
+          </button>
+
+          {/* Sound Preferences Settings Gear */}
+          <button
+            onClick={() => setShowAudioSettings(!showAudioSettings)}
+            className={`p-2 rounded-xl border transition-all ${
+              showAudioSettings
+                ? "bg-slate-700 border-slate-600 text-white"
+                : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200"
+            }`}
+            title="Audio Notification Preferences"
+            aria-label="Toggle audio notification preferences"
+          >
+            <Settings2 className="w-4 h-4" />
+          </button>
+
+          <div className="flex flex-wrap bg-slate-800/80 p-1 rounded-xl border border-slate-700/60 gap-0.5">
+            {[
+              { id: "coach", label: "Coach" },
+              { id: "ratio_analytics", label: "Sit-Stand Analytics" },
+              { id: "stretches", label: "Stretches" },
+              { id: "checklist", label: "Checklist" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                  activeTab === tab.id
+                    ? "bg-emerald-600 text-white shadow-md"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Expandable Audio Settings Panel */}
+      {showAudioSettings && (
+        <div className="p-5 bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-700 shadow-xl space-y-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Volume1 className="w-5 h-5 text-emerald-400" />
+              <h3 className="text-sm font-bold text-white">
+                Ergonomic Audio & Sound Notification Preferences
+              </h3>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => playChime("bell", true)}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs flex items-center gap-1 border border-slate-700 transition-all"
+                title="Test bell tone"
+              >
+                <Play className="w-3 h-3 text-emerald-400" /> Test Chime
+              </button>
+              <button
+                onClick={() => setShowAudioSettings(false)}
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Posture Alert Cue */}
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 cursor-pointer hover:bg-slate-800/90 transition-all">
+              <input
+                type="checkbox"
+                checked={audioCues.postureAlerts}
+                onChange={() => handleToggleCue("postureAlerts")}
+                className="mt-0.5 rounded border-slate-600 text-emerald-600 focus:ring-emerald-500 bg-slate-700"
+              />
+              <div className="space-y-0.5">
+                <div className="text-xs font-semibold text-white">Posture Feedback Tones</div>
+                <p className="text-[11px] text-slate-400">
+                  Audio alerts on alignment checks and slouch warnings
+                </p>
+              </div>
+            </label>
+
+            {/* 20-20-20 Eye Break Reminders */}
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 cursor-pointer hover:bg-slate-800/90 transition-all">
+              <input
+                type="checkbox"
+                checked={audioCues.eyeBreakReminders}
+                onChange={() => handleToggleCue("eyeBreakReminders")}
+                className="mt-0.5 rounded border-slate-600 text-cyan-600 focus:ring-cyan-500 bg-slate-700"
+              />
+              <div className="space-y-0.5">
+                <div className="text-xs font-semibold text-white">20-20-20 Eye Reminders</div>
+                <p className="text-[11px] text-slate-400">
+                  Harmonic chime when it is time to look 20 ft away
+                </p>
+              </div>
+            </label>
+
+            {/* Sit-Stand Switch Prompts */}
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 cursor-pointer hover:bg-slate-800/90 transition-all">
+              <input
+                type="checkbox"
+                checked={audioCues.sitStandPrompts}
+                onChange={() => handleToggleCue("sitStandPrompts")}
+                className="mt-0.5 rounded border-slate-600 text-teal-600 focus:ring-teal-500 bg-slate-700"
+              />
+              <div className="space-y-0.5">
+                <div className="text-xs font-semibold text-white">Sit/Stand Mode Prompts</div>
+                <p className="text-[11px] text-slate-400">
+                  Tone cues when changing between seated and standing desk postures
+                </p>
+              </div>
+            </label>
+
+            {/* Micro-Stretch Timers */}
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 cursor-pointer hover:bg-slate-800/90 transition-all">
+              <input
+                type="checkbox"
+                checked={audioCues.stretchTimers}
+                onChange={() => handleToggleCue("stretchTimers")}
+                className="mt-0.5 rounded border-slate-600 text-indigo-600 focus:ring-indigo-500 bg-slate-700"
+              />
+              <div className="space-y-0.5">
+                <div className="text-xs font-semibold text-white">Micro-Stretch Timer Tones</div>
+                <p className="text-[11px] text-slate-400">
+                  Success fanfare when completing guided routine timers
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
+            <div className="flex items-center gap-2">
+              <span>Alert Volume:</span>
+              <input
+                type="range"
+                min="0.1"
+                max="1.0"
+                step="0.05"
+                value={soundVolume}
+                onChange={(e) => setSoundVolume(parseFloat(e.target.value))}
+                className="w-24 accent-emerald-500 cursor-pointer"
+              />
+              <span className="font-mono text-slate-300 text-[11px]">
+                {Math.round(soundVolume * 100)}%
+              </span>
+            </div>
+            <span className="text-[11px] text-slate-500">
+              Browser Web Audio API synthesizers (Zero external assets required)
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 20-20-20 Eye Strain Urgent Banner if Active */}
+      {eyeBreakActive && (
+        <div className="p-5 bg-gradient-to-r from-blue-900/60 via-indigo-900/60 to-purple-900/60 rounded-2xl border border-blue-500/40 animate-pulse flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-blue-500/10">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-500 text-white rounded-full animate-bounce">
+              <Eye className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">20-20-20 Ocular Reset Active!</h3>
+              <p className="text-sm text-blue-200">
+                Look at an object at least 20 feet (6m) away to relax your eye ciliary muscles.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-3xl font-mono font-black text-cyan-300 bg-black/40 px-4 py-2 rounded-xl border border-blue-400/30">
+              00:{eyeBreakSecondsLeft.toString().padStart(2, "0")}
+            </div>
+            <button
+              onClick={() => {
+                setEyeBreakActive(false);
+                setSession((s) => ({ ...s, eyeBreaksCompleted: s.eyeBreaksCompleted + 1 }));
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all shadow"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 1: MAIN COACH VIEW */}
+      {activeTab === "coach" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Strain Index & Sit-Stand State */}
+          <div className="space-y-6 lg:col-span-1">
+            {/* Strain Index Card */}
+            <div className="p-6 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Ergonomic Health Score
+                </span>
+                <span
+                  className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase border ${getTierColor(
+                    strainScore.tier
+                  )}`}
+                >
+                  {strainScore.tier.replace("_", " ")}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-center py-4">
+                <div className="relative w-36 h-36 flex items-center justify-center">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                    <path
+                      className="text-slate-800"
+                      strokeWidth="3.5"
+                      stroke="currentColor"
+                      fill="none"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                    <path
+                      className={
+                        strainScore.score >= 80
+                          ? "text-emerald-400"
+                          : strainScore.score >= 50
+                          ? "text-amber-400"
+                          : "text-rose-400"
+                      }
+                      strokeDasharray={`${strainScore.score}, 100`}
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      stroke="currentColor"
+                      fill="none"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                  </svg>
+                  <div className="absolute flex flex-col items-center justify-center text-center">
+                    <span className="text-3xl font-black text-white">{strainScore.score}</span>
+                    <span className="text-[10px] text-slate-400 font-medium">INDEX / 100</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-slate-800/60 rounded-xl border border-slate-700/50 space-y-1.5 text-xs">
+                <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                  Coach Recommendation
+                </div>
+                <p className="text-slate-400 leading-relaxed">{strainScore.recommendation}</p>
+              </div>
+
+              {/* Sub-factors */}
+              <div className="space-y-2 pt-2 border-t border-slate-800/80 text-xs">
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Posture Balance:</span>
+                  <span className="font-mono text-slate-200 font-semibold">
+                    {strainScore.factors.postureBalanceScore}%
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Micro-Stretch Compliance:</span>
+                  <span className="font-mono text-slate-200 font-semibold">
+                    {strainScore.factors.stretchComplianceScore}%
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>20-20-20 Eye Rests:</span>
+                  <span className="font-mono text-slate-200 font-semibold">
+                    {strainScore.factors.eyeRestScore}%
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Hydration Target:</span>
+                  <span className="font-mono text-slate-200 font-semibold">
+                    {strainScore.factors.hydrationScore}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Posture Mode & Sit-Stand Switch */}
+            <div className="p-6 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Current Posture State
+                </span>
+                <span className="text-xs font-mono text-emerald-400">
+                  {session.currentPostureState === "sitting" ? "🪑 Seated" : "🧍 Standing"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="p-3.5 bg-slate-800/50 rounded-xl border border-slate-700/40">
+                  <div className="text-xs text-slate-400">Sitting Total</div>
+                  <div className="text-lg font-bold font-mono text-slate-200">
+                    {formatHoursMins(session.totalSittingSeconds)}
+                  </div>
+                </div>
+                <div className="p-3.5 bg-slate-800/50 rounded-xl border border-slate-700/40">
+                  <div className="text-xs text-slate-400">Standing Total</div>
+                  <div className="text-lg font-bold font-mono text-emerald-400">
+                    {formatHoursMins(session.totalStandingSeconds)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Sit-to-Stand Duration Ratio */}
+              {(() => {
+                const ratio = calculateSitStandRatio(
+                  session.totalSittingSeconds,
+                  session.totalStandingSeconds
+                );
+                return (
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">Sit-Stand Ratio:</span>
+                      <span className="font-mono text-emerald-400 font-bold">{ratio.display}</span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-lg h-2.5 overflow-hidden flex border border-slate-700/60">
+                      <div
+                        style={{ width: `${ratio.sittingPct}%` }}
+                        className="bg-indigo-500 h-full transition-all duration-500"
+                        title={`Sitting: ${ratio.sittingPct}%`}
+                      />
+                      <div
+                        style={{ width: `${ratio.standingPct}%` }}
+                        className="bg-emerald-400 h-full transition-all duration-500"
+                        title={`Standing: ${ratio.standingPct}%`}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>{ratio.sittingPct}% Seated</span>
+                      <span>{session.transitionsCount || 0} Shifts</span>
+                      <span>{ratio.standingPct}% Standing</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <button
+                onClick={togglePostureState}
+                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <Zap className="w-4 h-4" />
+                Switch to {session.currentPostureState === "sitting" ? "Standing" : "Sitting"} Mode
+              </button>
+
+              <button
+                onClick={() => setActiveTab("ratio_analytics")}
+                className="w-full py-2.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white font-semibold text-xs rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>Open Weekly Summary Analytics</span>
+                <ChevronRight className="w-3.5 h-3.5 text-emerald-400" />
+              </button>
+            </div>
+          </div>
+
+          {/* Center & Right Columns: Timers, Posture Check-in, Hydration */}
+          <div className="space-y-6 lg:col-span-2">
+            {/* Quick Posture Self-Assessment */}
+            <div className="p-6 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <UserCheck className="w-5 h-5 text-indigo-400" />
+                    Quick Posture Check-In
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    How is your spine alignment and shoulder tension feeling right now?
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleToggleCue("postureAlerts")}
+                  className={`self-start sm:self-center flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                    soundEnabled && audioCues.postureAlerts
+                      ? "bg-emerald-950/30 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/40"
+                      : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-300"
+                  }`}
+                  title={
+                    soundEnabled && audioCues.postureAlerts
+                      ? "Posture audio cues active — click to mute"
+                      : "Posture audio cues disabled — click to enable"
+                  }
+                >
+                  {soundEnabled && audioCues.postureAlerts ? (
+                    <>
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Audio Cues On</span>
+                    </>
+                  ) : (
+                    <>
+                      <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Audio Cues Muted</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  onClick={() => handlePostCheckIn("aligned")}
+                  className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 hover:bg-emerald-900/40 text-left transition-all group"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-emerald-300 text-sm">✨ Aligned</span>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Ears over shoulders, lumbar supported.
+                  </p>
+                </button>
+
+                <button
+                  onClick={() => handlePostCheckIn("slouching")}
+                  className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-950/20 hover:bg-amber-900/40 text-left transition-all group"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-amber-300 text-sm">🐢 Slouching</span>
+                    <AlertTriangle className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <p className="text-[11px] text-slate-400">Forward head or rounded shoulders.</p>
+                </button>
+
+                <button
+                  onClick={() => handlePostCheckIn("stiff")}
+                  className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-950/20 hover:bg-rose-900/40 text-left transition-all group"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-rose-300 text-sm">⚡ Stiff / Ache</span>
+                    <ShieldAlert className="w-4 h-4 text-rose-400 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <p className="text-[11px] text-slate-400">Tension in neck, traps, or lower back.</p>
+                </button>
+              </div>
+
+              {lastCheckInResult && (
+                <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-200">
+                  {lastCheckInResult}
+                </div>
+              )}
+            </div>
+
+            {/* Focus stretch break timer */}
+            <section
+              aria-labelledby="stretch-break-timer-heading"
+              className="rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-950/30 via-slate-900/80 to-slate-900/80 p-6 space-y-4"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 id="stretch-break-timer-heading" className="text-sm font-bold text-white">
+                    Focus & Stretch Break Timer
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Customize your focus interval and the movement break that follows.
+                  </p>
+                </div>
+                <div
+                  role="timer"
+                  aria-live="off"
+                  aria-label={`${stretchBreakPhase === "focus" ? "Focus" : "Stretch break"}: ${Math.floor(stretchBreakSecondsLeft / 60)} minutes and ${stretchBreakSecondsLeft % 60} seconds remaining`}
+                  className="font-mono text-3xl font-black tabular-nums text-violet-300"
+                >
+                  {formatTime(stretchBreakSecondsLeft)}
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-2 text-xs text-slate-300">
+                  <span className="flex items-center justify-between">
+                    <span>Focus duration</span>
+                    <span className="font-mono font-bold text-violet-200">{focusDurationMinutes}m</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={10}
+                    max={90}
+                    step={5}
+                    value={focusDurationMinutes}
+                    disabled={stretchBreakActive}
+                    onChange={(event) => selectFocusDuration(Number(event.target.value))}
+                    aria-label="Focus duration in minutes"
+                    aria-valuetext={`${focusDurationMinutes} minutes`}
+                    className="w-full accent-violet-500 disabled:opacity-50"
+                  />
+                  <span className="flex justify-between text-[10px] text-slate-500">
+                    <span>10 min</span>
+                    <span>90 min</span>
+                  </span>
+                </label>
+                <label className="space-y-2 text-xs text-slate-300">
+                  <span className="flex items-center justify-between">
+                    <span>Stretch duration</span>
+                    <span className="font-mono font-bold text-violet-200">{stretchDurationMinutes}m</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={30}
+                    step={1}
+                    value={stretchDurationMinutes}
+                    disabled={stretchBreakActive}
+                    onChange={(event) => selectStretchDuration(Number(event.target.value))}
+                    aria-label="Stretch duration in minutes"
+                    aria-valuetext={`${stretchDurationMinutes} minutes`}
+                    className="w-full accent-violet-500 disabled:opacity-50"
+                  />
+                  <span className="flex justify-between text-[10px] text-slate-500">
+                    <span>1 min</span>
+                    <span>30 min</span>
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-slate-300">
+                  {stretchBreakPhase === "focus" ? "Focus time" : "Stretch break"}
+                  {stretchBreakActive ? " · running" : " · paused"}
+                </span>
+                <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={stretchBreakChimeEnabled}
+                    onChange={(event) => setStretchBreakChimeEnabled(event.target.checked)}
+                    className="accent-violet-500"
+                  />
+                  Gentle chime
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleStretchBreakToggle}
+                  className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-violet-500"
+                >
+                  {stretchBreakActive ? (
+                    <>
+                      <Pause className="h-4 w-4" /> Pause timer
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" /> Start timer
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetStretchBreakTimer}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-700"
+                >
+                  <RotateCcw className="h-4 w-4" /> Reset
+                </button>
+              </div>
+              <p className="sr-only" aria-live="polite">
+                {stretchBreakActive
+                  ? `${stretchBreakPhase === "focus" ? "Focus timer" : "Stretch break timer"} running`
+                  : `${stretchBreakPhase === "focus" ? "Focus timer" : "Stretch break timer"} paused`}
+              </p>
+            </section>
+
+            {/* Timers Grid: 20-20-20 Eye Rest & Recommended Stretch */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* 20-20-20 Eye Strain Countdown */}
+              <div className="p-6 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Eye className="w-5 h-5 text-cyan-400" />
+                      <h4 className="font-bold text-sm text-white">20-20-20 Eye Rule</h4>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      {session.eyeBreaksCompleted} completed
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Every 20 minutes, gaze 20 feet away for 20 seconds to prevent ocular fatigue.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700/50 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] text-slate-400 uppercase">Next Ocular Break In</div>
+                    <div className="text-2xl font-black font-mono text-cyan-400">
+                      {formatTime(eyeCountdown)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setEyeBreakActive(true);
+                      setEyeBreakSecondsLeft(20);
+                      playChime("bell");
+                    }}
+                    className="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-lg transition-all shadow"
+                  >
+                    Trigger Now
+                  </button>
+                </div>
+              </div>
+
+              {/* Hydration Tracker */}
+              <div className="p-6 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 space-y-4 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Droplets className="w-5 h-5 text-blue-400" />
+                      <h4 className="font-bold text-sm text-white">Hydration Tracker</h4>
+                    </div>
+                    <span className="text-xs font-mono text-blue-300 font-bold">
+                      {session.waterIntakeMl} / {session.waterTargetMl} ml
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+                    <div
+                      className="bg-blue-500 h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          (session.waterIntakeMl / session.waterTargetMl) * 100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleLogWater(250)}
+                    className="flex-1 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Droplets className="w-3.5 h-3.5" /> +250 ml Glass
+                  </button>
+                  <button
+                    onClick={() => handleLogWater(500)}
+                    className="flex-1 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Droplets className="w-3.5 h-3.5" /> +500 ml Bottle
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Recommended Stretch Spotlight */}
+            <div className="p-6 bg-gradient-to-r from-emerald-950/30 via-slate-900/80 to-slate-900/80 backdrop-blur-md rounded-2xl border border-emerald-500/30 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-emerald-400" />
+                  <h4 className="font-bold text-sm text-white">Suggested Movement Routine</h4>
+                </div>
+                <span className="text-xs text-emerald-400 font-medium">
+                  {selectedStretch.durationSeconds}s Micro-Routine
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-slate-800/60 rounded-xl border border-slate-700/60">
+                <div className="space-y-1">
+                  <div className="font-bold text-white text-base">{selectedStretch.name}</div>
+                  <p className="text-xs text-slate-400">{selectedStretch.ergonomicBenefit}</p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {selectedStretch.targetMuscles.map((m) => (
+                      <span
+                        key={m}
+                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-700 text-slate-300"
+                      >
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setStretchTimerActive(!stretchTimerActive);
+                      playChime("bell");
+                    }}
+                    className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow ${
+                      stretchTimerActive
+                        ? "bg-amber-600 hover:bg-amber-500 text-white"
+                        : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                    }`}
+                  >
+                    {stretchTimerActive ? (
+                      <>
+                        <Pause className="w-4 h-4" /> Pause ({stretchSecondsLeft}s)
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4" /> Start Exercise
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("stretches")}
+                    className="p-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-xl transition-all"
+                    title="View All Stretches"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: SIT-TO-STAND DURATION RATIO & WEEKLY SUMMARY ANALYTICS */}
+      {activeTab === "ratio_analytics" && (
+        <SitStandRatioAnalytics
+          currentSittingSeconds={session.totalSittingSeconds}
+          currentStandingSeconds={session.totalStandingSeconds}
+          currentPostureState={session.currentPostureState}
+          transitionsCount={session.transitionsCount || 0}
+          onTogglePosture={togglePostureState}
+          onUpdateTimes={(sit: number, stand: number) =>
+            setSession((s) => ({
+              ...s,
+              totalSittingSeconds: sit,
+              totalStandingSeconds: stand,
+            }))
+          }
+        />
+      )}
+
+      {/* TAB 2: MICRO-STRETCH CATALOG */}
+      {activeTab === "stretches" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {MICRO_STRETCH_CATALOG.map((routine) => {
+              const isSelected = selectedStretch.id === routine.id;
+              const isCompleted = session.completedStretches.includes(routine.id);
+
+              return (
+                <div
+                  key={routine.id}
+                  onClick={() => selectRoutine(routine)}
+                  className={`p-5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between space-y-4 ${
+                    isSelected
+                      ? "bg-slate-800/90 border-emerald-500/60 shadow-lg shadow-emerald-950/30"
+                      : "bg-slate-900/80 border-slate-800 hover:border-slate-700"
+                  }`}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                        {routine.category.replace("_", " ")}
+                      </span>
+                      <span className="text-xs font-mono text-emerald-400 font-semibold">
+                        {routine.durationSeconds}s
+                      </span>
+                    </div>
+
+                    <h4 className="font-bold text-white text-base flex items-center gap-1.5">
+                      {routine.name}
+                      {isCompleted && (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      )}
+                    </h4>
+
+                    <p className="text-xs text-slate-400 line-clamp-2">
+                      {routine.ergonomicBenefit}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <div className="flex flex-wrap gap-1">
+                      {routine.targetMuscles.map((muscle) => (
+                        <span
+                          key={muscle}
+                          className="text-[9px] px-2 py-0.5 rounded bg-slate-800 text-slate-400"
+                        >
+                          {muscle}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] text-slate-500 capitalize">
+                        {routine.difficulty} difficulty
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          selectRoutine(routine);
+                          setStretchTimerActive(true);
+                        }}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-all"
+                      >
+                        Start Now
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Active Stretch Full Detail Card */}
+          <div className="p-6 bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-800 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider">
+                  Active Guided Routine
+                </span>
+                <h3 className="text-xl font-bold text-white">{selectedStretch.name}</h3>
+                <p className="text-sm text-slate-400">{selectedStretch.ergonomicBenefit}</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-2xl font-mono font-black text-emerald-400 bg-slate-800 px-4 py-2 rounded-xl border border-slate-700">
+                  {stretchSecondsLeft}s
+                </div>
+                <button
+                  onClick={() => setStretchTimerActive(!stretchTimerActive)}
+                  className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow ${
+                    stretchTimerActive
+                      ? "bg-amber-600 hover:bg-amber-500 text-white"
+                      : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  }`}
+                >
+                  {stretchTimerActive ? "Pause" : "Start Routine"}
+                </button>
+                <button
+                  onClick={() => {
+                    setStretchTimerActive(false);
+                    setStretchSecondsLeft(selectedStretch.durationSeconds);
+                  }}
+                  className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl"
+                  title="Reset Timer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/50 space-y-2">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                Step-by-Step Biomechanical Instructions
+              </div>
+              <ol className="list-decimal list-inside space-y-1.5 text-sm text-slate-300">
+                {selectedStretch.instructions.map((step, idx) => (
+                  <li key={idx} className="leading-relaxed">
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: ERGONOMIC WORKSPACE SETUP CHECKLIST */}
+      {activeTab === "checklist" && (
+        <div className="p-6 bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 space-y-6">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+              Optimal Workstation Ergonomic Geometry Checklist
+            </h3>
+            <p className="text-sm text-slate-400">
+              Align your chair, desk, and display according to OSHA & ISO 9241-5 ergonomic standards
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/40 space-y-2">
+              <div className="font-bold text-emerald-300 text-sm">
+                1. Monitor Eye-Level Height
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                The top 1/3 of your display should be at horizontal eye level, roughly an arm&apos;s
+                length (50-70 cm) away. Avoid downward cervical neck flexion.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/40 space-y-2">
+              <div className="font-bold text-emerald-300 text-sm">
+                2. 90-90-90 Neutral Joint Angles
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Elbows rested at 90-100 degrees parallel to desk surface. Hips and knees bent at 90
+                degrees with feet flat on the floor or a firm footrest.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/40 space-y-2">
+              <div className="font-bold text-emerald-300 text-sm">
+                3. Wrist & Forearm Neutrality
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Wrists should float straight without resting hard on sharp edges. Use an external
+                keyboard and ergonomic mouse to prevent pronation.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/40 space-y-2">
+              <div className="font-bold text-emerald-300 text-sm">
+                4. Sit-to-Stand Interval Cadence
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Aim for a 3:1 ratio (45 mins seated, 15 mins standing per hour) to promote venous
+                blood return without excessive lower back fatigue.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showStretchBreakSuggestions && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <FocusTrap
+            className="w-full max-w-xl space-y-5 rounded-2xl border border-emerald-500/30 bg-slate-900 p-6 shadow-2xl"
+            aria-labelledby="stretch-break-suggestions-title"
+            aria-describedby="stretch-break-suggestions-description"
+            initialFocusSelector="[data-initial-focus]"
+            onEscape={() => setShowStretchBreakSuggestions(false)}
+          >
+            <div>
+              <h2 id="stretch-break-suggestions-title" className="text-lg font-bold text-white">
+                Time to stretch
+              </h2>
+              <p id="stretch-break-suggestions-description" className="mt-1 text-sm text-slate-300">
+                Choose a quick routine to reset your posture and release tension.
+              </p>
+            </div>
+            <ul className="space-y-3">
+              {MICRO_STRETCH_CATALOG.slice(0, 3).map((routine, index) => (
+                <li
+                  key={routine.id}
+                  className="flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-800/60 p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">{routine.name}</h3>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {routine.durationSeconds}s · {routine.ergonomicBenefit}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    data-initial-focus={index === 0 ? "" : undefined}
+                    onClick={() => {
+                      selectRoutine(routine);
+                      setActiveTab("stretches");
+                      setStretchTimerActive(true);
+                      setShowStretchBreakSuggestions(false);
+                    }}
+                    className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500"
+                  >
+                    Start this stretch
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowStretchBreakSuggestions(false)}
+                className="rounded-xl border border-slate-600 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </FocusTrap>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -23,6 +23,9 @@ export const VENUE_FEATURE_KEYS = [
 export type VenueFeatureKey = (typeof VENUE_FEATURE_KEYS)[number];
 export const FEATURE_DIM = VENUE_FEATURE_KEYS.length;
 
+import type { PrivacyBudget, PrivacyReport } from "./privacyAccountant";
+import type { AdaptiveClippingConfig } from "./adaptiveClipping";
+
 export const DEFAULT_LEARNING_RATE = 0.05;
 
 /** DP-SGD settings applied to every on-device gradient step (#1563). */
@@ -33,6 +36,19 @@ export type DifferentialPrivacyConfig = {
   maxGradNorm: number;
   /** Noise std is `noiseMultiplier * maxGradNorm` (σ in DP-SGD). */
   noiseMultiplier: number;
+  /**
+   * Target (ε, δ) over `plannedRounds` train calls (#3359). When set, the
+   * noise multiplier is calibrated from it each round and training is
+   * refused once the budget is spent; `noiseMultiplier` is then ignored.
+   */
+  budget?: PrivacyBudget;
+  /**
+   * Adaptive clipping toward a gradient-norm quantile (#3359). `true` uses
+   * the defaults; `maxGradNorm` is then only the starting bound.
+   */
+  adaptiveClipping?: boolean | Partial<AdaptiveClippingConfig>;
+  /** δ used to report ε when no budget is set. Default 1e-5. */
+  reportingDelta?: number;
 };
 
 export const DEFAULT_DP_CONFIG: DifferentialPrivacyConfig = {
@@ -74,11 +90,20 @@ export type FederatedWorkerRequest =
       id: string;
       examples: Array<{ features: number[]; label: 0 | 1 }>;
     }
-  | { type: "getWeights"; id: string };
+  | { type: "getWeights"; id: string }
+  | { type: "privacy"; id: string };
 
 export type FederatedWorkerResponse =
   | { type: "ready"; id: string; weightCount: number }
   | { type: "scores"; id: string; scores: ScoredVenue[] }
-  | { type: "trained"; id: string; steps: number }
+  | {
+      type: "trained";
+      id: string;
+      steps: number;
+      /** Cumulative privacy loss after this round (#3359). */
+      privacy?: PrivacyReport;
+      clipNorm?: number;
+    }
+  | { type: "privacy"; id: string; privacy: PrivacyReport; clipNorm: number }
   | { type: "weights"; id: string; weights: number[]; bias: number }
   | { type: "error"; id: string; error: string };

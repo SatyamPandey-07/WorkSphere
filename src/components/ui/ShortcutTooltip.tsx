@@ -11,6 +11,7 @@ export interface ShortcutTooltipProps {
   position?: "top" | "bottom" | "left" | "right";
   className?: string;
   delayMs?: number;
+  withModifier?: boolean;
 }
 
 /**
@@ -23,6 +24,7 @@ export function ShortcutTooltip({
   position = "bottom",
   className = "",
   delayMs = 150,
+  withModifier = true,
 }: ShortcutTooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [timeoutId, setTimeoutId] = useState<NodeJS.Timeout | null>(null);
@@ -49,7 +51,13 @@ export function ShortcutTooltip({
     right: "left-full top-1/2 -translate-y-1/2 ml-2",
   }[position];
 
-  const fullLabel = `${content} (${formatShortcut(shortcut, { separator: " + " })})`;
+  const fullLabel = withModifier
+    ? `${content} (${formatShortcut(shortcut, { separator: " + " })})`
+    : `${content} (${shortcut})`;
+
+  const ariaKeyShortcuts = withModifier
+    ? `Control+${shortcut} Meta+${shortcut}`
+    : shortcut;
 
   return (
     <div
@@ -62,7 +70,7 @@ export function ShortcutTooltip({
       {React.isValidElement(children) ? (
         React.cloneElement(children as React.ReactElement<any>, {
           "aria-describedby": isVisible ? tooltipId : undefined,
-          "aria-keyshortcuts": `Control+${shortcut} Meta+${shortcut}`,
+          "aria-keyshortcuts": ariaKeyShortcuts,
           title: (children.props as any)?.title || fullLabel,
         })
       ) : (
@@ -79,6 +87,7 @@ export function ShortcutTooltip({
           <span>{content}</span>
           <KeyboardShortcutBadge
             shortcut={shortcut}
+            withModifier={withModifier}
             size="xs"
             variant="dark"
             className="border-white/20 bg-white/10 text-white"

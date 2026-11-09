@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { resetFFTNoiseFilter } from "@/lib/wasm/fftNoiseFilter";
+import { useWebAudioAutoPause } from "./useWebAudioAutoPause";
 
 export interface FFTNoiseFilterState {
   isReady: boolean;
@@ -48,7 +49,9 @@ export function useFFTNoiseFilter(
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const callbacksRef = useRef(callbacks);
-  callbacksRef.current = callbacks;
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -183,6 +186,13 @@ export function useFFTNoiseFilter(
         throw new Error("FFT Noise Filter not initialized");
       }
 
+      if (streamRef.current || sourceNodeRef.current) {
+        sourceNodeRef.current?.disconnect();
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        sourceNodeRef.current = null;
+        streamRef.current = null;
+      }
+
       const ctx = audioContextRef.current;
       if (ctx.state === "suspended") await ctx.resume();
 
@@ -210,6 +220,7 @@ export function useFFTNoiseFilter(
 
   const stop = useCallback(() => {
     sourceNodeRef.current?.disconnect();
+    workletNodeRef.current?.disconnect();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     workletNodeRef.current?.port.postMessage({ type: "reset" });
 
@@ -217,6 +228,11 @@ export function useFFTNoiseFilter(
     streamRef.current = null;
     setState((prev) => ({ ...prev, isProcessing: false }));
   }, []);
+
+  useWebAudioAutoPause({
+    isActive: state.isProcessing,
+    onPause: stop,
+  });
 
   const setSensitivity = useCallback((value: number) => {
     workletNodeRef.current?.port.postMessage({

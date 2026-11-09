@@ -7,7 +7,9 @@ import { BarChart3, Search, Settings, Webhook } from "lucide-react";
 import { BookingList } from "@/components/bookings/BookingList";
 import { StreakCard } from "@/components/dashboard/StreakCard";
 import { StudentVerificationBadge } from "@/components/student/StudentVerificationBadge";
+import { MonthlyBudgetTracker } from "@/components/billing/MonthlyBudgetTracker";
 import { CheckInHistory } from "./CheckInHistory";
+import { WorkStyleProfile } from "./WorkStyleProfile";
 
 export default function DashboardPage() {
   const { user } = useUser();
@@ -54,6 +56,8 @@ export default function DashboardPage() {
         </div>
       </header>
 
+      <MonthlyBudgetTracker />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <section
           className="lg:col-span-2 space-y-3"
@@ -73,6 +77,7 @@ export default function DashboardPage() {
         </section>
 
         <aside className="space-y-6">
+          <WorkStyleProfile />
           <StreakCard />
           <CheckInHistory />
           <Link

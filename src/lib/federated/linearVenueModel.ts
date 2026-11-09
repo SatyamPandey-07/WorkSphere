@@ -13,6 +13,12 @@ import {
   type RandomSource,
 } from "./differentialPrivacy";
 import {
+  nextClipNorm,
+  noisyUnclippedFraction,
+  type AdaptiveClippingConfig,
+} from "./adaptiveClipping";
+import type { RoundMultipliers } from "./privacyAccountant";
+import {
   DEFAULT_LEARNING_RATE,
   FEATURE_DIM,
   VENUE_FEATURE_KEYS,
@@ -157,6 +163,62 @@ export function trainBatch(
     steps += 1;
   }
   return steps;
+}
+
+export interface DpRoundResult {
+  steps: number;
+  /** Clip bound used this round. */
+  clipNorm: number;
+  /** Clip bound for the next round (unchanged without adaptive clipping). */
+  nextClipNorm: number;
+  /** Privatised unclipped fraction (only with adaptive clipping). */
+  noisyUnclippedFraction?: number;
+}
+
+/**
+ * One DP-SGD training round (#3359): every example gets one step with its
+ * gradient clipped to `clipNorm` and N(0, (z·clipNorm)²) noise added. With
+ * adaptive clipping, the round also releases a noisy count of unclipped
+ * gradients and moves the bound toward the target quantile.
+ *
+ * Privacy: each example is used once, so the round is one Gaussian release
+ * with multiplier `noiseMultiplier` (plus one count release with
+ * `countNoiseMultiplier`). Charge exactly those to the PrivacyAccountant.
+ */
+export function trainDpRound(
+  model: LinearVenueModelState,
+  examples: VenueTrainExample[],
+  round: RoundMultipliers & { clipNorm: number },
+  adaptive?: AdaptiveClippingConfig,
+  random: RandomSource = secureRandom,
+): DpRoundResult {
+  const { clipNorm, noiseMultiplier, countNoiseMultiplier } = round;
+  if (!(clipNorm > 0) || !(noiseMultiplier > 0)) {
+    throw new RangeError("clipNorm and noiseMultiplier must be positive");
+  }
+  if (adaptive && !(countNoiseMultiplier! > 0)) {
+    throw new RangeError("Adaptive clipping needs a countNoiseMultiplier");
+  }
+
+  let unclipped = 0;
+  for (const example of examples) {
+    const { gradient } = computeGradient(model, example);
+    const norm = clipByL2Norm(gradient, clipNorm);
+    if (norm <= clipNorm) unclipped += 1;
+    addGaussianNoise(gradient, noiseMultiplier * clipNorm, random);
+    applyGradient(model, gradient);
+  }
+
+  if (!adaptive || examples.length === 0) {
+    return { steps: examples.length, clipNorm, nextClipNorm: clipNorm };
+  }
+  const fraction = noisyUnclippedFraction(unclipped, examples.length, countNoiseMultiplier!, random);
+  return {
+    steps: examples.length,
+    clipNorm,
+    nextClipNorm: nextClipNorm(clipNorm, fraction, adaptive),
+    noisyUnclippedFraction: fraction,
+  };
 }
 
 function clamp01(v: number): number {

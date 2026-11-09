@@ -38,7 +38,7 @@ describe("Toast Duplicate Message Debounce (#1748)", () => {
     fireEvent.click(button);
 
     // Only 1 toast item should be rendered
-    const toasts = screen.getAllByRole("status");
+    const toasts = screen.getAllByRole("alert");
     expect(toasts).toHaveLength(1);
     expect(screen.getByText("Sync failed")).toBeInTheDocument();
   });
@@ -53,7 +53,7 @@ describe("Toast Duplicate Message Debounce (#1748)", () => {
     const button = screen.getByTestId("trigger-toast");
 
     fireEvent.click(button);
-    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
 
     // Advance time by 3001ms
     act(() => {
@@ -61,6 +61,6 @@ describe("Toast Duplicate Message Debounce (#1748)", () => {
     });
 
     fireEvent.click(button);
-    expect(screen.getAllByRole("status")).toHaveLength(2);
+    expect(screen.getAllByRole("alert")).toHaveLength(2);
   });
 });

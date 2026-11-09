@@ -12,22 +12,31 @@ logger = logging.getLogger("context-compression")
 
 
 def run_server(args):
-    from .server.server import CompressionServer
+    import uvicorn
 
-    server = CompressionServer(
-        host=args.host,
-        port=args.port,
+    try:
+        from .server.server import create_app, ContextCompressor, VectorStore
+    except (ImportError, ValueError):
+        from server.server import create_app, ContextCompressor, VectorStore
+
+    compressor = ContextCompressor(
         dimension=args.dimension,
         max_tokens=args.max_tokens,
         similarity_threshold=args.threshold,
+    )
+    store = VectorStore(dimension=args.dimension)
+    app = create_app(
+        compressor=compressor,
+        store=store,
         api_key=getattr(args, "api_key", None),
     )
+
     logger.info(
         f"Starting compression server on {args.host}:{args.port} "
         f"(dim={args.dimension}, max_tokens={args.max_tokens}, "
         f"threshold={args.threshold})"
     )
-    server.start()
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 def run_demo(args):

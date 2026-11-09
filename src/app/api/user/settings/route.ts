@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { userSettingsSchema } from "@/lib/validations";
+import { sanitizeDisplayName } from "@/lib/profileSanitizer";
 import type { Prisma } from "@prisma/client";
 
 export async function GET() {
@@ -14,6 +15,8 @@ export async function GET() {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
+        firstName: true,
+        lastName: true,
         phoneNumber: true,
         smsAlertsEnabled: true,
         whatsappWebhookUrl: true,
@@ -24,11 +27,14 @@ export async function GET() {
         quietHoursEnd: true,
         timezone: true,
         imageUrl: true,
-        workStyleProfile: true, // <-- NEW: Fetching the profile
+        workStyleProfile: true,
       },
     });
 
+    const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ");
+
     return NextResponse.json({
+      displayName: displayName || "",
       phoneNumber: user?.phoneNumber || "",
       smsAlertsEnabled: user?.smsAlertsEnabled || false,
       whatsappWebhookUrl: user?.whatsappWebhookUrl || "",
@@ -40,7 +46,7 @@ export async function GET() {
       quietHoursEnd: user?.quietHoursEnd || "",
       timezone: user?.timezone || "UTC",
       imageUrl: user?.imageUrl || "",
-      workStyleProfile: user?.workStyleProfile || "", // <-- NEW: Returning it to the frontend
+      workStyleProfile: user?.workStyleProfile || "",
     });
   } catch (error: any) {
     console.error("GET /api/user/settings error:", error);
@@ -71,6 +77,7 @@ export async function POST(req: Request) {
     }
 
     const {
+      displayName,
       phoneNumber,
       smsAlertsEnabled,
       whatsappWebhookUrl,
@@ -84,8 +91,22 @@ export async function POST(req: Request) {
       workStyleProfile,
     } = parsed.data;
 
-    // Prepare update data, ignoring fields that aren't provided to allow partial updates
+    let sanitizedFirstName: string | null = null;
+    let sanitizedLastName: string | null = null;
+    if (displayName !== undefined) {
+      const sanitized = sanitizeDisplayName(displayName);
+      if (sanitized) {
+        const parts = sanitized.split(" ");
+        sanitizedFirstName = parts[0];
+        sanitizedLastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
+      }
+    }
+
     const dataToUpdate: any = {
+      ...(displayName !== undefined && {
+        firstName: sanitizedFirstName,
+        lastName: sanitizedLastName,
+      }),
       ...(phoneNumber !== undefined && { phoneNumber: phoneNumber || null }),
       ...(smsAlertsEnabled !== undefined && { smsAlertsEnabled }),
       ...(whatsappWebhookUrl !== undefined && {
@@ -110,7 +131,7 @@ export async function POST(req: Request) {
       ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
       ...(workStyleProfile !== undefined && {
         workStyleProfile: workStyleProfile || null,
-      }), // <-- NEW: Adding to DB update payload
+      }),
     };
 
     const updatedUser = await prisma.user.upsert({
@@ -123,8 +144,13 @@ export async function POST(req: Request) {
       update: dataToUpdate,
     });
 
+    const updatedDisplayName = [updatedUser.firstName, updatedUser.lastName]
+      .filter(Boolean)
+      .join(" ");
+
     return NextResponse.json({
       success: true,
+      displayName: updatedDisplayName,
       phoneNumber: updatedUser.phoneNumber || "",
       smsAlertsEnabled: updatedUser.smsAlertsEnabled,
       whatsappWebhookUrl: updatedUser.whatsappWebhookUrl || "",
@@ -136,7 +162,7 @@ export async function POST(req: Request) {
       quietHoursEnd: updatedUser.quietHoursEnd || "",
       timezone: updatedUser.timezone || "UTC",
       imageUrl: updatedUser.imageUrl || "",
-      workStyleProfile: updatedUser.workStyleProfile || "", // <-- NEW: Returning success
+      workStyleProfile: updatedUser.workStyleProfile || "",
     });
   } catch (error: any) {
     console.error("POST /api/user/settings error:", error);
@@ -155,22 +181,56 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
+    const parsed = userSettingsSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid parameters",
+          details: parsed.error.flatten().fieldErrors,
+        },
+        { status: 400 },
+      );
+    }
+    const validated = parsed.data;
+
+    const dataToUpdate: Prisma.UserUpdateInput = {};
+
+    if ("displayName" in validated && validated.displayName !== undefined) {
+      const sanitized = sanitizeDisplayName(validated.displayName);
+      if (sanitized) {
+        const parts = sanitized.split(" ");
+        dataToUpdate.firstName = parts[0];
+        dataToUpdate.lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
+      } else {
+        dataToUpdate.firstName = null;
+        dataToUpdate.lastName = null;
+      }
+    }
+
     const allowedKeys = [
       "phoneNumber",
       "smsAlertsEnabled",
       "whatsappWebhookUrl",
+      "telegramWebhookUrl",
       "notificationStart",
       "notificationEnd",
       "quietHoursStart",
       "quietHoursEnd",
       "timezone",
+      "imageUrl",
+      "workStyleProfile",
+      "distanceUnit",
     ] as const;
 
-    const dataToUpdate: Prisma.UserUpdateInput = {};
     for (const key of allowedKeys) {
-      if (key in body) {
-        (dataToUpdate as any)[key] =
-          body[key] ?? (key === "smsAlertsEnabled" ? false : null);
+      if (key in validated) {
+        const value = (validated as any)[key];
+        if (value === "") {
+          (dataToUpdate as any)[key] =
+            key === "smsAlertsEnabled" ? false : key === "timezone" ? "UTC" : null;
+        } else {
+          (dataToUpdate as any)[key] = value ?? (key === "smsAlertsEnabled" ? false : null);
+        }
       }
     }
 
@@ -184,16 +244,25 @@ export async function PATCH(req: Request) {
       update: dataToUpdate,
     });
 
+    const updatedDisplayName = [updated.firstName, updated.lastName]
+      .filter(Boolean)
+      .join(" ");
+
     return NextResponse.json({
       success: true,
+      displayName: updatedDisplayName,
       phoneNumber: updated.phoneNumber || "",
       smsAlertsEnabled: updated.smsAlertsEnabled,
-      whatsappWebhookUrl: updated.whatsappWebhookUrl || "",
+      whatsappWebhookUrl: updated.whatsappWebhookUrl,
+      telegramWebhookUrl: (updated as any).telegramWebhookUrl || "",
       notificationStart: updated.notificationStart || "",
       notificationEnd: updated.notificationEnd || "",
       quietHoursStart: updated.quietHoursStart || "",
       quietHoursEnd: updated.quietHoursEnd || "",
       timezone: updated.timezone || "UTC",
+      imageUrl: (updated as any).imageUrl || "",
+      workStyleProfile: (updated as any).workStyleProfile || "",
+      distanceUnit: (updated as any).distanceUnit || "",
     });
   } catch (error: any) {
     console.error("PATCH /api/user/settings error:", error);

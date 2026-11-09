@@ -18,11 +18,12 @@ export async function triggerBackgroundMemorySync(
 
   // If Redis isn't configured, preserve existing behaviour.
   if (!redis) {
-    extractAndStoreMemories(conversationId)
-      .then(() => updateUserPreferencesSummary(userId))
-      .catch((err) =>
-        console.error("[BackgroundSync] Memory sync failed:", err),
-      );
+    try {
+      await extractAndStoreMemories(conversationId);
+      await updateUserPreferencesSummary(userId);
+    } catch (err) {
+      console.error("[BackgroundSync] Memory sync failed:", err);
+    }
 
     return;
   }
@@ -40,19 +41,13 @@ export async function triggerBackgroundMemorySync(
       return;
     }
 
-    extractAndStoreMemories(conversationId)
-      .then(() => updateUserPreferencesSummary(userId))
-      .catch((err) =>
-        console.error("[BackgroundSync] Memory sync failed:", err),
-      );
+    try {
+      await extractAndStoreMemories(conversationId);
+      await updateUserPreferencesSummary(userId);
+    } catch (err) {
+      console.error("[BackgroundSync] Memory sync failed:", err);
+    }
   } catch (err) {
     console.error("[BackgroundSync] Redis error:", err);
-
-    // If Redis fails, don't lose functionality.
-    extractAndStoreMemories(conversationId)
-      .then(() => updateUserPreferencesSummary(userId))
-      .catch((err) =>
-        console.error("[BackgroundSync] Memory sync failed:", err),
-      );
   }
 }

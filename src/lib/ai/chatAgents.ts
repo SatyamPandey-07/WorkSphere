@@ -1,9 +1,56 @@
-import Groq from "groq-sdk";
 import { applyFilters } from "@/lib/filters";
 import { prisma } from "@/lib/prisma";
 import { haversineKm } from "@/lib/distance";
+import {
+  GROQ_MODEL,
+  GEMINI_MODEL,
+  classifyQueryComplexity,
+  getProviderForComplexity,
+  getFallbackProvider,
+  getModelForProvider,
+  isGroqConfigured,
+  isProviderConfigured,
+  getGroqClient,
+  isRateLimitError,
+  executeProviderCompletion,
+  executeProviderStream,
+  routeChatCompletion,
+  routeChatStream,
+  type AIProvider,
+  type QueryComplexity,
+  type ChatMessage,
+  type CompletionOptions,
+  type StreamOptions,
+  type RoutedResult,
+} from "@/lib/ai/providerRouting";
+import { getGeminiClient, isGeminiConfigured } from "@/lib/ai/gemini";
 
-export const LLM_MODEL = "llama-3.3-70b-versatile";
+export const LLM_MODEL = GROQ_MODEL;
+
+export {
+  GROQ_MODEL,
+  GEMINI_MODEL,
+  classifyQueryComplexity,
+  getProviderForComplexity,
+  getFallbackProvider,
+  getModelForProvider,
+  isGroqConfigured,
+  isGeminiConfigured,
+  isProviderConfigured,
+  getGroqClient,
+  getGeminiClient,
+  isRateLimitError,
+  executeProviderCompletion,
+  executeProviderStream,
+  routeChatCompletion,
+  routeChatStream,
+  type AIProvider,
+  type QueryComplexity,
+  type ChatMessage,
+  type CompletionOptions,
+  type StreamOptions,
+  type RoutedResult,
+};
 
 /**
  * Patterns that attempt to override or escape the system prompt. Removing
@@ -35,34 +82,7 @@ export function sanitizeUserInput(input: string): string {
 }
 
 export function isLlmConfigured(): boolean {
-  return Boolean(process.env.GROQ_API_KEY);
-}
-
-let groq: Groq | null = null;
-export function getGroqClient(): Groq {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error("GROQ_API_KEY is not configured");
-  }
-  if (!groq) {
-    groq = new Groq({
-      apiKey: process.env.GROQ_API_KEY,
-      // Fail fast on sustained 429s instead of hanging the request.
-      maxRetries: 2,
-      timeout: 20000,
-    });
-  }
-  return groq;
-}
-
-export function isRateLimitError(error: any): boolean {
-  const message = error instanceof Error ? error.message.toLowerCase() : "";
-  return (
-    error?.status === 429 ||
-    error?.statusCode === 429 ||
-    error?.name === "RateLimitError" ||
-    message.includes("429") ||
-    message.includes("rate limit")
-  );
+  return isGroqConfigured() || isGeminiConfigured();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -272,6 +292,7 @@ export async function orchestratorAgent(
 ): Promise<OrchestratorDecision> {
   const userMessage = sanitizeUserInput(rawUserMessage);
   const heuristic = parseSearchQuery(userMessage);
+  const complexity = classifyQueryComplexity(userMessage, context);
 
   const heuristicDecision = (): OrchestratorDecision => {
     if (!heuristic.isSearch) {
@@ -279,11 +300,13 @@ export async function orchestratorAgent(
         agentsToUse: [],
         skipAgents: true,
         reasoning: "General conversation",
+        complexity,
       };
     }
     const detailed =
       heuristic.parameters.amenities.length > 0 ||
-      heuristic.parameters.workType !== "focus";
+      heuristic.parameters.workType !== "focus" ||
+      complexity === "complex";
     return {
       agentsToUse: detailed
         ? ["ContextAgent", "DataAgent", "ReasoningAgent", "ActionAgent"]
@@ -308,8 +331,10 @@ Output ONLY JSON:
 For general conversation: {"skipAgents": true, "reasoning": "General conversation"}`;
 
   try {
-    const response = await getGroqClient().chat.completions.create({
-      model: LLM_MODEL,
+    const { text: content } = await routeChatCompletion({
+      complexity,
+      userQuery: userMessage,
+      context,
       messages: [
         { role: "system", content: systemPrompt },
         {
@@ -319,23 +344,27 @@ For general conversation: {"skipAgents": true, "reasoning": "General conversatio
       ],
       temperature: 0.2,
     });
-    const parsed = extractJson(response.choices[0]?.message?.content || "");
+    const parsed = extractJson(content || "");
     if (parsed && typeof parsed === "object") {
       if (parsed.skipAgents === true) {
         return {
           agentsToUse: [],
           skipAgents: true,
           reasoning: String(parsed.reasoning ?? "General conversation"),
+          complexity,
         };
       }
-      const complexity = parsed.complexity === "simple" ? "simple" : "complex";
+      const resolvedComplexity =
+        parsed.complexity === "simple" || parsed.complexity === "complex"
+          ? parsed.complexity
+          : complexity;
       return {
         agentsToUse:
-          complexity === "simple"
+          resolvedComplexity === "simple"
             ? ["DataAgent", "ReasoningAgent", "ActionAgent"]
             : ["ContextAgent", "DataAgent", "ReasoningAgent", "ActionAgent"],
         skipAgents: false,
-        complexity,
+        complexity: resolvedComplexity,
         reasoning: String(parsed.reasoning ?? ""),
         parameters: parsed.parameters
           ? {
@@ -399,15 +428,16 @@ Output ONLY JSON:
 radius is in meters (nearby=1500, "2 miles"=3200). Use all three categories unless the user names specific ones.`;
 
   try {
-    const response = await getGroqClient().chat.completions.create({
-      model: LLM_MODEL,
+    const { text: content } = await routeChatCompletion({
+      complexity: "complex",
+      userQuery: userMessage,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: JSON.stringify(userMessage) },
       ],
       temperature: 0.2,
     });
-    const parsed = extractJson(response.choices[0]?.message?.content || "");
+    const parsed = extractJson(content || "");
     if (parsed?.parameters) {
       return {
         intent: String(parsed.intent ?? "find_workspaces").slice(0, 200),

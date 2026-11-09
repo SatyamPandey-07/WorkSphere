@@ -13,6 +13,8 @@ import {
   CalendarPlus,
   Repeat,
   Tag,
+  ChevronDown,
+  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -25,7 +27,7 @@ import {
 } from "react";
 import { useUser } from "@clerk/nextjs";
 import confetti from "canvas-confetti";
-import { Venue } from "./ChatMessages";
+import { Venue } from "@/types/venue";
 import { trackEvent } from "@/lib/analytics";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
@@ -39,8 +41,9 @@ import {
   BookingList,
   type BookingSummary,
 } from "@/components/bookings/BookingList";
+import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
 
-type Step = "details" | "payment" | "processing" | "success" | "history";
+type _Step = "details" | "payment" | "processing" | "success" | "history";
 
 interface BookingModalProps {
   venue: Venue | null;
@@ -69,12 +72,17 @@ function expandDates(
   const [y, m, d] = start.split("-").map(Number);
   const dates: string[] = [];
   for (let i = 0; i < count; i++) {
-    const next =
-      frequency === "daily"
-        ? new Date(y, m - 1, d + i)
-        : frequency === "weekly"
-          ? new Date(y, m - 1, d + 7 * i)
-          : new Date(y, m - 1 + i, d);
+    let next: Date;
+    if (frequency === "daily") {
+      next = new Date(y, m - 1, d + i);
+    } else if (frequency === "weekly") {
+      next = new Date(y, m - 1, d + 7 * i);
+    } else {
+      const first = new Date(y, m - 1 + i, 1);
+      const lastDay = new Date(y, m + i, 0).getDate();
+      first.setDate(Math.min(d, lastDay));
+      next = first;
+    }
     dates.push(localDateString(next));
   }
   return dates;
@@ -93,6 +101,42 @@ const inputClass =
 const labelClass =
   "block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1.5";
 
+const DURATION_PRESETS = [
+  { label: "30m", minutes: 30 },
+  { label: "1h", minutes: 60 },
+  { label: "2h", minutes: 120 },
+  { label: "4h", minutes: 240 },
+  { label: "Full Day", minutes: 480 },
+] as const;
+
+function addMinutesToTime(timeStr: string, minutesToAdd: number): string {
+  if (!timeStr) return "";
+  const [h, m] = timeStr.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return "";
+  const totalMinutes = h * 60 + m + minutesToAdd;
+  const nextHour = Math.floor(totalMinutes / 60) % 24;
+  const nextMinute = totalMinutes % 60;
+  return `${String(nextHour).padStart(2, "0")}:${String(nextMinute).padStart(2, "0")}`;
+}
+
+function addOneHour(timeStr: string): string {
+  return addMinutesToTime(timeStr, 60);
+}
+
+function calculateDurationMinutes(
+  startTime: string,
+  endTime: string,
+): number | null {
+  if (!startTime || !endTime) return null;
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return null;
+  const startMins = sh * 60 + sm;
+  const endMins = eh * 60 + em;
+  if (endMins <= startMins) return null;
+  return endMins - startMins;
+}
+
 export function BookingModal({
   venue,
   isOpen,
@@ -107,9 +151,10 @@ export function BookingModal({
     "details" | "payment" | "processing" | "success" | "history"
   >(initialStep ?? (mode === "history" ? "history" : "details"));
   const today = localDateString(new Date());
-  const getTodayString = () => today;
+  const _getTodayString = () => today;
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
+  const [bookingEndTime, setBookingEndTime] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringFrequency, setRecurringFrequency] = useState<
     "daily" | "weekly" | "monthly"
@@ -126,12 +171,14 @@ export function BookingModal({
     dates: string[];
     time: string;
   } | null>(null);
+  const [showCalendarDropdown, setShowCalendarDropdown] = useState(false);
   const [guestInviteStatus, setGuestInviteStatus] = useState<
     "idle" | "sending" | "done" | "failed"
   >("idle");
 
   const modalRef = useRef<HTMLDivElement>(null);
   const pointerDownStartedOnBackdrop = useRef(false);
+  const isSubmittingRef = useRef(false);
 
   // Prefill the confirmation email with the signed-in user's address.
   const accountEmail = user?.primaryEmailAddress?.emailAddress ?? "";
@@ -211,7 +258,9 @@ export function BookingModal({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        onCloseRef.current();
+        if (!isSubmitting && !isSubmittingRef.current) {
+          onCloseRef.current();
+        }
         return;
       }
       if (event.key !== "Tab") return;
@@ -225,7 +274,7 @@ export function BookingModal({
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, step]);
+  }, [isOpen, step, isSubmitting]);
 
   const plannedDates = useMemo(
     () =>
@@ -237,6 +286,11 @@ export function BookingModal({
     [bookingDate, isRecurring, recurringOccurrences, recurringFrequency],
   );
 
+  const activeDurationMinutes = useMemo(
+    () => calculateDurationMinutes(bookingTime, bookingEndTime),
+    [bookingTime, bookingEndTime],
+  );
+
   if (!isOpen) return null;
 
   const handleBackdropPointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -244,6 +298,7 @@ export function BookingModal({
   };
 
   const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (isSubmitting || isSubmittingRef.current) return;
     if (event.target !== event.currentTarget) return;
     if (
       shouldCloseFromBackdrop(
@@ -257,12 +312,13 @@ export function BookingModal({
   };
 
   const handleBooking = async () => {
-    if (!venue) return;
+    if (!venue || isSubmitting || isSubmittingRef.current) return;
     if (bookingDate && bookingDate < today) {
       setBookingError("Please choose today or a future date.");
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     setBookingError(null);
     setStep("processing");
@@ -339,12 +395,38 @@ export function BookingModal({
       setStep("details");
     } finally {
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
+
+  const handleStartTimeChange = (newStartTime: string) => {
+    setBookingTime(newStartTime);
+    if (!bookingEndTime || bookingEndTime <= newStartTime) {
+      setBookingEndTime(addOneHour(newStartTime));
+    }
+    if (bookingEndTime && newStartTime && bookingEndTime <= newStartTime) {
+      setBookingError("End time must be after start time.");
+    } else if (bookingError === "End time must be after start time.") {
+      setBookingError(null);
+    }
+  };
+
+  const handleEndTimeChange = (newEndTime: string) => {
+    setBookingEndTime(newEndTime);
+    if (bookingTime && newEndTime && newEndTime <= bookingTime) {
+      setBookingError("End time must be after start time.");
+    } else if (bookingError === "End time must be after start time.") {
+      setBookingError(null);
+    }
+  };
+
+  const isTimeInvalid =
+    !!bookingTime && !!bookingEndTime && bookingEndTime <= bookingTime;
 
   const canSubmit =
     !!bookingDate &&
     !!bookingTime &&
+    !isTimeInvalid &&
     /\S+@\S+\.\S+/.test(email) &&
     !isSubmitting &&
     retryAfter <= 0;
@@ -360,6 +442,7 @@ export function BookingModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="booking-modal-title"
+        data-testid="booking-modal"
         className="bg-white dark:bg-zinc-900 w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
@@ -424,7 +507,7 @@ export function BookingModal({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label htmlFor="booking-date" className={labelClass}>
                     Date
@@ -446,19 +529,69 @@ export function BookingModal({
                 </div>
                 <div>
                   <label htmlFor="arrival-time" className={labelClass}>
-                    Arrival time
+                    Start time
                   </label>
                   <div className="relative">
                     <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="time"
                       id="arrival-time"
+                      data-testid="booking-start-time"
                       required
                       className={inputClass}
                       value={bookingTime}
-                      onChange={(e) => setBookingTime(e.target.value)}
+                      onChange={(e) => handleStartTimeChange(e.target.value)}
                     />
                   </div>
+                </div>
+                <div>
+                  <label htmlFor="end-time" className={labelClass}>
+                    End time
+                  </label>
+                  <div className="relative">
+                    <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input
+                      type="time"
+                      id="end-time"
+                      data-testid="booking-end-time"
+                      min={bookingTime}
+                      className={inputClass}
+                      value={bookingEndTime}
+                      onChange={(e) => handleEndTimeChange(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <span className={labelClass}>Quick duration</span>
+                <div
+                  className="flex flex-wrap gap-2 mt-1.5"
+                  data-testid="duration-presets"
+                >
+                  {DURATION_PRESETS.map((preset) => {
+                    const isActive = activeDurationMinutes === preset.minutes;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        data-testid={`duration-preset-${preset.label.toLowerCase().replace(/\s+/g, "-")}`}
+                        onClick={() => {
+                          const start = bookingTime || "09:00";
+                          if (!bookingTime) setBookingTime(start);
+                          const newEnd = addMinutesToTime(start, preset.minutes);
+                          handleEndTimeChange(newEnd);
+                        }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                          isActive
+                            ? "bg-[var(--primary-accent)] text-white shadow-sm ring-2 ring-[var(--primary-accent)]/30 font-semibold"
+                            : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -636,13 +769,32 @@ export function BookingModal({
 
               {confirmation && (
                 <div className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
-                  <p className="text-xs text-zinc-500">
-                    Confirmation{" "}
-                    {confirmation.ids.length > 1 ? "numbers" : "number"}
-                  </p>
-                  <p className="font-mono font-semibold mt-1 break-all">
-                    {confirmation.ids.join(", ")}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-zinc-500">
+                      Confirmation{" "}
+                      {confirmation.ids.length > 1 ? "numbers" : "reference"}
+                    </p>
+                    {confirmation.ids.length === 1 && (
+                      <CopyBookingReferenceButton
+                        referenceId={confirmation.ids[0]}
+                        tooltipPosition="top"
+                      />
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mt-1">
+                    <p className="font-mono font-semibold text-base break-all text-zinc-900 dark:text-zinc-100">
+                      {confirmation.ids.join(", ")}
+                    </p>
+                    {confirmation.ids.length > 1 && (
+                      <CopyBookingReferenceButton
+                        referenceId={confirmation.ids.join(", ")}
+                        label="Copy all"
+                        tooltipText="Copy all references"
+                        copiedTooltipText="All references copied!"
+                        tooltipPosition="top"
+                      />
+                    )}
+                  </div>
                   <p className="text-xs text-zinc-500 mt-2">
                     A confirmation with your receipt is on its way to {email}.
                   </p>
@@ -665,48 +817,107 @@ export function BookingModal({
                 </p>
               )}
 
-              {confirmation && (
-                <div className="flex flex-wrap justify-center gap-2">
-                  <a
-                    href={
-                      getCalendarUrls(
-                        venue.name,
-                        venue.address ?? "",
-                        confirmation.dates[0],
-                        confirmation.time,
-                      ).googleUrl
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                  >
-                    <CalendarPlus className="w-4 h-4" /> Add to Google Calendar
-                  </a>
-                  <button
-                    onClick={() =>
-                      downloadICS(
-                        venue.name,
-                        venue.address ?? "",
-                        confirmation.dates[0],
-                        confirmation.time,
-                        60,
-                        confirmation.ids[0],
-                      )
-                    }
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                  >
-                    <Calendar className="w-4 h-4" /> Download .ics
-                  </button>
-                  {confirmation.bookingId && (
-                    <a
-                      href={`/api/bookings/${confirmation.bookingId}/download`}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                    >
-                      <Download className="w-4 h-4" /> Receipt
-                    </a>
-                  )}
-                </div>
-              )}
+              {confirmation && (() => {
+                const calUrls = getCalendarUrls(
+                  venue.name,
+                  venue.address ?? "",
+                  confirmation.dates[0],
+                  confirmation.time,
+                  60,
+                  browserTimeZone(),
+                );
+
+                return (
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {/* Add to Calendar Dropdown */}
+                    <div className="relative inline-block text-left">
+                      <button
+                        type="button"
+                        onClick={() => setShowCalendarDropdown((prev) => !prev)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                        aria-expanded={showCalendarDropdown}
+                        aria-haspopup="true"
+                        data-testid="calendar-quick-add-btn"
+                      >
+                        <CalendarPlus className="w-4 h-4 text-blue-500" />
+                        <span>Add to Calendar</span>
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showCalendarDropdown ? "rotate-180" : ""}`} />
+                      </button>
+
+                      {showCalendarDropdown && (
+                        <div
+                          data-testid="calendar-quick-add-dropdown"
+                          className="absolute left-0 sm:left-auto sm:right-0 mt-1.5 w-56 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-150"
+                        >
+                          <a
+                            href={calUrls.googleUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setShowCalendarDropdown(false)}
+                            data-testid="add-to-google-calendar"
+                            className="flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors"
+                          >
+                            <span className="flex items-center gap-2">
+                              <CalendarPlus className="w-4 h-4 text-blue-500" />
+                              Add to Google Calendar
+                            </span>
+                            <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                          </a>
+
+                          <a
+                            href={calUrls.outlookUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setShowCalendarDropdown(false)}
+                            data-testid="add-to-outlook-calendar"
+                            className="flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-sky-500" />
+                              Add to Outlook
+                            </span>
+                            <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                          </a>
+
+                          <div className="my-1 border-t border-zinc-100 dark:border-zinc-700/50" />
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowCalendarDropdown(false);
+                              downloadICS(
+                                venue.name,
+                                venue.address ?? "",
+                                confirmation.dates[0],
+                                confirmation.time,
+                                60,
+                                confirmation.ids[0],
+                              );
+                            }}
+                            data-testid="download-ics-button"
+                            className="w-full flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors text-left"
+                            aria-label="Download .ics file"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Download className="w-4 h-4 text-zinc-500" />
+                              Download (.ics)
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {confirmation.bookingId && (
+                      <a
+                        href={`/api/bookings/${confirmation.bookingId}/download`}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                      >
+                        <Download className="w-4 h-4" /> Receipt
+                      </a>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="flex w-full gap-2">
                 <Link

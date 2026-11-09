@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { MapPin, Wifi, Zap, Globe, ArrowLeft, Star, Coffee, Building2, BookOpen } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { CollectionUpvoteButton } from "@/components/collections/CollectionUpvoteButton";
 
 export const dynamic = "force-dynamic";
 
@@ -56,10 +57,16 @@ export default async function PublicCollectionPage({ params }: PublicCollectionP
         <div className="p-8 rounded-3xl bg-gradient-to-r from-indigo-950/40 via-zinc-900/60 to-zinc-900/40 border border-zinc-800/80 backdrop-blur-md relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl -z-10" />
           <div className="space-y-4">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-semibold text-indigo-400">
-              <Globe className="w-3.5 h-3.5" />
-              Shared Curated Collection
-            </span>
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-semibold text-indigo-400">
+                <Globe className="w-3.5 h-3.5" />
+                Shared Curated Collection
+              </span>
+              <CollectionUpvoteButton
+                folderId={folder.id}
+                initialUpvotes={folder.upvotes || 0}
+              />
+            </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
               {folder.name}
             </h1>

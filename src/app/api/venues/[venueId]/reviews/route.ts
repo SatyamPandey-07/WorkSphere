@@ -4,6 +4,8 @@ import { rateLimit } from "@/lib/rateLimit";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { processVenueReviewSubmission } from "@/lib/venueReviewService";
+import { apiError } from "@/lib/apiResponse";
+import { swrCache, getVenueReviewsCacheKey } from "@/lib/cache/swrCache";
 
 // GET /api/venues/[venueId]/reviews - Get all reviews/ratings for a venue
 export async function GET(
@@ -17,7 +19,7 @@ export async function GET(
     const ip = forwarded.split(",")[0].trim() || "unknown";
     const allowed = await rateLimit(`reviews:${ip}`, 60);
     if (!allowed) {
-      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      return apiError("Too many requests", 429, "RATE_LIMITED");
     }
 
     const { venueId } = await context.params;
@@ -34,33 +36,33 @@ export async function GET(
       return NextResponse.json({ reviews: [] });
     }
 
-    const reviews = await prisma.venueRating.findMany({
-      where: { venueId: venue.id },
-      include: {
-        user: {
-          select: {
-            firstName: true,
-            lastName: true,
+    const cacheKey = getVenueReviewsCacheKey(venue.id);
+    const reviews = await swrCache(cacheKey, async () => {
+      return await prisma.venueRating.findMany({
+        where: { venueId: venue.id },
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: "desc" },
+      });
     });
 
     return NextResponse.json({
-      reviews: reviews.map((r) => ({
+      reviews: reviews.map((r: any) => ({
         ...r,
         user: userId
-          ? { firstName: r.user.firstName, lastName: r.user.lastName }
+          ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
           : null,
       })),
     });
   } catch (error) {
     console.error("GET /api/venues/[venueId]/reviews error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch reviews" },
-      { status: 500 },
-    );
+    return apiError("Failed to fetch reviews", 500, "INTERNAL_ERROR");
   }
 }
 
@@ -73,7 +75,7 @@ export async function POST(
     const { userId: rawUserId } = await auth();
 
     if (!rawUserId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
     const userId: string = rawUserId;
 
@@ -97,24 +99,22 @@ export async function POST(
     });
 
     if (result.status >= 400) {
-      return NextResponse.json(
+      return apiError(
+        result.error ?? "Request failed",
+        result.status,
+        result.status === 409 ? "CONFLICT" : "VALIDATION_FAILED",
         {
-          error: result.error,
           conflictType: result.conflictType,
           serverReview: result.serverReview,
           serverVenue: result.serverVenue,
           message: result.message,
         },
-        { status: result.status },
       );
     }
 
     return NextResponse.json(result.data, { status: result.status });
   } catch (error) {
     console.error("POST /api/venues/[venueId]/reviews error:", error);
-    return NextResponse.json(
-      { error: "Failed to submit review" },
-      { status: 500 },
-    );
+    return apiError("Failed to submit review", 500, "INTERNAL_ERROR");
   }
 }

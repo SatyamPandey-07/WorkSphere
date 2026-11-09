@@ -3,6 +3,7 @@
 import { Marker, Popup } from "react-leaflet";
 import type { Marker as LeafletMarker } from "leaflet";
 import { useCallback, useEffect, useRef, memo } from "react";
+import { getVenueShape } from "@/lib/mapAccessibility";
 
 export interface AccessibleMarkerProps {
   position: [number, number];
@@ -12,6 +13,7 @@ export interface AccessibleMarkerProps {
   rating?: number;
   score?: number;
   isDestination?: boolean;
+  isHighContrast?: boolean;
   children?: React.ReactNode;
   telemetryData?: {
     seatCount?: number;
@@ -32,13 +34,17 @@ export const AccessibleMarker = memo(
     rating,
     score,
     isDestination,
+    isHighContrast = false,
     children,
     telemetryData: _telemetryData,
     zIndexOffset = 0,
     onClick,
   }: AccessibleMarkerProps) {
-    console.count(`Rendered marker: ${name}`);
     const markerRef = useRef<LeafletMarker | null>(null);
+
+    const popupEscapeHandlerRef = useRef<
+      ((event: KeyboardEvent) => void) | null
+    >(null);
 
     // Formats a WCAG 2.1 AA descriptive accessibility label
     const buildAriaLabel = useCallback(() => {
@@ -79,8 +85,23 @@ export const AccessibleMarker = memo(
         el.setAttribute("role", "button");
         el.setAttribute("tabindex", "0");
         el.classList.add("interactive-map-pin");
+        if (isHighContrast) {
+          el.setAttribute("data-high-contrast", "true");
+          const shape = getVenueShape(category);
+          el.setAttribute("data-shape", shape);
+          el.classList.add("high-contrast-pin", `hc-shape-${shape}`);
+        } else {
+          el.removeAttribute("data-high-contrast");
+          el.removeAttribute("data-shape");
+          el.classList.remove(
+            "high-contrast-pin",
+            "hc-shape-circle",
+            "hc-shape-square",
+            "hc-shape-diamond",
+          );
+        }
       },
-      [buildAriaLabel],
+      [buildAriaLabel, isHighContrast, category],
     );
 
     const handleAdd = useCallback(
@@ -108,13 +129,42 @@ export const AccessibleMarker = memo(
           popupEl.setAttribute("aria-modal", "true");
           popupEl.setAttribute("aria-label", name);
         }
+
+        popupEscapeHandlerRef.current = (event: KeyboardEvent) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            e.target.closePopup();
+          }
+        };
+        document.addEventListener("keydown", popupEscapeHandlerRef.current);
       },
       [name],
     );
 
     const handlePopupClose = useCallback(() => {
-      markerRef.current?.getElement()?.focus();
+      if (popupEscapeHandlerRef.current) {
+        document.removeEventListener("keydown", popupEscapeHandlerRef.current);
+        popupEscapeHandlerRef.current = null;
+      }
+      const marker = markerRef.current;
+      const element = marker?.getElement();
+
+      if (element?.isConnected) {
+        element.focus();
+      }
     }, []);
+
+    useEffect(
+      () => () => {
+        if (popupEscapeHandlerRef.current) {
+          document.removeEventListener(
+            "keydown",
+            popupEscapeHandlerRef.current,
+          );
+        }
+      },
+      [],
+    );
 
     // Direct Leaflet element updates to prevent map pin flicker
     useEffect(() => {
@@ -128,10 +178,15 @@ export const AccessibleMarker = memo(
 
     useEffect(() => {
       const marker = markerRef.current;
-      if (marker && icon) {
-        marker.setIcon(icon);
+      if (!marker || !icon) return;
+
+      marker.setIcon(icon);
+
+      const el = marker.getElement();
+      if (el) {
+        applyAccessibilityAttributes(el);
       }
-    }, [icon]);
+    }, [icon, applyAccessibilityAttributes]);
 
     return (
       <Marker
@@ -173,7 +228,8 @@ export const AccessibleMarker = memo(
       prevProps.category !== nextProps.category ||
       prevProps.rating !== nextProps.rating ||
       prevProps.score !== nextProps.score ||
-      prevProps.isDestination !== nextProps.isDestination
+      prevProps.isDestination !== nextProps.isDestination ||
+      prevProps.isHighContrast !== nextProps.isHighContrast
     ) {
       return false;
     }

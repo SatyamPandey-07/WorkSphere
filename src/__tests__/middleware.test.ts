@@ -62,4 +62,18 @@ describe("Middleware CSRF exemptions", () => {
       expect(isCsrfExemptRoute(mockReq)).toBe(false);
     });
   });
+
+  it("handles case-insensitive HTTP methods properly", () => {
+    const mutatingLowercaseReq = {
+      url: "http://localhost/api/bookings",
+      method: "post",
+    } as any;
+    expect(isCsrfExemptRoute(mutatingLowercaseReq)).toBe(false);
+
+    const exemptLowercaseReq = {
+      url: "http://localhost/api/auth/csrf-token",
+      method: "post",
+    } as any;
+    expect(isCsrfExemptRoute(exemptLowercaseReq)).toBe(true);
+  });
 });

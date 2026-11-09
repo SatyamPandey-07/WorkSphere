@@ -16,10 +16,11 @@ const customJestConfig = {
     // snarkjs/ffjavascript resolve to browser ESM under jsdom — pin CJS for tests
     '^snarkjs$': '<rootDir>/node_modules/snarkjs/build/main.cjs',
     '^ffjavascript$': '<rootDir>/node_modules/ffjavascript/build/main.cjs',
-    '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
     // @google/genai resolves to a browser ESM bundle under jsdom; pin the Node
     // CJS build so route handlers that import the Gemini client can load it.
     '^@google/genai$': '<rootDir>/node_modules/@google/genai/dist/node/index.cjs',
+    '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
+    '^idb$': '<rootDir>/node_modules/idb/build/index.cjs',
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', '<rootDir>/.kilo/', 'e2e'],
   // Canvas/WebGL/WASM-heavy suites accumulate memory across test files within
@@ -37,5 +38,13 @@ const customJestConfig = {
 
 module.exports = async () => {
   const config = await createJestConfig(customJestConfig)();
-  return config;
+  return {
+    ...config,
+    transform: {
+      '^.+\\.(ts|tsx)$': [
+        'ts-jest',
+        { tsconfig: { jsx: 'react-jsx', rootDir: '.' } },
+      ],
+    },
+  };
 };

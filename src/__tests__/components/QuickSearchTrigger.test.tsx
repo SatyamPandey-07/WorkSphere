@@ -33,4 +33,14 @@ describe("QuickSearchTrigger", () => {
 
     window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, listener);
   });
+
+  it("renders subtle cockpit corner reticles on trigger variants", () => {
+    const { unmount } = render(<QuickSearchTrigger variant="navbar" />);
+    expect(screen.getByTestId("quick-search-reticles")).toBeInTheDocument();
+    unmount();
+
+    render(<QuickSearchTrigger variant="icon-only" />);
+    expect(screen.getByTestId("quick-search-reticles-icon")).toBeInTheDocument();
+  });
 });
+

@@ -4,14 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
+  AlertTriangle,
   ArrowLeft,
   Database,
+  Download,
   Gauge,
+  HardDrive,
   MousePointerClick,
   RefreshCw,
   Search,
   Star,
 } from "lucide-react";
+import { WebVitalsWidget } from "@/components/admin/WebVitalsWidget";
+import { RouteLatencyHeatmap } from "@/components/admin/RouteLatencyHeatmap";
+import { BulkVenuePartitionManager } from "@/components/admin/BulkVenuePartitionManager";
 import {
   Area,
   AreaChart,
@@ -109,7 +115,9 @@ function MetricCard({
           <Icon className="h-5 w-5" />
         </span>
       </div>
-      <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
+      <p className="text-3xl font-semibold tracking-tight text-white">
+        {value}
+      </p>
       <p className="mt-2 text-xs text-zinc-500">{detail}</p>
     </article>
   );
@@ -121,54 +129,86 @@ const tooltipStyle = {
   borderRadius: 16,
 };
 
+type PartitionItem = {
+  name: string;
+  exists: boolean;
+  rowCount: number;
+  tableSizeBytes?: number;
+  tableSizePretty?: string;
+  isNearColdStorage?: boolean;
+};
+
+type PartitionHealthData = {
+  status: "HEALTHY" | "CRITICAL";
+  checkedAt: string;
+  partitions: PartitionItem[];
+};
+
 export default function AdminSystemDashboard() {
   const [range, setRange] = useState<RangeKey>("30d");
   const [data, setData] = useState<SystemMetrics | null>(null);
+  const [partitionsData, setPartitionsData] =
+    useState<PartitionHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestId = useRef(0);
 
-  async function loadMetrics(selectedRange: RangeKey) {
-  const currentRequest = ++requestId.current;
-
-  setLoading(true);
-  setError("");
-
-  try {
-    const response = await fetch(
-      `/api/admin/system?range=${selectedRange}`,
-      { cache: "no-store" },
-    );
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(
-        payload?.error ?? "Unable to load system metrics",
-      );
-    }
-
-    const result = await response.json();
-
-    if (currentRequest !== requestId.current) return;
-
-    setData(result);
-  } catch (requestError) {
-    if (currentRequest !== requestId.current) return;
-
-    setError(
-      requestError instanceof Error
-        ? requestError.message
-        : "Unable to load system metrics",
-    );
-  } finally {
-    if (currentRequest === requestId.current) {
-      setLoading(false);
+  async function loadPartitions() {
+    try {
+      const res = await fetch("/api/admin/system/partitions", {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setPartitionsData(json);
+      }
+    } catch {
+      // Non-fatal if partition health cannot be loaded
     }
   }
-}
+
+  async function loadMetrics(selectedRange: RangeKey) {
+    const currentRequest = ++requestId.current;
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const [metricsRes] = await Promise.all([
+        fetch(`/api/admin/system?range=${selectedRange}`, {
+          cache: "no-store",
+        }),
+        loadPartitions(),
+      ]);
+
+      if (!metricsRes.ok) {
+        const payload = await metricsRes.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to load system metrics");
+      }
+
+      const result = await metricsRes.json();
+
+      if (currentRequest !== requestId.current) return;
+
+      setData(result);
+    } catch (requestError) {
+      if (currentRequest !== requestId.current) return;
+
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load system metrics",
+      );
+    } finally {
+      if (currentRequest === requestId.current) {
+        setLoading(false);
+      }
+    }
+  }
 
   useEffect(() => {
     loadMetrics(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
   const slowQueryShare = useMemo(() => {
@@ -177,6 +217,55 @@ export default function AdminSystemDashboard() {
       (data.dbLatency.slowQueryCount / data.dbLatency.totalQueryCount) * 100,
     );
   }, [data]);
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+
+  async function handleExportDiagnostics() {
+    try {
+      setIsExporting(true);
+      const res = await fetch("/api/admin/system/diagnostics", {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to download diagnostics");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `worksphere-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setError("Failed to export diagnostics report");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function handleExportCsv() {
+    try {
+      setIsExportingCsv(true);
+      const res = await fetch(`/api/admin/system/export?range=${range}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to export system vitals CSV");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `worksphere-system-vitals-${range}-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setError("Failed to export system vitals CSV");
+    } finally {
+      setIsExportingCsv(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#07070a] text-white">
@@ -218,6 +307,34 @@ export default function AdminSystemDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleExportCsv}
+              disabled={isExportingCsv}
+              data-testid="export-csv-button"
+              title="Export system vital metrics, query latencies, and agent runtimes as CSV"
+              aria-label="Export system vital metrics as CSV"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-50"
+            >
+              <Download
+                className={`h-4 w-4 ${isExportingCsv ? "animate-bounce text-violet-400" : ""}`}
+              />
+              {isExportingCsv ? "Exporting CSV..." : "Export CSV"}
+            </button>
+
+            <button
+              onClick={handleExportDiagnostics}
+              disabled={isExporting}
+              data-testid="export-diagnostics-button"
+              title="Download sanitized full system telemetry and diagnostics report in JSON format"
+              aria-label="Download diagnostics report"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-50"
+            >
+              <Download
+                className={`h-4 w-4 ${isExporting ? "animate-bounce" : ""}`}
+              />
+              {isExporting ? "Exporting..." : "Download Diagnostics"}
+            </button>
+
             <div className="flex rounded-2xl border border-white/10 bg-white/[0.04] p-1">
               {ranges.map((item) => (
                 <button
@@ -240,7 +357,9 @@ export default function AdminSystemDashboard() {
               className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-zinc-300 transition hover:bg-white/[0.08] disabled:opacity-50"
               aria-label="Refresh system metrics"
             >
-              <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-5 w-5 ${loading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
         </header>
@@ -285,6 +404,10 @@ export default function AdminSystemDashboard() {
             icon={Database}
           />
         </section>
+
+        <WebVitalsWidget className="mt-6" initialRange={range} />
+
+        <RouteLatencyHeatmap className="mt-6" initialRange="1h" />
 
         <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
           <div className="mb-6">
@@ -422,7 +545,12 @@ export default function AdminSystemDashboard() {
                     width={90}
                   />
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="avgMs" name="avg ms" fill="#22d3ee" radius={6} />
+                  <Bar
+                    dataKey="avgMs"
+                    name="avg ms"
+                    fill="#22d3ee"
+                    radius={6}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -467,10 +595,17 @@ export default function AdminSystemDashboard() {
           </section>
         )}
 
+        <div className="mt-6">
+          <BulkVenuePartitionManager
+            initialData={partitionsData as any}
+            onRefresh={loadPartitions}
+          />
+        </div>
+
         <p className="mt-6 text-xs text-zinc-600">
-          DB latency stats are collected in-memory per server instance and
-          reset on restart — they reflect current health, not a durable audit
-          log. Last refreshed{" "}
+          DB latency stats are collected in-memory per server instance and reset
+          on restart — they reflect current health, not a durable audit log.
+          Last refreshed{" "}
           {data ? new Date(data.generatedAt).toLocaleTimeString() : "—"}.
         </p>
       </div>

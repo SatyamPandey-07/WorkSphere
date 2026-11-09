@@ -16,9 +16,36 @@ jobs:
     steps:
       - name: Welcome Issue Contributor
         if: github.event_name == 'issues'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
+            const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+            const issueAuthor = (context.payload.issue?.user?.login || '').toLowerCase();
+            if (BLOCKED_USERS.some(u => u.toLowerCase() === issueAuthor)) {
+              console.log(`Closing issue #${context.issue.number} by blocked user: ${issueAuthor}`);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `🚫 Issues and pull requests from @${issueAuthor} are not accepted on this repository.`
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                state: 'closed'
+              });
+              try {
+                await github.rest.issues.lock({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  lock_reason: 'spam'
+                });
+              } catch (e) {}
+              return;
+            }
+
             const association = context.payload.issue.author_association;
             const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
             let welcomePrefix = '';
@@ -91,7 +118,7 @@ jobs:
               body.includes('documentation') || 
               body.includes('proposed changes');
 
-            const labelsToAdd = ["OSCI'26", 'needs-review'];
+            const labelsToAdd = ['needs-review'];
             if (isBug) {
               labelsToAdd.push('bug');
             } else if (isFeature) {
@@ -129,7 +156,7 @@ jobs:
 
       - name: Welcome PR Contributor & Triage PR
         if: github.event_name == 'pull_request_target' && github.actor != 'dependabot[bot]'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             try {
@@ -138,6 +165,35 @@ jobs:
               const association = context.payload.pull_request.author_association;
               const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
               
+              // Immediately reject and close PRs from blocked/banned contributors
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+              if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthor.toLowerCase())) {
+                console.log(`Auto-closing PR #${prNumber} from blocked contributor: ${prAuthor}`);
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body: `🚫 Pull requests and contributions from @${prAuthor} are not accepted on this repository. This pull request has been automatically closed.`
+                });
+                await github.rest.pulls.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  state: 'closed'
+                });
+                try {
+                  await github.rest.issues.lock({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    lock_reason: 'spam'
+                  });
+                } catch (lockErr) {
+                  console.log(`Failed to lock PR #${prNumber}: ${lockErr.message}`);
+                }
+                return;
+              }
+
               // Skip automated bots
               if (context.payload.pull_request?.user?.type === 'Bot' || prAuthor === 'dependabot[bot]') {
                 console.log(`Skipping bot PR #${prNumber} by ${prAuthor}`);
@@ -234,8 +290,8 @@ jobs:
                 }
               }
 
-              // Assign core scoring label, review tag, and bonus labels logically based on modified files
-              const labelsToAdd = ["OSCI'26", 'needs-review'];
+              // Assign review tag and bonus labels logically based on modified files
+              const labelsToAdd = ['needs-review'];
 
               if (hasBackend) {
                 labelsToAdd.push('good-backend');

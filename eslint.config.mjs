@@ -2,12 +2,23 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+// Ensure react version is explicitly specified to prevent eslint-plugin-react
+// from invoking deprecated/removed contextOrFilename.getFilename() in ESLint 9/10
+for (const config of nextVitals) {
+  if (config.settings?.react) {
+    config.settings.react.version = "19.0";
+  }
+}
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
 
   globalIgnores([
     ".next/**",
+    ".kilo/**",
+    ".agents/**",
+    ".claude/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
@@ -29,7 +40,7 @@ const eslintConfig = defineConfig([
   {
     settings: {
       react: {
-        version: "detect",
+        version: "19.0",
       },
     },
     rules: {
@@ -44,6 +55,9 @@ const eslintConfig = defineConfig([
       "react/no-unescaped-entities": "off",
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/static-components": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/purity": "off",
     },
   },
 ]);

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -6,81 +7,64 @@ import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
 
-export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line";
+import {
+  type ConstructType,
+  renderConstructToCanvas,
+  renderConstructSvg,
+} from "@/lib/whiteboard/constructGenerator";
 
-export interface ShapeData {
-  id: string;
-  type: ToolType;
-  points: number[];
-  color: string;
-  width: number;
-  opacity: number;
-  userId: string;
-}
+export { type ConstructType, renderConstructToCanvas, renderConstructSvg };
 
-export interface RemoteCursor {
-  userId: string;
-  x: number;
-  y: number;
-  name: string;
-  color: string;
-}
+import {
+  type ToolType,
+  type ShapeData,
+  type RemoteCursor,
+  type WhiteboardParticipant,
+  type CanvasWhiteboardState,
+  type ColorSwatch,
+  type StrokeHistoryAction,
+  type UseCanvasWhiteboardOptions,
+  PARTYKIT_HOST,
+  IDLE_TIMEOUT_MS,
+  HEARTBEAT_INTERVAL_MS,
+  THROTTLE_INTERVAL_MS,
+  WHITEBOARD_COLOR_SWATCHES,
+  PRESET_COLORS,
+  WHITEBOARD_COLORS,
+  getDefaultColor,
+  shapeMapToData,
+  applyShapePointsToDoc,
+  addShapeToDoc,
+  updateShapeInDoc,
+  deleteShapeInDoc,
+  clearCanvasInDoc,
+  extractAwarenessUsers,
+  useStrokeBuffer,
+} from "@/lib/whiteboard/whiteboardCore";
 
-export interface CanvasWhiteboardState {
-  addShape: (shape: ShapeData) => void;
-  updateShape: (id: string, updates: Partial<ShapeData>) => void;
-  deleteShape?: (id: string) => void;
-  shapeSnapshots: ShapeData[];
-  remoteCursors: RemoteCursor[];
-  tool: ToolType;
-  color: string;
-  strokeWidth: number;
-  isConnected: boolean;
-  provider: YProvider | null;
-  yDoc: Y.Doc | null;
-  setTool: (tool: ToolType) => void;
-  setColor: (color: string) => void;
-  setStrokeWidth: (width: number) => void;
-  undo: () => void;
-  redo: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  clearCanvas: () => void;
-  updateCursor: (x: number, y: number) => void;
-}
-
-const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "127.0.0.1:1999";
-
-const PRESET_COLORS = [
-  "#ffffff",
-  "#f43f5e",
-  "#f97316",
-  "#eab308",
-  "#22c55e",
-  "#06b6d4",
-  "#3b82f6",
-  "#a855f7",
-];
-
-function getDefaultColor(index: number): string {
-  return PRESET_COLORS[index % PRESET_COLORS.length];
-}
-
-function shapeMapToData(map: Y.Map<unknown>): ShapeData {
-  return {
-    id: map.get("id") as string,
-    type: map.get("type") as ToolType,
-    points: (map.get("points") as number[]) ?? [],
-    color: map.get("color") as string,
-    width: map.get("width") as number,
-    opacity: map.get("opacity") as number,
-    userId: map.get("userId") as string,
-  };
-}
+export {
+  type ToolType,
+  type ShapeData,
+  type RemoteCursor,
+  type WhiteboardParticipant,
+  type CanvasWhiteboardState,
+  type ColorSwatch,
+  type StrokeHistoryAction,
+  type UseCanvasWhiteboardOptions,
+  PARTYKIT_HOST,
+  IDLE_TIMEOUT_MS,
+  HEARTBEAT_INTERVAL_MS,
+  THROTTLE_INTERVAL_MS,
+  WHITEBOARD_COLOR_SWATCHES,
+  PRESET_COLORS,
+  WHITEBOARD_COLORS,
+  getDefaultColor,
+  shapeMapToData,
+};
 
 export function useCanvasWhiteboard(
   canvasId: string | null,
-  options?: { userName?: string; userColor?: string; userId?: string },
+  options?: UseCanvasWhiteboardOptions,
 ): CanvasWhiteboardState {
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
@@ -93,16 +77,52 @@ export function useCanvasWhiteboard(
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const providerRef = useRef<YProvider | null>(null);
 
+  const localUndoStackRef = useRef<StrokeHistoryAction[]>([]);
+  const localRedoStackRef = useRef<StrokeHistoryAction[]>([]);
+
   const [shapeSnapshots, setShapeSnapshots] = useState<ShapeData[]>([]);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
+  const [participants, setParticipants] = useState<WhiteboardParticipant[]>([]);
+  const lastActiveAtRef = useRef<number>(Date.now());
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
   const [tool, setTool] = useState<ToolType>("pen");
-  const [color, setColor] = useState("#ffffff");
+  const [color, setColor] = useState("#000000");
   const [strokeWidth, setStrokeWidth] = useState(3);
 
   const localUserId = options?.userId ?? "anonymous";
+
+  const updateUndoState = useCallback(() => {
+    const um = undoManagerRef.current;
+    const umUndo = um
+      ? ((um.undoStack as any)?.length ?? (um.undoStack as any)?.size ?? 0) > 0
+      : false;
+    const umRedo = um
+      ? ((um.redoStack as any)?.length ?? (um.redoStack as any)?.size ?? 0) > 0
+      : false;
+
+    const localUndo = localUndoStackRef.current.length > 0;
+    const localRedo = localRedoStackRef.current.length > 0;
+
+    setCanUndo(umUndo || localUndo);
+    setCanRedo(umRedo || localRedo);
+  }, []);
+
+  const touchActivity = useCallback(() => {
+    lastActiveAtRef.current = Date.now();
+    const p = providerRef.current;
+    if (!p) return;
+    const aw = p.awareness;
+    const current = aw?.getLocalState() as Record<string, unknown> | null;
+    if (current && current.status !== "active") {
+      aw.setLocalState({
+        ...current,
+        status: "active",
+        lastActiveAt: Date.now(),
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (!canvasId) return;
@@ -111,6 +131,35 @@ export function useCanvasWhiteboard(
       .then((t) => setToken(t ?? null))
       .catch(() => setToken(null));
   }, [canvasId, getToken]);
+
+  // Stroke point applier shared between buffered & immediate dispatch
+  const applyShapePoints = useCallback(
+    (id: string, points: number[]) => {
+      const shapes = shapesRef.current;
+      const doc = docRef.current;
+      const now = Date.now();
+
+      if (shapes && doc) {
+        applyShapePointsToDoc(shapes, doc, id, points, localUserId);
+      } else {
+        setShapeSnapshots((prev) =>
+          prev.map((s) =>
+            s.id === id
+              ? { ...s, points: points.slice(), updatedAt: now, clock: now }
+              : s,
+          ),
+        );
+      }
+    },
+    [localUserId],
+  );
+
+  const {
+    strokeBufferRef,
+    flushStrokeBuffer,
+    broadcastStroke,
+    bufferStrokePoints,
+  } = useStrokeBuffer({ onApplyPoints: applyShapePoints });
 
   useEffect(() => {
     if (!canvasId || token === undefined) return;
@@ -149,38 +198,38 @@ export function useCanvasWhiteboard(
           failoverSync.handleConnect(sendFn, roomId);
         }
       };
+      newProvider.on("status", handleStatus);
 
       handleSync = (synced: boolean) => {
         if (synced && failoverSync.getStatus() !== "syncing_snapshot") {
           setIsConnected(true);
         }
       };
-
-      newProvider.on("status", handleStatus);
       newProvider.on("sync", handleSync);
-    } catch (err) {
-      console.warn("YProvider connection initialization deferred:", err);
+    } catch (e) {
+      console.error("[useCanvasWhiteboard] failed to create provider:", e);
     }
 
     const shapes = doc.getArray<Y.Map<unknown>>("shapes");
     shapesRef.current = shapes;
 
     const updateSnapshots = () => {
-      setShapeSnapshots(shapes.toArray().map(shapeMapToData));
+      const items: ShapeData[] = [];
+      for (let i = 0; i < shapes.length; i++) {
+        items.push(shapeMapToData(shapes.get(i)));
+      }
+      setShapeSnapshots(items);
+      updateUndoState();
     };
-    shapes.observe(updateSnapshots);
+
+    shapes.observeDeep(updateSnapshots);
     updateSnapshots();
 
     const um = new Y.UndoManager(shapes, {
-      captureTimeout: 500,
       trackedOrigins: new Set([localUserId]),
     });
     undoManagerRef.current = um;
 
-    const updateUndoState = () => {
-      setCanUndo(um.undoStack.length > 0);
-      setCanRedo(um.redoStack.length > 0);
-    };
     um.on("stack-item-added", updateUndoState);
     um.on("stack-item-popped", updateUndoState);
     updateUndoState();
@@ -188,40 +237,57 @@ export function useCanvasWhiteboard(
     const awareness = newProvider?.awareness;
     const userName = options?.userName ?? "Anonymous";
     const userColor = options?.userColor ?? getDefaultColor(0);
+    const userAvatar = options?.userAvatar;
+    const initNow = Date.now();
+    lastActiveAtRef.current = initNow;
 
     awareness?.setLocalState({
       x: 0,
       y: 0,
+      userId: localUserId,
       name: userName,
+      avatar: userAvatar,
       color: userColor,
+      lastActiveAt: initNow,
+      status: "active",
     });
 
     const handleAwarenessChange = () => {
+      const { cursors, participants: participantsList } = extractAwarenessUsers(
+        awareness,
+        localUserId,
+      );
+      setRemoteCursors(cursors);
+      setParticipants(participantsList);
+    };
+
+    awareness?.on("change", handleAwarenessChange);
+    handleAwarenessChange();
+
+    const heartbeatTimer = setInterval(() => {
       if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries()) as [
-        number,
-        any,
-      ][];
-      const cursors: RemoteCursor[] = [];
-      for (const [clientId, state] of states) {
-        if (clientId === awareness.clientID) continue;
-        const s = state as Record<string, unknown>;
-        if (typeof s.x === "number" && typeof s.y === "number") {
-          cursors.push({
-            userId: `user-${clientId}`,
-            x: s.x as number,
-            y: s.y as number,
-            name: (s.name as string) ?? "Unknown",
-            color: (s.color as string) ?? getDefaultColor(clientId),
+      const currentTime = Date.now();
+      if (currentTime - lastActiveAtRef.current > IDLE_TIMEOUT_MS) {
+        const local = awareness.getLocalState() as Record<
+          string,
+          unknown
+        > | null;
+        if (local && local.status !== "idle") {
+          awareness.setLocalState({
+            ...local,
+            status: "idle",
           });
         }
       }
-      setRemoteCursors(cursors);
-    };
-    awareness?.on("change", handleAwarenessChange);
+      handleAwarenessChange();
+    }, HEARTBEAT_INTERVAL_MS);
 
     return () => {
-      shapes.unobserve(updateSnapshots);
+      flushStrokeBuffer();
+      strokeBufferRef.current.clear();
+
+      clearInterval(heartbeatTimer);
+      shapes.unobserveDeep(updateSnapshots);
       awareness?.off("change", handleAwarenessChange);
       um.destroy();
       if (newProvider) {
@@ -235,90 +301,256 @@ export function useCanvasWhiteboard(
       undoManagerRef.current = null;
       providerRef.current = null;
     };
-  }, [canvasId, token, options?.userName, options?.userColor, localUserId]);
+  }, [
+    canvasId,
+    token,
+    options?.userName,
+    options?.userColor,
+    options?.userAvatar,
+    localUserId,
+    updateUndoState,
+    flushStrokeBuffer,
+    strokeBufferRef,
+  ]);
 
   const addShape = useCallback(
     (data: ShapeData) => {
+      touchActivity();
       const shapes = shapesRef.current;
       const doc = docRef.current;
-      if (!shapes || !doc) return;
 
-      doc.transact(() => {
-        const map = new Y.Map<unknown>();
-        map.set("id", data.id);
-        map.set("type", data.type);
-        map.set("points", data.points.slice());
-        map.set("color", data.color);
-        map.set("width", data.width);
-        map.set("opacity", data.opacity);
-        map.set("userId", data.userId);
-        shapes.push([map]);
-      }, localUserId);
+      if (shapes && doc) {
+        addShapeToDoc(shapes, doc, data, localUserId);
+      } else {
+        setShapeSnapshots((prev) => {
+          const exists = prev.some((s) => s.id === data.id);
+          const next = exists
+            ? prev.map((s) => (s.id === data.id ? { ...data } : s))
+            : [...prev, { ...data }];
+          return next;
+        });
+      }
+
+      localUndoStackRef.current.push({ type: "add", shape: data });
+      localRedoStackRef.current = [];
+      updateUndoState();
     },
-    [localUserId],
+    [localUserId, touchActivity, updateUndoState],
   );
 
   const updateShape = useCallback(
     (id: string, updates: Partial<ShapeData>) => {
+      touchActivity();
+      // Throttle high-frequency point updates during active strokes (#4918)
+      const keys = Object.keys(updates);
+      if (
+        updates.points !== undefined &&
+        (keys.length === 1 ||
+          (keys.length === 2 &&
+            (updates.clock !== undefined || updates.updatedAt !== undefined)))
+      ) {
+        broadcastStroke(id, updates.points);
+        return;
+      }
+
+      flushStrokeBuffer(id);
       const shapes = shapesRef.current;
       const doc = docRef.current;
-      if (!shapes || !doc) return;
+      const now = updates.clock ?? updates.updatedAt ?? Date.now();
+      let prevShape: ShapeData | null = null;
 
-      doc.transact(() => {
-        for (let i = 0; i < shapes.length; i++) {
-          const map = shapes.get(i);
-          if (map.get("id") === id) {
-            if (updates.points !== undefined) {
-              map.set("points", updates.points.slice());
-            }
-            if (updates.color !== undefined) map.set("color", updates.color);
-            if (updates.width !== undefined) map.set("width", updates.width);
-            if (updates.opacity !== undefined) {
-              map.set("opacity", updates.opacity);
-            }
-            break;
+      if (shapes && doc) {
+        prevShape = updateShapeInDoc(shapes, doc, id, updates, localUserId);
+      } else {
+        setShapeSnapshots((prev) => {
+          const item = prev.find((s) => s.id === id);
+          if (item) {
+            prevShape = { ...item };
+            return prev.map((s) =>
+              s.id === id
+                ? { ...s, ...updates, updatedAt: now, clock: now }
+                : s,
+            );
           }
-        }
-      }, localUserId);
+          return prev;
+        });
+      }
+
+      if (prevShape) {
+        localUndoStackRef.current.push({
+          type: "update",
+          id,
+          prev: prevShape,
+          next: updates,
+        });
+        localRedoStackRef.current = [];
+        updateUndoState();
+      }
     },
-    [localUserId],
+    [
+      localUserId,
+      touchActivity,
+      broadcastStroke,
+      flushStrokeBuffer,
+      updateUndoState,
+    ],
+  );
+
+  const deleteShape = useCallback(
+    (id: string) => {
+      touchActivity();
+      const shapes = shapesRef.current;
+      const doc = docRef.current;
+      let deletedShape: ShapeData | null = null;
+
+      if (shapes && doc) {
+        deletedShape = deleteShapeInDoc(shapes, doc, id, localUserId);
+      } else {
+        setShapeSnapshots((prev) => {
+          const item = prev.find((s) => s.id === id);
+          if (item) {
+            deletedShape = { ...item };
+            return prev.filter((s) => s.id !== id);
+          }
+          return prev;
+        });
+      }
+
+      if (deletedShape) {
+        localUndoStackRef.current.push({ type: "delete", shape: deletedShape });
+        localRedoStackRef.current = [];
+        updateUndoState();
+      }
+    },
+    [localUserId, touchActivity, updateUndoState],
   );
 
   const undo = useCallback(() => {
-    undoManagerRef.current?.undo();
-  }, []);
+    const um = undoManagerRef.current;
+    if (um) {
+      um.undo();
+    }
+
+    if (localUndoStackRef.current.length > 0) {
+      const action = localUndoStackRef.current.pop()!;
+      localRedoStackRef.current.push(action);
+
+      if (!shapesRef.current) {
+        setShapeSnapshots((prev) => {
+          switch (action.type) {
+            case "add":
+              return prev.filter((s) => s.id !== action.shape.id);
+            case "update":
+              return prev.map((s) => (s.id === action.id ? action.prev : s));
+            case "delete":
+              return [
+                ...prev.filter((s) => s.id !== action.shape.id),
+                action.shape,
+              ];
+            case "clear":
+              return [...action.shapes];
+            default:
+              return prev;
+          }
+        });
+      }
+    }
+    updateUndoState();
+  }, [updateUndoState]);
 
   const redo = useCallback(() => {
-    undoManagerRef.current?.redo();
-  }, []);
+    const um = undoManagerRef.current;
+    if (um) {
+      um.redo();
+    }
+
+    if (localRedoStackRef.current.length > 0) {
+      const action = localRedoStackRef.current.pop()!;
+      localUndoStackRef.current.push(action);
+
+      if (!shapesRef.current) {
+        setShapeSnapshots((prev) => {
+          switch (action.type) {
+            case "add":
+              return [...prev, action.shape];
+            case "update":
+              return prev.map((s) =>
+                s.id === action.id ? { ...s, ...action.next } : s,
+              );
+            case "delete":
+              return prev.filter((s) => s.id !== action.shape.id);
+            case "clear":
+              return [];
+            default:
+              return prev;
+          }
+        });
+      }
+    }
+    updateUndoState();
+  }, [updateUndoState]);
 
   const clearCanvas = useCallback(() => {
+    touchActivity();
     const shapes = shapesRef.current;
     const doc = docRef.current;
-    if (!shapes || !doc || shapes.length === 0) return;
+    let cleared: ShapeData[] = [];
 
-    doc.transact(() => {
-      shapes.delete(0, shapes.length);
-    }, localUserId);
-  }, [localUserId]);
-
-  const updateCursor = useCallback((x: number, y: number) => {
-    const p = providerRef.current;
-    if (!p) return;
-    const aw = p.awareness;
-    const state = aw.getLocalState() as Record<string, unknown> | null;
-    if (state) {
-      aw.setLocalState({ ...state, x, y });
+    if (shapes && doc) {
+      cleared = clearCanvasInDoc(shapes, doc, localUserId);
+    } else {
+      cleared = [...shapeSnapshots];
+      setShapeSnapshots([]);
     }
-  }, []);
+
+    if (cleared.length > 0) {
+      localUndoStackRef.current.push({ type: "clear", shapes: cleared });
+      localRedoStackRef.current = [];
+      updateUndoState();
+    }
+  }, [localUserId, shapeSnapshots, touchActivity, updateUndoState]);
+
+  const updateCursor = useCallback(
+    (x: number, y: number) => {
+      touchActivity();
+      const p = providerRef.current;
+      if (!p) return;
+      const aw = p.awareness;
+      const current = aw?.getLocalState() as Record<string, unknown> | null;
+      aw?.setLocalState({
+        ...current,
+        x,
+        y,
+        userId: localUserId,
+        name: options?.userName ?? "Anonymous",
+        avatar: options?.userAvatar,
+        color: options?.userColor ?? getDefaultColor(0),
+        lastActiveAt: Date.now(),
+        status: "active",
+      });
+    },
+    [
+      localUserId,
+      options?.userName,
+      options?.userAvatar,
+      options?.userColor,
+      touchActivity,
+    ],
+  );
 
   return {
     addShape,
     updateShape,
+    deleteShape,
+    broadcastStroke,
+    bufferStrokePoints,
+    flushStrokeBuffer,
     shapeSnapshots,
     remoteCursors,
+    participants,
     tool,
     color,
+    colors: WHITEBOARD_COLORS,
     strokeWidth,
     isConnected,
     provider,
@@ -334,3 +566,5 @@ export function useCanvasWhiteboard(
     updateCursor,
   };
 }
+
+export default useCanvasWhiteboard;

@@ -133,7 +133,7 @@ describe("Configurable Quiet Hours for Push Notifications", () => {
     const userId = "user-test-quiet";
 
     it("suppresses and defers non-critical notifications during quiet hours", async () => {
-      let currentTime = new Date("2026-10-02T23:30:00Z").getTime();
+      const currentTime = new Date("2026-10-02T23:30:00Z").getTime();
       const dateSpy = jest.spyOn(Date, "now").mockImplementation(() => currentTime);
       const originalDate = global.Date;
 

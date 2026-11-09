@@ -70,10 +70,30 @@ describe("NoteEditor", () => {
     });
   });
 
-  it("shows character count", () => {
-    render(<NoteEditor initialNotes={null} onSave={jest.fn()} />);
+  it("shows character count and formats as count / max characters", () => {
+    render(<NoteEditor initialNotes={null} onSave={jest.fn()} maxLength={500} />);
     fireEvent.click(screen.getByText("Add a private note..."));
-    expect(screen.getByText("0/2000")).toBeInTheDocument();
+    expect(screen.getByText("0 / 500 characters")).toBeInTheDocument();
+  });
+
+  it("shifts character count to amber warning when within 20 chars or >= 90% and red when at limit", () => {
+    render(<NoteEditor initialNotes={null} onSave={jest.fn()} maxLength={100} />);
+    fireEvent.click(screen.getByText("Add a private note..."));
+
+    const textarea = screen.getByLabelText("Private notes");
+    
+    // Normal state
+    fireEvent.change(textarea, { target: { value: "Hello world" } });
+    const countSpan = screen.getByText("11 / 100 characters");
+    expect(countSpan).toHaveClass("text-zinc-400");
+
+    // 90% threshold / within 20 chars (amber)
+    fireEvent.change(textarea, { target: { value: "a".repeat(90) } });
+    expect(screen.getByText("90 / 100 characters")).toHaveClass("text-amber-500");
+
+    // Max limit (red)
+    fireEvent.change(textarea, { target: { value: "a".repeat(100) } });
+    expect(screen.getByText("100 / 100 characters")).toHaveClass("text-red-500");
   });
 
   it("cancels editing and reverts changes", () => {

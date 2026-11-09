@@ -42,6 +42,14 @@ jest.mock("react-leaflet", () => {
           data-testid="accessible-marker"
           data-icon={icon}
           onClick={eventHandlers?.click}
+          onDoubleClick={() =>
+            eventHandlers?.popupopen?.({
+              target: {
+                getPopup: () => ({ getElement: () => document.createElement("div") }),
+                closePopup: mockClosePopup,
+              },
+            })
+          }
           onKeyDown={(e) => {
             if (eventHandlers?.keydown) {
               const mockOriginalEvent = {
@@ -169,6 +177,21 @@ describe("AccessibleMarker Accessibility & Keyboard Interactions", () => {
 
     const marker = screen.getByTestId("accessible-marker");
     fireEvent.keyDown(marker, { key: "Escape" });
+
+    expect(mockClosePopup).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes an open popup when Escape is pressed outside the marker", () => {
+    render(
+      <AccessibleMarker
+        position={[37.7749, -122.4194]}
+        icon={dummyIcon}
+        name="Blue Bottle Coffee"
+      />,
+    );
+
+    fireEvent.doubleClick(screen.getByTestId("accessible-marker"));
+    fireEvent.keyDown(document, { key: "Escape" });
 
     expect(mockClosePopup).toHaveBeenCalledTimes(1);
   });

@@ -46,14 +46,15 @@ export function WebSocketLatencyBadge({
   className = "",
 }: WebSocketLatencyBadgeProps) {
   const config = TIER_CONFIG[tier];
-  const label =
-    latencyMs !== null ? `${latencyMs} ms` : config.label;
+  const clampedLatency =
+    latencyMs !== null ? Math.max(0, Math.round(latencyMs)) : null;
+  const label = clampedLatency !== null ? `${clampedLatency} ms` : config.label;
 
   return (
     <div
       className={`flex items-center gap-1 text-xs font-medium ${config.textClass} ${className}`}
       title={`WebSocket latency: ${label}`}
-      aria-label={`Connection quality: ${config.label}${latencyMs !== null ? ` (${latencyMs} ms)` : ""}`}
+      aria-label={`Connection quality: ${config.label}${clampedLatency !== null ? ` (${clampedLatency} ms)` : ""}`}
     >
       <span
         className={`w-2 h-2 rounded-full shrink-0 ${config.dotClass} ${tier === "good" ? "animate-pulse" : ""}`}

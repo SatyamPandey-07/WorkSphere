@@ -129,4 +129,63 @@ describe("useBatteryStatus", () => {
     expect(mockBattery.addEventListener).toHaveBeenCalledWith("chargingchange", expect.any(Function));
     expect(mockBattery.addEventListener).toHaveBeenCalledWith("dischargingtimechange", expect.any(Function));
   });
+
+  it("removes event listeners using the registered handler when unmounted", async () => {
+    const { unmount } = renderHook(() => useBatteryStatus());
+    await act(async () => {});
+
+    const registeredHandler = mockBattery.addEventListener.mock.calls[0][1];
+    expect(typeof registeredHandler).toBe("function");
+
+    unmount();
+
+    expect(mockBattery.removeEventListener).toHaveBeenCalledWith("levelchange", registeredHandler);
+    expect(mockBattery.removeEventListener).toHaveBeenCalledWith("chargingchange", registeredHandler);
+    expect(mockBattery.removeEventListener).toHaveBeenCalledWith("dischargingtimechange", registeredHandler);
+  });
+
+  it("updates battery state when battery event listener is triggered", async () => {
+    mockBattery = createBatteryMock(0.8, true);
+    const { result } = renderHook(() => useBatteryStatus());
+    await act(async () => {});
+
+    expect(result.current.level).toBe(0.8);
+
+    // Simulate battery drain event
+    const registeredHandler = mockBattery.addEventListener.mock.calls[0][1];
+    mockBattery.level = 0.15;
+    mockBattery.charging = false;
+
+    await act(async () => {
+      registeredHandler();
+    });
+
+    expect(result.current.level).toBe(0.15);
+    expect(result.current.isLow).toBe(true);
+  });
+
+  it("does not attach listeners if unmounted before getBattery resolves", async () => {
+    let resolvePromise: (b: BatteryManagerMock) => void = () => {};
+    const deferredPromise = new Promise<BatteryManagerMock>((resolve) => {
+      resolvePromise = resolve;
+    });
+
+    Object.defineProperty(navigator, "getBattery", {
+      value: () => deferredPromise,
+      writable: true,
+      configurable: true,
+    });
+
+    const { unmount } = renderHook(() => useBatteryStatus());
+
+    // Unmount while promise is pending
+    unmount();
+
+    // Now resolve the promise
+    await act(async () => {
+      resolvePromise(mockBattery);
+    });
+
+    expect(mockBattery.addEventListener).not.toHaveBeenCalled();
+  });
 });

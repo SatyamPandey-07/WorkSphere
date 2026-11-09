@@ -1,6 +1,5 @@
 import { render, screen } from "@testing-library/react";
 import { WebSocketLatencyBadge } from "@/components/WebSocketLatencyBadge";
-import { type LatencyTier } from "@/hooks/useWebSocketLatency";
 
 describe("WebSocketLatencyBadge", () => {
   it("renders latency in ms when latencyMs is provided", () => {
@@ -71,5 +70,23 @@ describe("WebSocketLatencyBadge", () => {
     expect((container.firstChild as HTMLElement).className).toContain(
       "custom-class",
     );
+  });
+
+  it("clamps negative latency to 0 ms during client clock skew", () => {
+    render(<WebSocketLatencyBadge latencyMs={-6} tier="good" />);
+    expect(screen.getByText("0 ms")).toBeInTheDocument();
+    expect(screen.queryByText("-6 ms")).not.toBeInTheDocument();
+  });
+
+  it("clamps large negative latency values to 0 ms in title and aria-label", () => {
+    const { container } = render(
+      <WebSocketLatencyBadge latencyMs={-120} tier="good" />,
+    );
+    expect(screen.getByText("0 ms")).toBeInTheDocument();
+    const div = container.querySelector("[aria-label]");
+    expect(div!.getAttribute("aria-label")).toBe(
+      "Connection quality: Good (0 ms)",
+    );
+    expect(div!.getAttribute("title")).toBe("WebSocket latency: 0 ms");
   });
 });

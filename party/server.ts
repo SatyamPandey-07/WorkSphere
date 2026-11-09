@@ -1,5 +1,15 @@
 import type * as Party from "partykit/server";
 import { onConnect as onConnectYjs } from "y-partykit";
+
+/** Yjs rooms for collaborative collection notes: `folder-notes-{folderId}` (#3360). */
+export const FOLDER_NOTES_ROOM_PREFIX = "folder-notes-";
+
+/** Folder id for `folder-{id}` and `folder-notes-{id}` rooms (other rooms: the room id). */
+export function folderIdFromRoom(roomId: string): string {
+  if (roomId.startsWith(FOLDER_NOTES_ROOM_PREFIX)) return roomId.slice(FOLDER_NOTES_ROOM_PREFIX.length);
+  if (roomId.startsWith("folder-")) return roomId.slice("folder-".length);
+  return roomId;
+}
 import { verifyToken } from "@clerk/backend";
 
 type SeatStatus = "green" | "yellow" | "red";
@@ -31,6 +41,15 @@ interface VenueMusicState {
   reportedByConnId: string;
 }
 
+interface StickyNoteLease {
+  connId: string;
+  userId: string;
+  expiresAt: number;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+const STICKY_NOTE_LEASE_TTL_MS = 5000;
+
 // Venues we don't have real capacity data for yet still need a sensible
 // ring colour, so fall back to this when a check-in doesn't supply one.
 const DEFAULT_SEAT_CAPACITY = 8;
@@ -43,6 +62,40 @@ function seatStatusFor(count: number, capacity: number): SeatStatus {
   return "green";
 }
 
+export interface ReplayableSessionEvent {
+  sequenceId: number;
+  epoch: number;
+  messageId: string;
+  type: string;
+  payload: any;
+  timestamp: number;
+  senderId?: string;
+}
+
+export interface PresenceUser {
+  userId: string;
+  userName: string;
+  avatarUrl?: string;
+  cursorPosition?: number | null;
+  isTyping?: boolean;
+  lastActive: number;
+}
+
+/** Distributed seat-hold lock representation (#3522) */
+export interface SeatHold {
+  seatId: string;
+  venueId: string;
+  userId: string;
+  userName?: string;
+  connId: string;
+  heldAt: number;
+  expiresAt: number;
+  version: number;
+}
+
+/** Default seat-hold lock TTL (5 minutes in milliseconds) (#3522) */
+export const DEFAULT_SEAT_HOLD_TTL_MS = 5 * 60 * 1000;
+
 export default class WorkspaceServer implements Party.Server {
   // Real-time seat availability layer (#703): one check-in per connection,
   // keyed by connection id so we can always find & clear a user's previous
@@ -51,10 +104,26 @@ export default class WorkspaceServer implements Party.Server {
   private seatCheckinLocks = new Set<string>(); // Prevents concurrent ops per connection
   private serverEpoch = Date.now();
   private sequenceId = 0;
+  private eventHistory: ReplayableSessionEvent[] = [];
+  private readonly maxHistorySize = 500;
+  private processedMessageIds = new Set<string>();
+  private readonly maxProcessedIds = 1000;
+
+  // Real-time distributed seat-hold locks (#3522):
+  // 5-minute TTL locks to prevent double-booking during checkout.
+  // Keyed by `${venueId}:${seatId}`.
+  private seatHolds = new Map<string, SeatHold>();
+  private connHolds = new Map<string, Set<string>>(); // connId -> Set<holdKey>
+  private seatHoldCleanupInterval?: ReturnType<typeof setInterval>;
 
   // Music genre state per venue (#2077): tracks the current reported genre
   // for each venueId. Overwritten on each update — last reporter wins.
   private venueMusic = new Map<string, VenueMusicState>();
+  private stickyNoteLeases = new Map<string, StickyNoteLease>();
+
+  // Active typing presence protocol (#3438)
+  private roomPresence = new Map<string, PresenceUser>();
+  private presenceCleanupInterval?: ReturnType<typeof setInterval>;
 
   private heartbeatInterval?: ReturnType<typeof setInterval>;
   private connectionStates = new Map<
@@ -63,6 +132,16 @@ export default class WorkspaceServer implements Party.Server {
   >();
 
   constructor(readonly room: Party.Room) {
+    // 5-second sweep for active typing presence cleanup (>15s inactivity) (#3438)
+    this.presenceCleanupInterval = setInterval(() => {
+      this.pruneInactivePresence();
+    }, 5000);
+
+    // 2-second sweep for expired seat holds (Issue #3522)
+    this.seatHoldCleanupInterval = setInterval(() => {
+      this.pruneExpiredSeatHolds();
+    }, 2000);
+
     this.heartbeatInterval = setInterval(() => {
       const now = Date.now();
       for (const [connId, state] of this.connectionStates.entries()) {
@@ -81,7 +160,7 @@ export default class WorkspaceServer implements Party.Server {
           continue;
         }
 
-        if (now - state.lastPong > 45000) {
+        if (now - state.lastPong >= 45000) {
           // 45-second timeout: broadcast departure and force-close stale socket
           if (state.name) {
             this.room.broadcast(
@@ -103,12 +182,40 @@ export default class WorkspaceServer implements Party.Server {
     }, 15000);
   }
 
+  pruneInactivePresence(now: number = Date.now()): number {
+    let pruned = 0;
+    for (const [connId, presence] of this.roomPresence.entries()) {
+      const conn = this.room.getConnection(connId);
+      const isInactive = now - presence.lastActive > 15000;
+      if (!conn || isInactive) {
+        this.roomPresence.delete(connId);
+        this.room.broadcast(
+          JSON.stringify({
+            type: "presence_remove",
+            userId: presence.userId,
+            userName: presence.userName,
+            connId,
+          }),
+        );
+        pruned++;
+      }
+    }
+    return pruned;
+  }
+
+  getRoomPresence(): PresenceUser[] {
+    return Array.from(this.roomPresence.values());
+  }
+
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     const url = new URL(ctx.request.url);
     const token = url.searchParams.get("token");
 
     let isViewer = false;
     let verifiedUserId: string | undefined;
+    // Collection notes (#3360) hold private text: only folder members may join.
+    const isFolderNotesRoom = this.room.id.startsWith(FOLDER_NOTES_ROOM_PREFIX);
+    let isFolderMember = false;
 
     if (token) {
       try {
@@ -121,17 +228,18 @@ export default class WorkspaceServer implements Party.Server {
         if (this.room.id.startsWith("canvas-")) {
           isViewer = false;
         } else {
-          // Extract folder ID if room is named "folder-{id}"
-          let folderId = this.room.id;
-          if (folderId.startsWith("folder-")) {
-            folderId = folderId.replace("folder-", "");
-          }
+          const folderId = folderIdFromRoom(this.room.id);
 
           // Fetch user's role in the folder via Next.js internal API to avoid Edge Prisma errors
           const NEXT_PUBLIC_APP_URL =
             process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000";
+          const sharedSecret =
+            process.env.PARTYKIT_AUTH_SECRET || process.env.PARTYKIT_SHARED_SECRET;
           const authRes = await fetch(
-            `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${userId}&folderId=${folderId}`,
+            `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${encodeURIComponent(userId)}&folderId=${encodeURIComponent(folderId)}`,
+            // The auth route rejects calls without the shared secret; without
+            // this header every lookup failed and all users became viewers.
+            sharedSecret ? { headers: { Authorization: `Bearer ${sharedSecret}` } } : undefined,
           );
 
           if (authRes.ok) {
@@ -139,6 +247,7 @@ export default class WorkspaceServer implements Party.Server {
             if (authData.role === "MEMBER" || authData.role === "VIEWER") {
               isViewer = true;
             }
+            isFolderMember = authData.member === true || authData.role === "OWNER";
           } else {
             isViewer = true;
           }
@@ -152,6 +261,11 @@ export default class WorkspaceServer implements Party.Server {
       isViewer = true;
     }
 
+    if (isFolderNotesRoom && !isFolderMember) {
+      conn.close(4003, "Forbidden: collection notes are limited to members");
+      return;
+    }
+
     conn.setState({
       role: isViewer ? "VIEWER" : "EDITOR",
       userId: verifiedUserId,
@@ -159,8 +273,11 @@ export default class WorkspaceServer implements Party.Server {
 
     // Bring newly connected clients up to speed on current seat availability
     // (#703) so rings render correctly before any new check-in event fires.
+    // A snapshot goes to this connection only, so it is stamped with the latest
+    // sequence number WITHOUT consuming one. Consuming a number here would punch
+    // a hole in the stream every other client receives, and strict in-order
+    // clients would then buffer every later event waiting for it.
     if (this.seatCheckins.size > 0) {
-      this.sequenceId++;
       conn.send(
         JSON.stringify({
           type: "seat_snapshot",
@@ -171,14 +288,45 @@ export default class WorkspaceServer implements Party.Server {
       );
     }
 
+    // Check if client provided last acknowledged sequence on connection URL
+    const lastSeqParam = url.searchParams.get("lastSeq");
+    const epochParam = url.searchParams.get("epoch");
+    if (lastSeqParam !== null) {
+      const lastSeq = parseInt(lastSeqParam, 10);
+      const epoch = epochParam ? parseInt(epochParam, 10) : undefined;
+      if (!isNaN(lastSeq) && lastSeq > 0) {
+        this.handleSyncRequest(conn, lastSeq, epoch);
+      }
+    }
+
     // Yjs connection for shared state (messages, markers)
     // Pass readOnly option so y-partykit automatically drops incoming updates
-    onConnectYjs(conn, this.room, {
-      gc: true,
-      readOnly: isViewer,
-    });
+    onConnectYjs(
+      conn,
+      this.room,
+      isFolderNotesRoom
+        ? // Notes must outlive the room's in-memory lifetime (#3360);
+          // y-partykit requires gc off when persisting.
+          { gc: false, readOnly: isViewer, persist: { mode: "snapshot" } }
+        : { gc: true, readOnly: isViewer },
+    );
 
     this.connectionStates.set(conn.id, { lastPong: Date.now() });
+
+    // Send initial presence state to newly connected client (#3438)
+    if (this.roomPresence.size > 0) {
+      conn.send(
+        JSON.stringify({
+          type: "presence_state",
+          users: Array.from(this.roomPresence.values()),
+        }),
+      );
+    }
+
+    // Send active seat holds snapshot so new viewers immediately see held seats (#3522)
+    if (this.seatHolds.size > 0) {
+      this.sendSeatHoldsSnapshot(conn);
+    }
 
     // Also handle simple presence via standard WebSockets
     conn.addEventListener("message", (event: { data: unknown }) => {
@@ -206,9 +354,137 @@ export default class WorkspaceServer implements Party.Server {
     try {
       const parsed = JSON.parse(message);
 
+      if (parsed.type === "HOLD_NOTE") {
+        this.handleStickyNoteHold(parsed.payload, sender);
+        return;
+      }
+
+      if (parsed.type === "RELEASE_NOTE") {
+        const noteId = parsed.payload?.noteId;
+        if (typeof noteId === "string") {
+          this.releaseStickyNoteLease(noteId, sender.id);
+        }
+        return;
+      }
+
       if (parsed.type === "typing") {
         this.room.broadcast(message, [sender.id]);
         return;
+      }
+
+      // Room awareness presence updates (#3438)
+      if (parsed.type === "presence_update") {
+        const presence: PresenceUser = {
+          userId: String(
+            parsed.userId || (sender.state as any)?.userId || sender.id,
+          ),
+          userName: String(
+            parsed.userName ||
+              (sender.state as any)?.name ||
+              "Collaborator",
+          ),
+          avatarUrl: parsed.avatarUrl ? String(parsed.avatarUrl) : undefined,
+          cursorPosition:
+            typeof parsed.cursorPosition === "number"
+              ? parsed.cursorPosition
+              : null,
+          isTyping: Boolean(parsed.isTyping),
+          lastActive:
+            typeof parsed.lastActive === "number"
+              ? parsed.lastActive
+              : Date.now(),
+        };
+
+        this.roomPresence.set(sender.id, presence);
+
+        this.room.broadcast(
+          JSON.stringify({
+            type: "presence_update",
+            ...presence,
+            connId: sender.id,
+          }),
+          [sender.id],
+        );
+        return;
+      }
+
+      // Presence heartbeat (every 5s from client) (#3438)
+      if (parsed.type === "presence_heartbeat") {
+        const now = Date.now();
+        const existing = this.roomPresence.get(sender.id);
+        if (existing) {
+          existing.lastActive = now;
+          if (typeof parsed.cursorPosition === "number") {
+            existing.cursorPosition = parsed.cursorPosition;
+          }
+          if (typeof parsed.isTyping === "boolean") {
+            existing.isTyping = parsed.isTyping;
+          }
+        } else if (parsed.userId) {
+          this.roomPresence.set(sender.id, {
+            userId: String(parsed.userId),
+            userName: String(parsed.userName || "Collaborator"),
+            avatarUrl: parsed.avatarUrl ? String(parsed.avatarUrl) : undefined,
+            cursorPosition:
+              typeof parsed.cursorPosition === "number"
+                ? parsed.cursorPosition
+                : null,
+            isTyping: Boolean(parsed.isTyping),
+            lastActive: now,
+          });
+        }
+        return;
+      }
+
+      if (
+        parsed.type === "request_presence" ||
+        parsed.type === "presence_sync"
+      ) {
+        sender.send(
+          JSON.stringify({
+            type: "presence_state",
+            users: Array.from(this.roomPresence.values()),
+          }),
+        );
+        return;
+      }
+
+      if (parsed.type === "sync_request") {
+        const lastSeq = typeof parsed.lastSeq === "number" ? parsed.lastSeq : 0;
+        const epoch = typeof parsed.epoch === "number" ? parsed.epoch : undefined;
+        this.handleSyncRequest(sender, lastSeq, epoch);
+        return;
+      }
+
+      if (parsed.type === "ack_seq") {
+        const lastSeq = typeof parsed.lastSeq === "number" ? parsed.lastSeq : parsed.seq;
+        sender.setState({
+          ...((sender.state as Record<string, unknown>) ?? {}),
+          lastAckSeq: lastSeq,
+        });
+        return;
+      }
+
+      // Deduplication for idempotent retry messages
+      const msgId = parsed.messageId || parsed.message?.id;
+      if (msgId) {
+        if (this.processedMessageIds.has(msgId)) {
+          sender.send(
+            JSON.stringify({
+              type: "msg_ack",
+              messageId: msgId,
+              status: "duplicate",
+              sequenceId: this.sequenceId,
+              epoch: this.serverEpoch,
+            }),
+          );
+          return;
+        }
+        this.processedMessageIds.add(msgId);
+        if (this.processedMessageIds.size > this.maxProcessedIds) {
+          const oldest = this.processedMessageIds.values().next().value;
+          if (oldest) this.processedMessageIds.delete(oldest);
+        }
       }
 
       if (parsed.type === "ping") {
@@ -222,17 +498,17 @@ export default class WorkspaceServer implements Party.Server {
       }
 
       if (parsed.type === "pong") {
-        const state = this.connectionStates.get(sender.id);
-        if (state) {
-          state.lastPong = Date.now();
+        const connState = this.connectionStates.get(sender.id);
+        if (connState) {
+          connState.lastPong = Date.now();
         }
         return;
       }
 
       if (parsed.type === "cursor" && parsed.name) {
-        const state = this.connectionStates.get(sender.id);
-        if (state) {
-          state.name = parsed.name;
+        const connState = this.connectionStates.get(sender.id);
+        if (connState) {
+          connState.name = parsed.name;
         }
       }
 
@@ -266,6 +542,52 @@ export default class WorkspaceServer implements Party.Server {
       if (parsed.type === "spatial_listener_update") {
         if (!state.userId || parsed.userId !== state.userId) return;
         this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
+      // Distributed seat-hold locking protocol (#3522)
+      if (
+        parsed.type === "seat_hold_request" &&
+        typeof parsed.seatId === "string" &&
+        typeof parsed.venueId === "string"
+      ) {
+        this.handleSeatHoldRequest(
+          sender,
+          parsed.seatId,
+          parsed.venueId,
+          String(parsed.userId || state.userId || sender.id),
+          parsed.userName ? String(parsed.userName) : (sender.state as any)?.name,
+          typeof parsed.ttlMs === "number" ? parsed.ttlMs : undefined,
+        );
+        return;
+      }
+
+      if (
+        parsed.type === "seat_release_request" &&
+        typeof parsed.seatId === "string" &&
+        typeof parsed.venueId === "string"
+      ) {
+        this.handleSeatReleaseRequest(
+          sender,
+          parsed.seatId,
+          parsed.venueId,
+          String(parsed.userId || state.userId || sender.id),
+        );
+        return;
+      }
+
+      if (
+        parsed.type === "seat_checkout_complete" &&
+        typeof parsed.seatId === "string" &&
+        typeof parsed.venueId === "string"
+      ) {
+        this.handleSeatCheckoutComplete(sender, parsed.seatId, parsed.venueId);
+        return;
+      }
+
+      if (parsed.type === "request_seat_holds") {
+        const venueId = typeof parsed.venueId === "string" ? parsed.venueId : undefined;
+        this.sendSeatHoldsSnapshot(sender, venueId);
         return;
       }
 
@@ -311,7 +633,7 @@ export default class WorkspaceServer implements Party.Server {
 
       // Broadcast all other string messages to other clients
       // (Yjs handles ArrayBuffer messages automatically via onConnect)
-      this.room.broadcast(message, [sender.id]);
+      this.recordAndBroadcast(sender, parsed.type || "message", parsed, msgId);
     } catch {
       // Not JSON, ignore or broadcast if EDITOR
       if (state.role !== "VIEWER") {
@@ -325,6 +647,99 @@ export default class WorkspaceServer implements Party.Server {
   onClose(conn: Party.Connection) {
     this.connectionStates.delete(conn.id);
     this.handleSeatCheckout(conn);
+    this.handleConnectionSeatHoldsCleanup(conn.id);
+    for (const [noteId, lease] of this.stickyNoteLeases) {
+      if (lease.connId === conn.id) this.releaseStickyNoteLease(noteId, conn.id);
+    }
+
+    if (this.roomPresence.has(conn.id)) {
+      const presence = this.roomPresence.get(conn.id)!;
+      this.roomPresence.delete(conn.id);
+      this.room.broadcast(
+        JSON.stringify({
+          type: "presence_remove",
+          userId: presence.userId,
+          userName: presence.userName,
+          connId: conn.id,
+        }),
+      );
+    }
+  }
+
+  private handleStickyNoteHold(
+    payload: { noteId?: unknown; requestId?: unknown },
+    sender: Party.Connection,
+  ) {
+    const noteId = payload?.noteId;
+    const requestId = payload?.requestId;
+    if (typeof noteId !== "string" || noteId.length === 0) return;
+
+    const current = this.getActiveStickyNoteLease(noteId);
+    if (current && current.connId !== sender.id) {
+      sender.send(
+        JSON.stringify({
+          type: "NOTE_LOCK_DENIED",
+          payload: { noteId, requestId },
+        }),
+      );
+      return;
+    }
+
+    if (current) clearTimeout(current.timeout);
+    const userId =
+      (sender.state as { userId?: string } | null)?.userId ?? sender.id;
+    const lease: StickyNoteLease = {
+      connId: sender.id,
+      userId,
+      expiresAt: Date.now() + STICKY_NOTE_LEASE_TTL_MS,
+      timeout: setTimeout(() => {
+        if (this.stickyNoteLeases.get(noteId) !== lease) return;
+        this.stickyNoteLeases.delete(noteId);
+        this.broadcastStickyNoteLease(noteId, null);
+      }, STICKY_NOTE_LEASE_TTL_MS),
+    };
+    this.stickyNoteLeases.set(noteId, lease);
+    sender.send(
+      JSON.stringify({
+        type: "NOTE_LOCK_GRANTED",
+        payload: { noteId, requestId, expiresAt: lease.expiresAt },
+      }),
+    );
+    this.broadcastStickyNoteLease(noteId, lease);
+  }
+
+  private getActiveStickyNoteLease(noteId: string): StickyNoteLease | undefined {
+    const lease = this.stickyNoteLeases.get(noteId);
+    if (!lease) return undefined;
+    if (lease.expiresAt > Date.now()) return lease;
+    clearTimeout(lease.timeout);
+    this.stickyNoteLeases.delete(noteId);
+    this.broadcastStickyNoteLease(noteId, null);
+    return undefined;
+  }
+
+  private releaseStickyNoteLease(noteId: string, connId: string) {
+    const lease = this.stickyNoteLeases.get(noteId);
+    if (!lease || lease.connId !== connId) return;
+    clearTimeout(lease.timeout);
+    this.stickyNoteLeases.delete(noteId);
+    this.broadcastStickyNoteLease(noteId, null);
+  }
+
+  private broadcastStickyNoteLease(
+    noteId: string,
+    lease: StickyNoteLease | null,
+  ) {
+    this.room.broadcast(
+      JSON.stringify({
+        type: "NOTE_LOCK_STATE",
+        payload: {
+          noteId,
+          ownerUserId: lease?.userId ?? null,
+          expiresAt: lease?.expiresAt ?? null,
+        },
+      }),
+    );
   }
 
   private handleSeatCheckin(
@@ -451,16 +866,11 @@ export default class WorkspaceServer implements Party.Server {
     });
 
     // Broadcast the update to all connections so venue cards refresh instantly
-    this.sequenceId++;
-    this.room.broadcast(
-      JSON.stringify({
-        type: "music_genre_broadcast",
-        venueId,
-        genre: normalised,
-        updatedAt,
-        sequenceId: this.sequenceId,
-      }),
-    );
+    this.recordAndBroadcast(null, "music_genre_broadcast", {
+      venueId,
+      genre: normalised,
+      updatedAt,
+    });
   }
 
   private countForVenue(venueId: string): number {
@@ -482,20 +892,133 @@ export default class WorkspaceServer implements Party.Server {
     const count = this.countForVenue(venueId);
     const capacity = this.capacityForVenue(venueId);
     const music = this.venueMusic.get(venueId);
+    const seatMsg = {
+      venueId,
+      count,
+      capacity,
+      status: seatStatusFor(count, capacity),
+      musicGenre: music?.genre ?? null,
+      musicGenreUpdatedAt: music?.updatedAt ?? null,
+    };
+    this.recordAndBroadcast(null, "seat_update", seatMsg);
+  }
+
+  private recordAndBroadcast(
+    sender: Party.Connection | null,
+    type: string,
+    payload: Record<string, unknown>,
+    messageId?: string,
+  ): ReplayableSessionEvent {
     this.sequenceId++;
-    this.room.broadcast(
+    const resolvedMessageId =
+      messageId ||
+      (typeof payload.messageId === "string" ? payload.messageId : undefined) ||
+      (typeof (payload as any).message?.id === "string"
+        ? (payload as any).message.id
+        : undefined) ||
+      `evt-${this.serverEpoch}-${this.sequenceId}`;
+
+    const enriched = {
+      ...payload,
+      type,
+      epoch: this.serverEpoch,
+      sequenceId: this.sequenceId,
+      messageId: resolvedMessageId,
+    };
+    const wireMessage = JSON.stringify(enriched);
+
+    const eventRecord: ReplayableSessionEvent = {
+      sequenceId: this.sequenceId,
+      epoch: this.serverEpoch,
+      messageId: resolvedMessageId,
+      type,
+      payload: enriched,
+      timestamp: Date.now(),
+      senderId: sender?.id,
+    };
+
+    this.eventHistory.push(eventRecord);
+    if (this.eventHistory.length > this.maxHistorySize) {
+      this.eventHistory.shift();
+    }
+
+    if (sender) {
+      this.room.broadcast(wireMessage, [sender.id]);
+      // The sender never receives its own event, but the event consumed a
+      // sequence number. Report it so the sender's in-order tracking advances.
+      try {
+        sender.send(
+          JSON.stringify({
+            type: "msg_ack",
+            messageId: resolvedMessageId,
+            status: "processed",
+            sequenceId: this.sequenceId,
+            epoch: this.serverEpoch,
+          }),
+        );
+      } catch {
+        // Sender already disconnected; nothing to acknowledge.
+      }
+    } else {
+      this.room.broadcast(wireMessage);
+    }
+
+    return eventRecord;
+  }
+
+  private handleSyncRequest(
+    conn: Party.Connection,
+    lastSeq: number,
+    clientEpoch?: number,
+  ) {
+    if (typeof clientEpoch === "number" && clientEpoch !== this.serverEpoch) {
+      this.sendFullSyncFallback(conn, "epoch_mismatch");
+      return;
+    }
+
+    if (lastSeq >= this.sequenceId) {
+      conn.send(
+        JSON.stringify({
+          type: "sync_ack",
+          epoch: this.serverEpoch,
+          latestSeq: this.sequenceId,
+          status: "synchronized",
+        }),
+      );
+      return;
+    }
+
+    const oldestEvent = this.eventHistory[0];
+    const oldestSeq = oldestEvent ? oldestEvent.sequenceId : this.sequenceId + 1;
+
+    if (lastSeq + 1 < oldestSeq) {
+      this.sendFullSyncFallback(conn, "history_unavailable");
+      return;
+    }
+
+    const missedEvents = this.eventHistory.filter(
+      (e) => e.sequenceId > lastSeq && e.sequenceId <= this.sequenceId,
+    );
+
+    conn.send(
       JSON.stringify({
-        type: "seat_update",
-        venueId,
-        count,
-        capacity,
-        status: seatStatusFor(count, capacity),
-        // Include current music genre in seat updates so clients get it
-        // even if they missed the dedicated music_genre_broadcast (#2077)
-        musicGenre: music?.genre ?? null,
-        musicGenreUpdatedAt: music?.updatedAt ?? null,
+        type: "sync_replay",
         epoch: this.serverEpoch,
-        sequenceId: this.sequenceId,
+        fromSeq: lastSeq + 1,
+        toSeq: this.sequenceId,
+        events: missedEvents.map((e) => e.payload),
+      }),
+    );
+  }
+
+  private sendFullSyncFallback(conn: Party.Connection, reason: string) {
+    conn.send(
+      JSON.stringify({
+        type: "sync_fallback",
+        reason,
+        epoch: this.serverEpoch,
+        latestSeq: this.sequenceId,
+        seats: this.seatSummary(),
       }),
     );
   }
@@ -517,5 +1040,253 @@ export default class WorkspaceServer implements Party.Server {
         musicGenreUpdatedAt: music?.updatedAt ?? null,
       };
     });
+  }
+
+  /**
+   * Sweeps expired seat holds and broadcasts unlock events (#3522).
+   */
+  pruneExpiredSeatHolds(now: number = Date.now()): number {
+    let expiredCount = 0;
+    for (const [holdKey, hold] of this.seatHolds.entries()) {
+      if (now >= hold.expiresAt) {
+        this.seatHolds.delete(holdKey);
+        const userHolds = this.connHolds.get(hold.connId);
+        if (userHolds) {
+          userHolds.delete(holdKey);
+          if (userHolds.size === 0) {
+            this.connHolds.delete(hold.connId);
+          }
+        }
+        this.recordAndBroadcast(null, "seat_unlocked", {
+          seatId: hold.seatId,
+          venueId: hold.venueId,
+          reason: "EXPIRED",
+          timestamp: now,
+        });
+        expiredCount++;
+      }
+    }
+    return expiredCount;
+  }
+
+  private handleSeatHoldRequest(
+    conn: Party.Connection,
+    seatId: string,
+    venueId: string,
+    userId: string,
+    userName?: string,
+    ttlMs: number = DEFAULT_SEAT_HOLD_TTL_MS,
+  ) {
+    this.pruneExpiredSeatHolds();
+
+    const holdKey = `${venueId}:${seatId}`;
+    const now = Date.now();
+    const existing = this.seatHolds.get(holdKey);
+
+    // If held by another user and not expired
+    if (existing && now < existing.expiresAt && existing.userId !== userId) {
+      conn.send(
+        JSON.stringify({
+          type: "seat_hold_rejected",
+          seatId,
+          venueId,
+          reason: "ALREADY_HELD",
+          heldBy: existing.userId,
+          heldByName: existing.userName,
+          expiresAt: existing.expiresAt,
+          remainingMs: Math.max(0, existing.expiresAt - now),
+        }),
+      );
+      return;
+    }
+
+    // Acquire or renew hold
+    const clampedTtl = Math.min(Math.max(ttlMs, 10_000), 600_000);
+    const expiresAt = now + clampedTtl;
+    const version = (existing?.version ?? 0) + 1;
+
+    const newHold: SeatHold = {
+      seatId,
+      venueId,
+      userId,
+      userName,
+      connId: conn.id,
+      heldAt: now,
+      expiresAt,
+      version,
+    };
+
+    // Ownership may move to a different connection (the same user reconnecting
+    // or using a second tab, or a new user taking over an expired hold). The
+    // previous owner's connection must stop tracking this hold, otherwise its
+    // later disconnect would release a hold it no longer owns.
+    if (existing && existing.connId !== conn.id) {
+      this.untrackConnHold(existing.connId, holdKey);
+    }
+    this.seatHolds.set(holdKey, newHold);
+
+    let connSet = this.connHolds.get(conn.id);
+    if (!connSet) {
+      connSet = new Set();
+      this.connHolds.set(conn.id, connSet);
+    }
+    connSet.add(holdKey);
+
+    // Direct reply to the requester only: it carries no sequence number, so it
+    // is applied immediately and never consumes a slot in the shared stream.
+    conn.send(
+      JSON.stringify({
+        type: "seat_hold_acquired",
+        seatId,
+        venueId,
+        expiresAt,
+        ttlMs: clampedTtl,
+        version,
+      }),
+    );
+
+    this.recordAndBroadcast(null, "seat_locked", {
+      seatId,
+      venueId,
+      heldBy: userId,
+      heldByName: userName,
+      expiresAt,
+      version,
+    });
+  }
+
+  private handleSeatReleaseRequest(
+    conn: Party.Connection,
+    seatId: string,
+    venueId: string,
+    userId: string,
+  ) {
+    const holdKey = `${venueId}:${seatId}`;
+    const existing = this.seatHolds.get(holdKey);
+    if (!existing) return;
+
+    if (existing.userId === userId || existing.connId === conn.id) {
+      this.dropSeatHold(holdKey);
+
+      this.recordAndBroadcast(null, "seat_unlocked", {
+        seatId,
+        venueId,
+        reason: "RELEASED",
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  private handleSeatCheckoutComplete(
+    _conn: Party.Connection,
+    seatId: string,
+    venueId: string,
+  ) {
+    const holdKey = `${venueId}:${seatId}`;
+    const existing = this.seatHolds.get(holdKey);
+    if (existing) {
+      this.seatHolds.delete(holdKey);
+      const connSet = this.connHolds.get(existing.connId);
+      if (connSet) {
+        connSet.delete(holdKey);
+        if (connSet.size === 0) {
+          this.connHolds.delete(existing.connId);
+        }
+      }
+    }
+
+    this.recordAndBroadcast(null, "seat_unlocked", {
+      seatId,
+      venueId,
+      reason: "CHECKOUT_COMPLETE",
+      timestamp: Date.now(),
+    });
+  }
+
+  private sendSeatHoldsSnapshot(conn: Party.Connection, venueId?: string) {
+    this.pruneExpiredSeatHolds();
+    const now = Date.now();
+    const holds: Array<{
+      seatId: string;
+      venueId: string;
+      heldBy: string;
+      heldByName?: string;
+      expiresAt: number;
+      remainingMs: number;
+    }> = [];
+
+    for (const hold of this.seatHolds.values()) {
+      if (now < hold.expiresAt && (!venueId || hold.venueId === venueId)) {
+        holds.push({
+          seatId: hold.seatId,
+          venueId: hold.venueId,
+          heldBy: hold.userId,
+          heldByName: hold.userName,
+          expiresAt: hold.expiresAt,
+          remainingMs: Math.max(0, hold.expiresAt - now),
+        });
+      }
+    }
+
+    conn.send(
+      JSON.stringify({
+        type: "seat_holds_snapshot",
+        venueId,
+        holds,
+      }),
+    );
+  }
+
+  /** Stop a connection tracking a hold; drops its entry once it tracks none. */
+  private untrackConnHold(connId: string, holdKey: string): void {
+    const keys = this.connHolds.get(connId);
+    if (!keys) return;
+    keys.delete(holdKey);
+    if (keys.size === 0) {
+      this.connHolds.delete(connId);
+    }
+  }
+
+  /** Remove a hold from both indexes, via the connection that owns it. */
+  private dropSeatHold(holdKey: string): SeatHold | undefined {
+    const hold = this.seatHolds.get(holdKey);
+    if (!hold) return undefined;
+    this.seatHolds.delete(holdKey);
+    this.untrackConnHold(hold.connId, holdKey);
+    return hold;
+  }
+
+  private handleConnectionSeatHoldsCleanup(connId: string) {
+    const heldKeys = this.connHolds.get(connId);
+    if (!heldKeys || heldKeys.size === 0) return;
+
+    const now = Date.now();
+    for (const holdKey of [...heldKeys]) {
+      const hold = this.seatHolds.get(holdKey);
+      // Only release holds this connection still owns; ownership may have
+      // moved to another connection since the hold was first acquired.
+      if (hold && hold.connId === connId) {
+        this.dropSeatHold(holdKey);
+        this.recordAndBroadcast(null, "seat_unlocked", {
+          seatId: hold.seatId,
+          venueId: hold.venueId,
+          reason: "DISCONNECTED",
+          timestamp: now,
+        });
+      }
+    }
+    this.connHolds.delete(connId);
+  }
+
+  getActiveSeatHolds(venueId?: string): SeatHold[] {
+    this.pruneExpiredSeatHolds();
+    const now = Date.now();
+    const result: SeatHold[] = [];
+    for (const hold of this.seatHolds.values()) {
+      if (now < hold.expiresAt && (!venueId || hold.venueId === venueId)) {
+        result.push({ ...hold });
+      }
+    }
+    return result;
   }
 }

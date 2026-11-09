@@ -2,17 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   autoCreateUpcomingPartitions,
   archiveExpiredPushNotificationPartitions,
+  archiveExpiredTelemetryPartitions,
   checkPartitionHealth,
 } from "@/lib/partitionMaintenance";
+import { runTelemetryPartitionMaintenance } from "@/lib/db/partitionManager";
+import { runPartmanPartitionMaintenance } from "@/lib/db/partitionMaintenance";
 import { isAuthorizedCronRequest } from "@/lib/cronAuth";
+import { prisma } from "@/lib/prisma";
+import { runPartitionRetention, type RetentionRunReport } from "@/lib/partitionRetention";
+
+// DETACH/VACUUM on large partitions can take a while.
+export const maxDuration = 300;
 
 /**
  * GET /api/cron/partition-maintenance
  *
  * Monthly cron job that:
- * 1. Creates upcoming telemetry table partitions (next 2 months)
- * 2. Archives/drops expired partitions older than the retention window
- * 3. Returns a health report
+ * 1. Creates upcoming table partitions (PushNotificationLog, WifiTelemetry, and AdminAuditLog)
+ * 2. Detaches and archives expired telemetry partitions older than 12 months to S3/cold storage
+ * 3. Archives expired PushNotificationLog partitions older than 6 months
+ * 4. Runs upkeep, drops/archives expired ones in one transaction per table, and VACUUM (ANALYZE)s active partitions
+
+ * 4. Returns a health report
  *
  * Secure with a CRON_SECRET env var; configure in Vercel cron.json as
  * a monthly job (e.g. "0 2 1 * *" = 2 AM on the 1st of each month).
@@ -26,11 +37,25 @@ export async function GET(request: NextRequest) {
   const results: {
     partitionsCreated?: string[];
     partitionsArchived?: string[];
+    telemetryPartitionsArchived?: string[];
+    retention?: RetentionRunReport;
+
     healthReport?: unknown;
+    telemetryPartitions?: {
+      created: string[];
+      archived: string[];
+      vacuumed: string[];
+    };
+    telemetryMaintenance?: {
+      maintained: string[];
+      plannedPartitions: string[];
+      activePartitions: string[];
+      skippedTables: string[];
+    };
     errors: string[];
   } = { errors: [] };
 
-  // 1. Create upcoming partitions
+  // 1. Create upcoming partitions (TelemetryRecord & PushNotificationLog)
   try {
     results.partitionsCreated = await autoCreateUpcomingPartitions();
     console.log(
@@ -42,20 +67,109 @@ export async function GET(request: NextRequest) {
     console.error("[PartitionCron] Failed to create partitions:", err);
   }
 
-  // 2. Archive expired partitions
+  // 1b. Automated background partition pre-creation cron for upcoming calendar months (closes #4833)
+  // Pre-creates next month's partitions (_yyyy_mm) across audit logs, telemetry, and check-ins
+  try {
+    const now = new Date();
+    const nextMonthYear = now.getUTCMonth() === 11 ? now.getUTCFullYear() + 1 : now.getUTCFullYear();
+    const nextMonthVal = now.getUTCMonth() === 11 ? 1 : now.getUTCMonth() + 2;
+    const formattedMonth = String(nextMonthVal).padStart(2, "0");
+    const partitionSuffix = `_${nextMonthYear}_${formattedMonth}`;
+
+    const startTimestamp = new Date(Date.UTC(nextMonthYear, nextMonthVal - 1, 1, 0, 0, 0, 0));
+    const endTimestamp = new Date(Date.UTC(nextMonthYear, nextMonthVal, 1, 0, 0, 0, 0));
+
+    const targetTables = ["AdminAuditLog", "WifiTelemetry", "TelemetryRecord", "CheckIn"];
+    const verifiedPartitions: { table: string; partitionName: string; verified: boolean }[] = [];
+
+    for (const table of targetTables) {
+      const partitionName = `${table}${partitionSuffix}`;
+      try {
+        // Idempotently create upcoming month partition if parent table is partitioned
+        const isParentPartitioned = await prisma.$queryRawUnsafe<{ relkind: string }[]>(
+          `SELECT relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = $1`,
+          table,
+        );
+
+        if (isParentPartitioned.length > 0 && isParentPartitioned[0].relkind === "p") {
+          await prisma.$executeRawUnsafe(`
+            CREATE TABLE IF NOT EXISTS "${partitionName}"
+            PARTITION OF "${table}"
+            FOR VALUES FROM ('${startTimestamp.toISOString()}') TO ('${endTimestamp.toISOString()}')
+          `);
+        }
+
+        // Verify partition creation via database catalog query
+        const catalogCheck = await prisma.$queryRawUnsafe<{ relname: string }[]>(
+          `SELECT child.relname
+           FROM pg_inherits
+           JOIN pg_class child ON pg_inherits.inhrelid = child.oid
+           JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+           WHERE child.relname = $1`,
+          partitionName,
+        );
+
+        const verified = catalogCheck.length > 0;
+        verifiedPartitions.push({ table, partitionName, verified });
+        console.log(`[PartitionCron] Pre-created/verified partition ${partitionName}: ${verified ? "VERIFIED" : "SKIPPED/UNVERIFIED"}`);
+      } catch (tableErr) {
+        console.warn(`[PartitionCron] Partition pre-creation check for ${table}:`, tableErr);
+      }
+    }
+
+    (results as any).upcomingMonthlyPartitions = {
+      start: startTimestamp.toISOString(),
+      end: endTimestamp.toISOString(),
+      verifiedPartitions,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    results.errors.push(`upcomingMonthPartitions: ${msg}`);
+    console.error("[PartitionCron] Upcoming month partition pre-creation failed:", err);
+  }
+
+  // 2. Archive expired push notification partitions
   try {
     const archiveResult = await archiveExpiredPushNotificationPartitions();
     results.partitionsArchived = archiveResult.archived.map((a) => a.name);
     console.log(
-      `[PartitionCron] Archived ${results.partitionsArchived.length} expired partition(s)`,
+      `[PartitionCron] Archived ${results.partitionsArchived.length} expired push partition(s)`,
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    results.errors.push(`archiveExpiredPartitions: ${msg}`);
-    console.error("[PartitionCron] Failed to archive partitions:", err);
+    results.errors.push(`archiveExpiredPushNotificationPartitions: ${msg}`);
+    console.error("[PartitionCron] Failed to archive push partitions:", err);
   }
 
-  // 3. Collect health report
+  // 3. Telemetry / audit log partition upkeep + retention (#3362)
+  try {
+    results.retention = await runPartitionRetention();
+    for (const table of results.retention.tables) {
+      for (const error of table.errors) results.errors.push(`${table.table}: ${error}`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    results.errors.push(`runPartitionRetention: ${msg}`);
+    console.error("[PartitionCron] Retention run failed:", err);
+  }
+
+  // Detach and archive expired telemetry partitions older than 12 months to cold storage / S3
+  try {
+    if (typeof archiveExpiredTelemetryPartitions === "function") {
+      const telemetryArchiveResult = await archiveExpiredTelemetryPartitions();
+      results.telemetryPartitionsArchived = telemetryArchiveResult.archived.map((a) => a.name);
+      console.log(
+        `[PartitionCron] Archived ${results.telemetryPartitionsArchived.length} expired telemetry partition(s)`,
+      );
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    results.errors.push(`archiveExpiredTelemetryPartitions: ${msg}`);
+    console.error("[PartitionCron] Failed to archive telemetry partitions:", err);
+  }
+
+
+  // 4. Collect health report
   try {
     results.healthReport = await checkPartitionHealth();
   } catch (err) {
@@ -63,12 +177,51 @@ export async function GET(request: NextRequest) {
     results.errors.push(`checkPartitionHealth: ${msg}`);
   }
 
+  // 4. Run automated table partitioning maintenance worker
+  try {
+    results.telemetryMaintenance = await runPartmanPartitionMaintenance();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    results.errors.push(`runPartmanPartitionMaintenance: ${msg}`);
+    console.error("[PartitionCron] Telemetry maintenance failed:", err);
+  }
+
+
   const durationMs = Date.now() - startedAt;
   const success = results.errors.length === 0;
 
+  try {
+    const adminId = process.env.PARTITION_MAINTENANCE_ADMIN_ID;
+    if (!adminId) {
+      throw new Error("PARTITION_MAINTENANCE_ADMIN_ID is not configured");
+    }
+
+    const auditActor = await prisma.user.findFirst({
+      where: { id: adminId, isAdmin: true },
+      select: { id: true },
+    });
+    if (!auditActor) {
+      throw new Error("Configured partition maintenance audit actor is not an admin user");
+    }
+
+    await prisma.adminAuditLog.create({
+      data: {
+        adminId: auditActor.id,
+        action: "PARTITION_MAINTENANCE",
+        entityType: "DatabasePartition",
+        entityId: "WifiTelemetry,AcousticTelemetry",
+        details: JSON.stringify({ success, durationMs, ...results }),
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    results.errors.push(`partitionMaintenanceAudit: ${msg}`);
+    console.error("[PartitionCron] Failed to log maintenance metrics:", err);
+  }
+
   return NextResponse.json(
     {
-      success,
+      success: results.errors.length === 0,
       durationMs,
       ...results,
     },

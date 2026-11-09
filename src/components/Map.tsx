@@ -7,8 +7,6 @@ import {
   MapContainer,
   TileLayer,
   Marker,
-  Popup,
-  Polyline,
   useMap,
   LayersControl,
   LayerGroup,
@@ -21,69 +19,31 @@ import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
+import { Contrast } from "lucide-react";
+import { formatDistance } from "@/lib/geo/formatDistance";
 import {
-  useSeatAvailability,
-  type SeatStatus,
-} from "@/hooks/useSeatAvailability";
-import usePartySocket from "@/hooks/usePartySocketReconnect";
+  MapMarkerFactory,
+  SEAT_RING_COLORS,
+  getUserLocationIcon,
+} from "./map/MapMarkerFactory";
+import { MapRouteLayer } from "./map/MapRouteLayer";
+import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
+import RoutingOptimizer from "./map/RoutingOptimizer";
 
-function throttle<T extends (...args: any[]) => void>(
-  func: T,
-  limit: number,
-): T {
-  let inThrottle = false;
-  return function (this: any, ...args: any[]) {
-    if (!inThrottle) {
-      func.apply(this, args);
-      inThrottle = true;
-      setTimeout(() => (inThrottle = false), limit);
-    }
-  } as unknown as T;
-}
-
-// Seat-availability ring colours (#703): green = plenty of room, yellow =
-// filling up, red = at/over capacity.
-const SEAT_RING_COLORS: Record<SeatStatus, string> = {
-  green: "#22c55e",
-  yellow: "#eab308",
-  red: "#ef4444",
-};
+export { throttle } from "@/lib/utils";
+export {
+  getHighContrastIcon,
+  getVenueIcon,
+  getDestinationIcon,
+  getUserLocationIcon,
+  RadarSweepLayer,
+  SEAT_RING_COLORS,
+} from "./map/MapMarkerFactory";
 
 // Import Leaflet Heatmap Plugin safely only on client-side and not in Jest tests
 if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   require("leaflet.heat");
-}
-
-// Custom venue marker for dark theme - purple/blue dot - client-safe setup
-let venueIcon: any;
-let destinationIcon: any;
-
-if (typeof window !== "undefined") {
-  venueIcon = L.divIcon({
-    className: "venue-marker",
-    html: `<div class="venue-dot"></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -12],
-  });
-
-  // Destination marker - like the reference image
-  destinationIcon = L.divIcon({
-    className: "destination-marker",
-    html: `<div class="destination-pin"><span>D</span></div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
-  });
-
-  // Also fix the global default:
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: "/leaflet/marker-icon-2x.png",
-    iconUrl: "/leaflet/marker-icon.png",
-    shadowUrl: "/leaflet/marker-shadow.png",
-  });
 }
 
 function MapController({ mapView }: { mapView: MapView | null }) {
@@ -99,6 +59,23 @@ function MapController({ mapView }: { mapView: MapView | null }) {
   }, [mapView, map]);
 
   return null;
+}
+
+function ResetMapViewControl({ center }: { center: [number, number] }) {
+  const map = useMap();
+
+  return (
+    <div className="absolute bottom-3 right-3 z-[1000]">
+      <button
+        type="button"
+        aria-label="Reset Map View"
+        onClick={() => map.setView(center, 13)}
+        className="rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-md transition-colors hover:bg-zinc-800 hover:text-white"
+      >
+        Reset Map View
+      </button>
+    </div>
+  );
 }
 
 function AutoCenter({
@@ -248,21 +225,33 @@ function MapEvents({
   return null;
 }
 
+const escapeCursorHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const isSafeAvatarUrl = (url: string): boolean =>
+  /^https:\/\/[^"'\s)]+$/.test(url);
+
 const createCursorIcon = (avatarUrl: string, name: string) => {
   if (typeof window === "undefined") return null;
+  const safeName = escapeCursorHtml(name);
   let html: string;
-  if (avatarUrl && avatarUrl !== "default" && avatarUrl.startsWith("http")) {
+  if (avatarUrl && avatarUrl !== "default" && isSafeAvatarUrl(avatarUrl)) {
     html = `
       <div class="map-cursor-container">
         <div class="map-cursor-avatar" style="background-image: url(${avatarUrl})" width="32" height="32"></div>
-        <div class="map-cursor-label">${name}</div>
+        <div class="map-cursor-label">${safeName}</div>
       </div>
     `;
   } else {
     html = `
       <div class="map-cursor-container">
         <div class="map-cursor-avatar-default" width="16" height="16"></div>
-        <div class="map-cursor-label">${name}</div>
+        <div class="map-cursor-label">${safeName}</div>
       </div>
     `;
   }
@@ -342,24 +331,312 @@ const MemoizedCursorMarker = memo(function MemoizedCursorMarker({
   );
 });
 
+export interface MapViewportBounds {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+  zoom: number;
+}
+
+export function ViewportWatcher({
+  onViewportChange,
+  debounceMs = 300,
+}: {
+  onViewportChange?: (bounds: MapViewportBounds) => void;
+  debounceMs?: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!onViewportChange) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const notifyViewport = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        try {
+          const bounds = map.getBounds();
+          const zoom = map.getZoom();
+          onViewportChange({
+            minLat: bounds.getSouth(),
+            maxLat: bounds.getNorth(),
+            minLng: bounds.getWest(),
+            maxLng: bounds.getEast(),
+            zoom,
+          });
+        } catch {
+          // Ignore if map unmounted
+        }
+      }, debounceMs);
+    };
+
+    map.on("moveend", notifyViewport);
+    map.on("zoomend", notifyViewport);
+
+    // Initial trigger
+    notifyViewport();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      map.off("moveend", notifyViewport);
+      map.off("zoomend", notifyViewport);
+    };
+  }, [map, onViewportChange, debounceMs]);
+
+  return null;
+}
+
+export interface MarkerCluster {
+  id: string;
+  isCluster: true;
+  lat: number;
+  lng: number;
+  count: number;
+  markers: MapMarker[];
+  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+}
+
+export function latLngToPixel(
+  lat: number,
+  lng: number,
+  zoom: number,
+): { x: number; y: number } {
+  const siny = Math.min(
+    Math.max(Math.sin((lat * Math.PI) / 180), -0.9999),
+    0.9999,
+  );
+  const scale = 256 * Math.pow(2, zoom);
+  return {
+    x: (0.5 + lng / 360) * scale,
+    y: (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * scale,
+  };
+}
+
+export function clusterMarkers(
+  markers: MapMarker[],
+  zoom: number,
+  clusterRadiusPx: number = 60,
+): { clusters: MarkerCluster[]; unclustered: MapMarker[] } {
+  if (zoom >= 17) {
+    return { clusters: [], unclustered: markers };
+  }
+
+  const validMarkers = markers.filter(
+    (m) =>
+      m &&
+      m.position &&
+      m.position.lat != null &&
+      m.position.lng != null &&
+      !isNaN(Number(m.position.lat)) &&
+      !isNaN(Number(m.position.lng)),
+  );
+
+  const clusterList: {
+    markers: MapMarker[];
+    pixelX: number;
+    pixelY: number;
+    minLat: number;
+    maxLat: number;
+    minLng: number;
+    maxLng: number;
+  }[] = [];
+
+  for (const marker of validMarkers) {
+    const lat = Number(marker.position.lat);
+    const lng = Number(marker.position.lng);
+    const { x, y } = latLngToPixel(lat, lng, zoom);
+
+    let nearestIdx = -1;
+    let minDist = clusterRadiusPx;
+
+    for (let i = 0; i < clusterList.length; i++) {
+      const c = clusterList[i];
+      const dist = Math.hypot(c.pixelX - x, c.pixelY - y);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestIdx = i;
+      }
+    }
+
+    if (nearestIdx !== -1) {
+      const c = clusterList[nearestIdx];
+      c.markers.push(marker);
+      c.pixelX = (c.pixelX * (c.markers.length - 1) + x) / c.markers.length;
+      c.pixelY = (c.pixelY * (c.markers.length - 1) + y) / c.markers.length;
+      c.minLat = Math.min(c.minLat, lat);
+      c.maxLat = Math.max(c.maxLat, lat);
+      c.minLng = Math.min(c.minLng, lng);
+      c.maxLng = Math.max(c.maxLng, lng);
+    } else {
+      clusterList.push({
+        markers: [marker],
+        pixelX: x,
+        pixelY: y,
+        minLat: lat,
+        maxLat: lat,
+        minLng: lng,
+        maxLng: lng,
+      });
+    }
+  }
+
+  const clusters: MarkerCluster[] = [];
+  const unclustered: MapMarker[] = [];
+
+  clusterList.forEach((group, idx) => {
+    if (group.markers.length > 1) {
+      const avgLat =
+        group.markers.reduce((sum, m) => sum + Number(m.position.lat), 0) /
+        group.markers.length;
+      const avgLng =
+        group.markers.reduce((sum, m) => sum + Number(m.position.lng), 0) /
+        group.markers.length;
+
+      clusters.push({
+        id: `cluster-${idx}-${group.markers.length}`,
+        isCluster: true,
+        lat: avgLat,
+        lng: avgLng,
+        count: group.markers.length,
+        markers: group.markers,
+        bounds: {
+          minLat: group.minLat,
+          maxLat: group.maxLat,
+          minLng: group.minLng,
+          maxLng: group.maxLng,
+        },
+      });
+    } else {
+      unclustered.push(group.markers[0]);
+    }
+  });
+
+  return { clusters, unclustered };
+}
+
+export function createClusterIcon(count: number) {
+  if (typeof window === "undefined" || !L.divIcon) return null;
+  const size = count < 10 ? 36 : count < 50 ? 44 : 52;
+  return L.divIcon({
+    className: "custom-marker-cluster",
+    html: `
+      <div class="marker-cluster-badge"
+           style="width: ${size}px; height: ${size}px; font-size: ${size >= 44 ? 14 : 12}px;"
+           data-testid="marker-cluster-${count}"
+           role="button"
+           aria-label="Cluster of ${count} venues">
+        <span>${count}</span>
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+export const ClusterMarkerComponent = memo(function ClusterMarkerComponent({
+  cluster,
+}: {
+  cluster: MarkerCluster;
+}) {
+  const map = useMap();
+  const icon = useMemo(() => createClusterIcon(cluster.count), [cluster.count]);
+  if (!icon) return null;
+
+  return (
+    <Marker
+      position={[cluster.lat, cluster.lng]}
+      icon={icon}
+      eventHandlers={{
+        click: () => {
+          if (
+            cluster.bounds.minLat !== cluster.bounds.maxLat &&
+            cluster.bounds.minLng !== cluster.bounds.maxLng
+          ) {
+            const southWest = L.latLng(
+              cluster.bounds.minLat,
+              cluster.bounds.minLng,
+            );
+            const northEast = L.latLng(
+              cluster.bounds.maxLat,
+              cluster.bounds.maxLng,
+            );
+            map.fitBounds(L.latLngBounds(southWest, northEast), {
+              padding: [50, 50],
+              maxZoom: 17,
+            });
+          } else {
+            map.setView(
+              [cluster.lat, cluster.lng],
+              Math.min(map.getZoom() + 2, 18),
+              { animate: true },
+            );
+          }
+        },
+      }}
+    />
+  );
+});
+
+export interface MapProps {
+  location: { latitude: number; longitude: number };
+  markers: MapMarker[];
+  routes: MapRoute[];
+  mapView: MapView | null;
+  roomId?: string | null;
+  initialHighContrast?: boolean;
+  highContrast?: boolean;
+  onHighContrastChange?: (enabled: boolean) => void;
+  onViewportChange?: (bounds: MapViewportBounds) => void;
+  enableClustering?: boolean;
+  enableRadarSweep?: boolean;
+  radarRadius?: number;
+}
+
 const Map = ({
   location,
   markers,
   routes,
   mapView,
   roomId,
-}: {
-  location: { latitude: number; longitude: number };
-  markers: MapMarker[];
-  routes: MapRoute[];
-  mapView: MapView | null;
-  roomId?: string | null;
-}) => {
+  initialHighContrast = false,
+  highContrast: controlledHighContrast,
+  onHighContrastChange,
+  onViewportChange,
+  enableClustering = true,
+  enableRadarSweep = true,
+  radarRadius = 160,
+}: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+
+  const [internalHighContrast, setInternalHighContrast] =
+    useState(initialHighContrast);
+  const isHighContrast =
+    controlledHighContrast !== undefined
+      ? controlledHighContrast
+      : internalHighContrast;
+
+  const toggleHighContrast = useCallback(() => {
+    const next = !isHighContrast;
+    setInternalHighContrast(next);
+    onHighContrastChange?.(next);
+  }, [isHighContrast, onHighContrastChange]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia) {
+      if (
+        window.matchMedia("(prefers-contrast: more)").matches &&
+        controlledHighContrast === undefined
+      ) {
+        setInternalHighContrast(true);
+      }
+    }
+  }, [controlledHighContrast]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -371,124 +648,22 @@ const Map = ({
       .catch(() => setToken(null));
   }, [getToken]);
 
-  interface MapCursor {
-    lat: number;
-    lng: number;
-    name: string;
-    avatar: string;
-  }
-
-  const [mapCursors, setMapCursors] = useState<Record<string, MapCursor>>({});
-  const cursorLastSeen = useRef<Record<string, number>>({});
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      setMapCursors((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        for (const [userId, lastSeen] of Object.entries(
-          cursorLastSeen.current,
-        )) {
-          if (now - lastSeen > 3000) {
-            delete next[userId];
-            delete cursorLastSeen.current[userId];
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const socket = usePartySocket({
-    host: "127.0.0.1:1999",
-    room: isMounted && roomId ? roomId : "placeholder",
-    startClosed: !isMounted,
-    query: token ? { token } : undefined,
-    onMessage(event) {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "map-cursor") {
-          const userId = data.userId || data.name;
-          cursorLastSeen.current[userId] = Date.now();
-          setMapCursors((prev) => ({
-            ...prev,
-            [userId]: {
-              lat: data.lat,
-              lng: data.lng,
-              name: data.name,
-              avatar: data.avatar,
-            },
-          }));
-        } else if (data.type === "map-cursor-offline") {
-          const userId = data.userId || data.name;
-          delete cursorLastSeen.current[userId];
-          setMapCursors((prev) => {
-            if (!(userId in prev)) return prev;
-            const next = { ...prev };
-            delete next[userId];
-            return next;
-          });
-        }
-      } catch {
-        // Ignore
-      }
-    },
+  const {
+    mapCursors,
+    throttledBroadcast,
+    getAvailability,
+    checkIn,
+    checkOut,
+    checkedInVenueId,
+    isSeatSocketConnected,
+  } = useMapRealtimeSync({
+    roomId,
+    isMounted,
+    token,
+    user: clerkUser,
+    initialLocation: location,
   });
 
-  const userRef = useRef(clerkUser);
-  useEffect(() => {
-    userRef.current = clerkUser;
-  }, [clerkUser]);
-
-  const throttledBroadcastRef = useRef<((latlng: L.LatLng) => void) | null>(
-    null,
-  );
-
-  useEffect(() => {
-    throttledBroadcastRef.current = throttle((latlng: L.LatLng) => {
-      if (socket && socket.readyState === 1) {
-        const user = userRef.current.user;
-        socket.send(
-          JSON.stringify({
-            type: "map-cursor",
-            lat: latlng.lat,
-            lng: latlng.lng,
-            name: user?.firstName || "Anonymous",
-            avatar: user?.imageUrl || "default",
-            userId: user?.id || "anonymous",
-          }),
-        );
-      }
-    }, 50);
-  }, [socket]);
-
-  const throttledBroadcast = useCallback((latlng: L.LatLng) => {
-    if (throttledBroadcastRef.current) {
-      throttledBroadcastRef.current(latlng);
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (socket && socket.readyState === 1) {
-        const user = userRef.current.user;
-        try {
-          socket.send(
-            JSON.stringify({
-              type: "map-cursor-offline",
-              name: user?.firstName || "Anonymous",
-              userId: user?.id || "anonymous",
-            }),
-          );
-        } catch {
-          // ignore
-        }
-      }
-    };
-  }, [socket]);
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
   // Forecast selector state
@@ -496,16 +671,6 @@ const Map = ({
   const [selectedHour, setSelectedHour] = useState<number>(
     new Date().getHours(),
   );
-
-  // Real-time seat availability (#703) — PartyKit presence layer that
-  // powers the green/yellow/red rings and the popup check-in button.
-  const {
-    getAvailability,
-    checkIn,
-    checkOut,
-    checkedInVenueId,
-    isConnected: isSeatSocketConnected,
-  } = useSeatAvailability();
 
   // Prevent touch/mouse/scroll event propagation on overlays from bubbling to Leaflet Map
   useEffect(() => {
@@ -549,7 +714,7 @@ const Map = ({
   // marker offsets at a consistent on-screen pixel separation regardless of
   // how far the user has zoomed in/out.
   const [settledZoom, setSettledZoom] = useState<number>(13);
-  const [isZooming, setIsZooming] = useState(false);
+  const [, setIsZooming] = useState(false);
   const handleZoomSettled = useCallback((zoom: number) => {
     setSettledZoom(zoom);
     setIsZooming(false);
@@ -571,6 +736,14 @@ const Map = ({
     "walking" | "cycling" | "driving"
   >("walking");
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  useEffect(() => {
+    if (
+      selectedMarkerId !== null &&
+      !markers.some((marker) => marker.id === selectedMarkerId)
+    ) {
+      setSelectedMarkerId(null);
+    }
+  }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -634,13 +807,23 @@ const Map = ({
       const data = await response.json();
 
       if (data.code === "Ok") {
+        const coords = data.routes[0].geometry.coordinates;
+        const hasElevation = coords.some(
+          (c: any[]) => Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
+        );
+        const elevationProfile =
+          data.routes[0].elevation_profile ||
+          data.routes[0].elevationProfile ||
+          (hasElevation ? coords.map((c: any[]) => c[2]) : undefined);
+
         setOptimizedRoute({
-          coordinates: data.routes[0].geometry.coordinates.map(
+          coordinates: coords.map(
             (coord: [number, number]) => [coord[1], coord[0]],
           ),
           duration: data.routes[0].duration,
           distance: data.routes[0].distance,
           legs: data.routes[0].legs,
+          elevationProfile,
         });
       }
     } catch (error) {
@@ -719,65 +902,78 @@ const Map = ({
       }));
   }, [heatmapPoints, markers]);
 
-  // Group and spiderfy overlapping markers
-  const spiderfiedMarkers = useMemo(() => {
-    const groups: { [key: string]: any[] } = {};
-    markers.forEach((m) => {
-      if (
-        m &&
-        m.position &&
-        m.position.lat != null &&
-        m.position.lng != null &&
-        !isNaN(Number(m.position.lat)) &&
-        !isNaN(Number(m.position.lng))
-      ) {
-        const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
-        if (!groups[key]) {
-          groups[key] = [];
+  // Helper to spiderfy overlapping markers
+  const computeSpiderfiedMarkers = useCallback(
+    (markerList: MapMarker[], zoom: number) => {
+      const groups: { [key: string]: any[] } = {};
+      markerList.forEach((m) => {
+        if (
+          m &&
+          m.position &&
+          m.position.lat != null &&
+          m.position.lng != null &&
+          !isNaN(Number(m.position.lat)) &&
+          !isNaN(Number(m.position.lng))
+        ) {
+          const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
+          if (!groups[key]) {
+            groups[key] = [];
+          }
+          groups[key].push(m);
         }
-        groups[key].push(m);
-      }
-    });
+      });
 
-    const result: any[] = [];
-    Object.keys(groups).forEach((key) => {
-      const groupItems = groups[key];
-      const n = groupItems.length;
-      if (n === 1 || isZooming) {
-        result.push({
-          ...groupItems[0],
-          renderedLat: Number(groupItems[0].position.lat),
-          renderedLng: Number(groupItems[0].position.lng),
-        });
-      } else {
-        const centerLat = Number(groupItems[0].position.lat);
-        const centerLng = Number(groupItems[0].position.lng);
-
-        // Keep a consistent ~24px on-screen separation between spiderfied
-        // markers at any zoom level, instead of a fixed degree offset that
-        // only looked right at the default zoom and collapsed to
-        // sub-pixel distances once the user zoomed out (Web Mercator
-        // meters-per-pixel formula).
-        const metersPerPixel =
-          (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
-          Math.pow(2, settledZoom);
-        const targetPixelSeparation = 24 + 2 * n; // spread out a bit more if many markers share the location
-        const radius = (metersPerPixel * targetPixelSeparation) / 111320; // meters -> degrees latitude
-
-        groupItems.forEach((item, index) => {
-          const angle = (2 * Math.PI * index) / n;
-          const offsetLat = centerLat + radius * Math.cos(angle);
-          const offsetLng = centerLng + radius * Math.sin(angle);
+      const result: any[] = [];
+      Object.keys(groups).forEach((key) => {
+        const groupItems = groups[key];
+        const n = groupItems.length;
+        if (n === 1) {
           result.push({
-            ...item,
-            renderedLat: offsetLat,
-            renderedLng: offsetLng,
+            ...groupItems[0],
+            renderedLat: Number(groupItems[0].position.lat),
+            renderedLng: Number(groupItems[0].position.lng),
           });
-        });
-      }
-    });
-    return result;
-  }, [markers, settledZoom, isZooming]);
+        } else {
+          const centerLat = Number(groupItems[0].position.lat);
+          const centerLng = Number(groupItems[0].position.lng);
+
+          const metersPerPixel =
+            (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
+            Math.pow(2, zoom);
+          const targetPixelSeparation = 24 + 2 * n;
+          const radius = (metersPerPixel * targetPixelSeparation) / 111320;
+
+          groupItems.forEach((item, index) => {
+            const angle = (2 * Math.PI * index) / n;
+            const offsetLat = centerLat + radius * Math.cos(angle);
+            const offsetLng = centerLng + radius * Math.sin(angle);
+            result.push({
+              ...item,
+              renderedLat: offsetLat,
+              renderedLng: offsetLng,
+            });
+          });
+        }
+      });
+      return result;
+    },
+    [],
+  );
+
+  // Group and cluster or spiderfy overlapping markers
+  const { clusteredMarkers, spiderfiedMarkers } = useMemo(() => {
+    if (!enableClustering) {
+      return {
+        clusteredMarkers: [] as MarkerCluster[],
+        spiderfiedMarkers: computeSpiderfiedMarkers(markers, settledZoom),
+      };
+    }
+    const { clusters, unclustered } = clusterMarkers(markers, settledZoom);
+    return {
+      clusteredMarkers: clusters,
+      spiderfiedMarkers: computeSpiderfiedMarkers(unclustered, settledZoom),
+    };
+  }, [markers, settledZoom, enableClustering, computeSpiderfiedMarkers]);
 
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
@@ -789,23 +985,13 @@ const Map = ({
     return null;
   }, [clerkUser.isLoaded, clerkUser.user]);
 
-  // Derive customIcon from iconUrl
+  // Derive customIcon from iconUrl with rotating radar sweep effect (#6183)
   const customIcon = useMemo(() => {
-    let html: string;
-
-    if (iconUrl && iconUrl !== "default") {
-      html = `<div class="image-marker" style="background-image: url(${iconUrl})" width="40" height="40"></div>`;
-    } else {
-      html = `<div class="default-dot-marker" width="20" height="20"></div>`;
-    }
-
-    return L.divIcon({
-      className: "custom-user-marker",
-      html: html,
-      iconSize: [40, 40],
-      iconAnchor: [20, 20],
+    return getUserLocationIcon(iconUrl, {
+      enableRadarSweep,
+      radarRadius,
     });
-  }, [iconUrl]);
+  }, [iconUrl, enableRadarSweep, radarRadius]);
 
   // Memoize the rendered CircleMarker JSX to prevent unnecessary SVG re-renders
   // and micro-flickering on every Map.tsx update (e.g. cursor socket events)
@@ -831,12 +1017,14 @@ const Map = ({
   }, [spiderfiedMarkers, getAvailability]);
 
   const center: [number, number] = [latitude, longitude];
-  const tileUrl =
-    theme === "light"
-      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
+  const tileUrl = cartoKey
+    ? theme === "light"
+      ? `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : theme === "cyberpunk"
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+        ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -992,6 +1180,32 @@ const Map = ({
           pointer-events: none;
         }
 
+        /* Marker cluster badge styles (#3473) */
+        .custom-marker-cluster {
+          background: transparent !important;
+          border: none !important;
+        }
+        .marker-cluster-badge {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 9999px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: #ffffff;
+          font-weight: 700;
+          border: 2px solid #ffffff;
+          box-shadow: 0 4px 14px rgba(99, 102, 241, 0.5);
+          cursor: pointer;
+          user-select: none;
+          transition: transform 0.15s ease-in-out;
+        }
+        .marker-cluster-badge:hover {
+          transform: scale(1.1);
+        }
+        .marker-cluster-badge:active {
+          transform: scale(0.95);
+        }
+
         /* Disable animation on reduced motion/low performance mode */
         @media (prefers-reduced-motion: reduce) {
           .venue-dot::after {
@@ -1020,18 +1234,106 @@ const Map = ({
           margin: 12px 16px;
         }
         
-        /* Focus-visible ring for keyboard-navigated markers */
+        /* Focus-visible ring for keyboard-navigated markers (Issue #3446) */
+        .venue-marker:focus,
         .venue-marker:focus-visible,
+        .destination-marker:focus,
         .destination-marker:focus-visible,
+        .custom-user-marker:focus,
         .custom-user-marker:focus-visible,
+        .interactive-map-pin:focus,
         .interactive-map-pin:focus-visible,
+        .leaflet-marker-icon:focus,
         .leaflet-marker-icon:focus-visible,
-        [role="button"][tabindex="0"]:focus-visible {
-          outline: 3px solid #3b82f6 !important;
-          outline-offset: 3px !important;
+        [role="button"][tabindex="0"]:focus-visible,
+        [role="button"][tabindex="0"]:focus {
+          outline: 3px solid var(--primary-accent) !important;
+          outline-offset: 2px !important;
           box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.45) !important;
-          border-radius: 50%;
           z-index: 1000 !important;
+        }
+
+        .venue-marker:not(.high-contrast-marker):focus,
+        .venue-marker:not(.high-contrast-marker):focus-visible {
+          border-radius: 50%;
+        }
+
+        .high-contrast-marker.hc-marker-circle:focus,
+        .high-contrast-marker.hc-marker-circle:focus-visible {
+          border-radius: 50% !important;
+        }
+
+        .high-contrast-marker.hc-marker-square:focus,
+        .high-contrast-marker.hc-marker-square:focus-visible {
+          border-radius: 4px !important;
+        }
+
+        .high-contrast-marker.hc-marker-diamond:focus,
+        .high-contrast-marker.hc-marker-diamond:focus-visible {
+          border-radius: 3px !important;
+        }
+
+        /* High-Contrast Mode Styles (WCAG 2.1 AA 3:1 Non-Text Contrast) */
+        .high-contrast-marker {
+          background: transparent !important;
+          border: none !important;
+        }
+
+        .hc-marker-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          box-sizing: border-box;
+          border: 3px solid #000000;
+          box-shadow: 0 0 0 2px #ffffff, 0 3px 6px rgba(0, 0, 0, 0.6);
+          transition: transform 0.15s ease-in-out;
+        }
+
+        .hc-marker-wrapper:hover {
+          transform: scale(1.15);
+        }
+
+        /* Shape 1: Circle for cafe */
+        .hc-shape-circle,
+        .hc-marker-wrapper.hc-shape-circle {
+          border-radius: 50% !important;
+          background-color: #ffd600 !important;
+          color: #000000 !important;
+        }
+
+        /* Shape 2: Square for coworking */
+        .hc-shape-square,
+        .hc-marker-wrapper.hc-shape-square {
+          border-radius: 4px !important;
+          background-color: #00e5ff !important;
+          color: #000000 !important;
+        }
+
+        /* Shape 3: Diamond for library */
+        .hc-shape-diamond,
+        .hc-marker-wrapper.hc-shape-diamond {
+          border-radius: 3px !important;
+          transform: rotate(45deg);
+          background-color: #00e676 !important;
+          color: #000000 !important;
+        }
+
+        .hc-shape-diamond .hc-marker-inner {
+          transform: rotate(-45deg);
+        }
+
+        .hc-marker-inner {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+        }
+
+        .hc-glyph {
+          display: block;
         }
 
         /* Floating toggle position above canvas layers */
@@ -1058,20 +1360,33 @@ const Map = ({
         .map-forecast-controls input[type="range"] {
           width: 120px;
         }
-  .leaflet-control-scale {
-  background: transparent;
-}
+        .leaflet-control-scale {
+          background: transparent;
+        }
 
-.leaflet-control-scale-line {
-  border: 1px solid #3f3f46;
-  background: rgba(24, 24, 27, 0.9);
-  color: #f4f4f5;
-}
+        .leaflet-control-scale-line {
+          border: 1px solid #3f3f46;
+          background: rgba(24, 24, 27, 0.9);
+          color: #f4f4f5;
+        }
+
+        .leaflet-zoom-anim .leaflet-zoom-animated {
+          will-change: transform;
+        }
+
+        .venue-marker {
+          transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+        }
+
+        .interactive-map-pin {
+          will-change: transform;
+        }
       `,
         }}
       />
 
       <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {isHighContrast ? "High-contrast mode enabled. " : ""}
         {spiderfiedMarkers.length > 0
           ? `${spiderfiedMarkers.length} venue${spiderfiedMarkers.length === 1 ? "" : "s"} on map. Use Tab to navigate markers, Enter to open details.`
           : "No venues on map"}
@@ -1091,6 +1406,26 @@ const Map = ({
         }}
       >
         <ScaleControl position="bottomleft" metric={true} imperial={false} />
+        <ResetMapViewControl center={center} />
+
+        {/* Map Control Options: High-Contrast Mode Toggle (WCAG 2.1 AA) */}
+        <div className="map-accessibility-controls absolute top-3 left-16 z-[1000]">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isHighContrast}
+            aria-label="Toggle high-contrast mode"
+            onClick={toggleHighContrast}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${
+              isHighContrast
+                ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
+                : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            }`}
+          >
+            <Contrast className="w-3.5 h-3.5 text-current" />
+            <span>High Contrast</span>
+          </button>
+        </div>
         {/* Forecast selector UI */}
         <div className="map-forecast-controls">
           <label htmlFor="day-select">Day</label>
@@ -1155,6 +1490,20 @@ const Map = ({
           <LayersControl.Overlay name="Seat Availability">
             <LayerGroup>{memoizedSeatRings}</LayerGroup>
           </LayersControl.Overlay>
+
+          <LayersControl.Overlay
+            name="High-Contrast Mode"
+            checked={isHighContrast}
+          >
+            <LayerGroup />
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay
+            name="Radar Search Radius (Sweep)"
+            checked={enableRadarSweep}
+          >
+            <LayerGroup />
+          </LayersControl.Overlay>
         </LayersControl>
 
         <MapController mapView={mapView} />
@@ -1165,6 +1514,7 @@ const Map = ({
           delay={250}
         />
         <ResizeWatcher />
+        <ViewportWatcher onViewportChange={onViewportChange} />
         <WebGLContextWatcher />
 
         {customIcon && (
@@ -1180,291 +1530,50 @@ const Map = ({
         {Object.entries(mapCursors).map(([userId, cursor]) => (
           <MemoizedCursorMarker key={userId} userId={userId} cursor={cursor} />
         ))}
-        {spiderfiedMarkers.map((marker) => {
-          const isDest = marker.id.includes("dest");
-          const seat = !isDest ? getAvailability(marker.id) : null;
-          const isCheckedInHere = !isDest && checkedInVenueId === marker.id;
-          const telemetry = !isDest
-            ? {
-                seatCount: seat?.count,
-                seatCapacity: seat?.capacity,
-                isCheckedIn: isCheckedInHere,
-                isConnected: isSeatSocketConnected,
-              }
-            : undefined;
+        {clusteredMarkers.map((cluster) => (
+          <ClusterMarkerComponent key={cluster.id} cluster={cluster} />
+        ))}
+        <MapMarkerFactory
+          markers={spiderfiedMarkers}
+          selectedMarkerId={selectedMarkerId}
+          onSelectMarker={setSelectedMarkerId}
+          isHighContrast={isHighContrast}
+          getAvailability={getAvailability}
+          checkIn={checkIn}
+          checkOut={checkOut}
+          checkedInVenueId={checkedInVenueId}
+          isSeatSocketConnected={isSeatSocketConnected}
+          routingQueue={routingQueue}
+          onAddToRoutingQueue={(stop) => {
+            const updated = [...routingQueue, stop];
+            setRoutingQueue(updated);
+            calculateOptimizedRoute(updated);
+          }}
+        />
 
-          return (
-            <AccessibleMarker
-              key={marker.id}
-              position={[marker.renderedLat, marker.renderedLng]}
-              icon={isDest ? destinationIcon : venueIcon}
-              name={marker.name}
-              category={marker.category}
-              rating={marker.score}
-              score={marker.score}
-              isDestination={isDest}
-              telemetryData={telemetry}
-              zIndexOffset={selectedMarkerId === marker.id ? 1000 : 0}
-              onClick={() => setSelectedMarkerId(marker.id)}
-            >
-              <div className="text-sm">
-                <div className="font-semibold text-white">{marker.name}</div>
-                {marker.category && (
-                  <div className="text-zinc-400">{marker.category}</div>
-                )}
-                {marker.address && (
-                  <div className="text-zinc-500 text-xs mt-1">
-                    {marker.address}
-                  </div>
-                )}
-                {!isDest &&
-                  (() => {
-                    const seatTextColor =
-                      seat!.status === "red"
-                        ? "text-red-400"
-                        : seat!.status === "yellow"
-                          ? "text-yellow-400"
-                          : "text-green-400";
-                    return (
-                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
-                        <span
-                          className={`text-[10px] font-medium ${seatTextColor}`}
-                        >
-                          {isSeatSocketConnected
-                            ? `${seat!.count}/${seat!.capacity} checked in`
-                            : "Connecting…"}
-                        </span>
-                        <button
-                          onClick={() =>
-                            isCheckedInHere ? checkOut() : checkIn(marker.id)
-                          }
-                          className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
-                            isCheckedInHere
-                              ? "accent-bg text-white hover:opacity-90"
-                              : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
-                          }`}
-                        >
-                          {isCheckedInHere ? "Check out" : "Check in here"}
-                        </button>
-                      </div>
-                    );
-                  })()}
-              </div>
-              <button
-                onClick={() => {
-                  // Prevent duplicates in queue chain matrix
-                  if (!routingQueue.some((v) => v.id === marker.id)) {
-                    const updated = [
-                      ...routingQueue,
-                      {
-                        id: marker.id,
-                        name: marker.name,
-                        latitude: Number(marker.position.lat),
-                        longitude: Number(marker.position.lng),
-                      },
-                    ];
-                    setRoutingQueue(updated);
-                    calculateOptimizedRoute(updated);
-                  }
-                }}
-                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
-              >
-                ➕ Add to Workday Timeline
-              </button>
-            </AccessibleMarker>
-          );
-        })}
-
-        {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}
-        {optimizedRoute &&
-          optimizedRoute.coordinates &&
-          optimizedRoute.coordinates.length > 1 && (
-            <Polyline
-              positions={optimizedRoute.coordinates}
-              pathOptions={{
-                color: "#3b82f6", // Electric Blue for Multi-Stop Leg paths
-                weight: 6,
-                opacity: 0.9,
-                lineCap: "round",
-                lineJoin: "round",
-                dashArray: travelProfile === "walking" ? "5, 10" : undefined, // Dotted path line if walking
-              }}
-            >
-              <Popup
-                autoPanPadding={[20, 20]}
-                autoPanPaddingTopLeft={[20, 90]}
-                autoPanPaddingBottomRight={[20, 20]}
-              >
-                <div className="text-sm text-white">
-                  <div className="font-bold text-blue-400">
-                    Optimized Hybrid Schedule
-                  </div>
-                  <div>
-                    Total Distance:{" "}
-                    {(optimizedRoute.distance / 1000).toFixed(2)} km
-                  </div>
-                  <div>
-                    Est. Travel Time: {Math.round(optimizedRoute.duration / 60)}{" "}
-                    mins
-                  </div>
-                </div>
-              </Popup>
-            </Polyline>
-          )}
-
-        {routes.map((route) => {
-          const validPositions = (route.path || [])
-            .filter(
-              (p) =>
-                p &&
-                p.lat != null &&
-                p.lng != null &&
-                !isNaN(Number(p.lat)) &&
-                !isNaN(Number(p.lng)),
-            )
-            .map((p) => [Number(p.lat), Number(p.lng)] as [number, number]);
-
-          if (validPositions.length < 2) return null;
-
-          return (
-            <Polyline
-              key={route.id}
-              positions={validPositions}
-              pathOptions={{
-                color: "#22c55e",
-                weight: 6,
-                opacity: 0.9,
-                lineCap: "round",
-                lineJoin: "round",
-              }}
-            >
-              {route.distance && (
-                <Popup autoPanPadding={[20, 20]}>
-                  <div className="text-sm">
-                    Distance: {(route.distance / 1000).toFixed(1)} km
-                    {route.duration && (
-                      <div>Time: {Math.round(route.duration / 60)} min</div>
-                    )}
-                  </div>
-                </Popup>
-              )}
-            </Polyline>
-          );
-        })}
+        <MapRouteLayer
+          routes={routes}
+          optimizedRoute={optimizedRoute}
+          travelProfile={travelProfile}
+        />
         {/* MULTI-STOP ROUTING OPTIMIZER CONTROL INTERFACE OVERLAY */}
-        <div
+        <RoutingOptimizer
           ref={routingPanelRef}
-          className="absolute bottom-6 left-6 z-[1000] w-80 rounded-xl border border-zinc-800 bg-zinc-950/90 p-4 text-white shadow-2xl backdrop-blur-md"
-        >
-          <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
-            <h3 className="font-semibold text-sm tracking-wide text-zinc-200">
-              📍 ROUTING OPTIMIZER
-            </h3>
-            {routingQueue.length > 0 && (
-              <button
-                onClick={() => {
-                  setRoutingQueue([]);
-                  setOptimizedRoute(null);
-                }}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors"
-              >
-                Clear Queue
-              </button>
-            )}
-          </div>
-
-          {/* Travel Mode Selectors */}
-          <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-zinc-900 p-1 text-xs">
-            {(["walking", "cycling", "driving"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setTravelProfile(mode)}
-                className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
-                  travelProfile === mode
-                    ? "accent-bg text-white shadow"
-                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                }`}
-              >
-                {mode === "walking"
-                  ? "🚶‍♂️ Walk"
-                  : mode === "cycling"
-                    ? "🚴‍♂️ Bike"
-                    : "🚗 Drive"}
-              </button>
-            ))}
-          </div>
-
-          {/* Queue Timeline Slots */}
-          {routingQueue.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
-              Click markers or venue listings to chain multiple destinations
-              into your hybrid workday route!
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                {routingQueue.map((venue, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-lg bg-zinc-900 p-2 text-xs border border-zinc-800"
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-950 text-[10px] font-bold text-blue-400 border border-blue-800/50">
-                        {idx + 1}
-                      </span>
-                      <span className="truncate font-medium text-zinc-300">
-                        {venue.name}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const updated = routingQueue.filter(
-                          (_, i) => i !== idx,
-                        );
-                        setRoutingQueue(updated);
-                        calculateOptimizedRoute(updated);
-                      }}
-                      className="ml-2 text-zinc-500 hover:text-zinc-300 text-sm"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Optimize Trigger Action Button */}
-              {routingQueue.length >= 2 && (
-                <button
-                  onClick={() => calculateOptimizedRoute()}
-                  className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98]"
-                  style={{
-                    background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 80%, #4f46e5))`,
-                  }}
-                >
-                  🚀 Calculate Combined Travel Timeline
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Dynamic Journey Metric Matrix */}
-          {optimizedRoute && (
-            <div className="mt-3 border-t border-zinc-800 pt-3 text-xs text-zinc-400 space-y-1">
-              <div className="flex justify-between">
-                <span>Total Distance:</span>
-                <span className="font-semibold text-zinc-200">
-                  {(optimizedRoute.distance / 1000).toFixed(2)} km
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Est. Transit Time:</span>
-                <span className="font-semibold text-zinc-200">
-                  {Math.round(optimizedRoute.duration / 60)} mins
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
+          routingQueue={routingQueue}
+          onClearQueue={() => {
+            setRoutingQueue([]);
+            setOptimizedRoute(null);
+          }}
+          onRemoveVenue={(idx) => {
+            const updated = routingQueue.filter((_, i) => i !== idx);
+            setRoutingQueue(updated);
+            calculateOptimizedRoute(updated);
+          }}
+          travelProfile={travelProfile}
+          onTravelProfileChange={(mode) => setTravelProfile(mode)}
+          onCalculateRoute={() => calculateOptimizedRoute()}
+          optimizedRoute={optimizedRoute}
+        />
       </MapContainer>
     </>
   );

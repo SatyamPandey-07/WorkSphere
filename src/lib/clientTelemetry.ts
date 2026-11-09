@@ -1,6 +1,6 @@
 "use client";
 
-import { TelemetryRecord } from "./telemetryQueue";
+import type { TelemetryRecord } from "./telemetry/types";
 
 const STORAGE_KEY = "worksphere:telemetry:unsent";
 
@@ -16,7 +16,8 @@ function persistFailed(record: TelemetryRecord) {
       ? JSON.parse(existingStr)
       : [];
     existing.push(record);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    const capped = existing.slice(-100);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(capped));
   } catch (err) {
     console.error("[clientTelemetry] Failed to persist", err);
   }
@@ -27,8 +28,9 @@ export function retryFailedTelemetry() {
   try {
     const existingStr = localStorage.getItem(STORAGE_KEY);
     if (!existingStr) return;
+    const parsed = JSON.parse(existingStr);
+    const records = Array.isArray(parsed) ? (parsed as TelemetryRecord[]) : [];
     localStorage.removeItem(STORAGE_KEY);
-    const records = JSON.parse(existingStr) as TelemetryRecord[];
     records.forEach(flushToServer);
   } catch (err) {
     console.error("[clientTelemetry] Failed to retry", err);

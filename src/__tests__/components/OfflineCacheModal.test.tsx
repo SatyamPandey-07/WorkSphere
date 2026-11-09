@@ -1,8 +1,9 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { OfflineCacheModal } from "@/components/OfflineCacheModal";
 
-// Mock getAllVenuesOffline
+// Mock getAllVenuesOffline; the storage usage meter needs the rest of the module
 jest.mock("@/lib/offlineStorage", () => ({
+  ...jest.requireActual("@/lib/offlineStorage"),
   getAllVenuesOffline: jest.fn().mockResolvedValue([
     { id: "v1", name: "Café A" },
     { id: "v2", name: "Café B" },
@@ -12,7 +13,9 @@ jest.mock("@/lib/offlineStorage", () => ({
 // Mock navigator.storage.estimate
 Object.defineProperty(navigator, "storage", {
   value: {
-    estimate: jest.fn().mockResolvedValue({ usage: 1024 * 1024, quota: 50 * 1024 * 1024 }),
+    estimate: jest
+      .fn()
+      .mockResolvedValue({ usage: 1024 * 1024, quota: 50 * 1024 * 1024 }),
   },
   writable: true,
   configurable: true,
@@ -65,6 +68,14 @@ describe("OfflineCacheModal", () => {
     render(<OfflineCacheModal isOpen onClose={onClose} />);
     await screen.findByText("Offline Cache");
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onClose when the Escape key is pressed", async () => {
+    const onClose = jest.fn();
+    render(<OfflineCacheModal isOpen onClose={onClose} />);
+    await screen.findByText("Offline Cache");
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -16,40 +16,13 @@ import {
 } from "@/lib/bookingTime";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { conflictDateWindow, hasBookingConflict } from "@/lib/bookingOverlap";
+import { releaseSeatWebLock } from "@/lib/locks/seatHoldLock";
+import {
+  generateRecurringDates,
+  MAX_RECURRING_OCCURRENCES,
+} from "@/lib/booking/recurrence";
 
-const MAX_OCCURRENCES = 52;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function generateDates(
-  startDate: string,
-  frequency: string,
-  endDate: string | null,
-  occurrences: number | null,
-): string[] {
-  const dates: string[] = [];
-  const [y, m, d] = startDate.split("-").map(Number);
-  const limit = endDate ?? null;
-  const maxOccurrences = Math.min(
-    occurrences ?? MAX_OCCURRENCES,
-    MAX_OCCURRENCES,
-  );
-
-  for (let i = 0; dates.length < maxOccurrences; i++) {
-    const next =
-      frequency === "daily"
-        ? new Date(Date.UTC(y, m - 1, d + i))
-        : frequency === "weekly"
-          ? new Date(Date.UTC(y, m - 1, d + 7 * i))
-          : frequency === "monthly"
-            ? new Date(Date.UTC(y, m - 1 + i, d))
-            : null;
-    if (!next) break;
-    const dateStr = next.toISOString().slice(0, 10);
-    if (limit && dateStr > limit) break;
-    dates.push(dateStr);
-  }
-  return dates;
-}
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth();
@@ -106,7 +79,7 @@ export async function POST(request: NextRequest) {
       : null;
   const occurrences =
     typeof body.occurrences === "number" && body.occurrences > 0
-      ? Math.min(Math.floor(body.occurrences), MAX_OCCURRENCES)
+      ? Math.min(Math.floor(body.occurrences), MAX_RECURRING_OCCURRENCES)
       : null;
 
   if (
@@ -167,7 +140,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Seat not found" }, { status: 404 });
   }
 
-  const dates = generateDates(date, frequency, endDate, occurrences);
+  const dates = generateRecurringDates(date, frequency, endDate, occurrences);
   if (dates.length === 0) {
     return NextResponse.json(
       { error: "No valid dates generated for the recurrence pattern" },
@@ -260,6 +233,9 @@ export async function POST(request: NextRequest) {
       durationMinutes: duration,
     });
   }
+
+  // Explicitly release distributed seat hold lock for the booked seat
+  releaseSeatWebLock(venueId, seatId, userId).catch(() => {});
 
   if (guestEmails.length > 0 && created.length > 0) {
     await prisma.bookingGuest

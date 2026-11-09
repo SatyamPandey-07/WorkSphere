@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { refreshCsrfToken } from "@/hooks/useCsrfToken";
 import { CSRF_HEADER_NAME } from "@/lib/csrf";
 
@@ -19,15 +20,33 @@ export function ResendOtpButton({
   const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">(
     "idle",
   );
+  const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
 
+  const isSubmittingRef = useRef(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
   const startCooldown = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
     setSecondsLeft(cooldownSeconds);
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
-          clearInterval(interval);
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
           setStatus("idle");
           return 0;
         }
@@ -37,15 +56,19 @@ export function ResendOtpButton({
   };
 
   const handleResend = async () => {
+    if (isLoading || isSubmittingRef.current || secondsLeft > 0) {
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setIsLoading(true);
     setStatus("loading");
     setErrorMsg(null);
 
-    // Always fetch a fresh CSRF token before the resend POST — this is what
-    // the issue explicitly requires: explicitly refresh via the CSRF endpoint
-    // before dispatching the resend request, on all platforms.
-    const csrfToken = await refreshCsrfToken();
-
     try {
+      // Always fetch a fresh CSRF token before the resend POST
+      const csrfToken = await refreshCsrfToken();
+
       const res = await fetch("/api/auth/resend-otp", {
         method: "POST",
         credentials: "same-origin",
@@ -57,7 +80,7 @@ export function ResendOtpButton({
       });
 
       if (res.status === 429) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setErrorMsg(data.error ?? "Too many requests. Please wait.");
         setStatus("error");
         return;
@@ -75,24 +98,42 @@ export function ResendOtpButton({
     } catch {
       setErrorMsg("Network error. Please check your connection and try again.");
       setStatus("error");
+    } finally {
+      isSubmittingRef.current = false;
+      setIsLoading(false);
     }
   };
 
-  const isDisabled = status === "loading" || secondsLeft > 0;
+  const isDisabled = isLoading || status === "loading" || secondsLeft > 0;
 
   return (
     <div className="flex flex-col items-center gap-1">
       <button
         type="button"
+        data-testid="resend-otp-button"
         onClick={handleResend}
         disabled={isDisabled}
+        aria-busy={isLoading}
+        aria-disabled={isDisabled}
         className={className}
       >
-        {status === "loading"
-          ? "Sending…"
-          : secondsLeft > 0
-            ? `Resend in ${secondsLeft}s`
-            : "Resend Verification Code"}
+        {isLoading || status === "loading" ? (
+          <span
+            className="inline-flex items-center justify-center gap-1.5"
+            data-testid="resend-otp-loading"
+          >
+            <Loader2
+              data-testid="resend-otp-spinner"
+              className="w-4 h-4 animate-spin shrink-0"
+              aria-hidden="true"
+            />
+            <span>Sending…</span>
+          </span>
+        ) : secondsLeft > 0 ? (
+          `Resend in ${secondsLeft}s`
+        ) : (
+          "Resend Verification Code"
+        )}
       </button>
       {status === "sent" && (
         <p className="text-sm text-green-500">A new code has been sent.</p>

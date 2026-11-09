@@ -260,4 +260,33 @@ describe("Redis sliding window atomic MULTI (ZREMRANGEBYSCORE + ZCARD)", () => {
     ];
     expect(mockZrem).toHaveBeenCalledWith(key, rejectedZadd[1].member);
   });
+
+  it("enforces strict sliding window sub-bucket eviction on Redis cluster reconnect (#5037)", async () => {
+    const { SlidingWindowLimiter } = require("@/lib/rateLimit/limiters/slidingWindowLimiter");
+    const limiter = new SlidingWindowLimiter({ limit: 3, windowMs: 10_000 });
+    const ip = "reconnect-ip";
+
+    // 1. Simulate Redis Disconnected: Process 2 requests in memory fallback
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    const now1 = 1_700_000_000_000;
+    jest.spyOn(Date, "now").mockReturnValue(now1);
+
+    expect((await limiter.consume(ip)).success).toBe(true);
+    expect((await limiter.consume(ip)).success).toBe(true);
+
+    // 2. Advance time past windowMs (15 seconds later -> in-memory sub-buckets expire)
+    const now2 = now1 + 15_000;
+    jest.spyOn(Date, "now").mockReturnValue(now2);
+
+    // 3. Simulate Redis Reconnected
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+    resetRedisScripts();
+
+    mockMulti.exec.mockResolvedValueOnce([0, 1, 1, 1]);
+
+    // Consuming on reconnect must purge expired sub-buckets and succeed without quota burst
+    const res = await limiter.consume(ip);
+    expect(res.success).toBe(true);
+  });
 });

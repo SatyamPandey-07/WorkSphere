@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { predictQuietHours } from "@/lib/quietHoursPrediction";
+import { apiError } from "@/lib/apiResponse";
 
 /**
  * GET /api/venues/[venueId]/quiet-hours
@@ -23,7 +24,7 @@ export async function GET(
   const { venueId } = await params;
 
   if (!venueId) {
-    return NextResponse.json({ error: "venueId is required" }, { status: 400 });
+    return apiError("venueId is required", 400, "VALIDATION_FAILED");
   }
 
   try {
@@ -31,9 +32,6 @@ export async function GET(
     return NextResponse.json(prediction);
   } catch (error) {
     console.error("[QuietHours] Prediction failed:", error);
-    return NextResponse.json(
-      { error: "Failed to predict quiet hours" },
-      { status: 500 },
-    );
+    return apiError("Failed to predict quiet hours", 500, "INTERNAL_ERROR");
   }
 }

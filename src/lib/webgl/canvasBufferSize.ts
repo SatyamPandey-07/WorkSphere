@@ -20,11 +20,13 @@ export function allocateCanvasDrawingBuffer(
   canvas: HTMLCanvasElement,
   cssWidth?: number,
   cssHeight?: number,
+  maxDpr?: number,
 ): CanvasBufferSize {
-  const dpr =
+  const rawDpr =
     typeof window !== "undefined" && window.devicePixelRatio > 0
       ? window.devicePixelRatio
       : 1;
+  const dpr = maxDpr != null && maxDpr > 0 ? Math.min(rawDpr, maxDpr) : rawDpr;
 
   const hasExplicitW = cssWidth != null && cssWidth > 0;
   const hasExplicitH = cssHeight != null && cssHeight > 0;

@@ -19,6 +19,7 @@ import {
 import usePartySocket from "@/hooks/usePartySocketReconnect";
 import Image from "next/image";
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
+import { CollectionNotesEditor } from "@/components/collections/CollectionNotesEditor";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 interface ShortLink {
@@ -409,10 +410,20 @@ export default function FolderDetailsPage({
                   {folder.color || "#3b82f6"}
                 </span>
               </div>
-              {folder.description && (
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                  {folder.description}
-                </p>
+              {userRole ? (
+                // Shared, conflict-free notes (#3360) replace the
+                // last-write-wins description field.
+                <CollectionNotesEditor
+                  folderId={id}
+                  initialText={folder.description ?? null}
+                  canEdit={userRole === "OWNER" || userRole === "EDITOR"}
+                />
+              ) : (
+                folder.description && (
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                    {folder.description}
+                  </p>
+                )
               )}
             </div>
           </div>

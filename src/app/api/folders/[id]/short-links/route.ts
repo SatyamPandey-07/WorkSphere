@@ -26,7 +26,7 @@ function generateRandomShortCode(): string {
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let result = "";
   for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += chars.charAt(crypto.randomInt(chars.length));
   }
   return result;
 }

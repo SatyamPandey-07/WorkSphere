@@ -63,13 +63,34 @@ export const EventBus = {
   /**
    * Acknowledge and remove successfully processed event from the processing queue
    */
-  ackEvent: async (event: WebhookEvent) => {
+  ackEvent: async (event: WebhookEvent | string) => {
     try {
-      await requireRedis().lrem(
+      const redis = requireRedis();
+      const eventStr = typeof event === "string" ? event : JSON.stringify(event);
+      const removed = await redis.lrem(
         WEBHOOK_PROCESSING_QUEUE_KEY,
         1,
-        JSON.stringify(event),
+        eventStr,
       );
+
+      // If exact string match failed, find by event ID across processing items
+      if (removed === 0 && typeof event !== "string" && event?.id) {
+        const processingEvents = await redis.lrange(
+          WEBHOOK_PROCESSING_QUEUE_KEY,
+          0,
+          -1,
+        );
+        for (const item of processingEvents) {
+          if (!item) continue;
+          try {
+            const parsed = typeof item === "string" ? JSON.parse(item) : item;
+            if (parsed && parsed.id === event.id) {
+              await redis.lrem(WEBHOOK_PROCESSING_QUEUE_KEY, 1, item);
+              break;
+            }
+          } catch {}
+        }
+      }
     } catch (error) {
       console.error("[EventBus] Failed to acknowledge event:", error);
     }

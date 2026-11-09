@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { rateLimit } from "@/lib/rateLimit";
 import { recordCheckIn, CHECK_IN_TTL_MS } from "@/lib/checkIn";
+import { applyPrivacyFilter } from "@/lib/privacy/differentialPrivacy";
+import { apiError } from "@/lib/apiResponse";
 
 type RouteContext = { params: Promise<{ venueId: string }> };
 
@@ -11,13 +13,14 @@ type RouteContext = { params: Promise<{ venueId: string }> };
 export async function POST(_req: Request, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401, "UNAUTHORIZED");
   }
 
   if (!(await rateLimit(`check-in:${userId}`, 10))) {
-    return NextResponse.json(
-      { error: "Too many check-ins. Please wait a minute." },
-      { status: 429 },
+    return apiError(
+      "Too many check-ins. Please wait a minute.",
+      429,
+      "RATE_LIMITED",
     );
   }
 
@@ -27,7 +30,7 @@ export async function POST(_req: Request, context: RouteContext) {
     select: { id: true, name: true, latitude: true, longitude: true },
   });
   if (!venue) {
-    return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+    return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
   }
 
   try {
@@ -36,9 +39,10 @@ export async function POST(_req: Request, context: RouteContext) {
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     console.error("[check-in] failed:", error);
-    return NextResponse.json(
-      { error: "Check-in failed. Please try again." },
-      { status: 500 },
+    return apiError(
+      "Check-in failed. Please try again.",
+      500,
+      "INTERNAL_ERROR",
     );
   }
 }
@@ -47,7 +51,7 @@ export async function POST(_req: Request, context: RouteContext) {
 export async function DELETE(_req: Request, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401, "UNAUTHORIZED");
   }
 
   const { venueId } = await context.params;
@@ -86,8 +90,13 @@ export async function GET(_req: Request, context: RouteContext) {
       : null,
   ]);
 
+  // Apply differential privacy filter to public venue occupancy queries 
+  // when active visitors are below threshold N < 10
+  const maxCapacity = 1000; // arbitrary max capacity for clamping
+  const noisyActiveCount = applyPrivacyFilter(activeCount, maxCapacity, 1.0, 10);
+
   return NextResponse.json({
-    activeCount,
+    activeCount: Math.max(0, noisyActiveCount),
     checkedIn: Boolean(mine),
     expiresAt: mine?.expiresAt ?? null,
     ttlMinutes: CHECK_IN_TTL_MS / 60_000,

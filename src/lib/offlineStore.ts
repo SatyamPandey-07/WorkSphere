@@ -1,17 +1,47 @@
-export { withWebLock } from "./webLock";
+/**
+ * @deprecated Standalone offlineStore.ts is deprecated in favor of unified offline storage in @/lib/offline.
+ * Import directly from `@/lib/offline` instead.
+ */
+
+export { withWebLock, LockTimeoutError, type WebLockOptions } from "./webLock";
 import { withWebLock } from "./webLock";
+import { syncQueueManager } from "./offline/SyncQueueManager";
+
+// Register checkin handler with consolidated SyncQueueManager
+syncQueueManager.registerHandler("checkin", async (item) => {
+  const payload = item.payload as { venueId: string };
+  if (!payload?.venueId) return;
+
+  const res = await fetch(`/api/venues/${encodeURIComponent(payload.venueId)}/check-in`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timestamp: item.timestamp }),
+  });
+  if (!res.ok) {
+    throw new Error(`Check-in sync failed: ${res.statusText}`);
+  }
+});
+
+// Register amenity_vote handler with consolidated SyncQueueManager
+syncQueueManager.registerHandler("amenity_vote", async (item) => {
+  const payload = item.payload as { venueId: string; amenityId?: string; vote?: number };
+  if (!payload?.venueId) return;
+
+  const res = await fetch(`/api/venues/${encodeURIComponent(payload.venueId)}/amenity-votes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Amenity vote sync failed: ${res.statusText}`);
+  }
+});
+
 const STORE_NAME = "favorites-outbox";
 const CHECKIN_STORE_NAME = "checkins-outbox";
 export const TAG_STORE_NAME = "favorite-tags-outbox";
 const DB_NAME = "WorkSphereOfflineDB";
 
-/**
- * Maximum number of times the service worker will attempt to sync a queued
- * action before giving up. Once an action hits this count, it is removed
- * from the outbox and the user is notified via a postMessage to open
- * clients (see public/sw.js `syncFavoritesOutbox`) — it is never silently
- * dropped. (Issue #712)
- */
 export const MAX_SYNC_RETRIES = 3;
 
 export interface OfflineAction {
@@ -97,11 +127,57 @@ export function getDB(): Promise<IDBDatabase> {
 
   // Slow path — first caller: open the database and cache the Promise.
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        dbInstance = null;
+        dbPromise = null;
+        console.warn("[OfflineStore] IndexedDB open timed out (likely Safari Private Browsing)");
+        reject(new DOMException("IndexedDB open timed out", "SecurityError"));
+      }
+    }, 3000);
+
     try {
       const request = indexedDB.open(DB_NAME, 3);
 
+      request.onblocked = () => {
+        console.warn("[OfflineStore] Database upgrade blocked by open connection, closing inactive connections");
+        if (dbInstance) {
+          try {
+            dbInstance.close();
+          } catch {
+            // ignore
+          }
+          dbInstance = null;
+          dbPromise = null;
+        }
+      };
+
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+
+        if (transaction) {
+          transaction.onabort = (e) => {
+            console.warn("[OfflineStore] Upgrade transaction aborted", transaction.error || e);
+          };
+          transaction.onerror = (e) => {
+            console.warn("[OfflineStore] Upgrade transaction error", transaction.error || e);
+          };
+        }
+
+        db.onversionchange = () => {
+          console.warn("[OfflineStore] Database version change during upgrade, closing connection gracefully");
+          try {
+            db.close();
+          } catch {
+            // ignore
+          }
+          dbInstance = null;
+          dbPromise = null;
+        };
+
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, {
             keyPath: "id",
@@ -122,18 +198,22 @@ export function getDB(): Promise<IDBDatabase> {
         }
       };
 
-      request.onblocked = () => {
-        console.warn("[OfflineStore] Database upgrade blocked");
-      };
-
       request.onsuccess = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         const db = request.result;
 
         // Handle external schema upgrades (e.g. another tab calling a higher
         // DB version).  Close the stale connection and clear the singleton so
         // the next getDB() call re-opens with the new version.
         db.onversionchange = () => {
-          db.close();
+          console.warn("[OfflineStore] Database version change detected, closing connection gracefully");
+          try {
+            db.close();
+          } catch {
+            // ignore
+          }
           dbInstance = null;
           dbPromise = null;
         };
@@ -144,16 +224,31 @@ export function getDB(): Promise<IDBDatabase> {
       };
 
       request.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         // Clear both variables so the next getDB() call starts fresh.
+        if (dbInstance) {
+          try {
+            dbInstance.close();
+          } catch {
+            // ignore
+          }
+        }
         dbInstance = null;
         dbPromise = null;
         const err = request.error || new Error("Unknown IndexedDB error");
         if (err.name === "SecurityError") {
           showPrivateBrowsingAlert();
+        } else if (err.name === "AbortError") {
+          console.warn("[OfflineStore] Transaction abort error during schema upgrade handled gracefully", err);
         }
         reject(err);
       };
     } catch (err: any) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
       dbInstance = null;
       dbPromise = null;
       if (err.name === "SecurityError") {
@@ -170,6 +265,7 @@ export function getDB(): Promise<IDBDatabase> {
  * Pushes a target action into the client IndexedDB transaction queue.
  * Wrapped with Web Locks API to serialize multi-tab storage access (#910),
  * now sharing the same lock as offlineStorage.ts (fix for #829).
+ * @deprecated Use @/lib/offline instead.
  */
 export async function queueOfflineFavorite(
   venueId: string,
@@ -179,50 +275,67 @@ export async function queueOfflineFavorite(
     try {
       const db = await getDB();
 
-      // Check for existing identical action before inserting
-      const existing = await new Promise<OfflineAction | undefined>(
-        (resolve, reject) => {
-          const tx = db.transaction(STORE_NAME, "readonly");
-          const store = tx.objectStore(STORE_NAME);
-          const request = store.getAll();
-          request.onsuccess = () =>
-            resolve(
-              (request.result || []).find(
-                (a) => a.venueId === venueId && a.action === action,
-              ),
-            );
-          request.onerror = () => reject(request.error);
-        },
-      );
-      if (existing) return;
-
       return new Promise<void>((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, "readwrite");
         const store = tx.objectStore(STORE_NAME);
-        store.add({
-          venueId,
-          action,
-          timestamp: Date.now(),
-          retryCount: 0,
-        });
+        const request = store.getAll();
+
+        request.onsuccess = () => {
+          const queued = (request.result || []) as OfflineAction[];
+
+          const sameVenue = queued.filter(
+            (item) => item.venueId === venueId,
+          );
+
+          const existing = sameVenue[0];
+
+          if (existing) {
+            // Keep only the latest intended state for this venue.
+            store.put({
+              ...existing,
+              action,
+              timestamp: Date.now(),
+              retryCount: 0,
+            });
+
+            // Remove any older duplicate entries for this venue.
+            for (const item of sameVenue.slice(1)) {
+              if (item.id !== undefined) {
+                store.delete(item.id);
+              }
+            }
+          } else {
+            store.add({
+              venueId,
+              action,
+              timestamp: Date.now(),
+              retryCount: 0,
+            });
+          }
+        };
+
+        request.onerror = () => reject(request.error);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
       });
     } catch (err: any) {
       console.error("Failed to queue offline action:", err);
+
       if (
         err.name === "SecurityError" ||
         String(err.message).includes("SecurityError")
       ) {
         return;
       }
-      throw err; // let the caller (UI / service worker) know the write did not happen
+
+      throw err;
     }
   });
 }
-
-/**
+ /**
  * Retrieves all currently queued actions awaiting synchronization
+ * @deprecated Use @/lib/offline instead.
  */
 export async function getQueuedFavorites(): Promise<OfflineAction[]> {
   return withWebLock(async () => {
@@ -316,8 +429,10 @@ export async function restoreFailedPayload(id: number): Promise<boolean> {
 
 /**
  * Clears an action from the store once it has been processed
+ * @deprecated Use @/lib/offline instead.
  */
 export async function dequeueOfflineAction(id: number): Promise<void> {
+  if (id === undefined || id === null || isNaN(id)) return;
   return withWebLock(async () => {
     try {
       const db = await getDB();
@@ -336,6 +451,7 @@ export async function dequeueOfflineAction(id: number): Promise<void> {
 
 /**
  * Pushes a check-in action into the client IndexedDB checkin queue.
+ * @deprecated Use @/lib/offline instead.
  */
 export async function queueOfflineCheckIn(venueId: string): Promise<void> {
   return withWebLock(async () => {
@@ -363,6 +479,13 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
           timestamp: Date.now(),
           retryCount: 0,
         });
+        void syncQueueManager
+          .enqueue<OfflineCheckIn>({
+            entity: "checkin",
+            action: "create",
+            payload: { venueId, timestamp: Date.now() },
+          })
+          .catch(() => {});
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
@@ -375,6 +498,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
 
 /**
  * Retrieves all queued check-ins
+ * @deprecated Use @/lib/offline instead.
  */
 export async function getQueuedCheckIns(): Promise<OfflineCheckIn[]> {
   return withWebLock(async () => {
@@ -396,6 +520,7 @@ export async function getQueuedCheckIns(): Promise<OfflineCheckIn[]> {
 
 /**
  * Records a failed sync attempt for a queued check-in
+ * @deprecated Use @/lib/offline instead.
  */
 export async function incrementCheckInRetryCount(
   id: number,
@@ -430,6 +555,7 @@ export async function incrementCheckInRetryCount(
 
 /**
  * Clears a check-in from the store
+ * @deprecated Use @/lib/offline instead.
  */
 export async function dequeueOfflineCheckIn(id: number): Promise<void> {
   return withWebLock(async () => {

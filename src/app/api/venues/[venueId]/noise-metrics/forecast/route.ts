@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateNoiseForecast } from "@/lib/noiseForecast";
+import { apiError } from "@/lib/apiResponse";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ venueId: string }> },
 ) {
   try {
@@ -17,7 +18,7 @@ export async function GET(
     });
 
     if (!venue) {
-      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     const ratings = await prisma.venueRating.findMany({
@@ -36,7 +37,10 @@ export async function GET(
       timestamp: r.createdAt,
     }));
 
-    const result = generateNoiseForecast(rawData);
+    // Bucket by the caller's local hour; generateNoiseForecast ignores an
+    // invalid zone and falls back to the server's.
+    const timeZone = new URL(request.url).searchParams.get("tz") ?? undefined;
+    const result = generateNoiseForecast(rawData, timeZone);
 
     return NextResponse.json(result);
   } catch (error) {
@@ -44,9 +48,6 @@ export async function GET(
       "GET /api/venues/[venueId]/noise-metrics/forecast error:",
       error,
     );
-    return NextResponse.json(
-      { error: "Failed to generate noise forecast" },
-      { status: 500 },
-    );
+    return apiError("Failed to generate noise forecast", 500, "INTERNAL_ERROR");
   }
 }

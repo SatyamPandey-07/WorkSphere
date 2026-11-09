@@ -15,12 +15,19 @@ import {
   Download,
   UserPlus,
   Repeat,
+  AlertCircle,
 } from "lucide-react";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
+import { generateRecurringDates } from "@/lib/booking/recurrence";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
 import FloorPlanViewer3D from "@/components/floorplan/FloorPlanViewer3D";
 import { apiFetch } from "@/lib/apiClient";
 import { useRateLimit } from "@/hooks/useRateLimit";
+import { SeatOccupancyHeatmap } from "@/components/venue/SeatOccupancyHeatmap";
+import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
+import { useSeatHoldLock } from "@/hooks/useSeatHoldLock";
+import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
+import { RescheduleModal } from "@/components/bookings/RescheduleModal";
 
 type Seat = {
   id: string;
@@ -52,6 +59,57 @@ function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+export const QUICK_DURATION_PILLS = [
+  { label: "1 hr", minutes: 60 },
+  { label: "2 hrs", minutes: 120 },
+  { label: "4 hrs", minutes: 240 },
+  { label: "Full Day", minutes: 480 },
+] as const;
+
+export function formatReservationEndTime(
+  startTime: string,
+  durationMinutes: number,
+): string {
+  if (!startTime || !startTime.includes(":")) return "";
+  const [h, m] = startTime.split(":").map(Number);
+  const totalMinutes = (h || 0) * 60 + (m || 0) + durationMinutes;
+  const endH = Math.floor(totalMinutes / 60) % 24;
+  const endM = totalMinutes % 60;
+  return `${endH.toString().padStart(2, "0")}:${endM.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Clamps seat count between 1 and available capacity when capacity > 0.
+ * If capacity is 0, returns 0.
+ */
+export function clampSeatCount(count: number, capacity: number): number {
+  if (capacity <= 0) return 0;
+  return Math.min(Math.max(1, count), capacity);
+}
+
+/**
+ * Decrements seat count, ensuring it never drops below 1 when capacity > 0,
+ * and returns 0 when capacity is 0 (preventing negative values).
+ */
+export function decrementSeatCount(
+  currentCount: number,
+  capacity: number,
+): number {
+  if (capacity <= 0) return 0;
+  return Math.max(1, currentCount - 1);
+}
+
+/**
+ * Increments seat count up to the maximum available capacity.
+ */
+export function incrementSeatCount(
+  currentCount: number,
+  capacity: number,
+): number {
+  if (capacity <= 0) return 0;
+  return Math.min(capacity, Math.max(1, currentCount + 1));
+}
+
 export default function ReservationClient({ venue }: { venue: Venue }) {
   const retryAfter = useRateLimit("book");
   const [date, setDate] = useState(todayString());
@@ -59,11 +117,13 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const [duration, setDuration] = useState(60);
   const [seats, setSeats] = useState<Seat[]>([]);
   const [selectedSeat, setSelectedSeat] = useState<string | null>(null);
+  const [seatCount, setSeatCount] = useState(1);
   const [amenities, setAmenities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
+  const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [guests, setGuests] = useState<GuestEntry[]>([]);
   const [recurringEnabled, setRecurringEnabled] = useState(false);
   const [frequency, setFrequency] = useState<"daily" | "weekly" | "monthly">(
@@ -71,6 +131,32 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   );
   const [endDate, setEndDate] = useState("");
   const [occurrences, setOccurrences] = useState<number>(12);
+
+  // Distributed real-time seat-hold locking (#3522)
+  const {
+    activeHolds,
+    myHeldSeatId,
+    remainingSeconds,
+    acquireHold,
+    releaseHold,
+    confirmCheckout,
+    isSeatHeldByOther,
+  } = useSeatHoldLock({
+    venueId: venue.id,
+    onHoldExpired: (seatId) => {
+      if (selectedSeat === seatId) {
+        setSelectedSeat(null);
+        setMessage(
+          "Your 5-minute checkout hold expired. The seat has been released.",
+        );
+      }
+    },
+    onHoldRejected: (_seatId, _reason, _heldBy, heldByName) => {
+      setMessage(
+        `This seat is temporarily on hold by ${heldByName || "another user"} during checkout.`,
+      );
+    },
+  });
 
   const loadAvailability = useCallback(async () => {
     setLoading(true);
@@ -102,6 +188,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
           (seat: Seat) => seat.id === selectedSeat && seat.available,
         )
       ) {
+        releaseHold(selectedSeat).catch(() => {});
         setSelectedSeat(null);
       }
     } catch (error) {
@@ -111,7 +198,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     } finally {
       setLoading(false);
     }
-  }, [venue.id, date, time, duration, selectedSeat]);
+  }, [venue.id, date, time, duration, selectedSeat, releaseHold]);
 
   useEffect(() => {
     loadAvailability();
@@ -160,36 +247,40 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     [seats, selectedSeat],
   );
 
+  const availableCapacity = useMemo(
+    () => seats.filter((seat) => seat.available).length,
+    [seats],
+  );
+
+  useEffect(() => {
+    if (availableCapacity === 0) {
+      setSeatCount(0);
+    } else {
+      setSeatCount((prev) =>
+        clampSeatCount(prev === 0 ? 1 : prev, availableCapacity),
+      );
+    }
+  }, [availableCapacity]);
+
+  // Uses the same generator as POST /api/reservations/recurring-book so the
+  // preview always matches the dates that will actually be booked.
   const previewDates = useMemo(() => {
     if (!recurringEnabled) return [];
-    const dates: string[] = [];
-    const start = new Date(date + "T00:00:00Z");
-    const limit = endDate ? new Date(endDate + "T00:00:00Z") : null;
-    const maxOccurrences = occurrences ?? 52;
-    const current = new Date(start);
-    let count = 0;
-
-    while (count < maxOccurrences) {
-      if (limit && current > limit) break;
-      dates.push(current.toISOString().slice(0, 10));
-      count++;
-      switch (frequency) {
-        case "daily":
-          current.setDate(current.getDate() + 1);
-          break;
-        case "weekly":
-          current.setDate(current.getDate() + 7);
-          break;
-        case "monthly":
-          current.setMonth(current.getMonth() + 1);
-          break;
-      }
-    }
-    return dates;
+    return generateRecurringDates(
+      date,
+      frequency,
+      endDate || null,
+      occurrences,
+    );
   }, [recurringEnabled, date, frequency, endDate, occurrences]);
 
   async function reserve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (availableCapacity === 0) {
+      setMessage("No seats available for this date and time.");
+      return;
+    }
 
     if (!selected) {
       setMessage("Choose an available desk or room first.");
@@ -258,6 +349,9 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       setConfirmationId(payload.confirmationId);
     }
 
+    if (selectedSeat) {
+      await confirmCheckout(selectedSeat);
+    }
     setSelectedSeat(null);
     setBooking(false);
     setGuests([]);
@@ -294,6 +388,19 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             <p className="font-semibold">{message}</p>
             {confirmationId && (
               <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-600/10 px-4 py-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-violet-300/80">
+                    Booking reference
+                  </span>
+                  <span className="font-mono text-sm text-violet-100">
+                    {confirmationId}
+                  </span>
+                  <CopyBookingReferenceButton
+                    referenceId={confirmationId}
+                    tooltipPosition="top"
+                    className="!px-2 !py-1 text-xs font-semibold !bg-violet-500/20 !text-violet-200 !border-violet-500/30 hover:!bg-violet-500/30"
+                  />
+                </div>
                 <a
                   href={
                     getCalendarUrls(
@@ -327,6 +434,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   <Mail className="h-4 w-4" /> Add to Outlook
                 </a>
                 <button
+                  type="button"
                   onClick={() =>
                     downloadICS(
                       venue.name,
@@ -338,290 +446,550 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                     )
                   }
                   className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10 transition-colors text-zinc-300"
+                  aria-label="Add to Calendar (.ics)"
                 >
-                  <Download className="h-4 w-4" /> Download .ics
+                  <Download className="h-4 w-4" /> Add to Calendar (.ics)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRescheduleOpen(true)}
+                  className="flex items-center gap-2 rounded-xl bg-violet-600/20 border border-violet-500/30 px-4 py-2 hover:bg-violet-600/40 transition-colors text-violet-200"
+                  aria-label="Reschedule or extend booking"
+                >
+                  <RefreshCw className="h-4 w-4" /> Reschedule / Extend
                 </button>
               </div>
             )}
           </div>
         )}
 
-        <div className="grid gap-6 xl:grid-cols-[1.5fr_.7fr]">
-          <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:p-7">
-            <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Interactive layout</h2>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Select a green desk. Changes made by other viewers appear
-                  live.
-                </p>
-              </div>
+        <div className="space-y-6">
+          <VenueLiveVibeWidget venueId={venue.id} />
 
-              <button
-                onClick={loadAvailability}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-                />
-                Refresh
-              </button>
-            </div>
+          <SeatOccupancyHeatmap
+            venueId={venue.id}
+            selectedDate={date}
+            selectedTime={time}
+            onSelectSlot={({ date: selectedDate, time: selectedTime }) => {
+              setDate(selectedDate);
+              setTime(selectedTime);
+            }}
+          />
 
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0f]">
-              <FloorPlanViewer3D
-                seats={seats}
-                selectedSeat={selectedSeat}
-                onSelectSeat={(id) => {
-                  if (id === null) {
-                    setSelectedSeat(null);
-                    return;
-                  }
-                  const seat = seats.find((s) => s.id === id);
-                  if (seat && seat.available) {
-                    setSelectedSeat(id);
-                  }
-                }}
-              />
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-4 text-xs text-zinc-400">
-              <Legend color="bg-green-800" label="Available desk" />
-              <Legend color="bg-cyan-800" label="Available room" />
-              <Legend color="bg-violet-500" label="Selected" />
-              <Legend color="bg-zinc-700" label="Taken" />
-            </div>
-          </section>
-
-          <form
-            onSubmit={reserve}
-            className="h-fit rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:p-6"
-          >
-            <h2 className="text-xl font-semibold">Reservation details</h2>
-
-            <div className="mt-6 space-y-4">
-              <Field label="Date" icon={<CalendarDays className="h-4 w-4" />}>
-                <input
-                  type="date"
-                  min={todayString()}
-                  value={date}
-                  onChange={(event) => setDate(event.target.value)}
-                  className="reserve-input"
-                />
-              </Field>
-
-              <Field label="Start time" icon={<Clock3 className="h-4 w-4" />}>
-                <input
-                  type="time"
-                  value={time}
-                  onChange={(event) => setTime(event.target.value)}
-                  className="reserve-input"
-                />
-              </Field>
-
-              <Field label="Duration" icon={<Clock3 className="h-4 w-4" />}>
-                <select
-                  value={duration}
-                  onChange={(event) => setDuration(Number(event.target.value))}
-                  className="reserve-input"
-                >
-                  <option value={30}>30 minutes</option>
-                  <option value={60}>1 hour</option>
-                  <option value={90}>1.5 hours</option>
-                  <option value={120}>2 hours</option>
-                  <option value={240}>4 hours</option>
-                  <option value={480}>Full day</option>
-                </select>
-              </Field>
-            </div>
-
-            <div className="mt-6">
-              <p className="text-sm text-zinc-400">Amenities needed</p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {amenityOptions.map((option) => {
-                  const enabled = amenities.includes(option.id);
-                  const Icon = option.icon;
-
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() =>
-                        setAmenities((current) =>
-                          enabled
-                            ? current.filter((item) => item !== option.id)
-                            : [...current, option.id],
-                        )
-                      }
-                      className={`rounded-xl border p-3 text-left text-xs transition ${
-                        enabled
-                          ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
-                          : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
-                      }`}
-                    >
-                      <Icon className="mb-2 h-4 w-4" />
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Recurring Booking */}
-            <div className="mt-6">
-              <button
-                type="button"
-                onClick={() => setRecurringEnabled(!recurringEnabled)}
-                className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left text-xs transition ${
-                  recurringEnabled
-                    ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
-                }`}
-              >
-                <Repeat className="h-4 w-4" />
+          <div className="grid gap-6 xl:grid-cols-[1.5fr_.7fr]">
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:p-7">
+              <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="font-medium">Recurring booking</p>
-                  <p className="mt-0.5 text-[10px] opacity-70">
-                    Book this workspace on a recurring schedule
+                  <h2 className="text-xl font-semibold">Interactive layout</h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Select a green desk. Changes made by other viewers appear
+                    live.
                   </p>
                 </div>
-              </button>
 
-              {recurringEnabled && (
-                <div className="mt-3 space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                  <Field
-                    label="Frequency"
-                    icon={<Repeat className="h-4 w-4" />}
-                  >
-                    <select
-                      value={frequency}
-                      onChange={(event) =>
-                        setFrequency(
-                          event.target.value as "daily" | "weekly" | "monthly",
-                        )
+                <button
+                  onClick={loadAvailability}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                  />
+                  Refresh
+                </button>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0f]">
+                <FloorPlanViewer3D
+                  seats={seats}
+                  selectedSeat={selectedSeat}
+                  activeHolds={activeHolds}
+                  onHeldSeatClick={(seat, hold) => {
+                    setMessage(
+                      `Seat ${seat.seatNumber} is currently on hold by ${hold.heldByName || "another user"} (${hold.remainingSeconds ?? 300}s remaining).`,
+                    );
+                  }}
+                  onSelectSeat={async (id) => {
+                    if (id === null) {
+                      if (selectedSeat) {
+                        await releaseHold(selectedSeat);
                       }
-                      className="reserve-input"
+                      setSelectedSeat(null);
+                      return;
+                    }
+                    const seat = seats.find((s) => s.id === id);
+                    if (!seat || !seat.available) return;
+
+                    if (isSeatHeldByOther(id)) {
+                      setMessage(
+                        `Seat ${seat.seatNumber} is currently held by someone else.`,
+                      );
+                      return;
+                    }
+
+                    if (selectedSeat && selectedSeat !== id) {
+                      await releaseHold(selectedSeat);
+                    }
+
+                    const acquired = await acquireHold(id);
+                    if (acquired) {
+                      setSelectedSeat(id);
+                      setMessage("");
+                    } else {
+                      setMessage(
+                        `Could not hold seat ${seat.seatNumber}: currently held by someone else.`,
+                      );
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-4 text-xs text-zinc-400">
+                <Legend color="bg-green-800" label="Available desk" />
+                <Legend color="bg-cyan-800" label="Available room" />
+                <Legend color="bg-violet-500" label="Selected" />
+                <Legend color="bg-zinc-700" label="Taken" />
+              </div>
+            </section>
+
+            <form
+              onSubmit={reserve}
+              className="h-fit rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:p-6"
+            >
+              <h2 className="text-xl font-semibold">Reservation details</h2>
+
+              {/* 5-minute Seat Hold Active Countdown Indicator (#3522) */}
+              {selectedSeat && myHeldSeatId === selectedSeat && (
+                <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+                  <span className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
+                    <span>
+                      Seat{" "}
+                      <strong>
+                        {seats.find((s) => s.id === selectedSeat)?.seatNumber}
+                      </strong>{" "}
+                      locked for checkout
+                    </span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold text-amber-300">
+                      {Math.floor(remainingSeconds / 60)}:
+                      {(remainingSeconds % 60).toString().padStart(2, "0")}{" "}
+                      remaining
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (selectedSeat) {
+                          await releaseHold(selectedSeat);
+                          setSelectedSeat(null);
+                          setMessage("Seat hold released.");
+                        }
+                      }}
+                      className="rounded-md border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/30 transition-colors"
+                      title="Release seat hold lock"
                     >
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
+                      Release
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 space-y-4">
+                <Field label="Date" icon={<CalendarDays className="h-4 w-4" />}>
+                  <input
+                    type="date"
+                    min={todayString()}
+                    value={date}
+                    onChange={(event) => {
+                      if (selectedSeat) {
+                        releaseHold(selectedSeat).catch(() => {});
+                        setSelectedSeat(null);
+                      }
+                      setDate(event.target.value);
+                    }}
+                    className="reserve-input"
+                  />
+                </Field>
+
+                <Field label="Start time" icon={<Clock3 className="h-4 w-4" />}>
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={(event) => {
+                      if (selectedSeat) {
+                        releaseHold(selectedSeat).catch(() => {});
+                        setSelectedSeat(null);
+                      }
+                      setTime(event.target.value);
+                    }}
+                    className="reserve-input"
+                  />
+                </Field>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-sm text-zinc-400">
+                      <Clock3 className="h-4 w-4" />
+                      Duration
+                    </span>
+                    <span className="font-mono text-xs text-zinc-400">
+                      Ends at {formatReservationEndTime(time, duration)}
+                    </span>
+                  </div>
+
+                  {/* Quick-select duration pills */}
+                  <div
+                    className="flex flex-wrap gap-2 pt-0.5 pb-1"
+                    data-testid="duration-pills"
+                  >
+                    {QUICK_DURATION_PILLS.map((pill) => {
+                      const isActive = duration === pill.minutes;
+                      return (
+                        <button
+                          key={pill.label}
+                          type="button"
+                          onClick={() => {
+                            if (selectedSeat && duration !== pill.minutes) {
+                              releaseHold(selectedSeat).catch(() => {});
+                              setSelectedSeat(null);
+                            }
+                            setDuration(pill.minutes);
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                            isActive
+                              ? "bg-violet-600 text-white shadow-sm shadow-violet-500/25 ring-1 ring-violet-400"
+                              : "border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                          }`}
+                          aria-pressed={isActive}
+                          data-testid={`duration-pill-${pill.minutes}`}
+                        >
+                          {pill.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <Field label="End time" icon={<Clock3 className="h-4 w-4" />}>
+                    <select
+                      value={duration}
+                      onChange={(event) => {
+                        const newDur = Number(event.target.value);
+                        if (selectedSeat && duration !== newDur) {
+                          releaseHold(selectedSeat).catch(() => {});
+                          setSelectedSeat(null);
+                        }
+                        setDuration(newDur);
+                      }}
+                      className="reserve-input"
+                      aria-label="End time"
+                      data-testid="end-time-select"
+                    >
+                      <option value={30}>
+                        {formatReservationEndTime(time, 30)} (30 minutes)
+                      </option>
+                      <option value={60}>
+                        {formatReservationEndTime(time, 60)} (1 hour)
+                      </option>
+                      <option value={90}>
+                        {formatReservationEndTime(time, 90)} (1.5 hours)
+                      </option>
+                      <option value={120}>
+                        {formatReservationEndTime(time, 120)} (2 hours)
+                      </option>
+                      <option value={240}>
+                        {formatReservationEndTime(time, 240)} (4 hours)
+                      </option>
+                      <option value={480}>
+                        {formatReservationEndTime(time, 480)} (Full day)
+                      </option>
                     </select>
                   </Field>
-
-                  <Field
-                    label="End date (optional)"
-                    icon={<CalendarDays className="h-4 w-4" />}
-                  >
-                    <input
-                      type="date"
-                      min={date}
-                      value={endDate}
-                      onChange={(event) => setEndDate(event.target.value)}
-                      className="reserve-input"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Number of occurrences (max 52)"
-                    icon={<CalendarDays className="h-4 w-4" />}
-                  >
-                    <input
-                      type="number"
-                      min={1}
-                      max={52}
-                      value={occurrences}
-                      onChange={(event) =>
-                        setOccurrences(
-                          Math.min(52, Math.max(1, Number(event.target.value))),
-                        )
-                      }
-                      disabled={!!endDate}
-                      className="reserve-input disabled:opacity-40"
-                    />
-                  </Field>
-
-                  {previewDates.length > 0 && (
-                    <div className="mt-2">
-                      <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
-                        Preview ({previewDates.length} dates)
-                      </p>
-                      <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
-                        {previewDates.map((d) => (
-                          <span
-                            key={d}
-                            className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-zinc-400"
-                          >
-                            {d}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
-              )}
-            </div>
 
-            {/* Guest Invitations */}
-            <div className="mt-6">
-              <div className="flex items-center gap-2 mb-3">
-                <UserPlus className="h-4 w-4 text-zinc-400" />
-                <p className="text-sm text-zinc-400">Invite guests</p>
-              </div>
-              <GuestsInput
-                guests={guests}
-                onChange={setGuests}
-                maxGuests={10}
-                disabled={booking}
-              />
-            </div>
-
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Selected workspace
-              </p>
-
-              {selected ? (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-semibold">
-                      {selected.seatNumber}
+                {/* Seats / Capacity Selector */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-sm text-zinc-400">
+                      <UsersRound className="h-4 w-4" />
+                      Seats needed
                     </span>
-                    <Check className="h-5 w-5 text-emerald-300" />
+                    <span
+                      className={`text-xs font-medium ${
+                        availableCapacity === 0
+                          ? "text-red-400"
+                          : "text-zinc-400"
+                      }`}
+                      data-testid="capacity-status"
+                    >
+                      {availableCapacity === 0
+                        ? "No seats available"
+                        : `${availableCapacity} available`}
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs capitalize text-zinc-500">
-                    {selected.type.toLowerCase().replaceAll("_", " ")}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {selected.amenities.map((amenity) => (
-                      <span
-                        key={amenity}
-                        className="rounded-full bg-white/5 px-2 py-1 text-[10px] text-zinc-400"
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center rounded-xl border border-white/10 bg-white/5 p-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSeatCount((prev) =>
+                            decrementSeatCount(prev, availableCapacity),
+                          )
+                        }
+                        disabled={availableCapacity === 0 || seatCount <= 1}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 transition"
+                        aria-label="Decrease seat count"
+                        data-testid="seat-decrement-btn"
                       >
-                        {amenity}
+                        -
+                      </button>
+                      <span
+                        className="w-12 text-center font-mono text-sm font-semibold text-white"
+                        data-testid="seat-count-display"
+                      >
+                        {seatCount}
                       </span>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSeatCount((prev) =>
+                            incrementSeatCount(prev, availableCapacity),
+                          )
+                        }
+                        disabled={
+                          availableCapacity === 0 ||
+                          seatCount >= availableCapacity
+                        }
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 transition"
+                        aria-label="Increase seat count"
+                        data-testid="seat-increment-btn"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {availableCapacity === 0 && (
+                      <span className="text-xs font-medium text-red-400">
+                        No seats available
+                      </span>
+                    )}
                   </div>
                 </div>
-              ) : (
-                <p className="mt-3 text-sm text-zinc-500">
-                  Select a green desk or room on the layout.
-                </p>
-              )}
-            </div>
+              </div>
 
-            <button
-              disabled={!selected || booking || retryAfter > 0}
-              className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
-            >
-              {booking
-                ? "Securing workspace..."
-                : retryAfter > 0
-                  ? `Retry in ${retryAfter}s`
-                  : recurringEnabled
-                    ? `Confirm ${previewDates.length} recurring bookings`
-                    : "Confirm reservation"}
-            </button>
-          </form>
+              <div className="mt-6">
+                <p className="text-sm text-zinc-400">Amenities needed</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {amenityOptions.map((option) => {
+                    const enabled = amenities.includes(option.id);
+                    const Icon = option.icon;
+
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() =>
+                          setAmenities((current) =>
+                            enabled
+                              ? current.filter((item) => item !== option.id)
+                              : [...current, option.id],
+                          )
+                        }
+                        className={`rounded-xl border p-3 text-left text-xs transition ${
+                          enabled
+                            ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
+                            : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
+                        }`}
+                      >
+                        <Icon className="mb-2 h-4 w-4" />
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Recurring Booking */}
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={() => setRecurringEnabled(!recurringEnabled)}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left text-xs transition ${
+                    recurringEnabled
+                      ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
+                      : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <Repeat className="h-4 w-4" />
+                  <div>
+                    <p className="font-medium">Recurring booking</p>
+                    <p className="mt-0.5 text-[10px] opacity-70">
+                      Book this workspace on a recurring schedule
+                    </p>
+                  </div>
+                </button>
+
+                {recurringEnabled && (
+                  <div className="mt-3 space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <Field
+                      label="Frequency"
+                      icon={<Repeat className="h-4 w-4" />}
+                    >
+                      <select
+                        value={frequency}
+                        onChange={(event) =>
+                          setFrequency(
+                            event.target.value as
+                              "daily" | "weekly" | "monthly",
+                          )
+                        }
+                        className="reserve-input"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </Field>
+
+                    <Field
+                      label="End date (optional)"
+                      icon={<CalendarDays className="h-4 w-4" />}
+                    >
+                      <input
+                        type="date"
+                        min={date}
+                        value={endDate}
+                        onChange={(event) => setEndDate(event.target.value)}
+                        className="reserve-input"
+                      />
+                    </Field>
+
+                    <Field
+                      label="Number of occurrences (max 52)"
+                      icon={<CalendarDays className="h-4 w-4" />}
+                    >
+                      <input
+                        type="number"
+                        min={1}
+                        max={52}
+                        value={occurrences}
+                        onChange={(event) =>
+                          setOccurrences(
+                            Math.min(
+                              52,
+                              Math.max(1, Number(event.target.value)),
+                            ),
+                          )
+                        }
+                        disabled={!!endDate}
+                        className="reserve-input disabled:opacity-40"
+                      />
+                    </Field>
+
+                    {previewDates.length > 0 && (
+                      <div className="mt-2">
+                        <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                          Preview ({previewDates.length} dates)
+                        </p>
+                        <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                          {previewDates.map((d) => (
+                            <span
+                              key={d}
+                              className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-zinc-400"
+                            >
+                              {d}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Guest Invitations */}
+              <div className="mt-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <UserPlus className="h-4 w-4 text-zinc-400" />
+                  <p className="text-sm text-zinc-400">Invite guests</p>
+                </div>
+                <GuestsInput
+                  guests={guests}
+                  onChange={setGuests}
+                  maxGuests={10}
+                  disabled={booking}
+                />
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-xs uppercase tracking-wider text-zinc-500">
+                  Selected workspace
+                </p>
+
+                {selected ? (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg font-semibold">
+                        {selected.seatNumber}
+                      </span>
+                      <Check className="h-5 w-5 text-emerald-300" />
+                    </div>
+                    <p className="mt-1 text-xs capitalize text-zinc-500">
+                      {selected.type.toLowerCase().replaceAll("_", " ")}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {selected.amenities.map((amenity) => (
+                        <span
+                          key={amenity}
+                          className="rounded-full bg-white/5 px-2 py-1 text-[10px] text-zinc-400"
+                        >
+                          {amenity}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-zinc-500">
+                    Select a green desk or room on the layout.
+                  </p>
+                )}
+              </div>
+
+              {availableCapacity === 0 && (
+                <div
+                  className="mt-4 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400"
+                  data-testid="no-seats-warning"
+                >
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>No seats available</span>
+                </div>
+              )}
+
+              <button
+                disabled={
+                  !selected ||
+                  booking ||
+                  retryAfter > 0 ||
+                  availableCapacity === 0
+                }
+                className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
+                data-testid="confirm-booking-btn"
+              >
+                {availableCapacity === 0
+                  ? "No seats available"
+                  : booking
+                    ? "Securing workspace..."
+                    : retryAfter > 0
+                      ? `Retry in ${retryAfter}s`
+                      : recurringEnabled
+                        ? `Confirm ${previewDates.length} recurring bookings`
+                        : "Confirm reservation"}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 
@@ -643,6 +1011,35 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
           box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
         }
       `}</style>
+
+      <RescheduleModal
+        booking={
+          confirmationId
+            ? {
+                id: confirmationId,
+                confirmationId,
+                date,
+                time,
+                duration,
+                seatNumber: seats.find((s) => s.id === selectedSeat)
+                  ?.seatNumber,
+                seatId: selectedSeat,
+                venue,
+              }
+            : null
+        }
+        isOpen={isRescheduleOpen}
+        onClose={() => setIsRescheduleOpen(false)}
+        onSuccess={(updated) => {
+          setDate(updated.date);
+          setTime(updated.time);
+          setDuration(updated.duration);
+          setMessage(
+            `Booking updated! Rescheduled to ${updated.date} at ${updated.time} (${updated.duration} min).`,
+          );
+          loadAvailability();
+        }}
+      />
     </main>
   );
 }

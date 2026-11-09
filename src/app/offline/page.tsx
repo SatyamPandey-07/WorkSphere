@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { OfflineStorageUsageMeter } from "@/components/offline/OfflineStorageUsageMeter";
 
 export default function OfflinePage() {
   const router = useRouter();
@@ -115,7 +116,11 @@ export default function OfflinePage() {
             What you can still do offline:
           </h2>
           <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50">
+            <Link
+              href="/saved"
+              className="flex items-center gap-3 p-3 rounded-xl bg-white/50 dark:bg-zinc-900/50 border border-zinc-200/50 dark:border-zinc-800/50 hover:bg-white dark:hover:bg-zinc-900 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-black"
+              aria-label="View saved venues"
+            >
               <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
                 <MapPin className="w-5 h-5 text-green-600 dark:text-green-400" />
               </div>
@@ -128,6 +133,11 @@ export default function OfflinePage() {
                 </p>
               </div>
               <ArrowRight className="w-4 h-4 text-zinc-400 ml-auto" />
+            </Link>
+
+            {/* Offline Storage Usage Meter showing bytes used by cached floor plans */}
+            <div className="pt-2 text-left">
+              <OfflineStorageUsageMeter />
             </div>
           </div>
         </div>

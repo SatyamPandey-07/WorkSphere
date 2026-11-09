@@ -108,14 +108,18 @@ export async function POST(req: Request) {
       );
     }
 
-    const { newCounter } = verification.authenticationInfo;
+    const { newCounter, credentialDeviceType, credentialBackedUp } = verification.authenticationInfo;
 
-    // Update signature counter and lastUsedAt timestamp
-    await prisma.passkeyCredential.update({
+    const now = new Date();
+
+    // Update signature counter, backup state, and lastUsedAt timestamp
+    const updatedPasskey = await prisma.passkeyCredential.update({
       where: { id: passkey.id },
       data: {
         counter: BigInt(newCounter),
-        lastUsedAt: new Date(),
+        backedUp: credentialBackedUp ?? passkey.backedUp,
+        deviceType: credentialDeviceType ?? passkey.deviceType,
+        lastUsedAt: now,
       },
     });
 
@@ -147,6 +151,13 @@ export async function POST(req: Request) {
       verified: true,
       userId: passkey.userId,
       signInUrl,
+      credential: {
+        id: updatedPasskey.id,
+        credentialId: updatedPasskey.credentialId,
+        name: updatedPasskey.name,
+        nickname: updatedPasskey.name,
+        lastUsedAt: updatedPasskey.lastUsedAt,
+      },
       user: {
         id: passkey.user.id,
         email: passkey.user.email,

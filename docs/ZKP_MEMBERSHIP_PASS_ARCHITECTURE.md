@@ -75,3 +75,64 @@ The `src/lib/zkp/venueAccessToken.ts` file issues a custom short-lived token. Th
   - Verification is CPU intensive. The `zkp-access` route limits to 10 requests per IP.
   - The `snarkjs.groth16.verify` promise will strictly timeout after 10 seconds to prevent event loop blocking.
 - **Revocation Safety:** A traditional JWT cannot be easily revoked without tracking session state. In this architecture, if a user is banned, their public commitment is added to the revocation root. Because the server runs `isCommitmentRevokedDirectly()`, all subsequent proofs from that user are instantly rejected.
+
+## 7. Client-Side Proof Cache (#3358)
+
+Groth16 proving in the browser takes 1–3 s. The circuit's only public signal
+is the Poseidon commitment, so a proof stays valid for the same credential
+until the circuit keys change. `src/lib/zkp/proofCache.ts` stores proofs in
+IndexedDB, so repeat checks skip proving.
+
+```ts
+import { getOrCreateProof, clearProofCache } from "@/lib/zkp/proofCache";
+
+const { proof, publicSignals, source } = await getOrCreateProof({
+  scope: "premium-membership",
+  commit,                                  // Poseidon commitment (public)
+  generate: () => generateMembershipProof({ identityToken, expectedCommit: commit }),
+});
+// source: "cache" | "stale-cache" | "generated"
+
+await clearProofCache(); // on sign-out / account switch
+```
+
+`provePremiumAccess()` (premium venues) and `StudentDiscountVerification`
+(student discount) both use it.
+
+### Lifecycle
+
+| Entry state | Default | Behaviour |
+| --- | --- | --- |
+| Fresh | < 12 h (`freshMs`) | Served straight from IndexedDB |
+| Stale | 12–24 h | Served immediately; a replacement is proved in the background |
+| Expired | ≥ 24 h (`maxAgeMs`) | Deleted; proved in the foreground |
+
+Concurrent requests for the same credential share a single proving run.
+
+### Keys, epoch and invalidation
+
+- **Key:** `${scope}:${commitment}`. The raw `identityToken` is never stored;
+  the commitment is already public (it is the proof's public signal).
+- **Epoch:** the first 32 hex characters of SHA-256 over
+  `/zkp/verification_key.json`. Rebuilding the circuit or re-running the
+  trusted setup changes the verification key, so every cached proof is
+  invalidated automatically. If the key can't be fetched, nothing is cached.
+- **Credential change:** storing a proof for a new commitment deletes the
+  previous one in the same scope (one active identity per scope).
+- **Server rejection:** a 400/403 from the verifier deletes the cached proof.
+  If the rejected proof came from the cache, the client re-proves once, which
+  covers key rotations the epoch didn't catch.
+- **Integrity:** an entry is only served if `publicSignals[0]` equals the
+  requested commitment and its epoch and expiry check out.
+
+### Security notes
+
+- The verifier binds proofs only to the commitment (no nonce), so a proof
+  was already reusable server-side. Caching does not widen that. It does put
+  a reusable proof at rest in IndexedDB, which is why entries have a hard
+  24-hour expiry and `clearProofCache()` should run on sign-out.
+- The proof reveals nothing beyond the public commitment.
+
+Measured: a repeat check served from the cache takes a few milliseconds of
+IndexedDB time (median well under the 50 ms target in
+`src/__tests__/lib/zkpProofCache.test.ts`), versus 1–3 s to prove.

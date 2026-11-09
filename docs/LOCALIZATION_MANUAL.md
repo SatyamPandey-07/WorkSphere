@@ -4,6 +4,97 @@ This document explains how UI text is translated in WorkSphere, how the
 `src/locales/` translation files are structured, and how to add a new
 language.
 
+---
+
+## ⚡ Quickstart Checklist: Adding a New Locale
+
+Follow this 5-step checklist to add a new language translation to WorkSphere:
+
+1. **Copy the English Template**:
+   Create a new locale file in `src/locales/<lang-code>.json` by duplicating `src/locales/en.json` (e.g., `src/locales/it.json` for Italian or `src/locales/ja.json` for Japanese).
+   ```bash
+   cp src/locales/en.json src/locales/<lang-code>.json
+   ```
+
+2. **Translate Keys**:
+   Translate every string value while preserving all JSON keys, nesting, and interpolation tokens (e.g., `{{count}}`, `{{username}}`). Do not alter or translate the key names.
+
+3. **Register the Locale**:
+   Import your locale file in `src/components/I18nProvider.tsx` (and `src/locales/index.ts` if exporting a centralized resource bundle) and register it in the `resources` map passed to `i18n.init(...)`:
+   ```tsx
+   import it from "../locales/it.json";
+
+   // Inside i18n.init resources:
+   resources: {
+     en: { translation: en },
+     es: { translation: es },
+     fr: { translation: fr },
+     de: { translation: de },
+     hi: { translation: hi },
+     pt: { translation: pt },
+     it: { translation: it }, // <-- add your new locale here
+   }
+   ```
+
+4. **Validate Translations**:
+   Run the translation key parity and JSON syntax validation script:
+   ```bash
+   node -e '
+     const fs = require("fs");
+     const en = JSON.parse(fs.readFileSync("src/locales/en.json", "utf8"));
+     const targetLang = process.argv[1] || "it";
+     const targetPath = `src/locales/${targetLang}.json`;
+     if (!fs.existsSync(targetPath)) { console.error(`Missing ${targetPath}`); process.exit(1); }
+     const target = JSON.parse(fs.readFileSync(targetPath, "utf8"));
+     function checkKeys(base, check, path = "") {
+       for (const key of Object.keys(base)) {
+         const fullKey = path ? `${path}.${key}` : key;
+         if (!(key in check)) console.error(`Missing key: ${fullKey}`);
+         else if (typeof base[key] === "object" && base[key] !== null) checkKeys(base[key], check[key], fullKey);
+       }
+     }
+     checkKeys(en, target);
+     console.log(`Validation completed for ${targetLang}.json`);
+   ' it
+   ```
+   Or verify your JSON formatting with:
+   ```bash
+   npm run lint
+   ```
+
+5. **Test Locally**:
+   Start your development server (`npm run dev`) and test the UI by setting the language in your browser DevTools console:
+   ```js
+   localStorage.setItem("i18nextLng", "<lang-code>");
+   location.reload();
+   ```
+   Verify that all translated strings render correctly without falling back to English or displaying raw keys.
+
+### Pluralization Formatting Guidelines
+
+When adding strings that vary depending on numerical quantity, use i18next's standard plural suffix convention:
+
+- **Singular and Plural suffixes**:
+  - `key` or `key_one`: used when the count is 1.
+  - `key_other`: used when the count is plural (0, 2, 3, ...).
+  - In i18next v21+, `key_one` and `key_other` are preferred for multi-category plurals.
+- **Interpolation Variable**: Always use `{{count}}` inside the message template.
+  ```json
+  {
+    "venue": {
+      "reviewsCount_one": "{{count}} review",
+      "reviewsCount_other": "{{count}} reviews"
+    }
+  }
+  ```
+- **Usage in Components**:
+  ```tsx
+  t("venue.reviewsCount", { count: reviews.length })
+  ```
+- **Language-Specific Rules**: Note that languages like Russian, Polish, or Arabic have additional plural forms (`_few`, `_many`, `_zero`). Refer to the [i18next pluralization documentation](https://www.i18next.com/translation-function/plurals) for locale-specific suffixes.
+
+---
+
 ## 1. Overview
 
 WorkSphere uses [`i18next`](https://www.i18next.com/) together with

@@ -12,9 +12,14 @@ import { POST as POST_SYNC_TAGS } from "@/app/api/favorites/tags/sync/route";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { syncFavoriteTagsBulk } from "@/lib/favoriteTagSync";
+import { resolveVenue } from "@/lib/venueResolver";
 
 jest.mock("@clerk/nextjs/server", () => ({
   auth: jest.fn(),
+}));
+
+jest.mock("@/lib/venueResolver", () => ({
+  resolveVenue: jest.fn(),
 }));
 
 jest.mock("@/lib/auth", () => ({
@@ -40,6 +45,7 @@ jest.mock("@/lib/prisma", () => ({
     venue: {
       upsert: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
     },
     favoriteTag: {
       findMany: jest.fn(),
@@ -148,7 +154,7 @@ describe("POST /api/favorites", () => {
       placeId: "place_123",
       name: "Test Cafe",
     };
-    (prisma.venue.upsert as jest.Mock).mockResolvedValue(mockDbVenue);
+    (resolveVenue as jest.Mock).mockResolvedValue(mockDbVenue);
 
     const mockFavorite = {
       id: "fav_123",
@@ -177,10 +183,10 @@ describe("POST /api/favorites", () => {
     expect(data.favorite.id).toBe("fav_123");
     expect(data.favorite.venue.name).toBe("Test Cafe");
 
-    expect(prisma.venue.upsert).toHaveBeenCalledWith(
+    expect(resolveVenue).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { placeId: "place_123" },
-        create: expect.objectContaining({ name: "Test Cafe" }),
+        id: "place_123",
+        name: "Test Cafe",
       }),
     );
     expect(prisma.favorite.upsert).toHaveBeenCalledWith(
@@ -193,7 +199,7 @@ describe("POST /api/favorites", () => {
   });
 
   it("returns 409 when the same venue is favorited again", async () => {
-    (prisma.venue.upsert as jest.Mock).mockResolvedValue({
+    (resolveVenue as jest.Mock).mockResolvedValue({
       id: "venue_123",
       placeId: "place_123",
     });

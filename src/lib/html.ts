@@ -6,7 +6,13 @@ const HTML_ESCAPES: Record<string, string> = {
   "'": "&#39;",
 };
 
-/** Escapes user-controlled text before interpolating it into HTML (emails, server-rendered pages). */
 export function escapeHtml(value: unknown): string {
-  return String(value ?? "").replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
+  if (value === null || value === undefined) return "";
+  let str: string;
+  try {
+    str = typeof value === "string" ? value : String(value);
+  } catch {
+    return "";
+  }
+  return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch] || ch);
 }

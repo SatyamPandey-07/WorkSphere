@@ -6,6 +6,7 @@
  * L2 clipping + Gaussian noise) by default (#1563).
  */
 
+import type { PrivacyReport } from "./privacyAccountant";
 import type {
   DifferentialPrivacyConfig,
   FederatedWorkerRequest,
@@ -26,6 +27,8 @@ export class FederatedVenueTrainer {
   private pending = new Map<string, Pending>();
   private seq = 0;
   private ready = false;
+  /** Cumulative privacy loss reported after the last training round (#3359). */
+  lastPrivacyReport: PrivacyReport | null = null;
 
   /**
    * @param dp Optional DP-SGD overrides; omitted fields fall back to
@@ -122,7 +125,18 @@ export class FederatedVenueTrainer {
     if (res.type !== "trained") {
       throw new Error("Unexpected train response");
     }
+    this.lastPrivacyReport = res.privacy ?? null;
     return res.steps;
+  }
+
+  /** Cumulative (ε, δ) spent on this device, plus the current clip bound. */
+  async getPrivacyReport(): Promise<PrivacyReport & { clipNorm: number }> {
+    await this.ensureReady();
+    const res = await this.send({ type: "privacy", id: this.nextId() });
+    if (res.type !== "privacy") {
+      throw new Error("Unexpected privacy response");
+    }
+    return { ...res.privacy, clipNorm: res.clipNorm };
   }
 
   terminate(): void {

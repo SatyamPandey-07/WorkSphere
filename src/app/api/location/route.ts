@@ -180,7 +180,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(cached, { status: 200 });
     }
 
-    const location = await fetchIPLocation(forwarded);
+    const location = await fetchIPLocation(ip);
     locationCache.set(ip, location);
     return NextResponse.json(location, { status: 200 });
   } catch {

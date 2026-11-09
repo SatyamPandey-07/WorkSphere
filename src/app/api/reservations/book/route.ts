@@ -17,6 +17,7 @@ import {
 } from "@/lib/bookingTime";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { conflictDateWindow, hasBookingConflict } from "@/lib/bookingOverlap";
+import { releaseSeatWebLock } from "@/lib/locks/seatHoldLock";
 
 const PAST_GRACE_MS = 15 * 60 * 1000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -144,6 +145,7 @@ export async function POST(request: NextRequest) {
 
           const seats = await tx.venueSeat.findMany({
             where: { id: { in: uniqueSeatIds }, venueId, isEnabled: true },
+            orderBy: { id: "asc" },
           });
           if (seats.length !== uniqueSeatIds.length) {
             throw new Error("SEAT_NOT_FOUND");
@@ -242,6 +244,11 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // Explicitly release any distributed seat hold locks for confirmed seats
+      for (const sId of uniqueSeatIds) {
+        releaseSeatWebLock(venueId, sId, userId).catch(() => {});
+      }
+
       const notify = async () => {
         for (const booking of createdBookings) {
           try {
@@ -295,9 +302,14 @@ export async function POST(request: NextRequest) {
         err.code === "P2028" ||
         err.code === "P2034" ||
         err.code === "40001" ||
+        err.code === "40P01" ||
+        err.meta?.code === "40001" ||
+        err.meta?.code === "40P01" ||
         err.message?.includes("Timed out fetching a new connection") ||
         err.message?.includes("deadlock") ||
-        err.message?.includes("serialization");
+        err.message?.includes("serialization") ||
+        err.message?.includes("40P01") ||
+        err.message?.includes("40001");
 
       if (isTransient && attempt < MAX_RETRIES) {
         const backoff = Math.min(

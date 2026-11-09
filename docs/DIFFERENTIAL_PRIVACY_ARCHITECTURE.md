@@ -179,4 +179,130 @@ The worker validates overrides with `resolveDpConfig`. An invalid value, such as
 
 - The noise is zero-mean, so it averages out across many steps while each individual update stays masked. Higher `noiseMultiplier` gives stronger privacy and slower, noisier personalization.
 - A lower `maxGradNorm` reduces the noise added in absolute terms, but it also clips informative gradients more aggressively. `1.0` is the conventional starting point.
-- The overall $(\epsilon, \delta)$ guarantee depends on $\sigma$, the number of steps, and the sampling rate, under composition. The trainer does not yet run a privacy accountant (such as RDP / moments accountant). Add one before weights are shared off-device, and enforce a budget the same way §4 does for telemetry.
+- The overall $(\epsilon, \delta)$ guarantee depends on $\sigma$ and the number of rounds under composition. §7 adds the privacy accountant, budget enforcement and adaptive clipping.
+
+## 7. Adaptive Clipping & Privacy Accounting (#3359)
+
+§6 used a fixed clip bound and a fixed noise multiplier, with no accounting.
+The trainer now:
+
+1. **Adapts the clip bound** to a quantile of per-example gradient norms.
+2. **Calibrates σ** from a target $(\epsilon, \delta)$ budget.
+3. **Tracks cumulative privacy loss** across rounds, persists it, and refuses
+   to train once the budget is spent.
+
+| File | Role |
+| --- | --- |
+| `src/lib/federated/privacyAccountant.ts` | Exact Gaussian-DP accountant, (ε, δ) ↔ μ conversion, σ calibration |
+| `src/lib/federated/adaptiveClipping.ts` | Quantile-tracking clip bound (Andrew et al., 2021) |
+| `src/lib/federated/linearVenueModel.ts` | `trainDpRound()`: one DP-SGD round with optional adaptive clipping |
+| `src/lib/federated/dpTrainingSession.ts` | Rounds + accounting + clip state (what the worker runs) |
+| `src/lib/federated/weightDb.ts` | `privacyLedger` object store (DB v2) |
+
+### 7.1 Privacy unit and adjacency
+
+- **Unit:** one training example (engagement event).
+- **Adjacency: replace-one.** The trainer takes one step per example, so the
+  number of steps, and therefore the dataset size, is observable. Neighbouring
+  datasets swap one example for another.
+- **Participation:** an example is used at most once per round (one `train()`
+  call) and may reappear in every round. Callers must not pass the same event
+  twice in one call.
+
+Under replace-one, a clipped gradient can move from $+C$ to $-C$, so the
+gradient release has **sensitivity $2C$** (not $C$). Each round makes two
+Gaussian releases:
+
+| Release | Sensitivity | Noise | Cost $\mu^2$ |
+| --- | --- | --- | --- |
+| Clipped gradient step | $2C$ | $\mathcal{N}(0, (zC)^2)$ | $(2/z)^2$ |
+| Unclipped count (adaptive clipping) | $1$ | $\mathcal{N}(0, z_b^2)$ | $(1/z_b)^2$ |
+
+### 7.2 Exact accounting with Gaussian DP
+
+Every release is a non-subsampled Gaussian mechanism. Their adaptive
+composition is **exactly** $\mu$-GDP (Dong, Roth & Su, 2019) with
+
+$$ \mu^2 = \sum_{\text{releases}} (\Delta_i / \sigma_i)^2, $$
+
+and $\mu$-GDP converts to the tightest $(\epsilon, \delta)$ curve:
+
+$$ \delta(\epsilon) = \Phi\!\left(-\frac{\epsilon}{\mu} + \frac{\mu}{2}\right) - e^{\epsilon}\, \Phi\!\left(-\frac{\epsilon}{\mu} - \frac{\mu}{2}\right). $$
+
+So the accountant is exact, not an upper bound. It inverts this by bisection
+(`gdpEpsilon`, `gdpMu`), and $\Phi$ is evaluated in log space so the tails
+stay accurate. The Rényi-DP bound $\epsilon \le \mu^2/2 + \mu\sqrt{2\ln(1/\delta)}$
+(`rdpEpsilon`) is used in the tests as an independent upper bound.
+
+### 7.3 Calibrating σ from a budget
+
+Given $(\epsilon, \delta)$ and `plannedRounds` $R$, the target is
+$\mu^\star = \mu(\epsilon, \delta)$. Each round gets $\mu^{\star 2}/R$. A share
+$s$ (`countBudgetShare`, default 0.1) of each round goes to the count query and
+the rest to the gradient:
+
+$$ z = \frac{2}{\sqrt{(1-s)\,\mu^{\star 2}/R}}, \qquad z_b = \frac{1}{\sqrt{s\,\mu^{\star 2}/R}}. $$
+
+Before every round the accountant re-solves this from the **unspent** budget
+over the **remaining** rounds, so under-spending early leaves less noise
+later. A round that would exceed the budget throws
+`PrivacyBudgetExhaustedError` **before** any training happens.
+
+### 7.4 Adaptive clipping
+
+Each round releases $\tilde b = (\#\{\lVert g \rVert \le C\} + \mathcal{N}(0, z_b^2))/m$ and updates
+
+$$ C \leftarrow \operatorname{clamp}\!\left(C \cdot e^{-\eta(\tilde b - \gamma)},\ C_{\min},\ C_{\max}\right) $$
+
+with target quantile $\gamma$ (default 0.5), step $\eta$ (0.2) and bounds
+$[0.01, 10]$. The clamp stops runs of outlier gradients from exploding the
+bound. Every applied update is at most $\eta_{\text{lr}} \cdot C$ before noise.
+
+### 7.5 Configuration
+
+```ts
+await trainer.init(0.05, {
+  budget: { epsilon: 8, delta: 1e-5, plannedRounds: 200 }, // σ calibrated + enforced
+  adaptiveClipping: { targetQuantile: 0.5 },                 // or `true` for defaults
+});
+const report = await trainer.getPrivacyReport();
+// { epsilonSpent, delta, rounds, epsilonBudget, remainingRounds, clipNorm }
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `budget` | — (opt-in) | Target $(\epsilon, \delta)$ over `plannedRounds`. When set, `noiseMultiplier` is ignored |
+| `adaptiveClipping` | off | `true` or overrides of `targetQuantile`, `learningRate`, `minClipNorm`, `maxClipNorm`, `countBudgetShare`. `maxGradNorm` is the starting bound |
+| `reportingDelta` | `1e-5` | δ used to report ε when no budget is set |
+
+Without a budget, the fixed `noiseMultiplier` is used and the ε spent is still
+reported. With DP disabled, the report shows `epsilonSpent: Infinity`.
+
+### 7.6 Persistence
+
+The ledger ($\sum \mu^2$, rounds) and the current clip bound live in a
+separate `privacyLedger` object store. `purgeStaleWeights()` only touches
+`modelWeights`, so purging old weights can never reset the spent budget. The
+worker writes the ledger **before** the weights. A crash between the two
+writes over-counts privacy loss and never under-counts it.
+
+### 7.7 Verification
+
+`src/__tests__/lib/federatedPrivacyAccounting.test.ts` checks the guarantees
+independently:
+
+- **Exact formula:** $\delta(\epsilon)$ matches numerical integration of
+  $\int \max(0, \varphi(x-\mu) - e^\epsilon\varphi(x))\,dx$ to 5 decimal places.
+- **RDP cross-check:** $\epsilon_{\text{GDP}} \le \epsilon_{\text{RDP}}$ over a grid of $\mu$ and $\delta$.
+- **Calibration:** calibrated rounds spend the budget to within 0.1%,
+  exhausted budgets are refused, and re-calibration still lands within budget.
+- **Empirical attack on `trainDpRound`:** 20,000 runs on worst-case
+  neighbouring datasets. The optimal distinguisher's error matches
+  $\Phi(-\mu/2)$ for the $\mu$ the accountant charges, and the reported
+  $(\epsilon, \delta)$ holds for it. This catches a wrong noise scale or a wrong
+  sensitivity.
+- **Adaptive clipping:** the count is released with noise; starting ~6× above
+  the true median, the bound converges to within a factor of 1.25 of it; it
+  stays clamped.
+- **Ledger:** survives `purgeStaleWeights`.
+

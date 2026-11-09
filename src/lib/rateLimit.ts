@@ -1,9 +1,10 @@
 /**
- * Rate Limiting — Upstash Redis (distributed) with in-memory fallback
- *
- * Production: Set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN in env
- * Development: Falls back to an in-memory sliding window automatically
+ * Compatibility bridge: Re-export unified rate limiting implementations from @/lib/rateLimit.
  */
+
+import { auth } from "@clerk/nextjs/server";
+import { Ratelimit } from "@upstash/ratelimit";
+import { NextResponse } from "next/server";
 
 const DEFAULT_WINDOW_MS = 60_000;
 
@@ -84,6 +85,7 @@ interface MemEntry {
 const memStore = new Map<string, MemEntry>();
 
 const CLEANUP_INTERVAL_MS = 60_000;
+const MAX_MEM_ENTRIES = 10_000;
 
 function cleanupExpiredEntries() {
   const now = Date.now();
@@ -113,12 +115,36 @@ function memRateLimit(
   limit: number,
   windowMs: number = DEFAULT_WINDOW_MS,
 ): boolean {
+  if (!identifier || typeof identifier !== "string") return true;
+  const safeLimit =
+    typeof limit === "number" && Number.isFinite(limit) && limit > 0
+      ? limit
+      : 10;
+  const safeWindowMs =
+    typeof windowMs === "number" && Number.isFinite(windowMs) && windowMs > 0
+      ? windowMs
+      : DEFAULT_WINDOW_MS;
+
   const now = Date.now();
-  const start = now - windowMs;
+  const start = now - safeWindowMs;
 
   let entry = memStore.get(identifier);
   if (!entry) {
-    entry = { timestamps: [], resetTime: now + windowMs };
+    if (memStore.size >= MAX_MEM_ENTRIES) {
+      cleanupExpiredEntries();
+      while (memStore.size >= MAX_MEM_ENTRIES) {
+        const oldestKey = memStore.keys().next().value;
+        if (oldestKey === undefined) {
+          break;
+        }
+        memStore.delete(oldestKey);
+      }
+    }
+    entry = { timestamps: [], resetTime: now + safeWindowMs };
+    memStore.set(identifier, entry);
+  } else {
+    // Refresh LRU order
+    memStore.delete(identifier);
     memStore.set(identifier, entry);
   }
 
@@ -133,12 +159,12 @@ function memRateLimit(
     entry.timestamps = entry.timestamps.slice(firstValid);
   }
 
-  if (entry.timestamps.length >= limit) {
+  if (entry.timestamps.length >= safeLimit) {
     return false;
   }
 
   entry.timestamps.push(now);
-  entry.resetTime = now + windowMs;
+  entry.resetTime = now + safeWindowMs;
   return true;
 }
 
@@ -179,7 +205,7 @@ function memGetInfo(
   };
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// ─── Public API (Legacy) ─────────────────────────────────────────────────────
 
 /**
  * Returns true if the request should be allowed, false if rate-limited.
@@ -210,6 +236,12 @@ export async function getRateLimitInfo(
   resetTime: number;
   isLimited: boolean;
 } | null> {
+  if (
+    process.env.UPSTASH_REDIS_REST_URL &&
+    process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    return null;
+  }
   return memGetInfo(identifier, limit, windowMs);
 }
 
@@ -218,11 +250,13 @@ export function resetRateLimit(identifier?: string): void {
     memStore.delete(identifier);
   } else {
     memStore.clear();
+    upstashLimiters.clear();
   }
 }
 
 export function resetRedisScripts(): void {
   redisClient = null;
+  upstashLimiters.clear();
 }
 
 export function microTimestampMember(
@@ -232,4 +266,445 @@ export function microTimestampMember(
 ): string {
   const padUsec = String(usec).padStart(6, "0");
   return `${sec}${padUsec}:${nonce}`;
+}
+
+// ─── Token Bucket Rate Limiting Exports (#3529) ──────────────────────────────
+export {
+  MemoryRateLimitStore,
+  defaultMemoryStore,
+  type MemEntry,
+  type MemoryBucketEntry,
+} from "./rateLimit/stores/memoryStore";
+
+export {
+  SlidingWindowLimiter,
+  type SlidingWindowOptions,
+} from "./rateLimit/limiters/slidingWindowLimiter";
+
+export {
+  TokenBucketLimiter,
+  type TokenBucketOptions,
+} from "./rateLimit/limiters/tokenBucketLimiter";
+
+export {
+  checkTokenBucketRateLimit,
+  checkInMemoryTokenBucket,
+  matchRateTier,
+  resetTokenBuckets,
+  RATE_TIERS,
+  type RateTier,
+  type RateTierType,
+  type RateLimitResult,
+} from "./tokenBucketRateLimit";
+
+// ─── Tier-Based Sliding Window Rate Limiter (#3475) ──────────────────────────
+
+export type RateLimitTier = "anonymous" | "authenticated";
+
+export interface TierConfig {
+  readonly limit: number;
+  readonly windowMs: number;
+  readonly windowDuration:
+    `${number} m` | `${number}m` | `${number} s` | `${number}s`;
+}
+
+/**
+ * Tiered Rate Limiting profiles:
+ * - Anonymous: 10 requests / 15 minutes, identified by client IP.
+ * - Authenticated: 60 requests / 15 minutes, identified by Clerk user ID.
+ */
+export const TIER_CONFIGS: Record<RateLimitTier, TierConfig> = {
+  anonymous: {
+    limit: 10,
+    windowMs: 15 * 60 * 1000, // 900,000 ms = 15 minutes
+    windowDuration: "15 m",
+  },
+  authenticated: {
+    limit: 60,
+    windowMs: 15 * 60 * 1000, // 900,000 ms = 15 minutes
+    windowDuration: "15 m",
+  },
+} as const;
+
+export interface TieredRateLimitResult {
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  retryAfter: number; // in seconds
+  reset: number; // epoch ms
+  tier: RateLimitTier;
+  identity: string;
+}
+
+export interface CheckTieredRateLimitOptions {
+  /** Explicit user ID override (e.g. for testing or pre-authenticated requests). If undefined, calls auth() from @clerk/nextjs/server */
+  userId?: string | null;
+  /** Explicit client IP override (e.g. for testing) */
+  ip?: string;
+  /** Namespace prefix for rate limiting (default: "ai-public") */
+  namespace?: string;
+}
+
+// Cached Upstash Ratelimit instances keyed by `${namespace}:${tier}`
+const upstashLimiters = new Map<string, any>();
+
+function getUpstashLimiter(
+  redis: any,
+  namespace: string,
+  tier: RateLimitTier,
+): any {
+  const cacheKey = `${namespace}:${tier}`;
+  let limiter = upstashLimiters.get(cacheKey);
+  if (!limiter) {
+    const config = TIER_CONFIGS[tier];
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Ratelimit } = require("@upstash/ratelimit");
+    limiter = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(config.limit, config.windowDuration),
+      prefix: `worksphere:ratelimit:${namespace}:${tier}`,
+    });
+    upstashLimiters.set(cacheKey, limiter);
+  }
+  return limiter;
+}
+
+/**
+ * Safely extracts the client IP from request headers.
+ * Prioritizes direct proxy headers (X-Real-IP, CF-Connecting-IP) before X-Forwarded-For to prevent IP spoofing, falling back to loopback.
+ */
+export function getClientIp(reqOrHeaders: Request | Headers | null | undefined): string {
+  if (!reqOrHeaders) {
+    return "127.0.0.1";
+  }
+
+  if (
+    typeof reqOrHeaders === "object" &&
+    "ip" in reqOrHeaders &&
+    typeof (reqOrHeaders as any).ip === "string" &&
+    (reqOrHeaders as any).ip.trim()
+  ) {
+    return (reqOrHeaders as any).ip.trim();
+  }
+
+  const headers =
+    reqOrHeaders instanceof Headers
+      ? reqOrHeaders
+      : reqOrHeaders && typeof reqOrHeaders === "object" && "headers" in reqOrHeaders && reqOrHeaders.headers && typeof reqOrHeaders.headers.get === "function"
+        ? reqOrHeaders.headers
+        : null;
+
+  if (!headers) {
+    return "127.0.0.1";
+  }
+
+  const realIp = headers.get("x-real-ip");
+  if (realIp) {
+    const trimmed = realIp.trim();
+    if (trimmed) return trimmed;
+  }
+
+  const cfConnectingIp = headers.get("cf-connecting-ip");
+  if (cfConnectingIp) {
+    const trimmed = cfConnectingIp.trim();
+    if (trimmed) return trimmed;
+  }
+
+  const forwarded = headers.get("x-forwarded-for");
+  if (forwarded) {
+    const firstIp = forwarded.split(",")[0].trim();
+    if (firstIp) return firstIp;
+  }
+
+  return "127.0.0.1";
+}
+
+/**
+ * In-memory sliding-window fallback for local development, offline mode,
+ * and graceful degradation if Upstash Redis fails in production.
+ */
+export function memTieredRateLimit(
+  namespace: string,
+  tier: RateLimitTier,
+  identity: string,
+  config: TierConfig = TIER_CONFIGS[tier] || TIER_CONFIGS.anonymous,
+): TieredRateLimitResult {
+  const safeConfig = config || TIER_CONFIGS[tier] || TIER_CONFIGS.anonymous;
+  const now = Date.now();
+  const windowMs =
+    typeof safeConfig.windowMs === "number" &&
+    Number.isFinite(safeConfig.windowMs) &&
+    safeConfig.windowMs > 0
+      ? safeConfig.windowMs
+      : 900_000;
+  const limit =
+    typeof safeConfig.limit === "number" &&
+    Number.isFinite(safeConfig.limit) &&
+    safeConfig.limit > 0
+      ? safeConfig.limit
+      : 10;
+  const key = `worksphere:ratelimit:${namespace}:${tier}:${identity}`;
+
+  let entry = memStore.get(key);
+  if (!entry) {
+    if (memStore.size >= MAX_MEM_ENTRIES) {
+      cleanupExpiredEntries();
+      while (memStore.size >= MAX_MEM_ENTRIES) {
+        const oldestKey = memStore.keys().next().value;
+        if (oldestKey === undefined) {
+          break;
+        }
+        memStore.delete(oldestKey);
+      }
+    }
+    entry = { timestamps: [], resetTime: now + windowMs };
+    memStore.set(key, entry);
+  } else {
+    // Refresh LRU order
+    memStore.delete(key);
+    memStore.set(key, entry);
+  }
+
+  // Prune timestamps older than sliding window
+  const windowStart = now - windowMs;
+  let firstValid = 0;
+  while (
+    firstValid < entry.timestamps.length &&
+    entry.timestamps[firstValid] <= windowStart
+  ) {
+    firstValid++;
+  }
+  if (firstValid > 0) {
+    entry.timestamps = entry.timestamps.slice(firstValid);
+  }
+
+  if (entry.timestamps.length >= limit) {
+    const reset = entry.timestamps[0] + windowMs;
+    const retryAfter = Math.max(1, Math.ceil((reset - now) / 1000));
+    return {
+      allowed: false,
+      limit,
+      remaining: 0,
+      retryAfter,
+      reset,
+      tier,
+      identity,
+    };
+  }
+
+  entry.timestamps.push(now);
+  entry.resetTime = now + windowMs;
+  const remaining = Math.max(0, limit - entry.timestamps.length);
+  const reset = entry.timestamps[0] + windowMs;
+
+  return {
+    allowed: true,
+    limit,
+    remaining,
+    retryAfter: 0,
+    reset,
+    tier,
+    identity,
+  };
+}
+
+/**
+ * Inspect in-memory rate limit info without consuming quota.
+ */
+export function getTieredRateLimitInfo(
+  namespace: string,
+  tier: RateLimitTier,
+  identity: string,
+  config: TierConfig = TIER_CONFIGS[tier],
+): { count: number; remaining: number; resetTime: number; isLimited: boolean } {
+  const now = Date.now();
+  const windowMs = config.windowMs;
+  const limit = config.limit;
+  const key = `worksphere:ratelimit:${namespace}:${tier}:${identity}`;
+
+  const entry = memStore.get(key);
+  if (!entry) {
+    return {
+      count: 0,
+      remaining: limit,
+      resetTime: now + windowMs,
+      isLimited: false,
+    };
+  }
+
+  const windowStart = now - windowMs;
+  let firstValid = 0;
+  while (
+    firstValid < entry.timestamps.length &&
+    entry.timestamps[firstValid] <= windowStart
+  ) {
+    firstValid++;
+  }
+  const validCount = entry.timestamps.length - firstValid;
+  const resetTime =
+    validCount > 0 ? entry.timestamps[firstValid] + windowMs : now + windowMs;
+
+  return {
+    count: validCount,
+    remaining: Math.max(0, limit - validCount),
+    resetTime,
+    isLimited: validCount >= limit,
+  };
+}
+
+/**
+ * Main tiered rate-limiting check.
+ * Identifies the tier (anonymous vs authenticated), checks the sliding window
+ * via Upstash Redis (if configured) or in-memory fallback, and returns a detailed result.
+ */
+export async function checkTieredRateLimit(
+  req: Request | Headers | null | undefined,
+  options?: CheckTieredRateLimitOptions,
+): Promise<TieredRateLimitResult> {
+  const namespace = options?.namespace ?? "ai-public";
+  const safeReq = req || new Headers();
+
+  let userId: string | null = null;
+  if (options && "userId" in options) {
+    userId = options.userId ?? null;
+  } else {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { auth } = require("@clerk/nextjs/server");
+      const authResult = await auth();
+      userId = authResult?.userId ?? null;
+    } catch {
+      userId = null;
+    }
+  }
+
+  let tier: RateLimitTier;
+  let identity: string;
+
+  if (userId && typeof userId === "string" && userId.trim().length > 0) {
+    tier = "authenticated";
+    identity = userId.trim();
+  } else {
+    tier = "anonymous";
+    identity = options?.ip ?? getClientIp(safeReq);
+  }
+
+  const config = TIER_CONFIGS[tier];
+
+  // Upstash Redis when configured
+  if (
+    process.env.UPSTASH_REDIS_REST_URL &&
+    process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    const redis = getRedisClient();
+    if (redis) {
+      try {
+        const limiter = getUpstashLimiter(redis, namespace, tier);
+        const result = await limiter.limit(identity);
+        if (result.pending) {
+          void Promise.resolve(result.pending).catch(() => {});
+        }
+        const reset = result.reset ?? Date.now() + config.windowMs;
+        const retryAfter = result.success
+          ? 0
+          : Math.max(1, Math.ceil((reset - Date.now()) / 1000));
+
+        return {
+          allowed: result.success,
+          limit: result.limit ?? config.limit,
+          remaining: Math.max(0, result.remaining),
+          retryAfter,
+          reset,
+          tier,
+          identity,
+        };
+      } catch (err) {
+        console.error(
+          "Upstash Redis rate limit error, falling back to in-memory:",
+          err,
+        );
+        return memTieredRateLimit(namespace, tier, identity, config);
+      }
+    }
+  }
+
+  // In-memory fallback (offline / local development / unconfigured Upstash)
+  return memTieredRateLimit(namespace, tier, identity, config);
+}
+
+/**
+ * Standard rate-limit headers:
+ * - X-RateLimit-Limit
+ * - X-RateLimit-Remaining
+ * - Retry-After (included when request is blocked)
+ */
+export function getRateLimitHeaders(
+  result: TieredRateLimitResult | null | undefined,
+): Record<string, string> {
+  if (!result || typeof result !== "object") {
+    return {
+      "X-RateLimit-Limit": "10",
+      "X-RateLimit-Remaining": "10",
+    };
+  }
+  const limit =
+    typeof result.limit === "number" && Number.isFinite(result.limit)
+      ? result.limit
+      : 10;
+  const remaining =
+    typeof result.remaining === "number" && Number.isFinite(result.remaining)
+      ? Math.max(0, result.remaining)
+      : 0;
+
+  const headers: Record<string, string> = {
+    "X-RateLimit-Limit": String(limit),
+    "X-RateLimit-Remaining": String(remaining),
+  };
+  if (!result.allowed) {
+    const retryAfter =
+      typeof result.retryAfter === "number" && Number.isFinite(result.retryAfter)
+        ? Math.max(1, result.retryAfter)
+        : 1;
+    headers["Retry-After"] = String(retryAfter);
+  }
+  return headers;
+}
+
+/**
+ * Creates standard HTTP 429 Too Many Requests response with rate-limit headers.
+ */
+export function createRateLimitResponse(
+  result: TieredRateLimitResult,
+): any {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { NextResponse } = require("next/server");
+  return NextResponse.json(
+    { error: "Too many requests. Please try again later." },
+    {
+      status: 429,
+      headers: getRateLimitHeaders(result),
+    },
+  );
+}
+
+/**
+ * Attaches X-RateLimit headers to any successful Response or NextResponse.
+ */
+export function applyRateLimitHeaders<T extends Response>(
+  response: T,
+  result: TieredRateLimitResult,
+): T {
+  if (!response || !response.headers || typeof response.headers.set !== "function") {
+    return response;
+  }
+  const headers = getRateLimitHeaders(result);
+  for (const [key, value] of Object.entries(headers)) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+
+export function resetTieredRateLimit(identifier?: string): void {
+  resetRateLimit(identifier);
+  upstashLimiters.clear();
 }

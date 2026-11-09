@@ -1,0 +1,208 @@
+name: Check PR Issue Assignee
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  verify-assignee:
+    name: Verify Linked Issue Assignment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Issue Assignment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            try {
+              const pr = context.payload.pull_request;
+              if (!pr) return;
+
+              const prAuthor = pr.user?.login;
+              const prAuthorLower = (prAuthor || '').toLowerCase();
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+              const prNumber = pr.number;
+
+              // 1. Maintainers and bots are exempt
+              const MAINTAINERS = ['satyampandey-07'];
+              if (
+                MAINTAINERS.includes(prAuthorLower) ||
+                pr.user?.type === 'Bot' ||
+                prAuthorLower === 'dependabot[bot]'
+              ) {
+                console.log(`Skipping assignment verification for maintainer/bot: ${prAuthor}`);
+                return;
+              }
+
+              const title = pr.title || '';
+              const rawBody = pr.body || '';
+              const body = rawBody
+                .replace(/<!--[\s\S]*?-->/g, '')
+                .replace(/```[\s\S]*?```/g, '')
+                .replace(/`[^`]*`/g, '');
+              const headRef = pr.head ? pr.head.ref : '';
+
+              console.log(`Checking linked issues for PR #${prNumber} by @${prAuthor}...`);
+
+              let candidateIssueNumbers = new Set();
+
+              // Check GitHub GraphQL closingIssuesReferences
+              try {
+                const query = `
+                  query($owner: String!, $repo: String!, $number: Int!) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $number) {
+                        closingIssuesReferences(first: 10) {
+                          nodes {
+                            number
+                          }
+                        }
+                      }
+                    }
+                  }
+                `;
+                const gqlRes = await github.graphql(query, { owner, repo, number: prNumber });
+                const closingNodes = gqlRes?.repository?.pullRequest?.closingIssuesReferences?.nodes || [];
+                for (const node of closingNodes) {
+                  if (node.number && node.number !== prNumber) {
+                    candidateIssueNumbers.add(node.number);
+                  }
+                }
+              } catch (gqlErr) {
+                console.warn('GraphQL closingIssuesReferences query note:', gqlErr.message);
+              }
+
+              // Check keywords in title, body, and branch name
+              const issuePattern = /(?:closes?|closed|fixes?|fixed|resolves?|resolved)\s*#?(\d+)/gi;
+              let m;
+              while ((m = issuePattern.exec(title)) !== null) {
+                const num = parseInt(m[1], 10);
+                if (num !== prNumber) candidateIssueNumbers.add(num);
+              }
+              while ((m = issuePattern.exec(body)) !== null) {
+                const num = parseInt(m[1], 10);
+                if (num !== prNumber) candidateIssueNumbers.add(num);
+              }
+
+              const branchMatch = headRef.match(/(?:fix|close|resolve|issue)[-/](\d+)/i);
+              if (branchMatch) {
+                const num = parseInt(branchMatch[1], 10);
+                if (num !== prNumber) candidateIssueNumbers.add(num);
+              }
+
+              // Filter out template placeholder #123
+              candidateIssueNumbers.delete(123);
+
+              if (candidateIssueNumbers.size === 0) {
+                console.log(`No linked issues detected in PR #${prNumber}. Skipping assignment check.`);
+                return;
+              }
+
+              // Validate each candidate issue
+              let unassignedIssues = [];
+              let assignedToOthers = [];
+              let verifiedIssues = [];
+
+              for (const issueNum of candidateIssueNumbers) {
+                try {
+                  const issueRes = await github.rest.issues.get({
+                    owner,
+                    repo,
+                    issue_number: issueNum
+                  });
+
+                  // Only validate Issues, skip PRs
+                  if (!issueRes.data || issueRes.data.pull_request) {
+                    continue;
+                  }
+
+                  const assignees = (issueRes.data.assignees || []).map(a => a.login);
+                  const assigneesLower = assignees.map(a => a.toLowerCase());
+
+                  if (assigneesLower.includes(prAuthorLower)) {
+                    verifiedIssues.push(issueNum);
+                  } else if (assignees.length === 0) {
+                    unassignedIssues.push(issueNum);
+                  } else {
+                    assignedToOthers.push({
+                      issueNum,
+                      assignedTo: assignees.map(a => `@${a}`).join(', ')
+                    });
+                  }
+                } catch (fetchErr) {
+                  console.warn(`Could not fetch issue #${issueNum}:`, fetchErr.message);
+                }
+              }
+
+              // If there are unauthorized issues linked
+              if (assignedToOthers.length > 0 || unassignedIssues.length > 0) {
+                let reasonLines = [];
+
+                for (const item of assignedToOthers) {
+                  reasonLines.push(`- Issue **#${item.issueNum}** is currently assigned to **${item.assignedTo}**, not you.`);
+                }
+
+                for (const num of unassignedIssues) {
+                  reasonLines.push(`- Issue **#${num}** is unassigned. You must claim it with \`/claim\` before submitting a PR.`);
+                }
+
+                const closeComment = [
+                  `🚫 **Pull Request Closed: Issue Not Assigned to You**`,
+                  ``,
+                  `Hi @${prAuthor}, thank you for your contribution attempt!`,
+                  ``,
+                  `However, this pull request cannot be accepted because the issue(s) linked to this PR are not assigned to you:`,
+                  reasonLines.join('\n'),
+                  ``,
+                  `### 📋 How to Contribute:`,
+                  `1. Browse available open issues on our [Issues page](https://github.com/${owner}/${repo}/issues).`,
+                  `2. Find an **unassigned** issue you would like to work on.`,
+                  `3. Post a comment with exactly \`/claim\` on that issue.`,
+                  `4. Once the bot assigns the issue to you, you will have 6 days to submit your PR.`,
+                  ``,
+                  `*Only the contributor assigned to an issue can open a pull request for it. This PR has been automatically closed.*`
+                ].join('\n');
+
+                console.log(`Closing PR #${prNumber} by @${prAuthor}: issue is not assigned to them.`);
+
+                // Post comment
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: closeComment
+                });
+
+                // Add label
+                try {
+                  await github.rest.issues.addLabels({
+                    owner,
+                    repo,
+                    issue_number: prNumber,
+                    labels: ['not-assigned']
+                  });
+                } catch (lblErr) {
+                  console.warn('Label warning:', lblErr.message);
+                }
+
+                // Close PR
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  state: 'closed'
+                });
+
+                core.setFailed(`PR #${prNumber} closed: Linked issue is not assigned to @${prAuthor}.`);
+                return;
+              }
+
+              console.log(`Assignment check passed for PR #${prNumber} by @${prAuthor}. Verified issues: ${verifiedIssues.join(', ')}`);
+            } catch (error) {
+              console.error('Error during PR assignee verification:', error.message);
+            }

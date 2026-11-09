@@ -1,13 +1,15 @@
-import { mean, standardDeviation } from "./statistics";
+import { mean, standardDeviation, median } from "./statistics";
+import { isValidTimeZone } from "./booking/dateTimeAdapter";
 
 export interface RawNoiseData {
   avgDecibels: number;
-  timestamp: Date;
+  timestamp: Date | string | number;
 }
 
 export interface HourlyForecast {
   hour: number;
   predictedDb: number | null;
+  medianDb?: number | null;
   confidence: number;
   samples: number;
 }
@@ -17,17 +19,61 @@ export interface NoiseForecastResult {
   recommendedHours: number[];
 }
 
+/**
+ * @param timeZone IANA zone to bucket readings in (the viewer's zone). Without
+ * one, getHours() uses the server's zone, which is UTC in production, so every
+ * hour on the chart would be shifted by the viewer's UTC offset.
+ */
 export function generateNoiseForecast(
   data: RawNoiseData[],
+  timeZone?: string,
 ): NoiseForecastResult {
+  if (!data || !Array.isArray(data)) {
+    return { forecast: [], recommendedHours: [] };
+  }
   // 1. Group historical readings by hour of day (0-23)
   const groupedByHour: Record<number, number[]> = {};
   for (let i = 0; i < 24; i++) {
     groupedByHour[i] = [];
   }
 
+  const hourFormatter =
+    timeZone && isValidTimeZone(timeZone)
+      ? new Intl.DateTimeFormat("en-US", {
+          timeZone,
+          hour: "numeric",
+          hourCycle: "h23",
+        })
+      : null;
+
   for (const entry of data) {
-    const hour = entry.timestamp.getHours();
+    if (!entry) continue;
+
+    // Validate decibels: must be a finite, non-negative number
+    if (
+      typeof entry.avgDecibels !== "number" ||
+      !Number.isFinite(entry.avgDecibels) ||
+      entry.avgDecibels < 0
+    ) {
+      continue;
+    }
+
+    // Coerce timestamp if Date, ISO string, or timestamp number
+    const ts =
+      entry.timestamp instanceof Date
+        ? entry.timestamp
+        : new Date(entry.timestamp);
+
+    if (!ts || isNaN(ts.getTime())) continue;
+
+    const hour = hourFormatter
+      ? Number(
+          hourFormatter
+            .formatToParts(ts)
+            .find((part) => part.type === "hour")?.value,
+        ) % 24
+      : ts.getHours();
+
     groupedByHour[hour].push(entry.avgDecibels);
   }
 
@@ -42,6 +88,7 @@ export function generateNoiseForecast(
       forecast.push({
         hour: i,
         predictedDb: null,
+        medianDb: null,
         confidence: 0,
         samples: 0,
       });
@@ -49,6 +96,7 @@ export function generateNoiseForecast(
     }
 
     const avg = mean(samples);
+    const med = median(samples);
     const stdDev = standardDeviation(samples);
 
     // 3. Confidence Algorithm
@@ -67,6 +115,7 @@ export function generateNoiseForecast(
     forecast.push({
       hour: i,
       predictedDb: Math.round(avg * 10) / 10,
+      medianDb: Math.round(med * 10) / 10,
       confidence: Math.round(confidence * 100) / 100, // 2 decimal places
       samples: n,
     });
@@ -75,7 +124,15 @@ export function generateNoiseForecast(
   // 4. Identify Quietest Hours (top 3)
   // Only consider hours with actual data
   const validForecasts = forecast.filter((f) => f.predictedDb !== null);
-  validForecasts.sort((a, b) => a.predictedDb! - b.predictedDb!);
+  validForecasts.sort((a, b) => {
+    if (a.predictedDb! !== b.predictedDb!) {
+      return a.predictedDb! - b.predictedDb!;
+    }
+    if (a.confidence !== b.confidence) {
+      return b.confidence - a.confidence;
+    }
+    return a.hour - b.hour;
+  });
 
   const recommendedHours = validForecasts.slice(0, 3).map((f) => f.hour);
 

@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  Suspense,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
@@ -39,7 +46,12 @@ import { Venue } from "@/components/chat/ChatMessages";
 import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
 import { useBatteryStatus } from "@/hooks/useBatteryStatus";
 import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
-import { usePlatformModifier, TOGGLE_CHATBOT_EVENT } from "@/hooks/usePlatformModifier";
+import {
+  usePlatformModifier,
+  TOGGLE_CHATBOT_EVENT,
+} from "@/hooks/usePlatformModifier";
+import { useUserLocation } from "@/hooks/useUserLocation";
+import { GeolocationFallbackBanner } from "@/components/venues/GeolocationFallbackBanner";
 
 // Dynamically import EnhancedChatbot to isolate WASM loading / client effects during streaming SSR and prevent hydration mismatches
 const EnhancedChatbot = dynamic(
@@ -93,10 +105,15 @@ const Map = dynamic(() => import("@/components/Map"), {
 const MAX_USABLE_ACCURACY_M = 3000;
 
 function AppPage() {
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  const {
+    location,
+    locationName,
+    permissionState,
+    isDenied: isLocationDenied,
+    isLoading: isLoadingLocation,
+    setLocation,
+    setManualLocation,
+  } = useUserLocation();
   const [markers, setMarkers] = useState<MapMarker[]>([]);
   const [routes, setRoutes] = useState<MapRoute[]>([]);
   const [mapView, setMapView] = useState<MapView | null>(null);
@@ -106,7 +123,6 @@ function AppPage() {
   }>({ isOpen: false, venue: null });
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const battery = useBatteryStatus();
   const [toast, setToast] = useState<{
     message: string;
@@ -269,94 +285,6 @@ function AppPage() {
   useEffect(() => {
     loadOfflineVenues();
   }, [loadOfflineVenues]);
-
-  // Get user location on mount with API fallback
-  useEffect(() => {
-    const getLocation = async () => {
-      setIsLoadingLocation(true);
-
-      // Try browser geolocation first
-      if ("geolocation" in navigator) {
-        try {
-          const fallbackToIp = async () => {
-            try {
-              const response = await fetch("/api/location");
-              if (response.ok) {
-                const data = await response.json();
-                setLocation({ latitude: data.lat, longitude: data.lng });
-                console.log(
-                  `[Location] Using ${data.source}: ${data.city}, ${data.region}`,
-                );
-              } else {
-                throw new Error("Location API failed");
-              }
-            } catch (apiError) {
-              console.error("Location API error:", apiError);
-              // Ultimate fallback to San Francisco
-              setLocation({ latitude: 37.7749, longitude: -122.4194 });
-            }
-            setIsLoadingLocation(false);
-          };
-
-          navigator.geolocation.getCurrentPosition(
-            async (position) => {
-              if (
-                position.coords.accuracy !== undefined &&
-                position.coords.accuracy > MAX_USABLE_ACCURACY_M
-              ) {
-                console.warn(
-                  `GPS accuracy too low on mount (${position.coords.accuracy}m). Falling back to IP location.`,
-                );
-                await fallbackToIp();
-                return;
-              }
-              setLocation({
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-              });
-              setIsLoadingLocation(false);
-            },
-            async (error) => {
-              console.warn("Geolocation error:", error);
-              await fallbackToIp();
-            },
-            { timeout: 5000, enableHighAccuracy: false },
-          );
-        } catch (err) {
-          console.warn("Geolocation synchronous error on mount:", err);
-          // Fallback to IP-based location API
-          try {
-            const response = await fetch("/api/location");
-            if (response.ok) {
-              const data = await response.json();
-              setLocation({ latitude: data.lat, longitude: data.lng });
-            } else {
-              setLocation({ latitude: 37.7749, longitude: -122.4194 });
-            }
-          } catch {
-            setLocation({ latitude: 37.7749, longitude: -122.4194 });
-          }
-          setIsLoadingLocation(false);
-        }
-      } else {
-        // No geolocation support - use API fallback
-        try {
-          const response = await fetch("/api/location");
-          if (response.ok) {
-            const data = await response.json();
-            setLocation({ latitude: data.lat, longitude: data.lng });
-          } else {
-            setLocation({ latitude: 37.7749, longitude: -122.4194 });
-          }
-        } catch {
-          setLocation({ latitude: 37.7749, longitude: -122.4194 });
-        }
-        setIsLoadingLocation(false);
-      }
-    };
-
-    getLocation();
-  }, []);
 
   // Map update interface
   interface MapUpdateData {
@@ -734,7 +662,9 @@ function AppPage() {
           venueName: ratingDialog.venue.name,
           data: venuePayload,
         });
-        alert("Review saved offline. It will automatically sync when you reconnect.");
+        alert(
+          "Review saved offline. It will automatically sync when you reconnect.",
+        );
       } catch (err) {
         console.error("Failed to queue review offline:", err);
         setMarkers(prevMarkers);
@@ -771,7 +701,9 @@ function AppPage() {
           venueName: ratingDialog.venue.name,
           data: venuePayload,
         });
-        alert("Review saved offline. It will automatically sync when you reconnect.");
+        alert(
+          "Review saved offline. It will automatically sync when you reconnect.",
+        );
       } catch (queueErr) {
         setMarkers(prevMarkers);
         console.error("Error submitting and queueing rating:", error, queueErr);
@@ -882,6 +814,28 @@ function AppPage() {
           lg:flex flex-1 lg:flex-[7] relative
         `}
         >
+          {/* Fallback Banner for Geolocation Permission Prompt / Denied */}
+          {(isLocationDenied || permissionState === "prompt") && (
+            <div className="absolute top-4 left-4 right-4 z-20 max-w-xl mx-auto pointer-events-auto">
+              <GeolocationFallbackBanner
+                status={permissionState}
+                currentLocationName={locationName}
+                onLocationSelected={(geocoded) => {
+                  setManualLocation(
+                    geocoded.lat,
+                    geocoded.lng,
+                    geocoded.displayName,
+                  );
+                  setMapView({
+                    center: { lat: geocoded.lat, lng: geocoded.lng },
+                    zoom: 14,
+                    animate: true,
+                  });
+                }}
+              />
+            </div>
+          )}
+
           {markers.length === 0 && !isLoadingLocation && (
             <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
               <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-2xl shadow-xl pointer-events-auto max-w-xs w-full mx-4">
@@ -965,43 +919,44 @@ function AppPage() {
                         <button
                           key={profile}
                           onClick={async () => {
-                                setRouteProfile(profile);
-                              
-                                if (routes.length > 0 && location) {
-                                  const currentRequest = ++routeRequestId.current;
-                              
-                                  const { getRoute } = await import("@/lib/routing");
-                                  const lastRoute = routes[0];
-                              
-                                  const destination =
-                                    lastRoute.path[lastRoute.path.length - 1];
-                              
-                                  const routeData = await getRoute(
-                                    {
-                                      lat: location.latitude,
-                                      lng: location.longitude,
-                                    },
-                                    destination,
-                                    profile,
-                                  );
-                              
-                                  // Ignore older route requests
-                                  if (currentRequest !== routeRequestId.current) {
-                                    return;
-                                  }
-                              
-                                  if (routeData) {
-                                    setRoutes([
-                                      {
-                                        ...lastRoute,
-                                        path: routeData.path,
-                                        distance: routeData.distance,
-                                        duration: routeData.duration,
-                                      },
-                                    ]);
-                                  }
-                                }
-                              }}
+                            setRouteProfile(profile);
+
+                            if (routes.length > 0 && location) {
+                              const currentRequest = ++routeRequestId.current;
+
+                              const { getRoute } =
+                                await import("@/lib/routing");
+                              const lastRoute = routes[0];
+
+                              const destination =
+                                lastRoute.path[lastRoute.path.length - 1];
+
+                              const routeData = await getRoute(
+                                {
+                                  lat: location.latitude,
+                                  lng: location.longitude,
+                                },
+                                destination,
+                                profile,
+                              );
+
+                              // Ignore older route requests
+                              if (currentRequest !== routeRequestId.current) {
+                                return;
+                              }
+
+                              if (routeData) {
+                                setRoutes([
+                                  {
+                                    ...lastRoute,
+                                    path: routeData.path,
+                                    distance: routeData.distance,
+                                    duration: routeData.duration,
+                                  },
+                                ]);
+                              }
+                            }
+                          }}
                           className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
                             routeProfile === profile
                               ? "accent-bg text-white shadow-lg shadow-[var(--primary-accent)]/20"
@@ -1053,7 +1008,7 @@ function AppPage() {
                         outlets: v.hasOutlets,
                         quiet: v.noiseLevel === "quiet",
                         hasErgonomic: v.hasErgonomic,
-                        outletDensity: v.outletDensity,
+                        outletDensity: v.outletDensity ?? undefined,
                         wifiSpeed: v.wifiSpeed,
                       },
                       score: v.score,

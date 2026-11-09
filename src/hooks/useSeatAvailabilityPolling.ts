@@ -5,19 +5,21 @@ import {
   SeatAvailability,
   SeatStatus,
   DEFAULT_SEAT_CAPACITY,
+  DEFAULT_INITIAL_INTERVAL_MS,
+  DEFAULT_MAX_INTERVAL_MS,
+  DEFAULT_BACKOFF_FACTOR,
+  computeSeatStatus,
 } from "./useSeatAvailability";
 
-export const DEFAULT_INITIAL_INTERVAL_MS = 5000; // 5 seconds
-export const DEFAULT_MAX_INTERVAL_MS = 60000; // 60 seconds
-export const DEFAULT_BACKOFF_FACTOR = 2;
-
-export function computeSeatStatus(count: number, capacity: number): SeatStatus {
-  if (capacity <= 0) return "red";
-  const ratio = count / capacity;
-  if (ratio >= 1) return "red";
-  if (ratio >= 0.6) return "yellow";
-  return "green";
-}
+export {
+  computeSeatStatus,
+  DEFAULT_INITIAL_INTERVAL_MS,
+  DEFAULT_MAX_INTERVAL_MS,
+  DEFAULT_BACKOFF_FACTOR,
+  DEFAULT_SEAT_CAPACITY,
+  type SeatStatus,
+  type SeatAvailability,
+};
 
 export interface UseSeatAvailabilityPollingOptions {
   venueId?: string | null;

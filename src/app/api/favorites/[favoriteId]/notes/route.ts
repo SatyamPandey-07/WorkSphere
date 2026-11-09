@@ -34,9 +34,14 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Favorite not found" }, { status: 404 });
     }
 
+    const notesToStore =
+      typeof validation.data.notes === "object" && validation.data.notes !== null
+        ? JSON.stringify(validation.data.notes)
+        : validation.data.notes;
+
     const updated = await prisma.favorite.update({
       where: { id: favoriteId },
-      data: { notes: validation.data.notes },
+      data: { notes: notesToStore },
       include: { tags: true, venue: true },
     });
 

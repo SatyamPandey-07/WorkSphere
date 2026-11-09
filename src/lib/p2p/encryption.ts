@@ -135,6 +135,7 @@ export async function computeSHA256(data: Uint8Array): Promise<string> {
 export async function encryptFile(
   file: File,
   key: CryptoKey,
+  chunkSize: number = CHUNK_SIZE,
 ): Promise<{
   chunks: EncryptedChunk[];
   checksum: string;
@@ -143,12 +144,12 @@ export async function encryptFile(
   const buffer = await file.arrayBuffer();
   const data = new Uint8Array(buffer);
   const checksum = await computeSHA256(data);
-  const totalChunks = Math.ceil(data.length / CHUNK_SIZE);
+  const totalChunks = Math.ceil(data.length / chunkSize);
   const chunks: EncryptedChunk[] = [];
 
   for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE;
-    const end = Math.min(start + CHUNK_SIZE, data.length);
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, data.length);
     const chunk = data.slice(start, end);
     const encrypted = await encryptChunk(chunk, key, i);
     chunks.push(encrypted);

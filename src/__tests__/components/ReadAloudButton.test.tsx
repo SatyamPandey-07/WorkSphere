@@ -174,4 +174,52 @@ describe("ReadAloudButton UI component", () => {
     fireEvent.click(stopButton);
     expect(mockCancel).toHaveBeenCalled();
   });
+
+  it("safely falls back to browser default utterance voice when voices are initially empty", () => {
+    // getVoices returns [] on initial mount
+    render(<ReadAloudButton text="Sample text to read" />);
+
+    const button = screen.getByRole("button", { name: /Read message aloud/i });
+    fireEvent.click(button);
+
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
+    const utterance = createdUtterances[0];
+    // Utterance voice should not be assigned undefined; safely remains default (null)
+    expect(utterance.voice).toBeNull();
+  });
+
+  it("subscribes to voiceschanged event and resolves voice asynchronously", () => {
+    // Initially getVoices returns empty array
+    const mockVoice = {
+      name: "Asynchronous English Voice",
+      lang: "en-US",
+      default: true,
+      voiceURI: "async-en-voice",
+    };
+
+    render(<ReadAloudButton text="Sample text to read" />);
+
+    // Simulate voices becoming available asynchronously
+    (window.speechSynthesis.getVoices as jest.Mock).mockReturnValue([
+      mockVoice,
+    ]);
+
+    // Dispatch or trigger voiceschanged callback
+    act(() => {
+      const onVoicesChanged = window.speechSynthesis.onvoiceschanged as
+        (() => void) | null;
+      if (typeof onVoicesChanged === "function") {
+        onVoicesChanged();
+      }
+      window.speechSynthesis.dispatchEvent?.(new Event("voiceschanged"));
+    });
+
+    const button = screen.getByRole("button", { name: /Read message aloud/i });
+    fireEvent.click(button);
+
+    expect(mockSpeak).toHaveBeenCalledTimes(1);
+    const utterance = createdUtterances[createdUtterances.length - 1];
+    expect(utterance.voice).toBeDefined();
+    expect(utterance.voice).toEqual(mockVoice);
+  });
 });

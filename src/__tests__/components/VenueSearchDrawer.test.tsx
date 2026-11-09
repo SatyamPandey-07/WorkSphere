@@ -10,6 +10,9 @@ describe("VenueSearchDrawer Component (#1429)", () => {
     const handleNoiseLevelChange = jest.fn();
     const handlePriceRangeChange = jest.fn();
     const handleCategoryChange = jest.fn();
+    const handleMaxDistanceChange = jest.fn();
+    const handleCapacityChange = jest.fn();
+    const handleSortByChange = jest.fn();
     const handleClearFilters = jest.fn();
 
     render(
@@ -26,6 +29,12 @@ describe("VenueSearchDrawer Component (#1429)", () => {
         onPriceRangeChange={handlePriceRangeChange}
         category="cafe"
         onCategoryChange={handleCategoryChange}
+        maxDistance={3}
+        onMaxDistanceChange={handleMaxDistanceChange}
+        minCapacity={4}
+        onMinCapacityChange={handleCapacityChange}
+        sortBy="capacity_asc"
+        onSortByChange={handleSortByChange}
         onClearFilters={handleClearFilters}
       />,
     );
@@ -55,12 +64,16 @@ describe("VenueSearchDrawer Component (#1429)", () => {
     const clearBtn = screen.getByTestId("clear-filters-btn");
     fireEvent.click(clearBtn);
 
-    // Assert that callbacks were triggered with cleared / default values
-    expect(handleSearchChange).toHaveBeenCalledWith("");
+    // Search remains unchanged while all other filters return to defaults.
+    expect(handleSearchChange).not.toHaveBeenCalled();
+    expect(searchInput).toHaveValue("Coffee Shop");
     expect(handleAmenitiesChange).toHaveBeenCalledWith([]);
     expect(handleNoiseLevelChange).toHaveBeenCalledWith("all");
     expect(handlePriceRangeChange).toHaveBeenCalledWith("all");
     expect(handleCategoryChange).toHaveBeenCalledWith("all");
+    expect(handleMaxDistanceChange).toHaveBeenCalledWith(0);
+    expect(handleCapacityChange).toHaveBeenCalledWith(1);
+    expect(handleSortByChange).toHaveBeenCalledWith("default");
     expect(handleClearFilters).toHaveBeenCalledTimes(1);
   });
 
@@ -95,24 +108,17 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       expect(screen.queryByTestId("active-filter-badge")).not.toBeInTheDocument();
     });
 
-    it("displays Clear Filters button and active chips when search text is entered", () => {
+    it("does not treat search text alone as an active filter", () => {
       render(<VenueSearchDrawer isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByTestId("search-input");
       fireEvent.change(searchInput, { target: { value: "Library" } });
 
-      expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
-      expect(screen.getByTestId("header-clear-all-btn")).toBeInTheDocument();
-      expect(screen.getByTestId("active-filters-bar")).toBeInTheDocument();
-      expect(screen.getByTestId("active-filter-badge")).toHaveTextContent("1");
-      expect(screen.getByText('"Library"')).toBeInTheDocument();
-
-      // Dismiss search chip
-      const dismissSearch = screen.getByTestId("clear-search-chip");
-      fireEvent.click(dismissSearch);
-
       expect(screen.queryByTestId("clear-filters-btn")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("header-clear-all-btn")).not.toBeInTheDocument();
       expect(screen.queryByTestId("active-filters-bar")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("active-filter-badge")).not.toBeInTheDocument();
+      expect(searchInput).toHaveValue("Library");
     });
 
     it("displays active chips and allows individual dismissal for category, noise, and price", () => {
@@ -141,6 +147,220 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       expect(screen.queryByTestId("clear-filters-btn")).not.toBeInTheDocument();
       expect(screen.queryByTestId("active-filters-bar")).not.toBeInTheDocument();
       expect(screen.queryByTestId("active-filter-badge")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Noise level filter chips accessibility (#3930)", () => {
+    it("renders noise filter chips with descriptive aria-label and aria-pressed attributes", () => {
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          noiseLevel="quiet"
+        />,
+      );
+
+      const allChip = screen.getByTestId("noise-all");
+      const quietChip = screen.getByTestId("noise-quiet");
+      const moderateChip = screen.getByTestId("noise-moderate");
+      const loudChip = screen.getByTestId("noise-loud");
+
+      expect(allChip).toHaveAttribute("aria-label", "Filter by Any Noise level");
+      expect(allChip).toHaveAttribute("aria-pressed", "false");
+
+      expect(quietChip).toHaveAttribute("aria-label", "Filter by Quiet spaces");
+      expect(quietChip).toHaveAttribute("aria-pressed", "true");
+
+      expect(moderateChip).toHaveAttribute("aria-label", "Filter by Moderate spaces");
+      expect(moderateChip).toHaveAttribute("aria-pressed", "false");
+
+      expect(loudChip).toHaveAttribute("aria-label", "Filter by Lively spaces");
+      expect(loudChip).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("toggles noise filter selection and updates aria-pressed accordingly", () => {
+      const handleNoiseChange = jest.fn();
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          onNoiseLevelChange={handleNoiseChange}
+        />,
+      );
+
+      const quietChip = screen.getByTestId("noise-quiet");
+      fireEvent.click(quietChip);
+
+      expect(handleNoiseChange).toHaveBeenCalledWith("quiet");
+    });
+
+    it("supports keyboard Enter and Space keys to toggle noise filter state", () => {
+      const handleNoiseChange = jest.fn();
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          onNoiseLevelChange={handleNoiseChange}
+        />,
+      );
+
+      const moderateChip = screen.getByTestId("noise-moderate");
+
+      // Press Enter
+      fireEvent.keyDown(moderateChip, { key: "Enter", code: "Enter" });
+      expect(handleNoiseChange).toHaveBeenCalledWith("moderate");
+
+      // Press Space
+      fireEvent.keyDown(moderateChip, { key: " ", code: "Space" });
+      expect(handleNoiseChange).toHaveBeenCalledWith("moderate");
+    });
+  });
+
+  describe("Filter preset saving and application", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it("applies a default preset on click and updates all filter controls", () => {
+      const handleAmenitiesChange = jest.fn();
+      const handleNoiseChange = jest.fn();
+      const handleCategoryChange = jest.fn();
+
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          onAmenitiesChange={handleAmenitiesChange}
+          onNoiseLevelChange={handleNoiseChange}
+          onCategoryChange={handleCategoryChange}
+        />,
+      );
+
+      const quietStudyPreset = screen.getByTestId("preset-item-preset-quiet-study");
+      expect(quietStudyPreset).toBeInTheDocument();
+      fireEvent.click(quietStudyPreset);
+
+      expect(handleAmenitiesChange).toHaveBeenCalledWith(["wifi", "outlets", "quiet"]);
+      expect(handleNoiseChange).toHaveBeenCalledWith("quiet");
+      expect(handleCategoryChange).toHaveBeenCalledWith("library");
+    });
+
+    it("saves custom filter combination as a new preset to localStorage", () => {
+      render(<VenueSearchDrawer isOpen={true} onClose={jest.fn()} />);
+
+      // Open save preset form
+      const openSaveBtn = screen.getByTestId("open-save-preset-btn");
+      fireEvent.click(openSaveBtn);
+
+      const nameInput = screen.getByTestId("preset-name-input");
+      fireEvent.change(nameInput, { target: { value: "Weekend Work" } });
+
+      const saveBtn = screen.getByTestId("confirm-save-preset-btn");
+      fireEvent.click(saveBtn);
+
+      expect(screen.getByText("Weekend Work")).toBeInTheDocument();
+    });
+  });
+
+  describe("Sort by Capacity (Low to High / High to Low) (#4591)", () => {
+    it("renders sort dropdown with Capacity: Low to High and Capacity: High to Low options", () => {
+      const handleSortByChange = jest.fn();
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          sortBy="default"
+          onSortByChange={handleSortByChange}
+        />,
+      );
+
+      const sortSelect = screen.getByTestId("venue-sort-select") as HTMLSelectElement;
+      expect(sortSelect).toBeInTheDocument();
+      expect(sortSelect.value).toBe("default");
+
+      expect(screen.getByRole("option", { name: "Default" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", { name: "Capacity: Low to High" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", { name: "Capacity: High to Low" }),
+      ).toBeInTheDocument();
+
+      fireEvent.change(sortSelect, { target: { value: "capacity_asc" } });
+      expect(handleSortByChange).toHaveBeenCalledWith("capacity_asc");
+
+      fireEvent.change(sortSelect, { target: { value: "capacity_desc" } });
+      expect(handleSortByChange).toHaveBeenCalledWith("capacity_desc");
+    });
+
+    it("resets sort selection when Clear Filters is clicked", () => {
+      const handleSortByChange = jest.fn();
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          sortBy="capacity_asc"
+          onSortByChange={handleSortByChange}
+        />,
+      );
+
+      const clearBtn = screen.getByTestId("clear-filters-btn");
+      fireEvent.click(clearBtn);
+
+      expect(handleSortByChange).toHaveBeenCalledWith("default");
+    });
+  });
+
+  describe("Clear search query button and ESC keybinding (#5763)", () => {
+    it("renders clear button when search input has text and clears on click", () => {
+      const handleSearchChange = jest.fn();
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          searchText="Coworking Space"
+          onSearchChange={handleSearchChange}
+        />,
+      );
+
+      const clearBtn = screen.getByTestId("clear-search-input-btn");
+      expect(clearBtn).toBeInTheDocument();
+      expect(clearBtn).toHaveAttribute("aria-label", "Clear search input");
+
+      fireEvent.click(clearBtn);
+      expect(handleSearchChange).toHaveBeenCalledWith("");
+    });
+
+    it("hides clear button when search input is empty", () => {
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          searchText=""
+        />,
+      );
+
+      expect(screen.queryByTestId("clear-search-input-btn")).not.toBeInTheDocument();
+    });
+
+    it("clears search query and blurs input when Escape key is pressed", () => {
+      const handleSearchChange = jest.fn();
+      render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          searchText="Desk"
+          onSearchChange={handleSearchChange}
+        />,
+      );
+
+      const searchInput = screen.getByTestId("search-input");
+      const blurSpy = jest.spyOn(searchInput, "blur");
+
+      fireEvent.keyDown(searchInput, { key: "Escape", code: "Escape" });
+
+      expect(handleSearchChange).toHaveBeenCalledWith("");
+      expect(blurSpy).toHaveBeenCalled();
     });
   });
 });

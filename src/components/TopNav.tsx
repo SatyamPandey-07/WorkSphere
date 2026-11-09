@@ -23,9 +23,12 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { StreakBadge } from "@/components/Header/StreakBadge";
 import { OfflineSyncProgressBar } from "@/components/OfflineSyncProgressBar";
 import { NetworkStatusPill } from "@/components/NetworkStatusPill";
+import { OfflineConflictBadge } from "@/components/offline/OfflineConflictBadge";
 import { QuickSearchTrigger } from "@/components/ui/QuickSearchTrigger";
+import { LanternPowerRing } from "@/components/analytics/LanternPowerRing";
 
 interface TopNavProps {
+
   hideAuth?: boolean;
 }
 
@@ -147,7 +150,10 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
         <div className="flex items-center gap-2 shrink-0">
           <QuickSearchTrigger />
           <NetworkStatusPill />
+          <OfflineConflictBadge />
+          <LanternPowerRing size="sm" className="hidden sm:inline-flex" />
           <ThemeToggle />
+
 
           {!hideAuth && (
             <>

@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-115%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-118%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-115-active-rockstars"><b>👥 Contributors (115)</b></a> •
+  <a href="#-contributors-118-active-rockstars"><b>👥 Contributors (118)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (115 Active Rockstars)
+### 🚀 Contributors (118 Active Rockstars)
 
-A massive thank you to all **115 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **118 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -950,6 +950,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 ### 🚀 Performance & Reliability
 
 - **Rate Limiting**: API protection with configurable limits
+- **Security Architecture**: CSP nonces, signed double-submit CSRF cookies and multi-tier token bucket rate limiting, explained end to end in [docs/security/SECURITY_OVERVIEW.md](./docs/security/SECURITY_OVERVIEW.md)
 - **Data Caching**: Multi-layer caching with TTL support
 - **Error Boundaries**: Graceful error handling prevents crashes
 - **Loading Skeletons**: Smooth loading states for better UX

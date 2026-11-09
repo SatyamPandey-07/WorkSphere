@@ -10,8 +10,13 @@ import {
   Sun,
   Coffee,
   Check,
+  SlidersHorizontal,
+  Volume2,
+  X,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DualRangeSlider } from "@/components/ui/DualRangeSlider";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,10 +38,23 @@ export interface VenueFilterBarProps {
   onToggleFilter?: (filterId: string, active: boolean) => void;
   /** When true (default), selected state is read from / written to URL search params. */
   syncWithUrl?: boolean;
+  /** Custom decibel range filter [min, max] (dB) */
+  decibelRange?: [number, number];
+  /** Callback fired when decibel range changes */
+  onDecibelRangeChange?: (range: [number, number]) => void;
+  /** Custom WiFi speed range filter [min, max] (Mbps) */
+  wifiSpeedRange?: [number, number];
+  /** Callback fired when WiFi speed range changes */
+  onWifiSpeedRangeChange?: (range: [number, number]) => void;
+  /** Whether to show the custom range filters popover. Default: true */
+  showCustomRangeFilters?: boolean;
   /** Additional class names applied to the outermost wrapper element. */
   className?: string;
   "data-testid"?: string;
 }
+
+export const DEFAULT_DECIBEL_RANGE: [number, number] = [30, 85];
+export const DEFAULT_WIFI_RANGE: [number, number] = [10, 300];
 
 // ---------------------------------------------------------------------------
 // Default filter definitions
@@ -120,6 +138,11 @@ export function VenueFilterBar({
   selectedFilters: controlledSelected,
   onToggleFilter,
   syncWithUrl = true,
+  decibelRange: controlledDecibels,
+  onDecibelRangeChange,
+  wifiSpeedRange: controlledWifi,
+  onWifiSpeedRangeChange,
+  showCustomRangeFilters = true,
   className = "",
   "data-testid": testId = "venue-filter-bar",
 }: VenueFilterBarProps) {
@@ -128,7 +151,106 @@ export function VenueFilterBar({
   const pathname = usePathname();
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [scrollEdge, setScrollEdge] = useState<ScrollEdge>("none");
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+
+  // Derive initial decibel and wifi range from URL or controlled prop
+  const urlDecibels = React.useMemo<[number, number] | null>(() => {
+    if (!searchParams) return null;
+    const minDb = searchParams.get("minDb");
+    const maxDb = searchParams.get("maxDb");
+    if (minDb !== null || maxDb !== null) {
+      return [
+        minDb ? Math.max(20, Math.min(100, Number(minDb))) : DEFAULT_DECIBEL_RANGE[0],
+        maxDb ? Math.max(20, Math.min(100, Number(maxDb))) : DEFAULT_DECIBEL_RANGE[1],
+      ];
+    }
+    return null;
+  }, [searchParams]);
+
+  const urlWifi = React.useMemo<[number, number] | null>(() => {
+    if (!searchParams) return null;
+    const minW = searchParams.get("minWifi");
+    const maxW = searchParams.get("maxWifi");
+    if (minW !== null || maxW !== null) {
+      return [
+        minW ? Math.max(0, Math.min(500, Number(minW))) : DEFAULT_WIFI_RANGE[0],
+        maxW ? Math.max(0, Math.min(500, Number(maxW))) : DEFAULT_WIFI_RANGE[1],
+      ];
+    }
+    return null;
+  }, [searchParams]);
+
+  const [internalDecibels, setInternalDecibels] = useState<[number, number]>(
+    controlledDecibels ?? urlDecibels ?? DEFAULT_DECIBEL_RANGE,
+  );
+  const [internalWifi, setInternalWifi] = useState<[number, number]>(
+    controlledWifi ?? urlWifi ?? DEFAULT_WIFI_RANGE,
+  );
+
+  useEffect(() => {
+    if (controlledDecibels) {
+      setInternalDecibels(controlledDecibels);
+    } else if (urlDecibels) {
+      setInternalDecibels(urlDecibels);
+    }
+  }, [controlledDecibels, urlDecibels]);
+
+  useEffect(() => {
+    if (controlledWifi) {
+      setInternalWifi(controlledWifi);
+    } else if (urlWifi) {
+      setInternalWifi(urlWifi);
+    }
+  }, [controlledWifi, urlWifi]);
+
+  // Check if custom ranges are active
+  const hasCustomRangeActive = React.useMemo(() => {
+    const isDbCustom =
+      internalDecibels[0] !== DEFAULT_DECIBEL_RANGE[0] ||
+      internalDecibels[1] !== DEFAULT_DECIBEL_RANGE[1] ||
+      (searchParams && (searchParams.has("minDb") || searchParams.has("maxDb")));
+    const isWifiCustom =
+      internalWifi[0] !== DEFAULT_WIFI_RANGE[0] ||
+      internalWifi[1] !== DEFAULT_WIFI_RANGE[1] ||
+      (searchParams && (searchParams.has("minWifi") || searchParams.has("maxWifi")));
+    return isDbCustom || isWifiCustom;
+  }, [internalDecibels, internalWifi, searchParams]);
+
+  // Handle outside click & escape key to dismiss popover
+  useEffect(() => {
+    if (!isPopoverOpen) return;
+
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(event.target as Node) &&
+        triggerRef.current &&
+        !triggerRef.current.contains(event.target as Node)
+      ) {
+        setIsPopoverOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsPopoverOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isPopoverOpen]);
 
   // -------------------------------------------------------------------------
   // Derive active set from URL or controlled prop
@@ -181,7 +303,6 @@ export function VenueFilterBar({
     const el = scrollRef.current;
     if (!el) return;
 
-    // Run once on mount so the initial state is correct before the user scrolls
     updateScrollEdge();
 
     el.addEventListener("scroll", updateScrollEdge, { passive: true });
@@ -194,7 +315,7 @@ export function VenueFilterBar({
   }, [updateScrollEdge, filters]);
 
   // -------------------------------------------------------------------------
-  // Toggle handler
+  // Toggle handler for amenity pills
   // -------------------------------------------------------------------------
 
   const handleToggle = useCallback(
@@ -214,7 +335,6 @@ export function VenueFilterBar({
         } else {
           params.delete(item.paramKey);
 
-          // Also clean up from the comma-separated `amenities` param
           const list = new Set(
             (params.get("amenities") || "")
               .split(",")
@@ -238,6 +358,83 @@ export function VenueFilterBar({
   );
 
   // -------------------------------------------------------------------------
+  // Range filters Apply and Reset handlers
+  // -------------------------------------------------------------------------
+
+  const handleApplyRangeFilters = useCallback(() => {
+    setIsPopoverOpen(false);
+    onDecibelRangeChange?.(internalDecibels);
+    onWifiSpeedRangeChange?.(internalWifi);
+
+    if (syncWithUrl && pathname && router) {
+      const params = new URLSearchParams(
+        searchParams ? searchParams.toString() : "",
+      );
+
+      if (
+        internalDecibels[0] !== DEFAULT_DECIBEL_RANGE[0] ||
+        internalDecibels[1] !== DEFAULT_DECIBEL_RANGE[1]
+      ) {
+        params.set("minDb", String(internalDecibels[0]));
+        params.set("maxDb", String(internalDecibels[1]));
+      } else {
+        params.delete("minDb");
+        params.delete("maxDb");
+      }
+
+      if (
+        internalWifi[0] !== DEFAULT_WIFI_RANGE[0] ||
+        internalWifi[1] !== DEFAULT_WIFI_RANGE[1]
+      ) {
+        params.set("minWifi", String(internalWifi[0]));
+        params.set("maxWifi", String(internalWifi[1]));
+      } else {
+        params.delete("minWifi");
+        params.delete("maxWifi");
+      }
+
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [
+    internalDecibels,
+    internalWifi,
+    onDecibelRangeChange,
+    onWifiSpeedRangeChange,
+    syncWithUrl,
+    pathname,
+    router,
+    searchParams,
+  ]);
+
+  const handleResetRangeFilters = useCallback(() => {
+    setInternalDecibels(DEFAULT_DECIBEL_RANGE);
+    setInternalWifi(DEFAULT_WIFI_RANGE);
+    onDecibelRangeChange?.(DEFAULT_DECIBEL_RANGE);
+    onWifiSpeedRangeChange?.(DEFAULT_WIFI_RANGE);
+
+    if (syncWithUrl && pathname && router) {
+      const params = new URLSearchParams(
+        searchParams ? searchParams.toString() : "",
+      );
+      params.delete("minDb");
+      params.delete("maxDb");
+      params.delete("minWifi");
+      params.delete("maxWifi");
+
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [
+    onDecibelRangeChange,
+    onWifiSpeedRangeChange,
+    syncWithUrl,
+    pathname,
+    router,
+    searchParams,
+  ]);
+
+  // -------------------------------------------------------------------------
   // Render — nothing if the filter list is empty
   // -------------------------------------------------------------------------
 
@@ -248,14 +445,8 @@ export function VenueFilterBar({
   return (
     <div
       data-testid={testId}
-      className={cn("relative w-full overflow-hidden", className)}
+      className={cn("relative w-full", className)}
     >
-      {/*
-        The mask-image is applied to this div (the visible viewport of the
-        scroll container) so the gradient composites over whatever background
-        is behind the pills without adding extra DOM elements.
-        WebkitMaskImage is required for Safari / iOS.
-      */}
       <div
         style={{
           WebkitMaskImage: maskImage,
@@ -275,6 +466,38 @@ export function VenueFilterBar({
           aria-label="Filter venues by amenity"
           className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-1 scroll-smooth touch-pan-x"
         >
+          {/* Custom Ambient Decibel & WiFi Speed Range Filter Trigger */}
+          {showCustomRangeFilters && (
+            <button
+              ref={triggerRef}
+              type="button"
+              role="button"
+              aria-haspopup="dialog"
+              aria-expanded={isPopoverOpen}
+              data-testid="venue-filter-popover-trigger"
+              data-selected={hasCustomRangeActive}
+              onClick={() => setIsPopoverOpen((prev) => !prev)}
+              className={cn(
+                "inline-flex items-center justify-center gap-1.5",
+                "min-h-[44px] px-3 rounded-full",
+                "text-xs font-semibold shrink-0 select-none",
+                "transition-all active:scale-95 border",
+                hasCustomRangeActive || isPopoverOpen
+                  ? "bg-blue-600 text-white border-blue-600 shadow-sm hover:bg-blue-700 dark:bg-blue-600 dark:border-blue-500"
+                  : "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
+              )}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Noise &amp; Wi-Fi</span>
+              {hasCustomRangeActive && (
+                <span
+                  data-testid="venue-filter-popover-active-indicator"
+                  className="h-1.5 w-1.5 rounded-full bg-white dark:bg-cyan-300"
+                />
+              )}
+            </button>
+          )}
+
           {filters.map((item) => {
             const isSelected = activeSet.has(item.id);
             const Icon = item.icon;
@@ -288,13 +511,6 @@ export function VenueFilterBar({
                 data-testid={`venue-filter-pill-${item.id}`}
                 data-selected={isSelected}
                 onClick={() => handleToggle(item)}
-                /*
-                 * Touch target: Apple HIG recommends a minimum of 44 × 44 pt.
-                 * min-h-[44px] ensures the button is at least 44 px tall.
-                 * px-3 + the icon/label content makes it at least 44 px wide
-                 * for all labels in DEFAULT_VENUE_FILTERS; shrink-0 prevents
-                 * flex compression. The pill shape (rounded-full) is preserved.
-                 */
                 className={cn(
                   "inline-flex items-center justify-center gap-1.5",
                   "min-h-[44px] px-3 rounded-full",
@@ -316,6 +532,115 @@ export function VenueFilterBar({
           })}
         </div>
       </div>
+
+      {/* Custom Range Filters Popover */}
+      {showCustomRangeFilters && isPopoverOpen && (
+        <div
+          ref={popoverRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Custom ambient noise and WiFi speed filters"
+          data-testid="venue-filter-popover"
+          className={cn(
+            "absolute left-0 top-full mt-2 z-50",
+            "w-full sm:w-[420px] max-w-[calc(100vw-2rem)]",
+            "rounded-2xl border border-zinc-200 dark:border-zinc-800",
+            "bg-white dark:bg-zinc-900 p-5 shadow-2xl",
+            "animate-in fade-in duration-150",
+          )}
+        >
+          {/* Popover Header */}
+          <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3 mb-4">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                Acoustic &amp; Connectivity Filters
+              </h3>
+            </div>
+            <button
+              type="button"
+              data-testid="close-filter-popover-button"
+              onClick={() => setIsPopoverOpen(false)}
+              className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              aria-label="Close custom filters popover"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {/* Decibel Range Slider Section */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                  Ambient Noise Range
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-2">
+                Target acoustic levels from quiet libraries to vibrant cafes.
+              </p>
+              <DualRangeSlider
+                min={20}
+                max={100}
+                step={1}
+                value={internalDecibels}
+                onChange={setInternalDecibels}
+                formatValue={(v) => `${v} dB`}
+                minThumbLabel="Minimum decibels"
+                maxThumbLabel="Maximum decibels"
+                data-testid="decibel-range-slider"
+              />
+            </div>
+
+            {/* WiFi Speed Range Slider Section */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <Wifi className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                  Wi-Fi Download Speed
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-2">
+                Verified connectivity speed from light browsing to 4K calls.
+              </p>
+              <DualRangeSlider
+                min={0}
+                max={500}
+                step={5}
+                value={internalWifi}
+                onChange={setInternalWifi}
+                formatValue={(v) => `${v} Mbps`}
+                minThumbLabel="Minimum WiFi speed"
+                maxThumbLabel="Maximum WiFi speed"
+                data-testid="wifi-range-slider"
+              />
+            </div>
+          </div>
+
+          {/* Footer Actions */}
+          <div className="flex items-center justify-between border-t border-zinc-100 dark:border-zinc-800 pt-4 mt-6">
+            <button
+              type="button"
+              data-testid="reset-range-filters-button"
+              onClick={handleResetRangeFilters}
+              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset Defaults
+            </button>
+
+            <button
+              type="button"
+              data-testid="apply-range-filters-button"
+              onClick={handleApplyRangeFilters}
+              className="inline-flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all active:scale-95"
+            >
+              Apply Filters
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { Users, Volume2, Armchair, Clock } from "lucide-react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { Users, Volume2, Armchair, Clock, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface HourlyForecastItem {
@@ -101,6 +101,199 @@ export function getCrowdGradient(crowd: number): {
   };
 }
 
+/**
+ * Maps expected decibel levels and noise category to descriptive acoustic vibe tags.
+ */
+export function getDecibelVibeTag(decibels: number, noiseLevel?: string): string {
+  if (noiseLevel === "quiet" || decibels < 50) {
+    return "Quiet Library";
+  }
+  if (noiseLevel === "loud" || decibels >= 65) {
+    return "Bustling Cafe";
+  }
+  return "Cozy Workspace";
+}
+
+/**
+ * Determines horizontal boundary placement to avoid screen and container clipping.
+ */
+export function getTooltipAlignment(
+  index: number,
+  total: number = 24
+): "left" | "right" | "center" {
+  if (index <= 3) return "left";
+  if (index >= total - 4) return "right";
+  return "center";
+}
+
+export interface DecibelThresholdTooltipProps {
+  item: HourlyForecastItem;
+  index: number;
+  totalBars?: number;
+  className?: string;
+  "data-testid"?: string;
+  formatHour?: (hour: number) => string;
+}
+
+/**
+ * Floating decibel threshold tooltip anchored to hovered chart bar.
+ * Displays Expected dBA, Historical noise variance (+/- 4 dB), and acoustic vibe tag.
+ * Employs boundary detection to prevent screen edge overflow on mobile devices.
+ */
+export function DecibelThresholdTooltip({
+  item,
+  index,
+  totalBars = 24,
+  className,
+  "data-testid": testId = "decibel-threshold-tooltip",
+  formatHour = (h: number) => {
+    const period = h >= 12 ? "PM" : "AM";
+    const hour12 = h % 12 === 0 ? 12 : h % 12;
+    return `${hour12}:00 ${period}`;
+  },
+}: DecibelThresholdTooltipProps) {
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [screenShift, setScreenShift] = useState(0);
+
+  const decibels =
+    item.decibels ??
+    Math.round(32 + (item.crowdPercentage / 100) * 45);
+
+  const vibeTag = getDecibelVibeTag(decibels, item.noiseLevel);
+  const alignment = getTooltipAlignment(index, totalBars);
+
+  // Boundary detection: monitor screen edges on mobile devices
+  useEffect(() => {
+    if (!tooltipRef.current) return;
+    try {
+      const rect = tooltipRef.current.getBoundingClientRect();
+      const screenPadding = 8;
+      const viewportWidth =
+        typeof window !== "undefined"
+          ? window.innerWidth || document.documentElement.clientWidth
+          : 360;
+
+      if (rect.left < screenPadding) {
+        setScreenShift(screenPadding - rect.left);
+      } else if (rect.right > viewportWidth - screenPadding) {
+        setScreenShift(viewportWidth - screenPadding - rect.right);
+      } else {
+        setScreenShift(0);
+      }
+    } catch {
+      // Safe fallback in test or headless environments
+    }
+  }, [index]);
+
+  const centerPercent = ((index + 0.5) / totalBars) * 100;
+
+  const positionStyle: React.CSSProperties =
+    alignment === "left"
+      ? {
+          left: `${Math.max(1, (index / totalBars) * 100)}%`,
+          transform: screenShift ? `translateX(${screenShift}px)` : undefined,
+        }
+      : alignment === "right"
+        ? {
+            right: `${Math.max(1, ((totalBars - 1 - index) / totalBars) * 100)}%`,
+            transform: screenShift ? `translateX(${screenShift}px)` : undefined,
+          }
+        : {
+            left: `${centerPercent}%`,
+            transform: `translateX(calc(-50% + ${screenShift}px))`,
+          };
+
+  return (
+    <div
+      ref={tooltipRef}
+      role="tooltip"
+      data-testid={testId}
+      data-alignment={alignment}
+      style={positionStyle}
+      className={cn(
+        "absolute bottom-[calc(100%+8px)] z-30 pointer-events-none min-w-[175px] max-w-[240px]",
+        "bg-zinc-950/95 dark:bg-zinc-900/95 border border-white/15 dark:border-zinc-700/80 rounded-xl p-2.5",
+        "shadow-2xl backdrop-blur-md text-white text-xs",
+        "animate-in fade-in zoom-in-95 duration-150 transition-all",
+        className
+      )}
+    >
+      {/* Time & Crowd Header */}
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-1.5 mb-1.5">
+        <span
+          data-testid="tooltip-hour-header"
+          className="font-bold text-[11px] text-zinc-200 tracking-tight"
+        >
+          {formatHour(item.hour)}
+        </span>
+        <span className="text-[10px] font-medium text-zinc-400">
+          {item.crowdPercentage}% crowd
+        </span>
+      </div>
+
+      {/* Metrics Rows */}
+      <div className="space-y-1">
+        {/* Expected dBA reading */}
+        <div className="flex items-center justify-between gap-1 text-[11px]">
+          <span className="text-zinc-400 flex items-center gap-1">
+            <Volume2 className="w-3 h-3 text-cyan-400 shrink-0" />
+            Expected:
+          </span>
+          <span
+            data-testid="tooltip-expected-dba"
+            className="font-bold text-cyan-300 tracking-tight"
+          >
+            {decibels} dBA
+          </span>
+        </div>
+
+        {/* Historical noise variance */}
+        <div className="flex items-center justify-between gap-1 text-[11px]">
+          <span className="text-zinc-400">Historical variance:</span>
+          <span
+            data-testid="tooltip-noise-variance"
+            className="font-semibold text-emerald-400"
+            title="+/- 4 dB noise variance"
+          >
+            +/- 4 dB
+          </span>
+        </div>
+
+        {/* Vibe tag */}
+        <div className="flex items-center justify-between gap-1 pt-0.5">
+          <span className="text-zinc-400 text-[10px]">Acoustic Vibe:</span>
+          <span
+            data-testid="tooltip-vibe-tag"
+            className={cn(
+              "px-2 py-0.5 rounded-full text-[10px] font-semibold border inline-flex items-center gap-1",
+              vibeTag === "Quiet Library"
+                ? "bg-blue-500/20 text-cyan-300 border-blue-500/30"
+                : vibeTag === "Bustling Cafe"
+                  ? "bg-pink-500/20 text-pink-300 border-pink-500/30"
+                  : "bg-purple-500/20 text-purple-300 border-purple-500/30"
+            )}
+          >
+            <Sparkles className="w-2.5 h-2.5 shrink-0" />
+            {vibeTag}
+          </span>
+        </div>
+      </div>
+
+      {/* Arrow pointing to bar */}
+      <div
+        className={cn(
+          "absolute -bottom-1.5 w-3 h-3 rotate-45 bg-zinc-950 border-r border-b border-white/15",
+          alignment === "left"
+            ? "left-4"
+            : alignment === "right"
+              ? "right-4"
+              : "left-1/2 -translate-x-1/2"
+        )}
+      />
+    </div>
+  );
+}
+
 export function HourlyCrowdForecast({
   venueId,
   venueName,
@@ -112,6 +305,7 @@ export function HourlyCrowdForecast({
 }: HourlyCrowdForecastProps) {
   const currentHour = useMemo(() => new Date().getHours(), []);
   const [selectedHour, setSelectedHour] = useState<number>(currentHour);
+  const [hoveredHour, setHoveredHour] = useState<number | null>(null);
 
   const forecastData = useMemo(() => {
     if (forecast && forecast.length === 24) {
@@ -122,10 +316,25 @@ export function HourlyCrowdForecast({
 
   const activeReading = useMemo(() => {
     return (
-      forecastData.find((f) => f.hour === selectedHour) || forecastData[selectedHour] ||
+      forecastData.find((f) => f.hour === selectedHour) ||
+      forecastData[selectedHour] ||
       forecastData[0]
     );
   }, [forecastData, selectedHour]);
+
+  const hoveredItem = useMemo(() => {
+    if (hoveredHour === null) return null;
+    return (
+      forecastData.find((f) => f.hour === hoveredHour) ||
+      forecastData[hoveredHour] ||
+      null
+    );
+  }, [forecastData, hoveredHour]);
+
+  const hoveredIndex = useMemo(() => {
+    if (hoveredHour === null) return -1;
+    return forecastData.findIndex((f) => f.hour === hoveredHour);
+  }, [forecastData, hoveredHour]);
 
   const isCurrentLiveHour = selectedHour === currentHour;
   const gradientInfo = getCrowdGradient(activeReading.crowdPercentage);
@@ -242,23 +451,41 @@ export function HourlyCrowdForecast({
         </div>
       </div>
 
-      {/* Vertical Bars Histogram */}
+      {/* Vertical Bars Histogram with Floating Decibel Tooltip */}
       <div
         data-testid="hourly-bars-container"
+        onMouseLeave={() => setHoveredHour(null)}
         className="relative h-28 flex items-end gap-1 px-1 mb-3 pt-4 border-b border-white/10"
       >
-        {forecastData.map((item) => {
+        {/* Floating Decibel Threshold Tooltip anchored to hovered bar */}
+        {hoveredItem && hoveredIndex >= 0 && (
+          <DecibelThresholdTooltip
+            item={hoveredItem}
+            index={hoveredIndex}
+            totalBars={forecastData.length}
+            formatHour={formatHour}
+          />
+        )}
+
+        {forecastData.map((item, idx) => {
           const isSelected = item.hour === selectedHour;
           const isCurrent = item.hour === currentHour;
+          const isHovered = item.hour === hoveredHour;
           const barHeight = Math.max(12, item.crowdPercentage);
           const barStyle = getCrowdGradient(item.crowdPercentage);
 
           return (
             <div
               key={item.hour}
+              data-testid={`hourly-bar-${item.hour}`}
               onClick={() => handleBarClick(item.hour)}
-              className="flex-1 flex flex-col items-center justify-end h-full cursor-pointer group relative"
-              title={`${formatHour(item.hour)}: ${item.crowdPercentage}% crowd`}
+              onMouseEnter={() => setHoveredHour(item.hour)}
+              onFocus={() => setHoveredHour(item.hour)}
+              onBlur={() => setHoveredHour(null)}
+              tabIndex={0}
+              role="button"
+              aria-label={`${formatHour(item.hour)}: ${item.crowdPercentage}% crowd, ${item.decibels ?? 40} dBA`}
+              className="flex-1 flex flex-col items-center justify-end h-full cursor-pointer group relative focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 rounded-t-sm"
             >
               {/* Bar element with fluid gradient */}
               <div
@@ -268,7 +495,9 @@ export function HourlyCrowdForecast({
                   barStyle.barClass,
                   isSelected
                     ? "brightness-125 ring-2 ring-white scale-y-105 z-10"
-                    : "opacity-75 group-hover:opacity-100 group-hover:brightness-110",
+                    : isHovered
+                      ? "brightness-125 scale-y-105 opacity-100 z-10"
+                      : "opacity-75 group-hover:opacity-100 group-hover:brightness-110",
                   isCurrent && !isSelected && "ring-1 ring-emerald-400/80"
                 )}
               />

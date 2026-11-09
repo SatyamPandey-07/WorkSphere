@@ -882,13 +882,13 @@ async function syncConversations() {
           const response =
             action.type === "conversation-delete"
               ? await fetch(`/api/conversations/${action.conversationId}`, {
-                  method: "DELETE",
-                })
+                method: "DELETE",
+              })
               : await fetch(`/api/conversations/${action.conversationId}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ title: action.title }),
-                });
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: action.title }),
+              });
 
           if (response.ok) {
             await removePendingAction(db, action.id);
@@ -1220,8 +1220,8 @@ async function syncFavoriteVenuesOccupancy() {
       const targetStore = storeNames.contains("favorites")
         ? "favorites"
         : storeNames.contains("venues")
-        ? "venues"
-        : null;
+          ? "venues"
+          : null;
 
       if (targetStore) {
         const tx = db.transaction(targetStore, "readwrite");
@@ -1353,7 +1353,7 @@ function openIndexedDB() {
           deltaStore.createIndex("timestamp", "timestamp", { unique: false });
         }
 
-// Recently viewed venues store (Issue #3512)
+        // Recently viewed venues store (Issue #3512)
         if (!db.objectStoreNames.contains("recentlyViewedVenues")) {
           const recentStore = db.createObjectStore("recentlyViewedVenues", {
             keyPath: "id",
@@ -1450,11 +1450,11 @@ async function prefetchVenueData(venueId, position) {
         ((1 -
           Math.log(
             Math.tan((lat * Math.PI) / 180) +
-              1 / Math.cos((lat * Math.PI) / 180),
+            1 / Math.cos((lat * Math.PI) / 180),
           ) /
-            Math.PI) /
+          Math.PI) /
           2) *
-          Math.pow(2, zoom),
+        Math.pow(2, zoom),
       );
 
       const mapCache = await caches.open(MAP_TILE_CACHE_NAME);
@@ -1525,8 +1525,8 @@ self.addEventListener("push", (event) => {
     typeof self !== "undefined" && self && self.registration
       ? self.registration
       : typeof globalThis !== "undefined" &&
-          globalThis.self &&
-          globalThis.self.registration
+        globalThis.self &&
+        globalThis.self.registration
         ? globalThis.self.registration
         : null;
   if (swRegistration && swRegistration.showNotification) {
@@ -1670,7 +1670,7 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
         for (const record of toEvict) {
           await cache.delete(record.url);
         }
-        
+
         console.log(
           `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
         );

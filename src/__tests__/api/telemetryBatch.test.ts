@@ -177,3 +177,4 @@ describe("POST /api/telemetry/batch", () => {
     expect(json.error).toBe("Failed to persist telemetry readings");
   });
 });
+

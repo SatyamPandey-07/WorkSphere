@@ -7,6 +7,11 @@ import {
   CONFLICT_DATE_WINDOW_DAYS,
   DEFAULT_BOOKING_DURATION_MINUTES,
 } from "@/lib/bookingOverlap";
+import {
+  bookingStartsAt,
+  formatToWallClock,
+  timeZoneOffsetMs,
+} from "@/lib/booking";
 
 const slot = (
   date: string,
@@ -215,5 +220,50 @@ describe("conflictDateWindow", () => {
     }
     expect(conflicts).toBeGreaterThan(0);
     expect(furthestOffset).toBeLessThanOrEqual(CONFLICT_DATE_WINDOW_DAYS);
+  });
+});
+
+
+describe("dateTimeAdapter defensive edge cases (#6762)", () => {
+  it("intervalsOverlap returns false for nullish or non-finite inputs", () => {
+    // @ts-expect-error testing null input
+    expect(intervalsOverlap(null, { start: 0, end: 10 })).toBe(false);
+    // @ts-expect-error testing undefined input
+    expect(intervalsOverlap({ start: 0, end: 10 }, undefined)).toBe(false);
+    expect(intervalsOverlap({ start: NaN, end: 10 }, { start: 0, end: 10 })).toBe(false);
+    expect(intervalsOverlap({ start: 0, end: Infinity }, { start: 0, end: 10 })).toBe(false);
+  });
+
+  it("bookingInterval returns null for nullish slot", () => {
+    // @ts-expect-error testing null input
+    expect(bookingInterval(null)).toBeNull();
+    // @ts-expect-error testing undefined input
+    expect(bookingInterval(undefined)).toBeNull();
+  });
+
+  it("bookingStartsAt returns null for nullish booking or missing fields", () => {
+    // @ts-expect-error testing null input
+    expect(bookingStartsAt(null)).toBeNull();
+    // @ts-expect-error testing invalid object
+    expect(bookingStartsAt({})).toBeNull();
+  });
+
+  it("formatToWallClock and timeZoneOffsetMs handle invalid Date objects safely", () => {
+    const invalidDate = new Date(NaN);
+    expect(formatToWallClock(invalidDate)).toEqual({ date: "", time: "" });
+    // @ts-expect-error testing null input
+    expect(formatToWallClock(null)).toEqual({ date: "", time: "" });
+
+    expect(timeZoneOffsetMs(invalidDate, "UTC")).toBe(0);
+    // @ts-expect-error testing null input
+    expect(timeZoneOffsetMs(null, "UTC")).toBe(0);
+  });
+
+  it("findConflictingBookings and hasBookingConflict handle nullish existing arrays", () => {
+    const req = slot("2026-10-10", "10:00", "UTC");
+    // @ts-expect-error testing null existing
+    expect(findConflictingBookings(req, null)).toEqual([]);
+    // @ts-expect-error testing null existing
+    expect(hasBookingConflict(req, null)).toBe(false);
   });
 });

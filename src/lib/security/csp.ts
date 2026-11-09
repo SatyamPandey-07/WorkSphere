@@ -87,3 +87,4 @@ export const getCSPHeader = () => {
   ];
   return directives.join('; ');
 };
+};

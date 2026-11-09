@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Globe, Search, X, ChevronDown } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
 
@@ -13,6 +13,10 @@ export interface TimezoneClockProps {
   selectable?: boolean;
   /** Callback invoked when the user selects a different timezone */
   onTimezoneChange?: (newTimeZone: string) => void;
+  /** Optional additional CSS classes */
+  className?: string;
+  /** Optional custom test identifier */
+  testId?: string;
 }
 
 const FALLBACK_TIMEZONES = [
@@ -57,13 +61,20 @@ export function TimezoneClock({
   date,
   selectable = false,
   onTimezoneChange,
+  className = "",
+  testId = "timezone-clock-container",
 }: TimezoneClockProps) {
   const cleanTz = timeZone?.trim() || "";
 
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
   const debouncedQuery = useDebounce(searchQuery, 200);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerButtonRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const allTimezones = useMemo(() => getAllTimezones(), []);
 
@@ -86,7 +97,7 @@ export function TimezoneClock({
       if (q === "cst" || q === "cdt") return lower.includes("chicago");
       if (q === "mst" || q === "mdt") return lower.includes("denver");
       if (q === "pst" || q === "pdt") return lower.includes("los_angeles");
-      if (q === "ist") return lower.includes("kolkata");
+      if (q === "ist") return lower.includes("kolkata") || lower.includes("calcutta");
       if (q === "jst") return lower.includes("tokyo");
       if (q === "gmt" || q === "bst") return lower.includes("london") || lower === "utc";
 
@@ -94,13 +105,18 @@ export function TimezoneClock({
     });
   }, [allTimezones, debouncedQuery]);
 
-  const getReferenceDate = () => {
+  // Reset activeIndex when query or list changes
+  useEffect(() => {
+    setActiveIndex(filteredTimezones.length > 0 ? 0 : -1);
+  }, [filteredTimezones]);
+
+  const getReferenceDate = useCallback(() => {
     if (date) {
       const parsed = new Date(date);
       if (!isNaN(parsed.getTime())) return parsed;
     }
     return new Date();
-  };
+  }, [date]);
 
   const [time, setTime] = useState<string>(() => {
     if (!cleanTz) return "--:--:-- --";
@@ -188,7 +204,17 @@ export function TimezoneClock({
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [timeZone, date]);
+  }, [timeZone, date, getReferenceDate]);
+
+  const selectTimezone = useCallback(
+    (tz: string) => {
+      onTimezoneChange?.(tz);
+      setIsOpen(false);
+      setSearchQuery("");
+      triggerButtonRef.current?.focus();
+    },
+    [onTimezoneChange]
+  );
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -204,26 +230,73 @@ export function TimezoneClock({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
+  // Keyboard navigation for dropdown
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setIsOpen(false);
+        triggerButtonRef.current?.focus();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveIndex((prev) =>
+          filteredTimezones.length === 0
+            ? -1
+            : prev < filteredTimezones.length - 1
+            ? prev + 1
+            : 0
+        );
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveIndex((prev) =>
+          filteredTimezones.length === 0
+            ? -1
+            : prev > 0
+            ? prev - 1
+            : filteredTimezones.length - 1
+        );
+      } else if (e.key === "Enter") {
+        if (activeIndex >= 0 && activeIndex < filteredTimezones.length) {
+          e.preventDefault();
+          selectTimezone(filteredTimezones[activeIndex]);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, activeIndex, filteredTimezones, selectTimezone]);
+
   const clockContent = (
     <div
       suppressHydrationWarning
       className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-mono tabular-nums"
     >
-      <Globe className={`w-3 h-3 shrink-0 ${isValid ? "text-blue-400" : "text-red-400"}`} />
+      <Globe
+        data-testid="timezone-status-icon"
+        className={`w-3 h-3 shrink-0 ${isValid ? "text-blue-400" : "text-red-400"}`}
+      />
       <span
         suppressHydrationWarning
+        data-testid="timezone-clock-time"
         className="text-zinc-900 dark:text-zinc-100 font-semibold"
       >
         {time}
       </span>
       <span
         suppressHydrationWarning
+        data-testid="timezone-clock-abbr"
         className="text-zinc-400 dark:text-zinc-500"
       >
         {isValid ? tzAbbr : tzAbbr || timeZone}
       </span>
       {label && (
-        <span className="text-zinc-400 dark:text-zinc-500 ml-0.5">
+        <span
+          data-testid="timezone-clock-label"
+          className="text-zinc-400 dark:text-zinc-500 ml-0.5"
+        >
           · {label}
         </span>
       )}
@@ -232,15 +305,23 @@ export function TimezoneClock({
 
   if (!selectable) {
     return (
-      <div className="mt-1 inline-flex items-center">
+      <div
+        data-testid={testId}
+        className={`mt-1 inline-flex items-center ${className}`.trim()}
+      >
         {clockContent}
       </div>
     );
   }
 
   return (
-    <div className="relative mt-1 inline-block" ref={dropdownRef}>
+    <div
+      ref={dropdownRef}
+      data-testid={testId}
+      className={`relative mt-1 inline-block ${className}`.trim()}
+    >
       <button
+        ref={triggerButtonRef}
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
         aria-haspopup="listbox"
@@ -261,13 +342,21 @@ export function TimezoneClock({
           <div className="relative mb-2">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-400" />
             <input
+              ref={searchInputRef}
               type="text"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={isOpen}
+              aria-controls="timezone-results-list"
+              aria-activedescendant={
+                activeIndex >= 0 ? `timezone-option-${activeIndex}` : undefined
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search city, country, or timezone..."
               autoFocus
               data-testid="timezone-search-input"
-              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pl-8 pr-7 text-xs text-zinc-900 outline-none focus:border-blue-500 focus:bg-white dark:border-zinc-750 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
+              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-1.5 pl-8 pr-7 text-xs text-zinc-900 outline-none focus:border-blue-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-blue-500"
             />
             {searchQuery && (
               <button
@@ -284,6 +373,8 @@ export function TimezoneClock({
 
           {/* Timezone list or empty state */}
           <div
+            id="timezone-results-list"
+            ref={listRef}
             role="listbox"
             data-testid="timezone-results-list"
             className="max-h-56 overflow-y-auto space-y-0.5 rounded-lg text-xs"
@@ -304,22 +395,25 @@ export function TimezoneClock({
                 </button>
               </div>
             ) : (
-              filteredTimezones.map((tz) => {
+              filteredTimezones.map((tz, index) => {
                 const isSelected = tz === cleanTz;
+                const isHighlighted = index === activeIndex;
+
                 return (
                   <button
                     key={tz}
+                    id={`timezone-option-${index}`}
+                    data-testid={`timezone-item-${tz}`}
                     type="button"
                     role="option"
                     aria-selected={isSelected}
-                    onClick={() => {
-                      onTimezoneChange?.(tz);
-                      setIsOpen(false);
-                      setSearchQuery("");
-                    }}
+                    onClick={() => selectTimezone(tz)}
+                    onMouseEnter={() => setActiveIndex(index)}
                     className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
                       isSelected
                         ? "bg-blue-500/10 font-semibold text-blue-500 dark:text-blue-400"
+                        : isHighlighted
+                        ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
                         : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                     }`}
                   >
@@ -339,3 +433,5 @@ export function TimezoneClock({
     </div>
   );
 }
+
+export default TimezoneClock;

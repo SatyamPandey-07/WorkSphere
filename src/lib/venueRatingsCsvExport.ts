@@ -7,10 +7,12 @@
 export {
   escapeCSV,
   escapeCSVField,
+  triggerBrowserDownload,
 } from "./export/csvBuilder";
 
 export {
   type VenueRatingRecord,
+  type DownloadRatingsOptions,
   formatCSVDate,
   formatCSVUser,
   generateRatingsCSV,

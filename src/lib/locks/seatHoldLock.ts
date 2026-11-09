@@ -6,6 +6,7 @@
  */
 
 import { getRedis } from "@/lib/redis";
+import { getRedisKeyspaceManager } from "@/lib/redis/keyspaceNotifications";
 
 export const DEFAULT_LOCK_TTL_SECONDS = 300; // 5 minutes
 
@@ -157,7 +158,13 @@ export async function acquireSeatWebLock(
       const currentLock = parseLockValue(rawLock);
 
       if (Number(flag) === 1) {
-        return { success: true, lock: currentLock ?? lockPayload };
+        const finalLock = currentLock ?? lockPayload;
+        getRedisKeyspaceManager().registerDeskTimer(
+          venueId,
+          seatId,
+          finalLock.expiresAt,
+        );
+        return { success: true, lock: finalLock };
       }
 
       const remainingSec = currentLock
@@ -203,6 +210,11 @@ export async function acquireSeatWebLock(
   };
 
   memoryLocks.set(key, lockPayload);
+  getRedisKeyspaceManager().registerDeskTimer(
+    venueId,
+    seatId,
+    lockPayload.expiresAt,
+  );
   return { success: true, lock: lockPayload };
 }
 
@@ -216,6 +228,8 @@ export async function releaseSeatWebLock(
 ): Promise<boolean> {
   const key = getLockKey(venueId, seatId);
   const redis = getRedis();
+
+  getRedisKeyspaceManager().unregisterDeskTimer(venueId, seatId);
 
   if (redis) {
     try {
@@ -473,6 +487,7 @@ export const SeatHoldHeartbeatService = {
 export function resetMemorySeatLocks(): void {
   stopAllSeatLockRenewalHeartbeats();
   memoryLocks.clear();
+  getRedisKeyspaceManager().reset();
 }
 
 export interface SeatWebLockOptions {

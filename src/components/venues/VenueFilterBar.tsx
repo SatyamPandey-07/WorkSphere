@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { motion, LayoutGroup } from "framer-motion";
 import {
   Wifi,
   Zap,
@@ -14,13 +15,29 @@ import {
   Volume2,
   X,
   RotateCcw,
+  LayoutGrid,
+  Building2,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DualRangeSlider } from "@/components/ui/DualRangeSlider";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types & Defaults
 // ---------------------------------------------------------------------------
+
+export interface VenueCategoryItem {
+  id: string;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+}
+
+export const DEFAULT_VENUE_CATEGORIES: VenueCategoryItem[] = [
+  { id: "all", label: "All", icon: LayoutGrid },
+  { id: "cafe", label: "Cafes", icon: Coffee },
+  { id: "coworking", label: "Coworking", icon: Building2 },
+  { id: "library", label: "Libraries", icon: BookOpen },
+];
 
 export interface VenueFilterItem {
   id: string;
@@ -36,6 +53,18 @@ export interface VenueFilterBarProps {
   selectedFilters?: string[];
   /** Called when a filter is toggled. Receives (filterId, isNowActive). */
   onToggleFilter?: (filterId: string, active: boolean) => void;
+  /** Category tabs list. When provided or by default, renders category pill tabs. */
+  categories?: VenueCategoryItem[];
+  /** Controlled active category tab ID. */
+  selectedCategory?: string;
+  /** Alias for selectedCategory */
+  activeCategory?: string;
+  /** Called when a category tab is clicked or navigated to. Receives (categoryId). */
+  onSelectCategory?: (categoryId: string) => void;
+  /** Alias for onSelectCategory */
+  onCategoryChange?: (categoryId: string) => void;
+  /** Whether to show category tabs. Defaults to true. */
+  showCategoryTabs?: boolean;
   /** When true (default), selected state is read from / written to URL search params. */
   syncWithUrl?: boolean;
   /** Custom decibel range filter [min, max] (dB) */
@@ -86,17 +115,6 @@ export const DEFAULT_VENUE_FILTERS: VenueFilterItem[] = [
 
 // ---------------------------------------------------------------------------
 // Scroll-mask helpers
-//
-// We use the CSS `mask-image` property (with webkit prefix for Safari) on the
-// scroll container wrapper to fade out content near the edges when there is
-// hidden overflow. This avoids adding extra DOM nodes for gradient overlays
-// and works at the CSS compositing level (no layout impact on children).
-//
-// Gradient stops:
-//   - Both edges hidden  → fade in from both left (0→8%) and right (92→100%)
-//   - Only left hidden   → fade in from left only
-//   - Only right hidden  → fade out to right only
-//   - Neither            → no mask (full opacity)
 // ---------------------------------------------------------------------------
 
 type ScrollEdge = "none" | "left" | "right" | "both";
@@ -124,19 +142,25 @@ function buildMaskImage(edge: ScrollEdge): string {
 /**
  * VenueFilterBar
  *
- * A horizontally scrollable row of filter pill buttons for the /venues page.
+ * A horizontally scrollable row of category tabs and filter pill buttons for the /venues page.
  *
- * Key features vs the simpler AmenityFilterPills:
- *  - Uses CSS `mask-image` linear-gradient on the scroll container for a
- *    native fade-out scroll indicator on both edges (no extra DOM nodes).
- *  - Each pill button meets the Apple HIG 44 × 44 pt minimum touch target.
- *  - Right-edge gradient appears automatically when content overflows (even
- *    on viewports narrower than 390 px).
+ * Key features:
+ *  - Smooth pill tab sliding indicator using Framer Motion layoutId="activeFilterPill"
+ *    with a responsive spring transition (stiffness: 450, damping: 30).
+ *  - Keyboard navigation (ArrowLeft / ArrowRight / Home / End) to cycle through category tabs.
+ *  - Apple HIG 44 × 44 pt minimum touch target on all interactive pills.
+ *  - Uses CSS `mask-image` linear-gradient on the scroll container for smooth edge fade-out.
  */
 export function VenueFilterBar({
   filters = DEFAULT_VENUE_FILTERS,
   selectedFilters: controlledSelected,
   onToggleFilter,
+  categories = DEFAULT_VENUE_CATEGORIES,
+  selectedCategory: controlledSelectedCategory,
+  activeCategory: controlledActiveCategory,
+  onSelectCategory,
+  onCategoryChange,
+  showCategoryTabs = true,
   syncWithUrl = true,
   decibelRange: controlledDecibels,
   onDecibelRangeChange,
@@ -153,10 +177,117 @@ export function VenueFilterBar({
   const scrollRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const pillRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [scrollEdge, setScrollEdge] = useState<ScrollEdge>("none");
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
-  // Derive initial decibel and wifi range from URL or controlled prop
+  // -------------------------------------------------------------------------
+  // Category tabs state & URL sync
+  // -------------------------------------------------------------------------
+
+  const urlCategory = React.useMemo(() => {
+    if (!searchParams) return null;
+    return searchParams.get("category");
+  }, [searchParams]);
+
+  const [internalCategory, setInternalCategory] = useState<string>(() => {
+    const controlled = controlledSelectedCategory ?? controlledActiveCategory;
+    if (controlled !== undefined) return controlled;
+    if (urlCategory) return urlCategory;
+    return categories.length > 0 ? categories[0].id : "all";
+  });
+
+  useEffect(() => {
+    const controlled = controlledSelectedCategory ?? controlledActiveCategory;
+    if (controlled !== undefined) {
+      setInternalCategory(controlled);
+    } else if (urlCategory) {
+      setInternalCategory(urlCategory);
+    }
+  }, [controlledSelectedCategory, controlledActiveCategory, urlCategory]);
+
+  const currentCategory =
+    controlledSelectedCategory ?? controlledActiveCategory ?? internalCategory;
+
+  const handleSelectCategory = useCallback(
+    (categoryId: string) => {
+      setInternalCategory(categoryId);
+      onSelectCategory?.(categoryId);
+      onCategoryChange?.(categoryId);
+
+      if (syncWithUrl && pathname && router) {
+        const params = new URLSearchParams(
+          searchParams ? searchParams.toString() : "",
+        );
+        if (categoryId === "all") {
+          params.delete("category");
+        } else {
+          params.set("category", categoryId);
+        }
+        const qs = params.toString();
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      }
+    },
+    [onSelectCategory, onCategoryChange, syncWithUrl, pathname, router, searchParams],
+  );
+
+  const handleCategoryKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+      let nextIndex: number | null = null;
+
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        nextIndex = (currentIndex + 1) % categories.length;
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        nextIndex = (currentIndex - 1 + categories.length) % categories.length;
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        nextIndex = 0;
+      } else if (e.key === "End") {
+        e.preventDefault();
+        nextIndex = categories.length - 1;
+      }
+
+      if (nextIndex !== null) {
+        const nextCat = categories[nextIndex];
+        handleSelectCategory(nextCat.id);
+        tabRefs.current[nextIndex]?.focus();
+      }
+    },
+    [categories, handleSelectCategory],
+  );
+
+  const handlePillKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+      let nextIndex: number | null = null;
+
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        nextIndex = (currentIndex + 1) % filters.length;
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        nextIndex = (currentIndex - 1 + filters.length) % filters.length;
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        nextIndex = 0;
+      } else if (e.key === "End") {
+        e.preventDefault();
+        nextIndex = filters.length - 1;
+      }
+
+      if (nextIndex !== null) {
+        pillRefs.current[nextIndex]?.focus();
+      }
+    },
+    [filters],
+  );
+
+  // -------------------------------------------------------------------------
+  // Derive decibel and wifi range from URL or controlled prop
+  // -------------------------------------------------------------------------
+
   const urlDecibels = React.useMemo<[number, number] | null>(() => {
     if (!searchParams) return null;
     const minDb = searchParams.get("minDb");
@@ -435,7 +566,7 @@ export function VenueFilterBar({
   ]);
 
   // -------------------------------------------------------------------------
-  // Render — nothing if the filter list is empty
+  // Render — return null if filters list is explicitly empty
   // -------------------------------------------------------------------------
 
   if (filters.length === 0) return null;
@@ -445,8 +576,66 @@ export function VenueFilterBar({
   return (
     <div
       data-testid={testId}
-      className={cn("relative w-full", className)}
+      className={cn("relative w-full space-y-2", className)}
     >
+      {/* Category Tabs with Framer Motion layoutId sliding pill indicator */}
+      {showCategoryTabs && categories.length > 0 && (
+        <LayoutGroup id="venue-filter-categories">
+          <div
+            role="tablist"
+            aria-label="Venue categories"
+            data-testid="venue-category-tabs"
+            className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1 scroll-smooth touch-pan-x"
+          >
+            {categories.map((cat, index) => {
+              const isSelected = currentCategory === cat.id;
+              const Icon = cat.icon;
+
+              return (
+                <button
+                  key={cat.id}
+                  ref={(el) => {
+                    tabRefs.current[index] = el;
+                  }}
+                  type="button"
+                  role="tab"
+                  id={`venue-category-tab-${cat.id}`}
+                  aria-selected={isSelected}
+                  tabIndex={isSelected ? 0 : -1}
+                  data-testid={`venue-category-tab-${cat.id}`}
+                  data-selected={isSelected}
+                  onClick={() => handleSelectCategory(cat.id)}
+                  onKeyDown={(e) => handleCategoryKeyDown(e, index)}
+                  className={cn(
+                    "relative inline-flex items-center justify-center gap-1.5",
+                    "min-h-[40px] sm:min-h-[44px] px-4 py-1.5 rounded-full",
+                    "text-xs font-semibold shrink-0 select-none",
+                    "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                    isSelected
+                      ? "text-white"
+                      : "text-zinc-600 hover:text-zinc-900 bg-zinc-100/80 hover:bg-zinc-200/80 border border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
+                  )}
+                >
+                  {isSelected && (
+                    <motion.div
+                      layoutId="activeFilterPill"
+                      transition={{ type: "spring", stiffness: 450, damping: 30 }}
+                      className="absolute inset-0 bg-blue-600 rounded-full shadow-sm"
+                      data-testid="active-filter-pill-indicator"
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center gap-1.5">
+                    {Icon && <Icon className="w-3.5 h-3.5" />}
+                    <span>{cat.label}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </LayoutGroup>
+      )}
+
+      {/* Amenity Filter Row */}
       <div
         style={{
           WebkitMaskImage: maskImage,
@@ -498,21 +687,25 @@ export function VenueFilterBar({
             </button>
           )}
 
-          {filters.map((item) => {
+          {filters.map((item, index) => {
             const isSelected = activeSet.has(item.id);
             const Icon = item.icon;
 
             return (
               <button
                 key={item.id}
+                ref={(el) => {
+                  pillRefs.current[index] = el;
+                }}
                 type="button"
                 role="checkbox"
                 aria-checked={isSelected}
                 data-testid={`venue-filter-pill-${item.id}`}
                 data-selected={isSelected}
                 onClick={() => handleToggle(item)}
+                onKeyDown={(e) => handlePillKeyDown(e, index)}
                 className={cn(
-                  "inline-flex items-center justify-center gap-1.5",
+                  "relative inline-flex items-center justify-center gap-1.5",
                   "min-h-[44px] px-3 rounded-full",
                   "text-xs font-semibold shrink-0 select-none",
                   "transition-all active:scale-95 border",
@@ -646,4 +839,3 @@ export function VenueFilterBar({
 }
 
 export default VenueFilterBar;
-

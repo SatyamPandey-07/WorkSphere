@@ -4,10 +4,14 @@ import React, { useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+ feature/nomad-break-buffers
+import { Map as MapIcon, Sun, Moon } from "lucide-react";
+
 import { Map as MapIcon } from "lucide-react";
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+ main
 
 // Fix for default leaflet icons in React
 if (typeof window !== "undefined") {
@@ -220,6 +224,8 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+feature/nomad-break-buffers
+
  feature/booking-concurrency-lock
 
  feature/logarithmic-volume-curve
@@ -227,9 +233,12 @@ export function InteractiveMap({
 docs/git-worktree-guide
  main
  main
+main
   const tileLayerUrl = isHighContrast
     ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
+ feature/nomad-break-buffers
 
 feature/booking-concurrency-lock
 
@@ -245,6 +254,7 @@ feature/booking-concurrency-lock
  main
  main
 main
+ main
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
     return (

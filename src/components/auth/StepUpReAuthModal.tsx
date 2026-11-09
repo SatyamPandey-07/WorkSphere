@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
 import {
   ShieldAlert,
@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   HardDrive,
 } from "lucide-react";
+import { isModalBackdropClick } from "@/lib/modal-interactions";
 import {
   savePasskeyChallengeToSession,
   clearPasskeyChallengeFromSession,
@@ -25,6 +26,8 @@ export interface StepUpReAuthModalProps {
   actionDescription?: string;
   onSuccess: (stepUpToken: string, backupHealth?: string) => void;
   onCancel: () => void;
+  closeOnBackdropClick?: boolean;
+  closeOnEscape?: boolean;
 }
 
 export function StepUpReAuthModal({
@@ -34,6 +37,8 @@ export function StepUpReAuthModal({
   actionDescription = "This action requires biometric re-authentication with your registered Passkey to protect your account.",
   onSuccess,
   onCancel,
+  closeOnBackdropClick = true,
+  closeOnEscape = true,
 }: StepUpReAuthModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,15 +49,47 @@ export function StepUpReAuthModal({
     isSynced: boolean;
   } | null>(null);
 
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleCancel = useCallback(() => {
+    if (loading) return;
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current);
+      successTimerRef.current = null;
+    }
+    onCancel();
+  }, [loading, onCancel]);
+
   useEffect(() => {
     if (!isOpen) return;
     const cleanup = setupPasskeyUnloadCleanup();
     return () => {
       cleanup();
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+        successTimerRef.current = null;
+      }
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || !closeOnEscape) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleCancel();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, closeOnEscape, handleCancel]);
+
   if (!isOpen) return null;
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (closeOnBackdropClick && isModalBackdropClick(e)) {
+      handleCancel();
+    }
+  };
 
   const handleStartStepUp = async () => {
     try {
@@ -111,12 +148,11 @@ export function StepUpReAuthModal({
       }
 
       // Allow user to see the verification success briefly before resolving
-      setTimeout(() => {
+      successTimerRef.current = setTimeout(() => {
         onSuccess(result.stepUpToken, result.backupStatus?.backupHealth);
       }, 750);
     } catch (err: unknown) {
       clearPasskeyChallengeFromSession();
-      console.error("Step-up authentication error:", err);
       const msg =
         err instanceof Error
           ? err.message
@@ -124,6 +160,7 @@ export function StepUpReAuthModal({
       if (msg.includes("cancelled") || msg.includes("abort")) {
         setError("Re-authentication was cancelled.");
       } else {
+        console.error("Step-up authentication error:", err);
         setError(msg);
       }
     } finally {
@@ -132,12 +169,22 @@ export function StepUpReAuthModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="step-up-modal-title"
+      aria-describedby="step-up-modal-desc"
+      data-testid="step-up-modal"
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+    >
       <div className="relative w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
         <button
-          onClick={onCancel}
+          type="button"
+          onClick={handleCancel}
           disabled={loading}
-          className="absolute top-4 right-4 p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          data-testid="step-up-close-btn"
+          className="absolute top-4 right-4 p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-50"
           aria-label="Close dialog"
         >
           <X className="h-4 w-4" />
@@ -148,34 +195,53 @@ export function StepUpReAuthModal({
             <ShieldAlert className="h-6 w-6" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
+            <h3
+              id="step-up-modal-title"
+              className="text-lg font-bold text-zinc-900 dark:text-white"
+            >
               {actionTitle}
             </h3>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Protected Action: <span className="font-mono">{action}</span>
+              Protected Action:{" "}
+              <span data-testid="step-up-action" className="font-mono">
+                {action}
+              </span>
             </p>
           </div>
         </div>
 
-        <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed">
+        <p
+          id="step-up-modal-desc"
+          className="mt-4 text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed"
+        >
           {actionDescription}
         </p>
 
         {error && (
-          <div className="mt-4 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 flex items-start gap-2.5 text-xs">
+          <div
+            role="alert"
+            data-testid="step-up-error"
+            className="mt-4 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 flex items-start gap-2.5 text-xs"
+          >
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
             <span className="leading-snug">{error}</span>
           </div>
         )}
 
         {stepUpComplete && (
-          <div className="mt-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex flex-col gap-2">
+          <div
+            data-testid="step-up-success-notice"
+            className="mt-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex flex-col gap-2"
+          >
             <div className="flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
               <span>Identity Verified Successfully</span>
             </div>
             {backupInfo && (
-              <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-2 rounded-lg">
+              <div
+                data-testid="step-up-backup-info"
+                className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 p-2 rounded-lg"
+              >
                 {backupInfo.isSynced ? (
                   <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
                 ) : (
@@ -190,13 +256,18 @@ export function StepUpReAuthModal({
         <div className="mt-6 flex flex-col gap-2.5">
           {!stepUpComplete && (
             <button
+              type="button"
               onClick={handleStartStepUp}
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-sm shadow-md transition-all disabled:opacity-50"
+              data-testid="step-up-verify-btn"
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-sm shadow-md transition-all disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2
+                    data-testid="step-up-spinner"
+                    className="h-4 w-4 animate-spin"
+                  />
                   <span>Prompting Biometric Sensor...</span>
                 </>
               ) : (
@@ -209,9 +280,11 @@ export function StepUpReAuthModal({
           )}
 
           <button
-            onClick={onCancel}
+            type="button"
+            onClick={handleCancel}
             disabled={loading}
-            className="w-full px-4 py-2 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            data-testid="step-up-cancel-btn"
+            className="w-full px-4 py-2 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors cursor-pointer disabled:opacity-50"
           >
             Cancel
           </button>
@@ -220,3 +293,5 @@ export function StepUpReAuthModal({
     </div>
   );
 }
+
+export default StepUpReAuthModal;

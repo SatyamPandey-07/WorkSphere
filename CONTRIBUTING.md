@@ -9,8 +9,26 @@ Thank you for your interest in contributing to WorkSphere! This document details
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to help maintain a welcoming and respectful community.
 
 ---
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
+
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
+
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
+
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
 
 ## 📋 Table of Contents
+
+- [5-Minute Quickstart for WOCS 2026 Contributors](#5-minute-quickstart-for-wocs-2026-contributors)
+  - [Common Setup FAQs](#common-setup-faqs)
 
 1. [Git Workflow & PRs](#1-git-workflow--prs)
 2. [Code Style & Quality Checks](#2-code-style--quality-checks)
@@ -19,6 +37,183 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to hel
 5. [Pre-Commit Quality Verification Checklist](#5-pre-commit-quality-verification-checklist)
 6. [Windows Husky & Git Hooks Troubleshooting](#6-windows-husky--git-hooks-troubleshooting)
 7. [PR Pre-flight Checklist](#7-pr-pre-flight-checklist)
+
+---
+
+## 5-Minute Quickstart for WOCS 2026 Contributors
+
+Welcome to **Winter of Code Social (WOCS 2026)**! This checklist gets your local development environment up and running in 5 minutes so you can start contributing right away. For competition details and points scoring, refer to the [WOCS Level Evaluation Guide](docs/WOCS_LEVEL_GUIDE.md).
+
+### 1. Fork and Clone
+
+1. **Fork the repository**: Visit [SatyamPandey-07/WorkSphere](https://github.com/SatyamPandey-07/WorkSphere) and click the **Fork** button.
+2. **Clone your fork locally**:
+   ```bash
+   git clone https://github.com/<your-username>/WorkSphere.git
+   cd WorkSphere
+   ```
+3. **Configure the upstream remote**:
+   ```bash
+   git remote add upstream https://github.com/SatyamPandey-07/WorkSphere.git
+   git remote -v
+   ```
+   Confirm that `origin` points to your personal fork and `upstream` points to `SatyamPandey-07/WorkSphere`.
+
+### 2. Node.js Requirements
+
+WorkSphere requires **Node.js v20+** (LTS recommended, configured in `.nvmrc`).
+
+Verify your installed versions:
+
+```bash
+node -v   # Recommended: v20.x.x or higher
+npm -v    # Recommended: v10.x.x or higher
+```
+
+> **Tip:** If you use [nvm](https://github.com/nvm-sh/nvm), run `nvm use` in the repository root to automatically use the Node version defined in `.nvmrc`.
+
+### 3. Install Dependencies and Environment Setup
+
+1. **Install dependencies**:
+
+   ```bash
+   npm install
+   ```
+
+   _(If you encounter peer dependency conflicts, run `npm install --legacy-peer-deps`)._ Note that `prisma generate` runs automatically via the `postinstall` hook.
+
+2. **Configure environment variables**:
+   WorkSphere provides a template `.env.example` file. Copy it to create your local `.env.local`:
+
+   ```bash
+   # On macOS / Linux / Git Bash:
+   cp .env.example .env.local
+
+   # On Windows PowerShell:
+   Copy-Item .env.example .env.local
+   ```
+
+3. **Environment safety**:
+   - The default placeholder values in `.env.example` (such as `DATABASE_URL` and `UPSTASH_REDIS_REST_URL`) are pre-configured for local Docker development.
+   - For basic UI, styling, documentation, or unit test contributions, placeholder values work because test suites mock external APIs.
+   - **Never expose real secrets** or API keys in pull requests.
+   - Do not invent environment variables; use only those defined in `.env.example`.
+
+### 4. Run the Development Server
+
+Start the local Next.js development server:
+
+```bash
+npm run dev
+```
+
+Once compiled, access the application at:
+
+👉 **[http://localhost:3000](http://localhost:3000)**
+
+### 5. Run Tests
+
+Verify that your changes pass existing tests before submitting a PR:
+
+```bash
+# Run unit and integration tests (Jest)
+npm test
+
+# Run tests in watch mode during development
+npm run test:watch
+```
+
+Ensure all pre-commit quality checks pass:
+
+- **Type safety**: `npx tsc --noEmit`
+- **Linting**: `npm run lint`
+- **Production build**: `npm run build`
+
+### 6. Claim Issues and Submit PRs
+
+1. **Claim an issue**: Find an open, unassigned issue and comment exactly:
+   ```text
+   /claim
+   ```
+   The `@github-actions` bot will verify eligibility (up to 10 active assigned issues) and assign it to you. You have **6 days** to submit your PR.
+2. **Create a feature branch**:
+   Always branch from the latest `upstream/main`:
+   ```bash
+   git fetch upstream
+   git switch -c feat/your-feature-name upstream/main
+   ```
+3. **Submit your Pull Request**:
+   - Push your branch to your fork: `git push -u origin feat/your-feature-name`
+   - Open a PR against `main` on the official repository.
+   - **PR Title Format**: Must strictly follow `<type>: <short description> (closes #<issue_number>)`.
+     Example: `fix: prevent duplicate seat check-ins (closes #100)`
+   - **PR Description**: Include `Closes #<number>` (e.g. `Closes #100`) so GitHub automatically links and closes the issue upon merge.
+   - **WOCS Points**: Issues and PRs are scored based on difficulty levels (`level 1` = 2 pts, `level 2` = 5 pts, `level 3` = 11 pts). See the [WOCS Level Evaluation Guide](docs/WOCS_LEVEL_GUIDE.md) for details.
+
+---
+
+### Common Setup FAQs
+
+#### What if Node.js is outdated?
+
+WorkSphere requires Node.js v20+ (see `.nvmrc`). If your Node version is older (e.g., v16 or v18), install and switch to Node 20 using [nvm](https://github.com/nvm-sh/nvm) (Linux/macOS) or [nvm-windows](https://github.com/coreybutler/nvm-windows):
+
+```bash
+nvm install 20
+nvm use 20
+```
+
+Verify with `node -v`.
+
+#### What if npm install fails?
+
+- **Peer dependency conflicts**: Run `npm install --legacy-peer-deps`.
+- **Prisma generation error**: If the `postinstall` hook fails, run `npx prisma generate` directly.
+- **Git hooks on Windows**: If Husky fails during install on Windows, see the [Windows Husky & Git Hooks Troubleshooting Guide](docs/contributing/WINDOWS_HOOKS_TROUBLESHOOTING.md).
+- **Corrupt npm cache**: Clear cache with `npm cache clean --force` and retry.
+
+#### What if `.env` is missing?
+
+Next.js loads variables from `.env.local` during local development. Copy the template:
+
+```bash
+cp .env.example .env.local
+```
+
+For basic UI development and unit testing, you do not need live third-party keys; default placeholder values are sufficient because tests use Jest mocks. Never commit `.env.local` to git.
+
+#### How do I run the application locally?
+
+1. Ensure dependencies are installed (`npm install`).
+2. Run `npm run dev`.
+3. Open your browser to [http://localhost:3000](http://localhost:3000).
+4. _(Optional)_ If working on database-backed features, start PostgreSQL and Redis via Docker with `docker compose up -d` (see [Local Development via Docker Compose](#16-local-development-via-docker-compose)).
+
+#### How do I run tests?
+
+- **Unit & component tests**: Run `npm test`.
+- **Watch mode**: Run `npm run test:watch`.
+- **Specific test file**: Run `npx jest src/__tests__/lib/utils.test.ts`.
+- **E2E tests**: Run `npm run test:e2e` (requires `npx playwright install` first).
+- **Type checks**: Run `npx tsc --noEmit`.
+
+#### How do I claim an issue?
+
+Browse open issues on GitHub. On any unassigned issue, comment:
+
+```text
+/claim
+```
+
+The automated bot verifies your active assignment limit (< 10 issues) and assigns the issue to you. You have 6 days to submit a PR before the assignment expires.
+
+#### How do I link a PR to an issue?
+
+Link your pull request in both the title and description:
+
+- **In the PR title**: Append `(closes #<issue_number>)`, e.g. `feat: add export to csv button (closes #450)`.
+- **In the PR description**: Include the keyword `Closes #<issue_number>` (e.g., `Closes #450`).
+  This ensures GitHub automatically links the PR to the issue and closes it once merged.
 
 ---
 
@@ -72,9 +267,9 @@ Before starting work, claim an available issue by commenting `/claim` on GitHub 
 git remote add upstream https://github.com/SatyamPandey-07/WorkSphere.git
 ```
 
-### 1.1 OSCI'26 Issue Assignment & Claiming Policy (/claim)
+### 1.1 Program Participation & Issue Claiming Policy (/claim)
 
-WorkSphere is an official selected project for **OSCI'26** (Open Source Contribution India) and **ECSoC 2026**. Contributor issue tracking and assignment are automated via GitHub Actions to ensure a transparent, fair, and high-velocity workflow.
+WorkSphere is an official selected project for **OSCI'26** (Open Source Contribution India), **ECSoC 2026**, and **Winter of Code Social 2026 (WOCS'26)** by **Code Social**. Contributor issue tracking and assignment are automated via GitHub Actions to ensure a transparent, fair, and high-velocity workflow.
 
 - **Claiming an Issue**: Find any unassigned, open issue and post a comment containing exactly:
   ```text
@@ -89,11 +284,26 @@ WorkSphere is an official selected project for **OSCI'26** (Open Source Contribu
   /unclaim
   ```
 - **6-Day Resolution Window (SLA)**: Once assigned, you have exactly **6 days** to implement your solution and open a corresponding Pull Request.
-  - **Automated Expiration**: If the 6-day threshold expires without a linked pull request or a recorded progress update, the automated triage workflow unassigns the issue and returns it to the open pool for other OSCI'26 participants.
+  - **Automated Expiration**: If the 6-day threshold expires without a linked pull request or a recorded progress update, the automated triage workflow unassigns the issue and returns it to the open pool for other participants.
   - **Requesting an Extension**: If you need additional time due to technical complexity, post a progress comment on the issue describing your current status, blockers, and expected timeline before the 6th day.
-- **Maximum Assigned Issue Cap (10 Issues)**: To prevent issue hoarding and ensure fair opportunity across all OSCI'26 participants, each contributor may hold at most **10 active assigned issues** simultaneously. Additional `/claim` attempts will be automatically rejected until existing assignments are resolved or unclaimed.
+- **Maximum Assigned Issue Cap (10 Issues)**: To prevent issue hoarding and ensure fair opportunity across all participants, each contributor may hold at most **10 active assigned issues** simultaneously. Additional `/claim` attempts will be automatically rejected until existing assignments are resolved or unclaimed.
 
-### 1.2 Pull Request Title Conventions & Format
+### 1.2 Winter of Code Social (WOCS 2026) Guidelines & Points System
+
+WorkSphere is officially participating in [Winter of Code Social 2026](https://woc.codesocial.tech), hosted by **Code Social**!
+
+- **Registration**: All contributors must register on the [WOCS Portal](https://woc.codesocial.tech).
+- **Leaderboard**: Track your live standings on the [WOCS Leaderboard](https://woc.codesocial.tech/leaderboard).
+- **Discord Community**: Join the official [Code Social Discord Server](https://discord.gg/MSTNyRSPYW) and communicate in the WorkSphere project forum in `#find-a-project`.
+- **Labeling Requirements**: Every eligible PR must have the `wocs` label and exactly one difficulty level label applied prior to merge:
+  - `level 1` — **2 points** (Beginner-friendly fixes, documentation updates, minor UI tweaks)
+  - `level 2` — **5 points** (Feature enhancements, component implementations, test coverage)
+  - `level 3` — **11 points** (Complex architecture, agent workflows, backend endpoints)
+  - See the comprehensive [WOCS Level Evaluation Guide](docs/WOCS_LEVEL_GUIDE.md) for full breakdown by directory and complexity.
+- **Automatic Tracking**: Merged pull requests with the proper labels trigger the WOCS real-time webhook and automatically credit points to your account.
+- **AI Policy**: AI-assisted tooling is permitted provided that the contributor thoroughly understands and verifies the code, writes authentic tests, and adheres to our quality standards. Hallucinated or non-functional submissions will be rejected.
+
+### 1.3 Pull Request Title Conventions & Format
 
 All Pull Request titles must follow the strict machine-parseable convention:
 
@@ -111,7 +321,7 @@ docs: document NIOSH daily sound exposure calculation and formula reference (clo
 
 > **Mandatory Rule**: The `(closes #<issue_number>)` suffix is strictly required. It enables automated GitHub issue linking and closes the associated issue upon merge. Never invent dummy issue numbers or reference unrelated issues.
 
-### 1.3 Conventional Commit Standards
+### 1.4 Conventional Commit Standards
 
 WorkSphere enforces the [Conventional Commits](https://www.conventionalcommits.org/) specification for all git commit messages. Commit messages must be structured as:
 
@@ -141,7 +351,7 @@ WorkSphere enforces the [Conventional Commits](https://www.conventionalcommits.o
 - **Atomic Commits**: Keep each commit focused on one cohesive logical change. Avoid monolithic commits that mix unrelated bug fixes and UI updates.
 - **No Unrelated Changes**: Do not bundle stylistic reformatting of unrelated files or unnecessary dependency updates in a bug-fix PR.
 
-### 1.4 AI Coding Assistant & Subagent Guidelines
+### 1.5 AI Coding Assistant & Subagent Guidelines
 
 If you are developing using AI coding assistants (such as Cursor, Gemini, or custom terminal subagents):
 
@@ -155,7 +365,7 @@ If you are developing using AI coding assistants (such as Cursor, Gemini, or cus
 3. **No Unrequested Refactoring**: Do not allow AI tools to refactor or rewrite files outside the target scope of the issue. This creates massive diffs and complicates PR reviews.
 4. **JSDoc & Comments Retention**: Ensure the assistant does not clean up or delete existing codebase comments, JSDoc annotations, or architecture docs unless explicitly requested.
 
-### 1.5 Local Development via Docker Compose
+### 1.6 Local Development via Docker Compose
 
 To lower contributor onboarding friction, WorkSphere provides a local development environment powered by Docker Compose. This packages PostgreSQL (with the `pgvector` extension) and Redis.
 
@@ -536,3 +746,27 @@ Once all eight steps pass:
 - [ ] `npm run build` completes successfully
 - [ ] PR title follows the Conventional Commits format (`feat:`, `fix:`, `docs:`, etc.)
 - [ ] PR description explains **what** changed and **why**, and references the issue (`Closes #N`)
+
+## Architecture Documentation
+ feature/booking-concurrency-lock
+
+ feature/logarithmic-volume-curve
+
+ docs/git-worktree-guide
+main
+main
+
+For details on multi-agent scoring and consensus workflows, see [docs/architecture/multi-agent-consensus.md](docs/architecture/multi-agent-consensus.md).
+
+## Concurrent Development & Worktrees
+
+For guidelines on working on multiple issues concurrently using Git worktrees, see [docs/WORKTREE_GUIDE.md](docs/WORKTREE_GUIDE.md).
+ feature/booking-concurrency-lock
+
+feature/logarithmic-volume-curve
+
+
+For details on multi-agent scoring and consensus workflows, see [docs/architecture/multi-agent-consensus.md](docs/architecture/multi-agent-consensus.md).
+main
+ main
+main

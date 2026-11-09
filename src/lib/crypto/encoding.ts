@@ -44,7 +44,7 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
  * Decodes a standard Base64 string into an ArrayBuffer.
  */
 export function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  return base64ToUint8Array(base64).buffer;
+  return base64ToUint8Array(base64).buffer as ArrayBuffer;
 }
 
 /**
@@ -80,7 +80,7 @@ export function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
  * Decodes a URL-safe Base64 (base64url) string into an ArrayBuffer.
  */
 export function base64UrlToArrayBuffer(base64Url: string): ArrayBuffer {
-  return base64UrlToUint8Array(base64Url).buffer;
+  return base64UrlToUint8Array(base64Url).buffer as ArrayBuffer;
 }
 
 /**

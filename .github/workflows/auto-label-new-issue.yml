@@ -1,0 +1,73 @@
+name: Auto Label New Issues for WOCS
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  auto-label-issue:
+    name: Apply WOCS labels to new issues
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add WOCS and Level labels
+        uses: actions/github-script@v9
+        with:
+          script: |
+            try {
+              const issue = context.payload.issue;
+              const issueNumber = issue.number;
+              const existingLabels = (issue.labels || []).map(l => (typeof l === 'string' ? l : l.name).toLowerCase());
+
+              const labelsToAdd = [];
+
+              // 1. Ensure wocs label is present
+              if (!existingLabels.includes('wocs')) {
+                labelsToAdd.push('wocs');
+              }
+
+              // 2. Ensure difficulty level is present (intelligently classify if none provided)
+              const hasLevel = existingLabels.some(l => /^level\s*[123]$/i.test(l));
+              if (!hasLevel) {
+                const text = `${issue.title || ''}\n${issue.body || ''}`.toLowerCase();
+                
+                const level3Keywords = [
+                  'wasm', 'webassembly', 'dsp', 'audioworklet', 'audio worklet', 'fft',
+                  'decibel engine', 'solana', 'escrow', 'smart contract', 'multi-agent',
+                  'agent orchestration', 'vector embedding', 'pgvector', 'partykit',
+                  'webrtc', 'p2p mesh', 'zkp', 'proof of work', 'difficulty: hard',
+                  'difficulty: high', 'level 3', 'level3', 'architectural'
+                ];
+
+                const level2Keywords = [
+                  'api route', 'endpoint', 'component', 'modal', 'hook', 'state management',
+                  'unit test', 'integration test', 'jest', 'playwright', 'form validation',
+                  'zod schema', 'filter bar', 'dashboard', 'responsive layout', 'refactor',
+                  'difficulty: medium', 'level 2', 'level2'
+                ];
+
+                let assignedLevel = 'level 1';
+                if (level3Keywords.some(kw => text.includes(kw))) {
+                  assignedLevel = 'level 3';
+                } else if (level2Keywords.some(kw => text.includes(kw))) {
+                  assignedLevel = 'level 2';
+                }
+
+                labelsToAdd.push(assignedLevel);
+              }
+
+              if (labelsToAdd.length > 0) {
+                console.log(`Auto-applying labels to Issue #${issueNumber}: ${labelsToAdd.join(', ')}`);
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  labels: labelsToAdd
+                });
+              }
+            } catch (err) {
+              console.warn('Auto-label issue warning (gracefully caught):', err.message);
+            }
+

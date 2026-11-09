@@ -13,26 +13,34 @@ import de from "../locales/de.json";
 import hi from "../locales/hi.json";
 import pt from "../locales/pt.json";
 
-// Initialize i18next outside of component to avoid re-initialization
-i18n
-  .use(LanguageDetector)
-  .use(initReactI18next)
-  .init({
-    resources: {
-      en: { translation: en },
-      es: { translation: es },
-      fr: { translation: fr },
-      de: { translation: de },
-      hi: { translation: hi },
-      pt: { translation: pt }
-    },
-    fallbackLng: "en",
-    interpolation: {
-      escapeValue: false // react already safes from xss
-    }
-  });
+export interface I18nProviderProps {
+  children: React.ReactNode;
+  /** Optional initial language override (e.g. 'en', 'es', 'fr') */
+  initialLanguage?: string;
+}
 
-export default function I18nProvider({ children }: { children: React.ReactNode }) {
+// Initialize i18next outside of component to avoid re-initialization
+if (!i18n.isInitialized) {
+  i18n
+    .use(LanguageDetector)
+    .use(initReactI18next)
+    .init({
+      resources: {
+        en: { translation: en },
+        es: { translation: es },
+        fr: { translation: fr },
+        de: { translation: de },
+        hi: { translation: hi },
+        pt: { translation: pt },
+      },
+      fallbackLng: "en",
+      interpolation: {
+        escapeValue: false, // react already escapes from xss
+      },
+    });
+}
+
+export function I18nProvider({ children, initialLanguage }: I18nProviderProps) {
   const [mounted, setMounted] = useState(false);
 
   // Ensures a CSRF token is fetched on load and automatically re-issued
@@ -42,19 +50,18 @@ export default function I18nProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    if (initialLanguage && i18n.language !== initialLanguage) {
+      i18n.changeLanguage(initialLanguage);
+    }
+  }, [initialLanguage]);
 
   if (!mounted) {
-    // Avoid hydration mismatch by rendering children without context first,
-    // or just render children as is. React-i18next can handle hydration if configured carefully,
-    // but a simple approach is to render after mount.
-    // However, to avoid flashing, returning children works.
+    // Avoid hydration mismatch by rendering children directly before mount
     return <>{children}</>;
   }
 
-  return (
-    <I18nextProvider i18n={i18n}>
-      {children}
-    </I18nextProvider>
-  );
+  return <I18nextProvider i18n={i18n}>{children}</I18nextProvider>;
 }
+
+export { i18n };
+export default I18nProvider;

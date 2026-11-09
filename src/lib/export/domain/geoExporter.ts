@@ -125,11 +125,36 @@ export type GeoExportFolder = {
   }>;
 };
 
+
+export const INVALID_XML_CHARS =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+export function escapeXml(value: unknown): string {
+  return String(value ?? "")
+    .replace(INVALID_XML_CHARS, "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function formatKmlNumber(value: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "0";
+  const text = value
+    .toFixed(7)
+    .replace(/(\.\d*?)0+$/, "$1")
+    .replace(/\.$/, "");
+  return text === "-0" ? "0" : text;
+}
+
 export function hasValidCoordinates(venue: {
   latitude: unknown;
   longitude: unknown;
-}): boolean {
+} | null | undefined): boolean {
   if (
+    !venue ||
+    typeof venue !== "object" ||
     typeof venue.latitude !== "number" ||
     typeof venue.longitude !== "number" ||
     !Number.isFinite(venue.latitude) ||
@@ -149,7 +174,8 @@ export function hasValidCoordinates(venue: {
   );
 }
 
-export function normalizeVenueAmenities(venue: GeoExportVenue): string[] {
+export function normalizeVenueAmenities(venue: GeoExportVenue | null | undefined): string[] {
+  if (!venue || typeof venue !== "object") return [];
   const amenities: string[] = [];
   if ((venue.wifiSpeed ?? 0) > 0 || (venue.wifiQuality ?? 0) > 0) {
     amenities.push("Wi-Fi");
@@ -170,13 +196,22 @@ export function getVenueWorkSphereUrl(venueId: string): string {
   return appUrl(`/venues/${encodeURIComponent(venueId)}`);
 }
 
-export function venueProperties(venue: GeoExportVenue) {
+export function venueProperties(venue: GeoExportVenue | null | undefined) {
+  if (!venue || typeof venue !== "object") {
+    return {
+      name: "",
+      address: null,
+      category: "",
+      amenities: [],
+      workSphereUrl: "",
+    };
+  }
   return {
-    name: venue.name,
+    name: venue.name ?? "",
     address: venue.address ?? null,
-    category: venue.category,
+    category: venue.category ?? "",
     amenities: normalizeVenueAmenities(venue),
-    workSphereUrl: getVenueWorkSphereUrl(venue.id),
+    workSphereUrl: venue.id ? getVenueWorkSphereUrl(venue.id) : "",
   };
 }
 
@@ -221,13 +256,16 @@ export type GeoJsonFeatureCollection = {
  * and repairs or buffers invalid geometries.
  */
 export function generateFolderBoundingPolygon(
-  venuesOrCoordinates: (GeoExportVenue | number[])[],
+  venuesOrCoordinates: (GeoExportVenue | number[])[] | null | undefined,
   options: {
     folderName?: string;
     bufferPadding?: number;
     repairInvalid?: boolean;
   } = {},
 ): GeoJsonPolygonFeature | null {
+  if (!venuesOrCoordinates || !Array.isArray(venuesOrCoordinates)) {
+    return null;
+  }
   const coordinates: number[][] = [];
   for (const item of venuesOrCoordinates) {
     if (Array.isArray(item) && item.length >= 2) {
@@ -290,14 +328,23 @@ export function generateFolderBoundingPolygon(
 }
 
 export function venuesToGeoJson(
-  input: GeoExportFolder | GeoExportVenue[],
+  input: GeoExportFolder | GeoExportVenue[] | null | undefined,
   exportedAt?: Date,
   options: { includeBoundary?: boolean; boundaryRing?: number[][] } = {},
 ): GeoJsonFeatureCollection {
+  if (!input) {
+    return {
+      type: "FeatureCollection",
+      features: [],
+    };
+  }
+
   const isFolder = !Array.isArray(input) && typeof input === "object" && input !== null;
   const venues: GeoExportVenue[] = isFolder
-    ? (input.items ? input.items.map((item) => item.venue) : [])
-    : (input as GeoExportVenue[]);
+    ? (Array.isArray(input.items)
+        ? (input.items.map((item) => item?.venue).filter(Boolean) as GeoExportVenue[])
+        : [])
+    : (Array.isArray(input) ? input : []);
 
   const pointFeatures: GeoJsonPointFeature[] = venues
     .filter(hasValidCoordinates)
@@ -334,7 +381,7 @@ export function venuesToGeoJson(
       folderId: input.id,
       folderName: input.name,
       description: input.description ?? null,
-      exportedAt: (exportedAt ?? new Date()).toISOString(),
+      exportedAt: (exportedAt instanceof Date && !isNaN(exportedAt.getTime()) ? exportedAt : new Date()).toISOString(),
       featureCount: features.length,
       generator: "WorkSphere",
     };
@@ -344,7 +391,7 @@ export function venuesToGeoJson(
 }
 
 export function venuesToKml(
-  input: GeoExportFolder | GeoExportVenue[],
+  input: GeoExportFolder | GeoExportVenue[] | null | undefined,
   folderOrDate?: GeoExportFolder | Date,
 ): string {
   let folder: GeoExportFolder;
@@ -356,15 +403,20 @@ export function venuesToKml(
     folder = (folderOrDate && !(folderOrDate instanceof Date))
       ? folderOrDate
       : { name: "Collection" };
-    if (folderOrDate instanceof Date) {
+    if (folderOrDate instanceof Date && !isNaN(folderOrDate.getTime())) {
+      exportDate = folderOrDate;
+    }
+  } else if (input && typeof input === "object") {
+    folder = input;
+    venues = Array.isArray(input.items)
+      ? (input.items.map((i) => i?.venue).filter(Boolean) as GeoExportVenue[])
+      : [];
+    if (folderOrDate instanceof Date && !isNaN(folderOrDate.getTime())) {
       exportDate = folderOrDate;
     }
   } else {
-    folder = input;
-    venues = input.items ? input.items.map((i) => i.venue) : [];
-    if (folderOrDate instanceof Date) {
-      exportDate = folderOrDate;
-    }
+    folder = { name: "Collection" };
+    venues = [];
   }
 
   const validVenues = venues.filter(hasValidCoordinates);
@@ -383,27 +435,27 @@ export function venuesToKml(
         <a href="${escapeHtml(url)}">View on WorkSphere</a>
       ]]>`.trim();
 
-      return `    <Placemark id="venue-${escapeHtml(venue.id)}">
-      <name>${escapeHtml(venue.name)}</name>
+      return `    <Placemark id="venue-${escapeXml(venue.id)}">
+      <name>${escapeXml(venue.name)}</name>
       <description>${description}</description>
-      ${venue.address ? `      <address>${escapeHtml(venue.address)}</address>` : ""}
+      ${venue.address ? `      <address>${escapeXml(venue.address)}</address>` : ""}
       <Point>
-        <coordinates>${venue.longitude},${venue.latitude},0</coordinates>
+        <coordinates>${formatKmlNumber(venue.longitude)},${formatKmlNumber(venue.latitude)},0</coordinates>
       </Point>
     </Placemark>`;
     })
     .join("\n");
 
   const folderDescription = folder.description
-    ? `    <description>${escapeHtml(folder.description)}</description>\n`
+    ? `    <description>${escapeXml(folder.description)}</description>\n`
     : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="${KML_NAMESPACE}">
   <Document>
-    <name>${escapeHtml(folder.name)}</name>
+    <name>${escapeXml(folder.name || "Collection")}</name>
 ${folderDescription}    <ExtendedData>
-      ${folder.id ? `<Data name="folderId"><value>${escapeHtml(folder.id)}</value></Data>` : ""}
+      ${folder.id ? `<Data name="folderId"><value>${escapeXml(folder.id)}</value></Data>` : ""}
       <Data name="exportedAt"><value>${exportDate.toISOString()}</value></Data>
       <Data name="generator"><value>WorkSphere</value></Data>
     </ExtendedData>

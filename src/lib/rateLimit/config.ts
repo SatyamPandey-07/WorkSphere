@@ -91,9 +91,9 @@ export function matchRateTier(pathname: string): RateTier | null {
     return RATE_TIERS.telemetry;
   }
 
-  // Authentication endpoints: 5 req/min
+  // Authentication endpoints: 5 req/min (exempt CSRF token issuance which is a public session lifecycle endpoint)
   if (
-    pathname.startsWith("/api/auth") ||
+    (pathname.startsWith("/api/auth") && pathname !== "/api/auth/csrf-token") ||
     pathname.startsWith("/api/partykit/auth") ||
     pathname === "/api/user/verify-student"
   ) {

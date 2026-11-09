@@ -5,6 +5,16 @@
  * and manages AudioListener 3D positioning for collaborative room seating.
  */
 
+import {
+  ProximityBoundaryZoneConfig,
+  DEFAULT_PROXIMITY_ZONE_CONFIG,
+  PROXIMITY_ZONE_PRESETS,
+  ProximityZonePresetId,
+  calculateProximityFadeGain,
+  calculate3DDistance,
+  sanitizeProximityZoneConfig,
+} from "@/core/audio/ProximityBoundaryZone";
+
 export interface PeerSpatialChain {
   source: MediaStreamAudioSourceNode;
   gain: GainNode;
@@ -17,12 +27,17 @@ export class SpatialAudioRouter {
   private chains = new Map<string, PeerSpatialChain>();
   private masterGain: GainNode;
   private isMuted: boolean = false;
+  private listenerPos: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
+  private peerPositions = new Map<string, { x: number; y: number; z: number }>();
+  private peerBaseVolumes = new Map<string, number>();
+  private proximityZoneConfig: ProximityBoundaryZoneConfig;
 
-  constructor(ctx: AudioContext) {
+  constructor(ctx: AudioContext, proximityZoneConfig?: Partial<ProximityBoundaryZoneConfig>) {
     this.ctx = ctx;
     this.masterGain = ctx.createGain();
     this.masterGain.gain.value = 1.0;
     this.masterGain.connect(ctx.destination);
+    this.proximityZoneConfig = sanitizeProximityZoneConfig(proximityZoneConfig);
   }
 
   /**
@@ -58,6 +73,56 @@ export class SpatialAudioRouter {
   }
 
   /**
+   * Configures proximity fade-out boundary zones.
+   */
+  setProximityBoundaryZone(
+    config: Partial<ProximityBoundaryZoneConfig>
+  ): ProximityBoundaryZoneConfig {
+    this.proximityZoneConfig = sanitizeProximityZoneConfig({
+      ...this.proximityZoneConfig,
+      ...config,
+    });
+    this.updateAllPeerGains();
+    return this.getProximityBoundaryZone();
+  }
+
+  getProximityBoundaryZone(): ProximityBoundaryZoneConfig {
+    return { ...this.proximityZoneConfig };
+  }
+
+  setProximityZonePreset(
+    presetId: ProximityZonePresetId
+  ): ProximityBoundaryZoneConfig {
+    if (presetId in PROXIMITY_ZONE_PRESETS) {
+      const preset = PROXIMITY_ZONE_PRESETS[presetId as keyof typeof PROXIMITY_ZONE_PRESETS];
+      return this.setProximityBoundaryZone(preset);
+    }
+    return this.getProximityBoundaryZone();
+  }
+
+  calculatePeerEffectiveGain(peerId: string): number {
+    const baseVol = this.peerBaseVolumes.get(peerId) ?? 1.0;
+    const peerPos = this.peerPositions.get(peerId);
+    if (!peerPos || !this.proximityZoneConfig.enabled) {
+      return baseVol;
+    }
+    const dist = calculate3DDistance(peerPos, this.listenerPos);
+    const proximityGain = calculateProximityFadeGain(dist, this.proximityZoneConfig);
+    return Math.max(0, Math.min(2, baseVol * proximityGain));
+  }
+
+  updateAllPeerGains(): void {
+    for (const [peerId, chain] of this.chains.entries()) {
+      const effectiveGain = this.calculatePeerEffectiveGain(peerId);
+      if (chain.gain.gain.setTargetAtTime) {
+        chain.gain.gain.setTargetAtTime(effectiveGain, this.ctx.currentTime, 0.05);
+      } else {
+        chain.gain.gain.value = effectiveGain;
+      }
+    }
+  }
+
+  /**
    * Update local AudioListener position in world space.
    */
   updateListenerPosition(x: number, y: number, z: number): void {
@@ -69,6 +134,8 @@ export class SpatialAudioRouter {
     const cx = clampPos(x);
     const cy = clampPos(y);
     const cz = clampPos(z);
+    this.listenerPos = { x: cx, y: cy, z: cz };
+
     const listener = this.ctx.listener;
     if ("positionX" in listener) {
       listener.positionX.value = cx;
@@ -81,6 +148,8 @@ export class SpatialAudioRouter {
         }
       ).setPosition(cx, cy, cz);
     }
+
+    this.updateAllPeerGains();
   }
 
   /**
@@ -136,6 +205,11 @@ export class SpatialAudioRouter {
     const gain = this.ctx.createGain();
     gain.gain.value = 1.0;
 
+    this.peerBaseVolumes.set(peerId, 1.0);
+    this.peerPositions.set(peerId, { x: 0, y: 2, z: 0 });
+    const initialGain = this.calculatePeerEffectiveGain(peerId);
+    gain.gain.value = initialGain;
+
     const panner = new PannerNode(this.ctx, {
       panningModel: "HRTF",
       distanceModel: "inverse",
@@ -178,6 +252,7 @@ export class SpatialAudioRouter {
     const cx = clampPos(x);
     const cy = clampPos(y);
     const cz = clampPos(z);
+    this.peerPositions.set(peerId, { x: cx, y: cy, z: cz });
 
     if (
       typeof chain.panner.positionX === "object" &&
@@ -193,6 +268,13 @@ export class SpatialAudioRouter {
           setPosition: (x: number, y: number, z: number) => void;
         }
       ).setPosition(cx, cy, cz);
+    }
+
+    const effectiveGain = this.calculatePeerEffectiveGain(peerId);
+    if (chain.gain.gain.setTargetAtTime) {
+      chain.gain.gain.setTargetAtTime(effectiveGain, this.ctx.currentTime, 0.05);
+    } else {
+      chain.gain.gain.value = effectiveGain;
     }
   }
 
@@ -239,10 +321,12 @@ export class SpatialAudioRouter {
     if (!chain) return;
 
     const targetVol = Math.max(0, Math.min(2, volume));
+    this.peerBaseVolumes.set(peerId, targetVol);
+    const effectiveGain = this.calculatePeerEffectiveGain(peerId);
     if (chain.gain.gain.setTargetAtTime) {
-      chain.gain.gain.setTargetAtTime(targetVol, this.ctx.currentTime, 0.05);
+      chain.gain.gain.setTargetAtTime(effectiveGain, this.ctx.currentTime, 0.05);
     } else {
-      chain.gain.gain.value = targetVol;
+      chain.gain.gain.value = effectiveGain;
     }
   }
 
@@ -252,6 +336,9 @@ export class SpatialAudioRouter {
   detachPeer(peerId: string): void {
     const chain = this.chains.get(peerId);
     if (!chain) return;
+
+    this.peerPositions.delete(peerId);
+    this.peerBaseVolumes.delete(peerId);
 
     try {
       chain.source.disconnect();

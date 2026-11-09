@@ -49,17 +49,18 @@ export function escapeRFC4180Cell(
 
   let str: string;
   if (val instanceof Date) {
-    str = val.toISOString();
+    str = isNaN(val.getTime()) ? "" : val.toISOString();
   } else if (Array.isArray(val)) {
     str = val.join("; ");
   } else if (typeof val === "object") {
     str = JSON.stringify(val);
   } else {
-    str = String(val);
+    str = String(val).replace(/\0/g, "");
   }
 
-  // Formula injection sanitization: Prepend single quote (') if value starts with formula trigger (=, +, -, @, \t, \r)
-  if (sanitizeFormulas && /^[=+\-@\t\r]/.test(str)) {
+  // Formula injection sanitization: Prepend single quote (') if value starts with formula trigger (=, +, -, @, |, \t, \r)
+  // Spreadsheet engines trim leading whitespace before formula evaluation, so test both raw and trimmed string
+  if (sanitizeFormulas && (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()))) {
     str = "'" + str;
   }
 

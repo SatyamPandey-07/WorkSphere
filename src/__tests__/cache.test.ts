@@ -92,4 +92,81 @@ describe("LRUCache", () => {
     expect(cache.get("1")).toBeUndefined();
     expect(cache.get("2")).toBeUndefined();
   });
+
+  it("should validate capacity and throw on non-positive or non-finite values", () => {
+    expect(() => new LRUCache<string>(0, 1000)).toThrow("Capacity must be greater than 0");
+    expect(() => new LRUCache<string>(-5, 1000)).toThrow("Capacity must be greater than 0");
+    expect(() => new LRUCache<string>(NaN, 1000)).toThrow("Capacity must be greater than 0");
+    expect(() => new LRUCache<string>(0.5, 1000)).toThrow("Capacity must be greater than 0");
+    expect(() => new LRUCache<string>("invalid" as any, 1000)).toThrow("Capacity must be greater than 0");
+  });
+
+  it("should normalize fractional capacity", () => {
+    const cache = new LRUCache<number>(2.9, 1000);
+    cache.set("a", 1);
+    cache.set("b", 2);
+    cache.set("c", 3);
+    // Capacity 2 should evict "a"
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.get("b")).toBe(2);
+    expect(cache.get("c")).toBe(3);
+    expect(cache.size).toBe(2);
+  });
+
+  it("should validate ttlMs and throw on non-positive or non-finite values", () => {
+    expect(() => new LRUCache<string>(3, 0)).toThrow("TTL must be a positive number in milliseconds");
+    expect(() => new LRUCache<string>(3, -100)).toThrow("TTL must be a positive number in milliseconds");
+    expect(() => new LRUCache<string>(3, NaN)).toThrow("TTL must be a positive number in milliseconds");
+    expect(() => new LRUCache<string>(3, "invalid" as any)).toThrow("TTL must be a positive number in milliseconds");
+  });
+
+  it("should check existence without altering LRU order using has()", () => {
+    const cache = new LRUCache<string>(2, 1000);
+    cache.set("first", "v1");
+    cache.set("second", "v2");
+
+    expect(cache.has("first")).toBe(true);
+    expect(cache.has("second")).toBe(true);
+    expect(cache.has("missing")).toBe(false);
+
+    // Calling has("first") must NOT promote "first" to MRU
+    // Adding "third" must evict "first" because it remained LRU
+    cache.set("third", "v3");
+    expect(cache.has("first")).toBe(false);
+    expect(cache.has("second")).toBe(true);
+    expect(cache.has("third")).toBe(true);
+  });
+
+  it("should return false for expired items in has() and lazily remove them", () => {
+    const cache = new LRUCache<string>(2, 1000);
+    cache.set("expiring", "value");
+
+    expect(cache.has("expiring")).toBe(true);
+    jest.advanceTimersByTime(1001);
+
+    expect(cache.has("expiring")).toBe(false);
+    expect(cache.size).toBe(0);
+  });
+
+  it("should report size correctly through the size getter", () => {
+    const cache = new LRUCache<string>(3, 1000);
+    expect(cache.size).toBe(0);
+
+    cache.set("a", "1");
+    cache.set("b", "2");
+    expect(cache.size).toBe(2);
+
+    cache.set("a", "1-updated");
+    expect(cache.size).toBe(2);
+
+    cache.set("c", "3");
+    cache.set("d", "4"); // evicts "b"
+    expect(cache.size).toBe(3);
+
+    cache.invalidate("c");
+    expect(cache.size).toBe(2);
+
+    cache.clear();
+    expect(cache.size).toBe(0);
+  });
 });

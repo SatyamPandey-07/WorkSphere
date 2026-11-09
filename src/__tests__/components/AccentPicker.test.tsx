@@ -231,4 +231,102 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
       window.matchMedia = originalMatchMedia;
     });
   });
+
+  describe("Copy HEX Color Code Swatch Tooltip (#5965)", () => {
+    const originalClipboard = navigator.clipboard;
+
+    beforeEach(() => {
+      Object.assign(navigator, {
+        clipboard: {
+          writeText: jest.fn().mockResolvedValue(undefined),
+        },
+      });
+    });
+
+    afterEach(() => {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    });
+
+    it("displays swatch tooltip with hex code on mouse enter", () => {
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const blueButton = screen.getByRole("radio", {
+        name: /select blue accent color/i,
+      });
+
+      // Hover over the swatch wrapper
+      fireEvent.mouseEnter(blueButton.parentElement!);
+
+      expect(screen.getByTestId("swatch-tooltip-blue")).toBeInTheDocument();
+      expect(screen.getByText("#3B82F6")).toBeInTheDocument();
+      expect(screen.getByTestId("copy-hex-blue")).toBeInTheDocument();
+    });
+
+    it("displays swatch tooltip on focus and hides on blur", () => {
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const purpleButton = screen.getByRole("radio", {
+        name: /select purple accent color/i,
+      });
+
+      // Focus swatch
+      fireEvent.focus(purpleButton.parentElement!);
+
+      expect(screen.getByTestId("swatch-tooltip-purple")).toBeInTheDocument();
+      expect(screen.getByText("#A855F7")).toBeInTheDocument();
+
+      // Blur swatch
+      fireEvent.blur(purpleButton.parentElement!, { relatedTarget: document.body });
+      expect(screen.queryByTestId("swatch-tooltip-purple")).not.toBeInTheDocument();
+    });
+
+    it("copies exact HEX code to clipboard and displays Copied! badge", async () => {
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const blueButton = screen.getByRole("radio", {
+        name: /select blue accent color/i,
+      });
+
+      fireEvent.mouseEnter(blueButton.parentElement!);
+
+      const copyButton = screen.getByTestId("copy-hex-blue");
+      fireEvent.click(copyButton);
+
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith("#3b82f6");
+      expect(screen.getByTestId("copied-badge")).toBeInTheDocument();
+      expect(screen.getByText(/copied!/i)).toBeInTheDocument();
+    });
+
+    it("supports keyboard navigation with aria-describedby pointing to tooltip", () => {
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const blueButton = screen.getByRole("radio", {
+        name: /select blue accent color/i,
+      });
+
+      fireEvent.focus(blueButton.parentElement!);
+
+      expect(blueButton).toHaveAttribute(
+        "aria-describedby",
+        "swatch-tooltip-blue",
+      );
+    });
+  });
 });
+

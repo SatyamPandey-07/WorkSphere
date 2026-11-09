@@ -86,5 +86,89 @@ describe("VenueFilterBar Component", () => {
       expect(outletsPill).toHaveAttribute("aria-checked", "false");
     });
   });
+
+  describe("Custom Range Filters Popover Integration", () => {
+    it("renders the popover trigger button and opens the filter popover on click", () => {
+      render(<VenueFilterBar />);
+
+      const triggerBtn = screen.getByTestId("venue-filter-popover-trigger");
+      expect(triggerBtn).toBeInTheDocument();
+      expect(triggerBtn).toHaveTextContent("Noise & Wi-Fi");
+
+      // Popover should initially be closed
+      expect(screen.queryByTestId("venue-filter-popover")).not.toBeInTheDocument();
+
+      // Open popover
+      fireEvent.click(triggerBtn);
+      expect(screen.getByTestId("venue-filter-popover")).toBeInTheDocument();
+      expect(screen.getByTestId("decibel-range-slider")).toBeInTheDocument();
+      expect(screen.getByTestId("wifi-range-slider")).toBeInTheDocument();
+    });
+
+    it("applies custom range filters to URL and calls callbacks when Apply is clicked", () => {
+      const onDecibelChange = jest.fn();
+      const onWifiChange = jest.fn();
+      render(
+        <VenueFilterBar
+          onDecibelRangeChange={onDecibelChange}
+          onWifiSpeedRangeChange={onWifiChange}
+        />,
+      );
+
+      // Open popover
+      fireEvent.click(screen.getByTestId("venue-filter-popover-trigger"));
+
+      // Click Apply Filters
+      const applyBtn = screen.getByTestId("apply-range-filters-button");
+      fireEvent.click(applyBtn);
+
+      expect(onDecibelChange).toHaveBeenCalled();
+      expect(onWifiChange).toHaveBeenCalled();
+      // Popover closes after apply
+      expect(screen.queryByTestId("venue-filter-popover")).not.toBeInTheDocument();
+    });
+
+    it("resets range filters to defaults when Reset Defaults is clicked", () => {
+      const onDecibelChange = jest.fn();
+      const onWifiChange = jest.fn();
+      render(
+        <VenueFilterBar
+          decibelRange={[40, 60]}
+          wifiSpeedRange={[50, 200]}
+          onDecibelRangeChange={onDecibelChange}
+          onWifiSpeedRangeChange={onWifiChange}
+        />,
+      );
+
+      // Open popover
+      fireEvent.click(screen.getByTestId("venue-filter-popover-trigger"));
+
+      // Click Reset Defaults
+      const resetBtn = screen.getByTestId("reset-range-filters-button");
+      fireEvent.click(resetBtn);
+
+      expect(onDecibelChange).toHaveBeenCalledWith([30, 85]);
+      expect(onWifiChange).toHaveBeenCalledWith([10, 300]);
+    });
+
+    it("closes popover when close button or Escape key is pressed", () => {
+      render(<VenueFilterBar />);
+
+      const triggerBtn = screen.getByTestId("venue-filter-popover-trigger");
+      fireEvent.click(triggerBtn);
+      expect(screen.getByTestId("venue-filter-popover")).toBeInTheDocument();
+
+      // Close via close button
+      const closeBtn = screen.getByTestId("close-filter-popover-button");
+      fireEvent.click(closeBtn);
+      expect(screen.queryByTestId("venue-filter-popover")).not.toBeInTheDocument();
+
+      // Open again and close via Escape key
+      fireEvent.click(triggerBtn);
+      expect(screen.getByTestId("venue-filter-popover")).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByTestId("venue-filter-popover")).not.toBeInTheDocument();
+    });
+  });
 });
 

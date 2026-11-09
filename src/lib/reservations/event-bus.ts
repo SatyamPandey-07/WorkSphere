@@ -35,3 +35,37 @@ export function subscribeVenueAvailability(
     }
   };
 }
+
+/**
+ * Publishes a desk countdown expiration event across the venue availability bus.
+ */
+export function publishDeskCountdownExpired(
+  venueId: string,
+  deskId: string,
+  seatId?: string,
+) {
+  publishVenueAvailability(venueId, {
+    type: "DESK_HOLD_EXPIRED",
+    deskId,
+    seatId: seatId || deskId,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Publishes a desk countdown acquisition event across the venue availability bus.
+ */
+export function publishDeskCountdownAcquired(
+  venueId: string,
+  deskId: string,
+  expiresAt: number,
+  seatId?: string,
+) {
+  publishVenueAvailability(venueId, {
+    type: "DESK_HOLD_ACQUIRED",
+    deskId,
+    seatId: seatId || deskId,
+    expiresAt,
+    timestamp: Date.now(),
+  });
+}

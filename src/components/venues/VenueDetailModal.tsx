@@ -20,3 +20,4 @@ export function VenueDetailModal(props: VenueDetailModalProps) {
 
 export { HourlyCrowdForecast };
 export default VenueDetailModal;
+

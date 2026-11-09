@@ -67,3 +67,4 @@ describe("VenueDetailModal Component", () => {
     expect(VenueDetailModal).toBeDefined();
   });
 });
+

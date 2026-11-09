@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant cyberpunk (&:where(.cyberpunk, .cyberpunk *));
 
 @layer components {
   .audio-eq-energy-slider {

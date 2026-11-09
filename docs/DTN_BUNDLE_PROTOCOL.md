@@ -1,10 +1,7 @@
 # WorkSphere Delay-Tolerant Networking (DTN) Bundle Protocol
 
 ## 1. Overview
- feature/postgresql-weekly-partitioning
 
-
-main
 The Delay-Tolerant Networking (DTN) layer provides delay-tolerant, store-and-forward bundle routing across network partitions, intermittent connectivity, and offline peer clusters.
 
 ---
@@ -54,7 +51,9 @@ sequenceDiagram
     "payload"
   ]
 }
- feature/postgresql-weekly-partitioning
+```
+
+```typescript
 import { createHash } from "crypto";
 
 export interface DTNBundle {
@@ -81,13 +80,13 @@ export function deserializeAndVerifyBundle(rawBinary: ArrayBuffer): DTNBundle {
   }
 
   // Integrity verification
-  const computedHash = createHash("sha256").update(bundle.payload).digest("hex");
+  const computedHash = createHash("sha256")
+    .update(bundle.payload)
+    .digest("hex");
   if (computedHash !== bundle.payloadHash) {
     throw new Error(`Integrity check failed for bundle ${bundle.bundleId}`);
   }
 
   return bundle;
 }
-
 ```
-main

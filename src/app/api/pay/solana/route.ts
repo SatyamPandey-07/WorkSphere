@@ -22,6 +22,8 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { z } from "zod";
+
+export const dynamic = "force-dynamic";
 import {
   buildDepositTransaction,
   confirmTransaction,
@@ -32,7 +34,6 @@ import {
   verifyCheckInForBooking,
   verifyVenueClosureForBooking,
   getEscrowState,
-  type EscrowCurrency,
 } from "@/lib/solana/escrowClient";
 
 // ---------------------------------------------------------------------------
@@ -153,10 +154,7 @@ export async function POST(request: Request) {
     });
 
     if (!booking) {
-      return NextResponse.json(
-        { error: "Booking not found" },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
     if (booking.userId !== userId) {
@@ -192,10 +190,7 @@ export async function POST(request: Request) {
     });
 
     if (!validation.valid) {
-      return NextResponse.json(
-        { error: validation.error },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
     // 7. Build the unsigned transaction
@@ -267,10 +262,7 @@ async function handleConfirm(body: unknown, userId: string) {
   });
 
   if (!booking) {
-    return NextResponse.json(
-      { error: "Booking not found" },
-      { status: 404 },
-    );
+    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
 
   if (booking.userId !== userId) {
@@ -552,4 +544,3 @@ async function handleRefund(body: unknown, userId: string) {
     );
   }
 }
-

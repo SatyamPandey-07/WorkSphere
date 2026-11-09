@@ -9,6 +9,8 @@ import {
 } from "@/lib/locks/deskReservationTimer";
 import { apiError } from "@/lib/apiResponse";
 
+export const dynamic = "force-dynamic";
+
 type RouteContext = {
   params: Promise<{ venueId: string; seatId: string }>;
 };
@@ -21,7 +23,11 @@ export async function GET(_req: Request, context: RouteContext) {
   const { venueId, seatId } = await context.params;
   const { userId } = await auth();
 
-  const status = await getDeskReservationTimer(venueId, seatId, userId || undefined);
+  const status = await getDeskReservationTimer(
+    venueId,
+    seatId,
+    userId || undefined,
+  );
 
   return NextResponse.json({
     success: true,
@@ -70,9 +76,17 @@ export async function POST(req: Request, context: RouteContext) {
 
     if (!result.success) {
       if (result.reason === "UNAUTHORIZED") {
-        return apiError("Cannot extend lock owned by another user", 403, "FORBIDDEN");
+        return apiError(
+          "Cannot extend lock owned by another user",
+          403,
+          "FORBIDDEN",
+        );
       }
-      return apiError("Active countdown timer not found or expired", 404, "NOT_FOUND");
+      return apiError(
+        "Active countdown timer not found or expired",
+        404,
+        "NOT_FOUND",
+      );
     }
 
     return NextResponse.json({
@@ -143,4 +157,3 @@ export async function DELETE(_req: Request, context: RouteContext) {
     seatId,
   });
 }
-

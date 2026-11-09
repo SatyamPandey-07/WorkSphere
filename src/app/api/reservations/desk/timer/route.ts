@@ -6,6 +6,8 @@ import {
 } from "@/lib/reservations/deskReservationCountdown";
 import { apiError } from "@/lib/apiResponse";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/reservations/desk/timer
  * Query parameters:
@@ -23,7 +25,11 @@ export async function GET(req: NextRequest) {
   }
 
   if (deskId) {
-    const timer = await getDeskReservationTimer(venueId, deskId, userId ?? undefined);
+    const timer = await getDeskReservationTimer(
+      venueId,
+      deskId,
+      userId ?? undefined,
+    );
     return NextResponse.json(timer);
   }
 

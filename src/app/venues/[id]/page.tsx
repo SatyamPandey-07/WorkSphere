@@ -10,6 +10,7 @@ import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
 import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
+import { HourlyNoiseHeatGraph } from "@/components/venues/HourlyNoiseHeatGraph";
 import { SeatingForecastChart } from "@/components/venue/SeatingForecastChart";
 import { OccupancyTrendChart } from "@/components/analytics/OccupancyTrendChart";
 import { RecentlyViewedTracker } from "@/components/venues/RecentlyViewedTracker";
@@ -312,6 +313,12 @@ export default async function VenuePage({ params }: PageProps) {
                 <span>Expected Noise Levels</span>
               </h3>
               <AmbientNoiseTrendGraph venueId={venue.id} />
+              <div className="mt-4">
+                <HourlyNoiseHeatGraph
+                  venueId={venue.id}
+                  venueName={venue.name}
+                />
+              </div>
               <div className="mt-4">
                 <NoiseForecastChart venueId={venue.id} />
               </div>

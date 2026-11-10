@@ -50,6 +50,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
 export { throttle } from "@/lib/utils";
 export {
   getHighContrastIcon,
@@ -1670,34 +1675,6 @@ const TILE_PROVIDERS: Record<TileProviderKey, { name: string; url: string; maxZo
     attribution: '&copy; Wikimedia maps | OpenStreetMap contributors',
   },
 };
-useEffect(() => {
-  const handleMapAction = (event: Event) => {
-    const { action, payload } = (event as CustomEvent).detail;
-
-    switch (action) {
-      case "FIND_NEAREST_QUIET_DESK":
-        // Filter quiet zone layers & pan map
-        break;
-      case "FILTER_HIGH_SPEED_WIFI":
-        // Filter wifi capacity threshold >= 100 Mbps
-        break;
-      case "TOGGLE_3D_HEATMAP":
-        // Toggle 3D building height extrusion / heatmap layer visibility
-        break;
-      case "RESET_CITY_CENTER":
-        // Reset camera viewport center
-        break;
-      case "TOGGLE_HIGH_CONTRAST_BASEMAP":
-        // Switch tile layer source to high contrast
-        break;
-      default:
-        break;
-    }
-  };
-
-  window.addEventListener("worksphere:map-action", handleMapAction);
-  return () => window.removeEventListener("worksphere:map-action", handleMapAction);
-}, []);
 
 interface MapProps {
   center: [number, number];

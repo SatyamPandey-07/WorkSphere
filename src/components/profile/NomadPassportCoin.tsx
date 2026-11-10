@@ -367,9 +367,3 @@ export const NomadPassportCoin: React.FC<NomadPassportCoinProps> = ({
 };
 
 export default NomadPassportCoin;
-};
-
-export default NomadPassportCoin;
-};
-
-export default NomadPassportCoin;

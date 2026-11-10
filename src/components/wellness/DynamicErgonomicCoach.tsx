@@ -153,6 +153,18 @@ export default function DynamicErgonomicCoach() {
     };
   }, []);
 
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
   // Load sound preferences from localStorage on mount
   useEffect(() => {
     if (typeof window === "undefined") return;

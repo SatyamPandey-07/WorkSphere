@@ -72,6 +72,7 @@ describe('RoutingOptimizer Component - Mode Switching & Keyboard Navigation', ()
 });
 });
 });
+});
   test('2. Clicking a mode triggers the onTravelProfileChange callback with expected payload', () => {
     render(<RoutingOptimizer travelProfile="walking" onTravelProfileChange={mockOnTravelProfileChange} />);
 

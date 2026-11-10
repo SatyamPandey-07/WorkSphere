@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { Zap, Volume2 } from "lucide-react";
 import {
   BarChart,
@@ -28,35 +29,62 @@ export interface OccupancyDataPoint {
 }
 
 export interface VenueNoiseChartProps {
-  wifiPredictions?: WifiPredictionPoint[];
-  occupancyData?: OccupancyDataPoint[];
-  forecast?: HourlyForecast[];
+  wifiPredictions?: WifiPredictionPoint[] | null;
+  occupancyData?: OccupancyDataPoint[] | null;
+  forecast?: HourlyForecast[] | null;
+  className?: string;
+  testId?: string;
 }
 
 export function VenueNoiseChart({
   wifiPredictions = [],
   occupancyData = [],
   forecast = [],
+  className = "",
+  testId = "venue-noise-chart",
 }: VenueNoiseChartProps) {
-  const hasWifi = wifiPredictions.length > 0;
-  const hasOccupancy = occupancyData.length > 0;
-  const hasForecast = forecast.length > 0;
+  const safeWifi = Array.isArray(wifiPredictions) ? wifiPredictions : [];
+  const safeOccupancy = Array.isArray(occupancyData) ? occupancyData : [];
+  const safeForecast = Array.isArray(forecast) ? forecast : [];
+
+  const hasWifi = safeWifi.length > 0;
+  const hasOccupancy = safeOccupancy.length > 0;
+  const hasForecast = safeForecast.length > 0;
 
   if (!hasWifi && !hasOccupancy && !hasForecast) {
     return null;
   }
 
-  const forecastData = forecast.map((f) => ({
-    hour: `${f.hour.toString().padStart(2, "0")}:00`,
-    predictedDb: f.predictedDb,
-    confidence: f.confidence,
-    rawHour: f.hour,
-  }));
+  const forecastData = safeForecast
+    .filter((f) => f && typeof f === "object")
+    .map((f) => {
+      const hourNum =
+        typeof f.hour === "number" && !isNaN(f.hour)
+          ? f.hour
+          : parseInt(String(f.hour || 0), 10) || 0;
+      const formattedHour = `${Math.max(0, Math.min(23, hourNum))
+        .toString()
+        .padStart(2, "0")}:00`;
+      const confidence =
+        typeof f.confidence === "number" && !isNaN(f.confidence)
+          ? f.confidence
+          : 0;
+
+      return {
+        hour: formattedHour,
+        predictedDb: f.predictedDb,
+        confidence,
+        rawHour: f.hour,
+      };
+    });
 
   return (
-    <>
+    <div data-testid={testId} className={`space-y-6 ${className}`.trim()}>
       {hasWifi && (
-        <div className="mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+        <div
+          data-testid="wifi-prediction-section"
+          className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm"
+        >
           <h3 className="text-xs font-black uppercase tracking-widest text-zinc-200 mb-1 flex items-center gap-2">
             <Zap className="w-4 h-4 text-blue-400" />
             AI Wifi Prediction
@@ -66,7 +94,7 @@ export function VenueNoiseChart({
           </p>
           <div className="h-40 w-full mt-2">
             <ResponsiveContainer width="99%" height="100%" debounce={50}>
-              <BarChart data={wifiPredictions}>
+              <BarChart data={safeWifi}>
                 <XAxis
                   dataKey="time"
                   axisLine={false}
@@ -84,22 +112,26 @@ export function VenueNoiseChart({
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
+                      if (!data) return null;
                       return (
-                        <div className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl">
+                        <div
+                          data-testid="wifi-tooltip"
+                          className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl"
+                        >
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
                             {data.time}
                           </p>
                           <p className="text-sm font-bold text-blue-400">
-                            {data.download} Mbps (Download)
+                            {data.download ?? 0} Mbps (Download)
                           </p>
                           <p className="text-sm font-bold text-green-400">
-                            {data.upload} Mbps (Upload)
+                            {data.upload ?? 0} Mbps (Upload)
                           </p>
                           <p className="text-sm font-bold text-orange-400">
-                            {data.latency} ms (Latency)
+                            {data.latency ?? 0} ms (Latency)
                           </p>
                           <p className="text-[10px] uppercase tracking-wider text-zinc-500 mt-1">
-                            Crowd: {data.crowd}
+                            Crowd: {data.crowd || "N/A"}
                           </p>
                         </div>
                       );
@@ -132,7 +164,10 @@ export function VenueNoiseChart({
       )}
 
       {hasOccupancy && (
-        <div className="mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+        <div
+          data-testid="occupancy-section"
+          className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm"
+        >
           <h3 className="text-xs font-black uppercase tracking-widest text-zinc-200 mb-1 flex items-center gap-2">
             <Zap className="w-4 h-4 text-orange-400" />
             Live Crowd Occupancy
@@ -142,7 +177,7 @@ export function VenueNoiseChart({
           </p>
           <div className="h-40 w-full mt-2">
             <ResponsiveContainer width="99%" height="100%" debounce={50}>
-              <LineChart data={occupancyData}>
+              <LineChart data={safeOccupancy}>
                 <XAxis
                   dataKey="time"
                   axisLine={false}
@@ -164,13 +199,17 @@ export function VenueNoiseChart({
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
+                      if (!data) return null;
                       return (
-                        <div className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl">
+                        <div
+                          data-testid="occupancy-tooltip"
+                          className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl"
+                        >
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
                             {data.time}
                           </p>
                           <p className="text-sm font-bold text-orange-400">
-                            {data.occupancy}% Occupied
+                            {data.occupancy ?? 0}% Occupied
                           </p>
                         </div>
                       );
@@ -193,7 +232,10 @@ export function VenueNoiseChart({
       )}
 
       {hasForecast && (
-        <div className="mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+        <div
+          data-testid="noise-timeline-section"
+          className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm"
+        >
           <h3 className="text-xs font-black uppercase tracking-widest text-zinc-200 mb-1 flex items-center gap-2">
             <Volume2 className="w-4 h-4 text-pink-400" />
             Noise Level Timeline
@@ -223,14 +265,19 @@ export function VenueNoiseChart({
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
+                      if (!data) return null;
+                      const confPercent = Math.round((data.confidence ?? 0) * 100);
                       return (
-                        <div className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl text-xs">
+                        <div
+                          data-testid="noise-tooltip"
+                          className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl text-xs"
+                        >
                           <p className="font-bold text-zinc-200 mb-1">{data.hour}</p>
                           <p className="text-pink-400 font-semibold">
                             {data.predictedDb ? `${data.predictedDb} dB` : "No data"}
                           </p>
                           <p className="text-zinc-500 text-[10px] mt-0.5">
-                            Confidence: {Math.round(data.confidence * 100)}%
+                            Confidence: {isNaN(confPercent) ? 0 : confPercent}%
                           </p>
                         </div>
                       );
@@ -252,7 +299,7 @@ export function VenueNoiseChart({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 

@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
-import { Wifi, Activity, ShieldCheck, AlertCircle, ArrowUpRight } from "lucide-react";
+import { Wifi, AlertCircle } from "lucide-react";
 import { useSmoothTelemetry } from "@/lib/telemetry";
+import { cn } from "@/lib/utils";
 
 export interface WifiWidgetProps {
   /** Raw instantaneous speed in Mbps */
@@ -24,21 +25,22 @@ export function getSpeedTier(speedMbps: number): {
   color: string;
   badgeBg: string;
 } {
-  if (speedMbps >= 100) {
+  const safeSpeed = Math.max(0, isNaN(speedMbps) ? 0 : speedMbps);
+  if (safeSpeed >= 100) {
     return {
       tier: "Ultra Fast",
       color: "text-emerald-500 dark:text-emerald-400",
       badgeBg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
     };
   }
-  if (speedMbps >= 40) {
+  if (safeSpeed >= 40) {
     return {
       tier: "High Speed",
       color: "text-blue-500 dark:text-blue-400",
       badgeBg: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
     };
   }
-  if (speedMbps >= 15) {
+  if (safeSpeed >= 15) {
     return {
       tier: "Moderate",
       color: "text-amber-500 dark:text-amber-400",
@@ -60,8 +62,12 @@ export function WifiWidget({
   className = "",
   smoothingAlpha = 0.25,
 }: WifiWidgetProps) {
+  const safeRawSpeed = Math.max(0, isNaN(rawSpeedMbps) ? 0 : rawSpeedMbps);
+  const safePing = Math.max(0, isNaN(pingMs) ? 0 : pingMs);
+  const safeJitter = Math.max(0, isNaN(jitterMs) ? 0 : jitterMs);
+
   const { smoothedSpeed, isOutlier, history } = useSmoothTelemetry(
-    rawSpeedMbps,
+    safeRawSpeed,
     { alpha: smoothingAlpha },
   );
 
@@ -70,7 +76,10 @@ export function WifiWidget({
   return (
     <div
       data-testid="wifi-telemetry-widget"
-      className={`relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 shadow-sm transition-all ${className}`}
+      className={cn(
+        "relative overflow-hidden rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 shadow-sm transition-all",
+        className
+      )}
     >
       {/* Top Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
@@ -83,7 +92,10 @@ export function WifiWidget({
               Live WiFi Telemetry
             </h4>
             {venueName && (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[180px]">
+              <p
+                data-testid="wifi-venue-name"
+                className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[180px]"
+              >
                 {venueName}
               </p>
             )}
@@ -92,7 +104,10 @@ export function WifiWidget({
 
         <span
           data-testid="wifi-speed-tier"
-          className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${tierInfo.badgeBg}`}
+          className={cn(
+            "px-2.5 py-1 text-xs font-semibold rounded-full border",
+            tierInfo.badgeBg
+          )}
         >
           {tierInfo.tier}
         </span>
@@ -132,23 +147,29 @@ export function WifiWidget({
             data-testid="raw-speed-metric"
             className="font-bold text-zinc-700 dark:text-zinc-300 tabular-nums"
           >
-            {rawSpeedMbps.toFixed(0)} Mbps
+            {safeRawSpeed.toFixed(0)} Mbps
           </span>
         </div>
         <div>
           <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider block">
             Latency
           </span>
-          <span className="font-bold text-zinc-700 dark:text-zinc-300 tabular-nums">
-            {pingMs} ms
+          <span
+            data-testid="latency-metric"
+            className="font-bold text-zinc-700 dark:text-zinc-300 tabular-nums"
+          >
+            {safePing} ms
           </span>
         </div>
         <div>
           <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider block">
             Jitter
           </span>
-          <span className="font-bold text-zinc-700 dark:text-zinc-300 tabular-nums">
-            ±{jitterMs} ms
+          <span
+            data-testid="jitter-metric"
+            className="font-bold text-zinc-700 dark:text-zinc-300 tabular-nums"
+          >
+            ±{safeJitter} ms
           </span>
         </div>
       </div>
@@ -165,6 +186,7 @@ export function WifiWidget({
             return (
               <div
                 key={idx}
+                data-testid={`telemetry-sparkline-bar-${idx}`}
                 className="flex-1 rounded-sm bg-blue-500/30 dark:bg-blue-400/20 hover:bg-blue-500 transition-all"
                 style={{ height: `${heightPct}%` }}
                 title={`${val.toFixed(1)} Mbps`}
@@ -176,3 +198,5 @@ export function WifiWidget({
     </div>
   );
 }
+
+export default WifiWidget;

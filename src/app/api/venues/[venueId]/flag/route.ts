@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rateLimit";
 import { apiError } from "@/lib/apiResponse";
 import { apiHandler } from "@/lib/apiHandler";
+import { invalidateVenueReviewsCache } from "@/lib/cache/swrCache";
 
 const VALID_REASONS = [
   "permanently_closed",
@@ -71,6 +72,8 @@ export const POST = apiHandler<{ reason: FlagReason }, { venueId: string }>({
         reportedById: userId!,
       },
     });
+
+    await invalidateVenueReviewsCache(venueId);
 
     return NextResponse.json({
       message: "Report submitted. Thank you for your feedback!",

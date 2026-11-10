@@ -21,6 +21,7 @@ import { VenueNoiseSection } from "./venue-dialog/VenueNoiseSection";
 import { VenueAmenityVoting } from "./venue-dialog/VenueAmenityVoting";
 import { VenueReviewsSection } from "./venue-dialog/VenueReviewsSection";
 import { useVenueAmenityVotes } from "./venue-dialog/useVenueAmenityVotes";
+import { VenueDeveloperTab } from "@/components/venues/VenueDetailModal";
 
 const venueFallbacks = {
   cafe: "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=800",
@@ -40,6 +41,7 @@ export interface VenueDetailDialogProps {
   onGetDirections: (venue: Venue) => void;
   onToggleFavorite: (venue: Venue) => void;
   onRate?: (venue: Venue) => void;
+  initialTab?: "overview" | "reviews" | "menu" | "developer";
 }
 
 export function VenueDetailDialog({
@@ -50,6 +52,7 @@ export function VenueDetailDialog({
   onGetDirections,
   onToggleFavorite,
   onRate,
+  initialTab = "overview",
 }: VenueDetailDialogProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(true);
@@ -83,9 +86,9 @@ export function VenueDetailDialog({
   const lightboxOpenRef = useRef(false);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"overview" | "reviews" | "menu">(
-    "overview",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "reviews" | "menu" | "developer"
+  >(initialTab || "overview");
   const [reviews, setReviews] = useState<any[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const sentiment = useMemo(() => summarizeReviewSentiment(reviews), [reviews]);
@@ -537,7 +540,7 @@ export function VenueDetailDialog({
         .catch((err) => console.error(err));
 
       fetch(
-        `/api/venues/${encodeURIComponent(venue.id)}/noise-metrics/forecast`,
+        `/api/venues/${encodeURIComponent(venue.id)}/noise-metrics/forecast?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
       )
         .then((r) => r.json())
         .then((data) => {
@@ -920,6 +923,10 @@ export function VenueDetailDialog({
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
             />
+          )}
+
+          {activeTab === "developer" && (
+            <VenueDeveloperTab venueId={venue.id} venueName={venue.name} />
           )}
         </div>
       </div>

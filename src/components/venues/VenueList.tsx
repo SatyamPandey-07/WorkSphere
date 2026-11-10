@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from "react";
 import { VenueCard } from "@/components/VenueCard";
+import { cn } from "@/lib/utils";
 import { MapPin, Clock } from "lucide-react";
 import {
   sortVenuesByProximity,
@@ -12,12 +13,13 @@ import {
 import { getVenueHoursStatus } from "@/lib/venueHours";
 
 export interface VenueListProps {
-  venues: any[];
+  venues?: any[];
   userLocation?: { lat: number; lng: number } | null;
   sortByProximity?: boolean;
   maxDistanceKm?: number;
   showOpenNowFilter?: boolean;
   className?: string;
+  "data-testid"?: string;
   onBookmarkToggle?: (venueId: string) => void;
 }
 
@@ -53,13 +55,14 @@ export function isVenueCurrentlyOpen(venue: any, now = new Date()): boolean {
  * on the card corner, 'Open Now' quick filter chip, and proximity sorting when user GPS location permissions are granted.
  */
 export function VenueList({
-  venues,
+  venues = [],
   userLocation = null,
   sortByProximity = false,
   maxDistanceKm,
   showOpenNowFilter = true,
   className = "",
   onBookmarkToggle,
+  ...props
 }: VenueListProps) {
   const [openNowOnly, setOpenNowOnly] = useState(false);
   const [internalLocation, setInternalLocation] = useState<{
@@ -88,9 +91,10 @@ export function VenueList({
   }, [userLocation]);
 
   const activeLocation = userLocation || internalLocation;
+  const rawVenues = Array.isArray(venues) ? venues : [];
 
   const processedVenues = useMemo(() => {
-    let result = [...venues];
+    let result = [...rawVenues];
 
     if (openNowOnly) {
       result = result.filter((v) => isVenueCurrentlyOpen(v));
@@ -105,10 +109,13 @@ export function VenueList({
     }
 
     return result;
-  }, [venues, activeLocation, sortByProximity, maxDistanceKm, openNowOnly]);
+  }, [rawVenues, activeLocation, sortByProximity, maxDistanceKm, openNowOnly]);
 
   return (
-    <div className="space-y-4">
+    <div
+      data-testid={props["data-testid"] || "venue-list"}
+      className="space-y-4"
+    >
       {showOpenNowFilter && (
         <div className="flex items-center gap-2">
           <button
@@ -147,7 +154,10 @@ export function VenueList({
       ) : (
         <div
           data-testid="venue-list-grid"
-          className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 ${className}`}
+          className={cn(
+            "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6",
+            className
+          )}
         >
           {processedVenues.map((venue) => {
             const vLat = venue.latitude ?? venue.lat;

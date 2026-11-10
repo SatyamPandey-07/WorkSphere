@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 import { Clock } from "lucide-react";
 import { getVenueHoursStatus, type VenueHoursStatus } from "@/lib/venueHours";
 
@@ -11,6 +12,7 @@ export interface NextOpeningTimeBadgeProps {
   nowInput?: Date;
   /** If true, only renders when the venue is closed with next opening information */
   closedOnly?: boolean;
+  "data-testid"?: string;
 }
 
 export function NextOpeningTimeBadge({
@@ -19,6 +21,7 @@ export function NextOpeningTimeBadge({
   className = "",
   nowInput,
   closedOnly = false,
+  ...props
 }: NextOpeningTimeBadgeProps) {
   const [isClient, setIsClient] = useState(false);
 
@@ -50,8 +53,11 @@ export function NextOpeningTimeBadge({
   if (!isClient && !nowInput) {
     return (
       <span
-        data-testid="next-opening-time-badge-ssr"
-        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200/60 dark:border-zinc-700/50 ${className}`}
+        data-testid={props["data-testid"] ? `${props["data-testid"]}-ssr` : "next-opening-time-badge-ssr"}
+        className={cn(
+          "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200/60 dark:border-zinc-700/50",
+          className,
+        )}
       >
         <Clock className="w-3 h-3 text-zinc-400 dark:text-zinc-500 shrink-0" />
         <span className="truncate">{status.badgeText}</span>
@@ -61,13 +67,15 @@ export function NextOpeningTimeBadge({
 
   return (
     <span
-      data-testid="next-opening-time-badge"
+      data-testid={props["data-testid"] || "next-opening-time-badge"}
       aria-label={`Venue operating status: ${status.badgeText}`}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight ${
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight",
         isOpen
           ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
-          : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/50"
-      } ${className}`}
+          : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/50",
+        className,
+      )}
       title={status.badgeText}
     >
       <span
@@ -79,3 +87,5 @@ export function NextOpeningTimeBadge({
     </span>
   );
 }
+
+export default NextOpeningTimeBadge;

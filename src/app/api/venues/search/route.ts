@@ -1,4 +1,7 @@
+ feature/webgl-spatial-audio-heatmap-shader
+
  fix/nomad-tier-badge-mobile-overflow
+ main
 import { NextResponse } from "next/server";
 import { searchVenuesPhonetic } from "@/lib/search/phoneticVenueSearch";
 
@@ -19,6 +22,8 @@ export async function GET(req: Request) {
   } catch (error: any) {
     console.error("Phonetic Venue Search Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
+ feature/webgl-spatial-audio-heatmap-shader
+
 
  feature/webxr-ar-wayfinding-overlay
  main
@@ -39,6 +44,7 @@ export async function GET(req: Request) {
     if (!q) {
       return NextResponse.json({ results: [] });
     }
+ main
 
     const results = await searchVenuesPhonetic(q, limit);
     return NextResponse.json({ results });

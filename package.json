@@ -21,12 +21,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.3",
-feature/protobuf-binary-broker
-    "@google/genai": "^2.30.0",
-    "@google/generative-ai": "^0.24.1",
-
     "@google/genai": "^2.32.0",
- main
     "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.1",

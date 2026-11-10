@@ -263,21 +263,24 @@ Because `GET /api/auth/csrf-token` always mints a new token and replaces the sha
 
 ### 5.1 Tiers
 
-Defined in `RATE_TIERS` in `src/lib/rateLimit/config.ts`, selected by `matchRateTier(pathname)`:
+Defined in `RATE_TIERS` in `src/lib/rateLimit/config.ts`, selected by `matchRateTier(pathname, method)`:
 
 | Tier | Limit | Window | Matches |
 | --- | --- | --- | --- |
 | `telemetry` | 120 requests | 1 minute | `/api/telemetry*`, or a path segment equal to `telemetry`, `noise-metrics`, `wifi-prediction`, `wifiTelemetry` |
-| `auth` | 5 requests | 1 minute | `/api/auth*` (except `/api/auth/csrf-token`), `/api/partykit/auth*`, `/api/user/verify-student` |
+| `mutations` | 10 requests | 1 minute | Mutating actions (`POST`/`PUT`/`PATCH`/`DELETE` on `/api/bookings*`, `/api/reviews*`, or review/booking sub-routes) |
+| `auth` | 30 requests | 1 minute | `/api/auth*` (including `/api/auth/csrf-token`), `/api/partykit/auth*`, `/api/user/verify-student` |
 | `search` | 60 requests | 1 minute | `/api/venues*`, `/api/map*`, `/api/search*`, `/api/location*` |
 
 Rules that keep the limits from misfiring:
 
-- Tiers are checked in the order telemetry, auth, search, and the first match wins.
+- Tiers are checked in the order telemetry, mutations, auth, search, and the first match wins.
 - `/api/webhook`, `/api/webhooks`, `/api/webhooks/worker` and `/api/cron*` are never limited.
+- Mutating review and booking requests are evaluated before generic search routes so review submissions on venues are bound by the mutation tier.
 - Telemetry matching uses exact path segments so a path like `/api/venues/telemetry-guide` is not pulled into the telemetry tier.
 - Routes that match no tier are not limited by this middleware.
 - `OPTIONS` requests bypass the limiter entirely.
+- Redis connection timeouts fail open gracefully to protect legitimate traffic.
 
 ### 5.2 Identity
 

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, CheckCircle2, MapPin, XCircle } from "lucide-react";
+import { Clock, CheckCircle2, MapPin, XCircle, type LucideIcon } from "lucide-react";
 
 export type BookingStatus = "PENDING" | "CONFIRMED" | "CHECKED_IN" | "CANCELLED" | "COMPLETED";
 
@@ -16,7 +16,7 @@ const STATUS_CONFIG: Record<
   BookingStatus,
   {
     label: string;
-    icon: React.ElementType;
+    icon: LucideIcon;
     bg: string;
     text: string;
     border: string;

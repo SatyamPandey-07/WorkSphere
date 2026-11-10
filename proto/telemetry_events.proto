@@ -35,12 +35,16 @@ message ChatEvent {
 message WorkSphereEnvelope {
   EventType type = 1;
   int64 sequence_id = 2;
+feature/venuecard-a11y-focus-rings
+  
+
  feature/solana-escrow-refund
   
  feature/protobuf-binary-broker
 
 
   
+ main
  main
  main
   oneof payload {
@@ -48,6 +52,9 @@ message WorkSphereEnvelope {
     PresenceEvent presence = 4;
     ChatEvent chat = 5;
   }
+ feature/venuecard-a11y-focus-rings
+}
+
  feature/solana-escrow-refund
 }
 
@@ -55,5 +62,6 @@ message WorkSphereEnvelope {
 }
 
 }
+ main
  main
  main

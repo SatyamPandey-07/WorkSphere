@@ -5,14 +5,10 @@ import React, { useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Map as MapIcon, Sun, Moon } from "lucide-react";
-
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-import { Map as MapIcon, Sun, Moon, Plus, Minus, RotateCcw } from "lucide-react";
- main
+import { Map as MapIcon } from "lucide-react";
+import React, { useState, useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 // Fix for default leaflet icons in React
 if (typeof window !== "undefined") {
@@ -94,80 +90,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({ center, markers 
     </div>
   );
 };
-
-/**
- * Detects whether the current device is a touch-only mobile device without a fine pointer.
- */
-export function isTouchOnlyDevice(): boolean {
-  if (typeof window === "undefined") return false;
-  const matchMedia =
-    typeof window.matchMedia === "function"
-      ? window.matchMedia.bind(window)
-      : null;
-  if (!matchMedia) return false;
-  const hasCoarse = matchMedia("(pointer: coarse)")?.matches ?? false;
-  const hasFine = matchMedia("(pointer: fine)")?.matches ?? false;
-  if (hasCoarse && !hasFine) return true;
-  const hasTouch =
-    "ontouchstart" in window ||
-    (typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0);
-  return hasTouch && !hasFine;
-}
-
-export interface InteractiveMapMarker {
-  lat: number | string;
-  lng: number | string;
-  name?: string;
-  title?: string;
-  category?: string;
-  score?: number | string;
-  rating?: number | string;
-  [key: string]: any;
-}
-
-export interface InteractiveMapProps {
-  markers?: InteractiveMapMarker[];
-  center?: { lat: number; lng: number };
-  zoom?: number;
-  className?: string;
-}
-
-export function InteractiveMap({
-  markers = [],
-  center: propCenter,
-  zoom = 13,
-  className = "",
-}: InteractiveMapProps) {
-  const [isHighContrast, setIsHighContrast] = useState(false);
-  const [timeWindowHour, setTimeWindowHour] = useState(12);
- feature/protobuf-binary-broker
-
-  const [currentZoom, setCurrentZoom] = useState(zoom);
-  const [isTouchOnly, setIsTouchOnly] = useState(false);
-  const mapRef = useRef<any>(null);
-
-  // Detect touch-only mobile device on mount to conditionally hide shortcut badges
-  useEffect(() => {
-    setIsTouchOnly(isTouchOnlyDevice());
-  }, []);
-
-  // Update zoom when prop changes
-  useEffect(() => {
-    setCurrentZoom(zoom);
-  }, [zoom]);
- main
-
-  // Validate and sanitize numeric coordinates
-  const safeMarkers = useMemo(() => {
-    return (markers ?? []).filter(
-      (m) =>
-        m != null &&
-        m.lat != null &&
-        m.lng != null &&
-        Number.isFinite(Number(m.lat)) &&
-        Number.isFinite(Number(m.lng)),
-    );
-  }, [markers]);
 
   // Group and spiderfy overlapping markers
   const spiderfiedMarkers = useMemo(() => {

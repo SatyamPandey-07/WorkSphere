@@ -926,6 +926,21 @@ model StudentClaimNullifier {
   @@index([epoch])
 }
 
+/// Epoch-scoped nullifier registry for anonymous venue check-ins (#7390).
+/// A nullifier may only be spent once per epoch, preventing the same
+/// zk-SNARK proof from being replayed for a second check-in.
+model VenueCheckInNullifier {
+  id            String   @id @default(cuid())
+  nullifierHash String
+  epoch         Int
+  venueId       String
+  claimedAt     DateTime @default(now())
+
+  @@unique([nullifierHash, epoch])
+  @@index([epoch])
+  @@index([venueId])
+}
+
 
 enum WaitlistStatus {
   ACTIVE

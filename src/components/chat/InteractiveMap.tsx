@@ -1,10 +1,18 @@
 "use client";
 
+ feature/protobuf-binary-broker
+import React, { useState } from "react";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+import { Map as MapIcon, Sun, Moon } from "lucide-react";
+
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { Map as MapIcon, Sun, Moon, Plus, Minus, RotateCcw } from "lucide-react";
+ main
 
 // Fix for default leaflet icons in React
 if (typeof window !== "undefined") {
@@ -132,6 +140,8 @@ export function InteractiveMap({
 }: InteractiveMapProps) {
   const [isHighContrast, setIsHighContrast] = useState(false);
   const [timeWindowHour, setTimeWindowHour] = useState(12);
+ feature/protobuf-binary-broker
+
   const [currentZoom, setCurrentZoom] = useState(zoom);
   const [isTouchOnly, setIsTouchOnly] = useState(false);
   const mapRef = useRef<any>(null);
@@ -145,6 +155,7 @@ export function InteractiveMap({
   useEffect(() => {
     setCurrentZoom(zoom);
   }, [zoom]);
+ main
 
   // Validate and sanitize numeric coordinates
   const safeMarkers = useMemo(() => {
@@ -225,6 +236,10 @@ export function InteractiveMap({
     }
     return { lat: 0, lng: 0 };
   }, [propCenter, safeMarkers]);
+
+ feature/protobuf-binary-broker
+  // Memoized event handlers for interactive markers
+  const markerEventHandlers = React.useMemo(
 
   const [currentCenter, setCurrentCenter] = useState(computedCenter);
 
@@ -308,6 +323,7 @@ export function InteractiveMap({
 
   // Memoized event handlers for interactive markers
   const markerEventHandlers = useMemo(
+ main
     () => ({
       keydown: (e: any) => {
         if (e.originalEvent?.key === "Enter" || e.originalEvent?.key === " ") {
@@ -329,6 +345,11 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+ feature/protobuf-binary-broker
+  const tileLayerUrl = isHighContrast
+    ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
   const cartoKey =
     typeof process !== "undefined"
       ? process.env?.NEXT_PUBLIC_CARTO_KEY
@@ -341,6 +362,7 @@ export function InteractiveMap({
     : isHighContrast
       ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
       : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+ main
 
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
@@ -370,6 +392,14 @@ export function InteractiveMap({
           Interactive Map
         </div>
 
+ feature/protobuf-binary-broker
+        {/* High Contrast Toggle Button */}
+        <button
+          type="button"
+          onClick={() => setIsHighContrast((prev) => !prev)}
+          aria-label="Toggle high contrast map display mode"
+          aria-pressed={isHighContrast}
+
         {/* High Contrast Toggle Button with Monospace Keyboard Badge */}
         <button
           type="button"
@@ -377,6 +407,7 @@ export function InteractiveMap({
           aria-label="Toggle high contrast map display mode"
           aria-pressed={isHighContrast}
           data-testid="map-high-contrast-btn"
+ main
           className="shrink-0 px-2.5 py-1 text-xs font-semibold rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-200 shadow-sm backdrop-blur-md hover:bg-zinc-100 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 transition-all flex items-center gap-1.5 cursor-pointer"
         >
           {isHighContrast ? (
@@ -390,6 +421,8 @@ export function InteractiveMap({
               High Contrast
             </>
           )}
+ feature/protobuf-binary-broker
+
           {!isTouchOnly && (
             <kbd
               data-testid="kbd-high-contrast"
@@ -398,6 +431,7 @@ export function InteractiveMap({
               H
             </kbd>
           )}
+ main
         </button>
 
         {/* Time Window Slider Container */}
@@ -418,6 +452,8 @@ export function InteractiveMap({
             {`${String(timeWindowHour).padStart(2, "0")}:00`}
           </span>
         </div>
+ feature/protobuf-binary-broker
+
       </div>
 
       {/* Quick Map Action Navigation Controls with Keyboard Badges */}
@@ -484,6 +520,7 @@ export function InteractiveMap({
             </kbd>
           )}
         </button>
+ main
       </div>
 
       <MapContainer

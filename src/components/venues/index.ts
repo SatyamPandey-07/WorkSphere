@@ -46,3 +46,10 @@ export type { VenueDetailModalProps } from "./VenueDetailModal";
 export { VenueCheckInButton } from "./VenueCheckInButton";
 export type { VenueCheckInButtonProps } from "./VenueCheckInButton";
 
+export {
+  VenueReviewModal,
+  validateReviewComment,
+  REVIEW_MIN_LENGTH,
+  REVIEW_ERROR_MESSAGE,
+} from "./VenueReviewModal";
+export type { VenueReviewModalProps } from "./VenueReviewModal";

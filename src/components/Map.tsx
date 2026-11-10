@@ -20,7 +20,6 @@ import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import { Contrast } from "lucide-react";
-import { formatDistance } from "@/lib/geo/formatDistance";
 import {
   MapMarkerFactory,
   SEAT_RING_COLORS,
@@ -29,6 +28,12 @@ import {
 import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
 import RoutingOptimizer from "./map/RoutingOptimizer";
+import { MobileVenueDrawer } from "@/components/ui/MobileVenueDrawer";
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 export { throttle } from "@/lib/utils";
 export {
@@ -592,6 +597,10 @@ export interface MapProps {
   enableClustering?: boolean;
   enableRadarSweep?: boolean;
   radarRadius?: number;
+  onSelectVenue?: (venue: MapMarker | null) => void;
+  selectedVenueId?: string | null;
+  onBookVenue?: (venue: MapMarker) => void;
+  onGetDirections?: (venue: MapMarker) => void;
 }
 
 const Map = ({
@@ -607,6 +616,10 @@ const Map = ({
   enableClustering = true,
   enableRadarSweep = true,
   radarRadius = 160,
+  onSelectVenue,
+  selectedVenueId,
+  onBookVenue,
+  onGetDirections,
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -735,14 +748,37 @@ const Map = ({
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
-  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  const [internalSelectedMarkerId, setInternalSelectedMarkerId] = useState<
+    string | null
+  >(null);
+  const selectedMarkerId =
+    selectedVenueId !== undefined
+      ? selectedVenueId
+      : internalSelectedMarkerId;
+
+  const handleSelectMarker = useCallback(
+    (id: string | null) => {
+      setInternalSelectedMarkerId(id);
+      if (onSelectVenue) {
+        const found = id ? markers.find((m) => m.id === id) || null : null;
+        onSelectVenue(found);
+      }
+    },
+    [markers, onSelectVenue],
+  );
+
   useEffect(() => {
     if (
       selectedMarkerId !== null &&
       !markers.some((marker) => marker.id === selectedMarkerId)
     ) {
-      setSelectedMarkerId(null);
+      handleSelectMarker(null);
     }
+  }, [markers, selectedMarkerId, handleSelectMarker]);
+
+  const activeVenueForDrawer = useMemo(() => {
+    if (!selectedMarkerId) return null;
+    return markers.find((m) => m.id === selectedMarkerId) || null;
   }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
@@ -809,7 +845,8 @@ const Map = ({
       if (data.code === "Ok") {
         const coords = data.routes[0].geometry.coordinates;
         const hasElevation = coords.some(
-          (c: any[]) => Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
+          (c: any[]) =>
+            Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
         );
         const elevationProfile =
           data.routes[0].elevation_profile ||
@@ -817,9 +854,10 @@ const Map = ({
           (hasElevation ? coords.map((c: any[]) => c[2]) : undefined);
 
         setOptimizedRoute({
-          coordinates: coords.map(
-            (coord: [number, number]) => [coord[1], coord[0]],
-          ),
+          coordinates: coords.map((coord: [number, number]) => [
+            coord[1],
+            coord[0],
+          ]),
           duration: data.routes[0].duration,
           distance: data.routes[0].distance,
           legs: data.routes[0].legs,
@@ -1017,12 +1055,14 @@ const Map = ({
   }, [spiderfiedMarkers, getAvailability]);
 
   const center: [number, number] = [latitude, longitude];
-  const tileUrl =
-    theme === "light"
-      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
+  const tileUrl = cartoKey
+    ? theme === "light"
+      ? `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : theme === "cyberpunk"
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+        ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -1230,6 +1270,13 @@ const Map = ({
         }
         .leaflet-popup-content {
           margin: 12px 16px;
+        }
+
+        /* Hide desktop-style centered popup on mobile touch screens in favor of MobileVenueDrawer */
+        @media (max-width: 767px) {
+          .leaflet-popup {
+            display: none !important;
+          }
         }
         
         /* Focus-visible ring for keyboard-navigated markers (Issue #3446) */
@@ -1534,7 +1581,7 @@ const Map = ({
         <MapMarkerFactory
           markers={spiderfiedMarkers}
           selectedMarkerId={selectedMarkerId}
-          onSelectMarker={setSelectedMarkerId}
+          onSelectMarker={handleSelectMarker}
           isHighContrast={isHighContrast}
           getAvailability={getAvailability}
           checkIn={checkIn}
@@ -1573,7 +1620,124 @@ const Map = ({
           optimizedRoute={optimizedRoute}
         />
       </MapContainer>
+
+      {/* Mobile Draggable Venue Bottom Sheet Drawer */}
+      <MobileVenueDrawer
+        venue={activeVenueForDrawer}
+        isOpen={Boolean(activeVenueForDrawer)}
+        onClose={() => handleSelectMarker(null)}
+        onBook={onBookVenue}
+        onGetDirections={onGetDirections}
+        className="md:hidden"
+      />
     </>
+  );
+};
+type TileProviderKey = 'carto' | 'osm' | 'wikimedia';
+
+const TILE_PROVIDERS: Record<TileProviderKey, { name: string; url: string; maxZoom: number; attribution: string }> = {
+  carto: {
+    name: 'Carto Positron (Default)',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+  },
+  osm: {
+    name: 'OpenStreetMap Standard',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  wikimedia: {
+    name: 'Wikimedia Maps',
+    url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png',
+    maxZoom: 18,
+    attribution: '&copy; Wikimedia maps | OpenStreetMap contributors',
+  },
+};
+
+interface MapProps {
+  center: [number, number];
+  zoom?: number;
+  className?: string;
+}
+
+export const Map: React.FC<MapProps> = ({ center, zoom = 13, className = 'h-[450px] w-full rounded-2xl' }) => {
+  const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+
+  const [provider, setProvider] = useState<TileProviderKey>('carto');
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+
+    if (!mapRef.current) {
+      mapRef.current = L.map(mapContainerRef.current).setView(center, zoom);
+    }
+
+    const currentConfig = TILE_PROVIDERS[provider];
+
+    if (tileLayerRef.current) {
+      mapRef.current.removeLayer(tileLayerRef.current);
+    }
+
+    const layer = L.tileLayer(currentConfig.url, {
+      maxZoom: currentConfig.maxZoom,
+      attribution: currentConfig.attribution,
+      subdomains: 'abcd',
+    });
+
+    // Handle tile loading errors (e.g. 401 Unauthorized / quota limits on Carto)
+    layer.on('tileerror', (event) => {
+      console.warn('Tile load error detected for provider:', provider, event);
+      setHasError(true);
+      if (provider === 'carto') {
+        console.info('Automatically falling back from Carto to OpenStreetMap tiles...');
+        setProvider('osm');
+      }
+    });
+
+    layer.addTo(mapRef.current);
+    tileLayerRef.current = layer;
+
+    return () => {
+      if (tileLayerRef.current && mapRef.current) {
+        mapRef.current.removeLayer(tileLayerRef.current);
+      }
+    };
+  }, [provider, center, zoom]);
+
+  return (
+    <div className="relative">
+      {/* Map Settings / Tile Provider Toggle */}
+      <div className="absolute top-3 right-3 z-[1000] bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 shadow-xl flex items-center gap-2">
+        <span className="text-xs text-slate-300 font-medium px-2">Map Style:</span>
+        <select
+          value={provider}
+          onChange={(e) => {
+            setHasError(false);
+            setProvider(e.target.value as TileProviderKey);
+          }}
+          className="bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+        >
+          {Object.entries(TILE_PROVIDERS).map(([key, val]) => (
+            <option key={key} value={key}>
+              {val.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {hasError && provider !== 'carto' && (
+        <div className="absolute bottom-3 left-3 z-[1000] bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs px-3 py-1.5 rounded-lg backdrop-blur-md">
+          ⚠️ Primary map tiles failed; automatically switched to backup provider.
+        </div>
+      )}
+
+      <div ref={mapContainerRef} className={`${className} border border-slate-800 shadow-2xl`} />
+    </div>
   );
 };
 

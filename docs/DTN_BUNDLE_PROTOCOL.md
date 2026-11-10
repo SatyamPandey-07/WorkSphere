@@ -1,6 +1,10 @@
 # WorkSphere Delay-Tolerant Networking (DTN) Bundle Protocol
 
 ## 1. Overview
+ feature/protobuf-binary-broker
+
+
+ main
 The Delay-Tolerant Networking (DTN) layer provides delay-tolerant, store-and-forward bundle routing across network partitions, intermittent connectivity, and offline peer clusters.
 
 ---
@@ -50,6 +54,12 @@ sequenceDiagram
     "payload"
   ]
 }
+ feature/protobuf-binary-broker
+
+```
+
+```typescript
+ main
 import { createHash } from "crypto";
 
 export interface DTNBundle {
@@ -76,10 +86,21 @@ export function deserializeAndVerifyBundle(rawBinary: ArrayBuffer): DTNBundle {
   }
 
   // Integrity verification
+ feature/protobuf-binary-broker
   const computedHash = createHash("sha256").update(bundle.payload).digest("hex");
+
+  const computedHash = createHash("sha256")
+    .update(bundle.payload)
+    .digest("hex");
+ main
   if (computedHash !== bundle.payloadHash) {
     throw new Error(`Integrity check failed for bundle ${bundle.bundleId}`);
   }
 
   return bundle;
+ feature/protobuf-binary-broker
 }
+
+}
+```
+ main

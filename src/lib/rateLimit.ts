@@ -639,10 +639,13 @@ export async function checkTieredRateLimit(
  * - Retry-After (included when request is blocked)
  */
 export function getRateLimitHeaders(
-  result: TieredRateLimitResult | null | undefined,
+  result: TieredRateLimitResult | RateLimitResult | any,
 ): Record<string, string> {
   if (!result || typeof result !== "object") {
     return {
+      "RateLimit-Limit": "10",
+      "RateLimit-Remaining": "10",
+      "RateLimit-Reset": "60",
       "X-RateLimit-Limit": "10",
       "X-RateLimit-Remaining": "10",
     };
@@ -655,17 +658,25 @@ export function getRateLimitHeaders(
     typeof result.remaining === "number" && Number.isFinite(result.remaining)
       ? Math.max(0, result.remaining)
       : 0;
+  const retryAfter =
+    typeof result.retryAfter === "number" && Number.isFinite(result.retryAfter)
+      ? Math.max(1, result.retryAfter)
+      : 1;
+
+  const isBlocked = "allowed" in result ? !result.allowed : !result.success;
 
   const headers: Record<string, string> = {
+    "RateLimit-Limit": String(limit),
+    "RateLimit-Remaining": String(remaining),
+    "RateLimit-Reset": String(retryAfter),
     "X-RateLimit-Limit": String(limit),
     "X-RateLimit-Remaining": String(remaining),
   };
-  if (!result.allowed) {
-    const retryAfter =
-      typeof result.retryAfter === "number" && Number.isFinite(result.retryAfter)
-        ? Math.max(1, result.retryAfter)
-        : 1;
+  if (isBlocked) {
     headers["Retry-After"] = String(retryAfter);
+  }
+  if (result.reset) {
+    headers["X-RateLimit-Reset"] = String(result.reset);
   }
   return headers;
 }
@@ -674,12 +685,35 @@ export function getRateLimitHeaders(
  * Creates standard HTTP 429 Too Many Requests response with rate-limit headers.
  */
 export function createRateLimitResponse(
-  result: TieredRateLimitResult,
+  result: TieredRateLimitResult | RateLimitResult | any,
 ): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { NextResponse } = require("next/server");
+  const retryAfter =
+    typeof result?.retryAfter === "number" && Number.isFinite(result.retryAfter)
+      ? Math.max(1, result.retryAfter)
+      : 1;
+  const limit =
+    typeof result?.limit === "number" && Number.isFinite(result.limit)
+      ? result.limit
+      : 10;
+  const remaining =
+    typeof result?.remaining === "number" && Number.isFinite(result.remaining)
+      ? Math.max(0, result.remaining)
+      : 0;
+  const reset =
+    typeof result?.reset === "number" && Number.isFinite(result.reset)
+      ? result.reset
+      : Math.ceil(Date.now() / 1000) + 60;
+
   return NextResponse.json(
-    { error: "Too many requests. Please try again later." },
+    {
+      error: "Too many requests. Please try again later.",
+      retryAfter,
+      limit,
+      remaining,
+      reset,
+    },
     {
       status: 429,
       headers: getRateLimitHeaders(result),

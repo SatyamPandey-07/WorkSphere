@@ -3,8 +3,11 @@ import {
   matchRateTier,
   getClientIp,
   checkTokenBucketRateLimit,
+  type RateLimitResult,
 } from "@/lib/tokenBucketRateLimit";
 import type { MiddlewareHandler } from "../types";
+
+export const REDIS_TIMEOUT_MS = 1500;
 
 export const rateLimitMiddleware: MiddlewareHandler = async (req, ctx, next) => {
   // CORS preflight requests bypass rate limits
@@ -14,7 +17,7 @@ export const rateLimitMiddleware: MiddlewareHandler = async (req, ctx, next) => 
 
   // Multi-tier token bucket rate limiting for API routes
   if (req.nextUrl.pathname.startsWith("/api")) {
-    const tier = matchRateTier(req.nextUrl.pathname);
+    const tier = matchRateTier(req.nextUrl.pathname, req.method);
     if (tier) {
       const clientIp = getClientIp(req);
       let userId: string | null = null;
@@ -32,18 +35,65 @@ export const rateLimitMiddleware: MiddlewareHandler = async (req, ctx, next) => 
       }
 
       const identifier = `${tier.name}:${userId || clientIp}`;
-      const rateLimitResult = await checkTokenBucketRateLimit(tier, identifier);
+
+      let rateLimitResult: RateLimitResult;
+      try {
+        const timeoutPromise = new Promise<RateLimitResult>((resolve) => {
+          const timer = setTimeout(() => {
+            resolve({
+              success: true,
+              limit: tier.limit,
+              remaining: tier.limit,
+              reset: Math.ceil((Date.now() + tier.windowMs) / 1000),
+              retryAfter: 0,
+              tier: tier.name,
+              identity: identifier,
+            });
+          }, REDIS_TIMEOUT_MS);
+          timer.unref?.();
+        });
+
+        rateLimitResult = await Promise.race([
+          checkTokenBucketRateLimit(tier, identifier),
+          timeoutPromise,
+        ]);
+      } catch (err) {
+        // Gracefully fail-open if Redis encounters connection timeouts or errors
+        rateLimitResult = {
+          success: true,
+          limit: tier.limit,
+          remaining: tier.limit,
+          reset: Math.ceil((Date.now() + tier.windowMs) / 1000),
+          retryAfter: 0,
+          tier: tier.name,
+          identity: identifier,
+        };
+      }
 
       if (!rateLimitResult.success) {
+        const retryAfter = Math.max(1, rateLimitResult.retryAfter);
+        const resetSeconds = Math.max(
+          1,
+          rateLimitResult.reset - Math.floor(Date.now() / 1000) > 0
+            ? rateLimitResult.reset - Math.floor(Date.now() / 1000)
+            : retryAfter,
+        );
+
         return NextResponse.json(
           {
             error: "Too many requests. Please slow down and try again.",
-            retryAfter: rateLimitResult.retryAfter,
+            retryAfter,
+            limit: rateLimitResult.limit,
+            remaining: rateLimitResult.remaining,
+            reset: rateLimitResult.reset,
           },
           {
             status: 429,
             headers: {
-              "Retry-After": String(rateLimitResult.retryAfter),
+              "Retry-After": String(retryAfter),
+              "RateLimit-Limit": String(rateLimitResult.limit),
+              "RateLimit-Remaining": String(rateLimitResult.remaining),
+              "RateLimit-Reset": String(resetSeconds),
               "X-RateLimit-Limit": String(rateLimitResult.limit),
               "X-RateLimit-Remaining": String(rateLimitResult.remaining),
               "X-RateLimit-Reset": String(rateLimitResult.reset),
@@ -52,7 +102,14 @@ export const rateLimitMiddleware: MiddlewareHandler = async (req, ctx, next) => 
         );
       }
 
+      const resetCountdown = Math.max(
+        0,
+        rateLimitResult.reset - Math.floor(Date.now() / 1000),
+      );
       ctx.rateLimitHeaders = {
+        "RateLimit-Limit": String(rateLimitResult.limit),
+        "RateLimit-Remaining": String(rateLimitResult.remaining),
+        "RateLimit-Reset": String(resetCountdown),
         "X-RateLimit-Limit": String(rateLimitResult.limit),
         "X-RateLimit-Remaining": String(rateLimitResult.remaining),
         "X-RateLimit-Reset": String(rateLimitResult.reset),

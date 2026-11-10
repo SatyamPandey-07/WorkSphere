@@ -1,6 +1,11 @@
 export { AmbientNoiseSpectrumVisualizer } from "./AmbientNoiseSpectrumVisualizer";
 export type { AmbientNoiseSpectrumVisualizerProps } from "./AmbientNoiseSpectrumVisualizer";
 export { AmbientNoiseTrendGraph } from "./AmbientNoiseTrendGraph";
+export {
+  EdgeAcousticForecaster,
+  type EdgeAcousticForecasterProps,
+} from "./EdgeAcousticForecaster";
+export { default as EdgeAcousticForecasterDefault } from "./EdgeAcousticForecaster";
 export { NoiseForecastChart } from "./NoiseForecastChart";
 export { NoiseMeter } from "./NoiseMeter";
 export { EnhancedNoiseMeter } from "./EnhancedNoiseMeter";

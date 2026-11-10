@@ -14,9 +14,7 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to hel
 
 For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
 
-## Testing Guidelines
-
-For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
+feature/protobuf-binary-broker
 
 ## Testing Guidelines
 
@@ -30,6 +28,11 @@ For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB,
 
 For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
 
+## Testing Guidelines
+
+For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB, Next.js router) and instructions on avoiding memory leaks in Jest, refer to the [WorkSphere Testing Playbook](docs/TESTING_PLAYBOOK.md).
+
+ main
 ## 📋 Table of Contents
 
 - [5-Minute Quickstart for WOCS 2026 Contributors](#5-minute-quickstart-for-wocs-2026-contributors)

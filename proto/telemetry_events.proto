@@ -35,10 +35,18 @@ message ChatEvent {
 message WorkSphereEnvelope {
   EventType type = 1;
   int64 sequence_id = 2;
+ feature/protobuf-binary-broker
+
+
   
+ main
   oneof payload {
     TelemetryEvent telemetry = 3;
     PresenceEvent presence = 4;
     ChatEvent chat = 5;
   }
+ feature/protobuf-binary-broker
 }
+
+}
+ main

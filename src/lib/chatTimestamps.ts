@@ -4,19 +4,41 @@ export const CHAT_TIMESTAMP_FORMAT_STORAGE_KEY = "worksphere_chat_timestamp_form
 export const CHAT_TIMESTAMP_FORMAT_CHANGE_EVENT = "worksphere_chat_timestamp_format_change";
 
 export function formatChatTimestamp(
-  timestamp: number | string,
+  timestamp: Date | number | string | null | undefined,
   format: ChatTimestampFormat,
   now: Date = new Date(),
 ): string {
-  const parsedTimestamp =
-    typeof timestamp === "string" && /^\d+$/.test(timestamp)
-      ? Number(timestamp)
-      : timestamp;
-  const date = new Date(parsedTimestamp);
+  if (timestamp === null || timestamp === undefined || timestamp === "") {
+    return "";
+  }
+
+  let normalized: number | string | Date = timestamp;
+
+  // Handle string numeric timestamps
+  if (typeof normalized === "string" && /^\d+$/.test(normalized)) {
+    normalized = Number(normalized);
+  }
+
+  // Handle numbers: reject non-finite and negative/zero numbers
+  if (typeof normalized === "number") {
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+      return "";
+    }
+    // 10-digit seconds timestamps (< 1e12) normalized to milliseconds
+    if (normalized < 1e12) {
+      normalized = normalized * 1000;
+    }
+  }
+
+  const date = normalized instanceof Date ? normalized : new Date(normalized);
   if (Number.isNaN(date.getTime())) return "";
 
+  // Sanitize now: default to current date if now is invalid
+  const safeNow =
+    now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+
   if (format === "exact") {
-    if (date.toDateString() === now.toDateString()) {
+    if (date.toDateString() === safeNow.toDateString()) {
       return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
     return date.toLocaleString([], {
@@ -27,21 +49,46 @@ export function formatChatTimestamp(
     });
   }
 
-  const differenceInSeconds = Math.round((date.getTime() - now.getTime()) / 1000);
-  const absoluteDifference = Math.abs(differenceInSeconds);
-  const [value, unit] =
-    absoluteDifference < 60
-      ? [differenceInSeconds, "second"]
-      : absoluteDifference < 3600
-        ? [Math.round(differenceInSeconds / 60), "minute"]
-        : absoluteDifference < 86400
-          ? [Math.round(differenceInSeconds / 3600), "hour"]
-          : [Math.round(differenceInSeconds / 86400), "day"];
+  let differenceInSeconds = Math.round((date.getTime() - safeNow.getTime()) / 1000);
 
-  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
-    value,
-    unit as Intl.RelativeTimeFormatUnit,
-  );
+  // Slight clock drift into the future (< 30 seconds) is treated as present
+  if (differenceInSeconds > 0 && differenceInSeconds < 30) {
+    differenceInSeconds = 0;
+  }
+
+  const absoluteDifference = Math.abs(differenceInSeconds);
+
+  let value: number;
+  let unit: Intl.RelativeTimeFormatUnit;
+
+  if (absoluteDifference < 60) {
+    value = differenceInSeconds;
+    unit = "second";
+  } else if (absoluteDifference < 3600) {
+    value = Math.round(differenceInSeconds / 60);
+    unit = "minute";
+  } else if (absoluteDifference < 86400) {
+    value = Math.round(differenceInSeconds / 3600);
+    unit = "hour";
+  } else if (absoluteDifference < 86400 * 30) {
+    value = Math.round(differenceInSeconds / 86400);
+    unit = "day";
+  } else if (absoluteDifference < 86400 * 365) {
+    value = Math.round(differenceInSeconds / (86400 * 30));
+    unit = "month";
+  } else {
+    value = Math.round(differenceInSeconds / (86400 * 365));
+    unit = "year";
+  }
+
+  try {
+    return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
+      value,
+      unit,
+    );
+  } catch {
+    return date.toLocaleDateString();
+  }
 }
 
 export function getChatTimestampFormat(): ChatTimestampFormat {

@@ -5,7 +5,7 @@
  */
 import { WebGLContextRecoveryManager } from "@/lib/webgl/WebGLContextRecoveryManager";
 import { attachWebGLContextRecovery } from "@/lib/webgl/contextManager";
-import { WebGLHeatmapRenderer } from "@/lib/webgl/webglHeatmapRenderer";
+import { WebGLHeatmapRenderer } from "@/lib/webgl/WebGLHeatmapRenderer";
 
 const lose = (canvas: HTMLCanvasElement) => {
   const event = new Event("webglcontextlost", { cancelable: true });

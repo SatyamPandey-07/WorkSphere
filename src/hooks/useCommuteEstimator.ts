@@ -107,6 +107,9 @@ export function useCommuteEstimator({
 
   // Compute all estimates
   const allEstimates = useMemo(() => {
+    if (!Number.isFinite(venueLatitude) || !Number.isFinite(venueLongitude)) {
+      return null;
+    }
     const origin = userCoords ?? {
       latitude: venueLatitude + 0.03,
       longitude: venueLongitude + 0.03,

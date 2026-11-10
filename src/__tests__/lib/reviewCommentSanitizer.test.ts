@@ -222,4 +222,33 @@ describe("Review Comment Sanitization & Moderation (#5045)", () => {
       expect(cleanControlCharacters(input)).toBe("Clean Text with spaces");
     });
   });
+
+  describe("Extended Anchor Unwrapping and Whitespace Normalization (#6726)", () => {
+    it("unwraps anchor tags missing href attribute without leaving orphaned tags", () => {
+      const input = "Check out <a>our website</a> for details.";
+      const sanitized = sanitizeReviewComment(input, { allowFormatting: true });
+      expect(sanitized).toBe("Check out our website for details.");
+    });
+
+    it("unwraps vbscript and data URI schemes", () => {
+      const input = '<a href="data:text/html,<script>alert(1)</script>">Dangerous</a> and <a href="vbscript:msgbox(1)">Script</a>';
+      const sanitized = sanitizeReviewComment(input, { allowFormatting: true });
+      expect(sanitized).not.toContain("data:");
+      expect(sanitized).not.toContain("vbscript:");
+      expect(sanitized).toBe("Dangerous and Script");
+    });
+
+    it("strips orphaned closing </a> tags without matching opening tag", () => {
+      const input = "Some text</a> with orphaned tag";
+      const sanitized = sanitizeReviewComment(input, { allowFormatting: true });
+      expect(sanitized).toBe("Some text with orphaned tag");
+    });
+
+    it("collapses multi-space gaps left by removed block tags into single spaces", () => {
+      const input = "<p>First paragraph</p>     <div>Second block</div>";
+      const sanitized = sanitizeReviewComment(input, { allowFormatting: true });
+      expect(sanitized).toBe("First paragraph Second block");
+    });
+  });
+
 });

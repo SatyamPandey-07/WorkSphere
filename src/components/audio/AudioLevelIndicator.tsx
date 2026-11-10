@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-export const DEFAULT_DECAY_FACTOR = 0.2;
+export const DEFAULT_DECAY_FACTOR = 0.05;
 export const AUDIO_DECAY_TIMEOUT_MS = 300;
+export const PEAK_HOLD_DURATION_MS = 800;
 
 /**
  * Linear interpolation (lerp) decay step function.
- * Smooths current level towards target level with given decay factor.
+ * Smooths current level towards target level with given decay factor (~0.05 per frame).
  */
 export function lerpDecay(
   currentLevel: number,
@@ -15,6 +16,28 @@ export function lerpDecay(
   decayFactor: number = DEFAULT_DECAY_FACTOR
 ): number {
   return currentLevel + (targetLevel - currentLevel) * decayFactor;
+}
+
+/**
+ * Peak hold decay step function.
+ * Lingers at peak for holdDurationMs (default 800ms) before descending smoothly.
+ */
+export function calculatePeakHold(
+  currentPeak: number,
+  newLevel: number,
+  lastPeakTime: number,
+  now: number,
+  holdDurationMs: number = PEAK_HOLD_DURATION_MS,
+  decayRate: number = 0.02
+): { peak: number; peakTime: number } {
+  if (newLevel >= currentPeak) {
+    return { peak: newLevel, peakTime: now };
+  }
+  if (now - lastPeakTime < holdDurationMs) {
+    return { peak: currentPeak, peakTime: lastPeakTime };
+  }
+  const decayedPeak = Math.max(newLevel, currentPeak - decayRate);
+  return { peak: decayedPeak, peakTime: lastPeakTime };
 }
 
 type AudioLevelIndicatorProps = {
@@ -26,15 +49,20 @@ type AudioLevelIndicatorProps = {
   strokeWidth?: number;
   /** Show muted state */
   muted?: boolean;
-  /** Decay factor for linear interpolation (default 0.2) */
+  /** Decay factor for linear interpolation (default 0.05) */
   decayFactor?: number;
+  /** Peak hold duration in ms before descending (default 800ms) */
+  peakHoldDurationMs?: number;
+  /** Show peak hold dot */
+  showPeakHold?: boolean;
   /** Content to render inside the ring */
   children?: ReactNode;
 };
 
 /**
  * AudioLevelIndicator renders a circular audio volume meter around a child element.
- * Smoothly decays volume levels using requestAnimationFrame and linear interpolation (lerp).
+ * Smoothly decays volume levels using requestAnimationFrame, linear interpolation (lerp),
+ * and an 800ms peak-hold indicator dot.
  */
 export function AudioLevelIndicator({
   level,
@@ -42,37 +70,54 @@ export function AudioLevelIndicator({
   strokeWidth = 3,
   muted = false,
   decayFactor = DEFAULT_DECAY_FACTOR,
+  peakHoldDurationMs = PEAK_HOLD_DURATION_MS,
+  showPeakHold = true,
   children,
 }: AudioLevelIndicatorProps): ReactNode {
   const initialClamped = Math.min(1, Math.max(0, muted ? 0 : Number.isFinite(level) ? level : 0));
   const [displayLevel, setDisplayLevel] = useState<number>(initialClamped);
+  const [peakLevel, setPeakLevel] = useState<number>(initialClamped);
+
   const currentDisplayLevelRef = useRef<number>(initialClamped);
   const targetLevelRef = useRef<number>(initialClamped);
+  const peakLevelRef = useRef<number>(initialClamped);
+  const peakHoldTimeRef = useRef<number>(performance.now());
   const lastActiveTimeRef = useRef<number>(performance.now());
   const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const target = Math.min(1, Math.max(0, muted ? 0 : Number.isFinite(level) ? level : 0));
     targetLevelRef.current = target;
+    const now = performance.now();
+
     if (target > 0) {
-      lastActiveTimeRef.current = performance.now();
+      lastActiveTimeRef.current = now;
+    }
+
+    // Fast attack on peak
+    if (target >= peakLevelRef.current) {
+      peakLevelRef.current = target;
+      peakHoldTimeRef.current = now;
+      setPeakLevel(target);
     }
 
     const animate = () => {
       const current = currentDisplayLevelRef.current;
       const targetLevel = targetLevelRef.current;
+      const currentTime = performance.now();
 
+      // 1. Level meter attack & decay
       if (targetLevel >= current) {
         // Fast attack: jump up immediately to catch speech transients
         currentDisplayLevelRef.current = targetLevel;
         setDisplayLevel(targetLevel);
-        lastActiveTimeRef.current = performance.now();
+        lastActiveTimeRef.current = currentTime;
       } else {
-        // Smooth decay via linear interpolation
+        // Smooth decay via linear interpolation (~0.05 per frame)
         let next = lerpDecay(current, targetLevel, decayFactor);
 
         // Fallback clamp: ensure level reaches 0 within 300ms when audio stops
-        if (targetLevel === 0 && performance.now() - lastActiveTimeRef.current >= AUDIO_DECAY_TIMEOUT_MS) {
+        if (targetLevel === 0 && currentTime - lastActiveTimeRef.current >= AUDIO_DECAY_TIMEOUT_MS) {
           next = 0;
         } else if (Math.abs(next - targetLevel) < 0.005) {
           next = targetLevel;
@@ -80,14 +125,24 @@ export function AudioLevelIndicator({
 
         currentDisplayLevelRef.current = next;
         setDisplayLevel(next);
-
-        if (Math.abs(next - targetLevel) > 0.001) {
-          rafIdRef.current = requestAnimationFrame(animate);
-          return;
-        }
       }
 
-      if (Math.abs(currentDisplayLevelRef.current - targetLevelRef.current) > 0.001) {
+      // 2. Peak-hold decay: linger for 800ms before descending
+      const curPeak = peakLevelRef.current;
+      if (targetLevel >= curPeak) {
+        peakLevelRef.current = targetLevel;
+        peakHoldTimeRef.current = currentTime;
+        setPeakLevel(targetLevel);
+      } else if (currentTime - peakHoldTimeRef.current >= peakHoldDurationMs) {
+        const decayedPeak = Math.max(targetLevel, curPeak - 0.02);
+        peakLevelRef.current = decayedPeak;
+        setPeakLevel(decayedPeak);
+      }
+
+      const levelNeedsUpdate = Math.abs(currentDisplayLevelRef.current - targetLevelRef.current) > 0.001;
+      const peakNeedsUpdate = peakLevelRef.current > targetLevelRef.current;
+
+      if (levelNeedsUpdate || peakNeedsUpdate) {
         rafIdRef.current = requestAnimationFrame(animate);
       }
     };
@@ -103,7 +158,7 @@ export function AudioLevelIndicator({
         rafIdRef.current = null;
       }
     };
-  }, [level, muted, decayFactor]);
+  }, [level, muted, decayFactor, peakHoldDurationMs]);
 
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -118,6 +173,14 @@ export function AudioLevelIndicator({
   const ringColor = muted
     ? "rgba(255,255,255,0.15)"
     : `hsla(${hue}, 80%, 55%, 0.9)`;
+
+  // Peak hold coordinate along arc
+  const clampedPeak = Math.min(1, Math.max(0, muted ? 0 : peakLevel));
+  const peakAngle = -Math.PI / 2 + clampedPeak * 2 * Math.PI;
+  const peakX = center + radius * Math.cos(peakAngle);
+  const peakY = center + radius * Math.sin(peakAngle);
+  const peakHue = 120 - clampedPeak * 120;
+  const peakDotColor = `hsla(${peakHue}, 90%, 65%, 0.95)`;
 
   return (
     <div
@@ -159,6 +222,21 @@ export function AudioLevelIndicator({
               clamped > 0.7 ? `drop-shadow(0 0 4px ${ringColor})` : undefined,
           }}
         />
+
+        {/* Peak-hold indicator dot (lingers 800ms) */}
+        {showPeakHold && !muted && clampedPeak > 0.05 && (
+          <circle
+            data-testid="peak-hold-dot"
+            cx={peakX}
+            cy={peakY}
+            r={Math.max(1.8, strokeWidth * 0.75)}
+            fill={peakDotColor}
+            className="transition-all duration-75"
+            style={{
+              filter: `drop-shadow(0 0 3px ${peakDotColor})`,
+            }}
+          />
+        )}
       </svg>
 
       {/* Glow ring for loud audio */}

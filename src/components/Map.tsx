@@ -20,7 +20,6 @@ import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import { Contrast } from "lucide-react";
-import { formatDistance } from "@/lib/geo/formatDistance";
 import {
   MapMarkerFactory,
   SEAT_RING_COLORS,
@@ -28,6 +27,18 @@ import {
 } from "./map/MapMarkerFactory";
 import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
+import RoutingOptimizer from "./map/RoutingOptimizer";
+import { MobileVenueDrawer } from "@/components/ui/MobileVenueDrawer";
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 import React, { useState, useEffect, useRef } from 'react';
 // Assuming leaflet is imported or loaded via react-leaflet / window.L
@@ -596,6 +607,10 @@ export interface MapProps {
   enableClustering?: boolean;
   enableRadarSweep?: boolean;
   radarRadius?: number;
+  onSelectVenue?: (venue: MapMarker | null) => void;
+  selectedVenueId?: string | null;
+  onBookVenue?: (venue: MapMarker) => void;
+  onGetDirections?: (venue: MapMarker) => void;
 }
 
 const Map = ({
@@ -611,6 +626,10 @@ const Map = ({
   enableClustering = true,
   enableRadarSweep = true,
   radarRadius = 160,
+  onSelectVenue,
+  selectedVenueId,
+  onBookVenue,
+  onGetDirections,
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -739,14 +758,37 @@ const Map = ({
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
-  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  const [internalSelectedMarkerId, setInternalSelectedMarkerId] = useState<
+    string | null
+  >(null);
+  const selectedMarkerId =
+    selectedVenueId !== undefined
+      ? selectedVenueId
+      : internalSelectedMarkerId;
+
+  const handleSelectMarker = useCallback(
+    (id: string | null) => {
+      setInternalSelectedMarkerId(id);
+      if (onSelectVenue) {
+        const found = id ? markers.find((m) => m.id === id) || null : null;
+        onSelectVenue(found);
+      }
+    },
+    [markers, onSelectVenue],
+  );
+
   useEffect(() => {
     if (
       selectedMarkerId !== null &&
       !markers.some((marker) => marker.id === selectedMarkerId)
     ) {
-      setSelectedMarkerId(null);
+      handleSelectMarker(null);
     }
+  }, [markers, selectedMarkerId, handleSelectMarker]);
+
+  const activeVenueForDrawer = useMemo(() => {
+    if (!selectedMarkerId) return null;
+    return markers.find((m) => m.id === selectedMarkerId) || null;
   }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
@@ -811,13 +853,25 @@ const Map = ({
       const data = await response.json();
 
       if (data.code === "Ok") {
+        const coords = data.routes[0].geometry.coordinates;
+        const hasElevation = coords.some(
+          (c: any[]) =>
+            Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
+        );
+        const elevationProfile =
+          data.routes[0].elevation_profile ||
+          data.routes[0].elevationProfile ||
+          (hasElevation ? coords.map((c: any[]) => c[2]) : undefined);
+
         setOptimizedRoute({
-          coordinates: data.routes[0].geometry.coordinates.map(
-            (coord: [number, number]) => [coord[1], coord[0]],
-          ),
+          coordinates: coords.map((coord: [number, number]) => [
+            coord[1],
+            coord[0],
+          ]),
           duration: data.routes[0].duration,
           distance: data.routes[0].distance,
           legs: data.routes[0].legs,
+          elevationProfile,
         });
       }
     } catch (error) {
@@ -1011,12 +1065,14 @@ const Map = ({
   }, [spiderfiedMarkers, getAvailability]);
 
   const center: [number, number] = [latitude, longitude];
-  const tileUrl =
-    theme === "light"
-      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
+  const tileUrl = cartoKey
+    ? theme === "light"
+      ? `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : theme === "cyberpunk"
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+        ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -1224,6 +1280,13 @@ const Map = ({
         }
         .leaflet-popup-content {
           margin: 12px 16px;
+        }
+
+        /* Hide desktop-style centered popup on mobile touch screens in favor of MobileVenueDrawer */
+        @media (max-width: 767px) {
+          .leaflet-popup {
+            display: none !important;
+          }
         }
         
         /* Focus-visible ring for keyboard-navigated markers (Issue #3446) */
@@ -1528,7 +1591,7 @@ const Map = ({
         <MapMarkerFactory
           markers={spiderfiedMarkers}
           selectedMarkerId={selectedMarkerId}
-          onSelectMarker={setSelectedMarkerId}
+          onSelectMarker={handleSelectMarker}
           isHighContrast={isHighContrast}
           getAvailability={getAvailability}
           checkIn={checkIn}
@@ -1549,121 +1612,34 @@ const Map = ({
           travelProfile={travelProfile}
         />
         {/* MULTI-STOP ROUTING OPTIMIZER CONTROL INTERFACE OVERLAY */}
-        <div
+        <RoutingOptimizer
           ref={routingPanelRef}
-          className="absolute bottom-6 left-6 z-[1000] w-80 rounded-xl border border-zinc-800 bg-zinc-950/90 p-4 text-white shadow-2xl backdrop-blur-md"
-        >
-          <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
-            <h3 className="font-semibold text-sm tracking-wide text-zinc-200">
-              📍 ROUTING OPTIMIZER
-            </h3>
-            {routingQueue.length > 0 && (
-              <button
-                onClick={() => {
-                  setRoutingQueue([]);
-                  setOptimizedRoute(null);
-                }}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors"
-              >
-                Clear Queue
-              </button>
-            )}
-          </div>
-
-          {/* Travel Mode Selectors */}
-          <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-zinc-900 p-1 text-xs">
-            {(["walking", "cycling", "driving"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setTravelProfile(mode)}
-                className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
-                  travelProfile === mode
-                    ? "accent-bg text-white shadow"
-                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                }`}
-              >
-                {mode === "walking"
-                  ? "🚶‍♂️ Walk"
-                  : mode === "cycling"
-                    ? "🚴‍♂️ Bike"
-                    : "🚗 Drive"}
-              </button>
-            ))}
-          </div>
-
-          {/* Queue Timeline Slots */}
-          {routingQueue.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
-              Click markers or venue listings to chain multiple destinations
-              into your hybrid workday route!
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                {routingQueue.map((venue, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-lg bg-zinc-900 p-2 text-xs border border-zinc-800"
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-950 text-[10px] font-bold text-blue-400 border border-blue-800/50">
-                        {idx + 1}
-                      </span>
-                      <span className="truncate font-medium text-zinc-300">
-                        {venue.name}
-                      </span>
-                    </div>
-                    <button
-                      aria-label={`Remove ${venue.name} from routing queue`}
-                      onClick={() => {
-                        const updated = routingQueue.filter(
-                          (_, i) => i !== idx,
-                        );
-                        setRoutingQueue(updated);
-                        calculateOptimizedRoute(updated);
-                      }}
-                      className="ml-2 text-zinc-500 hover:text-zinc-300 text-sm"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Optimize Trigger Action Button */}
-              {routingQueue.length >= 2 && (
-                <button
-                  onClick={() => calculateOptimizedRoute()}
-                  className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98]"
-                  style={{
-                    background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 80%, #4f46e5))`,
-                  }}
-                >
-                  🚀 Calculate Combined Travel Timeline
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Dynamic Journey Metric Matrix */}
-          {optimizedRoute && (
-            <div className="mt-3 border-t border-zinc-800 pt-3 text-xs text-zinc-400 space-y-1">
-              <div className="flex justify-between">
-                <span>Total Distance:</span>
-                <span className="font-semibold text-zinc-200">
-                  {formatDistance(optimizedRoute.distance / 1000)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Est. Transit Time:</span>
-                <span className="font-semibold text-zinc-200">
-                  {Math.round(optimizedRoute.duration / 60)} mins
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
+          routingQueue={routingQueue}
+          onClearQueue={() => {
+            setRoutingQueue([]);
+            setOptimizedRoute(null);
+          }}
+          onRemoveVenue={(idx) => {
+            const updated = routingQueue.filter((_, i) => i !== idx);
+            setRoutingQueue(updated);
+            calculateOptimizedRoute(updated);
+          }}
+          travelProfile={travelProfile}
+          onTravelProfileChange={(mode) => setTravelProfile(mode)}
+          onCalculateRoute={() => calculateOptimizedRoute()}
+          optimizedRoute={optimizedRoute}
+        />
       </MapContainer>
+
+      {/* Mobile Draggable Venue Bottom Sheet Drawer */}
+      <MobileVenueDrawer
+        venue={activeVenueForDrawer}
+        isOpen={Boolean(activeVenueForDrawer)}
+        onClose={() => handleSelectMarker(null)}
+        onBook={onBookVenue}
+        onGetDirections={onGetDirections}
+        className="md:hidden"
+      />
     </>
   );
 };
@@ -1689,6 +1665,34 @@ const TILE_PROVIDERS: Record<TileProviderKey, { name: string; url: string; maxZo
     attribution: '&copy; Wikimedia maps | OpenStreetMap contributors',
   },
 };
+useEffect(() => {
+  const handleMapAction = (event: Event) => {
+    const { action, payload } = (event as CustomEvent).detail;
+
+    switch (action) {
+      case "FIND_NEAREST_QUIET_DESK":
+        // Filter quiet zone layers & pan map
+        break;
+      case "FILTER_HIGH_SPEED_WIFI":
+        // Filter wifi capacity threshold >= 100 Mbps
+        break;
+      case "TOGGLE_3D_HEATMAP":
+        // Toggle 3D building height extrusion / heatmap layer visibility
+        break;
+      case "RESET_CITY_CENTER":
+        // Reset camera viewport center
+        break;
+      case "TOGGLE_HIGH_CONTRAST_BASEMAP":
+        // Switch tile layer source to high contrast
+        break;
+      default:
+        break;
+    }
+  };
+
+  window.addEventListener("worksphere:map-action", handleMapAction);
+  return () => window.removeEventListener("worksphere:map-action", handleMapAction);
+}, []);
 
 interface MapProps {
   center: [number, number];

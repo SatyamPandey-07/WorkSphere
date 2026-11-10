@@ -17,12 +17,12 @@ const InteractiveMap = dynamic(() => import("./InteractiveMap"), {
 });
 
 // --- Error Boundary ---
-interface ErrorBoundaryProps {
+export interface ErrorBoundaryProps {
   children: ReactNode;
   componentName: string;
 }
 
-interface ErrorBoundaryState {
+export interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
 }
@@ -51,13 +51,17 @@ export class ComponentErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center gap-2 p-3 my-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+        <div
+          data-testid="component-error-boundary"
+          role="alert"
+          className="flex items-center gap-2 p-3 my-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800"
+        >
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <div className="flex flex-col">
             <span className="font-bold">
               Failed to render {this.props.componentName}
             </span>
-            <span className="text-xs opacity-80">
+            <span data-testid="error-message" className="text-xs opacity-80">
               {this.state.error?.message}
             </span>
           </div>
@@ -70,14 +74,50 @@ export class ComponentErrorBoundary extends Component<
 
 // --- Dynamic Components ---
 
+export interface DataChartProps {
+  data?: any[];
+  columns?: string[];
+  type?: "bar" | "line" | "pie";
+  labels?: string[];
+  datasets?: Array<{ label: string; data: number[] }>;
+}
+
 export function DataChart({
-  data,
-  columns,
-}: {
-  data: any[];
-  columns: string[];
-}) {
-  if (!data || data.length === 0) return <div>No data available</div>;
+  data: propData,
+  columns: propColumns,
+  labels,
+  datasets,
+}: DataChartProps) {
+  let chartData: any[] = propData || [];
+  let chartColumns: string[] = propColumns || [];
+
+  // Transform labels and datasets into row objects if provided
+  if (labels && datasets && (!chartData || chartData.length === 0)) {
+    chartColumns = ["label", ...datasets.map((d) => d.label)];
+    chartData = labels.map((lbl, i) => {
+      const row: Record<string, any> = { label: lbl };
+      datasets.forEach((d) => {
+        row[d.label] = d.data?.[i] ?? 0;
+      });
+      return row;
+    });
+  }
+
+  if (!chartData || chartData.length === 0) {
+    return (
+      <div data-testid="data-chart-empty" className="text-zinc-500 text-xs my-2">
+        No data available
+      </div>
+    );
+  }
+
+  // Derive columns if omitted
+  if (!chartColumns || chartColumns.length === 0) {
+    chartColumns = Object.keys(chartData[0] || {});
+  }
+
+  const xAxisKey = chartColumns[0] || "label";
+  const dataKeys = chartColumns.slice(1);
 
   const accentHex =
     typeof window !== "undefined"
@@ -86,18 +126,18 @@ export function DataChart({
           .trim() || "#3b82f6"
       : "#3b82f6";
 
-  const xAxisKey = columns[0];
-  const dataKeys = columns.slice(1);
-
   return (
-    <div className="w-full h-64 mt-4 p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm">
+    <div
+      data-testid="data-chart"
+      className="w-full h-64 mt-4 p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm"
+    >
       <div className="flex items-center gap-2 mb-4 text-sm font-bold text-zinc-700 dark:text-zinc-300">
         <BarChart2 className="w-4 h-4 text-blue-500" />
         Data Visualization
       </div>
       <ResponsiveContainer width="99%" height="100%" debounce={50}>
         <BarChart
-          data={data}
+          data={chartData}
           margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
         >
           <CartesianGrid
@@ -140,23 +180,36 @@ export function DataChart({
   );
 }
 
-export function DataTable({
-  data,
-  columns,
-}: {
-  data: any[];
-  columns: string[];
-}) {
-  if (!data || data.length === 0) return <div>No data to display</div>;
+export interface DataTableProps {
+  data?: any[];
+  columns?: string[];
+}
+
+export function DataTable({ data = [], columns }: DataTableProps) {
+  if (!data || data.length === 0) {
+    return (
+      <div data-testid="data-table-empty" className="text-zinc-500 text-xs my-2">
+        No data to display
+      </div>
+    );
+  }
+
+  const safeColumns =
+    columns && columns.length > 0
+      ? columns
+      : Object.keys(data[0] || {});
 
   return (
-    <div className="w-full mt-4 overflow-hidden border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm">
+    <div
+      data-testid="data-table"
+      className="w-full mt-4 overflow-hidden border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm"
+    >
       <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">
+        <table className="w-full text-sm text-left" aria-label="Generated Data Table">
           <thead className="text-xs uppercase bg-zinc-50 dark:bg-zinc-900/50 text-zinc-500 font-black tracking-wider">
             <tr>
-              {columns.map((col) => (
-                <th key={col} className="px-4 py-3">
+              {safeColumns.map((col) => (
+                <th key={col} scope="col" className="px-4 py-3">
                   {col}
                 </th>
               ))}
@@ -166,14 +219,17 @@ export function DataTable({
             {data.map((row, i) => (
               <tr
                 key={i}
+                data-testid={`data-table-row-${i}`}
                 className="border-t border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
               >
-                {columns.map((col) => (
+                {safeColumns.map((col) => (
                   <td
                     key={col}
                     className="px-4 py-3 text-zinc-700 dark:text-zinc-300 font-medium"
                   >
-                    {row[col]}
+                    {row?.[col] !== undefined && row?.[col] !== null
+                      ? String(row[col])
+                      : "—"}
                   </td>
                 ))}
               </tr>
@@ -214,6 +270,7 @@ function renderTextWithHighlight(
         return isHighlighted ? (
           <mark
             key={`${keyPrefix}-sent-${i}`}
+            data-testid="text-highlight"
             className="bg-yellow-300 dark:bg-yellow-500/40 text-zinc-900 dark:text-zinc-50 font-semibold rounded px-1 py-0.5 shadow-sm border border-yellow-400/50 transition-all duration-200"
           >
             {sent}
@@ -226,15 +283,19 @@ function renderTextWithHighlight(
   );
 }
 
+export interface MessageRendererProps {
+  content?: string | null;
+  speakingSentenceIndex?: number | null;
+}
+
 export function MessageRenderer({
   content,
   speakingSentenceIndex,
-}: {
-  content: string;
-  speakingSentenceIndex?: number | null;
-}) {
-  // We use a regex to find <ui-component name="..." props='{...}' />
-  const regex = /<ui-component\s+name="([^"]+)"\s+props='([^']+)'\s*\/>/g;
+}: MessageRendererProps) {
+  if (!content) return null;
+
+  // Supports both props='{...}' and props="{...}" formats
+  const regex = /<ui-component\s+name="([^"]+)"\s+props=(?:'([^']+)'|"([^"]+)")\s*\/>/g;
 
   const parts: ReactNode[] = [];
   let lastIndex = 0;
@@ -254,29 +315,51 @@ export function MessageRenderer({
     }
 
     const componentName = match[1];
-    let props = {};
+    const propsString = match[2] !== undefined ? match[2] : match[3];
+    let props: Record<string, any> = {};
+
     try {
-      const rawProps = match[2].replace(/&quot;/g, '"').replace(/&#x27;/g, "'");
+      const rawProps = (propsString || "")
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;/g, "'")
+        .replace(/&amp;/g, "&");
       props = JSON.parse(rawProps);
     } catch {
-      console.error("Failed to parse component props", match[2]);
+      console.error("Failed to parse component props", propsString);
+      parts.push(
+        <div
+          key={`parse-err-${match.index}`}
+          data-testid="ui-component-parse-error"
+          className="text-red-500 text-xs mt-2"
+        >
+          Failed to parse props for {componentName}
+        </div>,
+      );
+      lastIndex = regex.lastIndex;
+      continue;
     }
 
     const componentSchemas: Record<string, z.ZodTypeAny> = {
       DataTable: z.object({
-        columns: z.array(z.string()),
+        columns: z.array(z.string()).optional(),
         data: z.array(z.record(z.string(), z.any())),
       }),
-      DataChart: z.object({
-        type: z.enum(["bar", "line", "pie"]),
-        labels: z.array(z.string()),
-        datasets: z.array(
-          z.object({ label: z.string(), data: z.array(z.number()) }),
-        ),
-      }),
+      DataChart: z.union([
+        z.object({
+          columns: z.array(z.string()).optional(),
+          data: z.array(z.record(z.string(), z.any())),
+        }),
+        z.object({
+          type: z.enum(["bar", "line", "pie"]).optional(),
+          labels: z.array(z.string()),
+          datasets: z.array(
+            z.object({ label: z.string(), data: z.array(z.number()) }),
+          ),
+        }),
+      ]),
       Map: z.object({
         center: z.object({ lat: z.number(), lng: z.number() }),
-        markers: z.array(z.object({ lat: z.number(), lng: z.number() })),
+        markers: z.array(z.object({ lat: z.number(), lng: z.number() })).optional(),
       }),
     };
 
@@ -288,6 +371,7 @@ export function MessageRenderer({
         parts.push(
           <div
             key={`invalid-${match.index}`}
+            data-testid="ui-component-invalid"
             className="text-red-500 text-xs mt-2"
           >
             Invalid {componentName} data
@@ -299,7 +383,7 @@ export function MessageRenderer({
       props = result.data as Record<string, any>;
     }
 
-    let ComponentToRender = null;
+    let ComponentToRender: React.ComponentType<any> | null = null;
     if (componentName === "DataChart") ComponentToRender = DataChart;
     if (componentName === "Map") ComponentToRender = InteractiveMap;
     if (componentName === "DataTable") ComponentToRender = DataTable;
@@ -317,6 +401,7 @@ export function MessageRenderer({
       parts.push(
         <div
           key={`unknown-${match.index}`}
+          data-testid="ui-component-unknown"
           className="text-red-500 text-xs mt-2"
         >
           Unknown component: {componentName}
@@ -340,3 +425,5 @@ export function MessageRenderer({
 
   return <>{parts}</>;
 }
+
+export default MessageRenderer;

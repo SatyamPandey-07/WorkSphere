@@ -1,3 +1,9 @@
+export interface Vector3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export function calculateDistance(v1: Vector3, v2: Vector3): number {
   if (!v1 || !v2 || typeof v1.x !== "number" || typeof v2.x !== "number") {
     return 0;

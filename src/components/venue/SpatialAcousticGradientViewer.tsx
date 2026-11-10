@@ -215,12 +215,19 @@ export default function SpatialAcousticGradientViewer({
 
   // Helper to compute pin style position in 2D vs 3D Isometric projection
   const getPositionStyle = (xPct: number, yPct: number) => {
+    const safeXPct =
+      typeof xPct === "number" && Number.isFinite(xPct) ? Math.max(0, Math.min(100, xPct)) : 0;
+    const safeYPct =
+      typeof yPct === "number" && Number.isFinite(yPct) ? Math.max(0, Math.min(100, yPct)) : 0;
+
     if (viewMode === "2D" || !fieldMap) {
-      return { left: `${xPct}%`, top: `${yPct}%` };
+      return { left: `${safeXPct}%`, top: `${safeYPct}%` };
     }
 
-    const c = Math.round((xPct / 100) * (fieldMap.gridWidth - 1));
-    const r = Math.round((yPct / 100) * (fieldMap.gridHeight - 1));
+    const safeGridW = Math.max(1, fieldMap.gridWidth);
+    const safeGridH = Math.max(1, fieldMap.gridHeight);
+    const c = Math.max(0, Math.min(safeGridW - 1, Math.round((safeXPct / 100) * (safeGridW - 1))));
+    const r = Math.max(0, Math.min(safeGridH - 1, Math.round((safeYPct / 100) * (safeGridH - 1))));
     const rawDb = fieldMap.grid[r]?.[c] ?? 40;
     const db = clampDecibels(rawDb);
 
@@ -229,8 +236,8 @@ export default function SpatialAcousticGradientViewer({
     const topPct = (pt.y / 360) * 100;
 
     return {
-      left: `${leftPct}%`,
-      top: `${topPct}%`,
+      left: `${Number.isFinite(leftPct) ? leftPct : 0}%`,
+      top: `${Number.isFinite(topPct) ? topPct : 0}%`,
     };
   };
 

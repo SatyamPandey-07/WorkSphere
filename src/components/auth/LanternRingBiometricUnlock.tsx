@@ -118,6 +118,7 @@ export const LanternRingBiometricUnlock: React.FC<LanternRingBiometricUnlockProp
 
 export default LanternRingBiometricUnlock;
 export default LanternRingBiometricUnlock;
+export default LanternRingBiometricUnlock;
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";

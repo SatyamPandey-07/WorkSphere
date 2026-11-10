@@ -58,3 +58,4 @@ export function downloadIcsFile(event: CalendarEvent): void {
   window.URL.revokeObjectURL(url);
 }
 }
+}

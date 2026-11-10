@@ -17,11 +17,6 @@ describe('RoutingOptimizer Component - Mode Switching & Keyboard Navigation', ()
     const walkBtn = screen.getByRole('button', { name: /walk/i });
     const bikeBtn = screen.getByRole('button', { name: /bike/i });
     const driveBtn = screen.getByRole('button', { name: /drive/i });
-    render(<RoutingOptimizer travelProfile="walking" onTravelProfileChange={mockOnTravelProfileChange} />);
-
-    const walkBtn = screen.getByRole('button', { name: /walk/i });
-    const bikeBtn = screen.getByRole('button', { name: /bik/i });
-    const driveBtn = screen.getByRole('button', { name: /driv/i });
 
     expect(walkBtn).toBeInTheDocument();
     expect(bikeBtn).toBeInTheDocument();
@@ -72,6 +67,7 @@ describe('RoutingOptimizer Component - Mode Switching & Keyboard Navigation', ()
     fireEvent.click(bikeBtn);
     expect(mockOnModeChange).not.toHaveBeenCalled();
   });
+});
 });
 });
 });

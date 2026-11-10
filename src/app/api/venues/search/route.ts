@@ -157,6 +157,7 @@ export async function GET(request: NextRequest) {
   }
 }
 }
+}
     if (!bypassCache) {
       const ifNoneMatch = request.headers.get("if-none-match");
       if (ifNoneMatch && ifNoneMatch === etag) {

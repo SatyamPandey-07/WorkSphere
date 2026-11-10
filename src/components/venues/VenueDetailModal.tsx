@@ -11,9 +11,15 @@ import {
   HourlyCrowdForecast,
   HourlyCrowdForecastProps,
 } from "./HourlyCrowdForecast";
+import {
+  AmbientNoiseSparkline,
+  AmbientNoiseSparklineProps,
+  HourlyDecibelPoint,
+} from "../analytics/AmbientNoiseSparkline";
 
 export interface VenueDetailModalProps extends VenueDetailDialogProps {
   hourlyForecastProps?: Partial<HourlyCrowdForecastProps>;
+  hourlyDecibels?: HourlyDecibelPoint[];
   initialTab?: "overview" | "reviews" | "menu" | "developer";
 }
 
@@ -198,5 +204,6 @@ export function VenueDetailModal(props: VenueDetailModalProps) {
   return <VenueDetailDialog {...props} />;
 }
 
-export { HourlyCrowdForecast };
+export { HourlyCrowdForecast, AmbientNoiseSparkline };
+export type { AmbientNoiseSparklineProps, HourlyDecibelPoint };
 export default VenueDetailModal;

@@ -1,15 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Star, X, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const REVIEW_MIN_LENGTH = 10;
+export const REVIEW_MAX_LENGTH = 500;
 export const REVIEW_ERROR_MESSAGE =
   "Review must contain at least 10 non-whitespace characters.";
+export const REVIEW_MAX_ERROR_MESSAGE = "Review cannot exceed 500 characters.";
 
 /**
- * Validates review text by trimming whitespace and enforcing a minimum character count.
+ * Validates review text by trimming whitespace and enforcing minimum and maximum character counts.
  */
 export function validateReviewComment(comment: string): {
   isValid: boolean;
@@ -19,13 +21,23 @@ export function validateReviewComment(comment: string): {
 } {
   const trimmedComment = typeof comment === "string" ? comment.trim() : "";
   const trimmedLength = trimmedComment.length;
-  const isValid = trimmedLength >= REVIEW_MIN_LENGTH;
+  const rawLength = typeof comment === "string" ? comment.length : 0;
+  const isTooShort = trimmedLength < REVIEW_MIN_LENGTH;
+  const isTooLong = rawLength > REVIEW_MAX_LENGTH;
+  const isValid = !isTooShort && !isTooLong;
+
+  let errorMessage: string | null = null;
+  if (isTooShort) {
+    errorMessage = REVIEW_ERROR_MESSAGE;
+  } else if (isTooLong) {
+    errorMessage = REVIEW_MAX_ERROR_MESSAGE;
+  }
 
   return {
     isValid,
     trimmedComment,
     trimmedLength,
-    errorMessage: isValid ? null : REVIEW_ERROR_MESSAGE,
+    errorMessage,
   };
 }
 
@@ -49,8 +61,8 @@ export interface VenueReviewModalProps {
  * VenueReviewModal
  *
  * Modal dialog for submitting verified workspace ratings and written reviews.
- * Enforces non-empty, trimmed comment validation (min 10 characters) and prevents
- * submission of empty or whitespace-only reviews.
+ * Enforces non-empty, trimmed comment validation (min 10 characters, max 500 characters)
+ * and displays a dynamic character counter with color threshold warnings.
  */
 export function VenueReviewModal({
   isOpen,
@@ -97,14 +109,19 @@ export function VenueReviewModal({
   }, [isOpen, onClose]);
 
   // Validation logic
-  const { isValid: isCommentValid, trimmedComment, trimmedLength } =
-    validateReviewComment(comment);
+  const {
+    isValid: isCommentValid,
+    trimmedComment,
+    trimmedLength,
+    errorMessage,
+  } = validateReviewComment(comment);
   const hasValidRating = rating > 0 && rating <= 5;
   const isSubmitDisabled = !hasValidRating || !isCommentValid || isSubmitting;
 
-  // Show error if user typed text (or touched) but non-whitespace count is below threshold
+  // Show error if user typed text (or touched) but character criteria are violated
   const showError =
-    (isTouched || comment.length > 0) && trimmedLength < REVIEW_MIN_LENGTH;
+    ((isTouched || comment.length > 0) && trimmedLength < REVIEW_MIN_LENGTH) ||
+    comment.length > REVIEW_MAX_LENGTH;
 
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setComment(e.target.value);
@@ -171,7 +188,8 @@ export function VenueReviewModal({
               Review {venueName}
             </h3>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Share your productivity, acoustic, and WiFi experience with the nomad community.
+              Share your productivity, acoustic, and WiFi experience with the
+              nomad community.
             </p>
           </div>
           <button
@@ -270,17 +288,34 @@ export function VenueReviewModal({
               )}
             />
 
-            {/* Validation Error Message */}
-            {showError && (
-              <div
-                role="alert"
-                data-testid="venue-review-error"
-                className="flex items-center gap-1.5 text-xs text-rose-500 dark:text-rose-400 font-medium"
+            {/* Sub-textarea status row: Validation Error on left, Remaining Capacity Counter on right */}
+            <div className="flex items-center justify-between min-h-[20px] gap-2 pt-1">
+              {showError ? (
+                <div
+                  role="alert"
+                  data-testid="venue-review-error"
+                  className="flex items-center gap-1.5 text-xs text-rose-500 dark:text-rose-400 font-medium"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{errorMessage || REVIEW_ERROR_MESSAGE}</span>
+                </div>
+              ) : (
+                <div />
+              )}
+              <span
+                data-testid="venue-review-char-counter"
+                className={cn(
+                  "text-xs font-mono transition-colors shrink-0 ml-auto",
+                  comment.length >= REVIEW_MAX_LENGTH
+                    ? "text-rose-500 dark:text-rose-400 font-semibold"
+                    : comment.length >= 450
+                      ? "text-amber-500 dark:text-amber-400"
+                      : "text-zinc-500 dark:text-zinc-400",
+                )}
               >
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>{REVIEW_ERROR_MESSAGE}</span>
-              </div>
-            )}
+                {comment.length} / {REVIEW_MAX_LENGTH} characters
+              </span>
+            </div>
           </div>
 
           {/* Action Buttons */}

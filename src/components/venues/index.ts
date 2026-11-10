@@ -41,10 +41,7 @@ export type {
   HourlyNoiseDataPoint,
   DayProfileType,
 } from "./HourlyNoiseHeatGraph";
-export {
-  VenueDetailModal,
-  AmbientNoiseSparkline,
-} from "./VenueDetailModal";
+export { VenueDetailModal, AmbientNoiseSparkline } from "./VenueDetailModal";
 export type {
   VenueDetailModalProps,
   AmbientNoiseSparklineProps,
@@ -57,6 +54,8 @@ export {
   VenueReviewModal,
   validateReviewComment,
   REVIEW_MIN_LENGTH,
+  REVIEW_MAX_LENGTH,
   REVIEW_ERROR_MESSAGE,
+  REVIEW_MAX_ERROR_MESSAGE,
 } from "./VenueReviewModal";
 export type { VenueReviewModalProps } from "./VenueReviewModal";

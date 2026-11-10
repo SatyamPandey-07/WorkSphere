@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
+import { parseBookingDateFilter } from "@/lib/validations/dateFilter";
 
 export async function GET(req: NextRequest) {
   try {
@@ -76,13 +77,21 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 4. Date range filter (startDate and endDate)
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
+    // 4. Date range filter (startDate and endDate) with strict ISO 8601 validation & timezone normalization
+    const dateParseResult = parseBookingDateFilter(searchParams);
+    if (!dateParseResult.success) {
+      return dateParseResult.response;
+    }
+
+    const { startDate, endDate } = dateParseResult.data;
     if (startDate || endDate) {
       const dateFilter: { gte?: string; lte?: string } = {};
-      if (startDate) dateFilter.gte = startDate;
-      if (endDate) dateFilter.lte = endDate;
+      if (startDate) {
+        dateFilter.gte = startDate.includes("T") ? startDate.split("T")[0] : startDate;
+      }
+      if (endDate) {
+        dateFilter.lte = endDate.includes("T") ? endDate.split("T")[0] : endDate;
+      }
       where.date = dateFilter;
     }
 

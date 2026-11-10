@@ -302,5 +302,52 @@ describe("filterVenuesByRadius", () => {
     expect(filterVenuesByRadius(venues, userLocation, 0)).toEqual(venues);
     expect(filterVenuesByRadius(venues, userLocation, -1)).toEqual(venues);
   });
-});
+  describe("Defensive null-safety and NaN handling (#6766)", () => {
+    const userLocation = { lat: 40.7484, lng: -73.9857 };
 
+    it("handles nullish and invalid venues array in sortVenuesByProximity", () => {
+      // @ts-expect-error testing null input
+      expect(sortVenuesByProximity(null, userLocation)).toEqual([]);
+      // @ts-expect-error testing undefined input
+      expect(sortVenuesByProximity(undefined, userLocation)).toEqual([]);
+
+      // Array with nullish elements
+      const venuesWithNull = [
+        null,
+        { id: "far", lat: 48.8566, lng: 2.3522 },
+        undefined,
+        { id: "near", lat: 40.7549, lng: -73.9840 },
+      ];
+      // @ts-expect-error testing array with nulls
+      const sorted = sortVenuesByProximity(venuesWithNull, userLocation);
+      expect(sorted.map((v) => v.id)).toEqual(["near", "far"]);
+
+      // Venues with NaN coordinates should not break comparator
+      const venuesWithNaN = [
+        { id: "nan", lat: NaN, lng: 10 },
+        { id: "valid", lat: 40.7549, lng: -73.9840 },
+      ];
+      const res = sortVenuesByProximity(venuesWithNaN, userLocation);
+      expect(res.map((v) => v.id)).toEqual(["valid", "nan"]);
+    });
+
+    it("handles nullish and invalid venues array and NaN maxDistanceKm in filterVenuesByRadius", () => {
+      // @ts-expect-error testing null input
+      expect(filterVenuesByRadius(null, userLocation, 5)).toEqual([]);
+      // @ts-expect-error testing undefined input
+      expect(filterVenuesByRadius(undefined, userLocation, 5)).toEqual([]);
+
+      // NaN or non-finite maxDistanceKm
+      const sampleVenues = [{ id: "1", lat: 40.75, lng: -73.98 }];
+      expect(filterVenuesByRadius(sampleVenues, userLocation, NaN)).toEqual(sampleVenues);
+      // @ts-expect-error testing non-numeric input
+      expect(filterVenuesByRadius(sampleVenues, userLocation, "invalid")).toEqual(sampleVenues);
+
+      // Array with nullish items
+      const mixed = [null, { id: "1", lat: 40.7490, lng: -73.9860 }, undefined];
+      // @ts-expect-error testing array with nulls
+      const filtered = filterVenuesByRadius(mixed, userLocation, 1);
+      expect(filtered.map((v) => v.id)).toEqual(["1"]);
+    });
+  });
+});

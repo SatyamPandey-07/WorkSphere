@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant cyberpunk (&:where(.cyberpunk, .cyberpunk *));
 
 @layer components {
   .audio-eq-energy-slider {
@@ -1447,4 +1448,10 @@ html[data-hud-cursor="true"] [role="switch"] {
   }
 }
 
-
+
+/* Disable transitions while the theme switches to avoid FOUC (#7201) */
+html.preload *,
+html.preload *::before,
+html.preload *::after {
+  transition: none !important;
+}

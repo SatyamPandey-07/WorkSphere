@@ -29,7 +29,7 @@ export function NoiseForecastChart({ venueId }: NoiseForecastChartProps) {
     async function fetchForecast() {
       try {
         const res = await fetch(
-          `/api/venues/${venueId}/noise-metrics/forecast`,
+          `/api/venues/${venueId}/noise-metrics/forecast?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
         );
         if (!res.ok) throw new Error("Failed to load forecast");
         const json = await res.json();

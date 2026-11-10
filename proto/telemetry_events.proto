@@ -35,6 +35,9 @@ message ChatEvent {
 message WorkSphereEnvelope {
   EventType type = 1;
   int64 sequence_id = 2;
+ feature/health-probe-subsystem
+  
+
  feature/audio-worklet-phase-alignment
   
 
@@ -55,11 +58,15 @@ feature/venuecard-a11y-focus-rings
  main
  main
  main
+ main
   oneof payload {
     TelemetryEvent telemetry = 3;
     PresenceEvent presence = 4;
     ChatEvent chat = 5;
   }
+ feature/health-probe-subsystem
+}
+
  feature/audio-worklet-phase-alignment
 }
 
@@ -76,6 +83,7 @@ feature/venuecard-a11y-focus-rings
 }
 
 }
+ main
  main
  main
  main

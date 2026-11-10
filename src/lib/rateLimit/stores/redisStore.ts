@@ -203,7 +203,18 @@ export async function executeAtomicTokenBucket(
       retryAfter: Number(retryAfterNum),
       identity: key,
     };
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof Error && /timeout|etimedout|timed out|abort/i.test(err.message)) {
+      console.warn("[RedisStore] Redis connection timed out, failing open:", err.message);
+      return {
+        success: true,
+        limit: safeLimit,
+        remaining: safeLimit,
+        reset: Math.ceil((safeNow + safeWindowMs) / 1000),
+        retryAfter: 0,
+        identity: key,
+      };
+    }
     console.error("[RedisStore] Atomic token bucket Lua evaluation failed:", err);
     return null;
   }

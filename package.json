@@ -14,6 +14,7 @@
     "db:verify-partitions": "node --experimental-strip-types scripts/verify-partition-backups.ts",
     "cdc:worker": "node --experimental-strip-types src/workers/reservationCdcWorker.ts",
     "zkp:compile": "bash scripts/compile-zkp.sh",
+    "zkp:compile:membership": "bash scripts/compile-membership-zkp.sh",
     "build:wasm:audio-filter": "bash wasm/audio-filter/build.sh",
     "bench:audio-filter": "node scripts/bench-audio-filter-pool.mjs",
     "postinstall": "prisma generate",

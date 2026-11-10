@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useToast } from "@/components/ui/Toast";
+import { ensureCsrfToken } from "@/hooks/useCsrfToken";
 import type {
   ConflictResolutionStrategy,
   QueuedReviewItem,
@@ -21,6 +22,10 @@ export interface ReviewConflictItem {
 export function useReviewConflictWorker() {
   const { getToken } = useAuth();
   const { toast } = useToast();
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   const workerRef = useRef<Worker | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -35,13 +40,10 @@ export function useReviewConflictWorker() {
 
   const fetchCsrfToken = useCallback(async (): Promise<string | null> => {
     try {
-      const res = await fetch("/api/auth/csrf-token");
-      if (res.ok) {
-        const data = await res.json();
-        return data.csrfToken || null;
-      }
-    } catch {}
-    return null;
+      return await ensureCsrfToken();
+    } catch {
+      return null;
+    }
   }, []);
 
   const triggerSync = useCallback(async () => {
@@ -49,7 +51,7 @@ export function useReviewConflictWorker() {
     const token = await getTokenRef.current().catch(() => null);
     const csrfToken = await fetchCsrfToken();
 
-    workerRef.current.postMessage({
+    workerRef.current?.postMessage({
       type: "TRIGGER_SYNC",
       token: token ?? undefined,
       csrfToken: csrfToken ?? undefined,
@@ -66,7 +68,7 @@ export function useReviewConflictWorker() {
       const token = await getTokenRef.current().catch(() => null);
       const csrfToken = await fetchCsrfToken();
 
-      workerRef.current.postMessage({
+      workerRef.current?.postMessage({
         type: "RESOLVE_CONFLICT",
         id,
         resolution,
@@ -98,7 +100,7 @@ export function useReviewConflictWorker() {
         }
 
         case "SYNC_SUCCESS": {
-          toast(
+          toastRef.current?.(
             `Offline review for ${msg.venueName || "venue"} synced successfully!`,
             "success",
           );
@@ -122,7 +124,7 @@ export function useReviewConflictWorker() {
 
           setActiveConflict(conflictItem);
 
-          toast(
+          toastRef.current?.(
             `Review conflict on ${msg.venueName || "venue"}. Multi-device edit collision detected.`,
             "warning",
             {
@@ -137,9 +139,9 @@ export function useReviewConflictWorker() {
           if (msg.success) {
             setConflicts((prev) => prev.filter((c) => c.id !== msg.id));
             setActiveConflict((prev) => (prev?.id === msg.id ? null : prev));
-            toast("Review conflict resolved.", "success");
+            toastRef.current?.("Review conflict resolved.", "success");
           } else {
-            toast("Failed to resolve review conflict.", "warning");
+            toastRef.current?.("Failed to resolve review conflict.", "warning");
           }
           break;
         }
@@ -194,7 +196,7 @@ export function useReviewConflictWorker() {
       worker.postMessage({ type: "STOP_PERIODIC_CHECK" } satisfies ReviewConflictWorkerInboundMessage);
       worker.terminate();
     };
-  }, [fetchCsrfToken, resolveConflict, toast, triggerSync]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     isSyncing,

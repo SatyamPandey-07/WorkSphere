@@ -1,22 +1,35 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
 
-interface RadarChartProps {
-  data: {
-    name: string;
-    color: string;
-    values: number[]; // 5 values from 0 to 100
-  }[];
-  labels: string[]; // 5 labels
-  size?: number;
+export interface RadarChartSeries {
+  name: string;
+  color: string;
+  values: number[];
 }
 
-export function RadarChart({ data, labels, size = 300 }: RadarChartProps) {
+export interface RadarChartProps {
+  data?: RadarChartSeries[];
+  labels?: string[];
+  size?: number;
+  className?: string;
+  "data-testid"?: string;
+}
+
+export function RadarChart({
+  data = [],
+  labels = [],
+  size = 300,
+  className,
+  "data-testid": dataTestId = "radar-chart",
+}: RadarChartProps) {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  if (!labels || labels.length === 0) return null;
 
   const center = size / 2;
   const radius = (size / 2) * 0.7; // Leave room for labels
@@ -48,7 +61,7 @@ export function RadarChart({ data, labels, size = 300 }: RadarChartProps) {
   const gridLevels = [20, 40, 60, 80, 100];
 
   return (
-    <div className="relative" style={{ width: size, height: size }}>
+    <div data-testid={dataTestId} className={cn("relative", className)} style={{ width: size, height: size }}>
       <svg width={size} height={size} className="overflow-visible">
         {/* Background Grid */}
         {gridLevels.map((level) => (
@@ -93,6 +106,7 @@ export function RadarChart({ data, labels, size = 300 }: RadarChartProps) {
             return (
               <motion.path
                 key={series.name}
+                data-testid={`radar-series-${series.name.toLowerCase().replace(/\s+/g, '-')}`}
                 initial={{ d: zeroPath, opacity: 0 }}
                 animate={{ d: path, opacity: 0.5 }}
                 transition={{ duration: 0.8, ease: "easeOut", delay: i * 0.1 }}
@@ -109,6 +123,7 @@ export function RadarChart({ data, labels, size = 300 }: RadarChartProps) {
           return (
             <text
               key={`label-${i}`}
+              data-testid={`radar-label-${i}`}
               x={x}
               y={y}
               fill="currentColor"
@@ -126,3 +141,5 @@ export function RadarChart({ data, labels, size = 300 }: RadarChartProps) {
     </div>
   );
 }
+
+export default RadarChart;

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { processVenueReviewSubmission } from "@/lib/venueReviewService";
 import { apiError } from "@/lib/apiResponse";
+import { swrCache, getVenueReviewsCacheKey } from "@/lib/cache/swrCache";
 
 // GET /api/venues/[venueId]/reviews - Get all reviews/ratings for a venue
 export async function GET(
@@ -35,24 +36,27 @@ export async function GET(
       return NextResponse.json({ reviews: [] });
     }
 
-    const reviews = await prisma.venueRating.findMany({
-      where: { venueId: venue.id },
-      include: {
-        user: {
-          select: {
-            firstName: true,
-            lastName: true,
+    const cacheKey = getVenueReviewsCacheKey(venue.id);
+    const reviews = await swrCache(cacheKey, async () => {
+      return await prisma.venueRating.findMany({
+        where: { venueId: venue.id },
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: "desc" },
+      });
     });
 
     return NextResponse.json({
-      reviews: reviews.map((r) => ({
+      reviews: reviews.map((r: any) => ({
         ...r,
         user: userId
-          ? { firstName: r.user.firstName, lastName: r.user.lastName }
+          ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
           : null,
       })),
     });

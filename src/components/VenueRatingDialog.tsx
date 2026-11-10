@@ -4,12 +4,15 @@ import { NoiseMeasurement, NoiseMeter } from "@/components/noise/NoiseMeter";
 import { Star, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { cn } from "@/lib/utils";
 
-interface VenueRatingDialogProps {
+export interface VenueRatingDialogProps {
   venueName: string;
   venueId: string;
   isOpen: boolean;
   onClose: () => void;
+  className?: string;
+  "data-testid"?: string;
   onSubmit: (rating: {
     wifiQuality: number;
     hasOutlets: boolean;
@@ -47,6 +50,8 @@ export function VenueRatingDialog({
   isOpen,
   onClose,
   onSubmit,
+  className = "",
+  ...props
 }: VenueRatingDialogProps) {
   const [wifiQuality, setWifiQuality] = useState(3);
   const [hasOutlets, setHasOutlets] = useState<boolean | null>(null);
@@ -257,13 +262,21 @@ export function VenueRatingDialog({
   if (!isOpen || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+    <div
+      data-testid={props["data-testid"] || "venue-rating-dialog"}
+      onClick={onClose}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="venue-rating-title"
         aria-describedby="venue-rating-description"
-        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          "max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900",
+          className
+        )}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
           <div>
@@ -277,6 +290,8 @@ export function VenueRatingDialog({
 
           <button
             type="button"
+            data-testid="venue-rating-close-btn"
+            aria-label="Close dialog"
             onClick={onClose}
             className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
@@ -774,6 +789,7 @@ export function VenueRatingDialog({
           <div className="flex gap-2">
             <button
               type="button"
+              data-testid="venue-rating-cancel-btn"
               onClick={onClose}
               disabled={isSubmitting}
               className="flex-1 rounded-lg bg-zinc-100 px-4 py-2 font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
@@ -783,6 +799,7 @@ export function VenueRatingDialog({
 
             <button
               type="submit"
+              data-testid="venue-rating-submit-btn"
               disabled={isSubmitting || hasOutlets === null}
               className="flex-1 rounded-lg accent-bg px-4 py-2 font-medium text-white accent-bg-hover disabled:opacity-50"
             >
@@ -795,3 +812,5 @@ export function VenueRatingDialog({
     document.body,
   );
 }
+
+export default VenueRatingDialog;

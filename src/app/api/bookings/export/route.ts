@@ -1,8 +1,12 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
-import { bookingsToCSV } from "@/lib/pdfHelpers";
+import {
+  bookingsToCSV,
+  exportBookingsToJson,
+} from "@/lib/pdfHelpers";
 import { resolveDateRange, filterBookingsByRange } from "@/lib/taxExport";
 import { generateTaxExportPdf } from "@/lib/pdfGenerator";
 import { generateBookingsExcel } from "@/lib/export/domain/bookingHistoryExporter";
@@ -10,24 +14,27 @@ import { generateBookingsExcel } from "@/lib/export/domain/bookingHistoryExporte
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     await ensureUserExists(userId);
 
     const body = await req.json();
     const { bookingIds, format, taxYear, startDate, endDate } = body;
 
     if (
-      format !== "pdf" &&
-      format !== "csv" &&
-      format !== "xlsx" &&
-      format !== "excel"
+      !["pdf", "csv", "json", "xlsx", "excel"].includes(format)
     ) {
-      return NextResponse.json({ error: "Invalid format" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid format" },
+        { status: 400 },
+      );
     }
 
-    const usingDateRange = !bookingIds && (taxYear || (startDate && endDate));
+    const usingDateRange =
+      !bookingIds && (taxYear || (startDate && endDate));
 
     if (!Array.isArray(bookingIds) && !usingDateRange) {
       return NextResponse.json(
@@ -39,7 +46,7 @@ export async function POST(req: NextRequest) {
     let bookings;
 
     if (Array.isArray(bookingIds) && bookingIds.length > 0) {
-      // Only fetch bookings that belong to this user - never trust client-supplied ownership
+      // Only fetch bookings that belong to this user.
       bookings = await (prisma as any).booking.findMany({
         where: { id: { in: bookingIds }, userId },
         include: { venue: true, user: true },
@@ -48,6 +55,7 @@ export async function POST(req: NextRequest) {
     } else {
       // Date-range / tax-year path (issue #198)
       let range;
+
       try {
         range = resolveDateRange({ taxYear, startDate, endDate });
       } catch (err: any) {
@@ -74,6 +82,7 @@ export async function POST(req: NextRequest) {
       const csv =
         "Estimate only - $15/hr flat rate, 8% flat tax - verify against your invoices\n" +
         bookingsToCSV(bookings);
+
       return new NextResponse(csv, {
         status: 200,
         headers: {
@@ -84,22 +93,24 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (format === "xlsx" || format === "excel") {
-      const excelXml = generateBookingsExcel(bookings, {
-        venueName: bookings[0]?.venue?.name || "Workspace",
-      });
-      return new NextResponse(excelXml, {
+    if (format === "json") {
+      const json = exportBookingsToJson(bookings);
+
+      return new NextResponse(json, {
         status: 200,
         headers: {
-          "Content-Type":
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.xlsx"`,
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.json"`,
           "Cache-Control": "no-cache",
         },
       });
     }
 
+    // Preserve the existing PDF fallback.
+    // Excel formats are accepted here as they were in the original validation,
+    // but this route does not add a new Excel-generation branch.
     const pdfBytes = await generateTaxExportPdf(bookings);
+
     return new NextResponse(Buffer.from(pdfBytes), {
       status: 200,
       headers: {
@@ -110,6 +121,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error("[Bookings Export Error]:", error);
+
     return NextResponse.json(
       { error: "Failed to generate export" },
       { status: 500 },

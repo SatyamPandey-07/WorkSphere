@@ -28,6 +28,7 @@ import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
 import { useSeatHoldLock } from "@/hooks/useSeatHoldLock";
 import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
 import { RescheduleModal } from "@/components/bookings/RescheduleModal";
+import { DeskReservationCountdownTimer } from "@/components/reservations/DeskReservationCountdownTimer";
 
 type Seat = {
   id: string;
@@ -557,44 +558,31 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             >
               <h2 className="text-xl font-semibold">Reservation details</h2>
 
-              {/* 5-minute Seat Hold Active Countdown Indicator (#3522) */}
+              {/* Atomic Desk Reservation Countdown Timer with Redis Keyspace Notifications */}
               {selectedSeat && myHeldSeatId === selectedSeat && (
-                <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
-                  <span className="flex items-center gap-2">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                    </span>
-                    <span>
-                      Seat{" "}
-                      <strong>
-                        {seats.find((s) => s.id === selectedSeat)?.seatNumber}
-                      </strong>{" "}
-                      locked for checkout
-                    </span>
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-semibold text-amber-300">
-                      {Math.floor(remainingSeconds / 60)}:
-                      {(remainingSeconds % 60).toString().padStart(2, "0")}{" "}
-                      remaining
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (selectedSeat) {
-                          await releaseHold(selectedSeat);
-                          setSelectedSeat(null);
-                          setMessage("Seat hold released.");
-                        }
-                      }}
-                      className="rounded-md border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/30 transition-colors"
-                      title="Release seat hold lock"
-                    >
-                      Release
-                    </button>
-                  </div>
-                </div>
+                <DeskReservationCountdownTimer
+                  className="mt-4"
+                  venueId={venue.id}
+                  deskId={selectedSeat}
+                  deskName={seats.find((s) => s.id === selectedSeat)?.seatNumber}
+                  initialExpiresAt={activeHolds[selectedSeat]?.expiresAt}
+                  totalDurationSeconds={300}
+                  onExpire={(seatId) => {
+                    if (selectedSeat === seatId) {
+                      setSelectedSeat(null);
+                      setMessage(
+                        "Your 5-minute checkout hold expired. The seat has been released.",
+                      );
+                    }
+                  }}
+                  onRelease={async () => {
+                    if (selectedSeat) {
+                      await releaseHold(selectedSeat);
+                      setSelectedSeat(null);
+                      setMessage("Seat hold released.");
+                    }
+                  }}
+                />
               )}
 
               <div className="mt-6 space-y-4">

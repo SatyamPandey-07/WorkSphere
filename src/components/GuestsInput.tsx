@@ -29,11 +29,12 @@ export interface GuestEntry {
   name: string;
 }
 
-interface GuestsInputProps {
+export interface GuestsInputProps {
   guests: GuestEntry[];
   onChange: (guests: GuestEntry[]) => void;
   maxGuests?: number;
   disabled?: boolean;
+  className?: string;
 }
 
 // Simple ID generator for unique keys
@@ -55,7 +56,9 @@ export default function GuestsInput({
   onChange,
   maxGuests = 20,
   disabled = false,
+  className = "",
 }: GuestsInputProps) {
+  const safeGuests = Array.isArray(guests) ? guests : [];
   const [emailInput, setEmailInput] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [showNameInput, setShowNameInput] = useState(false);
@@ -75,12 +78,12 @@ export default function GuestsInput({
       return;
     }
 
-    if (guests.some((g) => g.email.toLowerCase() === email.toLowerCase())) {
+    if (safeGuests.some((g) => g.email.toLowerCase() === email.toLowerCase())) {
       setValidationError("This guest has already been added");
       return;
     }
 
-    if (guests.length >= maxGuests) {
+    if (safeGuests.length >= maxGuests) {
       setValidationError(`Maximum ${maxGuests} guests allowed`);
       return;
     }
@@ -92,19 +95,19 @@ export default function GuestsInput({
       name: nameInput.trim(),
     };
 
-    onChange([...guests, newGuest]);
+    onChange([...safeGuests, newGuest]);
     setEmailInput("");
     setNameInput("");
     setShowNameInput(false);
     setValidationError(null);
-  }, [emailInput, nameInput, guests, maxGuests, onChange]);
+  }, [emailInput, nameInput, safeGuests, maxGuests, onChange]);
 
   const removeGuest = useCallback(
     (id: string) => {
-      onChange(guests.filter((g) => g.id !== id));
+      onChange(safeGuests.filter((g) => g.id !== id));
       setValidationError(null);
     },
-    [guests, onChange],
+    [safeGuests, onChange],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -121,16 +124,17 @@ export default function GuestsInput({
   };
 
   return (
-    <div className="space-y-3">
+    <div data-testid="guests-input-container" className={`space-y-3 ${className}`.trim()}>
       {/* Guest chips */}
-      {guests.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {guests.map((guest) => (
+      {safeGuests.length > 0 && (
+        <div data-testid="guest-chips-container" className="flex flex-wrap gap-2">
+          {safeGuests.map((guest) => (
             <div
               key={guest.id}
+              data-testid={`guest-chip-${guest.id}`}
               className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/30 bg-violet-400/10 px-3 py-1.5 text-xs text-violet-200"
             >
-              <Mail className="h-3 w-3" />
+              <Mail className="h-3 w-3 shrink-0" />
               <span className="truncate max-w-[120px]">{guest.email}</span>
               {guest.name && (
                 <>
@@ -144,6 +148,7 @@ export default function GuestsInput({
                 disabled={disabled}
                 className="ml-0.5 rounded-full p-0.5 hover:bg-violet-400/20 transition-colors disabled:opacity-40"
                 aria-label={`Remove ${guest.email}`}
+                data-testid={`remove-guest-${guest.id}`}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -153,20 +158,22 @@ export default function GuestsInput({
       )}
 
       {/* Input area */}
-      {guests.length < maxGuests && !disabled && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+      {safeGuests.length < maxGuests && !disabled && (
+        <div data-testid="guests-input-area" className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
           <div className="flex items-center gap-2">
             <Mail className="h-4 w-4 text-zinc-500 shrink-0" />
             <input
               type="email"
               value={emailInput}
+              aria-label="Guest email address"
+              data-testid="guest-email-input"
               onChange={(e) => {
                 setEmailInput(e.target.value);
                 setValidationError(null);
               }}
               onKeyDown={handleKeyDown}
               placeholder={
-                guests.length === 0
+                safeGuests.length === 0
                   ? "Add guest email..."
                   : "Add another guest..."
               }
@@ -179,6 +186,8 @@ export default function GuestsInput({
               disabled={!emailInput.trim() || disabled}
               className="rounded-lg bg-violet-600/60 p-1.5 text-white hover:bg-violet-600/80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Add guest"
+              aria-label="Add guest"
+              data-testid="add-guest-btn"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -186,11 +195,13 @@ export default function GuestsInput({
 
           {/* Optional name field (expandable) */}
           {showNameInput && (
-            <div className="mt-2 flex items-center gap-2 pl-6">
+            <div data-testid="guest-name-area" className="mt-2 flex items-center gap-2 pl-6">
               <User className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
               <input
                 type="text"
                 value={nameInput}
+                aria-label="Guest name (optional)"
+                data-testid="guest-name-input"
                 onChange={(e) => setNameInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addGuest()}
                 placeholder="Guest name (optional)"
@@ -204,6 +215,8 @@ export default function GuestsInput({
           <button
             type="button"
             onClick={() => setShowNameInput(!showNameInput)}
+            aria-expanded={showNameInput}
+            data-testid="toggle-name-btn"
             className="mt-1.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors pl-6"
           >
             {showNameInput ? "Hide name field" : "+ Add name (optional)"}
@@ -211,8 +224,12 @@ export default function GuestsInput({
 
           {/* Validation error */}
           {validationError && (
-            <p className="mt-1.5 flex items-center gap-1 text-[10px] text-red-400 pl-6">
-              <AlertCircle className="h-3 w-3" />
+            <p
+              role="alert"
+              data-testid="guest-validation-error"
+              className="mt-1.5 flex items-center gap-1 text-[10px] text-red-400 pl-6"
+            >
+              <AlertCircle className="h-3 w-3 shrink-0" />
               {validationError}
             </p>
           )}
@@ -220,9 +237,9 @@ export default function GuestsInput({
       )}
 
       {/* Guest count */}
-      <p className="text-[10px] text-zinc-600">
-        {guests.length > 0
-          ? `${guests.length} guest${guests.length !== 1 ? "s" : ""} invited`
+      <p data-testid="guest-count-text" aria-live="polite" className="text-[10px] text-zinc-600">
+        {safeGuests.length > 0
+          ? `${safeGuests.length} guest${safeGuests.length !== 1 ? "s" : ""} invited`
           : "No guests added yet"}
         {maxGuests && ` (max ${maxGuests})`}
       </p>
@@ -242,7 +259,10 @@ export function GuestInviteStatus({
 }) {
   if (success) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+      <span
+        data-testid="guest-invite-status-success"
+        className="inline-flex items-center gap-1 text-xs text-emerald-400"
+      >
         <Check className="h-3 w-3" />
         Invitation sent
       </span>
@@ -251,6 +271,7 @@ export function GuestInviteStatus({
 
   return (
     <span
+      data-testid="guest-invite-status-failed"
       className="inline-flex items-center gap-1 text-xs text-red-400"
       title={error}
     >
@@ -265,7 +286,10 @@ export function GuestInviteStatus({
  */
 export function GuestInviteLoading() {
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
+    <span
+      data-testid="guest-invite-loading"
+      className="inline-flex items-center gap-1 text-xs text-zinc-500"
+    >
       <Loader2 className="h-3 w-3 animate-spin" />
       Sending invitation...
     </span>

@@ -35,6 +35,9 @@ message ChatEvent {
 message WorkSphereEnvelope {
   EventType type = 1;
   int64 sequence_id = 2;
+ feature/cdc-pg-redis-streamer
+  
+
  feature/map-command-palette-shortcuts
   
 
@@ -63,11 +66,15 @@ feature/venuecard-a11y-focus-rings
  main
  main
  main
+ main
   oneof payload {
     TelemetryEvent telemetry = 3;
     PresenceEvent presence = 4;
     ChatEvent chat = 5;
   }
+ feature/cdc-pg-redis-streamer
+}
+
  feature/map-command-palette-shortcuts
 }
 
@@ -90,6 +97,7 @@ feature/venuecard-a11y-focus-rings
 }
 
 }
+ main
  main
  main
  main

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import {
   Building2,
   ChevronUp,
@@ -107,11 +108,24 @@ export function calculateVerticalSpeedFpm(
   transitDurationSeconds: number,
   floorHeightFeet: number = 14,
 ): number {
-  if (transitDurationSeconds <= 0 || fromFloor === toFloor) return 0;
-  const floorDiff = toFloor - fromFloor;
-  const totalFeet = floorDiff * floorHeightFeet;
+  if (
+    typeof transitDurationSeconds !== "number" ||
+    !Number.isFinite(transitDurationSeconds) ||
+    transitDurationSeconds <= 0 ||
+    fromFloor === toFloor
+  ) {
+    return 0;
+  }
+  const safeFrom = typeof fromFloor === "number" && Number.isFinite(fromFloor) ? fromFloor : 0;
+  const safeTo = typeof toFloor === "number" && Number.isFinite(toFloor) ? toFloor : 0;
+  const safeFloorHeight =
+    typeof floorHeightFeet === "number" && Number.isFinite(floorHeightFeet) && floorHeightFeet > 0
+      ? floorHeightFeet
+      : 14;
+  const floorDiff = safeTo - safeFrom;
+  const totalFeet = floorDiff * safeFloorHeight;
   const fpm = (totalFeet * 60) / transitDurationSeconds;
-  return Math.round(fpm);
+  return Number.isFinite(fpm) ? Math.round(fpm) : 0;
 }
 
 /**
@@ -124,11 +138,17 @@ export function interpolateVsiNeedleOffset(
   maxFpm: number = 3000,
   halfTapeHeightPx: number = 96,
 ): number {
-  if (maxFpm <= 0) return 0;
-  const clampedFpm = Math.max(-maxFpm, Math.min(maxFpm, verticalSpeedFpm));
-  const ratio = clampedFpm / maxFpm;
-  // Positive FPM moves upward (negative translateY)
-  return -ratio * halfTapeHeightPx;
+  const safeMax = typeof maxFpm === "number" && Number.isFinite(maxFpm) && maxFpm > 0 ? maxFpm : 3000;
+  const safeHalfHeight =
+    typeof halfTapeHeightPx === "number" && Number.isFinite(halfTapeHeightPx) && halfTapeHeightPx > 0
+      ? halfTapeHeightPx
+      : 96;
+  const safeFpm = typeof verticalSpeedFpm === "number" && Number.isFinite(verticalSpeedFpm) ? verticalSpeedFpm : 0;
+  const clampedFpm = Math.max(-safeMax, Math.min(safeMax, safeFpm));
+  const ratio = clampedFpm / safeMax;
+  // Positive FPM moves upward (negative translateY). Normalize -0 to 0.
+  const offset = -ratio * safeHalfHeight;
+  return offset === 0 ? 0 : offset;
 }
 
 /**
@@ -136,7 +156,8 @@ export function interpolateVsiNeedleOffset(
  * 1 FPM = 0.00508 m/s
  */
 export function fpmToMetersPerSecond(fpm: number): number {
-  return Number((fpm * 0.00508).toFixed(1));
+  const safeFpm = typeof fpm === "number" && Number.isFinite(fpm) ? fpm : 0;
+  return Number((safeFpm * 0.00508).toFixed(1));
 }
 
 /**
@@ -148,11 +169,24 @@ export function calculateFloorTransitEtaSeconds(
   speedFpm: number,
   floorHeightFeet: number = 14,
 ): number {
-  if (currentFloor === targetFloor || speedFpm === 0) return 0;
-  const distanceFeet = Math.abs(targetFloor - currentFloor) * floorHeightFeet;
+  if (
+    typeof speedFpm !== "number" ||
+    !Number.isFinite(speedFpm) ||
+    speedFpm === 0 ||
+    currentFloor === targetFloor
+  ) {
+    return 0;
+  }
+  const safeCurrent = typeof currentFloor === "number" && Number.isFinite(currentFloor) ? currentFloor : 0;
+  const safeTarget = typeof targetFloor === "number" && Number.isFinite(targetFloor) ? targetFloor : 0;
+  const safeHeight =
+    typeof floorHeightFeet === "number" && Number.isFinite(floorHeightFeet) && floorHeightFeet > 0
+      ? floorHeightFeet
+      : 14;
+  const distanceFeet = Math.abs(safeTarget - safeCurrent) * safeHeight;
   const speedAbsFpm = Math.abs(speedFpm);
   const seconds = (distanceFeet / speedAbsFpm) * 60;
-  return Math.max(1, Math.round(seconds));
+  return Number.isFinite(seconds) ? Math.max(1, Math.round(seconds)) : 0;
 }
 
 /**
@@ -165,7 +199,8 @@ export function classifyVerticalRate(speedFpm: number): {
   color: string;
   badgeClass: string;
 } {
-  const absFpm = Math.abs(speedFpm);
+  const safeFpm = typeof speedFpm === "number" && Number.isFinite(speedFpm) ? speedFpm : 0;
+  const absFpm = Math.abs(safeFpm);
   if (absFpm < 50) {
     return {
       state: "LEVEL",
@@ -176,7 +211,7 @@ export function classifyVerticalRate(speedFpm: number): {
     };
   }
 
-  if (speedFpm > 0) {
+  if (safeFpm > 0) {
     if (absFpm >= 2000) {
       return {
         state: "CLIMB",
@@ -209,7 +244,7 @@ export function classifyVerticalRate(speedFpm: number): {
     return {
       state: "DESCENT",
       intensity: "RAPID",
-      label: "RAPID DESCENT",
+      label: "RAPID DROP",
       color: "text-rose-400",
       badgeClass: "bg-rose-500/15 border-rose-500/40 text-rose-300",
     };
@@ -235,7 +270,7 @@ export function classifyVerticalRate(speedFpm: number): {
 /**
  * Synthetic avionics audio tick feedback for vertical speed transitions.
  */
-function playAvionicsRateChime(isClimb: boolean) {
+export function playAvionicsRateChime(isClimb: boolean) {
   if (typeof window === "undefined") return;
   try {
     const AudioContextClass =
@@ -247,6 +282,17 @@ function playAvionicsRateChime(isClimb: boolean) {
     if (ctx.state === "suspended") {
       ctx.resume().catch(() => {});
     }
+
+    const cleanup = () => {
+      try {
+        if (ctx.state !== "closed") {
+          ctx.close().catch(() => {});
+        }
+      } catch {
+        // Ignore already closed context
+      }
+    };
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -263,8 +309,16 @@ function playAvionicsRateChime(isClimb: boolean) {
 
     osc.connect(gain);
     gain.connect(ctx.destination);
+
+    osc.onended = cleanup;
+
     osc.start(now);
     osc.stop(now + 0.045);
+
+    const timer = setTimeout(cleanup, 100);
+    if (typeof timer === "object" && typeof (timer as any).unref === "function") {
+      (timer as any).unref();
+    }
   } catch {
     // Ignore audio permission restrictions
   }
@@ -295,7 +349,7 @@ export function CockpitVerticalSpeedTape({
       return verticalSpeedFpm;
     }
     if (currentFloor === targetFloor) return 0;
-    const profile = TRANSIT_MODE_PROFILES[transitMode];
+    const profile = TRANSIT_MODE_PROFILES[transitMode] || TRANSIT_MODE_PROFILES.elevator_local;
     const direction = targetFloor >= currentFloor ? 1 : -1;
     return direction * profile.nominalSpeedFpm;
   }, [verticalSpeedFpm, currentFloor, targetFloor, transitMode]);
@@ -395,13 +449,13 @@ export function CockpitVerticalSpeedTape({
       role="region"
       aria-label={`Cockpit Vertical Speed Tape for ${venueName}`}
       data-testid="cockpit-vertical-speed-tape"
-      className={`p-4 md:p-5 rounded-2xl bg-[#03110b]/90 dark:bg-zinc-950/95 border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 text-emerald-400 font-mono backdrop-blur-md w-full max-w-[340px] select-none space-y-3 ${className}`}
+      className={cn("p-4 md:p-5 rounded-2xl bg-[#03110b]/90 dark:bg-zinc-950/95 border border-emerald-500/30 shadow-2xl shadow-emerald-950/50 text-emerald-400 font-mono backdrop-blur-md w-full max-w-[340px] select-none space-y-3", className)}
     >
       {/* Header bar */}
       <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2.5">
         <div className="flex items-center gap-1.5 text-xs text-white font-bold tracking-wider">
           <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="truncate max-w-[170px]">{venueName}</span>
+          <span data-testid="vsi-venue-name" className="truncate max-w-[170px]">{venueName}</span>
         </div>
         <div className="flex items-center gap-1 text-[10px] text-emerald-300/80 font-semibold uppercase">
           <Compass className="w-3 h-3 text-cyan-400 animate-spin-slow" />
@@ -481,6 +535,7 @@ export function CockpitVerticalSpeedTape({
             <button
               type="button"
               aria-label="Increase climb rate"
+              data-testid="vsi-increase-rate-btn"
               onClick={() => handleStepSpeed(250)}
               className="flex-1 py-1 px-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center justify-center gap-1 transition"
             >
@@ -489,6 +544,7 @@ export function CockpitVerticalSpeedTape({
             <button
               type="button"
               aria-label="Decrease climb rate"
+              data-testid="vsi-decrease-rate-btn"
               onClick={() => handleStepSpeed(-250)}
               className="flex-1 py-1 px-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center justify-center gap-1 transition"
             >
@@ -497,6 +553,7 @@ export function CockpitVerticalSpeedTape({
             <button
               type="button"
               aria-label="Level out vertical speed"
+              data-testid="vsi-level-rate-btn"
               onClick={() => {
                 setSimulatedFpm(0);
                 onVerticalSpeedChange?.(0);
@@ -622,14 +679,15 @@ export function CockpitVerticalSpeedTape({
       <div className="pt-2 border-t border-emerald-500/15 flex items-center justify-between text-[10px] text-zinc-400 font-mono">
         <div className="flex items-center gap-1">
           <Zap className="w-3 h-3 text-emerald-400" />
-          <span className="text-zinc-300">
-            {TRANSIT_MODE_PROFILES[transitMode].name}
+          <span data-testid="vsi-transit-mode-name" className="text-zinc-300">
+            {(TRANSIT_MODE_PROFILES[transitMode] || TRANSIT_MODE_PROFILES.elevator_local).name}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             aria-label="Increase target floor"
+            data-testid="vsi-target-floor-up-btn"
             onClick={() => handleFloorChange(targetFloor + 1)}
             disabled={targetFloor >= totalFloors}
             className="p-0.5 rounded bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30"
@@ -640,6 +698,7 @@ export function CockpitVerticalSpeedTape({
           <button
             type="button"
             aria-label="Decrease target floor"
+            data-testid="vsi-target-floor-down-btn"
             onClick={() => handleFloorChange(targetFloor - 1)}
             disabled={targetFloor <= 1}
             className="p-0.5 rounded bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30"

@@ -32,7 +32,7 @@ export class SmartLockProtocol {
 
     private async sign(data: Uint8Array): Promise<ArrayBuffer> {
         await this.importKey();
-        return crypto.subtle.sign(this.algorithm, this.secretKey!, data);
+        return crypto.subtle.sign(this.algorithm, this.secretKey!, data as unknown as BufferSource);
     }
 
     private arrayBufferToHex(buffer: ArrayBuffer): string {

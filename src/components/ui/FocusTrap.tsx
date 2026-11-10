@@ -1,17 +1,19 @@
 "use client";
 
 import React, { useRef } from "react";
+import { cn } from "@/lib/utils";
 import { useFocusTrap, UseFocusTrapOptions } from "@/hooks/useFocusTrap";
 
 export interface FocusTrapProps extends UseFocusTrapOptions {
   children: React.ReactNode;
   className?: string;
-  as?: keyof JSX.IntrinsicElements;
+  as?: keyof React.JSX.IntrinsicElements;
   role?: string;
   "aria-modal"?: boolean | "true" | "false";
   "aria-label"?: string;
   "aria-labelledby"?: string;
   "aria-describedby"?: string;
+  "data-testid"?: string;
 }
 
 export function FocusTrap({
@@ -31,6 +33,9 @@ export function FocusTrap({
   ...rest
 }: FocusTrapProps) {
   const containerRef = useRef<HTMLElement | null>(null);
+  // A union of every intrinsic tag collapses its props to `never`; render
+  // through a generic element type instead.
+  const Tag = Component as any;
 
   useFocusTrap(containerRef, {
     isActive,
@@ -41,17 +46,20 @@ export function FocusTrap({
   });
 
   return (
-    <Component
+    <Tag
       ref={containerRef}
       role={role}
       aria-modal={ariaModal}
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
       aria-describedby={ariaDescribedBy}
-      className={className}
+      data-testid={rest["data-testid"] || "focus-trap"}
+      className={cn(className)}
       {...rest}
     >
       {children}
-    </Component>
+    </Tag>
   );
 }
+
+export default FocusTrap;

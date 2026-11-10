@@ -671,4 +671,44 @@ describe("Tier-Based Sliding Window Rate Limiter (#3475)", () => {
       expect(translateBlockedRes.status).toBe(429);
     });
   });
+
+  describe("Defensive hardening against nullish and NaN inputs (#6768)", () => {
+    it("handles nullish and invalid request objects in getClientIp gracefully", () => {
+      expect(getClientIp(null as any)).toBe("127.0.0.1");
+      expect(getClientIp(undefined as any)).toBe("127.0.0.1");
+      expect(getClientIp({} as any)).toBe("127.0.0.1");
+      expect(getClientIp({ ip: "  10.0.0.42  " } as any)).toBe("10.0.0.42");
+    });
+
+    it("handles nullish and NaN limits in getRateLimitHeaders and applyRateLimitHeaders", () => {
+      const defaultHeaders = getRateLimitHeaders(null);
+      expect(defaultHeaders["X-RateLimit-Limit"]).toBe("10");
+      expect(defaultHeaders["X-RateLimit-Remaining"]).toBe("10");
+
+      const nanHeaders = getRateLimitHeaders({
+        allowed: false,
+        limit: NaN,
+        remaining: NaN,
+        resetTime: NaN,
+        retryAfter: NaN,
+      });
+      expect(nanHeaders["X-RateLimit-Limit"]).toBe("10");
+      expect(nanHeaders["X-RateLimit-Remaining"]).toBe("0");
+      expect(nanHeaders["Retry-After"]).toBe("1");
+
+      const nullRes = applyRateLimitHeaders(null as any, null as any);
+      expect(nullRes).toBeNull();
+    });
+
+    it("handles NaN and non-positive limits safely in memTieredRateLimit", () => {
+      const result = memTieredRateLimit(
+        "test-harden",
+        "anonymous",
+        "ip-harden-1",
+        { limit: NaN, windowMs: NaN },
+      );
+      expect(result.allowed).toBe(true);
+      expect(result.limit).toBe(10);
+    });
+  });
 });

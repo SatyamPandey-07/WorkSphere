@@ -135,7 +135,7 @@ export function useBeaconCalibration(onSave: SaveCalibration) {
           );
         }
 
-        deviceRef.current = device;
+        deviceRef.current = device as unknown as BluetoothBeaconDevice;
         const listener = (event: Event) => {
           const index = activeSampleRef.current;
           const rssi = (event as BluetoothAdvertisementEvent).rssi;

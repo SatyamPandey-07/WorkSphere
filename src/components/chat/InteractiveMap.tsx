@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+ feature/protobuf-binary-broker
+import React, { useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -90,27 +91,18 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({ center, markers 
   );
 };
 
-export default function InteractiveMap({ markers }: { markers: any[] }) {
   // Group and spiderfy overlapping markers
-  const spiderfiedMarkers = React.useMemo(() => {
+  const spiderfiedMarkers = useMemo(() => {
     const groups: { [key: string]: any[] } = {};
-    if (markers) {
-      markers.forEach((m) => {
-        if (
-          m &&
-          m.lat != null &&
-          m.lng != null &&
-          !isNaN(Number(m.lat)) &&
-          !isNaN(Number(m.lng))
-        ) {
-          const key = `${Number(m.lat).toFixed(6)},${Number(m.lng).toFixed(6)}`;
-          if (!groups[key]) {
-            groups[key] = [];
-          }
-          groups[key].push(m);
-        }
-      });
-    }
+    safeMarkers.forEach((m) => {
+      const numLat = Number(m.lat);
+      const numLng = Number(m.lng);
+      const key = `${numLat.toFixed(6)},${numLng.toFixed(6)}`;
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+      groups[key].push({ ...m, lat: numLat, lng: numLng });
+    });
 
     const result: any[] = [];
     Object.keys(groups).forEach((key) => {
@@ -143,22 +135,128 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
       }
     });
     return result;
-  }, [markers]);
+  }, [safeMarkers]);
 
-  // Memoized event handlers for all interactive markers to prevent react-leaflet
-  // from removing and re-adding event listeners on every render.
+  // Determine map centroid defensively
+  const computedCenter = useMemo(() => {
+    if (
+      propCenter &&
+      propCenter.lat != null &&
+      propCenter.lng != null &&
+      Number.isFinite(Number(propCenter.lat)) &&
+      Number.isFinite(Number(propCenter.lng))
+    ) {
+      return { lat: Number(propCenter.lat), lng: Number(propCenter.lng) };
+    }
+    if (safeMarkers.length > 0) {
+      const sumLat = safeMarkers.reduce((sum, m) => sum + Number(m.lat), 0);
+      const sumLng = safeMarkers.reduce((sum, m) => sum + Number(m.lng), 0);
+      return {
+        lat: sumLat / safeMarkers.length,
+        lng: sumLng / safeMarkers.length,
+      };
+    }
+    return { lat: 0, lng: 0 };
+  }, [propCenter, safeMarkers]);
+
+ feature/protobuf-binary-broker
+  // Memoized event handlers for interactive markers
   const markerEventHandlers = React.useMemo(
+
+  const [currentCenter, setCurrentCenter] = useState(computedCenter);
+
+  useEffect(() => {
+    setCurrentCenter(computedCenter);
+  }, [computedCenter]);
+
+  // Quick Map Navigation Handlers
+  const handleZoomIn = () => {
+    setCurrentZoom((prev) => {
+      const next = Math.min(prev + 1, 19);
+      try {
+        mapRef.current?.setZoom?.(next);
+        mapRef.current?.zoomIn?.();
+      } catch {
+        // no-op in headless/test
+      }
+      return next;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setCurrentZoom((prev) => {
+      const next = Math.max(prev - 1, 1);
+      try {
+        mapRef.current?.setZoom?.(next);
+        mapRef.current?.zoomOut?.();
+      } catch {
+        // no-op in headless/test
+      }
+      return next;
+    });
+  };
+
+  const handleResetView = () => {
+    setCurrentZoom(zoom);
+    setCurrentCenter(computedCenter);
+    try {
+      mapRef.current?.setView?.([computedCenter.lat, computedCenter.lng], zoom);
+    } catch {
+      // no-op in headless/test
+    }
+  };
+
+  const handleToggleHighContrast = () => {
+    setIsHighContrast((prev) => !prev);
+  };
+
+  // Bind global keydown listeners for quick map navigation actions
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when user is typing in form inputs, textareas, or contenteditables
+      const target = e.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      const isInput =
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "select" ||
+        Boolean(target?.isContentEditable);
+
+      if (isInput) return;
+
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        handleZoomIn();
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        handleZoomOut();
+      } else if (e.key === "h" || e.key === "H") {
+        e.preventDefault();
+        handleToggleHighContrast();
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        handleResetView();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [computedCenter, zoom]);
+
+  // Memoized event handlers for interactive markers
+  const markerEventHandlers = useMemo(
+ main
     () => ({
       keydown: (e: any) => {
-        if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
-          e.originalEvent.preventDefault();
-          e.target.openPopup();
+        if (e.originalEvent?.key === "Enter" || e.originalEvent?.key === " ") {
+          e.originalEvent?.preventDefault?.();
+          e.target?.openPopup?.();
         }
       },
       add: (e: any) => {
-        const el = e.target.getElement();
+        const el = e.target?.getElement?.();
         if (el) {
-          const name = e.target.options.title || "Map marker";
+          const name = e.target?.options?.title || "Map marker";
           el.setAttribute("aria-label", name);
           el.setAttribute("role", "button");
           el.setAttribute("tabindex", "0");
@@ -168,33 +266,201 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
     [],
   );
 
-  if (!markers || markers.length === 0) return <div>No markers provided</div>;
+  // Dynamic Tile Layer URL depending on High Contrast mode
+ feature/protobuf-binary-broker
+  const tileLayerUrl = isHighContrast
+    ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
 
-  const center = {
-    lat: markers.reduce((sum, m) => sum + m.lat, 0) / markers.length,
-    lng: markers.reduce((sum, m) => sum + m.lng, 0) / markers.length,
-  };
+  const cartoKey =
+    typeof process !== "undefined"
+      ? process.env?.NEXT_PUBLIC_CARTO_KEY
+      : undefined;
+
+  const tileLayerUrl = cartoKey
+    ? isHighContrast
+      ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+      : `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+    : isHighContrast
+      ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+      : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+ main
+
+  // Fallback empty view
+  if (safeMarkers.length === 0 && !propCenter) {
+    return (
+      <div
+        data-testid="interactive-map-empty"
+        className="w-full p-6 text-center text-xs text-zinc-500 border border-zinc-200 dark:border-zinc-800 rounded-2xl"
+      >
+        No markers provided
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full h-64 mt-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden relative z-0">
-      <div className="absolute top-2 left-2 z-[400] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
-        <MapIcon className="w-3 h-3 text-blue-500" />
-        Interactive Map View
+    <div
+      data-testid="interactive-map"
+      className={`w-full h-80 mt-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden relative z-0 ${className}`}
+    >
+      {/* Map Overlay Controls - Non-overlapping Responsive Stack */}
+      <div className="absolute top-2 left-2 z-[400] flex flex-col sm:flex-row items-start sm:items-center gap-2 max-w-[calc(100%-1rem)]">
+        {/* Map Header Badge */}
+        <div
+          data-testid="map-header"
+          className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-sm border border-zinc-200 dark:border-zinc-800 flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300 shrink-0"
+        >
+          <MapIcon className="w-3.5 h-3.5 text-blue-500" />
+          Interactive Map
+        </div>
+
+ feature/protobuf-binary-broker
+        {/* High Contrast Toggle Button */}
+        <button
+          type="button"
+          onClick={() => setIsHighContrast((prev) => !prev)}
+          aria-label="Toggle high contrast map display mode"
+          aria-pressed={isHighContrast}
+
+        {/* High Contrast Toggle Button with Monospace Keyboard Badge */}
+        <button
+          type="button"
+          onClick={handleToggleHighContrast}
+          aria-label="Toggle high contrast map display mode"
+          aria-pressed={isHighContrast}
+          data-testid="map-high-contrast-btn"
+ main
+          className="shrink-0 px-2.5 py-1 text-xs font-semibold rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-200 shadow-sm backdrop-blur-md hover:bg-zinc-100 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 transition-all flex items-center gap-1.5 cursor-pointer"
+        >
+          {isHighContrast ? (
+            <>
+              <Sun className="w-3.5 h-3.5 text-amber-400" />
+              Standard Contrast
+            </>
+          ) : (
+            <>
+              <Moon className="w-3.5 h-3.5 text-indigo-400" />
+              High Contrast
+            </>
+          )}
+ feature/protobuf-binary-broker
+
+          {!isTouchOnly && (
+            <kbd
+              data-testid="kbd-high-contrast"
+              className="px-1 py-0.5 text-[10px] bg-zinc-800 border border-zinc-700 rounded font-mono text-zinc-400"
+            >
+              H
+            </kbd>
+          )}
+ main
+        </button>
+
+        {/* Time Window Slider Container */}
+        <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 px-3 py-1 text-xs text-zinc-700 dark:text-zinc-300 shadow-sm backdrop-blur-md max-w-full overflow-x-auto">
+          <span className="shrink-0 font-medium text-zinc-500 dark:text-zinc-400">
+            Time:
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={24}
+            value={timeWindowHour}
+            onChange={(e) => setTimeWindowHour(Number(e.target.value))}
+            aria-label="Time window hour slider"
+            className="h-1.5 w-20 sm:w-28 accent-emerald-500 bg-zinc-200 dark:bg-zinc-700 rounded-lg cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          />
+          <span className="shrink-0 font-mono text-emerald-600 dark:text-emerald-400 font-semibold text-[11px] min-w-[45px]">
+            {`${String(timeWindowHour).padStart(2, "0")}:00`}
+          </span>
+        </div>
+ feature/protobuf-binary-broker
+
       </div>
+
+      {/* Quick Map Action Navigation Controls with Keyboard Badges */}
+      <div
+        data-testid="map-navigation-controls"
+        className="absolute bottom-3 right-3 z-[400] flex items-center gap-1.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-lg"
+      >
+        {/* Zoom In Button */}
+        <button
+          type="button"
+          onClick={handleZoomIn}
+          data-testid="map-zoom-in-btn"
+          aria-label="Zoom in"
+          title="Zoom In (+)"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5 text-blue-500" />
+          {!isTouchOnly && (
+            <kbd
+              data-testid="kbd-zoom-in"
+              className="px-1 py-0.5 text-[10px] bg-zinc-800 border border-zinc-700 rounded font-mono text-zinc-400"
+            >
+              +
+            </kbd>
+          )}
+        </button>
+
+        {/* Zoom Out Button */}
+        <button
+          type="button"
+          onClick={handleZoomOut}
+          data-testid="map-zoom-out-btn"
+          aria-label="Zoom out"
+          title="Zoom Out (-)"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+        >
+          <Minus className="w-3.5 h-3.5 text-blue-500" />
+          {!isTouchOnly && (
+            <kbd
+              data-testid="kbd-zoom-out"
+              className="px-1 py-0.5 text-[10px] bg-zinc-800 border border-zinc-700 rounded font-mono text-zinc-400"
+            >
+              -
+            </kbd>
+          )}
+        </button>
+
+        {/* Reset View Button */}
+        <button
+          type="button"
+          onClick={handleResetView}
+          data-testid="map-reset-view-btn"
+          aria-label="Reset map view"
+          title="Reset View (R)"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-emerald-500" />
+          {!isTouchOnly && (
+            <kbd
+              data-testid="kbd-reset-view"
+              className="px-1 py-0.5 text-[10px] bg-zinc-800 border border-zinc-700 rounded font-mono text-zinc-400"
+            >
+              R
+            </kbd>
+          )}
+        </button>
+ main
+      </div>
+
       <MapContainer
-        center={center}
-        zoom={13}
+        ref={mapRef}
+        center={currentCenter}
+        zoom={currentZoom}
         style={{ height: "100%", width: "100%", zIndex: 0 }}
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          url={tileLayerUrl}
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
         {spiderfiedMarkers.map((marker, idx) => {
+          const venueName = marker.name || marker.title || "Location";
           const ratingVal = marker.score ?? marker.rating;
-          const parts = [`Venue: ${marker.name}`];
+          const parts = [`Venue: ${venueName}`];
           if (marker.category) {
-            parts.push(`Category: ${marker.category.replace("_", " ")}`);
+            parts.push(`Category: ${String(marker.category).replace("_", " ")}`);
           }
           if (ratingVal != null && !isNaN(Number(ratingVal))) {
             parts.push(`Rating: ${ratingVal}`);
@@ -206,12 +472,12 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
               key={idx}
               position={[marker.renderedLat, marker.renderedLng]}
               title={markerAriaLabel}
-              alt={marker.name}
+              alt={venueName}
               keyboard={true}
               eventHandlers={{
                 ...markerEventHandlers,
                 add: (e: any) => {
-                  const el = e.target.getElement();
+                  const el = e.target?.getElement?.();
                   if (el) {
                     el.setAttribute("aria-label", markerAriaLabel);
                     el.setAttribute("role", "button");
@@ -226,10 +492,14 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
                 autoPanPaddingTopLeft={[20, 90]}
                 autoPanPaddingBottomRight={[20, 20]}
               >
-                <div className="font-bold text-sm">{marker.name}</div>
-                <div className="text-xs text-gray-500 capitalize">
-                  {marker.category?.replace("_", " ")}
+                <div data-testid="marker-popup-name" className="font-bold text-sm">
+                  {venueName}
                 </div>
+                {marker.category && (
+                  <div className="text-xs text-gray-500 capitalize">
+                    {String(marker.category).replace("_", " ")}
+                  </div>
+                )}
               </Popup>
             </Marker>
           );
@@ -238,3 +508,5 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
     </div>
   );
 }
+
+export default InteractiveMap;

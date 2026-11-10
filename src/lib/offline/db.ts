@@ -196,6 +196,13 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
         if (!database.objectStoreNames.contains("favorite_tags")) {
           database.createObjectStore("favorite_tags", { keyPath: "id" });
         }
+
+        // CRDT state vector records and tombstones store (#6488)
+        if (!database.objectStoreNames.contains("crdt_tombstones")) {
+          const tombstoneStore = database.createObjectStore("crdt_tombstones", { keyPath: "id" });
+          tombstoneStore.createIndex("deletedAt", "deletedAt", { unique: false });
+          tombstoneStore.createIndex("isMerged", "isMerged", { unique: false });
+        }
       };
     } catch (err: any) {
       if (settled) return;

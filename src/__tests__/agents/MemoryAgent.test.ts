@@ -8,8 +8,25 @@ import {
   MEMORY_COMPACTION_THRESHOLD,
   MEMORY_SIMILARITY_THRESHOLD,
   type MemoryStatement,
+  calculateMemoryDecay,
+  computeMemoryItemScore,
+  pruneSessionMemoriesLRU,
+  addSessionMemory,
+  getSessionMemories,
+  touchSessionMemory,
+  clearSessionMemories,
+  REDIS_MEMORY_LRU_CAP,
+  MEMORY_DECAY_HALF_LIFE_DAYS,
+  MEMORY_DECAY_HALF_LIFE_HOURS,
+  DEFAULT_DECAY_LAMBDA,
+  HIGH_SALIENCE_THRESHOLD,
+  type SessionMemoryItem,
 } from "@/lib/agents/MemoryAgent";
 import { prisma } from "@/lib/prisma";
+
+jest.mock("@/lib/redis", () => ({
+  getRedis: jest.fn(() => null),
+}));
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
@@ -295,4 +312,248 @@ describe("MemoryAgent - Episodic Memory Compaction (#3449)", () => {
       expect(result).toBe("I prefer quiet libraries with outlets.");
     });
   });
+
+  describe("Redis Session Memory Store - Decay & LRU Pruning (#6468)", () => {
+    const mockUserId = "test-session-user";
+
+    beforeEach(async () => {
+      await clearSessionMemories(mockUserId);
+    });
+
+    describe("Exponential Time-Decay Scoring", () => {
+      it("calculates exponential decay using formula score = baseScore * Math.exp(-lambda * deltaHours)", () => {
+        const baseScore = 1.0;
+        const deltaHours = 24;
+        const lambda = 0.01;
+        const expectedScore = baseScore * Math.exp(-lambda * deltaHours);
+
+        const calculated = calculateMemoryDecay(baseScore, deltaHours, lambda);
+        expect(calculated).toBeCloseTo(expectedScore, 5);
+      });
+
+      it("preserves exact base score when deltaHours is 0 or negative", () => {
+        expect(calculateMemoryDecay(0.85, 0)).toBe(0.85);
+        expect(calculateMemoryDecay(0.85, -5)).toBe(0.85);
+      });
+
+      it("decays memories older than 7 days (168 hours) to half relevance with default lambda", () => {
+        const baseScore = 1.0;
+        const sevenDaysHours = MEMORY_DECAY_HALF_LIFE_HOURS; // 168 hours
+
+        const scoreAt7Days = calculateMemoryDecay(baseScore, sevenDaysHours);
+        // Half-life: at 7 days, score should be ~0.50
+        expect(scoreAt7Days).toBeCloseTo(0.5, 3);
+
+        const fourteenDaysHours = sevenDaysHours * 2; // 336 hours
+        const scoreAt14Days = calculateMemoryDecay(baseScore, fourteenDaysHours);
+        // After two half-lives (14 days), score should be ~0.25
+        expect(scoreAt14Days).toBeCloseTo(0.25, 3);
+      });
+
+      it("preserves pinned preferences without decaying regardless of age", () => {
+        const now = Date.now();
+        const tenDaysAgo = now - 10 * 24 * 60 * 60 * 1000;
+
+        const pinnedItem: SessionMemoryItem = {
+          id: "pinned-1",
+          userId: mockUserId,
+          content: "Always need standing desks",
+          baseScore: 1.0,
+          timestamp: tenDaysAgo,
+          lastAccessedAt: tenDaysAgo,
+          isPinned: true,
+        };
+
+        const unpinnedItem: SessionMemoryItem = {
+          id: "unpinned-1",
+          userId: mockUserId,
+          content: "Asked for today's weather",
+          baseScore: 1.0,
+          timestamp: tenDaysAgo,
+          lastAccessedAt: tenDaysAgo,
+          isPinned: false,
+        };
+
+        const pinnedScore = computeMemoryItemScore(pinnedItem, now);
+        const unpinnedScore = computeMemoryItemScore(unpinnedItem, now);
+
+        expect(pinnedScore).toBe(1.0);
+        expect(unpinnedScore).toBeLessThan(0.4);
+      });
+    });
+
+    describe("LRU Eviction & Pruning Cap (Max 50 Memories)", () => {
+      it("does not evict items when total memories count is <= 50", () => {
+        const items: SessionMemoryItem[] = Array.from({ length: 30 }, (_, i) => ({
+          id: `item-${i}`,
+          userId: mockUserId,
+          content: `Dialogue turn ${i}`,
+          baseScore: 0.8,
+          timestamp: Date.now() - i * 1000,
+          lastAccessedAt: Date.now() - i * 1000,
+        }));
+
+        const pruned = pruneSessionMemoriesLRU(items, REDIS_MEMORY_LRU_CAP);
+        expect(pruned).toHaveLength(30);
+      });
+
+      it("enforces strict cap of 50 active items and evicts stale, low-relevance turns first", () => {
+        const now = Date.now();
+        // Generate 60 memories: 10 stale low-relevance from 10 days ago, 50 recent items
+        const items: SessionMemoryItem[] = [];
+
+        // 10 stale items (older than 7 days, low salience)
+        for (let i = 0; i < 10; i++) {
+          items.push({
+            id: `stale-${i}`,
+            userId: mockUserId,
+            content: `Stale message ${i}`,
+            baseScore: 0.5,
+            timestamp: now - (8 + i) * 24 * 60 * 60 * 1000,
+            lastAccessedAt: now - (8 + i) * 24 * 60 * 60 * 1000,
+            isPinned: false,
+            salience: 0.2,
+          });
+        }
+
+        // 50 fresh items
+        for (let i = 0; i < 50; i++) {
+          items.push({
+            id: `fresh-${i}`,
+            userId: mockUserId,
+            content: `Active concierge prompt ${i}`,
+            baseScore: 0.9,
+            timestamp: now - i * 60 * 1000,
+            lastAccessedAt: now - i * 60 * 1000,
+            isPinned: false,
+            salience: 0.6,
+          });
+        }
+
+        expect(items).toHaveLength(60);
+
+        const pruned = pruneSessionMemoriesLRU(items, REDIS_MEMORY_LRU_CAP, now);
+        expect(pruned).toHaveLength(50);
+
+        // Stale items should have been evicted first
+        const prunedIds = new Set(pruned.map((p) => p.id));
+        for (let i = 0; i < 10; i++) {
+          expect(prunedIds.has(`stale-${i}`)).toBe(false);
+        }
+      });
+
+      it("preserves pinned preferences and high-salience workspace constraints during LRU eviction", () => {
+        const now = Date.now();
+        const items: SessionMemoryItem[] = [];
+
+        // 1 Pinned preference (old timestamp)
+        items.push({
+          id: "pinned-preference",
+          userId: mockUserId,
+          content: "User prefers ergonomic seating and dual monitors",
+          baseScore: 1.0,
+          timestamp: now - 15 * 24 * 60 * 60 * 1000,
+          lastAccessedAt: now - 15 * 24 * 60 * 60 * 1000,
+          isPinned: true,
+          salience: 0.5,
+        });
+
+        // 1 High-salience workspace constraint (salience >= 0.8)
+        items.push({
+          id: "high-salience-constraint",
+          userId: mockUserId,
+          content: "Requires HIPAA-compliant private booth for calls",
+          baseScore: 0.8,
+          timestamp: now - 12 * 24 * 60 * 60 * 1000,
+          lastAccessedAt: now - 12 * 24 * 60 * 60 * 1000,
+          isPinned: false,
+          salience: 0.95,
+        });
+
+        // 55 standard unpinned dialogue turns
+        for (let i = 0; i < 55; i++) {
+          items.push({
+            id: `turn-${i}`,
+            userId: mockUserId,
+            content: `Turn ${i}`,
+            baseScore: 0.7,
+            timestamp: now - (i + 1) * 60 * 1000,
+            lastAccessedAt: now - (i + 1) * 60 * 1000,
+            isPinned: false,
+            salience: 0.3,
+          });
+        }
+
+        expect(items).toHaveLength(57);
+
+        const pruned = pruneSessionMemoriesLRU(items, REDIS_MEMORY_LRU_CAP, now);
+        expect(pruned).toHaveLength(50);
+
+        const prunedIds = new Set(pruned.map((p) => p.id));
+        // Both the pinned item and high salience item MUST be preserved!
+        expect(prunedIds.has("pinned-preference")).toBe(true);
+        expect(prunedIds.has("high-salience-constraint")).toBe(true);
+      });
+    });
+
+    describe("Redis Session Store Integration", () => {
+      it("adds dialogue turns, retrieves active context, and evicts at 50 cap", async () => {
+        // Mock Redis client with in-memory map
+        const redisStore = new Map<string, string>();
+        const mockRedis = {
+          get: jest.fn(async (key: string) => redisStore.get(key) || null),
+          set: jest.fn(async (key: string, val: string) => {
+            redisStore.set(key, val);
+            return "OK";
+          }),
+          del: jest.fn(async (key: string) => {
+            redisStore.delete(key);
+            return 1;
+          }),
+        };
+
+        // Add 52 memories sequentially
+        for (let i = 1; i <= 52; i++) {
+          await addSessionMemory(
+            mockUserId,
+            {
+              id: `dialogue-${i}`,
+              content: `Turn content ${i}`,
+              baseScore: 1.0,
+              timestamp: Date.now() + i * 100,
+              lastAccessedAt: Date.now() + i * 100,
+            },
+            { redisClient: mockRedis, maxCap: 50 },
+          );
+        }
+
+        const activeMemories = await getSessionMemories(mockUserId, {
+          redisClient: mockRedis,
+        });
+
+        expect(activeMemories).toHaveLength(50);
+        expect(mockRedis.set).toHaveBeenCalled();
+        expect(mockRedis.get).toHaveBeenCalled();
+      });
+
+      it("updates item lastAccessedAt on touchSessionMemory", async () => {
+        await addSessionMemory(mockUserId, {
+          id: "item-to-touch",
+          content: "Needs quiet focus pod",
+          timestamp: 1000,
+          lastAccessedAt: 1000,
+        });
+
+        const updated = await touchSessionMemory(mockUserId, "item-to-touch", {
+          accessTime: 99999,
+        });
+        expect(updated).toBe(true);
+
+        const memories = await getSessionMemories(mockUserId);
+        const item = memories.find((m) => m.id === "item-to-touch");
+        expect(item?.lastAccessedAt).toBe(99999);
+      });
+    });
+  });
 });
+

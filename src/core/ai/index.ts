@@ -5,3 +5,5 @@
 
 export * from './ResumeParser';
 export * from './SkillEmbedder';
+export * from './BayesianSeatRecommender';
+

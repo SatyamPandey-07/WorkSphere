@@ -6,6 +6,9 @@
 
 import { sanitizeCapacityInput } from "./filters";
 
+export const MAX_PRESET_NAME_LENGTH = 50;
+export const MAX_CUSTOM_PRESETS = 20;
+
 export interface VenueFilterValues {
   searchText?: string;
   amenities: string[];
@@ -73,6 +76,49 @@ export const DEFAULT_FILTER_PRESETS: FilterPreset[] = [
   },
 ];
 
+const DEFAULT_PRESET_IDS = new Set(DEFAULT_FILTER_PRESETS.map((p) => p.id));
+
+function sanitizePresetFilters(raw?: Partial<VenueFilterValues> | null): VenueFilterValues {
+  const safe = raw || {};
+  const amenities = Array.isArray(safe.amenities)
+    ? safe.amenities.filter((a): a is string => typeof a === "string" && a.trim().length > 0)
+    : [];
+
+  const maxDistance =
+    typeof safe.maxDistance === "number" &&
+    Number.isFinite(safe.maxDistance) &&
+    safe.maxDistance >= 0
+      ? safe.maxDistance
+      : 0;
+
+  const minCapacity =
+    safe.minCapacity !== undefined && Number.isFinite(safe.minCapacity)
+      ? sanitizeCapacityInput(safe.minCapacity)
+      : undefined;
+
+  const semanticWeight =
+    typeof safe.semanticWeight === "number" && Number.isFinite(safe.semanticWeight)
+      ? Math.max(0, Math.min(1, safe.semanticWeight))
+      : undefined;
+
+  const fullTextWeight =
+    typeof safe.fullTextWeight === "number" && Number.isFinite(safe.fullTextWeight)
+      ? Math.max(0, Math.min(1, safe.fullTextWeight))
+      : undefined;
+
+  return {
+    searchText: typeof safe.searchText === "string" ? safe.searchText.trim() : "",
+    amenities,
+    noiseLevel: typeof safe.noiseLevel === "string" && safe.noiseLevel.trim() ? safe.noiseLevel.trim() : "all",
+    priceRange: typeof safe.priceRange === "string" && safe.priceRange.trim() ? safe.priceRange.trim() : "all",
+    category: typeof safe.category === "string" && safe.category.trim() ? safe.category.trim() : "all",
+    maxDistance,
+    minCapacity,
+    semanticWeight,
+    fullTextWeight,
+  };
+}
+
 /**
  * Loads all available filter presets (built-in defaults + user-saved presets from localStorage).
  */
@@ -86,15 +132,34 @@ export function loadFilterPresets(): FilterPreset[] {
     if (!raw) {
       return [...DEFAULT_FILTER_PRESETS];
     }
-    const customPresets: FilterPreset[] = JSON.parse(raw);
+    const customPresets = JSON.parse(raw);
     if (!Array.isArray(customPresets)) {
       return [...DEFAULT_FILTER_PRESETS];
     }
 
-    // Merge default presets with custom presets (filtering out corrupt entries)
-    const validCustom = customPresets.filter(
-      (p) => p && typeof p.id === "string" && typeof p.name === "string" && p.filters,
-    );
+    // Merge default presets with validated custom presets (filtering out corrupt entries and ID collisions)
+    const validCustom: FilterPreset[] = [];
+    for (const p of customPresets) {
+      if (
+        p &&
+        typeof p === "object" &&
+        typeof p.id === "string" &&
+        p.id.trim() &&
+        !DEFAULT_PRESET_IDS.has(p.id) &&
+        typeof p.name === "string" &&
+        p.name.trim() &&
+        p.filters &&
+        typeof p.filters === "object"
+      ) {
+        validCustom.push({
+          id: p.id.trim(),
+          name: p.name.trim().slice(0, MAX_PRESET_NAME_LENGTH),
+          filters: sanitizePresetFilters(p.filters),
+          isDefault: false,
+          createdAt: typeof p.createdAt === "number" && Number.isFinite(p.createdAt) ? p.createdAt : Date.now(),
+        });
+      }
+    }
 
     return [...DEFAULT_FILTER_PRESETS, ...validCustom];
   } catch (error) {
@@ -106,29 +171,22 @@ export function loadFilterPresets(): FilterPreset[] {
 /**
  * Saves a new custom filter preset to localStorage and returns the merged preset list.
  */
-export function saveFilterPreset(name: string, filters: VenueFilterValues): FilterPreset[] {
+export function saveFilterPreset(name: string, filters?: VenueFilterValues | null): FilterPreset[] {
   if (typeof window === "undefined" || !window.localStorage) {
     return [...DEFAULT_FILTER_PRESETS];
   }
 
-  const trimmedName = name.trim() || "My Preset";
+  const trimmedName =
+    typeof name === "string"
+      ? name.trim().slice(0, MAX_PRESET_NAME_LENGTH) || "My Preset"
+      : "My Preset";
+
+  const sanitizedFilters = sanitizePresetFilters(filters);
+
   const newPreset: FilterPreset = {
     id: `preset-custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name: trimmedName,
-    filters: {
-      searchText: filters.searchText?.trim() || "",
-      amenities: [...(filters.amenities || [])],
-      noiseLevel: filters.noiseLevel || "all",
-      priceRange: filters.priceRange || "all",
-      category: filters.category || "all",
-      maxDistance: filters.maxDistance ?? 0,
-      minCapacity:
-        filters.minCapacity !== undefined
-          ? sanitizeCapacityInput(filters.minCapacity)
-          : undefined,
-      semanticWeight: filters.semanticWeight,
-      fullTextWeight: filters.fullTextWeight,
-    },
+    filters: sanitizedFilters,
     isDefault: false,
     createdAt: Date.now(),
   };
@@ -139,12 +197,35 @@ export function saveFilterPreset(name: string, filters: VenueFilterValues): Filt
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) existing = parsed;
+        if (Array.isArray(parsed)) {
+          existing = parsed.filter(
+            (p) =>
+              p &&
+              typeof p === "object" &&
+              typeof p.id === "string" &&
+              !DEFAULT_PRESET_IDS.has(p.id),
+          );
+        }
       } catch {
         existing = [];
       }
     }
-    const updatedCustom = [...existing, newPreset];
+
+    // Check if preset with identical case-insensitive name exists; update in place if so
+    const existingIndex = existing.findIndex(
+      (p) => p.name.toLowerCase() === trimmedName.toLowerCase(),
+    );
+    let updatedCustom: FilterPreset[];
+    if (existingIndex !== -1) {
+      updatedCustom = [...existing];
+      updatedCustom[existingIndex] = {
+        ...newPreset,
+        id: existing[existingIndex].id,
+      };
+    } else {
+      updatedCustom = [...existing, newPreset].slice(-MAX_CUSTOM_PRESETS);
+    }
+
     window.localStorage.setItem(FILTER_PRESETS_STORAGE_KEY, JSON.stringify(updatedCustom));
     return [...DEFAULT_FILTER_PRESETS, ...updatedCustom];
   } catch (error) {
@@ -159,6 +240,10 @@ export function saveFilterPreset(name: string, filters: VenueFilterValues): Filt
 export function deleteFilterPreset(presetId: string): FilterPreset[] {
   if (typeof window === "undefined" || !window.localStorage) {
     return [...DEFAULT_FILTER_PRESETS];
+  }
+
+  if (!presetId || typeof presetId !== "string" || DEFAULT_PRESET_IDS.has(presetId)) {
+    return loadFilterPresets();
   }
 
   try {

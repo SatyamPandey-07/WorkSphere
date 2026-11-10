@@ -65,12 +65,12 @@ function ResetMapViewControl({ center }: { center: [number, number] }) {
   const map = useMap();
 
   return (
-    <div className="absolute bottom-3 right-3 z-[1000]">
+    <div className="absolute bottom-8 right-4 z-[1000] sm:bottom-4">
       <button
         type="button"
         aria-label="Reset Map View"
         onClick={() => map.setView(center, 13)}
-        className="rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-md transition-colors hover:bg-zinc-800 hover:text-white"
+        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white"
       >
         Reset Map View
       </button>
@@ -747,9 +747,7 @@ const Map = ({
     string | null
   >(null);
   const selectedMarkerId =
-    selectedVenueId !== undefined
-      ? selectedVenueId
-      : internalSelectedMarkerId;
+    selectedVenueId !== undefined ? selectedVenueId : internalSelectedMarkerId;
 
   const handleSelectMarker = useCallback(
     (id: string | null) => {

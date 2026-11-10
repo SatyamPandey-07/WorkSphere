@@ -276,6 +276,33 @@ export function useAvionicsAudio({
     };
   }, [selectedSinkId]);
 
+  // Handle AudioContext suspend and resume on browser tab visibility change
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible") {
+        const audioCtx = getSharedAudioContext(selectedSinkId);
+        if (audioCtx && audioCtx.state === "suspended") {
+          try {
+            await audioCtx.resume();
+          } catch {
+            // Ignore resume rejection if blocked by browser policy
+          }
+        }
+        if (audioCtx && audioCtx.state === "running") {
+          setIsAudioUnlocked(true);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [selectedSinkId]);
+
   // Procedural Master Caution synthesis
   const playMasterCaution = useCallback(
     (options?: PlayCautionOptions): boolean => {

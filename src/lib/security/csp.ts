@@ -79,3 +79,16 @@ export function generateCsp(nonce: string): string {
     `upgrade-insecure-requests`,
   ].join("; ");
 }
+
+// src/lib/security/csp.ts
+
+export const getCSPHeader = () => {
+  const directives = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org https://maps.wikimedia.org",
+    "connect-src 'self' https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org",
+  ];
+  return directives.join('; ');
+};

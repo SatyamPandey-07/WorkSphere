@@ -1,5 +1,11 @@
-export { BookmarkVenueButton } from "./BookmarkVenueButton";
-export type { BookmarkVenueButtonProps } from "./BookmarkVenueButton";
+export {
+  BookmarkVenueButton,
+  VenueBookmarkButton,
+} from "./BookmarkVenueButton";
+export type {
+  BookmarkVenueButtonProps,
+  VenueBookmarkButtonProps,
+} from "./BookmarkVenueButton";
 export { RecentlyViewedVenues } from "./RecentlyViewedVenues";
 export { RecentlyViewedTracker } from "./RecentlyViewedTracker";
 export { SearchBar } from "./SearchBar";
@@ -41,10 +47,7 @@ export type {
   HourlyNoiseDataPoint,
   DayProfileType,
 } from "./HourlyNoiseHeatGraph";
-export {
-  VenueDetailModal,
-  AmbientNoiseSparkline,
-} from "./VenueDetailModal";
+export { VenueDetailModal, AmbientNoiseSparkline } from "./VenueDetailModal";
 export type {
   VenueDetailModalProps,
   AmbientNoiseSparklineProps,

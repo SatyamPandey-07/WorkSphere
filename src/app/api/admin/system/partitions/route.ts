@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
-const prisma = new PrismaClient();
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
@@ -17,7 +17,9 @@ export async function POST(req: Request) {
     `);
 
     // 2. Identify Partitions Older Than 90 Days
-    const expiredPartitions = await prisma.$queryRaw<Array<{ relname: string }>>`
+    const expiredPartitions = await prisma.$queryRaw<
+      Array<{ relname: string }>
+    >`
       SELECT c.relname
       FROM pg_class c
       JOIN pg_inherits i ON c.oid = i.inhrelid
@@ -31,21 +33,27 @@ export async function POST(req: Request) {
 
     // 3. Detach & Drop Partitions Older Than 90 Days (Cold Storage Archival)
     for (const partition of expiredPartitions) {
-      const match = partition.relname.match(/^telemetry_reading_y(\d{4})_w(\d{2})$/);
+      const match = partition.relname.match(
+        /^telemetry_reading_y(\d{4})_w(\d{2})$/,
+      );
       if (match) {
         const [, year, week] = match;
         // Check if partition end boundary is > 90 days ago
-        const partitionEndDateQuery = await prisma.$queryRaw<Array<{ is_expired: boolean }>>`
+        const partitionEndDateQuery = await prisma.$queryRaw<
+          Array<{ is_expired: boolean }>
+        >`
           SELECT (to_date(${year} || ${week}, 'IYYYIW') + INTERVAL '1 week') < (NOW() - INTERVAL '90 days') AS is_expired;
         `;
 
         if (partitionEndDateQuery[0]?.is_expired) {
           // Detach concurrently to avoid locks
           await prisma.$executeRawUnsafe(
-            `ALTER TABLE "TelemetryReading" DETACH PARTITION "${partition.relname}" CONCURRENTLY;`
+            `ALTER TABLE "TelemetryReading" DETACH PARTITION "${partition.relname}" CONCURRENTLY;`,
           );
           // Drop partition table after detachment
-          await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${partition.relname}";`);
+          await prisma.$executeRawUnsafe(
+            `DROP TABLE IF EXISTS "${partition.relname}";`,
+          );
           archivedPartitions.push(partition.relname);
         }
       }
@@ -54,7 +62,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       archivedPartitions,
-      message: "Weekly telemetry partitions created & retention policies executed.",
+      message:
+        "Weekly telemetry partitions created & retention policies executed.",
     });
   } catch (error: any) {
     console.error("Partition Maintenance Error:", error);

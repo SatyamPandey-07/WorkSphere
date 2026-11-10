@@ -50,8 +50,9 @@ class RedisKeyspaceSubscriber {
     }
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const Redis = require("ioredis");
+      const pkg = "ioredis";
+
+      const Redis = eval("require")(pkg);
       const sub = new Redis(redisUrl, {
         lazyConnect: true,
         maxRetriesPerRequest: 3,
@@ -59,7 +60,10 @@ class RedisKeyspaceSubscriber {
       });
 
       await sub.connect().catch((err: any) => {
-        console.warn("[KeyspaceSubscriber] Redis connection failed, using timer wheel fallback:", err.message);
+        console.warn(
+          "[KeyspaceSubscriber] Redis connection failed, using timer wheel fallback:",
+          err.message,
+        );
       });
 
       // Try enabling keyspace notifications if permissions allow
@@ -72,14 +76,20 @@ class RedisKeyspaceSubscriber {
       // Pattern-subscribe to expired and deleted key events across all databases
       await sub.psubscribe("__keyevent@*__:expired", "__keyevent@*__:del");
 
-      sub.on("pmessage", (_pattern: string, _channel: string, messageKey: string) => {
-        this.handleKeyEvent(messageKey);
-      });
+      sub.on(
+        "pmessage",
+        (_pattern: string, _channel: string, messageKey: string) => {
+          this.handleKeyEvent(messageKey);
+        },
+      );
 
       this.redisSubscriberClient = sub;
       this.isSubscribed = true;
     } catch (err: any) {
-      console.warn("[KeyspaceSubscriber] Initialization fallback to in-memory timer wheel:", err.message);
+      console.warn(
+        "[KeyspaceSubscriber] Initialization fallback to in-memory timer wheel:",
+        err.message,
+      );
     }
   }
 
@@ -94,7 +104,9 @@ class RedisKeyspaceSubscriber {
     if (!key || typeof key !== "string") return;
 
     // Pattern: prefix:venueId:deskId
-    const match = key.match(/^(?:desk:reservation|seat:hold|desk:hold):([^:]+):([^:]+)$/);
+    const match = key.match(
+      /^(?:desk:reservation|seat:hold|desk:hold):([^:]+):([^:]+)$/,
+    );
     if (!match) return;
 
     const [, venueId, deskId] = match;
@@ -141,7 +153,10 @@ class RedisKeyspaceSubscriber {
       try {
         listener(venueId, deskId);
       } catch (err) {
-        console.error("[KeyspaceSubscriber] Listener callback threw an error:", err);
+        console.error(
+          "[KeyspaceSubscriber] Listener callback threw an error:",
+          err,
+        );
       }
     }
   }
@@ -151,7 +166,11 @@ class RedisKeyspaceSubscriber {
    * Ensures that when Redis keyspace notifications are absent or in REST mode,
    * expiration events fire with exact millisecond precision.
    */
-  public registerFallbackTimer(venueId: string, deskId: string, expiresAt: number): void {
+  public registerFallbackTimer(
+    venueId: string,
+    deskId: string,
+    expiresAt: number,
+  ): void {
     const timerKey = `${venueId}:${deskId}`;
     const existing = this.activeTimers.get(timerKey);
     if (existing) {

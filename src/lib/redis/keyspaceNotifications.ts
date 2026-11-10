@@ -9,7 +9,14 @@
  */
 
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
-import Redis from "ioredis";
+
+let RedisClass: any = null;
+try {
+  const pkg = "ioredis";
+  RedisClass = eval("require")(pkg);
+} catch {
+  // ioredis is optional in environments using REST or simulated timers
+}
 
 export interface ParsedReservationKey {
   valid: boolean;
@@ -29,7 +36,9 @@ export interface DeskReservationExpiredEvent {
   source: "redis_keyspace" | "in_memory_simulation";
 }
 
-type ExpiryListener = (event: DeskReservationExpiredEvent) => void | Promise<void>;
+type ExpiryListener = (
+  event: DeskReservationExpiredEvent,
+) => void | Promise<void>;
 
 /**
  * Parses Redis key patterns used for seat and desk reservation holds.
@@ -40,13 +49,23 @@ type ExpiryListener = (event: DeskReservationExpiredEvent) => void | Promise<voi
  */
 export function parseReservationKey(rawKey: string): ParsedReservationKey {
   if (typeof rawKey !== "string") {
-    return { valid: false, prefix: "", venueId: "", deskId: "", seatId: "", rawKey: "" };
+    return {
+      valid: false,
+      prefix: "",
+      venueId: "",
+      deskId: "",
+      seatId: "",
+      rawKey: "",
+    };
   }
 
   // Handle keys that might include Redis keyspace prefixes like `__keyspace@0__:seat:hold:...`
   let cleanKey = rawKey;
   const keyspacePrefixIdx = cleanKey.indexOf(":");
-  if (cleanKey.startsWith("__keyspace@") || cleanKey.startsWith("__keyevent@")) {
+  if (
+    cleanKey.startsWith("__keyspace@") ||
+    cleanKey.startsWith("__keyevent@")
+  ) {
     cleanKey = cleanKey.slice(keyspacePrefixIdx + 1);
   }
 
@@ -64,7 +83,11 @@ export function parseReservationKey(rawKey: string): ParsedReservationKey {
     };
   }
 
-  if (parts.length >= 4 && parts[0] === "desk" && (parts[1] === "hold" || parts[1] === "reservation")) {
+  if (
+    parts.length >= 4 &&
+    parts[0] === "desk" &&
+    (parts[1] === "hold" || parts[1] === "reservation")
+  ) {
     const venueId = parts[2];
     const deskId = parts.slice(3).join(":");
     return {
@@ -77,23 +100,38 @@ export function parseReservationKey(rawKey: string): ParsedReservationKey {
     };
   }
 
-  return { valid: false, prefix: "", venueId: "", deskId: "", seatId: "", rawKey };
+  return {
+    valid: false,
+    prefix: "",
+    venueId: "",
+    deskId: "",
+    seatId: "",
+    rawKey,
+  };
 }
 
 export class RedisKeyspaceNotificationManager {
   private static instance: RedisKeyspaceNotificationManager | null = null;
-  private subscriberClient: Redis | null = null;
-  private adminClient: Redis | null = null;
+  private subscriberClient: any = null;
+  private adminClient: any = null;
   private isSubscribed = false;
   private isConnecting = false;
   private listeners = new Set<ExpiryListener>();
 
   // In-memory fallback simulation for local dev or offline mode
-  private simulatedTimers = new Map<string, { timer: NodeJS.Timeout; expiresAt: number; event: DeskReservationExpiredEvent }>();
+  private simulatedTimers = new Map<
+    string,
+    {
+      timer: NodeJS.Timeout;
+      expiresAt: number;
+      event: DeskReservationExpiredEvent;
+    }
+  >();
 
   public static getInstance(): RedisKeyspaceNotificationManager {
     if (!RedisKeyspaceNotificationManager.instance) {
-      RedisKeyspaceNotificationManager.instance = new RedisKeyspaceNotificationManager();
+      RedisKeyspaceNotificationManager.instance =
+        new RedisKeyspaceNotificationManager();
     }
     return RedisKeyspaceNotificationManager.instance;
   }
@@ -105,7 +143,10 @@ export class RedisKeyspaceNotificationManager {
   public onDeskReservationExpired(listener: ExpiryListener): () => void {
     this.listeners.add(listener);
     this.ensureInitialized().catch((err) => {
-      console.warn("[RedisKeyspace] Failed to initialize live Redis subscriber, using fallback:", err);
+      console.warn(
+        "[RedisKeyspace] Failed to initialize live Redis subscriber, using fallback:",
+        err,
+      );
     });
 
     return () => {
@@ -178,7 +219,10 @@ export class RedisKeyspaceNotificationManager {
         timestamp: event.timestamp,
       });
     } catch (err) {
-      console.error("[RedisKeyspace] Failed to publish availability event:", err);
+      console.error(
+        "[RedisKeyspace] Failed to publish availability event:",
+        err,
+      );
     }
 
     // 2. Notify all registered in-process listeners
@@ -201,38 +245,42 @@ export class RedisKeyspaceNotificationManager {
     const redisUrl =
       process.env.REDIS_URL ||
       process.env.UPSTASH_REDIS_URL ||
-      (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_URL.startsWith("redis")
+      (process.env.UPSTASH_REDIS_REST_URL &&
+      process.env.UPSTASH_REDIS_REST_URL.startsWith("redis")
         ? process.env.UPSTASH_REDIS_REST_URL
         : null);
 
-    if (!redisUrl) {
+    if (!redisUrl || !RedisClass) {
       this.isConnecting = false;
       return;
     }
 
     try {
-      this.subscriberClient = new Redis(redisUrl, {
+      this.subscriberClient = new RedisClass(redisUrl, {
         lazyConnect: true,
         enableOfflineQueue: false,
         maxRetriesPerRequest: 1,
-        retryStrategy(times) {
+        retryStrategy(times: number) {
           if (times > 3) return null; // stop reconnecting if down
           return Math.min(times * 100, 1000);
         },
       });
 
-      this.adminClient = new Redis(redisUrl, {
+      this.adminClient = new RedisClass(redisUrl, {
         lazyConnect: true,
         enableOfflineQueue: false,
         maxRetriesPerRequest: 1,
       });
 
-      this.subscriberClient.on("error", (err) => {
-        console.warn("[RedisKeyspace] Subscriber connection error (falling back to timer simulation):", err.message);
+      this.subscriberClient.on("error", (err: any) => {
+        console.warn(
+          "[RedisKeyspace] Subscriber connection error (falling back to timer simulation):",
+          err?.message,
+        );
       });
 
-      this.adminClient.on("error", (err) => {
-        console.warn("[RedisKeyspace] Admin connection error:", err.message);
+      this.adminClient.on("error", (err: any) => {
+        console.warn("[RedisKeyspace] Admin connection error:", err?.message);
       });
 
       await Promise.all([
@@ -253,28 +301,34 @@ export class RedisKeyspaceNotificationManager {
         // Subscribe to keyspace notifications across databases
         await this.subscriberClient.psubscribe("__keyevent@*__:expired");
 
-        this.subscriberClient.on("pmessage", (_pattern, channel, message) => {
-          // message is the expired key name
-          const parsed = parseReservationKey(message);
-          if (parsed.valid) {
-            // Cancel simulated timer since live Redis notification arrived
-            this.clearSimulatedTimer(parsed.rawKey);
+        this.subscriberClient.on(
+          "pmessage",
+          (_pattern: string, channel: string, message: string) => {
+            // message is the expired key name
+            const parsed = parseReservationKey(message);
+            if (parsed.valid) {
+              // Cancel simulated timer since live Redis notification arrived
+              this.clearSimulatedTimer(parsed.rawKey);
 
-            this.dispatchExpiration({
-              venueId: parsed.venueId,
-              deskId: parsed.deskId,
-              seatId: parsed.seatId,
-              rawKey: message,
-              timestamp: Date.now(),
-              source: "redis_keyspace",
-            });
-          }
-        });
+              this.dispatchExpiration({
+                venueId: parsed.venueId,
+                deskId: parsed.deskId,
+                seatId: parsed.seatId,
+                rawKey: message,
+                timestamp: Date.now(),
+                source: "redis_keyspace",
+              });
+            }
+          },
+        );
 
         this.isSubscribed = true;
       }
     } catch (err: any) {
-      console.warn("[RedisKeyspace] Live keyspace subscription unavailable, continuing with memory fallback:", err?.message || err);
+      console.warn(
+        "[RedisKeyspace] Live keyspace subscription unavailable, continuing with memory fallback:",
+        err?.message || err,
+      );
     } finally {
       this.isConnecting = false;
     }
@@ -284,7 +338,7 @@ export class RedisKeyspaceNotificationManager {
    * Resets all state and active timers (for test isolation).
    */
   public reset(): void {
-    for (const [key, item] of this.simulatedTimers.entries()) {
+    for (const [, item] of this.simulatedTimers.entries()) {
       clearTimeout(item.timer);
     }
     this.simulatedTimers.clear();
@@ -299,4 +353,3 @@ export function getRedisKeyspaceManager(): RedisKeyspaceNotificationManager {
 export function onDeskReservationExpired(listener: ExpiryListener): () => void {
   return getRedisKeyspaceManager().onDeskReservationExpired(listener);
 }
-

@@ -31,12 +31,52 @@ import {
   TransactionInstruction,
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
-import {
-  getAssociatedTokenAddressSync,
-  createTransferInstruction,
-  TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-} from "@solana/spl-token";
+export const TOKEN_PROGRAM_ID = new PublicKey(
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+);
+export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+);
+
+export function getAssociatedTokenAddressSync(
+  mint: PublicKey,
+  owner: PublicKey,
+  _allowOwnerOffCurve = false,
+  programId = TOKEN_PROGRAM_ID,
+  associatedTokenProgramId = ASSOCIATED_TOKEN_PROGRAM_ID,
+): PublicKey {
+  const [address] = PublicKey.findProgramAddressSync(
+    [owner.toBuffer(), programId.toBuffer(), mint.toBuffer()],
+    associatedTokenProgramId,
+  );
+  return address;
+}
+
+export function createTransferInstruction(
+  source: PublicKey,
+  destination: PublicKey,
+  owner: PublicKey,
+  amount: number | bigint,
+  multiSigners: (PublicKey | any)[] = [],
+  programId = TOKEN_PROGRAM_ID,
+): TransactionInstruction {
+  const data = Buffer.alloc(9);
+  data.writeUInt8(3, 0); // Instruction 3: Transfer
+  data.writeBigUInt64LE(BigInt(amount), 1);
+
+  const keys = [
+    { pubkey: source, isSigner: false, isWritable: true },
+    { pubkey: destination, isSigner: false, isWritable: true },
+    { pubkey: owner, isSigner: true, isWritable: false },
+    ...multiSigners.map((signer) => ({
+      pubkey: signer.publicKey || signer,
+      isSigner: true,
+      isWritable: false,
+    })),
+  ];
+
+  return new TransactionInstruction({ keys, programId, data });
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -151,7 +191,8 @@ export function toBaseUnits(amount: number, currency: EscrowCurrency): bigint {
     );
   }
 
-  const multiplier = currency === "SOL" ? LAMPORTS_PER_SOL : 10 ** USDC_DECIMALS;
+  const multiplier =
+    currency === "SOL" ? LAMPORTS_PER_SOL : 10 ** USDC_DECIMALS;
   const baseUnits = Math.round(amount * multiplier);
 
   // Guard against amounts so large they lose precision in floating point.
@@ -327,7 +368,10 @@ export async function buildUsdcDepositTransaction(
 
   // Memo instruction for booking correlation.
   const memoData = Buffer.from(
-    JSON.stringify({ bookingId: params.bookingId, type: "escrow_deposit_usdc" }),
+    JSON.stringify({
+      bookingId: params.bookingId,
+      type: "escrow_deposit_usdc",
+    }),
   );
 
   transaction.add(
@@ -811,7 +855,10 @@ export async function verifyCheckInForBooking(
   }
 
   if (booking.status === "CANCELLED") {
-    return { verified: false, error: "Cannot check in for a cancelled booking" };
+    return {
+      verified: false,
+      error: "Cannot check in for a cancelled booking",
+    };
   }
 
   // Check the server-side CheckIn ledger: must be active (expiresAt > now)
@@ -924,8 +971,7 @@ export async function releaseEscrow(
   }
 
   const recipient = options?.recipientWallet ?? authorityWallet;
-  const timestamp =
-    options?.checkInTimestamp ?? Math.floor(Date.now() / 1000);
+  const timestamp = options?.checkInTimestamp ?? Math.floor(Date.now() / 1000);
 
   const { serializedTransaction, escrowVault } = await buildReleaseTransaction({
     bookingId,
@@ -974,8 +1020,7 @@ export async function refundEscrow(
   }
 
   const depositor = options?.depositorWallet ?? authorityWallet;
-  const timestamp =
-    options?.closureTimestamp ?? Math.floor(Date.now() / 1000);
+  const timestamp = options?.closureTimestamp ?? Math.floor(Date.now() / 1000);
   const reason = options?.reason ?? "Venue closed";
 
   const { serializedTransaction, escrowVault } = await buildRefundTransaction({
@@ -992,4 +1037,3 @@ export async function refundEscrow(
 
   return { executed: true, escrowVault, signature: serializedTransaction };
 }
-

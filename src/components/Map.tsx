@@ -20,7 +20,6 @@ import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import { Contrast } from "lucide-react";
-import { formatDistance } from "@/lib/geo/formatDistance";
 import {
   MapMarkerFactory,
   SEAT_RING_COLORS,
@@ -29,6 +28,7 @@ import {
 import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
 import RoutingOptimizer from "./map/RoutingOptimizer";
+import { MobileVenueDrawer } from "@/components/ui/MobileVenueDrawer";
 
 export { throttle } from "@/lib/utils";
 export {
@@ -592,6 +592,10 @@ export interface MapProps {
   enableClustering?: boolean;
   enableRadarSweep?: boolean;
   radarRadius?: number;
+  onSelectVenue?: (venue: MapMarker | null) => void;
+  selectedVenueId?: string | null;
+  onBookVenue?: (venue: MapMarker) => void;
+  onGetDirections?: (venue: MapMarker) => void;
 }
 
 const Map = ({
@@ -607,6 +611,10 @@ const Map = ({
   enableClustering = true,
   enableRadarSweep = true,
   radarRadius = 160,
+  onSelectVenue,
+  selectedVenueId,
+  onBookVenue,
+  onGetDirections,
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -735,14 +743,37 @@ const Map = ({
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
-  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  const [internalSelectedMarkerId, setInternalSelectedMarkerId] = useState<
+    string | null
+  >(null);
+  const selectedMarkerId =
+    selectedVenueId !== undefined
+      ? selectedVenueId
+      : internalSelectedMarkerId;
+
+  const handleSelectMarker = useCallback(
+    (id: string | null) => {
+      setInternalSelectedMarkerId(id);
+      if (onSelectVenue) {
+        const found = id ? markers.find((m) => m.id === id) || null : null;
+        onSelectVenue(found);
+      }
+    },
+    [markers, onSelectVenue],
+  );
+
   useEffect(() => {
     if (
       selectedMarkerId !== null &&
       !markers.some((marker) => marker.id === selectedMarkerId)
     ) {
-      setSelectedMarkerId(null);
+      handleSelectMarker(null);
     }
+  }, [markers, selectedMarkerId, handleSelectMarker]);
+
+  const activeVenueForDrawer = useMemo(() => {
+    if (!selectedMarkerId) return null;
+    return markers.find((m) => m.id === selectedMarkerId) || null;
   }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
@@ -809,7 +840,8 @@ const Map = ({
       if (data.code === "Ok") {
         const coords = data.routes[0].geometry.coordinates;
         const hasElevation = coords.some(
-          (c: any[]) => Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
+          (c: any[]) =>
+            Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
         );
         const elevationProfile =
           data.routes[0].elevation_profile ||
@@ -817,9 +849,10 @@ const Map = ({
           (hasElevation ? coords.map((c: any[]) => c[2]) : undefined);
 
         setOptimizedRoute({
-          coordinates: coords.map(
-            (coord: [number, number]) => [coord[1], coord[0]],
-          ),
+          coordinates: coords.map((coord: [number, number]) => [
+            coord[1],
+            coord[0],
+          ]),
           duration: data.routes[0].duration,
           distance: data.routes[0].distance,
           legs: data.routes[0].legs,
@@ -1233,6 +1266,13 @@ const Map = ({
         .leaflet-popup-content {
           margin: 12px 16px;
         }
+
+        /* Hide desktop-style centered popup on mobile touch screens in favor of MobileVenueDrawer */
+        @media (max-width: 767px) {
+          .leaflet-popup {
+            display: none !important;
+          }
+        }
         
         /* Focus-visible ring for keyboard-navigated markers (Issue #3446) */
         .venue-marker:focus,
@@ -1536,7 +1576,7 @@ const Map = ({
         <MapMarkerFactory
           markers={spiderfiedMarkers}
           selectedMarkerId={selectedMarkerId}
-          onSelectMarker={setSelectedMarkerId}
+          onSelectMarker={handleSelectMarker}
           isHighContrast={isHighContrast}
           getAvailability={getAvailability}
           checkIn={checkIn}
@@ -1575,6 +1615,16 @@ const Map = ({
           optimizedRoute={optimizedRoute}
         />
       </MapContainer>
+
+      {/* Mobile Draggable Venue Bottom Sheet Drawer */}
+      <MobileVenueDrawer
+        venue={activeVenueForDrawer}
+        isOpen={Boolean(activeVenueForDrawer)}
+        onClose={() => handleSelectMarker(null)}
+        onBook={onBookVenue}
+        onGetDirections={onGetDirections}
+        className="md:hidden"
+      />
     </>
   );
 };

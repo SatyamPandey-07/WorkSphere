@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Map as MapIcon, Sun, Moon } from "lucide-react";
+import { Map as MapIcon, Sun, Moon, Plus, Minus, RotateCcw } from "lucide-react";
 
 // Fix for default leaflet icons in React
 if (typeof window !== "undefined") {
@@ -15,6 +15,25 @@ if (typeof window !== "undefined") {
     iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   });
+}
+
+/**
+ * Detects whether the current device is a touch-only mobile device without a fine pointer.
+ */
+export function isTouchOnlyDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const matchMedia =
+    typeof window.matchMedia === "function"
+      ? window.matchMedia.bind(window)
+      : null;
+  if (!matchMedia) return false;
+  const hasCoarse = matchMedia("(pointer: coarse)")?.matches ?? false;
+  const hasFine = matchMedia("(pointer: fine)")?.matches ?? false;
+  if (hasCoarse && !hasFine) return true;
+  const hasTouch =
+    "ontouchstart" in window ||
+    (typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0);
+  return hasTouch && !hasFine;
 }
 
 export interface InteractiveMapMarker {
@@ -43,9 +62,22 @@ export function InteractiveMap({
 }: InteractiveMapProps) {
   const [isHighContrast, setIsHighContrast] = useState(false);
   const [timeWindowHour, setTimeWindowHour] = useState(12);
+  const [currentZoom, setCurrentZoom] = useState(zoom);
+  const [isTouchOnly, setIsTouchOnly] = useState(false);
+  const mapRef = useRef<any>(null);
+
+  // Detect touch-only mobile device on mount to conditionally hide shortcut badges
+  useEffect(() => {
+    setIsTouchOnly(isTouchOnlyDevice());
+  }, []);
+
+  // Update zoom when prop changes
+  useEffect(() => {
+    setCurrentZoom(zoom);
+  }, [zoom]);
 
   // Validate and sanitize numeric coordinates
-  const safeMarkers = React.useMemo(() => {
+  const safeMarkers = useMemo(() => {
     return (markers ?? []).filter(
       (m) =>
         m != null &&
@@ -57,7 +89,7 @@ export function InteractiveMap({
   }, [markers]);
 
   // Group and spiderfy overlapping markers
-  const spiderfiedMarkers = React.useMemo(() => {
+  const spiderfiedMarkers = useMemo(() => {
     const groups: { [key: string]: any[] } = {};
     safeMarkers.forEach((m) => {
       const numLat = Number(m.lat);
@@ -103,7 +135,7 @@ export function InteractiveMap({
   }, [safeMarkers]);
 
   // Determine map centroid defensively
-  const computedCenter = React.useMemo(() => {
+  const computedCenter = useMemo(() => {
     if (
       propCenter &&
       propCenter.lat != null &&
@@ -124,8 +156,88 @@ export function InteractiveMap({
     return { lat: 0, lng: 0 };
   }, [propCenter, safeMarkers]);
 
+  const [currentCenter, setCurrentCenter] = useState(computedCenter);
+
+  useEffect(() => {
+    setCurrentCenter(computedCenter);
+  }, [computedCenter]);
+
+  // Quick Map Navigation Handlers
+  const handleZoomIn = () => {
+    setCurrentZoom((prev) => {
+      const next = Math.min(prev + 1, 19);
+      try {
+        mapRef.current?.setZoom?.(next);
+        mapRef.current?.zoomIn?.();
+      } catch {
+        // no-op in headless/test
+      }
+      return next;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setCurrentZoom((prev) => {
+      const next = Math.max(prev - 1, 1);
+      try {
+        mapRef.current?.setZoom?.(next);
+        mapRef.current?.zoomOut?.();
+      } catch {
+        // no-op in headless/test
+      }
+      return next;
+    });
+  };
+
+  const handleResetView = () => {
+    setCurrentZoom(zoom);
+    setCurrentCenter(computedCenter);
+    try {
+      mapRef.current?.setView?.([computedCenter.lat, computedCenter.lng], zoom);
+    } catch {
+      // no-op in headless/test
+    }
+  };
+
+  const handleToggleHighContrast = () => {
+    setIsHighContrast((prev) => !prev);
+  };
+
+  // Bind global keydown listeners for quick map navigation actions
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when user is typing in form inputs, textareas, or contenteditables
+      const target = e.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      const isInput =
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "select" ||
+        Boolean(target?.isContentEditable);
+
+      if (isInput) return;
+
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        handleZoomIn();
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        handleZoomOut();
+      } else if (e.key === "h" || e.key === "H") {
+        e.preventDefault();
+        handleToggleHighContrast();
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        handleResetView();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [computedCenter, zoom]);
+
   // Memoized event handlers for interactive markers
-  const markerEventHandlers = React.useMemo(
+  const markerEventHandlers = useMemo(
     () => ({
       keydown: (e: any) => {
         if (e.originalEvent?.key === "Enter" || e.originalEvent?.key === " ") {
@@ -147,43 +259,19 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
- feature/postgresql-weekly-partitioning
+  const cartoKey =
+    typeof process !== "undefined"
+      ? process.env?.NEXT_PUBLIC_CARTO_KEY
+      : undefined;
 
-feature/floorplan-vector-editor
-
- feature/nomad-tax-spring-animation
-
- docs/p2p-dtn-spec
-
- fix/seat-availability-stale-state
- main
-main
-main
- main
-  const tileLayerUrl = isHighContrast
-    ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-
- feature/postgresql-weekly-partitioning
-
-feature/floorplan-vector-editor
-
- feature/nomad-tax-spring-animation
-
- docs/p2p-dtn-spec
-
-
-  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
   const tileLayerUrl = cartoKey
     ? isHighContrast
       ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
-    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-main
-main
-main
-main
- main
+    : isHighContrast
+      ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+      : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
     return (
@@ -212,12 +300,13 @@ main
           Interactive Map
         </div>
 
-        {/* High Contrast Toggle Button */}
+        {/* High Contrast Toggle Button with Monospace Keyboard Badge */}
         <button
           type="button"
-          onClick={() => setIsHighContrast((prev) => !prev)}
+          onClick={handleToggleHighContrast}
           aria-label="Toggle high contrast map display mode"
           aria-pressed={isHighContrast}
+          data-testid="map-high-contrast-btn"
           className="shrink-0 px-2.5 py-1 text-xs font-semibold rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-200 shadow-sm backdrop-blur-md hover:bg-zinc-100 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 transition-all flex items-center gap-1.5 cursor-pointer"
         >
           {isHighContrast ? (
@@ -230,6 +319,14 @@ main
               <Moon className="w-3.5 h-3.5 text-indigo-400" />
               High Contrast
             </>
+          )}
+          {!isTouchOnly && (
+            <kbd
+              data-testid="kbd-high-contrast"
+              className="px-1 py-0.5 text-[10px] bg-zinc-800 border border-zinc-700 rounded font-mono text-zinc-400"
+            >
+              H
+            </kbd>
           )}
         </button>
 
@@ -253,9 +350,76 @@ main
         </div>
       </div>
 
+      {/* Quick Map Action Navigation Controls with Keyboard Badges */}
+      <div
+        data-testid="map-navigation-controls"
+        className="absolute bottom-3 right-3 z-[400] flex items-center gap-1.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-lg"
+      >
+        {/* Zoom In Button */}
+        <button
+          type="button"
+          onClick={handleZoomIn}
+          data-testid="map-zoom-in-btn"
+          aria-label="Zoom in"
+          title="Zoom In (+)"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5 text-blue-500" />
+          {!isTouchOnly && (
+            <kbd
+              data-testid="kbd-zoom-in"
+              className="px-1 py-0.5 text-[10px] bg-zinc-800 border border-zinc-700 rounded font-mono text-zinc-400"
+            >
+              +
+            </kbd>
+          )}
+        </button>
+
+        {/* Zoom Out Button */}
+        <button
+          type="button"
+          onClick={handleZoomOut}
+          data-testid="map-zoom-out-btn"
+          aria-label="Zoom out"
+          title="Zoom Out (-)"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+        >
+          <Minus className="w-3.5 h-3.5 text-blue-500" />
+          {!isTouchOnly && (
+            <kbd
+              data-testid="kbd-zoom-out"
+              className="px-1 py-0.5 text-[10px] bg-zinc-800 border border-zinc-700 rounded font-mono text-zinc-400"
+            >
+              -
+            </kbd>
+          )}
+        </button>
+
+        {/* Reset View Button */}
+        <button
+          type="button"
+          onClick={handleResetView}
+          data-testid="map-reset-view-btn"
+          aria-label="Reset map view"
+          title="Reset View (R)"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-emerald-500" />
+          {!isTouchOnly && (
+            <kbd
+              data-testid="kbd-reset-view"
+              className="px-1 py-0.5 text-[10px] bg-zinc-800 border border-zinc-700 rounded font-mono text-zinc-400"
+            >
+              R
+            </kbd>
+          )}
+        </button>
+      </div>
+
       <MapContainer
-        center={computedCenter}
-        zoom={zoom}
+        ref={mapRef}
+        center={currentCenter}
+        zoom={currentZoom}
         style={{ height: "100%", width: "100%", zIndex: 0 }}
       >
         <TileLayer

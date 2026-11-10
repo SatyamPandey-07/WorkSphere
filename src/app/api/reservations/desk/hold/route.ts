@@ -8,6 +8,8 @@ import {
 } from "@/lib/reservations/deskReservationCountdown";
 import { apiError } from "@/lib/apiResponse";
 
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/reservations/desk/hold
  * Atomically acquires or renews a countdown reservation hold on a desk.
@@ -111,10 +113,18 @@ export async function GET(req: NextRequest) {
   const { userId } = await auth();
 
   if (!venueId || !deskId) {
-    return apiError("venueId and deskId query parameters are required", 400, "BAD_REQUEST");
+    return apiError(
+      "venueId and deskId query parameters are required",
+      400,
+      "BAD_REQUEST",
+    );
   }
 
-  const timerInfo = await getDeskReservationTimer(venueId, deskId, userId ?? undefined);
+  const timerInfo = await getDeskReservationTimer(
+    venueId,
+    deskId,
+    userId ?? undefined,
+  );
 
   return NextResponse.json(timerInfo);
 }

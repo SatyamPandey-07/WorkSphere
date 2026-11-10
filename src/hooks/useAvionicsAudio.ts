@@ -58,18 +58,22 @@ const TONE_HIGH_FREQ = 1000; // 1000Hz military caution
 const MAX_SAFE_GAIN = 0.45; // Limiter clamp ceiling to prevent acoustic clipping
 const DEFAULT_FILTER_CUTOFF = 1800; // Low-pass filter cutoff in Hz
 
-let globalAudioCtx: (AudioContext & { setSinkId?: (id: string) => Promise<void> }) | null = null;
+let globalAudioCtx:
+  (AudioContext & { setSinkId?: (id: string) => Promise<void> }) | null = null;
 
 function getSharedAudioContext(preferredSinkId?: string): AudioContext | null {
   if (typeof window === "undefined") return null;
   const AudioContextClass =
     window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    (window as unknown as { webkitAudioContext: typeof AudioContext })
+      .webkitAudioContext;
   if (!AudioContextClass) return null;
 
   if (!globalAudioCtx || globalAudioCtx.state === "closed") {
     try {
-      globalAudioCtx = new AudioContextClass() as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+      globalAudioCtx = new AudioContextClass() as AudioContext & {
+        setSinkId?: (id: string) => Promise<void>;
+      };
       if (preferredSinkId && typeof globalAudioCtx.setSinkId === "function") {
         globalAudioCtx.setSinkId(preferredSinkId).catch(() => {});
       }
@@ -95,7 +99,7 @@ export function useAvionicsAudio({
   const [isCautionActive, setIsCautionActive] = useState(false);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
   const [isOffline, setIsOffline] = useState(() =>
-    typeof navigator !== "undefined" ? !navigator.onLine : false
+    typeof navigator !== "undefined" ? !navigator.onLine : false,
   );
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedSinkId, setSelectedSinkId] = useState<string>("default");
@@ -103,9 +107,9 @@ export function useAvionicsAudio({
   const battery = useBatteryStatus();
   const isLowBattery = Boolean(
     battery.isSupported &&
-      !battery.charging &&
-      battery.level !== null &&
-      battery.level < CRITICAL_BATTERY_THRESHOLD
+    !battery.charging &&
+    battery.level !== null &&
+    battery.level < CRITICAL_BATTERY_THRESHOLD,
   );
 
   const isMutedRef = useRef(isMuted);
@@ -134,7 +138,9 @@ export function useAvionicsAudio({
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
           const devices = await navigator.mediaDevices.enumerateDevices();
-          const outputs = devices.filter((device) => device.kind === "audiooutput");
+          const outputs = devices.filter(
+            (device) => device.kind === "audiooutput",
+          );
           setAudioDevices(outputs);
         }
       } catch (e) {
@@ -147,7 +153,10 @@ export function useAvionicsAudio({
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
       navigator.mediaDevices.addEventListener("devicechange", fetchDevices);
       return () => {
-        navigator.mediaDevices.removeEventListener("devicechange", fetchDevices);
+        navigator.mediaDevices.removeEventListener(
+          "devicechange",
+          fetchDevices,
+        );
       };
     }
   }, []);
@@ -168,13 +177,14 @@ export function useAvionicsAudio({
     }
   }, []);
 
-  const getAudioContext = useCallback(async (): Promise<AudioContext | null> => {
-    const ctx = getSharedAudioContext(selectedSinkId);
-    if (ctx && ctx.state === "suspended") {
-      await ctx.resume().catch(() => {});
-    }
-    return ctx;
-  }, [selectedSinkId]);
+  const getAudioContext =
+    useCallback(async (): Promise<AudioContext | null> => {
+      const ctx = getSharedAudioContext(selectedSinkId);
+      if (ctx && ctx.state === "suspended") {
+        await ctx.resume().catch(() => {});
+      }
+      return ctx;
+    }, [selectedSinkId]);
 
   // Stop active caution chime
   const stopMasterCaution = useCallback(() => {
@@ -237,7 +247,8 @@ export function useAvionicsAudio({
       userInteractedRef.current = true;
       const ctx = getSharedAudioContext(selectedSinkId);
       if (ctx && ctx.state === "suspended") {
-        ctx.resume()
+        ctx
+          .resume()
           .then(() => {
             setIsAudioUnlocked(ctx.state === "running");
           })
@@ -249,7 +260,7 @@ export function useAvionicsAudio({
 
     const gestureEvents = ["click", "keydown", "touchstart", "pointerdown"];
     gestureEvents.forEach((evt) =>
-      window.addEventListener(evt, handleUserGesture, { passive: true })
+      window.addEventListener(evt, handleUserGesture, { passive: true }),
     );
 
     const ctx = getSharedAudioContext(selectedSinkId);
@@ -260,7 +271,7 @@ export function useAvionicsAudio({
 
     return () => {
       gestureEvents.forEach((evt) =>
-        window.removeEventListener(evt, handleUserGesture)
+        window.removeEventListener(evt, handleUserGesture),
       );
     };
   }, [selectedSinkId]);
@@ -334,7 +345,10 @@ export function useAvionicsAudio({
         gain1.gain.setValueAtTime(0.0001, cycleStart);
         gain1.gain.exponentialRampToValueAtTime(1.0, cycleStart + 0.015);
         gain1.gain.setValueAtTime(1.0, cycleStart + toneDuration - 0.02);
-        gain1.gain.exponentialRampToValueAtTime(0.0001, cycleStart + toneDuration);
+        gain1.gain.exponentialRampToValueAtTime(
+          0.0001,
+          cycleStart + toneDuration,
+        );
 
         osc1.connect(gain1);
         gain1.connect(lowPassFilter);
@@ -365,15 +379,18 @@ export function useAvionicsAudio({
       setIsCautionActive(true);
 
       const totalDurationSec = cycles * singleCycleDuration;
-      cautionTimeoutRef.current = setTimeout(() => {
-        setIsCautionActive(false);
-        activeNodesRef.current = [];
-        masterGainRef.current = null;
-      }, Math.ceil(totalDurationSec * 1000));
+      cautionTimeoutRef.current = setTimeout(
+        () => {
+          setIsCautionActive(false);
+          activeNodesRef.current = [];
+          masterGainRef.current = null;
+        },
+        Math.ceil(totalDurationSec * 1000),
+      );
 
       return true;
     },
-    [volume, filterCutoff, stopMasterCaution, selectedSinkId]
+    [volume, filterCutoff, stopMasterCaution, selectedSinkId],
   );
 
   // Monitor online / offline network state

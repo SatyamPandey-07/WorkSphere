@@ -1,6 +1,10 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { InteractiveMap, InteractiveMapMarker } from "@/components/chat/InteractiveMap";
+import {
+  InteractiveMap,
+  InteractiveMapMarker,
+  isTouchOnlyDevice,
+} from "@/components/chat/InteractiveMap";
 
 // Mock react-leaflet components for fast, reliable unit testing
 jest.mock("react-leaflet", () => ({
@@ -240,17 +244,116 @@ describe("InteractiveMap Component", () => {
     });
   });
 
-  describe("Keyboard Event Handlers", () => {
-    it("provides accessible keydown event handler for Enter and Space to open popup", () => {
-      const markers: InteractiveMapMarker[] = [
-        { lat: 35.6762, lng: 139.6503, name: "Tokyo Desk" },
-      ];
+  describe("Keyboard Event Handlers & Navigation Overlay Badges", () => {
+    it("renders subtle monospace keyboard badges on navigation controls", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 10, lng: 10, name: "Test" }]}
+        />,
+      );
 
-      render(<InteractiveMap markers={markers} />);
+      // Verify zoom-in badge
+      const kbdZoomIn = screen.getByTestId("kbd-zoom-in");
+      expect(kbdZoomIn).toBeInTheDocument();
+      expect(kbdZoomIn).toHaveTextContent("+");
+      expect(kbdZoomIn).toHaveClass("font-mono", "bg-zinc-800", "border-zinc-700", "text-zinc-400");
 
-      // Find marker component and trigger event handler directly
-      expect(screen.getByTestId("mock-marker")).toBeInTheDocument();
-      expect(screen.getByTestId("map-header")).toBeInTheDocument();
+      // Verify zoom-out badge
+      const kbdZoomOut = screen.getByTestId("kbd-zoom-out");
+      expect(kbdZoomOut).toBeInTheDocument();
+      expect(kbdZoomOut).toHaveTextContent("-");
+      expect(kbdZoomOut).toHaveClass("font-mono", "bg-zinc-800", "border-zinc-700", "text-zinc-400");
+
+      // Verify reset-view badge
+      const kbdReset = screen.getByTestId("kbd-reset-view");
+      expect(kbdReset).toBeInTheDocument();
+      expect(kbdReset).toHaveTextContent("R");
+      expect(kbdReset).toHaveClass("font-mono", "bg-zinc-800", "border-zinc-700", "text-zinc-400");
+
+      // Verify high-contrast badge
+      const kbdContrast = screen.getByTestId("kbd-high-contrast");
+      expect(kbdContrast).toBeInTheDocument();
+      expect(kbdContrast).toHaveTextContent("H");
+      expect(kbdContrast).toHaveClass("font-mono", "bg-zinc-800", "border-zinc-700", "text-zinc-400");
+    });
+
+    it("handles global keydown actions for +, -, H, and R", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 10, lng: 10, name: "Test" }]}
+          zoom={13}
+        />,
+      );
+
+      const mapContainer = screen.getByTestId("mock-map-container");
+      expect(mapContainer).toHaveAttribute("data-zoom", "13");
+
+      // Zoom in using '+' key
+      fireEvent.keyDown(window, { key: "+" });
+      expect(mapContainer).toHaveAttribute("data-zoom", "14");
+
+      // Zoom out using '-' key
+      fireEvent.keyDown(window, { key: "-" });
+      expect(mapContainer).toHaveAttribute("data-zoom", "13");
+
+      // Toggle high contrast using 'H' key
+      const highContrastBtn = screen.getByTestId("map-high-contrast-btn");
+      expect(highContrastBtn).toHaveAttribute("aria-pressed", "false");
+      fireEvent.keyDown(window, { key: "h" });
+      expect(highContrastBtn).toHaveAttribute("aria-pressed", "true");
+
+      // Reset view using 'R' key
+      fireEvent.keyDown(window, { key: "+" });
+      expect(mapContainer).toHaveAttribute("data-zoom", "14");
+      fireEvent.keyDown(window, { key: "r" });
+      expect(mapContainer).toHaveAttribute("data-zoom", "13");
+    });
+
+    it("ignores global keydown shortcuts when typing in an input element", () => {
+      render(
+        <div>
+          <input data-testid="test-input" type="text" />
+          <InteractiveMap
+            markers={[{ lat: 10, lng: 10, name: "Test" }]}
+            zoom={13}
+          />
+        </div>,
+      );
+
+      const input = screen.getByTestId("test-input");
+      const mapContainer = screen.getByTestId("mock-map-container");
+
+      fireEvent.keyDown(input, { key: "+" });
+      // Zoom should remain unchanged because input was focused
+      expect(mapContainer).toHaveAttribute("data-zoom", "13");
+    });
+
+    it("isTouchOnlyDevice helper detects touch-only vs fine pointer", () => {
+      const originalMatchMedia = window.matchMedia;
+
+      // Simulate touch-only device (coarse pointer, no fine pointer)
+      window.matchMedia = jest.fn().mockImplementation((query) => ({
+        matches: query === "(pointer: coarse)",
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+      }));
+
+      expect(isTouchOnlyDevice()).toBe(true);
+
+      // Simulate desktop (fine pointer)
+      window.matchMedia = jest.fn().mockImplementation((query) => ({
+        matches: query === "(pointer: fine)",
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+      }));
+
+      expect(isTouchOnlyDevice()).toBe(false);
+
+      window.matchMedia = originalMatchMedia;
     });
   });
 });

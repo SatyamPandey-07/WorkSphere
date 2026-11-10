@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Clock, Zap, PlusCircle, XCircle, AlertTriangle, Radio } from "lucide-react";
+import { Clock, PlusCircle, XCircle, AlertTriangle, Radio } from "lucide-react";
 import { useDeskReservationCountdown } from "@/hooks/useDeskReservationCountdown";
 
 export interface DeskReservationCountdownTimerProps {
@@ -85,7 +85,8 @@ export function DeskReservationCountdownTimer({
           <span className="flex items-center gap-2 font-medium">
             <XCircle className="h-4 w-4 text-rose-400" />
             <span>
-              Desk reservation hold for <strong>{deskName || deskId}</strong> has expired.
+              Desk reservation hold for <strong>{deskName || deskId}</strong>{" "}
+              has expired.
             </span>
           </span>
           <span className="rounded-md border border-rose-500/40 bg-rose-500/20 px-2 py-0.5 font-mono text-[10px] text-rose-300">
@@ -126,10 +127,7 @@ export function DeskReservationCountdownTimer({
           </span>
 
           <span className="font-medium text-amber-100">
-            Desk{" "}
-            <strong className="text-white">
-              {deskName || deskId}
-            </strong>{" "}
+            Desk <strong className="text-white">{deskName || deskId}</strong>{" "}
             locked for checkout
           </span>
 
@@ -205,3 +203,5 @@ export function DeskReservationCountdownTimer({
     </div>
   );
 }
+
+export default DeskReservationCountdownTimer;

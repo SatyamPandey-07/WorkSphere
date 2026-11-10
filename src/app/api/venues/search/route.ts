@@ -19,22 +19,18 @@ export async function GET(req: Request) {
     console.error("Phonetic Venue Search Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
 
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import {
-  getLatestVenueTimestamp,
-  generateETag,
-  BoundingBox,
-} from "@/lib/cache/venueCache";
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { getLatestVenueTimestamp, generateETag, BoundingBox } from '@/lib/cache/venueCache';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const bbox: BoundingBox = {
-      minLat: parseFloat(searchParams.get("minLat") || "0"),
-      maxLat: parseFloat(searchParams.get("maxLat") || "0"),
-      minLng: parseFloat(searchParams.get("minLng") || "0"),
-      maxLng: parseFloat(searchParams.get("maxLng") || "0"),
+      minLat: parseFloat(searchParams.get('minLat') || '0'),
+      maxLat: parseFloat(searchParams.get('maxLat') || '0'),
+      minLng: parseFloat(searchParams.get('minLng') || '0'),
+      maxLng: parseFloat(searchParams.get('maxLng') || '0'),
     };
 
     // 1. Get latest venue timestamp for ETag generation
@@ -42,19 +38,19 @@ export async function GET(request: NextRequest) {
     const etag = generateETag(latestTimestamp);
 
     // 2. Check If-None-Match header for conditional GET request (304 Not Modified)
-    const ifNoneMatch = request.headers.get("if-none-match");
+    const ifNoneMatch = request.headers.get('if-none-match');
     if (ifNoneMatch === etag) {
       return new NextResponse(null, {
         status: 304,
         headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
-          ETag: etag,
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+          'ETag': etag,
         },
       });
     }
 
     // 3. Fetch venues from database (simulate data fetching here)
-    const venues: Record<string, unknown>[] = [
+    const venues = [
       // { id: '1', name: 'Coffee House', ... }
     ];
 
@@ -64,16 +60,16 @@ export async function GET(request: NextRequest) {
       {
         status: 200,
         headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
-          ETag: etag,
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+          'ETag': etag,
         },
-      },
+      }
     );
   } catch (error) {
-    console.error("Venue search caching error:", error);
+    console.error('Venue search caching error:', error);
     return NextResponse.json(
-      { success: false, error: "Internal Server Error" },
-      { status: 500 },
+      { success: false, error: 'Internal Server Error' },
+      { status: 500 }
     );
 main
   }

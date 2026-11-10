@@ -11,9 +11,15 @@ import {
   HourlyCrowdForecast,
   HourlyCrowdForecastProps,
 } from "./HourlyCrowdForecast";
+import {
+  AmbientNoiseSparkline,
+  AmbientNoiseSparklineProps,
+  HourlyDecibelPoint,
+} from "../analytics/AmbientNoiseSparkline";
 
 export interface VenueDetailModalProps extends VenueDetailDialogProps {
   hourlyForecastProps?: Partial<HourlyCrowdForecastProps>;
+  hourlyDecibels?: HourlyDecibelPoint[];
   initialTab?: "overview" | "reviews" | "menu" | "developer";
 }
 
@@ -193,10 +199,19 @@ export function VenueDeveloperTab({
  *
  * Wrapper component providing modal compatibility for venue details with
  * integrated HourlyCrowdForecast and Developer tab terminal cURL snippet generator.
+ * Applies theme-aware overlay and backdrop styling to prevent white flash during theme transitions.
  */
 export function VenueDetailModal(props: VenueDetailModalProps) {
-  return <VenueDetailDialog {...props} />;
+  return (
+    <div
+      style={{ colorScheme: "dark light" }}
+      className="[color-scheme:dark_light] [&>div]:!bg-black/60 dark:[&>div]:!bg-black/80 [&_[role='dialog']]:!bg-white dark:[&_[role='dialog']]:!bg-zinc-950 [&_[role='dialog']]:!backdrop-blur-md"
+    >
+      <VenueDetailDialog {...props} />
+    </div>
+  );
 }
 
-export { HourlyCrowdForecast };
+export { HourlyCrowdForecast, AmbientNoiseSparkline };
+export type { AmbientNoiseSparklineProps, HourlyDecibelPoint };
 export default VenueDetailModal;

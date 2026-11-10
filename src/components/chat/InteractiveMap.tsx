@@ -16,6 +16,76 @@ if (typeof window !== "undefined") {
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   });
 }
+type TileProviderKey = 'carto' | 'osm' | 'wikimedia';
+
+const TILE_URLS: Record<TileProviderKey, string> = {
+  carto: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  osm: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  wikimedia: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png',
+};
+
+interface InteractiveMapProps {
+  center: [number, number];
+  markers?: { id: string; lat: number; lng: number; title: string }[];
+}
+
+export const InteractiveMap: React.FC<InteractiveMapProps> = ({ center, markers = [] }) => {
+  const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [provider, setProvider] = useState<TileProviderKey>('carto');
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    if (!mapRef.current) {
+      mapRef.current = L.map(containerRef.current).setView(center, 13);
+    }
+
+    if (tileLayerRef.current) {
+      mapRef.current.removeLayer(tileLayerRef.current);
+    }
+
+    const layer = L.tileLayer(TILE_URLS[provider], {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors & CARTO',
+      subdomains: 'abcd',
+    });
+
+    layer.on('tileerror', () => {
+      if (provider === 'carto') {
+        console.warn('Carto tile error caught in InteractiveMap. Falling back to OSM.');
+        setProvider('osm');
+      }
+    });
+
+    layer.addTo(mapRef.current);
+    tileLayerRef.current = layer;
+
+    // Render markers
+    markers.forEach((m) => {
+      L.marker([m.lat, m.lng]).addTo(mapRef.current!).bindPopup(m.title);
+    });
+
+  }, [provider, center, markers]);
+
+  return (
+    <div className="relative w-full h-[500px]">
+      <div className="absolute top-3 right-3 z-[1000] bg-slate-900/90 border border-slate-700 rounded-xl p-2 shadow-xl flex items-center gap-2">
+        <select
+          value={provider}
+          onChange={(e) => setProvider(e.target.value as TileProviderKey)}
+          className="bg-slate-800 text-slate-100 text-xs rounded-lg px-2 py-1 border border-slate-700 cursor-pointer"
+        >
+          <option value="carto">Carto (Default)</option>
+          <option value="osm">OpenStreetMap</option>
+          <option value="wikimedia">Wikimedia</option>
+        </select>
+      </div>
+      <div ref={containerRef} className="w-full h-full rounded-2xl border border-slate-800 shadow-2xl" />
+    </div>
+  );
+};
 
 /**
  * Detects whether the current device is a touch-only mobile device without a fine pointer.

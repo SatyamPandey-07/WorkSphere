@@ -14,6 +14,14 @@ import {
 import { useEffect, useState, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 
+
+import React, { useState } from 'react';
+
+interface CommandHelp {
+  command: string;
+  syntax: string;
+  description: string;
+}
 const AGENTS = [
   {
     id: "Context",
@@ -479,5 +487,90 @@ export function BrainTerminal({
     </div>
   );
 }
+
+const COMMAND_LIST: CommandHelp[] = [
+  { command: 'help', syntax: 'help [options]', description: 'Display available terminal commands and usage' },
+  { command: 'optimize', syntax: 'optimize [--model] [--force]', description: 'Optimize active LLM inference and context parameters' },
+  { command: 'sync', syntax: 'sync [--remote] [--force]', description: 'Synchronize local workspace state with cloud storage' },
+  { command: 'status', syntax: 'status [--verbose]', description: 'Display current system diagnostic metrics and node health' },
+  { command: 'clear', syntax: 'clear', description: 'Clear terminal screen buffer and reset session logs' },
+];
+
+export const BrainTerminal: React.FC = () => {
+  const [input, setInput] = useState('');
+  const [logs, setLogs] = useState<string[]>([
+    'WorkSphere BrainTerminal v2.4.0 (x86_64-pc-web)',
+    'Type "help" to view standardized command reference.',
+  ]);
+
+  const handleCommandSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    const newLogs = [...logs, `$ ${trimmed}`];
+
+    if (trimmed === 'help') {
+      newLogs.push('Available Commands:');
+      COMMAND_LIST.forEach((cmd) => {
+        newLogs.push(`  ${cmd.syntax.padEnd(30)} - ${cmd.description}`);
+      });
+    } else if (trimmed.startsWith('optimize')) {
+      newLogs.push('Executing optimization pipeline with standardized flags...');
+      newLogs.push('Optimization complete: Latency reduced by 14%.');
+    } else if (trimmed.startsWith('sync')) {
+      newLogs.push('Synchronizing local state with remote storage...');
+      newLogs.push('Sync successful.');
+    } else if (trimmed === 'status') {
+      newLogs.push('System Status: Operational | Memory: 42% | Edge Node: Connected');
+    } else if (trimmed === 'clear') {
+      setLogs(['WorkSphere BrainTerminal v2.4.0']);
+      setInput('');
+      return;
+    } else {
+      newLogs.push(`Command not recognized: "${trimmed}". Type "help" for valid commands.`);
+    }
+
+    setLogs(newLogs);
+    setInput('');
+  };
+
+  return (
+    <div className="bg-slate-950 text-emerald-400 font-mono p-4 rounded-xl shadow-2xl border border-slate-800 max-w-2xl mx-auto h-96 flex flex-col">
+      <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800 text-xs text-slate-400">
+        <span>BrainTerminal - Interactive CLI</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          Ready
+        </span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto space-y-1.5 text-xs mb-3 pr-2 scrollbar-thin">
+        {logs.map((log, index) => (
+          <div key={index} className={log.startsWith('$') ? 'text-slate-200 font-semibold' : 'text-slate-300'}>
+            {log}
+          </div>
+        ))}
+      </div>
+
+      <form onSubmit={handleCommandSubmit} className="flex gap-2 pt-2 border-t border-slate-800/80">
+        <span className="text-emerald-500 font-bold self-center">$</span>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Type a command (e.g., help, optimize, status)..."
+          className="flex-1 bg-transparent text-slate-100 placeholder-slate-600 focus:outline-none text-xs font-mono"
+        />
+        <button
+          type="submit"
+          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition cursor-pointer"
+        >
+          Run
+        </button>
+      </form>
+    </div>
+  );
+};
 
 export default BrainTerminal;

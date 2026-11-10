@@ -24,10 +24,11 @@ export type {
 } from "./HybridSearchWeightSlider";
 export { VenueList } from "./VenueList";
 export type { VenueListProps } from "./VenueList";
-export { VenueFilterBar } from "./VenueFilterBar";
+export { VenueFilterBar, DEFAULT_VENUE_CATEGORIES } from "./VenueFilterBar";
 export type {
   VenueFilterBarProps,
   VenueFilterItem,
+  VenueCategoryItem,
 } from "./VenueFilterBar";
 export { HourlyCrowdForecast } from "./HourlyCrowdForecast";
 export type {
@@ -40,8 +41,22 @@ export type {
   HourlyNoiseDataPoint,
   DayProfileType,
 } from "./HourlyNoiseHeatGraph";
-export { VenueDetailModal } from "./VenueDetailModal";
-export type { VenueDetailModalProps } from "./VenueDetailModal";
+export {
+  VenueDetailModal,
+  AmbientNoiseSparkline,
+} from "./VenueDetailModal";
+export type {
+  VenueDetailModalProps,
+  AmbientNoiseSparklineProps,
+  HourlyDecibelPoint,
+} from "./VenueDetailModal";
 export { VenueCheckInButton } from "./VenueCheckInButton";
 export type { VenueCheckInButtonProps } from "./VenueCheckInButton";
 
+export {
+  VenueReviewModal,
+  validateReviewComment,
+  REVIEW_MIN_LENGTH,
+  REVIEW_ERROR_MESSAGE,
+} from "./VenueReviewModal";
+export type { VenueReviewModalProps } from "./VenueReviewModal";

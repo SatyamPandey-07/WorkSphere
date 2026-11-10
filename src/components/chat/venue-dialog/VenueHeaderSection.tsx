@@ -33,8 +33,8 @@ export interface VenueHeaderSectionProps {
   photoLoading?: boolean;
   setImageError?: (error: boolean) => void;
   sentiment?: any;
-  activeTab: "overview" | "reviews" | "menu";
-  setActiveTab: (tab: "overview" | "reviews" | "menu") => void;
+  activeTab: "overview" | "reviews" | "menu" | "developer";
+  setActiveTab: (tab: "overview" | "reviews" | "menu" | "developer") => void;
   onClose: () => void;
   onOpenLightbox?: (index?: number) => void;
   voteMetrics?: Record<string, VoteMetricState>;
@@ -290,6 +290,7 @@ export function VenueHeaderSection({
           { id: "overview", label: "Overview" },
           { id: "reviews", label: reviewsLabel },
           { id: "menu", label: "Menus & Prices" },
+          { id: "developer", label: "Developer" },
         ].map((tab) => (
           <button
             key={tab.id}

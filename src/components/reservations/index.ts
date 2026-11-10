@@ -1,2 +1,3 @@
 export * from "./DeskReservationCountdownTimer";
-export { default } from "./DeskReservationCountdownTimer";
+export * from "./DeskReservationButton";
+export { DeskReservationCountdownTimer as default } from "./DeskReservationCountdownTimer";

@@ -1,10 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+ feature/protobuf-binary-broker
+import React, { useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Map as MapIcon, Sun, Moon, Plus, Minus, RotateCcw } from "lucide-react";
+import { Map as MapIcon } from "lucide-react";
+import React, { useState, useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 // Fix for default leaflet icons in React
 if (typeof window !== "undefined") {
@@ -16,77 +20,76 @@ if (typeof window !== "undefined") {
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   });
 }
+type TileProviderKey = 'carto' | 'osm' | 'wikimedia';
 
-/**
- * Detects whether the current device is a touch-only mobile device without a fine pointer.
- */
-export function isTouchOnlyDevice(): boolean {
-  if (typeof window === "undefined") return false;
-  const matchMedia =
-    typeof window.matchMedia === "function"
-      ? window.matchMedia.bind(window)
-      : null;
-  if (!matchMedia) return false;
-  const hasCoarse = matchMedia("(pointer: coarse)")?.matches ?? false;
-  const hasFine = matchMedia("(pointer: fine)")?.matches ?? false;
-  if (hasCoarse && !hasFine) return true;
-  const hasTouch =
-    "ontouchstart" in window ||
-    (typeof navigator !== "undefined" && (navigator.maxTouchPoints ?? 0) > 0);
-  return hasTouch && !hasFine;
+const TILE_URLS: Record<TileProviderKey, string> = {
+  carto: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  osm: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  wikimedia: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png',
+};
+
+interface InteractiveMapProps {
+  center: [number, number];
+  markers?: { id: string; lat: number; lng: number; title: string }[];
 }
 
-export interface InteractiveMapMarker {
-  lat: number | string;
-  lng: number | string;
-  name?: string;
-  title?: string;
-  category?: string;
-  score?: number | string;
-  rating?: number | string;
-  [key: string]: any;
-}
+export const InteractiveMap: React.FC<InteractiveMapProps> = ({ center, markers = [] }) => {
+  const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [provider, setProvider] = useState<TileProviderKey>('carto');
 
-export interface InteractiveMapProps {
-  markers?: InteractiveMapMarker[];
-  center?: { lat: number; lng: number };
-  zoom?: number;
-  className?: string;
-}
-
-export function InteractiveMap({
-  markers = [],
-  center: propCenter,
-  zoom = 13,
-  className = "",
-}: InteractiveMapProps) {
-  const [isHighContrast, setIsHighContrast] = useState(false);
-  const [timeWindowHour, setTimeWindowHour] = useState(12);
-  const [currentZoom, setCurrentZoom] = useState(zoom);
-  const [isTouchOnly, setIsTouchOnly] = useState(false);
-  const mapRef = useRef<any>(null);
-
-  // Detect touch-only mobile device on mount to conditionally hide shortcut badges
   useEffect(() => {
-    setIsTouchOnly(isTouchOnlyDevice());
-  }, []);
+    if (!containerRef.current) return;
 
-  // Update zoom when prop changes
-  useEffect(() => {
-    setCurrentZoom(zoom);
-  }, [zoom]);
+    if (!mapRef.current) {
+      mapRef.current = L.map(containerRef.current).setView(center, 13);
+    }
 
-  // Validate and sanitize numeric coordinates
-  const safeMarkers = useMemo(() => {
-    return (markers ?? []).filter(
-      (m) =>
-        m != null &&
-        m.lat != null &&
-        m.lng != null &&
-        Number.isFinite(Number(m.lat)) &&
-        Number.isFinite(Number(m.lng)),
-    );
-  }, [markers]);
+    if (tileLayerRef.current) {
+      mapRef.current.removeLayer(tileLayerRef.current);
+    }
+
+    const layer = L.tileLayer(TILE_URLS[provider], {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors & CARTO',
+      subdomains: 'abcd',
+    });
+
+    layer.on('tileerror', () => {
+      if (provider === 'carto') {
+        console.warn('Carto tile error caught in InteractiveMap. Falling back to OSM.');
+        setProvider('osm');
+      }
+    });
+
+    layer.addTo(mapRef.current);
+    tileLayerRef.current = layer;
+
+    // Render markers
+    markers.forEach((m) => {
+      L.marker([m.lat, m.lng]).addTo(mapRef.current!).bindPopup(m.title);
+    });
+
+  }, [provider, center, markers]);
+
+  return (
+    <div className="relative w-full h-[500px]">
+      <div className="absolute top-3 right-3 z-[1000] bg-slate-900/90 border border-slate-700 rounded-xl p-2 shadow-xl flex items-center gap-2">
+        <select
+          value={provider}
+          onChange={(e) => setProvider(e.target.value as TileProviderKey)}
+          className="bg-slate-800 text-slate-100 text-xs rounded-lg px-2 py-1 border border-slate-700 cursor-pointer"
+        >
+          <option value="carto">Carto (Default)</option>
+          <option value="osm">OpenStreetMap</option>
+          <option value="wikimedia">Wikimedia</option>
+        </select>
+      </div>
+      <div ref={containerRef} className="w-full h-full rounded-2xl border border-slate-800 shadow-2xl" />
+    </div>
+  );
+};
 
   // Group and spiderfy overlapping markers
   const spiderfiedMarkers = useMemo(() => {
@@ -155,6 +158,10 @@ export function InteractiveMap({
     }
     return { lat: 0, lng: 0 };
   }, [propCenter, safeMarkers]);
+
+ feature/protobuf-binary-broker
+  // Memoized event handlers for interactive markers
+  const markerEventHandlers = React.useMemo(
 
   const [currentCenter, setCurrentCenter] = useState(computedCenter);
 
@@ -238,6 +245,7 @@ export function InteractiveMap({
 
   // Memoized event handlers for interactive markers
   const markerEventHandlers = useMemo(
+ main
     () => ({
       keydown: (e: any) => {
         if (e.originalEvent?.key === "Enter" || e.originalEvent?.key === " ") {
@@ -259,6 +267,11 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
+ feature/protobuf-binary-broker
+  const tileLayerUrl = isHighContrast
+    ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
+    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+
   const cartoKey =
     typeof process !== "undefined"
       ? process.env?.NEXT_PUBLIC_CARTO_KEY
@@ -271,6 +284,7 @@ export function InteractiveMap({
     : isHighContrast
       ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
       : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+ main
 
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
@@ -300,6 +314,14 @@ export function InteractiveMap({
           Interactive Map
         </div>
 
+ feature/protobuf-binary-broker
+        {/* High Contrast Toggle Button */}
+        <button
+          type="button"
+          onClick={() => setIsHighContrast((prev) => !prev)}
+          aria-label="Toggle high contrast map display mode"
+          aria-pressed={isHighContrast}
+
         {/* High Contrast Toggle Button with Monospace Keyboard Badge */}
         <button
           type="button"
@@ -307,6 +329,7 @@ export function InteractiveMap({
           aria-label="Toggle high contrast map display mode"
           aria-pressed={isHighContrast}
           data-testid="map-high-contrast-btn"
+ main
           className="shrink-0 px-2.5 py-1 text-xs font-semibold rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-200 shadow-sm backdrop-blur-md hover:bg-zinc-100 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 transition-all flex items-center gap-1.5 cursor-pointer"
         >
           {isHighContrast ? (
@@ -320,6 +343,8 @@ export function InteractiveMap({
               High Contrast
             </>
           )}
+ feature/protobuf-binary-broker
+
           {!isTouchOnly && (
             <kbd
               data-testid="kbd-high-contrast"
@@ -328,6 +353,7 @@ export function InteractiveMap({
               H
             </kbd>
           )}
+ main
         </button>
 
         {/* Time Window Slider Container */}
@@ -348,6 +374,8 @@ export function InteractiveMap({
             {`${String(timeWindowHour).padStart(2, "0")}:00`}
           </span>
         </div>
+ feature/protobuf-binary-broker
+
       </div>
 
       {/* Quick Map Action Navigation Controls with Keyboard Badges */}
@@ -414,6 +442,7 @@ export function InteractiveMap({
             </kbd>
           )}
         </button>
+ main
       </div>
 
       <MapContainer

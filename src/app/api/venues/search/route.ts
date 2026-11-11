@@ -1,5 +1,20 @@
  feature/solana-optimistic-escrow-simulation
 import { NextResponse } from "next/server";
+ feature/solana-optimistic-escrow-simulation
+import { searchVenuesPhonetic } from "@/lib/search/phoneticVenueSearch";
+
+ feature/hybrid-venue-search
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const q = searchParams.get("q");
+    const limitParam = searchParams.get("limit");
+    const limit = limitParam ? parseInt(limitParam, 10) : 20;
+
+    if (!q) {
+      return NextResponse.json({ results: [] });
+    }
+
 import type { NextRequest } from "next/server";
 import {
   getLatestVenueTimestamp,
@@ -19,6 +34,7 @@ const PUBLIC_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=300";
 const BYPASS_CACHE_CONTROL =
   "private, no-cache, no-store, max-age=0, must-revalidate";
 const VARY_HEADER = "Accept-Encoding, Accept";
+ main
 
     const results = await searchVenuesPhonetic(q, limit);
     return NextResponse.json({ results });
@@ -210,5 +226,6 @@ export async function GET(request: NextRequest) {
       { success: false, error: error?.message || "Internal Server Error" },
       { status: 500 },
     );
+main
   }
 }

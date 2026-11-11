@@ -12,11 +12,15 @@ export interface NomadTierBadgeProps {
 
 const tierConfig: Record<
   TierLevel,
+ feature/solana-optimistic-escrow-simulation
+  { icon: React.ElementType; badgeClasses: string; textClasses: string }
+
   {
     icon: React.ComponentType<{ className?: string }>;
     badgeClasses: string;
     textClasses: string;
   }
+ main
 > = {
   Bronze: {
     icon: Shield,
@@ -61,13 +65,21 @@ export const NomadTierBadge: React.FC<NomadTierBadgeProps> = ({ tier, xp }) => {
       <span className="text-zinc-600 shrink-0">•</span>
 
       {/* XP Counter with shrink-0 for full visibility */}
+ feature/solana-optimistic-escrow-simulation
+      <span className={`shrink-0 font-mono text-[11px] sm:text-xs ${config.textClasses}`}>
+
       <span
         className={`shrink-0 font-mono text-[11px] sm:text-xs ${config.textClasses}`}
       >
+ main
         {formattedXP}
       </span>
     </div>
   );
 };
 
+ feature/solana-optimistic-escrow-simulation
 export default NomadTierBadge;
+
+export default NomadTierBadge;
+ main

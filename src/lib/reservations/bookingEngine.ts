@@ -10,11 +10,16 @@ export interface BookingResult {
   reservation?: any;
   error?: string;
   isConflict?: boolean;
+  fencingToken?: number;
 }
 
 export interface BookingOptions {
   redlockManager?: RedlockManager | null;
   lockTtlMs?: number;
+  retryCount?: number;
+  retryDelayMs?: number;
+  useSlotLevelLock?: boolean;
+  withFencingToken?: boolean;
 }
 
 /**
@@ -29,22 +34,30 @@ export async function bookSeatWithAdvisoryLock(
   endTime: Date,
   options?: BookingOptions | RedlockManager,
 ): Promise<BookingResult> {
-  const lockManager =
-    options instanceof RedlockManager
-      ? options
-      : options?.redlockManager !== undefined
-      ? options.redlockManager
-      : getRedlockManager();
+  const isManagerInstance = options instanceof RedlockManager;
+  const bookingOpts = !isManagerInstance ? options : undefined;
 
-  const lockTtlMs =
-    options && !(options instanceof RedlockManager) && options.lockTtlMs
-      ? options.lockTtlMs
-      : 5000;
+  const lockManager = isManagerInstance
+    ? options
+    : options?.redlockManager !== undefined
+    ? options.redlockManager
+    : getRedlockManager();
+
+  const lockTtlMs = bookingOpts?.lockTtlMs ?? 5000;
+  const useSlotLevel = bookingOpts?.useSlotLevelLock ?? false;
+  const withFencingToken = bookingOpts?.withFencingToken ?? true;
 
   if (lockManager) {
-    const lockKey = `seat:${seatId}`;
+    const datePrefix = startTime.toISOString().slice(0, 10);
+    const lockKey = useSlotLevel
+      ? `seat:${seatId}:${datePrefix}`
+      : `seat:${seatId}`;
+
     const lock = await lockManager.acquire(lockKey, lockTtlMs, {
       autoRenew: true,
+      retryCount: bookingOpts?.retryCount ?? 1,
+      retryDelayMs: bookingOpts?.retryDelayMs ?? 100,
+      withFencingToken,
     });
     if (!lock) {
       return {
@@ -102,6 +115,7 @@ export async function bookSeatWithAdvisoryLock(
         return {
           success: true,
           reservation,
+          fencingToken: lock.fencingToken,
         };
       });
     } catch (err: any) {

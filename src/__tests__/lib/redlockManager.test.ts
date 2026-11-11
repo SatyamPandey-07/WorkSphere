@@ -85,6 +85,21 @@ function createMockRedisNode(id: string) {
         return 0;
       }
 
+      // Fencing acquisition Lua script: SET NX PX + INCR fencing key
+      if (script.includes("incr")) {
+        const token = String(args[0]);
+        const ttl = Number(args[1]);
+        if (isAlive) {
+          return [0, 0];
+        }
+        store.set(key, { value: token, expiresAt: now + ttl });
+        const fenceKey = keys[1] || `${key}:fencing`;
+        const prevFence = Number(store.get(fenceKey)?.value || 0);
+        const nextFence = prevFence + 1;
+        store.set(fenceKey, { value: String(nextFence), expiresAt: Infinity });
+        return [1, nextFence];
+      }
+
       return 0;
     },
     async get(key: string) {
@@ -384,6 +399,68 @@ describe("RedlockManager Distributed Lock Suite", () => {
       expect(result.success).toBe(false);
       expect(result.isConflict).toBe(true);
       expect(result.error).toMatch(/lease was lost/i);
+    });
+
+    it("generates monotonically increasing fencing tokens across acquisitions", async () => {
+      const lock1 = await manager.acquire("resource:desk:fencing_01", 3000, {
+        withFencingToken: true,
+      });
+      expect(lock1).not.toBeNull();
+      expect(typeof lock1?.fencingToken).toBe("number");
+      const token1 = lock1!.fencingToken!;
+      await lock1?.release();
+
+      const lock2 = await manager.acquire("resource:desk:fencing_01", 3000, {
+        withFencingToken: true,
+      });
+      expect(lock2).not.toBeNull();
+      expect(typeof lock2?.fencingToken).toBe("number");
+      const token2 = lock2!.fencingToken!;
+      await lock2?.release();
+
+      expect(token2).toBeGreaterThan(token1);
+    });
+
+    it("rolls back partial node extensions when extension quorum fails", async () => {
+      const lock = await manager.acquire("resource:desk:extend_rollback", 2000);
+      expect(lock).not.toBeNull();
+
+      // Nodes 1 and 2 fail during extension, so only node 0 could extend
+      nodes[1].setShouldFail(true);
+      nodes[2].setShouldFail(true);
+
+      const extended = await manager.extend(lock!, 5000);
+      expect(extended).toBe(false);
+
+      // Node 0 must have had its partial extension rolled back
+      expect(nodes[0].store.has("resource:desk:extend_rollback")).toBe(false);
+    });
+
+    it("refuses to extend an already released or lost lock", async () => {
+      const lock = await manager.acquire("resource:desk:released_guard", 2000);
+      expect(lock).not.toBeNull();
+      await lock!.release();
+
+      const extended = await lock!.extend(2000);
+      expect(extended).toBe(false);
+    });
+
+    it("supports granular slot-aware booking and propagates fencing tokens", async () => {
+      const result = await bookSeatWithAdvisoryLock(
+        mockPrisma,
+        "seat_slot_01",
+        "user_200",
+        new Date("2026-12-05T09:00:00Z"),
+        new Date("2026-12-05T11:00:00Z"),
+        {
+          redlockManager: manager,
+          useSlotLevelLock: true,
+          withFencingToken: true,
+        }
+      );
+
+      expect(result.success).toBe(true);
+      expect(typeof result.fencingToken).toBe("number");
     });
   });
 });

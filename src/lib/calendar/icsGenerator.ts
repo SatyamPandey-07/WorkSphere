@@ -1,3 +1,14 @@
+ feat/rrule-ics-calendar-7422
+export type RecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY";
+
+export interface RecurrenceOptions {
+  freq: RecurrenceFrequency;
+  interval?: number;
+  byDay?: string[]; // e.g., ["MO", "WE", "FR"]
+  until?: Date;
+  count?: number;
+  exdates?: Date[]; // Cancelled exception dates
+
 import { parseBookingDateTime } from "@/lib/booking/dateTimeAdapter";
 import {
   buildIcsAlarmLines,
@@ -88,20 +99,34 @@ export interface BookingCalendarInput {
     latitude?: number | null;
     longitude?: number | null;
   };
+ main
 }
 
-export interface BookingCalendarEvent {
+export interface IcsEventOptions {
   uid: string;
+  summary: string;
+  description?: string;
+  location?: string;
   start: Date;
   end: Date;
-  title: string;
-  description: string;
-  location: string;
-  timeZone: string;
-  status: "CONFIRMED" | "TENTATIVE" | "CANCELLED";
-  geo: { latitude: number; longitude: number } | null;
+  recurrence?: RecurrenceOptions;
+  organizer?: { name: string; email: string };
 }
 
+ feat/rrule-ics-calendar-7422
+/**
+ * Format Date to UTC iCalendar format: YYYYMMDDTHHMMSSZ
+ */
+export function formatDateToICS(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = pad(date.getUTCMonth() + 1);
+  const day = pad(date.getUTCDate());
+  const hours = pad(date.getUTCHours());
+  const minutes = pad(date.getUTCMinutes());
+  const seconds = pad(date.getUTCSeconds());
+
+  return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
 export interface BookingIcsOptions {
   /** Minutes before start for each VALARM. Defaults to a single 30 minute reminder. */
   alarmMinutes?: number[];
@@ -135,72 +160,40 @@ function mapStatus(status?: string | null): BookingCalendarEvent["status"] {
   if (value === "CANCELLED" || value === "CANCELLED_BY_OPERATOR") return "CANCELLED";
   if (value === "PENDING") return "TENTATIVE";
   return "CONFIRMED";
+ main
 }
 
 /**
- * Normalises a booking row into a calendar event. The wall clock date and time
- * are read in the booking's own IANA zone (falling back to UTC) so the UTC
- * instants are right regardless of where the server runs.
- * Returns null when the date or time cannot be parsed.
+ * Build RFC 5545 compliant RRULE string
  */
-export function buildBookingCalendarEvent(
-  booking: BookingCalendarInput,
-): BookingCalendarEvent | null {
-  const timeZone = booking.timeZone || "UTC";
-  const start = parseBookingDateTime(booking.date, booking.time, timeZone);
-  if (!start) return null;
+export function buildRRule(options: RecurrenceOptions): string {
+  const parts: string[] = [`FREQ=${options.freq}`];
 
-  const rawDuration = booking.duration;
-  const minutes =
-    isFiniteNumber(rawDuration) && rawDuration > 0
-      ? Math.min(Math.floor(rawDuration), MAX_DURATION_MINUTES)
-      : DEFAULT_DURATION_MINUTES;
-  const end = new Date(start.getTime() + minutes * 60_000);
+  if (options.interval && options.interval > 1) {
+    parts.push(`INTERVAL=${options.interval}`);
+  }
 
-  const ref = booking.confirmationId || booking.id;
-  const venueName = booking.venue.name;
-  const address = booking.venue.address?.trim() || "";
-  const location = address ? `${venueName}, ${address}` : venueName;
+  if (options.byDay && options.byDay.length > 0) {
+    parts.push(`BYDAY=${options.byDay.join(",")}`);
+  }
 
-  const description = [
-    `Booking at ${venueName}`,
-    address ? `Address: ${address}` : "",
-    booking.seatNumber ? `Seat: ${booking.seatNumber}` : "",
-    `Booking ID: ${ref}`,
-    `Duration: ${minutes} min`,
-    `Local time zone: ${timeZone}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  if (options.until) {
+    parts.push(`UNTIL=${formatDateToICS(options.until)}`);
+  } else if (options.count && options.count > 0) {
+    parts.push(`COUNT=${options.count}`);
+  }
 
-  const { latitude, longitude } = booking.venue;
-  const geo =
-    isFiniteNumber(latitude) &&
-    isFiniteNumber(longitude) &&
-    Math.abs(latitude) <= 90 &&
-    Math.abs(longitude) <= 180
-      ? { latitude, longitude }
-      : null;
-
-  return {
-    uid: `${booking.id.replace(/[^A-Za-z0-9-]/g, "")}@worksphere.app`,
-    start,
-    end,
-    title: `Booking at ${venueName}`,
-    description,
-    location,
-    timeZone,
-    status: mapStatus(booking.status),
-    geo,
-  };
+  return `RRULE:${parts.join(";")}`;
 }
 
 /**
- * RFC 5545 iCalendar feed for one booking. Lines are CRLF terminated, folded at
- * 75 octets, and text values are escaped. Times are written in UTC so every
- * client (Apple, Google, Outlook) resolves the same instant.
- * Returns null when the booking date or time is invalid.
+ * Generate RFC 5545 iCalendar content string for booking events
  */
+ feat/rrule-ics-calendar-7422
+export function generateICS(event: IcsEventOptions): string {
+  const now = new Date();
+  const lines: string[] = [
+
 export function generateBookingIcs(
   booking: BookingCalendarInput,
   options: BookingIcsOptions = {},
@@ -216,13 +209,20 @@ export function generateBookingIcs(
   const stamp = formatIcsUtc(options.now ?? new Date());
 
   const lines = [
+ main
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//WorkSphere//Booking Calendar//EN",
+    "PRODID:-//WorkSphere//Desk Booking Generator//EN",
     "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
+    "METHOD:REQUEST",
     "BEGIN:VEVENT",
     `UID:${event.uid}`,
+ feat/rrule-ics-calendar-7422
+    `DTSTAMP:${formatDateToICS(now)}`,
+    `DTSTART:${formatDateToICS(event.start)}`,
+    `DTEND:${formatDateToICS(event.end)}`,
+    `SUMMARY:${escapeICS(event.summary)}`,
+
     `DTSTAMP:${stamp}`,
     `DTSTART:${formatIcsUtc(event.start)}`,
     `DTEND:${formatIcsUtc(event.end)}`,
@@ -235,38 +235,43 @@ export function generateBookingIcs(
     ...buildIcsAlarmLines(alarms, `Reminder: ${event.title}`),
     "END:VEVENT",
     "END:VCALENDAR",
+ main
   ];
 
-  return lines.map(foldIcsLine).join("\r\n") + "\r\n";
+  if (event.description) {
+    lines.push(`DESCRIPTION:${escapeICS(event.description)}`);
+  }
+
+  if (event.location) {
+    lines.push(`LOCATION:${escapeICS(event.location)}`);
+  }
+
+  if (event.organizer) {
+    lines.push(
+      `ORGANIZER;CN=${escapeICS(event.organizer.name)}:mailto:${event.organizer.email}`,
+    );
+  }
+
+  if (event.recurrence) {
+    lines.push(buildRRule(event.recurrence));
+
+    if (event.recurrence.exdates && event.recurrence.exdates.length > 0) {
+      const formattedExdates = event.recurrence.exdates
+        .map((d) => formatDateToICS(d))
+        .join(",");
+      lines.push(`EXDATE:${formattedExdates}`);
+    }
+  }
+
+  lines.push("STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR");
+
+  return lines.join("\r\n");
 }
 
-/** One click "add to Google Calendar" link. */
-export function buildGoogleCalendarLink(event: BookingCalendarEvent): string {
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: event.title,
-    dates: `${formatIcsUtc(event.start)}/${formatIcsUtc(event.end)}`,
-    details: event.description,
-    location: event.location,
-    ctz: event.timeZone,
-  });
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
-
-/** One click "add to Outlook" link (personal accounts by default, work or school with `work`). */
-export function buildOutlookWebLink(
-  event: BookingCalendarEvent,
-  account: "personal" | "work" = "personal",
-): string {
-  const host = account === "work" ? "outlook.office.com" : "outlook.live.com";
-  const params = new URLSearchParams({
-    path: "/calendar/action/compose",
-    rru: "addevent",
-    subject: event.title,
-    startdt: formatIsoUtc(event.start),
-    enddt: formatIsoUtc(event.end),
-    body: event.description,
-    location: event.location,
-  });
-  return `https://${host}/calendar/0/deeplink/compose?${params.toString()}`;
+function escapeICS(str: string): string {
+  return str
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\n/g, "\\n");
 }

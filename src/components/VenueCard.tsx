@@ -185,7 +185,9 @@ export function TacticalWaypointPill({
             Aviation Grid
           </span>
         </div>
-        <div className="text-[11px] text-zinc-300 font-mono">{gridCoordinate}</div>
+        <div className="text-[11px] text-zinc-300 font-mono">
+          {gridCoordinate}
+        </div>
         <div className="text-[10px] text-emerald-300/80 font-mono mt-0.5 pt-1 border-t border-zinc-800">
           GPS: {fullDecimal}
         </div>
@@ -340,22 +342,26 @@ export function VenueCard({
   // Helper function to convert base USD price
   const formatPrice = (basePriceUSD: number) => {
     // Standard conversion rates (can be replaced with live API later)
-    const rates = {
+    const rates: Record<string, number> = {
       USD: 1,
       EUR: 0.92,
       GBP: 0.79,
       INR: 83.5,
+      JPY: 155.0,
     };
 
-    const symbols = {
+    const symbols: Record<string, string> = {
       USD: "$",
       EUR: "€",
       GBP: "£",
       INR: "₹",
+      JPY: "¥",
     };
 
-    const convertedPrice = basePriceUSD * rates[currency];
-    return `${symbols[currency]}${convertedPrice.toFixed(2)}`;
+    const rate = rates[currency] ?? 1;
+    const symbol = symbols[currency] ?? "$";
+    const convertedPrice = basePriceUSD * rate;
+    return `${symbol}${convertedPrice.toFixed(2)}`;
   };
 
   // =========================================================================
@@ -919,7 +925,10 @@ export function VenueCard({
         {/* Aerospace Mach Speed Classification Badge (#6175) */}
         {venue.amenities?.wifiSpeed ? (
           <div className="flex items-center gap-2 mb-3">
-            <MachSpeedBadge downloadMbps={venue.amenities.wifiSpeed} size="sm" />
+            <MachSpeedBadge
+              downloadMbps={venue.amenities.wifiSpeed}
+              size="sm"
+            />
           </div>
         ) : null}
 

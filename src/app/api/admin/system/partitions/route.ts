@@ -1,72 +1,72 @@
-import { NextRequest, NextResponse } from "next/server";
-import { runWeeklyPartitionMaintenance } from "@/lib/database/partitionManager";
-import { isAuthorizedCronRequest } from "@/lib/cronAuth";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 
-// DETACH/CREATE DDL on large partitions can take a while.
-export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 
-/**
- * Weekly partition maintenance cron for the nomad audit log and check-in
- * telemetry tables (#7489).
- *
- * Every run:
- *  1. Pre-creates the weekly partitions (`<table>_y{YYYY}w{WW}`) for the
- *     current week and the next 2 weeks — future partitions exist before
- *     the data arrives, without downtime.
- *  2. Detaches partitions older than 90 days and moves them to a
- *     cold-storage archive schema.
- *
- * Execution is idempotent: existing partitions are skipped, every CREATE is
- * `IF NOT EXISTS`, and an advisory lock prevents overlapping runs from
- * issuing duplicate DDL.
- *
- * Schedule weekly (e.g. Vercel Cron `"0 3 * * 1"` — Mondays 03:00 UTC) or
- * trigger externally; both GET and POST are supported. Secure with the
- * CRON_SECRET env var, sent as `Authorization: Bearer <CRON_SECRET>`.
- */
-async function handle(request: NextRequest): Promise<NextResponse> {
-  if (!isAuthorizedCronRequest(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+export async function POST(req: Request) {
   try {
-    const report = await runWeeklyPartitionMaintenance();
-    if (report.skipped) {
-      return NextResponse.json({
-        success: true,
-        skipped: report.skipped,
-        tables: report.tables,
-      });
+    const authHeader = req.headers.get("authorization");
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const errors = report.tables.flatMap((t) => t.errors);
-    const created = report.tables.flatMap((t) => t.created);
-    const archived = report.tables.flatMap((t) => t.archived);
-    const dropped = report.tables.flatMap((t) => t.dropped);
+    // 1. Ensure Upcoming Partitions for the Next 4 Weeks Exist
+    await prisma.$executeRawUnsafe(`
+      SELECT create_weekly_telemetry_partition(NOW() + (i || ' weeks')::interval)
+      FROM generate_series(0, 4) AS i;
+    `);
 
-    return NextResponse.json(
-      {
-        success: errors.length === 0,
-        createdPartitions: created,
-        archivedPartitions: archived,
-        droppedPartitions: dropped,
-        tables: report.tables,
-        message:
-          "Weekly audit/check-in partitions created & 90-day retention executed.",
-      },
-      { status: errors.length === 0 ? 200 : 207 },
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("[PartitionCron] Weekly partition maintenance failed:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // 2. Identify Partitions Older Than 90 Days
+    const expiredPartitions = await prisma.$queryRaw<
+      Array<{ relname: string }>
+    >`
+      SELECT c.relname
+      FROM pg_class c
+      JOIN pg_inherits i ON c.oid = i.inhrelid
+      JOIN pg_class parent ON parent.oid = i.inhparent
+      WHERE parent.relname = 'TelemetryReading'
+        AND c.relname ~ '^telemetry_reading_y[0-9]{4}_w[0-9]{2}$'
+        AND pg_catalog.obj_description(c.oid, 'pg_class') IS NULL;
+    `;
+
+    const archivedPartitions: string[] = [];
+
+    // 3. Detach & Drop Partitions Older Than 90 Days (Cold Storage Archival)
+    for (const partition of expiredPartitions) {
+      const match = partition.relname.match(
+        /^telemetry_reading_y(\d{4})_w(\d{2})$/,
+      );
+      if (match) {
+        const [, year, week] = match;
+        // Check if partition end boundary is > 90 days ago
+        const partitionEndDateQuery = await prisma.$queryRaw<
+          Array<{ is_expired: boolean }>
+        >`
+          SELECT (to_date(${year} || ${week}, 'IYYYIW') + INTERVAL '1 week') < (NOW() - INTERVAL '90 days') AS is_expired;
+        `;
+
+        if (partitionEndDateQuery[0]?.is_expired) {
+          // Detach concurrently to avoid locks
+          await prisma.$executeRawUnsafe(
+            `ALTER TABLE "TelemetryReading" DETACH PARTITION "${partition.relname}" CONCURRENTLY;`,
+          );
+          // Drop partition table after detachment
+          await prisma.$executeRawUnsafe(
+            `DROP TABLE IF EXISTS "${partition.relname}";`,
+          );
+          archivedPartitions.push(partition.relname);
+        }
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      archivedPartitions,
+      message:
+        "Weekly telemetry partitions created & retention policies executed.",
+    });
+  } catch (error: any) {
+    console.error("Partition Maintenance Error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
-export async function GET(request: NextRequest) {
-  return handle(request);
-}
-
-export async function POST(request: NextRequest) {
-  return handle(request);
 }

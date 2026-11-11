@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-118%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-121%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-118-active-rockstars"><b>👥 Contributors (118)</b></a> •
+  <a href="#-contributors-121-active-rockstars"><b>👥 Contributors (121)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (118 Active Rockstars)
+### 🚀 Contributors (121 Active Rockstars)
 
-A massive thank you to all **118 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **121 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -802,10 +802,30 @@ A massive thank you to all **118 brilliant contributors and bots** building Work
         <sub><b>harichillin</b></sub>
       </a>
     </td>
-    <td align="center" width="14.28%"></td>
-    <td align="center" width="14.28%"></td>
-    <td align="center" width="14.28%"></td>
-    <td align="center" width="14.28%"></td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/CoderSoham345">
+        <img src="https://avatars.githubusercontent.com/u/184341131?v=4" width="55px;" height="55px;" alt="CoderSoham345" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>CoderSoham345</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/kiranShamsHere">
+        <img src="https://avatars.githubusercontent.com/u/160856436?v=4" width="55px;" height="55px;" alt="kiranShamsHere" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>kiranShamsHere</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Rohan766-negi">
+        <img src="https://avatars.githubusercontent.com/u/226471698?v=4" width="55px;" height="55px;" alt="Rohan766-negi" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Rohan766-negi</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Khushi-agarwal1401">
+        <img src="https://avatars.githubusercontent.com/u/233539105?v=4" width="55px;" height="55px;" alt="Khushi-agarwal1401" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Khushi-agarwal1401</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1017,12 +1037,14 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🛡️ Zero-Knowledge Proofs, Security & Compliance
 
+- **ZK-SNARK Coworking Membership Verifier**: Circom-compiled Groth16 zero-knowledge circuit for proving coworking membership passes and access tiers without disclosing nomad identity (`/api/zkp/membership/verify`, `circuits/membership_verifier.circom`).
 - **Decentralized DID Wallet & ZK-Age / Identity Verification**: Verify KYC and identity requirements without disclosing personal identity documents (`/test-student-zkp`, `/api/identity/verify`).
 - **Client-Side PII Redaction & Document Sanitization Pipeline**: In-browser regex and NER model scrubbing sensitive credentials, emails, and phone numbers before cloud transmission (`/api/documents/sanitize`).
 - **AI-Powered Legal & NDA Redline Assistant**: In-browser automated contract analysis, clause risk scoring, and interactive redlining before booking commercial spaces (`/api/legal/redline`).
 - **Cryptographic Proof-of-Deep-Work Ledger with ZK-SNARKs**: Verifiable proof of undistracted deep-work time for client billing without surveillance (`/api/zkp/deepwork`).
 - **ECDH P-256 + AES-GCM 256 End-to-End Encrypted (E2EE) Chat & SPKI Key Pinning**: Zero-knowledge team communication with SPKI SHA-256 Certificate Public Key Pinning (`/api/auth/passkey/*`).
 - **Audit Log SHA-256 Merkle Tree Verification**: Tamper-evident immutable audit log endpoint (`/api/admin/audit/verify`).
+- **Atomic Redis Sliding-Window Rate Limiter**: High-concurrency protection using atomic Lua scripts preventing burst bypasses across API routes (`/api/v1/*`).
 
 ---
 

@@ -16,6 +16,10 @@ export interface NomadPassportCoinProps {
 
 const DEFAULT_STAMP: PassportStamp = {
   stampId: "stamp-default-001",
+  badgeType: "bronze",
+  tierTitle: "Nomad Explorer",
+  issuedAt: "2026-01-01T00:00:00.000Z",
+  svgMarkup: "<svg></svg>",
   venueName: "WorkSphere Hub",
   epoch: 1,
   nullifierHash: "0x00000000000000000000000000000000",

@@ -84,6 +84,7 @@ export function VenueDetailDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   const lightboxOpenRef = useRef(false);
+  const triggerElementRef = useRef<HTMLElement | null>(null);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<
@@ -687,6 +688,10 @@ export function VenueDetailDialog({
   useEffect(() => {
     if (!isOpen) return;
 
+    if (typeof document !== "undefined") {
+      triggerElementRef.current = document.activeElement as HTMLElement | null;
+    }
+
     const el = dialogRef.current;
     if (el) {
       const focusTarget =
@@ -743,6 +748,12 @@ export function VenueDetailDialog({
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      if (
+        triggerElementRef.current &&
+        typeof triggerElementRef.current.focus === "function"
+      ) {
+        triggerElementRef.current.focus();
+      }
     };
   }, [isOpen]);
 

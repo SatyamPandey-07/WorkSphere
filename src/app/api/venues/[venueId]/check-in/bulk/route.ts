@@ -73,10 +73,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     try {
       body = await req.json();
     } catch {
-      return NextResponse.json(
-        { error: "Invalid JSON body" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
     const parseResult = BulkCheckInSchema.safeParse(body);
@@ -84,14 +81,20 @@ export async function POST(req: NextRequest, context: RouteContext) {
       return NextResponse.json(
         {
           error: "Validation failed",
-          errors: parseResult.error.errors,
+          errors:
+            (parseResult.error as any).errors ||
+            (parseResult.error as any).issues,
           details: parseResult.error.flatten(),
         },
         { status: 400 },
       );
     }
 
-    const { bookingIds, checkedInBy, checkInTimestamp } = parseResult.data;
+    const {
+      bookingIds,
+      checkedInBy: _checkedInBy,
+      checkInTimestamp,
+    } = parseResult.data;
 
     // 5. Execute updates atomically within a Prisma transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -137,9 +140,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
         const checkInTime = checkInTimestamp
           ? new Date(checkInTimestamp)
           : new Date();
-        const expiresAt = new Date(
-          checkInTime.getTime() + 4 * 60 * 60 * 1000,
-        );
+        const expiresAt = new Date(checkInTime.getTime() + 4 * 60 * 60 * 1000);
 
         for (const booking of eligibleBookings) {
           try {

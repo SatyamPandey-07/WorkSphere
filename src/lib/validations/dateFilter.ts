@@ -19,13 +19,16 @@ export const ISO_8601_REGEX =
  * Validates whether a calendar year, month, and day combination is valid,
  * including leap-year calculation for February.
  */
-function isValidCalendarDate(year: number, month: number, day: number): boolean {
+function isValidCalendarDate(
+  year: number,
+  month: number,
+  day: number,
+): boolean {
   if (year < 1000 || year > 9999) return false;
   if (month < 1 || month > 12) return false;
   if (day < 1) return false;
 
-  const isLeapYear =
-    (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 
   const daysInMonth = [
     31,
@@ -127,12 +130,10 @@ export function normalizeToUtcIso(val: string): string {
  * Zod schema for validating and normalizing ISO 8601 timestamps.
  */
 export const iso8601TimestampSchema = z
-  .string({
-    required_error: "Timestamp is required",
-    invalid_type_error: "Timestamp must be a string",
-  })
+  .string()
   .refine(isValidIso8601, {
-    message: "Must be a valid ISO 8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)",
+    message:
+      "Must be a valid ISO 8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)",
   })
   .transform((val) => normalizeToUtcIso(val));
 
@@ -236,10 +237,7 @@ export type ParseBookingDateFilterResult =
  * Request, URLSearchParams, or plain object.
  */
 export function parseBookingDateFilter(
-  input:
-    | URLSearchParams
-    | Request
-    | Record<string, string | null | undefined>,
+  input: URLSearchParams | Request | Record<string, string | null | undefined>,
 ): ParseBookingDateFilterResult {
   let params: {
     startDate?: string | null;
@@ -250,7 +248,8 @@ export function parseBookingDateFilter(
   if (typeof (input as Request).url === "string") {
     const url = new URL((input as Request).url);
     params = {
-      startDate: url.searchParams.get("startDate") || url.searchParams.get("from"),
+      startDate:
+        url.searchParams.get("startDate") || url.searchParams.get("from"),
       endDate: url.searchParams.get("endDate") || url.searchParams.get("to"),
       date: url.searchParams.get("date"),
     };
@@ -261,10 +260,11 @@ export function parseBookingDateFilter(
       date: input.get("date"),
     };
   } else if (input && typeof input === "object") {
+    const record = input as Record<string, string | null | undefined>;
     params = {
-      startDate: input.startDate || input.from,
-      endDate: input.endDate || input.to,
-      date: input.date,
+      startDate: record.startDate || record.from,
+      endDate: record.endDate || record.to,
+      date: record.date,
     };
   }
 
@@ -275,7 +275,8 @@ export function parseBookingDateFilter(
     if (!isValidIso8601(params.startDate)) {
       errors.push({
         field: "startDate",
-        issue: "startDate must be a valid ISO 8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)",
+        issue:
+          "startDate must be a valid ISO 8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)",
       });
     } else {
       normalizedStartDate = normalizeToUtcIso(params.startDate);
@@ -287,7 +288,8 @@ export function parseBookingDateFilter(
     if (!isValidIso8601(params.endDate)) {
       errors.push({
         field: "endDate",
-        issue: "endDate must be a valid ISO 8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)",
+        issue:
+          "endDate must be a valid ISO 8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)",
       });
     } else {
       normalizedEndDate = normalizeToUtcIso(params.endDate);
@@ -299,7 +301,8 @@ export function parseBookingDateFilter(
     if (!isValidIso8601(params.date)) {
       errors.push({
         field: "date",
-        issue: "date must be a valid ISO 8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)",
+        issue:
+          "date must be a valid ISO 8601 date string (e.g. YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.sssZ)",
       });
     } else {
       normalizedDate = normalizeToUtcIso(params.date);

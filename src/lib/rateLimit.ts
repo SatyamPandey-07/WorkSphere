@@ -2,9 +2,7 @@
  * Compatibility bridge: Re-export unified rate limiting implementations from @/lib/rateLimit.
  */
 
-import { auth } from "@clerk/nextjs/server";
-import { Ratelimit } from "@upstash/ratelimit";
-import { NextResponse } from "next/server";
+import type { RateLimitResult } from "./rateLimit/types";
 
 const DEFAULT_WINDOW_MS = 60_000;
 
@@ -373,7 +371,9 @@ function getUpstashLimiter(
  * Safely extracts the client IP from request headers.
  * Prioritizes direct proxy headers (X-Real-IP, CF-Connecting-IP) before X-Forwarded-For to prevent IP spoofing, falling back to loopback.
  */
-export function getClientIp(reqOrHeaders: Request | Headers | null | undefined): string {
+export function getClientIp(
+  reqOrHeaders: Request | Headers | null | undefined,
+): string {
   if (!reqOrHeaders) {
     return "127.0.0.1";
   }
@@ -390,7 +390,11 @@ export function getClientIp(reqOrHeaders: Request | Headers | null | undefined):
   const headers =
     reqOrHeaders instanceof Headers
       ? reqOrHeaders
-      : reqOrHeaders && typeof reqOrHeaders === "object" && "headers" in reqOrHeaders && reqOrHeaders.headers && typeof reqOrHeaders.headers.get === "function"
+      : reqOrHeaders &&
+          typeof reqOrHeaders === "object" &&
+          "headers" in reqOrHeaders &&
+          reqOrHeaders.headers &&
+          typeof reqOrHeaders.headers.get === "function"
         ? reqOrHeaders.headers
         : null;
 
@@ -728,7 +732,11 @@ export function applyRateLimitHeaders<T extends Response>(
   response: T,
   result: TieredRateLimitResult,
 ): T {
-  if (!response || !response.headers || typeof response.headers.set !== "function") {
+  if (
+    !response ||
+    !response.headers ||
+    typeof response.headers.set !== "function"
+  ) {
     return response;
   }
   const headers = getRateLimitHeaders(result);

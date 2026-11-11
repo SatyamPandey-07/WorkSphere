@@ -12,7 +12,7 @@
  * 4. Anti-spam Proof-of-Work validation support using ProofOfWorkValidator.
  */
 
-import type { Connection, Commitment } from "@solana/web3.js";
+import type { Connection } from "@solana/web3.js";
 import {
   ProofOfWorkValidator,
   type PoWSubmission,
@@ -21,17 +21,10 @@ import {
 export const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000; // 60 seconds
 
 export type SeatState =
-  | "available"
-  | "provisionally_reserved"
-  | "confirmed"
-  | "finalized";
+  "available" | "provisionally_reserved" | "confirmed" | "finalized";
 
 export type PaymentConfirmationStage =
-  | "pending"
-  | "confirmed"
-  | "finalized"
-  | "failed"
-  | "timeout";
+  "pending" | "confirmed" | "finalized" | "failed" | "timeout";
 
 export interface SeatReservationState {
   seatId: string;
@@ -148,7 +141,11 @@ export class SolanaPayEscrowManager {
     if (!signature || typeof signature !== "string" || !signature.trim()) {
       throw new Error("Transaction signature is required");
     }
-    if (!payerWallet || typeof payerWallet !== "string" || !payerWallet.trim()) {
+    if (
+      !payerWallet ||
+      typeof payerWallet !== "string" ||
+      !payerWallet.trim()
+    ) {
       throw new Error("payerWallet address is required");
     }
 
@@ -156,7 +153,9 @@ export class SolanaPayEscrowManager {
     if (powSubmission) {
       const isValid = this.validatePoW(powSubmission);
       if (!isValid) {
-        throw new Error("Invalid Proof-of-Work: anti-spam challenge validation failed");
+        throw new Error(
+          "Invalid Proof-of-Work: anti-spam challenge validation failed",
+        );
       }
     }
 
@@ -245,11 +244,10 @@ export class SolanaPayEscrowManager {
       subRecord.confirmedSubId = connection.onSignatureWithOptions(
         signature,
         (notification, context) => {
-          if (notification.err) {
+          const err = (notification as any).err;
+          if (err) {
             const errorMsg =
-              typeof notification.err === "string"
-                ? notification.err
-                : JSON.stringify(notification.err);
+              typeof err === "string" ? err : JSON.stringify(err);
             const reason = `Transaction failed on-chain: ${errorMsg}. Seat reservation reverted to available.`;
             this.rollback(seatId, reason, "failed");
             return;
@@ -272,14 +270,20 @@ export class SolanaPayEscrowManager {
               callbacks?.onStateChange?.(confirmedState);
               callbacks?.onConfirmed?.(confirmedState);
             } catch (err) {
-              console.error("[SolanaPayEscrow] Error in confirmed callback:", err);
+              console.error(
+                "[SolanaPayEscrow] Error in confirmed callback:",
+                err,
+              );
             }
           }
         },
         { commitment: "confirmed" },
       );
     } catch (err) {
-      console.error("[SolanaPayEscrow] Failed to subscribe to confirmed notification:", err);
+      console.error(
+        "[SolanaPayEscrow] Failed to subscribe to confirmed notification:",
+        err,
+      );
     }
 
     // Handle WebSocket listener for 'finalized' commitment
@@ -287,11 +291,10 @@ export class SolanaPayEscrowManager {
       subRecord.finalizedSubId = connection.onSignatureWithOptions(
         signature,
         (notification, context) => {
-          if (notification.err) {
+          const err = (notification as any).err;
+          if (err) {
             const errorMsg =
-              typeof notification.err === "string"
-                ? notification.err
-                : JSON.stringify(notification.err);
+              typeof err === "string" ? err : JSON.stringify(err);
             const reason = `Transaction failed on-chain during finalization: ${errorMsg}. Seat reservation reverted to available.`;
             this.rollback(seatId, reason, "failed");
             return;
@@ -299,7 +302,11 @@ export class SolanaPayEscrowManager {
 
           // Transition to finalized
           const current = this.reservations.get(seatId);
-          if (current && (current.state === "provisionally_reserved" || current.state === "confirmed")) {
+          if (
+            current &&
+            (current.state === "provisionally_reserved" ||
+              current.state === "confirmed")
+          ) {
             const finalizedState: SeatReservationState = {
               ...current,
               state: "finalized",
@@ -317,14 +324,20 @@ export class SolanaPayEscrowManager {
               callbacks?.onStateChange?.(finalizedState);
               callbacks?.onFinalized?.(finalizedState);
             } catch (err) {
-              console.error("[SolanaPayEscrow] Error in finalized callback:", err);
+              console.error(
+                "[SolanaPayEscrow] Error in finalized callback:",
+                err,
+              );
             }
           }
         },
         { commitment: "finalized" },
       );
     } catch (err) {
-      console.error("[SolanaPayEscrow] Failed to subscribe to finalized notification:", err);
+      console.error(
+        "[SolanaPayEscrow] Failed to subscribe to finalized notification:",
+        err,
+      );
     }
 
     this.activeSubscriptions.set(seatId, subRecord);
@@ -366,7 +379,10 @@ export class SolanaPayEscrowManager {
       callbacks?.onRollback?.(reason, rolledBackState);
       callbacks?.onStateChange?.(rolledBackState);
     } catch (callbackErr) {
-      console.error("[SolanaPayEscrow] Error in rollback callback:", callbackErr);
+      console.error(
+        "[SolanaPayEscrow] Error in rollback callback:",
+        callbackErr,
+      );
     }
 
     return rolledBackState;

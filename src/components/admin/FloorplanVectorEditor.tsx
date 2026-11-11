@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import {
   RotateCw,
   Trash2,
@@ -9,10 +9,15 @@ import {
   Maximize2,
   Square,
   Zap,
+  Volume2,
   VolumeX,
   Save,
   Link as LinkIcon,
 } from "lucide-react";
+import {
+  VolumetricAcousticShader,
+  floorplanElementsToAcousticScene,
+} from "@/components/venues/VolumetricAcousticShader";
 
 export interface ElementData {
   id: string;
@@ -52,6 +57,9 @@ export const FloorplanVectorEditor: React.FC<FloorplanVectorEditorProps> = ({
     "select" | "desk" | "wall" | "power" | "quiet_zone"
   >("select");
 
+  // Volumetric acoustic dispersion preview (issue #7392)
+  const [showAcousticPreview, setShowAcousticPreview] = useState(false);
+
   // Transform states
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -59,6 +67,17 @@ export const FloorplanVectorEditor: React.FC<FloorplanVectorEditorProps> = ({
   const canvasRef = useRef<SVGSVGElement | null>(null);
 
   const snapToGrid = (val: number) => Math.round(val / GRID_SIZE) * GRID_SIZE;
+
+  // Convert the current wall layout into a normalized acoustic scene for the
+  // volumetric ray-marching shader preview.
+  const acousticScene = useMemo(
+    () =>
+      floorplanElementsToAcousticScene(elements, {
+        wallAbsorptionDb: 15,
+        metersPerUnit: 0.1, // 10px grid cell ≈ 1 meter
+      }),
+    [elements]
+  );
 
   // Add Element to Canvas
   const handleCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -198,6 +217,21 @@ export const FloorplanVectorEditor: React.FC<FloorplanVectorEditorProps> = ({
             </>
           )}
 
+          {/* Volumetric Acoustic Dispersion Preview Toggle */}
+          <div className="h-4 w-[1px] bg-slate-800 mx-1" />
+          <button
+            onClick={() => setShowAcousticPreview((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              showAcousticPreview
+                ? "bg-cyan-600 text-white"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+            title="Volumetric acoustic dispersion preview"
+          >
+            <Volume2 className="w-3.5 h-3.5" />
+            {showAcousticPreview ? "Acoustic: On" : "Acoustic"}
+          </button>
+
           {/* Canvas Controls */}
           <div className="h-4 w-[1px] bg-slate-800 mx-1" />
           <button
@@ -230,6 +264,24 @@ export const FloorplanVectorEditor: React.FC<FloorplanVectorEditorProps> = ({
 
       {/* Main Canvas + Properties Drawer */}
       <div className="relative flex-1 flex overflow-hidden">
+        {showAcousticPreview ? (
+          <div className="flex-1 p-4 overflow-auto">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-semibold text-cyan-300">
+                Volumetric Acoustic Dispersion — ray-marched dBA heat map
+              </span>
+              <span className="text-[10px] text-slate-400">
+                {acousticScene.walls.length} wall
+                {acousticScene.walls.length === 1 ? "" : "s"} · sample emitters
+              </span>
+            </div>
+            <VolumetricAcousticShader
+              walls={acousticScene.walls}
+              roomWidthMeters={acousticScene.roomScaleMeters[0]}
+              roomHeightMeters={acousticScene.roomScaleMeters[1]}
+            />
+          </div>
+        ) : (
         <svg
           ref={canvasRef}
           onClick={handleCanvasClick}
@@ -318,9 +370,10 @@ export const FloorplanVectorEditor: React.FC<FloorplanVectorEditorProps> = ({
             })}
           </g>
         </svg>
+        )}
 
         {/* Selected Object Properties Drawer */}
-        {selectedIds.length === 1 && (
+        {selectedIds.length === 1 && !showAcousticPreview && (
           <div className="absolute right-4 top-4 w-64 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl text-xs flex flex-col gap-3">
             <span className="font-bold text-slate-200">Element Properties</span>
             {elements

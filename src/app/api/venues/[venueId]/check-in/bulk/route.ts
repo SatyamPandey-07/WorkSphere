@@ -114,7 +114,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
         const booking = foundMap.get(id);
         if (!booking) {
           failedIds.push(id);
-        } else if (booking.status === "CANCELLED") {
+        } else if ((booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR")) {
           failedIds.push(id);
         } else {
           eligibleBookings.push(booking);

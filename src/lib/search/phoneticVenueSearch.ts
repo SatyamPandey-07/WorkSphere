@@ -14,50 +14,81 @@ export interface VenueSearchResult {
   score: number;
 }
 
+/**
+ * Combines pg_trgm typo matching, English full-text rank, Double Metaphone,
+ * and a small historical-booking popularity signal for venue-name searches.
+ */
 export async function searchVenuesPhonetic(
   query: string,
+ feature/solana-optimistic-escrow-simulation
  feature/solana-optimistic-escrow-simulation
   limit: number = 20
 
   limit: number = 20,
  main
+
+  limit = 20,
+ main
 ): Promise<VenueSearchResult[]> {
-  if (!query || query.trim().length === 0) {
-    return [];
-  }
+  const normalizedQuery = typeof query === "string" ? query.trim().slice(0, 128) : "";
+  if (!normalizedQuery) return [];
 
-  const sanitizedQuery = query.trim().replace(/['"\\]/g, "");
+  const safeLimit = Number.isInteger(limit)
+    ? Math.max(1, Math.min(50, limit))
+    : 20;
 
-  const results = await prisma.$queryRaw<VenueSearchResult[]>`
-    SELECT 
-      id,
-      name,
-      description,
-      category,
+  return prisma.$queryRaw<VenueSearchResult[]> `
+    SELECT
+      venue."id",
+      venue."name",
+      venue."description",
+      venue."category",
       (
-        0.5 * similarity(name, ${sanitizedQuery}) +
-        0.3 * ts_rank(
-          to_tsvector('english', COALESCE(name, '') || ' ' || COALESCE(description, '')),
-          websearch_to_tsquery('english', ${sanitizedQuery})
+        0.55 * similarity(venue."name", ${normalizedQuery}) +
+        0.25 * ts_rank(
+          to_tsvector(
+            'english',
+            COALESCE(venue."name", '') || ' ' || COALESCE(venue."description", '')
+          ),
+          websearch_to_tsquery('english', ${normalizedQuery})
         ) +
-        0.2 * CASE 
-          WHEN dmetaphone(name) = dmetaphone(${sanitizedQuery}) THEN 1.0
-          WHEN dmetaphone(name) LIKE '%' || dmetaphone(${sanitizedQuery}) || '%' THEN 0.5
+        0.15 * CASE
+          WHEN dmetaphone(venue."name") = dmetaphone(${normalizedQuery}) THEN 1.0
+          WHEN dmetaphone(venue."name") LIKE '%' || dmetaphone(${normalizedQuery}) || '%' THEN 0.5
           ELSE 0.0
-        END
+        END +
+        0.05 * LEAST(
+          LN(1 + COALESCE(popularity.booking_count, 0)) / LN(101),
+          1.0
+        )
       )::double precision AS score
-    FROM "Venue"
-    WHERE 
-      similarity(name, ${sanitizedQuery}) > 0.15
-      OR to_tsvector('english', COALESCE(name, '') || ' ' || COALESCE(description, '')) @@ websearch_to_tsquery('english', ${sanitizedQuery})
-      OR dmetaphone(name) = dmetaphone(${sanitizedQuery})
-    ORDER BY score DESC
-    LIMIT ${limit};
+    FROM "Venue" AS venue
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::double precision AS booking_count
+      FROM "Booking" AS booking
+      WHERE booking."venueId" = venue."id"
+    ) AS popularity ON TRUE
+    WHERE
+      similarity(venue."name", ${normalizedQuery}) > 0.3
+      OR to_tsvector(
+        'english',
+        COALESCE(venue."name", '') || ' ' || COALESCE(venue."description", '')
+      ) @@ websearch_to_tsquery('english', ${normalizedQuery})
+      OR dmetaphone(venue."name") = dmetaphone(${normalizedQuery})
+    ORDER BY
+      score DESC,
+      popularity.booking_count DESC,
+      venue."rating" DESC NULLS LAST,
+      venue."name" ASC
+    LIMIT ${safeLimit};
   `;
+ feature/solana-optimistic-escrow-simulation
 
   return results;
  feature/solana-optimistic-escrow-simulation
 }
 
+
+ main
 }
  main

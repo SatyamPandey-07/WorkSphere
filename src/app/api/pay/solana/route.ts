@@ -164,7 +164,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (booking.status === "CANCELLED") {
+    if (
+      booking.status === "CANCELLED" ||
+      booking.status === "CANCELLED_BY_OPERATOR"
+    ) {
       return NextResponse.json(
         { error: "Cannot deposit for a cancelled booking" },
         { status: 400 },

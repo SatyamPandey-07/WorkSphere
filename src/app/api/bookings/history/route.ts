@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
         } else if (s === "CONFIRMED") {
           where.status = "CONFIRMED";
         } else if (s === "CANCELLED") {
-          where.status = "CANCELLED";
+          where.status = { in: ["CANCELLED", "CANCELLED_BY_OPERATOR"] };
         } else {
           where.status = s;
         }
@@ -70,7 +70,11 @@ export async function GET(req: NextRequest) {
             orConditions.push({ status: "COMPLETED" });
             orConditions.push({ status: "CONFIRMED", date: { lt: todayStr } });
           } else {
-            orConditions.push({ status: s });
+            orConditions.push(
+              s === "CANCELLED"
+                ? { status: { in: ["CANCELLED", "CANCELLED_BY_OPERATOR"] } }
+                : { status: s },
+            );
           }
         }
         where.OR = orConditions;

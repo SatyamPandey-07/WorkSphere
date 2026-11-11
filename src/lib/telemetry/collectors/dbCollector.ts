@@ -9,9 +9,12 @@ const FLUSH_INTERVAL_MS = 5_000;
 const SAMPLE_DECAY_START = 0.5;
 const CIRCUIT_BREAKER_THRESHOLD = 0.95;
 
-type BufferedSample = { model: string; sample: DbQuerySample };
+type BufferedSample = {
+  model: string;
+  sample: DbQuerySample;
+};
 
-// A fixed-size global ring also bounds memory when model names are high-cardinality.
+// A fixed-size global ring bounds history even when model names are high-cardinality.
 const samplesByModel = new Map<string, DbQuerySample[]>();
 const sampleRing: Array<BufferedSample | undefined> = new Array(MAX_TOTAL_SAMPLES);
 let sampleRingCursor = 0;
@@ -19,6 +22,8 @@ let sampleRingSize = 0;
 
 let slowQueryCount = 0;
 let totalQueryCount = 0;
+
+// Redis sample writes are bounded globally; aggregate counters remain exact.
 let pendingGlobalTotal = 0;
 let pendingGlobalSlow = 0;
 let pendingSamples: BufferedSample[] = [];
@@ -26,7 +31,10 @@ let flushInFlight: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 function getHeapPressure(): number {
-  if (typeof process === "undefined" || typeof process.memoryUsage !== "function") return 0;
+  if (typeof process === "undefined" || typeof process.memoryUsage !== "function") {
+    return 0;
+  }
+
   try {
     const { heapUsed, heapTotal } = process.memoryUsage();
     if (heapTotal <= 0) return 0;
@@ -37,16 +45,20 @@ function getHeapPressure(): number {
 }
 
 function getBufferPressure(): number {
-  return Math.max(pendingSamples.length / MAX_PENDING_SAMPLES, getHeapPressure());
+  return Math.max(
+    pendingSamples.length / MAX_PENDING_SAMPLES,
+    getHeapPressure(),
+  );
 }
 
-/** Detailed samples decay smoothly under load; aggregate counters remain exact. */
+/** Decays detailed-sample collection under load; aggregate counters are not sampled. */
 function getDetailedSampleRate(): number {
   const pressure = getBufferPressure();
   if (pressure <= SAMPLE_DECAY_START) return 1;
   if (pressure >= CIRCUIT_BREAKER_THRESHOLD) return 0;
 
-  const progress = (pressure - SAMPLE_DECAY_START) /
+  const progress =
+    (pressure - SAMPLE_DECAY_START) /
     (CIRCUIT_BREAKER_THRESHOLD - SAMPLE_DECAY_START);
   return Math.max(0, 1 - 0.9 * progress * progress);
 }
@@ -89,16 +101,22 @@ function addInMemorySample(model: string, sample: DbQuerySample): void {
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
-    promise.then((val) => {
-      clearTimeout(timer);
-      resolve(val);
-    }).catch((err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
+    const timer = setTimeout(() => {
+      reject(new Error(`Timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+    promise
+      .then((val) => {
+        clearTimeout(timer);
+        resolve(val);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
   });
 }
+
+// ─── Batch flush ─────────────────────────────────────────────────────────────
 
 function flushBuffer(): Promise<void> {
   if (flushInFlight) return flushInFlight;
@@ -130,13 +148,19 @@ function flushBuffer(): Promise<void> {
       const globalKey = "worksphere:telemetry:global";
       const modelsKey = "worksphere:telemetry:models";
 
-      if (globalTotal > 0) pipeline.hincrby(globalKey, "totalQueryCount", globalTotal);
-      if (globalSlow > 0) pipeline.hincrby(globalKey, "slowQueryCount", globalSlow);
+      if (globalTotal > 0) {
+        pipeline.hincrby(globalKey, "totalQueryCount", globalTotal);
+      }
+      if (globalSlow > 0) {
+        pipeline.hincrby(globalKey, "slowQueryCount", globalSlow);
+      }
 
       for (const [model, samples] of groupedSamples) {
         pipeline.sadd(modelsKey, model);
         const samplesKey = `worksphere:telemetry:samples:${model}`;
-        for (const sample of samples) pipeline.lpush(samplesKey, JSON.stringify(sample));
+        for (const sample of samples) {
+          pipeline.lpush(samplesKey, JSON.stringify(sample));
+        }
         pipeline.ltrim(samplesKey, 0, MAX_SAMPLES_PER_MODEL - 1);
       }
 
@@ -145,32 +169,44 @@ function flushBuffer(): Promise<void> {
       pendingGlobalTotal = Math.max(0, pendingGlobalTotal - globalTotal);
       pendingGlobalSlow = Math.max(0, pendingGlobalSlow - globalSlow);
       const flushedSamples = new Set(samplesSnapshot);
-      pendingSamples = pendingSamples.filter((entry) => !flushedSamples.has(entry));
+      pendingSamples = pendingSamples.filter(
+        (entry) => !flushedSamples.has(entry),
+      );
     } catch (error) {
       console.error("[dbTelemetry] Redis batch flush failed:", error);
     }
   };
 
-  flushInFlight = runFlush().finally(() => { flushInFlight = null; });
+  flushInFlight = runFlush().finally(() => {
+    flushInFlight = null;
+  });
   return flushInFlight;
 }
-
 function startFlusher(): void {
-  if (flushTimer || typeof window !== "undefined") return;
+  if (flushTimer) return;
+  if (typeof window !== "undefined") return;
+
   flushTimer = setInterval(() => {
     flushBuffer().catch((error) => {
       console.error("[dbTelemetry] Unhandled flush error:", error);
     });
   }, FLUSH_INTERVAL_MS);
-  if (flushTimer.unref) flushTimer.unref();
+
+  if (flushTimer.unref) {
+    flushTimer.unref();
+  }
 }
+
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 export function recordQueryDuration(model: string, durationMs: number) {
   totalQueryCount += 1;
   if (durationMs >= SLOW_QUERY_THRESHOLD_MS) slowQueryCount += 1;
 
   pendingGlobalTotal += 1;
-  if (durationMs >= SLOW_QUERY_THRESHOLD_MS) pendingGlobalSlow += 1;
+  if (durationMs >= SLOW_QUERY_THRESHOLD_MS) {
+    pendingGlobalSlow += 1;
+  }
 
   const sampleRate = getDetailedSampleRate();
   if (sampleRate <= 0 || pendingSamples.length >= MAX_PENDING_SAMPLES) return;
@@ -181,7 +217,6 @@ export function recordQueryDuration(model: string, durationMs: number) {
   addInMemorySample(key, sample);
   pendingSamples.push({ model: key, sample });
 }
-
 export function flushTelemetryBuffer(): Promise<void> {
   return flushBuffer();
 }
@@ -195,33 +230,49 @@ declare global {
   var __dbTelemetryFlusherStarted: boolean | undefined;
 }
 
+// ─── Read API ─────────────────────────────────────────────────────────────────
+
 function percentile(sorted: number[], p: number) {
   if (sorted.length === 0) return 0;
-  const index = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  const index = Math.min(
+    sorted.length - 1,
+    Math.floor((p / 100) * sorted.length),
+  );
   return sorted[index];
 }
 
 function getDbLatencyStatsSync() {
   const allDurations: number[] = [];
-  const byModel: Array<{ model: string; avgMs: number; p95Ms: number; sampleCount: number }> = [];
+  const byModel: Array<{
+    model: string;
+    avgMs: number;
+    p95Ms: number;
+    sampleCount: number;
+  }> = [];
 
   for (const [model, samples] of samplesByModel.entries()) {
-    const durations = samples.map((sample) => sample.durationMs).sort((a, b) => a - b);
+    const durations = samples.map((s) => s.durationMs).sort((a, b) => a - b);
     allDurations.push(...durations);
+
     byModel.push({
       model,
-      avgMs: Math.round(durations.reduce((sum, duration) => sum + duration, 0) / (durations.length || 1)),
+      avgMs: Math.round(
+        durations.reduce((sum, d) => sum + d, 0) / (durations.length || 1),
+      ),
       p95Ms: Math.round(percentile(durations, 95)),
       sampleCount: durations.length,
     });
   }
 
   allDurations.sort((a, b) => a - b);
+
   return {
     totalQueryCount,
     slowQueryCount,
     slowQueryThresholdMs: SLOW_QUERY_THRESHOLD_MS,
-    avgMs: Math.round(allDurations.reduce((sum, duration) => sum + duration, 0) / (allDurations.length || 1)),
+    avgMs: Math.round(
+      allDurations.reduce((sum, d) => sum + d, 0) / (allDurations.length || 1),
+    ),
     p95Ms: Math.round(percentile(allDurations, 95)),
     byModel: byModel.sort((a, b) => b.avgMs - a.avgMs),
   };
@@ -229,44 +280,70 @@ function getDbLatencyStatsSync() {
 
 export async function getDbLatencyStats() {
   const redis = getRedis();
+
   if (redis) {
     try {
       const globalKey = "worksphere:telemetry:global";
       const modelsKey = "worksphere:telemetry:models";
+
       const [globalStats, models] = await Promise.all([
-        withTimeout(redis.hgetall(globalKey), 1500) as Promise<Record<string, string | number> | null>,
+        withTimeout(redis.hgetall(globalKey), 1500) as Promise<Record<
+          string,
+          string | number
+        > | null>,
         withTimeout(redis.smembers(modelsKey), 1500) as Promise<string[]>,
       ]);
 
-      const redisTotalQueryCount = globalStats ? Number(globalStats.totalQueryCount || 0) : 0;
-      const redisSlowQueryCount = globalStats ? Number(globalStats.slowQueryCount || 0) : 0;
-      const byModel: Array<{ model: string; avgMs: number; p95Ms: number; sampleCount: number }> = [];
+      const redisTotalQueryCount = globalStats
+        ? Number(globalStats.totalQueryCount || 0)
+        : 0;
+      const redisSlowQueryCount = globalStats
+        ? Number(globalStats.slowQueryCount || 0)
+        : 0;
+
+      const byModel: Array<{
+        model: string;
+        avgMs: number;
+        p95Ms: number;
+        sampleCount: number;
+      }> = [];
       const allDurations: number[] = [];
 
       if (models && models.length > 0) {
         const pipeline = redis.pipeline();
-        for (const model of models) pipeline.lrange(`worksphere:telemetry:samples:${model}`, 0, -1);
+        for (const model of models) {
+          pipeline.lrange(`worksphere:telemetry:samples:${model}`, 0, -1);
+        }
         const samplesListsRaw = await withTimeout(pipeline.exec(), 1500);
 
-        for (let index = 0; index < models.length; index += 1) {
-          const model = models[index];
-          const rawSamples = samplesListsRaw[index] as any[];
+        for (let i = 0; i < models.length; i++) {
+          const model = models[i];
+          const rawSamples = samplesListsRaw[i] as any[];
           if (!rawSamples || rawSamples.length === 0) continue;
 
-          const durations = rawSamples.map((raw) => {
-            try {
-              const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-              return typeof parsed?.durationMs === "number" ? parsed.durationMs : null;
-            } catch {
-              return null;
-            }
-          }).filter((duration): duration is number => duration !== null).sort((a, b) => a - b);
+          const durations = rawSamples
+            .map((s) => {
+              try {
+                const parsed = typeof s === "string" ? JSON.parse(s) : s;
+                return typeof parsed?.durationMs === "number"
+                  ? parsed.durationMs
+                  : null;
+              } catch {
+                return null;
+              }
+            })
+            .filter((d): d is number => d !== null)
+            .sort((a, b) => a - b);
 
           if (durations.length === 0) continue;
+
           allDurations.push(...durations);
+
           byModel.push({
             model,
-            avgMs: Math.round(durations.reduce((sum, duration) => sum + duration, 0) / durations.length),
+            avgMs: Math.round(
+              durations.reduce((sum, d) => sum + d, 0) / durations.length,
+            ),
             p95Ms: Math.round(percentile(durations, 95)),
             sampleCount: durations.length,
           });
@@ -274,16 +351,23 @@ export async function getDbLatencyStats() {
       }
 
       allDurations.sort((a, b) => a - b);
+
       return {
         totalQueryCount: redisTotalQueryCount,
         slowQueryCount: redisSlowQueryCount,
         slowQueryThresholdMs: SLOW_QUERY_THRESHOLD_MS,
-        avgMs: Math.round(allDurations.reduce((sum, duration) => sum + duration, 0) / (allDurations.length || 1)),
+        avgMs: Math.round(
+          allDurations.reduce((sum, d) => sum + d, 0) /
+            (allDurations.length || 1),
+        ),
         p95Ms: Math.round(percentile(allDurations, 95)),
         byModel: byModel.sort((a, b) => b.avgMs - a.avgMs),
       };
     } catch (error) {
-      console.error("[dbTelemetry] Redis read failed, falling back to in-memory:", error);
+      console.error(
+        "[dbTelemetry] Redis read failed, falling back to in-memory:",
+        error,
+      );
     }
   }
 

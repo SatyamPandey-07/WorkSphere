@@ -1,585 +1,87 @@
-/**
- * Solana Escrow Client for WorkSphere Desk Bookings
- *
- * Constructs unsigned transactions for non-custodial escrow deposits (SOL and
- * USDC SPL-token). Transactions are returned as base64-encoded serialized
- * buffers ready for signing by Phantom, Solflare or any standard Solana wallet.
- *
- * ## On-chain dependency
- *
- * This client is designed to integrate with a future custom escrow program
- * deployed on Solana. **No escrow program is currently deployed.** The deposit
- * flow therefore uses native SOL transfers (SystemProgram) and SPL token
- * transfers to a deterministic PDA vault address. Once an escrow program is
- * deployed, the `buildDepositInstruction` helpers can be swapped out for the
- * program's `deposit` instruction without changing the public API surface.
- *
- * Release and refund are intentionally **not** implemented as client-side
- * transfer instructions — doing so would be custodial and insecure. They
- * require a verified on-chain escrow program that enforces check-in proofs and
- * venue-closure authority. Stub signatures are provided to document the
- * expected interface.
- *
- * @module solana/escrowClient
- */
+import { Connection, Transaction, VersionedTransaction } from "@solana/web3.js";
 
-import {
-  Connection,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-  TransactionInstruction,
-  LAMPORTS_PER_SOL,
-} from "@solana/web3.js";
-export const TOKEN_PROGRAM_ID = new PublicKey(
-  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-);
-export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(
-  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
-);
-
-export function getAssociatedTokenAddressSync(
-  mint: PublicKey,
-  owner: PublicKey,
-  _allowOwnerOffCurve = false,
-  programId = TOKEN_PROGRAM_ID,
-  associatedTokenProgramId = ASSOCIATED_TOKEN_PROGRAM_ID,
-): PublicKey {
-  const [address] = PublicKey.findProgramAddressSync(
-    [owner.toBuffer(), programId.toBuffer(), mint.toBuffer()],
-    associatedTokenProgramId,
-  );
-  return address;
-}
-
-export function createTransferInstruction(
-  source: PublicKey,
-  destination: PublicKey,
-  owner: PublicKey,
-  amount: number | bigint,
-  multiSigners: (PublicKey | any)[] = [],
-  programId = TOKEN_PROGRAM_ID,
-): TransactionInstruction {
-  const data = Buffer.alloc(9);
-  data.writeUInt8(3, 0); // Instruction 3: Transfer
-  data.writeBigUInt64LE(BigInt(amount), 1);
-
-  const keys = [
-    { pubkey: source, isSigner: false, isWritable: true },
-    { pubkey: destination, isSigner: false, isWritable: true },
-    { pubkey: owner, isSigner: true, isWritable: false },
-    ...multiSigners.map((signer) => ({
-      pubkey: signer.publicKey || signer,
-      isSigner: true,
-      isWritable: false,
-    })),
-  ];
-
-  return new TransactionInstruction({ keys, programId, data });
-}
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** USDC mint on mainnet-beta. Devnet USDC mint can be overridden via env. */
-export const USDC_MINT = new PublicKey(
-  process.env.NEXT_PUBLIC_USDC_MINT ??
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-);
-
-/** USDC uses 6 decimal places. */
-export const USDC_DECIMALS = 6;
-
-/**
- * Placeholder escrow program ID. Set `NEXT_PUBLIC_ESCROW_PROGRAM_ID` once a
- * real program is deployed. This value is used **only** for PDA derivation;
- * no CPI is attempted against it until an actual program exists.
- *
- * The default value is a well-known "no program" sentinel (system program)
- * so that PDA seeds remain deterministic across environments.
- */
-export const ESCROW_PROGRAM_ID = new PublicKey(
-  process.env.NEXT_PUBLIC_ESCROW_PROGRAM_ID ??
-    "11111111111111111111111111111111",
-);
-
-/** Seed prefix for PDA derivation. */
-const PDA_SEED_PREFIX = "worksphere_escrow";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type EscrowCurrency = "SOL" | "USDC";
-
-export interface EscrowDepositParams {
-  /** Payer's wallet public key (base58). */
-  payerWallet: string;
-  /** WorkSphere booking ID. */
-  bookingId: string;
-  /** Amount in human-readable units (SOL or USDC). */
-  amount: number;
-  /** Currency to deposit. */
-  currency: EscrowCurrency;
-  /** Solana RPC endpoint URL. */
-  rpcUrl: string;
-}
-
-export interface EscrowDepositResult {
-  /** Base64-encoded serialized transaction (message only, unsigned). */
-  serializedTransaction: string;
-  /** The escrow vault PDA address (base58). */
-  escrowVault: string;
-  /** PDA bump seed. */
-  escrowBump: number;
-  /** Amount in base units (lamports or token smallest unit). */
-  amountBaseUnits: bigint;
-  /** The recent blockhash used. */
-  recentBlockhash: string;
-}
-
-export interface EscrowValidationResult {
-  valid: boolean;
+export interface SimulationResult {
+  success: boolean;
+  logs: string[];
   error?: string;
 }
 
-// ---------------------------------------------------------------------------
-// PDA derivation
-// ---------------------------------------------------------------------------
-
-/**
- * Derives the deterministic escrow vault PDA for a given booking.
- *
- * Seeds: `["worksphere_escrow", bookingId_bytes]`
- *
- * The PDA is derived against `ESCROW_PROGRAM_ID`. When a real escrow program
- * is deployed, setting its ID via `NEXT_PUBLIC_ESCROW_PROGRAM_ID` will
- * automatically produce matching PDAs.
- */
-export function deriveEscrowPDA(bookingId: string): {
-  address: PublicKey;
-  bump: number;
-} {
-  if (!bookingId || typeof bookingId !== "string") {
-    throw new Error("bookingId is required for PDA derivation");
-  }
-  const [address, bump] = PublicKey.findProgramAddressSync(
-    [Buffer.from(PDA_SEED_PREFIX), Buffer.from(bookingId)],
-    ESCROW_PROGRAM_ID,
-  );
-  return { address, bump };
+export interface ReconcileOptions {
+  signature: string;
+  connection: Connection;
+  maxRetries?: number;
+  retryIntervalMs?: number;
 }
 
-// ---------------------------------------------------------------------------
-// Amount conversion
-// ---------------------------------------------------------------------------
-
 /**
- * Converts a human-readable amount to the smallest on-chain unit.
- *
- * - SOL → lamports (1 SOL = 1_000_000_000 lamports)
- * - USDC → base units (1 USDC = 1_000_000 base units)
- *
- * Rejects negative, zero, NaN, Infinity, and amounts that would overflow
- * safe integer range after conversion.
+ * Simulates a signed Solana transaction on RPC nodes before broadcasting.
  */
-export function toBaseUnits(amount: number, currency: EscrowCurrency): bigint {
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error(
-      `Invalid amount: must be a positive finite number, got ${amount}`,
-    );
-  }
-
-  const multiplier =
-    currency === "SOL" ? LAMPORTS_PER_SOL : 10 ** USDC_DECIMALS;
-  const baseUnits = Math.round(amount * multiplier);
-
-  // Guard against amounts so large they lose precision in floating point.
-  if (!Number.isSafeInteger(baseUnits) || baseUnits <= 0) {
-    throw new Error(
-      `Amount ${amount} ${currency} converts to an unsafe integer (${baseUnits})`,
-    );
-  }
-
-  return BigInt(baseUnits);
-}
-
-// ---------------------------------------------------------------------------
-// Input validation
-// ---------------------------------------------------------------------------
-
-/**
- * Validates all escrow deposit parameters before building a transaction.
- */
-export function validateDepositParams(
-  params: EscrowDepositParams,
-): EscrowValidationResult {
+export async function simulateEscrowTransaction(
+  connection: Connection,
+  transaction: Transaction | VersionedTransaction
+): Promise<SimulationResult> {
   try {
-    if (!params.payerWallet || typeof params.payerWallet !== "string") {
-      return { valid: false, error: "payerWallet is required" };
+    const res = await connection.simulateTransaction(transaction as any);
+    if (res.value.err) {
+      return {
+        success: false,
+        logs: res.value.logs || [],
+        error: JSON.stringify(res.value.err),
+      };
     }
+    return {
+      success: true,
+      logs: res.value.logs || [],
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      logs: [],
+      error: err.message || "RPC Simulation failed",
+    };
+  }
+}
+
+/**
+ * Background worker verifying on-chain transaction finalization.
+ */
+export async function reconcilePendingSignature({
+  signature,
+  connection,
+  maxRetries = 30,
+  retryIntervalMs = 1000,
+}: ReconcileOptions): Promise<boolean> {
+  let attempts = 0;
+  while (attempts < maxRetries) {
     try {
-      new PublicKey(params.payerWallet);
-    } catch {
-      return { valid: false, error: "Invalid payerWallet address" };
-    }
+      const status = await connection.getSignatureStatus(signature, {
+        searchTransactionHistory: true,
+      });
 
-    if (!params.bookingId || typeof params.bookingId !== "string") {
-      return { valid: false, error: "bookingId is required" };
-    }
-
-    if (!Number.isFinite(params.amount) || params.amount <= 0) {
-      return {
-        valid: false,
-        error: "amount must be a positive finite number",
-      };
-    }
-
-    if (params.currency !== "SOL" && params.currency !== "USDC") {
-      return { valid: false, error: "currency must be SOL or USDC" };
-    }
-
-    if (!params.rpcUrl || typeof params.rpcUrl !== "string") {
-      return { valid: false, error: "rpcUrl is required" };
-    }
-
-    // Validate PDA can be derived
-    deriveEscrowPDA(params.bookingId);
-
-    // Validate amount conversion
-    toBaseUnits(params.amount, params.currency);
-
-    return { valid: true };
-  } catch (e: unknown) {
-    return {
-      valid: false,
-      error: e instanceof Error ? e.message : "Unknown validation error",
-    };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// SOL deposit transaction
-// ---------------------------------------------------------------------------
-
-/**
- * Builds an unsigned SOL transfer transaction from the payer to the escrow
- * vault PDA. The transaction is serialized without signatures so wallets
- * (Phantom, Solflare) can sign it client-side.
- */
-export async function buildSolDepositTransaction(
-  params: EscrowDepositParams,
-): Promise<EscrowDepositResult> {
-  const validation = validateDepositParams(params);
-  if (!validation.valid) {
-    throw new Error(`Validation failed: ${validation.error}`);
-  }
-
-  const payer = new PublicKey(params.payerWallet);
-  const { address: escrowVault, bump } = deriveEscrowPDA(params.bookingId);
-  const amountBaseUnits = toBaseUnits(params.amount, "SOL");
-
-  const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
-
-  const transaction = new Transaction({
-    recentBlockhash: blockhash,
-    feePayer: payer,
-  });
-
-  // Memo-like data: embed the bookingId so on-chain indexers / the future
-  // escrow program can correlate deposits to bookings.
-  const memoData = Buffer.from(
-    JSON.stringify({ bookingId: params.bookingId, type: "escrow_deposit" }),
-  );
-
-  transaction.add(
-    SystemProgram.transfer({
-      fromPubkey: payer,
-      toPubkey: escrowVault,
-      lamports: amountBaseUnits,
-    }),
-    // Use a no-op instruction to attach booking metadata. A real escrow
-    // program would replace this with its own deposit instruction.
-    new TransactionInstruction({
-      keys: [{ pubkey: payer, isSigner: true, isWritable: false }],
-      programId: ESCROW_PROGRAM_ID,
-      data: memoData,
-    }),
-  );
-
-  const serialized = transaction
-    .serialize({ requireAllSignatures: false, verifySignatures: false })
-    .toString("base64");
-
-  return {
-    serializedTransaction: serialized,
-    escrowVault: escrowVault.toBase58(),
-    escrowBump: bump,
-    amountBaseUnits,
-    recentBlockhash: blockhash,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// USDC SPL-token deposit transaction
-// ---------------------------------------------------------------------------
-
-/**
- * Builds an unsigned USDC SPL-token transfer from the payer's associated
- * token account to the escrow vault's associated token account.
- */
-export async function buildUsdcDepositTransaction(
-  params: EscrowDepositParams,
-): Promise<EscrowDepositResult> {
-  const validation = validateDepositParams(params);
-  if (!validation.valid) {
-    throw new Error(`Validation failed: ${validation.error}`);
-  }
-
-  const payer = new PublicKey(params.payerWallet);
-  const { address: escrowVault, bump } = deriveEscrowPDA(params.bookingId);
-  const amountBaseUnits = toBaseUnits(params.amount, "USDC");
-
-  const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
-
-  // Derive associated token accounts for both payer and vault.
-  const payerAta = getAssociatedTokenAddressSync(
-    USDC_MINT,
-    payer,
-    false,
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID,
-  );
-  const vaultAta = getAssociatedTokenAddressSync(
-    USDC_MINT,
-    escrowVault,
-    true, // allowOwnerOffCurve: PDA is off-curve
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID,
-  );
-
-  const transaction = new Transaction({
-    recentBlockhash: blockhash,
-    feePayer: payer,
-  });
-
-  // Memo instruction for booking correlation.
-  const memoData = Buffer.from(
-    JSON.stringify({
-      bookingId: params.bookingId,
-      type: "escrow_deposit_usdc",
-    }),
-  );
-
-  transaction.add(
-    createTransferInstruction(
-      payerAta,
-      vaultAta,
-      payer,
-      amountBaseUnits,
-      [],
-      TOKEN_PROGRAM_ID,
-    ),
-    new TransactionInstruction({
-      keys: [{ pubkey: payer, isSigner: true, isWritable: false }],
-      programId: ESCROW_PROGRAM_ID,
-      data: memoData,
-    }),
-  );
-
-  const serialized = transaction
-    .serialize({ requireAllSignatures: false, verifySignatures: false })
-    .toString("base64");
-
-  return {
-    serializedTransaction: serialized,
-    escrowVault: escrowVault.toBase58(),
-    escrowBump: bump,
-    amountBaseUnits,
-    recentBlockhash: blockhash,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Unified deposit builder
-// ---------------------------------------------------------------------------
-
-/**
- * Builds an unsigned escrow deposit transaction for the given currency.
- */
-export async function buildDepositTransaction(
-  params: EscrowDepositParams,
-): Promise<EscrowDepositResult> {
-  if (params.currency === "SOL") {
-    return buildSolDepositTransaction(params);
-  }
-  return buildUsdcDepositTransaction(params);
-}
-
-// ---------------------------------------------------------------------------
-// Transaction confirmation & deposit verification
-// ---------------------------------------------------------------------------
-
-/**
- * Confirms a signed transaction on the Solana network.
- *
- * @param signature - The transaction signature (base58).
- * @param rpcUrl - Solana RPC endpoint.
- * @returns Whether the transaction was confirmed successfully.
- */
-export async function confirmTransaction(
-  signature: string,
-  rpcUrl: string,
-): Promise<{ confirmed: boolean; error?: string }> {
-  if (!signature || typeof signature !== "string") {
-    return { confirmed: false, error: "Transaction signature is required" };
-  }
-  if (!rpcUrl || typeof rpcUrl !== "string") {
-    return { confirmed: false, error: "RPC URL is required" };
-  }
-
-  try {
-    const connection = new Connection(rpcUrl, "confirmed");
-    const result = await connection.getSignatureStatus(signature, {
-      searchTransactionHistory: true,
-    });
-
-    if (!result?.value) {
-      return { confirmed: false, error: "Transaction not found" };
-    }
-
-    if (result.value.err) {
-      return {
-        confirmed: false,
-        error: `Transaction failed: ${JSON.stringify(result.value.err)}`,
-      };
-    }
-
-    const confirmationStatus = result.value.confirmationStatus;
-    if (
-      confirmationStatus === "confirmed" ||
-      confirmationStatus === "finalized"
-    ) {
-      return { confirmed: true };
-    }
-
-    return {
-      confirmed: false,
-      error: `Transaction status: ${confirmationStatus ?? "unknown"}`,
-    };
-  } catch (e: unknown) {
-    return {
-      confirmed: false,
-      error: e instanceof Error ? e.message : "Unknown RPC error",
-    };
-  }
-}
-
-/**
- * Verifies that a deposit transaction matches the expected booking parameters.
- *
- * Fetches the parsed transaction from the network and checks:
- * 1. The transaction is confirmed/finalized.
- * 2. The destination matches the booking's escrow PDA (or its ATA for USDC).
- * 3. The transferred amount matches the expected amount.
- * 4. The payer matches the expected wallet.
- *
- * @returns Verification result with details.
- */
-export async function verifyDeposit(
-  signature: string,
-  expectedParams: {
-    bookingId: string;
-    payerWallet: string;
-    amount: number;
-    currency: EscrowCurrency;
-  },
-  rpcUrl: string,
-): Promise<{
-  verified: boolean;
-  error?: string;
-  escrowVault?: string;
-  amountBaseUnits?: bigint;
-}> {
-  if (!signature) {
-    return { verified: false, error: "Transaction signature is required" };
-  }
-
-  try {
-    const connection = new Connection(rpcUrl, "confirmed");
-    const tx = await connection.getParsedTransaction(signature, {
-      maxSupportedTransactionVersion: 0,
-      commitment: "confirmed",
-    });
-
-    if (!tx) {
-      return { verified: false, error: "Transaction not found on-chain" };
-    }
-
-    if (tx.meta?.err) {
-      return {
-        verified: false,
-        error: `Transaction failed on-chain: ${JSON.stringify(tx.meta.err)}`,
-      };
-    }
-
-    const { address: escrowVault } = deriveEscrowPDA(expectedParams.bookingId);
-    const expectedAmount = toBaseUnits(
-      expectedParams.amount,
-      expectedParams.currency,
-    );
-    const payer = new PublicKey(expectedParams.payerWallet);
-
-    // Verify payer is a signer.
-    const accountKeys = tx.transaction.message.accountKeys;
-    const payerKey = accountKeys.find(
-      (k) => k.pubkey.equals(payer) && k.signer,
-    );
-    if (!payerKey) {
-      return { verified: false, error: "Expected payer is not a signer" };
-    }
-
-    // For SOL deposits, check post-balances to confirm the vault received funds.
-    // For USDC, check token balance changes.
-    // This is a simplified verification; a production system should parse
-    // individual instructions.
-    const vaultIndex = accountKeys.findIndex((k) =>
-      k.pubkey.equals(escrowVault),
-    );
-
-    if (expectedParams.currency === "SOL") {
-      if (vaultIndex === -1) {
-        return {
-          verified: false,
-          error: "Escrow vault not found in transaction accounts",
-        };
+      const confirmation = status.value;
+      if (confirmation) {
+        if (confirmation.err) {
+          console.error(`[Solana Reconciler] Transaction ${signature} failed on-chain:`, confirmation.err);
+          return false;
+        }
+        if (
+          confirmation.confirmationStatus === "confirmed" ||
+          confirmation.confirmationStatus === "finalized"
+        ) {
+          return true;
+        }
       }
-      const preBal = BigInt(tx.meta?.preBalances?.[vaultIndex] ?? 0);
-      const postBal = BigInt(tx.meta?.postBalances?.[vaultIndex] ?? 0);
-      const received = postBal - preBal;
-
-      if (received < expectedAmount) {
-        return {
-          verified: false,
-          error: `Insufficient deposit: expected ${expectedAmount}, received ${received}`,
-        };
-      }
+    } catch (err) {
+      console.warn(`[Solana Reconciler] Poll attempt ${attempts + 1} failed:`, err);
     }
 
-    return {
-      verified: true,
-      escrowVault: escrowVault.toBase58(),
-      amountBaseUnits: expectedAmount,
-    };
-  } catch (e: unknown) {
-    return {
-      verified: false,
-      error: e instanceof Error ? e.message : "Verification failed",
-    };
+    attempts++;
+    await new Promise((resolve) => setTimeout(resolve, retryIntervalMs));
   }
+ feature/solana-optimistic-escrow-simulation
+  return false;
+}
+
 }
 
 // ---------------------------------------------------------------------------
@@ -1054,3 +556,4 @@ export function deriveEscrowPda(bookingId: string): [PublicKey, number] {
 }
 
 export * from "./solanaPayEscrow";
+ main

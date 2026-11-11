@@ -1,107 +1,82 @@
-import {
-  PublicKey,
-  TransactionInstruction,
-  Transaction,
-  SystemProgram,
-} from "@solana/web3.js";
+import { Connection, Transaction, VersionedTransaction } from "@solana/web3.js";
 
-// Program ID configuration
-export const ESCROW_PROGRAM_ID = new PublicKey(
-  process.env.NEXT_PUBLIC_ESCROW_PROGRAM_ID || "11111111111111111111111111111111"
-);
-
-export interface EscrowAccountData {
-  escrowId: string;
-  bookingId: string;
-  userPublicKey: string;
-  venuePublicKey: string;
-  amount: bigint;
-  status: "DEPOSITED" | "REFUND_PENDING" | "REFUNDED" | "RELEASED";
+export interface SimulationResult {
+  success: boolean;
+  logs: string[];
+  error?: string;
 }
 
-export interface BuildRefundTransactionParams {
-  bookingId: string;
-  userPublicKey: string;
-  vaultPda: string;
-  recentBlockhash: string;
+export interface ReconcileOptions {
+  signature: string;
+  connection: Connection;
+  maxRetries?: number;
+  retryIntervalMs?: number;
 }
 
 /**
- * Derives the Program Derived Address (PDA) for a booking escrow vault.
+ * Simulates a signed Solana transaction on RPC nodes before broadcasting.
  */
-export function deriveEscrowPda(bookingId: string): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("escrow"), Buffer.from(bookingId)],
-    ESCROW_PROGRAM_ID
-  );
+export async function simulateEscrowTransaction(
+  connection: Connection,
+  transaction: Transaction | VersionedTransaction
+): Promise<SimulationResult> {
+  try {
+    const res = await connection.simulateTransaction(transaction as any);
+    if (res.value.err) {
+      return {
+        success: false,
+        logs: res.value.logs || [],
+        error: JSON.stringify(res.value.err),
+      };
+    }
+    return {
+      success: true,
+      logs: res.value.logs || [],
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      logs: [],
+      error: err.message || "RPC Simulation failed",
+    };
+  }
 }
 
 /**
- * Constructs an unsigned refund transaction instruction referencing the PDA vault authority.
- * Non-custodial: Requires zero private keys.
+ * Background worker verifying on-chain transaction finalization.
  */
-export function buildRefundInstruction(
-  bookingId: string,
-  userPubKeyStr: string,
-  vaultPdaStr: string
-): TransactionInstruction {
-  const userPublicKey = new PublicKey(userPubKeyStr);
-  const vaultPda = new PublicKey(vaultPdaStr);
+export async function reconcilePendingSignature({
+  signature,
+  connection,
+  maxRetries = 30,
+  retryIntervalMs = 1000,
+}: ReconcileOptions): Promise<boolean> {
+  let attempts = 0;
+  while (attempts < maxRetries) {
+    try {
+      const status = await connection.getSignatureStatus(signature, {
+        searchTransactionHistory: true,
+      });
 
-  // Instruction Discriminator / Identifier for Refund
-  const dataBuffer = Buffer.concat([
-    Buffer.from([1]), // 1 = Refund Instruction Discriminator
-    Buffer.from(bookingId),
-  ]);
+      const confirmation = status.value;
+      if (confirmation) {
+        if (confirmation.err) {
+          console.error(`[Solana Reconciler] Transaction ${signature} failed on-chain:`, confirmation.err);
+          return false;
+        }
+        if (
+          confirmation.confirmationStatus === "confirmed" ||
+          confirmation.confirmationStatus === "finalized"
+        ) {
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn(`[Solana Reconciler] Poll attempt ${attempts + 1} failed:`, err);
+    }
 
-  return new TransactionInstruction({
-    keys: [
-      { pubkey: vaultPda, isSigner: false, isWritable: true },
-      { pubkey: userPublicKey, isSigner: false, isWritable: true },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
-    programId: ESCROW_PROGRAM_ID,
-    data: dataBuffer,
-  });
-}
-
-/**
- * Builds a complete unsigned transaction serialized for client-side wallet signing.
- */
-export async function buildRefundTransaction({
-  bookingId,
-  userPublicKey,
-  vaultPda,
-  recentBlockhash,
-}: BuildRefundTransactionParams): Promise<string> {
-  const refundInstruction = buildRefundInstruction(
-    bookingId,
-    userPublicKey,
-    vaultPda
-  );
-
-  const transaction = new Transaction();
-  transaction.recentBlockhash = recentBlockhash;
-  transaction.feePayer = new PublicKey(userPublicKey);
-  transaction.add(refundInstruction);
-
-  // Serialize unsigned transaction for wallet approval
-  return transaction
-    .serialize({
-      requireAllSignatures: false,
-      verifySignatures: false,
-    })
-    .toString("base64");
-}
-
-/**
- * Verifies if the booking has exceeded the 24-hour grace window without check-in.
- */
-export function isEscrowExpired(
-  bookingDate: Date,
-  gracePeriodHours: number = 24
-): boolean {
-  const now = new Date().getTime();
-  const expiryTime = new Date(bookingDate).getTime() + gracePeriodHours * 60 * 60 * 1000;
-  return now > expiryTime;
+    attempts++;
+    await new Promise((resolve) => setTimeout(resolve, retryIntervalMs));
+  }
+  return false;
 }

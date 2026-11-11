@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  extensions = [vector, pg_trgm]
+  extensions = [vector, pg_trgm, postgis]
 }
 
 model User {
@@ -88,6 +88,7 @@ model Venue {
   searchEmbedding     Unsupported("vector(1024)")?
   latitude            Float
   longitude           Float
+  coordinates         Unsupported("geography(Point, 4326)")? // PostGIS spatial column backing GiST-indexed proximity search
   category            String // cafe, coworking, library
   address             String?
   rating              Float?

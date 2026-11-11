@@ -65,3 +65,9 @@ export {
   REVIEW_MAX_ERROR_MESSAGE,
 } from "./VenueReviewModal";
 export type { VenueReviewModalProps } from "./VenueReviewModal";
+
+export { VenueFilterDropdown } from "./VenueFilterDropdown";
+export type {
+  VenueFilterDropdownProps,
+  FilterOption,
+} from "./VenueFilterDropdown";

@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ItineraryTimeline, type ItineraryItem } from "@/components/itinerary/ItineraryTimeline";
 
 const initialItems: ItineraryItem[] = [
@@ -28,7 +28,7 @@ describe("ItineraryTimeline history", () => {
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
 
-    fireEvent.click(screen.getAllByTitle("Move up")[1]);
+    fireEvent.click(screen.getAllByTitle("Move up")[0]);
     await waitFor(() => expect(getOrder()).toEqual(["b", "a", "c"]));
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
 
@@ -60,7 +60,7 @@ describe("ItineraryTimeline history", () => {
       />,
     );
 
-    fireEvent.click(screen.getAllByTitle("Move up")[1]);
+    fireEvent.click(screen.getAllByTitle("Move up")[0]);
     await waitFor(() => expect(onSyncFailed).toHaveBeenCalledTimes(1));
     expect(getOrder()).toEqual(["a", "b", "c"]);
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();

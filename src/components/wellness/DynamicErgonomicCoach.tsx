@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Activity,
   Eye,
@@ -29,6 +29,8 @@ import {
 } from "@/lib/wellness/ergonomicCoachEngine";
 import { ErgonomicChimeSynthesizer } from "@/lib/audio/ErgonomicChimeSynthesizer";
 import { FocusTrap } from "@/components/ui/FocusTrap";
+import { calculateSitStandRatio } from "@/lib/wellness/deskPostureAnalytics";
+import { SitStandRatioAnalytics } from "@/components/wellness/SitStandRatioAnalytics";
 
 export default function DynamicErgonomicCoach() {
   const [session, setSession] = useState<ErgonomicSessionState>({
@@ -71,11 +73,17 @@ export default function DynamicErgonomicCoach() {
   const [eyeBreakSecondsLeft, setEyeBreakSecondsLeft] = useState(20);
   const [focusDurationMinutes, setFocusDurationMinutes] = useState(25);
   const [stretchDurationMinutes, setStretchDurationMinutes] = useState(5);
-  const [stretchBreakSecondsLeft, setStretchBreakSecondsLeft] = useState(25 * 60);
+  const [stretchBreakSecondsLeft, setStretchBreakSecondsLeft] = useState(
+    25 * 60,
+  );
   const [stretchBreakActive, setStretchBreakActive] = useState(false);
-  const [stretchBreakPhase, setStretchBreakPhase] = useState<"focus" | "break">("focus");
-  const [stretchBreakChimeEnabled, setStretchBreakChimeEnabled] = useState(true);
-  const [showStretchBreakSuggestions, setShowStretchBreakSuggestions] = useState(false);
+  const [stretchBreakPhase, setStretchBreakPhase] = useState<"focus" | "break">(
+    "focus",
+  );
+  const [stretchBreakChimeEnabled, setStretchBreakChimeEnabled] =
+    useState(true);
+  const [showStretchBreakSuggestions, setShowStretchBreakSuggestions] =
+    useState(false);
   const ergonomicChimeRef = useRef<ErgonomicChimeSynthesizer | null>(null);
 
   // Sound Notification settings
@@ -463,16 +471,24 @@ export default function DynamicErgonomicCoach() {
 
     const timer = window.setInterval(updateRemainingTime, 250);
     return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stretchBreakActive, stretchBreakPhase]);
 
   useEffect(() => {
     if (!stretchBreakActive || stretchBreakSecondsLeft !== 0) return;
 
     const playTimerChime = () => {
-      if (!stretchBreakChimeEnabled || !soundEnabled || !ergonomicChimeRef.current) return;
-      void ergonomicChimeRef.current.playGentleChime(soundVolume).catch((error: unknown) => {
-        console.warn("Could not play ergonomic break chime:", error);
-      });
+      if (
+        !stretchBreakChimeEnabled ||
+        !soundEnabled ||
+        !ergonomicChimeRef.current
+      )
+        return;
+      void ergonomicChimeRef.current
+        .playGentleChime(soundVolume)
+        .catch((error: unknown) => {
+          console.warn("Could not play ergonomic break chime:", error);
+        });
     };
 
     if (stretchBreakPhase === "focus") {
@@ -612,7 +628,9 @@ export default function DynamicErgonomicCoach() {
 
     if (stretchBreakSecondsLeft === 0) {
       setStretchBreakSecondsLeft(
-        (stretchBreakPhase === "focus" ? focusDurationMinutes : stretchDurationMinutes) * 60
+        (stretchBreakPhase === "focus"
+          ? focusDurationMinutes
+          : stretchDurationMinutes) * 60,
       );
     }
     void ergonomicChimeRef.current?.prepare().catch((error: unknown) => {
@@ -624,7 +642,10 @@ export default function DynamicErgonomicCoach() {
       Notification.permission === "default"
     ) {
       void Notification.requestPermission().catch((error: unknown) => {
-        console.warn("Could not request desktop notification permission:", error);
+        console.warn(
+          "Could not request desktop notification permission:",
+          error,
+        );
       });
     }
     setStretchBreakActive(true);
@@ -1215,7 +1236,8 @@ export default function DynamicErgonomicCoach() {
                     Focus & Stretch Break Timer
                   </h3>
                   <p className="mt-1 text-xs text-slate-400">
-                    Customize your focus interval and the movement break that follows.
+                    Customize your focus interval and the movement break that
+                    follows.
                   </p>
                 </div>
                 <div
@@ -1232,7 +1254,9 @@ export default function DynamicErgonomicCoach() {
                 <label className="space-y-2 text-xs text-slate-300">
                   <span className="flex items-center justify-between">
                     <span>Focus duration</span>
-                    <span className="font-mono font-bold text-violet-200">{focusDurationMinutes}m</span>
+                    <span className="font-mono font-bold text-violet-200">
+                      {focusDurationMinutes}m
+                    </span>
                   </span>
                   <input
                     type="range"
@@ -1241,7 +1265,9 @@ export default function DynamicErgonomicCoach() {
                     step={5}
                     value={focusDurationMinutes}
                     disabled={stretchBreakActive}
-                    onChange={(event) => selectFocusDuration(Number(event.target.value))}
+                    onChange={(event) =>
+                      selectFocusDuration(Number(event.target.value))
+                    }
                     aria-label="Focus duration in minutes"
                     aria-valuetext={`${focusDurationMinutes} minutes`}
                     className="w-full accent-violet-500 disabled:opacity-50"
@@ -1254,7 +1280,9 @@ export default function DynamicErgonomicCoach() {
                 <label className="space-y-2 text-xs text-slate-300">
                   <span className="flex items-center justify-between">
                     <span>Stretch duration</span>
-                    <span className="font-mono font-bold text-violet-200">{stretchDurationMinutes}m</span>
+                    <span className="font-mono font-bold text-violet-200">
+                      {stretchDurationMinutes}m
+                    </span>
                   </span>
                   <input
                     type="range"
@@ -1263,7 +1291,9 @@ export default function DynamicErgonomicCoach() {
                     step={1}
                     value={stretchDurationMinutes}
                     disabled={stretchBreakActive}
-                    onChange={(event) => selectStretchDuration(Number(event.target.value))}
+                    onChange={(event) =>
+                      selectStretchDuration(Number(event.target.value))
+                    }
                     aria-label="Stretch duration in minutes"
                     aria-valuetext={`${stretchDurationMinutes} minutes`}
                     className="w-full accent-violet-500 disabled:opacity-50"
@@ -1277,7 +1307,9 @@ export default function DynamicErgonomicCoach() {
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs font-semibold text-slate-300">
-                  {stretchBreakPhase === "focus" ? "Focus time" : "Stretch break"}
+                  {stretchBreakPhase === "focus"
+                    ? "Focus time"
+                    : "Stretch break"}
                   {stretchBreakActive ? " · running" : " · paused"}
                 </span>
                 <label className="inline-flex items-center gap-2 text-xs text-slate-300">

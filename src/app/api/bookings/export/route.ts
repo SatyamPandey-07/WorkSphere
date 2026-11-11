@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 function escapeCsvField(field: any): string {
   if (field === null || field === undefined) return '""';
@@ -58,9 +56,12 @@ export async function GET(req: Request) {
       ];
 
       const rows = bookings.map((b: any) => {
-        const bookingDate = new Date(b.bookingDate || b.createdAt || Date.now());
+        const bookingDate = new Date(
+          b.bookingDate || b.createdAt || Date.now(),
+        );
         const dateStr = bookingDate.toISOString().split("T")[0];
-        const timeStr = bookingDate.toISOString().split("T")[1]?.slice(0, 5) || "00:00";
+        const timeStr =
+          bookingDate.toISOString().split("T")[1]?.slice(0, 5) || "00:00";
 
         return [
           escapeCsvField(b.id),

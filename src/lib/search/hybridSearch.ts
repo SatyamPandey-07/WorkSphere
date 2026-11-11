@@ -1,13 +1,5 @@
- feature/protobuf-binary-broker
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import Redis from "ioredis";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
-
 import { getGeminiClient, isGeminiConfigured } from "@/lib/ai/gemini";
 import { getRedis } from "@/lib/redis";
- main
 
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
 
@@ -23,29 +15,6 @@ export interface HybridSearchResult {
  */
 export async function getQueryEmbedding(query: string): Promise<number[]> {
   const cacheKey = `embedding:${Buffer.from(query.toLowerCase().trim()).toString("base64")}`;
- feature/protobuf-binary-broker
-
-  try {
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached);
-    }
-  } catch (err) {
-    console.warn("[Redis Cache Miss/Error]:", err);
-  }
-
-  const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
-  const result = await model.embedContent(query);
-  const embedding = result.embedding.values;
-
-  try {
-    await redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(embedding));
-  } catch (err) {
-    console.warn("[Redis Set Error]:", err);
-  }
-
-  return embedding;
-
   const redis = getRedis();
 
   if (redis) {
@@ -89,7 +58,6 @@ export async function getQueryEmbedding(query: string): Promise<number[]> {
     console.warn("[Gemini Embedding Error]:", err);
     return new Array(768).fill(0);
   }
- main
 }
 
 /**

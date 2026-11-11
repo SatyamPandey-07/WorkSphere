@@ -163,7 +163,7 @@ export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
 
     window.addEventListener("keydown", handleHistoryShortcut);
     return () => window.removeEventListener("keydown", handleHistoryShortcut);
-  }, [canRedo, canUndo, futureItems, isPending, items, pastItems]);
+  }, [canRedo, canUndo, futureItems, handleRedo, handleUndo, isPending, items, pastItems]);
 
   return (
     <div className="bg-slate-950 border border-slate-900 rounded-3xl p-6 text-white shadow-2xl max-w-xl mx-auto space-y-4">

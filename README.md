@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-121%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-122%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-121-active-rockstars"><b>👥 Contributors (121)</b></a> •
+  <a href="#-contributors-122-active-rockstars"><b>👥 Contributors (122)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (121 Active Rockstars)
+### 🚀 Contributors (122 Active Rockstars)
 
-A massive thank you to all **121 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **122 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -827,6 +827,14 @@ A massive thank you to all **121 brilliant contributors and bots** building Work
       </a>
     </td>
   </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/kailash71869-code">
+        <img src="https://avatars.githubusercontent.com/u/234456671?v=4" width="55px;" height="55px;" alt="kailash71869-code" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>kailash71869-code</b></sub>
+      </a>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -891,6 +899,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 - **Dark Theme**: Beautiful CartoDB Dark Matter tiles
 - **Real-time Markers**: Purple glowing venue markers with venue photos
+- **PostGIS Geospatial Proximity Search & GiST Indexing**: Accelerated KNN nearest-neighbor query for nomad venues within radius bounds using PostgreSQL native PostGIS `ST_DWithin` spherical calculations without in-memory Haversine compute overhead (`/api/venues/search`, `src/lib/search/spatialVenueSearch.ts`).
 - **Green Route Lines**: Real road routing with OSRM (not straight lines)
 - **User Location**: Custom marker with Clerk user avatar
 - **Auto-centering**: Map adjusts to show search results
@@ -969,6 +978,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🚀 Performance & Reliability
 
+- **Distributed Redlock Monotonic Fencing Tokens**: Concurrency control across distributed multi-instance Redis clusters preventing split-brain double desk bookings with monotonically increasing lease fencing tokens (`src/lib/redis/RedlockManager.ts`).
 - **Rate Limiting**: API protection with configurable limits
 - **Security Architecture**: CSP nonces, signed double-submit CSRF cookies and multi-tier token bucket rate limiting, explained end to end in [docs/security/SECURITY_OVERVIEW.md](./docs/security/SECURITY_OVERVIEW.md)
 - **Data Caching**: Multi-layer caching with TTL support
@@ -993,6 +1003,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 ### 💸 Web3, Solana Pay & Smart Escrow
 
 - **Solana Pay Engine**: High-contrast QR payment modal with dynamic payment request generation, Screen Wake Lock API integration to prevent display dimming during scan, and verifiable on-chain confirmation (protected against synthetic confirmation spoofing).
+- **Solana Escrow Cluster RPC Failover Pool**: Resilient multi-endpoint RPC cluster failover with automated health probes, exponential jitter backoff, and optimistic client simulation for instant desk escrow deposits (`/api/pay/solana`, `/api/cron/escrow-refund`, `src/lib/solana/escrowClient.ts`).
 - **Focus Session Bounties & Escrow**: Stake crypto tokens to commit to deep work sessions; automated smart-contract payout release upon verified session completion (`/api/bounties/payout`, `/api/bookings/escrow`).
 - **Virtual Single-Use Cards & Automated Invoicing**: Issue ephemeral corporate cards for workspace booking expenses with automatic OCR receipt reconciliation (`/api/finance/card`).
 - **Nomad Tax Residency Geo-Fence & ZK Ledger**: Automated tracking of border crossings and physical presence duration with zero-knowledge cryptographic proof generation (`/analytics/nomad-tax`).
@@ -1022,12 +1033,14 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 ### 🌐 Decentralized Networking & Survival Mesh
 
 - **Distributed Compute-Burst WebRTC Mesh**: Collaborative local distributed computing offloading code builds and heavy processing across idle laptops on cafe WiFi (`/p2p/mesh-collab`, `/api/compute/burst`).
+- **W3C WebRTC Perfect Negotiation & Glare Rollback**: Symmetric polite/impolite role negotiation engine resolving concurrent offer collisions and ICE candidate race conditions across collaborative nomad audio/video meshes (`src/core/network/WebRTCMesh.ts`).
 - **Offline-First P2P Emergency Mesh Network**: WebRTC DataChannels + Bluetooth Low Energy (BLE) peer discovery maintaining critical comms during cafe ISP outages (`/api/network/survival`).
 - **Offline Medical Emergency Mesh Beacon & First-Aid Router**: Instant SOS broadcasting and automated navigation to the nearest automated external defibrillator (AED) and medical kit (`/api/medical/beacon`).
 - **Bandwidth-Hog Identification & Cooperative QoS**: Local network cooperative monitoring to detect and throttle background stream hogs on public WiFi (`/api/network/qos`).
 
 ### ✈️ Nomad Travel, Smart Housing & Collab War Rooms
 
+- **IndexedDB CRDT Offline Change-Journal Replay Buffer**: Resilient append-only transaction journal capturing serialized `Y.encodeStateAsUpdate` frames during intermittent nomad connectivity, providing topological re-streaming and seamless state reconciliation upon reconnect (`src/lib/crdt/canvasProvider.ts`).
 - **Flight-Delay Itinerary Auto-Rerouting**: Webhook integration with aviation feeds automatically rescheduling booked coworking passes when flights are delayed or cancelled (`/api/travel/reroute`).
 - **Git Merge Conflict Physical War Room & IoT Lockdown**: Automatic physical meeting room booking and IoT access lockdown during critical deployment conflicts (`/api/collab/warroom`).
 - **Decentralized Nomad Housing Swap & Smart-Contract Lease Ledger**: Peer-to-peer apartment and studio exchange protocol backed by decentralized identity and reputation scores (`/api/housing/swap`).

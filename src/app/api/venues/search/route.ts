@@ -1,4 +1,3 @@
- feature/solana-optimistic-escrow-simulation
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
@@ -19,48 +18,93 @@ const BYPASS_CACHE_CONTROL =
   "private, no-cache, no-store, max-age=0, must-revalidate";
 const VARY_HEADER = "Accept-Encoding, Accept";
 
-    const results = await searchVenuesPhonetic(q, limit);
-    return NextResponse.json({ results });
-  } catch (error: any) {
-    console.error("Phonetic Venue Search Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-
-
- main
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import {
-  getLatestVenueTimestamp,
-  generateETag,
-  BoundingBox,
-} from "@/lib/cache/venueCache";
-import { searchVenuesPhonetic } from "@/lib/search/phoneticVenueSearch";
-
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
-  try {
-    const searchParams = request.nextUrl.searchParams;
-    const q = searchParams.get("q");
+function shouldBypassCache(request: NextRequest): boolean {
+  if (request.headers.get("authorization")) return true;
+  const cookie = request.headers.get("cookie") || "";
+  if (cookie.includes("__session") || cookie.includes("__client_uat")) {
+    return true;
+  }
+  const cacheControl = request.headers.get("cache-control") || "";
+  if (cacheControl.includes("no-cache") || cacheControl.includes("no-store")) {
+    return true;
+  }
+  return false;
+}
 
-    if (q) {
-      const limitParam = searchParams.get("limit");
-      const limit = limitParam ? parseInt(limitParam, 10) : 20;
-      const results = await searchVenuesPhonetic(q, limit);
-      return NextResponse.json({
-        success: true,
-        count: results.length,
-        data: results,
-        results,
-      });
+function parseLimit(raw: string | null, fallback: number = 20): number {
+  if (!raw) return fallback;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+interface ParsedSpatial {
+  lat?: number;
+  lng?: number;
+  radiusMeters: number;
+  error?: string;
+}
+
+function parseSpatialParams(searchParams: URLSearchParams): ParsedSpatial {
+  const latStr = searchParams.get("lat");
+  const lngStr = searchParams.get("lng");
+  const radiusStr = searchParams.get("radiusMeters");
+
+  if (latStr === null && lngStr === null) {
+    return { radiusMeters: DEFAULT_SEARCH_RADIUS_METERS };
+  }
+
+  if (latStr === null || lngStr === null) {
+    return {
+      radiusMeters: DEFAULT_SEARCH_RADIUS_METERS,
+      error: "'lat' and 'lng' are required together for spatial search",
+    };
+  }
+
+  const lat = parseFloat(latStr);
+  const lng = parseFloat(lngStr);
+
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+    return {
+      radiusMeters: DEFAULT_SEARCH_RADIUS_METERS,
+      error: "'lat' must be a valid latitude between -90 and 90",
+    };
+  }
+
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+    return {
+      radiusMeters: DEFAULT_SEARCH_RADIUS_METERS,
+      error: "'lng' must be a valid longitude between -180 and 180",
+    };
+  }
+
+  let radiusMeters = DEFAULT_SEARCH_RADIUS_METERS;
+  if (radiusStr !== null) {
+    const parsed = parseFloat(radiusStr);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return {
+        radiusMeters: DEFAULT_SEARCH_RADIUS_METERS,
+        error: "'radiusMeters' must be a positive number",
+      };
     }
     if (parsed > MAX_SEARCH_RADIUS_METERS) {
       return {
+        radiusMeters: DEFAULT_SEARCH_RADIUS_METERS,
         error: `'radiusMeters' must not exceed ${MAX_SEARCH_RADIUS_METERS}`,
       };
     }
     radiusMeters = parsed;
   }
+
+  return { lat, lng, radiusMeters };
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const q = searchParams.get("q");
+    const id = searchParams.get("id");
 
     const bbox: BoundingBox = {
       minLat: parseFloat(searchParams.get("minLat") || "0"),
@@ -111,35 +155,22 @@ export async function GET(request: NextRequest) {
             "Cache-Control": BYPASS_CACHE_CONTROL,
             Vary: VARY_HEADER,
           },
-        }
+        },
       );
     }
 
     let venues: Record<string, unknown>[] = [];
-    const ifNoneMatch = request.headers.get("if-none-match");
-    if (ifNoneMatch === etag) {
-      return new NextResponse(null, {
-        status: 304,
-        headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
-          ETag: etag,
-        },
-      });
-    }
-
-    // 3. Fetch venues from database (simulate data fetching here)
-    const venues: Record<string, unknown>[] = [];
 
     if (spatial.lat !== undefined && spatial.lng !== undefined) {
       const limit = Math.min(
         parseLimit(searchParams.get("limit"), 20),
-        MAX_SPATIAL_RESULT_LIMIT
+        MAX_SPATIAL_RESULT_LIMIT,
       );
       venues = (await searchVenuesNearby(
         spatial.lat,
         spatial.lng,
         spatial.radiusMeters,
-        limit
+        limit,
       )) as unknown as Record<string, unknown>[];
     } else if (q) {
       const limit = parseLimit(searchParams.get("limit"), 20);
@@ -166,10 +197,7 @@ export async function GET(request: NextRequest) {
       },
       {
         status: 200,
-        headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
-          ETag: etag,
-        },
+        headers: responseHeaders,
       },
     );
   } catch (error: any) {

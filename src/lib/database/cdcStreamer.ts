@@ -12,7 +12,8 @@ export interface CDCEvent {
 
 const TARGET_TABLES = new Set(["Booking", "TelemetryReading", "DeskHoldLock"]);
 const REDIS_CHANNEL = "cdc:db_events";
-const REPLICATION_SLOT_NAME = process.env.PG_REPLICATION_SLOT || "worksphere_cdc_slot";
+const REPLICATION_SLOT_NAME =
+  process.env.PG_REPLICATION_SLOT || "worksphere_cdc_slot";
 const PUBLICATION_NAME = process.env.PG_PUBLICATION_NAME || "worksphere_pub";
 
 export class PostgresCDCStreamer {
@@ -34,14 +35,14 @@ export class PostgresCDCStreamer {
       this.client = new Client({
         connectionString: process.env.DATABASE_URL,
         replication: "database",
-      });
+      } as any);
 
       await this.client.connect();
       console.log("[CDC] Connected to PostgreSQL replication stream.");
       this.reconnectAttempts = 0;
 
       const sql = `START_REPLICATION SLOT ${REPLICATION_SLOT_NAME} LOGICAL 0/0 ("proto_version" '1', "publication_names" '${PUBLICATION_NAME}');`;
-      
+
       this.client.query(sql, (err: Error | null) => {
         if (err) {
           console.error("[CDC] Replication stream error:", err);
@@ -149,10 +150,12 @@ export class PostgresCDCStreamer {
     this.reconnectAttempts++;
     const delay = Math.min(
       1000 * Math.pow(2, this.reconnectAttempts),
-      this.maxReconnectDelayMs
+      this.maxReconnectDelayMs,
     );
 
-    console.warn(`[CDC] Reconnecting in ${delay / 1000}s (Attempt ${this.reconnectAttempts})...`);
+    console.warn(
+      `[CDC] Reconnecting in ${delay / 1000}s (Attempt ${this.reconnectAttempts})...`,
+    );
     setTimeout(() => {
       this.connectAndStream();
     }, delay);

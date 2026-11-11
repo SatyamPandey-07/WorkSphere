@@ -49,6 +49,85 @@ describe('MeetingOptimizer with MultiAgentOrchestrator (#7166)', () => {
     expect(slots[1].participantCount).toBe(2);
   });
 
+  it('ranks slots with an adequate recovery gap ahead of back-to-back slots', async () => {
+    const dayStart = Date.UTC(2026, 10, 12, 10, 0);
+    const laterStart = Date.UTC(2026, 10, 12, 12, 0);
+    const slots: OverlapSlot[] = [
+      {
+        startUTC: dayStart,
+        endUTC: dayStart + 60 * 60_000,
+        durationMinutes: 60,
+        participantCount: 2,
+        participants: ['Alice', 'Bob'],
+      },
+      {
+        startUTC: laterStart,
+        endUTC: laterStart + 60 * 60_000,
+        durationMinutes: 60,
+        participantCount: 2,
+        participants: ['Alice', 'Bob'],
+      },
+    ];
+    const context: MeetingContext = {
+      ...mockContext,
+      participants: ['Alice', 'Bob'],
+      participantTimezones: { Alice: 'UTC', Bob: 'UTC' },
+      participantBusyIntervals: {
+        Alice: [
+          { startUTC: dayStart - 10 * 60_000, endUTC: dayStart - 5 * 60_000 },
+          { startUTC: laterStart - 30 * 60_000, endUTC: laterStart - 15 * 60_000 },
+        ],
+        Bob: [
+          { startUTC: dayStart - 10 * 60_000, endUTC: dayStart - 5 * 60_000 },
+          { startUTC: laterStart - 30 * 60_000, endUTC: laterStart - 15 * 60_000 },
+        ],
+      },
+    };
+
+    const optimized = await optimizer.optimizeMeeting(context, slots);
+    expect(optimized[0].startUTC).toBe(laterStart);
+    expect(optimized[1].startUTC).toBe(dayStart);
+  });
+
+  it('applies a stronger recovery penalty during a participant\'s local late night', async () => {
+    const dayStart = Date.UTC(2026, 10, 12, 14, 0);
+    const lateStart = Date.UTC(2026, 10, 12, 22, 0);
+    const slots: OverlapSlot[] = [
+      {
+        startUTC: lateStart,
+        endUTC: lateStart + 60 * 60_000,
+        durationMinutes: 60,
+        participantCount: 1,
+        participants: ['Alice'],
+      },
+      {
+        startUTC: dayStart,
+        endUTC: dayStart + 60 * 60_000,
+        durationMinutes: 60,
+        participantCount: 1,
+        participants: ['Alice'],
+      },
+    ];
+
+    const optimized = await optimizer.optimizeMeeting(
+      {
+        ...mockContext,
+        participants: ['Alice'],
+        participantTimezones: { Alice: 'UTC' },
+        participantBusyIntervals: {
+          Alice: [
+            { startUTC: dayStart - 10 * 60_000, endUTC: dayStart - 5 * 60_000 },
+            { startUTC: lateStart - 10 * 60_000, endUTC: lateStart - 5 * 60_000 },
+          ],
+        },
+      },
+      slots,
+    );
+
+    expect(optimized[0].startUTC).toBe(dayStart);
+    expect(optimized[1].startUTC).toBe(lateStart);
+  });
+
   it('provides an integrated MultiAgentOrchestrator instance', () => {
     const orchestrator = optimizer.getOrchestrator();
     expect(orchestrator).toBeInstanceOf(MultiAgentOrchestrator);

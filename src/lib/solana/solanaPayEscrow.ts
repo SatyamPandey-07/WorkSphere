@@ -1,24 +1,30 @@
 /**
  * solanaPayEscrow.ts
  *
- * Implements optimistic UI updates and WebSocket confirmation listener for Solana Pay seat bookings.
- * Enhances seat reservation payments so transactions update the UI optimistically while subscribing
- * to Solana RPC WebSocket commitment notifications (confirmed -> finalized).
+ * Implements optimistic UI updates and confirmation listeners for Solana Pay seat bookings.
+ * Enhances seat reservation payments so transactions update the UI optimistically while tracking
+ * Solana RPC commitment progress (confirmed -> finalized).
  *
  * Features:
  * 1. Transition seat state to provisionally_reserved immediately upon wallet signature approval.
  * 2. Subscribe to RPC onSignatureWithOptions WebSocket for transaction confirmation.
- * 3. Roll back to available with user-friendly error message if the transaction fails or drops from mempool after 60 seconds.
- * 4. Anti-spam Proof-of-Work validation support using ProofOfWorkValidator.
+ * 3. Fall back to background status polling (confirmed -> finalized) when WebSocket
+ *    subscriptions cannot be registered (e.g. rate-limited RPC endpoints) or when the
+ *    caller explicitly requests polling mode with an injectable, failover-aware poller.
+ * 4. Roll back to available with user-friendly error message if the transaction fails or drops from mempool after 60 seconds.
+ * 5. Anti-spam Proof-of-Work validation support using ProofOfWorkValidator.
  */
 
-import type { Connection } from "@solana/web3.js";
+import type { Connection, SignatureStatus } from "@solana/web3.js";
 import {
   ProofOfWorkValidator,
   type PoWSubmission,
 } from "@/core/ledger/ProofOfWorkValidator";
 
 export const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000; // 60 seconds
+export const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2 seconds
+
+export type SeatConfirmationMode = "websocket" | "polling";
 
 export type SeatState =
   "available" | "provisionally_reserved" | "confirmed" | "finalized";
@@ -60,6 +66,19 @@ export interface ReserveSeatOptions {
   timeoutMs?: number;
   powSubmission?: PoWSubmission;
   callbacks?: SeatReservationCallbacks;
+  /**
+   * How the (confirmed -> finalized) commitment progress is tracked.
+   * - "websocket" (default): subscribes via onSignatureWithOptions notifications.
+   * - "polling": background RPC status polling until finality.
+   */
+  confirmationMode?: SeatConfirmationMode;
+  /**
+   * Optional failover-aware signature status poller used in polling mode.
+   * Defaults to polling the provided connection's getSignatureStatuses.
+   */
+  pollSignatureStatus?: (signature: string) => Promise<SignatureStatus | null>;
+  /** Interval between background status polls (polling mode only). */
+  pollIntervalMs?: number;
 }
 
 interface ActiveSubscription {
@@ -68,8 +87,24 @@ interface ActiveSubscription {
   confirmedSubId?: number;
   finalizedSubId?: number;
   timeoutTimer?: ReturnType<typeof setTimeout>;
+  pollTimer?: ReturnType<typeof setTimeout>;
+  pollAborted?: boolean;
   connection: Connection;
   callbacks?: SeatReservationCallbacks;
+}
+
+/**
+ * Default signature status poller that queries the provided connection directly.
+ * Used as the fallback poller when no failover-aware poller is injected.
+ */
+async function fetchSignatureStatusViaConnection(
+  connection: Connection,
+  signature: string,
+): Promise<SignatureStatus | null> {
+  const response = await connection.getSignatureStatuses?.([signature], {
+    searchTransactionHistory: true,
+  });
+  return response?.value?.[0] ?? null;
 }
 
 export class SolanaPayEscrowManager {
@@ -114,7 +149,7 @@ export class SolanaPayEscrowManager {
   }
 
   /**
-   * Optimistically reserves a seat and initiates WebSocket commitment listeners.
+   * Optimistically reserves a seat and initiates confirmation tracking.
    */
   public async reserveSeatOptimistically(
     options: ReserveSeatOptions,
@@ -130,6 +165,9 @@ export class SolanaPayEscrowManager {
       timeoutMs = DEFAULT_CONFIRMATION_TIMEOUT_MS,
       powSubmission,
       callbacks,
+      confirmationMode = "websocket",
+      pollSignatureStatus,
+      pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
     } = options;
 
     if (!seatId || typeof seatId !== "string" || !seatId.trim()) {
@@ -201,20 +239,36 @@ export class SolanaPayEscrowManager {
     // Clean up any stale subscription for this seat before starting a new one
     this.cleanupSubscription(seatId);
 
-    // 2. Subscribe to RPC onSignatureWithOptions WebSocket & start 60s timeout
-    this.subscribeToSignatureUpdates(
-      connection,
-      seatId,
-      signature,
-      timeoutMs,
-      callbacks,
-    );
+    // 2. Track confirmation (WebSocket notifications or background status polling) & start timeout
+    if (confirmationMode === "polling") {
+      this.startPollingConfirmation(
+        connection,
+        seatId,
+        signature,
+        timeoutMs,
+        pollIntervalMs,
+        pollSignatureStatus,
+        callbacks,
+      );
+    } else {
+      this.subscribeToSignatureUpdates(
+        connection,
+        seatId,
+        signature,
+        timeoutMs,
+        callbacks,
+        pollIntervalMs,
+        pollSignatureStatus,
+      );
+    }
 
     return initialState;
   }
 
   /**
    * Subscribes to Solana RPC WebSocket commitment notifications (confirmed -> finalized).
+   * If both subscriptions cannot be registered (e.g. the RPC endpoint rejects them),
+   * falls back to background status polling so the reservation never gets stuck.
    */
   private subscribeToSignatureUpdates(
     connection: Connection,
@@ -222,6 +276,10 @@ export class SolanaPayEscrowManager {
     signature: string,
     timeoutMs: number,
     callbacks?: SeatReservationCallbacks,
+    pollIntervalMs: number = DEFAULT_POLL_INTERVAL_MS,
+    pollSignatureStatus?: (
+      signature: string,
+    ) => Promise<SignatureStatus | null>,
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
@@ -254,28 +312,7 @@ export class SolanaPayEscrowManager {
           }
 
           // Transition to confirmed
-          const current = this.reservations.get(seatId);
-          if (current && current.state === "provisionally_reserved") {
-            const confirmedState: SeatReservationState = {
-              ...current,
-              state: "confirmed",
-              paymentStatus: "confirmed",
-              slot: context?.slot,
-              error: null,
-              updatedAt: Date.now(),
-            };
-            this.reservations.set(seatId, confirmedState);
-
-            try {
-              callbacks?.onStateChange?.(confirmedState);
-              callbacks?.onConfirmed?.(confirmedState);
-            } catch (err) {
-              console.error(
-                "[SolanaPayEscrow] Error in confirmed callback:",
-                err,
-              );
-            }
-          }
+          this.transitionToConfirmed(seatId, context?.slot, callbacks);
         },
         { commitment: "confirmed" },
       );
@@ -301,35 +338,7 @@ export class SolanaPayEscrowManager {
           }
 
           // Transition to finalized
-          const current = this.reservations.get(seatId);
-          if (
-            current &&
-            (current.state === "provisionally_reserved" ||
-              current.state === "confirmed")
-          ) {
-            const finalizedState: SeatReservationState = {
-              ...current,
-              state: "finalized",
-              paymentStatus: "finalized",
-              slot: context?.slot,
-              error: null,
-              updatedAt: Date.now(),
-            };
-            this.reservations.set(seatId, finalizedState);
-
-            // Successfully finalized, clear subscriptions and timers
-            this.cleanupSubscription(seatId);
-
-            try {
-              callbacks?.onStateChange?.(finalizedState);
-              callbacks?.onFinalized?.(finalizedState);
-            } catch (err) {
-              console.error(
-                "[SolanaPayEscrow] Error in finalized callback:",
-                err,
-              );
-            }
-          }
+          this.transitionToFinalized(seatId, context?.slot, callbacks);
         },
         { commitment: "finalized" },
       );
@@ -341,6 +350,229 @@ export class SolanaPayEscrowManager {
     }
 
     this.activeSubscriptions.set(seatId, subRecord);
+
+    // Both WebSocket subscriptions failed to register — fall back to background polling
+    if (
+      subRecord.confirmedSubId === undefined &&
+      subRecord.finalizedSubId === undefined
+    ) {
+      console.warn(
+        "[SolanaPayEscrow] WebSocket subscriptions unavailable; falling back to background status polling.",
+      );
+      this.scheduleNextPoll(
+        subRecord,
+        signature,
+        pollIntervalMs,
+        pollSignatureStatus,
+      );
+    }
+  }
+
+  /**
+   * Tracks (confirmed -> finalized) commitment progress via background RPC polling
+   * until finality, rolling the seat back to available on failure or mempool drop.
+   */
+  private startPollingConfirmation(
+    connection: Connection,
+    seatId: string,
+    signature: string,
+    timeoutMs: number,
+    pollIntervalMs: number,
+    pollSignatureStatus?: (
+      signature: string,
+    ) => Promise<SignatureStatus | null>,
+    callbacks?: SeatReservationCallbacks,
+  ): void {
+    const subRecord: ActiveSubscription = {
+      seatId,
+      signature,
+      connection,
+      callbacks,
+    };
+
+    // Overall timeout: rollback to available if transaction drops from mempool
+    subRecord.timeoutTimer = setTimeout(() => {
+      const timeoutReason =
+        `Transaction confirmation timed out after ${Math.round(timeoutMs / 1000)} seconds ` +
+        `(dropped from mempool). Seat reservation has been restored to available.`;
+      this.rollback(seatId, timeoutReason, "timeout");
+    }, timeoutMs);
+    subRecord.timeoutTimer.unref?.();
+
+    this.activeSubscriptions.set(seatId, subRecord);
+    this.scheduleNextPoll(
+      subRecord,
+      signature,
+      pollIntervalMs,
+      pollSignatureStatus,
+    );
+  }
+
+  /**
+   * Schedules the next background status poll for an active subscription.
+   */
+  private scheduleNextPoll(
+    subRecord: ActiveSubscription,
+    signature: string,
+    pollIntervalMs: number,
+    pollSignatureStatus?: (
+      signature: string,
+    ) => Promise<SignatureStatus | null>,
+  ): void {
+    if (subRecord.pollAborted) return;
+    subRecord.pollTimer = setTimeout(() => {
+      void this.pollSignatureStatusOnce(
+        subRecord,
+        signature,
+        pollIntervalMs,
+        pollSignatureStatus,
+      );
+    }, pollIntervalMs);
+    subRecord.pollTimer.unref?.();
+  }
+
+  /**
+   * Performs one background status poll and advances the reservation state machine.
+   * Transient RPC failures are swallowed and retried on the next tick until the
+   * overall confirmation timeout rolls the reservation back.
+   */
+  private async pollSignatureStatusOnce(
+    subRecord: ActiveSubscription,
+    signature: string,
+    pollIntervalMs: number,
+    pollSignatureStatus?: (
+      signature: string,
+    ) => Promise<SignatureStatus | null>,
+  ): Promise<void> {
+    if (subRecord.pollAborted) return;
+    const { seatId, connection, callbacks } = subRecord;
+
+    let status: SignatureStatus | null = null;
+    try {
+      status = pollSignatureStatus
+        ? await pollSignatureStatus(signature)
+        : await fetchSignatureStatusViaConnection(connection, signature);
+    } catch (err) {
+      console.warn(
+        "[SolanaPayEscrow] Signature status poll failed; retrying next interval:",
+        err,
+      );
+      this.scheduleNextPoll(
+        subRecord,
+        signature,
+        pollIntervalMs,
+        pollSignatureStatus,
+      );
+      return;
+    }
+
+    if (subRecord.pollAborted) return;
+
+    // Status not visible on-chain yet — keep polling; the overall timeout
+    // handles the dropped-from-mempool case.
+    if (!status) {
+      this.scheduleNextPoll(
+        subRecord,
+        signature,
+        pollIntervalMs,
+        pollSignatureStatus,
+      );
+      return;
+    }
+
+    if (status.err) {
+      const errorMsg =
+        typeof status.err === "string"
+          ? status.err
+          : JSON.stringify(status.err);
+      const reason = `Transaction failed on-chain: ${errorMsg}. Seat reservation reverted to available.`;
+      this.rollback(seatId, reason, "failed");
+      return;
+    }
+
+    const commitment = status.confirmationStatus;
+    if (commitment === "finalized" || status.confirmations === null) {
+      this.transitionToFinalized(seatId, status.slot, callbacks);
+      return;
+    }
+
+    if (commitment === "confirmed") {
+      this.transitionToConfirmed(seatId, status.slot, callbacks);
+    }
+
+    this.scheduleNextPoll(
+      subRecord,
+      signature,
+      pollIntervalMs,
+      pollSignatureStatus,
+    );
+  }
+
+  /**
+   * Transitions a reservation from provisionally_reserved to confirmed.
+   */
+  private transitionToConfirmed(
+    seatId: string,
+    slot: number | undefined,
+    callbacks?: SeatReservationCallbacks,
+  ): void {
+    const current = this.reservations.get(seatId);
+    if (!current || current.state !== "provisionally_reserved") return;
+
+    const confirmedState: SeatReservationState = {
+      ...current,
+      state: "confirmed",
+      paymentStatus: "confirmed",
+      slot,
+      error: null,
+      updatedAt: Date.now(),
+    };
+    this.reservations.set(seatId, confirmedState);
+
+    try {
+      callbacks?.onStateChange?.(confirmedState);
+      callbacks?.onConfirmed?.(confirmedState);
+    } catch (err) {
+      console.error("[SolanaPayEscrow] Error in confirmed callback:", err);
+    }
+  }
+
+  /**
+   * Transitions a reservation to finalized and cleans up its listeners.
+   */
+  private transitionToFinalized(
+    seatId: string,
+    slot: number | undefined,
+    callbacks?: SeatReservationCallbacks,
+  ): void {
+    const current = this.reservations.get(seatId);
+    if (
+      !current ||
+      (current.state !== "provisionally_reserved" &&
+        current.state !== "confirmed")
+    ) {
+      return;
+    }
+
+    const finalizedState: SeatReservationState = {
+      ...current,
+      state: "finalized",
+      paymentStatus: "finalized",
+      slot,
+      error: null,
+      updatedAt: Date.now(),
+    };
+    this.reservations.set(seatId, finalizedState);
+
+    // Successfully finalized, clear subscriptions and timers
+    this.cleanupSubscription(seatId);
+
+    try {
+      callbacks?.onStateChange?.(finalizedState);
+      callbacks?.onFinalized?.(finalizedState);
+    } catch (err) {
+      console.error("[SolanaPayEscrow] Error in finalized callback:", err);
+    }
   }
 
   /**
@@ -389,11 +621,18 @@ export class SolanaPayEscrowManager {
   }
 
   /**
-   * Cleans up WebSocket subscriptions and timeout timers for a seat.
+   * Cleans up WebSocket subscriptions, poll timers, and timeout timers for a seat.
    */
   private cleanupSubscription(seatId: string): void {
     const sub = this.activeSubscriptions.get(seatId);
     if (!sub) return;
+
+    // Halt any background polling loop for this reservation
+    sub.pollAborted = true;
+    if (sub.pollTimer) {
+      clearTimeout(sub.pollTimer);
+      sub.pollTimer = undefined;
+    }
 
     if (sub.timeoutTimer) {
       clearTimeout(sub.timeoutTimer);

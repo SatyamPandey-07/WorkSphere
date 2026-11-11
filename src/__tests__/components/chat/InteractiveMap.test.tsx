@@ -4,7 +4,7 @@ import {
   InteractiveMap,
   InteractiveMapMarker,
   isTouchOnlyDevice,
-} from "@/components/chat/InteractiveMap";
+} from "../../../components/chat/InteractiveMap";
 
 // Mock react-leaflet components for fast, reliable unit testing
 jest.mock("react-leaflet", () => ({
@@ -246,35 +246,51 @@ describe("InteractiveMap Component", () => {
 
   describe("Keyboard Event Handlers & Navigation Overlay Badges", () => {
     it("renders subtle monospace keyboard badges on navigation controls", () => {
-      render(
-        <InteractiveMap
-          markers={[{ lat: 10, lng: 10, name: "Test" }]}
-        />,
-      );
+      render(<InteractiveMap markers={[{ lat: 10, lng: 10, name: "Test" }]} />);
 
       // Verify zoom-in badge
       const kbdZoomIn = screen.getByTestId("kbd-zoom-in");
       expect(kbdZoomIn).toBeInTheDocument();
       expect(kbdZoomIn).toHaveTextContent("+");
-      expect(kbdZoomIn).toHaveClass("font-mono", "bg-zinc-800", "border-zinc-700", "text-zinc-400");
+      expect(kbdZoomIn).toHaveClass(
+        "font-mono",
+        "bg-zinc-800",
+        "border-zinc-700",
+        "text-zinc-400",
+      );
 
       // Verify zoom-out badge
       const kbdZoomOut = screen.getByTestId("kbd-zoom-out");
       expect(kbdZoomOut).toBeInTheDocument();
       expect(kbdZoomOut).toHaveTextContent("-");
-      expect(kbdZoomOut).toHaveClass("font-mono", "bg-zinc-800", "border-zinc-700", "text-zinc-400");
+      expect(kbdZoomOut).toHaveClass(
+        "font-mono",
+        "bg-zinc-800",
+        "border-zinc-700",
+        "text-zinc-400",
+      );
 
       // Verify reset-view badge
       const kbdReset = screen.getByTestId("kbd-reset-view");
       expect(kbdReset).toBeInTheDocument();
       expect(kbdReset).toHaveTextContent("R");
-      expect(kbdReset).toHaveClass("font-mono", "bg-zinc-800", "border-zinc-700", "text-zinc-400");
+      expect(kbdReset).toHaveClass(
+        "font-mono",
+        "bg-zinc-800",
+        "border-zinc-700",
+        "text-zinc-400",
+      );
 
       // Verify high-contrast badge
       const kbdContrast = screen.getByTestId("kbd-high-contrast");
       expect(kbdContrast).toBeInTheDocument();
       expect(kbdContrast).toHaveTextContent("H");
-      expect(kbdContrast).toHaveClass("font-mono", "bg-zinc-800", "border-zinc-700", "text-zinc-400");
+      expect(kbdContrast).toHaveClass(
+        "font-mono",
+        "bg-zinc-800",
+        "border-zinc-700",
+        "text-zinc-400",
+      );
     });
 
     it("handles global keydown actions for +, -, H, and R", () => {
@@ -354,6 +370,22 @@ describe("InteractiveMap Component", () => {
       expect(isTouchOnlyDevice()).toBe(false);
 
       window.matchMedia = originalMatchMedia;
+    });
+
+    it("keeps navigation controls and reset view clear of map attribution with 44px touch target (#7144)", () => {
+      render(<InteractiveMap markers={[{ lat: 10, lng: 10, name: "Test" }]} />);
+
+      const navControls = screen.getByTestId("map-navigation-controls");
+      expect(navControls).toHaveClass(
+        "bottom-8",
+        "right-4",
+        "sm:bottom-4",
+        "backdrop-blur-sm",
+        "shadow-md",
+      );
+
+      const resetBtn = screen.getByTestId("map-reset-view-btn");
+      expect(resetBtn).toHaveClass("min-h-11", "min-w-11");
     });
   });
 });

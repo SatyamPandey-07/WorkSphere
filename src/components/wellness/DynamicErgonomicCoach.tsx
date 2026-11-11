@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Activity,
   Eye,
@@ -30,7 +30,7 @@ import {
 import { ErgonomicChimeSynthesizer } from "@/lib/audio/ErgonomicChimeSynthesizer";
 import { FocusTrap } from "@/components/ui/FocusTrap";
 import { calculateSitStandRatio } from "@/lib/wellness/deskPostureAnalytics";
-import SitStandRatioAnalytics from "./SitStandRatioAnalytics";
+import { SitStandRatioAnalytics } from "@/components/wellness/SitStandRatioAnalytics";
 
 export default function DynamicErgonomicCoach() {
   const [session, setSession] = useState<ErgonomicSessionState>({
@@ -100,6 +100,126 @@ export default function DynamicErgonomicCoach() {
   const [lastCheckInResult, setLastCheckInResult] = useState<string | null>(
     null,
   );
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
 
   useEffect(() => {
     const synthesizer = new ErgonomicChimeSynthesizer();
@@ -358,10 +478,6 @@ export default function DynamicErgonomicCoach() {
     if (!stretchBreakActive || stretchBreakSecondsLeft !== 0) return;
 
     const playTimerChime = () => {
-      if (!stretchBreakChimeEnabled || !soundEnabled || !ergonomicChimeRef.current) return;
-      void ergonomicChimeRef.current.playGentleChime(soundVolume).catch((error: unknown) => {
-        console.warn("Could not play ergonomic break chime:", error);
-      });
       if (
         !stretchBreakChimeEnabled ||
         !soundEnabled ||
@@ -512,7 +628,6 @@ export default function DynamicErgonomicCoach() {
 
     if (stretchBreakSecondsLeft === 0) {
       setStretchBreakSecondsLeft(
-        (stretchBreakPhase === "focus" ? focusDurationMinutes : stretchDurationMinutes) * 60
         (stretchBreakPhase === "focus"
           ? focusDurationMinutes
           : stretchDurationMinutes) * 60,
@@ -527,7 +642,6 @@ export default function DynamicErgonomicCoach() {
       Notification.permission === "default"
     ) {
       void Notification.requestPermission().catch((error: unknown) => {
-        console.warn("Could not request desktop notification permission:", error);
         console.warn(
           "Could not request desktop notification permission:",
           error,
@@ -1122,7 +1236,6 @@ export default function DynamicErgonomicCoach() {
                     Focus & Stretch Break Timer
                   </h3>
                   <p className="mt-1 text-xs text-slate-400">
-                    Customize your focus interval and the movement break that follows.
                     Customize your focus interval and the movement break that
                     follows.
                   </p>
@@ -1141,7 +1254,6 @@ export default function DynamicErgonomicCoach() {
                 <label className="space-y-2 text-xs text-slate-300">
                   <span className="flex items-center justify-between">
                     <span>Focus duration</span>
-                    <span className="font-mono font-bold text-violet-200">{focusDurationMinutes}m</span>
                     <span className="font-mono font-bold text-violet-200">
                       {focusDurationMinutes}m
                     </span>
@@ -1153,7 +1265,6 @@ export default function DynamicErgonomicCoach() {
                     step={5}
                     value={focusDurationMinutes}
                     disabled={stretchBreakActive}
-                    onChange={(event) => selectFocusDuration(Number(event.target.value))}
                     onChange={(event) =>
                       selectFocusDuration(Number(event.target.value))
                     }
@@ -1169,7 +1280,6 @@ export default function DynamicErgonomicCoach() {
                 <label className="space-y-2 text-xs text-slate-300">
                   <span className="flex items-center justify-between">
                     <span>Stretch duration</span>
-                    <span className="font-mono font-bold text-violet-200">{stretchDurationMinutes}m</span>
                     <span className="font-mono font-bold text-violet-200">
                       {stretchDurationMinutes}m
                     </span>
@@ -1181,7 +1291,6 @@ export default function DynamicErgonomicCoach() {
                     step={1}
                     value={stretchDurationMinutes}
                     disabled={stretchBreakActive}
-                    onChange={(event) => selectStretchDuration(Number(event.target.value))}
                     onChange={(event) =>
                       selectStretchDuration(Number(event.target.value))
                     }
@@ -1198,7 +1307,6 @@ export default function DynamicErgonomicCoach() {
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs font-semibold text-slate-300">
-                  {stretchBreakPhase === "focus" ? "Focus time" : "Stretch break"}
                   {stretchBreakPhase === "focus"
                     ? "Focus time"
                     : "Stretch break"}

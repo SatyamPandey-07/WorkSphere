@@ -10,10 +10,27 @@ export interface DeskReservationCountdownTimerProps {
   deskName?: string;
   initialExpiresAt?: number;
   totalDurationSeconds?: number;
+  capacityPercentage?: number;
   onExpire?: (deskId: string) => void;
   onRelease?: () => void;
   onExtended?: (newExpiresAt: number) => void;
   className?: string;
+}
+
+/**
+ * Maps occupancy percentage to theme-aware status colors.
+ * - Green: below 60%
+ * - Amber: 60% through 85% (inclusive)
+ * - Rose: above 85%
+ */
+export function getOccupancyBadgeColor(capacityPercentage: number): string {
+  if (capacityPercentage < 60) {
+    return "bg-emerald-500/20 text-emerald-400";
+  }
+  if (capacityPercentage <= 85) {
+    return "bg-amber-500/20 text-amber-400";
+  }
+  return "bg-rose-500/20 text-rose-400 animate-pulse";
 }
 
 export function DeskReservationCountdownTimer({
@@ -22,6 +39,7 @@ export function DeskReservationCountdownTimer({
   deskName,
   initialExpiresAt,
   totalDurationSeconds = 300,
+  capacityPercentage,
   onExpire,
   onRelease,
   onExtended,
@@ -29,6 +47,11 @@ export function DeskReservationCountdownTimer({
 }: DeskReservationCountdownTimerProps) {
   const [extending, setExtending] = useState(false);
   const [releasing, setReleasing] = useState(false);
+
+  const hasCapacity =
+    capacityPercentage !== undefined &&
+    capacityPercentage !== null &&
+    !Number.isNaN(capacityPercentage);
 
   const {
     remainingSeconds,
@@ -145,6 +168,17 @@ export function DeskReservationCountdownTimer({
 
         {/* Right: Countdown Display & Action Controls */}
         <div className="flex items-center gap-3">
+          {hasCapacity && (
+            <span
+              data-testid="desk-countdown-occupancy-badge"
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide transition-colors duration-200 ${getOccupancyBadgeColor(
+                capacityPercentage,
+              )}`}
+            >
+              {Math.round(capacityPercentage)}% occupied
+            </span>
+          )}
+
           <div
             data-testid="desk-countdown-display"
             className="flex items-center gap-1.5 font-mono text-sm font-bold text-amber-300"

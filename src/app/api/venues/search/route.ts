@@ -1,3 +1,4 @@
+ feature/solana-optimistic-escrow-simulation
 import { NextResponse } from "next/server";
 import { searchVenuesPhonetic } from "@/lib/search/phoneticVenueSearch";
 
@@ -19,6 +20,8 @@ export async function GET(req: Request) {
     console.error("Phonetic Venue Search Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
 
+
+ main
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
@@ -26,10 +29,27 @@ import {
   generateETag,
   BoundingBox,
 } from "@/lib/cache/venueCache";
+import { searchVenuesPhonetic } from "@/lib/search/phoneticVenueSearch";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
+    const q = searchParams.get("q");
+
+    if (q) {
+      const limitParam = searchParams.get("limit");
+      const limit = limitParam ? parseInt(limitParam, 10) : 20;
+      const results = await searchVenuesPhonetic(q, limit);
+      return NextResponse.json({
+        success: true,
+        count: results.length,
+        data: results,
+        results,
+      });
+    }
+
     const bbox: BoundingBox = {
       minLat: parseFloat(searchParams.get("minLat") || "0"),
       maxLat: parseFloat(searchParams.get("maxLat") || "0"),
@@ -54,9 +74,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Fetch venues from database (simulate data fetching here)
-    const venues: Record<string, unknown>[] = [
-      // { id: '1', name: 'Coffee House', ... }
-    ];
+    const venues: Record<string, unknown>[] = [];
 
     // 4. Return successful response with Edge caching headers & ETag
     return NextResponse.json(
@@ -69,10 +87,10 @@ export async function GET(request: NextRequest) {
         },
       },
     );
-  } catch (error) {
-    console.error("Venue search caching error:", error);
+  } catch (error: any) {
+    console.error("Venue search error:", error);
     return NextResponse.json(
-      { success: false, error: "Internal Server Error" },
+      { success: false, error: error?.message || "Internal Server Error" },
       { status: 500 },
     );
 main

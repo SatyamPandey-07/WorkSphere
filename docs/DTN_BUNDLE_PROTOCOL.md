@@ -24,9 +24,11 @@ sequenceDiagram
     Relay->>Dest: Forward Bundle upon Reconnection
     Dest->>Relay: Final Delivery ACK
     Relay->>Relay: Prune Bundle from Storage
+```
 
-    {
-  "$schema": "[http://json-schema.org/draft-07/schema#](http://json-schema.org/draft-07/schema#)",
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "WorkSphereDTNBundle",
   "type": "object",
   "properties": {

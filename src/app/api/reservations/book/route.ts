@@ -1,3 +1,4 @@
+import { withIdempotency } from "@/lib/middleware/idempotency";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse, after } from "next/server";
 import { randomBytes } from "crypto";
@@ -26,7 +27,7 @@ function newConfirmationId(): string {
   return `WS-${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
-export async function POST(request: NextRequest) {
+async function handleBooking(request: NextRequest): Promise<NextResponse> {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -161,7 +162,9 @@ export async function POST(request: NextRequest) {
             },
             select: { date: true, time: true, duration: true, timeZone: true },
           });
-          if (hasBookingConflict({ date, time, timeZone, duration }, existing)) {
+          if (
+            hasBookingConflict({ date, time, timeZone, duration }, existing)
+          ) {
             throw new Error("CONFLICT");
           }
 
@@ -327,4 +330,7 @@ export async function POST(request: NextRequest) {
       );
     }
   }
+}
+export async function POST(request: NextRequest) {
+  return withIdempotency(request, handleBooking);
 }

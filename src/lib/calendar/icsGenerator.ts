@@ -125,7 +125,7 @@ const isFiniteNumber = (n: unknown): n is number =>
 
 function mapStatus(status?: string | null): BookingCalendarEvent["status"] {
   const value = (status ?? "").toUpperCase();
-  if (value === "CANCELLED") return "CANCELLED";
+  if (value === "CANCELLED" || value === "CANCELLED_BY_OPERATOR") return "CANCELLED";
   if (value === "PENDING") return "TENTATIVE";
   return "CONFIRMED";
 }

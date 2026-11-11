@@ -62,21 +62,40 @@ export function VenueShareModal({
     });
   }, [isOpen, shortUrl, venue.name]);
 
+  const triggerElementRef = useRef<HTMLElement | null>(null);
+
   const handleClose = useCallback(() => {
     setIsOpen(false);
     setCopied(false);
+    if (
+      triggerElementRef.current &&
+      typeof triggerElementRef.current.focus === "function"
+    ) {
+      triggerElementRef.current.focus();
+    }
   }, []);
 
   // Handle ESC key to close modal
   useEffect(() => {
     if (!isOpen) return;
+    if (typeof document !== "undefined" && !triggerElementRef.current) {
+      triggerElementRef.current = document.activeElement as HTMLElement | null;
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         handleClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (
+        triggerElementRef.current &&
+        typeof triggerElementRef.current.focus === "function"
+      ) {
+        triggerElementRef.current.focus();
+      }
+    };
   }, [isOpen, handleClose]);
 
   const handleShareClick = async () => {
@@ -212,9 +231,10 @@ export function VenueShareModal({
               </div>
               <button
                 type="button"
+                data-testid="venue-share-modal-close"
                 onClick={handleClose}
                 aria-label="Close dialog"
-                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 <X className="w-5 h-5" />
               </button>

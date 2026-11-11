@@ -94,9 +94,15 @@ export function VenueReviewModal({
     }
   }, [isOpen, initialRating, initialComment]);
 
-  // Handle ESC key to dismiss modal
+  const triggerElementRef = useRef<HTMLElement | null>(null);
+
+  // Handle ESC key to dismiss modal and restore focus
   useEffect(() => {
     if (!isOpen) return;
+
+    if (typeof document !== "undefined") {
+      triggerElementRef.current = document.activeElement as HTMLElement | null;
+    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -105,7 +111,15 @@ export function VenueReviewModal({
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (
+        triggerElementRef.current &&
+        typeof triggerElementRef.current.focus === "function"
+      ) {
+        triggerElementRef.current.focus();
+      }
+    };
   }, [isOpen, onClose]);
 
   // Validation logic
@@ -197,7 +211,7 @@ export function VenueReviewModal({
             data-testid="venue-review-modal-close"
             onClick={onClose}
             aria-label="Close review modal"
-            className="rounded-xl p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            className="rounded-xl p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <X className="w-5 h-5" />
           </button>
@@ -324,7 +338,7 @@ export function VenueReviewModal({
               type="button"
               data-testid="venue-review-cancel-button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold rounded-xl text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="px-4 py-2 text-xs font-semibold rounded-xl text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               Cancel
             </button>

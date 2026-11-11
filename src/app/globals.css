@@ -264,7 +264,9 @@ html.high-contrast .hard-light-pulse {
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary-accent, #3b82f6);
   --color-primary-accent: var(--primary-accent);
+  --color-ring: var(--primary-accent, #3b82f6);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

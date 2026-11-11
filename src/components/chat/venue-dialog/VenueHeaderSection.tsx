@@ -225,7 +225,7 @@ export function VenueHeaderSection({
             data-testid="close-venue-btn"
             onClick={onClose}
             aria-label="Close venue details"
-            className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90"
+            className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <X className="w-6 h-6" />
           </button>

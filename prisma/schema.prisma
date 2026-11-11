@@ -1130,3 +1130,18 @@ model DeepWorkCredential {
 
   @@index([userId, mintedAt])
 }
+
+
+/// Durable idempotency ledger for operator-initiated venue cancellation webhooks.
+model VenueCancellationWebhookEvent {
+  id             String   @id @default(cuid())
+  idempotencyKey String   @unique
+  payloadHash    String
+  bookingId      String
+  createdAt      DateTime @default(now())
+  processedAt    DateTime @default(now())
+  expiresAt      DateTime
+
+  @@index([bookingId])
+  @@index([expiresAt])
+}

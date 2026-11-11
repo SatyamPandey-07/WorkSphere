@@ -1,5 +1,10 @@
 import { parseBookingDateTime } from "@/lib/booking/dateTimeAdapter";
-import { escapeIcsText, foldIcsLine } from "@/lib/calendar/ics";
+import {
+  buildIcsAlarmLines,
+  escapeIcsText,
+  foldIcsLine,
+  type IcsAlarm,
+} from "@/lib/calendar/ics";
 
 export interface CalendarEvent {
   title: string;
@@ -100,6 +105,8 @@ export interface BookingCalendarEvent {
 export interface BookingIcsOptions {
   /** Minutes before start for each VALARM. Defaults to a single 30 minute reminder. */
   alarmMinutes?: number[];
+  /** Custom RFC 5545 alarm triggers such as -PT15M, -PT1H, or -P1D. */
+  alarms?: IcsAlarm[];
   /** Injectable clock for DTSTAMP, mainly for tests. */
   now?: Date;
 }
@@ -201,9 +208,11 @@ export function generateBookingIcs(
   const event = buildBookingCalendarEvent(booking);
   if (!event) return null;
 
-  const alarms = (options.alarmMinutes ?? [30]).filter(
-    (m) => Number.isInteger(m) && m > 0 && m <= 10_080,
-  );
+  const alarms =
+    options.alarms ??
+    (options.alarmMinutes ?? [30])
+      .filter((minutes) => Number.isInteger(minutes) && minutes > 0 && minutes <= 10_080)
+      .map((minutes) => ({ trigger: `-PT${minutes}M` }));
   const stamp = formatIcsUtc(options.now ?? new Date());
 
   const lines = [
@@ -223,13 +232,7 @@ export function generateBookingIcs(
     ...(event.geo ? [`GEO:${event.geo.latitude};${event.geo.longitude}`] : []),
     `STATUS:${event.status}`,
     "TRANSP:OPAQUE",
-    ...alarms.flatMap((m) => [
-      "BEGIN:VALARM",
-      "ACTION:DISPLAY",
-      `TRIGGER:-PT${m}M`,
-      `DESCRIPTION:${escapeIcsText(`Reminder: ${event.title}`)}`,
-      "END:VALARM",
-    ]),
+    ...buildIcsAlarmLines(alarms, `Reminder: ${event.title}`),
     "END:VEVENT",
     "END:VCALENDAR",
   ];

@@ -1,4 +1,4 @@
-import { withIdempotency } from '@/lib/middleware/idempotency';
+import { withIdempotency } from "@/lib/middleware/idempotency";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse, after } from "next/server";
 import { randomBytes } from "crypto";
@@ -27,7 +27,7 @@ function newConfirmationId(): string {
   return `WS-${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
-export async function POST(request: NextRequest) {
+async function handleBooking(request: NextRequest): Promise<NextResponse> {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -162,7 +162,9 @@ export async function POST(request: NextRequest) {
             },
             select: { date: true, time: true, duration: true, timeZone: true },
           });
-          if (hasBookingConflict({ date, time, timeZone, duration }, existing)) {
+          if (
+            hasBookingConflict({ date, time, timeZone, duration }, existing)
+          ) {
             throw new Error("CONFLICT");
           }
 
@@ -329,42 +331,6 @@ export async function POST(request: NextRequest) {
     }
   }
 }
-async function handleBooking(request: NextRequest): Promise<NextResponse> {
-  const body = await request.json();
-  const { userId, deskId, timeSlot } = body;
-
-  if (!userId || !deskId || !timeSlot) {
-    return NextResponse.json(
-      { success: false, error: 'Missing required booking parameters.' },
-      { status: 400 }
-    );
-  }
-
-  // Simulate database booking creation transaction
-  const bookingId = `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-  /*
-  await db.booking.create({
-    data: { id: bookingId, userId, deskId, timeSlot, status: 'CONFIRMED' }
-  });
-  */
-
-  return NextResponse.json(
-    {
-      success: true,
-      message: 'Desk reservation successfully confirmed.',
-      data: {
-        bookingId,
-        userId,
-        deskId,
-        timeSlot,
-        createdAt: new Date().toISOString(),
-      },
-    },
-    { status: 201 }
-  );
-}
-
 export async function POST(request: NextRequest) {
   return withIdempotency(request, handleBooking);
 }

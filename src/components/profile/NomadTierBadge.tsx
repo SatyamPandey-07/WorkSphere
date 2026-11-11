@@ -12,7 +12,11 @@ export interface NomadTierBadgeProps {
 
 const tierConfig: Record<
   TierLevel,
-  { icon: React.ElementType; badgeClasses: string; textClasses: string }
+  {
+    icon: React.ComponentType<{ className?: string }>;
+    badgeClasses: string;
+    textClasses: string;
+  }
 > = {
   Bronze: {
     icon: Shield,
@@ -57,7 +61,9 @@ export const NomadTierBadge: React.FC<NomadTierBadgeProps> = ({ tier, xp }) => {
       <span className="text-zinc-600 shrink-0">•</span>
 
       {/* XP Counter with shrink-0 for full visibility */}
-      <span className={`shrink-0 font-mono text-[11px] sm:text-xs ${config.textClasses}`}>
+      <span
+        className={`shrink-0 font-mono text-[11px] sm:text-xs ${config.textClasses}`}
+      >
         {formattedXP}
       </span>
     </div>

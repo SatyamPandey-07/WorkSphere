@@ -1,6 +1,4 @@
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 export interface VenueSearchResult {
   id: string;
@@ -12,7 +10,7 @@ export interface VenueSearchResult {
 
 export async function searchVenuesPhonetic(
   query: string,
-  limit: number = 20
+  limit: number = 20,
 ): Promise<VenueSearchResult[]> {
   if (!query || query.trim().length === 0) {
     return [];

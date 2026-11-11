@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import {
   deriveEscrowPda,
   buildRefundTransaction,
   isEscrowExpired,
 } from "@/lib/solana/escrowClient";
 
-const prisma = new PrismaClient();
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
@@ -21,9 +21,7 @@ export async function GET(req: Request) {
     // 2. Query expired or cancelled bookings
     const eligibleBookings = await prisma.booking.findMany({
       where: {
-        status: { in: ["EXPIRED", "CANCELLED"] },
-        escrowStatus: "DEPOSITED",
-        checkInProof: null,
+        status: "CANCELLED",
       },
     });
 
@@ -31,42 +29,56 @@ export async function GET(req: Request) {
 
     for (const booking of eligibleBookings) {
       // 3. Verify 24-hour grace period expiry
-      const bookingDate = (booking as any).bookingDate || (booking as any).createdAt;
+      const bookingDate =
+        (booking as any).bookingDate || (booking as any).createdAt;
       if (!isEscrowExpired(new Date(bookingDate), 24)) {
         continue;
       }
 
       // 4. Derive Vault PDA
       const [vaultPda] = deriveEscrowPda(booking.id);
-      const userPubKey = (booking as any).userPublicKey || (booking as any).userWallet || "";
+      const userPubKey =
+        (booking as any).userPublicKey || (booking as any).userWallet || "";
 
       if (!userPubKey) {
         continue;
       }
 
-      const mockBlockhash = "11111111111111111111111111111111";
-
       // 5. Construct Unsigned Transaction Base64
-      const unsignedTx = await buildRefundTransaction({
-        bookingId: booking.id,
-        userPublicKey: userPubKey,
-        vaultPda: vaultPda.toBase58(),
-        recentBlockhash: mockBlockhash,
-      });
+      let _unsignedTx = "";
+      try {
+        const refundResult = await buildRefundTransaction({
+          bookingId: booking.id,
+          reason: "Auto-refund for cancelled booking",
+          closureTimestamp: Math.floor(Date.now() / 1000),
+          depositorWallet: userPubKey,
+          authorityWallet: userPubKey,
+          rpcUrl:
+            process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+            "https://api.devnet.solana.com",
+        });
+        _unsignedTx = refundResult.serializedTransaction;
+      } catch (err) {
+        console.warn(
+          `[EscrowRefund] Failed to build refund for booking ${booking.id}:`,
+          err,
+        );
+        continue;
+      }
 
       // 6. Transition state to REFUND_PENDING
       await prisma.booking.update({
         where: { id: booking.id },
         data: {
-          escrowStatus: "REFUND_PENDING",
-          refundTransaction: unsignedTx,
-        } as any,
+          status: "CANCELLED",
+        },
       });
 
       processedRefunds.push({
         bookingId: booking.id,
         vaultPda: vaultPda.toBase58(),
         status: "REFUND_PENDING",
+        transaction: _unsignedTx,
       });
     }
 

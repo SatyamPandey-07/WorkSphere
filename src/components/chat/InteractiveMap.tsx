@@ -1,18 +1,23 @@
 "use client";
 
- feature/protobuf-binary-broker
-import React, { useState } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Map as MapIcon, Sun, Moon } from "lucide-react";
-
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-import { Map as MapIcon, Sun, Moon, Plus, Minus, RotateCcw } from "lucide-react";
- main
+import {
+  Map as MapIcon,
+  Sun,
+  Moon,
+  Plus,
+  Minus,
+  RotateCcw,
+} from "lucide-react";
 
 // Fix for default leaflet icons in React
 if (typeof window !== "undefined") {
@@ -24,76 +29,6 @@ if (typeof window !== "undefined") {
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   });
 }
-type TileProviderKey = 'carto' | 'osm' | 'wikimedia';
-
-const TILE_URLS: Record<TileProviderKey, string> = {
-  carto: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-  osm: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  wikimedia: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png',
-};
-
-interface InteractiveMapProps {
-  center: [number, number];
-  markers?: { id: string; lat: number; lng: number; title: string }[];
-}
-
-export const InteractiveMap: React.FC<InteractiveMapProps> = ({ center, markers = [] }) => {
-  const mapRef = useRef<L.Map | null>(null);
-  const tileLayerRef = useRef<L.TileLayer | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [provider, setProvider] = useState<TileProviderKey>('carto');
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    if (!mapRef.current) {
-      mapRef.current = L.map(containerRef.current).setView(center, 13);
-    }
-
-    if (tileLayerRef.current) {
-      mapRef.current.removeLayer(tileLayerRef.current);
-    }
-
-    const layer = L.tileLayer(TILE_URLS[provider], {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors & CARTO',
-      subdomains: 'abcd',
-    });
-
-    layer.on('tileerror', () => {
-      if (provider === 'carto') {
-        console.warn('Carto tile error caught in InteractiveMap. Falling back to OSM.');
-        setProvider('osm');
-      }
-    });
-
-    layer.addTo(mapRef.current);
-    tileLayerRef.current = layer;
-
-    // Render markers
-    markers.forEach((m) => {
-      L.marker([m.lat, m.lng]).addTo(mapRef.current!).bindPopup(m.title);
-    });
-
-  }, [provider, center, markers]);
-
-  return (
-    <div className="relative w-full h-[500px]">
-      <div className="absolute top-3 right-3 z-[1000] bg-slate-900/90 border border-slate-700 rounded-xl p-2 shadow-xl flex items-center gap-2">
-        <select
-          value={provider}
-          onChange={(e) => setProvider(e.target.value as TileProviderKey)}
-          className="bg-slate-800 text-slate-100 text-xs rounded-lg px-2 py-1 border border-slate-700 cursor-pointer"
-        >
-          <option value="carto">Carto (Default)</option>
-          <option value="osm">OpenStreetMap</option>
-          <option value="wikimedia">Wikimedia</option>
-        </select>
-      </div>
-      <div ref={containerRef} className="w-full h-full rounded-2xl border border-slate-800 shadow-2xl" />
-    </div>
-  );
-};
 
 /**
  * Detects whether the current device is a touch-only mobile device without a fine pointer.
@@ -140,8 +75,6 @@ export function InteractiveMap({
 }: InteractiveMapProps) {
   const [isHighContrast, setIsHighContrast] = useState(false);
   const [timeWindowHour, setTimeWindowHour] = useState(12);
- feature/protobuf-binary-broker
-
   const [currentZoom, setCurrentZoom] = useState(zoom);
   const [isTouchOnly, setIsTouchOnly] = useState(false);
   const mapRef = useRef<any>(null);
@@ -155,7 +88,6 @@ export function InteractiveMap({
   useEffect(() => {
     setCurrentZoom(zoom);
   }, [zoom]);
- main
 
   // Validate and sanitize numeric coordinates
   const safeMarkers = useMemo(() => {
@@ -237,10 +169,6 @@ export function InteractiveMap({
     return { lat: 0, lng: 0 };
   }, [propCenter, safeMarkers]);
 
- feature/protobuf-binary-broker
-  // Memoized event handlers for interactive markers
-  const markerEventHandlers = React.useMemo(
-
   const [currentCenter, setCurrentCenter] = useState(computedCenter);
 
   useEffect(() => {
@@ -248,7 +176,7 @@ export function InteractiveMap({
   }, [computedCenter]);
 
   // Quick Map Navigation Handlers
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     setCurrentZoom((prev) => {
       const next = Math.min(prev + 1, 19);
       try {
@@ -259,9 +187,9 @@ export function InteractiveMap({
       }
       return next;
     });
-  };
+  }, []);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     setCurrentZoom((prev) => {
       const next = Math.max(prev - 1, 1);
       try {
@@ -272,9 +200,9 @@ export function InteractiveMap({
       }
       return next;
     });
-  };
+  }, []);
 
-  const handleResetView = () => {
+  const handleResetView = useCallback(() => {
     setCurrentZoom(zoom);
     setCurrentCenter(computedCenter);
     try {
@@ -282,11 +210,11 @@ export function InteractiveMap({
     } catch {
       // no-op in headless/test
     }
-  };
+  }, [computedCenter, zoom]);
 
-  const handleToggleHighContrast = () => {
+  const handleToggleHighContrast = useCallback(() => {
     setIsHighContrast((prev) => !prev);
-  };
+  }, []);
 
   // Bind global keydown listeners for quick map navigation actions
   useEffect(() => {
@@ -319,11 +247,10 @@ export function InteractiveMap({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [computedCenter, zoom]);
+  }, [handleZoomIn, handleZoomOut, handleToggleHighContrast, handleResetView]);
 
   // Memoized event handlers for interactive markers
   const markerEventHandlers = useMemo(
- main
     () => ({
       keydown: (e: any) => {
         if (e.originalEvent?.key === "Enter" || e.originalEvent?.key === " ") {
@@ -345,11 +272,6 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
- feature/protobuf-binary-broker
-  const tileLayerUrl = isHighContrast
-    ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-
   const cartoKey =
     typeof process !== "undefined"
       ? process.env?.NEXT_PUBLIC_CARTO_KEY
@@ -362,7 +284,6 @@ export function InteractiveMap({
     : isHighContrast
       ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
       : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
- main
 
   // Fallback empty view
   if (safeMarkers.length === 0 && !propCenter) {
@@ -392,14 +313,6 @@ export function InteractiveMap({
           Interactive Map
         </div>
 
- feature/protobuf-binary-broker
-        {/* High Contrast Toggle Button */}
-        <button
-          type="button"
-          onClick={() => setIsHighContrast((prev) => !prev)}
-          aria-label="Toggle high contrast map display mode"
-          aria-pressed={isHighContrast}
-
         {/* High Contrast Toggle Button with Monospace Keyboard Badge */}
         <button
           type="button"
@@ -407,7 +320,6 @@ export function InteractiveMap({
           aria-label="Toggle high contrast map display mode"
           aria-pressed={isHighContrast}
           data-testid="map-high-contrast-btn"
- main
           className="shrink-0 px-2.5 py-1 text-xs font-semibold rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 text-zinc-800 dark:text-zinc-200 shadow-sm backdrop-blur-md hover:bg-zinc-100 dark:hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 transition-all flex items-center gap-1.5 cursor-pointer"
         >
           {isHighContrast ? (
@@ -421,7 +333,6 @@ export function InteractiveMap({
               High Contrast
             </>
           )}
- feature/protobuf-binary-broker
 
           {!isTouchOnly && (
             <kbd
@@ -431,7 +342,6 @@ export function InteractiveMap({
               H
             </kbd>
           )}
- main
         </button>
 
         {/* Time Window Slider Container */}
@@ -452,14 +362,12 @@ export function InteractiveMap({
             {`${String(timeWindowHour).padStart(2, "0")}:00`}
           </span>
         </div>
- feature/protobuf-binary-broker
-
       </div>
 
       {/* Quick Map Action Navigation Controls with Keyboard Badges */}
       <div
         data-testid="map-navigation-controls"
-        className="absolute bottom-3 right-3 z-[400] flex items-center gap-1.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-lg"
+        className="absolute bottom-8 right-4 z-[400] sm:bottom-4 flex items-center gap-1.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-md"
       >
         {/* Zoom In Button */}
         <button
@@ -468,7 +376,7 @@ export function InteractiveMap({
           data-testid="map-zoom-in-btn"
           aria-label="Zoom in"
           title="Zoom In (+)"
-          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+          className="min-h-11 min-w-11 flex items-center justify-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5 text-blue-500" />
           {!isTouchOnly && (
@@ -488,7 +396,7 @@ export function InteractiveMap({
           data-testid="map-zoom-out-btn"
           aria-label="Zoom out"
           title="Zoom Out (-)"
-          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+          className="min-h-11 min-w-11 flex items-center justify-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
         >
           <Minus className="w-3.5 h-3.5 text-blue-500" />
           {!isTouchOnly && (
@@ -508,7 +416,7 @@ export function InteractiveMap({
           data-testid="map-reset-view-btn"
           aria-label="Reset map view"
           title="Reset View (R)"
-          className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+          className="min-h-11 min-w-11 flex items-center justify-center gap-1.5 px-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
         >
           <RotateCcw className="w-3.5 h-3.5 text-emerald-500" />
           {!isTouchOnly && (
@@ -520,7 +428,6 @@ export function InteractiveMap({
             </kbd>
           )}
         </button>
- main
       </div>
 
       <MapContainer
@@ -538,7 +445,9 @@ export function InteractiveMap({
           const ratingVal = marker.score ?? marker.rating;
           const parts = [`Venue: ${venueName}`];
           if (marker.category) {
-            parts.push(`Category: ${String(marker.category).replace("_", " ")}`);
+            parts.push(
+              `Category: ${String(marker.category).replace("_", " ")}`,
+            );
           }
           if (ratingVal != null && !isNaN(Number(ratingVal))) {
             parts.push(`Rating: ${ratingVal}`);
@@ -570,7 +479,10 @@ export function InteractiveMap({
                 autoPanPaddingTopLeft={[20, 90]}
                 autoPanPaddingBottomRight={[20, 20]}
               >
-                <div data-testid="marker-popup-name" className="font-bold text-sm">
+                <div
+                  data-testid="marker-popup-name"
+                  className="font-bold text-sm"
+                >
                   {venueName}
                 </div>
                 {marker.category && (

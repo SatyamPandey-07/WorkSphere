@@ -43,6 +43,7 @@ describe("custom booking calendar alarms", () => {
     expect(isValidIcsAlarmTrigger("-P1D")).toBe(true);
     expect(isValidIcsAlarmTrigger("-PT0M")).toBe(false);
     expect(isValidIcsAlarmTrigger("-PT")).toBe(false);
+    expect(isValidIcsAlarmTrigger("-P2DT")).toBe(false);
     expect(isValidIcsAlarmTrigger("PT15M")).toBe(false);
     expect(isValidIcsAlarmTrigger("-P1W2D")).toBe(false);
   });

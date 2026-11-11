@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useEffect, useState, useTransition } from "react";
 
 export interface ItineraryItem {
   id: string;
@@ -16,18 +16,66 @@ interface ItineraryTimelineProps {
   onSyncFailed?: (errorMsg: string) => void;
 }
 
+const MAX_HISTORY_STATES = 20;
+
 export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
   itineraryId,
   initialItems,
   onSyncFailed,
 }) => {
   const [items, setItems] = useState<ItineraryItem[]>(initialItems);
+  const [pastItems, setPastItems] = useState<ItineraryItem[][]>([]);
+  const [futureItems, setFutureItems] = useState<ItineraryItem[][]>([]);
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
+  const syncItems = (
+    updatedItems: ItineraryItem[],
+    updatedPast: ItineraryItem[][],
+    updatedFuture: ItineraryItem[][],
+  ) => {
+    const previousState = { items, pastItems, futureItems };
+    setErrorMessage(null);
+
+    startTransition(async () => {
+      setItems(updatedItems);
+      setPastItems(updatedPast);
+      setFutureItems(updatedFuture);
+
+      try {
+        const response = await fetch(`/api/itinerary/${itineraryId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: updatedItems }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to synchronize itinerary sequence with server.");
+        }
+      } catch (err) {
+        setItems(previousState.items);
+        setPastItems(previousState.pastItems);
+        setFutureItems(previousState.futureItems);
+        const errorText =
+          err instanceof Error ? err.message : "Network synchronization error.";
+        setErrorMessage(errorText);
+        if (onSyncFailed) onSyncFailed(errorText);
+      }
+    });
+  };
+
+  const applyReorder = (updatedItems: ItineraryItem[]) => {
+    if (isPending) return;
+    syncItems(
+      updatedItems,
+      [...pastItems, items].slice(-MAX_HISTORY_STATES),
+      [],
+    );
+  };
+
   const handleDragStart = (index: number) => {
-    setDraggedIndex(index);
+    if (!isPending) setDraggedIndex(index);
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -35,7 +83,7 @@ export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
   };
 
   const handleDrop = (targetIndex: number) => {
-    if (draggedIndex === null || draggedIndex === targetIndex) {
+    if (isPending || draggedIndex === null || draggedIndex === targetIndex) {
       setDraggedIndex(null);
       return;
     }
@@ -44,79 +92,78 @@ export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
     const [moved] = reordered.splice(draggedIndex, 1);
     reordered.splice(targetIndex, 0, moved);
 
-    const updatedItems = reordered.map((item, idx) => ({
+    const updatedItems = reordered.map((item, index) => ({
       ...item,
       transitDurationMinutes:
-        idx === 0 ? 0 : Math.floor(10 + Math.random() * 20),
+        index === 0 ? 0 : Math.floor(10 + Math.random() * 20),
     }));
 
-    const previousItems = items;
-    setItems(updatedItems);
-    setErrorMessage(null);
     setDraggedIndex(null);
-
-    // Sync asynchronously to server via PUT /api/itinerary/[id]
-    startTransition(async () => {
-      try {
-        const response = await fetch(`/api/itinerary/${itineraryId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: updatedItems }),
-        });
-
-        if (!response.ok) {
-          throw new Error(
-            "Failed to synchronize itinerary sequence with server.",
-          );
-        }
-      } catch (err) {
-        setItems(previousItems);
-        const errorText =
-          err instanceof Error ? err.message : "Network synchronization error.";
-        setErrorMessage(errorText);
-        if (onSyncFailed) onSyncFailed(errorText);
-      }
-    });
+    applyReorder(updatedItems);
   };
 
   const moveItem = (from: number, to: number) => {
-    if (to < 0 || to >= items.length) return;
+    if (isPending || to < 0 || to >= items.length) return;
+
     const reordered = [...items];
     const [moved] = reordered.splice(from, 1);
     reordered.splice(to, 0, moved);
 
-    const updatedItems = reordered.map((item, idx) => ({
+    const updatedItems = reordered.map((item, index) => ({
       ...item,
       transitDurationMinutes:
-        idx === 0 ? 0 : Math.floor(10 + Math.random() * 20),
+        index === 0 ? 0 : Math.floor(10 + Math.random() * 20),
     }));
 
-    const previousItems = items;
-    setItems(updatedItems);
-    setErrorMessage(null);
-
-    startTransition(async () => {
-      try {
-        const response = await fetch(`/api/itinerary/${itineraryId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: updatedItems }),
-        });
-
-        if (!response.ok) {
-          throw new Error(
-            "Failed to synchronize itinerary sequence with server.",
-          );
-        }
-      } catch (err) {
-        setItems(previousItems);
-        const errorText =
-          err instanceof Error ? err.message : "Network synchronization error.";
-        setErrorMessage(errorText);
-        if (onSyncFailed) onSyncFailed(errorText);
-      }
-    });
+    applyReorder(updatedItems);
   };
+
+  const handleUndo = () => {
+    if (isPending || pastItems.length === 0) return;
+    const previousItems = pastItems[pastItems.length - 1];
+    syncItems(
+      previousItems,
+      pastItems.slice(0, -1),
+      [...futureItems, items].slice(-MAX_HISTORY_STATES),
+    );
+  };
+
+  const handleRedo = () => {
+    if (isPending || futureItems.length === 0) return;
+    const nextItems = futureItems[futureItems.length - 1];
+    syncItems(
+      nextItems,
+      [...pastItems, items].slice(-MAX_HISTORY_STATES),
+      futureItems.slice(0, -1),
+    );
+  };
+
+  const canUndo = pastItems.length > 0;
+  const canRedo = futureItems.length > 0;
+
+  useEffect(() => {
+    const handleHistoryShortcut = (event: KeyboardEvent) => {
+      const modifierPressed = event.ctrlKey || event.metaKey;
+      if (!modifierPressed || event.key.toLowerCase() !== "z") return;
+
+      const target = event.target as HTMLElement | null;
+      const editingField =
+        target?.isContentEditable ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "");
+      if (editingField || isPending) return;
+
+      if (event.shiftKey && canRedo) {
+        event.preventDefault();
+        handleRedo();
+      } else if (!event.shiftKey && canUndo) {
+        event.preventDefault();
+        handleUndo();
+      }
+    };
+
+    window.addEventListener("keydown", handleHistoryShortcut);
+    return () => window.removeEventListener("keydown", handleHistoryShortcut);
+  }, [canRedo, canUndo, futureItems, handleRedo, handleUndo, isPending, items, pastItems]);
 
   return (
     <div className="bg-slate-950 border border-slate-900 rounded-3xl p-6 text-white shadow-2xl max-w-xl mx-auto space-y-4">
@@ -124,11 +171,33 @@ export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
         <h3 className="text-base font-bold tracking-tight text-slate-100">
           Workday Hop Itinerary
         </h3>
-        {isPending && (
-          <span className="text-xs font-mono text-amber-400 animate-pulse">
-            Syncing changes...
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isPending && (
+            <span className="text-xs font-mono text-amber-400 animate-pulse">
+              Syncing changes...
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleUndo}
+            disabled={!canUndo || isPending}
+            aria-label="Undo"
+            title="Undo (Ctrl/Cmd+Z)"
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            onClick={handleRedo}
+            disabled={!canRedo || isPending}
+            aria-label="Redo"
+            title="Redo (Ctrl/Cmd+Shift+Z)"
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Redo
+          </button>
+        </div>
       </div>
 
       {errorMessage && (
@@ -141,7 +210,9 @@ export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
         {items.map((item, index) => (
           <div
             key={item.id}
-            draggable
+            data-testid="itinerary-item"
+            data-item-id={item.id}
+            draggable={!isPending}
             onDragStart={() => handleDragStart(index)}
             onDragOver={handleDragOver}
             onDrop={() => handleDrop(index)}
@@ -156,12 +227,8 @@ export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
                 {index + 1}
               </span>
               <div>
-                <h4 className="text-sm font-bold text-slate-100">
-                  {item.venueName}
-                </h4>
-                <span className="text-xs text-slate-400 font-mono">
-                  {item.timeSlot}
-                </span>
+                <h4 className="text-sm font-bold text-slate-100">{item.venueName}</h4>
+                <span className="text-xs text-slate-400 font-mono">{item.timeSlot}</span>
               </div>
             </div>
 
@@ -176,7 +243,8 @@ export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
                   <button
                     type="button"
                     onClick={() => moveItem(index, index - 1)}
-                    className="p-1 text-slate-400 hover:text-white"
+                    disabled={isPending}
+                    className="p-1 text-slate-400 hover:text-white disabled:opacity-40"
                     title="Move up"
                   >
                     ▲
@@ -186,7 +254,8 @@ export const ItineraryTimeline: React.FC<ItineraryTimelineProps> = ({
                   <button
                     type="button"
                     onClick={() => moveItem(index, index + 1)}
-                    className="p-1 text-slate-400 hover:text-white"
+                    disabled={isPending}
+                    className="p-1 text-slate-400 hover:text-white disabled:opacity-40"
                     title="Move down"
                   >
                     ▼

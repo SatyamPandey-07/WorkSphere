@@ -28,8 +28,10 @@ export function isValidIcsAlarmTrigger(trigger: string): boolean {
     (value) => Number(value ?? 0),
   );
   const hasDuration = weeks + days + hours + minutes + seconds > 0;
+  const hasTimeComponent = hours + minutes + seconds > 0;
+  const timeDesignatorIsValid = !trigger.includes("T") || hasTimeComponent;
   const weeksAreExclusive = weeks === 0 || days + hours + minutes + seconds === 0;
-  return hasDuration && weeksAreExclusive;
+  return hasDuration && timeDesignatorIsValid && weeksAreExclusive;
 }
 
 /** Builds validated DISPLAY alarms, escaping user-provided descriptions. */

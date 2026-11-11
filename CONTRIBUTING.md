@@ -39,6 +39,7 @@ For standard mocking patterns (Clerk auth, Leaflet maps, Web Workers, IndexedDB,
   - [Common Setup FAQs](#common-setup-faqs)
 
 1. [Git Workflow & PRs](#1-git-workflow--prs)
+   - [Advanced Git Workflow (Git Worktree)](#17-advanced-git-workflow-git-worktree--branch-isolation)
 2. [Code Style & Quality Checks](#2-code-style--quality-checks)
 3. [Testing Conventions (Jest & RTL)](#3-testing-conventions-jest--rtl)
 4. [E2E Testing (Playwright)](#4-e2e-testing-playwright)
@@ -395,6 +396,36 @@ To lower contributor onboarding friction, WorkSphere provides a local developmen
    ```bash
    npm run dev
    ```
+
+### 1.7 Advanced Git Workflow: Git Worktree & Branch Isolation
+
+For active contributors working across multiple simultaneous feature implementations, bug triage, or code reviews, WorkSphere supports the **Git Worktree** workflow.
+
+Using `git worktree` allows you to check out multiple branches simultaneously into independent sibling directories without stashing incomplete changes or paying the overhead of Next.js/Turbopack rebuilds and cache invalidations.
+
+- **Guide**: Read the complete [Git Worktree & Branch Isolation Guide](docs/contributing/WORKTREE_GUIDE.md).
+- **Key benefits**:
+  - Zero branch-switching thrash (no `git stash` or lost working trees).
+  - Isolated working directories for concurrent development (`../WorkSphere-features/`, `../WorkSphere-fixes/`).
+  - Shared `.git` repository database saving disk space and fetch bandwidth compared to multiple clones.
+
+#### Quick Example:
+
+**Bash:**
+```bash
+# Add a new worktree for an urgent fix off upstream/main
+git fetch upstream
+git worktree add ../WorkSphere-fixes/fix-modal-contrast -b fix/modal-contrast upstream/main
+```
+
+**PowerShell:**
+```powershell
+# Add a new worktree for an urgent fix off upstream/main
+git fetch upstream
+git worktree add ..\WorkSphere-fixes\fix-modal-contrast -b fix/modal-contrast upstream/main
+```
+
+For comprehensive step-by-step commands, lifecycle walkthroughs, and solutions to common pitfalls (e.g., `node_modules` dependency isolation, environment files, and dev server port conflicts), see the [Git Worktree & Branch Isolation Guide](docs/contributing/WORKTREE_GUIDE.md).
 
 ---
 

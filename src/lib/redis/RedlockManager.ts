@@ -75,6 +75,8 @@ export interface AcquireOptions {
   autoRenew?: boolean;
   /** Interval in ms to attempt heartbeat renewal (default: ttlMs / 3) */
   renewIntervalMs?: number;
+  /** Generate a strictly monotonically increasing fencing token across cluster */
+  withFencingToken?: boolean;
 }
 
 /**
@@ -111,6 +113,23 @@ if redis.call("get", KEYS[1]) == ARGV[1] then
   return redis.call("pexpire", KEYS[1], tonumber(ARGV[2]))
 else
   return 0
+end
+`;
+
+/**
+ * Atomic acquire with monotonic fencing token generation script.
+ * KEYS[1]: resource lock key
+ * KEYS[2]: resource fencing sequence key
+ * ARGV[1]: unique lock token
+ * ARGV[2]: lease TTL in ms
+ * Returns [1, fencingToken] if lock acquired; [0, 0] otherwise.
+ */
+export const REDLOCK_ACQUIRE_FENCING_LUA = `
+if redis.call("set", KEYS[1], ARGV[1], "NX", "PX", tonumber(ARGV[2])) then
+  local fence = redis.call("incr", KEYS[2])
+  return {1, fence}
+else
+  return {0, 0}
 end
 `;
 
@@ -179,6 +198,7 @@ export class DistributedLock {
   public readonly token: string;
   public validity: number;
   public expiresAt: number;
+  public readonly fencingToken?: number;
 
   private _isLost = false;
   private _isReleased = false;
@@ -194,13 +214,14 @@ export class DistributedLock {
     token: string,
     validity: number,
     ttlMs: number,
-    options?: { autoRenew?: boolean; renewIntervalMs?: number }
+    options?: { autoRenew?: boolean; renewIntervalMs?: number; fencingToken?: number }
   ) {
     this._manager = manager;
     this.key = key;
     this.token = token;
     this.validity = validity;
     this.expiresAt = performance.now() + validity;
+    this.fencingToken = options?.fencingToken;
 
     if (options?.autoRenew) {
       this.startAutoRenew(ttlMs, options.renewIntervalMs);
@@ -316,6 +337,7 @@ export class DistributedLock {
    * Manually extends the lock lease by ttlMs.
    */
   public async extend(ttlMs?: number): Promise<boolean> {
+    if (this._isLost || this._isReleased) return false;
     return await this._manager.extend(this, ttlMs);
   }
 
@@ -325,8 +347,11 @@ export class DistributedLock {
   public async release(): Promise<boolean> {
     this.stopAutoRenew();
     if (this._isReleased) return true;
-    this._isReleased = true;
-    return await this._manager.release(this);
+    const ok = await this._manager.release(this);
+    if (ok) {
+      this._isReleased = true;
+    }
+    return ok;
   }
 }
 
@@ -413,14 +438,40 @@ export class RedlockManager {
       const token = this.generateToken();
       const startTime = performance.now();
 
-      // Attempt acquisition on all independent nodes in parallel
-      const results = await Promise.allSettled(
-        this.clients.map((client) => setNxPx(client, key, token, ttl))
-      );
+      let successCount = 0;
+      const fencingTokens: number[] = [];
 
-      const successCount = results.filter(
-        (r) => r.status === "fulfilled" && r.value === true
-      ).length;
+      if (options?.withFencingToken) {
+        const fenceKey = `${key}:fencing`;
+        const results = await Promise.allSettled(
+          this.clients.map(async (client) => {
+            const res = await evalLua(
+              client,
+              REDLOCK_ACQUIRE_FENCING_LUA,
+              [key, fenceKey],
+              [token, ttl]
+            );
+            if (Array.isArray(res) && Number(res[0]) === 1) {
+              return Number(res[1]);
+            }
+            return null;
+          })
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled" && typeof r.value === "number") {
+            successCount++;
+            fencingTokens.push(r.value);
+          }
+        }
+      } else {
+        // Attempt acquisition on all independent nodes in parallel
+        const results = await Promise.allSettled(
+          this.clients.map((client) => setNxPx(client, key, token, ttl))
+        );
+        successCount = results.filter(
+          (r) => r.status === "fulfilled" && r.value === true
+        ).length;
+      }
 
       const elapsedMs = performance.now() - startTime;
       const driftMs = Math.round(ttl * this.driftFactor) + 2;
@@ -428,9 +479,12 @@ export class RedlockManager {
 
       // Quorum check and validity budget check
       if (successCount >= this.quorum && remainingValidityMs > 0) {
+        const fencingToken =
+          fencingTokens.length > 0 ? Math.max(...fencingTokens) : undefined;
         return new DistributedLock(this, key, token, remainingValidityMs, ttl, {
           autoRenew: options?.autoRenew,
           renewIntervalMs: options?.renewIntervalMs,
+          fencingToken,
         });
       }
 
@@ -457,6 +511,9 @@ export class RedlockManager {
    * @returns true if extended on majority quorum; false otherwise.
    */
   public async extend(lock: DistributedLock, ttlMs?: number): Promise<boolean> {
+    if (lock.isLost || lock.isReleased) {
+      return false;
+    }
     const extensionTtl = ttlMs ?? this.defaultTtlMs;
     const { key, token } = lock;
 
@@ -491,6 +548,9 @@ export class RedlockManager {
       return true;
     }
 
+    // Safety rollback: clean up partially extended nodes to avoid dangling locks
+    await this.releaseNodes(key, token);
+
     return false;
   }
 
@@ -519,7 +579,9 @@ export class RedlockManager {
     }
     try {
       lock.checkLost();
-      return await routine(lock);
+      const result = await routine(lock);
+      lock.checkLost();
+      return result;
     } finally {
       await lock.release();
     }

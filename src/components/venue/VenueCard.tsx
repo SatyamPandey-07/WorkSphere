@@ -1,6 +1,9 @@
 "use client";
 
+ docs/local-development-setup-guide
+
  feat/ergonomic-coach-mute-toggle
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -82,6 +85,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ docs/local-development-setup-guide
+}
+
 }
 
 import React, { useState } from "react";
@@ -173,4 +179,5 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main

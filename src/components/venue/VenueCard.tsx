@@ -1,10 +1,13 @@
 "use client";
 
+ fix/telemetry-ws-auth-token-refresh
+
  fix/map-route-layer-cleanup
 
  fix/solana-escrow-rpc-timeout-retry
 
  feat/ambient-noise-visualizer
+ main
  main
  main
 import React from "react";
@@ -88,6 +91,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/telemetry-ws-auth-token-refresh
+}
+
  fix/map-route-layer-cleanup
 }
 
@@ -187,6 +193,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

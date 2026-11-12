@@ -5,6 +5,7 @@ import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { notifyNextInWaitlist } from "@/lib/waitlist";
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
 import { releaseDeskReservation } from "@/lib/reservations/deskReservationCountdown";
+import { dispatchVenueCancellationDiscordNotification } from "@/lib/notifications/discordNotifier";
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_BOOKING_STATUSES = ["CONFIRMED", "PENDING", "CHECKED_IN"] as const;
@@ -174,6 +175,17 @@ export async function POST(request: Request) {
           confirmationId: true,
           seatId: true,
           duration: true,
+          user: {
+            select: {
+              discordWebhookUrl: true,
+            },
+          },
+          venue: {
+            select: {
+              name: true,
+              address: true,
+            },
+          },
         },
       });
 
@@ -260,6 +272,20 @@ export async function POST(request: Request) {
           : "Venue operator cancelled the reservation",
       cancelledAt: new Date().toISOString(),
     });
+
+    if (booking.user.discordWebhookUrl) {
+      const appUrl =
+        process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
+      void dispatchVenueCancellationDiscordNotification({
+        webhookUrl: booking.user.discordWebhookUrl,
+        bookingId: booking.id,
+        venueName: booking.venue.name,
+        venueAddress: booking.venue.address,
+        affectedTimeSlot: `${booking.date} ${booking.time}${booking.timeZone ? ` (${booking.timeZone})` : ""}`,
+        refundStatus: "Refund requested",
+        bookingDetailsUrl: `${appUrl}/api/bookings/${encodeURIComponent(booking.id)}/download`,
+      });
+    }
 
     void notifyNextInWaitlist(
       booking.venueId,

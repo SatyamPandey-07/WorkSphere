@@ -326,4 +326,67 @@ describe("SearchBar component (#4401, #4404)", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
   });
+
+  describe("Enter key submits exactly one search request (#7612)", () => {
+    const flush = async (ms: number) => {
+      await act(async () => {
+        jest.advanceTimersByTime(ms);
+      });
+    };
+
+    it("sends one request when Enter is pressed before the debounce fires", async () => {
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe" } });
+      });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await flush(250);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls[0][0]).toContain("query=Cafe");
+    });
+
+    it("does not resend the same query when Enter is pressed after the debounced search ran", async () => {
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe" } });
+      });
+      await flush(250);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await flush(250);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("still searches when Enter is pressed for a new query", async () => {
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe" } });
+      });
+      await flush(250);
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe Roma" } });
+      });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await flush(250);
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch.mock.calls[1][0]).toContain("query=Cafe%20Roma");
+    });
+  });
 });

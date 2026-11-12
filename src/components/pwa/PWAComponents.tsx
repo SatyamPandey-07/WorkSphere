@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, Download, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { purgeStaleWeights } from "@/lib/federated/weightDb";
 import { flushPendingReviewsClientFallback } from "@/lib/offlineReviewSync";
 import { useReviewConflictWorker } from "@/hooks/useReviewConflictWorker";
@@ -72,7 +73,36 @@ export function SyncManager() {
  * Toast shown when a favorite couldn't be synced after repeated retries.
  * Mount once alongside <OfflineIndicator /> / <PWABanner />.
  */
-export function OfflineSyncNotice() {
+export interface OfflineSyncNoticeProps {
+  className?: string;
+  "data-testid"?: string;
+}
+
+export interface OfflineIndicatorProps {
+  className?: string;
+  "data-testid"?: string;
+}
+
+export interface InstallAppButtonProps {
+  className?: string;
+  "data-testid"?: string;
+}
+
+export interface IOSInstallOverlayProps {
+  onClose: () => void;
+  className?: string;
+  "data-testid"?: string;
+}
+
+export interface PWABannerProps {
+  className?: string;
+  "data-testid"?: string;
+}
+
+export function OfflineSyncNotice({
+  className = "",
+  ...props
+}: OfflineSyncNoticeProps = {}) {
   const { notice, dismiss } = useOfflineSyncNotice();
 
   if (!notice) return null;
@@ -80,7 +110,13 @@ export function OfflineSyncNotice() {
   const verb = notice.action === "ADD" ? "save" : "remove";
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50">
+    <div
+      data-testid={props["data-testid"] || "offline-sync-notice"}
+      className={cn(
+        "fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50",
+        className
+      )}
+    >
       <div className="bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-start gap-3">
         <svg
           className="w-5 h-5 flex-shrink-0 mt-0.5"
@@ -117,13 +153,22 @@ export function OfflineSyncNotice() {
 /**
  * Offline indicator component
  */
-export function OfflineIndicator() {
+export function OfflineIndicator({
+  className = "",
+  ...props
+}: OfflineIndicatorProps = {}) {
   const { isOnline } = useServiceWorker();
 
   if (isOnline) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto z-50">
+    <div
+      data-testid={props["data-testid"] || "offline-indicator"}
+      className={cn(
+        "fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto z-50",
+        className
+      )}
+    >
       <div className="bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
         <svg
           className="w-5 h-5"
@@ -147,7 +192,10 @@ export function OfflineIndicator() {
 /**
  * Install app button component
  */
-export function InstallAppButton() {
+export function InstallAppButton({
+  className = "",
+  ...props
+}: InstallAppButtonProps = {}) {
   const { canInstall, install } = useInstallPrompt();
   const [showIOSOverlay, setShowIOSOverlay] = useState(false);
 
@@ -163,8 +211,12 @@ export function InstallAppButton() {
   return (
     <>
       <button
+        data-testid={props["data-testid"] || "install-app-btn"}
         onClick={handleInstallClick}
-        className="flex items-center gap-2 px-4 py-2 bg-[var(--primary-accent)] text-white rounded-lg hover:opacity-90 transition-colors"
+        className={cn(
+          "flex items-center gap-2 px-4 py-2 bg-[var(--primary-accent)] text-white rounded-lg hover:opacity-90 transition-colors",
+          className
+        )}
       >
         <svg
           className="w-5 h-5"
@@ -192,10 +244,18 @@ export function InstallAppButton() {
 /**
  * iOS Safari PWA Installation overlay/guidance modal
  */
-export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
+export function IOSInstallOverlay({
+  onClose,
+  className = "",
+  ...props
+}: IOSInstallOverlayProps) {
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[11000] flex items-end sm:items-center justify-center p-4"
+      data-testid={props["data-testid"] || "ios-install-overlay"}
+      className={cn(
+        "fixed inset-0 bg-black/60 backdrop-blur-sm z-[11000] flex items-end sm:items-center justify-center p-4",
+        className
+      )}
       onClick={onClose}
     >
       <div
@@ -296,7 +356,10 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
 /**
  * Premium PWA Install Banner Component
  */
-export function PWABanner() {
+export function PWABanner({
+  className = "",
+  ...props
+}: PWABannerProps = {}) {
   const { canInstall, install } = useInstallPrompt();
   const { isOnline } = useServiceWorker();
   const [showIOSOverlay, setShowIOSOverlay] = useState(false);
@@ -325,7 +388,13 @@ export function PWABanner() {
 
   return (
     <>
-      <div className="fixed bottom-20 left-4 right-4 md:bottom-6 md:right-6 md:left-auto md:w-96 z-50 animate-in slide-in-from-bottom duration-300">
+      <div
+        data-testid={props["data-testid"] || "pwa-banner"}
+        className={cn(
+          "fixed bottom-20 left-4 right-4 md:bottom-6 md:right-6 md:left-auto md:w-96 z-50 animate-in slide-in-from-bottom duration-300",
+          className
+        )}
+      >
         <div className="relative overflow-hidden bg-zinc-900/90 dark:bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl text-white">
           <div className="absolute -top-10 -right-10 w-24 h-24 bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.9)] rounded-full blur-xl pointer-events-none" />
 
@@ -375,3 +444,5 @@ export function PWABanner() {
     </>
   );
 }
+
+export default PWABanner;

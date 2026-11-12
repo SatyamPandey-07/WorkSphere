@@ -6,7 +6,7 @@ export interface UserHistoryItem {
 }
 
 export function buildUserPreferenceVector(
-  history: UserHistoryItem[],
+  history: UserHistoryItem[] | null | undefined,
 ): Record<string, number> {
   const aggregated: Record<string, number> = {
     wifi: 0,
@@ -17,10 +17,22 @@ export function buildUserPreferenceVector(
     meetingRooms: 0,
   };
 
-  if (!history || history.length === 0) return aggregated;
+  if (!Array.isArray(history) || history.length === 0) return aggregated;
 
   for (const item of history) {
-    const { venue, weight } = item;
+    if (!item || !item.venue) continue;
+
+    const { venue } = item;
+    const rawWeight = item.weight;
+    // Default to 1.0 if weight is unspecified, and clamp non-finite/negative weights to 0
+    const weight =
+      rawWeight === undefined
+        ? 1.0
+        : typeof rawWeight === "number" && Number.isFinite(rawWeight)
+          ? Math.max(0, rawWeight)
+          : 0;
+
+    if (weight <= 0) continue;
 
     if (venue.wifi) {
       aggregated.wifi += weight;
@@ -34,11 +46,10 @@ export function buildUserPreferenceVector(
     if (
       venue.category?.toLowerCase().includes("coffee") ||
       venue.category?.toLowerCase().includes("cafe") ||
-      venue.name.toLowerCase().includes("coffee")
+      (venue.name?.toLowerCase().includes("coffee") ?? false)
     ) {
       aggregated.coffee += weight;
     }
-    // we can add other features if venue interface expands
   }
 
   // Normalize

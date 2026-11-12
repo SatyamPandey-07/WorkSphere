@@ -56,7 +56,12 @@ export function WeatherCloudRenderer({
   useEffect(() => {
     let isMounted = true;
     async function loadWeather() {
-      if (typeof lat === "number" && typeof lng === "number") {
+      if (
+        typeof lat === "number" &&
+        typeof lng === "number" &&
+        Number.isFinite(lat) &&
+        Number.isFinite(lng)
+      ) {
         setLoading(true);
         const liveData = await fetchLiveVenueWeather(lat, lng);
         if (isMounted) {
@@ -83,6 +88,29 @@ export function WeatherCloudRenderer({
         ? Sun
         : Cloud;
 
+  const conditionDisplay =
+    typeof weather.weatherCondition === "string"
+      ? weather.weatherCondition.replace("_", " ")
+      : "partly cloudy";
+  const tempDisplay =
+    typeof weather.temperature === "number" &&
+    Number.isFinite(weather.temperature)
+      ? `${Math.round(weather.temperature)}°C`
+      : "22°C";
+  const cloudDisplay =
+    typeof weather.cloudCover === "number" &&
+    Number.isFinite(weather.cloudCover)
+      ? `${Math.round(weather.cloudCover)}%`
+      : "45%";
+  const humidityDisplay =
+    typeof weather.humidity === "number" && Number.isFinite(weather.humidity)
+      ? `${Math.round(weather.humidity)}%`
+      : "60%";
+  const windDisplay =
+    typeof weather.windSpeed === "number" && Number.isFinite(weather.windSpeed)
+      ? `${Math.round(weather.windSpeed)} km/h`
+      : "12 km/h";
+
   return (
     <div
       className={`relative w-full rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-900 ${className}`}
@@ -99,7 +127,7 @@ export function WeatherCloudRenderer({
           </p>
           <div className="mt-4 flex items-center gap-3 bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl text-sm font-semibold">
             <ConditionIcon className="w-5 h-5 text-blue-300" />
-            <span>{weather.cloudCover}% Cloud Cover</span>
+            <span>{cloudDisplay} Cloud Cover</span>
           </div>
         </div>
       ) : (
@@ -137,10 +165,10 @@ export function WeatherCloudRenderer({
                 <ConditionIcon className="w-6 h-6 text-blue-400 shrink-0" />
                 <div>
                   <h3 className="text-base font-black capitalize leading-none">
-                    {weather.weatherCondition.replace("_", " ")}
+                    {conditionDisplay}
                   </h3>
                   <span className="text-[11px] text-zinc-300 font-medium">
-                    {weather.temperature}°C &bull;{" "}
+                    {tempDisplay} &bull;{" "}
                     {weather.isDaytime ? "Day" : "Night"}
                   </span>
                 </div>
@@ -153,7 +181,7 @@ export function WeatherCloudRenderer({
                     <Cloud className="w-2.5 h-2.5" /> Clouds
                   </span>
                   <span className="text-white text-xs font-bold">
-                    {weather.cloudCover}%
+                    {cloudDisplay}
                   </span>
                 </div>
                 <div className="flex flex-col items-center">
@@ -161,7 +189,7 @@ export function WeatherCloudRenderer({
                     <Droplets className="w-2.5 h-2.5" /> Humidity
                   </span>
                   <span className="text-white text-xs font-bold">
-                    {weather.humidity}%
+                    {humidityDisplay}
                   </span>
                 </div>
                 <div className="flex flex-col items-center">
@@ -169,7 +197,7 @@ export function WeatherCloudRenderer({
                     <Wind className="w-2.5 h-2.5" /> Wind
                   </span>
                   <span className="text-white text-xs font-bold">
-                    {weather.windSpeed} km/h
+                    {windDisplay}
                   </span>
                 </div>
               </div>

@@ -2,9 +2,7 @@
  * Compatibility bridge: Re-export unified rate limiting implementations from @/lib/rateLimit.
  */
 
-import { auth } from "@clerk/nextjs/server";
-import { Ratelimit } from "@upstash/ratelimit";
-import { NextResponse } from "next/server";
+import type { RateLimitResult } from "./rateLimit/types";
 
 const DEFAULT_WINDOW_MS = 60_000;
 
@@ -116,8 +114,17 @@ function memRateLimit(
   windowMs: number = DEFAULT_WINDOW_MS,
 ): boolean {
   if (!identifier || typeof identifier !== "string") return true;
+  const safeLimit =
+    typeof limit === "number" && Number.isFinite(limit) && limit > 0
+      ? limit
+      : 10;
+  const safeWindowMs =
+    typeof windowMs === "number" && Number.isFinite(windowMs) && windowMs > 0
+      ? windowMs
+      : DEFAULT_WINDOW_MS;
+
   const now = Date.now();
-  const start = now - windowMs;
+  const start = now - safeWindowMs;
 
   let entry = memStore.get(identifier);
   if (!entry) {
@@ -131,7 +138,7 @@ function memRateLimit(
         memStore.delete(oldestKey);
       }
     }
-    entry = { timestamps: [], resetTime: now + windowMs };
+    entry = { timestamps: [], resetTime: now + safeWindowMs };
     memStore.set(identifier, entry);
   } else {
     // Refresh LRU order
@@ -150,12 +157,12 @@ function memRateLimit(
     entry.timestamps = entry.timestamps.slice(firstValid);
   }
 
-  if (entry.timestamps.length >= limit) {
+  if (entry.timestamps.length >= safeLimit) {
     return false;
   }
 
   entry.timestamps.push(now);
-  entry.resetTime = now + windowMs;
+  entry.resetTime = now + safeWindowMs;
   return true;
 }
 
@@ -261,6 +268,23 @@ export function microTimestampMember(
 
 // ─── Token Bucket Rate Limiting Exports (#3529) ──────────────────────────────
 export {
+  MemoryRateLimitStore,
+  defaultMemoryStore,
+  type MemEntry,
+  type MemoryBucketEntry,
+} from "./rateLimit/stores/memoryStore";
+
+export {
+  SlidingWindowLimiter,
+  type SlidingWindowOptions,
+} from "./rateLimit/limiters/slidingWindowLimiter";
+
+export {
+  TokenBucketLimiter,
+  type TokenBucketOptions,
+} from "./rateLimit/limiters/tokenBucketLimiter";
+
+export {
   checkTokenBucketRateLimit,
   checkInMemoryTokenBucket,
   matchRateTier,
@@ -347,16 +371,35 @@ function getUpstashLimiter(
  * Safely extracts the client IP from request headers.
  * Prioritizes direct proxy headers (X-Real-IP, CF-Connecting-IP) before X-Forwarded-For to prevent IP spoofing, falling back to loopback.
  */
-export function getClientIp(reqOrHeaders: Request | Headers): string {
-  const headers =
-    reqOrHeaders instanceof Headers ? reqOrHeaders : reqOrHeaders.headers;
+export function getClientIp(
+  reqOrHeaders: Request | Headers | null | undefined,
+): string {
+  if (!reqOrHeaders) {
+    return "127.0.0.1";
+  }
 
   if (
+    typeof reqOrHeaders === "object" &&
     "ip" in reqOrHeaders &&
     typeof (reqOrHeaders as any).ip === "string" &&
     (reqOrHeaders as any).ip.trim()
   ) {
     return (reqOrHeaders as any).ip.trim();
+  }
+
+  const headers =
+    reqOrHeaders instanceof Headers
+      ? reqOrHeaders
+      : reqOrHeaders &&
+          typeof reqOrHeaders === "object" &&
+          "headers" in reqOrHeaders &&
+          reqOrHeaders.headers &&
+          typeof reqOrHeaders.headers.get === "function"
+        ? reqOrHeaders.headers
+        : null;
+
+  if (!headers) {
+    return "127.0.0.1";
   }
 
   const realIp = headers.get("x-real-ip");
@@ -388,11 +431,22 @@ export function memTieredRateLimit(
   namespace: string,
   tier: RateLimitTier,
   identity: string,
-  config: TierConfig = TIER_CONFIGS[tier],
+  config: TierConfig = TIER_CONFIGS[tier] || TIER_CONFIGS.anonymous,
 ): TieredRateLimitResult {
+  const safeConfig = config || TIER_CONFIGS[tier] || TIER_CONFIGS.anonymous;
   const now = Date.now();
-  const windowMs = config.windowMs;
-  const limit = config.limit;
+  const windowMs =
+    typeof safeConfig.windowMs === "number" &&
+    Number.isFinite(safeConfig.windowMs) &&
+    safeConfig.windowMs > 0
+      ? safeConfig.windowMs
+      : 900_000;
+  const limit =
+    typeof safeConfig.limit === "number" &&
+    Number.isFinite(safeConfig.limit) &&
+    safeConfig.limit > 0
+      ? safeConfig.limit
+      : 10;
   const key = `worksphere:ratelimit:${namespace}:${tier}:${identity}`;
 
   let entry = memStore.get(key);
@@ -508,10 +562,11 @@ export function getTieredRateLimitInfo(
  * via Upstash Redis (if configured) or in-memory fallback, and returns a detailed result.
  */
 export async function checkTieredRateLimit(
-  req: Request | Headers,
+  req: Request | Headers | null | undefined,
   options?: CheckTieredRateLimitOptions,
 ): Promise<TieredRateLimitResult> {
   const namespace = options?.namespace ?? "ai-public";
+  const safeReq = req || new Headers();
 
   let userId: string | null = null;
   if (options && "userId" in options) {
@@ -535,7 +590,7 @@ export async function checkTieredRateLimit(
     identity = userId.trim();
   } else {
     tier = "anonymous";
-    identity = options?.ip ?? getClientIp(req);
+    identity = options?.ip ?? getClientIp(safeReq);
   }
 
   const config = TIER_CONFIGS[tier];
@@ -588,14 +643,44 @@ export async function checkTieredRateLimit(
  * - Retry-After (included when request is blocked)
  */
 export function getRateLimitHeaders(
-  result: TieredRateLimitResult,
+  result: TieredRateLimitResult | RateLimitResult | any,
 ): Record<string, string> {
+  if (!result || typeof result !== "object") {
+    return {
+      "RateLimit-Limit": "10",
+      "RateLimit-Remaining": "10",
+      "RateLimit-Reset": "60",
+      "X-RateLimit-Limit": "10",
+      "X-RateLimit-Remaining": "10",
+    };
+  }
+  const limit =
+    typeof result.limit === "number" && Number.isFinite(result.limit)
+      ? result.limit
+      : 10;
+  const remaining =
+    typeof result.remaining === "number" && Number.isFinite(result.remaining)
+      ? Math.max(0, result.remaining)
+      : 0;
+  const retryAfter =
+    typeof result.retryAfter === "number" && Number.isFinite(result.retryAfter)
+      ? Math.max(1, result.retryAfter)
+      : 1;
+
+  const isBlocked = "allowed" in result ? !result.allowed : !result.success;
+
   const headers: Record<string, string> = {
-    "X-RateLimit-Limit": String(result.limit),
-    "X-RateLimit-Remaining": String(Math.max(0, result.remaining)),
+    "RateLimit-Limit": String(limit),
+    "RateLimit-Remaining": String(remaining),
+    "RateLimit-Reset": String(retryAfter),
+    "X-RateLimit-Limit": String(limit),
+    "X-RateLimit-Remaining": String(remaining),
   };
-  if (!result.allowed) {
-    headers["Retry-After"] = String(Math.max(1, result.retryAfter));
+  if (isBlocked) {
+    headers["Retry-After"] = String(retryAfter);
+  }
+  if (result.reset) {
+    headers["X-RateLimit-Reset"] = String(result.reset);
   }
   return headers;
 }
@@ -604,12 +689,35 @@ export function getRateLimitHeaders(
  * Creates standard HTTP 429 Too Many Requests response with rate-limit headers.
  */
 export function createRateLimitResponse(
-  result: TieredRateLimitResult,
+  result: TieredRateLimitResult | RateLimitResult | any,
 ): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { NextResponse } = require("next/server");
+  const retryAfter =
+    typeof result?.retryAfter === "number" && Number.isFinite(result.retryAfter)
+      ? Math.max(1, result.retryAfter)
+      : 1;
+  const limit =
+    typeof result?.limit === "number" && Number.isFinite(result.limit)
+      ? result.limit
+      : 10;
+  const remaining =
+    typeof result?.remaining === "number" && Number.isFinite(result.remaining)
+      ? Math.max(0, result.remaining)
+      : 0;
+  const reset =
+    typeof result?.reset === "number" && Number.isFinite(result.reset)
+      ? result.reset
+      : Math.ceil(Date.now() / 1000) + 60;
+
   return NextResponse.json(
-    { error: "Too many requests. Please try again later." },
+    {
+      error: "Too many requests. Please try again later.",
+      retryAfter,
+      limit,
+      remaining,
+      reset,
+    },
     {
       status: 429,
       headers: getRateLimitHeaders(result),
@@ -624,13 +732,16 @@ export function applyRateLimitHeaders<T extends Response>(
   response: T,
   result: TieredRateLimitResult,
 ): T {
-  response.headers.set("X-RateLimit-Limit", String(result.limit));
-  response.headers.set(
-    "X-RateLimit-Remaining",
-    String(Math.max(0, result.remaining)),
-  );
-  if (!result.allowed) {
-    response.headers.set("Retry-After", String(Math.max(1, result.retryAfter)));
+  if (
+    !response ||
+    !response.headers ||
+    typeof response.headers.set !== "function"
+  ) {
+    return response;
+  }
+  const headers = getRateLimitHeaders(result);
+  for (const [key, value] of Object.entries(headers)) {
+    response.headers.set(key, value);
   }
   return response;
 }

@@ -64,13 +64,29 @@ export function weatherToCloudUniforms(
     ...data,
   };
 
-  const cloudCoverage = Math.min(1.0, Math.max(0.0, weather.cloudCover / 100));
-  const humidity = Math.min(1.0, Math.max(0.0, weather.humidity / 100));
-  const rainFactor = Math.min(
-    1.0,
-    Math.max(0.0, weather.rainProbability / 100),
-  );
-  const windSpeed = Math.max(0.2, (weather.windSpeed || 10) / 10.0);
+  const rawCloud =
+    typeof weather.cloudCover === "number" &&
+    Number.isFinite(weather.cloudCover)
+      ? weather.cloudCover
+      : DEFAULT_MOCK_WEATHER.cloudCover;
+  const rawHumidity =
+    typeof weather.humidity === "number" && Number.isFinite(weather.humidity)
+      ? weather.humidity
+      : DEFAULT_MOCK_WEATHER.humidity;
+  const rawRain =
+    typeof weather.rainProbability === "number" &&
+    Number.isFinite(weather.rainProbability)
+      ? weather.rainProbability
+      : DEFAULT_MOCK_WEATHER.rainProbability;
+  const rawWind =
+    typeof weather.windSpeed === "number" && Number.isFinite(weather.windSpeed)
+      ? weather.windSpeed
+      : DEFAULT_MOCK_WEATHER.windSpeed || 10;
+
+  const cloudCoverage = Math.min(1.0, Math.max(0.0, rawCloud / 100));
+  const humidity = Math.min(1.0, Math.max(0.0, rawHumidity / 100));
+  const rainFactor = Math.min(1.0, Math.max(0.0, rawRain / 100));
+  const windSpeed = Math.max(0.2, rawWind / 10.0);
 
   const isDay = weather.isDaytime ?? true;
 

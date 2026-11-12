@@ -144,8 +144,21 @@ export function calculateRFactor(
 ): number {
   const cleanR0 = 94.2;
 
+  const validRtt =
+    typeof rttMs === "number" && Number.isFinite(rttMs) && rttMs >= 0
+      ? rttMs
+      : 0;
+  const validJitter =
+    typeof jitterMs === "number" && Number.isFinite(jitterMs) && jitterMs >= 0
+      ? jitterMs
+      : 0;
+  const validLoss =
+    typeof lossRatio === "number" && Number.isFinite(lossRatio) && lossRatio >= 0
+      ? Math.min(1.0, lossRatio)
+      : 0;
+
   // One-way delay estimation d = RTT/2 + 2 * jitter
-  const oneWayDelay = Math.max(0, rttMs / 2 + 2 * jitterMs);
+  const oneWayDelay = Math.max(0, validRtt / 2 + 2 * validJitter);
 
   // Delay Impairment Id
   let id = 0;
@@ -156,7 +169,7 @@ export function calculateRFactor(
   }
 
   // Equipment Impairment Ie based on packet loss (0 <= lossRatio <= 1)
-  const lossPercent = Math.min(100, Math.max(0, lossRatio * 100));
+  const lossPercent = Math.min(100, Math.max(0, validLoss * 100));
   // Standard ITU-T Opus/PLC loss robustness model: 95 * P / (P + Bpl), Bpl ~= 10
   const ie = (95 * lossPercent) / (lossPercent + 10);
 
@@ -168,6 +181,7 @@ export function calculateRFactor(
  * Calculates MOS score (1.0 to 4.5) from transmission rating factor R.
  */
 export function calculateMosFromRFactor(r: number): number {
+  if (typeof r !== "number" || Number.isNaN(r)) return 1.0;
   if (r <= 0) return 1.0;
   if (r >= 100) return 4.5;
 
@@ -193,6 +207,13 @@ export function estimateMos(
  * Maps a MOS score directly to the corresponding QualityTier.
  */
 export function getTierForMos(mos: number): QualityTier {
+  if (
+    typeof mos !== "number" ||
+    !Number.isFinite(mos) ||
+    mos <= QUALITY_TIERS.critical.minMos
+  ) {
+    return QUALITY_TIERS.critical;
+  }
   if (mos >= QUALITY_TIERS.excellent.minMos) return QUALITY_TIERS.excellent;
   if (mos >= QUALITY_TIERS.good.minMos) return QUALITY_TIERS.good;
   if (mos >= QUALITY_TIERS.fair.minMos) return QUALITY_TIERS.fair;
@@ -213,53 +234,95 @@ export function extractNetworkMetricsFromStats(
   let packetsReceived: number | undefined;
   let fractionLost: number | undefined;
 
-  report.forEach((stat: any) => {
-    // 1. Candidate pair round trip time
-    if (
-      stat.type === "candidate-pair" &&
-      (stat.state === "succeeded" || stat.nominated)
-    ) {
-      if (typeof stat.currentRoundTripTime === "number") {
-        rttMs = stat.currentRoundTripTime * 1000;
-      }
-    }
+  if (report && typeof report.forEach === "function") {
+    report.forEach((stat: any) => {
+      if (!stat || typeof stat !== "object") return;
 
-    // 2. Remote inbound RTP (feedback from remote peer)
-    if (stat.type === "remote-inbound-rtp") {
-      if (typeof stat.roundTripTime === "number") {
-        rttMs = stat.roundTripTime * 1000;
+      // 1. Candidate pair round trip time
+      if (
+        stat.type === "candidate-pair" &&
+        (stat.state === "succeeded" || stat.nominated)
+      ) {
+        if (
+          typeof stat.currentRoundTripTime === "number" &&
+          Number.isFinite(stat.currentRoundTripTime) &&
+          stat.currentRoundTripTime >= 0
+        ) {
+          rttMs = stat.currentRoundTripTime * 1000;
+        }
       }
-      if (typeof stat.jitter === "number") {
-        jitterMs = stat.jitter * 1000;
-      }
-      if (typeof stat.fractionLost === "number") {
-        fractionLost = stat.fractionLost;
-      }
-      if (typeof stat.packetsLost === "number") {
-        packetsLost = stat.packetsLost;
-      }
-    }
 
-    // 3. Inbound RTP (receiver side)
-    if (stat.type === "inbound-rtp") {
-      if (typeof stat.jitter === "number" && jitterMs === undefined) {
-        jitterMs = stat.jitter * 1000;
+      // 2. Remote inbound RTP (feedback from remote peer)
+      if (stat.type === "remote-inbound-rtp") {
+        if (
+          typeof stat.roundTripTime === "number" &&
+          Number.isFinite(stat.roundTripTime) &&
+          stat.roundTripTime >= 0
+        ) {
+          rttMs = stat.roundTripTime * 1000;
+        }
+        if (
+          typeof stat.jitter === "number" &&
+          Number.isFinite(stat.jitter) &&
+          stat.jitter >= 0
+        ) {
+          jitterMs = stat.jitter * 1000;
+        }
+        if (
+          typeof stat.fractionLost === "number" &&
+          Number.isFinite(stat.fractionLost) &&
+          stat.fractionLost >= 0
+        ) {
+          fractionLost = Math.min(1.0, stat.fractionLost);
+        }
+        if (
+          typeof stat.packetsLost === "number" &&
+          Number.isFinite(stat.packetsLost) &&
+          stat.packetsLost >= 0
+        ) {
+          packetsLost = stat.packetsLost;
+        }
       }
-      if (typeof stat.packetsLost === "number" && packetsLost === undefined) {
-        packetsLost = stat.packetsLost;
-      }
-      if (typeof stat.packetsReceived === "number") {
-        packetsReceived = stat.packetsReceived;
-      }
-    }
 
-    // 4. Outbound RTP (sender side)
-    if (stat.type === "outbound-rtp") {
-      if (typeof stat.packetsSent === "number") {
-        packetsSent = stat.packetsSent;
+      // 3. Inbound RTP (receiver side)
+      if (stat.type === "inbound-rtp") {
+        if (
+          typeof stat.jitter === "number" &&
+          Number.isFinite(stat.jitter) &&
+          stat.jitter >= 0 &&
+          jitterMs === undefined
+        ) {
+          jitterMs = stat.jitter * 1000;
+        }
+        if (
+          typeof stat.packetsLost === "number" &&
+          Number.isFinite(stat.packetsLost) &&
+          stat.packetsLost >= 0 &&
+          packetsLost === undefined
+        ) {
+          packetsLost = stat.packetsLost;
+        }
+        if (
+          typeof stat.packetsReceived === "number" &&
+          Number.isFinite(stat.packetsReceived) &&
+          stat.packetsReceived >= 0
+        ) {
+          packetsReceived = stat.packetsReceived;
+        }
       }
-    }
-  });
+
+      // 4. Outbound RTP (sender side)
+      if (stat.type === "outbound-rtp") {
+        if (
+          typeof stat.packetsSent === "number" &&
+          Number.isFinite(stat.packetsSent) &&
+          stat.packetsSent >= 0
+        ) {
+          packetsSent = stat.packetsSent;
+        }
+      }
+    });
+  }
 
   return {
     rttMs,
@@ -292,34 +355,63 @@ export class WebRtcMosQualityMonitor {
    * Ingests raw network telemetry, calculates EMA smoothing and ITU-T MOS score,
    * and evaluates adaptive degradation tier transitions.
    */
-  public updateMetrics(raw: RawNetworkMetrics): MosScoreResult {
-    const rtt = Math.max(0, raw.rttMs ?? 0);
-    const jitter = Math.max(0, raw.jitterMs ?? 0);
+  public updateMetrics(raw?: RawNetworkMetrics | null): MosScoreResult {
+    const safeRaw = raw || {};
+    const rtt =
+      typeof safeRaw.rttMs === "number" &&
+      Number.isFinite(safeRaw.rttMs) &&
+      safeRaw.rttMs >= 0
+        ? safeRaw.rttMs
+        : 0;
+    const jitter =
+      typeof safeRaw.jitterMs === "number" &&
+      Number.isFinite(safeRaw.jitterMs) &&
+      safeRaw.jitterMs >= 0
+        ? safeRaw.jitterMs
+        : 0;
 
     // Compute loss ratio (from fractionLost, or packetsLost / total)
     let lossRatio = 0;
-    if (typeof raw.fractionLost === "number" && raw.fractionLost >= 0) {
-      lossRatio = Math.min(1.0, raw.fractionLost);
-    } else if (raw.packetsLost !== undefined) {
+    if (
+      typeof safeRaw.fractionLost === "number" &&
+      Number.isFinite(safeRaw.fractionLost) &&
+      safeRaw.fractionLost >= 0
+    ) {
+      lossRatio = Math.min(1.0, safeRaw.fractionLost);
+    } else if (
+      safeRaw.packetsLost !== undefined &&
+      Number.isFinite(safeRaw.packetsLost) &&
+      safeRaw.packetsLost >= 0
+    ) {
+      const packetsSent =
+        typeof safeRaw.packetsSent === "number" &&
+        Number.isFinite(safeRaw.packetsSent) &&
+        safeRaw.packetsSent >= 0
+          ? safeRaw.packetsSent
+          : 0;
+      const packetsReceived =
+        typeof safeRaw.packetsReceived === "number" &&
+        Number.isFinite(safeRaw.packetsReceived) &&
+        safeRaw.packetsReceived >= 0
+          ? safeRaw.packetsReceived
+          : 0;
       const total =
-        (raw.packetsSent ?? 0) > 0
-          ? raw.packetsSent!
-          : (raw.packetsReceived ?? 0) + raw.packetsLost;
-      lossRatio = total > 0 ? Math.min(1.0, raw.packetsLost / total) : 0;
+        packetsSent > 0 ? packetsSent : packetsReceived + safeRaw.packetsLost;
+      lossRatio = total > 0 ? Math.min(1.0, safeRaw.packetsLost / total) : 0;
     }
 
     // EMA smoothing
     const alpha = this.config.emaAlpha;
     this.smoothedRtt =
-      this.smoothedRtt === null
+      this.smoothedRtt === null || !Number.isFinite(this.smoothedRtt)
         ? rtt
         : alpha * rtt + (1 - alpha) * this.smoothedRtt;
     this.smoothedJitter =
-      this.smoothedJitter === null
+      this.smoothedJitter === null || !Number.isFinite(this.smoothedJitter)
         ? jitter
         : alpha * jitter + (1 - alpha) * this.smoothedJitter;
     this.smoothedLoss =
-      this.smoothedLoss === null
+      this.smoothedLoss === null || !Number.isFinite(this.smoothedLoss)
         ? lossRatio
         : alpha * lossRatio + (1 - alpha) * this.smoothedLoss;
 
@@ -388,8 +480,8 @@ export class WebRtcMosQualityMonitor {
         jitterMs: Math.round(this.smoothedJitter * 10) / 10,
         lossRatio: Math.round(this.smoothedLoss * 1000) / 1000,
       },
-      raw,
-      timestamp: raw.timestamp ?? Date.now(),
+      raw: safeRaw,
+      timestamp: safeRaw.timestamp ?? Date.now(),
       transition,
     };
 
@@ -439,11 +531,12 @@ export class WebRtcMosQualityMonitor {
    * Applies the current degradation recommendations to an active RTCPeerConnection's senders.
    */
   public async applyToPeerConnection(pc: RTCPeerConnection): Promise<boolean> {
+    if (!pc || typeof pc.getSenders !== "function") return false;
     const rec = this.currentTier.recommendation;
     let applied = false;
 
     for (const sender of pc.getSenders()) {
-      if (!sender.track) continue;
+      if (!sender || !sender.track) continue;
 
       if (sender.track.kind === "video") {
         try {

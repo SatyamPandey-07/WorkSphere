@@ -13,6 +13,7 @@ Architecture decisions, implementation notes, and system-level design references
 
 ## Application architecture
 
+- [ADR-004: Dual PostGIS spatial and trigram venue search](./ADR-004-spatial-phonetic-venue-search.md)
 - [Middleware routing](./middleware-routing.md)
 - [Multi-region sync](./multi-region-sync.md)
 - [Offline sync flow](./offline-sync-flow.md)

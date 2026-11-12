@@ -871,6 +871,20 @@ export function EnhancedChatbot({
     });
   };
 
+  // Reset every filter in the panel and, if venues are showing, reload them
+  // without filters so the listing matches the cleared state (#7610).
+  const handleClearFilters = () => {
+    const cleared: Filters = {};
+    setFilters(cleared);
+    trackFilterApplied(cleared);
+
+    if (location && latestVenueResults) {
+      handleRefreshVenues(cleared).catch(() => {
+        onShowToast?.("Filters cleared, but venues could not be refreshed.");
+      });
+    }
+  };
+
   // Agent step expand/collapse
   const toggleSteps = (messageId: string) => {
     setExpandedSteps((prev) => ({ ...prev, [messageId]: !prev[messageId] }));
@@ -890,7 +904,9 @@ export function EnhancedChatbot({
     },
     [isLoading],
   );
-  const handleRefreshVenues = async () => {
+  // `filtersOverride` lets callers refresh with filters that have just been
+  // set but are not yet reflected in state (e.g. after "Clear all").
+  const handleRefreshVenues = async (filtersOverride: Filters = filters) => {
     if (!location) return;
 
     const params = new URLSearchParams({
@@ -899,7 +915,7 @@ export function EnhancedChatbot({
       radius: "5000",
     });
 
-    Object.entries(filters).forEach(([key, value]) => {
+    Object.entries(filtersOverride).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== false) {
         params.set(key, String(value));
       }
@@ -1334,6 +1350,7 @@ export function EnhancedChatbot({
         setShowFilters={setShowFilters}
         onToggleFilter={(key) => toggleFilter(key as keyof Filters)}
         onSetFilter={handleSetFilter}
+        onClearFilters={handleClearFilters}
         showHistory={showHistory}
         setShowHistory={setShowHistory}
         onNewChat={startNewChat}

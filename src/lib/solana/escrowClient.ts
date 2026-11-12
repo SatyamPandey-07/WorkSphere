@@ -1424,6 +1424,11 @@ export class EscrowRpcConnectionPool {
           );
           this.recordSuccess(endpoint, this.now() - startedAt);
           this.activeIndex = index;
+          if (failures.length > 0) {
+            console.warn(
+              `[EscrowRPC] Failover recovered on ${endpoint} after ${failures.length} failed attempt(s)`,
+            );
+          }
           return result;
         } catch (error) {
           const retryable = this.isRetryable(error);
@@ -1533,21 +1538,29 @@ export class EscrowRpcConnectionPool {
   private withTimeout<T>(promise: Promise<T>, endpoint: string): Promise<T> {
     if (this.requestTimeoutMs <= 0) return promise;
 
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        console.warn(
+          `[EscrowRPC] ${endpoint} timed out after ${this.requestTimeoutMs}ms; failing over to the next endpoint`,
+        );
         reject(new EscrowRpcTimeoutError(this.requestTimeoutMs, endpoint));
       }, this.requestTimeoutMs);
       timer.unref?.();
-      promise.then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-      );
+    });
+
+    // Observe the endpoint probe's rejection *before* aggregating. When the
+    // timeout wins the race the probe may still reject later (e.g. a stalled
+    // fetch that eventually fails); without an explicit observer that late
+    // rejection surfaces as an unhandled rejection in the Node.js runtime.
+    const probe = Promise.resolve(promise);
+    void probe.catch(() => {});
+
+    return Promise.race([probe, timeoutPromise]).finally(() => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
     });
   }
 

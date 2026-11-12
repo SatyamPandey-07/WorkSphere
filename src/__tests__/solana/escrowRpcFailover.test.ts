@@ -315,6 +315,60 @@ describe("EscrowRpcConnectionPool failover", () => {
     }
   });
 
+  it("does not emit unhandled rejections when a timed-out endpoint rejects after failover", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      let rejectPrimary: ((error: Error) => void) | undefined;
+      const primary = createMockConnection({
+        // Stalled request that only rejects once the pool has failed over.
+        getLatestBlockhash: jest.fn(
+          () =>
+            new Promise((_resolve, reject) => {
+              rejectPrimary = reject;
+            }),
+        ),
+      });
+      const secondary = createMockConnection();
+      const { pool } = buildPool(
+        [PRIMARY, SECONDARY],
+        { [PRIMARY]: primary, [SECONDARY]: secondary },
+        { requestTimeoutMs: 20, maxRetriesPerEndpoint: 0 },
+      );
+
+      const result = await pool.execute((connection) =>
+        connection.getLatestBlockhash(),
+      );
+
+      expect(result.blockhash).toBe(
+        "GHtXQBtRBcvNx4VdU5KnfQuL1RKJbF1sHhGGbCPNg6cB",
+      );
+      expect(pool.getActiveEndpoint()).toBe(SECONDARY);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("timed out after 20ms"),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failover recovered on"),
+      );
+
+      // The abandoned primary probe finally rejects; the pool must have
+      // observed it so Node.js does not report an unhandled rejection.
+      rejectPrimary?.(new Error("RPC connection timeout"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+      warnSpy.mockRestore();
+    }
+  });
+
   it("does not retry non-retryable errors on the same endpoint", async () => {
     const primary = createMockConnection({
       getLatestBlockhash: jest

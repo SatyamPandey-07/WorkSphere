@@ -50,6 +50,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
 export { throttle } from "@/lib/utils";
 export {
   getHighContrastIcon,

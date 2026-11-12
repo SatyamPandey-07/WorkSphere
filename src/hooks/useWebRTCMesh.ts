@@ -1,28 +1,30 @@
-import { useRef, useCallback } from "react";
-import { MeshConnection } from "@/lib/webrtc/meshConnection";
+import { useState, useEffect, useRef } from 'react';
+import { ScreenShareManager, StreamHealthTelemetry } from '@/lib/webrtc/screenShareManager';
 
-export function useWebRTCMesh() {
-  const meshRef = useRef<MeshConnection | null>(null);
+export function useWebRTCMesh(peerConnection: RTCPeerConnection | null) {
+  const [telemetry, setTelemetry] = useState<StreamHealthTelemetry>({
+    bitrateBps: 2500000,
+    framerate: 30,
+    resolution: '1080p',
+    rttMs: 45,
+    packetLossPercent: 0.1,
+  });
 
-  const getOrCreateConnection = useCallback((config?: RTCConfiguration) => {
-    if (!meshRef.current) {
-      meshRef.current = new MeshConnection(config);
-    }
-    return meshRef.current;
-  }, []);
+  const managerRef = useRef<ScreenShareManager | null>(null);
 
-  const handleRemoteSignal = useCallback(
-    async (signal: { type: "offer" | "answer" | "candidate"; data: any }) => {
-      const conn = getOrCreateConnection();
+  useEffect(() => {
+    if (!peerConnection) return;
 
-      if (signal.type === "offer" || signal.type === "answer") {
-        await conn.setRemoteDescription(signal.data);
-      } else if (signal.type === "candidate") {
-        await conn.addIceCandidate(signal.data);
-      }
-    },
-    [getOrCreateConnection],
-  );
+    managerRef.current = new ScreenShareManager(peerConnection, (newTelemetry) => {
+      setTelemetry(newTelemetry);
+    });
 
-  return { getOrCreateConnection, handleRemoteSignal };
+    managerRef.current.startMonitoring();
+
+    return () => {
+      managerRef.current?.stopMonitoring();
+    };
+  }, [peerConnection]);
+
+  return { telemetry };
 }

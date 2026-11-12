@@ -1,5 +1,7 @@
 "use client";
 
+ feat/noise-level-slider-filter
+
  fix/telemetry-ws-auth-token-refresh
 
  fix/map-route-layer-cleanup
@@ -7,6 +9,7 @@
  fix/solana-escrow-rpc-timeout-retry
 
  feat/ambient-noise-visualizer
+ main
  main
  main
  main
@@ -91,6 +94,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/noise-level-slider-filter
+}
+
  fix/telemetry-ws-auth-token-refresh
 }
 
@@ -193,6 +199,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

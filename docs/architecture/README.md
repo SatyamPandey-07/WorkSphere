@@ -6,6 +6,7 @@ Architecture decisions, implementation notes, and system-level design references
 
 - [Atomic desk reservation countdown and Redis keyspace](./atomic-desk-reservation-countdown-redis-keyspace.md)
 - [Distributed locks and fencing](./distributed-locks-and-fencing.md)
+- [Redlock lease fencing token protocol](./REDLOCK_FENCING_TOKENS.md)
 - [Seat hold lock architecture](./seat-hold-lock-architecture.md)
 - [Seat hold Redlock architecture](./seat-hold-lock-redlock-architecture.md)
 - [Rate limiting strategies](./rate-limiting-strategies.md)

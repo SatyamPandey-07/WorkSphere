@@ -1194,6 +1194,11 @@ WorkSphere brings together geospatial data, ambient intelligence, and real-time 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Architecture Deep Dives
+
+- [Redlock Lease Fencing Token Protocol](docs/architecture/REDLOCK_FENCING_TOKENS.md): how fencing tokens are generated, renewed and checked at the reservation transaction boundary, with failover and lease-renewal sequence diagrams.
+- [Architecture documentation index](docs/architecture/README.md)
+
 ---
 
 ## 🚀 Getting Started

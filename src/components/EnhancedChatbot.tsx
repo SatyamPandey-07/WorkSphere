@@ -32,6 +32,8 @@ import {
   flushConversationEditQueue,
 } from "@/lib/offlineStorage";
 import { queueOfflineReview } from "@/lib/offlineReviewSync";
+import { LiveAnnouncer } from "@/components/ui/LiveAnnouncer";
+import { formatVenueResultsAnnouncement } from "@/lib/venueResultsAnnouncement";
 import {
   formatChatHistoryMarkdown,
   generateChatPdfReport,
@@ -192,6 +194,16 @@ export function EnhancedChatbot({
   }, [messages]);
   const [showFilters, setShowFilters] = useState(false);
   const [distanceRadius, setDistanceRadius] = useState<number>(0);
+  // Latest venue result set, announced to screen readers when it changes
+  // (new search or refresh). Replies without venues keep the previous set.
+  const latestVenueResults = useMemo(
+    () =>
+      [...messages].reverse().find((m) => m.venues && m.venues.length > 0)
+        ?.venues ?? null,
+    [messages],
+  );
+  const activeFilterCount =
+    Object.keys(filters).length + (distanceRadius > 0 ? 1 : 0);
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
   const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
@@ -1264,6 +1276,18 @@ export function EnhancedChatbot({
   // Render
   return (
     <div className="flex h-full flex-col min-h-0 bg-white dark:bg-zinc-950 relative overflow-hidden">
+      <LiveAnnouncer
+        testId="venue-results-announcer"
+        announceKey={latestVenueResults}
+        message={
+          latestVenueResults
+            ? formatVenueResultsAnnouncement(
+                latestVenueResults.length,
+                activeFilterCount,
+              )
+            : ""
+        }
+      />
       {/* Remote Cursors */}
       <AnimatePresence>
         {Object.values(cursors).map((cursor) => (

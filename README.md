@@ -1199,10 +1199,11 @@ WorkSphere brings together geospatial data, ambient intelligence, and real-time 
    #### Option A: Docker Compose (Recommended)
 
    This starts a local PostgreSQL instance (with the `pgvector` extension) and Redis automatically.
+   > For a comprehensive walkthrough covering container initialization, seed commands, and port collision troubleshooting, see the [Local Development Setup Guide](docs/guides/LOCAL_DEVELOPMENT_SETUP.md).
 
    ```bash
    # Start database and Redis container services
-   docker compose up -d
+   docker compose up -d postgres redis
 
    # Copy local environment example
    cp .env.example .env.local

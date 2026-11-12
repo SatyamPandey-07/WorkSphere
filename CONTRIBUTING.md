@@ -89,6 +89,9 @@ npm -v    # Recommended: v10.x.x or higher
    - **Never expose real secrets** or API keys in pull requests.
    - Do not invent environment variables; use only those defined in `.env.example`.
 
+> **Local Database & Cache Setup:**
+> For full local PostgreSQL (pgvector) and Redis orchestration with Docker Compose, Prisma migrations, and port troubleshooting, refer to the [Local Development Setup Guide](docs/guides/LOCAL_DEVELOPMENT_SETUP.md).
+
 ### 4. Run the Development Server
 
 Start the local Next.js development server:

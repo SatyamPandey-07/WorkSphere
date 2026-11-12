@@ -167,6 +167,7 @@ Design tokens are defined in `src/app/globals.css` as CSS custom properties and 
 
 ### Core Color Tokens
 
+ docs/spacing-and-layout-tokens
 | Token          | Light Value | Dark Value | CSS Variable             |
 | -------------- | ----------- | ---------- | ------------------------ |
 | `--background` | `#ffffff`   | `#0a0a0a`  | Page viewport background |
@@ -182,6 +183,46 @@ Design tokens are defined in `src/app/globals.css` as CSS custom properties and 
 | `--color-foreground`    | `var(--foreground)`      | `text-foreground`, `border-foreground` |
 | `--font-sans`           | `var(--font-geist-sans)` | `font-sans`                            |
 | `--font-mono`           | `var(--font-geist-mono)` | `font-mono`                            |
+
+| Token Variable | Light Value | Dark Value | Cyberpunk Value | Operational Context |
+|:---|:---|:---|:---|:---|
+| `--background` | `#ffffff` | `#0a0a0a` | `#090014` | Page viewport canvas background |
+| `--foreground` | `#171717` (`zinc-900`) | `#ededed` (`zinc-100`) | `#f4f4ff` | Primary text and headings |
+| `--contrast-border` | `#e4e4e7` (`zinc-200`) | `#27272a` (`zinc-800`) | `#380062` | Component boundaries and dividers |
+| `--contrast-card-bg` | `#ffffff` | `#18181b` (`zinc-900`) | `#150028` | Elevated card surfaces and popovers |
+| `--contrast-text-muted` | `#71717a` (`zinc-500`) | `#a1a1aa` (`zinc-400`) | `#b8b4dc` | Subdued metadata and captions |
+| `--contrast-focus` | `#3b82f6` (`blue-500`) | `#60a5fa` (`blue-400`) | `#22d3ee` | Interactive focus state indicator |
+| `--contrast-btn-bg` | `#18181b` (`zinc-900`) | `#ffffff` | `#f4f4ff` | High-contrast button fill |
+| `--contrast-btn-text` | `#ffffff` | `#18181b` (`zinc-900`) | `#090014` | High-contrast button text |
+| `--primary-accent` | `#3b82f6` (`blue-500`) | `#60a5fa` (`blue-400`) | `#22d3ee` | Active call-to-action color |
+
+### Color Contrast Matrix (WCAG 2.1 Compliance)
+
+All primary text pairings on default backgrounds ensure $\ge 4.5:1$ contrast (WCAG AA) and high-contrast tokens ensure $\ge 7:1$ (WCAG AAA):
+
+| Foreground Token | Background Token | Context | Contrast Ratio | WCAG 2.1 Status |
+|:---|:---|:---|:---|:---|
+| `--foreground` (`#171717`) | `--background` (`#ffffff`) | Light Mode Body | **17.59 : 1** | AAA Pass |
+| `--foreground` (`#ededed`) | `--background` (`#0a0a0a`) | Dark Mode Body | **16.91 : 1** | AAA Pass |
+| `--foreground` (`#ededed`) | `--contrast-card-bg` (`#18181b`) | Dark Card Surface | **14.81 : 1** | AAA Pass |
+| `--contrast-text-muted` (`#71717a`) | `--background` (`#ffffff`) | Light Secondary Text | **4.84 : 1** | AA Pass |
+| `--contrast-text-muted` (`#a1a1aa`) | `--background` (`#0a0a0a`) | Dark Secondary Text | **7.74 : 1** | AAA Pass |
+| `--contrast-interactive-active` (`#2563eb`) | `--background` (`#ffffff`) | Light Active Link | **5.24 : 1** | AA Pass |
+| `--contrast-text` (`#000000`) | `--contrast-bg` (`#ffffff`) | High-Contrast Light | **21.00 : 1** | Maximum AAA |
+| `--contrast-text` (`#ffffff`) | `--contrast-bg` (`#000000`) | High-Contrast Dark | **21.00 : 1** | Maximum AAA |
+
+> Detailed token tables, scales, and accessibility checklists are available in [DESIGN_TOKENS.md](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/docs/design-system/DESIGN_TOKENS.md).
+
+### Theme Mappings
+
+| Tailwind Theme Variable | Maps To | Tailwind Utilities |
+|-------------------------|---------|-------------------|
+| `--color-background` | `var(--background)` | `bg-background`, `text-background` |
+| `--color-foreground` | `var(--foreground)` | `text-foreground`, `border-foreground` |
+| `--color-primary-accent` | `var(--primary-accent)` | `bg-primary-accent`, `text-primary-accent` |
+| `--font-sans` | `var(--font-geist-sans)` | `font-sans` |
+| `--font-mono` | `var(--font-geist-mono)` | `font-mono` |
+ main
 
 ### Additional CSS Properties
 

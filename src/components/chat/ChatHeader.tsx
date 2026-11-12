@@ -69,6 +69,8 @@ interface ChatHeaderProps {
   setShowFilters: (show: boolean) => void;
   onToggleFilter: (filter: string) => void;
   onSetFilter?: (key: string, value: any) => void;
+  /** Resets every filter in the panel. Enables the "Clear all" button. */
+  onClearFilters?: () => void;
   showHistory: boolean;
   setShowHistory: (show: boolean) => void;
   onNewChat: () => void;
@@ -130,6 +132,7 @@ export function ChatHeader({
   setShowFilters,
   onToggleFilter,
   onSetFilter,
+  onClearFilters,
   showHistory,
   setShowHistory,
   onNewChat,
@@ -146,6 +149,23 @@ export function ChatHeader({
   const [renameValue, setRenameValue] = useState("");
   const filtersBtnRef = useRef<HTMLButtonElement>(null);
   const filtersPanelRef = useRef<HTMLDivElement>(null);
+
+  // Filters set in this panel. distanceRadius is controlled from the chat
+  // input, not this panel, so it is not counted or cleared here.
+  const activePanelFilterCount = Object.entries(filters).filter(
+    ([key, value]) =>
+      key !== "distanceRadius" &&
+      value !== undefined &&
+      value !== null &&
+      value !== false,
+  ).length;
+
+  const handleClearFilters = () => {
+    onClearFilters?.();
+    // The button disappears once filters are cleared; keep focus on the
+    // control that owns the panel instead of dropping it to <body>.
+    filtersBtnRef.current?.focus();
+  };
 
   const { currency, setCurrency } = useCurrency();
   const [connectionStatus, setConnectionStatus] = useState<
@@ -524,6 +544,23 @@ export function ChatHeader({
             className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl"
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {onClearFilters && activePanelFilterCount >= 2 && (
+              <div className="flex items-center justify-between gap-2 -mb-1">
+                <span className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest ml-1">
+                  {activePanelFilterCount} filters active
+                </span>
+                <button
+                  type="button"
+                  data-testid="clear-all-filters-btn"
+                  onClick={handleClearFilters}
+                  aria-label={`Clear all ${activePanelFilterCount} filters`}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 border border-orange-500/40 hover:bg-orange-600 hover:text-white transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                >
+                  <X className="w-3 h-3" aria-hidden="true" />
+                  Clear all
+                </button>
+              </div>
+            )}
             {/* Section 0: Venue Category Filters */}
             <div>
               <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">

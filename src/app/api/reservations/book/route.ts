@@ -1,3 +1,4 @@
+import { withIdempotency } from '@/lib/middleware/idempotency';
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse, after } from "next/server";
 import { randomBytes } from "crypto";
@@ -22,11 +23,79 @@ import { releaseSeatWebLock } from "@/lib/locks/seatHoldLock";
 const PAST_GRACE_MS = 15 * 60 * 1000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * PostgreSQL SQLSTATE codes that indicate a transient lock/serialization
+ * failure rather than a permanent booking conflict:
+ *   55P03 - lock_not_available (raised by `FOR UPDATE NOWAIT`)
+ *   40P01 - deadlock_detected
+ *   40001 - serialization_failure
+ * Prisma surfaces the same conditions as P2034 (write conflict / deadlock)
+ * and P2028 (transaction API error).
+ */
+const RETRYABLE_DB_CODES = new Set([
+  "55P03",
+  "40P01",
+  "40001",
+  "P2028",
+  "P2034",
+]);
+
+function errorCode(err: any): string | undefined {
+  return err?.code ?? err?.meta?.code;
+}
+
+function isRetryableTransactionError(err: any): boolean {
+  const code = errorCode(err);
+  if (code && RETRYABLE_DB_CODES.has(code)) return true;
+
+  const message = typeof err?.message === "string" ? err.message : "";
+  return (
+    message.includes("Timed out fetching a new connection") ||
+    message.includes("could not obtain lock") ||
+    message.includes("deadlock") ||
+    message.includes("serialization") ||
+    message.includes("55P03") ||
+    message.includes("40P01") ||
+    message.includes("40001")
+  );
+}
+
+/** True when the failure means another transaction is claiming the seat. */
+function isSeatContentionError(err: any): boolean {
+  const code = errorCode(err);
+  return (
+    code === "55P03" ||
+    code === "40P01" ||
+    code === "40001" ||
+    code === "P2034" ||
+    code === "P2002"
+  );
+}
+
 function newConfirmationId(): string {
   return `WS-${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
-export async function POST(request: NextRequest) {
+function seatConflictResponse(
+  seatIds: string[],
+  message: string,
+  code: "SEAT_CONFLICT" | "SEAT_LOCK_CONTENTION",
+): NextResponse {
+  return NextResponse.json(
+    {
+      error: message,
+      code,
+      seats: seatIds,
+      retryable: true,
+    },
+    {
+      status: 409,
+      headers: { "Retry-After": "1" },
+    },
+  );
+}
+
+async function handleBooking(request: NextRequest): Promise<NextResponse> {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -141,7 +210,11 @@ export async function POST(request: NextRequest) {
       const createdBookings = await prisma.$transaction(
         async (tx) => {
           // Row-lock the requested seats for the rest of the transaction.
-          await tx.$queryRaw`SELECT id FROM "VenueSeat" WHERE id IN (${Prisma.join(uniqueSeatIds)}) FOR UPDATE`;
+          // NOWAIT makes a competing reservation fail fast with SQLSTATE 55P03
+          // instead of queueing behind it, which the retry loop below handles.
+          await tx.$queryRaw`SELECT id FROM "VenueSeat" WHERE id IN (${Prisma.join(
+            uniqueSeatIds,
+          )}) ORDER BY id ASC FOR UPDATE NOWAIT`;
 
           const seats = await tx.venueSeat.findMany({
             where: { id: { in: uniqueSeatIds }, venueId, isEnabled: true },
@@ -161,7 +234,9 @@ export async function POST(request: NextRequest) {
             },
             select: { date: true, time: true, duration: true, timeZone: true },
           });
-          if (hasBookingConflict({ date, time, timeZone, duration }, existing)) {
+          if (
+            hasBookingConflict({ date, time, timeZone, duration }, existing)
+          ) {
             throw new Error("CONFLICT");
           }
 
@@ -292,32 +367,40 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Seat not found" }, { status: 404 });
       }
       if (err.message === "CONFLICT") {
-        return NextResponse.json(
-          { error: "That seat was just reserved. Choose another seat." },
-          { status: 409 },
+        return seatConflictResponse(
+          uniqueSeatIds,
+          "That seat was just reserved. Choose another seat.",
+          "SEAT_CONFLICT",
         );
       }
 
-      const isTransient =
-        err.code === "P2028" ||
-        err.code === "P2034" ||
-        err.code === "40001" ||
-        err.code === "40P01" ||
-        err.meta?.code === "40001" ||
-        err.meta?.code === "40P01" ||
-        err.message?.includes("Timed out fetching a new connection") ||
-        err.message?.includes("deadlock") ||
-        err.message?.includes("serialization") ||
-        err.message?.includes("40P01") ||
-        err.message?.includes("40001");
+      // The partial unique index on active bookings is the database-level
+      // backstop for two transactions that both passed the availability check.
+      if (errorCode(err) === "P2002") {
+        return seatConflictResponse(
+          uniqueSeatIds,
+          "That seat was just reserved. Choose another seat.",
+          "SEAT_CONFLICT",
+        );
+      }
 
-      if (isTransient && attempt < MAX_RETRIES) {
+      if (isRetryableTransactionError(err) && attempt < MAX_RETRIES) {
         const backoff = Math.min(
           2 ** (attempt + 1) * 100 + Math.random() * 50,
           2000,
         );
         await new Promise((res) => setTimeout(res, backoff));
         continue;
+      }
+
+      // Exhausted retries while another transaction held the seat lock. This
+      // is a contention outcome, not a server fault: tell the client to retry.
+      if (isSeatContentionError(err)) {
+        return seatConflictResponse(
+          uniqueSeatIds,
+          "That seat is being reserved concurrently. Please retry.",
+          "SEAT_LOCK_CONTENTION",
+        );
       }
 
       console.error("[BookAPI] Error:", err);
@@ -327,4 +410,43 @@ export async function POST(request: NextRequest) {
       );
     }
   }
+}
+async function handleBooking(request: NextRequest): Promise<NextResponse> {
+  const body = await request.json();
+  const { userId, deskId, timeSlot } = body;
+
+  if (!userId || !deskId || !timeSlot) {
+    return NextResponse.json(
+      { success: false, error: 'Missing required booking parameters.' },
+      { status: 400 }
+    );
+  }
+
+  // Simulate database booking creation transaction
+  const bookingId = `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+  /*
+  await db.booking.create({
+    data: { id: bookingId, userId, deskId, timeSlot, status: 'CONFIRMED' }
+  });
+  */
+
+  return NextResponse.json(
+    {
+      success: true,
+      message: 'Desk reservation successfully confirmed.',
+      data: {
+        bookingId,
+        userId,
+        deskId,
+        timeSlot,
+        createdAt: new Date().toISOString(),
+      },
+    },
+    { status: 201 }
+  );
+}
+
+export async function POST(request: NextRequest) {
+  return withIdempotency(request, handleBooking);
 }

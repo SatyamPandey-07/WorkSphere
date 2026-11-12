@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { invalidateXpLeaderboard } from "@/lib/leaderboards/xpLeaderboard";
 
 const MIN_VOTES_TO_HIDE = 5;
 const HIDE_THRESHOLD = 60;
@@ -76,6 +77,7 @@ async function trackAccurateContributions(
         create: { userId: vote.userId, badgeType: "verified_explorer" },
       });
     }
+    await invalidateXpLeaderboard();
   }
 }
 

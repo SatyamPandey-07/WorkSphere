@@ -7,9 +7,11 @@ import React, {
   useCallback,
   useRef,
 } from "react";
+import { createPortal } from "react-dom";
 import { Share2, Copy, Check, Download, X, QrCode, MapPin } from "lucide-react";
 import { generateQRCodeSVG, downloadSVG } from "@/lib/qr/svgQr";
 import { useToast } from "@/components/ui/Toast";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 export interface VenueShareProps {
   venue: {
@@ -67,6 +69,11 @@ export function VenueShareModal({
   }, [isOpen, shortUrl, venue.name]);
 
   const triggerElementRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep Tab / Shift+Tab inside the dialog while it is open. Escape and
+  // returning focus to the trigger are handled by the effect below.
+  useFocusTrap(dialogRef, { isActive: isOpen, returnFocus: false });
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
@@ -218,130 +225,141 @@ export function VenueShareModal({
     <>
       {renderTriggerButton()}
 
-      {isOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="share-modal-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={handleClose}
-        >
+      {/*
+        Portal the dialog to <body>. The trigger is often rendered inside a
+        positioned, z-indexed wrapper (e.g. `absolute z-10` on the venue hero),
+        which creates a stacking context and traps any z-index set here below
+        the sticky TopNav (`z-40`). Rendering at the body root lets z-[60]
+        sit above the navbar and its mobile menu (`z-50`).
+      */}
+      {isOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
           <div
-            className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-2xl transition-all scale-100 animate-in zoom-in-95 duration-150 space-y-5"
-            onClick={(e) => e.stopPropagation()}
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-modal-title"
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={handleClose}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <h2
-                id="share-modal-title"
-                className="text-lg font-bold text-zinc-900 dark:text-zinc-100"
-              >
-                Share Venue
-              </h2>
-              <button
-                type="button"
-                data-testid="venue-share-modal-close"
-                onClick={handleClose}
-                aria-label="Close dialog"
-                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Venue Snippet */}
-            <div className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800">
-              {venue.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={venue.imageUrl}
-                  alt={venue.name}
-                  className="w-12 h-12 rounded-xl object-cover shrink-0 border border-zinc-200/50 dark:border-zinc-700/50"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-xl bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
-                  <MapPin className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-bold truncate text-zinc-900 dark:text-zinc-100">
-                  {venue.name}
-                </h3>
-                {venue.address && (
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                    {venue.address}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Copyable Shortlink */}
-            <div className="space-y-2">
-              <label className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                Copy Shortlink
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={shortUrl}
-                  onFocus={(e) => e.target.select()}
-                  className="flex-1 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 select-all font-mono focus:outline-none focus:ring-2 focus:ring-zinc-400"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                    copied
-                      ? "bg-green-600 text-white"
-                      : "bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900"
-                  }`}
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* QR Code Section */}
-            <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <div
+              className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-2xl transition-all scale-100 animate-in zoom-in-95 duration-150 space-y-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
-                  <QrCode className="w-3.5 h-3.5" />
-                  <span>Scan or Download QR</span>
-                </span>
+                <h2
+                  id="share-modal-title"
+                  className="text-lg font-bold text-zinc-900 dark:text-zinc-100"
+                >
+                  Share Venue
+                </h2>
                 <button
                   type="button"
-                  onClick={handleDownloadQR}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                  data-testid="venue-share-modal-close"
+                  onClick={handleClose}
+                  aria-label="Close dialog"
+                  className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download SVG</span>
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="flex flex-col items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                <div
-                  className="p-3 bg-white rounded-xl shadow-md border border-zinc-200/60 inline-flex items-center justify-center"
-                  dangerouslySetInnerHTML={{ __html: qrSvg }}
-                />
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-2.5 text-center font-medium">
-                  Scan with your phone camera to instantly view this venue.
-                </p>
+              {/* Venue Snippet */}
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800">
+                {venue.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={venue.imageUrl}
+                    alt={venue.name}
+                    className="w-12 h-12 rounded-xl object-cover shrink-0 border border-zinc-200/50 dark:border-zinc-700/50"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+                    <MapPin className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-bold truncate text-zinc-900 dark:text-zinc-100">
+                    {venue.name}
+                  </h3>
+                  {venue.address && (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                      {venue.address}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Copyable Shortlink */}
+              <div className="space-y-2">
+                <label className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  Copy Shortlink
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={shortUrl}
+                    onFocus={(e) => e.target.select()}
+                    className="flex-1 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 select-all font-mono focus:outline-none focus:ring-2 focus:ring-zinc-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                      copied
+                        ? "bg-green-600 text-white"
+                        : "bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900"
+                    }`}
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* QR Code Section */}
+              <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Scan or Download QR</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadQR}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download SVG</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-col items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                  <div
+                    className="p-3 bg-white rounded-xl shadow-md border border-zinc-200/60 inline-flex items-center justify-center"
+                    dangerouslySetInnerHTML={{ __html: qrSvg }}
+                  />
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-2.5 text-center font-medium">
+                    Scan with your phone camera to instantly view this venue.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

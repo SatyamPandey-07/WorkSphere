@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import L from "leaflet";
+ fix/map-route-layer-cleanup
 import { Footprints, Bike, Car } from "lucide-react";
 import MapRouteLayer, {
   CalculatedRoute,
@@ -15,6 +16,365 @@ interface MapProps {
   origin?: RouteCoordinate | null;
   destination?: RouteCoordinate | null;
   initialMode?: TransitMode;
+
+import "leaflet/dist/leaflet.css";
+import { MapMarker, MapRoute, MapView } from "@/types/map";
+import { AccessibleMarker } from "@/components/ui/MapMarker";
+import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
+import { Contrast } from "lucide-react";
+import {
+  MapMarkerFactory,
+  SEAT_RING_COLORS,
+  getUserLocationIcon,
+} from "./map/MapMarkerFactory";
+import { MapRouteLayer } from "./map/MapRouteLayer";
+import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
+import RoutingOptimizer from "./map/RoutingOptimizer";
+import { MobileVenueDrawer } from "@/components/ui/MobileVenueDrawer";
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+import React, { useState, useEffect, useRef } from 'react';
+// Assuming leaflet is imported or loaded via react-leaflet / window.L
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+export { throttle } from "@/lib/utils";
+export {
+  getHighContrastIcon,
+  getVenueIcon,
+  getDestinationIcon,
+  getUserLocationIcon,
+  RadarSweepLayer,
+  SEAT_RING_COLORS,
+} from "./map/MapMarkerFactory";
+
+// Import Leaflet Heatmap Plugin safely only on client-side and not in Jest tests
+if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("leaflet.heat");
+}
+
+function MapController({ mapView }: { mapView: MapView | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (mapView && mapView.center && mapView.zoom) {
+      if (mapView.animate) {
+        map.flyTo([mapView.center.lat, mapView.center.lng], mapView.zoom);
+      } else {
+        map.setView([mapView.center.lat, mapView.center.lng], mapView.zoom);
+      }
+    }
+  }, [mapView, map]);
+
+  return null;
+}
+
+function ResetMapViewControl({ center }: { center: [number, number] }) {
+  const map = useMap();
+
+  return (
+    <div className="absolute bottom-8 right-4 z-[1000] sm:bottom-4">
+      <button
+        type="button"
+        aria-label="Reset Map View"
+        onClick={() => map.setView(center, 13)}
+        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white"
+      >
+        Reset Map View
+      </button>
+    </div>
+  );
+}
+
+function AutoCenter({
+  markers,
+  userLocation,
+}: {
+  markers: MapMarker[];
+  userLocation: [number, number];
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+
+    const bounds = L.latLngBounds([
+      userLocation,
+      ...markers.map(
+        (m) => [m.position.lat, m.position.lng] as [number, number],
+      ),
+    ]);
+
+    if (markers.length > 0) {
+      map.flyToBounds(bounds, { padding: [100, 100] });
+    } else {
+      map.setView(userLocation, 13);
+    }
+  }, [markers, userLocation, map]);
+
+  return null;
+}
+
+// Tracks the map's settled zoom level so spiderfied marker offsets can be
+// recalculated relative to it. The `zoomend` handler is debounced so that
+// rapid zoom actions (e.g. zoom out then quickly double-click to zoom in)
+// don't trigger a recalculation on every intermediate animation frame -
+// only once the zoom transition has actually settled, avoiding the stale
+// pre-zoom offsets that caused clustered markers to render on top of each
+// other mid-transition.
+function ZoomWatcher({
+  onZoomSettled,
+  onZoomStart,
+  delay = 150,
+}: {
+  onZoomSettled: (zoom: number) => void;
+  onZoomStart?: () => void;
+  delay?: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+
+    const handleZoomStart = () => {
+      clearTimeout(timer);
+      onZoomStart?.();
+    };
+
+    const handleZoomEnd = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => onZoomSettled(map.getZoom()), delay);
+    };
+
+    map.on("zoomstart", handleZoomStart);
+    map.on("zoomend", handleZoomEnd);
+    handleZoomEnd(); // capture the initial zoom too
+
+    return () => {
+      clearTimeout(timer);
+      map.off("zoomstart", handleZoomStart);
+      map.off("zoomend", handleZoomEnd);
+    };
+  }, [map, onZoomSettled, onZoomStart, delay]);
+
+  return null;
+}
+
+import { createLayerComponent } from "@react-leaflet/core";
+
+const CROWD_GRADIENT = {
+  0.3: "#1e3a8a", // Deep Blue (Quiet)
+  0.55: "#3b82f6", // Bright Blue (Moderate)
+  0.8: "#8b5cf6", // Velvet Purple (Busy)
+  1.0: "#d946ef", // Neon Pink/Fuchsia (High Activity levels)
+};
+
+const createHeatLayer = (props: any, context: any) => {
+  const layer = (L as any).heatLayer(props.points, {
+    radius: 30,
+    blur: 18,
+    maxZoom: 16,
+    gradient: props.gradient || CROWD_GRADIENT,
+  });
+  return { instance: layer, context };
+};
+
+const updateHeatLayer = (instance: any, props: any, prevProps: any) => {
+  if (props.points !== prevProps.points) {
+    instance.setLatLngs(props.points);
+  }
+  if (props.gradient !== prevProps.gradient) {
+    instance.setOptions({ gradient: props.gradient || CROWD_GRADIENT });
+  }
+};
+
+const HeatmapOverlay = createLayerComponent(createHeatLayer, updateHeatLayer);
+function ResizeWatcher({ delay = 150 }: { delay?: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+
+    const handleResize = () => {
+      clearTimeout(timer);
+      const centerBeforeResize = map.getCenter();
+
+      timer = setTimeout(() => {
+        map.invalidateSize();
+        map.setView(centerBeforeResize, map.getZoom(), { animate: false });
+      }, delay);
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [map, delay]);
+
+  return null;
+}
+function MapEvents({
+  onMouseMove,
+}: {
+  onMouseMove: (latlng: L.LatLng) => void;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const handleMouseMove = ({ latlng }: L.LeafletMouseEvent) => {
+      onMouseMove(latlng);
+    };
+    map.on("mousemove", handleMouseMove);
+    return () => {
+      map.off("mousemove", handleMouseMove);
+    };
+  }, [map, onMouseMove]);
+  return null;
+}
+
+const escapeCursorHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const isSafeAvatarUrl = (url: string): boolean =>
+  /^https:\/\/[^"'\s)]+$/.test(url);
+
+const createCursorIcon = (avatarUrl: string, name: string) => {
+  if (typeof window === "undefined") return null;
+  const safeName = escapeCursorHtml(name);
+  let html: string;
+  if (avatarUrl && avatarUrl !== "default" && isSafeAvatarUrl(avatarUrl)) {
+    html = `
+      <div class="map-cursor-container">
+        <div class="map-cursor-avatar" style="background-image: url(${avatarUrl})" width="32" height="32"></div>
+        <div class="map-cursor-label">${safeName}</div>
+      </div>
+    `;
+  } else {
+    html = `
+      <div class="map-cursor-container">
+        <div class="map-cursor-avatar-default" width="16" height="16"></div>
+        <div class="map-cursor-label">${safeName}</div>
+      </div>
+    `;
+  }
+  return L.divIcon({
+    className: "map-presence-marker",
+    html,
+    iconSize: [32, 48],
+    iconAnchor: [16, 16],
+  });
+};
+
+import { attachWebGLContextRecovery } from "@/lib/webgl/contextManager";
+
+function WebGLContextWatcher() {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || typeof map.getContainer !== "function") return;
+    const container = map.getContainer();
+    if (!container) return;
+    const cleanups: Array<() => void> = [];
+    // setupCanvases re-runs on every tab focus; attach once per canvas so
+    // listeners and recovery managers don't pile up (#1729).
+    const attached = new WeakSet<HTMLCanvasElement>();
+
+    const setupCanvases = () => {
+      const canvases = container.querySelectorAll("canvas");
+      canvases.forEach((canvas) => {
+        if (attached.has(canvas as HTMLCanvasElement)) return;
+        attached.add(canvas as HTMLCanvasElement);
+        const cleanup = attachWebGLContextRecovery(
+          canvas as HTMLCanvasElement,
+          () => {
+            map.invalidateSize();
+          },
+        );
+        cleanups.push(cleanup);
+      });
+    };
+
+    setupCanvases();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setupCanvases();
+        map.invalidateSize();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cleanups.forEach((c) => c());
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [map]);
+
+  return null;
+}
+
+const MemoizedCursorMarker = memo(function MemoizedCursorMarker({
+  userId,
+  cursor,
+}: {
+  userId: string;
+  cursor: { lat: number; lng: number; name: string; avatar: string };
+}) {
+  const presenceIcon = createCursorIcon(cursor.avatar, cursor.name);
+  if (!presenceIcon) return null;
+  return (
+    <Marker
+      key={`presence-${userId}`}
+      position={[cursor.lat, cursor.lng]}
+      icon={presenceIcon}
+      interactive={false}
+    />
+  );
+});
+
+export interface MapViewportBounds {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+  zoom: number;
+ main
 }
 
 const TRANSIT_MODES: {
@@ -42,6 +402,7 @@ export const Map: React.FC<MapProps> = ({
   useEffect(() => {
     if (!containerRef.current) return;
 
+ fix/map-route-layer-cleanup
     const map = L.map(containerRef.current, {
       center: [center.lat, center.lng],
       zoom,
@@ -50,6 +411,316 @@ export const Map: React.FC<MapProps> = ({
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
+  const clusters: MarkerCluster[] = [];
+  const unclustered: MapMarker[] = [];
+
+  clusterList.forEach((group, idx) => {
+    if (group.markers.length > 1) {
+      const avgLat =
+        group.markers.reduce((sum, m) => sum + Number(m.position.lat), 0) /
+        group.markers.length;
+      const avgLng =
+        group.markers.reduce((sum, m) => sum + Number(m.position.lng), 0) /
+        group.markers.length;
+
+      clusters.push({
+        id: `cluster-${idx}-${group.markers.length}`,
+        isCluster: true,
+        lat: avgLat,
+        lng: avgLng,
+        count: group.markers.length,
+        markers: group.markers,
+        bounds: {
+          minLat: group.minLat,
+          maxLat: group.maxLat,
+          minLng: group.minLng,
+          maxLng: group.maxLng,
+        },
+      });
+    } else {
+      unclustered.push(group.markers[0]);
+    }
+  });
+
+  return { clusters, unclustered };
+}
+
+export function createClusterIcon(count: number) {
+  if (typeof window === "undefined" || !L.divIcon) return null;
+  const size = count < 10 ? 36 : count < 50 ? 44 : 52;
+  return L.divIcon({
+    className: "custom-marker-cluster",
+    html: `
+      <div class="marker-cluster-badge"
+           style="width: ${size}px; height: ${size}px; font-size: ${size >= 44 ? 14 : 12}px;"
+           data-testid="marker-cluster-${count}"
+           role="button"
+           aria-label="Cluster of ${count} venues">
+        <span>${count}</span>
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+export const ClusterMarkerComponent = memo(function ClusterMarkerComponent({
+  cluster,
+}: {
+  cluster: MarkerCluster;
+}) {
+  const map = useMap();
+  const icon = useMemo(() => createClusterIcon(cluster.count), [cluster.count]);
+  if (!icon) return null;
+
+  return (
+    <Marker
+      position={[cluster.lat, cluster.lng]}
+      icon={icon}
+      eventHandlers={{
+        click: () => {
+          if (
+            cluster.bounds.minLat !== cluster.bounds.maxLat &&
+            cluster.bounds.minLng !== cluster.bounds.maxLng
+          ) {
+            const southWest = L.latLng(
+              cluster.bounds.minLat,
+              cluster.bounds.minLng,
+            );
+            const northEast = L.latLng(
+              cluster.bounds.maxLat,
+              cluster.bounds.maxLng,
+            );
+            map.fitBounds(L.latLngBounds(southWest, northEast), {
+              padding: [50, 50],
+              maxZoom: 17,
+            });
+          } else {
+            map.setView(
+              [cluster.lat, cluster.lng],
+              Math.min(map.getZoom() + 2, 18),
+              { animate: true },
+            );
+          }
+        },
+      }}
+    />
+  );
+});
+
+export interface MapProps {
+  location: { latitude: number; longitude: number };
+  markers: MapMarker[];
+  routes: MapRoute[];
+  mapView: MapView | null;
+  roomId?: string | null;
+  initialHighContrast?: boolean;
+  highContrast?: boolean;
+  onHighContrastChange?: (enabled: boolean) => void;
+  onViewportChange?: (bounds: MapViewportBounds) => void;
+  enableClustering?: boolean;
+  enableRadarSweep?: boolean;
+  radarRadius?: number;
+  onSelectVenue?: (venue: MapMarker | null) => void;
+  selectedVenueId?: string | null;
+  onBookVenue?: (venue: MapMarker) => void;
+  onGetDirections?: (venue: MapMarker) => void;
+}
+
+const Map = ({
+  location,
+  markers,
+  routes,
+  mapView,
+  roomId,
+  initialHighContrast = false,
+  highContrast: controlledHighContrast,
+  onHighContrastChange,
+  onViewportChange,
+  enableClustering = true,
+  enableRadarSweep = true,
+  radarRadius = 160,
+  onSelectVenue,
+  selectedVenueId,
+  onBookVenue,
+  onGetDirections,
+}: MapProps) => {
+  const clerkUser = useUser();
+  const { theme } = useTheme();
+  const { getToken } = useAuth();
+  const [token, setToken] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  const [internalHighContrast, setInternalHighContrast] =
+    useState(initialHighContrast);
+  const isHighContrast =
+    controlledHighContrast !== undefined
+      ? controlledHighContrast
+      : internalHighContrast;
+
+  const toggleHighContrast = useCallback(() => {
+    const next = !isHighContrast;
+    setInternalHighContrast(next);
+    onHighContrastChange?.(next);
+  }, [isHighContrast, onHighContrastChange]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia) {
+      if (
+        window.matchMedia("(prefers-contrast: more)").matches &&
+        controlledHighContrast === undefined
+      ) {
+        setInternalHighContrast(true);
+      }
+    }
+  }, [controlledHighContrast]);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    getToken()
+      .then(setToken)
+      .catch(() => setToken(null));
+  }, [getToken]);
+
+  const {
+    mapCursors,
+    throttledBroadcast,
+    getAvailability,
+    checkIn,
+    checkOut,
+    checkedInVenueId,
+    isSeatSocketConnected,
+  } = useMapRealtimeSync({
+    roomId,
+    isMounted,
+    token,
+    user: clerkUser,
+    initialLocation: location,
+  });
+
+  const { latitude, longitude } = location;
+  const routingPanelRef = useRef<HTMLDivElement>(null);
+  // Forecast selector state
+  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // 0=Sun
+  const [selectedHour, setSelectedHour] = useState<number>(
+    new Date().getHours(),
+  );
+
+  // Prevent touch/mouse/scroll event propagation on overlays from bubbling to Leaflet Map
+  useEffect(() => {
+    const el = routingPanelRef.current;
+    if (!el) return;
+
+    if (L && L.DomEvent) {
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+    }
+
+    // Stop touch and pointer events from propagating to prevent map dragging/panning
+    const stopPropagation = (e: Event) => {
+      e.stopPropagation();
+    };
+
+    const events = [
+      "touchstart",
+      "touchmove",
+      "touchend",
+      "pointerdown",
+      "pointermove",
+      "pointerup",
+      "mousedown",
+      "mousemove",
+      "mouseup",
+    ];
+
+    events.forEach((event) => {
+      el.addEventListener(event, stopPropagation, { passive: true });
+    });
+
+    return () => {
+      events.forEach((event) => {
+        el.removeEventListener(event, stopPropagation);
+      });
+    };
+  }, []);
+
+  // Settled zoom level (debounced via ZoomWatcher), used to keep spiderfied
+  // marker offsets at a consistent on-screen pixel separation regardless of
+  // how far the user has zoomed in/out.
+  const [settledZoom, setSettledZoom] = useState<number>(13);
+  const [, setIsZooming] = useState(false);
+  const handleZoomSettled = useCallback((zoom: number) => {
+    setSettledZoom(zoom);
+    setIsZooming(false);
+  }, []);
+
+  // Collapse spiderfied markers to their center positions during zoom
+  // transitions so overlapping offsets don't render mid-animation,
+  // then respiderfy after the zoom settles (handled via handleZoomSettled).
+  const handleZoomStart = useCallback(() => {
+    setIsZooming(true);
+  }, []);
+
+  // =========================================================================
+  // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
+  // =========================================================================
+  const [routingQueue, setRoutingQueue] = useState<any[]>([]);
+  const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
+  const [travelProfile, setTravelProfile] = useState<
+    "walking" | "cycling" | "driving"
+  >("walking");
+  const [internalSelectedMarkerId, setInternalSelectedMarkerId] = useState<
+    string | null
+  >(null);
+  const selectedMarkerId =
+    selectedVenueId !== undefined ? selectedVenueId : internalSelectedMarkerId;
+
+  const handleSelectMarker = useCallback(
+    (id: string | null) => {
+      setInternalSelectedMarkerId(id);
+      if (onSelectVenue) {
+        const found = id ? markers.find((m) => m.id === id) || null : null;
+        onSelectVenue(found);
+      }
+    },
+    [markers, onSelectVenue],
+  );
+
+  useEffect(() => {
+    if (
+      selectedMarkerId !== null &&
+      !markers.some((marker) => marker.id === selectedMarkerId)
+    ) {
+      handleSelectMarker(null);
+    }
+  }, [markers, selectedMarkerId, handleSelectMarker]);
+
+  const activeVenueForDrawer = useMemo(() => {
+    if (!selectedMarkerId) return null;
+    return markers.find((m) => m.id === selectedMarkerId) || null;
+  }, [markers, selectedMarkerId]);
+
+  // OSRM Multi-Stop coordinate solver engine
+  const calculateOptimizedRoute = async (venuesList = routingQueue) => {
+    if (venuesList.length < 2) {
+      setOptimizedRoute(null);
+      return;
+    }
+
+    // Guard: remove consecutive duplicate stops (same lat/lng) —
+    // sending identical consecutive coordinates to OSRM can trigger
+    // a crash/error response.
+    const dedupedList = venuesList.filter((venue, idx) => {
+      if (idx === 0) return true;
+      const prev = venuesList[idx - 1];
+      return !(
+        venue.latitude === prev.latitude && venue.longitude === prev.longitude
+      );
+    });
+ main
 
     setMapInstance(map);
 
@@ -59,6 +730,7 @@ export const Map: React.FC<MapProps> = ({
     };
   }, [center.lat, center.lng, zoom]);
 
+ fix/map-route-layer-cleanup
   const handleModeChange = (nextMode: TransitMode) => {
     if (nextMode === transitMode) return;
     setActiveRoute(null);
@@ -72,6 +744,615 @@ export const Map: React.FC<MapProps> = ({
         role="group"
         aria-label="Transit mode"
         className="absolute left-3 top-3 z-[1000] inline-flex items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/90 p-1 shadow-lg backdrop-blur-md"
+
+      if (data.code === "Ok") {
+        const coords = data.routes[0].geometry.coordinates;
+        const hasElevation = coords.some(
+          (c: any[]) =>
+            Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
+        );
+        const elevationProfile =
+          data.routes[0].elevation_profile ||
+          data.routes[0].elevationProfile ||
+          (hasElevation ? coords.map((c: any[]) => c[2]) : undefined);
+
+        setOptimizedRoute({
+          coordinates: coords.map((coord: [number, number]) => [
+            coord[1],
+            coord[0],
+          ]),
+          duration: data.routes[0].duration,
+          distance: data.routes[0].distance,
+          legs: data.routes[0].legs,
+          elevationProfile,
+        });
+      }
+    } catch (error) {
+      console.error("OSRM Multi-Stop routing resolution failed:", error);
+    }
+  };
+
+  // Track heatmap states
+  const [heatmapPoints, setHeatmapPoints] = useState<any[]>([]);
+
+  // Noise-level heatmap states (Issue #135)
+  const [noiseHeatmapPoints, setNoiseHeatmapPoints] = useState<any[]>([]);
+
+  // Green (<45dB) -> Yellow (45-65dB) -> Red (>65dB), banded rather than
+  // blended so the zones read as distinct quiet/moderate/loud regions.
+  const NOISE_GRADIENT = {
+    0.0: "#22c55e",
+    0.357: "#22c55e",
+    0.358: "#eab308",
+    0.643: "#eab308",
+    0.644: "#ef4444",
+    1.0: "#ef4444",
+  };
+
+  // Async load data context when layer UI toggles active
+  // Fetch heatmap points for selected day and hour (forecast)
+  useEffect(() => {
+    // Debounce fetch to avoid rapid requests when sliding time
+    const timer = setTimeout(() => {
+      const url = `/api/map/forecast-heatmap?day=${selectedDay}&hour=${selectedHour}`;
+      fetch(url)
+        .then((res) => res.json())
+        .then((resData) => {
+          if (resData.success) {
+            setHeatmapPoints(resData.data);
+          }
+        })
+        .catch((err) =>
+          console.error("Could not populate forecast heatmap", err),
+        );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [selectedDay, selectedHour]);
+
+  useEffect(() => {
+    fetch("/api/map/noise-heatmap")
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData.success) {
+          setNoiseHeatmapPoints(resData.data);
+        }
+      })
+      .catch((err) =>
+        console.error("Could not populate noise heatmap context", err),
+      );
+  }, []);
+
+  // Compute WebGL GPU Heatmap Telemetry Points (combining forecast telemetry & markers)
+  const webglTelemetryPoints = useMemo(() => {
+    if (heatmapPoints && heatmapPoints.length > 0) {
+      return heatmapPoints.map((pt: any) => ({
+        lat: Number(pt[0]),
+        lng: Number(pt[1]),
+        intensity: pt[2] != null ? Number(pt[2]) : 0.75,
+        radius: 32,
+      }));
+    }
+    // Fallback: map venue markers to telemetry point data
+    return markers
+      .filter((m) => m.position?.lat != null && m.position?.lng != null)
+      .map((m) => ({
+        lat: Number(m.position.lat),
+        lng: Number(m.position.lng),
+        intensity: 0.85,
+        radius: 36,
+      }));
+  }, [heatmapPoints, markers]);
+
+  // Helper to spiderfy overlapping markers
+  const computeSpiderfiedMarkers = useCallback(
+    (markerList: MapMarker[], zoom: number) => {
+      const groups: { [key: string]: any[] } = {};
+      markerList.forEach((m) => {
+        if (
+          m &&
+          m.position &&
+          m.position.lat != null &&
+          m.position.lng != null &&
+          !isNaN(Number(m.position.lat)) &&
+          !isNaN(Number(m.position.lng))
+        ) {
+          const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
+          if (!groups[key]) {
+            groups[key] = [];
+          }
+          groups[key].push(m);
+        }
+      });
+
+      const result: any[] = [];
+      Object.keys(groups).forEach((key) => {
+        const groupItems = groups[key];
+        const n = groupItems.length;
+        if (n === 1) {
+          result.push({
+            ...groupItems[0],
+            renderedLat: Number(groupItems[0].position.lat),
+            renderedLng: Number(groupItems[0].position.lng),
+          });
+        } else {
+          const centerLat = Number(groupItems[0].position.lat);
+          const centerLng = Number(groupItems[0].position.lng);
+
+          const metersPerPixel =
+            (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
+            Math.pow(2, zoom);
+          const targetPixelSeparation = 24 + 2 * n;
+          const radius = (metersPerPixel * targetPixelSeparation) / 111320;
+
+          groupItems.forEach((item, index) => {
+            const angle = (2 * Math.PI * index) / n;
+            const offsetLat = centerLat + radius * Math.cos(angle);
+            const offsetLng = centerLng + radius * Math.sin(angle);
+            result.push({
+              ...item,
+              renderedLat: offsetLat,
+              renderedLng: offsetLng,
+            });
+          });
+        }
+      });
+      return result;
+    },
+    [],
+  );
+
+  // Group and cluster or spiderfy overlapping markers
+  const { clusteredMarkers, spiderfiedMarkers } = useMemo(() => {
+    if (!enableClustering) {
+      return {
+        clusteredMarkers: [] as MarkerCluster[],
+        spiderfiedMarkers: computeSpiderfiedMarkers(markers, settledZoom),
+      };
+    }
+    const { clusters, unclustered } = clusterMarkers(markers, settledZoom);
+    return {
+      clusteredMarkers: clusters,
+      spiderfiedMarkers: computeSpiderfiedMarkers(unclustered, settledZoom),
+    };
+  }, [markers, settledZoom, enableClustering, computeSpiderfiedMarkers]);
+
+  // Derive iconUrl directly from clerkUser state
+  const iconUrl = useMemo(() => {
+    if (clerkUser.isLoaded && clerkUser.user?.hasImage) {
+      return clerkUser.user.imageUrl;
+    } else if (clerkUser.isLoaded) {
+      return "default";
+    }
+    return null;
+  }, [clerkUser.isLoaded, clerkUser.user]);
+
+  // Derive customIcon from iconUrl with rotating radar sweep effect (#6183)
+  const customIcon = useMemo(() => {
+    return getUserLocationIcon(iconUrl, {
+      enableRadarSweep,
+      radarRadius,
+    });
+  }, [iconUrl, enableRadarSweep, radarRadius]);
+
+  // Memoize the rendered CircleMarker JSX to prevent unnecessary SVG re-renders
+  // and micro-flickering on every Map.tsx update (e.g. cursor socket events)
+  const memoizedSeatRings = useMemo(() => {
+    return spiderfiedMarkers
+      .filter((marker) => !marker.id.includes("dest"))
+      .map((marker) => {
+        const seat = getAvailability(marker.id);
+        return (
+          <CircleMarker
+            key={`seat-ring-${marker.id}`}
+            center={[marker.renderedLat, marker.renderedLng]}
+            radius={16}
+            pathOptions={{
+              color: SEAT_RING_COLORS[seat.status],
+              weight: 3,
+              opacity: 0.9,
+              fillOpacity: 0,
+            }}
+          />
+        );
+      });
+  }, [spiderfiedMarkers, getAvailability]);
+
+  const center: [number, number] = [latitude, longitude];
+  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
+  const tileUrl = cartoKey
+    ? theme === "light"
+      ? `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+      : theme === "cyberpunk"
+        ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  return (
+    <>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        /* Webkit/iOS Safari hardware acceleration fixes to prevent overlapping/jitter during zoom animations */
+        .leaflet-marker-icon, .leaflet-pane {
+          will-change: transform;
+        }
+        .custom-user-marker {
+          /* This container itself doesn't need styles */
+        }
+        .image-marker {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background-size: cover;
+          background-position: center;
+          border: 3px solid #3b82f6; /* Blue border for dark theme */
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.5);
+          will-change: transform;
+        }
+        .default-dot-marker {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background-color: #3b82f6;
+          border: 3px solid white;
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.5);
+          /* Offset for iconAnchor */
+          transform: translate(10px, 10px);
+          will-change: transform;
+        }
+
+        /* Fix for Next.js/Leaflet width/height bug */
+        .leaflet-container {
+          width: 100%;
+          height: 100%;
+          border-radius: 12px;
+          position: relative;
+          z-index: 20;
+        }
+        
+        /* UPDATED: Target map tiles specifically so they don't hide the heatmap canvas */
+        .leaflet-layer {
+          filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+        }
+
+        /* NEW: Keeps the glowing canvas layer clean and visible */
+        .leaflet-heatmap-layer {
+          z-index: 400 !important;
+          mix-blend-mode: screen;
+          filter: none !important; /* Forces the browser to keep full color saturation */
+        }
+
+        /* WebGL GPU Heatmap Canvas Overlay (#818) */
+        .leaflet-webgl-heatmap-layer {
+          z-index: 401 !important;
+          mix-blend-mode: screen;
+          filter: none !important;
+          pointer-events: none;
+        }
+        
+        /* GPU-accelerated pulsing keyframes */
+        @keyframes markerPulse {
+          0% {
+            transform: scale(0.8);
+            opacity: 0.5;
+          }
+          100% {
+            transform: scale(1.6);
+            opacity: 0;
+          }
+        }
+
+        /* Venue marker - circular dot */
+        .venue-dot {
+          position: relative;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #8b5cf6, #6366f1);
+          border: 3px solid white;
+          box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+          transform: translate(2px, 2px);
+          will-change: transform;
+        }
+        
+        /* Pulse ring around venue markers */
+        .venue-dot::after {
+          content: '';
+          position: absolute;
+          inset: -3px;
+          border-radius: 50%;
+          background: rgba(139, 92, 246, 0.4);
+          animation: markerPulse 2.5s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+          will-change: transform, opacity;
+          z-index: -1;
+        }
+
+        /* Destination pin marker */
+        .destination-pin {
+          position: relative;
+          width: 32px;
+          height: 32px;
+          border-radius: 50% 50% 50% 0;
+          background: linear-gradient(135deg, #8b5cf6, #6366f1);
+          transform: rotate(-45deg);
+          border: 2px solid white;
+          box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        /* Animated User Cursors Presence styles */
+        .map-presence-marker {
+          transition: transform 0.08s linear;
+          will-change: transform;
+          z-index: 1000 !important;
+        }
+        .map-cursor-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          position: relative;
+        }
+        .map-cursor-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background-size: cover;
+          background-position: center;
+          border: 2px solid #ef4444; /* Vibrant Red border for presence indicators */
+          box-shadow: 0 0 8px rgba(239, 68, 68, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+        .map-cursor-avatar-default {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background-color: #ef4444;
+          border: 2px solid white;
+          box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+        }
+        .map-cursor-label {
+          background-color: rgba(239, 68, 68, 0.9);
+          color: white;
+          font-size: 9px;
+          font-weight: bold;
+          padding: 1px 6px;
+          border-radius: 4px;
+          margin-top: 2px;
+          white-space: nowrap;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+          pointer-events: none;
+        }
+
+        /* Marker cluster badge styles (#3473) */
+        .custom-marker-cluster {
+          background: transparent !important;
+          border: none !important;
+        }
+        .marker-cluster-badge {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 9999px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: #ffffff;
+          font-weight: 700;
+          border: 2px solid #ffffff;
+          box-shadow: 0 4px 14px rgba(99, 102, 241, 0.5);
+          cursor: pointer;
+          user-select: none;
+          transition: transform 0.15s ease-in-out;
+        }
+        .marker-cluster-badge:hover {
+          transform: scale(1.1);
+        }
+        .marker-cluster-badge:active {
+          transform: scale(0.95);
+        }
+
+        /* Disable animation on reduced motion/low performance mode */
+        @media (prefers-reduced-motion: reduce) {
+          .venue-dot::after {
+            animation: none !important;
+            display: none !important;
+          }
+        }
+        .destination-pin span {
+          transform: rotate(45deg);
+          color: white;
+          font-weight: bold;
+          font-size: 14px;
+        }
+        
+        /* Leaflet popup styling for dark theme */
+        .leaflet-popup-content-wrapper {
+          background: rgba(30, 30, 30, 0.95);
+          color: white;
+          border-radius: 8px;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+        .leaflet-popup-tip {
+          background: rgba(30, 30, 30, 0.95);
+        }
+        .leaflet-popup-content {
+          margin: 12px 16px;
+        }
+
+        /* Hide desktop-style centered popup on mobile touch screens in favor of MobileVenueDrawer */
+        @media (max-width: 767px) {
+          .leaflet-popup {
+            display: none !important;
+          }
+        }
+        
+        /* Focus-visible ring for keyboard-navigated markers (Issue #3446) */
+        .venue-marker:focus,
+        .venue-marker:focus-visible,
+        .destination-marker:focus,
+        .destination-marker:focus-visible,
+        .custom-user-marker:focus,
+        .custom-user-marker:focus-visible,
+        .interactive-map-pin:focus,
+        .interactive-map-pin:focus-visible,
+        .leaflet-marker-icon:focus,
+        .leaflet-marker-icon:focus-visible,
+        [role="button"][tabindex="0"]:focus-visible,
+        [role="button"][tabindex="0"]:focus {
+          outline: 3px solid var(--primary-accent) !important;
+          outline-offset: 2px !important;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.45) !important;
+          z-index: 1000 !important;
+        }
+
+        .venue-marker:not(.high-contrast-marker):focus,
+        .venue-marker:not(.high-contrast-marker):focus-visible {
+          border-radius: 50%;
+        }
+
+        .high-contrast-marker.hc-marker-circle:focus,
+        .high-contrast-marker.hc-marker-circle:focus-visible {
+          border-radius: 50% !important;
+        }
+
+        .high-contrast-marker.hc-marker-square:focus,
+        .high-contrast-marker.hc-marker-square:focus-visible {
+          border-radius: 4px !important;
+        }
+
+        .high-contrast-marker.hc-marker-diamond:focus,
+        .high-contrast-marker.hc-marker-diamond:focus-visible {
+          border-radius: 3px !important;
+        }
+
+        /* High-Contrast Mode Styles (WCAG 2.1 AA 3:1 Non-Text Contrast) */
+        .high-contrast-marker {
+          background: transparent !important;
+          border: none !important;
+        }
+
+        .hc-marker-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          box-sizing: border-box;
+          border: 3px solid #000000;
+          box-shadow: 0 0 0 2px #ffffff, 0 3px 6px rgba(0, 0, 0, 0.6);
+          transition: transform 0.15s ease-in-out;
+        }
+
+        .hc-marker-wrapper:hover {
+          transform: scale(1.15);
+        }
+
+        /* Shape 1: Circle for cafe */
+        .hc-shape-circle,
+        .hc-marker-wrapper.hc-shape-circle {
+          border-radius: 50% !important;
+          background-color: #ffd600 !important;
+          color: #000000 !important;
+        }
+
+        /* Shape 2: Square for coworking */
+        .hc-shape-square,
+        .hc-marker-wrapper.hc-shape-square {
+          border-radius: 4px !important;
+          background-color: #00e5ff !important;
+          color: #000000 !important;
+        }
+
+        /* Shape 3: Diamond for library */
+        .hc-shape-diamond,
+        .hc-marker-wrapper.hc-shape-diamond {
+          border-radius: 3px !important;
+          transform: rotate(45deg);
+          background-color: #00e676 !important;
+          color: #000000 !important;
+        }
+
+        .hc-shape-diamond .hc-marker-inner {
+          transform: rotate(-45deg);
+        }
+
+        .hc-marker-inner {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+        }
+
+        .hc-glyph {
+          display: block;
+        }
+
+        /* Floating toggle position above canvas layers */
+        .map-noise-toggle {
+          position: absolute;
+          top: 68px;
+          right: 20px;
+          z-index: 1000;
+        }
+        .map-forecast-controls {
+          position: absolute;
+          top: 120px;
+          right: 20px;
+          z-index: 1000;
+          background: rgba(24,24,27,0.9);
+          padding: 8px 12px;
+          border-radius: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          color: #f4f4f5;
+        }
+        .map-forecast-controls select,
+        .map-forecast-controls input[type="range"] {
+          width: 120px;
+        }
+        .leaflet-control-scale {
+          background: transparent;
+        }
+
+        .leaflet-control-scale-line {
+          border: 1px solid #3f3f46;
+          background: rgba(24, 24, 27, 0.9);
+          color: #f4f4f5;
+        }
+
+        .leaflet-zoom-anim .leaflet-zoom-animated {
+          will-change: transform;
+        }
+
+        .venue-marker {
+          transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+        }
+
+        .interactive-map-pin {
+          will-change: transform;
+        }
+      `,
+        }}
+      />
+
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {isHighContrast ? "High-contrast mode enabled. " : ""}
+        {spiderfiedMarkers.length > 0
+          ? `${spiderfiedMarkers.length} venue${spiderfiedMarkers.length === 1 ? "" : "s"} on map. Use Tab to navigate markers, Enter to open details.`
+          : "No venues on map"}
+      </div>
+      <MapContainer
+        center={center}
+        zoom={13}
+        maxZoom={18}
+        preferCanvas={true}
+        className="z-20 relative"
+        style={{
+          width: "95%",
+          height: "95%",
+          borderRadius: "12px",
+          position: "relative",
+          zIndex: 20,
+        }}
+ main
       >
         {TRANSIT_MODES.map((item) => {
           const isActive = transitMode === item.id;
@@ -100,6 +1381,7 @@ export const Map: React.FC<MapProps> = ({
           {Math.max(1, Math.round(activeRoute.durationSeconds / 60))} min &bull;{" "}
           {(activeRoute.distanceMeters / 1000).toFixed(1)} km
         </div>
+ fix/map-route-layer-cleanup
       )}
 
       {/* Map Canvas */}
@@ -113,6 +1395,248 @@ export const Map: React.FC<MapProps> = ({
         mode={transitMode}
         onRouteCalculated={setActiveRoute}
       />
+    </div>
+
+        <LayersControl position="topright">
+          <LayersControl.BaseLayer checked name="OpenStreetMap">
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url={tileUrl}
+              className="map-tiles-dark"
+              maxZoom={18}
+              maxNativeZoom={18}
+              keepBuffer={4}
+              updateWhenIdle={true}
+            />
+          </LayersControl.BaseLayer>
+
+          <LayersControl.Overlay checked name="GPU WebGL Heatmap (60 FPS)">
+            <LayerGroup>
+              <WebGLHeatmapLayer
+                points={webglTelemetryPoints}
+                opacity={0.85}
+                blur={1.0}
+              />
+            </LayerGroup>
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay name="Live Crowd Heatmap">
+            <HeatmapOverlay points={heatmapPoints} />
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay name="Noise Levels">
+            <HeatmapOverlay
+              points={noiseHeatmapPoints}
+              gradient={NOISE_GRADIENT}
+            />
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay name="Seat Availability">
+            <LayerGroup>{memoizedSeatRings}</LayerGroup>
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay
+            name="High-Contrast Mode"
+            checked={isHighContrast}
+          >
+            <LayerGroup />
+          </LayersControl.Overlay>
+
+          <LayersControl.Overlay
+            name="Radar Search Radius (Sweep)"
+            checked={enableRadarSweep}
+          >
+            <LayerGroup />
+          </LayersControl.Overlay>
+        </LayersControl>
+
+        <MapController mapView={mapView} />
+        <AutoCenter markers={markers} userLocation={center} />
+        <ZoomWatcher
+          onZoomSettled={handleZoomSettled}
+          onZoomStart={handleZoomStart}
+          delay={250}
+        />
+        <ResizeWatcher />
+        <ViewportWatcher onViewportChange={onViewportChange} />
+        <WebGLContextWatcher />
+
+        {customIcon && (
+          <AccessibleMarker
+            position={center}
+            icon={customIcon}
+            name="Your location"
+          >
+            <div className="text-sm text-white">You are here!</div>
+          </AccessibleMarker>
+        )}
+        <MapEvents onMouseMove={throttledBroadcast} />
+        {Object.entries(mapCursors).map(([userId, cursor]) => (
+          <MemoizedCursorMarker key={userId} userId={userId} cursor={cursor} />
+        ))}
+        {clusteredMarkers.map((cluster) => (
+          <ClusterMarkerComponent key={cluster.id} cluster={cluster} />
+        ))}
+        <MapMarkerFactory
+          markers={spiderfiedMarkers}
+          selectedMarkerId={selectedMarkerId}
+          onSelectMarker={handleSelectMarker}
+          isHighContrast={isHighContrast}
+          getAvailability={getAvailability}
+          checkIn={checkIn}
+          checkOut={checkOut}
+          checkedInVenueId={checkedInVenueId}
+          isSeatSocketConnected={isSeatSocketConnected}
+          routingQueue={routingQueue}
+          onAddToRoutingQueue={(stop) => {
+            const updated = [...routingQueue, stop];
+            setRoutingQueue(updated);
+            calculateOptimizedRoute(updated);
+          }}
+        />
+
+        <MapRouteLayer
+          routes={routes}
+          optimizedRoute={optimizedRoute}
+          travelProfile={travelProfile}
+        />
+        {/* MULTI-STOP ROUTING OPTIMIZER CONTROL INTERFACE OVERLAY */}
+        <RoutingOptimizer
+          ref={routingPanelRef}
+          routingQueue={routingQueue}
+          onClearQueue={() => {
+            setRoutingQueue([]);
+            setOptimizedRoute(null);
+          }}
+          onRemoveVenue={(idx) => {
+            const updated = routingQueue.filter((_, i) => i !== idx);
+            setRoutingQueue(updated);
+            calculateOptimizedRoute(updated);
+          }}
+          travelProfile={travelProfile}
+          onTravelProfileChange={(mode) => setTravelProfile(mode)}
+          onCalculateRoute={() => calculateOptimizedRoute()}
+          optimizedRoute={optimizedRoute}
+        />
+      </MapContainer>
+
+      {/* Mobile Draggable Venue Bottom Sheet Drawer */}
+      <MobileVenueDrawer
+        venue={activeVenueForDrawer}
+        isOpen={Boolean(activeVenueForDrawer)}
+        onClose={() => handleSelectMarker(null)}
+        onBook={onBookVenue}
+        onGetDirections={onGetDirections}
+        className="md:hidden"
+      />
+    </>
+ main
+  );
+};
+type TileProviderKey = 'carto' | 'osm' | 'wikimedia';
+
+const TILE_PROVIDERS: Record<TileProviderKey, { name: string; url: string; maxZoom: number; attribution: string }> = {
+  carto: {
+    name: 'Carto Positron (Default)',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+  },
+  osm: {
+    name: 'OpenStreetMap Standard',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+  wikimedia: {
+    name: 'Wikimedia Maps',
+    url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png',
+    maxZoom: 18,
+    attribution: '&copy; Wikimedia maps | OpenStreetMap contributors',
+  },
+};
+
+interface MapProps {
+  center: [number, number];
+  zoom?: number;
+  className?: string;
+}
+
+export const Map: React.FC<MapProps> = ({ center, zoom = 13, className = 'h-[450px] w-full rounded-2xl' }) => {
+  const mapRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+
+  const [provider, setProvider] = useState<TileProviderKey>('carto');
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+
+    if (!mapRef.current) {
+      mapRef.current = L.map(mapContainerRef.current).setView(center, zoom);
+    }
+
+    const currentConfig = TILE_PROVIDERS[provider];
+
+    if (tileLayerRef.current) {
+      mapRef.current.removeLayer(tileLayerRef.current);
+    }
+
+    const layer = L.tileLayer(currentConfig.url, {
+      maxZoom: currentConfig.maxZoom,
+      attribution: currentConfig.attribution,
+      subdomains: 'abcd',
+    });
+
+    // Handle tile loading errors (e.g. 401 Unauthorized / quota limits on Carto)
+    layer.on('tileerror', (event) => {
+      console.warn('Tile load error detected for provider:', provider, event);
+      setHasError(true);
+      if (provider === 'carto') {
+        console.info('Automatically falling back from Carto to OpenStreetMap tiles...');
+        setProvider('osm');
+      }
+    });
+
+    layer.addTo(mapRef.current);
+    tileLayerRef.current = layer;
+
+    return () => {
+      if (tileLayerRef.current && mapRef.current) {
+        mapRef.current.removeLayer(tileLayerRef.current);
+      }
+    };
+  }, [provider, center, zoom]);
+
+  return (
+    <div className="relative">
+      {/* Map Settings / Tile Provider Toggle */}
+      <div className="absolute top-3 right-3 z-[1000] bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 shadow-xl flex items-center gap-2">
+        <span className="text-xs text-slate-300 font-medium px-2">Map Style:</span>
+        <select
+          value={provider}
+          onChange={(e) => {
+            setHasError(false);
+            setProvider(e.target.value as TileProviderKey);
+          }}
+          className="bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+        >
+          {Object.entries(TILE_PROVIDERS).map(([key, val]) => (
+            <option key={key} value={key}>
+              {val.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {hasError && provider !== 'carto' && (
+        <div className="absolute bottom-3 left-3 z-[1000] bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs px-3 py-1.5 rounded-lg backdrop-blur-md">
+          ⚠️ Primary map tiles failed; automatically switched to backup provider.
+        </div>
+      )}
+
+      <div ref={mapContainerRef} className={`${className} border border-slate-800 shadow-2xl`} />
     </div>
   );
 };

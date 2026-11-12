@@ -31,6 +31,58 @@ function getRedisClient() {
 }
 
 /**
+ * Atomic sliding-window Lua script that encapsulates:
+ * 1. ZREMRANGEBYSCORE - clean timestamps older than now - windowMs
+ * 2. ZCARD - count current entries
+ * 3. ZADD - add current timestamp if under limit
+ * 4. PEXPIRE - set TTL
+ *
+ * All operations are executed atomically on the Redis server,
+ * preventing interleaving attacks during high concurrency bursts.
+ */
+export const SLIDING_WINDOW_LOG_LUA_SCRIPT = `local key = KEYS[1]
+local limit = math.max(1, math.floor(tonumber(ARGV[1]) or 1))
+local window_ms = math.max(1, math.floor(tonumber(ARGV[2]) or 60000))
+local now = tonumber(ARGV[3]) or 0
+local member = ARGV[4]
+local cost = math.max(0, math.floor(tonumber(ARGV[5]) or 1))
+
+if now <= 0 then
+  now = tonumber(redis.call("TIME")[1]) * 1000
+end
+
+local window_start = now - window_ms
+redis.call("ZREMRANGEBYSCORE", key, "-inf", window_start)
+local count = tonumber(redis.call("ZCARD", key))
+
+local oldest = redis.call("ZRANGE", key, 0, 0, "WITHSCORES")
+local reset_time = now + window_ms
+if oldest and #oldest >= 2 then
+  reset_time = tonumber(oldest[2]) + window_ms
+end
+
+if cost == 0 then
+  local remaining = math.max(0, limit - count)
+  local retry_after = 0
+  if count >= limit then
+    retry_after = math.max(1, math.ceil((reset_time - now) / 1000))
+  end
+  return { count < limit and 1 or 0, remaining, math.ceil(reset_time / 1000), retry_after, count }
+end
+
+if count + cost <= limit then
+  for i = 1, cost do
+    redis.call("ZADD", key, now, member .. ":" .. i)
+  end
+  redis.call("PEXPIRE", key, window_ms)
+  return { 1, math.max(0, limit - count - cost), math.ceil(reset_time / 1000), 0, count + cost }
+end
+
+local retry_after = math.max(1, math.ceil((reset_time - now) / 1000))
+return { 0, 0, math.ceil(reset_time / 1000), retry_after, count }
+`;
+
+/**
  * Sliding-window check in one MULTI/EXEC:
  * ZREMRANGEBYSCORE → ZADD → ZCARD → EXPIRE.
  * Avoids Lua `eval` timeouts under ~200 RPS while keeping prune+count+write atomic
@@ -46,8 +98,6 @@ async function upstashRateLimit(
 
   try {
     const now = Date.now();
-    const windowStart = now - windowMs;
-    const windowSeconds = Math.ceil(windowMs / 1000);
     const key = `worksphere:ratelimit:${identifier}`;
     const member = microTimestampMember(
       Math.floor(now / 1000),
@@ -55,17 +105,15 @@ async function upstashRateLimit(
       `${Math.random().toString(36).slice(2, 10)}`,
     );
 
-    const tx = redis.multi();
-    tx.zremrangebyscore(key, 0, windowStart);
-    tx.zadd(key, { score: now, member });
-    tx.zcard(key);
-    tx.expire(key, windowSeconds);
-    const result = await tx.exec();
+    const result = await redis.eval(
+      SLIDING_WINDOW_LOG_LUA_SCRIPT,
+      [key],
+      [limit, windowMs, now, member, 1],
+    );
 
-    // MULTI result order: rem, add, card, expire
-    const count = Number(result?.[2] ?? 0);
-    if (count > limit) {
-      await redis.zrem(key, member);
+    // Lua script result order: [allowed, remaining, reset, retry_after, count]
+    const allowed = Number(result?.[0]) === 1;
+    if (!allowed) {
       return false;
     }
 

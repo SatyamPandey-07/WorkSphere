@@ -21,6 +21,8 @@ export interface ReactiveUserButtonProps {
   className?: string;
   /** Click handler */
   onClick?: () => void;
+  /** Whether the button is disabled */
+  disabled?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export function ReactiveUserButton({
   size = 36,
   className = "",
   onClick,
+  disabled = false,
 }: ReactiveUserButtonProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
     initialAvatarUrl || null,
@@ -62,13 +65,17 @@ export function ReactiveUserButton({
     return () => unsubscribe();
   }, [userId]);
 
+  const trimmedName = (userName ?? "").trim();
+
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
+      data-testid="reactive-user-button"
       aria-label={`Open profile menu for ${userName}`}
       title={userName}
-      className={`relative inline-flex items-center justify-center overflow-hidden rounded-full border-2 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 transition-transform active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
+      className={`relative inline-flex items-center justify-center overflow-hidden rounded-full border-2 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 transition-transform active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-500 ${disabled ? "opacity-60 cursor-not-allowed pointer-events-none" : ""} ${className}`}
       style={{ width: `${size}px`, height: `${size}px` }}
     >
       {avatarUrl && !imageError ? (
@@ -78,18 +85,30 @@ export function ReactiveUserButton({
           width={size}
           height={size}
           unoptimized
+          data-testid="reactive-user-avatar-image"
           onError={() => setImageError(true)}
           className="h-full w-full object-cover rounded-full"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300 font-bold text-xs uppercase">
-          {userName && userName.length > 0 ? (
-            userName.slice(0, 2).toUpperCase()
+        <div
+          data-testid="reactive-user-fallback-container"
+          className="flex h-full w-full items-center justify-center bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300 font-bold text-xs uppercase"
+        >
+          {trimmedName.length > 0 ? (
+            <span data-testid="reactive-user-fallback-initials">
+              {trimmedName.slice(0, 2).toUpperCase()}
+            </span>
           ) : (
-            <User className="h-4 w-4" />
+            <User
+              data-testid="reactive-user-fallback-icon"
+              className="h-4 w-4"
+              aria-hidden="true"
+            />
           )}
         </div>
       )}
     </button>
   );
 }
+
+export default ReactiveUserButton;

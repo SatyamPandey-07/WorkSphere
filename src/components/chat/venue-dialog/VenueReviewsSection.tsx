@@ -9,37 +9,45 @@ import { sanitizeReviewComment } from "@/lib/reviewCommentSanitizer";
 import type { QueuedVenueReview } from "@/lib/offlineReviewSync";
 
 export interface VenueReviewsSectionProps {
-  venue: Venue;
-  reviews: any[];
-  reviewsLoading: boolean;
-  conflictReview: QueuedVenueReview | null;
-  resolvingConflict: boolean;
-  onResolveConflict: (choice: "KEEP_LOCAL" | "USE_REMOTE") => void;
-  translatedReviews: Record<string, string>;
-  translatingReviewId: string | null;
-  onTranslateReview: (review: any) => void;
-  onViewSpeedtestPhoto: (photoUrl: string) => void;
+  venue?: Venue;
+  reviews?: any[];
+  reviewsLoading?: boolean;
+  conflictReview?: QueuedVenueReview | null;
+  resolvingConflict?: boolean;
+  onResolveConflict?: (choice: "KEEP_LOCAL" | "USE_REMOTE") => void;
+  translatedReviews?: Record<string, string>;
+  translatingReviewId?: string | null;
+  onTranslateReview?: (review: any) => void;
+  onViewSpeedtestPhoto?: (photoUrl: string) => void;
 }
 
 export function VenueReviewsSection({
   venue,
-  reviews,
-  reviewsLoading,
-  conflictReview,
-  resolvingConflict,
+  reviews = [],
+  reviewsLoading = false,
+  conflictReview = null,
+  resolvingConflict = false,
   onResolveConflict,
-  translatedReviews,
-  translatingReviewId,
+  translatedReviews = {},
+  translatingReviewId = null,
   onTranslateReview,
   onViewSpeedtestPhoto,
 }: VenueReviewsSectionProps) {
   const { t } = useTranslation();
 
+  const safeReviews = Array.isArray(reviews) ? reviews : [];
+  const safeTranslatedReviews = translatedReviews || {};
+  const venueName = venue?.name || "Venue";
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="venue-reviews-section">
       {/* Offline Review Sync Conflict Banner */}
       {conflictReview && (
-        <div className="p-4 border border-amber-500/30 bg-amber-500/10 rounded-2xl space-y-3">
+        <div
+          role="alert"
+          data-testid="review-conflict-banner"
+          className="p-4 border border-amber-500/30 bg-amber-500/10 rounded-2xl space-y-3"
+        >
           <div className="flex items-start gap-2.5">
             <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
@@ -55,15 +63,23 @@ export function VenueReviewsSection({
           </div>
           <div className="flex items-center gap-2 pt-1">
             <button
-              onClick={() => onResolveConflict("KEEP_LOCAL")}
+              type="button"
+              data-testid="review-conflict-keep-local-btn"
+              onClick={() => onResolveConflict?.("KEEP_LOCAL")}
               disabled={resolvingConflict}
+              aria-busy={resolvingConflict}
+              aria-label="Keep local review and overwrite server version"
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-black transition-colors disabled:opacity-50"
             >
               {resolvingConflict ? "Resolving..." : "Keep Local (Overwrite)"}
             </button>
             <button
-              onClick={() => onResolveConflict("USE_REMOTE")}
+              type="button"
+              data-testid="review-conflict-use-remote-btn"
+              onClick={() => onResolveConflict?.("USE_REMOTE")}
               disabled={resolvingConflict}
+              aria-busy={resolvingConflict}
+              aria-label="Use remote review and discard local changes"
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-50"
             >
               Use Remote (Discard Local)
@@ -73,14 +89,17 @@ export function VenueReviewsSection({
       )}
 
       {/* Reviews Count & CSV Export Header */}
-      {reviews.length > 0 && (
-        <div className="flex items-center justify-between pb-3 border-b border-white/10">
+      {safeReviews.length > 0 && (
+        <div
+          data-testid="reviews-count-header"
+          className="flex items-center justify-between pb-3 border-b border-white/10"
+        >
           <span className="text-[11px] font-black uppercase tracking-wider text-zinc-400">
-            {reviews.length} {reviews.length === 1 ? "Review" : "Reviews"}
+            {safeReviews.length} {safeReviews.length === 1 ? "Review" : "Reviews"}
           </span>
           <ExportRatingsCSVButton
-            ratings={reviews}
-            venueName={venue.name}
+            ratings={safeReviews}
+            venueName={venueName}
             variant="compact"
           />
         </div>
@@ -88,7 +107,12 @@ export function VenueReviewsSection({
 
       {/* Reviews Content: Loading, Empty, or List */}
       {reviewsLoading ? (
-        <div className="space-y-3">
+        <div
+          role="status"
+          aria-label="Loading reviews"
+          data-testid="reviews-loading-skeleton"
+          className="space-y-3"
+        >
           {[0, 1, 2].map((i) => (
             <div
               key={i}
@@ -108,8 +132,13 @@ export function VenueReviewsSection({
             </div>
           ))}
         </div>
-      ) : reviews.length === 0 ? (
-        <div className="py-12 border-2 border-dashed border-white/10 rounded-2xl text-center px-4">
+      ) : safeReviews.length === 0 ? (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="reviews-empty-state"
+          className="py-12 border-2 border-dashed border-white/10 rounded-2xl text-center px-4"
+        >
           <Info className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
           <p className="text-xs font-black uppercase tracking-wider text-zinc-400">
             {t("venue.noReviewsYet")}
@@ -119,83 +148,108 @@ export function VenueReviewsSection({
           </p>
         </div>
       ) : (
-        reviews.map((review: any, idx: number) => (
-          <div
-            key={idx}
-            className="p-4 border border-white/10 bg-black/20 rounded-2xl space-y-3"
-          >
-            <div className="flex justify-between items-start">
-              <div>
-                <span className="text-xs font-bold text-zinc-200 uppercase">
-                  {review.user
-                    ? `${review.user.firstName || "Nomad"} ${review.user.lastName || "Scout"}`
-                    : "Anonymous"}
-                </span>
-                <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-zinc-400">
-                  <span>
-                    {t("venue.wifi")}: {review.wifiQuality}/5
+        safeReviews.map((review: any, idx: number) => {
+          const reviewKey = review?.id || `review-${idx}`;
+          const authorName = review?.user
+            ? `${review.user.firstName || "Nomad"} ${review.user.lastName || "Scout"}`.trim()
+            : "Anonymous";
+          const formattedLocations = Array.isArray(review?.outletLocations)
+            ? review.outletLocations
+                .map((l: any) =>
+                  typeof l === "string" ? l.replace(/_/g, " ") : String(l ?? ""),
+                )
+                .filter(Boolean)
+                .join(", ")
+            : "";
+
+          const translatedText = review?.id
+            ? safeTranslatedReviews[review.id]
+            : undefined;
+          const isCurrentlyTranslating =
+            Boolean(translatingReviewId && review?.id && translatingReviewId === review.id);
+
+          return (
+            <div
+              key={reviewKey}
+              data-testid={`review-card-${reviewKey}`}
+              className="p-4 border border-white/10 bg-black/20 rounded-2xl space-y-3"
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="text-xs font-bold text-zinc-200 uppercase">
+                    {authorName}
                   </span>
-                  <span>•</span>
-                  <span>
-                    {t("venue.power")}:{" "}
-                    {review.hasOutlets ? t("venue.yes") : t("venue.no")}
-                  </span>
-                  <span>•</span>
-                  <span>
-                    {t("venue.noise")}: {review.noiseLevel}
-                  </span>
-                  {review.outletLocations &&
-                    review.outletLocations.length > 0 && (
+                  <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-zinc-400">
+                    <span>
+                      {t("venue.wifi")}: {review?.wifiQuality ?? "N/A"}/5
+                    </span>
+                    <span>•</span>
+                    <span>
+                      {t("venue.power")}:{" "}
+                      {review?.hasOutlets ? t("venue.yes") : t("venue.no")}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      {t("venue.noise")}: {review?.noiseLevel ?? "N/A"}
+                    </span>
+                    {formattedLocations.length > 0 && (
                       <>
                         <span>•</span>
-                        <span>
-                          Locations:{" "}
-                          {review.outletLocations
-                            .map((l: string) => l.replace("_", " "))
-                            .join(", ")}
-                        </span>
+                        <span>Locations: {formattedLocations}</span>
                       </>
                     )}
+                  </div>
                 </div>
-              </div>
-              {review.wifiSpeed && (
-                <span className="px-2 py-0.5 accent-bg-20 accent-text rounded text-[9px] font-black tracking-wider border accent-border-30">
-                  {review.wifiSpeed} MBPS
-                </span>
-              )}
-            </div>
-            {review.comment && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-zinc-200 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 break-words">
-                  {sanitizeReviewComment(
-                    translatedReviews[review.id] || review.comment,
-                  )}
-                </p>
-                {!translatedReviews[review.id] && (
-                  <button
-                    onClick={() => onTranslateReview(review)}
-                    disabled={translatingReviewId === review.id}
-                    className="inline-flex items-center gap-1 text-[10px] font-bold accent-text hover:opacity-80 transition-colors disabled:opacity-50"
+                {review?.wifiSpeed && (
+                  <span
+                    data-testid={`wifi-speed-badge-${reviewKey}`}
+                    className="px-2 py-0.5 accent-bg-20 accent-text rounded text-[9px] font-black tracking-wider border accent-border-30"
                   >
-                    <Globe2 className="w-3 h-3" />
-                    {translatingReviewId === review.id
-                      ? t("venue.translating")
-                      : t("venue.translate")}
-                  </button>
+                    {review.wifiSpeed} MBPS
+                  </span>
                 )}
               </div>
-            )}
-            {review.speedtestPhoto && (
-              <button
-                onClick={() => onViewSpeedtestPhoto(review.speedtestPhoto)}
-                className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest accent-text accent-bg-10 hover:accent-bg-20 px-3 py-1.5 rounded-lg border accent-border-20 transition-all active:scale-95"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                {t("venue.viewSpeedtest")}
-              </button>
-            )}
-          </div>
-        ))
+              {review?.comment && (
+                <div className="space-y-2">
+                  <p
+                    data-testid={`review-comment-${reviewKey}`}
+                    className="text-xs font-medium text-zinc-200 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 break-words"
+                  >
+                    {sanitizeReviewComment(translatedText || review.comment)}
+                  </p>
+                  {!translatedText && (
+                    <button
+                      type="button"
+                      data-testid={`translate-btn-${reviewKey}`}
+                      onClick={() => onTranslateReview?.(review)}
+                      disabled={isCurrentlyTranslating}
+                      aria-busy={isCurrentlyTranslating}
+                      aria-label={`Translate review by ${authorName}`}
+                      className="inline-flex items-center gap-1 text-[10px] font-bold accent-text hover:opacity-80 transition-colors disabled:opacity-50"
+                    >
+                      <Globe2 className="w-3 h-3" />
+                      {isCurrentlyTranslating
+                        ? t("venue.translating")
+                        : t("venue.translate")}
+                    </button>
+                  )}
+                </div>
+              )}
+              {review?.speedtestPhoto && (
+                <button
+                  type="button"
+                  data-testid={`view-speedtest-btn-${reviewKey}`}
+                  onClick={() => onViewSpeedtestPhoto?.(review.speedtestPhoto)}
+                  aria-label={`View speedtest photo for review by ${authorName}`}
+                  className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest accent-text accent-bg-10 hover:accent-bg-20 px-3 py-1.5 rounded-lg border accent-border-20 transition-all active:scale-95"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  {t("venue.viewSpeedtest")}
+                </button>
+              )}
+            </div>
+          );
+        })
       )}
     </div>
   );

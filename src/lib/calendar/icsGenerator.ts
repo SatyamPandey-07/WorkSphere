@@ -1,4 +1,6 @@
+ feat/email-normalization-7422
  feat/rrule-ics-calendar-7422
+ main
 export type RecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY";
 
 export interface RecurrenceOptions {
@@ -8,6 +10,8 @@ export interface RecurrenceOptions {
   until?: Date;
   count?: number;
   exdates?: Date[]; // Cancelled exception dates
+ feat/email-normalization-7422
+
 
 import { parseBookingDateTime } from "@/lib/booking/dateTimeAdapter";
 import {
@@ -100,6 +104,7 @@ export interface BookingCalendarInput {
     longitude?: number | null;
   };
  main
+ main
 }
 
 export interface IcsEventOptions {
@@ -113,7 +118,10 @@ export interface IcsEventOptions {
   organizer?: { name: string; email: string };
 }
 
+ feat/email-normalization-7422
+
  feat/rrule-ics-calendar-7422
+ main
 /**
  * Format Date to UTC iCalendar format: YYYYMMDDTHHMMSSZ
  */
@@ -127,6 +135,8 @@ export function formatDateToICS(date: Date): string {
   const seconds = pad(date.getUTCSeconds());
 
   return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
+ feat/email-normalization-7422
+
 export interface BookingIcsOptions {
   /** Minutes before start for each VALARM. Defaults to a single 30 minute reminder. */
   alarmMinutes?: number[];
@@ -161,6 +171,7 @@ function mapStatus(status?: string | null): BookingCalendarEvent["status"] {
   if (value === "PENDING") return "TENTATIVE";
   return "CONFIRMED";
  main
+ main
 }
 
 /**
@@ -189,6 +200,11 @@ export function buildRRule(options: RecurrenceOptions): string {
 /**
  * Generate RFC 5545 iCalendar content string for booking events
  */
+ feat/email-normalization-7422
+export function generateICS(event: IcsEventOptions): string {
+  const now = new Date();
+  const lines: string[] = [
+
  feat/rrule-ics-calendar-7422
 export function generateICS(event: IcsEventOptions): string {
   const now = new Date();
@@ -210,6 +226,7 @@ export function generateBookingIcs(
 
   const lines = [
  main
+ main
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//WorkSphere//Desk Booking Generator//EN",
@@ -217,11 +234,16 @@ export function generateBookingIcs(
     "METHOD:REQUEST",
     "BEGIN:VEVENT",
     `UID:${event.uid}`,
+ feat/email-normalization-7422
+
  feat/rrule-ics-calendar-7422
+ main
     `DTSTAMP:${formatDateToICS(now)}`,
     `DTSTART:${formatDateToICS(event.start)}`,
     `DTEND:${formatDateToICS(event.end)}`,
     `SUMMARY:${escapeICS(event.summary)}`,
+ feat/email-normalization-7422
+
 
     `DTSTAMP:${stamp}`,
     `DTSTART:${formatIcsUtc(event.start)}`,
@@ -236,11 +258,13 @@ export function generateBookingIcs(
     "END:VEVENT",
     "END:VCALENDAR",
  main
+ main
   ];
 
   if (event.description) {
     lines.push(`DESCRIPTION:${escapeICS(event.description)}`);
   }
+ feat/email-normalization-7422
 
   if (event.location) {
     lines.push(`LOCATION:${escapeICS(event.location)}`);
@@ -265,6 +289,32 @@ export function generateBookingIcs(
 
   lines.push("STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR");
 
+
+
+  if (event.location) {
+    lines.push(`LOCATION:${escapeICS(event.location)}`);
+  }
+
+  if (event.organizer) {
+    lines.push(
+      `ORGANIZER;CN=${escapeICS(event.organizer.name)}:mailto:${event.organizer.email}`,
+    );
+  }
+
+  if (event.recurrence) {
+    lines.push(buildRRule(event.recurrence));
+
+    if (event.recurrence.exdates && event.recurrence.exdates.length > 0) {
+      const formattedExdates = event.recurrence.exdates
+        .map((d) => formatDateToICS(d))
+        .join(",");
+      lines.push(`EXDATE:${formattedExdates}`);
+    }
+  }
+
+  lines.push("STATUS:CONFIRMED", "END:VEVENT", "END:VCALENDAR");
+
+ main
   return lines.join("\r\n");
 }
 

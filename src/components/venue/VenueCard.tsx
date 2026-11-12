@@ -1,6 +1,9 @@
 "use client";
 
+ fix/solana-escrow-rpc-timeout-retry
+
  feat/ambient-noise-visualizer
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -82,6 +85,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/solana-escrow-rpc-timeout-retry
+}
+
 }
 
 import React, { useState } from "react";
@@ -175,4 +181,5 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main

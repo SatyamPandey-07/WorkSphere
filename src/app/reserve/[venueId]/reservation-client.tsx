@@ -275,8 +275,16 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     );
   }, [recurringEnabled, date, frequency, endDate, occurrences]);
 
+  const isDurationValid =
+    Number.isInteger(duration) && duration >= 1 && duration <= 1440;
+
   async function reserve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!isDurationValid) {
+      setMessage("Duration must be between 1 and 1440 minutes.");
+      return;
+    }
 
     if (availableCapacity === 0) {
       setMessage("No seats available for this date and time.");
@@ -660,8 +668,15 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                     })}
                   </div>
 
-                  <Field label="End time" icon={<Clock3 className="h-4 w-4" />}>
-                    <select
+                  <Field
+                    label="Duration (minutes)"
+                    icon={<Clock3 className="h-4 w-4" />}
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      step={1}
                       value={duration}
                       onChange={(event) => {
                         const newDur = Number(event.target.value);
@@ -672,28 +687,20 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                         setDuration(newDur);
                       }}
                       className="reserve-input"
-                      aria-label="End time"
-                      data-testid="end-time-select"
-                    >
-                      <option value={30}>
-                        {formatReservationEndTime(time, 30)} (30 minutes)
-                      </option>
-                      <option value={60}>
-                        {formatReservationEndTime(time, 60)} (1 hour)
-                      </option>
-                      <option value={90}>
-                        {formatReservationEndTime(time, 90)} (1.5 hours)
-                      </option>
-                      <option value={120}>
-                        {formatReservationEndTime(time, 120)} (2 hours)
-                      </option>
-                      <option value={240}>
-                        {formatReservationEndTime(time, 240)} (4 hours)
-                      </option>
-                      <option value={480}>
-                        {formatReservationEndTime(time, 480)} (Full day)
-                      </option>
-                    </select>
+                      aria-label="Duration in minutes"
+                      aria-invalid={!isDurationValid}
+                      aria-describedby="duration-validation-error"
+                      data-testid="duration-input"
+                    />
+                    {!isDurationValid && (
+                      <p
+                        id="duration-validation-error"
+                        role="alert"
+                        className="mt-1 text-xs text-red-400"
+                      >
+                        Duration must be between 1 and 1440 minutes.
+                      </p>
+                    )}
                   </Field>
                 </div>
 
@@ -961,7 +968,8 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   !selected ||
                   booking ||
                   retryAfter > 0 ||
-                  availableCapacity === 0
+                  availableCapacity === 0 ||
+                  !isDurationValid
                 }
                 className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
                 data-testid="confirm-booking-btn"

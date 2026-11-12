@@ -136,7 +136,7 @@ export async function POST(req: Request) {
           venueId: venue.id,
           date: { in: dates },
           time,
-          status: { not: "CANCELLED" },
+          status: { notIn: ["CANCELLED", "CANCELLED_BY_OPERATOR"] },
         },
         select: { date: true },
       });

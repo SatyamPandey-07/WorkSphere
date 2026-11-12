@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { subscribeVenueAvailability } from "@/lib/reservations/event-bus";
+import { getRedisKeyspaceManager } from "@/lib/redis/keyspaceNotifications";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,9 @@ export async function GET(request: NextRequest) {
   if (!venueId) {
     return new Response("venueId is required", { status: 400 });
   }
+
+  // Ensure background Redis keyspace listener is initialized for real-time expiry dispatch
+  getRedisKeyspaceManager().ensureInitialized().catch(() => {});
 
   const encoder = new TextEncoder();
   let unsubscribe = () => {};
@@ -31,6 +35,14 @@ export async function GET(request: NextRequest) {
 
       unsubscribe = subscribeVenueAvailability(venueId, (payload) => {
         send("availability", payload);
+        try {
+          const parsed = JSON.parse(payload);
+          if (parsed.type === "DESK_HOLD_EXPIRED") {
+            send("desk_expired", payload);
+          }
+        } catch {
+          // ignore
+        }
       });
 
       const heartbeat = setInterval(() => {

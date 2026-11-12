@@ -834,6 +834,30 @@ A massive thank you to all **124 brilliant contributors and bots** building Work
         <sub><b>kailash71869-code</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/bhavesh-patil2007">
+        <img src="https://avatars.githubusercontent.com/u/249955569?v=4" width="55px;" height="55px;" alt="bhavesh-patil2007" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>bhavesh-patil2007</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/IsmeetPandey">
+        <img src="https://avatars.githubusercontent.com/u/304746926?v=4" width="55px;" height="55px;" alt="IsmeetPandey" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>IsmeetPandey</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/saurabhwagh01">
+        <img src="https://avatars.githubusercontent.com/u/288387055?v=4" width="55px;" height="55px;" alt="saurabhwagh01" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>saurabhwagh01</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/apps/dependabot">
+        <img src="https://avatars.githubusercontent.com/in/29110?v=4" width="55px;" height="55px;" alt="dependabot[bot]" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>dependabot[bot]</b></sub><br /><sub><code>🤖 Bot</code></sub>
+      </a>
+    </td>
   </tr>
 </table>
 

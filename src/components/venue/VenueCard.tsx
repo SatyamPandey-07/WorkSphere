@@ -1,10 +1,13 @@
 "use client";
 
+ feat/idempotent-venue-reviews
+
  feat/venue-grid-layout-tooltips
 
  docs/local-development-setup-guide
 
  feat/ergonomic-coach-mute-toggle
+ main
  main
  main
 import React from "react";
@@ -88,6 +91,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/idempotent-venue-reviews
+}
+
  feat/venue-grid-layout-tooltips
 }
 
@@ -185,6 +191,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

@@ -1,8 +1,11 @@
 "use client";
 
+ feat/venue-grid-layout-tooltips
+
  docs/local-development-setup-guide
 
  feat/ergonomic-coach-mute-toggle
+ main
  main
 import React from "react";
 import Image from "next/image";
@@ -85,6 +88,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/venue-grid-layout-tooltips
+}
+
  docs/local-development-setup-guide
 }
 
@@ -179,5 +185,6 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main

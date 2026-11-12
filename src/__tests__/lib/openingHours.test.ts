@@ -2,6 +2,7 @@ import {
   parseStructuredHours,
   formatTime12h,
   getOpeningHoursStatus,
+  is24HoursText,
   StructuredHours,
 } from "../../lib/openingHours";
 
@@ -33,11 +34,80 @@ describe("Timezone-aware opening hours helper logic", () => {
     expect(parseStructuredHours(null)).toBeNull();
   });
 
-  it("formats 24h time strings to 12h format", () => {
+  it("formats 24h time strings to 12h format including 24:00 midnight", () => {
     expect(formatTime12h("09:00")).toBe("9:00 AM");
     expect(formatTime12h("13:30")).toBe("1:30 PM");
     expect(formatTime12h("23:59")).toBe("11:59 PM");
     expect(formatTime12h("00:05")).toBe("12:05 AM");
+    expect(formatTime12h("24:00")).toBe("12:00 AM");
+    expect(formatTime12h("24:15")).toBe("24:15");
+  });
+
+  it("parses structured hours with top-level day period keys", () => {
+    const rawDirectDays = JSON.stringify({
+      timezone: "America/Chicago",
+      monday: { open: "08:00", close: "18:00", closed: false },
+    });
+    const parsed = parseStructuredHours(rawDirectDays);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.timezone).toBe("America/Chicago");
+    expect(parsed?.periods.monday.open).toBe("08:00");
+  });
+
+  it("recognizes 24/7 continuous operation keywords with is24HoursText", () => {
+    expect(is24HoursText("24/7")).toBe(true);
+    expect(is24HoursText("Open 24 Hours")).toBe(true);
+    expect(is24HoursText("open 24/7")).toBe(true);
+    expect(is24HoursText("00:00 - 24:00")).toBe(true);
+    expect(is24HoursText("00:00-00:00")).toBe(true);
+    expect(is24HoursText("09:00 - 17:00")).toBe(false);
+    expect(is24HoursText("")).toBe(false);
+    expect(is24HoursText(null)).toBe(false);
+  });
+
+  it("returns isOpen: true and 'Open 24 Hours' for unstructured 24/7 strings", () => {
+    const status247 = getOpeningHoursStatus("24/7");
+    expect(status247.isOpen).toBe(true);
+    expect(status247.displayString).toBe("Open 24 Hours");
+    expect(status247.isStructured).toBe(false);
+
+    const statusAllDay = getOpeningHoursStatus("Open 24 Hours");
+    expect(statusAllDay.isOpen).toBe(true);
+    expect(statusAllDay.displayString).toBe("Open 24 Hours");
+  });
+
+  it("formats 24-hour continuous periods as 'Open 24 Hours (<timezone>)'", () => {
+    const continuous24h: StructuredHours = {
+      timezone: "America/New_York",
+      periods: {
+        monday: { open: "00:00", close: "00:00", closed: false },
+        tuesday: { open: "00:00", close: "24:00", closed: false },
+      },
+    };
+    // Monday at 14:00 UTC (10:00 EDT)
+    const monNoon = new Date("2026-10-26T14:00:00Z");
+    const statusMon = getOpeningHoursStatus(JSON.stringify(continuous24h), undefined, monNoon);
+    expect(statusMon.isOpen).toBe(true);
+    expect(statusMon.displayString).toBe("Open 24 Hours (America/New_York)");
+
+    // Tuesday at 14:00 UTC (10:00 EDT) with 00:00-24:00
+    const tueNoon = new Date("2026-10-27T14:00:00Z");
+    const statusTue = getOpeningHoursStatus(JSON.stringify(continuous24h), undefined, tueNoon);
+    expect(statusTue.isOpen).toBe(true);
+    expect(statusTue.displayString).toBe("Open 24 Hours (America/New_York)");
+  });
+
+  it("formats 24:00 close boundary as 12:00 AM in standard shifts", () => {
+    const midnightClose: StructuredHours = {
+      timezone: "UTC",
+      periods: {
+        monday: { open: "08:00", close: "24:00", closed: false },
+      },
+    };
+    const monMorning = new Date("2026-10-26T10:00:00Z");
+    const status = getOpeningHoursStatus(JSON.stringify(midnightClose), undefined, monMorning);
+    expect(status.isOpen).toBe(true);
+    expect(status.displayString).toBe("Today: 8:00 AM - 12:00 AM (UTC)");
   });
 
   it("evaluates current open/close status in the target timezone", () => {

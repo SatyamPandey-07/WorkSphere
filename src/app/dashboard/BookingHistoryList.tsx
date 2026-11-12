@@ -65,7 +65,7 @@ export function BookingHistoryList({
   // Filtered list
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
-      const cancelled = b.status === "CANCELLED";
+      const cancelled = (b.status === "CANCELLED" || b.status === "CANCELLED_BY_OPERATOR");
       const future = !cancelled && isUpcoming(b);
       const currentStatus = cancelled
         ? "CANCELLED"
@@ -265,7 +265,7 @@ export function BookingHistoryList({
               className="space-y-3"
             >
               {itemsToRender.map(({ booking }) => {
-                const cancelled = booking.status === "CANCELLED";
+                const cancelled = ((booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR") || booking.status === "CANCELLED_BY_OPERATOR");
                 const future = !cancelled && isUpcoming(booking);
                 const venueName = booking.venue?.name ?? "Workspace";
                 const address = booking.venue?.address ?? "";

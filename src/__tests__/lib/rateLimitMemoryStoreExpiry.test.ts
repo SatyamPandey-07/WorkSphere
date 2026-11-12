@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MemoryRateLimitStore } from "@/lib/rateLimit/stores/memoryStore";
 
 describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#4794)", () => {
   let store: MemoryRateLimitStore;
 
   beforeEach(() => {
-    vi.useRealTimers();
+    jest.useRealTimers();
     store = new MemoryRateLimitStore(50);
   });
 
@@ -24,7 +23,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
     });
 
     it("purges and returns undefined if sliding window entry is expired on get", () => {
-      vi.useFakeTimers();
+      jest.useFakeTimers();
       const now = Date.now();
       store.setSlidingWindowEntry("user:expired", {
         timestamps: [now],
@@ -34,7 +33,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
       expect(store.slidingWindowSize).toBe(1);
 
       // Advance past resetTime
-      vi.advanceTimersByTime(1500);
+      jest.advanceTimersByTime(1500);
 
       const entry = store.getSlidingWindowEntry("user:expired");
       expect(entry).toBeUndefined();
@@ -42,7 +41,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
     });
 
     it("does not insert entry if it is already expired when calling setSlidingWindowEntry", () => {
-      vi.useFakeTimers();
+      jest.useFakeTimers();
       const now = Date.now();
       store.setSlidingWindowEntry("user:old", {
         timestamps: [now - 5000],
@@ -56,7 +55,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
 
   describe("Sliding window bulk lookup cleanup", () => {
     it("purges expired keys on the fly during bulk lookup", () => {
-      vi.useFakeTimers();
+      jest.useFakeTimers();
       const now = Date.now();
 
       store.setSlidingWindowEntry("key:1", { timestamps: [now], resetTime: now + 5000 });
@@ -67,7 +66,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
       expect(store.slidingWindowSize).toBe(4);
 
       // Advance 2 seconds -> key:2 and key:4 expire
-      vi.advanceTimersByTime(2000);
+      jest.advanceTimersByTime(2000);
 
       const results = store.getBulkSlidingWindowEntries(["key:1", "key:2", "key:3", "key:4", "key:missing"]);
 
@@ -100,7 +99,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
     });
 
     it("purges and returns undefined if token bucket is expired on get", () => {
-      vi.useFakeTimers();
+      jest.useFakeTimers();
       const now = Date.now();
       store.setTokenBucketEntry("bucket:expired", {
         tokens: 2,
@@ -111,7 +110,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
       expect(store.tokenBucketSize).toBe(1);
 
       // Advance past windowMs
-      vi.advanceTimersByTime(6000);
+      jest.advanceTimersByTime(6000);
 
       const bucket = store.getTokenBucketEntry("bucket:expired");
       expect(bucket).toBeUndefined();
@@ -119,7 +118,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
     });
 
     it("does not insert entry if already expired when calling setTokenBucketEntry", () => {
-      vi.useFakeTimers();
+      jest.useFakeTimers();
       const now = Date.now();
       store.setTokenBucketEntry("bucket:already_dead", {
         tokens: 10,
@@ -134,7 +133,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
 
   describe("Token bucket bulk lookup cleanup", () => {
     it("purges expired token bucket keys on the fly during bulk lookup", () => {
-      vi.useFakeTimers();
+      jest.useFakeTimers();
       const now = Date.now();
 
       store.setTokenBucketEntry("tb:1", { tokens: 10, lastRefill: now, windowMs: 10_000 });
@@ -145,7 +144,7 @@ describe("MemoryRateLimitStore expired key cleanup on read and bulk lookup (#479
       expect(store.tokenBucketSize).toBe(4);
 
       // Advance 3 seconds -> tb:2 and tb:4 expire
-      vi.advanceTimersByTime(3000);
+      jest.advanceTimersByTime(3000);
 
       const results = store.getBulkTokenBucketEntries(["tb:1", "tb:2", "tb:3", "tb:4", "tb:5"]);
 

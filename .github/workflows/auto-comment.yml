@@ -74,7 +74,7 @@ jobs:
               }
 
               // Assign labels logically based on modified files
-              const labelsToAdd = ["OSCI'26"];
+              const labelsToAdd = ["wocs"];
               
               if (hasBackend) {
                 labelsToAdd.push('good-backend');
@@ -89,6 +89,28 @@ jobs:
               // Fallback: If no bonus labels were matched, assign 'good-pr'
               if (!hasBackend && !hasUI && !hasTests && !hasDocs) {
                 labelsToAdd.push('good-pr');
+              }
+
+              // Check if PR already has a level label; if not, dynamically classify based on changes
+              const currentPrLabels = (pr.labels || []).map(l => (typeof l === 'string' ? l : l.name));
+              if (!currentPrLabels.some(l => /^level\s*[123]$/i.test(l))) {
+                let dynamicLevel = 'level 1';
+                const hasLevel3 = files.some(f => {
+                  const fn = f.filename;
+                  return fn.startsWith('src/wasm/') || fn.endsWith('.c') || fn.endsWith('.h') ||
+                    fn.startsWith('src/core/ai/') || fn.startsWith('src/lib/agents/') ||
+                    fn.startsWith('src/lib/realtime/') || fn.startsWith('party/') ||
+                    fn.startsWith('src/core/ledger/') || fn.startsWith('src/lib/solana/') ||
+                    fn.startsWith('prisma/');
+                });
+                const totalChanges = (pr.additions || 0) + (pr.deletions || 0);
+
+                if (hasLevel3 || totalChanges >= 350) {
+                  dynamicLevel = 'level 3';
+                } else if (hasBackend || hasUI || hasTests || totalChanges >= 50) {
+                  dynamicLevel = 'level 2';
+                }
+                labelsToAdd.push(dynamicLevel);
               }
               
               console.log(`Auto-assigning labels pre-merge for PR #${prNumber}: ${labelsToAdd.join(', ')}`);

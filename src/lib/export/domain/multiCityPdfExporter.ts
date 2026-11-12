@@ -29,20 +29,33 @@ export function computeCityMetrics(
   city: string,
   venues: Venue[],
 ): CityMetricSummary {
-  const cityVenues = venues.filter(
-    (v) => v.address && v.address.toLowerCase().includes(city.toLowerCase()),
-  );
+  const safeCity = typeof city === "string" ? city.trim() : "";
+  const safeVenues = Array.isArray(venues) ? venues : [];
+
+  const cityLower = safeCity.toLowerCase();
+  const cityVenues = safeVenues.filter((v) => {
+    if (!v || !cityLower) return false;
+    const addr =
+      typeof v.address === "string"
+        ? v.address
+        : v.address != null
+          ? String(v.address)
+          : "";
+    return addr.toLowerCase().includes(cityLower);
+  });
 
   const wifiSpeeds = cityVenues
-    .map((v) => v.wifiSpeed)
-    .filter((s): s is number => s != null && s > 0);
+    .map((v) => v?.wifiSpeed)
+    .filter((s): s is number => typeof s === "number" && Number.isFinite(s) && s > 0);
   const avgWifiSpeed =
     wifiSpeeds.length > 0
       ? Math.round(wifiSpeeds.reduce((a, b) => a + b, 0) / wifiSpeeds.length)
       : 0;
 
-  const outletCount = cityVenues.filter((v) => v.hasOutlets).length;
-  const quietCount = cityVenues.filter((v) => v.noiseLevel === "quiet").length;
+  const outletCount = cityVenues.filter((v) => Boolean(v?.hasOutlets)).length;
+  const quietCount = cityVenues.filter(
+    (v) => typeof v?.noiseLevel === "string" && v.noiseLevel.toLowerCase() === "quiet",
+  ).length;
 
   const outletRatio =
     cityVenues.length > 0
@@ -50,7 +63,7 @@ export function computeCityMetrics(
       : 0;
 
   return {
-    city,
+    city: safeCity || "Unknown City",
     totalVenues: cityVenues.length,
     avgWifiSpeed,
     quietRatio:
@@ -63,11 +76,17 @@ export function computeCityMetrics(
   };
 }
 
-export async function generateMultiCityPdfReport(options: {
-  selectedCities: string[];
-  venues: Venue[];
+export async function generateMultiCityPdfReport(options?: {
+  selectedCities?: string[];
+  venues?: Venue[];
 }): Promise<Uint8Array> {
-  const { selectedCities, venues } = options;
+  const safeOptions = options || {};
+  const selectedCities = Array.isArray(safeOptions.selectedCities)
+    ? safeOptions.selectedCities.filter(
+        (c): c is string => typeof c === "string" && c.trim().length > 0,
+      )
+    : [];
+  const venues = Array.isArray(safeOptions.venues) ? safeOptions.venues : [];
 
   const builder = await PdfDocumentBuilder.create({
     pageSize: [842, 595], // A4 Landscape
@@ -94,83 +113,111 @@ export async function generateMultiCityPdfReport(options: {
 
   builder.drawDivider();
 
+  if (selectedCities.length === 0) {
+    builder.ensureSpace(60);
+    builder.drawText("No city hubs selected for comparison.", {
+      size: 11,
+      font: boldFont,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+    builder.addPageNumbers();
+    return await builder.build();
+  }
+
   const cityMetrics = selectedCities.map((city) =>
     computeCityMetrics(city, venues),
   );
 
-  const numCities = cityMetrics.length || 1;
+  // Multi-row grid layout: max 4 cards per row to fit within landscape page margins
+  const maxColsPerRow = 4;
   const colGap = 16;
-  const colWidth = Math.max(
-    140,
-    (availableWidth - colGap * (numCities - 1)) / numCities,
-  );
+  const rowGap = 20;
+  const cardHeight = 140;
 
-  const startY = builder.currentY;
+  for (let i = 0; i < cityMetrics.length; i += maxColsPerRow) {
+    const chunk = cityMetrics.slice(i, i + maxColsPerRow);
+    builder.ensureSpace(cardHeight + rowGap);
 
-  // Draw comparison columns side-by-side
-  cityMetrics.forEach((metric, index) => {
-    const colX = margin + index * (colWidth + colGap);
-    const colY = startY;
+    const colsInRow = chunk.length;
+    const colsToFit =
+      cityMetrics.length <= maxColsPerRow ? colsInRow : maxColsPerRow;
+    const colWidth =
+      (availableWidth - colGap * (colsToFit - 1)) / colsToFit;
+    const rowY = builder.currentY;
 
-    // Card background
-    builder.currentPage.drawRectangle({
-      x: colX,
-      y: colY - 140,
-      width: colWidth,
-      height: 140,
-      color: rgb(0.96, 0.97, 0.99),
-      borderColor: rgb(0.85, 0.88, 0.94),
-      borderWidth: 1,
-    });
+    chunk.forEach((metric, colIndex) => {
+      const colX = margin + colIndex * (colWidth + colGap);
+      const colY = rowY;
 
-    drawSafeText(builder.currentPage, metric.city.toUpperCase(), {
-      x: colX + 10,
-      y: colY - 20,
-      size: 13,
-      font: boldFont,
-      color: rgb(0.1, 0.25, 0.6),
-    });
+      // Card background
+      builder.currentPage.drawRectangle({
+        x: colX,
+        y: colY - cardHeight,
+        width: colWidth,
+        height: cardHeight,
+        color: rgb(0.96, 0.97, 0.99),
+        borderColor: rgb(0.85, 0.88, 0.94),
+        borderWidth: 1,
+      });
 
-    drawSafeText(
-      builder.currentPage,
-      `Avg WiFi: ${metric.avgWifiSpeed ? `${metric.avgWifiSpeed} Mbps` : "N/A"}`,
-      {
+      const safeCityTitle = metric.city.toUpperCase();
+      const truncatedTitle = truncateText(
+        safeCityTitle,
+        boldFont,
+        13,
+        colWidth - 20,
+      );
+      drawSafeText(builder.currentPage, truncatedTitle, {
         x: colX + 10,
-        y: colY - 45,
+        y: colY - 20,
+        size: 13,
+        font: boldFont,
+        color: rgb(0.1, 0.25, 0.6),
+      });
+
+      drawSafeText(
+        builder.currentPage,
+        `Avg WiFi: ${metric.avgWifiSpeed ? `${metric.avgWifiSpeed} Mbps` : "N/A"}`,
+        {
+          x: colX + 10,
+          y: colY - 45,
+          size: 9,
+          font,
+          color: rgb(0.2, 0.2, 0.2),
+        },
+      );
+
+      drawSafeText(builder.currentPage, `Quiet Venues: ${metric.quietRatio}%`, {
+        x: colX + 10,
+        y: colY - 65,
         size: 9,
         font,
         color: rgb(0.2, 0.2, 0.2),
-      },
-    );
+      });
 
-    drawSafeText(builder.currentPage, `Quiet Venues: ${metric.quietRatio}%`, {
-      x: colX + 10,
-      y: colY - 65,
-      size: 9,
-      font,
-      color: rgb(0.2, 0.2, 0.2),
-    });
-
-    drawSafeText(builder.currentPage, `Outlets Available: ${metric.outletRatio}%`, {
-      x: colX + 10,
-      y: colY - 85,
-      size: 9,
-      font,
-      color: rgb(0.2, 0.2, 0.2),
-    });
-
-    drawSafeText(
-      builder.currentPage,
-      `Tracked Workspaces: ${metric.totalVenues}`,
-      {
+      drawSafeText(builder.currentPage, `Outlets Available: ${metric.outletRatio}%`, {
         x: colX + 10,
-        y: colY - 105,
+        y: colY - 85,
         size: 9,
-        font: boldFont,
-        color: rgb(0.15, 0.15, 0.15),
-      },
-    );
-  });
+        font,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+
+      drawSafeText(
+        builder.currentPage,
+        `Tracked Workspaces: ${metric.totalVenues}`,
+        {
+          x: colX + 10,
+          y: colY - 105,
+          size: 9,
+          font: boldFont,
+          color: rgb(0.15, 0.15, 0.15),
+        },
+      );
+    });
+
+    builder.currentY -= cardHeight + rowGap;
+  }
 
   builder.addPageNumbers();
   return await builder.build();

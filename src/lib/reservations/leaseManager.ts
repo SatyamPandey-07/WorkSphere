@@ -14,8 +14,28 @@ export interface AcquireHoldResult {
   error?: string;
 }
 
+/** SQLSTATE / Prisma codes that are safe to retry with backoff. */
+const RETRYABLE_CODES = new Set(["55P03", "40P01", "40001", "P2028", "P2034"]);
+
+function isRetryableTransactionError(error: any): boolean {
+  const code = error?.code ?? error?.meta?.code;
+  if (code && RETRYABLE_CODES.has(code)) return true;
+
+  const message = typeof error?.message === "string" ? error.message : "";
+  return (
+    message.includes("could not obtain lock") ||
+    message.includes("deadlock detected") ||
+    message.includes("serialization failure") ||
+    message.includes("55P03") ||
+    message.includes("40P01") ||
+    message.includes("40001")
+  );
+}
+
 /**
- * Execute a operation with exponential backoff and jitter on PostgreSQL serialization/deadlock failures (40P01 / 40001).
+ * Execute an operation with exponential backoff and jitter on PostgreSQL
+ * lock/serialization failures (55P03 / 40P01 / 40001) and the equivalent
+ * Prisma P2034 / P2028 errors.
  */
 export async function withTransactionRetry<T>(
   fn: () => Promise<T>,
@@ -27,14 +47,7 @@ export async function withTransactionRetry<T>(
     try {
       return await fn();
     } catch (error: any) {
-      const isDeadlock =
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        (error.code === "P2034" ||
-          error.message.includes("40P01") ||
-          error.message.includes("40001") ||
-          error.message.includes("deadlock detected"));
-
-      if (isDeadlock && attempt < maxRetries) {
+      if (isRetryableTransactionError(error) && attempt < maxRetries) {
         attempt++;
         const jitter = Math.random() * 0.5 + 0.75; // 0.75 - 1.25 multiplier
         const delay = Math.floor(baseDelayMs * Math.pow(2, attempt) * jitter);

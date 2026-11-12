@@ -39,10 +39,89 @@ export const VenueShareModal: React.FC<VenueShareModalProps> = ({
     setIsSharing(false);
   }, []);
 
+ fix/venue-share-modal-debounce
   // Reset state cleanly upon modal close or component unmount
   useEffect(() => {
     if (!isOpen) {
       resetActionStates();
+
+  const shortUrl = useMemo(() => {
+    return origin ? `${origin}/venues/${venue.id}` : `/venues/${venue.id}`;
+  }, [origin, venue.id]);
+
+  const qrSvg = useMemo(() => {
+    if (!isOpen) return "";
+    return generateQRCodeSVG(shortUrl, {
+      size: 200,
+      title: `${venue.name} QR Code`,
+      fgColor: "#09090b",
+      bgColor: "#ffffff",
+      padding: 3,
+    });
+  }, [isOpen, shortUrl, venue.name]);
+
+  const triggerElementRef = useRef<HTMLElement | null>(null);
+
+  const handleClose = useCallback(() => {
+    setIsOpen(false);
+    setCopied(false);
+    if (
+      triggerElementRef.current &&
+      typeof triggerElementRef.current.focus === "function"
+    ) {
+      triggerElementRef.current.focus();
+    }
+  }, []);
+
+  // Handle ESC key to close modal
+  useEffect(() => {
+    if (!isOpen) return;
+    if (typeof document !== "undefined" && !triggerElementRef.current) {
+      triggerElementRef.current = document.activeElement as HTMLElement | null;
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (
+        triggerElementRef.current &&
+        typeof triggerElementRef.current.focus === "function"
+      ) {
+        triggerElementRef.current.focus();
+      }
+    };
+  }, [isOpen, handleClose]);
+
+  const handleShareClick = async () => {
+    if (
+      typeof navigator !== "undefined" &&
+      typeof navigator.share === "function"
+    ) {
+      try {
+        const shareData: ShareData = {
+          title: `${venue.name} | WorkSphere`,
+          text: `Check out ${venue.name} on WorkSphere!`,
+          url: shortUrl,
+        };
+
+        await navigator.share(shareData);
+        return;
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          // User dismissed the native share sheet
+          return;
+        }
+        // Fallback to modal if native share fails unexpectedly
+        setIsOpen(true);
+      }
+    } else {
+      // Desktop or unsupported browser
+      setIsOpen(true);
+ main
     }
     return () => {
       resetActionStates();
@@ -129,6 +208,7 @@ export const VenueShareModal: React.FC<VenueShareModalProps> = ({
           </button>
         </div>
 
+ fix/venue-share-modal-debounce
         <div className="mt-4 space-y-4">
           <div className="flex items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-950/80 px-3 py-2">
             <input
@@ -139,6 +219,42 @@ export const VenueShareModal: React.FC<VenueShareModalProps> = ({
               className="w-full bg-transparent text-xs text-slate-300 focus:outline-none"
             />
           </div>
+
+      {isOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="share-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleClose();
+          }}
+        >
+          <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 sm:p-7 space-y-6 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div>
+                <h2
+                  id="share-modal-title"
+                  className="text-xl font-black tracking-tight text-zinc-900 dark:text-zinc-50"
+                >
+                  Share Venue
+                </h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  Share this venue with friends or open on another device.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="venue-share-modal-close"
+                onClick={handleClose}
+                aria-label="Close dialog"
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+ main
 
           <div className="flex items-center gap-3">
             <button

@@ -1,5 +1,23 @@
 /**
- * Compatibility bridge: Re-export unified rate limiting implementations from @/lib/rateLimit.
+ * Rate limiting utilities imported via `@/lib/rateLimit`.
+ *
+ * This file is what `@/lib/rateLimit` resolves to (a file takes precedence over
+ * the `./rateLimit/` directory). It provides:
+ *
+ * - **Legacy sliding window** — {@link rateLimit}, {@link getRateLimitInfo}:
+ *   boolean allow/deny per identifier.
+ * - **Tiered sliding window** — {@link checkTieredRateLimit} and helpers:
+ *   anonymous (by IP) vs authenticated (by Clerk user ID) quotas from
+ *   {@link TIER_CONFIGS}, plus HTTP header/429 helpers.
+ * - **Token bucket** — re-exported from `./tokenBucketRateLimit`
+ *   (`checkTokenBucketRateLimit`, `RATE_TIERS`, ...).
+ *
+ * **Storage.** When both `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
+ * are set, limits are enforced in Upstash Redis and shared across instances.
+ * Otherwise — or if a Redis call throws — an in-process memory store is used.
+ * The memory store is per server instance (not shared between serverless
+ * invocations or replicas), holds at most 10,000 keys with LRU eviction, and
+ * drops expired keys every 60 s.
  */
 
 import type { RateLimitResult } from "./rateLimit/types";
@@ -31,14 +49,22 @@ function getRedisClient() {
 }
 
 /**
- * Atomic sliding-window Lua script that encapsulates:
- * 1. ZREMRANGEBYSCORE - clean timestamps older than now - windowMs
- * 2. ZCARD - count current entries
- * 3. ZADD - add current timestamp if under limit
- * 4. PEXPIRE - set TTL
+ * Atomic sliding-window-log Lua script used by {@link rateLimit} on Redis.
  *
- * All operations are executed atomically on the Redis server,
- * preventing interleaving attacks during high concurrency bursts.
+ * Runs as a single script on the Redis server, so prune, count and write
+ * cannot interleave between concurrent requests:
+ * 1. `ZREMRANGEBYSCORE` — drop entries older than `now - windowMs`
+ * 2. `ZCARD` — count entries left in the window
+ * 3. `ZADD` — record `cost` entries if `count + cost <= limit`
+ * 4. `PEXPIRE` — expire the key after `windowMs`
+ *
+ * - `KEYS[1]` — sorted-set key
+ * - `ARGV[1]` limit (min 1) · `ARGV[2]` windowMs (min 1, default 60000) ·
+ *   `ARGV[3]` now in epoch ms (`<= 0` uses Redis `TIME`) ·
+ *   `ARGV[4]` unique member prefix (see {@link microTimestampMember}) ·
+ *   `ARGV[5]` cost (default 1; `0` only inspects without recording)
+ *
+ * Returns `[allowed (1|0), remaining, resetEpochSeconds, retryAfterSeconds, count]`.
  */
 export const SLIDING_WINDOW_LOG_LUA_SCRIPT = `local key = KEYS[1]
 local limit = math.max(1, math.floor(tonumber(ARGV[1]) or 1))
@@ -83,10 +109,11 @@ return { 0, 0, math.ceil(reset_time / 1000), retry_after, count }
 `;
 
 /**
- * Sliding-window check in one MULTI/EXEC:
- * ZREMRANGEBYSCORE → ZADD → ZCARD → EXPIRE.
- * Avoids Lua `eval` timeouts under ~200 RPS while keeping prune+count+write atomic
- * so concurrent bursts cannot all pass on a stale ZCARD (issue #1034).
+ * Redis sliding-window check for {@link rateLimit}. Runs
+ * {@link SLIDING_WINDOW_LOG_LUA_SCRIPT} with a cost of 1 against
+ * `worksphere:ratelimit:<identifier>`, so prune + count + write are atomic and
+ * concurrent bursts cannot all pass on a stale count (issue #1034).
+ * Falls back to the in-memory limiter if no client can be created or the call throws.
  */
 async function upstashRateLimit(
   identifier: string,
@@ -254,8 +281,30 @@ function memGetInfo(
 // ─── Public API (Legacy) ─────────────────────────────────────────────────────
 
 /**
- * Returns true if the request should be allowed, false if rate-limited.
- * Prefers Upstash Redis; falls back to in-memory when env vars are absent.
+ * Sliding-window rate limit check that records the request when allowed.
+ *
+ * Uses Upstash Redis when `UPSTASH_REDIS_REST_URL` and
+ * `UPSTASH_REDIS_REST_TOKEN` are set, and the per-instance memory store
+ * otherwise. Redis errors fall back to the memory store; this function does
+ * not throw for rate-limit reasons.
+ *
+ * In memory mode an empty or non-string `identifier` is always allowed, and an
+ * invalid `limit` / `windowMs` (not a positive finite number) falls back to
+ * 10 / 60000. On Redis the script clamps both to at least 1.
+ *
+ * @param identifier - Who is being limited, e.g. a user ID or client IP.
+ *   Combine with a route prefix (`"reviews:" + ip`) to keep limits separate.
+ * @param limit - Maximum requests allowed per window. Defaults to `10`.
+ * @param windowMs - Window length in milliseconds. Defaults to `60000` (1 minute).
+ * @returns `true` if the request is allowed (and counted), `false` if limited.
+ *
+ * @example
+ * ```ts
+ * const ip = getClientIp(req);
+ * if (!(await rateLimit(`reviews:${ip}`, 5, 60_000))) {
+ *   return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+ * }
+ * ```
  */
 export async function rateLimit(
   identifier: string,
@@ -272,6 +321,22 @@ export async function rateLimit(
   return memRateLimit(identifier, limit, windowMs);
 }
 
+/**
+ * Reads the current {@link rateLimit} state for an identifier without
+ * recording a request.
+ *
+ * Only the in-memory store can be inspected: when Upstash Redis is configured
+ * (both env vars set) this returns `null`. Pass the same `limit` and
+ * `windowMs` that are used with {@link rateLimit}.
+ *
+ * @param identifier - Same identifier passed to {@link rateLimit}.
+ * @param limit - Maximum requests per window. Defaults to `10`.
+ * @param windowMs - Window length in milliseconds. Defaults to `60000`.
+ * @returns `null` when Redis is configured; otherwise
+ *   `count` (requests in the window), `remaining`, `resetTime` (epoch ms when
+ *   the oldest request leaves the window, or now + `windowMs` if empty) and
+ *   `isLimited` (`count >= limit`).
+ */
 export async function getRateLimitInfo(
   identifier: string,
   limit = 10,
@@ -291,6 +356,17 @@ export async function getRateLimitInfo(
   return memGetInfo(identifier, limit, windowMs);
 }
 
+/**
+ * Clears in-memory rate limit state. Intended for tests and local development.
+ *
+ * Does not touch Redis.
+ *
+ * @param identifier - Exact memory-store key to clear. For {@link rateLimit}
+ *   this is the identifier itself; tiered entries are stored as
+ *   `worksphere:ratelimit:<namespace>:<tier>:<identity>`, so a bare identity
+ *   does not clear them. Omit to clear every in-memory entry and the cached
+ *   Upstash tier limiters.
+ */
 export function resetRateLimit(identifier?: string): void {
   if (identifier) {
     memStore.delete(identifier);
@@ -300,11 +376,31 @@ export function resetRateLimit(identifier?: string): void {
   }
 }
 
+/**
+ * Drops the cached Redis client and cached Upstash tier limiters so the next
+ * call re-reads the `UPSTASH_REDIS_REST_*` env vars. Intended for tests that
+ * change those variables. Does not clear in-memory counters or Redis data.
+ */
 export function resetRedisScripts(): void {
   redisClient = null;
   upstashLimiters.clear();
 }
 
+/**
+ * Builds a unique sorted-set member for {@link SLIDING_WINDOW_LOG_LUA_SCRIPT}:
+ * seconds, microseconds zero-padded to 6 digits, then `:nonce`. The nonce keeps
+ * members unique when several requests share the same microsecond.
+ *
+ * @param sec - Whole seconds since the epoch.
+ * @param usec - Microseconds within the second (0–999999).
+ * @param nonce - Random suffix.
+ * @returns The member string.
+ *
+ * @example
+ * ```ts
+ * microTimestampMember(1700000000, 42, "ab12"); // "1700000000000042:ab12"
+ * ```
+ */
 export function microTimestampMember(
   sec: number | string,
   usec: number,
@@ -345,11 +441,16 @@ export {
 
 // ─── Tier-Based Sliding Window Rate Limiter (#3475) ──────────────────────────
 
+/** Quota tier for {@link checkTieredRateLimit}: by client IP or by Clerk user ID. */
 export type RateLimitTier = "anonymous" | "authenticated";
 
+/** Quota for one {@link RateLimitTier}. */
 export interface TierConfig {
+  /** Maximum requests per window. */
   readonly limit: number;
+  /** Window length in milliseconds (used by the in-memory limiter). */
   readonly windowMs: number;
+  /** Same window as an Upstash duration string, e.g. `"15 m"` (used on Redis). Keep in sync with `windowMs`. */
   readonly windowDuration:
     `${number} m` | `${number}m` | `${number} s` | `${number}s`;
 }
@@ -372,22 +473,36 @@ export const TIER_CONFIGS: Record<RateLimitTier, TierConfig> = {
   },
 } as const;
 
+/** Outcome of a tiered rate limit check. */
 export interface TieredRateLimitResult {
+  /** Whether the request is allowed (and was counted). */
   allowed: boolean;
+  /** Maximum requests per window for this tier. */
   limit: number;
+  /** Requests left in the current window (never negative). */
   remaining: number;
-  retryAfter: number; // in seconds
-  reset: number; // epoch ms
+  /** Seconds to wait before retrying: `0` when allowed, at least `1` when blocked. */
+  retryAfter: number;
+  /** When the window frees up, in **epoch milliseconds**. */
+  reset: number;
+  /** Tier the request was counted against. */
   tier: RateLimitTier;
+  /** Value the limit is keyed on: the trimmed user ID or the client IP. */
   identity: string;
 }
 
+/** Options for {@link checkTieredRateLimit}. */
 export interface CheckTieredRateLimitOptions {
-  /** Explicit user ID override (e.g. for testing or pre-authenticated requests). If undefined, calls auth() from @clerk/nextjs/server */
+  /**
+   * Explicit user ID (e.g. tests or already-authenticated handlers). When the
+   * `userId` key is present — even as `undefined` or `null` — Clerk's `auth()`
+   * is not called and an empty value means the anonymous tier. When the key is
+   * absent, `auth()` from `@clerk/nextjs/server` is called.
+   */
   userId?: string | null;
-  /** Explicit client IP override (e.g. for testing) */
+  /** Client IP override for the anonymous tier (e.g. tests). Defaults to {@link getClientIp}. */
   ip?: string;
-  /** Namespace prefix for rate limiting (default: "ai-public") */
+  /** Separates quotas per feature/route; part of the storage key. Defaults to `"ai-public"`. */
   namespace?: string;
 }
 
@@ -416,8 +531,26 @@ function getUpstashLimiter(
 }
 
 /**
- * Safely extracts the client IP from request headers.
- * Prioritizes direct proxy headers (X-Real-IP, CF-Connecting-IP) before X-Forwarded-For to prevent IP spoofing, falling back to loopback.
+ * Extracts the client IP used as the anonymous rate-limit identity.
+ *
+ * Checked in order, first non-empty (trimmed) value wins:
+ * 1. an `ip` string property on the request object (set by some platforms)
+ * 2. `x-real-ip`
+ * 3. `cf-connecting-ip`
+ * 4. the first entry of `x-forwarded-for`
+ * 5. `"127.0.0.1"` (also returned for `null`/`undefined` input)
+ *
+ * Header values are trusted as received. Checking proxy-set headers before
+ * `x-forwarded-for` only prevents spoofing if the deployment's proxy
+ * overwrites or strips client-supplied copies of these headers.
+ *
+ * @param reqOrHeaders - A `Request`/`NextRequest`, a `Headers` object, or nothing.
+ * @returns The client IP string, or `"127.0.0.1"` if none is found.
+ *
+ * @example
+ * ```ts
+ * getClientIp(new Headers({ "x-forwarded-for": "203.0.113.7, 10.0.0.1" })); // "203.0.113.7"
+ * ```
  */
 export function getClientIp(
   reqOrHeaders: Request | Headers | null | undefined,
@@ -472,8 +605,19 @@ export function getClientIp(
 }
 
 /**
- * In-memory sliding-window fallback for local development, offline mode,
- * and graceful degradation if Upstash Redis fails in production.
+ * In-memory tiered sliding-window check that records the request when allowed.
+ *
+ * Used by {@link checkTieredRateLimit} when Redis is not configured or a Redis
+ * call fails. State is per server instance and stored under
+ * `worksphere:ratelimit:<namespace>:<tier>:<identity>`. An invalid `config`
+ * (missing, or non-positive `limit`/`windowMs`) falls back to 10 requests per
+ * 900000 ms.
+ *
+ * @param namespace - Quota namespace, e.g. `"ai-public"`.
+ * @param tier - Tier being checked.
+ * @param identity - User ID or client IP.
+ * @param config - Quota to apply. Defaults to `TIER_CONFIGS[tier]`.
+ * @returns The check result; `reset` is in epoch milliseconds.
  */
 export function memTieredRateLimit(
   namespace: string,
@@ -561,7 +705,17 @@ export function memTieredRateLimit(
 }
 
 /**
- * Inspect in-memory rate limit info without consuming quota.
+ * Reads in-memory tiered rate limit state without recording a request.
+ *
+ * Only reflects the memory store; when {@link checkTieredRateLimit} is using
+ * Redis this reports an empty window.
+ *
+ * @param namespace - Quota namespace used with {@link checkTieredRateLimit}.
+ * @param tier - Tier to inspect.
+ * @param identity - User ID or client IP.
+ * @param config - Quota to evaluate against. Defaults to `TIER_CONFIGS[tier]`.
+ * @returns `count` in the window, `remaining`, `resetTime` (epoch ms) and
+ *   `isLimited` (`count >= limit`).
  */
 export function getTieredRateLimitInfo(
   namespace: string,
@@ -605,9 +759,32 @@ export function getTieredRateLimitInfo(
 }
 
 /**
- * Main tiered rate-limiting check.
- * Identifies the tier (anonymous vs authenticated), checks the sliding window
- * via Upstash Redis (if configured) or in-memory fallback, and returns a detailed result.
+ * Tiered sliding-window rate limit check that records the request when allowed.
+ *
+ * 1. **Tier:** `authenticated` (keyed by trimmed user ID) when a non-empty user
+ *    ID is found, otherwise `anonymous` (keyed by `options.ip` or
+ *    {@link getClientIp}). See {@link CheckTieredRateLimitOptions.userId} for
+ *    when Clerk's `auth()` is called; if it throws, the request is anonymous.
+ * 2. **Quota:** from {@link TIER_CONFIGS}.
+ * 3. **Storage:** Upstash `Ratelimit.slidingWindow` (cached per
+ *    namespace + tier, prefix `worksphere:ratelimit:<namespace>:<tier>`) when
+ *    both Upstash env vars are set; if that call throws, the error is logged
+ *    and {@link memTieredRateLimit} is used. Without Redis, memory is used.
+ *
+ * Never throws for rate-limit or storage errors.
+ *
+ * @param req - Incoming request or its headers; used only to read the client IP.
+ * @param options - Identity and namespace overrides.
+ * @returns The check result; `reset` is in epoch milliseconds.
+ *
+ * @example
+ * ```ts
+ * export async function POST(req: Request) {
+ *   const result = await checkTieredRateLimit(req, { namespace: "ai-chat" });
+ *   if (!result.allowed) return createRateLimitResponse(result);
+ *   return applyRateLimitHeaders(NextResponse.json({ ok: true }), result);
+ * }
+ * ```
  */
 export async function checkTieredRateLimit(
   req: Request | Headers | null | undefined,
@@ -685,10 +862,24 @@ export async function checkTieredRateLimit(
 }
 
 /**
- * Standard rate-limit headers:
- * - X-RateLimit-Limit
- * - X-RateLimit-Remaining
- * - Retry-After (included when request is blocked)
+ * Builds rate-limit response headers from a check result.
+ *
+ * Always includes `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`,
+ * `X-RateLimit-Limit` and `X-RateLimit-Remaining`. Adds `Retry-After` when the
+ * request was blocked (`allowed === false`, or `success === false` for results
+ * without `allowed`), and `X-RateLimit-Reset` when `result.reset` is set.
+ *
+ * Value rules:
+ * - `RateLimit-Reset` and `Retry-After` are `retryAfter` in seconds, minimum 1
+ *   (so an allowed request reports `"1"`).
+ * - `X-RateLimit-Reset` is `result.reset` unchanged: epoch **ms** for
+ *   {@link TieredRateLimitResult}, epoch **seconds** for token-bucket results.
+ * - A non-finite `limit` becomes `10` and a non-finite `remaining` becomes `0`.
+ * - A missing or non-object `result` returns fixed defaults (limit 10,
+ *   remaining 10, reset 60).
+ *
+ * @param result - A tiered or token-bucket rate limit result.
+ * @returns Header names mapped to string values.
  */
 export function getRateLimitHeaders(
   result: TieredRateLimitResult | RateLimitResult | any,
@@ -734,7 +925,15 @@ export function getRateLimitHeaders(
 }
 
 /**
- * Creates standard HTTP 429 Too Many Requests response with rate-limit headers.
+ * Creates an HTTP 429 `NextResponse` for a blocked request.
+ *
+ * Body: `{ error, retryAfter, limit, remaining, reset }`. Headers come from
+ * {@link getRateLimitHeaders}. Missing or invalid fields fall back to
+ * `retryAfter` 1, `limit` 10, `remaining` 0, and `reset` = 60 s from now in
+ * epoch **seconds** (a provided `reset` is passed through unchanged).
+ *
+ * @param result - The blocked check result.
+ * @returns A `NextResponse` with status 429.
  */
 export function createRateLimitResponse(
   result: TieredRateLimitResult | RateLimitResult | any,
@@ -774,7 +973,15 @@ export function createRateLimitResponse(
 }
 
 /**
- * Attaches X-RateLimit headers to any successful Response or NextResponse.
+ * Sets the headers from {@link getRateLimitHeaders} on a response, typically
+ * a successful one, so clients can see their remaining quota.
+ *
+ * Mutates and returns the same response. Returns it unchanged if it has no
+ * settable `headers`.
+ *
+ * @param response - A `Response` or `NextResponse`.
+ * @param result - The check result for this request.
+ * @returns The same `response` instance.
  */
 export function applyRateLimitHeaders<T extends Response>(
   response: T,
@@ -794,6 +1001,13 @@ export function applyRateLimitHeaders<T extends Response>(
   return response;
 }
 
+/**
+ * Clears tiered rate limit state for tests: same as {@link resetRateLimit},
+ * and also drops the cached Upstash tier limiters. Does not touch Redis.
+ *
+ * @param identifier - Exact memory-store key
+ *   (`worksphere:ratelimit:<namespace>:<tier>:<identity>`); omit to clear all.
+ */
 export function resetTieredRateLimit(identifier?: string): void {
   resetRateLimit(identifier);
   upstashLimiters.clear();

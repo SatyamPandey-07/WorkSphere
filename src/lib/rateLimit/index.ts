@@ -97,6 +97,39 @@ export function resetRateLimit(identifier?: string): void {
 
 // ─── Token Bucket Convenience APIs ───────────────────────────────────────────
 
+/**
+ * Token-bucket rate limit check for a route tier; consumes one token when allowed.
+ *
+ * The bucket holds `tier.limit` tokens and refills at `tier.limit` per
+ * `tier.windowMs`, so short bursts up to the limit are allowed. Storage, in order:
+ * 1. Upstash Redis atomic Lua script (key `worksphere:ratelimit:<tier.name>:<identifier>`)
+ * 2. `@upstash/ratelimit` token bucket
+ * 3. the per-instance memory store ({@link checkInMemoryTokenBucket})
+ *
+ * Redis is only used when both `UPSTASH_REDIS_REST_*` env vars are set. A Redis
+ * **timeout** fails open (request allowed with full `remaining`); other Redis
+ * errors fall through to the next option.
+ *
+ * @param tier - Tier from `RATE_TIERS`, usually via `matchRateTier(pathname)`.
+ * @param identifier - Who is being limited, e.g. client IP or user ID.
+ * @returns The result; `reset` is in epoch **seconds** and `retryAfter` in seconds.
+ *
+ * @example
+ * ```ts
+ * import {
+ *   checkTokenBucketRateLimit,
+ *   createRateLimitResponse,
+ *   getClientIp,
+ *   matchRateTier,
+ * } from "@/lib/rateLimit";
+ *
+ * const tier = matchRateTier(req.nextUrl.pathname, req.method);
+ * if (tier) {
+ *   const result = await checkTokenBucketRateLimit(tier, getClientIp(req));
+ *   if (!result.success) return createRateLimitResponse(result);
+ * }
+ * ```
+ */
 export async function checkTokenBucketRateLimit(
   tier: RateTier,
   identifier: string,
@@ -110,6 +143,19 @@ export async function checkTokenBucketRateLimit(
   return limiter.consume(identifier);
 }
 
+/**
+ * Synchronous in-memory token-bucket check; consumes one token when allowed.
+ *
+ * Never uses Redis, so state is per server instance. The bucket for
+ * `<tier.name>:<identifier>` starts full (`tier.limit` tokens) and refills
+ * proportionally to elapsed time; a backwards clock jump does not add tokens.
+ *
+ * @param tier - Tier from `RATE_TIERS`.
+ * @param identifier - Who is being limited, e.g. client IP or user ID.
+ * @returns The result; `remaining` is the whole tokens left, `reset` is in
+ *   epoch **seconds**, and `retryAfter` (when blocked) is the seconds until the
+ *   next token, minimum 1.
+ */
 export function checkInMemoryTokenBucket(
   tier: RateTier,
   identifier: string,
@@ -179,6 +225,10 @@ export function checkInMemoryTokenBucket(
   };
 }
 
+/**
+ * Clears all in-memory token buckets and cached Upstash limiters. Intended for
+ * tests; does not touch Redis.
+ */
 export function resetTokenBuckets(): void {
   defaultMemoryStore.clearTokenBuckets();
   clearCachedLimiters();

@@ -31,12 +31,16 @@ export function VenueShareModal({
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [origin, setOrigin] = useState("");
   const timerRef = useRef<number | null>(null);
+  const shareTimerRef = useRef<number | null>(null);
 
   useEffect(
     () => () => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      if (shareTimerRef.current !== null)
+        window.clearTimeout(shareTimerRef.current);
     },
     [],
   );
@@ -62,24 +66,50 @@ export function VenueShareModal({
     });
   }, [isOpen, shortUrl, venue.name]);
 
+  const triggerElementRef = useRef<HTMLElement | null>(null);
+
   const handleClose = useCallback(() => {
     setIsOpen(false);
     setCopied(false);
+    setIsSharing(false);
+    if (
+      triggerElementRef.current &&
+      typeof triggerElementRef.current.focus === "function"
+    ) {
+      triggerElementRef.current.focus();
+    }
   }, []);
 
   // Handle ESC key to close modal
   useEffect(() => {
     if (!isOpen) return;
+    if (typeof document !== "undefined" && !triggerElementRef.current) {
+      triggerElementRef.current = document.activeElement as HTMLElement | null;
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         handleClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (
+        triggerElementRef.current &&
+        typeof triggerElementRef.current.focus === "function"
+      ) {
+        triggerElementRef.current.focus();
+      }
+    };
   }, [isOpen, handleClose]);
 
   const handleShareClick = async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+    if (shareTimerRef.current !== null)
+      window.clearTimeout(shareTimerRef.current);
+    shareTimerRef.current = window.setTimeout(() => setIsSharing(false), 800);
+
     if (
       typeof navigator !== "undefined" &&
       typeof navigator.share === "function"
@@ -108,6 +138,7 @@ export function VenueShareModal({
   };
 
   const handleCopyLink = async () => {
+    if (copied) return;
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard) {
         await navigator.clipboard.writeText(shortUrl);
@@ -148,7 +179,7 @@ export function VenueShareModal({
           type="button"
           onClick={handleShareClick}
           aria-label={`Share ${venue.name}`}
-          className={`p-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-all active:scale-95 ${className}`}
+          className={`p-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-all active:scale-95 border border-zinc-200/80 dark:border-zinc-700/80 ${className}`}
         >
           <Share2 className="w-4 h-4" />
         </button>
@@ -161,23 +192,24 @@ export function VenueShareModal({
           type="button"
           onClick={handleShareClick}
           aria-label={`Share ${venue.name}`}
-          className={`inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 font-semibold text-sm transition-all active:scale-95 ${className}`}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-medium transition-all active:scale-95 ${className}`}
         >
-          <Share2 className="w-4 h-4" />
-          <span>Share Venue</span>
+          <Share2 className="w-3.5 h-3.5" />
+          <span>Share</span>
         </button>
       );
     }
 
+    // Default "button"
     return (
       <button
         type="button"
         onClick={handleShareClick}
         aria-label={`Share ${venue.name}`}
-        className={`inline-flex items-center justify-center gap-2 py-3 px-5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-bold text-sm transition-all shadow-md active:scale-95 ${className}`}
+        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 text-sm font-semibold transition-all active:scale-95 shadow-sm ${className}`}
       >
         <Share2 className="w-4 h-4" />
-        <span>Share Venue</span>
+        <span>Share</span>
       </button>
     );
   };
@@ -192,29 +224,26 @@ export function VenueShareModal({
           aria-modal="true"
           aria-labelledby="share-modal-title"
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) handleClose();
-          }}
+          onClick={handleClose}
         >
-          <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 sm:p-7 space-y-6 overflow-hidden animate-in zoom-in-95 duration-200">
+          <div
+            className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-2xl transition-all scale-100 animate-in zoom-in-95 duration-150 space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
-            <div className="flex items-start justify-between">
-              <div>
-                <h2
-                  id="share-modal-title"
-                  className="text-xl font-black tracking-tight text-zinc-900 dark:text-zinc-50"
-                >
-                  Share Venue
-                </h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  Share this venue with friends or open on another device.
-                </p>
-              </div>
+            <div className="flex items-center justify-between">
+              <h2
+                id="share-modal-title"
+                className="text-lg font-bold text-zinc-900 dark:text-zinc-100"
+              >
+                Share Venue
+              </h2>
               <button
                 type="button"
+                data-testid="venue-share-modal-close"
                 onClick={handleClose}
                 aria-label="Close dialog"
-                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -316,3 +345,5 @@ export function VenueShareModal({
     </>
   );
 }
+
+export default VenueShareModal;

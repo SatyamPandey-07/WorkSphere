@@ -1,25 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MonitorUp, PictureInPicture2, Square, Crop, Signal } from "lucide-react";
+import {
+  MonitorUp,
+  PictureInPicture2,
+  Square,
+  Crop,
+  Signal,
+} from "lucide-react";
 import { useScreenShare } from "@/hooks/useScreenShare";
 import { useScreenShareQuality } from "@/hooks/useScreenShareQuality";
 import { DataSaverToggle } from "@/components/sessions/DataSaverToggle";
+import { cn } from "@/lib/utils";
 
-type Props = {
+export interface ScreenSharePanelProps {
   sessionSlug: string;
   hostId: string;
-  currentUserId: string | null | undefined;
-};
+  currentUserId?: string | null;
+  className?: string;
+  "data-testid"?: string;
+}
 
-export default function ScreenSharePanel({
+export function ScreenSharePanel({
   sessionSlug,
   hostId,
   currentUserId,
-}: Props) {
+  className,
+  "data-testid": testId,
+}: ScreenSharePanelProps) {
   const isHost = !!currentUserId && currentUserId === hostId;
   const videoRef = useRef<HTMLVideoElement>(null);
   const [pipOn, setPipOn] = useState(false);
+  const [isStageHidden, setIsStageHidden] = useState(false);
 
   const {
     sharing,
@@ -32,7 +44,6 @@ export default function ScreenSharePanel({
     startShare,
     stopShare,
     setDataSaverMode,
-    requestPip,
   } = useScreenShare({
     roomId: `session-${sessionSlug}`,
     userId: currentUserId,
@@ -40,10 +51,14 @@ export default function ScreenSharePanel({
   });
 
   // Initialize Quality Control Hook if we have a sender (usually the host)
-  const { currentProfile, manualSetProfile } = useScreenShareQuality(sender || null);
+  const { currentProfile, manualSetProfile } = useScreenShareQuality(
+    sender || null,
+  );
 
   const activeStream = isHost ? localStream : remoteStream;
   const showStage = !!activeStream;
+  // Viewer-only; the stage is hidden via class (not unmounted) so the <video> keeps its srcObject and any active PiP window
+  const stageHidden = isStageHidden && !isHost;
 
   useEffect(() => {
     const el = videoRef.current;
@@ -71,14 +86,16 @@ export default function ScreenSharePanel({
         setPipOn(true);
       }
     } catch (error) {
-      console.error('Picture-in-Picture failed:', error);
+      console.error("Picture-in-Picture failed:", error);
     }
   };
 
   const handleCropRegion = async () => {
     // Note: Region Capture API (CropTarget) requires specific browser support and setup.
     // This is a scaffold for the feature.
-    console.log('Region capture initiated. Implement CropTarget.fromElement() here.');
+    console.log(
+      "Region capture initiated. Implement CropTarget.fromElement() here.",
+    );
   };
 
   if (!currentUserId) {
@@ -86,7 +103,13 @@ export default function ScreenSharePanel({
   }
 
   return (
-    <div className="mt-8 rounded-2xl border border-white/10 bg-black/25 p-5">
+    <div
+      data-testid={testId || "screen-share-panel"}
+      className={cn(
+        "mt-8 rounded-2xl border border-white/10 bg-black/25 p-5",
+        className,
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-sm font-medium text-zinc-200">
@@ -105,8 +128,9 @@ export default function ScreenSharePanel({
           {isHost && !sharing && (
             <button
               type="button"
+              data-testid="start-share-button"
               onClick={() => void startShare()}
-              className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 text-sm font-medium hover:bg-cyan-500"
+              className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 text-sm font-medium hover:bg-cyan-500 transition-colors"
             >
               <MonitorUp className="h-4 w-4" />
               Share screen
@@ -120,19 +144,32 @@ export default function ScreenSharePanel({
               />
               <button
                 type="button"
+                data-testid="stop-share-button"
                 onClick={stopShare}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10 transition-colors"
               >
                 <Square className="h-4 w-4" />
                 Stop sharing
               </button>
             </>
           )}
+          {!isHost && isStageHidden && !!activeStream && (
+            <button
+              type="button"
+              data-testid="show-stage-button"
+              onClick={() => setIsStageHidden(false)}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10 transition-colors"
+            >
+              <MonitorUp className="h-4 w-4" />
+              Show Stage
+            </button>
+          )}
           {showStage && pipSupported && (
             <button
               type="button"
+              data-testid="pip-button"
               onClick={handleTogglePiP}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10 transition-colors"
             >
               <PictureInPicture2 className="h-4 w-4" />
               {pipOn ? "Exit PiP" : "Pop out"}
@@ -141,12 +178,26 @@ export default function ScreenSharePanel({
         </div>
       </div>
 
-      {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+      {error && (
+        <p
+          data-testid="screen-share-error"
+          className="mt-3 text-sm text-rose-300"
+        >
+          {error}
+        </p>
+      )}
 
       {showStage && (
-        <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden group">
+        <div
+          data-testid="screen-share-stage"
+          className={cn(
+            "relative w-full aspect-video bg-black rounded-xl overflow-hidden group",
+            stageHidden && "hidden",
+          )}
+        >
           <video
             ref={videoRef}
+            data-testid="screen-share-video"
             autoPlay
             playsInline
             muted={isHost}
@@ -155,10 +206,15 @@ export default function ScreenSharePanel({
 
           {/* Overlay Controls for Quality & Region Capture */}
           {sharing && (
-            <div className="absolute top-4 left-4 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div
+              data-testid="screen-share-overlay-controls"
+              className="absolute top-4 left-4 z-10 flex gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-200"
+            >
               {/* Quality Profile Selector */}
               <div className="relative">
                 <select
+                  data-testid="quality-select"
+                  aria-label="Screen share quality profile"
                   value={currentProfile}
                   onChange={(e) => manualSetProfile(e.target.value)}
                   className="appearance-none pl-9 pr-8 py-1.5 text-xs font-medium bg-black/60 text-white rounded-lg border border-white/10 backdrop-blur-md hover:bg-black/80 transition-colors cursor-pointer outline-none focus:border-cyan-500"
@@ -173,6 +229,8 @@ export default function ScreenSharePanel({
 
               {/* Region Capture Button */}
               <button
+                type="button"
+                data-testid="crop-button"
                 onClick={handleCropRegion}
                 title="Crop to Region (Experimental)"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-black/60 text-white rounded-lg border border-white/10 backdrop-blur-md hover:bg-black/80 transition-colors"
@@ -186,7 +244,9 @@ export default function ScreenSharePanel({
           {/* Close/Stop Button Overlay for Viewers or Hosts */}
           {!isHost && (
             <button
-              onClick={() => { /* Maybe just hide stage? Or leave session? */ }}
+              type="button"
+              data-testid="hide-stage-button"
+              onClick={() => setIsStageHidden(true)}
               className="absolute bottom-4 right-4 px-4 py-2 bg-black/60 backdrop-blur-md text-white text-xs font-medium rounded-lg border border-white/10 hover:bg-red-600/80 hover:border-red-500/50 transition-colors"
             >
               Hide Stage
@@ -197,3 +257,5 @@ export default function ScreenSharePanel({
     </div>
   );
 }
+
+export default ScreenSharePanel;

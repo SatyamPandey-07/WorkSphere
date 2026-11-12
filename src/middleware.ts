@@ -6,7 +6,13 @@ import {
   type RoutePermissionRule,
 } from "./lib/middleware";
 import { generateCryptographicNonce, generateCsp } from "./lib/security/csp";
-import { matchRateTier, getClientIp } from "./lib/tokenBucketRateLimit";
+import {
+  matchRateTier,
+  getClientIp,
+  checkTokenBucketRateLimit,
+  RATE_TIERS,
+} from "./lib/tokenBucketRateLimit";
+import { rateLimitMiddleware } from "./lib/middleware/handlers/rateLimitHandler";
 
 /**
  * WorkSphere Orchestrated Edge Middleware Pipeline
@@ -25,6 +31,9 @@ export {
   isCsrfExemptRoute,
   matchRateTier,
   getClientIp,
+  checkTokenBucketRateLimit,
+  RATE_TIERS,
+  rateLimitMiddleware,
   ROUTE_PERMISSIONS,
   type RoutePermissionRule,
 };

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useId } from "react";
 import { X, AlertTriangle, ShieldAlert } from "lucide-react";
+import { isModalBackdropClick } from "@/lib/modal-interactions";
 
 export type BiometricVerificationState =
   "initiating" | "waiting" | "success" | "failed" | null;
@@ -12,6 +13,9 @@ export interface GreenLanternBatteryModalProps {
   passkeyName?: string;
   errorMessage?: string;
   onCancel?: () => void;
+  closeOnBackdropClick?: boolean;
+  closeOnEscape?: boolean;
+  chargePercentage?: number;
 }
 
 /**
@@ -20,10 +24,18 @@ export interface GreenLanternBatteryModalProps {
 export function GreenLanternEmblem({
   state,
   className = "",
+  idPrefix,
 }: {
   state: BiometricVerificationState;
   className?: string;
+  idPrefix?: string;
 }) {
+  const generatedId = useId().replace(/:/g, "");
+  const prefix = idPrefix || `gl-${generatedId}`;
+  const gradId = `${prefix}-emerald-grad`;
+  const coreGlowId = `${prefix}-core-glow`;
+  const glowFilterId = `${prefix}-glow-filter`;
+
   const isCharging = state === "initiating" || state === "waiting";
   const isSuccess = state === "success";
   const isFailed = state === "failed";
@@ -83,7 +95,7 @@ export function GreenLanternEmblem({
       >
         <defs>
           <linearGradient
-            id="gl-emerald-grad"
+            id={gradId}
             x1="0%"
             y1="0%"
             x2="100%"
@@ -94,14 +106,14 @@ export function GreenLanternEmblem({
             <stop offset="100%" stopColor={isFailed ? "#b91c1c" : "#047857"} />
           </linearGradient>
 
-          <radialGradient id="gl-core-glow" cx="50%" cy="50%" r="50%">
+          <radialGradient id={coreGlowId} cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor={isFailed ? "#fecaca" : "#a7f3d0"} />
             <stop offset="50%" stopColor={isFailed ? "#ef4444" : "#34d399"} />
             <stop offset="100%" stopColor={isFailed ? "#991b1b" : "#065f46"} />
           </radialGradient>
 
           <filter
-            id="gl-glow-filter"
+            id={glowFilterId}
             x="-20%"
             y="-20%"
             width="140%"
@@ -117,7 +129,7 @@ export function GreenLanternEmblem({
           cx="60"
           cy="60"
           r="48"
-          stroke="url(#gl-emerald-grad)"
+          stroke={`url(#${gradId})`}
           strokeWidth="6"
           className="opacity-95"
         />
@@ -129,8 +141,8 @@ export function GreenLanternEmblem({
           width="76"
           height="10"
           rx="5"
-          fill="url(#gl-emerald-grad)"
-          filter="url(#gl-glow-filter)"
+          fill={`url(#${gradId})`}
+          filter={`url(#${glowFilterId})`}
         />
 
         {/* Bottom Horizontal Battery Flange */}
@@ -140,8 +152,8 @@ export function GreenLanternEmblem({
           width="76"
           height="10"
           rx="5"
-          fill="url(#gl-emerald-grad)"
-          filter="url(#gl-glow-filter)"
+          fill={`url(#${gradId})`}
+          filter={`url(#${glowFilterId})`}
         />
 
         {/* Outer Circular Rim */}
@@ -149,10 +161,10 @@ export function GreenLanternEmblem({
           cx="60"
           cy="60"
           r="34"
-          stroke="url(#gl-emerald-grad)"
+          stroke={`url(#${gradId})`}
           strokeWidth="8"
           fill="none"
-          filter="url(#gl-glow-filter)"
+          filter={`url(#${glowFilterId})`}
         />
 
         {/* Central Power Core Reservoir */}
@@ -160,7 +172,7 @@ export function GreenLanternEmblem({
           cx="60"
           cy="60"
           r="18"
-          fill="url(#gl-core-glow)"
+          fill={`url(#${coreGlowId})`}
           className={`transition-transform duration-300 ${
             isSuccess ? "scale-110" : ""
           }`}
@@ -177,10 +189,18 @@ export function GreenLanternEmblem({
 export function GreenLanternRingIcon({
   state,
   className = "",
+  idPrefix,
 }: {
   state: BiometricVerificationState;
   className?: string;
+  idPrefix?: string;
 }) {
+  const generatedId = useId().replace(/:/g, "");
+  const prefix = idPrefix || `ring-${generatedId}`;
+  const metalBandId = `${prefix}-metal-band`;
+  const faceBezelId = `${prefix}-face-bezel`;
+  const coreEnergyId = `${prefix}-core-energy`;
+
   const isCharging = state === "initiating" || state === "waiting";
   const isSuccess = state === "success";
   const isFailed = state === "failed";
@@ -257,7 +277,7 @@ export function GreenLanternRingIcon({
         >
           <defs>
             <linearGradient
-              id="ring-metal-band"
+              id={metalBandId}
               x1="0%"
               y1="0%"
               x2="100%"
@@ -273,7 +293,7 @@ export function GreenLanternRingIcon({
             </linearGradient>
 
             <linearGradient
-              id="ring-face-bezel"
+              id={faceBezelId}
               x1="0%"
               y1="0%"
               x2="0%"
@@ -287,7 +307,7 @@ export function GreenLanternRingIcon({
               />
             </linearGradient>
 
-            <radialGradient id="ring-core-energy" cx="50%" cy="50%" r="50%">
+            <radialGradient id={coreEnergyId} cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor={isFailed ? "#fee2e2" : "#ffffff"} />
               <stop offset="35%" stopColor={isFailed ? "#fca5a5" : "#a7f3d0"} />
               <stop offset="70%" stopColor={isFailed ? "#ef4444" : "#10b981"} />
@@ -304,7 +324,7 @@ export function GreenLanternRingIcon({
             cy="68"
             rx="32"
             ry="18"
-            stroke="url(#ring-metal-band)"
+            stroke={`url(#${metalBandId})`}
             strokeWidth="9"
             fill="none"
           />
@@ -312,7 +332,7 @@ export function GreenLanternRingIcon({
           {/* Raised Signet Ring Bezel Platform */}
           <polygon
             points="32,32 68,32 76,52 24,52"
-            fill="url(#ring-face-bezel)"
+            fill={`url(#${faceBezelId})`}
             stroke={isFailed ? "#ef4444" : "#34d399"}
             strokeWidth="2"
           />
@@ -323,7 +343,7 @@ export function GreenLanternRingIcon({
             cy="42"
             r="16"
             fill={
-              isSuccess ? "url(#ring-core-energy)" : "url(#ring-metal-band)"
+              isSuccess ? `url(#${coreEnergyId})` : `url(#${metalBandId})`
             }
             stroke={isFailed ? "#ef4444" : "#a7f3d0"}
             strokeWidth="2.5"
@@ -352,7 +372,7 @@ export function GreenLanternRingIcon({
             cx="50"
             cy="42"
             r="8"
-            fill="url(#ring-core-energy)"
+            fill={`url(#${coreEnergyId})`}
             stroke={isFailed ? "#f87171" : "#ecfdf5"}
             strokeWidth="1.5"
           />
@@ -368,10 +388,13 @@ export function GreenLanternBatteryModal({
   passkeyName,
   errorMessage,
   onCancel,
+  closeOnBackdropClick = true,
+  closeOnEscape = true,
+  chargePercentage: customCharge,
 }: GreenLanternBatteryModalProps) {
   // Handle ESC key to cancel
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !closeOnEscape) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onCancel?.();
@@ -379,12 +402,18 @@ export function GreenLanternBatteryModal({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onCancel]);
+  }, [isOpen, closeOnEscape, onCancel]);
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (closeOnBackdropClick && isModalBackdropClick(e)) {
+      onCancel?.();
+    }
+  };
 
   if (!isOpen || !state) return null;
 
   // Power battery charge percentage calculation
-  const chargePercentage =
+  const defaultCharge =
     state === "success"
       ? 100
       : state === "waiting"
@@ -393,12 +422,19 @@ export function GreenLanternBatteryModal({
           ? 25
           : 0;
 
+  const chargePercentage =
+    typeof customCharge === "number" && !Number.isNaN(customCharge)
+      ? Math.max(0, Math.min(100, Math.round(customCharge)))
+      : defaultCharge;
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="gl-modal-title"
+      aria-describedby="gl-modal-desc"
       data-testid="green-lantern-modal"
+      onClick={handleBackdropClick}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-in fade-in duration-200"
     >
       {/* Background Emerald Willpower Grid Accent */}
@@ -483,7 +519,11 @@ export function GreenLanternBatteryModal({
           </div>
 
           {/* Prompt Instructions / Explanations */}
-          <div className="text-xs font-mono text-zinc-400 max-w-sm mx-auto">
+          <div
+            id="gl-modal-desc"
+            data-testid="gl-modal-desc"
+            className="text-xs font-mono text-zinc-400 max-w-sm mx-auto"
+          >
             {state === "initiating" &&
               "Preparing WebAuthn biometric security challenge..."}
             {state === "waiting" &&

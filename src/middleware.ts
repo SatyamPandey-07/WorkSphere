@@ -1,50 +1,28 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
-import {
-  runMiddlewarePipeline,
-  isCsrfExemptRoute,
-  ROUTE_PERMISSIONS,
-  type RoutePermissionRule,
-} from "./lib/middleware";
-import { generateCryptographicNonce, generateCsp } from "./lib/security/csp";
-import {
-  matchRateTier,
-  getClientIp,
-  checkTokenBucketRateLimit,
-  RATE_TIERS,
-} from "./lib/tokenBucketRateLimit";
-import { rateLimitMiddleware } from "./lib/middleware/handlers/rateLimitHandler";
+import { NextRequest, NextResponse } from 'next/server';
+import { W3CTracer } from '@/lib/telemetry/tracer';
 
-/**
- * WorkSphere Orchestrated Edge Middleware Pipeline
- * Chains Rate Limiting, Authentication & Authorization, Security Headers (CSP & Nonce), and CSRF Protection.
- */
-export default clerkMiddleware(async (auth, req) => {
-  return await runMiddlewarePipeline(req, {
-    auth,
-    protect: auth.protect,
+export function middleware(request: NextRequest) {
+  const incomingTraceParent = request.headers.get('traceparent');
+  const { traceparent, context } = W3CTracer.parseOrGenerateTraceParent(incomingTraceParent);
+
+  // Clone request headers to inject trace context for downstream handlers
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('traceparent', traceparent);
+  requestHeaders.set('x-trace-id', context.traceId);
+
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
   });
-});
 
-export {
-  generateCryptographicNonce,
-  generateCsp,
-  isCsrfExemptRoute,
-  matchRateTier,
-  getClientIp,
-  checkTokenBucketRateLimit,
-  RATE_TIERS,
-  rateLimitMiddleware,
-  ROUTE_PERMISSIONS,
-  type RoutePermissionRule,
-};
+  // Attach W3C traceparent to outgoing response headers for end-to-end correlation
+  response.headers.set('traceparent', traceparent);
+  response.headers.set('tracestate', `worksphere=vendor:active,tid:${context.traceId}`);
+
+  return response;
+}
 
 export const config = {
-  matcher: [
-    // Skip static assets (including manifest/service worker) so they aren't gated by auth
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf|eot|css|js|json|txt|xml|webmanifest)|manifest\\.json|sw\\.js|service-worker\\.js|robots\\.txt).*)",
-    // Always run for API routes
-    "/(api|trpc)(.*)",
-    // Clerk internal proxy routes
-    "/__clerk/:path*",
-  ],
+  matcher: ['/api/:path*', '/venues/:path*'],
 };

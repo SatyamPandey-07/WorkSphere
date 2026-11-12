@@ -1,5 +1,7 @@
 "use client";
 
+ fix/venue-share-modal-debounce
+
  feat/idempotent-venue-reviews
 
  feat/venue-grid-layout-tooltips
@@ -7,6 +9,7 @@
  docs/local-development-setup-guide
 
  feat/ergonomic-coach-mute-toggle
+ main
  main
  main
  main
@@ -91,6 +94,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/venue-share-modal-debounce
+}
+
  feat/idempotent-venue-reviews
 }
 
@@ -195,3 +201,4 @@ export default VenueCard;
  main
  main
  main
+main

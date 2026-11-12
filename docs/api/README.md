@@ -4,6 +4,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 
 ## Guides
 
+- [Venue amenity voting OpenAPI 3.1 specification](./amenity-votes.openapi.yaml)
 - [Rate limiting](./RATE_LIMITING.md) — active middleware quotas, the separate tiered configuration, 429 headers, and client retry examples.
 - [Bookings](./bookings.md)
 - [Cafe orders](./cafe-orders.md)

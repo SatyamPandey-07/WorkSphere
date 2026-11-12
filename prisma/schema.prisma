@@ -330,6 +330,11 @@ model Booking {
   frequency          String?
   guestCount         Int?
 
+  // A partial unique index, `Booking_active_seat_slot_key`, protects against
+  // concurrent reservations of the same active (venueId, seat, date, time)
+  // slot. It is defined in
+  // prisma/migrations/20261112090000_booking_active_seat_unique because
+  // Prisma cannot express partial indexes in the schema.
   @@index([userId])
   @@index([venueId])
   @@index([seatId])

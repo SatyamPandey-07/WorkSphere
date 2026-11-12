@@ -2,6 +2,7 @@
 
 import React, { useCallback } from "react";
 import { Sparkles, FileText, RotateCcw, Sliders, Info } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface HybridSearchWeightSlidersProps {
   semanticWeight: number; // 0 to 100 (or 0 to 1)
@@ -26,8 +27,10 @@ export const HYBRID_WEIGHT_PRESETS = [
 
 /**
  * Normalizes weight to 0-100 range regardless of whether 0-1 or 0-100 was passed.
+ * Defensively handles NaN, null, and undefined values.
  */
-function toPercent(val: number): number {
+function toPercent(val: number, fallback = 50): number {
+  if (typeof val !== "number" || isNaN(val)) return fallback;
   if (val <= 1 && val > 0) return Math.round(val * 100);
   return Math.min(100, Math.max(0, Math.round(val)));
 }
@@ -44,8 +47,8 @@ export function HybridSearchWeightSliders({
   showPresets = true,
   showHelpText = true,
 }: HybridSearchWeightSlidersProps) {
-  const normSemantic = toPercent(semanticWeight);
-  const normFullText = toPercent(fullTextWeight);
+  const normSemantic = toPercent(semanticWeight, defaultSemanticWeight);
+  const normFullText = toPercent(fullTextWeight, defaultFullTextWeight);
 
   const isDefault =
     normSemantic === toPercent(defaultSemanticWeight) &&
@@ -99,7 +102,10 @@ export function HybridSearchWeightSliders({
   return (
     <div
       data-testid="hybrid-search-weight-sliders"
-      className={`space-y-4 p-4 bg-zinc-50 dark:bg-zinc-900/60 rounded-2xl border border-zinc-200 dark:border-zinc-800 ${className}`}
+      className={cn(
+        "space-y-4 p-4 bg-zinc-50 dark:bg-zinc-900/60 rounded-2xl border border-zinc-200 dark:border-zinc-800",
+        className
+      )}
     >
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -229,11 +235,12 @@ export function HybridSearchWeightSliders({
                   data-testid={`preset-weight-${preset.id}`}
                   onClick={() => handlePresetApply(preset)}
                   title={preset.desc}
-                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all ${
+                  className={cn(
+                    "px-2.5 py-1 rounded-xl text-xs font-bold transition-all",
                     isSelected
                       ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
                       : "bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:border-indigo-400/50"
-                  }`}
+                  )}
                 >
                   {preset.label} ({preset.semantic}/{preset.fullText})
                 </button>
@@ -255,3 +262,5 @@ export function HybridSearchWeightSliders({
     </div>
   );
 }
+
+export default HybridSearchWeightSliders;

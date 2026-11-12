@@ -116,5 +116,24 @@ describe("Sun Position & Natural Light Seating Recommendation (#5064)", () => {
       const farDesk = recs.find((r) => r.deskId === "desk-far-interior");
       expect(farDesk!.isOptimalNaturalLight).toBe(false);
     });
+
+    test("handles nullish desks, options, and missing desk properties safely", () => {
+      expect(recommendNaturalLightDesks(null, {} as any)).toEqual([]);
+      expect(recommendNaturalLightDesks(undefined, {} as any)).toEqual([]);
+      expect(recommendNaturalLightDesks([], null as any)).toEqual([]);
+
+      const recs = recommendNaturalLightDesks(
+        [null as any, { id: "" } as any, { id: "desk-valid" }],
+        {
+          latitude: 40.7128,
+          longitude: -74.006,
+          date: new Date("2026-06-21T16:00:00Z"),
+          venueCompassOrientation: NaN,
+          glareAngleThresholdDeg: NaN,
+          minDaylightAltitudeDeg: NaN,
+        },
+      );
+      expect(recs).toHaveLength(3);
+    });
   });
 });

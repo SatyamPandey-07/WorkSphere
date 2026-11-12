@@ -61,7 +61,9 @@ type ExistingRow = {
 };
 
 const dayAfter = (d: string) =>
-  new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
 
 function makeTx(existing: ExistingRow[] = []) {
   let n = 0;
@@ -107,6 +109,63 @@ function request(body: Record<string, unknown>) {
   });
 }
 
+/**
+ * A transaction mock whose callbacks run one at a time, mirroring the row lock
+ * held by PostgreSQL for the duration of a booking transaction. State is shared
+ * between callbacks so the availability re-check sees prior commits.
+ */
+function serializedTransaction(tx: any) {
+  let tail: Promise<unknown> = Promise.resolve();
+  return jest.fn((cb: any) => {
+    const run = tail.then(() => cb(tx));
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  });
+}
+
+function makeSharedTx() {
+  const created: any[] = [];
+  const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    venueSeat: {
+      findMany: jest.fn(async ({ where }: any) =>
+        where.id.in.map((id: string) => ({
+          id,
+          venueId: "venue_1",
+          seatNumber: id.toUpperCase(),
+        })),
+      ),
+    },
+    booking: {
+      findMany: jest.fn(async () =>
+        created.map((booking) => ({
+          date: booking.date,
+          time: booking.time,
+          duration: booking.duration,
+          timeZone: booking.timeZone,
+        })),
+      ),
+      create: jest.fn(async ({ data }: any) => {
+        const booking = {
+          id: `booking_${created.length + 1}`,
+          ...data,
+          venue: {
+            name: "Test Venue",
+            address: "123 Main St",
+            category: "coworking",
+          },
+        };
+        created.push(booking);
+        return booking;
+      }),
+    },
+  };
+  return { tx, created };
+}
+
 describe("POST /api/reservations/book", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -127,6 +186,9 @@ describe("POST /api/reservations/book", () => {
     const res = await POST(request({ seatId: "seat_1" }));
     expect(res.status).toBe(201);
     expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    const lockSql = (tx.$queryRaw.mock.calls[0][0] as string[]).join("?");
+    expect(lockSql).toContain("ORDER BY id ASC");
+    expect(lockSql).toContain("FOR UPDATE NOWAIT");
   });
 
   it("returns 409 when the seat is already taken for an overlapping slot", async () => {
@@ -287,5 +349,70 @@ describe("POST /api/reservations/book", () => {
     const res = await POST(request({ seatId: "seat_1", time: "14:00" }));
     expect(res.status).toBe(201);
     expect(attempts).toBe(2);
+  });
+
+  it("retries automatically when the row lock is unavailable (55P03)", async () => {
+    let attempts = 0;
+    const lockErr = Object.assign(new Error("could not obtain lock on row"), {
+      code: "55P03",
+    });
+    const tx = makeTx();
+    (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
+      attempts++;
+      if (attempts === 1) throw lockErr;
+      return cb(tx);
+    });
+
+    const res = await POST(request({ seatId: "seat_1", time: "15:00" }));
+    expect(res.status).toBe(201);
+    expect(attempts).toBe(2);
+  });
+
+  it("returns an informative 409 when seat lock contention persists after retries", async () => {
+    const lockErr = Object.assign(new Error("could not obtain lock on row"), {
+      code: "55P03",
+    });
+    (prisma.$transaction as jest.Mock).mockRejectedValue(lockErr);
+
+    const res = await POST(request({ seatId: "seat_1", time: "16:00" }));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("SEAT_LOCK_CONTENTION");
+    expect(body.retryable).toBe(true);
+    expect(body.seats).toEqual(["seat_1"]);
+  });
+
+  it("maps the active-booking unique constraint violation (P2002) to 409", async () => {
+    const uniqueErr = Object.assign(new Error("Unique constraint failed"), {
+      code: "P2002",
+      meta: { target: ["venueId", "seatId", "date", "time"] },
+    });
+    (prisma.$transaction as jest.Mock).mockRejectedValue(uniqueErr);
+
+    const res = await POST(request({ seatId: "seat_1", time: "17:00" }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("SEAT_CONFLICT");
+  });
+
+  it("allows exactly one of 20 parallel requests for the same seat and rejects the rest with 409", async () => {
+    const { tx, created } = makeSharedTx();
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      serializedTransaction(tx),
+    );
+
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, () => POST(request({ seatId: "seat_1" }))),
+    );
+
+    const statuses = responses.map((res) => res.status);
+    expect(statuses.filter((status) => status === 201)).toHaveLength(1);
+    expect(statuses.filter((status) => status === 409)).toHaveLength(19);
+    expect(created).toHaveLength(1);
+    expect(tx.booking.create).toHaveBeenCalledTimes(1);
+
+    const conflicts = await Promise.all(
+      responses.filter((res) => res.status === 409).map((res) => res.json()),
+    );
+    expect(conflicts.every((body) => body.code === "SEAT_CONFLICT")).toBe(true);
   });
 });

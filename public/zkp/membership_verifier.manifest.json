@@ -1,0 +1,6 @@
+{
+  "circuit": "membership_verifier.circom",
+  "circuitSha256": "a304509d6b8fe239710606768599d070479fc3a4361adb464dfdb429e107c456",
+  "commitmentScheme": "poseidon-bn254-merkle16",
+  "circomlibVersion": "2.0.5"
+}

@@ -34,6 +34,16 @@ describe("csvExport utility", () => {
       const date = new Date("2026-10-03T12:00:00.000Z");
       expect(escapeCSVField(date)).toBe("2026-10-03T12:00:00.000Z");
     });
+
+    it("sanitizes DDE command execution triggers starting with pipe (|)", () => {
+      expect(escapeCSVField("|'cmd'!' /C calc'")).toBe("'|'cmd'!' /C calc'");
+      expect(escapeCSVField("   |cmd")).toBe("'   |cmd");
+    });
+
+    it("sanitizes formula triggers with leading whitespace and strips null bytes", () => {
+      expect(escapeCSVField("   =1+1")).toBe("'   =1+1");
+      expect(escapeCSVField("Hello\0World")).toBe("HelloWorld");
+    });
   });
 
   describe("exportAnalyticsToCSV", () => {
@@ -162,6 +172,39 @@ describe("csvExport utility", () => {
 
       appendChildSpy.mockRestore();
       removeChildSpy.mockRestore();
+    });
+  });
+
+  describe("CsvBuilder and generateBookingsCSV nullish resilience", () => {
+    it("CsvBuilder safely handles nullish rows and accessor errors", () => {
+      const { CsvBuilder } = require("@/lib/export/csvBuilder");
+      const builder = new CsvBuilder<{ name: string; fail: string }>({ lineDelimiter: "\n" });
+
+      builder.setColumns([
+        { header: "Name", accessor: (r: any) => r.name },
+        { header: "Fail", accessor: () => { throw new Error("bad accessor"); } },
+      ]);
+
+      expect(() => builder.addRows(null as any)).not.toThrow();
+      expect(() => builder.addRows(undefined as any)).not.toThrow();
+      expect(() => builder.addRow(null as any)).not.toThrow();
+      expect(() => builder.addRows([null as any, { name: "Alice" }, undefined as any])).not.toThrow();
+
+      const csv = builder.build();
+      expect(csv).toContain("Alice,");
+    });
+
+    it("generateBookingsCSV handles nullish bookings and missing booking IDs safely", () => {
+      const { generateBookingsCSV } = require("@/lib/export/domain/bookingHistoryExporter");
+      expect(() => generateBookingsCSV(null as any)).not.toThrow();
+      expect(() => generateBookingsCSV(undefined as any)).not.toThrow();
+
+      const csv = generateBookingsCSV([
+        null as any,
+        { date: "2026-10-26", time: "10:00" } as any,
+      ]);
+      expect(csv).toContain("Confirmation ID,Venue Name");
+      expect(csv).toContain("WS-#N/A");
     });
   });
 });

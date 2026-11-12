@@ -76,7 +76,7 @@ export class IOUCryptographicSigner {
         const signature = await crypto.subtle.sign(
             { name: 'ECDSA', hash: 'SHA-256' },
             privateKey,
-            data
+            data as unknown as BufferSource
         );
 
         // Convert ArrayBuffer to hex string
@@ -103,8 +103,8 @@ export class IOUCryptographicSigner {
             const isValid = await crypto.subtle.verify(
                 { name: 'ECDSA', hash: 'SHA-256' },
                 publicKey,
-                signatureBytes,
-                data
+                signatureBytes as unknown as BufferSource,
+                data as unknown as BufferSource
             );
 
             return isValid;

@@ -2,9 +2,7 @@
  * Compatibility bridge: Re-export unified rate limiting implementations from @/lib/rateLimit.
  */
 
-import { auth } from "@clerk/nextjs/server";
-import { Ratelimit } from "@upstash/ratelimit";
-import { NextResponse } from "next/server";
+import type { RateLimitResult } from "./rateLimit/types";
 
 const DEFAULT_WINDOW_MS = 60_000;
 
@@ -373,7 +371,9 @@ function getUpstashLimiter(
  * Safely extracts the client IP from request headers.
  * Prioritizes direct proxy headers (X-Real-IP, CF-Connecting-IP) before X-Forwarded-For to prevent IP spoofing, falling back to loopback.
  */
-export function getClientIp(reqOrHeaders: Request | Headers | null | undefined): string {
+export function getClientIp(
+  reqOrHeaders: Request | Headers | null | undefined,
+): string {
   if (!reqOrHeaders) {
     return "127.0.0.1";
   }
@@ -390,7 +390,11 @@ export function getClientIp(reqOrHeaders: Request | Headers | null | undefined):
   const headers =
     reqOrHeaders instanceof Headers
       ? reqOrHeaders
-      : reqOrHeaders && typeof reqOrHeaders === "object" && "headers" in reqOrHeaders && reqOrHeaders.headers && typeof reqOrHeaders.headers.get === "function"
+      : reqOrHeaders &&
+          typeof reqOrHeaders === "object" &&
+          "headers" in reqOrHeaders &&
+          reqOrHeaders.headers &&
+          typeof reqOrHeaders.headers.get === "function"
         ? reqOrHeaders.headers
         : null;
 
@@ -639,10 +643,13 @@ export async function checkTieredRateLimit(
  * - Retry-After (included when request is blocked)
  */
 export function getRateLimitHeaders(
-  result: TieredRateLimitResult | null | undefined,
+  result: TieredRateLimitResult | RateLimitResult | any,
 ): Record<string, string> {
   if (!result || typeof result !== "object") {
     return {
+      "RateLimit-Limit": "10",
+      "RateLimit-Remaining": "10",
+      "RateLimit-Reset": "60",
       "X-RateLimit-Limit": "10",
       "X-RateLimit-Remaining": "10",
     };
@@ -655,17 +662,25 @@ export function getRateLimitHeaders(
     typeof result.remaining === "number" && Number.isFinite(result.remaining)
       ? Math.max(0, result.remaining)
       : 0;
+  const retryAfter =
+    typeof result.retryAfter === "number" && Number.isFinite(result.retryAfter)
+      ? Math.max(1, result.retryAfter)
+      : 1;
+
+  const isBlocked = "allowed" in result ? !result.allowed : !result.success;
 
   const headers: Record<string, string> = {
+    "RateLimit-Limit": String(limit),
+    "RateLimit-Remaining": String(remaining),
+    "RateLimit-Reset": String(retryAfter),
     "X-RateLimit-Limit": String(limit),
     "X-RateLimit-Remaining": String(remaining),
   };
-  if (!result.allowed) {
-    const retryAfter =
-      typeof result.retryAfter === "number" && Number.isFinite(result.retryAfter)
-        ? Math.max(1, result.retryAfter)
-        : 1;
+  if (isBlocked) {
     headers["Retry-After"] = String(retryAfter);
+  }
+  if (result.reset) {
+    headers["X-RateLimit-Reset"] = String(result.reset);
   }
   return headers;
 }
@@ -674,12 +689,35 @@ export function getRateLimitHeaders(
  * Creates standard HTTP 429 Too Many Requests response with rate-limit headers.
  */
 export function createRateLimitResponse(
-  result: TieredRateLimitResult,
+  result: TieredRateLimitResult | RateLimitResult | any,
 ): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { NextResponse } = require("next/server");
+  const retryAfter =
+    typeof result?.retryAfter === "number" && Number.isFinite(result.retryAfter)
+      ? Math.max(1, result.retryAfter)
+      : 1;
+  const limit =
+    typeof result?.limit === "number" && Number.isFinite(result.limit)
+      ? result.limit
+      : 10;
+  const remaining =
+    typeof result?.remaining === "number" && Number.isFinite(result.remaining)
+      ? Math.max(0, result.remaining)
+      : 0;
+  const reset =
+    typeof result?.reset === "number" && Number.isFinite(result.reset)
+      ? result.reset
+      : Math.ceil(Date.now() / 1000) + 60;
+
   return NextResponse.json(
-    { error: "Too many requests. Please try again later." },
+    {
+      error: "Too many requests. Please try again later.",
+      retryAfter,
+      limit,
+      remaining,
+      reset,
+    },
     {
       status: 429,
       headers: getRateLimitHeaders(result),
@@ -694,7 +732,11 @@ export function applyRateLimitHeaders<T extends Response>(
   response: T,
   result: TieredRateLimitResult,
 ): T {
-  if (!response || !response.headers || typeof response.headers.set !== "function") {
+  if (
+    !response ||
+    !response.headers ||
+    typeof response.headers.set !== "function"
+  ) {
     return response;
   }
   const headers = getRateLimitHeaders(result);

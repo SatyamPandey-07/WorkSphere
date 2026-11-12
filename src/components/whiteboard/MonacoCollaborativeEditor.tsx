@@ -3,6 +3,10 @@ import Editor, { OnMount } from "@monaco-editor/react";
 import * as Y from "yjs";
 import { MonacoBinding } from "y-monaco";
 import YPartyKitProvider from "y-partykit/provider";
+import {
+  SnapshotManager,
+  createHttpSnapshotStorage,
+} from "@/lib/crdt/snapshotManager";
 
 interface UserPresence {
   name: string;
@@ -34,7 +38,19 @@ export const MonacoCollaborativeEditor: React.FC<
 
     // 1. Initialize Yjs document and text type
     const doc = new Y.Doc();
+    // Reclaim deleted nodes/inserts between checkpoints; without this the
+    // document retains tombstones for the lifetime of a long session.
+    doc.gc = true;
     const yText = doc.getText("monaco");
+
+    // Periodically fold thousands of updates into one compact snapshot and
+    // purge the superseded delta log so memory stays bounded (#7574).
+    const snapshotManager = new SnapshotManager({
+      doc,
+      roomId,
+      storage: createHttpSnapshotStorage(),
+    });
+    snapshotManager.start();
 
     // 2. Setup PartyKit Provider for real-time CRDT sync
     const provider = new YPartyKitProvider(partykitHost, roomId, doc, {
@@ -112,6 +128,7 @@ export const MonacoCollaborativeEditor: React.FC<
       styleElement.remove();
       binding.destroy();
       provider.disconnect();
+      void snapshotManager.destroy();
       doc.destroy();
     };
   };

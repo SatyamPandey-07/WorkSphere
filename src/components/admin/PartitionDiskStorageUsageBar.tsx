@@ -32,21 +32,33 @@ const TABLE_PALETTE = [
   { bg: "bg-indigo-500", text: "text-indigo-400", border: "border-indigo-500/30", fill: "#6366f1" },
 ];
 
-function formatBytes(bytes: number): string {
-  if (!bytes || bytes <= 0 || Number.isNaN(bytes) || !Number.isFinite(bytes)) return "0 B";
+export function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0 || !Number.isFinite(bytes)) return "0 B";
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  if (i < 0 || i >= sizes.length) return "0 B";
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  const unitIndex = Math.min(Math.max(0, i), sizes.length - 1);
+  const formattedVal = bytes / Math.pow(k, unitIndex);
+  const valString =
+    formattedVal % 1 === 0
+      ? formattedVal.toString()
+      : parseFloat(formattedVal.toFixed(1)).toString();
+  return `${valString} ${sizes[unitIndex]}`;
 }
 
-function safePercent(bytes: number, total: number): number {
-  if (!total || total <= 0 || !bytes || bytes <= 0 || Number.isNaN(total) || Number.isNaN(bytes)) {
+export function safePercent(bytes: number, total: number): number {
+  if (
+    !total ||
+    total <= 0 ||
+    !bytes ||
+    bytes <= 0 ||
+    !Number.isFinite(total) ||
+    !Number.isFinite(bytes)
+  ) {
     return 0;
   }
   const calculated = (bytes / total) * 100;
-  if (Number.isNaN(calculated) || !Number.isFinite(calculated)) {
+  if (!Number.isFinite(calculated)) {
     return 0;
   }
   return Math.max(0, Math.min(100, calculated));
@@ -63,11 +75,15 @@ export function PartitionDiskStorageUsageBar({
   const [hoveredSegment, setHoveredSegment] = useState<string | null>(null);
 
   const totalBytes = useMemo(() => {
-    if (typeof propTotalSizeBytes === "number" && !Number.isNaN(propTotalSizeBytes)) {
+    if (typeof propTotalSizeBytes === "number" && Number.isFinite(propTotalSizeBytes)) {
       return Math.max(0, propTotalSizeBytes);
     }
     const computed = (partitions || []).reduce(
-      (acc, p) => acc + (p?.tableSizeBytes && p.tableSizeBytes > 0 ? p.tableSizeBytes : 0),
+      (acc, p) =>
+        acc +
+        (p?.tableSizeBytes && p.tableSizeBytes > 0 && Number.isFinite(p.tableSizeBytes)
+          ? p.tableSizeBytes
+          : 0),
       0,
     );
     return Math.max(0, computed);
@@ -79,12 +95,19 @@ export function PartitionDiskStorageUsageBar({
   const parentBreakdown = useMemo(() => {
     const map = new Map<string, { bytes: number; count: number; rows: number }>();
     (partitions || []).forEach((p) => {
-      const parentTable = p?.parentTable || "unknown";
+      if (!p) return;
+      const parentTable = p.parentTable || "unknown";
       const current = map.get(parentTable) || { bytes: 0, count: 0, rows: 0 };
       map.set(parentTable, {
-        bytes: current.bytes + (p?.tableSizeBytes && p.tableSizeBytes > 0 ? p.tableSizeBytes : 0),
+        bytes:
+          current.bytes +
+          (p.tableSizeBytes && p.tableSizeBytes > 0 && Number.isFinite(p.tableSizeBytes)
+            ? p.tableSizeBytes
+            : 0),
         count: current.count + 1,
-        rows: current.rows + (p?.rowCount && p.rowCount > 0 ? p.rowCount : 0),
+        rows:
+          current.rows +
+          (p.rowCount && p.rowCount > 0 && Number.isFinite(p.rowCount) ? p.rowCount : 0),
       });
     });
 
@@ -115,11 +138,15 @@ export function PartitionDiskStorageUsageBar({
     let expiredCount = 0;
 
     (partitions || []).forEach((p) => {
-      const bytes = p?.tableSizeBytes && p.tableSizeBytes > 0 ? p.tableSizeBytes : 0;
-      if (p?.isArchived) {
+      if (!p) return;
+      const bytes =
+        p.tableSizeBytes && p.tableSizeBytes > 0 && Number.isFinite(p.tableSizeBytes)
+          ? p.tableSizeBytes
+          : 0;
+      if (p.isArchived) {
         archivedBytes += bytes;
         archivedCount += 1;
-      } else if (p?.isExpired) {
+      } else if (p.isExpired) {
         expiredBytes += bytes;
         expiredCount += 1;
       } else {
@@ -176,7 +203,10 @@ export function PartitionDiskStorageUsageBar({
   // Cold threshold warnings
   const heavyPartitionsCount = useMemo(() => {
     return (partitions || []).filter(
-      (p) => p?.isNearColdStorage || (p?.tableSizeBytes && p.tableSizeBytes >= 100 * 1024 * 1024),
+      (p) =>
+        Boolean(p) &&
+        (p.isNearColdStorage ||
+          (p.tableSizeBytes && p.tableSizeBytes >= 100 * 1024 * 1024)),
     ).length;
   }, [partitions]);
 
@@ -262,18 +292,26 @@ export function PartitionDiskStorageUsageBar({
               if (seg.percent <= 0) return null;
               const isHovered = hoveredSegment === seg.key;
               const clampedPercent = Math.max(0, Math.min(100, seg.percent));
+              const handleFilter = () => {
+                if (viewMode === "parent") {
+                  onFilterByParent?.(seg.key);
+                } else {
+                  onFilterByStatus?.(seg.key);
+                }
+              };
               return (
                 <button
                   type="button"
                   key={seg.key}
+                  data-testid={`progress-segment-${seg.key}`}
                   style={{ width: `${clampedPercent}%` }}
                   onMouseEnter={() => setHoveredSegment(seg.key)}
                   onMouseLeave={() => setHoveredSegment(null)}
-                  onClick={() => {
-                    if (viewMode === "parent") {
-                      onFilterByParent?.(seg.key);
-                    } else {
-                      onFilterByStatus?.(seg.key);
+                  onClick={handleFilter}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleFilter();
                     }
                   }}
                   className={`h-full transition-all focus:outline-none focus:ring-1 focus:ring-white ${
@@ -298,17 +336,25 @@ export function PartitionDiskStorageUsageBar({
           activeSegments.map((seg) => {
             const isHovered = hoveredSegment === seg.key;
             const clampedPercent = Math.max(0, Math.min(100, seg.percent));
+            const handleFilter = () => {
+              if (viewMode === "parent") {
+                onFilterByParent?.(seg.key);
+              } else {
+                onFilterByStatus?.(seg.key);
+              }
+            };
             return (
               <button
                 type="button"
                 key={seg.key}
+                data-testid={`legend-item-${seg.key}`}
                 onMouseEnter={() => setHoveredSegment(seg.key)}
                 onMouseLeave={() => setHoveredSegment(null)}
-                onClick={() => {
-                  if (viewMode === "parent") {
-                    onFilterByParent?.(seg.key);
-                  } else {
-                    onFilterByStatus?.(seg.key);
+                onClick={handleFilter}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleFilter();
                   }
                 }}
                 className={`flex items-center gap-1.5 text-xs rounded-lg px-2 py-1 transition-colors text-left ${

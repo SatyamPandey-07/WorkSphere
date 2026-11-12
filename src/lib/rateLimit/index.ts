@@ -13,15 +13,13 @@ import type {
   TieredRateLimitResult,
   CheckTieredRateLimitOptions,
 } from "./types";
-import { TIER_CONFIGS, RATE_TIERS, matchRateTier, getClientIp } from "./config";
+import { TIER_CONFIGS, getClientIp } from "./config";
 import { defaultMemoryStore } from "./stores/memoryStore";
 import {
   getRedisClient,
   getCachedLimiter,
   setCachedLimiter,
-  resetRedisScripts,
   clearCachedLimiters,
-  microTimestampMember,
 } from "./stores/redisStore";
 import { SlidingWindowLimiter } from "./limiters/slidingWindowLimiter";
 import { TokenBucketLimiter } from "./limiters/tokenBucketLimiter";
@@ -32,6 +30,8 @@ export * from "./stores/memoryStore";
 export * from "./stores/redisStore";
 export * from "./limiters/slidingWindowLimiter";
 export * from "./limiters/tokenBucketLimiter";
+export * from "./slidingWindowRateLimiter";
+export * from "./lua/slidingWindowScript";
 
 const DEFAULT_WINDOW_MS = 60_000;
 
@@ -46,7 +46,11 @@ export async function rateLimit(
   limit = 10,
   windowMs: number = DEFAULT_WINDOW_MS,
 ): Promise<boolean> {
-  const limiter = new SlidingWindowLimiter({ limit, windowMs, namespace: "default" });
+  const limiter = new SlidingWindowLimiter({
+    limit,
+    windowMs,
+    namespace: "default",
+  });
   const result = await limiter.consume(identifier);
   return result.success;
 }
@@ -67,7 +71,11 @@ export async function getRateLimitInfo(
   ) {
     return null;
   }
-  const limiter = new SlidingWindowLimiter({ limit, windowMs, namespace: "default" });
+  const limiter = new SlidingWindowLimiter({
+    limit,
+    windowMs,
+    namespace: "default",
+  });
   const result = await limiter.check(identifier);
   return {
     count: limit - result.remaining,
@@ -132,7 +140,10 @@ export function checkInMemoryTokenBucket(
   const elapsed = Math.max(0, now - bucket.lastRefill);
   if (elapsed > 0) {
     const refillTokens = (elapsed / tier.windowMs) * tier.limit;
-    bucket.tokens = Math.min(tier.limit, Math.max(0, bucket.tokens) + refillTokens);
+    bucket.tokens = Math.min(
+      tier.limit,
+      Math.max(0, bucket.tokens) + refillTokens,
+    );
     bucket.lastRefill = now;
   }
 
@@ -288,7 +299,10 @@ function getUpstashLimiter(
     const { Ratelimit } = require("@upstash/ratelimit");
     limiter = new Ratelimit({
       redis,
-      limiter: Ratelimit.slidingWindow(config.limit, (config.windowDuration || "15 m") as any),
+      limiter: Ratelimit.slidingWindow(
+        config.limit,
+        (config.windowDuration || "15 m") as any,
+      ),
       prefix: `worksphere:ratelimit:${namespace}:${tier}`,
     });
     setCachedLimiter(cacheKey, limiter);

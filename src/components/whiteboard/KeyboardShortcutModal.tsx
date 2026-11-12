@@ -2,8 +2,9 @@
 
 import React, { useEffect, useRef } from "react";
 import { X, Keyboard } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-interface ShortcutItem {
+export interface ShortcutItem {
   name: string;
   keys: string[];
   description: string;
@@ -20,11 +21,15 @@ const SHORTCUTS: ShortcutItem[] = [
 export interface KeyboardShortcutModalProps {
   isOpen: boolean;
   onClose: () => void;
+  shortcuts?: ShortcutItem[];
+  className?: string;
 }
 
 export function KeyboardShortcutModal({
   isOpen,
   onClose,
+  shortcuts = SHORTCUTS,
+  className,
 }: KeyboardShortcutModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -99,7 +104,10 @@ export function KeyboardShortcutModal({
     >
       <div
         ref={modalRef}
-        className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl"
+        className={cn(
+          "w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl",
+          className
+        )}
       >
         <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
           <div className="flex items-center gap-2.5">
@@ -122,6 +130,7 @@ export function KeyboardShortcutModal({
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
+            data-testid="shortcut-close-button"
             aria-label="Close shortcuts modal"
             className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
           >
@@ -130,9 +139,10 @@ export function KeyboardShortcutModal({
         </div>
 
         <div className="mt-4 space-y-3">
-          {SHORTCUTS.map((item) => (
+          {shortcuts.map((item) => (
             <div
               key={item.name}
+              data-testid={`shortcut-item-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
               className="flex items-center justify-between rounded-xl bg-zinc-800/50 p-2.5 transition-colors hover:bg-zinc-800"
             >
               <div>
@@ -166,6 +176,7 @@ export function KeyboardShortcutModal({
           <button
             type="button"
             onClick={onClose}
+            data-testid="shortcut-got-it-button"
             className="rounded-lg bg-zinc-800 px-3 py-1.5 font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white"
           >
             Got it
@@ -175,3 +186,5 @@ export function KeyboardShortcutModal({
     </div>
   );
 }
+
+export default KeyboardShortcutModal;

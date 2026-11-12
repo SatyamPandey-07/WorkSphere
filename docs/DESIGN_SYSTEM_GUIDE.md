@@ -6,6 +6,43 @@
 
 ---
 
+## Spacing & Layout Tokens
+
+WorkSphere enforces a standardized **4px base grid** using Tailwind CSS spacing tokens to guarantee visual rhythm, predictable density, and consistent responsive alignment across all surfaces. Avoid arbitrary pixel values (such as `p-[13px]` or `gap-[18px]`) in component stylesheets.
+
+### Core Spacing Scale Reference
+
+| Token      | Tailwind Utilities       | Rem Value | Pixel Equivalent | Primary Usage                                                                                 |
+| :--------- | :----------------------- | :-------- | :--------------- | :-------------------------------------------------------------------------------------------- |
+| `space-1`  | `p-1`, `m-1`, `gap-1`    | `0.25rem` | `4px`            | Icon-to-label micro-gaps, tight badge internal padding (`px-2 py-0.5`).                       |
+| `space-2`  | `p-2`, `m-2`, `gap-2`    | `0.5rem`  | `8px`            | Compact button padding (`px-3 py-1.5`), inline chip lists, form label-to-input offsets.       |
+| `space-3`  | `p-3`, `m-3`, `gap-3`    | `0.75rem` | `12px`           | Dense toolbar groups, list row gaps, compact mobile card padding.                             |
+| `space-4`  | `p-4`, `m-4`, `gap-4`    | `1rem`    | `16px`           | **Default** card internal padding (mobile), standard grid column/row gaps, form field stacks. |
+| `space-6`  | `p-6`, `m-6`, `gap-6`    | `1.5rem`  | `24px`           | **Default** card & modal internal padding (desktop), section separation within views.         |
+| `space-8`  | `p-8`, `m-8`, `gap-8`    | `2rem`    | `32px`           | Major page section breaks, empty state containers, spacious modal bodies.                     |
+| `space-12` | `p-12`, `m-12`, `gap-12` | `3rem`    | `48px`           | Top-level page vertical padding (`py-8 lg:py-12`) and hero regions.                           |
+
+---
+
+### Responsive Container Max-Widths
+
+All top-level page wrappers and centered overlays must constrain line length and horizontal stretch using standard Tailwind container tokens:
+
+| Breakpoint Token | Tailwind Class            | Max Width           | Recommended Surface                                                                     |
+| :--------------- | :------------------------ | :------------------ | :-------------------------------------------------------------------------------------- |
+| **Small**        | `max-w-sm`                | `384px` (`24rem`)   | Confirmation dialogs, compact OTP/auth cards, toast stacks.                             |
+| **Medium**       | `max-w-md`                | `448px` (`28rem`)   | Share modals (`VenueShareModal`), single-column forms, alert drawers.                   |
+| **Large**        | `max-w-lg` / `max-w-2xl`  | `512px` / `672px`   | Detail inspection modals (`VenueDetailModal`), settings panels.                         |
+| **Extra Large**  | `max-w-5xl` / `max-w-6xl` | `1024px` / `1152px` | Standard dashboard views, venue discovery grids with filter sidebars.                   |
+| **2X Large**     | `max-w-7xl`               | `1280px` (`80rem`)  | Full-bleed analytics workspaces, multi-column comparison matrices, top navigation bars. |
+
+Standard page shell wrapper pattern:
+
+````tsx
+<main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+  {children}
+</main>
+
 ## Table of Contents
 
 - [Introduction](#introduction)
@@ -87,7 +124,7 @@ src/
 ├── lib/
 │   └── utils.ts                  # cn() utility (clsx + tailwind-merge)
 └── hooks/                        # Custom React hooks
-```
+````
 
 ### Utility Function
 
@@ -130,6 +167,23 @@ Design tokens are defined in `src/app/globals.css` as CSS custom properties and 
 
 ### Core Color Tokens
 
+ docs/spacing-and-layout-tokens
+| Token          | Light Value | Dark Value | CSS Variable             |
+| -------------- | ----------- | ---------- | ------------------------ |
+| `--background` | `#ffffff`   | `#0a0a0a`  | Page viewport background |
+| `--foreground` | `#171717`   | `#ededed`  | Primary text color       |
+
+> **Note:** Only `--background` and `--foreground` are defined as CSS custom properties. Additional color values used by components (e.g. `zinc-900`, `red-500`, `blue-600`) are referenced directly as Tailwind utility classes rather than through CSS variables.
+
+### Theme Mappings
+
+| Tailwind Theme Variable | Maps To                  | Tailwind Utilities                     |
+| ----------------------- | ------------------------ | -------------------------------------- |
+| `--color-background`    | `var(--background)`      | `bg-background`, `text-background`     |
+| `--color-foreground`    | `var(--foreground)`      | `text-foreground`, `border-foreground` |
+| `--font-sans`           | `var(--font-geist-sans)` | `font-sans`                            |
+| `--font-mono`           | `var(--font-geist-mono)` | `font-mono`                            |
+
 | Token Variable | Light Value | Dark Value | Cyberpunk Value | Operational Context |
 |:---|:---|:---|:---|:---|
 | `--background` | `#ffffff` | `#0a0a0a` | `#090014` | Page viewport canvas background |
@@ -168,11 +222,12 @@ All primary text pairings on default backgrounds ensure $\ge 4.5:1$ contrast (WC
 | `--color-primary-accent` | `var(--primary-accent)` | `bg-primary-accent`, `text-primary-accent` |
 | `--font-sans` | `var(--font-geist-sans)` | `font-sans` |
 | `--font-mono` | `var(--font-geist-mono)` | `font-mono` |
+ main
 
 ### Additional CSS Properties
 
-| Property | Value | Purpose |
-|----------|-------|---------|
+| Property       | Value        | Purpose                                              |
+| -------------- | ------------ | ---------------------------------------------------- |
 | `color-scheme` | `light dark` | Native form control theming (scrollbars, checkboxes) |
 
 ### Tokens Currently Not Defined
@@ -237,50 +292,50 @@ WorkSphere uses **Tailwind's built-in color scales** directly in components rath
 
 ### Primary Colors
 
-| Color | Tailwind Classes | Usage |
-|-------|-----------------|-------|
-| **Zinc (primary)** | `zinc-50`, `zinc-100`, `zinc-200`, `zinc-300`, `zinc-400`, `zinc-500`, `zinc-600`, `zinc-700`, `zinc-800`, `zinc-900`, `zinc-950` | Default buttons, text, borders, backgrounds |
-| **Blue (accent)** | `blue-500`, `blue-600`, `blue-700` | Primary actions, links, focus rings, accents |
-| **Red (destructive)** | `red-500`, `red-600`, `red-700`, `red-900` | Error states, destructive buttons, alerts |
-| **Purple** | `purple-600`, `purple-700` | Gradient accents, branding |
-| **Green / Emerald** | `green-500`, `emerald-400` | Success states, verified indicators |
-| **Amber** | `amber-500` | Warning states |
-| **Cyan** | `cyan-700` | Informational highlights |
-| **Violet** | `violet-400`, `violet-700` | Decorative accents |
+| Color                 | Tailwind Classes                                                                                                                  | Usage                                        |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Zinc (primary)**    | `zinc-50`, `zinc-100`, `zinc-200`, `zinc-300`, `zinc-400`, `zinc-500`, `zinc-600`, `zinc-700`, `zinc-800`, `zinc-900`, `zinc-950` | Default buttons, text, borders, backgrounds  |
+| **Blue (accent)**     | `blue-500`, `blue-600`, `blue-700`                                                                                                | Primary actions, links, focus rings, accents |
+| **Red (destructive)** | `red-500`, `red-600`, `red-700`, `red-900`                                                                                        | Error states, destructive buttons, alerts    |
+| **Purple**            | `purple-600`, `purple-700`                                                                                                        | Gradient accents, branding                   |
+| **Green / Emerald**   | `green-500`, `emerald-400`                                                                                                        | Success states, verified indicators          |
+| **Amber**             | `amber-500`                                                                                                                       | Warning states                               |
+| **Cyan**              | `cyan-700`                                                                                                                        | Informational highlights                     |
+| **Violet**            | `violet-400`, `violet-700`                                                                                                        | Decorative accents                           |
 
 ### Background Colors
 
-| Context | Light | Dark | Classes |
-|---------|-------|------|---------|
-| Page background | `#ffffff` | `#0a0a0a` | `bg-background` |
-| Card / surface | `#ffffff` | `zinc-900` | `bg-white dark:bg-zinc-900` |
-| Input field | `#ffffff` | `zinc-950` | `bg-white dark:bg-zinc-950` |
+| Context           | Light      | Dark       | Classes                        |
+| ----------------- | ---------- | ---------- | ------------------------------ |
+| Page background   | `#ffffff`  | `#0a0a0a`  | `bg-background`                |
+| Card / surface    | `#ffffff`  | `zinc-900` | `bg-white dark:bg-zinc-900`    |
+| Input field       | `#ffffff`  | `zinc-950` | `bg-white dark:bg-zinc-950`    |
 | Secondary surface | `zinc-100` | `zinc-800` | `bg-zinc-100 dark:bg-zinc-800` |
 
 ### Text Colors
 
-| Context | Light | Dark | Classes |
-|---------|-------|------|---------|
-| Primary text | `#171717` | `#ededed` | `text-foreground` |
-| Label text | `zinc-900` | `zinc-50` | `text-zinc-900 dark:text-zinc-50` |
+| Context        | Light      | Dark       | Classes                            |
+| -------------- | ---------- | ---------- | ---------------------------------- |
+| Primary text   | `#171717`  | `#ededed`  | `text-foreground`                  |
+| Label text     | `zinc-900` | `zinc-50`  | `text-zinc-900 dark:text-zinc-50`  |
 | Secondary text | `zinc-500` | `zinc-400` | `text-zinc-500 dark:text-zinc-400` |
-| Muted text | `zinc-600` | `white/70` | `text-zinc-600 dark:text-white/70` |
+| Muted text     | `zinc-600` | `white/70` | `text-zinc-600 dark:text-white/70` |
 
 ### Border Colors
 
-| Context | Light | Dark | Classes |
-|---------|-------|------|---------|
-| Standard border | `zinc-200` | `zinc-800` | `border-zinc-200 dark:border-zinc-800` |
-| Muted border | `zinc-200/80` | `white/5` | `border-zinc-200/80 dark:border-white/5` |
+| Context         | Light         | Dark       | Classes                                  |
+| --------------- | ------------- | ---------- | ---------------------------------------- |
+| Standard border | `zinc-200`    | `zinc-800` | `border-zinc-200 dark:border-zinc-800`   |
+| Muted border    | `zinc-200/80` | `white/5`  | `border-zinc-200/80 dark:border-white/5` |
 
 ### Semantic Status Colors
 
-| Status | Classes | Usage |
-|--------|---------|-------|
-| **Success** | `text-green-500`, `bg-green-500` | Success toasts, verified badges |
-| **Error** | `text-red-500`, `bg-red-500` | Error toasts, destructive actions |
-| **Warning** | `text-amber-500`, `bg-amber-500` | Warning toasts, caution states |
-| **Info** | `text-blue-500`, `bg-blue-500` | Informational badges, accents |
+| Status      | Classes                          | Usage                             |
+| ----------- | -------------------------------- | --------------------------------- |
+| **Success** | `text-green-500`, `bg-green-500` | Success toasts, verified badges   |
+| **Error**   | `text-red-500`, `bg-red-500`     | Error toasts, destructive actions |
+| **Warning** | `text-amber-500`, `bg-amber-500` | Warning toasts, caution states    |
+| **Info**    | `text-blue-500`, `bg-blue-500`   | Informational badges, accents     |
 
 ---
 
@@ -288,11 +343,11 @@ WorkSphere uses **Tailwind's built-in color scales** directly in components rath
 
 ### Font Families
 
-| Font | Variable | Tailwind Class | Purpose |
-|------|----------|---------------|---------|
-| **Geist Sans** | `--font-geist-sans` | `font-sans` | Primary body font |
-| **Geist Mono** | `--font-geist-mono` | `font-mono` | Code, technical content |
-| **Arial, Helvetica, sans-serif** | — | — | Fallback (set on `body`) |
+| Font                             | Variable            | Tailwind Class | Purpose                  |
+| -------------------------------- | ------------------- | -------------- | ------------------------ |
+| **Geist Sans**                   | `--font-geist-sans` | `font-sans`    | Primary body font        |
+| **Geist Mono**                   | `--font-geist-mono` | `font-mono`    | Code, technical content  |
+| **Arial, Helvetica, sans-serif** | —                   | —              | Fallback (set on `body`) |
 
 ### Font Loading
 
@@ -319,40 +374,40 @@ Additionally, the project bundles `NotoSans-Regular.ttf` and `NotoSans-Bold.ttf`
 
 ### Font Sizes
 
-| Tailwind Class | Size | Usage |
-|---------------|------|-------|
-| `text-xs` | `0.75rem` (12px) | Captions, helper text, badges |
-| `text-sm` | `0.875rem` (14px) | Labels, input text, button text, body small |
-| `text-base` | `1rem` (16px) | Default body text |
-| `text-lg` | `1.125rem` (18px) | Section headings, emphasized content |
-| `text-xl` | `1.25rem` (20px) | Card titles, nav brand |
-| `text-2xl` | `1.5rem` (24px) | Page headings (mobile) |
-| `text-3xl` | `1.875rem` (30px) | Section headings (desktop) |
-| `text-4xl` | `2.25rem` (36px) | Hero headings (desktop) |
+| Tailwind Class | Size              | Usage                                       |
+| -------------- | ----------------- | ------------------------------------------- |
+| `text-xs`      | `0.75rem` (12px)  | Captions, helper text, badges               |
+| `text-sm`      | `0.875rem` (14px) | Labels, input text, button text, body small |
+| `text-base`    | `1rem` (16px)     | Default body text                           |
+| `text-lg`      | `1.125rem` (18px) | Section headings, emphasized content        |
+| `text-xl`      | `1.25rem` (20px)  | Card titles, nav brand                      |
+| `text-2xl`     | `1.5rem` (24px)   | Page headings (mobile)                      |
+| `text-3xl`     | `1.875rem` (30px) | Section headings (desktop)                  |
+| `text-4xl`     | `2.25rem` (36px)  | Hero headings (desktop)                     |
 
 ### Font Weights
 
-| Tailwind Class | Weight | Usage |
-|---------------|--------|-------|
-| `font-medium` | 500 | Buttons, labels, nav links |
-| `font-semibold` | 600 | Subheadings, card titles |
-| `font-bold` | 700 | Headings, emphasis |
-| `font-black` | 900 | Uppercase section labels, FAQ questions |
+| Tailwind Class  | Weight | Usage                                   |
+| --------------- | ------ | --------------------------------------- |
+| `font-medium`   | 500    | Buttons, labels, nav links              |
+| `font-semibold` | 600    | Subheadings, card titles                |
+| `font-bold`     | 700    | Headings, emphasis                      |
+| `font-black`    | 900    | Uppercase section labels, FAQ questions |
 
 ### Letter Spacing
 
-| Tailwind Class | Usage |
-|---------------|-------|
-| `tracking-wider` | Uppercase labels |
+| Tailwind Class    | Usage                        |
+| ----------------- | ---------------------------- |
+| `tracking-wider`  | Uppercase labels             |
 | `tracking-widest` | Section badges, eyebrow text |
 
 ### Line Heights
 
-| Tailwind Class | Usage |
-|---------------|-------|
-| `leading-none` | Compact labels |
+| Tailwind Class    | Usage                   |
+| ----------------- | ----------------------- |
+| `leading-none`    | Compact labels          |
 | `leading-relaxed` | Body text, descriptions |
-| `leading-tight` | Headings |
+| `leading-tight`   | Headings                |
 
 ### Typography Recommendations
 
@@ -371,49 +426,49 @@ WorkSphere follows Tailwind's default spacing scale. Custom spacing tokens are *
 
 ### Common Spacing Values
 
-| Token | Value | Common Usage |
-|-------|-------|-------------|
-| `p-2` | `0.5rem` (8px) | Compact padding, icon buttons |
-| `p-3` | `0.75rem` (12px) | Card inner padding, small containers |
-| `p-4` | `1rem` (16px) | Standard card padding |
-| `p-6` | `1.5rem` (24px) | Section padding, modal content |
-| `p-8` | `2rem` (32px) | Empty state, hero sections |
-| `px-4` | `0 1rem` | Standard horizontal padding |
-| `px-6` | `0 1.5rem` | Page-level horizontal padding |
-| `py-2` | `0.5rem 0` | Button vertical padding |
-| `py-3` | `0.75rem 0` | Input vertical padding |
-| `py-5` | `1.25rem 0` | Accordion item padding |
+| Token  | Value            | Common Usage                         |
+| ------ | ---------------- | ------------------------------------ |
+| `p-2`  | `0.5rem` (8px)   | Compact padding, icon buttons        |
+| `p-3`  | `0.75rem` (12px) | Card inner padding, small containers |
+| `p-4`  | `1rem` (16px)    | Standard card padding                |
+| `p-6`  | `1.5rem` (24px)  | Section padding, modal content       |
+| `p-8`  | `2rem` (32px)    | Empty state, hero sections           |
+| `px-4` | `0 1rem`         | Standard horizontal padding          |
+| `px-6` | `0 1.5rem`       | Page-level horizontal padding        |
+| `py-2` | `0.5rem 0`       | Button vertical padding              |
+| `py-3` | `0.75rem 0`      | Input vertical padding               |
+| `py-5` | `1.25rem 0`      | Accordion item padding               |
 
 ### Gap Utilities
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `gap-1` | `0.25rem` | Tight icon + text spacing |
-| `gap-1.5` | `0.375rem` | Tag chip spacing |
-| `gap-2` | `0.5rem` | Standard gap for inline elements |
-| `gap-3` | `0.75rem` | Button groups, form fields |
-| `gap-4` | `1rem` | Section spacing, flex layouts |
-| `gap-6` | `1.5rem` | Grid gap, card layouts |
+| Token     | Value      | Usage                            |
+| --------- | ---------- | -------------------------------- |
+| `gap-1`   | `0.25rem`  | Tight icon + text spacing        |
+| `gap-1.5` | `0.375rem` | Tag chip spacing                 |
+| `gap-2`   | `0.5rem`   | Standard gap for inline elements |
+| `gap-3`   | `0.75rem`  | Button groups, form fields       |
+| `gap-4`   | `1rem`     | Section spacing, flex layouts    |
+| `gap-6`   | `1.5rem`   | Grid gap, card layouts           |
 
 ### Vertical Spacing
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `space-y-2` | `0.5rem` | List item spacing |
-| `space-y-3` | `0.75rem` | Form field spacing |
-| `space-y-4` | `1rem` | Section spacing |
-| `space-y-6` | `1.5rem` | Major section spacing |
+| Token       | Value     | Usage                 |
+| ----------- | --------- | --------------------- |
+| `space-y-2` | `0.5rem`  | List item spacing     |
+| `space-y-3` | `0.75rem` | Form field spacing    |
+| `space-y-4` | `1rem`    | Section spacing       |
+| `space-y-6` | `1.5rem`  | Major section spacing |
 
 ### Margins
 
-| Token | Usage |
-|-------|-------|
-| `mb-1.5` | After heading before body |
-| `mb-2` | After subtitle |
-| `mb-3` | After icon in error states |
-| `mb-4` | After heading in sections |
-| `mb-5` | After header in modals |
-| `mb-12` | After section header |
+| Token    | Usage                      |
+| -------- | -------------------------- |
+| `mb-1.5` | After heading before body  |
+| `mb-2`   | After subtitle             |
+| `mb-3`   | After icon in error states |
+| `mb-4`   | After heading in sections  |
+| `mb-5`   | After header in modals     |
+| `mb-12`  | After section header       |
 
 ---
 
@@ -421,15 +476,15 @@ WorkSphere follows Tailwind's default spacing scale. Custom spacing tokens are *
 
 WorkSphere uses Tailwind's default border radius scale. No custom radius tokens are defined in `@theme`.
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `rounded` | `0.25rem` (4px) | Minimal rounding |
-| `rounded-md` | `0.375rem` (6px) | Buttons, inputs, skeleton base |
-| `rounded-lg` | `0.5rem` (8px) | Cards, small containers |
-| `rounded-xl` | `0.75rem` (12px) | Theme toggle, toast items, tag chips |
-| `rounded-2xl` | `1rem` (16px) | Saved venue cards, FAQ items, modals |
-| `rounded-3xl` | `1.5rem` (24px) | Shortcuts modal, large containers |
-| `rounded-full` | `9999px` | Avatar, badge, pill shapes |
+| Token          | Value            | Usage                                |
+| -------------- | ---------------- | ------------------------------------ |
+| `rounded`      | `0.25rem` (4px)  | Minimal rounding                     |
+| `rounded-md`   | `0.375rem` (6px) | Buttons, inputs, skeleton base       |
+| `rounded-lg`   | `0.5rem` (8px)   | Cards, small containers              |
+| `rounded-xl`   | `0.75rem` (12px) | Theme toggle, toast items, tag chips |
+| `rounded-2xl`  | `1rem` (16px)    | Saved venue cards, FAQ items, modals |
+| `rounded-3xl`  | `1.5rem` (24px)  | Shortcuts modal, large containers    |
+| `rounded-full` | `9999px`         | Avatar, badge, pill shapes           |
 
 ### Recommendations
 
@@ -446,29 +501,29 @@ WorkSphere uses Tailwind's default border radius scale. No custom radius tokens 
 
 ### Tailwind Shadow Utilities
 
-| Utility | Usage |
-|---------|-------|
-| `shadow-sm` | Subtle elevation, hover states |
-| `shadow` | Default card shadow |
-| `shadow-md` | Medium elevation |
-| `shadow-lg` | Dropdown menus, popovers |
+| Utility     | Usage                                      |
+| ----------- | ------------------------------------------ |
+| `shadow-sm` | Subtle elevation, hover states             |
+| `shadow`    | Default card shadow                        |
+| `shadow-md` | Medium elevation                           |
+| `shadow-lg` | Dropdown menus, popovers                   |
 | `shadow-xl` | Elevated cards, panels, Clerk card element |
 
 ### Custom Shadow Effects
 
-| Class | CSS | Usage |
-|-------|-----|-------|
-| `.glow-blue` | `box-shadow: 0 0 20px rgba(59, 130, 246, 0.3)` | Static blue glow for highlighted elements |
-| `.animate-pulseGlow` | Animated `box-shadow` between `20px` and `40px` spread | Pulsing glow for interactive emphasis |
+| Class                | CSS                                                    | Usage                                     |
+| -------------------- | ------------------------------------------------------ | ----------------------------------------- |
+| `.glow-blue`         | `box-shadow: 0 0 20px rgba(59, 130, 246, 0.3)`         | Static blue glow for highlighted elements |
+| `.animate-pulseGlow` | Animated `box-shadow` between `20px` and `40px` spread | Pulsing glow for interactive emphasis     |
 
 ### Component-Specific Shadows
 
-| Component | Shadow | Context |
-|-----------|--------|---------|
-| `TopNav` logo | `shadow-lg shadow-blue-500/30` | Brand icon glow |
-| `ShortcutsModal` | `shadow-2xl` | High-elevation modal |
-| `ErrorBoundary` | none | Flat error card |
-| `Toast` | `shadow-lg` | Notification toast |
+| Component        | Shadow                         | Context              |
+| ---------------- | ------------------------------ | -------------------- |
+| `TopNav` logo    | `shadow-lg shadow-blue-500/30` | Brand icon glow      |
+| `ShortcutsModal` | `shadow-2xl`                   | High-elevation modal |
+| `ErrorBoundary`  | none                           | Flat error card      |
+| `Toast`          | `shadow-lg`                    | Notification toast   |
 
 ---
 
@@ -486,44 +541,48 @@ Defined in `src/app/globals.css`:
 }
 ```
 
-| Property | Light | Dark |
-|----------|-------|------|
-| Background | `bg-white` | `bg-zinc-900` |
-| Border | `border-zinc-200` | `border-zinc-800` |
-| Shadow | `shadow-xl` | `shadow-xl` |
+| Property   | Light             | Dark              |
+| ---------- | ----------------- | ----------------- |
+| Background | `bg-white`        | `bg-zinc-900`     |
+| Border     | `border-zinc-200` | `border-zinc-800` |
+| Shadow     | `shadow-xl`       | `shadow-xl`       |
 
 ### Backdrop Blur Utilities
 
 WorkSphere uses Tailwind's backdrop blur utilities extensively for glass effects:
 
-| Utility | Blur Amount | Usage |
-|---------|-------------|-------|
-| `backdrop-blur-sm` | 4px | Subtle overlays, lightweight UI |
-| `backdrop-blur-md` | 12px | Toast notifications, cards |
-| `backdrop-blur-xl` | 24px | Full-screen modals, dialogs |
+| Utility            | Blur Amount | Usage                           |
+| ------------------ | ----------- | ------------------------------- |
+| `backdrop-blur-sm` | 4px         | Subtle overlays, lightweight UI |
+| `backdrop-blur-md` | 12px        | Toast notifications, cards      |
+| `backdrop-blur-xl` | 24px        | Full-screen modals, dialogs     |
 
 ### Glass Pattern in Components
 
 **TopNav (navigation bar):**
+
 ```tsx
 <nav className="sticky top-0 z-50 border-b border-zinc-200/80 dark:border-white/5
   backdrop-blur-xl bg-white/70 dark:bg-black/40 transition-colors">
 ```
 
 **Toast notifications:**
+
 ```tsx
 className="bg-white/90 dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800
   backdrop-blur-md"
 ```
 
 **Shortcuts modal backdrop:**
+
 ```tsx
-className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm"
+className = "absolute inset-0 bg-zinc-950/60 backdrop-blur-sm";
 ```
 
 **FAQ accordion items:**
+
 ```tsx
-className="bg-white/50 dark:bg-black/20 backdrop-blur-sm"
+className = "bg-white/50 dark:bg-black/20 backdrop-blur-sm";
 ```
 
 ### Building Glass Components
@@ -531,8 +590,10 @@ className="bg-white/50 dark:bg-black/20 backdrop-blur-sm"
 To create a glass-style component:
 
 ```tsx
-<div className="bg-white/70 dark:bg-zinc-900/70 backdrop-blur-md
-  border border-zinc-200/50 dark:border-zinc-800/50 rounded-2xl shadow-xl">
+<div
+  className="bg-white/70 dark:bg-zinc-900/70 backdrop-blur-md
+  border border-zinc-200/50 dark:border-zinc-800/50 rounded-2xl shadow-xl"
+>
   {/* Content */}
 </div>
 ```
@@ -602,10 +663,10 @@ Use `dark:` variants directly in className rather than CSS variables for most st
 
 ```tsx
 // Preferred
-className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+className = "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800";
 
 // Also valid (for the two mapped tokens)
-className="bg-background text-foreground"
+className = "bg-background text-foreground";
 ```
 
 ### Best Practices
@@ -618,26 +679,26 @@ className="bg-background text-foreground"
 
 ### Light → Dark Mode Mapping Table
 
-| Purpose | Light | Dark | Classes |
-|---------|-------|------|---------|
-| Page background | `#ffffff` | `#0a0a0a` | `bg-background` |
-| Card/surface bg | `white` | `zinc-900` | `bg-white dark:bg-zinc-900` |
-| Secondary surface | `zinc-100` | `zinc-800` | `bg-zinc-100 dark:bg-zinc-800` |
-| Input bg | `white` | `zinc-950` | `bg-white dark:bg-zinc-950` |
-| Primary text | `#171717` | `#ededed` | `text-foreground` |
-| Label text | `zinc-900` | `zinc-50` | `text-zinc-900 dark:text-zinc-50` |
-| Body text | `zinc-700` | `zinc-300` | `text-zinc-700 dark:text-zinc-300` |
-| Secondary text | `zinc-500` | `zinc-400` | `text-zinc-500 dark:text-zinc-400` |
-| Muted text | `zinc-600` | `white/70` | `text-zinc-600 dark:text-white/70` |
-| Border | `zinc-200` | `zinc-800` | `border-zinc-200 dark:border-zinc-800` |
-| Subtle border | `zinc-200/80` | `white/5` | `border-zinc-200/80 dark:border-white/5` |
-| Button default bg | `zinc-900` | `zinc-50` | `bg-zinc-900 dark:bg-zinc-50` |
-| Button default text | `zinc-50` | `zinc-900` | `text-zinc-50 dark:text-zinc-900` |
-| Button secondary bg | `zinc-100` | `zinc-800` | `bg-zinc-100 dark:bg-zinc-800` |
-| Ghost hover bg | `zinc-100` | `zinc-800` | `hover:bg-zinc-100 dark:hover:bg-zinc-800` |
-| Scrollbar thumb | `zinc-300` | `zinc-700` | (via CSS) |
-| Skeleton bg | `zinc-200` | `zinc-800` | `bg-zinc-200 dark:bg-zinc-800` |
-| Modal backdrop | `zinc-950/60` | `zinc-950/60` | `bg-zinc-950/60` |
+| Purpose             | Light         | Dark          | Classes                                    |
+| ------------------- | ------------- | ------------- | ------------------------------------------ |
+| Page background     | `#ffffff`     | `#0a0a0a`     | `bg-background`                            |
+| Card/surface bg     | `white`       | `zinc-900`    | `bg-white dark:bg-zinc-900`                |
+| Secondary surface   | `zinc-100`    | `zinc-800`    | `bg-zinc-100 dark:bg-zinc-800`             |
+| Input bg            | `white`       | `zinc-950`    | `bg-white dark:bg-zinc-950`                |
+| Primary text        | `#171717`     | `#ededed`     | `text-foreground`                          |
+| Label text          | `zinc-900`    | `zinc-50`     | `text-zinc-900 dark:text-zinc-50`          |
+| Body text           | `zinc-700`    | `zinc-300`    | `text-zinc-700 dark:text-zinc-300`         |
+| Secondary text      | `zinc-500`    | `zinc-400`    | `text-zinc-500 dark:text-zinc-400`         |
+| Muted text          | `zinc-600`    | `white/70`    | `text-zinc-600 dark:text-white/70`         |
+| Border              | `zinc-200`    | `zinc-800`    | `border-zinc-200 dark:border-zinc-800`     |
+| Subtle border       | `zinc-200/80` | `white/5`     | `border-zinc-200/80 dark:border-white/5`   |
+| Button default bg   | `zinc-900`    | `zinc-50`     | `bg-zinc-900 dark:bg-zinc-50`              |
+| Button default text | `zinc-50`     | `zinc-900`    | `text-zinc-50 dark:text-zinc-900`          |
+| Button secondary bg | `zinc-100`    | `zinc-800`    | `bg-zinc-100 dark:bg-zinc-800`             |
+| Ghost hover bg      | `zinc-100`    | `zinc-800`    | `hover:bg-zinc-100 dark:hover:bg-zinc-800` |
+| Scrollbar thumb     | `zinc-300`    | `zinc-700`    | (via CSS)                                  |
+| Skeleton bg         | `zinc-200`    | `zinc-800`    | `bg-zinc-200 dark:bg-zinc-800`             |
+| Modal backdrop      | `zinc-950/60` | `zinc-950/60` | `bg-zinc-950/60`                           |
 
 ---
 
@@ -651,32 +712,32 @@ A versatile button component with 6 variants and 4 sizes.
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `variant` | `"default" \| "destructive" \| "outline" \| "secondary" \| "ghost" \| "link"` | `"default"` | Visual style variant |
-| `size` | `"default" \| "sm" \| "lg" \| "icon"` | `"default"` | Button size |
-| `className` | `string` | — | Additional CSS classes |
-| `...props` | `React.ButtonHTMLAttributes<HTMLButtonElement>` | — | All native button attributes |
+| Prop        | Type                                                                          | Default     | Description                  |
+| ----------- | ----------------------------------------------------------------------------- | ----------- | ---------------------------- |
+| `variant`   | `"default" \| "destructive" \| "outline" \| "secondary" \| "ghost" \| "link"` | `"default"` | Visual style variant         |
+| `size`      | `"default" \| "sm" \| "lg" \| "icon"`                                         | `"default"` | Button size                  |
+| `className` | `string`                                                                      | —           | Additional CSS classes       |
+| `...props`  | `React.ButtonHTMLAttributes<HTMLButtonElement>`                               | —           | All native button attributes |
 
 #### Variants
 
-| Variant | Light | Dark | Usage |
-|---------|-------|------|-------|
-| `default` | `bg-zinc-900 text-zinc-50` | `bg-zinc-50 text-zinc-900` | Primary actions |
-| `destructive` | `bg-red-500 text-zinc-50` | `bg-red-900 text-zinc-50` | Delete, remove, danger |
-| `outline` | `border-zinc-200 bg-white` | `border-zinc-800 bg-zinc-950` | Secondary actions |
-| `secondary` | `bg-zinc-100 text-zinc-900` | `bg-zinc-800 text-zinc-50` | Tertiary actions |
-| `ghost` | transparent, hover `zinc-100` | transparent, hover `zinc-800` | Inline actions, nav |
-| `link` | `text-zinc-900`, underline | `text-zinc-50`, underline | Text links |
+| Variant       | Light                         | Dark                          | Usage                  |
+| ------------- | ----------------------------- | ----------------------------- | ---------------------- |
+| `default`     | `bg-zinc-900 text-zinc-50`    | `bg-zinc-50 text-zinc-900`    | Primary actions        |
+| `destructive` | `bg-red-500 text-zinc-50`     | `bg-red-900 text-zinc-50`     | Delete, remove, danger |
+| `outline`     | `border-zinc-200 bg-white`    | `border-zinc-800 bg-zinc-950` | Secondary actions      |
+| `secondary`   | `bg-zinc-100 text-zinc-900`   | `bg-zinc-800 text-zinc-50`    | Tertiary actions       |
+| `ghost`       | transparent, hover `zinc-100` | transparent, hover `zinc-800` | Inline actions, nav    |
+| `link`        | `text-zinc-900`, underline    | `text-zinc-50`, underline     | Text links             |
 
 #### Sizes
 
-| Size | Height | Padding | Notes |
-|------|--------|---------|-------|
-| `default` | `h-10` | `px-4 py-2` | Standard button |
-| `sm` | `h-9` | `px-3` | Compact button |
-| `lg` | `h-11` | `px-8` | Large/CTA button |
-| `icon` | `h-10 w-10` | — | Square icon-only button |
+| Size      | Height      | Padding     | Notes                   |
+| --------- | ----------- | ----------- | ----------------------- |
+| `default` | `h-10`      | `px-4 py-2` | Standard button         |
+| `sm`      | `h-9`       | `px-3`      | Compact button          |
+| `lg`      | `h-11`      | `px-8`      | Large/CTA button        |
+| `icon`    | `h-10 w-10` | —           | Square icon-only button |
 
 #### Example
 
@@ -707,11 +768,11 @@ A styled text input component.
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `className` | `string` | — | Additional CSS classes |
-| `type` | `string` | — | Input type (text, email, password, etc.) |
-| `...props` | `React.InputHTMLAttributes<HTMLInputElement>` | — | All native input attributes |
+| Prop        | Type                                          | Default | Description                              |
+| ----------- | --------------------------------------------- | ------- | ---------------------------------------- |
+| `className` | `string`                                      | —       | Additional CSS classes                   |
+| `type`      | `string`                                      | —       | Input type (text, email, password, etc.) |
+| `...props`  | `React.InputHTMLAttributes<HTMLInputElement>` | —       | All native input attributes              |
 
 #### Styling
 
@@ -741,10 +802,10 @@ A form label component that responds to peer disabled state.
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `className` | `string` | — | Additional CSS classes |
-| `...props` | `React.LabelHTMLAttributes<HTMLLabelElement>` | — | All native label attributes |
+| Prop        | Type                                          | Default | Description                 |
+| ----------- | --------------------------------------------- | ------- | --------------------------- |
+| `className` | `string`                                      | —       | Additional CSS classes      |
+| `...props`  | `React.LabelHTMLAttributes<HTMLLabelElement>` | —       | All native label attributes |
 
 #### Styling
 
@@ -779,9 +840,9 @@ A pulse-animated placeholder for loading states.
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `className` | `string` | — | Size and shape customization |
+| Prop        | Type     | Default | Description                  |
+| ----------- | -------- | ------- | ---------------------------- |
+| `className` | `string` | —       | Size and shape customization |
 
 #### Base Styling
 
@@ -791,15 +852,15 @@ A pulse-animated placeholder for loading states.
 
 #### Composed Skeletons
 
-| Export | Description |
-|--------|-------------|
-| `Skeleton` | Base primitive — sized via `className` |
-| `VenueCardSkeleton` | Mirrors a single venue card layout |
-| `VenueListSkeleton` | A list of `VenueCardSkeleton` (configurable `count`, default 3) |
-| `ChatMessageSkeleton` | Incoming chat bubble placeholder |
-| `AgentStepsSkeleton` | 5-step timeline with left border |
-| `SavedVenueCardSkeleton` | Saved venue card layout |
-| `MapMarkerSkeleton` | Centered circular map marker |
+| Export                   | Description                                                     |
+| ------------------------ | --------------------------------------------------------------- |
+| `Skeleton`               | Base primitive — sized via `className`                          |
+| `VenueCardSkeleton`      | Mirrors a single venue card layout                              |
+| `VenueListSkeleton`      | A list of `VenueCardSkeleton` (configurable `count`, default 3) |
+| `ChatMessageSkeleton`    | Incoming chat bubble placeholder                                |
+| `AgentStepsSkeleton`     | 5-step timeline with left border                                |
+| `SavedVenueCardSkeleton` | Saved venue card layout                                         |
+| `MapMarkerSkeleton`      | Centered circular map marker                                    |
 
 #### Example
 
@@ -830,20 +891,20 @@ An animated empty state component with SVG illustrations.
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `illustration` | `"search" \| "collection" \| "chat"` | — | Which SVG illustration to display |
-| `message` | `string` | — | Bold heading text |
-| `description` | `string` | — | Optional descriptive text |
-| `action` | `React.ReactNode` | — | Optional action element (e.g., button) |
+| Prop           | Type                                 | Default | Description                            |
+| -------------- | ------------------------------------ | ------- | -------------------------------------- |
+| `illustration` | `"search" \| "collection" \| "chat"` | —       | Which SVG illustration to display      |
+| `message`      | `string`                             | —       | Bold heading text                      |
+| `description`  | `string`                             | —       | Optional descriptive text              |
+| `action`       | `React.ReactNode`                    | —       | Optional action element (e.g., button) |
 
 #### Illustrations
 
-| Type | Description |
-|------|-------------|
-| `search` | Animated radar/pin with magnifying glass — for empty search results |
-| `collection` | Floating folder with star — for empty collections |
-| `chat` | Chat bubbles with brain icon — for empty chat state |
+| Type         | Description                                                         |
+| ------------ | ------------------------------------------------------------------- |
+| `search`     | Animated radar/pin with magnifying glass — for empty search results |
+| `collection` | Floating folder with star — for empty collections                   |
+| `chat`       | Chat bubbles with brain icon — for empty chat state                 |
 
 #### Example
 
@@ -856,7 +917,7 @@ import { Button } from "@/components/ui/button";
   message="No venues found"
   description="Try adjusting your search filters"
   action={<Button>Clear Filters</Button>}
-/>
+/>;
 ```
 
 ---
@@ -875,18 +936,18 @@ type ToastType = "success" | "error" | "warning";
 
 #### API
 
-| Export | Description |
-|--------|-------------|
-| `ToastProvider` | Context provider — wrap at the top level |
-| `useToast()` | Hook returning `{ toast: (message, type?) => void }` |
+| Export          | Description                                          |
+| --------------- | ---------------------------------------------------- |
+| `ToastProvider` | Context provider — wrap at the top level             |
+| `useToast()`    | Hook returning `{ toast: (message, type?) => void }` |
 
 #### Toast Types
 
-| Type | Icon | Icon Color | Default |
-|------|------|-----------|---------|
-| `success` | `CheckCircle2` | `text-green-500` | Yes |
-| `error` | `AlertCircle` | `text-red-500` | — |
-| `warning` | `AlertTriangle` | `text-amber-500` | — |
+| Type      | Icon            | Icon Color       | Default |
+| --------- | --------------- | ---------------- | ------- |
+| `success` | `CheckCircle2`  | `text-green-500` | Yes     |
+| `error`   | `AlertCircle`   | `text-red-500`   | —       |
+| `warning` | `AlertTriangle` | `text-amber-500` | —       |
 
 #### Styling
 
@@ -901,7 +962,7 @@ type ToastType = "success" | "error" | "warning";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
 
 // Wrap in layout:
-<ToastProvider>{children}</ToastProvider>
+<ToastProvider>{children}</ToastProvider>;
 
 // In any component:
 function MyComponent() {
@@ -938,7 +999,7 @@ A fixed progress bar at the top of the viewport showing scroll position.
 import { ScrollProgress } from "@/components/ui/ScrollProgress";
 
 // Already included in layout.tsx — no manual addition needed
-<ScrollProgress />
+<ScrollProgress />;
 ```
 
 ---
@@ -969,7 +1030,7 @@ A single-expand accordion for frequently asked questions.
 ```tsx
 import FAQAccordion from "@/components/ui/FAQAccordion";
 
-<FAQAccordion />
+<FAQAccordion />;
 ```
 
 ---
@@ -982,21 +1043,21 @@ A modal dialog displaying keyboard shortcuts.
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `isOpen` | `boolean` | — | Controls visibility |
-| `onClose` | `() => void` | — | Called when modal should close |
+| Prop      | Type         | Default | Description                    |
+| --------- | ------------ | ------- | ------------------------------ |
+| `isOpen`  | `boolean`    | —       | Controls visibility            |
+| `onClose` | `() => void` | —       | Called when modal should close |
 
 #### Keyboard Shortcuts Displayed
 
-| Category | Shortcut | Action |
-|----------|----------|--------|
-| General | `?` | Toggle shortcuts guide |
-| General | `Esc` | Close active modal |
-| Chat | `Ctrl/⌘ + K` | Focus search input |
-| Venues | `↓` | Next venue card |
-| Venues | `↑` | Previous venue card |
-| Venues | `Enter` | Open venue details |
+| Category | Shortcut     | Action                 |
+| -------- | ------------ | ---------------------- |
+| General  | `?`          | Toggle shortcuts guide |
+| General  | `Esc`        | Close active modal     |
+| Chat     | `Ctrl/⌘ + K` | Focus search input     |
+| Venues   | `↓`          | Next venue card        |
+| Venues   | `↑`          | Previous venue card    |
+| Venues   | `Enter`      | Open venue details     |
 
 #### Styling
 
@@ -1009,7 +1070,10 @@ A modal dialog displaying keyboard shortcuts.
 ```tsx
 import { ShortcutsModal } from "@/components/ui/ShortcutsModal";
 
-<ShortcutsModal isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
+<ShortcutsModal
+  isOpen={showShortcuts}
+  onClose={() => setShowShortcuts(false)}
+/>;
 ```
 
 ---
@@ -1022,8 +1086,8 @@ The global navigation bar, sticky at the top.
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
+| Prop       | Type      | Default | Description                      |
+| ---------- | --------- | ------- | -------------------------------- |
 | `hideAuth` | `boolean` | `false` | Hides auth buttons and user menu |
 
 #### Features
@@ -1072,7 +1136,7 @@ A button that toggles between light and dark mode.
 ```tsx
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-<ThemeToggle />
+<ThemeToggle />;
 ```
 
 ---
@@ -1085,20 +1149,20 @@ A React class component error boundary with domain-specific variants.
 
 #### Props
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `children` | `ReactNode` | — | Content to protect |
-| `fallback` | `ReactNode` | — | Custom fallback UI |
-| `onError` | `(error, errorInfo) => void` | — | Error callback |
+| Prop       | Type                         | Default | Description        |
+| ---------- | ---------------------------- | ------- | ------------------ |
+| `children` | `ReactNode`                  | —       | Content to protect |
+| `fallback` | `ReactNode`                  | —       | Custom fallback UI |
+| `onError`  | `(error, errorInfo) => void` | —       | Error callback     |
 
 #### Variants
 
-| Export | Purpose |
-|--------|---------|
-| `ErrorBoundary` | Generic error boundary |
-| `withErrorBoundary(Component, fallback?)` | HOC wrapper |
-| `ChatErrorBoundary` | Chat-specific error with refresh |
-| `MapErrorBoundary` | Map-specific error with reload |
+| Export                                    | Purpose                          |
+| ----------------------------------------- | -------------------------------- |
+| `ErrorBoundary`                           | Generic error boundary           |
+| `withErrorBoundary(Component, fallback?)` | HOC wrapper                      |
+| `ChatErrorBoundary`                       | Chat-specific error with refresh |
+| `MapErrorBoundary`                        | Map-specific error with reload   |
 
 #### Example
 
@@ -1143,7 +1207,7 @@ The global page footer with newsletter, social links, and navigation.
 ```tsx
 import SiteFooter from "@/components/site-footer";
 
-<SiteFooter />
+<SiteFooter />;
 ```
 
 ---
@@ -1168,7 +1232,7 @@ Expandable card for saved/bookmarked venues.
 ```tsx
 import { SavedVenueCard } from "@/components/saved-venues/SavedVenueCard";
 
-<SavedVenueCard venue={venue} onUpdate={refreshList} />
+<SavedVenueCard venue={venue} onUpdate={refreshList} />;
 ```
 
 ---
@@ -1217,7 +1281,11 @@ Dialog for creating new tags with color picker.
 ```tsx
 import { TagInput } from "@/components/saved-venues/TagInput";
 
-<TagInput isOpen={showTagInput} onClose={() => setShowTagInput(false)} onCreated={refreshTags} />
+<TagInput
+  isOpen={showTagInput}
+  onClose={() => setShowTagInput(false)}
+  onCreated={refreshTags}
+/>;
 ```
 
 ---
@@ -1271,7 +1339,7 @@ Displays aggregate metrics for a collection.
 ```tsx
 import { MetricsWidget } from "@/components/collections/MetricsWidget";
 
-<MetricsWidget folderId={folderId} />
+<MetricsWidget folderId={folderId} />;
 ```
 
 ---
@@ -1302,7 +1370,7 @@ Side-by-side collection comparison.
 ```tsx
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
 
-<ComparisonTool />
+<ComparisonTool />;
 ```
 
 ---
@@ -1452,32 +1520,32 @@ Internationalization provider.
 
 ### Custom Utilities (defined in globals.css)
 
-| Class | CSS | Usage |
-|-------|-----|-------|
-| `.glass-card` | `bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl` | Frosted glass card container |
-| `.glow-blue` | `box-shadow: 0 0 20px rgba(59, 130, 246, 0.3)` | Static blue glow effect |
-| `.text-glow` | `text-shadow: none` | Reserved (currently disabled) |
+| Class         | CSS                                                                               | Usage                         |
+| ------------- | --------------------------------------------------------------------------------- | ----------------------------- |
+| `.glass-card` | `bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl` | Frosted glass card container  |
+| `.glow-blue`  | `box-shadow: 0 0 20px rgba(59, 130, 246, 0.3)`                                    | Static blue glow effect       |
+| `.text-glow`  | `text-shadow: none`                                                               | Reserved (currently disabled) |
 
 ### Custom Animations (defined in globals.css)
 
-| Class | Animation | Duration | Effect |
-|-------|-----------|----------|--------|
-| `.animate-gradient` | `gradient` | 6s, infinite | Background gradient position cycling |
-| `.animate-fadeInUp` | `fadeInUp` | 0.6s, forwards | Fade in + 20px upward slide |
-| `.animate-pulseGlow` | `pulseGlow` | 2s, infinite | Breathing blue glow (20px ↔ 40px) |
-| `.animate-shimmer` | `shimmer` | 1.5s, infinite | Horizontal shimmer sweep |
+| Class                | Animation   | Duration       | Effect                               |
+| -------------------- | ----------- | -------------- | ------------------------------------ |
+| `.animate-gradient`  | `gradient`  | 6s, infinite   | Background gradient position cycling |
+| `.animate-fadeInUp`  | `fadeInUp`  | 0.6s, forwards | Fade in + 20px upward slide          |
+| `.animate-pulseGlow` | `pulseGlow` | 2s, infinite   | Breathing blue glow (20px ↔ 40px)    |
+| `.animate-shimmer`   | `shimmer`   | 1.5s, infinite | Horizontal shimmer sweep             |
 
 ### Common Tailwind Utilities in Use
 
-| Category | Utilities |
-|----------|-----------|
-| Flex | `flex`, `inline-flex`, `flex-1`, `flex-col`, `items-center`, `items-start`, `justify-center`, `justify-between` |
-| Grid | `grid`, `grid-cols-1`, `grid-cols-2`, `md:grid-cols-2`, `lg:grid-cols-3` |
-| Position | `sticky`, `fixed`, `absolute`, `relative` |
-| Overflow | `overflow-hidden`, `overflow-y-auto`, `min-w-0` |
-| Sizing | `w-full`, `w-8`, `w-10`, `h-8`, `h-9`, `h-10`, `h-11`, `max-w-lg`, `max-w-sm`, `max-w-3xl` |
-| Display | `hidden`, `block`, `sm:flex`, `sm:block` |
-| Transitions | `transition-colors`, `transition-all`, `transition-shadow`, `transition-transform` |
+| Category    | Utilities                                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------- |
+| Flex        | `flex`, `inline-flex`, `flex-1`, `flex-col`, `items-center`, `items-start`, `justify-center`, `justify-between` |
+| Grid        | `grid`, `grid-cols-1`, `grid-cols-2`, `md:grid-cols-2`, `lg:grid-cols-3`                                        |
+| Position    | `sticky`, `fixed`, `absolute`, `relative`                                                                       |
+| Overflow    | `overflow-hidden`, `overflow-y-auto`, `min-w-0`                                                                 |
+| Sizing      | `w-full`, `w-8`, `w-10`, `h-8`, `h-9`, `h-10`, `h-11`, `max-w-lg`, `max-w-sm`, `max-w-3xl`                      |
+| Display     | `hidden`, `block`, `sm:flex`, `sm:block`                                                                        |
+| Transitions | `transition-colors`, `transition-all`, `transition-shadow`, `transition-transform`                              |
 
 ---
 
@@ -1501,15 +1569,15 @@ PascalCase, matching the Lucide icon name: `MapPin`, `AlertCircle`, `Loader2`, `
 
 ### Standard Sizes
 
-| Tailwind Classes | Pixel Size | Usage |
-|-----------------|------------|-------|
-| `w-3 h-3` | 12px | Tiny inline icons |
-| `w-3.5 h-3.5` | 14px | Toast dismiss button |
-| `w-4 h-4` | 16px | Standard icon size, buttons, nav |
-| `w-5 h-5` | 20px | Larger icons, header icons |
-| `w-6 h-6` | 24px | Feature icons |
-| `w-10 h-10` | 40px | Error state icons, large feature icons |
-| `w-12 h-12` | 48px | Empty state large icons |
+| Tailwind Classes | Pixel Size | Usage                                  |
+| ---------------- | ---------- | -------------------------------------- |
+| `w-3 h-3`        | 12px       | Tiny inline icons                      |
+| `w-3.5 h-3.5`    | 14px       | Toast dismiss button                   |
+| `w-4 h-4`        | 16px       | Standard icon size, buttons, nav       |
+| `w-5 h-5`        | 20px       | Larger icons, header icons             |
+| `w-6 h-6`        | 24px       | Feature icons                          |
+| `w-10 h-10`      | 40px       | Error state icons, large feature icons |
+| `w-12 h-12`      | 48px       | Empty state large icons                |
 
 ### Color Patterns
 
@@ -1528,22 +1596,22 @@ PascalCase, matching the Lucide icon name: `MapPin`, `AlertCircle`, `Loader2`, `
 
 ### Icons Used in the Codebase
 
-| Icon | Usage |
-|------|-------|
-| `MapPin` | Logo, map markers, venue location |
-| `Sun` / `Moon` | Theme toggle |
-| `X` | Close buttons, dismiss |
-| `CheckCircle2` | Success toasts |
-| `AlertCircle` | Error toasts |
-| `AlertTriangle` | Warning toasts, error boundaries |
-| `RefreshCw` | Retry buttons |
-| `ChevronDown` | Accordion expand indicator |
-| `Keyboard` | Shortcuts modal header |
-| `Coffee` | Dashboard nav link |
-| `LayoutGrid` | Collections nav link |
-| `Loader2` | Loading spinner (animated) |
-| `Settings` | Settings pages |
-| `Globe` | Language selector |
+| Icon            | Usage                             |
+| --------------- | --------------------------------- |
+| `MapPin`        | Logo, map markers, venue location |
+| `Sun` / `Moon`  | Theme toggle                      |
+| `X`             | Close buttons, dismiss            |
+| `CheckCircle2`  | Success toasts                    |
+| `AlertCircle`   | Error toasts                      |
+| `AlertTriangle` | Warning toasts, error boundaries  |
+| `RefreshCw`     | Retry buttons                     |
+| `ChevronDown`   | Accordion expand indicator        |
+| `Keyboard`      | Shortcuts modal header            |
+| `Coffee`        | Dashboard nav link                |
+| `LayoutGrid`    | Collections nav link              |
+| `Loader2`       | Loading spinner (animated)        |
+| `Settings`      | Settings pages                    |
+| `Globe`         | Language selector                 |
 
 ---
 
@@ -1635,10 +1703,7 @@ variants={{
 ### Hover Effects
 
 ```tsx
-<motion.button
-  whileHover={{ scale: 1.03 }}
-  whileTap={{ scale: 0.97 }}
-/>
+<motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} />
 ```
 
 ### Custom CSS Animations
@@ -1647,16 +1712,16 @@ Defined in `globals.css` — see [Utility Classes](#utility-classes).
 
 ### Timing Guidelines
 
-| Interaction | Duration | Easing |
-|-------------|----------|--------|
-| Hover/Press | 150ms | `ease` |
-| Button press | 100–150ms | `ease` |
-| Modal/Dropdown | 200–300ms | `ease-in-out` |
-| Page transition | ~220ms | `ease-in-out` |
-| List item entrance | 150–250ms | `ease-out` |
-| Gradient cycle | 6s | `ease` |
-| Shimmer | 1.5s | `linear` |
-| Pulse glow | 2s | `ease-in-out` |
+| Interaction        | Duration  | Easing        |
+| ------------------ | --------- | ------------- |
+| Hover/Press        | 150ms     | `ease`        |
+| Button press       | 100–150ms | `ease`        |
+| Modal/Dropdown     | 200–300ms | `ease-in-out` |
+| Page transition    | ~220ms    | `ease-in-out` |
+| List item entrance | 150–250ms | `ease-out`    |
+| Gradient cycle     | 6s        | `ease`        |
+| Shimmer            | 1.5s      | `linear`      |
+| Pulse glow         | 2s        | `ease-in-out` |
 
 ### Reduced Motion
 
@@ -1697,13 +1762,13 @@ This globally disables all animations and transitions for users who prefer reduc
 
 **Component focus patterns:**
 
-| Component | Focus Style |
-|-----------|-------------|
-| `Button` | `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2` |
-| `Input` | `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2` |
-| `FAQAccordion` | `focus-visible:ring-2 focus-visible:ring-blue-500 rounded-2xl` |
-| `ThemeToggle` | Inherits global `focus-visible:outline` |
-| `ShortcutsModal` close | Inherits global `focus-visible:outline` |
+| Component              | Focus Style                                                                |
+| ---------------------- | -------------------------------------------------------------------------- |
+| `Button`               | `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2` |
+| `Input`                | `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2` |
+| `FAQAccordion`         | `focus-visible:ring-2 focus-visible:ring-blue-500 rounded-2xl`             |
+| `ThemeToggle`          | Inherits global `focus-visible:outline`                                    |
+| `ShortcutsModal` close | Inherits global `focus-visible:outline`                                    |
 
 > **Known Issue:** The `Button` and `Input` components use `focus-visible:ring-ring` but the `--ring` / `--color-ring` CSS variable is not defined in `@theme inline`. Until this is fixed, these components rely on the global `*:focus-visible` outline as a fallback. New components should use `focus-visible:ring-2 focus-visible:ring-blue-500` directly.
 
@@ -1719,17 +1784,17 @@ Blue-tinted selection color consistent with the brand palette.
 
 ### ARIA Attributes in Use
 
-| Pattern | Attributes |
-|---------|-----------|
-| Toast container | `aria-live="polite"`, `aria-label="Notifications"` |
-| Toast item | `role="status"` |
-| Toast dismiss | `aria-label="Dismiss notification"` |
-| FAQ question | `aria-expanded`, `aria-controls`, `aria-labelledby` |
-| FAQ answer | `role="region"`, `aria-labelledby` |
-| Shortcuts modal | `aria-label="Close keyboard shortcuts"` on close button |
-| Theme toggle | `aria-label="Switch to light/dark mode"` |
-| Decorative elements | `aria-hidden="true"` |
-| Scroll progress | `aria-hidden="true"` |
+| Pattern             | Attributes                                              |
+| ------------------- | ------------------------------------------------------- |
+| Toast container     | `aria-live="polite"`, `aria-label="Notifications"`      |
+| Toast item          | `role="status"`                                         |
+| Toast dismiss       | `aria-label="Dismiss notification"`                     |
+| FAQ question        | `aria-expanded`, `aria-controls`, `aria-labelledby`     |
+| FAQ answer          | `role="region"`, `aria-labelledby`                      |
+| Shortcuts modal     | `aria-label="Close keyboard shortcuts"` on close button |
+| Theme toggle        | `aria-label="Switch to light/dark mode"`                |
+| Decorative elements | `aria-hidden="true"`                                    |
+| Scroll progress     | `aria-hidden="true"`                                    |
 
 ### Screen Reader Support
 
@@ -1768,14 +1833,14 @@ Blue-tinted selection color consistent with the brand palette.
 
 ### Breakpoints
 
-| Prefix | Min Width | Typical Devices |
-|--------|-----------|----------------|
-| (none) | 0px | Mobile phones (base) |
-| `sm` | 640px | Large phones, small tablets |
-| `md` | 768px | Tablets, iPad portrait |
-| `lg` | 1024px | Small laptops, iPad landscape |
-| `xl` | 1280px | Desktops |
-| `2xl` | 1536px | Large desktops |
+| Prefix | Min Width | Typical Devices               |
+| ------ | --------- | ----------------------------- |
+| (none) | 0px       | Mobile phones (base)          |
+| `sm`   | 640px     | Large phones, small tablets   |
+| `md`   | 768px     | Tablets, iPad portrait        |
+| `lg`   | 1024px    | Small laptops, iPad landscape |
+| `xl`   | 1280px    | Desktops                      |
+| `2xl`  | 1536px    | Large desktops                |
 
 ### Mobile-First Strategy
 
@@ -1791,51 +1856,57 @@ All components are written mobile-first. Base styles apply to the smallest scree
 ### Common Responsive Patterns
 
 **Navigation:**
+
 ```tsx
 // TopNav: hides links on mobile, shows on sm+
 <Link className="hidden sm:flex items-center gap-2 px-4 py-2 ...">
 ```
 
 **Spacing:**
+
 ```tsx
 <div className="px-4 sm:px-6 md:px-10">
 ```
 
 **Typography:**
+
 ```tsx
 <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold">
 ```
 
 **Container:**
+
 ```tsx
 <div className="container mx-auto px-6 sm:px-10">
 ```
 
 **Grid:**
+
 ```tsx
 <div className="grid gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
 ```
 
 ### Responsive Utilities
 
-| Utility | Usage |
-|---------|-------|
-| `hidden` / `block` | Show/hide at specific breakpoints |
-| `sm:flex` / `md:block` | Toggle display modes |
-| `max-w-7xl` | Content width cap |
-| `min-h-dvh` | Full viewport height (including mobile browser chrome) |
+| Utility                | Usage                                                  |
+| ---------------------- | ------------------------------------------------------ |
+| `hidden` / `block`     | Show/hide at specific breakpoints                      |
+| `sm:flex` / `md:block` | Toggle display modes                                   |
+| `max-w-7xl`            | Content width cap                                      |
+| `min-h-dvh`            | Full viewport height (including mobile browser chrome) |
 
 ### Touch vs Pointer
 
 For touch-specific styling:
 
 ```tsx
-className="hover:bg-zinc-100 pointer-coarse:hover:bg-transparent"
+className = "hover:bg-zinc-100 pointer-coarse:hover:bg-transparent";
 ```
 
 ### Testing Checklist
 
 Test at these viewport widths:
+
 - `375px` — iPhone SE
 - `640px` — `sm` breakpoint
 - `768px` — `md` breakpoint (iPad portrait)
@@ -1877,13 +1948,13 @@ Test at these viewport widths:
 
 ### Naming Conventions
 
-| Element | Convention | Example |
-|---------|-----------|---------|
-| Component files | PascalCase | `VenueCard.tsx`, `ThemeProvider.tsx` |
-| Hook files | camelCase with `use` prefix | `useScrollProgress.ts` |
-| CSS classes | kebab-case | `glass-card`, `glow-blue`, `animate-fadeInUp` |
-| CSS variables | kebab-case with `--` prefix | `--background`, `--foreground` |
-| Tailwind theme vars | `--color-*`, `--font-*` | `--color-background`, `--font-sans` |
+| Element             | Convention                  | Example                                       |
+| ------------------- | --------------------------- | --------------------------------------------- |
+| Component files     | PascalCase                  | `VenueCard.tsx`, `ThemeProvider.tsx`          |
+| Hook files          | camelCase with `use` prefix | `useScrollProgress.ts`                        |
+| CSS classes         | kebab-case                  | `glass-card`, `glow-blue`, `animate-fadeInUp` |
+| CSS variables       | kebab-case with `--` prefix | `--background`, `--foreground`                |
+| Tailwind theme vars | `--color-*`, `--font-*`     | `--color-background`, `--font-sans`           |
 
 ### Component Composition
 
@@ -1947,7 +2018,7 @@ import { MapPin, Coffee } from "lucide-react";
   <Button variant="outline" size="sm" className="w-full">
     View Details
   </Button>
-</div>
+</div>;
 ```
 
 ### Form
@@ -1967,10 +2038,12 @@ import { Label } from "@/components/ui/label";
     <Input id="address" placeholder="123 Main St" />
   </div>
   <div className="flex gap-3">
-    <Button type="button" variant="outline">Cancel</Button>
+    <Button type="button" variant="outline">
+      Cancel
+    </Button>
     <Button type="submit">Save Workspace</Button>
   </div>
-</form>
+</form>;
 ```
 
 ### Navigation
@@ -1985,7 +2058,7 @@ import SiteFooter from "@/components/site-footer";
     {/* Page content */}
   </main>
   <SiteFooter />
-</div>
+</div>;
 ```
 
 ### Dark Mode Card
@@ -2095,31 +2168,32 @@ import { Button } from "@/components/ui/button";
 <ErrorBoundary
   fallback={
     <div className="text-center p-8">
-      <p className="text-zinc-600 dark:text-zinc-400 mb-4">Something went wrong</p>
+      <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+        Something went wrong
+      </p>
       <Button onClick={() => window.location.reload()}>Reload</Button>
     </div>
   }
 >
   <VenueMap />
-</ErrorBoundary>
+</ErrorBoundary>;
 ```
 
 ---
 
 ## Related Documentation
 
-| Document | Description |
-|----------|-------------|
-| [`STYLING_SYSTEM.md`](./STYLING_SYSTEM.md) | Tailwind v4 setup and global styling configuration |
-| [`DESIGN_SYSTEM_TOKENS.md`](./DESIGN_SYSTEM_TOKENS.md) | CSS custom properties and token catalog |
-| [`UI_SPACING_TOKENS.md`](./UI_SPACING_TOKENS.md) | Spacing tokens, component reference, and housekeeping notes |
-| [`COLOR_PALETTE.md`](./COLOR_PALETTE.md) | HSL color palette definitions |
-| [`TAILWIND_V4_GUIDE.md`](./TAILWIND_V4_GUIDE.md) | Comprehensive Tailwind CSS v4 styling guide |
-| [`TAILWIND_V4_LAYOUTS.md`](./TAILWIND_V4_LAYOUTS.md) | Layout patterns and CSS variable usage |
-| [`FRAMER_MOTION_GUIDE.md`](./FRAMER_MOTION_GUIDE.md) | Framer Motion animation patterns |
-| [`ANIMATION_STANDARDS.md`](./ANIMATION_STANDARDS.md) | Animation timing and easing standards |
-| [`RESPONSIVE_DESIGN_STANDARDS.md`](./RESPONSIVE_DESIGN_STANDARDS.md) | Responsive design strategy and breakpoints |
-| [`ACCESSIBILITY_GUIDELINE.md`](./ACCESSIBILITY_GUIDELINE.md) | Accessibility standards for custom modals |
+| Document                                                                                                         | Description                                                       |
+| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [`STYLING_SYSTEM.md`](./STYLING_SYSTEM.md)                                                                       | Tailwind v4 setup and global styling configuration                |
+| [`DESIGN_SYSTEM_TOKENS.md`](./DESIGN_SYSTEM_TOKENS.md)                                                           | CSS custom properties and token catalog                           |
+| [`UI_SPACING_TOKENS.md`](./UI_SPACING_TOKENS.md)                                                                 | Spacing tokens, component reference, and housekeeping notes       |
+| [`COLOR_PALETTE.md`](./COLOR_PALETTE.md)                                                                         | HSL color palette definitions                                     |
+| [`TAILWIND_V4_GUIDE.md`](./TAILWIND_V4_GUIDE.md)                                                                 | Comprehensive Tailwind CSS v4 styling guide                       |
+| [`TAILWIND_V4_LAYOUTS.md`](./TAILWIND_V4_LAYOUTS.md)                                                             | Layout patterns and CSS variable usage                            |
+| [`FRAMER_MOTION_GUIDE.md`](./FRAMER_MOTION_GUIDE.md)                                                             | Framer Motion animation patterns                                  |
+| [`ANIMATION_STANDARDS.md`](./ANIMATION_STANDARDS.md)                                                             | Animation timing and easing standards                             |
+| [`RESPONSIVE_DESIGN_STANDARDS.md`](./RESPONSIVE_DESIGN_STANDARDS.md)                                             | Responsive design strategy and breakpoints                        |
+| [`ACCESSIBILITY_GUIDELINE.md`](./ACCESSIBILITY_GUIDELINE.md)                                                     | Accessibility standards for custom modals                         |
 | [`KEYBOARD_NAVIGATION_AND_COLOR_CONTRAST_GUIDELINES.md`](./KEYBOARD_NAVIGATION_AND_COLOR_CONTRAST_GUIDELINES.md) | Keyboard navigation checklist & WCAG AA color contrast guidelines |
-| [`ICON_USAGE-GUIDE.md`](./ICON_USAGE-GUIDE.md) | Lucide React icon usage guide |
-
+| [`ICON_USAGE-GUIDE.md`](./ICON_USAGE-GUIDE.md)                                                                   | Lucide React icon usage guide                                     |

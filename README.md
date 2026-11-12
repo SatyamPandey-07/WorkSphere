@@ -65,12 +65,9 @@
 | :------------------------------------ | :---------------- | :----------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🚀 **Founder & Lead Architect / CTO** | **Satyam Pandey** | [@SatyamPandey-07](https://github.com/SatyamPandey-07) | [![GitHub Profile](https://img.shields.io/badge/GitHub-Profile-181717?style=flat-square&logo=github)](https://github.com/SatyamPandey-07) [![Pair Extraordinaire](https://img.shields.io/badge/GitHub-Pair%20Extraordinaire-58A6FF?style=flat-square&logo=github)](https://github.com/SatyamPandey-07) |
 
-> [!TIP]
-> **Issue Claiming & Auto-Merge Workflow:**
->
-> - Post `/claim` on any open issue to auto-assign it to yourself (limit: up to 10 active issues, 6-day completion window).
-> - Post `/unclaim` on an issue to unassign yourself if you need to release it for other contributors!
-> - When opening a PR, link the issue (e.g. `Closes #123`). Our CI will automatically approve and squash-merge your PR with co-author credit!
+> [!WARNING]
+> **Maintenance Notice — Issue Claiming & Auto-Merge Paused:**
+> Auto-assignment via `/claim` and automated PR merging are temporarily **paused** by repository maintainers for maintenance and manual review. Pull requests will be reviewed manually before merging into `main`. Releases via `/unclaim` remain operational.
 
 ---
 

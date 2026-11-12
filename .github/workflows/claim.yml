@@ -123,6 +123,21 @@ jobs:
               // ==========================================
               console.log(`Processing /claim on issue #${issueNumber} by ${commenter}...`);
 
+              // ==========================================
+              // PAUSE AUTO-ASSIGN
+              // ==========================================
+              const AUTO_ASSIGN_PAUSED = true;
+              if (AUTO_ASSIGN_PAUSED) {
+                console.log(`⏸️ Auto-assign is currently paused. Rejecting /claim by @${commenter} on #${issueNumber}.`);
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: `⏸️ Hi @${commenter}, **issue auto-assignment is temporarily paused** by repository maintainers. New issues cannot be claimed at this time. Please check back later!`
+                }).catch(e => console.warn('Pause comment warning:', e.message));
+                return;
+              }
+
               // 1. Check if issue is already assigned to someone else
               if (assignees.length > 0) {
                 const currentAssignees = assignees.map(a => `@${a.login}`).join(', ');

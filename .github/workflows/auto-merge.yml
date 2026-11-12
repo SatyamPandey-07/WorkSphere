@@ -26,6 +26,23 @@ jobs:
                 return;
               }
 
+              // ==========================================
+              // PAUSE AUTO-MERGE
+              // ==========================================
+              const AUTO_MERGE_PAUSED = true;
+              if (AUTO_MERGE_PAUSED) {
+                console.log('⏸️ Auto-merge is currently paused by repository maintainers.');
+                if (context.payload.action === 'opened') {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: pr.number,
+                    body: '⏸️ **Auto-merge is temporarily paused.** All pull requests are held for manual review by repository maintainers to ensure main branch stability. Thank you for your patience!'
+                  }).catch(e => console.warn('Pause notice comment warning:', e.message));
+                }
+                return;
+              }
+
               const prAuthor = (pr.user?.login || '').toLowerCase();
               const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
               if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthor)) {

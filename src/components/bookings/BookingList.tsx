@@ -27,7 +27,7 @@ export interface BookingSummary {
   confirmationId: string;
   date: string;
   time: string;
-  status?: "CONFIRMED" | "PENDING" | "CANCELLED";
+  status?: "CONFIRMED" | "PENDING" | "CANCELLED" | "CANCELLED_BY_OPERATOR";
   seatNumber?: string | null;
   duration?: number | null;
   timeZone?: string | null;
@@ -125,7 +125,9 @@ export function BookingList({
 
   const { upcoming, rest } = useMemo(() => {
     const active = (b: BookingSummary) =>
-      b?.status !== "CANCELLED" && isUpcoming(b);
+      b?.status !== "CANCELLED" &&
+      b?.status !== "CANCELLED_BY_OPERATOR" &&
+      isUpcoming(b);
     return {
       upcoming: bookings
         .filter(active)
@@ -219,7 +221,9 @@ export function BookingList({
   };
 
   const renderBooking = (booking: BookingSummary) => {
-    const cancelled = booking?.status === "CANCELLED";
+    const cancelled =
+      booking?.status === "CANCELLED" ||
+      booking?.status === "CANCELLED_BY_OPERATOR";
     const future = !cancelled && isUpcoming(booking);
     const venueName = booking?.venue?.name ?? "Workspace";
     const address = booking?.venue?.address ?? "";

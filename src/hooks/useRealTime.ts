@@ -1,9 +1,8 @@
 /**
- * Real-time Updates using Server-Sent Events (SSE)
+ * Real-time Updates using Server-Sent Events (SSE) and PartySocket Protobuf Messaging
  * Provides live updates for venue ratings and availability
  */
 
-// Client-side hook for real-time updates
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -12,6 +11,8 @@ import usePartySocket from "@/hooks/usePartySocket";
 import YProvider from "y-partykit/provider";
 import * as Y from "yjs";
 import { useHydrationComplete } from "@/hooks/useHydrationComplete";
+
+import { encodeBinaryMessage, decodeIncomingMessage, RawEnvelope } from "@/party/binaryMessageBroker";
 
 export {
   ConnectionStatus,
@@ -43,7 +44,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
     setUpdates([]);
   }, [setUpdates]);
 
-  // Stable key — avoids reconnecting when a new array with the same IDs is passed
   const venueIdsKey = venueIds.slice().sort().join(",");
 
   useEffect(() => {
@@ -52,12 +52,11 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
 
     let eventSource: EventSource | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout>;
-    let currentBackoff = 1000; // Start with 1s
+    let currentBackoff = 1000;
 
     const connect = () => {
       clearTimeout(reconnectTimeout);
 
-      // Don't even try if we know we're offline
       if (typeof window !== "undefined" && !window.navigator.onLine) {
         setIsConnected(false);
         setError("Browser is offline");
@@ -72,7 +71,7 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       eventSource.onopen = () => {
         setIsConnected(true);
         setError(null);
-        currentBackoff = 1000; // Reset backoff on success
+        currentBackoff = 1000;
         console.log("[RealTime] Connected to updates stream");
       };
 
@@ -101,7 +100,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
         );
         eventSource?.close();
 
-        // Exponential backoff: double the delay up to 30 seconds
         console.warn(
           `[RealTime] Connection failed. Retrying in ${currentBackoff / 1000}s...`,
         );
@@ -111,7 +109,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       };
     };
 
-    // Handle online/offline events automatically
     const handleOnline = () => {
       console.log("[RealTime] Browser online, reconnecting...");
       currentBackoff = 1000;
@@ -138,7 +135,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     connect();
@@ -148,7 +144,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       clearTimeout(reconnectTimeout);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
-
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [venueIdsKey, enabled]);
@@ -167,9 +162,6 @@ export function useOptimisticUpdate<T>(
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Keep a ref to the latest value so the update callback never closes over
-  // a stale snapshot — avoids WebSocket/SSE handlers applying updates on top
-  // of an outdated local state.
   const valueRef = useRef(value);
   useEffect(() => {
     valueRef.current = value;
@@ -178,7 +170,7 @@ export function useOptimisticUpdate<T>(
   const update = useCallback(
     async (newValue: T) => {
       const previousValue = valueRef.current;
-      setValue(newValue); // Optimistic update
+      setValue(newValue);
       setIsPending(true);
       setError(null);
 
@@ -186,13 +178,13 @@ export function useOptimisticUpdate<T>(
         const confirmedValue = await updateFn(newValue);
         setValue(confirmedValue);
       } catch (e) {
-        setValue(previousValue); // Rollback to the latest known-good value
+        setValue(previousValue);
         setError(e instanceof Error ? e.message : "Update failed");
       } finally {
         setIsPending(false);
       }
     },
-    [updateFn], // no longer depends on `value` — reads from ref instead
+    [updateFn],
   );
 
   return { value, update, isPending, error };
@@ -226,8 +218,7 @@ export function usePollingUpdates<T>(
   useEffect(() => {
     if (!enabled) return;
 
-    refresh(); // Initial fetch
-
+    refresh();
     const intervalId = setInterval(refresh, interval);
 
     return () => clearInterval(intervalId);
@@ -236,12 +227,14 @@ export function usePollingUpdates<T>(
   return { data, isLoading, error, refresh };
 }
 
+/**
+ * Multiplayer session hook supporting Protobuf binary messaging
+ */
 export function useMultiplayerSession(roomId: string | null) {
   const [provider, setProvider] = useState<YProvider | null>(null);
   const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
-  // Defer PartySocket / Yjs until after App Router hydration (#1033)
   const isHydrated = useHydrationComplete();
 
   useEffect(() => {
@@ -256,7 +249,6 @@ export function useMultiplayerSession(roomId: string | null) {
     }
 
     const doc = new Y.Doc();
-    // Pass the token as a query parameter in the options
     const newProvider = new YProvider("127.0.0.1:1999", roomId, doc, {
       params: token ? { token } : {},
     });
@@ -270,17 +262,39 @@ export function useMultiplayerSession(roomId: string | null) {
     };
   }, [roomId, token, isHydrated]);
 
-  // Use standard websocket for simple presence broadcast
-  // startClosed prevents WebSocket connection during SSR / streaming hydration
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
     room: isHydrated && roomId ? roomId : "placeholder",
     startClosed: !isHydrated,
     query: token ? { token } : undefined,
-    onMessage() {
-      // handled in component after hydration
+    onMessage(event) {
+      try {
+        if (event.data) {
+          decodeIncomingMessage(event.data);
+        }
+      } catch (err) {
+        console.error("[RealTime] Failed to decode protobuf socket message:", err);
+      }
     },
   });
 
-  return { provider, yDoc, socket, isHydrated };
+  const sendBinaryMessage = useCallback(
+    (envelope: RawEnvelope) => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        try {
+          const binaryBuffer = encodeBinaryMessage(envelope);
+          const arrayBuffer = binaryBuffer.buffer.slice(
+            binaryBuffer.byteOffset,
+            binaryBuffer.byteOffset + binaryBuffer.byteLength
+          );
+          socket.send(arrayBuffer);
+        } catch (err) {
+          socket.send(JSON.stringify(envelope));
+        }
+      }
+    },
+    [socket]
+  );
+
+  return { provider, yDoc, socket, sendBinaryMessage, isHydrated };
 }

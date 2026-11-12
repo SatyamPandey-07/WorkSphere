@@ -37,6 +37,7 @@ export function formatBookingStatus(status?: string | null): string {
   if (s === "CONFIRMED") return "Confirmed";
   if (s === "PENDING") return "Pending";
   if (s === "CANCELLED") return "Cancelled";
+  if (s === "CANCELLED_BY_OPERATOR") return "Cancelled by venue";
   return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 }
 

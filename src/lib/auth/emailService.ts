@@ -1,7 +1,5 @@
 import { z } from "zod";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 export const emailSchema = z
   .string()
@@ -22,9 +20,13 @@ export async function processMagicLinkRequest(
   const parseResult = emailSchema.safeParse(rawEmail);
 
   if (!parseResult.success) {
+    const errorMsg =
+      (parseResult.error as any).issues?.[0]?.message ||
+      (parseResult.error as any).errors?.[0]?.message ||
+      "Invalid email format";
     return {
       success: false,
-      error: parseResult.error.errors[0]?.message || "Invalid email format",
+      error: errorMsg,
     };
   }
 
@@ -42,6 +44,7 @@ export async function processMagicLinkRequest(
   if (!user) {
     user = await prisma.user.create({
       data: {
+        id: `user_${Math.random().toString(36).substring(2, 12)}`,
         email: normalizedEmail,
       },
     });

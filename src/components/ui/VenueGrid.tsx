@@ -1,25 +1,5 @@
 "use client";
 
- feature/solana-optimistic-escrow-simulation
-import React, { useState, useEffect } from "react";
-import VenueCard, { VenueCardProps } from "@/components/venue/VenueCard";
-import VenueCardSkeleton from "@/components/venues/VenueCardSkeleton";
-
-interface VenueGridProps {
-  venues?: Array<VenueCardProps["venue"]>;
-  isLoading?: boolean;
-}
-
-export const VenueGrid: React.FC<VenueGridProps> = ({
-  venues = [],
-  isLoading = false,
-}) => {
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
-
 import React, { ReactNode } from "react";
 import { motion, MotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -146,9 +126,11 @@ export function VenueGrid({
       </div>
     );
   }
- main
 
-  const showSkeletons = isLoading || !hydrated;
+  // Card view grid with subgrid support
+  const gridClasses = useSubgrid
+    ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-fr [grid-auto-flow:dense]"
+    : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4";
 
   if (children) {
     return (
@@ -168,12 +150,6 @@ export function VenueGrid({
 
   return (
     <div
- feature/solana-optimistic-escrow-simulation
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full"
-      data-testid="venue-grid"
-    >
-      {showSkeletons
-
       data-testid={dataTestId || "venue-grid"}
       className={cn(
         "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full",
@@ -182,17 +158,12 @@ export function VenueGrid({
       {...props}
     >
       {isLoading
- main
         ? Array.from({ length: 6 }).map((_, idx) => (
             <div key={`skeleton-${idx}`} className="w-full min-h-[356px]">
               <VenueCardSkeleton />
             </div>
           ))
- feature/solana-optimistic-escrow-simulation
-        : venues.map((venue) => (
-
         : venues.map((venue: any) => (
- main
             <div
               key={venue.id}
               className="w-full min-h-[356px] transition-opacity duration-300 opacity-100 animate-in fade-in-50"
@@ -202,8 +173,6 @@ export function VenueGrid({
           ))}
     </div>
   );
- feature/solana-optimistic-escrow-simulation
-};
 }
 
 export interface SubgridCellProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -240,6 +209,5 @@ export const SubgridCell = React.forwardRef<HTMLDivElement, SubgridCellProps>(
   },
 );
 SubgridCell.displayName = "SubgridCell";
- main
 
 export default VenueGrid;

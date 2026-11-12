@@ -1,7 +1,5 @@
 import { emailSchema, processMagicLinkRequest } from "@/lib/auth/emailService";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 describe("Email Normalization & Magic Link Auth", () => {
   const rawEmail = "Alex.Nomad@Domain.COM";

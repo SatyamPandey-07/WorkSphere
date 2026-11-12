@@ -1,10 +1,4 @@
- feature/solana-optimistic-escrow-simulation
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
-
 import { prisma } from "@/lib/prisma";
- main
 
 export interface VenueSearchResult {
   id: string;
@@ -20,24 +14,17 @@ export interface VenueSearchResult {
  */
 export async function searchVenuesPhonetic(
   query: string,
- feature/solana-optimistic-escrow-simulation
- feature/solana-optimistic-escrow-simulation
-  limit: number = 20
-
   limit: number = 20,
- main
-
-  limit = 20,
- main
 ): Promise<VenueSearchResult[]> {
-  const normalizedQuery = typeof query === "string" ? query.trim().slice(0, 128) : "";
+  const normalizedQuery =
+    typeof query === "string" ? query.trim().slice(0, 128) : "";
   if (!normalizedQuery) return [];
 
   const safeLimit = Number.isInteger(limit)
     ? Math.max(1, Math.min(50, limit))
     : 20;
 
-  return prisma.$queryRaw<VenueSearchResult[]> `
+  return prisma.$queryRaw<VenueSearchResult[]>`
     SELECT
       venue."id",
       venue."name",
@@ -82,13 +69,4 @@ export async function searchVenuesPhonetic(
       venue."name" ASC
     LIMIT ${safeLimit};
   `;
- feature/solana-optimistic-escrow-simulation
-
-  return results;
- feature/solana-optimistic-escrow-simulation
 }
-
-
- main
-}
- main

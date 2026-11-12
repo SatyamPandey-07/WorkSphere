@@ -1,70 +1,3 @@
- feature/solana-optimistic-escrow-simulation
-// AudioWorkletGlobalScope declaration
-declare class AudioWorkletProcessor {
-  readonly port: MessagePort;
-  process(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean;
-}
-
-declare function registerProcessor(
-  name: string,
-  processorCtor: new () => AudioWorkletProcessor,
-): void;
-
-export class SpatialAudioWorkletProcessor extends AudioWorkletProcessor {
-  private wasmInstance: any = null;
-  private azimuth: number = 0;
-  private elevation: number = 0;
-
-  constructor() {
-    super();
-    this.port.onmessage = (event) => {
-      if (event.data.type === "INIT_WASM") {
-        this.wasmInstance = event.data.wasmModule;
-      } else if (event.data.type === "UPDATE_ORIENTATION") {
-        this.azimuth = event.data.azimuth ?? 0;
-        this.elevation = event.data.elevation ?? 0;
-      }
-    };
-  }
-
-  process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
-    const input = inputs[0];
-    const output = outputs[0];
-
-    if (!input || !input[0] || !output || !output[0] || !output[1]) {
-      return true;
-    }
-
-    const inputChannel = input[0];
-    const outputL = output[0];
-    const outputR = output[1];
-
-    if (this.wasmInstance && this.wasmInstance.convolve_spatial_frame) {
-      // High-performance WASM SIMD execution path
-      this.wasmInstance.convolve_spatial_frame(
-        inputChannel,
-        this.azimuth,
-        this.elevation,
-        outputL,
-        outputR,
-      );
-    } else {
-      // Graceful fallback to equal-power stereophonic panning
-      const rad = (this.azimuth * Math.PI) / 180;
-      const gainL = Math.cos(Math.PI / 4 - rad * 0.5);
-      const gainR = Math.sin(Math.PI / 4 + rad * 0.5);
-
-      for (let i = 0; i < inputChannel.length; i++) {
-        outputL[i] = inputChannel[i] * gainL;
-        outputR[i] = inputChannel[i] * gainR;
-      }
-    }
-
-
 /**
  * AudioWorklet wrapper for the Rust/WASM SIMD spatial-audio kernel
  * (`src/wasm/spatial-audio`, #7490).
@@ -108,23 +41,38 @@ export const SPATIAL_AUDIO_WORKLET_NAME = "spatial-audio-wasm-processor";
  * Round `offset` up to the next multiple of `alignment`, which must be a
  * positive power of two.
  */
-export function alignTo(offset: number, alignment: number = SIMD_ALIGNMENT_BYTES): number {
-  if (!Number.isInteger(alignment) || alignment <= 0 || (alignment & (alignment - 1)) !== 0) {
-    throw new RangeError(`alignment must be a positive power of two, got ${alignment}`);
+export function alignTo(
+  offset: number,
+  alignment: number = SIMD_ALIGNMENT_BYTES,
+): number {
+  if (
+    !Number.isInteger(alignment) ||
+    alignment <= 0 ||
+    (alignment & (alignment - 1)) !== 0
+  ) {
+    throw new RangeError(
+      `alignment must be a positive power of two, got ${alignment}`,
+    );
   }
   const mask = alignment - 1;
   return (offset + mask) & ~mask;
 }
 
 /** True when `offset` is a non-negative multiple of `alignment`. */
-export function isAligned(offset: number, alignment: number = SIMD_ALIGNMENT_BYTES): boolean {
+export function isAligned(
+  offset: number,
+  alignment: number = SIMD_ALIGNMENT_BYTES,
+): boolean {
   return Number.isInteger(offset) && offset >= 0 && offset % alignment === 0;
 }
 
 /** Constant-power panning (-1 = hard left, 0 = center, +1 = hard right). */
-export function constantPowerGains(pan: number): { left: number; right: number } {
+export function constantPowerGains(pan: number): {
+  left: number;
+  right: number;
+} {
   const clamped = Math.min(1, Math.max(-1, pan));
-  const angle = ((clamped + 1) * 0.5) * (Math.PI / 2);
+  const angle = (clamped + 1) * 0.5 * (Math.PI / 2);
   return { left: Math.cos(angle), right: Math.sin(angle) };
 }
 
@@ -180,7 +128,9 @@ export class AlignedWasmAllocator {
   /** Reserve `bytes` and return a pointer aligned to `SIMD_ALIGNMENT_BYTES`. */
   alloc(bytes: number): number {
     if (!Number.isInteger(bytes) || bytes <= 0) {
-      throw new RangeError(`allocation size must be a positive integer, got ${bytes}`);
+      throw new RangeError(
+        `allocation size must be a positive integer, got ${bytes}`,
+      );
     }
     const capacity = this.memory.buffer.byteLength;
     const padded = alignTo(bytes);
@@ -273,7 +223,9 @@ export class SpatialAudioWorkletProcessor extends AudioWorkletProcessorBase {
   }
 
   /** Compiled kernel chosen from `processorOptions` or the page injection. */
-  private static resolveWasm(explicit?: SpatialAudioWasmExports): SpatialAudioWasmExports | null {
+  private static resolveWasm(
+    explicit?: SpatialAudioWasmExports,
+  ): SpatialAudioWasmExports | null {
     const injected = (workletGlobal.__WORKSPHERE_SPATIAL_AUDIO_WASM__ ??
       null) as SpatialAudioWasmExports | null;
     const candidate = explicit ?? injected;
@@ -307,9 +259,13 @@ export class SpatialAudioWorkletProcessor extends AudioWorkletProcessorBase {
    * the Rust side (#7490). Memory growth replaces the ArrayBuffer, which
    * invalidates cached offsets and views, so we rebuild from scratch.
    */
-  private ensureBuffers(wasm: SpatialAudioWasmExports, numSamples: number): AlignedBufferSet {
+  private ensureBuffers(
+    wasm: SpatialAudioWasmExports,
+    numSamples: number,
+  ): AlignedBufferSet {
     const existing = this.buffers;
-    const memoryGrew = existing !== null && existing.views.in.buffer !== wasm.memory.buffer;
+    const memoryGrew =
+      existing !== null && existing.views.in.buffer !== wasm.memory.buffer;
     if (existing !== null && !memoryGrew && existing.capacity >= numSamples) {
       return existing;
     }
@@ -322,22 +278,38 @@ export class SpatialAudioWorkletProcessor extends AudioWorkletProcessorBase {
     // Defensive: an allocator that ever hands out an unaligned offset would
     // trap the kernel on ARM64 (#7490).
     if (!isAligned(inPtr) || !isAligned(outLPtr) || !isAligned(outRPtr)) {
-      throw new RangeError("AlignedWasmAllocator handed out an unaligned offset");
+      throw new RangeError(
+        "AlignedWasmAllocator handed out an unaligned offset",
+      );
     }
     const views = {
       in: new Float32Array(wasm.memory.buffer, inPtr, numSamples),
       outL: new Float32Array(wasm.memory.buffer, outLPtr, numSamples),
       outR: new Float32Array(wasm.memory.buffer, outRPtr, numSamples),
     };
-    const buffers: AlignedBufferSet = { inPtr, outLPtr, outRPtr, capacity: numSamples, views };
+    const buffers: AlignedBufferSet = {
+      inPtr,
+      outLPtr,
+      outRPtr,
+      capacity: numSamples,
+      views,
+    };
     this.buffers = buffers;
     return buffers;
   }
 
   /** Read an AudioParam value with an initial-value fallback. */
-  private readParam(parameters: Record<string, Float32Array>, name: string, fallback: number): number {
+  private readParam(
+    parameters: Record<string, Float32Array>,
+    name: string,
+    fallback: number,
+  ): number {
     const values = parameters[name];
-    if (values !== undefined && values.length > 0 && Number.isFinite(values[0])) {
+    if (
+      values !== undefined &&
+      values.length > 0 &&
+      Number.isFinite(values[0])
+    ) {
       return values[0];
     }
     return fallback;
@@ -415,7 +387,9 @@ export class SpatialAudioWorkletProcessor extends AudioWorkletProcessorBase {
         } else if (status === SPATIAL_DSP_FALLBACK_SCALAR) {
           this.kernelScalarFallbacks += 1;
         } else {
-          throw new RangeError(`spatial_dsp_process rejected the block (status ${status})`);
+          throw new RangeError(
+            `spatial_dsp_process rejected the block (status ${status})`,
+          );
         }
         outL.set(buffers.views.outL.subarray(0, numSamples));
         if (outR !== outL) {
@@ -432,19 +406,21 @@ export class SpatialAudioWorkletProcessor extends AudioWorkletProcessorBase {
       }
     }
 
-    SpatialAudioWorkletProcessor.panScalar(inChannel, outL, outR, numSamples, pan, gain);
- main
+    SpatialAudioWorkletProcessor.panScalar(
+      inChannel,
+      outL,
+      outR,
+      numSamples,
+      pan,
+      gain,
+    );
     return true;
   }
 }
 
- feature/solana-optimistic-escrow-simulation
-registerProcessor(
-  "spatial-audio-worklet-processor",
-  SpatialAudioWorkletProcessor,
-);
-
 if (typeof workletGlobal.registerProcessor === "function") {
-  workletGlobal.registerProcessor(SPATIAL_AUDIO_WORKLET_NAME, SpatialAudioWorkletProcessor);
+  workletGlobal.registerProcessor(
+    SPATIAL_AUDIO_WORKLET_NAME,
+    SpatialAudioWorkletProcessor,
+  );
 }
- main

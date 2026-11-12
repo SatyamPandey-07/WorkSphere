@@ -15,6 +15,7 @@ model User {
   lastName           String?
   imageUrl           String?
   createdAt          DateTime           @default(now())
+  passwordChangedAt  DateTime?          @default(null)
   discordWebhookUrl  String?
   whatsappWebhookUrl String?
   telegramWebhookUrl String?

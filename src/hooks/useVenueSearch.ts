@@ -86,12 +86,16 @@ export function useVenueSearch<T = VenueSearchResult>(
   const abortControllerRef = useRef<AbortController | null>(null);
   // Timer reference for debounce delay
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Trimmed query of the last request that is in flight or has loaded results.
+  // Reset on abort/error so the same query can be retried.
+  const lastRequestedQueryRef = useRef<string | null>(null);
 
   const abort = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    lastRequestedQueryRef.current = null;
     setIsLoading(false);
   }, []);
 
@@ -132,6 +136,7 @@ export function useVenueSearch<T = VenueSearchResult>(
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      lastRequestedQueryRef.current = trimmedQuery;
 
       setIsLoading(true);
       setError(null);
@@ -189,6 +194,7 @@ export function useVenueSearch<T = VenueSearchResult>(
         if (isAbort) {
           if (abortControllerRef.current === controller) {
             abortControllerRef.current = null;
+            lastRequestedQueryRef.current = null;
             setIsLoading(false);
           }
           return;
@@ -196,6 +202,7 @@ export function useVenueSearch<T = VenueSearchResult>(
 
         // Only set error if this is still the active request
         if (abortControllerRef.current === controller) {
+          lastRequestedQueryRef.current = null;
           setError(
             err instanceof Error ? err.message : "Failed to fetch venue search results",
           );
@@ -275,6 +282,31 @@ export function useVenueSearch<T = VenueSearchResult>(
     [abort, isControlled, minQueryLength],
   );
 
+  /**
+   * Explicit search (e.g. pressing Enter). Cancels any pending debounced search
+   * so the debounce timer does not send the same query a second time, and skips
+   * the request entirely when results for that query are already loaded or in
+   * flight (#7612).
+   */
+  const search = useCallback(
+    async (queryOverride?: string): Promise<void> => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+
+      const target =
+        typeof queryOverride === "string" ? queryOverride : activeQuery;
+      const trimmed = target.trim();
+      if (trimmed !== "" && trimmed === lastRequestedQueryRef.current) {
+        return;
+      }
+
+      await performSearch(target);
+    },
+    [activeQuery, performSearch],
+  );
+
   return {
     query: activeQuery,
     setQuery: handleSetQuery,
@@ -286,7 +318,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     error,
     clear,
     abort,
-    search: performSearch,
+    search,
   };
 }
 

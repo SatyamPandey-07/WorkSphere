@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-122%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-124%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-122-active-rockstars"><b>👥 Contributors (122)</b></a> •
+  <a href="#-contributors-124-active-rockstars"><b>👥 Contributors (124)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (122 Active Rockstars)
+### 🚀 Contributors (124 Active Rockstars)
 
-A massive thank you to all **122 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **124 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -957,6 +957,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 ### 🔐 Authentication
 
 - **Clerk Integration**: Secure sign-in/sign-up
+- **Case-Insensitive Normalized Email & Magic Link Auth**: Resilient authentication flow featuring RFC-compliant email normalization via Zod schemas, whitespace trimming, and fail-safe magic link token issuance (`src/lib/auth/emailService.ts`).
 - **User Profiles**: Personalized experience
 - **Webhook Sync**: Real-time user data updates
 
@@ -978,6 +979,9 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🚀 Performance & Reliability
 
+- **PostgreSQL Concurrency Serialization with `NOWAIT` Advisory Locks**: High-throughput seat reservation serialization using transaction-level advisory locks with immediate non-blocking failure semantics (`NOWAIT`), eliminating split-second double-booking races under intense demand spikes (`src/app/api/reservations/book/route.ts`).
+- **Probabilistic Vector Cache Stampede Prevention (XFetch)**: Implements the optimal XFetch algorithm for vector embeddings during hybrid semantic venue searches, computing early background re-fetches as expiration nears to completely prevent thundering-herd cache stampedes (`src/lib/search/hybridSearch.ts`).
+- **Idempotent Venue Reviews & Deduplication Engine**: Robust header-based idempotency layer (`x-idempotency-key`) utilizing SHA-256 payload hashing, concurrent in-flight promise memoization, and conflict detection returning `409 Conflict` on key reuse with altered payloads (`src/lib/idempotency.ts`, `src/app/api/venues/[venueId]/reviews/route.ts`).
 - **Distributed Redlock Monotonic Fencing Tokens**: Concurrency control across distributed multi-instance Redis clusters preventing split-brain double desk bookings with monotonically increasing lease fencing tokens (`src/lib/redis/RedlockManager.ts`).
 - **Rate Limiting**: API protection with configurable limits
 - **Security Architecture**: CSP nonces, signed double-submit CSRF cookies and multi-tier token bucket rate limiting, explained end to end in [docs/security/SECURITY_OVERVIEW.md](./docs/security/SECURITY_OVERVIEW.md)
@@ -1003,6 +1007,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 ### 💸 Web3, Solana Pay & Smart Escrow
 
 - **Solana Pay Engine**: High-contrast QR payment modal with dynamic payment request generation, Screen Wake Lock API integration to prevent display dimming during scan, and verifiable on-chain confirmation (protected against synthetic confirmation spoofing).
+- **Solana Optimistic Escrow Simulation**: Pre-flight RPC simulation with balance delta verification, transaction build pipeline, and fallback reconciliation for zero-latency desk escrow holds (`src/lib/solana/escrowClient.ts`).
 - **Solana Escrow Cluster RPC Failover Pool**: Resilient multi-endpoint RPC cluster failover with automated health probes, exponential jitter backoff, and optimistic client simulation for instant desk escrow deposits (`/api/pay/solana`, `/api/cron/escrow-refund`, `src/lib/solana/escrowClient.ts`).
 - **Focus Session Bounties & Escrow**: Stake crypto tokens to commit to deep work sessions; automated smart-contract payout release upon verified session completion (`/api/bounties/payout`, `/api/bookings/escrow`).
 - **Virtual Single-Use Cards & Automated Invoicing**: Issue ephemeral corporate cards for workspace booking expenses with automatic OCR receipt reconciliation (`/api/finance/card`).
@@ -1018,6 +1023,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 👓 Spatial Computing, WebXR & Ergonomics
 
+- **Accessible Venue Grid Tooltips & Keyboard Shortcuts**: Full WCAG-compliant keyboard navigation (`G` for Grid, `C` for Compact, `M` for Map) with animated tooltip overlays and focus ring management (`src/components/ui/VenueGrid.tsx`).
+- **Ergonomic Posture Audio Coach & Dynamic Mute Controls**: Integrated audio coaching engine providing real-time ergonomics nudges with accessible mute toggles and persistent user preference state (`src/components/venue/VenueCard.tsx`, `/wellness/ergonomics`).
 - **WebXR SLAM Venue Scanner & Voxel Octree**: Camera-based spatial mapping for desk geometry, power outlet coordinates, and indoor navigation paths (`/ar/finder`).
 - **Real-Time 3D Desk Ergonomics & ISO Validator**: WebGL 3D avatar posture analysis evaluating chair height, screen angle, and ambient lighting against ISO 9241 standards (`/wellness/ergonomics`).
 - **Automated Audio-Description Spatial Scene Graph**: Real-time accessibility engine converting venue visual layout into navigable spatial audio narration for visually impaired professionals (`/api/accessibility/scene`).
@@ -1040,6 +1047,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### ✈️ Nomad Travel, Smart Housing & Collab War Rooms
 
+- **CRDT State Vector Exchange & Differential Compaction Protocol**: Ultra-low-bandwidth collaborative whiteboard synchronization utilizing Yjs state vector exchanges, incremental update compaction, and differential snapshot pruning ([docs/crdt/CRDT_VECTOR_COMPACTION.md](./docs/crdt/CRDT_VECTOR_COMPACTION.md)).
 - **IndexedDB CRDT Offline Change-Journal Replay Buffer**: Resilient append-only transaction journal capturing serialized `Y.encodeStateAsUpdate` frames during intermittent nomad connectivity, providing topological re-streaming and seamless state reconciliation upon reconnect (`src/lib/crdt/canvasProvider.ts`).
 - **Flight-Delay Itinerary Auto-Rerouting**: Webhook integration with aviation feeds automatically rescheduling booked coworking passes when flights are delayed or cancelled (`/api/travel/reroute`).
 - **Git Merge Conflict Physical War Room & IoT Lockdown**: Automatic physical meeting room booking and IoT access lockdown during critical deployment conflicts (`/api/collab/warroom`).
@@ -1198,8 +1206,7 @@ WorkSphere brings together geospatial data, ambient intelligence, and real-time 
 
    #### Option A: Docker Compose (Recommended)
 
-   This starts a local PostgreSQL instance (with the `pgvector` extension) and Redis automatically.
-   > For a comprehensive walkthrough covering container initialization, seed commands, and port collision troubleshooting, see the [Local Development Setup Guide](docs/guides/LOCAL_DEVELOPMENT_SETUP.md).
+   This starts a local PostgreSQL instance (with the `pgvector` extension) and Redis automatically. See [docs/guides/LOCAL_DEVELOPMENT_SETUP.md](./docs/guides/LOCAL_DEVELOPMENT_SETUP.md) for full container architecture and configuration options.
 
    ```bash
    # Start database and Redis container services

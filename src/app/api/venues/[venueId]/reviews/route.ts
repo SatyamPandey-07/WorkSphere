@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+ feat/idempotent-venue-reviews
 import { PrismaClient } from "@prisma/client";
 import {
   executeIdempotent,
   IdempotencyConflictError,
   CachedHttpResponse,
 } from "@/lib/idempotency";
+
+import { auth } from "@clerk/nextjs/server";
+import { rateLimit } from "@/lib/rateLimit";
+import { prisma } from "@/lib/prisma";
+import { ensureUserExists } from "@/lib/auth";
+import { processVenueReviewSubmission } from "@/lib/venueReviewService";
+import { apiError } from "@/lib/apiResponse";
+import { swrCache, getVenueReviewsCacheKey } from "@/lib/cache/swrCache";
+ main
 
 const prisma = new PrismaClient();
 
@@ -30,6 +40,7 @@ export async function POST(
       );
     }
 
+ feat/idempotent-venue-reviews
     const createReview = async (): Promise<CachedHttpResponse> => {
       const review = await prisma.review.create({
         data: {
@@ -44,6 +55,37 @@ export async function POST(
         body: { review },
       };
     };
+
+    const cacheKey = getVenueReviewsCacheKey(venue.id);
+    const reviews = await swrCache(cacheKey, async () => {
+      return await prisma.venueRating.findMany({
+        where: { venueId: venue.id },
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    });
+
+    return NextResponse.json({
+      reviews: reviews.map((r: any) => ({
+        ...r,
+        user: userId
+          ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
+          : null,
+      })),
+    });
+  } catch (error) {
+    console.error("GET /api/venues/[venueId]/reviews error:", error);
+    return apiError("Failed to fetch reviews", 500, "INTERNAL_ERROR");
+  }
+}
+ main
 
     if (!idempotencyKey) {
       const result = await createReview();

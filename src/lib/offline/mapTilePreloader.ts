@@ -2,6 +2,13 @@
  * mapTilePreloader.ts
  * Background Fetch API & offline map vector tile caching for zoom levels 12-16.
  * Preloads vector tiles into CacheStorage for bookmarked destinations before users lose connectivity.
+ *
+ * Zoom-change safety (rapid zoom):
+ *   - An AbortController per tile (keyed by "z-x-y") is kept in `_inflight`.
+ *   - `abortTilesForZoom(z)` cancels every in-flight request whose zoom level
+ *     differs from `z`, preventing stale cache writes and DOM exceptions.
+ *   - `MAX_CONCURRENT_PREFETCHES` (6) caps the concurrency so the network is
+ *     not saturated and the browser tile-loading path stays responsive.
  */
 
 export const MAP_TILES_CACHE_NAME = "worksphere-offline-map-tiles-v1";
@@ -9,6 +16,9 @@ export const DEFAULT_MIN_ZOOM = 12;
 export const DEFAULT_MAX_ZOOM = 16;
 export const DEFAULT_TILE_URL_TEMPLATE = "https://tiles.worksphere.internal/{z}/{x}/{y}.pbf";
 export const MAX_TILES_PER_BATCH = 150;
+
+/** Maximum number of tile fetches that may run simultaneously. */
+export const MAX_CONCURRENT_PREFETCHES = 6;
 
 export interface TileBoundingBox {
   north: number;
@@ -49,6 +59,95 @@ export interface PreloadResult {
   failedUrls?: string[];
   urls: string[];
 }
+
+// ---------------------------------------------------------------------------
+// In-flight AbortController registry
+// Key format: "<z>-<x>-<y>"
+// ---------------------------------------------------------------------------
+
+/** @internal Exported only for testing – treat as private in application code. */
+export const _inflight = new Map<string, AbortController>();
+
+/**
+ * Returns the canonical tile key used to index the in-flight controller map.
+ */
+export function tileKey(z: number, x: number, y: number): string {
+  return `${z}-${x}-${y}`;
+}
+
+/**
+ * Extracts `{ z, x, y }` from a tile URL by matching the last three numeric
+ * path segments.  Returns `null` if the URL does not match the expected pattern.
+ */
+function parseTileCoordFromUrl(url: string): TileCoordinate | null {
+  const match = url.match(/\/(\d+)\/(\d+)\/(\d+)(?:\.\w+)?(?:\?.*)?$/);
+  if (!match) return null;
+  return { z: parseInt(match[1], 10), x: parseInt(match[2], 10), y: parseInt(match[3], 10) };
+}
+
+/**
+ * Aborts every in-flight prefetch request whose zoom level differs from
+ * `currentZoom`.  Call this whenever Leaflet fires a `zoomend` event so that
+ * tiles queued for a superseded zoom are cancelled before they write to cache.
+ */
+export function abortTilesForZoom(currentZoom: number): void {
+  for (const [key, controller] of _inflight) {
+    const z = parseInt(key.split("-")[0], 10);
+    if (z !== currentZoom) {
+      controller.abort();
+      _inflight.delete(key);
+    }
+  }
+}
+
+/**
+ * Aborts ALL in-flight tile prefetch requests (e.g. on component unmount).
+ */
+export function abortAllTilePrefetches(): void {
+  for (const controller of _inflight.values()) {
+    controller.abort();
+  }
+  _inflight.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency semaphore
+// ---------------------------------------------------------------------------
+
+/**
+ * Simple async semaphore that limits the number of concurrent tile fetches
+ * to `MAX_CONCURRENT_PREFETCHES` (6).
+ *
+ * Usage:
+ *   const release = await acquirePrefetchSlot();
+ *   try { ... } finally { release(); }
+ */
+let _activePrefetches = 0;
+const _prefetchQueue: Array<() => void> = [];
+
+export function acquirePrefetchSlot(): Promise<() => void> {
+  return new Promise((resolve) => {
+    const tryAcquire = () => {
+      if (_activePrefetches < MAX_CONCURRENT_PREFETCHES) {
+        _activePrefetches++;
+        resolve(() => {
+          _activePrefetches--;
+          if (_prefetchQueue.length > 0) {
+            const next = _prefetchQueue.shift()!;
+            next();
+          }
+        });
+      } else {
+        _prefetchQueue.push(tryAcquire);
+      }
+    };
+    tryAcquire();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Pure utility functions (unchanged from original)
+// ---------------------------------------------------------------------------
 
 /**
  * Converts latitude, longitude, and zoom level into slippy map tile coordinates (x, y, z).
@@ -132,9 +231,20 @@ export function isBackgroundFetchSupported(): boolean {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Core preload functions
+// ---------------------------------------------------------------------------
+
 /**
- * Downloads and stores vector map tiles in CacheStorage using the Background Fetch API
- * with automatic fallback to standard fetch().
+ * Downloads and stores vector map tiles in CacheStorage using the Background
+ * Fetch API with automatic fallback to standard fetch().
+ *
+ * In the standard-fetch path:
+ *  - Each tile gets its own AbortController registered in `_inflight`.
+ *  - Concurrency is bounded to `MAX_CONCURRENT_PREFETCHES` (6).
+ *  - AbortError rejections are swallowed silently – they represent intentional
+ *    cancellation due to a zoom change and must not be logged as failures.
+ *  - A tile whose fetch was aborted is NOT written to CacheStorage.
  */
 export async function preloadMapTiles(
   urls: string[],
@@ -152,7 +262,9 @@ export async function preloadMapTiles(
     };
   }
 
-  // 1. Attempt Background Fetch API if available and service worker is registered
+  // 1. Attempt Background Fetch API if available and service worker is registered.
+  //    Background Fetch manages its own lifecycle, so AbortController overhead is
+  //    unnecessary here – zoom cancellation is handled server-side by the SW.
   if (isBackgroundFetchSupported()) {
     try {
       const swRegistration = await navigator.serviceWorker.ready;
@@ -184,7 +296,8 @@ export async function preloadMapTiles(
     }
   }
 
-  // 2. Standard Fetch Fallback: download directly and populate CacheStorage
+  // 2. Standard Fetch Fallback: download directly and populate CacheStorage.
+  //    Uses per-tile AbortControllers and a concurrency semaphore.
   const failedUrls: string[] = [];
   let cache: Cache | null = null;
 
@@ -197,17 +310,50 @@ export async function preloadMapTiles(
   }
 
   const fetchPromises = urls.map(async (url) => {
+    // Parse z/x/y from the URL so we can key the AbortController.
+    const coord = parseTileCoordFromUrl(url);
+    const key = coord ? tileKey(coord.z, coord.x, coord.y) : url;
+
+    // If this tile is already in-flight, abort the previous request first so
+    // we don't accumulate duplicate fetches for the same tile.
+    if (_inflight.has(key)) {
+      _inflight.get(key)!.abort();
+    }
+
+    const controller = new AbortController();
+    _inflight.set(key, controller);
+
+    // Wait for a free concurrency slot before issuing the network request.
+    const release = await acquirePrefetchSlot();
+
     try {
-      const response = await fetch(url, { mode: "cors" });
+      // Re-check: the controller may have been aborted while waiting in queue.
+      if (controller.signal.aborted) return;
+
+      const response = await fetch(url, {
+        mode: "cors",
+        signal: controller.signal,
+      });
+
       if (!response.ok) {
         failedUrls.push(url);
         return;
       }
-      if (cache) {
+
+      // Only write to cache if the request was not superseded by a zoom change.
+      if (!controller.signal.aborted && cache) {
         await cache.put(url, response.clone());
       }
-    } catch {
+    } catch (err: unknown) {
+      // AbortError = intentional cancellation (zoom changed). Not a real failure.
+      if (err instanceof Error && err.name === "AbortError") return;
       failedUrls.push(url);
+    } finally {
+      release();
+      // Clean up registry only if this controller is still the active one.
+      if (_inflight.get(key) === controller) {
+        _inflight.delete(key);
+      }
     }
   });
 

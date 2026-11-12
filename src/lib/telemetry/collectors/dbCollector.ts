@@ -2,20 +2,102 @@ import { getRedis } from "@/lib/redis";
 import type { DbQuerySample } from "../types";
 
 const MAX_SAMPLES_PER_MODEL = 200;
+const MAX_TOTAL_SAMPLES = 1_000;
+const MAX_PENDING_SAMPLES = 1_000;
 const SLOW_QUERY_THRESHOLD_MS = 200;
 const FLUSH_INTERVAL_MS = 5_000;
+const SAMPLE_DECAY_START = 0.5;
+const CIRCUIT_BREAKER_THRESHOLD = 0.95;
 
-// ─── In-memory state ─────────────────────────────────────────────────────────
+type BufferedSample = {
+  model: string;
+  sample: DbQuerySample;
+};
+
+// A fixed-size global ring bounds history even when model names are high-cardinality.
 const samplesByModel = new Map<string, DbQuerySample[]>();
+const sampleRing: Array<BufferedSample | undefined> = new Array(MAX_TOTAL_SAMPLES);
+let sampleRingCursor = 0;
+let sampleRingSize = 0;
+
 let slowQueryCount = 0;
 let totalQueryCount = 0;
 
-// Buffer for pending writes to Redis
+// Redis sample writes are bounded globally; aggregate counters remain exact.
 let pendingGlobalTotal = 0;
 let pendingGlobalSlow = 0;
-const pendingSamplesByModel = new Map<string, DbQuerySample[]>();
-const pendingNewModels = new Set<string>();
+let pendingSamples: BufferedSample[] = [];
+let flushInFlight: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setInterval> | null = null;
+
+function getHeapPressure(): number {
+  if (typeof process === "undefined" || typeof process.memoryUsage !== "function") {
+    return 0;
+  }
+
+  try {
+    const { heapUsed, heapTotal } = process.memoryUsage();
+    if (heapTotal <= 0) return 0;
+    return Math.min(1, Math.max(0, (heapUsed / heapTotal - 0.6) / 0.38));
+  } catch {
+    return 0;
+  }
+}
+
+function getBufferPressure(): number {
+  return Math.max(
+    pendingSamples.length / MAX_PENDING_SAMPLES,
+    getHeapPressure(),
+  );
+}
+
+/** Decays detailed-sample collection under load; aggregate counters are not sampled. */
+function getDetailedSampleRate(): number {
+  const pressure = getBufferPressure();
+  if (pressure <= SAMPLE_DECAY_START) return 1;
+  if (pressure >= CIRCUIT_BREAKER_THRESHOLD) return 0;
+
+  const progress =
+    (pressure - SAMPLE_DECAY_START) /
+    (CIRCUIT_BREAKER_THRESHOLD - SAMPLE_DECAY_START);
+  return Math.max(0, 1 - 0.9 * progress * progress);
+}
+
+export function getDbTelemetryBufferStatus() {
+  const pressure = getBufferPressure();
+  return {
+    inMemorySamples: sampleRingSize,
+    maxInMemorySamples: MAX_TOTAL_SAMPLES,
+    pendingSamples: pendingSamples.length,
+    maxPendingSamples: MAX_PENDING_SAMPLES,
+    sampleRate: getDetailedSampleRate(),
+    circuitBreakerOpen: pressure >= CIRCUIT_BREAKER_THRESHOLD,
+  };
+}
+
+function addInMemorySample(model: string, sample: DbQuerySample): void {
+  if (sampleRingSize === MAX_TOTAL_SAMPLES) {
+    const oldest = sampleRing[sampleRingCursor];
+    if (oldest) {
+      const oldModelSamples = samplesByModel.get(oldest.model);
+      if (oldModelSamples) {
+        const oldIndex = oldModelSamples.indexOf(oldest.sample);
+        if (oldIndex >= 0) oldModelSamples.splice(oldIndex, 1);
+        if (oldModelSamples.length === 0) samplesByModel.delete(oldest.model);
+      }
+    }
+  } else {
+    sampleRingSize += 1;
+  }
+
+  sampleRing[sampleRingCursor] = { model, sample };
+  sampleRingCursor = (sampleRingCursor + 1) % MAX_TOTAL_SAMPLES;
+
+  const modelSamples = samplesByModel.get(model) ?? [];
+  modelSamples.push(sample);
+  if (modelSamples.length > MAX_SAMPLES_PER_MODEL) modelSamples.shift();
+  samplesByModel.set(model, modelSamples);
+}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -36,69 +118,70 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 // ─── Batch flush ─────────────────────────────────────────────────────────────
 
-async function flushBuffer(): Promise<void> {
-  if (pendingGlobalTotal === 0 && pendingSamplesByModel.size === 0) return;
+function flushBuffer(): Promise<void> {
+  if (flushInFlight) return flushInFlight;
 
-  const redis = getRedis();
-  if (!redis) {
-    pendingGlobalTotal = 0;
-    pendingGlobalSlow = 0;
-    pendingSamplesByModel.clear();
-    pendingNewModels.clear();
-    return;
-  }
+  const runFlush = async (): Promise<void> => {
+    if (pendingGlobalTotal === 0 && pendingSamples.length === 0) return;
 
-  const globalTotal = pendingGlobalTotal;
-  const globalSlow = pendingGlobalSlow;
-  const samplesSnapshot = new Map(pendingSamplesByModel);
-  const newModelsSnapshot = new Set(pendingNewModels);
-
-  try {
-    const pipeline = redis.pipeline();
-    const globalKey = "worksphere:telemetry:global";
-    const modelsKey = "worksphere:telemetry:models";
-
-    if (globalTotal > 0) {
-      pipeline.hincrby(globalKey, "totalQueryCount", globalTotal);
-    }
-    if (globalSlow > 0) {
-      pipeline.hincrby(globalKey, "slowQueryCount", globalSlow);
+    const redis = getRedis();
+    if (!redis) {
+      pendingGlobalTotal = 0;
+      pendingGlobalSlow = 0;
+      pendingSamples = [];
+      return;
     }
 
-    for (const model of newModelsSnapshot) {
-      pipeline.sadd(modelsKey, model);
+    const globalTotal = pendingGlobalTotal;
+    const globalSlow = pendingGlobalSlow;
+    const samplesSnapshot = pendingSamples.slice();
+    const groupedSamples = new Map<string, DbQuerySample[]>();
+
+    for (const entry of samplesSnapshot) {
+      const modelSamples = groupedSamples.get(entry.model) ?? [];
+      modelSamples.push(entry.sample);
+      groupedSamples.set(entry.model, modelSamples);
     }
 
-    for (const [model, samples] of samplesSnapshot) {
-      const samplesKey = `worksphere:telemetry:samples:${model}`;
-      for (const sample of samples) {
-        pipeline.lpush(samplesKey, JSON.stringify(sample));
+    try {
+      const pipeline = redis.pipeline();
+      const globalKey = "worksphere:telemetry:global";
+      const modelsKey = "worksphere:telemetry:models";
+
+      if (globalTotal > 0) {
+        pipeline.hincrby(globalKey, "totalQueryCount", globalTotal);
       }
-      pipeline.ltrim(samplesKey, 0, MAX_SAMPLES_PER_MODEL - 1);
-    }
+      if (globalSlow > 0) {
+        pipeline.hincrby(globalKey, "slowQueryCount", globalSlow);
+      }
 
-    await withTimeout(pipeline.exec(), 3000);
-
-    pendingGlobalTotal -= globalTotal;
-    pendingGlobalSlow -= globalSlow;
-    for (const model of newModelsSnapshot) {
-      pendingNewModels.delete(model);
-    }
-    for (const [model, samples] of samplesSnapshot) {
-      const current = pendingSamplesByModel.get(model);
-      if (current) {
-        if (current.length <= samples.length) {
-          pendingSamplesByModel.delete(model);
-        } else {
-          pendingSamplesByModel.set(model, current.slice(samples.length));
+      for (const [model, samples] of groupedSamples) {
+        pipeline.sadd(modelsKey, model);
+        const samplesKey = `worksphere:telemetry:samples:${model}`;
+        for (const sample of samples) {
+          pipeline.lpush(samplesKey, JSON.stringify(sample));
         }
+        pipeline.ltrim(samplesKey, 0, MAX_SAMPLES_PER_MODEL - 1);
       }
-    }
-  } catch (error) {
-    console.error("[dbTelemetry] Redis batch flush failed:", error);
-  }
-}
 
+      await withTimeout(pipeline.exec(), 3000);
+
+      pendingGlobalTotal = Math.max(0, pendingGlobalTotal - globalTotal);
+      pendingGlobalSlow = Math.max(0, pendingGlobalSlow - globalSlow);
+      const flushedSamples = new Set(samplesSnapshot);
+      pendingSamples = pendingSamples.filter(
+        (entry) => !flushedSamples.has(entry),
+      );
+    } catch (error) {
+      console.error("[dbTelemetry] Redis batch flush failed:", error);
+    }
+  };
+
+  flushInFlight = runFlush().finally(() => {
+    flushInFlight = null;
+  });
+  return flushInFlight;
+}
 function startFlusher(): void {
   if (flushTimer) return;
   if (typeof window !== "undefined") return;
@@ -120,36 +203,20 @@ export function recordQueryDuration(model: string, durationMs: number) {
   totalQueryCount += 1;
   if (durationMs >= SLOW_QUERY_THRESHOLD_MS) slowQueryCount += 1;
 
-  const key = model || "unknown";
-  const samples = samplesByModel.get(key) ?? [];
-  const sample = { durationMs, timestamp: Date.now() };
-  samples.push(sample);
-
-  if (samples.length > MAX_SAMPLES_PER_MODEL) {
-    samples.shift();
-  }
-
-  samplesByModel.set(key, samples);
-
-  // Buffer writes for periodic Redis flush
   pendingGlobalTotal += 1;
   if (durationMs >= SLOW_QUERY_THRESHOLD_MS) {
     pendingGlobalSlow += 1;
   }
 
-  if (!pendingNewModels.has(key)) {
-    pendingNewModels.add(key);
-  }
+  const sampleRate = getDetailedSampleRate();
+  if (sampleRate <= 0 || pendingSamples.length >= MAX_PENDING_SAMPLES) return;
+  if (Math.random() >= sampleRate) return;
 
-  const pendingSamples = pendingSamplesByModel.get(key) ?? [];
-  pendingSamples.push(sample);
-  if (pendingSamples.length > 50) {
-    pendingSamplesByModel.set(key, pendingSamples.slice(-50));
-  } else {
-    pendingSamplesByModel.set(key, pendingSamples);
-  }
+  const key = model || "unknown";
+  const sample = { durationMs, timestamp: Date.now() };
+  addInMemorySample(key, sample);
+  pendingSamples.push({ model: key, sample });
 }
-
 export function flushTelemetryBuffer(): Promise<void> {
   return flushBuffer();
 }

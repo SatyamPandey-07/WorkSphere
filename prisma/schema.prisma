@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  extensions = [vector, pg_trgm]
+  extensions = [vector, pg_trgm, postgis]
 }
 
 model User {
@@ -15,6 +15,7 @@ model User {
   lastName           String?
   imageUrl           String?
   createdAt          DateTime           @default(now())
+  passwordChangedAt  DateTime?          @default(null)
   discordWebhookUrl  String?
   whatsappWebhookUrl String?
   telegramWebhookUrl String?
@@ -88,6 +89,7 @@ model Venue {
   searchEmbedding     Unsupported("vector(1024)")?
   latitude            Float
   longitude           Float
+  coordinates         Unsupported("geography(Point, 4326)")? // PostGIS spatial column backing GiST-indexed proximity search
   category            String // cafe, coworking, library
   address             String?
   rating              Float?
@@ -329,6 +331,11 @@ model Booking {
   frequency          String?
   guestCount         Int?
 
+  // A partial unique index, `Booking_active_seat_slot_key`, protects against
+  // concurrent reservations of the same active (venueId, seat, date, time)
+  // slot. It is defined in
+  // prisma/migrations/20261112090000_booking_active_seat_unique because
+  // Prisma cannot express partial indexes in the schema.
   @@index([userId])
   @@index([venueId])
   @@index([seatId])
@@ -926,6 +933,21 @@ model StudentClaimNullifier {
   @@index([epoch])
 }
 
+/// Epoch-scoped nullifier registry for anonymous venue check-ins (#7390).
+/// A nullifier may only be spent once per epoch, preventing the same
+/// zk-SNARK proof from being replayed for a second check-in.
+model VenueCheckInNullifier {
+  id            String   @id @default(cuid())
+  nullifierHash String
+  epoch         Int
+  venueId       String
+  claimedAt     DateTime @default(now())
+
+  @@unique([nullifierHash, epoch])
+  @@index([epoch])
+  @@index([venueId])
+}
+
 
 enum WaitlistStatus {
   ACTIVE
@@ -1113,4 +1135,19 @@ model DeepWorkCredential {
   mintedAt        DateTime @default(now())
 
   @@index([userId, mintedAt])
+}
+
+
+/// Durable idempotency ledger for operator-initiated venue cancellation webhooks.
+model VenueCancellationWebhookEvent {
+  id             String   @id @default(cuid())
+  idempotencyKey String   @unique
+  payloadHash    String
+  bookingId      String
+  createdAt      DateTime @default(now())
+  processedAt    DateTime @default(now())
+  expiresAt      DateTime
+
+  @@index([bookingId])
+  @@index([expiresAt])
 }

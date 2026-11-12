@@ -162,4 +162,60 @@ describe("VenueShareModal Component (#4402)", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  describe("stacking context and focus (#7613)", () => {
+    const openFromHeroWrapper = () => {
+      // @ts-expect-error - intentional test simulation
+      delete (navigator as any).share;
+
+      // Mirrors the venue page, where the trigger sits inside a positioned,
+      // z-indexed wrapper that creates its own stacking context.
+      render(
+        <div data-testid="hero-wrapper" className="absolute top-4 right-4 z-10">
+          <VenueShareModal venue={mockVenue} variant="hero" />
+        </div>,
+      );
+
+      const shareBtn = screen.getByRole("button", {
+        name: /share cafe artisan/i,
+      });
+      shareBtn.focus();
+      fireEvent.click(shareBtn);
+      return { shareBtn, dialog: screen.getByRole("dialog") };
+    };
+
+    it("portals the backdrop to document.body, outside the z-indexed wrapper", () => {
+      const { dialog } = openFromHeroWrapper();
+
+      expect(dialog.parentElement).toBe(document.body);
+      expect(screen.getByTestId("hero-wrapper")).not.toContainElement(dialog);
+      expect(dialog).toHaveClass("fixed", "inset-0", "z-[60]");
+    });
+
+    it("moves focus into the dialog and keeps Tab / Shift+Tab inside it", async () => {
+      openFromHeroWrapper();
+      const closeBtn = screen.getByRole("button", { name: /close dialog/i });
+      const downloadBtn = screen.getByRole("button", { name: /download svg/i });
+
+      await waitFor(() => expect(closeBtn).toHaveFocus());
+
+      downloadBtn.focus();
+      fireEvent.keyDown(downloadBtn, { key: "Tab" });
+      expect(closeBtn).toHaveFocus();
+
+      fireEvent.keyDown(closeBtn, { key: "Tab", shiftKey: true });
+      expect(downloadBtn).toHaveFocus();
+    });
+
+    it("still closes on Escape and returns focus to the share button", async () => {
+      const { shareBtn } = openFromHeroWrapper();
+      const closeBtn = screen.getByRole("button", { name: /close dialog/i });
+      await waitFor(() => expect(closeBtn).toHaveFocus());
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(shareBtn).toHaveFocus();
+    });
+  });
 });

@@ -200,6 +200,8 @@ export function AudioEqualizer({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const jazzCleanupRef = useRef<(() => void) | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const resumeOnInteractionRef = useRef<(() => void) | null>(null);
+  const hasUserInteractedRef = useRef(false);
 
   // External Audio Refs (Parametric Mode)
   const eqRef = useRef<ParametricEQGraph | null>(null);
@@ -371,17 +373,22 @@ export function AudioEqualizer({
     eqFiltersRef.current = filters;
     analyserRef.current = analyser;
 
-    // Safari iOS resume handler
+    // Safari iOS only allows resuming a suspended context from a user gesture.
     if (ctx.state === "suspended") {
       const resumeOnInteraction = () => {
-        if (!audioContextRef.current) return;
-        audioContextRef.current.resume().then(() => {
-          if (audioContextRef.current?.state === "running") {
+        if (ctx.state !== "suspended") return;
+        hasUserInteractedRef.current = true;
+        ctx.resume().then(() => {
+          if (ctx.state === "running") {
             document.removeEventListener("touchstart", resumeOnInteraction);
             document.removeEventListener("click", resumeOnInteraction);
+            resumeOnInteractionRef.current = null;
           }
-        }).catch(() => { });
+        }).catch(() => {
+          // Keep the listeners for a later user interaction.
+        });
       };
+      resumeOnInteractionRef.current = resumeOnInteraction;
       document.addEventListener("touchstart", resumeOnInteraction, { passive: true });
       document.addEventListener("click", resumeOnInteraction);
     }
@@ -580,10 +587,6 @@ export function AudioEqualizer({
     const masterGain = masterGainRef.current!;
     const audioEntryPoint = eqFiltersRef.current[0] || masterGain;
 
-    if (ctx.state === "suspended") {
-      ctx.resume();
-    }
-
     stopPlayingNodes();
 
     if (preset === "cafe") {
@@ -715,7 +718,9 @@ export function AudioEqualizer({
       if (
         document.visibilityState === "visible" &&
         audioContextRef.current &&
-        audioContextRef.current.state !== "closed"
+        audioContextRef.current.state !== "closed" &&
+        hasUserInteractedRef.current &&
+        audioContextRef.current.state === "suspended"
       ) {
         audioContextRef.current.resume().catch(() => { });
       }
@@ -725,6 +730,11 @@ export function AudioEqualizer({
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (resumeOnInteractionRef.current) {
+        document.removeEventListener("touchstart", resumeOnInteractionRef.current);
+        document.removeEventListener("click", resumeOnInteractionRef.current);
+        resumeOnInteractionRef.current = null;
+      }
       stopPlayingNodes();
       if (
         audioContextRef.current &&

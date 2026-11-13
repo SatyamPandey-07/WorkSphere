@@ -1,0 +1,492 @@
+openapi: 3.1.0
+
+info:
+  title: WorkSphere Anonymous ZKP Venue Check-In API
+  version: 1.0.0
+  summary: Groth16 proof verification and anonymous venue check-in.
+  description: |
+    Anonymous venue check-in lets a visitor prove membership without revealing
+    an account, wallet address, or other identity data. The client submits a
+    SnarkJS Groth16 proof and the circuit's ordered public signals. The server
+    verifies the proof, claims the epoch-scoped nullifier to prevent replay, and
+    returns a short-lived anonymous check-in token.
+
+    The canonical contract is documented at
+    `POST /api/venues/checkin/anonymous`. The current server build exposes the
+    same verification flow at `POST /api/auth/zkp/verify-nullifier`; that
+    operation is included below because it is the deployed route, and it derives
+    `venueId` and `nullifierHash` from the ordered `publicSignals` array instead
+    of accepting them as top-level fields.
+
+    Proofs use the Groth16 proving system over the BN254 (`bn128`) curve in the
+    JSON format emitted by [SnarkJS](https://github.com/iden3/snarkjs).
+  contact:
+    name: WorkSphere maintainers
+    url: https://github.com/SatyamPandey-07/WorkSphere
+  license:
+    name: MIT
+    identifier: MIT
+
+externalDocs:
+  description: Batch Groth16 verification architecture
+  url: https://github.com/SatyamPandey-07/WorkSphere/blob/main/docs/zkp/batch-zk-verification-architecture.md
+
+servers:
+  - url: /
+    description: Current WorkSphere deployment
+
+tags:
+  - name: Anonymous ZKP Check-In
+    description: Canonical anonymous membership proof and venue check-in contract.
+  - name: Deployed Check-In Implementation
+    description: Route currently serving the anonymous check-in flow in this repository.
+
+paths:
+  /api/venues/checkin/anonymous:
+    post:
+      operationId: anonymousVenueCheckIn
+      tags:
+        - Anonymous ZKP Check-In
+      summary: Verify an anonymous Groth16 proof and confirm a venue check-in
+      description: |
+        Verifies that the caller knows a valid membership witness for the venue
+        without revealing the witness. On success the server atomically claims
+        the nullifier for the current epoch and returns a signed anonymous
+        check-in token.
+
+        The proof must be bound to the supplied `venueId` and `nullifierHash`.
+        In particular, the circuit public signals are expected in this order:
+
+        1. `merkleRoot` — root of the venue membership tree.
+        2. `nullifierHash` — nullifier committed by the proof.
+        3. `venueId` — venue identifier committed by the proof.
+        4. `epoch` — positive integer epoch used to scope the nullifier ledger.
+
+        Reusing the same `(nullifierHash, epoch)` pair for a second check-in
+        fails with `409 Conflict`.
+      security: []
+      x-implementation:
+        status: specified
+        currentPath: /api/auth/zkp/verify-nullifier
+        source: src/app/api/auth/zkp/verify-nullifier/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnonymousCheckInRequest"
+            examples:
+              validCheckIn:
+                summary: Anonymous check-in with a Groth16 proof
+                value:
+                  venueId: venue-1
+                  nullifierHash: "0x1f2e3d4c5b6a79887766554433221100aabbccddeeff00112233445566778899"
+                  proof:
+                    pi_a:
+                      - "1000"
+                      - "2000"
+                      - "1"
+                    pi_b:
+                      - - "3000"
+                        - "4000"
+                      - - "5000"
+                        - "6000"
+                      - - "1"
+                        - "0"
+                    pi_c:
+                      - "7000"
+                      - "8000"
+                      - "1"
+                    protocol: groth16
+                    curve: bn128
+                  publicSignals:
+                    - "1849102948102938401928401928401928401928401928401928401928401928"
+                    - "0x1f2e3d4c5b6a79887766554433221100aabbccddeeff00112233445566778899"
+                    - venue-1
+                    - "2026"
+      responses:
+        "200":
+          description: Proof verified and the anonymous check-in was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousCheckInResponse"
+              examples:
+                verified:
+                  summary: Nullifier claimed and check-in token issued
+                  value:
+                    success: true
+                    verified: true
+                    venueId: venue-1
+                    epoch: 2026
+                    nullifierHash: "0x1f2e3d4c5b6a79887766554433221100aabbccddeeff00112233445566778899"
+                    accessToken: "eyJzY29wZSI6InZlbnVlLWNoZWNraW4iLCJ2ZW51ZUlkIjoidmVudWUtMSJ9.1763000000000.c2lnbmF0dXJl"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/NullifierAlreadySpent"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/auth/zkp/verify-nullifier:
+    post:
+      operationId: verifyZkNullifier
+      tags:
+        - Deployed Check-In Implementation
+      summary: Verify a Groth16 proof and claim an epoch-scoped nullifier
+      description: |
+        Deployed implementation of the anonymous check-in flow. This route
+        accepts the SnarkJS proof and public signals only; the venue identifier
+        and nullifier hash are read from `publicSignals[2]` and
+        `publicSignals[1]` respectively, and the epoch is parsed from
+        `publicSignals[3]`.
+
+        A successful call returns the verified venue, epoch, nullifier hash, and
+        a signed anonymous check-in token. The token is valid for 15 minutes and
+        contains only public proof signals.
+      security: []
+      x-implementation:
+        source: src/app/api/auth/zkp/verify-nullifier/route.ts
+        verifier: snarkjs.groth16.verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyNullifierRequest"
+            examples:
+              validProof:
+                summary: Deployed-route request with public signals
+                value:
+                  proof:
+                    pi_a:
+                      - "1000"
+                      - "2000"
+                      - "1"
+                    pi_b:
+                      - - "3000"
+                        - "4000"
+                      - - "5000"
+                        - "6000"
+                      - - "1"
+                        - "0"
+                    pi_c:
+                      - "7000"
+                      - "8000"
+                      - "1"
+                    protocol: groth16
+                    curve: bn128
+                  publicSignals:
+                    - "1849102948102938401928401928401928401928401928401928401928401928"
+                    - "9876543210987654321098765432109876543210987654321098765432109876"
+                    - venue-1
+                    - "2026"
+      responses:
+        "200":
+          description: Proof verified, nullifier claimed, and check-in token issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousCheckInResponse"
+              examples:
+                verified:
+                  summary: Nullifier claimed and check-in token issued
+                  value:
+                    success: true
+                    verified: true
+                    venueId: venue-1
+                    epoch: 2026
+                    nullifierHash: "9876543210987654321098765432109876543210987654321098765432109876"
+                    accessToken: "eyJzY29wZSI6InZlbnVlLWNoZWNraW4iLCJ2ZW51ZUlkIjoidmVudWUtMSJ9.1763000000000.c2lnbmF0dXJl"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/NullifierAlreadySpent"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  schemas:
+    FieldElement:
+      type: string
+      pattern: "^-?[0-9]+$"
+      description: |
+        Base-10 string encoding of a finite-field element. SnarkJS emits proof
+        coordinates and decimal public signals as strings so that values larger
+        than JavaScript's safe integer range are preserved.
+      examples:
+        - "1000"
+        - "1849102948102938401928401928401928401928401928401928401928401928"
+
+    HexNullifierHash:
+      type: string
+      pattern: "^0x[0-9a-fA-F]+$"
+      minLength: 3
+      description: |
+        Hex-encoded nullifier hash with a `0x` prefix. The same value must be
+        committed by the proof in `publicSignals[1]`.
+      examples:
+        - "0x1f2e3d4c5b6a79887766554433221100aabbccddeeff00112233445566778899"
+
+    NullifierHash:
+      type: string
+      minLength: 1
+      pattern: "^(0x[0-9a-fA-F]+|[0-9]+)$"
+      description: |
+        Nullifier hash returned by the deployed route. SnarkJS public signals
+        are commonly base-10 strings, but clients may also use hex encoding.
+      examples:
+        - "9876543210987654321098765432109876543210987654321098765432109876"
+        - "0x1f2e3d4c5b6a79887766554433221100aabbccddeeff00112233445566778899"
+
+    VenueId:
+      type: string
+      minLength: 1
+      description: WorkSphere venue identifier bound to the proof.
+      examples:
+        - venue-1
+
+    Groth16Proof:
+      type: object
+      description: |
+        Groth16 proof in the JSON format produced by
+        `snarkjs.groth16.fullProve`. `pi_a` and `pi_c` are affine G1 points with
+        three decimal string elements; `pi_b` is a G2 point represented as three
+        rows of two decimal string elements.
+      required:
+        - pi_a
+        - pi_b
+        - pi_c
+      properties:
+        pi_a:
+          type: array
+          description: G1 proof element `[x, y, z]`.
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/FieldElement"
+        pi_b:
+          type: array
+          description: G2 proof element `[[x0, x1], [y0, y1], [z0, z1]]`.
+          minItems: 3
+          maxItems: 3
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+              $ref: "#/components/schemas/FieldElement"
+        pi_c:
+          type: array
+          description: G1 proof element `[x, y, z]`.
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/FieldElement"
+        protocol:
+          type: string
+          enum:
+            - groth16
+          default: groth16
+          description: Proving system identifier emitted by SnarkJS.
+        curve:
+          type: string
+          enum:
+            - bn128
+          default: bn128
+          description: Pairing curve used by the circuit.
+
+    PublicSignals:
+      type: array
+      description: |
+        Ordered circuit public signals. The circuit binds the membership Merkle
+        root, the nullifier, the venue, and the epoch in this exact order.
+      minItems: 4
+      maxItems: 4
+      prefixItems:
+        - type: string
+          minLength: 1
+          description: Merkle root of the venue membership tree.
+        - type: string
+          minLength: 1
+          description: |
+            Nullifier hash committed by the proof. The deployed route also
+            returns this value as the response `nullifierHash`.
+        - type: string
+          minLength: 1
+          description: Venue identifier committed by the proof.
+        - type: string
+          pattern: "^[0-9]+$"
+          description: Positive integer epoch used to scope the nullifier ledger.
+      items: false
+
+    AnonymousCheckInRequest:
+      type: object
+      description: |
+        Canonical anonymous check-in payload. The top-level `venueId` and
+        `nullifierHash` must match the values bound in `publicSignals`.
+      required:
+        - venueId
+        - nullifierHash
+        - proof
+        - publicSignals
+      properties:
+        venueId:
+          $ref: "#/components/schemas/VenueId"
+        nullifierHash:
+          $ref: "#/components/schemas/HexNullifierHash"
+        proof:
+          $ref: "#/components/schemas/Groth16Proof"
+        publicSignals:
+          $ref: "#/components/schemas/PublicSignals"
+
+    VerifyNullifierRequest:
+      type: object
+      description: |
+        Request accepted by the deployed `/api/auth/zkp/verify-nullifier`
+        route. Venue and nullifier values are derived from `publicSignals`.
+      required:
+        - proof
+        - publicSignals
+      properties:
+        proof:
+          $ref: "#/components/schemas/Groth16Proof"
+        publicSignals:
+          $ref: "#/components/schemas/PublicSignals"
+
+    AnonymousCheckInResponse:
+      type: object
+      description: |
+        Confirmation returned after the proof is verified and the nullifier is
+        atomically claimed. The access token is HMAC-SHA256 signed and expires
+        after 15 minutes.
+      required:
+        - success
+        - verified
+        - venueId
+        - epoch
+        - nullifierHash
+        - accessToken
+      properties:
+        success:
+          type: boolean
+          const: true
+          description: Indicates that the request completed successfully.
+        verified:
+          type: boolean
+          const: true
+          description: Indicates that the Groth16 proof was accepted.
+        venueId:
+          $ref: "#/components/schemas/VenueId"
+        epoch:
+          type: integer
+          minimum: 1
+          description: Epoch claimed by the nullifier ledger.
+          examples:
+            - 2026
+        nullifierHash:
+          $ref: "#/components/schemas/NullifierHash"
+        accessToken:
+          type: string
+          minLength: 1
+          description: |
+            Short-lived anonymous check-in token. The compact
+            `payload.timestamp.signature` format contains only public proof
+            signals and carries the `venue-checkin` scope.
+          examples:
+            - "eyJzY29wZSI6InZlbnVlLWNoZWNraW4iLCJ2ZW51ZUlkIjoidmVudWUtMSJ9.1763000000000.c2lnbmF0dXJl"
+
+    ApiError:
+      type: object
+      description: Error envelope returned by the API.
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          description: Human-readable error message.
+        code:
+          type: string
+          description: Machine-readable error code when available.
+          examples:
+            - VALIDATION_FAILED
+            - NULLIFIER_ALREADY_SPENT
+            - INTERNAL_ERROR
+
+  responses:
+    BadRequest:
+      description: |
+        The request body is not valid JSON, the proof is malformed, the public
+        signals are incomplete, the epoch is not a positive integer, or SnarkJS
+        rejected the proof.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            malformedJson:
+              summary: Invalid JSON body
+              value:
+                success: false
+                error: Invalid JSON body.
+                code: VALIDATION_FAILED
+            malformedProof:
+              summary: Malformed proof parameters
+              value:
+                success: false
+                error: Malformed proof parameters or public signals.
+                code: VALIDATION_FAILED
+            invalidProof:
+              summary: Proof failed verification
+              value:
+                success: false
+                error: Invalid zero-knowledge proof.
+                code: VALIDATION_FAILED
+            invalidPublicSignals:
+              summary: Public signals do not bind the venue or epoch
+              value:
+                success: false
+                error: "Invalid public signals: currentEpoch must be a positive integer."
+                code: VALIDATION_FAILED
+
+    NullifierAlreadySpent:
+      description: |
+        The nullifier has already been used for this venue epoch. A proof cannot
+        be replayed for a second check-in in the same epoch.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            duplicate:
+              summary: Nullifier already claimed
+              value:
+                success: false
+                error: This nullifier has already been used in the current epoch.
+                code: NULLIFIER_ALREADY_SPENT
+
+    InternalServerError:
+      description: |
+        The verification key is unavailable, the nullifier ledger could not be
+        updated, or an unexpected server error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+          examples:
+            verificationKeyUnavailable:
+              summary: Verification key missing or unreadable
+              value:
+                success: false
+                error: Verification key not found.
+                code: INTERNAL_ERROR
+            ledgerFailure:
+              summary: Nullifier could not be recorded
+              value:
+                success: false
+                error: Failed to record nullifier.
+                code: INTERNAL_ERROR

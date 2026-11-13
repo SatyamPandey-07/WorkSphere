@@ -1,13 +1,57 @@
 "use client";
-
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { CanvasTexture, DoubleSide, Group, SRGBColorSpace } from "three";
 import type { PassportStamp } from "@/lib/zkp/nomadProof";
 import styles from "./NomadPassportCoin.module.css";
 
-interface NomadPassportCoinProps {
-  stamp: PassportStamp;
+export interface NomadPassportCoinProps {
+  stamp?: PassportStamp;
+  isLoading?: boolean;
+  isLoaded?: boolean;
+  className?: string;
+  onReady?: () => void;
+}
+
+const DEFAULT_STAMP: PassportStamp = {
+  stampId: "stamp-default-001",
+  badgeType: "bronze",
+  tierTitle: "Nomad Explorer",
+  issuedAt: "2026-01-01T00:00:00.000Z",
+  svgMarkup: "<svg></svg>",
+  venueName: "WorkSphere Hub",
+  epoch: 1,
+  nullifierHash: "0x00000000000000000000000000000000",
+  verificationSignature: "zk-sig-verified-epoch-1",
+  countryCode: "US",
+};
+
+/**
+ * Animated CSS shimmer pulse skeleton component rendered during 3D WebGL asset
+ * and texture compilation. Maintains identical coin diameter (max-w-[20rem]) and 1:1
+ * aspect ratio to eliminate Cumulative Layout Shift (CLS = 0).
+ */
+export function NomadPassportCoinSkeleton({
+  className = "",
+}: {
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      aria-label="Loading nomad passport coin"
+      data-testid="nomad-coin-skeleton"
+      className={`relative rounded-full aspect-square w-full max-w-[20rem] mx-auto overflow-hidden border-4 border-muted/40 shadow-inner flex items-center justify-center bg-gradient-to-r from-muted via-muted/50 to-muted animate-pulse ${className}`}
+    >
+      {/* Concentric inner relief rings matching 3D coin edge geometry */}
+      <div className="absolute inset-3 rounded-full border border-muted/30 pointer-events-none" />
+      <div className="absolute inset-8 rounded-full border border-muted/20 pointer-events-none" />
+      <div className="w-16 h-16 rounded-full bg-muted/40 animate-pulse flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full bg-muted/30" />
+      </div>
+      <span className="sr-only">Loading nomad passport coin...</span>
+    </div>
+  );
 }
 
 function createCoinTexture(stamp: PassportStamp, reverse: boolean) {
@@ -114,7 +158,10 @@ function createCoinTexture(stamp: PassportStamp, reverse: boolean) {
 function CoinMesh({
   stamp,
   flipped,
-}: NomadPassportCoinProps & { flipped: boolean }) {
+}: {
+  stamp: PassportStamp;
+  flipped: boolean;
+}) {
   const coin = useRef<Group>(null);
   const frontTexture = useMemo(() => createCoinTexture(stamp, false), [stamp]);
   const backTexture = useMemo(() => createCoinTexture(stamp, true), [stamp]);
@@ -182,7 +229,10 @@ function CoinMesh({
 function CoinFallback({
   stamp,
   flipped,
-}: NomadPassportCoinProps & { flipped: boolean }) {
+}: {
+  stamp: PassportStamp;
+  flipped: boolean;
+}) {
   const attestation =
     stamp.nullifierHash || stamp.verificationSignature || stamp.stampId;
   const initials = (stamp.venueName || "WorkSphere")
@@ -244,11 +294,19 @@ class CoinErrorBoundary extends React.Component<
   }
 }
 
-export default function NomadPassportCoin({ stamp }: NomadPassportCoinProps) {
+export function NomadPassportCoin({
+  stamp = DEFAULT_STAMP,
+  isLoading,
+  isLoaded,
+  className = "",
+  onReady,
+}: NomadPassportCoinProps) {
   const [webglSupported, setWebglSupported] = useState(false);
+  const [internalLoaded, setInternalLoaded] = useState(false);
   const [flipped, setFlipped] = useState(false);
 
   useEffect(() => {
+    if (typeof document === "undefined") return;
     const probe = document.createElement("canvas");
     let supported = false;
     try {
@@ -257,6 +315,8 @@ export default function NomadPassportCoin({ stamp }: NomadPassportCoinProps) {
         !("WebGL2RenderingContext" in window)
       ) {
         setWebglSupported(false);
+        setInternalLoaded(true);
+        onReady?.();
         return;
       }
       supported = Boolean(
@@ -269,46 +329,81 @@ export default function NomadPassportCoin({ stamp }: NomadPassportCoinProps) {
       supported = false;
     }
     setWebglSupported(supported);
-  }, []);
+    if (!supported) {
+      setInternalLoaded(true);
+      onReady?.();
+    }
+  }, [onReady]);
+
+  // Determine whether to display the shimmer pulse skeleton
+  const isCoinLoading =
+    isLoading !== undefined
+      ? isLoading
+      : isLoaded !== undefined
+        ? !isLoaded
+        : !internalLoaded;
+
+  const handleCanvasCreated = () => {
+    setInternalLoaded(true);
+    onReady?.();
+  };
 
   const fallback = <CoinFallback stamp={stamp} flipped={flipped} />;
 
   return (
-    <button
-      type="button"
-      aria-label={`${stamp.venueName || "Nomad passport"} coin. Hover or activate to reveal its attestation hash.`}
-      aria-pressed={flipped}
-      className={`${styles.button} ${styles.perspective1000}`}
-      onMouseEnter={() => setFlipped(true)}
-      onMouseLeave={() => setFlipped(false)}
-      onFocus={() => setFlipped(true)}
-      onBlur={() => setFlipped(false)}
-      onClick={() => setFlipped(true)}
+    <div
+      className={`relative w-full max-w-[20rem] aspect-square mx-auto ${className}`}
+      data-testid="nomad-coin-container"
     >
-      {webglSupported ? (
-        <CoinErrorBoundary fallback={fallback}>
-          <Canvas
-            dpr={[1, 1.5]}
-            camera={{ position: [0, 0, 4.25], fov: 36 }}
-            shadows
-            fallback={fallback}
-          >
-            <ambientLight intensity={1.5} />
-            <directionalLight position={[3, 4, 5]} intensity={4} castShadow />
-            <pointLight
-              position={[-3, -2, 3]}
-              intensity={1.3}
-              color="#7ec9df"
-            />
-            <CoinMesh stamp={stamp} flipped={flipped} />
-          </Canvas>
-        </CoinErrorBoundary>
-      ) : (
-        fallback
+      {/* Animated CSS shimmer pulse skeleton component */}
+      {isCoinLoading && (
+        <NomadPassportCoinSkeleton className="absolute inset-0 z-10" />
       )}
-      <span className="sr-only">
-        {flipped ? "Attestation hash face" : "Venue logo face"}
-      </span>
-    </button>
+
+      {/* Interactive 3D Canvas / Fallback coin element */}
+      <button
+        type="button"
+        aria-label={`${stamp.venueName || "Nomad passport"} coin. Hover or activate to reveal its attestation hash.`}
+        aria-pressed={flipped}
+        className={`${styles.button} ${styles.perspective1000} ${
+          isCoinLoading
+            ? "opacity-0 pointer-events-none"
+            : "opacity-100 transition-opacity duration-300"
+        }`}
+        onMouseEnter={() => setFlipped(true)}
+        onMouseLeave={() => setFlipped(false)}
+        onFocus={() => setFlipped(true)}
+        onBlur={() => setFlipped(false)}
+        onClick={() => setFlipped(true)}
+      >
+        {webglSupported ? (
+          <CoinErrorBoundary fallback={fallback}>
+            <Canvas
+              dpr={[1, 1.5]}
+              camera={{ position: [0, 0, 4.25], fov: 36 }}
+              shadows
+              fallback={fallback}
+              onCreated={handleCanvasCreated}
+            >
+              <ambientLight intensity={1.5} />
+              <directionalLight position={[3, 4, 5]} intensity={4} castShadow />
+              <pointLight
+                position={[-3, -2, 3]}
+                intensity={1.3}
+                color="#7ec9df"
+              />
+              <CoinMesh stamp={stamp} flipped={flipped} />
+            </Canvas>
+          </CoinErrorBoundary>
+        ) : (
+          fallback
+        )}
+        <span className="sr-only">
+          {flipped ? "Attestation hash face" : "Venue logo face"}
+        </span>
+      </button>
+    </div>
   );
 }
+
+export default NomadPassportCoin;

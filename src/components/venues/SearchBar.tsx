@@ -5,6 +5,7 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Search, X, Loader2, MapPin } from "lucide-react";
 import { useVenueSearch, VenueSearchResult } from "@/hooks/useVenueSearch";
 import { AmenityFilterPills } from "./AmenityFilterPills";
+import { ShortcutTooltip } from "../ui/ShortcutTooltip";
 
 export interface SearchBarProps {
   placeholder?: string;
@@ -92,9 +93,7 @@ export function SearchBar({
   // Detect OS for shortcut display badge (⌘K on macOS, Ctrl+K elsewhere)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const isMac = /Mac|iPod|iPhone|iPad/.test(
-        navigator.platform || navigator.userAgent,
-      );
+      const isMac = /Mac|iPod|iPhone|iPad/i.test(navigator.userAgent);
       setShortcutKey(isMac ? "⌘K" : "Ctrl+K");
     }
   }, []);
@@ -268,13 +267,20 @@ export function SearchBar({
             />
           )}
           {query.trim().length === 0 && (
-            <kbd
-              data-testid="search-bar-shortcut-badge"
-              onClick={() => inputRef.current?.focus()}
-              className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 bg-zinc-200/60 dark:bg-zinc-700/60 border border-zinc-300/60 dark:border-zinc-600/60 rounded cursor-pointer hover:bg-zinc-300/60 dark:hover:bg-zinc-600/60 transition-colors select-none shrink-0"
+            <ShortcutTooltip
+              content="Press Ctrl+K / ⌘K to search anywhere"
+              shortcut="K"
+              position="bottom"
             >
-              {shortcutKey}
-            </kbd>
+              <kbd
+                data-testid="search-bar-shortcut-badge"
+                title="Press Ctrl+K / ⌘K to search anywhere"
+                onClick={() => inputRef.current?.focus()}
+                className="hidden md:inline-flex items-center border border-zinc-700 bg-zinc-800/80 text-zinc-400 text-[10px] font-mono px-1.5 py-0.5 rounded cursor-pointer hover:bg-zinc-700/80 transition-colors select-none shrink-0"
+              >
+                {shortcutKey}
+              </kbd>
+            </ShortcutTooltip>
           )}
           {query.trim().length > 0 && (
             <button

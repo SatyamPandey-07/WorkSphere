@@ -33,8 +33,8 @@ export interface VenueHeaderSectionProps {
   photoLoading?: boolean;
   setImageError?: (error: boolean) => void;
   sentiment?: any;
-  activeTab: "overview" | "reviews" | "menu";
-  setActiveTab: (tab: "overview" | "reviews" | "menu") => void;
+  activeTab: "overview" | "reviews" | "menu" | "developer";
+  setActiveTab: (tab: "overview" | "reviews" | "menu" | "developer") => void;
   onClose: () => void;
   onOpenLightbox?: (index?: number) => void;
   voteMetrics?: Record<string, VoteMetricState>;
@@ -225,7 +225,7 @@ export function VenueHeaderSection({
             data-testid="close-venue-btn"
             onClick={onClose}
             aria-label="Close venue details"
-            className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90"
+            className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <X className="w-6 h-6" />
           </button>
@@ -290,6 +290,7 @@ export function VenueHeaderSection({
           { id: "overview", label: "Overview" },
           { id: "reviews", label: reviewsLabel },
           { id: "menu", label: "Menus & Prices" },
+          { id: "developer", label: "Developer" },
         ].map((tab) => (
           <button
             key={tab.id}

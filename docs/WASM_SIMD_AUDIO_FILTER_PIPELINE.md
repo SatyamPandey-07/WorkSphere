@@ -116,9 +116,14 @@ Coefficient design needs `sin`/`cos`/`pow`, so it runs in TypeScript. Coefficien
 | `setStage(i, b0, b1, b2, a1, a2)`      | Set normalised coefficients for stage `i`          |
 | `setStageCount(n)`                     | Activate `n` stages and reset state                |
 | `setOutputGain(g)`                     | Linear post-filter gain                            |
+| `setAGCEnabled(0 \| 1)`                | Enable/disable peak-tracking AGC                  |
 | `process(channels, frames)`            | Filter in place. Returns `0`, or `-1` on bad dimensions |
-| `reset()`                              | Zero all delay lines                               |
+| `reset()`                              | Zero delay lines and reset AGC envelope            |
 | `setSIMDEnabled(0 \| 1)`               | Switch to/from the scalar loops in the SIMD build  |
+
+When enabled, AGC targets a 0.5 peak with approximately 10 ms attack and
+500 ms release at 48 kHz. Its per-channel gain is clamped to 0.5x-2.5x to
+limit clipping and acoustic feedback.
 
 ## 5. Performance
 

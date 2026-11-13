@@ -373,7 +373,7 @@ export function MobileVenueDrawer({
                 </div>
                 <span
                   data-testid="drawer-noise-badge"
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${noiseColor}`}
+                  className={`min-w-0 max-w-[45%] truncate px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${noiseColor}`}
                 >
                   {noiseLevel} space
                 </span>

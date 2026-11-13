@@ -623,7 +623,7 @@ export function VenueFilterBar({
                     "relative inline-flex items-center justify-center gap-1.5",
                     "min-h-[40px] sm:min-h-[44px] px-4 py-1.5 rounded-full",
                     "text-xs font-semibold shrink-0 select-none",
-                    "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                    "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
                     isSelected
                       ? "text-white"
                       : "text-zinc-600 hover:text-zinc-900 bg-zinc-100/80 hover:bg-zinc-200/80 border border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
@@ -688,6 +688,7 @@ export function VenueFilterBar({
                 "min-h-[44px] px-3 rounded-full",
                 "text-xs font-semibold shrink-0 select-none",
                 "transition-all active:scale-95 border",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
                 hasCustomRangeActive || isPopoverOpen
                   ? "bg-blue-600 text-white border-blue-600 shadow-sm hover:bg-blue-700 dark:bg-blue-600 dark:border-blue-500"
                   : "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
@@ -726,6 +727,7 @@ export function VenueFilterBar({
                   "min-h-[44px] px-3 rounded-full",
                   "text-xs font-semibold shrink-0 select-none",
                   "transition-all active:scale-95 border",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
                   isSelected
                     ? "bg-blue-600 text-white border-blue-600 shadow-sm hover:bg-blue-700 dark:bg-blue-600 dark:border-blue-500"
                     : "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
@@ -771,7 +773,7 @@ export function VenueFilterBar({
               type="button"
               data-testid="close-filter-popover-button"
               onClick={() => setIsPopoverOpen(false)}
-              className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
               aria-label="Close custom filters popover"
             >
               <X className="w-4 h-4" />
@@ -834,7 +836,7 @@ export function VenueFilterBar({
               type="button"
               data-testid="reset-range-filters-button"
               onClick={handleResetRangeFilters}
-              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset Defaults
@@ -844,7 +846,7 @@ export function VenueFilterBar({
               type="button"
               data-testid="apply-range-filters-button"
               onClick={handleApplyRangeFilters}
-              className="inline-flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all active:scale-95"
+              className="inline-flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
             >
               Apply Filters
             </button>

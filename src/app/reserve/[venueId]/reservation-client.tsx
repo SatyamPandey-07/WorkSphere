@@ -610,7 +610,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                       }
                       setDate(event.target.value);
                     }}
-                    className="reserve-input"
+                    className="reserve-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                   />
                 </Field>
 
@@ -625,7 +625,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                       }
                       setTime(event.target.value);
                     }}
-                    className="reserve-input"
+                    className="reserve-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                   />
                 </Field>
 
@@ -1006,9 +1006,12 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
         .reserve-input option {
           background: #111114;
         }
-        .reserve-input:focus {
+        .reserve-input:focus:not(:focus-visible) {
           border-color: rgba(167, 139, 250, 0.6);
-          box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+        }
+        .reserve-input:focus-visible {
+          border-color: #22d3ee;
+          outline: none;
         }
       `}</style>
 

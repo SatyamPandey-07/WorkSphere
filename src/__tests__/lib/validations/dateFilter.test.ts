@@ -1,9 +1,35 @@
- fix/date-filter-chronological-validation
+import { NextRequest } from "next/server";
 import {
   createDateFilterSchema,
   dateFilterSchema,
   parseDateFilter,
+  isValidIso8601,
+  normalizeToUtcIso,
+  iso8601TimestampSchema,
+  bookingDateFilterSchema,
+  createDateFilterErrorResponse,
+  parseBookingDateFilter,
 } from "@/lib/validations/dateFilter";
+import { GET as getBookingHistory } from "@/app/api/bookings/history/route";
+import { prisma } from "@/lib/prisma";
+import { auth } from "@clerk/nextjs/server";
+import { ensureUserExists } from "@/lib/auth";
+
+jest.mock("@clerk/nextjs/server", () => ({
+  auth: jest.fn(),
+}));
+
+jest.mock("@/lib/auth", () => ({
+  ensureUserExists: jest.fn(),
+}));
+
+jest.mock("@/lib/prisma", () => ({
+  prisma: {
+    booking: {
+      findMany: jest.fn(),
+    },
+  },
+}));
 
 describe("dateFilterSchema & parseDateFilter", () => {
   it("accepts a valid chronological range where startDate < endDate", () => {
@@ -92,36 +118,8 @@ describe("dateFilterSchema & parseDateFilter", () => {
     if (!result.success) {
       expect(result.code).toBe("INVALID_DATE_RANGE");
     }
-
-import { NextRequest } from "next/server";
-import {
-  isValidIso8601,
-  normalizeToUtcIso,
-  iso8601TimestampSchema,
-  bookingDateFilterSchema,
-  createDateFilterErrorResponse,
-  parseBookingDateFilter,
-} from "@/lib/validations/dateFilter";
-import { GET as getBookingHistory } from "@/app/api/bookings/history/route";
-import { prisma } from "@/lib/prisma";
-import { auth } from "@clerk/nextjs/server";
-import { ensureUserExists } from "@/lib/auth";
-
-jest.mock("@clerk/nextjs/server", () => ({
-  auth: jest.fn(),
-}));
-
-jest.mock("@/lib/auth", () => ({
-  ensureUserExists: jest.fn(),
-}));
-
-jest.mock("@/lib/prisma", () => ({
-  prisma: {
-    booking: {
-      findMany: jest.fn(),
-    },
-  },
-}));
+  });
+});
 
 describe("DateFilter ISO 8601 Validation & Normalization", () => {
   beforeEach(() => {
@@ -294,7 +292,9 @@ describe("DateFilter ISO 8601 Validation & Normalization", () => {
         expect(result.errors).toEqual([
           expect.objectContaining({
             field: "startDate",
-            issue: expect.stringContaining("startDate must be a valid ISO 8601"),
+            issue: expect.stringContaining(
+              "startDate must be a valid ISO 8601",
+            ),
           }),
         ]);
         expect(result.response.status).toBe(400);
@@ -357,6 +357,5 @@ describe("DateFilter ISO 8601 Validation & Normalization", () => {
         }),
       );
     });
- main
   });
 });

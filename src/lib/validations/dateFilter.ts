@@ -1,4 +1,4 @@
- fix/date-filter-chronological-validation
+import { NextResponse } from "next/server";
 import { z } from "zod";
 
 export const DEFAULT_MAX_RANGE_DAYS = 90;
@@ -108,9 +108,14 @@ export function parseDateFilter(
       code: "INVALID_DATE_RANGE",
       message: issues[0]?.message ?? "Invalid date range parameters",
       issues,
+    };
+  }
 
-import { NextResponse } from "next/server";
-import { z } from "zod";
+  return {
+    success: true,
+    data: result.data,
+  };
+}
 
 /**
  * Strict ISO 8601 regex:
@@ -437,15 +442,11 @@ export function parseBookingDateFilter(
       success: false,
       response: createDateFilterErrorResponse(errors),
       errors,
- main
     };
   }
 
   return {
     success: true,
- fix/date-filter-chronological-validation
-    data: result.data,
-
     data: {
       startDate: normalizedStartDate,
       endDate: normalizedEndDate,
@@ -454,6 +455,5 @@ export function parseBookingDateFilter(
       endDateUtc: normalizedEndDate,
       dateUtc: normalizedDate,
     },
- main
   };
 }

@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-126%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-128%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-126-active-rockstars"><b>👥 Contributors (126)</b></a> •
+  <a href="#-contributors-128-active-rockstars"><b>👥 Contributors (128)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (126 Active Rockstars)
+### 🚀 Contributors (128 Active Rockstars)
 
-A massive thank you to all **126 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **128 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -871,6 +871,20 @@ A massive thank you to all **126 brilliant contributors and bots** building Work
       </a>
     </td>
   </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Lakshanya25cs505">
+        <img src="https://avatars.githubusercontent.com/u/231058694?v=4" width="55px;" height="55px;" alt="Lakshanya25cs505" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Lakshanya25cs505</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/jeniferalaquoke">
+        <img src="https://avatars.githubusercontent.com/u/230145746?v=4" width="55px;" height="55px;" alt="jeniferalaquoke" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>jeniferalaquoke</b></sub>
+      </a>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -981,6 +995,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 - **Favorites System**: Save frequently visited spots
 - **Crowdsourced Ratings**: Rate venues on WiFi quality, outlets, noise levels, quietness
+- **Strict Chronological Booking Date Filter Validation**: Zod-based timestamp and ISO 8601 validation enforcing strict chronological bounds (`startDate <= endDate`) with configurable `maxRangeDays` limits and normalized UTC outputs (`src/lib/validations/dateFilter.ts`).
 - **Interactive Noise Decibel Slider Filter**: Real-time acoustic slider and preset buttons allowing users to filter coworking venues by ambient decibel thresholds (30 dB - 100 dB) across quiet study zones and collaborative spaces (`src/components/venues/NoiseLevelSlider.tsx`).
 - **One-Click Filter Reset & ARIA-Live Announcements**: One-click "Clear all" filter button with accessible screen-reader count announcements rendered inside an `aria-live="polite"` region (`src/components/venues/VenueFilterBar.tsx`).
 - **Rating Dialog**: Beautiful modal with 5-star ratings for each amenity
@@ -1014,12 +1029,14 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 - **Installable**: Add to home screen on mobile/desktop
 - **Offline Support**: IndexedDB storage for venues and favorites
+- **Enhanced Offline Sync Status Indicators**: Header indicator displaying synchronization state machine with live sync queue count, offline notification, and accessibility labels (`src/components/Header/OfflineSyncBadge.tsx`).
 - **Service Worker**: Caches static assets for fast loading
 - **Background Sync**: Queue actions when offline
 
 ### 🚀 Performance & Reliability
 
 - **PostgreSQL Concurrency Serialization with `NOWAIT` Advisory Locks**: High-throughput seat reservation serialization using transaction-level advisory locks with immediate non-blocking failure semantics (`NOWAIT`), eliminating split-second double-booking races under intense demand spikes (`src/app/api/reservations/book/route.ts`).
+- **Resilient Compression Web Worker**: Robust client-side compression worker utilizing transferable ArrayBuffers with structured error boundaries and diagnostic error reporting for large documents (`src/worker/compressionWorker.ts`).
 - **OpenTelemetry W3C Distributed Tracing**: Distributed context propagation utilizing standard W3C `traceparent` and `tracestate` headers across microservices with sub-operation span instrumentation (`src/lib/telemetry/tracer.ts`, `src/middleware.ts`).
 - **Backpressure-Aware SSE AI Streaming**: Implements stream throttling respecting client backpressure via `controller.desiredSize` and handles immediate disconnection cleanup via `AbortSignal` (`src/app/api/ai/stream/route.ts`).
 - **Adaptive Bitrate (ABR) WebRTC AIMD Controller**: Dynamically regulates WebRTC video and screen share bitrates based on peer connection `getStats` loss, RTT, and bandwidth metrics using Additive Increase Multiplicative Decrease (`src/lib/webrtc/abrController.ts`).
@@ -1059,6 +1076,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🎧 Edge Audio Processing & Acoustic Privacy (WASM DSP)
 
+- **Ambient Audio Spectrogram Element Visibility Observer**: Performance optimization using `IntersectionObserver` to automatically pause heavy Web Audio FFT analysis and Canvas 2D render loops when the acoustic visualizer is scrolled out of viewport (`src/hooks/useElementVisibility.ts`, `src/components/noise/AmbientNoiseSpectrumVisualizer.tsx`).
 - **Dynamic Acoustic Privacy Jammer**: WebAssembly DSP ring buffer applying Delayed Auditory Feedback (DAF) to headphones, scientifically disrupting loud speech and maintaining private conversations in open cafes (`/api/audio/jammer`).
 - **AI Generative Venue Vibe Audio Synthesizer**: Procedural acoustic soundscapes and focus-frequency noise generation tailored in real-time to current venue ambient noise telemetry (`/api/audio/vibe`).
 - **Spatial RT60 Reverberation Analyzer**: In-browser acoustic impulse measurement calculating venue echo decay time (RT60) to grade conference call suitability (`/api/venues/acoustics/rt60`).
@@ -1082,6 +1100,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🌐 Decentralized Networking & Survival Mesh
 
+- **CRDT DataChannel Binary Framing Protocol**: WebRTC DataChannel packet fragmentation and binary framing protocol for large Yjs collaborative editing updates over unreliable or MTU-bounded channels ([docs/crdt/CRDT_DATACHANNEL_FRAMING.md](./docs/crdt/CRDT_DATACHANNEL_FRAMING.md)).
 - **Distributed Compute-Burst WebRTC Mesh**: Collaborative local distributed computing offloading code builds and heavy processing across idle laptops on cafe WiFi (`/p2p/mesh-collab`, `/api/compute/burst`).
 - **W3C WebRTC Perfect Negotiation & Glare Rollback**: Symmetric polite/impolite role negotiation engine resolving concurrent offer collisions and ICE candidate race conditions across collaborative nomad audio/video meshes (`src/core/network/WebRTCMesh.ts`).
 - **Offline-First P2P Emergency Mesh Network**: WebRTC DataChannels + Bluetooth Low Energy (BLE) peer discovery maintaining critical comms during cafe ISP outages (`/api/network/survival`).

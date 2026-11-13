@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-123%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-128%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-123-active-rockstars"><b>👥 Contributors (123)</b></a> •
+  <a href="#-contributors-128-active-rockstars"><b>👥 Contributors (128)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (123 Active Rockstars)
+### 🚀 Contributors (128 Active Rockstars)
 
-A massive thank you to all **123 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **128 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -852,6 +852,38 @@ A massive thank you to all **123 brilliant contributors and bots** building Work
         <sub><b>saurabhwagh01</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/KartikManral092006">
+        <img src="https://avatars.githubusercontent.com/u/158327479?v=4" width="55px;" height="55px;" alt="KartikManral092006" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>KartikManral092006</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/radheshyam-bhati">
+        <img src="https://avatars.githubusercontent.com/u/222760314?v=4" width="55px;" height="55px;" alt="radheshyam-bhati" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>radheshyam-bhati</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/mohanapriya9324">
+        <img src="https://avatars.githubusercontent.com/u/233785360?v=4" width="55px;" height="55px;" alt="mohanapriya9324" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>mohanapriya9324</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Lakshanya25cs505">
+        <img src="https://avatars.githubusercontent.com/u/231058694?v=4" width="55px;" height="55px;" alt="Lakshanya25cs505" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Lakshanya25cs505</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/jeniferalaquoke">
+        <img src="https://avatars.githubusercontent.com/u/230145746?v=4" width="55px;" height="55px;" alt="jeniferalaquoke" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>jeniferalaquoke</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -963,6 +995,9 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 - **Favorites System**: Save frequently visited spots
 - **Crowdsourced Ratings**: Rate venues on WiFi quality, outlets, noise levels, quietness
+- **Strict Chronological Booking Date Filter Validation**: Zod-based timestamp and ISO 8601 validation enforcing strict chronological bounds (`startDate <= endDate`) with configurable `maxRangeDays` limits and normalized UTC outputs (`src/lib/validations/dateFilter.ts`).
+- **Interactive Noise Decibel Slider Filter**: Real-time acoustic slider and preset buttons allowing users to filter coworking venues by ambient decibel thresholds (30 dB - 100 dB) across quiet study zones and collaborative spaces (`src/components/venues/NoiseLevelSlider.tsx`).
+- **One-Click Filter Reset & ARIA-Live Announcements**: One-click "Clear all" filter button with accessible screen-reader count announcements rendered inside an `aria-live="polite"` region (`src/components/venues/VenueFilterBar.tsx`).
 - **Rating Dialog**: Beautiful modal with 5-star ratings for each amenity
 - **Conversation History**: Resume previous searches
 - **Venue Suggestions**: Submit new venues via modal form
@@ -976,6 +1011,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 - **Clerk Integration**: Secure sign-in/sign-up
 - **Case-Insensitive Normalized Email & Magic Link Auth**: Resilient authentication flow featuring RFC-compliant email normalization via Zod schemas, whitespace trimming, and fail-safe magic link token issuance (`src/lib/auth/emailService.ts`).
+- **JWT Refresh Token Invalidation on Password Change**: Tracks `passwordChangedAt` in the User model to immediately invalidate previously issued refresh tokens upon credential rotation (`src/lib/auth/emailService.ts`, `prisma/schema.prisma`).
 - **User Profiles**: Personalized experience
 - **Webhook Sync**: Real-time user data updates
 
@@ -983,6 +1019,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 - **Serverless-Compatible**: Uses **pdf-lib** (not PDFKit) for AWS Lambda compatibility
 - **Instant Generation**: PDF receipts generated on-demand for confirmed bookings
+- **Visual Loading States**: Accessible loading indicators and animated spinner feedback while rendering cryptographically verified booking receipts (`src/components/receipt/ReceiptVerificationModal.tsx`).
 - **Professional Format**: Includes venue details, booking info, confirmation ID, timestamps
 - **Embedded Fonts**: Helvetica and HelveticaBold loaded from pdf-lib (no filesystem dependencies)
 - **Direct Download**: One-click download with loading states and error handling
@@ -992,12 +1029,17 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 - **Installable**: Add to home screen on mobile/desktop
 - **Offline Support**: IndexedDB storage for venues and favorites
+- **Enhanced Offline Sync Status Indicators**: Header indicator displaying synchronization state machine with live sync queue count, offline notification, and accessibility labels (`src/components/Header/OfflineSyncBadge.tsx`).
 - **Service Worker**: Caches static assets for fast loading
 - **Background Sync**: Queue actions when offline
 
 ### 🚀 Performance & Reliability
 
 - **PostgreSQL Concurrency Serialization with `NOWAIT` Advisory Locks**: High-throughput seat reservation serialization using transaction-level advisory locks with immediate non-blocking failure semantics (`NOWAIT`), eliminating split-second double-booking races under intense demand spikes (`src/app/api/reservations/book/route.ts`).
+- **Resilient Compression Web Worker**: Robust client-side compression worker utilizing transferable ArrayBuffers with structured error boundaries and diagnostic error reporting for large documents (`src/worker/compressionWorker.ts`).
+- **OpenTelemetry W3C Distributed Tracing**: Distributed context propagation utilizing standard W3C `traceparent` and `tracestate` headers across microservices with sub-operation span instrumentation (`src/lib/telemetry/tracer.ts`, `src/middleware.ts`).
+- **Backpressure-Aware SSE AI Streaming**: Implements stream throttling respecting client backpressure via `controller.desiredSize` and handles immediate disconnection cleanup via `AbortSignal` (`src/app/api/ai/stream/route.ts`).
+- **Adaptive Bitrate (ABR) WebRTC AIMD Controller**: Dynamically regulates WebRTC video and screen share bitrates based on peer connection `getStats` loss, RTT, and bandwidth metrics using Additive Increase Multiplicative Decrease (`src/lib/webrtc/abrController.ts`).
 - **Probabilistic Vector Cache Stampede Prevention (XFetch)**: Implements the optimal XFetch algorithm for vector embeddings during hybrid semantic venue searches, computing early background re-fetches as expiration nears to completely prevent thundering-herd cache stampedes (`src/lib/search/hybridSearch.ts`).
 - **Idempotent Venue Reviews & Deduplication Engine**: Robust header-based idempotency layer (`x-idempotency-key`) utilizing SHA-256 payload hashing, concurrent in-flight promise memoization, and conflict detection returning `409 Conflict` on key reuse with altered payloads (`src/lib/idempotency.ts`, `src/app/api/venues/[venueId]/reviews/route.ts`).
 - **Distributed Redlock Monotonic Fencing Tokens**: Concurrency control across distributed multi-instance Redis clusters preventing split-brain double desk bookings with monotonically increasing lease fencing tokens (`src/lib/redis/RedlockManager.ts`).
@@ -1034,6 +1076,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🎧 Edge Audio Processing & Acoustic Privacy (WASM DSP)
 
+- **Ambient Audio Spectrogram Element Visibility Observer**: Performance optimization using `IntersectionObserver` to automatically pause heavy Web Audio FFT analysis and Canvas 2D render loops when the acoustic visualizer is scrolled out of viewport (`src/hooks/useElementVisibility.ts`, `src/components/noise/AmbientNoiseSpectrumVisualizer.tsx`).
 - **Dynamic Acoustic Privacy Jammer**: WebAssembly DSP ring buffer applying Delayed Auditory Feedback (DAF) to headphones, scientifically disrupting loud speech and maintaining private conversations in open cafes (`/api/audio/jammer`).
 - **AI Generative Venue Vibe Audio Synthesizer**: Procedural acoustic soundscapes and focus-frequency noise generation tailored in real-time to current venue ambient noise telemetry (`/api/audio/vibe`).
 - **Spatial RT60 Reverberation Analyzer**: In-browser acoustic impulse measurement calculating venue echo decay time (RT60) to grade conference call suitability (`/api/venues/acoustics/rt60`).
@@ -1057,6 +1100,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🌐 Decentralized Networking & Survival Mesh
 
+- **CRDT DataChannel Binary Framing Protocol**: WebRTC DataChannel packet fragmentation and binary framing protocol for large Yjs collaborative editing updates over unreliable or MTU-bounded channels ([docs/crdt/CRDT_DATACHANNEL_FRAMING.md](./docs/crdt/CRDT_DATACHANNEL_FRAMING.md)).
 - **Distributed Compute-Burst WebRTC Mesh**: Collaborative local distributed computing offloading code builds and heavy processing across idle laptops on cafe WiFi (`/p2p/mesh-collab`, `/api/compute/burst`).
 - **W3C WebRTC Perfect Negotiation & Glare Rollback**: Symmetric polite/impolite role negotiation engine resolving concurrent offer collisions and ICE candidate race conditions across collaborative nomad audio/video meshes (`src/core/network/WebRTCMesh.ts`).
 - **Offline-First P2P Emergency Mesh Network**: WebRTC DataChannels + Bluetooth Low Energy (BLE) peer discovery maintaining critical comms during cafe ISP outages (`/api/network/survival`).
@@ -1083,6 +1127,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - **Cryptographic Proof-of-Deep-Work Ledger with ZK-SNARKs**: Verifiable proof of undistracted deep-work time for client billing without surveillance (`/api/zkp/deepwork`).
 - **ECDH P-256 + AES-GCM 256 End-to-End Encrypted (E2EE) Chat & SPKI Key Pinning**: Zero-knowledge team communication with SPKI SHA-256 Certificate Public Key Pinning (`/api/auth/passkey/*`).
 - **Audit Log SHA-256 Merkle Tree Verification**: Tamper-evident immutable audit log endpoint (`/api/admin/audit/verify`).
+- **PostgreSQL Persistent ZKP Nullifier Table**: Enforces database-level replay protection with transactional `ON CONFLICT DO NOTHING` on zero-knowledge spent nullifiers, preventing double-spending during anonymous check-ins (`src/lib/crypto/zkNullifierVerifier.ts`).
 - **Atomic Redis Sliding-Window Rate Limiter**: High-concurrency protection using atomic Lua scripts preventing burst bypasses across API routes (`/api/v1/*`).
 
 ---

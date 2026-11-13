@@ -229,7 +229,14 @@ export function VenueFilterBar({
         router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
       }
     },
-    [onSelectCategory, onCategoryChange, syncWithUrl, pathname, router, searchParams],
+    [
+      onSelectCategory,
+      onCategoryChange,
+      syncWithUrl,
+      pathname,
+      router,
+      searchParams,
+    ],
   );
 
   const handleCategoryKeyDown = useCallback(
@@ -294,8 +301,12 @@ export function VenueFilterBar({
     const maxDb = searchParams.get("maxDb");
     if (minDb !== null || maxDb !== null) {
       return [
-        minDb ? Math.max(20, Math.min(100, Number(minDb))) : DEFAULT_DECIBEL_RANGE[0],
-        maxDb ? Math.max(20, Math.min(100, Number(maxDb))) : DEFAULT_DECIBEL_RANGE[1],
+        minDb
+          ? Math.max(20, Math.min(100, Number(minDb)))
+          : DEFAULT_DECIBEL_RANGE[0],
+        maxDb
+          ? Math.max(20, Math.min(100, Number(maxDb)))
+          : DEFAULT_DECIBEL_RANGE[1],
       ];
     }
     return null;
@@ -342,11 +353,13 @@ export function VenueFilterBar({
     const isDbCustom =
       internalDecibels[0] !== DEFAULT_DECIBEL_RANGE[0] ||
       internalDecibels[1] !== DEFAULT_DECIBEL_RANGE[1] ||
-      (searchParams && (searchParams.has("minDb") || searchParams.has("maxDb")));
+      (searchParams &&
+        (searchParams.has("minDb") || searchParams.has("maxDb")));
     const isWifiCustom =
       internalWifi[0] !== DEFAULT_WIFI_RANGE[0] ||
       internalWifi[1] !== DEFAULT_WIFI_RANGE[1] ||
-      (searchParams && (searchParams.has("minWifi") || searchParams.has("maxWifi")));
+      (searchParams &&
+        (searchParams.has("minWifi") || searchParams.has("maxWifi")));
     return isDbCustom || isWifiCustom;
   }, [internalDecibels, internalWifi, searchParams]);
 
@@ -619,7 +632,11 @@ export function VenueFilterBar({
                   {isSelected && (
                     <motion.div
                       layoutId="activeFilterPill"
-                      transition={{ type: "spring", stiffness: 450, damping: 30 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 450,
+                        damping: 30,
+                      }}
                       className="absolute inset-0 bg-blue-600 rounded-full shadow-sm"
                       data-testid="active-filter-pill-indicator"
                     />

@@ -5,7 +5,6 @@ import {
   Ban,
   Calendar,
   CalendarPlus,
-  Download,
   Inbox,
   Loader2,
   MapPin,
@@ -21,6 +20,7 @@ import { SplitBillModal } from "@/components/bookings/SplitBillModal";
 import { GeoCheckInReminderBanner } from "@/components/bookings/GeoCheckInReminderBanner";
 import { MobileWalletPassModal } from "@/components/bookings/MobileWalletPassModal";
 import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
+import { ReceiptDownloadButton } from "@/components/bookings/ReceiptDownloadButton";
 
 export interface BookingSummary {
   id: string;
@@ -290,15 +290,12 @@ export function BookingList({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 mt-3 pl-7">
-          <a
-            href={`/api/bookings/${booking.id}/download`}
+          <ReceiptDownloadButton
+            bookingId={booking.id}
+            confirmationId={booking.confirmationId}
             className={chipClass}
-            aria-label="Download receipt"
-            data-testid={`booking-receipt-link-${booking.id}`}
-          >
-            <Download className="w-3.5 h-3.5" />
-            Receipt
-          </a>
+            testId={`booking-receipt-link-${booking.id}`}
+          />
           <a
             href={`/api/bookings/${booking.id}/itinerary`}
             className={chipClass}

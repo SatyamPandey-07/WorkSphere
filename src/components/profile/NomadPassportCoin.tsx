@@ -1,5 +1,4 @@
 "use client";
-import React from 'react';
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { CanvasTexture, DoubleSide, Group, SRGBColorSpace } from "three";
@@ -406,66 +405,5 @@ export function NomadPassportCoin({
     </div>
   );
 }
-export type NomadTier = 'Bronze' | 'Silver' | 'Gold' | 'Platinum';
-
-interface NomadPassportCoinProps {
-  tier: NomadTier;
-  xpEarned: number;
-  className?: string;
-}
-
-const TIER_COLORS: Record<NomadTier, { ring: string; bg: string; text: string }> = {
-  Bronze: { ring: 'border-amber-700/80', bg: 'from-amber-950 to-amber-900', text: 'text-amber-600' },
-  Silver: { ring: 'border-slate-400/80', bg: 'from-slate-900 to-slate-800', text: 'text-slate-300' },
-  Gold: { ring: 'border-yellow-500/80', bg: 'from-yellow-950 to-yellow-900', text: 'text-yellow-400' },
-  Platinum: { ring: 'border-cyan-400/80', bg: 'from-cyan-950 to-slate-900', text: 'text-cyan-400' },
-};
-
-export const NomadPassportCoin: React.FC<NomadPassportCoinProps> = ({
-  tier,
-  xpEarned,
-  className = '',
-}) => {
-  const colors = TIER_COLORS[tier] || TIER_COLORS.Bronze;
-  const titleId = `coin-tier-title-${tier.toLowerCase()}`;
-  const descId = `coin-tier-desc-${tier.toLowerCase()}`;
-
-  return (
-    <div
-      role="region"
-      aria-labelledby={titleId}
-      aria-describedby={descId}
-      tabIndex={0}
-      className={`relative w-32 h-32 rounded-full border-4 ${colors.ring} bg-gradient-to-br ${colors.bg} p-2 shadow-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-emerald-500 ${className}`}
-    >
-      {/* Hidden description for screen readers */}
-      <span id={descId} className="sr-only">
-        {tier} Nomad Passport coin. You have earned {xpEarned.toLocaleString()} experience points in this tier.
-      </span>
-
-      <svg
-        className="w-12 h-12 mb-1 drop-shadow-md"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-labelledby={titleId}
-      >
-        <title id={titleId}>{tier} Nomad Passport Coin</title>
-        <circle cx="12" cy="12" r="10" />
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-      </svg>
-
-      <span className={`text-xs font-bold uppercase tracking-wider ${colors.text}`}>
-        {tier}
-      </span>
-      <span className="text-[10px] font-mono text-slate-400 mt-0.5">
-        {xpEarned.toLocaleString()} XP
-      </span>
-    </div>
-  );
-};
 
 export default NomadPassportCoin;

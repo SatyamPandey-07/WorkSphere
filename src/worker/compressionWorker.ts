@@ -1,50 +1,98 @@
+
 /**
  * Compression Worker
  * Interfaces with the Brotli WASM module to compress large telemetry batches.
  */
 
-import { initBrotli, compressData, loadInput } from '@/lib/wasm-loader/brotli';
+import {
+    initBrotli,
+    compressData,
+    loadInput,
+} from '@/lib/wasm-loader/brotli';
+
+const worker = self as DedicatedWorkerGlobalScope;
 
 let isWasmReady = false;
+let initPromise: Promise<void> | null = null;
 
-self.addEventListener('message', async (event: MessageEvent) => {
-    const { action, payload } = event.data;
+function getErrorMessage(error: unknown): string {
+    return error instanceof Error
+        ? error.message
+        : String(error);
+}
+
+worker.addEventListener('message', async (event: MessageEvent) => {
+    const { action, payload } = event.data ?? {};
 
     if (action === 'INIT') {
         try {
-            await initBrotli(6); // Quality 6 is a good balance
-            isWasmReady = true;
-            self.postMessage({ action: 'WASM_READY' });
-        } catch (err: any) {
-            self.postMessage({ action: 'WASM_ERROR', error: err.message });
+            if (!initPromise) {
+                initPromise = initBrotli(6).then(() => {
+                    isWasmReady = true;
+                }).catch((error) => {
+                    initPromise = null;
+                    throw error;
+                });
+            }
+
+            await initPromise;
+
+            worker.postMessage({ action: 'WASM_READY' });
+        } catch (error: unknown) {
+            worker.postMessage({
+                action: 'WASM_ERROR',
+                error: getErrorMessage(error),
+            });
         }
+
         return;
     }
 
     if (action === 'COMPRESS_BATCH') {
         if (!isWasmReady) {
-            self.postMessage({ action: 'ERROR', error: 'WASM not ready' });
+            worker.postMessage({
+                action: 'ERROR',
+                error: 'WASM not ready',
+            });
             return;
         }
 
-        const { batchId, data } = payload; // data is ArrayBuffer
+        if (!payload || !(payload.data instanceof ArrayBuffer)) {
+            worker.postMessage({
+                action: 'ERROR',
+                error: 'Invalid compression payload',
+            });
+            return;
+        }
+
+        const { batchId, data } = payload;
 
         try {
             loadInput(new Uint8Array(data));
+
             const compressedSize = compressData();
 
-            // In a real WASM setup, we'd read the output buffer pointer and length
-            // Mocking the compressed result extraction
+            // IMPORTANT:
+            // Replace this with the actual WASM output extraction.
+            // This buffer is not compressed data.
             const compressedData = new ArrayBuffer(compressedSize);
 
-            self.postMessage(
-                { action: 'COMPRESSION_COMPLETE', batchId, data: compressedData },
-                [compressedData] // Transferable
+            worker.postMessage(
+                {
+                    action: 'COMPRESSION_COMPLETE',
+                    batchId,
+                    data: compressedData,
+                },
+                [compressedData]
             );
-        } catch (err: any) {
-            self.postMessage({ action: 'ERROR', error: err.message });
+        } catch (error: unknown) {
+            worker.postMessage({
+                action: 'ERROR',
+                batchId,
+                error: getErrorMessage(error),
+            });
         }
     }
 });
 
-export { };
+export {};

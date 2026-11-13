@@ -1,22 +1,20 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { useUser, useAuth } from "@clerk/nextjs";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
+import { useTheme } from "./ThemeProvider";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  useMap,
+  LayersControl,
+  LayerGroup,
+  CircleMarker,
+  ScaleControl,
+} from "react-leaflet";
+
 import L from "leaflet";
- fix/map-route-layer-cleanup
-import { Footprints, Bike, Car } from "lucide-react";
-import MapRouteLayer, {
-  CalculatedRoute,
-  RouteCoordinate,
-  TransitMode,
-} from "./map/MapRouteLayer";
-
-interface MapProps {
-  center?: RouteCoordinate;
-  zoom?: number;
-  origin?: RouteCoordinate | null;
-  destination?: RouteCoordinate | null;
-  initialMode?: TransitMode;
-
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
@@ -31,41 +29,6 @@ import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
 import RoutingOptimizer from "./map/RoutingOptimizer";
 import { MobileVenueDrawer } from "@/components/ui/MobileVenueDrawer";
-
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-import React, { useState, useEffect, useRef } from 'react';
-// Assuming leaflet is imported or loaded via react-leaflet / window.L
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 
 export { throttle } from "@/lib/utils";
 export {
@@ -374,43 +337,151 @@ export interface MapViewportBounds {
   minLng: number;
   maxLng: number;
   zoom: number;
- main
 }
 
-const TRANSIT_MODES: {
-  id: TransitMode;
-  label: string;
-  icon: React.ReactNode;
-}[] = [
-  { id: "walking", label: "Walking", icon: <Footprints className="h-4 w-4" /> },
-  { id: "cycling", label: "Cycling", icon: <Bike className="h-4 w-4" /> },
-  { id: "driving", label: "Driving", icon: <Car className="h-4 w-4" /> },
-];
-
-export const Map: React.FC<MapProps> = ({
-  center = { lat: 19.076, lng: 72.8777 },
-  zoom = 13,
-  origin = null,
-  destination = null,
-  initialMode = "walking",
-}) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
-  const [transitMode, setTransitMode] = useState<TransitMode>(initialMode);
-  const [activeRoute, setActiveRoute] = useState<CalculatedRoute | null>(null);
+export function ViewportWatcher({
+  onViewportChange,
+  debounceMs = 300,
+}: {
+  onViewportChange?: (bounds: MapViewportBounds) => void;
+  debounceMs?: number;
+}) {
+  const map = useMap();
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!onViewportChange) return;
 
- fix/map-route-layer-cleanup
-    const map = L.map(containerRef.current, {
-      center: [center.lat, center.lng],
-      zoom,
-    });
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
+    const notifyViewport = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        try {
+          const bounds = map.getBounds();
+          const zoom = map.getZoom();
+          onViewportChange({
+            minLat: bounds.getSouth(),
+            maxLat: bounds.getNorth(),
+            minLng: bounds.getWest(),
+            maxLng: bounds.getEast(),
+            zoom,
+          });
+        } catch {
+          // Ignore if map unmounted
+        }
+      }, debounceMs);
+    };
+
+    map.on("moveend", notifyViewport);
+    map.on("zoomend", notifyViewport);
+
+    // Initial trigger
+    notifyViewport();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      map.off("moveend", notifyViewport);
+      map.off("zoomend", notifyViewport);
+    };
+  }, [map, onViewportChange, debounceMs]);
+
+  return null;
+}
+
+export interface MarkerCluster {
+  id: string;
+  isCluster: true;
+  lat: number;
+  lng: number;
+  count: number;
+  markers: MapMarker[];
+  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+}
+
+export function latLngToPixel(
+  lat: number,
+  lng: number,
+  zoom: number,
+): { x: number; y: number } {
+  const siny = Math.min(
+    Math.max(Math.sin((lat * Math.PI) / 180), -0.9999),
+    0.9999,
+  );
+  const scale = 256 * Math.pow(2, zoom);
+  return {
+    x: (0.5 + lng / 360) * scale,
+    y: (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * scale,
+  };
+}
+
+export function clusterMarkers(
+  markers: MapMarker[],
+  zoom: number,
+  clusterRadiusPx: number = 60,
+): { clusters: MarkerCluster[]; unclustered: MapMarker[] } {
+  if (zoom >= 17) {
+    return { clusters: [], unclustered: markers };
+  }
+
+  const validMarkers = markers.filter(
+    (m) =>
+      m &&
+      m.position &&
+      m.position.lat != null &&
+      m.position.lng != null &&
+      !isNaN(Number(m.position.lat)) &&
+      !isNaN(Number(m.position.lng)),
+  );
+
+  const clusterList: {
+    markers: MapMarker[];
+    pixelX: number;
+    pixelY: number;
+    minLat: number;
+    maxLat: number;
+    minLng: number;
+    maxLng: number;
+  }[] = [];
+
+  for (const marker of validMarkers) {
+    const lat = Number(marker.position.lat);
+    const lng = Number(marker.position.lng);
+    const { x, y } = latLngToPixel(lat, lng, zoom);
+
+    let nearestIdx = -1;
+    let minDist = clusterRadiusPx;
+
+    for (let i = 0; i < clusterList.length; i++) {
+      const c = clusterList[i];
+      const dist = Math.hypot(c.pixelX - x, c.pixelY - y);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestIdx = i;
+      }
+    }
+
+    if (nearestIdx !== -1) {
+      const c = clusterList[nearestIdx];
+      c.markers.push(marker);
+      c.pixelX = (c.pixelX * (c.markers.length - 1) + x) / c.markers.length;
+      c.pixelY = (c.pixelY * (c.markers.length - 1) + y) / c.markers.length;
+      c.minLat = Math.min(c.minLat, lat);
+      c.maxLat = Math.max(c.maxLat, lat);
+      c.minLng = Math.min(c.minLng, lng);
+      c.maxLng = Math.max(c.maxLng, lng);
+    } else {
+      clusterList.push({
+        markers: [marker],
+        pixelX: x,
+        pixelY: y,
+        minLat: lat,
+        maxLat: lat,
+        minLng: lng,
+        maxLng: lng,
+      });
+    }
+  }
+
   const clusters: MarkerCluster[] = [];
   const unclustered: MapMarker[] = [];
 
@@ -720,30 +791,49 @@ const Map = ({
         venue.latitude === prev.latitude && venue.longitude === prev.longitude
       );
     });
- main
 
-    setMapInstance(map);
+    if (dedupedList.length < 2) {
+      setOptimizedRoute(null);
+      return;
+    }
 
-    return () => {
-      map.remove();
-      setMapInstance(null);
+    // Validate coordinates before sending to OSRM — low accuracy or invalid
+    // coordinates (0,0 or out of range) cause routing failures.
+    const isValidCoord = (v: any) => {
+      const lat = Number(v.latitude);
+      const lng = Number(v.longitude);
+      return (
+        !isNaN(lat) &&
+        !isNaN(lng) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lng >= -180 &&
+        lng <= 180 &&
+        !(lat === 0 && lng === 0)
+      );
     };
-  }, [center.lat, center.lng, zoom]);
+    const validList = dedupedList.filter(isValidCoord);
+    if (validList.length < 2) {
+      console.warn("[OSRM] Not enough valid coordinates for routing");
+      setOptimizedRoute(null);
+      return;
+    }
 
- fix/map-route-layer-cleanup
-  const handleModeChange = (nextMode: TransitMode) => {
-    if (nextMode === transitMode) return;
-    setActiveRoute(null);
-    setTransitMode(nextMode);
-  };
+    const coordinatesString = validList
+      .map((venue) => `${venue.longitude},${venue.latitude}`)
+      .join(";");
 
-  return (
-    <div className="relative h-full min-h-[420px] w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
-      {/* Transit Mode Switcher */}
-      <div
-        role="group"
-        aria-label="Transit mode"
-        className="absolute left-3 top-3 z-[1000] inline-flex items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/90 p-1 shadow-lg backdrop-blur-md"
+    const osrmProfile =
+      travelProfile === "walking"
+        ? "foot"
+        : travelProfile === "cycling"
+          ? "bicycle"
+          : "driving";
+    const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
+
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
 
       if (data.code === "Ok") {
         const coords = data.routes[0].geometry.coordinates;
@@ -1352,51 +1442,55 @@ const Map = ({
           position: "relative",
           zIndex: 20,
         }}
- main
       >
-        {TRANSIT_MODES.map((item) => {
-          const isActive = transitMode === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              aria-pressed={isActive}
-              onClick={() => handleModeChange(item.id)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
-                isActive
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
+        <ScaleControl position="bottomleft" metric={true} imperial={false} />
+        <ResetMapViewControl center={center} />
 
-      {/* Active Route Summary Pill */}
-      {activeRoute && (
-        <div className="absolute bottom-3 left-3 z-[1000] rounded-lg border border-slate-700/80 bg-slate-900/90 px-3 py-1.5 text-xs font-medium text-slate-200 shadow-lg backdrop-blur-md">
-          {Math.max(1, Math.round(activeRoute.durationSeconds / 60))} min &bull;{" "}
-          {(activeRoute.distanceMeters / 1000).toFixed(1)} km
+        {/* Map Control Options: High-Contrast Mode Toggle (WCAG 2.1 AA) */}
+        <div className="map-accessibility-controls absolute top-3 left-16 z-[1000]">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isHighContrast}
+            aria-label="Toggle high-contrast mode"
+            onClick={toggleHighContrast}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${
+              isHighContrast
+                ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
+                : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            }`}
+          >
+            <Contrast className="w-3.5 h-3.5 text-current" />
+            <span>High Contrast</span>
+          </button>
         </div>
- fix/map-route-layer-cleanup
-      )}
-
-      {/* Map Canvas */}
-      <div ref={containerRef} className="h-full min-h-[420px] w-full" />
-
-      {/* Managed Route Polyline Layer */}
-      <MapRouteLayer
-        map={mapInstance}
-        origin={origin}
-        destination={destination}
-        mode={transitMode}
-        onRouteCalculated={setActiveRoute}
-      />
-    </div>
-
+        {/* Forecast selector UI */}
+        <div className="map-forecast-controls">
+          <label htmlFor="day-select">Day</label>
+          <select
+            id="day-select"
+            value={selectedDay}
+            onChange={(e) => setSelectedDay(parseInt(e.target.value))}
+          >
+            <option value={0}>Sunday</option>
+            <option value={1}>Monday</option>
+            <option value={2}>Tuesday</option>
+            <option value={3}>Wednesday</option>
+            <option value={4}>Thursday</option>
+            <option value={5}>Friday</option>
+            <option value={6}>Saturday</option>
+          </select>
+          <label htmlFor="hour-range">Hour</label>
+          <input
+            id="hour-range"
+            type="range"
+            min={0}
+            max={23}
+            value={selectedHour}
+            onChange={(e) => setSelectedHour(parseInt(e.target.value))}
+          />
+          <span>{selectedHour}:00</span>
+        </div>
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer
@@ -1530,114 +1624,6 @@ const Map = ({
         className="md:hidden"
       />
     </>
- main
-  );
-};
-type TileProviderKey = 'carto' | 'osm' | 'wikimedia';
-
-const TILE_PROVIDERS: Record<TileProviderKey, { name: string; url: string; maxZoom: number; attribution: string }> = {
-  carto: {
-    name: 'Carto Positron (Default)',
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-  },
-  osm: {
-    name: 'OpenStreetMap Standard',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  },
-  wikimedia: {
-    name: 'Wikimedia Maps',
-    url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}{r}.png',
-    maxZoom: 18,
-    attribution: '&copy; Wikimedia maps | OpenStreetMap contributors',
-  },
-};
-
-interface MapProps {
-  center: [number, number];
-  zoom?: number;
-  className?: string;
-}
-
-export const Map: React.FC<MapProps> = ({ center, zoom = 13, className = 'h-[450px] w-full rounded-2xl' }) => {
-  const mapRef = useRef<L.Map | null>(null);
-  const tileLayerRef = useRef<L.TileLayer | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-
-  const [provider, setProvider] = useState<TileProviderKey>('carto');
-  const [hasError, setHasError] = useState(false);
-
-  useEffect(() => {
-    if (!mapContainerRef.current) return;
-
-    if (!mapRef.current) {
-      mapRef.current = L.map(mapContainerRef.current).setView(center, zoom);
-    }
-
-    const currentConfig = TILE_PROVIDERS[provider];
-
-    if (tileLayerRef.current) {
-      mapRef.current.removeLayer(tileLayerRef.current);
-    }
-
-    const layer = L.tileLayer(currentConfig.url, {
-      maxZoom: currentConfig.maxZoom,
-      attribution: currentConfig.attribution,
-      subdomains: 'abcd',
-    });
-
-    // Handle tile loading errors (e.g. 401 Unauthorized / quota limits on Carto)
-    layer.on('tileerror', (event) => {
-      console.warn('Tile load error detected for provider:', provider, event);
-      setHasError(true);
-      if (provider === 'carto') {
-        console.info('Automatically falling back from Carto to OpenStreetMap tiles...');
-        setProvider('osm');
-      }
-    });
-
-    layer.addTo(mapRef.current);
-    tileLayerRef.current = layer;
-
-    return () => {
-      if (tileLayerRef.current && mapRef.current) {
-        mapRef.current.removeLayer(tileLayerRef.current);
-      }
-    };
-  }, [provider, center, zoom]);
-
-  return (
-    <div className="relative">
-      {/* Map Settings / Tile Provider Toggle */}
-      <div className="absolute top-3 right-3 z-[1000] bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 shadow-xl flex items-center gap-2">
-        <span className="text-xs text-slate-300 font-medium px-2">Map Style:</span>
-        <select
-          value={provider}
-          onChange={(e) => {
-            setHasError(false);
-            setProvider(e.target.value as TileProviderKey);
-          }}
-          className="bg-slate-800 text-slate-100 text-xs rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
-        >
-          {Object.entries(TILE_PROVIDERS).map(([key, val]) => (
-            <option key={key} value={key}>
-              {val.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {hasError && provider !== 'carto' && (
-        <div className="absolute bottom-3 left-3 z-[1000] bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs px-3 py-1.5 rounded-lg backdrop-blur-md">
-          ⚠️ Primary map tiles failed; automatically switched to backup provider.
-        </div>
-      )}
-
-      <div ref={mapContainerRef} className={`${className} border border-slate-800 shadow-2xl`} />
-    </div>
   );
 };
 

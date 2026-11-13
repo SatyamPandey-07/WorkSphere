@@ -9,65 +9,65 @@ datasource db {
 }
 
 model User {
-  id                 String             @id
-  email              String?            @unique
-  firstName          String?
-  lastName           String?
-  imageUrl           String?
-  createdAt          DateTime           @default(now())
-  passwordChangedAt  DateTime?          @default(null)
-  discordWebhookUrl  String?
-  whatsappWebhookUrl String?
-  telegramWebhookUrl String?
-  favorites          Favorite[]
-  ratings            VenueRating[]
-  conversations      Conversation[]
-  bookings           Booking[]
-  memories           UserMemory[]
-  crdtState          Bytes?
-  preferencesSummary String?
-  createdVenues      Venue[]            @relation("VenueCreator")
-  workStatus         WorkBuddyStatus?
-  hostedSessions     CoworkingSession[] @relation("SessionHost")
-  sessionRsvps       SessionRsvp[]
-  isAdmin            Boolean            @default(false)
-  flagsReported      FlaggedItem[]
-  adminAuditLogs     AdminAuditLog[]
-  ownedFolders       Folder[]           @relation("FolderOwner")
-  folderMemberships  FolderMember[]     @relation("FolderMembership")
-  addedFolderVenues  FolderVenue[]      @relation("FolderVenueAdder")
-  webhookEndpoints   WebhookEndpoint[]
-  phoneNumber        String?
-  smsAlertsEnabled   Boolean            @default(false)
-  notificationStart  String?
-  notificationEnd    String?
-  quietHoursStart    String?
-  quietHoursEnd      String?
-  timezone           String?            @default("UTC")
-  folderUpvotes      FolderUpvote[]
-  sentFolderInvites  FolderInvite[]     @relation("FolderInviteSender")
-  workStyleProfile   String?
-  pushSubscriptions  PushSubscription[]
+  id                   String                @id
+  email                String?               @unique
+  firstName            String?
+  lastName             String?
+  imageUrl             String?
+  createdAt            DateTime              @default(now())
+  passwordChangedAt    DateTime?
+  discordWebhookUrl    String?
+  whatsappWebhookUrl   String?
+  telegramWebhookUrl   String?
+  favorites            Favorite[]
+  ratings              VenueRating[]
+  conversations        Conversation[]
+  bookings             Booking[]
+  memories             UserMemory[]
+  crdtState            Bytes?
+  preferencesSummary   String?
+  createdVenues        Venue[]               @relation("VenueCreator")
+  workStatus           WorkBuddyStatus?
+  hostedSessions       CoworkingSession[]    @relation("SessionHost")
+  sessionRsvps         SessionRsvp[]
+  isAdmin              Boolean               @default(false)
+  flagsReported        FlaggedItem[]
+  adminAuditLogs       AdminAuditLog[]
+  ownedFolders         Folder[]              @relation("FolderOwner")
+  folderMemberships    FolderMember[]        @relation("FolderMembership")
+  addedFolderVenues    FolderVenue[]         @relation("FolderVenueAdder")
+  webhookEndpoints     WebhookEndpoint[]
+  phoneNumber          String?
+  smsAlertsEnabled     Boolean               @default(false)
+  notificationStart    String?
+  notificationEnd      String?
+  quietHoursStart      String?
+  quietHoursEnd        String?
+  timezone             String?               @default("UTC")
+  folderUpvotes        FolderUpvote[]
+  sentFolderInvites    FolderInvite[]        @relation("FolderInviteSender")
+  workStyleProfile     String?
+  pushSubscriptions    PushSubscription[]
   pushNotificationLogs PushNotificationLog[]
-  checkIns           CheckIn[]
-  xrAnchors          XRAnchor[]
+  checkIns             CheckIn[]
+  xrAnchors            XRAnchor[]
   // ── Activity streak ────────────────────────────────────────────────────────
   // currentStreak:    consecutive days with at least one check-in
   // longestStreak:    all-time best streak for profile display
   // lastCheckInDate:  UTC date string (YYYY-MM-DD) used to detect same-day
   //                   duplicates and next-day increments
-  currentStreak      Int                @default(0)
-  longestStreak      Int                @default(0)
-  lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
-  passkeys           PasskeyCredential[]
-  passkeyEmailOtps   PasskeyEmailOtp[]
-  isVerifiedStudent  Boolean            @default(false)
-  accurateVotes      Int                @default(0)
-  badges             UserBadge[]
-  seatWaitlists      VenueSeatWaitlist[]
-  liveFeedbacks      VenueLiveFeedback[]
+  currentStreak        Int                   @default(0)
+  longestStreak        Int                   @default(0)
+  lastCheckInDate      String? // stored as "YYYY-MM-DD" UTC
+  passkeys             PasskeyCredential[]
+  passkeyEmailOtps     PasskeyEmailOtp[]
+  isVerifiedStudent    Boolean               @default(false)
+  accurateVotes        Int                   @default(0)
+  badges               UserBadge[]
+  seatWaitlists        VenueSeatWaitlist[]
+  liveFeedbacks        VenueLiveFeedback[]
   // Running total of verified deep-work minutes (see /api/zkp/deepwork)
-  totalDeepWorkMinutes Int              @default(0)
+  totalDeepWorkMinutes Int                   @default(0)
 }
 
 model UserBadge {
@@ -82,87 +82,87 @@ model UserBadge {
 }
 
 model Venue {
-  id                  String              @id @default(cuid())
-  placeId             String              @unique
-  name                String
-  searchVector        Unsupported("tsvector")?
-  searchEmbedding     Unsupported("vector(1024)")?
-  latitude            Float
-  longitude           Float
-  coordinates         Unsupported("geography(Point, 4326)")? // PostGIS spatial column backing GiST-indexed proximity search
-  category            String // cafe, coworking, library
-  address             String?
-  rating              Float?
-  wifiQuality         Int? // 1-5 scale
-  hasOutlets          Boolean             @default(false)
-  singleOriginBeans   Boolean             @default(false)
-  specialtyEspresso   Boolean             @default(false)
-  oatAlmondMilk       Boolean             @default(false)
-  pourOverAvailable   Boolean             @default(false)
-  noiseLevel          String? // quiet, moderate, loud
-  hasErgonomic        Boolean             @default(false)
-  hasPhoneBooths      Boolean             @default(false)
-  hasNoMusic          Boolean             @default(false)
-  hasQuietZone        Boolean             @default(false)
-  hasAncHeadsetRental Boolean             @default(false)
-  petsAllowedIndoors  Boolean             @default(false)
-  largeDogsAllowed    Boolean             @default(false)
-  smallDogsOnly       Boolean             @default(false)
-  servicePetsOnly     Boolean             @default(false)
-  outdoorPetsOnly     Boolean             @default(false)
-  patioOnly           Boolean             @default(false)
-  waterBowlsProvided  Boolean             @default(false)
-  dogFriendly         Boolean             @default(false)
-  catsAllowed         Boolean             @default(false)
-  outletDensity       String? // every_table, some_tables, wall_seats, none
-  powerTypes          String[]            @default([])
-  outletLocations     String[]            @default([])
-  wifiSpeed           Int? // in Mbps
-  tableSize           String?  // "small", "medium", "large", "xl" — crowdsourced desk/table dimensions
-  equipmentLoadout    String?  // "minimal", "standard", "heavy" — typical equipment profile of regulars
-  crowdsourced        Boolean             @default(false)
-  requiresReview      Boolean             @default(false)
-  imageUrl            String?
-  googlePlaceId       String? // Cached Google place_id (for photo lookup)
-  photoReference      String? // Cached Google Places photo_reference
-  menuPhotos          String[]            @default([])
-  foodTags            String[]            @default([])
-  mealPrice           String?
-  lunchDealSchedule   String?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  lighting            String?
-  musicStyle          String?
-  isWellLit           Boolean             @default(false) // OSM lit=yes along walking route
-  hasCCTV             Boolean             @default(false) // CCTV visible on premises
-  safetyScore         Int?     // 1-5 crowdsourced safety rating for night workers
-  ratings             VenueRating[]
-  favorites           Favorite[]
-  bookings            Booking[]
-  creatorId           String?
-  creator             User?               @relation("VenueCreator", fields: [creatorId], references: [id])
-  workStatuses        WorkBuddyStatus[]
-  sessions            CoworkingSession[]
-  seats               VenueSeat[]
-  wifiTelemetry       WifiTelemetry[]
-  telemetryRecords    TelemetryRecord[]
-  validations         AmenityValidation[]
-  foodValidations     FoodValidation[]
-  folderVenues        FolderVenue[]
-  currentOccupancy    Int                 @default(0)
-  maxCapacity         Int                 @default(50)
-  checkIns            CheckIn[]
-  xrAnchors           XRAnchor[]
+  id                     String                                 @id @default(cuid())
+  placeId                String                                 @unique
+  name                   String
+  searchVector           Unsupported("tsvector")?
+  searchEmbedding        Unsupported("vector(1024)")?
+  latitude               Float
+  longitude              Float
+  coordinates            Unsupported("geography(Point, 4326)")? // PostGIS spatial column backing GiST-indexed proximity search
+  category               String // cafe, coworking, library
+  address                String?
+  rating                 Float?
+  wifiQuality            Int? // 1-5 scale
+  hasOutlets             Boolean                                @default(false)
+  singleOriginBeans      Boolean                                @default(false)
+  specialtyEspresso      Boolean                                @default(false)
+  oatAlmondMilk          Boolean                                @default(false)
+  pourOverAvailable      Boolean                                @default(false)
+  noiseLevel             String? // quiet, moderate, loud
+  hasErgonomic           Boolean                                @default(false)
+  hasPhoneBooths         Boolean                                @default(false)
+  hasNoMusic             Boolean                                @default(false)
+  hasQuietZone           Boolean                                @default(false)
+  hasAncHeadsetRental    Boolean                                @default(false)
+  petsAllowedIndoors     Boolean                                @default(false)
+  largeDogsAllowed       Boolean                                @default(false)
+  smallDogsOnly          Boolean                                @default(false)
+  servicePetsOnly        Boolean                                @default(false)
+  outdoorPetsOnly        Boolean                                @default(false)
+  patioOnly              Boolean                                @default(false)
+  waterBowlsProvided     Boolean                                @default(false)
+  dogFriendly            Boolean                                @default(false)
+  catsAllowed            Boolean                                @default(false)
+  outletDensity          String? // every_table, some_tables, wall_seats, none
+  powerTypes             String[]                               @default([])
+  outletLocations        String[]                               @default([])
+  wifiSpeed              Int? // in Mbps
+  tableSize              String? // "small", "medium", "large", "xl" — crowdsourced desk/table dimensions
+  equipmentLoadout       String? // "minimal", "standard", "heavy" — typical equipment profile of regulars
+  crowdsourced           Boolean                                @default(false)
+  requiresReview         Boolean                                @default(false)
+  imageUrl               String?
+  googlePlaceId          String? // Cached Google place_id (for photo lookup)
+  photoReference         String? // Cached Google Places photo_reference
+  menuPhotos             String[]                               @default([])
+  foodTags               String[]                               @default([])
+  mealPrice              String?
+  lunchDealSchedule      String?
+  createdAt              DateTime                               @default(now())
+  updatedAt              DateTime                               @updatedAt
+  lighting               String?
+  musicStyle             String?
+  isWellLit              Boolean                                @default(false) // OSM lit=yes along walking route
+  hasCCTV                Boolean                                @default(false) // CCTV visible on premises
+  safetyScore            Int? // 1-5 crowdsourced safety rating for night workers
+  ratings                VenueRating[]
+  favorites              Favorite[]
+  bookings               Booking[]
+  creatorId              String?
+  creator                User?                                  @relation("VenueCreator", fields: [creatorId], references: [id])
+  workStatuses           WorkBuddyStatus[]
+  sessions               CoworkingSession[]
+  seats                  VenueSeat[]
+  wifiTelemetry          WifiTelemetry[]
+  telemetryRecords       TelemetryRecord[]
+  validations            AmenityValidation[]
+  foodValidations        FoodValidation[]
+  folderVenues           FolderVenue[]
+  currentOccupancy       Int                                    @default(0)
+  maxCapacity            Int                                    @default(50)
+  checkIns               CheckIn[]
+  xrAnchors              XRAnchor[]
   noiseTelemetryReleases NoiseTelemetryRelease[]
-  isClaimed           Boolean             @default(false)
-  ownerId             String?
-  hostMessage         String?
-  photos              VenuePhoto[]
-  openingHours        String?
-  beaconReferenceRssi Float?
+  isClaimed              Boolean                                @default(false)
+  ownerId                String?
+  hostMessage            String?
+  photos                 VenuePhoto[]
+  openingHours           String?
+  beaconReferenceRssi    Float?
   beaconPathLossExponent Float?
-  seatWaitlists       VenueSeatWaitlist[]
-  liveFeedbacks       VenueLiveFeedback[]
+  seatWaitlists          VenueSeatWaitlist[]
+  liveFeedbacks          VenueLiveFeedback[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -174,8 +174,8 @@ model VenueLiveFeedback {
   venue             Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
   userId            String?
   user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  vibe              String   // "silent_focus" | "moderate_buzz" | "lively"
-  noiseLevel        String?  // "quiet" | "moderate" | "loud"
+  vibe              String // "silent_focus" | "moderate_buzz" | "lively"
+  noiseLevel        String? // "quiet" | "moderate" | "loud"
   isVerifiedCheckIn Boolean  @default(false)
   createdAt         DateTime @default(now())
   expiresAt         DateTime
@@ -209,8 +209,8 @@ model VenueRating {
   specialtyEspresso  Boolean  @default(false)
   oatAlmondMilk      Boolean  @default(false)
   pourOverAvailable  Boolean  @default(false)
-  downloadMbps       Float?   // User-measured download speed in Mbps (optional)
-  uploadMbps         Float?   // User-measured upload speed in Mbps (optional)
+  downloadMbps       Float? // User-measured download speed in Mbps (optional)
+  uploadMbps         Float? // User-measured upload speed in Mbps (optional)
   noiseLevel         String // quiet, moderate, loud
   hasErgonomic       Boolean  @default(false)
   hasPhoneBooths     Boolean  @default(false)
@@ -233,7 +233,7 @@ model VenueRating {
   waterBowlsProvided Boolean  @default(false)
   dogFriendly        Boolean  @default(false)
   catsAllowed        Boolean  @default(false)
-  tableSize          String?  // crowdsourced: "small", "medium", "large", "xl"
+  tableSize          String? // crowdsourced: "small", "medium", "large", "xl"
 
   @@unique([userId, venueId])
   @@index([venueId])
@@ -241,13 +241,13 @@ model VenueRating {
 }
 
 model NoiseTelemetryRelease {
-  venueId      String
-  venue        Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  epochKey     String
-  avgDecibels  Float
-  rdpCosts     Json
-  submissions  Int      @default(1)
-  updatedAt    DateTime @updatedAt
+  venueId     String
+  venue       Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  epochKey    String
+  avgDecibels Float
+  rdpCosts    Json
+  submissions Int      @default(1)
+  updatedAt   DateTime @updatedAt
 
   @@id([venueId, epochKey])
   @@index([epochKey])
@@ -347,22 +347,22 @@ model Booking {
 }
 
 model BookingGuest {
-  id          String      @id @default(cuid())
-  bookingId   String
-  booking     Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  email       String
-  name        String?
-  phone       String?
-  status      GuestStatus @default(PENDING)
-  calendarUid String?
-  sentAt      DateTime?
+  id              String      @id @default(cuid())
+  bookingId       String
+  booking         Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  email           String
+  name            String?
+  phone           String?
+  status          GuestStatus @default(PENDING)
+  calendarUid     String?
+  sentAt          DateTime?
   // Split-bill payment state. `status = ACCEPTED` only means the guest RSVP'd
   // "yes"; a guest has paid if and only if `paidAt` is set.
   paidAt          DateTime?
   paidAmountCents Int?
   paidCurrency    String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@unique([bookingId, email])
   @@index([bookingId])
@@ -508,29 +508,28 @@ model VenueSeat {
   width  Int @default(72)
   height Int @default(48)
 
-  amenities String[] @default([])
-  isEnabled Boolean  @default(true)
-  isQuietZone Boolean @default(false) // seat is in a designated quiet zone
+  amenities   String[] @default([])
+  isEnabled   Boolean  @default(true)
+  isQuietZone Boolean  @default(false) // seat is in a designated quiet zone
   zoneName    String? // e.g. "Quiet Reading Room", "Collaborative Area"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bookings Booking[]
-  xrAnchors XRAnchor[]
+  bookings        Booking[]
+  xrAnchors       XRAnchor[]
   waitlistEntries VenueSeatWaitlist[]
 
   @@unique([venueId, seatNumber])
   @@index([venueId])
 }
 
-
 model XRAnchor {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String
-  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  venue     Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
   seatId    String?
   seat      VenueSeat? @relation(fields: [seatId], references: [id], onDelete: SetNull)
   bookingId String?
@@ -539,9 +538,9 @@ model XRAnchor {
   matrix          Float[]
   label           String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  lastTrackedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastTrackedAt DateTime @default(now())
 
   @@index([venueId])
   @@index([userId])
@@ -948,7 +947,6 @@ model VenueCheckInNullifier {
   @@index([venueId])
 }
 
-
 enum WaitlistStatus {
   ACTIVE
   NOTIFIED
@@ -966,8 +964,8 @@ model VenueSeatWaitlist {
   seatId          String?
   seat            VenueSeat?     @relation(fields: [seatId], references: [id], onDelete: SetNull)
   seatType        SeatType?
-  date            String         // YYYY-MM-DD
-  time            String         // HH:MM
+  date            String // YYYY-MM-DD
+  time            String // HH:MM
   duration        Int            @default(60) // in minutes
   timeZone        String?        @default("UTC")
   requiresQuiet   Boolean        @default(false)
@@ -984,7 +982,6 @@ model VenueSeatWaitlist {
   @@index([seatId])
   @@index([status, claimExpiresAt])
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Models used by API routes that previously had no backing table. Shapes are
@@ -1136,7 +1133,6 @@ model DeepWorkCredential {
 
   @@index([userId, mintedAt])
 }
-
 
 /// Durable idempotency ledger for operator-initiated venue cancellation webhooks.
 model VenueCancellationWebhookEvent {

@@ -1,4 +1,4 @@
-import { withIdempotency } from '@/lib/middleware/idempotency';
+import { withIdempotency } from "@/lib/middleware/idempotency";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse, after } from "next/server";
 import { randomBytes } from "crypto";
@@ -410,41 +410,6 @@ async function handleBooking(request: NextRequest): Promise<NextResponse> {
       );
     }
   }
-}
-async function handleBooking(request: NextRequest): Promise<NextResponse> {
-  const body = await request.json();
-  const { userId, deskId, timeSlot } = body;
-
-  if (!userId || !deskId || !timeSlot) {
-    return NextResponse.json(
-      { success: false, error: 'Missing required booking parameters.' },
-      { status: 400 }
-    );
-  }
-
-  // Simulate database booking creation transaction
-  const bookingId = `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-  /*
-  await db.booking.create({
-    data: { id: bookingId, userId, deskId, timeSlot, status: 'CONFIRMED' }
-  });
-  */
-
-  return NextResponse.json(
-    {
-      success: true,
-      message: 'Desk reservation successfully confirmed.',
-      data: {
-        bookingId,
-        userId,
-        deskId,
-        timeSlot,
-        createdAt: new Date().toISOString(),
-      },
-    },
-    { status: 201 }
-  );
 }
 
 export async function POST(request: NextRequest) {

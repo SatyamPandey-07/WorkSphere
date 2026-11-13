@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 
 import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
+import { storeOfflinePasscardsFromBooking } from '@/lib/security/offlinePasscardStore';
 
 interface BookingModalProps {
   venueId: string;
@@ -66,6 +67,10 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
         throw new Error(json.error || 'Failed to book');
       }
       
+      // Keep the signed offline passcard (when the server issued one) for use with no network. Best effort:
+      // a storage problem must not turn a confirmed booking into an error.
+      await storeOfflinePasscardsFromBooking(json.data).catch(() => 0);
+
       onSuccess(json.data.confirmationId);
     } catch (err: any) {
       setError(err.message || 'Failed to book');

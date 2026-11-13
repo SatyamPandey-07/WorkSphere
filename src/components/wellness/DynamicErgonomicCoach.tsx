@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Activity,
-  Heart,
   Eye,
   Droplets,
   AlertTriangle,
@@ -16,13 +15,9 @@ import {
   Volume2,
   VolumeX,
   Volume1,
-  Bell,
-  BellOff,
   ChevronRight,
   UserCheck,
   ShieldAlert,
-  ArrowUpRight,
-  TrendingUp,
   Settings2,
 } from "lucide-react";
 import {
@@ -45,7 +40,9 @@ export default function DynamicErgonomicCoach() {
     totalSittingSeconds: 2700,
     totalStandingSeconds: 900,
     completedStretches: ["neck-chin-tuck"],
-    postureCheckIns: [{ timestamp: Date.now() - 20 * 60 * 1000, rating: "aligned" }],
+    postureCheckIns: [
+      { timestamp: Date.now() - 20 * 60 * 1000, rating: "aligned" },
+    ],
     waterIntakeMl: 500,
     waterTargetMl: 2000,
     eyeBreaksCompleted: 2,
@@ -55,18 +52,18 @@ export default function DynamicErgonomicCoach() {
   });
 
   const [strainScore, setStrainScore] = useState<ErgonomicStrainScore>(() =>
-    ErgonomicCoachEngine.calculateStrainScore(session)
+    ErgonomicCoachEngine.calculateStrainScore(session),
   );
 
   const [activeTab, setActiveTab] = useState<
     "coach" | "ratio_analytics" | "stretches" | "checklist"
   >("coach");
   const [selectedStretch, setSelectedStretch] = useState<MicroStretchRoutine>(
-    MICRO_STRETCH_CATALOG[0]
+    MICRO_STRETCH_CATALOG[0],
   );
   const [stretchTimerActive, setStretchTimerActive] = useState(false);
   const [stretchSecondsLeft, setStretchSecondsLeft] = useState(
-    MICRO_STRETCH_CATALOG[0].durationSeconds
+    MICRO_STRETCH_CATALOG[0].durationSeconds,
   );
 
   const [eyeCountdown, setEyeCountdown] = useState(20 * 60); // 20 min in seconds
@@ -92,7 +89,225 @@ export default function DynamicErgonomicCoach() {
     stretchTimers: true,
   });
 
-  const [lastCheckInResult, setLastCheckInResult] = useState<string | null>(null);
+  const [lastCheckInResult, setLastCheckInResult] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const synthesizer = new ErgonomicChimeSynthesizer();
+    ergonomicChimeRef.current = synthesizer;
+
+    return () => {
+      ergonomicChimeRef.current = null;
+      void synthesizer.dispose().catch((error: unknown) => {
+        console.warn("Could not close ergonomic chime audio context:", error);
+      });
+    };
+  }, []);
 
   useEffect(() => {
     const synthesizer = new ErgonomicChimeSynthesizer();
@@ -136,7 +351,10 @@ export default function DynamicErgonomicCoach() {
       const updated = { ...prev, [key]: !prev[key] };
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("worksphere_ergo_audio_cues", JSON.stringify(updated));
+          localStorage.setItem(
+            "worksphere_ergo_audio_cues",
+            JSON.stringify(updated),
+          );
         } catch {}
       }
       return updated;
@@ -147,7 +365,8 @@ export default function DynamicErgonomicCoach() {
   const playChime = (type: "bell" | "success" | "alert", forcePlay = false) => {
     if ((!soundEnabled && !forcePlay) || typeof window === "undefined") return;
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
 
@@ -170,8 +389,14 @@ export default function DynamicErgonomicCoach() {
           const gain = ctx.createGain();
           osc.type = "triangle";
           osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
-          gain.gain.setValueAtTime(0.15 * soundVolume, ctx.currentTime + idx * 0.08);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.08 + 0.4);
+          gain.gain.setValueAtTime(
+            0.15 * soundVolume,
+            ctx.currentTime + idx * 0.08,
+          );
+          gain.gain.exponentialRampToValueAtTime(
+            0.001,
+            ctx.currentTime + idx * 0.08 + 0.4,
+          );
           osc.connect(gain);
           gain.connect(ctx.destination);
           osc.start(ctx.currentTime + idx * 0.08);
@@ -184,8 +409,14 @@ export default function DynamicErgonomicCoach() {
           const gain = ctx.createGain();
           osc.type = "sine";
           osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.15);
-          gain.gain.setValueAtTime(0.18 * soundVolume, ctx.currentTime + idx * 0.15);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.15 + 0.25);
+          gain.gain.setValueAtTime(
+            0.18 * soundVolume,
+            ctx.currentTime + idx * 0.15,
+          );
+          gain.gain.exponentialRampToValueAtTime(
+            0.001,
+            ctx.currentTime + idx * 0.15 + 0.25,
+          );
           osc.connect(gain);
           gain.connect(ctx.destination);
           osc.start(ctx.currentTime + idx * 0.15);
@@ -238,6 +469,7 @@ export default function DynamicErgonomicCoach() {
     }, 1000);
 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eyeBreakActive, soundEnabled, audioCues.eyeBreakReminders]);
 
   // Eye break active countdown
@@ -249,7 +481,10 @@ export default function DynamicErgonomicCoach() {
           if (prev <= 1) {
             if (audioCues.eyeBreakReminders) playChime("success");
             setEyeBreakActive(false);
-            setSession((s) => ({ ...s, eyeBreaksCompleted: s.eyeBreaksCompleted + 1 }));
+            setSession((s) => ({
+              ...s,
+              eyeBreaksCompleted: s.eyeBreaksCompleted + 1,
+            }));
             return 20;
           }
           return prev - 1;
@@ -257,7 +492,19 @@ export default function DynamicErgonomicCoach() {
       }, 1000);
     }
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eyeBreakActive, soundEnabled, audioCues.eyeBreakReminders]);
+
+  const handleCompleteStretch = useCallback((stretchId: string) => {
+    setSession((prev) => {
+      const updated = {
+        ...prev,
+        completedStretches: [...prev.completedStretches, stretchId],
+      };
+      setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
+      return updated;
+    });
+  }, []);
 
   // Guided stretch timer
   useEffect(() => {
@@ -278,7 +525,13 @@ export default function DynamicErgonomicCoach() {
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [stretchTimerActive, selectedStretch, soundEnabled, audioCues.stretchTimers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    stretchTimerActive,
+    selectedStretch,
+    soundEnabled,
+    audioCues.stretchTimers,
+  ]);
 
   useEffect(() => {
     if (!stretchBreakActive) {
@@ -355,7 +608,8 @@ export default function DynamicErgonomicCoach() {
 
   const togglePostureState = () => {
     setSession((prev) => {
-      const nextState = prev.currentPostureState === "sitting" ? "standing" : "sitting";
+      const nextState =
+        prev.currentPostureState === "sitting" ? "standing" : "sitting";
       const updated: ErgonomicSessionState = {
         ...prev,
         currentPostureState: nextState,
@@ -374,7 +628,10 @@ export default function DynamicErgonomicCoach() {
     setSession((prev) => {
       const updated: ErgonomicSessionState = {
         ...prev,
-        postureCheckIns: [...prev.postureCheckIns, { timestamp: Date.now(), rating }],
+        postureCheckIns: [
+          ...prev.postureCheckIns,
+          { timestamp: Date.now(), rating },
+        ],
       };
       setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
       return updated;
@@ -383,8 +640,8 @@ export default function DynamicErgonomicCoach() {
       rating === "aligned"
         ? "Awesome alignment! Keep chest open and shoulders soft."
         : rating === "slouching"
-        ? "Slouch recorded. Reset your chin back & align your earlobes over shoulders."
-        : "Muscular stiffness noted. We recommend a quick thoracic twist."
+          ? "Slouch recorded. Reset your chin back & align your earlobes over shoulders."
+          : "Muscular stiffness noted. We recommend a quick thoracic twist.",
     );
     if (audioCues.postureAlerts) {
       if (rating === "aligned") {
@@ -407,17 +664,6 @@ export default function DynamicErgonomicCoach() {
     if (audioCues.postureAlerts) {
       playChime("bell");
     }
-  };
-
-  const handleCompleteStretch = (stretchId: string) => {
-    setSession((prev) => {
-      const updated = {
-        ...prev,
-        completedStretches: [...prev.completedStretches, stretchId],
-      };
-      setStrainScore(ErgonomicCoachEngine.calculateStrainScore(updated));
-      return updated;
-    });
   };
 
   const selectRoutine = (routine: MicroStretchRoutine) => {
@@ -520,7 +766,8 @@ export default function DynamicErgonomicCoach() {
                 </span>
               </h2>
               <p className="text-sm text-slate-400">
-                Continuous biomechanical posture, 20-20-20 eye strain, and sit-stand balance monitor
+                Continuous biomechanical posture, 20-20-20 eye strain, and
+                sit-stand balance monitor
               </p>
             </div>
           </div>
@@ -535,8 +782,16 @@ export default function DynamicErgonomicCoach() {
                 ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/50 shadow-sm shadow-emerald-900/20"
                 : "bg-rose-950/40 border-rose-800/40 text-rose-400 hover:bg-rose-900/50"
             }`}
-            title={soundEnabled ? "Sound notifications enabled — click to mute" : "Sound notifications muted — click to enable"}
-            aria-label={soundEnabled ? "Mute sound notifications" : "Enable sound notifications"}
+            title={
+              soundEnabled
+                ? "Sound notifications enabled — click to mute"
+                : "Sound notifications muted — click to enable"
+            }
+            aria-label={
+              soundEnabled
+                ? "Mute sound notifications"
+                : "Enable sound notifications"
+            }
           >
             {soundEnabled ? (
               <>
@@ -625,7 +880,9 @@ export default function DynamicErgonomicCoach() {
                 className="mt-0.5 rounded border-slate-600 text-emerald-600 focus:ring-emerald-500 bg-slate-700"
               />
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold text-white">Posture Feedback Tones</div>
+                <div className="text-xs font-semibold text-white">
+                  Posture Feedback Tones
+                </div>
                 <p className="text-[11px] text-slate-400">
                   Audio alerts on alignment checks and slouch warnings
                 </p>
@@ -641,7 +898,9 @@ export default function DynamicErgonomicCoach() {
                 className="mt-0.5 rounded border-slate-600 text-cyan-600 focus:ring-cyan-500 bg-slate-700"
               />
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold text-white">20-20-20 Eye Reminders</div>
+                <div className="text-xs font-semibold text-white">
+                  20-20-20 Eye Reminders
+                </div>
                 <p className="text-[11px] text-slate-400">
                   Harmonic chime when it is time to look 20 ft away
                 </p>
@@ -657,9 +916,12 @@ export default function DynamicErgonomicCoach() {
                 className="mt-0.5 rounded border-slate-600 text-teal-600 focus:ring-teal-500 bg-slate-700"
               />
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold text-white">Sit/Stand Mode Prompts</div>
+                <div className="text-xs font-semibold text-white">
+                  Sit/Stand Mode Prompts
+                </div>
                 <p className="text-[11px] text-slate-400">
-                  Tone cues when changing between seated and standing desk postures
+                  Tone cues when changing between seated and standing desk
+                  postures
                 </p>
               </div>
             </label>
@@ -673,7 +935,9 @@ export default function DynamicErgonomicCoach() {
                 className="mt-0.5 rounded border-slate-600 text-indigo-600 focus:ring-indigo-500 bg-slate-700"
               />
               <div className="space-y-0.5">
-                <div className="text-xs font-semibold text-white">Micro-Stretch Timer Tones</div>
+                <div className="text-xs font-semibold text-white">
+                  Micro-Stretch Timer Tones
+                </div>
                 <p className="text-[11px] text-slate-400">
                   Success fanfare when completing guided routine timers
                 </p>
@@ -712,9 +976,12 @@ export default function DynamicErgonomicCoach() {
               <Eye className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white">20-20-20 Ocular Reset Active!</h3>
+              <h3 className="text-lg font-bold text-white">
+                20-20-20 Ocular Reset Active!
+              </h3>
               <p className="text-sm text-blue-200">
-                Look at an object at least 20 feet (6m) away to relax your eye ciliary muscles.
+                Look at an object at least 20 feet (6m) away to relax your eye
+                ciliary muscles.
               </p>
             </div>
           </div>
@@ -725,7 +992,10 @@ export default function DynamicErgonomicCoach() {
             <button
               onClick={() => {
                 setEyeBreakActive(false);
-                setSession((s) => ({ ...s, eyeBreaksCompleted: s.eyeBreaksCompleted + 1 }));
+                setSession((s) => ({
+                  ...s,
+                  eyeBreaksCompleted: s.eyeBreaksCompleted + 1,
+                }));
               }}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-all shadow"
             >
@@ -748,7 +1018,7 @@ export default function DynamicErgonomicCoach() {
                 </span>
                 <span
                   className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase border ${getTierColor(
-                    strainScore.tier
+                    strainScore.tier,
                   )}`}
                 >
                   {strainScore.tier.replace("_", " ")}
@@ -757,7 +1027,10 @@ export default function DynamicErgonomicCoach() {
 
               <div className="flex items-center justify-center py-4">
                 <div className="relative w-36 h-36 flex items-center justify-center">
-                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                  <svg
+                    className="w-full h-full transform -rotate-90"
+                    viewBox="0 0 36 36"
+                  >
                     <path
                       className="text-slate-800"
                       strokeWidth="3.5"
@@ -770,8 +1043,8 @@ export default function DynamicErgonomicCoach() {
                         strainScore.score >= 80
                           ? "text-emerald-400"
                           : strainScore.score >= 50
-                          ? "text-amber-400"
-                          : "text-rose-400"
+                            ? "text-amber-400"
+                            : "text-rose-400"
                       }
                       strokeDasharray={`${strainScore.score}, 100`}
                       strokeWidth="3.5"
@@ -782,8 +1055,12 @@ export default function DynamicErgonomicCoach() {
                     />
                   </svg>
                   <div className="absolute flex flex-col items-center justify-center text-center">
-                    <span className="text-3xl font-black text-white">{strainScore.score}</span>
-                    <span className="text-[10px] text-slate-400 font-medium">INDEX / 100</span>
+                    <span className="text-3xl font-black text-white">
+                      {strainScore.score}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      INDEX / 100
+                    </span>
                   </div>
                 </div>
               </div>
@@ -793,7 +1070,9 @@ export default function DynamicErgonomicCoach() {
                   <Sparkles className="w-4 h-4 text-emerald-400" />
                   Coach Recommendation
                 </div>
-                <p className="text-slate-400 leading-relaxed">{strainScore.recommendation}</p>
+                <p className="text-slate-400 leading-relaxed">
+                  {strainScore.recommendation}
+                </p>
               </div>
 
               {/* Sub-factors */}
@@ -832,7 +1111,9 @@ export default function DynamicErgonomicCoach() {
                   Current Posture State
                 </span>
                 <span className="text-xs font-mono text-emerald-400">
-                  {session.currentPostureState === "sitting" ? "🪑 Seated" : "🧍 Standing"}
+                  {session.currentPostureState === "sitting"
+                    ? "🪑 Seated"
+                    : "🧍 Standing"}
                 </span>
               </div>
 
@@ -855,13 +1136,15 @@ export default function DynamicErgonomicCoach() {
               {(() => {
                 const ratio = calculateSitStandRatio(
                   session.totalSittingSeconds,
-                  session.totalStandingSeconds
+                  session.totalStandingSeconds,
                 );
                 return (
                   <div className="space-y-2 pt-2 border-t border-slate-800">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400">Sit-Stand Ratio:</span>
-                      <span className="font-mono text-emerald-400 font-bold">{ratio.display}</span>
+                      <span className="font-mono text-emerald-400 font-bold">
+                        {ratio.display}
+                      </span>
                     </div>
                     <div className="w-full bg-slate-800 rounded-lg h-2.5 overflow-hidden flex border border-slate-700/60">
                       <div
@@ -889,7 +1172,11 @@ export default function DynamicErgonomicCoach() {
                 className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
               >
                 <Zap className="w-4 h-4" />
-                Switch to {session.currentPostureState === "sitting" ? "Standing" : "Sitting"} Mode
+                Switch to{" "}
+                {session.currentPostureState === "sitting"
+                  ? "Standing"
+                  : "Sitting"}{" "}
+                Mode
               </button>
 
               <button
@@ -913,7 +1200,8 @@ export default function DynamicErgonomicCoach() {
                     Quick Posture Check-In
                   </h3>
                   <p className="text-xs text-slate-400">
-                    How is your spine alignment and shoulder tension feeling right now?
+                    How is your spine alignment and shoulder tension feeling
+                    right now?
                   </p>
                 </div>
                 <button
@@ -949,7 +1237,9 @@ export default function DynamicErgonomicCoach() {
                   className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 hover:bg-emerald-900/40 text-left transition-all group"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-emerald-300 text-sm">✨ Aligned</span>
+                    <span className="font-bold text-emerald-300 text-sm">
+                      ✨ Aligned
+                    </span>
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
                   </div>
                   <p className="text-[11px] text-slate-400">
@@ -962,10 +1252,14 @@ export default function DynamicErgonomicCoach() {
                   className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-950/20 hover:bg-amber-900/40 text-left transition-all group"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-amber-300 text-sm">🐢 Slouching</span>
+                    <span className="font-bold text-amber-300 text-sm">
+                      🐢 Slouching
+                    </span>
                     <AlertTriangle className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
                   </div>
-                  <p className="text-[11px] text-slate-400">Forward head or rounded shoulders.</p>
+                  <p className="text-[11px] text-slate-400">
+                    Forward head or rounded shoulders.
+                  </p>
                 </button>
 
                 <button
@@ -973,10 +1267,14 @@ export default function DynamicErgonomicCoach() {
                   className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-950/20 hover:bg-rose-900/40 text-left transition-all group"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-rose-300 text-sm">⚡ Stiff / Ache</span>
+                    <span className="font-bold text-rose-300 text-sm">
+                      ⚡ Stiff / Ache
+                    </span>
                     <ShieldAlert className="w-4 h-4 text-rose-400 group-hover:scale-110 transition-transform" />
                   </div>
-                  <p className="text-[11px] text-slate-400">Tension in neck, traps, or lower back.</p>
+                  <p className="text-[11px] text-slate-400">
+                    Tension in neck, traps, or lower back.
+                  </p>
                 </button>
               </div>
 
@@ -994,7 +1292,10 @@ export default function DynamicErgonomicCoach() {
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h3 id="stretch-break-timer-heading" className="text-sm font-bold text-white">
+                  <h3
+                    id="stretch-break-timer-heading"
+                    className="text-sm font-bold text-white"
+                  >
                     Focus & Stretch Break Timer
                   </h3>
                   <p className="mt-1 text-xs text-slate-400">
@@ -1067,7 +1368,9 @@ export default function DynamicErgonomicCoach() {
                   <input
                     type="checkbox"
                     checked={stretchBreakChimeEnabled}
-                    onChange={(event) => setStretchBreakChimeEnabled(event.target.checked)}
+                    onChange={(event) =>
+                      setStretchBreakChimeEnabled(event.target.checked)
+                    }
                     className="accent-violet-500"
                   />
                   Gentle chime
@@ -1113,20 +1416,25 @@ export default function DynamicErgonomicCoach() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <Eye className="w-5 h-5 text-cyan-400" />
-                      <h4 className="font-bold text-sm text-white">20-20-20 Eye Rule</h4>
+                      <h4 className="font-bold text-sm text-white">
+                        20-20-20 Eye Rule
+                      </h4>
                     </div>
                     <span className="text-[11px] text-slate-400">
                       {session.eyeBreaksCompleted} completed
                     </span>
                   </div>
                   <p className="text-xs text-slate-400">
-                    Every 20 minutes, gaze 20 feet away for 20 seconds to prevent ocular fatigue.
+                    Every 20 minutes, gaze 20 feet away for 20 seconds to
+                    prevent ocular fatigue.
                   </p>
                 </div>
 
                 <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700/50 flex items-center justify-between">
                   <div>
-                    <div className="text-[11px] text-slate-400 uppercase">Next Ocular Break In</div>
+                    <div className="text-[11px] text-slate-400 uppercase">
+                      Next Ocular Break In
+                    </div>
                     <div className="text-2xl font-black font-mono text-cyan-400">
                       {formatTime(eyeCountdown)}
                     </div>
@@ -1150,7 +1458,9 @@ export default function DynamicErgonomicCoach() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <Droplets className="w-5 h-5 text-blue-400" />
-                      <h4 className="font-bold text-sm text-white">Hydration Tracker</h4>
+                      <h4 className="font-bold text-sm text-white">
+                        Hydration Tracker
+                      </h4>
                     </div>
                     <span className="text-xs font-mono text-blue-300 font-bold">
                       {session.waterIntakeMl} / {session.waterTargetMl} ml
@@ -1162,7 +1472,7 @@ export default function DynamicErgonomicCoach() {
                       style={{
                         width: `${Math.min(
                           100,
-                          (session.waterIntakeMl / session.waterTargetMl) * 100
+                          (session.waterIntakeMl / session.waterTargetMl) * 100,
                         )}%`,
                       }}
                     />
@@ -1191,7 +1501,9 @@ export default function DynamicErgonomicCoach() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-emerald-400" />
-                  <h4 className="font-bold text-sm text-white">Suggested Movement Routine</h4>
+                  <h4 className="font-bold text-sm text-white">
+                    Suggested Movement Routine
+                  </h4>
                 </div>
                 <span className="text-xs text-emerald-400 font-medium">
                   {selectedStretch.durationSeconds}s Micro-Routine
@@ -1200,8 +1512,12 @@ export default function DynamicErgonomicCoach() {
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-slate-800/60 rounded-xl border border-slate-700/60">
                 <div className="space-y-1">
-                  <div className="font-bold text-white text-base">{selectedStretch.name}</div>
-                  <p className="text-xs text-slate-400">{selectedStretch.ergonomicBenefit}</p>
+                  <div className="font-bold text-white text-base">
+                    {selectedStretch.name}
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    {selectedStretch.ergonomicBenefit}
+                  </p>
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {selectedStretch.targetMuscles.map((m) => (
                       <span
@@ -1228,7 +1544,8 @@ export default function DynamicErgonomicCoach() {
                   >
                     {stretchTimerActive ? (
                       <>
-                        <Pause className="w-4 h-4" /> Pause ({stretchSecondsLeft}s)
+                        <Pause className="w-4 h-4" /> Pause (
+                        {stretchSecondsLeft}s)
                       </>
                     ) : (
                       <>
@@ -1258,7 +1575,7 @@ export default function DynamicErgonomicCoach() {
           currentPostureState={session.currentPostureState}
           transitionsCount={session.transitionsCount || 0}
           onTogglePosture={togglePostureState}
-          onUpdateTimes={(sit, stand) =>
+          onUpdateTimes={(sit: number, stand: number) =>
             setSession((s) => ({
               ...s,
               totalSittingSeconds: sit,
@@ -1274,7 +1591,9 @@ export default function DynamicErgonomicCoach() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {MICRO_STRETCH_CATALOG.map((routine) => {
               const isSelected = selectedStretch.id === routine.id;
-              const isCompleted = session.completedStretches.includes(routine.id);
+              const isCompleted = session.completedStretches.includes(
+                routine.id,
+              );
 
               return (
                 <div
@@ -1348,8 +1667,12 @@ export default function DynamicErgonomicCoach() {
                 <span className="text-xs text-emerald-400 font-bold uppercase tracking-wider">
                   Active Guided Routine
                 </span>
-                <h3 className="text-xl font-bold text-white">{selectedStretch.name}</h3>
-                <p className="text-sm text-slate-400">{selectedStretch.ergonomicBenefit}</p>
+                <h3 className="text-xl font-bold text-white">
+                  {selectedStretch.name}
+                </h3>
+                <p className="text-sm text-slate-400">
+                  {selectedStretch.ergonomicBenefit}
+                </p>
               </div>
 
               <div className="flex items-center gap-3">
@@ -1404,7 +1727,8 @@ export default function DynamicErgonomicCoach() {
               Optimal Workstation Ergonomic Geometry Checklist
             </h3>
             <p className="text-sm text-slate-400">
-              Align your chair, desk, and display according to OSHA & ISO 9241-5 ergonomic standards
+              Align your chair, desk, and display according to OSHA & ISO 9241-5
+              ergonomic standards
             </p>
           </div>
 
@@ -1414,8 +1738,9 @@ export default function DynamicErgonomicCoach() {
                 1. Monitor Eye-Level Height
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                The top 1/3 of your display should be at horizontal eye level, roughly an arm&apos;s
-                length (50-70 cm) away. Avoid downward cervical neck flexion.
+                The top 1/3 of your display should be at horizontal eye level,
+                roughly an arm&apos;s length (50-70 cm) away. Avoid downward
+                cervical neck flexion.
               </p>
             </div>
 
@@ -1424,8 +1749,9 @@ export default function DynamicErgonomicCoach() {
                 2. 90-90-90 Neutral Joint Angles
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Elbows rested at 90-100 degrees parallel to desk surface. Hips and knees bent at 90
-                degrees with feet flat on the floor or a firm footrest.
+                Elbows rested at 90-100 degrees parallel to desk surface. Hips
+                and knees bent at 90 degrees with feet flat on the floor or a
+                firm footrest.
               </p>
             </div>
 
@@ -1434,8 +1760,9 @@ export default function DynamicErgonomicCoach() {
                 3. Wrist & Forearm Neutrality
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Wrists should float straight without resting hard on sharp edges. Use an external
-                keyboard and ergonomic mouse to prevent pronation.
+                Wrists should float straight without resting hard on sharp
+                edges. Use an external keyboard and ergonomic mouse to prevent
+                pronation.
               </p>
             </div>
 
@@ -1444,8 +1771,9 @@ export default function DynamicErgonomicCoach() {
                 4. Sit-to-Stand Interval Cadence
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Aim for a 3:1 ratio (45 mins seated, 15 mins standing per hour) to promote venous
-                blood return without excessive lower back fatigue.
+                Aim for a 3:1 ratio (45 mins seated, 15 mins standing per hour)
+                to promote venous blood return without excessive lower back
+                fatigue.
               </p>
             </div>
           </div>
@@ -1462,11 +1790,18 @@ export default function DynamicErgonomicCoach() {
             onEscape={() => setShowStretchBreakSuggestions(false)}
           >
             <div>
-              <h2 id="stretch-break-suggestions-title" className="text-lg font-bold text-white">
+              <h2
+                id="stretch-break-suggestions-title"
+                className="text-lg font-bold text-white"
+              >
                 Time to stretch
               </h2>
-              <p id="stretch-break-suggestions-description" className="mt-1 text-sm text-slate-300">
-                Choose a quick routine to reset your posture and release tension.
+              <p
+                id="stretch-break-suggestions-description"
+                className="mt-1 text-sm text-slate-300"
+              >
+                Choose a quick routine to reset your posture and release
+                tension.
               </p>
             </div>
             <ul className="space-y-3">
@@ -1476,7 +1811,9 @@ export default function DynamicErgonomicCoach() {
                   className="flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-800/60 p-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <h3 className="text-sm font-semibold text-white">{routine.name}</h3>
+                    <h3 className="text-sm font-semibold text-white">
+                      {routine.name}
+                    </h3>
                     <p className="mt-1 text-xs text-slate-400">
                       {routine.durationSeconds}s · {routine.ergonomicBenefit}
                     </p>

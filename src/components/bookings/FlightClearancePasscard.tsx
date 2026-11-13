@@ -1,7 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { toPng } from 'html-to-image';
-import { Download, Printer, Shield, Plane, X } from 'lucide-react';
+import { Download, Printer, Shield, Plane, X, WifiOff } from 'lucide-react';
+import { getOfflinePasscard } from '@/lib/security/offlinePasscardStore';
 
 export interface FlightClearanceBookingDetails {
   callsign?: string;
@@ -16,6 +17,13 @@ export interface FlightClearancePasscardProps {
   isOpen: boolean;
   onClose: () => void;
   bookingDetails?: FlightClearanceBookingDetails;
+  /**
+   * The booking this passcard belongs to. When given (and no `offlineToken` is passed), the signed offline
+   * token saved for it in IndexedDB at booking confirmation is loaded and drawn as the QR code.
+   */
+  bookingId?: string;
+  /** A signed offline token (see src/lib/security/offlineQrSigner.ts). Takes priority over the stored one. */
+  offlineToken?: string | null;
   className?: string;
   testId?: string;
   onExportPng?: () => void;
@@ -35,12 +43,15 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
   isOpen,
   onClose,
   bookingDetails = DEFAULT_BOOKING_DETAILS,
+  bookingId,
+  offlineToken,
   className = '',
   testId = 'flight-clearance-passcard',
   onExportPng,
   onPrint,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [storedToken, setStoredToken] = useState<string | null>(null);
 
   const mergedDetails = {
     callsign: bookingDetails?.callsign || DEFAULT_BOOKING_DETAILS.callsign,
@@ -66,6 +77,25 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
+
+  // The signed token saved at booking confirmation, read from IndexedDB so it works with no network.
+  useEffect(() => {
+    if (!isOpen || !bookingId || offlineToken) {
+      setStoredToken(null);
+      return;
+    }
+    let cancelled = false;
+    getOfflinePasscard(bookingId)
+      .then((token) => {
+        if (!cancelled) setStoredToken(token);
+      })
+      .catch(() => {
+        if (!cancelled) setStoredToken(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, bookingId, offlineToken]);
 
   if (!isOpen) return null;
 
@@ -96,6 +126,9 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
   };
 
   const qrCodeUrl = `https://workspace.sector.command/verify?code=${encodeURIComponent(mergedDetails.clearanceCode || '')}`;
+  // A signed token can be checked by a scanner with no network, so it wins over the online verify link.
+  const activeToken = offlineToken || storedToken;
+  const qrValue = activeToken || qrCodeUrl;
 
   return (
     <div
@@ -203,19 +236,31 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
 
           {/* QR Code & Verification Section */}
           <div className="relative z-10 flex items-center justify-between pt-3 border-t border-emerald-500/30">
-            <div className="bg-white p-2 rounded-lg shadow-inner" data-testid="flight-clearance-qrcode">
+            <div
+              className="bg-white p-2 rounded-lg shadow-inner"
+              data-testid="flight-clearance-qrcode"
+              data-qr-mode={activeToken ? 'offline-signed' : 'online-link'}
+            >
               <QRCodeSVG
-                value={qrCodeUrl}
-                size={70}
+                value={qrValue}
+                size={activeToken ? 132 : 70}
                 bgColor="#FFFFFF"
                 fgColor="#022c22"
-                level="H"
+                level={activeToken ? 'M' : 'H'}
               />
             </div>
             <div className="text-right">
               <p className="text-[10px] text-slate-400">ISSUED ON</p>
               <p className="text-xs text-emerald-400 font-bold">{mergedDetails.date}</p>
               <p className="text-[9px] text-emerald-500/70 mt-1 uppercase">Apple Wallet Ready</p>
+              {activeToken && (
+                <p
+                  className="mt-1 flex items-center justify-end gap-1 text-[9px] font-bold uppercase text-emerald-300"
+                  data-testid="flight-clearance-offline-badge"
+                >
+                  <WifiOff className="w-3 h-3" aria-hidden="true" /> Works offline
+                </p>
+              )}
             </div>
           </div>
         </div>

@@ -365,7 +365,7 @@ export function VenueSeatWaitlistModal({
                   onChange={(e) => setDate(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
                   required
-                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-sm text-white focus:border-violet-500 focus:outline-none transition"
+                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-sm text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition"
                 />
               </div>
               <div>
@@ -375,7 +375,7 @@ export function VenueSeatWaitlistModal({
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
                   required
-                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-sm text-white focus:border-violet-500 focus:outline-none transition"
+                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-sm text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition"
                 />
               </div>
             </div>

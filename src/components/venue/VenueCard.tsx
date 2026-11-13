@@ -1,8 +1,11 @@
 "use client";
 
+ fix/audio-visualizer-visibility-pause
+
  fix/date-filter-chronological-validation
 
  docs/crdt-datachannel-framing
+ main
  main
 import React from "react";
 import Image from "next/image";
@@ -85,6 +88,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/audio-visualizer-visibility-pause
+}
+
  fix/date-filter-chronological-validation
 }
 
@@ -181,5 +187,6 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main

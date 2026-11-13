@@ -1,6 +1,9 @@
 "use client";
 
+ fix/date-filter-chronological-validation
+
  docs/crdt-datachannel-framing
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -82,6 +85,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/date-filter-chronological-validation
+}
+
 }
 
 import React, { useState } from "react";
@@ -175,4 +181,5 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main

@@ -3,17 +3,17 @@
  *
  * Implements:
  * 1. Three-tier simulcast video bitrate ladder:
- *    - High: 1280x720, 30 fps, 1500 kbps (scaleResolutionDownBy = 1.0)
- *    - Medium: 640x360, 20 fps, 500 kbps (scaleResolutionDownBy = 2.0)
- *    - Low: 320x180, 15 fps, 150 kbps (scaleResolutionDownBy = 4.0)
+ *    - Full: 1280x720, 30 fps, 1500 kbps (rid "f")
+ *    - Half: 640x360, 20 fps, 500 kbps (rid "h")
+ *    - Quarter: 320x180, 15 fps, 150 kbps (rid "q")
  * 2. RTCP statistics monitoring via getStats() polled every ~2 seconds:
  *    - packet loss fraction (preferring fractionLost, falling back to delta loss ratio)
  *    - RTT (remote-inbound-rtp or candidate-pair)
  *    - jitter (inbound / remote-inbound)
  * 3. Adaptive degradation state machine:
- *    - NORMAL -> DEGRADED when packet loss > 8% OR RTT > 350ms
- *    - High layer is dynamically disabled via RTCRtpSender.setParameters()
- *    - Medium and Low layers remain active; audio is never touched
+ *    - NORMAL -> DEGRADED when packet loss > 5% OR RTT > 350ms
+ *    - Full layer is dynamically disabled and active layers are bitrate-limited
+ *    - Half and Quarter layers remain active; audio is never touched
  *    - Recovers to NORMAL only after >15 consecutive seconds of stable healthy conditions
  *    - Any bad sample during recovery resets the recovery streak
  *    - Idempotent: avoids redundant setParameters() calls when state is unchanged
@@ -34,7 +34,7 @@ import {
  */
 export const SIMULCAST_BITRATE_LADDER: readonly SimulcastLayerConfig[] = [
   {
-    rid: "high",
+    rid: "f",
     targetResolution: { width: 1280, height: 720 },
     maxBitrate: 1_500_000, // 1500 kbps
     maxFramerate: 30,
@@ -42,7 +42,7 @@ export const SIMULCAST_BITRATE_LADDER: readonly SimulcastLayerConfig[] = [
     active: true,
   },
   {
-    rid: "medium",
+    rid: "h",
     targetResolution: { width: 640, height: 360 },
     maxBitrate: 500_000, // 500 kbps
     maxFramerate: 20,
@@ -50,7 +50,7 @@ export const SIMULCAST_BITRATE_LADDER: readonly SimulcastLayerConfig[] = [
     active: true,
   },
   {
-    rid: "low",
+    rid: "q",
     targetResolution: { width: 320, height: 180 },
     maxBitrate: 150_000, // 150 kbps
     maxFramerate: 15,
@@ -136,6 +136,7 @@ export async function configureSimulcastSender(
   const params = sender.getParameters() || {};
   if (params.encodings && params.encodings.length === encodings.length) {
     params.encodings.forEach((enc, i) => {
+      enc.rid = encodings[i].rid;
       enc.maxBitrate = encodings[i].maxBitrate;
       enc.maxFramerate = encodings[i].maxFramerate;
       enc.scaleResolutionDownBy = encodings[i].scaleResolutionDownBy;
@@ -315,7 +316,7 @@ export function evaluateNetworkCondition(stats: NetworkStats): {
   const isHighLoss =
     stats.packetLossFraction !== undefined &&
     Number.isFinite(stats.packetLossFraction) &&
-    stats.packetLossFraction > 0.08;
+    stats.packetLossFraction > 0.05;
   const isHighRtt =
     stats.rttMs !== undefined &&
     Number.isFinite(stats.rttMs) &&
@@ -342,7 +343,7 @@ export async function setHighLayerActive(
   }
 
   let highIndex = params.encodings.findIndex(
-    (e) => e.rid === "high" || e.rid === "h",
+    (e) => e.rid === "f" || e.rid === "high",
   );
   if (highIndex === -1) {
     if (params.encodings.length > 1) {
@@ -367,6 +368,66 @@ export async function setHighLayerActive(
     }
   });
 
+  try {
+    await sender.setParameters(params);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const DEGRADED_BITRATE_BY_RID: Record<string, number> = {
+  q: 120_000,
+  h: 350_000,
+  f: 0,
+  low: 120_000,
+  medium: 350_000,
+  high: 0,
+};
+
+/** Adjusts the simulcast bitrate ladder and disables the full-resolution layer. */
+export async function applyBandwidthDegradation(
+  sender: RTCRtpSender,
+  degraded: boolean,
+): Promise<boolean> {
+  if (sender.track && sender.track.kind !== "video") return false;
+  const params = sender.getParameters();
+  if (!params?.encodings?.length) return false;
+
+  let changed = false;
+  params.encodings.forEach((encoding) => {
+    const rid = encoding.rid ?? "";
+    const ladderLayer = SIMULCAST_BITRATE_LADDER.find(
+      (layer) =>
+        layer.rid === rid ||
+        (rid === "high" && layer.rid === "f") ||
+        (rid === "medium" && layer.rid === "h") ||
+        (rid === "low" && layer.rid === "q"),
+    );
+    if (degraded) {
+      const bitrate = DEGRADED_BITRATE_BY_RID[rid];
+      if (bitrate !== undefined && encoding.maxBitrate !== bitrate) {
+        encoding.maxBitrate = bitrate;
+        changed = true;
+      }
+      const active = rid !== "f" && rid !== "high";
+      if (encoding.active !== active) {
+        encoding.active = active;
+        changed = true;
+      }
+    } else if (ladderLayer) {
+      if (encoding.maxBitrate !== ladderLayer.maxBitrate) {
+        encoding.maxBitrate = ladderLayer.maxBitrate;
+        changed = true;
+      }
+      if (encoding.active !== true) {
+        encoding.active = true;
+        changed = true;
+      }
+    }
+  });
+
+  if (!changed) return false;
   try {
     await sender.setParameters(params);
     return true;
@@ -505,7 +566,7 @@ export class SimulcastAdaptiveController {
         this.state = "DEGRADED";
         this.healthySince = null;
         this.consecutiveHealthySamples = 0;
-        await setHighLayerActive(this.videoSender, false);
+        await applyBandwidthDegradation(this.videoSender, true);
         this.options.onStateChange?.(this.state);
         return true;
       }
@@ -528,7 +589,7 @@ export class SimulcastAdaptiveController {
           this.state = "NORMAL";
           this.healthySince = null;
           this.consecutiveHealthySamples = 0;
-          await setHighLayerActive(this.videoSender, true);
+          await applyBandwidthDegradation(this.videoSender, false);
           this.options.onStateChange?.(this.state);
           return true;
         }

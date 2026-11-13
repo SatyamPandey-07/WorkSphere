@@ -6,6 +6,7 @@
  */
 
 import { getRedis } from "@/lib/redis";
+import { getRedisKeyspaceManager } from "@/lib/redis/keyspaceNotifications";
 
 export const DEFAULT_LOCK_TTL_SECONDS = 300; // 5 minutes
 export const BASE_DRIFT_FACTOR = 0.01;
@@ -297,6 +298,7 @@ export async function acquireSeatWebLock(
       const currentLock = parseLockValue(rawLock);
 
       if (Number(flag) === 1) {
+ fix/redlock-monotonic-fencing-drift
         const resolvedLock: SeatLockData = {
           ...(currentLock ?? lockPayload),
           driftAllowanceMs,
@@ -311,6 +313,15 @@ export async function acquireSeatWebLock(
           fencingToken: resolvedToken,
           driftAllowanceMs,
         };
+
+        const finalLock = currentLock ?? lockPayload;
+        getRedisKeyspaceManager().registerDeskTimer(
+          venueId,
+          seatId,
+          finalLock.expiresAt,
+        );
+        return { success: true, lock: finalLock };
+ main
       }
 
       const remainingSec = currentLock
@@ -371,12 +382,20 @@ export async function acquireSeatWebLock(
   };
 
   memoryLocks.set(key, lockPayload);
+ fix/redlock-monotonic-fencing-drift
   return {
     success: true,
     lock: lockPayload,
     fencingToken: token,
     driftAllowanceMs,
   };
+  getRedisKeyspaceManager().registerDeskTimer(
+    venueId,
+    seatId,
+    lockPayload.expiresAt,
+  );
+  return { success: true, lock: lockPayload };
+ main
 }
 
 /**
@@ -389,6 +408,8 @@ export async function releaseSeatWebLock(
 ): Promise<boolean> {
   const key = getLockKey(venueId, seatId);
   const redis = getRedis();
+
+  getRedisKeyspaceManager().unregisterDeskTimer(venueId, seatId);
 
   if (redis) {
     try {
@@ -656,7 +677,11 @@ export const SeatHoldHeartbeatService = {
 export function resetMemorySeatLocks(): void {
   stopAllSeatLockRenewalHeartbeats();
   memoryLocks.clear();
+ fix/redlock-monotonic-fencing-drift
   resetMonotonicFencingSequence();
+
+  getRedisKeyspaceManager().reset();
+ main
 }
 
 export interface SeatWebLockOptions {

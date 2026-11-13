@@ -1,6 +1,6 @@
 "use client";
 
-import React, { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Polyline, Popup, useMap } from "react-leaflet";
 import {
   TrendingUp,
@@ -9,9 +9,6 @@ import {
   Mountain,
   ChevronDown,
   ChevronUp,
-  RotateCcw,
-  Sliders,
-  Compass,
 } from "lucide-react";
 import type { MapRoute } from "@/types/map";
 import { formatDistance } from "@/lib/geo/formatDistance";
@@ -108,7 +105,9 @@ export function calculateGradePercent(
   deltaDistanceMeters: number,
 ): number {
   if (deltaDistanceMeters <= 0.001) return 0;
-  return Number(((deltaElevationMeters / deltaDistanceMeters) * 100).toFixed(1));
+  return Number(
+    ((deltaElevationMeters / deltaDistanceMeters) * 100).toFixed(1),
+  );
 }
 
 /** Format elevation with selected unit (meters or feet). */
@@ -202,8 +201,12 @@ export function calculateRouteElevationProfile(
     const w0 = validPath[segIdx];
     const w1 = validPath[Math.min(validPath.length - 1, segIdx + 1)];
     const segSpan =
-      (waypointDistances[segIdx + 1] ?? totalDist) - waypointDistances[segIdx] || 0.001;
-    const t = Math.max(0, Math.min(1, (sampleDistKm - waypointDistances[segIdx]) / segSpan));
+      (waypointDistances[segIdx + 1] ?? totalDist) -
+        waypointDistances[segIdx] || 0.001;
+    const t = Math.max(
+      0,
+      Math.min(1, (sampleDistKm - waypointDistances[segIdx]) / segSpan),
+    );
 
     const lat = w0.lat + (w1.lat - w0.lat) * t;
     const lng = w0.lng + (w1.lng - w0.lng) * t;
@@ -211,7 +214,8 @@ export function calculateRouteElevationProfile(
     // Use explicit elevation if provided, otherwise realistic terrain wave
     let elevMeters = 0;
     if (w0.elevationMeters !== undefined && w1.elevationMeters !== undefined) {
-      elevMeters = w0.elevationMeters + (w1.elevationMeters - w0.elevationMeters) * t;
+      elevMeters =
+        w0.elevationMeters + (w1.elevationMeters - w0.elevationMeters) * t;
     } else {
       // Natural urban topography wave (gentle undulations and bridge/tunnel transitions)
       const wave1 = Math.sin(progress * Math.PI * 2.5) * 16;
@@ -424,7 +428,10 @@ export function routesToGeoJson(
 }
 
 /** Re-binds route GeoJSON datasets. */
-export function rebindRouteGeoJson(mapOrSource: any, geoJsonData: any): boolean {
+export function rebindRouteGeoJson(
+  mapOrSource: any,
+  geoJsonData: any,
+): boolean {
   if (!mapOrSource) return false;
   try {
     if (typeof mapOrSource.getSource === "function") {
@@ -441,13 +448,19 @@ export function rebindRouteGeoJson(mapOrSource: any, geoJsonData: any): boolean 
       return true;
     }
   } catch (err) {
-    console.warn("[MapRouteLayer] Failed to re-bind route GeoJSON dataset:", err);
+    console.warn(
+      "[MapRouteLayer] Failed to re-bind route GeoJSON dataset:",
+      err,
+    );
   }
   return false;
 }
 
 /** Re-binds vector tile layers. */
-export function rebindVectorTileLayers(mapOrSource: any, layers: any[] = []): boolean {
+export function rebindVectorTileLayers(
+  mapOrSource: any,
+  layers: any[] = [],
+): boolean {
   if (!mapOrSource || !mapOrSource.style?.sourceCaches) return false;
   try {
     let reloaded = false;
@@ -469,9 +482,9 @@ export function rebindVectorTileLayers(mapOrSource: any, layers: any[] = []): bo
 /** Recreates WebGL route buffers. */
 export function recreateRouteBuffers(
   gl: WebGLRenderingContext | any,
-  routes: any[] = [],
-  optimizedRoute: any = null,
-  canvas?: any,
+  _routes: any[] = [],
+  _optimizedRoute: any = null,
+  _canvas?: any,
 ): any {
   if (!gl || typeof gl.createBuffer !== "function") return {};
   try {
@@ -505,7 +518,10 @@ function VerticalElevationTapeOverlay({
 
   const selectedPoint = profile.points[selectedIndex] || profile.points[0];
 
-  const elevRange = Math.max(15, profile.maxElevationMeters - profile.minElevationMeters);
+  const elevRange = Math.max(
+    15,
+    profile.maxElevationMeters - profile.minElevationMeters,
+  );
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const idx = parseInt(e.target.value, 10);
@@ -533,7 +549,9 @@ function VerticalElevationTapeOverlay({
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
-            onClick={() => setActiveUnit((u) => (u === "meters" ? "feet" : "meters"))}
+            onClick={() =>
+              setActiveUnit((u) => (u === "meters" ? "feet" : "meters"))
+            }
             className="px-1.5 py-0.5 rounded text-[10px] bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-emerald-500/30 font-bold"
             title="Toggle altitude units"
           >
@@ -544,9 +562,15 @@ function VerticalElevationTapeOverlay({
             data-testid="toggle-elevation-tape-btn"
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="p-1 rounded bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-emerald-500/30"
-            title={isCollapsed ? "Expand elevation tape" : "Collapse elevation tape"}
+            title={
+              isCollapsed ? "Expand elevation tape" : "Collapse elevation tape"
+            }
           >
-            {isCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+            {isCollapsed ? (
+              <ChevronDown className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronUp className="w-3.5 h-3.5" />
+            )}
           </button>
         </div>
       </div>
@@ -556,7 +580,9 @@ function VerticalElevationTapeOverlay({
           {/* Altimeter Drum & Current Waypoint Readout */}
           <div className="flex items-center justify-between bg-black/80 p-2.5 rounded-xl border border-emerald-500/30">
             <div>
-              <div className="text-[10px] text-zinc-400 font-semibold">CURRENT ALTITUDE</div>
+              <div className="text-[10px] text-zinc-400 font-semibold">
+                CURRENT ALTITUDE
+              </div>
               <div
                 data-testid="current-elevation-readout"
                 className="text-lg font-black text-white flex items-baseline gap-1"
@@ -577,8 +603,8 @@ function VerticalElevationTapeOverlay({
                 isClimb
                   ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
                   : isDescent
-                  ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
-                  : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                    ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
+                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
               }`}
             >
               {isClimb ? (
@@ -588,9 +614,7 @@ function VerticalElevationTapeOverlay({
               ) : (
                 <Minus className="w-3 h-3 text-emerald-400" />
               )}
-              <span>
-                {grade > 0 ? `+${grade}%` : `${grade}%`} GRADE
-              </span>
+              <span>{grade > 0 ? `+${grade}%` : `${grade}%`} GRADE</span>
             </div>
           </div>
 
@@ -598,10 +622,14 @@ function VerticalElevationTapeOverlay({
           <div className="relative h-28 bg-zinc-900/90 rounded-xl p-2 border border-emerald-500/20 flex flex-col justify-between overflow-hidden">
             {/* Background Altitude Reference Grid Lines */}
             <div className="absolute inset-x-2 top-2 border-b border-dashed border-zinc-800 text-[8px] text-zinc-600 flex justify-between">
-              <span>MAX {formatElevation(profile.maxElevationMeters, activeUnit)}</span>
+              <span>
+                MAX {formatElevation(profile.maxElevationMeters, activeUnit)}
+              </span>
             </div>
             <div className="absolute inset-x-2 bottom-2 border-t border-dashed border-zinc-800 text-[8px] text-zinc-600 flex justify-between">
-              <span>MIN {formatElevation(profile.minElevationMeters, activeUnit)}</span>
+              <span>
+                MIN {formatElevation(profile.minElevationMeters, activeUnit)}
+              </span>
             </div>
 
             {/* SVG Profile Polyline Curve */}
@@ -626,7 +654,8 @@ function VerticalElevationTapeOverlay({
                       const x = (i / (profile.points.length - 1)) * 100;
                       const y =
                         50 -
-                        ((pt.elevationMeters - profile.minElevationMeters) / elevRange) *
+                        ((pt.elevationMeters - profile.minElevationMeters) /
+                          elevRange) *
                           44;
                       return `${x.toFixed(1)},${y.toFixed(1)}`;
                     })
@@ -643,7 +672,8 @@ function VerticalElevationTapeOverlay({
                     const x = (i / (profile.points.length - 1)) * 100;
                     const y =
                       50 -
-                      ((pt.elevationMeters - profile.minElevationMeters) / elevRange) *
+                      ((pt.elevationMeters - profile.minElevationMeters) /
+                        elevRange) *
                         44;
                     return `${x.toFixed(1)},${y.toFixed(1)}`;
                   })
@@ -661,7 +691,8 @@ function VerticalElevationTapeOverlay({
                   cx={(selectedIndex / (profile.points.length - 1)) * 100}
                   cy={
                     50 -
-                    ((selectedPoint.elevationMeters - profile.minElevationMeters) /
+                    ((selectedPoint.elevationMeters -
+                      profile.minElevationMeters) /
                       elevRange) *
                       44
                   }
@@ -750,12 +781,15 @@ export const MapRouteLayer = memo(function MapRouteLayer({
 
   const [isContextLost, setIsContextLost] = useState<boolean>(false);
   const [restoreCount, setRestoreCount] = useState<number>(0);
-  const [recoveryState, setRecoveryState] = useState<"active" | "lost" | "restored">("active");
+  const [recoveryState, setRecoveryState] = useState<
+    "active" | "lost" | "restored"
+  >("active");
   const needsRebindRef = useRef<boolean>(false);
 
   // Filter to routes with at least two valid coordinates
   const validRoutes = useMemo(
-    () => routes.filter((route) => (route.path ?? []).filter(Boolean).length >= 2),
+    () =>
+      routes.filter((route) => (route.path ?? []).filter(Boolean).length >= 2),
     [routes],
   );
 
@@ -795,7 +829,9 @@ export const MapRouteLayer = memo(function MapRouteLayer({
 
       try {
         const gl =
-          (targetCanvas.getContext("webgl2") as WebGL2RenderingContext | null) ||
+          (targetCanvas.getContext(
+            "webgl2",
+          ) as WebGL2RenderingContext | null) ||
           (targetCanvas.getContext("webgl") as WebGLRenderingContext | null);
         if (gl) {
           recreateRouteBuffers(gl, routes, optimizedRoute, targetCanvas);
@@ -816,11 +852,18 @@ export const MapRouteLayer = memo(function MapRouteLayer({
     };
 
     targetCanvas.addEventListener("webglcontextlost", handleContextLost, false);
-    targetCanvas.addEventListener("webglcontextrestored", handleContextRestored, false);
+    targetCanvas.addEventListener(
+      "webglcontextrestored",
+      handleContextRestored,
+      false,
+    );
 
     return () => {
       targetCanvas.removeEventListener("webglcontextlost", handleContextLost);
-      targetCanvas.removeEventListener("webglcontextrestored", handleContextRestored);
+      targetCanvas.removeEventListener(
+        "webglcontextrestored",
+        handleContextRestored,
+      );
     };
   }, [
     canvasProp,
@@ -837,7 +880,9 @@ export const MapRouteLayer = memo(function MapRouteLayer({
   useEffect(() => {
     const handleVisibilityChange = () => {
       const isVisible =
-        typeof document !== "undefined" ? document.visibilityState === "visible" : true;
+        typeof document !== "undefined"
+          ? document.visibilityState === "visible"
+          : true;
 
       onVisibilityChange?.(isVisible);
 
@@ -861,10 +906,19 @@ export const MapRouteLayer = memo(function MapRouteLayer({
     }
     return () => {
       if (typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
       }
     };
-  }, [map, isContextLost, vectorTileLayers, effectiveGeoJson, onVisibilityChange]);
+  }, [
+    map,
+    isContextLost,
+    vectorTileLayers,
+    effectiveGeoJson,
+    onVisibilityChange,
+  ]);
 
   // Create Leaflet pane once for Catmull-Rom SVG
   useEffect(() => {
@@ -901,12 +955,17 @@ export const MapRouteLayer = memo(function MapRouteLayer({
     const build = () => {
       const paths = validRoutes.map((route) => {
         const pts = route.path
-          .filter((pt) => pt && Number.isFinite(pt.lat) && Number.isFinite(pt.lng))
+          .filter(
+            (pt) => pt && Number.isFinite(pt.lat) && Number.isFinite(pt.lng),
+          )
           .map((pt) => map.latLngToLayerPoint([pt.lat, pt.lng]));
 
         const d = catmullRomToBezierPath(pts);
         const highlighted = route.isHighlighted === true;
-        const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        const group = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "g",
+        );
         group.setAttribute("data-route-id", route.id);
         group.setAttribute("class", "map-route-fx");
 
@@ -947,14 +1006,18 @@ export const MapRouteLayer = memo(function MapRouteLayer({
         return { route, group, core, highlighted };
       });
 
-      const size = typeof map.getSize === "function" ? map.getSize() : { x: 800, y: 600 };
+      const size =
+        typeof map.getSize === "function" ? map.getSize() : { x: 800, y: 600 };
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("width", String(size.x));
       svg.setAttribute("height", String(size.y));
       svg.style.overflow = "visible";
       svg.style.display = "block";
 
-      const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      const defs = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "defs",
+      );
       defs.innerHTML =
         '<filter id="map-route-bloom" x="-50%" y="-50%" width="200%" height="200%">' +
         '<feGaussianBlur stdDeviation="4" result="blur"/>' +
@@ -1072,9 +1135,17 @@ export const MapRouteLayer = memo(function MapRouteLayer({
               autoPanPaddingBottomRight={[20, 20]}
             >
               <div className="text-sm text-white">
-                <div className="font-bold text-blue-400">Optimized Hybrid Schedule</div>
-                <div>Total Distance: {formatDistance(optimizedRoute.distance / 1000)}</div>
-                <div>Est. Travel Time: {Math.round(optimizedRoute.duration / 60)} mins</div>
+                <div className="font-bold text-blue-400">
+                  Optimized Hybrid Schedule
+                </div>
+                <div>
+                  Total Distance:{" "}
+                  {formatDistance(optimizedRoute.distance / 1000)}
+                </div>
+                <div>
+                  Est. Travel Time: {Math.round(optimizedRoute.duration / 60)}{" "}
+                  mins
+                </div>
               </div>
             </Popup>
           </Polyline>
@@ -1084,7 +1155,9 @@ export const MapRouteLayer = memo(function MapRouteLayer({
       {!isContextLost &&
         routes.map((route) => {
           const validPositions = (route.path || [])
-            .filter((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng))
+            .filter(
+              (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng),
+            )
             .map((p) => [Number(p.lat), Number(p.lng)] as [number, number]);
 
           if (validPositions.length < 2) return null;

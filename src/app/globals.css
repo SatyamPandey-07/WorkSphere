@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant cyberpunk (&:where(.cyberpunk, .cyberpunk *));
 
 @layer components {
   .audio-eq-energy-slider {
@@ -263,7 +264,9 @@ html.high-contrast .hard-light-pulse {
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary-accent, #3b82f6);
   --color-primary-accent: var(--primary-accent);
+  --color-ring: var(--primary-accent, #3b82f6);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -1447,4 +1450,10 @@ html[data-hud-cursor="true"] [role="switch"] {
   }
 }
 
-
+
+/* Disable transitions while the theme switches to avoid FOUC (#7201) */
+html.preload *,
+html.preload *::before,
+html.preload *::after {
+  transition: none !important;
+}

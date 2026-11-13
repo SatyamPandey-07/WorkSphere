@@ -486,4 +486,75 @@ describe("useVenueSearch (#3513)", () => {
     expect(result.current.venues).toEqual([]);
     expect(result.current.isLoading).toBe(false);
   });
+
+  describe("explicit search() deduplication (#7612)", () => {
+    it("cancels the pending debounce so search() sends a single request", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ venues: [] }),
+      });
+      const { result } = renderHook(() => useVenueSearch());
+
+      act(() => {
+        result.current.setQuery("Library");
+      });
+      await act(async () => {
+        await result.current.search();
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(250);
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips search() for a query whose results are already loaded", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ venues: [] }),
+      });
+      const { result } = renderHook(() => useVenueSearch());
+
+      act(() => {
+        result.current.setQuery("Library");
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(250);
+      });
+      await act(async () => {
+        await result.current.search("  Library ");
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("allows search() to retry the same query after a failed request", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          json: async () => ({}),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ venues: [] }),
+        });
+      const { result } = renderHook(() => useVenueSearch());
+
+      act(() => {
+        result.current.setQuery("Library");
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(250);
+      });
+      expect(result.current.error).not.toBeNull();
+
+      await act(async () => {
+        await result.current.search();
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(result.current.error).toBeNull();
+    });
+  });
 });

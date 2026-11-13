@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { getGeminiClient, isGeminiConfigured } from "@/lib/ai/gemini";
 import { getRedis } from "@/lib/redis";
 
@@ -19,6 +20,11 @@ export interface HybridSearchResult {
   score: number;
 }
 
+export interface QueryCacheContext {
+  userId?: string | null;
+  authorizationTier?: string | null;
+}
+
 interface CachedEmbedding {
   embedding: number[];
   deltaMs: number;
@@ -31,6 +37,38 @@ interface ComputedEmbedding {
 
 /** Per-query single-flight guards for background embedding refreshes. */
 const inFlightRefreshes = new Map<string, Promise<void>>();
+
+function hashCacheContext(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 32);
+}
+
+/**
+ * Builds an embedding cache key without exposing authenticated identifiers in
+ * Redis. Public queries retain the shared cache, while personalized queries
+ * are isolated by user identity or authorization tier.
+ */
+export function buildQueryEmbeddingCacheKey(
+  query: string,
+  context: QueryCacheContext = {},
+): string {
+  const normalizedQuery = query.toLowerCase().trim();
+  const userId =
+    typeof context.userId === "string" ? context.userId.trim() : "";
+  const authorizationTier =
+    typeof context.authorizationTier === "string"
+      ? context.authorizationTier.trim()
+      : "";
+  const scope = userId
+    ? `user:${hashCacheContext(userId)}`
+    : authorizationTier
+      ? `tier:${hashCacheContext(authorizationTier)}`
+      : "public";
+
+  const encodedQuery = Buffer.from(normalizedQuery).toString("base64");
+  return scope === "public"
+    ? `embedding:${encodedQuery}`
+    : `embedding:${scope}:${encodedQuery}`;
+}
 
 /**
  * Normalizes both the current `{ embedding, deltaMs }` payload and the legacy
@@ -178,8 +216,11 @@ function scheduleEmbeddingRefresh(
  * entry is close enough to expiry, a background refresh is scheduled while the
  * cached embedding is returned immediately.
  */
-export async function getQueryEmbedding(query: string): Promise<number[]> {
-  const cacheKey = `embedding:${Buffer.from(query.toLowerCase().trim()).toString("base64")}`;
+export async function getQueryEmbedding(
+  query: string,
+  context: QueryCacheContext = {},
+): Promise<number[]> {
+  const cacheKey = buildQueryEmbeddingCacheKey(query, context);
   const redis = getRedis();
 
   if (redis) {
@@ -251,8 +292,9 @@ export async function executeHybridSearch(
   prismaClient: any,
   limit: number = 10,
   rrfK: number = 60,
+  cacheContext: QueryCacheContext = {},
 ): Promise<HybridSearchResult[]> {
-  const embedding = await getQueryEmbedding(query);
+  const embedding = await getQueryEmbedding(query, cacheContext);
   const vectorStr = `[${embedding.join(",")}]`;
 
   // Reciprocal Rank Fusion (RRF) raw SQL execution

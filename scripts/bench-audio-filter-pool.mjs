@@ -13,6 +13,7 @@
 import { Worker } from "node:worker_threads";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import assert from "node:assert/strict";
 
 const WASM = readFileSync(fileURLToPath(new URL("../public/audio-filter-simd.wasm", import.meta.url)));
 const CHANNELS = 8;
@@ -68,6 +69,41 @@ async function inlineRunner() {
 const makeChannels = (count, frames) =>
   Array.from({ length: count }, () => new Float32Array(frames).fill(0.1));
 
+function runAgcCoverage() {
+  return WebAssembly.instantiate(WASM).then(({ instance }) => {
+    const x = instance.exports;
+    assert.equal(typeof x.setAGCEnabled, "function", "WASM must expose AGC control");
+    x.setStageCount(0);
+    x.setAGCEnabled(0);
+
+    const maxFrames = x.getMaxFrames();
+    const heap = new Float32Array(x.memory.buffer, x.getBufferPtr(), maxFrames);
+    heap.fill(0.1, 0, maxFrames);
+    x.process(1, maxFrames);
+    assert.deepEqual(Array.from(heap.subarray(0, 32)), new Array(32).fill(0.1));
+
+    x.reset();
+    x.setAGCEnabled(1);
+    heap.fill(0.1, 0, maxFrames);
+    x.process(1, maxFrames);
+    assert.ok(heap[maxFrames - 1] > 0.2, "AGC should boost a quiet signal");
+    assert.ok(heap[maxFrames - 1] <= 0.25 + 1e-4, "AGC must cap amplification at 2.5x");
+
+    x.reset();
+    heap.fill(1, 0, maxFrames);
+    x.process(1, maxFrames);
+    assert.ok(heap[maxFrames - 1] >= 0.5 - 1e-4, "AGC must not attenuate below 0.5x");
+    assert.ok(heap[maxFrames - 1] <= 1, "AGC should attenuate a loud signal");
+
+    x.reset();
+    heap.fill(1, 0, maxFrames);
+    x.process(1, maxFrames);
+    heap.fill(0.1, 0, maxFrames);
+    x.process(1, 1);
+    assert.ok(heap[0] < 0.1, "AGC release should be gradual after a loud signal");
+  });
+}
+
 async function measure(run) {
   for (let i = 0; i < 50; i++) await run();
   const times = [];
@@ -81,6 +117,9 @@ async function measure(run) {
 }
 
 const us = (ms) => `${(ms * 1000).toFixed(1).padStart(7)} µs`;
+
+await runAgcCoverage();
+console.log("AGC coverage: enabled flag, attack, release, and gain clamps passed");
 
 const inline = await inlineRunner();
 const single = await startWorker();

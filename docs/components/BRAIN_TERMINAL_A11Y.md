@@ -24,7 +24,7 @@ The execution output uses `role="log"`, `aria-live="polite"`, and `aria-atomic="
 
 ## Focus and visual contrast
 
-The panel is not a modal and therefore does not implement a focus trap. Its controls remain in the normal Tab sequence. Keep visible focus indicators on interactive controls and ensure the indicators remain perceivable in forced-colors/high-contrast mode. Do not rely on colored agent icons or animated glow alone to communicate focused or active state.
+The panel is not a modal and therefore does not implement a focus trap. Its controls remain in the normal Tab sequence. Maintain at least 4.5:1 contrast for normal text and 3:1 for UI boundaries and focus indicators. Provide a visible `:focus-visible` outline and preserve it in `@media (forced-colors: active)` using system colors (for example `Highlight` / `HighlightText`). Do not rely on colored agent icons or animated glow alone to communicate focused or active state.
 
 ## Verification checklist
 

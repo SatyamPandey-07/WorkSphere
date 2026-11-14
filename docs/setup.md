@@ -337,3 +337,29 @@ wsl --list --verbose
 - Avoid manually modifying PostgreSQL container data-directory permissions from Windows.
 
 For additional guidance, see the official [Docker Desktop WSL documentation](https://docs.docker.com/desktop/features/wsl/) and [WSL best practices](https://docs.docker.com/desktop/features/wsl/best-practices/).
+
+### macOS: Docker Desktop and PostgreSQL troubleshooting
+
+**Docker Desktop for Mac:**
+- Install and start Docker Desktop for Mac.
+- Run Docker commands from the macOS Terminal.
+- Check that Docker is running:
+```bash
+open -a Docker
+docker info
+```
+
+**Port 5432 already in use:**
+Check which process is using the port:
+```bash
+lsof -nP -iTCP:5432 -sTCP:LISTEN
+```
+- Stop the conflicting service if appropriate, or change the host port mapping to `5433:5432` in `docker-compose.yml`.
+- Update the host port in `DATABASE_URL` if you change the port.
+
+**Volumes and file access:**
+- Prefer Docker-managed named volumes for PostgreSQL data.
+- Avoid manually modifying PostgreSQL container data-directory permissions.
+- Do not delete database volumes unless you intentionally want to remove their data.
+
+For more information, see the official [Docker Desktop for Mac documentation](https://docs.docker.com/desktop/setup/install/mac-install/).

@@ -10,6 +10,11 @@ import {
   BAND_COUNT,
   BIN_DURATION_S,
   GRID_CELLS,
+  MAX_ACOUSTIC_BVH_NODES,
+  MAX_ACOUSTIC_TRIANGLES,
+  ACOUSTIC_BVH_NODE_BYTES,
+  ACOUSTIC_TRIANGLE_BYTES,
+  type AcousticTriangle,
   MATERIAL_ABSORPTION,
   MAX_ACOUSTIC_SOURCES,
   SOURCE_BLOCK_BYTES,
@@ -522,6 +527,51 @@ describe("GPU path with a mocked device", () => {
     expect(sourceF32[14]).toBe(-2); // omnidirectional sentinel
     expect(sourceF32[15]).toBe(1); // outerGain
     expect([sourceF32[16], sourceF32[17], sourceF32[18]]).toEqual([0, 0, 1]);
+  });
+
+  it("uploads a flattened mesh BVH and triangle storage buffer", async () => {
+    const { writes } = installFakeGpu();
+    const sim = await WebGPUAcousticSimulator.create();
+    const triangle: AcousticTriangle = {
+      a: [4, 1, 2],
+      b: [4, 2, 2],
+      c: [4, 1, 3],
+      materialId: AcousticMaterial.Drywall,
+    };
+    const result = await sim.simulate(
+      { ...room(AcousticMaterial.Wood), triangles: [triangle] },
+      { rayCount: 512, maxBounces: 8, seed: 5 },
+    );
+    expect(result.backend).toBe("webgpu");
+
+    const paramsWrite = writes.find((write) => write.buffer.size === ACOUSTIC_PARAMS_BYTES)!;
+    const params = paramsWrite.data instanceof ArrayBuffer
+      ? paramsWrite.data
+      : paramsWrite.data.buffer;
+    const paramsU32 = new Uint32Array(params);
+    expect(paramsU32[26]).toBeGreaterThan(0);
+    expect(paramsU32[27]).toBe(1);
+
+    const nodeWrite = writes.find(
+      (write) => write.buffer.size === MAX_ACOUSTIC_BVH_NODES * ACOUSTIC_BVH_NODE_BYTES,
+    )!;
+    const nodeRaw = nodeWrite.data instanceof ArrayBuffer
+      ? nodeWrite.data
+      : nodeWrite.data.buffer;
+    const nodeFloats = new Float32Array(nodeRaw);
+    const nodeU32 = new Uint32Array(nodeRaw);
+    expect(Array.from(nodeFloats.slice(0, 3))).toEqual([4, 1, 2]);
+    expect(Array.from(nodeFloats.slice(4, 7))).toEqual([4, 2, 3]);
+    expect(nodeU32[9]).toBe(1);
+    expect(nodeU32[10]).toBe(1);
+
+    const triangleWrite = writes.find(
+      (write) => write.buffer.size === MAX_ACOUSTIC_TRIANGLES * ACOUSTIC_TRIANGLE_BYTES,
+    )!;
+    const triangleRaw = triangleWrite.data instanceof ArrayBuffer
+      ? triangleWrite.data
+      : triangleWrite.data.buffer;
+    expect(new Uint32Array(triangleRaw)[12]).toBe(AcousticMaterial.Drywall);
   });
 
   it("uploads 16 sources and keeps one dispatch per ray", async () => {

@@ -1,6 +1,10 @@
 import {
   BAND_COUNT,
   BIN_DURATION_S,
+  buildAcousticBvh,
+  findNearestBvhTriangleHit,
+  findNearestLinearTriangleHit,
+  type Vec3,
   DEFAULT_MAX_BOUNCES,
   DEFAULT_RAY_COUNT,
   GRID_CELLS,
@@ -65,6 +69,8 @@ export function simulateAcousticsCpu(
   const [minX, minY, minZ] = scene.roomMin;
   const [maxX, maxY, maxZ] = scene.roomMax;
   const occupants = scene.occupants ?? [];
+  const triangles = scene.triangles ?? [];
+  const bvh = buildAcousticBvh(triangles);
   const sources = resolveAcousticSources(scene);
   const histogram = new Float64Array(BAND_COUNT * TIME_BINS);
   const grid = new Float64Array(GRID_CELLS);
@@ -128,9 +134,22 @@ export function simulateAcousticsCpu(
         }
         let materialId: number = scene.wallMaterials[wall];
         let hitOccupant = false;
+        let hitTriangle = false;
         let nx = 0;
         let ny = 0;
         let nz = 0;
+
+        const rayOrigin: Vec3 = [px, py, pz];
+        const rayDirection: Vec3 = [dx, dy, dz];
+        const meshHit = options.useBvh === false
+          ? findNearestLinearTriangleHit(triangles, rayOrigin, rayDirection, tHit)
+          : findNearestBvhTriangleHit(bvh, rayOrigin, rayDirection, tHit);
+        if (meshHit) {
+          tHit = meshHit.distance;
+          materialId = meshHit.materialId;
+          hitTriangle = true;
+          [nx, ny, nz] = meshHit.normal;
+        }
 
         for (const o of occupants) {
           const ocx = px - o.position[0];
@@ -144,6 +163,7 @@ export function simulateAcousticsCpu(
             if (t > EPS && t < tHit) {
               tHit = t;
               hitOccupant = true;
+              hitTriangle = false;
               materialId = HUMAN;
               nx = px + dx * t - o.position[0];
               ny = py + dy * t - o.position[1];
@@ -183,7 +203,7 @@ export function simulateAcousticsCpu(
           if (energy[band] > remaining) remaining = energy[band];
         }
 
-        if (hitOccupant) {
+        if (hitOccupant || hitTriangle) {
           const dn = dx * nx + dy * ny + dz * nz;
           dx -= 2 * dn * nx;
           dy -= 2 * dn * ny;

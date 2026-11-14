@@ -9,6 +9,12 @@ import {
   DEFAULT_RAY_COUNT,
   GRID_CELLS,
   MAX_OCCUPANTS,
+  MAX_ACOUSTIC_BVH_NODES,
+  MAX_ACOUSTIC_TRIANGLES,
+  ACOUSTIC_BVH_NODE_BYTES,
+  ACOUSTIC_TRIANGLE_BYTES,
+  buildAcousticBvh,
+  packAcousticBvh,
   SOURCE_BLOCK_BYTES,
   SPEED_OF_SOUND_MS,
   TIME_BINS,
@@ -52,6 +58,17 @@ export interface BenchmarkReport {
   withinBudget: boolean;
 }
 
+export interface MeshAccelerationBenchmark {
+  backend: "webgpu" | "cpu";
+  runs: number;
+  triangleCount: number;
+  bvhNodeCount: number;
+  bvhMedianMs: number;
+  linearMedianMs: number;
+  speedup: number;
+  meetsFourXTarget: boolean;
+}
+
 interface ShaderMessage {
   type: string;
   lineNum: number;
@@ -65,6 +82,8 @@ interface GpuResources {
   params: GPUBuffer;
   sources: GPUBuffer;
   occupants: GPUBuffer;
+  bvhNodes: GPUBuffer;
+  triangles: GPUBuffer;
   histogram: GPUBuffer;
   density: GPUBuffer;
   histogramStaging: GPUBuffer;
@@ -118,6 +137,16 @@ async function initGpu(): Promise<GpuResources> {
     size: MAX_OCCUPANTS * 16,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
+
+  // Fixed-capacity storage avoids reallocating buffers when the active venue mesh changes.
+  const bvhNodes = device.createBuffer({
+    size: MAX_ACOUSTIC_BVH_NODES * ACOUSTIC_BVH_NODE_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  const triangles = device.createBuffer({
+    size: MAX_ACOUSTIC_TRIANGLES * ACOUSTIC_TRIANGLE_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
   const histBytes = BAND_COUNT * TIME_BINS * 4;
   const gridBytes = GRID_CELLS * 4;
   const storageUsage =
@@ -146,6 +175,8 @@ async function initGpu(): Promise<GpuResources> {
       { binding: 3, resource: { buffer: histogram } },
       { binding: 4, resource: { buffer: density } },
       { binding: 5, resource: { buffer: sources } },
+      { binding: 6, resource: { buffer: bvhNodes } },
+      { binding: 7, resource: { buffer: triangles } },
     ],
   });
 
@@ -156,6 +187,8 @@ async function initGpu(): Promise<GpuResources> {
     params,
     sources,
     occupants,
+    bvhNodes,
+    triangles,
     histogram,
     density,
     histogramStaging,
@@ -278,6 +311,51 @@ export class WebGPUAcousticSimulator {
     };
   }
 
+  /** Compares BVH traversal against a linear triangle scan on the same scene. */
+  async benchmarkMeshAcceleration(
+    scene: AcousticScene,
+    runs = 10,
+    options: AcousticOptions = {},
+  ): Promise<MeshAccelerationBenchmark> {
+    const triangleCount = scene.triangles?.length ?? 0;
+    if (triangleCount === 0) {
+      throw new RangeError("benchmarkMeshAcceleration requires a non-empty triangle mesh");
+    }
+    if (!Number.isInteger(runs) || runs < 1) {
+      throw new RangeError("benchmark runs must be a positive integer");
+    }
+    const bvhNodeCount = buildAcousticBvh(scene.triangles ?? []).nodes.length;
+    const measure = async (useBvh: boolean): Promise<number[]> => {
+      for (let i = 0; i < 3; i++) {
+        await this.simulate(scene, { ...options, useBvh });
+      }
+      const samples: number[] = [];
+      for (let i = 0; i < runs; i++) {
+        const result = await this.simulate(scene, { ...options, useBvh });
+        samples.push(result.gpuMs ?? result.totalMs);
+      }
+      return samples.sort((a, b) => a - b);
+    };
+    const [accelerated, linear] = await Promise.all([
+      measure(true),
+      measure(false),
+    ]);
+    const median = (values: number[]) => values[Math.floor(values.length / 2)];
+    const bvhMedianMs = median(accelerated);
+    const linearMedianMs = median(linear);
+    const speedup = bvhMedianMs > 0 ? linearMedianMs / bvhMedianMs : 0;
+    return {
+      backend: this.backend,
+      runs,
+      triangleCount,
+      bvhNodeCount,
+      bvhMedianMs,
+      linearMedianMs,
+      speedup,
+      meetsFourXTarget: speedup >= 4,
+    };
+  }
+
   dispose(): void {
     const g = this.gpu;
     this.gpu = null;
@@ -356,6 +434,8 @@ export class WebGPUAcousticSimulator {
     const { device } = g;
     const occ = scene.occupants ?? [];
     const sources = resolveAcousticSources(scene);
+    const bvh = buildAcousticBvh(scene.triangles ?? []);
+    const packedBvh = packAcousticBvh(bvh);
 
     // Scale the integer accumulators by the hottest source band so high-energy
     // spectra cannot overflow the u32 atomics during long multi-bounce runs.
@@ -396,8 +476,12 @@ export class WebGPUAcousticSimulator {
     u32.set(scene.wallMaterials, 16);
     f32[24] = densityScale;
     u32[25] = sources.length;
+    u32[26] = options.useBvh === false ? 0 : bvh.nodes.length;
+    u32[27] = bvh.triangles.length;
     device.queue.writeBuffer(g.params, 0, buf);
     device.queue.writeBuffer(g.sources, 0, packSourceBlock(sources));
+    device.queue.writeBuffer(g.bvhNodes, 0, packedBvh.nodeBuffer);
+    device.queue.writeBuffer(g.triangles, 0, packedBvh.triangleBuffer);
 
     const occData = new Float32Array(MAX_OCCUPANTS * 4);
     occ.forEach((o, i) => {

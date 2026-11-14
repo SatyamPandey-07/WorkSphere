@@ -5,6 +5,13 @@ import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { notifyNextInWaitlist } from "@/lib/waitlist";
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
 import { releaseDeskReservation } from "@/lib/reservations/deskReservationCountdown";
+import { invalidateVenueAvailability } from "@/lib/cache/venueAvailabilityCache";
+
+jest.mock("@/lib/cache/venueAvailabilityCache", () => ({
+  invalidateVenueAvailability: jest.fn().mockResolvedValue(true),
+  venueAvailabilityCacheKey: (venueId: string) =>
+    `venue:availability:${venueId}`,
+}));
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
@@ -51,6 +58,8 @@ const booking = {
   confirmationId: "CONFIRM-123",
   seatId: "seat_123",
   duration: 60,
+  user: { discordWebhookUrl: null },
+  venue: { name: "Venue", address: null },
 };
 
 function signedRequest(
@@ -80,14 +89,23 @@ describe("POST /api/webhooks/venue-cancel", () => {
     jest.clearAllMocks();
     process.env.VENUE_CANCEL_WEBHOOK_SECRET = SECRET;
 
-    (prisma.venueCancellationWebhookEvent.deleteMany as jest.Mock).mockResolvedValue({ count: 0 });
-    (prisma.venueCancellationWebhookEvent.findUnique as jest.Mock).mockResolvedValue(null);
-    (prisma.venueCancellationWebhookEvent.create as jest.Mock).mockResolvedValue({ id: "event-row-1" });
+    (
+      prisma.venueCancellationWebhookEvent.deleteMany as jest.Mock
+    ).mockResolvedValue({ count: 0 });
+    (
+      prisma.venueCancellationWebhookEvent.findUnique as jest.Mock
+    ).mockResolvedValue(null);
+    (
+      prisma.venueCancellationWebhookEvent.create as jest.Mock
+    ).mockResolvedValue({ id: "event-row-1" });
     (prisma.booking.findFirst as jest.Mock).mockResolvedValue(booking);
     (prisma.booking.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
-    (prisma.bookingGuest.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+    (prisma.bookingGuest.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
     (prisma.$transaction as jest.Mock).mockImplementation(
-      async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma),
+      async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+        callback(prisma),
     );
   });
 
@@ -101,7 +119,9 @@ describe("POST /api/webhooks/venue-cancel", () => {
 
   it("rejects missing or invalid HMAC signatures", async () => {
     const rawBody = JSON.stringify({ bookingId: booking.id });
-    const response = await POST(signedRequest(rawBody, "invalid-event", "00".repeat(32)));
+    const response = await POST(
+      signedRequest(rawBody, "invalid-event", "00".repeat(32)),
+    );
 
     expect(response.status).toBe(401);
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -109,6 +129,19 @@ describe("POST /api/webhooks/venue-cancel", () => {
   });
 
   it("atomically cancels a booking and records the idempotency key", async () => {
+    let transactionCommitted = false;
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      async (callback: (tx: typeof prisma) => Promise<unknown>) => {
+        const result = await callback(prisma);
+        transactionCommitted = true;
+        return result;
+      },
+    );
+    (invalidateVenueAvailability as jest.Mock).mockImplementation(() => {
+      expect(transactionCommitted).toBe(true);
+      return Promise.resolve(true);
+    });
+
     const rawBody = JSON.stringify({
       bookingId: booking.id,
       reason: "Venue closed unexpectedly",
@@ -139,6 +172,9 @@ describe("POST /api/webhooks/venue-cancel", () => {
       data: { status: "CANCELLED_BY_OPERATOR" },
     });
     expect(prisma.bookingGuest.updateMany).toHaveBeenCalled();
+    expect(invalidateVenueAvailability).toHaveBeenCalledWith(
+      `venue:availability:${booking.venueId}`,
+    );
     expect(releaseDeskReservation).toHaveBeenCalledWith(
       booking.venueId,
       booking.seatId,
@@ -156,10 +192,25 @@ describe("POST /api/webhooks/venue-cancel", () => {
     expect(notifyNextInWaitlist).toHaveBeenCalled();
   });
 
+  it("does not invalidate availability when the cancellation transaction fails", async () => {
+    (prisma.$transaction as jest.Mock).mockRejectedValue(
+      new Error("database transaction failed"),
+    );
+
+    const response = await POST(
+      signedRequest(JSON.stringify({ bookingId: booking.id })),
+    );
+
+    expect(response.status).toBe(500);
+    expect(invalidateVenueAvailability).not.toHaveBeenCalled();
+  });
+
   it("acknowledges a repeated delivery with the same idempotency key and payload", async () => {
     const rawBody = JSON.stringify({ bookingId: booking.id });
     const payloadHash = createHash("sha256").update(rawBody).digest("hex");
-    (prisma.venueCancellationWebhookEvent.findUnique as jest.Mock).mockResolvedValue({
+    (
+      prisma.venueCancellationWebhookEvent.findUnique as jest.Mock
+    ).mockResolvedValue({
       payloadHash,
       bookingId: booking.id,
     });
@@ -173,7 +224,9 @@ describe("POST /api/webhooks/venue-cancel", () => {
   });
 
   it("rejects reuse of an idempotency key with a different request body", async () => {
-    (prisma.venueCancellationWebhookEvent.findUnique as jest.Mock).mockResolvedValue({
+    (
+      prisma.venueCancellationWebhookEvent.findUnique as jest.Mock
+    ).mockResolvedValue({
       payloadHash: "different-payload-hash",
       bookingId: booking.id,
     });

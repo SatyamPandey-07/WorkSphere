@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import {
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 export const BulkCheckInSchema = z.object({
   bookingIds: z.array(z.string().cuid()).min(1).max(50),
@@ -114,7 +118,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
         const booking = foundMap.get(id);
         if (!booking) {
           failedIds.push(id);
-        } else if ((booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR")) {
+        } else if (
+          booking.status === "CANCELLED" ||
+          booking.status === "CANCELLED_BY_OPERATOR"
+        ) {
           failedIds.push(id);
         } else {
           eligibleBookings.push(booking);
@@ -181,6 +188,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
         updatedBookings,
       };
     });
+
+    if (result.successfulCount > 0) {
+      await invalidateVenueAvailability(venueAvailabilityCacheKey(venue.id));
+    }
 
     return NextResponse.json(
       {

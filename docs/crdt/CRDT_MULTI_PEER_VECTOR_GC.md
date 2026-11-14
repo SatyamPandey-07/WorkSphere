@@ -98,6 +98,23 @@ A future peer-retention manager should use the following states:
 
 A retention grace period is an operational configuration, not a mathematical proof. Choosing a timeout does not prove that a peer has no unsent local updates.
 
+## 5.1 Monotonicity of peer state vectors and the stable frontier
+
+For a fixed peer (p), integrating an update can only add previously missing structs; it does not decrement a client clock. Therefore, for every client (c):
+
+[
+V'_p(c) \ge V_p(c).
+]
+
+While the retained peer set (P_e) is fixed, the component-wise minimum frontier is also monotonic:
+
+[
+F'_e(c)=\min_{p\in P_e} V'_p(c)
+\ge \min_{p\in P_e}V_p(c)=F_e(c).
+]
+
+This argument depends on keeping the membership set fixed for the comparison. Adding a new peer can lower a component of the minimum frontier. WorkSphere therefore treats peer-set changes as a new retention epoch: the new peer must bootstrap from the committed checkpoint, and the new frontier is computed and compared only within that epoch. A removal may advance the frontier only after the eviction decision and checkpoint are durable. No code should compare frontiers across different membership epochs as though they were one uninterrupted monotone sequence.
+
 ## 5. Convergence argument
 
 Assume:

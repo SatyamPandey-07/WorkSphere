@@ -115,6 +115,7 @@ export function BrainTerminal({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const draftInputRef = useRef("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleCommandSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -193,12 +194,29 @@ export function BrainTerminal({
     }
   };
 
-  // Bind keydown event listener for Escape key to close terminal
+  // Terminal shortcuts are scoped to this panel so they never intercept
+  // the application's global keyboard shortcuts while focus is elsewhere.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         onClose?.();
+        return;
+      }
+
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "k" &&
+        e.target instanceof Node &&
+        containerRef.current?.contains(e.target)
+      ) {
+        e.preventDefault();
+        setLogs([]);
+        setCommandInput("");
+        setCommandHistory([]);
+        setHistoryIndex(-1);
+        draftInputRef.current = "";
+        inputRef.current?.focus();
       }
     },
     [onClose],
@@ -234,8 +252,10 @@ export function BrainTerminal({
 
   return (
     <div
+      ref={containerRef}
       data-testid="brain-terminal-container"
-      className={`glass-card rounded-2xl p-6 glow-accent mx-auto overflow-hidden transition-all duration-300 ${
+      tabIndex={-1}
+      className={`brain-terminal-panel glass-card rounded-2xl p-6 glow-accent mx-auto overflow-hidden transition-all duration-300 ${
         isMaximized ? "max-w-3xl w-full" : "max-w-lg"
       } ${className}`}
     >
@@ -401,7 +421,15 @@ export function BrainTerminal({
             Live Execution Logs
           </span>
         </div>
-        <div className="space-y-1">
+        <div
+          className="space-y-1"
+          role="log"
+          aria-label="Brain terminal execution log"
+          aria-live="polite"
+          aria-atomic="false"
+          aria-relevant="additions text"
+          data-testid="terminal-log-region"
+        >
           {logs.map((log, i) => (
             <div
               key={i}

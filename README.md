@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-128%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-130%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-128-active-rockstars"><b>👥 Contributors (128)</b></a> •
+  <a href="#-contributors-130-active-rockstars"><b>👥 Contributors (130)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (128 Active Rockstars)
+### 🚀 Contributors (130 Active Rockstars)
 
-A massive thank you to all **128 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **130 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -884,6 +884,18 @@ A massive thank you to all **128 brilliant contributors and bots** building Work
         <sub><b>jeniferalaquoke</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/IG-ABHINAV">
+        <img src="https://avatars.githubusercontent.com/u/127868165?v=4" width="55px;" height="55px;" alt="IG-ABHINAV" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>IG-ABHINAV</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/srnsksyp">
+        <img src="https://avatars.githubusercontent.com/u/180870881?v=4" width="55px;" height="55px;" alt="srnsksyp" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>srnsksyp</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1076,6 +1088,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🎧 Edge Audio Processing & Acoustic Privacy (WASM DSP)
 
+- **Rust SIMD WebAssembly Acoustic Sound Classifier**: Real-time on-device acoustic inference classifying environmental soundscapes (speech, typing, ambient noise, cafe chatter) using SIMD-accelerated WebAssembly kernels (`public/sound_classifier.wasm`, `src/core/audio/WasmSoundClassifier.ts`).
+- **HRTF Spatial Room Simulation & 3D WebGPU Acoustic Ray-Tracing**: Real-time room impulse response simulation using Head-Related Transfer Function (HRTF) binaural filtering coupled with WebGPU compute shaders for 3D acoustic ray-tracing (`src/core/spatial/WebGPUAcousticSimulator.ts`, `src/lib/audio/spatialAudioEngine.ts`).
 - **Ambient Audio Spectrogram Element Visibility Observer**: Performance optimization using `IntersectionObserver` to automatically pause heavy Web Audio FFT analysis and Canvas 2D render loops when the acoustic visualizer is scrolled out of viewport (`src/hooks/useElementVisibility.ts`, `src/components/noise/AmbientNoiseSpectrumVisualizer.tsx`).
 - **Dynamic Acoustic Privacy Jammer**: WebAssembly DSP ring buffer applying Delayed Auditory Feedback (DAF) to headphones, scientifically disrupting loud speech and maintaining private conversations in open cafes (`/api/audio/jammer`).
 - **AI Generative Venue Vibe Audio Synthesizer**: Procedural acoustic soundscapes and focus-frequency noise generation tailored in real-time to current venue ambient noise telemetry (`/api/audio/vibe`).
@@ -1100,6 +1114,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🌐 Decentralized Networking & Survival Mesh
 
+- **GossipSub WebRTC Mesh Router for Offline Emergency Messaging**: Decentralized peer-to-peer pub/sub message dissemination across local WebRTC mesh networks without central servers (`src/core/p2p/GossipSubRouter.ts`, `src/core/p2p/MeshPacketSerializer.ts`).
 - **CRDT DataChannel Binary Framing Protocol**: WebRTC DataChannel packet fragmentation and binary framing protocol for large Yjs collaborative editing updates over unreliable or MTU-bounded channels ([docs/crdt/CRDT_DATACHANNEL_FRAMING.md](./docs/crdt/CRDT_DATACHANNEL_FRAMING.md)).
 - **Distributed Compute-Burst WebRTC Mesh**: Collaborative local distributed computing offloading code builds and heavy processing across idle laptops on cafe WiFi (`/p2p/mesh-collab`, `/api/compute/burst`).
 - **W3C WebRTC Perfect Negotiation & Glare Rollback**: Symmetric polite/impolite role negotiation engine resolving concurrent offer collisions and ICE candidate race conditions across collaborative nomad audio/video meshes (`src/core/network/WebRTCMesh.ts`).
@@ -1120,6 +1135,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🛡️ Zero-Knowledge Proofs, Security & Compliance
 
+- **Cryptographically Signed Offline QR Code Passcards**: Ed25519 digital signatures and tamper-evident IndexedDB passcard storage enabling physical venue entry and clearance verification during offline network outages (`src/lib/security/offlineQrSigner.ts`, `src/lib/security/offlinePasscardStore.ts`).
 - **ZK-SNARK Coworking Membership Verifier**: Circom-compiled Groth16 zero-knowledge circuit for proving coworking membership passes and access tiers without disclosing nomad identity (`/api/zkp/membership/verify`, `circuits/membership_verifier.circom`).
 - **Decentralized DID Wallet & ZK-Age / Identity Verification**: Verify KYC and identity requirements without disclosing personal identity documents (`/test-student-zkp`, `/api/identity/verify`).
 - **Client-Side PII Redaction & Document Sanitization Pipeline**: In-browser regex and NER model scrubbing sensitive credentials, emails, and phone numbers before cloud transmission (`/api/documents/sanitize`).

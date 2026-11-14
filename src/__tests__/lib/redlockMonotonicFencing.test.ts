@@ -1,5 +1,10 @@
 import {
   acquireSeatWebLock,
+  acquireQuorumFencingToken,
+  configureRedlockNodes,
+  getRedlockNodeHealth,
+  resetRedlockNodeHealth,
+  QuorumFencingError,
   assertLockLeaseValid,
   computeDynamicClockDriftMs,
   getMonotonicNowNs,
@@ -255,5 +260,95 @@ describe("Redlock N/2+1 Quorum INCR Fencing & Partition Failover Monotonicity", 
     );
     expect(second.accepted).toBe(true);
     expect(second.previousToken).toBe(BigInt(1042));
+  });
+});
+
+describe("Redlock node failover backoff (#7776)", () => {
+  beforeEach(() => {
+    resetMemorySeatLocks();
+    resetRedlockNodeHealth();
+  });
+
+  it("keeps quorum available when one Redis node times out", async () => {
+    let now = 1_000;
+    let reconnects = 0;
+    const fastNode = (id: string, value: number) => ({
+      id,
+      incr: async () => value,
+    });
+    const slowNode = {
+      id: "sentinel-promoted-node",
+      reconnect: async () => { reconnects++; },
+      incr: async () => new Promise<number>(() => {}),
+    };
+    configureRedlockNodes([fastNode("node-a", 100), fastNode("node-b", 101), slowNode]);
+
+    const first = await acquireQuorumFencingToken("v:s", undefined, {
+      timeoutMs: 20,
+      baseBackoffMs: 100,
+      maxBackoffMs: 500,
+      now: () => now,
+    });
+    expect(first.quorumAchieved).toBe(2);
+    expect(first.quorumRequired).toBe(2);
+    expect(getRedlockNodeHealth(now)).toEqual([
+      expect.objectContaining({
+        nodeId: "sentinel-promoted-node",
+        failureCount: 1,
+        retryAt: now + 100,
+        degraded: true,
+      }),
+    ]);
+
+    // During backoff the unhealthy node is skipped; the two healthy nodes
+    // still constitute a majority, so acquisition is not blocked by failover.
+    const second = await acquireQuorumFencingToken("v:s", undefined, {
+      timeoutMs: 20,
+      baseBackoffMs: 100,
+      maxBackoffMs: 500,
+      now: () => now,
+    });
+    expect(second.quorumAchieved).toBe(2);
+    expect(reconnects).toBe(0);
+
+    // Once the cool-off period expires, the node is reconnected and probed.
+    now += 101;
+    configureRedlockNodes([
+      fastNode("node-a", 102),
+      fastNode("node-b", 103),
+      {
+        id: "sentinel-promoted-node",
+        reconnect: async () => { reconnects++; },
+        incr: async () => 104,
+      },
+    ]);
+    const recovered = await acquireQuorumFencingToken("v:s", undefined, {
+      timeoutMs: 20,
+      baseBackoffMs: 100,
+      maxBackoffMs: 500,
+      now: () => now,
+    });
+    expect(recovered.quorumAchieved).toBe(3);
+    expect(reconnects).toBe(1);
+    expect(getRedlockNodeHealth(now)).toEqual([]);
+  });
+
+  it("rejects acquisition only when the surviving nodes cannot form a majority", async () => {
+    const fastNode = (id: string, value: number) => ({
+      id,
+      incr: async () => value,
+    });
+    configureRedlockNodes([
+      fastNode("node-a", 1),
+      { id: "node-b", incr: async () => new Promise<number>(() => {}) },
+      { id: "node-c", incr: async () => { throw new Error("connection lost"); } },
+    ]);
+    await expect(
+      acquireQuorumFencingToken("v:s", undefined, {
+        timeoutMs: 20,
+        baseBackoffMs: 100,
+        maxBackoffMs: 500,
+      }),
+    ).rejects.toBeInstanceOf(QuorumFencingError);
   });
 });

@@ -65,6 +65,8 @@ export interface RedlockRedisNode {
     options?: { ex?: number; nx?: boolean },
   ) => Promise<unknown>;
   eval?: (script: string, keys: string[], args: string[]) => Promise<unknown>;
+  /** Optional client-specific reconnect hook (for Sentinel / cluster failover). */
+  reconnect?: () => Promise<void>;
 }
 
 /**
@@ -85,6 +87,86 @@ export function getMonotonicNowNs(): bigint {
 let monotonicFencingSeq: bigint = BigInt(0);
 const resourceLastSeenTokens = new Map<string, bigint>();
 let registeredRedlockNodes: RedlockRedisNode[] | null = null;
+
+export const REDLOCK_NODE_TIMEOUT_MS = 1_000;
+export const REDLOCK_NODE_BASE_BACKOFF_MS = 250;
+export const REDLOCK_NODE_MAX_BACKOFF_MS = 5_000;
+
+interface RedlockNodeHealthState {
+  failureCount: number;
+  retryAt: number;
+  lastError?: string;
+}
+
+export interface RedlockNodeHealth {
+  nodeId: string;
+  failureCount: number;
+  retryAt: number;
+  lastError?: string;
+  degraded: boolean;
+}
+
+const redlockNodeHealth = new Map<string, RedlockNodeHealthState>();
+
+export function getRedlockNodeHealth(now = Date.now()): RedlockNodeHealth[] {
+  return Array.from(redlockNodeHealth, ([nodeId, state]) => ({
+    nodeId,
+    failureCount: state.failureCount,
+    retryAt: state.retryAt,
+    lastError: state.lastError,
+    degraded: state.retryAt > now,
+  }));
+}
+
+export function resetRedlockNodeHealth(): void {
+  redlockNodeHealth.clear();
+}
+
+function markRedlockNodeHealthy(nodeId: string): void {
+  redlockNodeHealth.delete(nodeId);
+}
+
+function markRedlockNodeFailed(
+  nodeId: string,
+  error: unknown,
+  now: number,
+  baseBackoffMs: number,
+  maxBackoffMs: number,
+): void {
+  const failureCount = (redlockNodeHealth.get(nodeId)?.failureCount ?? 0) + 1;
+  const backoffMs = Math.min(
+    maxBackoffMs,
+    baseBackoffMs * 2 ** Math.min(failureCount - 1, 20),
+  );
+  const message = error instanceof Error ? error.message : String(error);
+  redlockNodeHealth.set(nodeId, {
+    failureCount,
+    retryAt: now + backoffMs,
+    lastError: message.slice(0, 240),
+  });
+}
+
+async function withRedlockNodeTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  nodeId: string,
+  operationName: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Redis node ${nodeId} ${operationName} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 /**
  * Configures independent Redis nodes for N/2+1 Redlock quorum consensus.
@@ -131,6 +213,12 @@ function getFencingSequenceKey(resourceKey: string): string {
 export async function acquireQuorumFencingToken(
   resourceKey: string,
   nodes?: RedlockRedisNode[],
+  options: {
+    timeoutMs?: number;
+    baseBackoffMs?: number;
+    maxBackoffMs?: number;
+    now?: () => number;
+  } = {},
 ): Promise<{
   token: bigint;
   quorumAchieved: number;
@@ -151,60 +239,100 @@ export async function acquireQuorumFencingToken(
     return { token: fallback, quorumAchieved: 1, quorumRequired: 1 };
   }
 
+  const timeoutMs = Math.max(10, Math.floor(options.timeoutMs ?? REDLOCK_NODE_TIMEOUT_MS));
+  const baseBackoffMs = Math.max(1, Math.floor(options.baseBackoffMs ?? REDLOCK_NODE_BASE_BACKOFF_MS));
+  const maxBackoffMs = Math.max(baseBackoffMs, Math.floor(options.maxBackoffMs ?? REDLOCK_NODE_MAX_BACKOFF_MS));
+  const now = options.now ?? Date.now;
   const totalNodes = activeNodes.length;
   const requiredQuorum = Math.floor(totalNodes / 2) + 1;
   const seqKey = getFencingSequenceKey(resourceKey);
+  const eligibleNodes = activeNodes.filter((node) => {
+    const health = redlockNodeHealth.get(node.id);
+    return !health || health.retryAt <= now();
+  });
 
   const results = await Promise.allSettled(
-    activeNodes.map(async (node) => {
-      const rawVal = await node.incr(seqKey);
-      return BigInt(rawVal);
+    eligibleNodes.map(async (node) => {
+      try {
+        const health = redlockNodeHealth.get(node.id);
+        if (health?.failureCount && node.reconnect) {
+          await withRedlockNodeTimeout(
+            node.reconnect(),
+            timeoutMs,
+            node.id,
+            "reconnect",
+          );
+        }
+        const rawVal = await withRedlockNodeTimeout(
+          node.incr(seqKey),
+          timeoutMs,
+          node.id,
+          "INCR",
+        );
+        const token = BigInt(rawVal);
+        markRedlockNodeHealthy(node.id);
+        return { node, token };
+      } catch (error) {
+        markRedlockNodeFailed(
+          node.id,
+          error,
+          now(),
+          baseBackoffMs,
+          maxBackoffMs,
+        );
+        throw error;
+      }
     }),
   );
 
-  const succeededTokens: bigint[] = [];
-  for (const res of results) {
-    if (res.status === "fulfilled") {
-      succeededTokens.push(res.value);
-    }
-  }
-
-  if (succeededTokens.length < requiredQuorum) {
+  const succeeded = results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  if (succeeded.length < requiredQuorum) {
     throw new QuorumFencingError(
-      `Failed to achieve Redlock fencing quorum (${succeededTokens.length}/${requiredQuorum} nodes responded)`,
-      succeededTokens.length,
+      `Failed to achieve Redlock fencing quorum (${succeeded.length}/${requiredQuorum} nodes responded)`,
+      succeeded.length,
       requiredQuorum,
     );
   }
 
-  // Take the maximum INCR value across the responding quorum and enforce strict monotonicity
-  // against any previously observed token for this resource so lagging replicas cannot regress.
-  let quorumMax = succeededTokens[0];
-  for (const val of succeededTokens) {
-    if (val > quorumMax) {
-      quorumMax = val;
-    }
+  let quorumMax = succeeded[0].token;
+  for (const result of succeeded) {
+    if (result.token > quorumMax) quorumMax = result.token;
   }
 
   const lastSeen = resourceLastSeenTokens.get(resourceKey) ?? BigInt(0);
   const candidate = quorumMax > lastSeen ? quorumMax : lastSeen + BigInt(1);
   const finalToken = nextMonotonicFencingToken(candidate - BigInt(1));
-
   resourceLastSeenTokens.set(resourceKey, finalToken);
 
-  // Best-effort bump on any lagging quorum nodes whose counter was behind finalToken
+  // A failed repair does not invalidate an already obtained majority. It is
+  // bounded and recorded so the next acquisition can retry that node later.
   await Promise.allSettled(
-    activeNodes.map(async (node, idx) => {
-      const res = results[idx];
-      if (res.status === "fulfilled" && res.value < finalToken && node.set) {
-        await node.set(seqKey, finalToken.toString());
+    succeeded.map(async ({ node, token }) => {
+      if (token >= finalToken || !node.set) return;
+      try {
+        await withRedlockNodeTimeout(
+          node.set(seqKey, finalToken.toString()),
+          timeoutMs,
+          node.id,
+          "counter repair",
+        );
+      } catch (error) {
+        markRedlockNodeFailed(
+          node.id,
+          error,
+          now(),
+          baseBackoffMs,
+          maxBackoffMs,
+        );
       }
     }),
   );
 
   return {
     token: finalToken,
-    quorumAchieved: succeededTokens.length,
+    quorumAchieved: succeeded.length,
     quorumRequired: requiredQuorum,
   };
 }
@@ -848,6 +976,7 @@ export function resetMemorySeatLocks(): void {
   memoryLocks.clear();
   resetMonotonicFencingSequence();
   registeredRedlockNodes = null;
+  resetRedlockNodeHealth();
   getRedisKeyspaceManager().reset();
 }
 

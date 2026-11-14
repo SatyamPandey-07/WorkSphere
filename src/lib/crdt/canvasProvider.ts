@@ -518,6 +518,31 @@ function yieldToMainThread(): Promise<void> {
  * in their own store, one per room, and are written in the same transaction
  * that prunes the journal records they supersede.
  */
+/**
+ * Serialize IndexedDB readwrite transactions for a journal database.
+ *
+ * The queue is database-scoped, so different CanvasChangeJournal instances
+ * sharing the same IndexedDB database cannot race their read-modify-write,
+ * compaction, or replay transactions.
+ */
+const journalWriteQueues = new Map<string, Promise<void>>();
+
+function withJournalWriteLock<T>(
+  databaseName: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = journalWriteQueues.get(databaseName) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  const settled = current.then(() => undefined, () => undefined);
+  journalWriteQueues.set(databaseName, settled);
+  void settled.then(() => {
+    if (journalWriteQueues.get(databaseName) === settled) {
+      journalWriteQueues.delete(databaseName);
+    }
+  });
+  return current;
+}
+
 export class CanvasChangeJournal {
   private dbPromise: Promise<IDBPDatabase<CanvasJournalDB>> | null = null;
 
@@ -580,27 +605,28 @@ export class CanvasChangeJournal {
     if (!roomName || !roomName.trim() || !update || update.length === 0) {
       return null;
     }
-    const trimmed = roomName.trim();
-    const db = await this.getDb();
+    return withJournalWriteLock(this.dbName, async () => {
+      const trimmed = roomName.trim();
+      const db = await this.getDb();
+      const tx = db.transaction([JOURNAL_META_STORE, JOURNAL_STORE], "readwrite");
+      const metaStore = tx.objectStore(JOURNAL_META_STORE);
+      const journalStore = tx.objectStore(JOURNAL_STORE);
 
-    const tx = db.transaction([JOURNAL_META_STORE, JOURNAL_STORE], "readwrite");
-    const metaStore = tx.objectStore(JOURNAL_META_STORE);
-    const journalStore = tx.objectStore(JOURNAL_STORE);
+      const meta = await metaStore.get(trimmed);
+      const seq = (meta?.lastSeq ?? 0) + 1;
+      await metaStore.put({ ...meta, roomName: trimmed, lastSeq: seq });
 
-    const meta = await metaStore.get(trimmed);
-    const seq = (meta?.lastSeq ?? 0) + 1;
-    await metaStore.put({ ...meta, roomName: trimmed, lastSeq: seq });
-
-    const block: JournalBlock = {
-      seq,
-      roomName: trimmed,
-      update: Array.from(update),
-      checksum: computeChecksum(update),
-      createdAt: Date.now(),
-    };
-    await journalStore.put(block);
-    await tx.done;
-    return block;
+      const block: JournalBlock = {
+        seq,
+        roomName: trimmed,
+        update: Array.from(update),
+        checksum: computeChecksum(update),
+        createdAt: Date.now(),
+      };
+      await journalStore.put(block);
+      await tx.done;
+      return block;
+    });
   }
 
   /** All pending blocks for a room, ordered by ascending sequence. */
@@ -615,19 +641,23 @@ export class CanvasChangeJournal {
   }
 
   async remove(seq: number): Promise<void> {
-    const db = await this.getDb();
-    await db.delete(JOURNAL_STORE, seq);
+    await withJournalWriteLock(this.dbName, async () => {
+      const db = await this.getDb();
+      await db.delete(JOURNAL_STORE, seq);
+    });
   }
 
   async clearRoom(roomName: string): Promise<void> {
-    const trimmed = roomName.trim();
-    const blocks = await this.listPending(trimmed);
-    const db = await this.getDb();
-    const tx = db.transaction(JOURNAL_STORE, "readwrite");
-    await Promise.all([
-      ...blocks.map((block) => tx.store.delete(block.seq)),
-      tx.done,
-    ]);
+    await withJournalWriteLock(this.dbName, async () => {
+      const trimmed = roomName.trim();
+      const blocks = await this.listPending(trimmed);
+      const db = await this.getDb();
+      const tx = db.transaction(JOURNAL_STORE, "readwrite");
+      await Promise.all([
+        ...blocks.map((block) => tx.store.delete(block.seq)),
+        tx.done,
+      ]);
+    });
   }
 
   async size(roomName: string): Promise<number> {
@@ -673,18 +703,22 @@ export class CanvasChangeJournal {
 
   /** Persist a snapshot without pruning (repair / test helper). */
   async saveSnapshot(snapshot: CanvasSnapshot): Promise<CanvasSnapshot> {
-    const record: CanvasSnapshot = {
-      ...snapshot,
-      roomName: snapshot.roomName.trim(),
-    };
-    const db = await this.getDb();
-    await db.put(SNAPSHOT_STORE, record);
-    return record;
+    return withJournalWriteLock(this.dbName, async () => {
+      const record: CanvasSnapshot = {
+        ...snapshot,
+        roomName: snapshot.roomName.trim(),
+      };
+      const db = await this.getDb();
+      await db.put(SNAPSHOT_STORE, record);
+      return record;
+    });
   }
 
   async deleteSnapshot(roomName: string): Promise<void> {
-    const db = await this.getDb();
-    await db.delete(SNAPSHOT_STORE, roomName.trim());
+    await withJournalWriteLock(this.dbName, async () => {
+      const db = await this.getDb();
+      await db.delete(SNAPSHOT_STORE, roomName.trim());
+    });
   }
 
   /**
@@ -700,47 +734,49 @@ export class CanvasChangeJournal {
     snapshot: CanvasSnapshot,
     throughSeq: number,
   ): Promise<CanvasCompactionResult> {
-    const record: CanvasSnapshot = {
-      ...snapshot,
-      roomName: snapshot.roomName.trim(),
-    };
-    const db = await this.getDb();
-    const tx = db.transaction(
-      [SNAPSHOT_STORE, JOURNAL_STORE, JOURNAL_META_STORE],
-      "readwrite",
-    );
+    return withJournalWriteLock(this.dbName, async () => {
+      const record: CanvasSnapshot = {
+        ...snapshot,
+        roomName: snapshot.roomName.trim(),
+      };
+      const db = await this.getDb();
+      const tx = db.transaction(
+        [SNAPSHOT_STORE, JOURNAL_STORE, JOURNAL_META_STORE],
+        "readwrite",
+      );
 
-    const snapshotStore = tx.objectStore(SNAPSHOT_STORE);
-    const journalStore = tx.objectStore(JOURNAL_STORE);
-    const metaStore = tx.objectStore(JOURNAL_META_STORE);
+      const snapshotStore = tx.objectStore(SNAPSHOT_STORE);
+      const journalStore = tx.objectStore(JOURNAL_STORE);
+      const metaStore = tx.objectStore(JOURNAL_META_STORE);
 
-    await snapshotStore.put(record);
+      await snapshotStore.put(record);
 
-    const blocks = await journalStore.index("by-room").getAll(record.roomName);
-    const superseded = blocks.filter((block) => block.seq <= throughSeq);
-    await Promise.all(
-      superseded.map((block) => journalStore.delete(block.seq)),
-    );
+      const blocks = await journalStore.index("by-room").getAll(record.roomName);
+      const superseded = blocks.filter((block) => block.seq <= throughSeq);
+      await Promise.all(
+        superseded.map((block) => journalStore.delete(block.seq)),
+      );
 
-    const meta = await metaStore.get(record.roomName);
-    await metaStore.put({
-      ...meta,
-      roomName: record.roomName,
-      lastSeq: Math.max(meta?.lastSeq ?? 0, throughSeq),
-      opsAtSnapshot: record.opsAtSnapshot,
-      compactedAt: record.createdAt,
+      const meta = await metaStore.get(record.roomName);
+      await metaStore.put({
+        ...meta,
+        roomName: record.roomName,
+        lastSeq: Math.max(meta?.lastSeq ?? 0, throughSeq),
+        opsAtSnapshot: record.opsAtSnapshot,
+        compactedAt: record.createdAt,
+      });
+
+      await tx.done;
+
+      return {
+        snapshot: record,
+        deletedRecords: superseded.length,
+        reclaimedBytes: superseded.reduce(
+          (sum, block) => sum + block.update.length,
+          0,
+        ),
+      };
     });
-
-    await tx.done;
-
-    return {
-      snapshot: record,
-      deletedRecords: superseded.length,
-      reclaimedBytes: superseded.reduce(
-        (sum, block) => sum + block.update.length,
-        0,
-      ),
-    };
   }
 }
 

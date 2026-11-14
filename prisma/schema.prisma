@@ -163,6 +163,10 @@ model Venue {
   beaconPathLossExponent Float?
   seatWaitlists          VenueSeatWaitlist[]
   liveFeedbacks          VenueLiveFeedback[]
+  slaPenaltyPoints       Int       @default(0)
+  slaComplianceScore     Float?
+  slaLastAuditedAt       DateTime?
+  slaAudits              VenueSlaAudit[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -1166,4 +1170,28 @@ model WebhookOutboxEvent {
 
   @@index([state, nextAttemptAt])
   @@index([state, lockedUntil])
+}
+
+model VenueSlaAudit {
+  id                         String   @id @default(cuid())
+  venueId                    String
+  venue                      Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  periodStart                DateTime
+  periodEnd                  DateTime
+  thresholdVersion           String
+  status                     String
+  sampleCount                Int      @default(0)
+  avgWifiSpeedMbps           Float?
+  wifiUptimePercent          Float?
+  avgNoiseLevelDb            Float?
+  avgSeatAvailabilityPercent Float?
+  complianceScore            Float?
+  isCompliant                Boolean?
+  penaltyPoints              Int?
+  violations                 Json?
+  createdAt                  DateTime @default(now())
+
+  @@unique([venueId, periodStart, periodEnd, thresholdVersion])
+  @@index([venueId, periodEnd])
+  @@index([periodStart, periodEnd])
 }

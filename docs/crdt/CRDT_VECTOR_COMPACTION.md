@@ -200,6 +200,8 @@ Compaction in WorkSphere means **re-encoding the current converged state as one 
 
 A joining peer calls `loadRoomSnapshot()`, decodes the base64, and applies the snapshot with `Y.applyUpdate`. Because the snapshot is a normal Yjs update, the subsequent handshake still works: the peer's state vector reflects everything in the snapshot.
 
+The same checkpoint is mirrored into IndexedDB. `CanvasChangeJournal.compact()` writes the encoded update and its `Y.encodeStateVector` into the `snapshots` store and, in the **same readwrite transaction**, deletes every raw `journal` record whose sequence number the snapshot supersedes. The compactor round-trips the bytes through a scratch `Y.Doc` before and after the write, comparing checksums and state vectors, so a failed verification aborts the prune instead of losing history. `restoreFromJournal()` applies the verified baseline first and then replays any surviving journal blocks.
+
 ### 5.2 Why a full re-encode is safe
 
 `Y.encodeStateAsUpdate(doc)` is a lossless re-serialization of the same struct set. It does not:
@@ -247,14 +249,14 @@ Both are full-state encodings; neither is a log of deltas.
 
 The defaults in `canvasProvider.ts` are deliberately conservative. The table below documents the operating envelope and the signals that should trigger a review.
 
-| Signal                   | Default / threshold                      | Action                         | Rationale                                                                                                        |
-| :----------------------- | :--------------------------------------- | :----------------------------- | :--------------------------------------------------------------------------------------------------------------- |
-| Operation count          | `maxOperations = 500`                    | Full checkpoint                | Bounds replay cost for a fresh peer and caps the in-memory op counter.                                           |
-| Elapsed time             | `checkpointIntervalMs = 300000` (5 min)  | Full checkpoint if dirty       | Ensures a quiet room still persists after activity stops.                                                        |
-| Uncompacted transactions | `> 1,000`                                | Compact                        | Mirrors the server-side history-mode trigger; useful when raising the client threshold.                          |
-| Snapshot payload         | `> 5 MB`                                 | Compact and investigate growth | A snapshot this large usually indicates a soft-delete leak (see [§9](#9-tombstone-lifecycle-and-gc-trade-offs)). |
-| Tombstone ratio          | `deleted / total >= 0.40`                | Schedule compaction            | High tombstone density wastes bytes and slows joins.                                                             |
-| Offline backlog          | `pendingJournalCount() > 0` on reconnect | Replay before sync             | Prevents a stale journal from outliving the checkpoint that superseded it.                                       |
+| Signal                   | Default / threshold                       | Action                         | Rationale                                                                                                        |
+| :----------------------- | :---------------------------------------- | :----------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| Operation count          | `maxOperations = 500`                     | Full checkpoint                | Bounds replay cost for a fresh peer and caps the in-memory op counter.                                           |
+| Elapsed time             | `checkpointIntervalMs = 300000` (5 min)   | Full checkpoint if dirty       | Ensures a quiet room still persists after activity stops.                                                        |
+| Uncompacted transactions | `> 500` raw IndexedDB records or `> 5 MB` | Compact                        | Keeps the offline journal bounded so long drawing sessions do not slow reloads.                                  |
+| Snapshot payload         | `> 5 MB`                                  | Compact and investigate growth | A snapshot this large usually indicates a soft-delete leak (see [§9](#9-tombstone-lifecycle-and-gc-trade-offs)). |
+| Tombstone ratio          | `deleted / total >= 0.40`                 | Schedule compaction            | High tombstone density wastes bytes and slows joins.                                                             |
+| Offline backlog          | `pendingJournalCount() > 0` on reconnect  | Replay before sync             | Prevents a stale journal from outliving the checkpoint that superseded it.                                       |
 
 Heuristics are **advisory**. Yjs correctness does not depend on compaction frequency; a document that never compacts still converges. Compaction is a performance and storage concern, not a consistency requirement.
 

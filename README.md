@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-130%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-132%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-130-active-rockstars"><b>👥 Contributors (130)</b></a> •
+  <a href="#-contributors-132-active-rockstars"><b>👥 Contributors (132)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (130 Active Rockstars)
+### 🚀 Contributors (132 Active Rockstars)
 
-A massive thank you to all **130 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **132 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -896,6 +896,18 @@ A massive thank you to all **130 brilliant contributors and bots** building Work
         <sub><b>srnsksyp</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/shashankkshyp">
+        <img src="https://avatars.githubusercontent.com/u/197880779?v=4" width="55px;" height="55px;" alt="shashankkshyp" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>shashankkshyp</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/gokul8802">
+        <img src="https://avatars.githubusercontent.com/u/241746467?v=4" width="55px;" height="55px;" alt="gokul8802" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>gokul8802</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1005,6 +1017,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### ⭐ User Features
 
+- **Test Pilot Wings Contributor Badge**: Dynamic gamified SVG achievement badge awarded to early adopters testing bleeding-edge nomad features (`src/components/badges/TestPilotWingBadge.tsx`).
 - **Favorites System**: Save frequently visited spots
 - **Crowdsourced Ratings**: Rate venues on WiFi quality, outlets, noise levels, quietness
 - **Strict Chronological Booking Date Filter Validation**: Zod-based timestamp and ISO 8601 validation enforcing strict chronological bounds (`startDate <= endDate`) with configurable `maxRangeDays` limits and normalized UTC outputs (`src/lib/validations/dateFilter.ts`).
@@ -1078,6 +1091,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 💸 Web3, Solana Pay & Smart Escrow
 
+- **Automated Solana Escrow Refund Cron**: Background worker querying expired or cancelled desk booking escrow transactions, generating on-chain refund signatures through multi-region RPC quorum validation with idempotent reconciliation (`/api/cron/escrow-refund`, `src/lib/solana/escrowClient.ts`, [docs/solana/SOLANA_ESCROW_REFUND_CRON.md](./docs/solana/SOLANA_ESCROW_REFUND_CRON.md)).
 - **Solana Pay Engine**: High-contrast QR payment modal with dynamic payment request generation, Screen Wake Lock API integration to prevent display dimming during scan, and verifiable on-chain confirmation (protected against synthetic confirmation spoofing).
 - **Solana Optimistic Escrow Simulation**: Pre-flight RPC simulation with balance delta verification, transaction build pipeline, and fallback reconciliation for zero-latency desk escrow holds (`src/lib/solana/escrowClient.ts`).
 - **Solana Escrow Cluster RPC Failover Pool**: Resilient multi-endpoint RPC cluster failover with automated health probes, exponential jitter backoff, and optimistic client simulation for instant desk escrow deposits (`/api/pay/solana`, `/api/cron/escrow-refund`, `src/lib/solana/escrowClient.ts`).
@@ -1135,6 +1149,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🛡️ Zero-Knowledge Proofs, Security & Compliance
 
+- **N/2+1 Monotonic Redlock Fencing Token Quorum**: Distributed seat hold locking mechanism enforcing multi-instance Redis consensus with strict monotonic database fencing token validation across cluster failovers (`src/lib/locks/seatHoldLock.ts`).
 - **Cryptographically Signed Offline QR Code Passcards**: Ed25519 digital signatures and tamper-evident IndexedDB passcard storage enabling physical venue entry and clearance verification during offline network outages (`src/lib/security/offlineQrSigner.ts`, `src/lib/security/offlinePasscardStore.ts`).
 - **ZK-SNARK Coworking Membership Verifier**: Circom-compiled Groth16 zero-knowledge circuit for proving coworking membership passes and access tiers without disclosing nomad identity (`/api/zkp/membership/verify`, `circuits/membership_verifier.circom`).
 - **Decentralized DID Wallet & ZK-Age / Identity Verification**: Verify KYC and identity requirements without disclosing personal identity documents (`/test-student-zkp`, `/api/identity/verify`).

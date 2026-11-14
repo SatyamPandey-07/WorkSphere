@@ -1,6 +1,9 @@
 "use client";
 
+ fix/telemetry-ws-backoff-jitter
+
  fix/canvas-provider-idb-memory-leak
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -82,6 +85,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/telemetry-ws-backoff-jitter
+}
+
 }
 
 import React, { useState } from "react";
@@ -221,4 +227,5 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 
 import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
+import { storeOfflinePasscardsFromBooking } from '@/lib/security/offlinePasscardStore';
 
 interface BookingModalProps {
   venueId: string;
@@ -66,6 +67,10 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
         throw new Error(json.error || 'Failed to book');
       }
       
+      // Keep the signed offline passcard (when the server issued one) for use with no network. Best effort:
+      // a storage problem must not turn a confirmed booking into an error.
+      await storeOfflinePasscardsFromBooking(json.data).catch(() => 0);
+
       onSuccess(json.data.confirmationId);
     } catch (err: any) {
       setError(err.message || 'Failed to book');
@@ -148,7 +153,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
               value={date}
               disabled={isPending}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50"
+              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50"
             />
           </div>
           <div>
@@ -159,7 +164,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
               value={time}
               disabled={isPending}
               onChange={(e) => setTime(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50"
+              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50"
             />
           </div>
         </div>

@@ -8,19 +8,10 @@ import { eventBus } from "@/core/events";
 import "@/core/subscribers/booking";
 import "@/core/subscribers/guests";
 import { rateLimit } from "@/lib/rateLimit";
-import {
-  isValidBookingDate,
-  isValidTimeZone,
-  normalizeBookingTime,
-  parseBookingDateTime,
-} from "@/lib/bookingTime";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { conflictDateWindow, hasBookingConflict } from "@/lib/bookingOverlap";
 import { releaseSeatWebLock } from "@/lib/locks/seatHoldLock";
-import {
-  generateRecurringDates,
-  MAX_RECURRING_OCCURRENCES,
-} from "@/lib/booking/recurrence";
+import { validateRecurringReservation } from "@/lib/booking/recurringReservationValidation";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -45,12 +36,28 @@ export async function POST(request: NextRequest) {
 
   const venueId = typeof body.venueId === "string" ? body.venueId : "";
   const seatId = typeof body.seatId === "string" ? body.seatId : "";
-  const date = typeof body.date === "string" ? body.date : "";
-  const time = normalizeBookingTime(
-    typeof body.time === "string" ? body.time : "",
-  );
-  const timeZone = isValidTimeZone(body.timeZone) ? body.timeZone : "UTC";
-  const duration = Number(body.duration);
+  const validation = validateRecurringReservation(body);
+  if (!validation.success) {
+    return NextResponse.json(
+      {
+        error: "Invalid recurring reservation details",
+        fieldErrors: validation.fieldErrors,
+      },
+      { status: 400 },
+    );
+  }
+  const { time, timeZone, duration, frequency, dates } = validation.data;
+
+  if (!venueId || !seatId) {
+    const fieldErrors: Record<string, string> = {};
+    if (!venueId) fieldErrors.venueId = "venueId is required.";
+    if (!seatId) fieldErrors.seatId = "seatId is required.";
+    return NextResponse.json(
+      { error: "Invalid recurring reservation details", fieldErrors },
+      { status: 400 },
+    );
+  }
+
   const amenitiesNeeded: string[] = Array.isArray(body.amenitiesNeeded)
     ? body.amenitiesNeeded
         .filter((item: unknown): item is string => typeof item === "string")
@@ -71,52 +78,6 @@ export async function POST(request: NextRequest) {
         }))
         .slice(0, 20)
     : [];
-  const frequency =
-    typeof body.frequency === "string" ? body.frequency : "weekly";
-  const endDate =
-    typeof body.endDate === "string" && isValidBookingDate(body.endDate)
-      ? body.endDate
-      : null;
-  const occurrences =
-    typeof body.occurrences === "number" && body.occurrences > 0
-      ? Math.min(Math.floor(body.occurrences), MAX_RECURRING_OCCURRENCES)
-      : null;
-
-  if (
-    !venueId ||
-    !seatId ||
-    !isValidBookingDate(date) ||
-    !time ||
-    !Number.isInteger(duration) ||
-    duration < 30 ||
-    duration > 480
-  ) {
-    return NextResponse.json(
-      { error: "Invalid reservation details" },
-      { status: 400 },
-    );
-  }
-  if (!endDate && !occurrences) {
-    return NextResponse.json(
-      { error: "Provide either an end date or a number of occurrences" },
-      { status: 400 },
-    );
-  }
-  if (!["daily", "weekly", "monthly"].includes(frequency)) {
-    return NextResponse.json(
-      { error: "Invalid frequency. Must be daily, weekly, or monthly" },
-      { status: 400 },
-    );
-  }
-
-  const firstStart = parseBookingDateTime(date, time, timeZone);
-  if (!firstStart || firstStart.getTime() < Date.now() - 15 * 60 * 1000) {
-    return NextResponse.json(
-      { error: "You can't book a time in the past." },
-      { status: 400 },
-    );
-  }
-
   let customerEmail =
     typeof body.customerEmail === "string" ? body.customerEmail.trim() : "";
   if (!EMAIL_RE.test(customerEmail)) {
@@ -138,14 +99,6 @@ export async function POST(request: NextRequest) {
   });
   if (!seat) {
     return NextResponse.json({ error: "Seat not found" }, { status: 404 });
-  }
-
-  const dates = generateRecurringDates(date, frequency, endDate, occurrences);
-  if (dates.length === 0) {
-    return NextResponse.json(
-      { error: "No valid dates generated for the recurrence pattern" },
-      { status: 400 },
-    );
   }
 
   const recurringGroupId = `rg_${randomBytes(8).toString("hex")}`;

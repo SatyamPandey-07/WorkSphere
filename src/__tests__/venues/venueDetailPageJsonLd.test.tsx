@@ -31,6 +31,9 @@ jest.mock("@/components/WeatherCloudRenderer", () => ({
 jest.mock("@/components/noise/NoiseForecastChart", () => ({
   NoiseForecastChart: () => null,
 }));
+jest.mock("@/components/venues/HourlyNoiseHeatGraph", () => ({
+  HourlyNoiseHeatGraph: () => null,
+}));
 jest.mock("@/components/venue/SeatingForecastChart", () => ({
   SeatingForecastChart: () => null,
 }));

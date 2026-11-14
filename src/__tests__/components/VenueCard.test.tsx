@@ -1,260 +1,154 @@
-import { render, screen, fireEvent, act } from "@testing-library/react";
-import "@testing-library/jest-dom";
-import { VenueCard } from "@/components/VenueCard";
+import React from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { VenueCard } from "@/components/venue/VenueCard";
 
-const mockPrefetch = jest.fn();
-jest.mock("next/navigation", () => ({
-  useRouter: () => ({ prefetch: mockPrefetch }),
-}));
-jest.mock("@/context/CurrencyContext", () => ({
-  useCurrency: () => ({ currency: "USD", setCurrency: jest.fn() }),
-}));
-
-const mockVenue = {
-  id: "test-venue-1",
-  name: "Coffee Shop",
-  category: "cafe",
-  address: "123 Main St",
-  distance: "0.5 km",
-  rating: 4.5,
-  position: { lat: 37.7749, lng: -122.4194 },
-  wifiQuality: 4,
-  hasOutlets: true,
-  noiseLevel: "quiet",
-};
-
-describe("VenueCard", () => {
-  const mockOnGetDirections = jest.fn();
-  const mockOnSaveFavorite = jest.fn();
-  const mockOnRate = jest.fn();
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  const renderVenueCard = async (venue = mockVenue) => {
-    const utils = render(
-      <VenueCard
-        venue={venue}
-        onGetDirections={mockOnGetDirections}
-        onSaveFavorite={mockOnSaveFavorite}
-        onRate={mockOnRate}
-      />,
-    );
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    return utils;
+describe("VenueCard Accessibility & Actions", () => {
+  const mockVenue = {
+    id: "v-101",
+    name: "CoWork Space Bandra",
+    description: "Quiet workspace with high-speed internet.",
   };
 
-  it("renders venue name and category", async () => {
-    await renderVenueCard();
-
-    expect(screen.getByText("Coffee Shop")).toBeInTheDocument();
-    expect(screen.getByText("cafe")).toBeInTheDocument();
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
-  it("renders address when provided", async () => {
-    await renderVenueCard();
+  test("renders all action buttons with descriptive aria-label attributes", () => {
+    render(<VenueCard venue={mockVenue} />);
 
-    expect(screen.getByText("123 Main St")).toBeInTheDocument();
-  });
-
-  it("shows WiFi indicator when venue has WiFi", async () => {
-    await renderVenueCard();
-
-    expect(screen.getAllByText(/WiFi/)[0]).toBeInTheDocument();
-  });
-
-  it("shows Outlets indicator when venue has outlets", async () => {
-    await renderVenueCard();
-
-    expect(screen.getAllByText(/Outlets/)[0]).toBeInTheDocument();
-  });
-
-  it("renders Mach Speed classification badge when venue has wifiSpeed", async () => {
-    const venueWithSpeed = {
-      ...mockVenue,
-      id: "venue-mach-speed",
-      wifiSpeed: 300,
-    };
-    await renderVenueCard(venueWithSpeed);
-
-    expect(
-      screen.getByText("Hypersonic Mach 5 (>250 Mbps)"),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("jet-icon")).toBeInTheDocument();
-  });
-
-  it("calls onGetDirections when Directions button is clicked", async () => {
-    await renderVenueCard();
-
-    fireEvent.click(screen.getByText("Directions"));
-    expect(mockOnGetDirections).toHaveBeenCalledWith(mockVenue);
-  });
-
-  it("calls onSaveFavorite when heart icon is clicked", async () => {
-    await renderVenueCard();
-
-    // Find the heart button (favorite button)
-    const favoriteButton = document
-      .querySelector("button svg.lucide-heart")
-      ?.closest("button");
-    if (favoriteButton) {
-      fireEvent.click(favoriteButton);
-      expect(mockOnSaveFavorite).toHaveBeenCalledWith(mockVenue);
-    }
-  });
-
-  it("calls onRate when Rate button is clicked", async () => {
-    await renderVenueCard();
-
-    fireEvent.click(screen.getByText("Rate"));
-    expect(mockOnRate).toHaveBeenCalledWith(mockVenue);
-  });
-
-  it("renders all action buttons", async () => {
-    await renderVenueCard();
-
-    // Verify all actions are available
-    expect(screen.getByText("Directions")).toBeInTheDocument();
-    expect(screen.getByText("Rate")).toBeInTheDocument();
-  });
-
-  it("renders study-specific verification tags for library category", async () => {
-    const mockLibrary = {
-      ...mockVenue,
-      id: "test-library-1",
-      name: "Central Library",
-      category: "library",
-    };
-    await renderVenueCard(mockLibrary);
-
-    expect(screen.getByText(/Silent Room/)).toBeInTheDocument();
-    expect(screen.getByText(/Study Tables/)).toBeInTheDocument();
-    expect(screen.getByText(/Scanners\/Printers/)).toBeInTheDocument();
-  });
-
-  it("attaches hover predictor ref to the card root element", async () => {
-    const { container } = await renderVenueCard();
-    const card = container.firstElementChild as HTMLElement;
-    expect(card).toBeInTheDocument();
-  });
-
-  it("calls router.prefetch with venue detail route on hover predict", async () => {
-    await renderVenueCard();
-    expect(mockPrefetch).not.toHaveBeenCalled();
-
-    const card = document.querySelector(
-      '[class*="rounded-3xl"]',
-    ) as HTMLElement;
-    if (card) {
-      const realNow = Date.now;
-      Date.now = () => 1000000;
-
-      const enterEvent = new MouseEvent("mouseenter", { bubbles: true });
-      card.dispatchEvent(enterEvent);
-
-      for (let i = 0; i < 6; i++) {
-        const moveEvent = new MouseEvent("mousemove", {
-          bubbles: true,
-          clientX: 100 + i * 2,
-          clientY: 100,
-        });
-        card.dispatchEvent(moveEvent);
-      }
-
-      Date.now = realNow;
-
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-      });
-    }
-
-    expect(mockPrefetch).toHaveBeenCalledWith("/venues/test-venue-1");
-  });
-
-  it("does not call router.prefetch when venue has no id", async () => {
-    const venueNoId = { ...mockVenue, id: "" };
-    await renderVenueCard(venueNoId);
-    expect(mockPrefetch).not.toHaveBeenCalled();
-  });
-
-  it("renders a verified host badge when isClaimed is true", async () => {
-    const claimedVenue = { ...mockVenue, isClaimed: true };
-    await renderVenueCard(claimedVenue);
-    expect(screen.getByTitle("Verified Host")).toBeInTheDocument();
-  });
-
-  it("prevents stale venue data from overwriting state when rapidly switching venues", async () => {
-    const originalFetch = global.fetch;
-    let resolveVenueA: (value: any) => void = () => {};
-    let resolveVenueB: (value: any) => void = () => {};
-
-    const mockFetch = jest.fn().mockImplementation((url: string) => {
-      const decodedUrl = decodeURIComponent(url.replace(/\+/g, " "));
-      if (decodedUrl.includes("Venue A")) {
-        return new Promise((resolve) => {
-          resolveVenueA = (data: any) =>
-            resolve({ ok: true, json: () => Promise.resolve(data) });
-        });
-      } else if (decodedUrl.includes("Venue B")) {
-        return new Promise((resolve) => {
-          resolveVenueB = (data: any) =>
-            resolve({ ok: true, json: () => Promise.resolve(data) });
-        });
-      } else {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ metrics: {} }),
-        });
-      }
+    const bookmarkBtn = screen.getByRole("button", {
+      name: `Bookmark ${mockVenue.name}`,
+    });
+    const favoriteBtn = screen.getByRole("button", {
+      name: `Favorite ${mockVenue.name}`,
+    });
+    const shareBtn = screen.getByRole("button", {
+      name: `Share ${mockVenue.name}`,
     });
 
-    global.fetch = mockFetch as any;
+    expect(bookmarkBtn).toBeInTheDocument();
+    expect(favoriteBtn).toBeInTheDocument();
+    expect(shareBtn).toBeInTheDocument();
+  });
 
-    try {
-      const venueA = {
-        ...mockVenue,
-        id: "test-venue-A",
-        name: "Venue A",
-        position: { lat: 1, lng: 1 },
-      };
-      const venueB = {
-        ...mockVenue,
-        id: "test-venue-B",
-        name: "Venue B",
-        position: { lat: 2, lng: 2 },
-      };
+  test("applies focus-visible ring classes for keyboard navigation", () => {
+    render(<VenueCard venue={mockVenue} />);
 
-      const { rerender } = render(<VenueCard venue={venueA} />);
+    const bookmarkBtn = screen.getByRole("button", {
+      name: `Bookmark ${mockVenue.name}`,
+    });
+    expect(bookmarkBtn).toHaveClass("focus-visible:ring-emerald-500");
+    expect(bookmarkBtn).toHaveClass("focus-visible:ring-offset-zinc-900");
+  });
 
-      // Switch rapidly to Venue B before Venue A resolves
-      rerender(<VenueCard venue={venueB} />);
+  test("triggers handlers on button click", () => {
+    const onBookmarkMock = jest.fn();
+    render(<VenueCard venue={mockVenue} onBookmark={onBookmarkMock} />);
 
-      // Resolve Venue B first
-      await act(async () => {
-        resolveVenueB({
-          photos: ["https://example.com/b.jpg"],
-          categories: ["Category B"],
-        });
-      });
+    const bookmarkBtn = screen.getByRole("button", {
+      name: `Bookmark ${mockVenue.name}`,
+    });
+    fireEvent.click(bookmarkBtn);
 
-      expect(screen.getByText("Category B")).toBeInTheDocument();
+    expect(onBookmarkMock).toHaveBeenCalledWith(mockVenue.id);
+  });
 
-      // Resolve Venue A's stale response afterward
-      await act(async () => {
-        resolveVenueA({
-          photos: ["https://example.com/a.jpg"],
-          categories: ["Stale Category A"],
-        });
-      });
+  test("does not render a booking action without an onBook handler", () => {
+    render(<VenueCard venue={mockVenue} />);
 
-      // Stale data from Venue A must not overwrite Venue B's data
-      expect(screen.queryByText("Stale Category A")).not.toBeInTheDocument();
-      expect(screen.getByText("Category B")).toBeInTheDocument();
-    } finally {
-      global.fetch = originalFetch;
-    }
+    expect(
+      screen.queryByRole("button", {
+        name: `Instant booking for ${mockVenue.name}`,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  test("invokes onBook when the primary booking button is clicked", () => {
+    const onBookMock = jest.fn();
+    render(<VenueCard venue={mockVenue} onBook={onBookMock} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Instant booking for ${mockVenue.name}`,
+      }),
+    );
+
+    expect(onBookMock).toHaveBeenCalledWith(mockVenue.id);
+  });
+
+  test("exposes the booking hotkey and shows the tooltip badge on keyboard focus", () => {
+    jest.useFakeTimers();
+    render(<VenueCard venue={mockVenue} onBook={jest.fn()} />);
+
+    const bookingBtn = screen.getByRole("button", {
+      name: `Instant booking for ${mockVenue.name}`,
+    });
+
+    expect(bookingBtn).toHaveAttribute("aria-keyshortcuts", "B");
+    expect(bookingBtn).not.toHaveAttribute("aria-describedby");
+
+    act(() => bookingBtn.focus());
+    act(() => {
+      jest.advanceTimersByTime(200);
+    });
+
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Instant booking");
+    expect(bookingBtn).toHaveAttribute("aria-describedby", tooltip.id);
+    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveTextContent(
+      "B",
+    );
+
+    act(() => bookingBtn.blur());
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  test("shows the hotkey tooltip on pointer hover", () => {
+    jest.useFakeTimers();
+    render(<VenueCard venue={mockVenue} onBook={jest.fn()} />);
+
+    const bookingBtn = screen.getByRole("button", {
+      name: `Instant booking for ${mockVenue.name}`,
+    });
+
+    act(() => {
+      fireEvent.mouseEnter(bookingBtn.parentElement as HTMLElement);
+    });
+    act(() => {
+      jest.advanceTimersByTime(200);
+    });
+
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Instant booking");
+  });
+
+  test("disables tooltip animations when prefers-reduced-motion is set", () => {
+    jest.useFakeTimers();
+    render(<VenueCard venue={mockVenue} onBook={jest.fn()} />);
+
+    act(() =>
+      screen
+        .getByRole("button", {
+          name: `Instant booking for ${mockVenue.name}`,
+        })
+        .focus(),
+    );
+    act(() => {
+      jest.advanceTimersByTime(200);
+    });
+
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveClass("motion-reduce:animate-none");
+    expect(tooltip).toHaveClass("motion-reduce:transition-none");
+  });
+
+  test("supports rendering the booking action without a hotkey hint", () => {
+    render(
+      <VenueCard venue={mockVenue} onBook={jest.fn()} bookingHotkey={null} />,
+    );
+
+    const bookingBtn = screen.getByRole("button", {
+      name: `Instant booking for ${mockVenue.name}`,
+    });
+    expect(bookingBtn).not.toHaveAttribute("aria-keyshortcuts");
   });
 });

@@ -7,7 +7,15 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { Volume2, Mic, Square, Radio, Sliders, Sparkles, Zap } from "lucide-react";
+import {
+  Volume2,
+  Mic,
+  Square,
+  Radio,
+  Sliders,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 import {
   analyzeFrequencyBands,
   getFrequencyProfile,
@@ -15,6 +23,7 @@ import {
 } from "@/lib/noise/spectrumAnalyzer";
 import { normalizeFrequencyGain } from "@/lib/noise/calibration";
 import { useBatteryLowPowerThrottle } from "@/hooks/useBatteryLowPowerThrottle";
+import { useElementVisibility } from "@/hooks/useElementVisibility";
 
 export interface AmbientNoiseSpectrumVisualizerProps {
   venueId?: string;
@@ -175,7 +184,7 @@ export function AmbientNoiseSpectrumVisualizer({
 }: AmbientNoiseSpectrumVisualizerProps) {
   const {
     isLowPower,
-    mode: powerMode,
+    mode: _powerMode,
     webglPolicy,
     shouldRenderWebGLFrame,
     setManualOverride,
@@ -205,6 +214,11 @@ export function AmbientNoiseSpectrumVisualizer({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const { ref: containerRef, isVisible } =
+    useElementVisibility<HTMLDivElement>();
+  const isVisibleRef = useRef<boolean>(isVisible);
+  isVisibleRef.current = isVisible;
+  const lastDrawnDbRef = useRef<number | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const simIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const simWaterfallRafRef = useRef<number | null>(null);
@@ -462,8 +476,26 @@ export function AmbientNoiseSpectrumVisualizer({
 
       const renderLiveFrame = (now: number) => {
         if (!analyserRef.current) return;
+        if (!isVisibleRef.current) {
+          animFrameRef.current = null;
+          return;
+        }
         if (shouldRenderWebGLFrame(now)) {
           analyserRef.current.getByteFrequencyData(dataArray);
+
+          let byteSum = 0;
+          for (let i = 0; i < bufferLength; i++) byteSum += dataArray[i];
+          const instantDb =
+            30 + (byteSum / Math.max(1, bufferLength) / 255) * 65;
+
+          if (
+            lastDrawnDbRef.current !== null &&
+            Math.abs(instantDb - lastDrawnDbRef.current) < 0.5
+          ) {
+            animFrameRef.current = requestAnimationFrame(renderLiveFrame);
+            return;
+          }
+          lastDrawnDbRef.current = instantDb;
 
           // Push FFT byte data to WebGL dynamic texture backing
           pushWaterfallRow(dataArray);
@@ -516,9 +548,94 @@ export function AmbientNoiseSpectrumVisualizer({
     }
   }, [pushWaterfallRow, shouldRenderWebGLFrame]);
 
+  // Resume live mic RAF loop cleanly when visibility returns
+  useEffect(() => {
+    if (
+      !isLiveMic ||
+      !isVisible ||
+      animFrameRef.current !== null ||
+      !analyserRef.current
+    ) {
+      return;
+    }
+    const analyser = analyserRef.current;
+    const audioCtx = audioContextRef.current;
+    if (!audioCtx) return;
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const resumeLiveFrame = (now: number) => {
+      if (!analyserRef.current || !isVisibleRef.current) {
+        animFrameRef.current = null;
+        return;
+      }
+      if (shouldRenderWebGLFrame(now)) {
+        analyserRef.current.getByteFrequencyData(dataArray);
+        let byteSum = 0;
+        for (let i = 0; i < bufferLength; i++) byteSum += dataArray[i];
+        const instantDb = 30 + (byteSum / Math.max(1, bufferLength) / 255) * 65;
+
+        if (
+          lastDrawnDbRef.current === null ||
+          Math.abs(instantDb - lastDrawnDbRef.current) >= 0.5
+        ) {
+          lastDrawnDbRef.current = instantDb;
+          pushWaterfallRow(dataArray);
+          const step = Math.max(1, Math.floor(bufferLength / 24));
+          const newBars: number[] = [];
+          let totalEnergy = 0;
+          for (let i = 0; i < 24; i++) {
+            const startIdx = i * step;
+            let sum = 0;
+            for (let j = 0; j < step && startIdx + j < bufferLength; j++) {
+              sum += dataArray[startIdx + j];
+            }
+            const avgByte = sum / step;
+            newBars.push(
+              normalizeFrequencyGain(Math.round((avgByte / 255) * 100)),
+            );
+            totalEnergy += avgByte;
+          }
+          setCurrentDb(Math.round(30 + (totalEnergy / 24 / 255) * 65));
+          setBars(newBars);
+          setPeaks((prev) =>
+            prev.map((p, idx) => Math.max(p * 0.95, newBars[idx] || 0)),
+          );
+          setFrequencySpectrum(
+            analyzeFrequencyBands(
+              dataArray,
+              audioCtx.sampleRate,
+              analyser.fftSize,
+            ),
+          );
+        }
+      }
+      animFrameRef.current = requestAnimationFrame(resumeLiveFrame);
+    };
+
+    animFrameRef.current = requestAnimationFrame(resumeLiveFrame);
+    return () => {
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, [isLiveMic, isVisible, pushWaterfallRow, shouldRenderWebGLFrame]);
+
   // Continuous simulated ambient acoustic telemetry & waterfall loop when microphone is inactive
   useEffect(() => {
-    if (isLiveMic) return;
+    if (isLiveMic || !isVisible) {
+      if (simWaterfallRafRef.current !== null) {
+        cancelAnimationFrame(simWaterfallRafRef.current);
+        simWaterfallRafRef.current = null;
+      }
+      if (simIntervalRef.current !== null) {
+        clearInterval(simIntervalRef.current);
+        simIntervalRef.current = null;
+      }
+      return;
+    }
 
     const baseDb = targetAvgDb;
     const isQuiet = baseDb < 50;
@@ -604,7 +721,13 @@ export function AmbientNoiseSpectrumVisualizer({
         clearInterval(simIntervalRef.current);
       }
     };
-  }, [isLiveMic, targetAvgDb, pushWaterfallRow]);
+  }, [
+    isLiveMic,
+    isVisible,
+    targetAvgDb,
+    pushWaterfallRow,
+    shouldRenderWebGLFrame,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -646,6 +769,7 @@ export function AmbientNoiseSpectrumVisualizer({
 
   return (
     <div
+      ref={containerRef}
       data-testid="ambient-noise-spectrum-visualizer"
       className={`p-5 bg-zinc-900/90 border border-zinc-800/80 rounded-2xl shadow-lg backdrop-blur-md transition-all ${className}`}
     >
@@ -728,8 +852,8 @@ export function AmbientNoiseSpectrumVisualizer({
                 manualOverride === "low_power"
                   ? null
                   : manualOverride === "critical"
-                  ? null
-                  : "low_power",
+                    ? null
+                    : "low_power",
               );
             }}
             title={
@@ -745,10 +869,14 @@ export function AmbientNoiseSpectrumVisualizer({
           >
             <Zap
               className={`w-3 h-3 ${
-                isLowPower ? "text-amber-400 fill-amber-400/30" : "text-zinc-500"
+                isLowPower
+                  ? "text-amber-400 fill-amber-400/30"
+                  : "text-zinc-500"
               }`}
             />
-            <span>{isLowPower ? `ECO ${webglPolicy.targetFps}FPS` : "60FPS"}</span>
+            <span>
+              {isLowPower ? `ECO ${webglPolicy.targetFps}FPS` : "60FPS"}
+            </span>
           </button>
 
           {/* Colormap Toggle (only when waterfall is visible) */}

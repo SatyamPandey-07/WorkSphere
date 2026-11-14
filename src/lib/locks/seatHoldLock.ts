@@ -6,8 +6,87 @@
  */
 
 import { getRedis } from "@/lib/redis";
+import { getRedisKeyspaceManager } from "@/lib/redis/keyspaceNotifications";
 
 export const DEFAULT_LOCK_TTL_SECONDS = 300; // 5 minutes
+export const BASE_DRIFT_FACTOR = 0.01;
+const NS_PER_MS = BigInt(1_000_000);
+
+export class LockValidityError extends Error {
+  readonly code = "LOCK_VALIDITY_ERROR";
+  readonly fencingToken?: bigint;
+  readonly validityRemainingMs: number;
+
+  constructor(
+    message: string,
+    validityRemainingMs: number,
+    fencingToken?: bigint,
+  ) {
+    super(message);
+    this.name = "LockValidityError";
+    this.validityRemainingMs = validityRemainingMs;
+    this.fencingToken = fencingToken;
+  }
+}
+
+/**
+ * High-resolution monotonic nanosecond clock backed by process.hrtime.bigint().
+ */
+export function getMonotonicNowNs(): bigint {
+  if (
+    typeof process !== "undefined" &&
+    typeof process.hrtime?.bigint === "function"
+  ) {
+    return process.hrtime.bigint();
+  }
+  const ms =
+    typeof performance !== "undefined" ? performance.now() : Date.now();
+  return BigInt(Math.floor(ms * 1_000_000));
+}
+
+let monotonicFencingSeq: bigint = BigInt(0);
+
+/**
+ * Generates a strictly monotonic 64-bit BigInt fencing token immune to 32-bit wrap-around.
+ */
+export function nextMonotonicFencingToken(
+  previousToken?: bigint | string | number,
+): bigint {
+  const prev =
+    typeof previousToken === "bigint"
+      ? previousToken
+      : previousToken !== undefined && previousToken !== null
+        ? BigInt(previousToken)
+        : BigInt(0);
+  const candidate = monotonicFencingSeq + BigInt(1);
+  const next = candidate > prev ? candidate : prev + BigInt(1);
+  monotonicFencingSeq = next;
+  return next;
+}
+
+export function resetMonotonicFencingSequence(
+  initial: bigint = BigInt(0),
+): void {
+  monotonicFencingSeq = initial;
+}
+
+/**
+ * Computes dynamic clock drift allowance (ms) from monotonic acquisition duration
+ * and observed inter-node clock skew so valid quorum locks are not falsely expired.
+ */
+export function computeDynamicClockDriftMs(
+  ttlMs: number,
+  elapsedMonotonicNs: bigint,
+  observedSkewMs: number = 0,
+): number {
+  const elapsedMs =
+    Number(elapsedMonotonicNs / NS_PER_MS) +
+    Number(elapsedMonotonicNs % NS_PER_MS) / 1_000_000;
+  const baseDrift = Math.ceil(ttlMs * BASE_DRIFT_FACTOR);
+  const dynamicOverhead =
+    Math.ceil(elapsedMs * 0.5) + Math.max(0, Math.ceil(observedSkewMs));
+  return Math.max(baseDrift, dynamicOverhead) + 2;
+}
 
 export interface SeatLockData {
   venueId: string;
@@ -17,16 +96,68 @@ export interface SeatLockData {
   heldAt: number;
   expiresAt: number;
   version: number;
+  fencingToken?: string;
+  driftAllowanceMs?: number;
+  acquiredMonotonicNs?: string;
 }
 
 export interface AcquireLockResult {
   success: boolean;
   lock?: SeatLockData;
+  fencingToken?: bigint;
+  driftAllowanceMs?: number;
   heldBy?: string;
   heldByName?: string;
   expiresAt?: number;
   remainingSeconds?: number;
   reason?: "ALREADY_HELD" | "ERROR";
+}
+
+/**
+ * Validates remaining lease validity using monotonic elapsed time and dynamic drift compensation.
+ * Throws LockValidityError if effective remaining validity is <= 0.
+ */
+export function assertLockLeaseValid(
+  lock: SeatLockData,
+  options?: {
+    observedSkewMs?: number;
+    nowMonotonicNs?: bigint;
+    nowWallMs?: number;
+  },
+): { valid: true; remainingValidityMs: number; fencingToken: bigint } {
+  const fencingToken = lock.fencingToken
+    ? BigInt(lock.fencingToken)
+    : BigInt(lock.version || 1);
+  const ttlMs = Math.max(0, lock.expiresAt - lock.heldAt);
+  const driftAllowanceMs =
+    lock.driftAllowanceMs ??
+    computeDynamicClockDriftMs(ttlMs, BigInt(0), options?.observedSkewMs ?? 0);
+
+  let elapsedMs: number;
+  if (lock.acquiredMonotonicNs) {
+    const startNs = BigInt(lock.acquiredMonotonicNs);
+    const nowNs = options?.nowMonotonicNs ?? getMonotonicNowNs();
+    const deltaNs = nowNs >= startNs ? nowNs - startNs : BigInt(0);
+    elapsedMs =
+      Number(deltaNs / NS_PER_MS) + Number(deltaNs % NS_PER_MS) / 1_000_000;
+  } else {
+    const nowWall = options?.nowWallMs ?? Date.now();
+    elapsedMs = Math.max(0, nowWall - lock.heldAt);
+  }
+
+  const skew = Math.max(0, options?.observedSkewMs ?? 0);
+  const effectiveDrift = Math.max(0, skew - driftAllowanceMs);
+  const remainingValidityMs = ttlMs - elapsedMs - effectiveDrift;
+
+  if (remainingValidityMs <= 0) {
+    throw new LockValidityError(
+      `Seat lock lease expired or exceeded dynamic clock drift tolerance (${remainingValidityMs.toFixed(2)}ms)`,
+      remainingValidityMs,
+      fencingToken,
+    );
+  }
+
+  return { valid: true, remainingValidityMs, fencingToken };
 }
 
 // In-memory fallback for local development or when Upstash Redis is unconfigured
@@ -122,12 +253,15 @@ export async function acquireSeatWebLock(
   ttlSeconds: number = DEFAULT_LOCK_TTL_SECONDS,
 ): Promise<AcquireLockResult> {
   const key = getLockKey(venueId, seatId);
+  const acquireStartNs = getMonotonicNowNs();
   const now = Date.now();
   const validTtl = Number.isFinite(ttlSeconds)
     ? ttlSeconds
     : DEFAULT_LOCK_TTL_SECONDS;
   const clampedTtl = Math.min(Math.max(validTtl, 10), 600);
-  const expiresAt = now + clampedTtl * 1000;
+  const ttlMs = clampedTtl * 1000;
+  const expiresAt = now + ttlMs;
+  const initialToken = nextMonotonicFencingToken();
 
   const redis = getRedis();
 
@@ -141,6 +275,8 @@ export async function acquireSeatWebLock(
         heldAt: now,
         expiresAt,
         version: 1,
+        fencingToken: initialToken.toString(),
+        acquiredMonotonicNs: acquireStartNs.toString(),
       };
 
       // Single atomic round trip: acquire if free, renew if we already own it,
@@ -151,13 +287,41 @@ export async function acquireSeatWebLock(
         [userId, JSON.stringify(lockPayload), String(clampedTtl)],
       );
 
-      const [flag, rawLock] = Array.isArray(rawResult)
-        ? rawResult
-        : [0, null];
+      const acquireEndNs = getMonotonicNowNs();
+      const elapsedNs =
+        acquireEndNs >= acquireStartNs
+          ? acquireEndNs - acquireStartNs
+          : BigInt(0);
+      const driftAllowanceMs = computeDynamicClockDriftMs(ttlMs, elapsedNs);
+
+      const [flag, rawLock] = Array.isArray(rawResult) ? rawResult : [0, null];
       const currentLock = parseLockValue(rawLock);
 
       if (Number(flag) === 1) {
-        return { success: true, lock: currentLock ?? lockPayload };
+ fix/redlock-monotonic-fencing-drift
+        const resolvedLock: SeatLockData = {
+          ...(currentLock ?? lockPayload),
+          driftAllowanceMs,
+          acquiredMonotonicNs: acquireEndNs.toString(),
+        };
+        const resolvedToken = resolvedLock.fencingToken
+          ? BigInt(resolvedLock.fencingToken)
+          : initialToken;
+        return {
+          success: true,
+          lock: resolvedLock,
+          fencingToken: resolvedToken,
+          driftAllowanceMs,
+        };
+
+        const finalLock = currentLock ?? lockPayload;
+        getRedisKeyspaceManager().registerDeskTimer(
+          venueId,
+          seatId,
+          finalLock.expiresAt,
+        );
+        return { success: true, lock: finalLock };
+ main
       }
 
       const remainingSec = currentLock
@@ -173,7 +337,10 @@ export async function acquireSeatWebLock(
         remainingSeconds: remainingSec,
       };
     } catch (err) {
-      console.warn("[SeatLock] Redis lock acquisition failed, falling back to memory:", err);
+      console.warn(
+        "[SeatLock] Redis lock acquisition failed, falling back to memory:",
+        err,
+      );
     }
   }
 
@@ -188,9 +355,18 @@ export async function acquireSeatWebLock(
       heldBy: existing.userId,
       heldByName: existing.userName,
       expiresAt: existing.expiresAt,
-      remainingSeconds: Math.max(0, Math.ceil((existing.expiresAt - now) / 1000)),
+      remainingSeconds: Math.max(
+        0,
+        Math.ceil((existing.expiresAt - now) / 1000),
+      ),
     };
   }
+
+  const acquireEndNs = getMonotonicNowNs();
+  const elapsedNs =
+    acquireEndNs >= acquireStartNs ? acquireEndNs - acquireStartNs : BigInt(0);
+  const driftAllowanceMs = computeDynamicClockDriftMs(ttlMs, elapsedNs);
+  const token = nextMonotonicFencingToken(existing?.fencingToken);
 
   const lockPayload: SeatLockData = {
     venueId,
@@ -200,10 +376,26 @@ export async function acquireSeatWebLock(
     heldAt: now,
     expiresAt,
     version: (existing?.version ?? 0) + 1,
+    fencingToken: token.toString(),
+    driftAllowanceMs,
+    acquiredMonotonicNs: acquireEndNs.toString(),
   };
 
   memoryLocks.set(key, lockPayload);
+ fix/redlock-monotonic-fencing-drift
+  return {
+    success: true,
+    lock: lockPayload,
+    fencingToken: token,
+    driftAllowanceMs,
+  };
+  getRedisKeyspaceManager().registerDeskTimer(
+    venueId,
+    seatId,
+    lockPayload.expiresAt,
+  );
   return { success: true, lock: lockPayload };
+ main
 }
 
 /**
@@ -217,13 +409,18 @@ export async function releaseSeatWebLock(
   const key = getLockKey(venueId, seatId);
   const redis = getRedis();
 
+  getRedisKeyspaceManager().unregisterDeskTimer(venueId, seatId);
+
   if (redis) {
     try {
       // Atomic compare-and-delete: never removes a lock owned by someone else.
       const released = await redis.eval(SEAT_LOCK_RELEASE_LUA, [key], [userId]);
       return Number(released) === 1;
     } catch (err) {
-      console.warn("[SeatLock] Redis release failed, falling back to memory:", err);
+      console.warn(
+        "[SeatLock] Redis release failed, falling back to memory:",
+        err,
+      );
     }
   }
 
@@ -321,7 +518,11 @@ interface HeartbeatEntry {
 
 const activeHeartbeats = new Map<string, HeartbeatEntry>();
 
-function getHeartbeatKey(venueId: string, seatId: string, userId?: string): string {
+function getHeartbeatKey(
+  venueId: string,
+  seatId: string,
+  userId?: string,
+): string {
   return userId ? `${venueId}:${seatId}:${userId}` : `${venueId}:${seatId}`;
 }
 
@@ -377,7 +578,10 @@ export function startSeatLockRenewalHeartbeat(
         onRenewFailed?.(result.reason || "RENEWAL_REJECTED");
       }
     } catch (err: any) {
-      console.warn(`[SeatLock Heartbeat] Renewal failed for ${venueId}:${seatId}:`, err);
+      console.warn(
+        `[SeatLock Heartbeat] Renewal failed for ${venueId}:${seatId}:`,
+        err,
+      );
       stopSeatLockRenewalHeartbeat(venueId, seatId, userId);
       onRenewFailed?.(err?.message || "HEARTBEAT_ERROR");
     }
@@ -473,6 +677,11 @@ export const SeatHoldHeartbeatService = {
 export function resetMemorySeatLocks(): void {
   stopAllSeatLockRenewalHeartbeats();
   memoryLocks.clear();
+ fix/redlock-monotonic-fencing-drift
+  resetMonotonicFencingSequence();
+
+  getRedisKeyspaceManager().reset();
+ main
 }
 
 export interface SeatWebLockOptions {
@@ -588,4 +797,3 @@ export async function withSeatWebLock<T>(
   // Fallback when Web Locks API is unavailable
   return callback(() => {});
 }
-

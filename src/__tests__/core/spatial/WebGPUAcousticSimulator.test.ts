@@ -5,11 +5,14 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { simulateAcousticsCpu } from "../../../core/spatial/acousticCpu";
 import {
+  ACOUSTIC_PARAMS_BYTES,
   AcousticMaterial,
   BAND_COUNT,
   BIN_DURATION_S,
   GRID_CELLS,
   MATERIAL_ABSORPTION,
+  MAX_ACOUSTIC_SOURCES,
+  SOURCE_BLOCK_BYTES,
   TIME_BINS,
   WebGPUAcousticSimulator,
   analyzeAcousticOutput,
@@ -17,6 +20,8 @@ import {
   estimateRt60,
   isWebGPUSupported,
   packMaterialTable,
+  packSourceBlock,
+  resolveAcousticSources,
   validateAcousticInput,
   type AcousticMaterialId,
   type AcousticScene,
@@ -183,6 +188,118 @@ describe("CPU simulation", () => {
   });
 });
 
+describe("multi-source CPU simulation", () => {
+  const sceneAt = (source: AcousticScene["sources"]): AcousticScene => ({
+    ...room(AcousticMaterial.Wood),
+    sources: source,
+  });
+  const total = (values: ArrayLike<number>): number =>
+    Array.from(values).reduce((sum, value) => sum + value, 0);
+  const bandTotal = (histogram: ArrayLike<number>, band: number): number =>
+    total(
+      Array.from(histogram).slice(band * TIME_BINS, (band + 1) * TIME_BINS),
+    );
+
+  it("resolves the legacy source into one omnidirectional emitter", () => {
+    const resolved = resolveAcousticSources(room(AcousticMaterial.Wood));
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].position).toEqual([3, 1.5, 4]);
+    expect(resolved[0].coneCos).toBe(-2);
+    expect(resolved[0].outerGain).toBe(1);
+  });
+
+  it("packs a fixed 16-slot block with a count header", () => {
+    const block = packSourceBlock(
+      resolveAcousticSources(sceneAt([{ position: [1, 2, 3] }])),
+    );
+    expect(block.byteLength).toBe(SOURCE_BLOCK_BYTES);
+    const view = new DataView(block);
+    expect(view.getUint32(0, true)).toBe(1);
+    expect(view.getFloat32(16, true)).toBe(1);
+    expect(view.getFloat32(20, true)).toBe(2);
+    expect(view.getFloat32(24, true)).toBe(3);
+    expect(view.getFloat32(28, true)).toBe(1);
+    expect(view.getFloat32(56, true)).toBe(-2);
+  });
+
+  it("keeps single-source output identical when sources[0] mirrors scene.source", () => {
+    const options = { rayCount: 500, maxBounces: 32, seed: 11 };
+    const legacy = simulateAcousticsCpu(room(AcousticMaterial.Wood), options);
+    const explicit = simulateAcousticsCpu(
+      sceneAt([{ position: [3, 1.5, 4] }]),
+      options,
+    );
+    expect(Array.from(explicit.histogram)).toEqual(
+      Array.from(legacy.histogram),
+    );
+    expect(Array.from(explicit.grid)).toEqual(Array.from(legacy.grid));
+  });
+
+  it("aggregates every source into one histogram and energy grid", () => {
+    const options = { rayCount: 1500, maxBounces: 32, seed: 5 };
+    const one = simulateAcousticsCpu(room(AcousticMaterial.Wood), options);
+    const two = simulateAcousticsCpu(
+      sceneAt([{ position: [3, 1.5, 4] }, { position: [7, 2.5, 3] }]),
+      options,
+    );
+    expect(total(two.histogram)).toBeGreaterThan(total(one.histogram) * 1.3);
+    expect(total(two.grid)).toBeGreaterThan(total(one.grid) * 1.3);
+  });
+
+  it("scales absorbed energy with the source gain", () => {
+    const options = { rayCount: 800, maxBounces: 32, seed: 3 };
+    const unit = simulateAcousticsCpu(
+      sceneAt([{ position: [3, 1.5, 4], gain: 1 }]),
+      options,
+    );
+    const doubled = simulateAcousticsCpu(
+      sceneAt([{ position: [3, 1.5, 4], gain: 2 }]),
+      options,
+    );
+    const ratio = total(doubled.histogram) / total(unit.histogram);
+    expect(ratio).toBeGreaterThan(1.95);
+    expect(ratio).toBeLessThan(2.05);
+  });
+
+  it("weights absorbed energy by the per-band spectrum", () => {
+    const options = { rayCount: 800, maxBounces: 32, seed: 9 };
+    const low = simulateAcousticsCpu(
+      sceneAt([{ position: [3, 1.5, 4], spectrum: [8, 1, 1, 1, 1, 1] }]),
+      options,
+    );
+    const high = simulateAcousticsCpu(
+      sceneAt([{ position: [3, 1.5, 4], spectrum: [1, 1, 1, 1, 1, 8] }]),
+      options,
+    );
+    expect(bandTotal(low.histogram, 0)).toBeGreaterThan(
+      bandTotal(high.histogram, 0),
+    );
+    expect(bandTotal(high.histogram, 5)).toBeGreaterThan(
+      bandTotal(low.histogram, 5),
+    );
+  });
+
+  it("emits energy only inside a directional cone", () => {
+    const options = { rayCount: 2000, maxBounces: 32, seed: 13 };
+    const omni = simulateAcousticsCpu(
+      sceneAt([{ position: [2, 2, 4] }]),
+      options,
+    );
+    const cone = simulateAcousticsCpu(
+      sceneAt([
+        {
+          position: [2, 2, 4],
+          direction: [1, 0, 0],
+          coneAngle: Math.PI / 6,
+        },
+      ]),
+      options,
+    );
+    expect(total(cone.histogram)).toBeGreaterThan(0);
+    expect(total(cone.histogram)).toBeLessThan(total(omni.histogram) * 0.2);
+  });
+});
+
 describe("fallback to CPU", () => {
   const small = { rayCount: 500, maxBounces: 32 };
 
@@ -265,6 +382,22 @@ describe("fallback to CPU", () => {
     expect(
       (await sim.simulate(room(AcousticMaterial.Wood), small)).backend,
     ).toBe("cpu");
+  });
+
+  it("reports the source count in a CPU fallback benchmark", async () => {
+    const sim = await WebGPUAcousticSimulator.create({ forceCpu: true });
+    const report = await sim.benchmark(
+      {
+        ...room(AcousticMaterial.Wood),
+        sources: [{ position: [2, 1, 2] }, { position: [8, 2, 6] }],
+      },
+      2,
+      { rayCount: 200, maxBounces: 8 },
+    );
+    expect(report.backend).toBe("cpu");
+    expect(report.runs).toBe(2);
+    expect(report.sourceCount).toBe(2);
+    expect(report.medianMs).toBeGreaterThan(0);
   });
 });
 
@@ -353,9 +486,10 @@ describe("GPU path with a mocked device", () => {
     });
     expect(r.backend).toBe("webgpu");
     expect(r.rayCount).toBe(64_000);
+    expect(r.sourceCount).toBe(1);
     expect(dispatches).toEqual([1000]);
 
-    const params = writes.find((w) => w.buffer.size === 96)!;
+    const params = writes.find((w) => w.buffer.size === ACOUSTIC_PARAMS_BYTES)!;
     const raw =
       params.data instanceof ArrayBuffer ? params.data : params.data.buffer;
     const u32 = new Uint32Array(raw);
@@ -367,8 +501,77 @@ describe("GPU path with a mocked device", () => {
     expect(u32[11]).toBe(1);
     expect(u32[14]).toBe(64_000);
     expect(Array.from(u32.slice(16, 22))).toEqual([0, 1, 2, 3, 0, 1]);
+    expect(f32[24]).toBe(256);
+    expect(u32[25]).toBe(1);
     // per band sums must stay inside u32: rayCount * scale <= 4e9
     expect(64_000 * f32[15]).toBeLessThanOrEqual(4_000_000_000);
+
+    const sourceWrite = writes.find(
+      (w) => w.buffer.size === SOURCE_BLOCK_BYTES,
+    )!;
+    const sourceRaw =
+      sourceWrite.data instanceof ArrayBuffer
+        ? sourceWrite.data
+        : sourceWrite.data.buffer;
+    const sourceU32 = new Uint32Array(sourceRaw);
+    const sourceF32 = new Float32Array(sourceRaw);
+    expect(sourceU32[0]).toBe(1);
+    expect([sourceF32[4], sourceF32[5], sourceF32[6]]).toEqual([3, 1.5, 4]);
+    expect(sourceF32[7]).toBe(1); // gain
+    expect(Array.from(sourceF32.slice(8, 14))).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(sourceF32[14]).toBe(-2); // omnidirectional sentinel
+    expect(sourceF32[15]).toBe(1); // outerGain
+    expect([sourceF32[16], sourceF32[17], sourceF32[18]]).toEqual([0, 0, 1]);
+  });
+
+  it("uploads 16 sources and keeps one dispatch per ray", async () => {
+    const { writes, dispatches } = installFakeGpu();
+    const sim = await WebGPUAcousticSimulator.create();
+    const sources = Array.from({ length: MAX_ACOUSTIC_SOURCES }, (_, i) => ({
+      position: [1 + (i % 8), 1, 1] as const,
+      spectrum: [i + 1, 1, 1, 1, 1, 1],
+      direction: [0, 0, 1] as const,
+      coneAngle: Math.PI / 2,
+      outerGain: 0.25,
+      gain: 1 + i * 0.1,
+    }));
+    const r = await sim.simulate(
+      { ...room(AcousticMaterial.Wood), sources },
+      { rayCount: 4096, maxBounces: 8, seed: 3 },
+    );
+    expect(r.backend).toBe("webgpu");
+    expect(r.sourceCount).toBe(MAX_ACOUSTIC_SOURCES);
+    expect(dispatches).toEqual([64]);
+
+    const params = writes.find((w) => w.buffer.size === ACOUSTIC_PARAMS_BYTES)!;
+    const paramsRaw =
+      params.data instanceof ArrayBuffer ? params.data : params.data.buffer;
+    expect(new Uint32Array(paramsRaw)[25]).toBe(MAX_ACOUSTIC_SOURCES);
+    const paramsF32 = new Float32Array(paramsRaw);
+    // the hottest band (16 * gain 2.5) stays inside the u32 accumulators
+    expect(4096 * 40 * paramsF32[15]).toBeLessThanOrEqual(4_000_000_000);
+    expect(4096 * 8 * 40 * paramsF32[24]).toBeLessThanOrEqual(4_000_000_000);
+
+    const sourceWrite = writes.find(
+      (w) => w.buffer.size === SOURCE_BLOCK_BYTES,
+    )!;
+    const sourceRaw =
+      sourceWrite.data instanceof ArrayBuffer
+        ? sourceWrite.data
+        : sourceWrite.data.buffer;
+    expect(new Uint32Array(sourceRaw)[0]).toBe(MAX_ACOUSTIC_SOURCES);
+    const f32 = new Float32Array(sourceRaw);
+    sources.forEach((source, i) => {
+      const base = 4 + i * 16;
+      expect(f32[base]).toBeCloseTo(source.position[0]);
+      expect(f32[base + 3]).toBeCloseTo(source.gain);
+      expect(f32[base + 4]).toBeCloseTo(source.spectrum[0]);
+      expect(f32[base + 10]).toBeCloseTo(Math.cos(Math.PI / 2));
+      expect(f32[base + 11]).toBeCloseTo(0.25);
+      expect(f32[base + 14]).toBeCloseTo(1);
+    });
+    // the unused direction w component stays zeroed
+    expect(f32[4 + MAX_ACOUSTIC_SOURCES * 16 - 1]).toBe(0);
   });
 
   it("falls back to CPU when the shader fails to compile", async () => {
@@ -424,10 +627,116 @@ describe("validation", () => {
         10,
       ),
     ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        {
+          ...s,
+          sources: Array.from({ length: MAX_ACOUSTIC_SOURCES + 1 }, () => ({
+            position: [1, 1, 1] as const,
+          })),
+        },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        {
+          ...s,
+          sources: [{ position: [1, 1, 1] }, { position: [2, 1, 1] }],
+        },
+        1,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        { ...s, sources: [{ position: [99, 1, 1] }] },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        {
+          ...s,
+          sources: [{ position: [1, 1, 1], spectrum: [1, 2] }],
+        },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        {
+          ...s,
+          sources: [{ position: [1, 1, 1], spectrum: [1, 1, 1, 1, 1, -1] }],
+        },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        { ...s, sources: [{ position: [1, 1, 1], gain: 0 }] },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        { ...s, sources: [{ position: [1, 1, 1], gain: 17 }] },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        { ...s, sources: [{ position: [1, 1, 1], outerGain: -0.1 }] },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        { ...s, sources: [{ position: [1, 1, 1], coneAngle: 0 }] },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        {
+          ...s,
+          sources: [{ position: [1, 1, 1], coneAngle: Math.PI + 0.1 }],
+        },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateAcousticInput(
+        { ...s, sources: [{ position: [1, 1, 1], direction: [0, 0, 0] }] },
+        100,
+        10,
+      ),
+    ).toThrow(RangeError);
   });
 
   it("accepts the default 64k ray workload", () => {
     expect(() => validateAcousticInput(s, 64_000, 128)).not.toThrow();
+  });
+
+  it("accepts the maximum source count with a matching ray budget", () => {
+    const sources = Array.from({ length: MAX_ACOUSTIC_SOURCES }, (_, i) => ({
+      position: [1 + (i % 8), 1, 1] as const,
+    }));
+    expect(() =>
+      validateAcousticInput({ ...s, sources }, MAX_ACOUSTIC_SOURCES, 128),
+    ).not.toThrow();
+    expect(() =>
+      validateAcousticInput({ ...s, sources }, MAX_ACOUSTIC_SOURCES - 1, 128),
+    ).toThrow(RangeError);
   });
 });
 
@@ -448,6 +757,22 @@ describe("shader sync", () => {
     expect(c("BAND_COUNT")).toBe(BAND_COUNT);
     expect(c("TIME_BINS")).toBe(TIME_BINS);
     expect(c("GRID_X") * c("GRID_Y") * c("GRID_Z")).toBe(GRID_CELLS);
+    expect(c("MAX_SOURCES")).toBe(MAX_ACOUSTIC_SOURCES);
     expect(wgsl).toContain("@workgroup_size(64)");
+  });
+
+  it("declares the multi-source uniform block at binding 5", () => {
+    expect(wgsl).toContain(
+      "@binding(5) var<uniform> sourceBlock: SourceBlock;",
+    );
+    expect(wgsl).toContain("struct SourceBlock");
+    const slots = Number(
+      /sources: array<AcousticSource, (\d+)>/.exec(wgsl)?.[1],
+    );
+    expect(slots).toBe(MAX_ACOUSTIC_SOURCES);
+    expect(wgsl).toContain("let sourceIndex = idx % sourceCount;");
+    expect(wgsl).toContain("sourceBlock.sources[sourceIndex]");
+    expect(wgsl).toContain("params.densityScale");
+    expect(wgsl).toContain("smoothstep");
   });
 });

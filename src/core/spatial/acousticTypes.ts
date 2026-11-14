@@ -12,6 +12,17 @@ export const SPEED_OF_SOUND_MS = 343;
 export const WORKGROUP_SIZE = 64;
 export const MAX_WORKGROUPS_PER_DIM = 65_535;
 export const MAX_OCCUPANTS = 64;
+/** Maximum number of simultaneous emitters supported by the shader. */
+export const MAX_ACOUSTIC_SOURCES = 16;
+/** Per-source uniform block: 4 vec4s (position/gain, spectrum, cone, direction). */
+export const SOURCE_STRIDE_FLOATS = 16;
+export const SOURCE_BLOCK_HEADER_FLOATS = 4;
+export const SOURCE_BLOCK_FLOATS =
+  SOURCE_BLOCK_HEADER_FLOATS + MAX_ACOUSTIC_SOURCES * SOURCE_STRIDE_FLOATS;
+export const SOURCE_BLOCK_BYTES = SOURCE_BLOCK_FLOATS * 4;
+/** Bounds keep GPU accumulators finite and the CPU path numerically stable. */
+export const MAX_SOURCE_SPECTRUM = 64;
+export const MAX_SOURCE_GAIN = 16;
 /** Keeps the u32 atomic accumulators on the GPU from overflowing. */
 export const MAX_RAY_BOUNCE_PRODUCT = 16_000_000;
 export const DEAD_ZONE_THRESHOLD = 0.25;
@@ -58,10 +69,116 @@ export interface Occupant {
   radius: number;
 }
 
+/**
+ * One acoustic emitter. `position` is required; everything else has a
+ * backwards-compatible omnidirectional default.
+ */
+export interface AcousticSource {
+  position: Vec3;
+  /** Linear energy per octave band (125, 250, 500, 1k, 2k, 4k Hz). */
+  spectrum?: readonly number[];
+  /** Cone axis; normalized internally. Defaults to +z (irrelevant when omni). */
+  direction?: Vec3;
+  /** Half-angle of the directivity cone in radians. Defaults to PI (omni). */
+  coneAngle?: number;
+  /** Energy multiplier outside the cone, 0..1. Defaults to 0 for cones, 1 for omni. */
+  outerGain?: number;
+  /** Overall linear source gain. Defaults to 1. */
+  gain?: number;
+}
+
+export interface ResolvedAcousticSource {
+  position: Vec3;
+  spectrum: readonly number[];
+  direction: Vec3;
+  coneAngle: number;
+  /** Cosine of the cone half-angle; -2 marks an omnidirectional source. */
+  coneCos: number;
+  outerGain: number;
+  gain: number;
+}
+
+export const DEFAULT_SOURCE_SPECTRUM: readonly number[] = [1, 1, 1, 1, 1, 1];
+
+function normalizeDirection(value: Vec3): Vec3 {
+  const length = Math.hypot(value[0], value[1], value[2]);
+  if (!Number.isFinite(length) || length <= 1e-9) return [0, 0, 1];
+  return [value[0] / length, value[1] / length, value[2] / length];
+}
+
+/**
+ * Resolves `scene.sources` (or the legacy single `scene.source`) into the
+ * normalized list used by both the GPU shader and the CPU fallback.
+ */
+export function resolveAcousticSources(
+  scene: AcousticScene,
+): ResolvedAcousticSource[] {
+  const raw: readonly AcousticSource[] =
+    scene.sources && scene.sources.length > 0
+      ? scene.sources
+      : [{ position: scene.source }];
+
+  return raw.slice(0, MAX_ACOUSTIC_SOURCES).map((source) => {
+    const spectrum =
+      source.spectrum && source.spectrum.length === BAND_COUNT
+        ? source.spectrum
+        : DEFAULT_SOURCE_SPECTRUM;
+    const coneAngle = source.coneAngle ?? Math.PI;
+    const omni = coneAngle >= Math.PI - 1e-6;
+    return {
+      position: source.position,
+      spectrum,
+      direction: normalizeDirection(source.direction ?? [0, 0, 1]),
+      coneAngle,
+      coneCos: omni ? -2 : Math.cos(coneAngle),
+      outerGain: source.outerGain ?? (omni ? 1 : 0),
+      gain: source.gain ?? 1,
+    };
+  });
+}
+
+/**
+ * Packs the active sources into the WGSL uniform block:
+ * `vec4 count/padding` followed by 16 × 4 vec4 entries.
+ */
+export function packSourceBlock(
+  sources: readonly ResolvedAcousticSource[],
+): ArrayBuffer {
+  const buffer = new ArrayBuffer(SOURCE_BLOCK_BYTES);
+  const header = new Uint32Array(buffer, 0, SOURCE_BLOCK_HEADER_FLOATS);
+  header[0] = Math.min(sources.length, MAX_ACOUSTIC_SOURCES);
+
+  const f32 = new Float32Array(buffer);
+  sources.slice(0, MAX_ACOUSTIC_SOURCES).forEach((source, index) => {
+    const base = SOURCE_BLOCK_HEADER_FLOATS + index * SOURCE_STRIDE_FLOATS;
+    f32[base] = source.position[0];
+    f32[base + 1] = source.position[1];
+    f32[base + 2] = source.position[2];
+    f32[base + 3] = source.gain;
+    f32[base + 4] = source.spectrum[0];
+    f32[base + 5] = source.spectrum[1];
+    f32[base + 6] = source.spectrum[2];
+    f32[base + 7] = source.spectrum[3];
+    f32[base + 8] = source.spectrum[4];
+    f32[base + 9] = source.spectrum[5];
+    f32[base + 10] = source.coneCos;
+    f32[base + 11] = source.outerGain;
+    f32[base + 12] = source.direction[0];
+    f32[base + 13] = source.direction[1];
+    f32[base + 14] = source.direction[2];
+    f32[base + 15] = 0;
+  });
+
+  return buffer;
+}
+
 export interface AcousticScene {
   roomMin: Vec3;
   roomMax: Vec3;
+  /** Legacy primary source, used when `sources` is absent/empty. */
   source: Vec3;
+  /** Up to MAX_ACOUSTIC_SOURCES simultaneous emitters. */
+  sources?: readonly AcousticSource[];
   /** Materials for the walls in this order: -x, +x, -y, +y, -z, +z */
   wallMaterials: readonly AcousticMaterialId[];
   occupants?: readonly Occupant[];
@@ -92,6 +209,8 @@ export interface AcousticResult {
   backend: "webgpu" | "cpu";
   rayCount: number;
   maxBounces: number;
+  /** Number of active emitters aggregated into this result. */
+  sourceCount: number;
   /** Upload + dispatch time, excludes readback. Null on CPU. */
   gpuMs: number | null;
   totalMs: number;
@@ -125,10 +244,78 @@ export function validateAcousticInput(
         "roomMax must be greater than roomMin on every axis",
       );
     }
-    if (!(
-      scene.source[i] >= scene.roomMin[i] && scene.source[i] <= scene.roomMax[i]
-    )) {
-      throw new RangeError("source must be inside the room");
+  }
+  if (scene.sources && scene.sources.length > MAX_ACOUSTIC_SOURCES) {
+    throw new RangeError(
+      `at most ${MAX_ACOUSTIC_SOURCES} acoustic sources are supported`,
+    );
+  }
+  for (const source of scene.sources ?? []) {
+    if (source.spectrum) {
+      if (
+        source.spectrum.length !== BAND_COUNT ||
+        source.spectrum.some(
+          (value) =>
+            !Number.isFinite(value) || value < 0 || value > MAX_SOURCE_SPECTRUM,
+        )
+      ) {
+        throw new RangeError(
+          `source spectrum needs ${BAND_COUNT} values between 0 and ${MAX_SOURCE_SPECTRUM}`,
+        );
+      }
+    }
+    if (
+      source.gain !== undefined &&
+      (!Number.isFinite(source.gain) ||
+        source.gain <= 0 ||
+        source.gain > MAX_SOURCE_GAIN)
+    ) {
+      throw new RangeError(
+        `source gain must be greater than 0 and at most ${MAX_SOURCE_GAIN}`,
+      );
+    }
+    if (
+      source.outerGain !== undefined &&
+      (!Number.isFinite(source.outerGain) ||
+        source.outerGain < 0 ||
+        source.outerGain > 1)
+    ) {
+      throw new RangeError("source outerGain must be between 0 and 1");
+    }
+    if (
+      source.coneAngle !== undefined &&
+      (!Number.isFinite(source.coneAngle) ||
+        source.coneAngle <= 0 ||
+        source.coneAngle > Math.PI)
+    ) {
+      throw new RangeError("source coneAngle must be between 0 and PI");
+    }
+    if (source.direction) {
+      const length = Math.hypot(
+        source.direction[0],
+        source.direction[1],
+        source.direction[2],
+      );
+      if (!Number.isFinite(length) || length <= 1e-9) {
+        throw new RangeError("source direction must be a non-zero vector");
+      }
+    }
+  }
+
+  const sources = resolveAcousticSources(scene);
+  if (rayCount < sources.length) {
+    throw new RangeError(
+      "rayCount must be at least the number of active sources",
+    );
+  }
+  for (const source of sources) {
+    for (let i = 0; i < 3; i++) {
+      if (!(
+        source.position[i] >= scene.roomMin[i] &&
+        source.position[i] <= scene.roomMax[i]
+      )) {
+        throw new RangeError("every source must be inside the room");
+      }
     }
   }
   if (

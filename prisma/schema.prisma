@@ -1195,3 +1195,38 @@ model VenueSlaAudit {
   @@index([venueId, periodEnd])
   @@index([periodStart, periodEnd])
 }
+
+/// Durable Solana escrow hold processed by /api/cron/escrow-refund (#7740).
+///
+/// `PENDING` holds are refundable once `holdExpiresAt` passes. The refund cron
+/// claims a row with an atomic PENDING -> REFUND_PENDING update, persists the
+/// signed transaction signature before broadcasting it, and only transitions to
+/// `REFUNDED` after the signature is confirmed on-chain. `refundTxSignature`
+/// plus the status guard make repeated or concurrent cron runs idempotent.
+model SolanaEscrow {
+  id                String             @id @default(cuid())
+  bookingId         String             @unique
+  depositorWallet   String
+  amountLamports    BigInt
+  currency          String             @default("SOL")
+  status            SolanaEscrowStatus @default(PENDING)
+  holdExpiresAt     DateTime
+  /// Base58 signature of the refund transaction. Written before broadcast.
+  refundTxSignature String?
+  refundAttemptedAt DateTime?
+  refundedAt        DateTime?
+  lastRefundError   String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([status, holdExpiresAt])
+  @@index([status, refundAttemptedAt])
+}
+
+enum SolanaEscrowStatus {
+  PENDING
+  REFUND_PENDING
+  REFUNDED
+  RELEASED
+  FAILED
+}

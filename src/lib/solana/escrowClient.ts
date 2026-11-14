@@ -338,9 +338,9 @@ export async function verifyDeposit(
   signature: string,
   expectedParams: {
     bookingId: string;
-    payerWallet: string;
-    amount: number;
-    currency: EscrowCurrency;
+    payerWallet?: string;
+    amount?: number;
+    currency?: EscrowCurrency;
   },
   rpcUrl: string,
 ): Promise<{
@@ -348,6 +348,7 @@ export async function verifyDeposit(
   error?: string;
   escrowVault?: string;
   amountBaseUnits?: bigint;
+  payerWallet?: string;
 }> {
   if (!signature) {
     return { verified: false, error: "Transaction signature is required" };
@@ -372,25 +373,33 @@ export async function verifyDeposit(
     }
 
     const { address: escrowVault } = deriveEscrowPDA(expectedParams.bookingId);
-    const expectedAmount = toBaseUnits(
-      expectedParams.amount,
-      expectedParams.currency,
-    );
-    const payer = new PublicKey(expectedParams.payerWallet);
+    const currency = expectedParams.currency ?? "SOL";
+    const expectedAmount =
+      expectedParams.amount !== undefined && expectedParams.amount > 0
+        ? toBaseUnits(expectedParams.amount, currency)
+        : undefined;
 
     const accountKeys = tx.transaction.message.accountKeys;
-    const payerKey = accountKeys.find(
-      (k) => k.pubkey.equals(payer) && k.signer,
-    );
-    if (!payerKey) {
-      return { verified: false, error: "Expected payer is not a signer" };
+    let payerKey: any;
+    if (expectedParams.payerWallet) {
+      const payer = new PublicKey(expectedParams.payerWallet);
+      payerKey = accountKeys.find((k) => k.pubkey.equals(payer) && k.signer);
+      if (!payerKey) {
+        return { verified: false, error: "Expected payer is not a signer" };
+      }
+    } else {
+      payerKey = accountKeys.find((k) => k.signer);
+      if (!payerKey) {
+        return { verified: false, error: "No signer found in transaction" };
+      }
     }
+    const detectedPayer = (payerKey.pubkey as PublicKey).toBase58();
 
     const vaultIndex = accountKeys.findIndex((k) =>
       k.pubkey.equals(escrowVault),
     );
 
-    if (expectedParams.currency === "SOL") {
+    if (currency === "SOL" && expectedAmount !== undefined) {
       if (vaultIndex === -1) {
         return {
           verified: false,
@@ -407,12 +416,18 @@ export async function verifyDeposit(
           error: `Insufficient deposit: expected ${expectedAmount}, received ${received}`,
         };
       }
+    } else if (vaultIndex === -1) {
+      return {
+        verified: false,
+        error: "Escrow vault not found in transaction accounts",
+      };
     }
 
     return {
       verified: true,
       escrowVault: escrowVault.toBase58(),
       amountBaseUnits: expectedAmount,
+      payerWallet: detectedPayer,
     };
   } catch (e: unknown) {
     return {
@@ -2490,6 +2505,20 @@ export class EscrowClient {
       pollSignatureStatus: (signature) => this.getSignatureStatus(signature),
     });
   }
+
+  /**
+   * Subscribes to signature confirmation via WebSocket with automatic two-stage
+   * HTTP polling fallback.
+   */
+  public subscribeToConfirmation(
+    signature: string,
+    options?: Omit<SubscribeToEscrowConfirmationOptions, "pool">,
+  ): EscrowConfirmationSubscription {
+    return subscribeToEscrowConfirmation(signature, {
+      ...options,
+      pool: this.pool,
+    });
+  }
 }
 
 let defaultEscrowClient: EscrowClient | null = null;
@@ -2508,6 +2537,613 @@ export function getEscrowClient(config?: EscrowClientConfig): EscrowClient {
 /** Resets the shared EscrowClient (useful for tests). */
 export function resetEscrowClient(): void {
   defaultEscrowClient = null;
+}
+
+// ===========================================================================
+// WebSocket Confirmation Streaming & Monotonic State Machine (#7773)
+// ===========================================================================
+
+export type EscrowConfirmationStatus =
+  | "pending"
+  | "processed"
+  | "confirmed"
+  | "finalized"
+  | "fallback_polling"
+  | "failed"
+  | "timeout";
+
+export type EscrowConfirmationSource = "websocket" | "http_polling";
+
+export interface EscrowConfirmationEvent {
+  signature: string;
+  status: EscrowConfirmationStatus;
+  source: EscrowConfirmationSource;
+  slot?: number | null;
+  error?: string | null;
+  timestamp: number;
+}
+
+export interface EscrowConfirmationCallbacks {
+  onStatusChange?: (event: EscrowConfirmationEvent) => void;
+  onProcessed?: (event: EscrowConfirmationEvent) => void;
+  onConfirmed?: (event: EscrowConfirmationEvent) => void;
+  onFinalized?: (event: EscrowConfirmationEvent) => void;
+  onFallbackPolling?: (event: EscrowConfirmationEvent) => void;
+  onError?: (error: Error, event: EscrowConfirmationEvent) => void;
+  onTimeout?: (event: EscrowConfirmationEvent) => void;
+}
+
+export interface SubscribeToEscrowConfirmationOptions {
+  connection?: Connection;
+  pool?: EscrowRpcConnectionPool;
+  confirmTimeoutMs?: number; // Stage 1 watchdog: 30s default
+  finalizeTimeoutMs?: number; // Stage 2 watchdog: 15s default
+  overallTimeoutMs?: number; // Overall budget timeout: 55s default
+  pollIntervalMs?: number; // HTTP fallback poll cadence: 2s default
+  callbacks?: EscrowConfirmationCallbacks;
+  pollSignatureStatus?: (signature: string) => Promise<SignatureStatus | null>;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export interface EscrowConfirmationSubscription {
+  signature: string;
+  getStatus: () => EscrowConfirmationStatus;
+  getLatestEvent: () => EscrowConfirmationEvent;
+  unsubscribe: () => void;
+  promise: Promise<EscrowConfirmationEvent>;
+}
+
+export const ESCROW_CONFIRM_WATCHDOG_MS = 30_000;
+export const ESCROW_FINALIZE_WATCHDOG_MS = 15_000;
+export const ESCROW_STREAMING_OVERALL_TIMEOUT_MS = 55_000;
+
+export class EscrowConfirmationStateMachine {
+  private currentStatus: EscrowConfirmationStatus = "pending";
+  private currentSource: EscrowConfirmationSource = "websocket";
+  private currentCommitmentRank = 0; // 0: none/pending, 1: processed, 2: confirmed, 3: finalized
+  private _isTerminal = false;
+  private latestEvent: EscrowConfirmationEvent;
+  private readonly signature: string;
+  private readonly callbacks?: EscrowConfirmationCallbacks;
+  private readonly now: () => number;
+  private listeners: Array<(event: EscrowConfirmationEvent) => void> = [];
+
+  constructor(
+    signature: string,
+    callbacks?: EscrowConfirmationCallbacks,
+    now: () => number = Date.now,
+  ) {
+    this.signature = signature;
+    this.callbacks = callbacks;
+    this.now = now;
+    this.latestEvent = {
+      signature,
+      status: "pending",
+      source: "websocket",
+      slot: null,
+      error: null,
+      timestamp: this.now(),
+    };
+  }
+
+  public getStatus(): EscrowConfirmationStatus {
+    return this.currentStatus;
+  }
+
+  public getCommitmentRank(): number {
+    return this.currentCommitmentRank;
+  }
+
+  public getLatestEvent(): EscrowConfirmationEvent {
+    return { ...this.latestEvent };
+  }
+
+  public isDone(): boolean {
+    return this._isTerminal;
+  }
+
+  public isTerminal(): boolean {
+    return this._isTerminal;
+  }
+
+  public subscribe(listener: (event: EscrowConfirmationEvent) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  public transition(
+    newStatus: EscrowConfirmationStatus,
+    sourceOrOptions?:
+      | EscrowConfirmationSource
+      | { slot?: number | null; error?: string | null; reason?: string },
+    optionsParam?: { slot?: number | null; error?: string | null; reason?: string },
+  ): EscrowConfirmationEvent | null {
+    if (this._isTerminal) {
+      return null;
+    }
+
+    let source: EscrowConfirmationSource = "websocket";
+    let options: { slot?: number | null; error?: string | null; reason?: string } =
+      {};
+
+    if (typeof sourceOrOptions === "string") {
+      source = sourceOrOptions;
+      if (optionsParam) options = optionsParam;
+    } else if (typeof sourceOrOptions === "object" && sourceOrOptions !== null) {
+      options = sourceOrOptions;
+    }
+
+    // Determine commitment rank
+    let targetRank = this.currentCommitmentRank;
+    if (newStatus === "processed") targetRank = 1;
+    else if (newStatus === "confirmed") targetRank = 2;
+    else if (newStatus === "finalized") targetRank = 3;
+
+    // Reject out-of-order commitment regressions
+    // e.g. processed arriving when already confirmed (1 < 2)
+    if (
+      (newStatus === "processed" ||
+        newStatus === "confirmed" ||
+        newStatus === "finalized") &&
+      targetRank < this.currentCommitmentRank
+    ) {
+      return null;
+    }
+
+    // Duplicate event check
+    if (
+      newStatus === this.currentStatus &&
+      targetRank === this.currentCommitmentRank &&
+      newStatus !== "fallback_polling"
+    ) {
+      return null;
+    }
+
+    // Update state
+    this.currentStatus = newStatus;
+    this.currentSource = source;
+    if (targetRank > this.currentCommitmentRank) {
+      this.currentCommitmentRank = targetRank;
+    }
+
+    const event: EscrowConfirmationEvent = {
+      signature: this.signature,
+      status: newStatus,
+      source,
+      slot: options.slot ?? this.latestEvent.slot ?? null,
+      error: options.error ?? null,
+      timestamp: this.now(),
+    };
+    this.latestEvent = event;
+
+    // Check terminal
+    if (
+      newStatus === "finalized" ||
+      newStatus === "failed" ||
+      newStatus === "timeout"
+    ) {
+      this._isTerminal = true;
+    }
+
+    // Fire listeners and callbacks safely
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (lErr) {
+        console.error("[EscrowStateMachine] Error in listener:", lErr);
+      }
+    }
+
+    try {
+      this.callbacks?.onStatusChange?.(event);
+      if (newStatus === "processed") this.callbacks?.onProcessed?.(event);
+      else if (newStatus === "confirmed") this.callbacks?.onConfirmed?.(event);
+      else if (newStatus === "finalized") {
+        this.callbacks?.onFinalized?.(event);
+      } else if (newStatus === "fallback_polling") {
+        this.callbacks?.onFallbackPolling?.(event);
+      } else if (newStatus === "failed") {
+        const err = new Error(options.error || "Escrow confirmation failed");
+        this.callbacks?.onError?.(err, event);
+      } else if (newStatus === "timeout") {
+        this.callbacks?.onTimeout?.(event);
+      }
+    } catch (cbErr) {
+      console.error("[EscrowStateMachine] Error in callback:", cbErr);
+    }
+
+    return event;
+  }
+}
+
+/**
+ * Subscribes to Solana transaction signature confirmation via WebSocket RPC subscriptions
+ * with automatic two-stage fallback to HTTP polling.
+ *
+ * Stage 1 (0-30s): Listens on WebSocket at processed, confirmed, and finalized commitment.
+ * If confirmed/finalized is not received within 30s, transitions to fallback_polling.
+ * Stage 2: Once confirmed, if finalized is not received within 15s, maintains HTTP polling until finality.
+ * Overall budget (55s): Terminates safely before serverless execution boundaries.
+ */
+export function subscribeToEscrowConfirmation(
+  signature: string,
+  options: SubscribeToEscrowConfirmationOptions = {},
+): EscrowConfirmationSubscription {
+  if (!signature || typeof signature !== "string" || !signature.trim()) {
+    throw new Error("Valid transaction signature is required");
+  }
+  const cleanSignature = signature.trim();
+
+  const confirmTimeoutMs =
+    options.confirmationTimeoutMs ??
+    options.confirmTimeoutMs ??
+    ESCROW_CONFIRM_WATCHDOG_MS;
+  const finalizeTimeoutMs =
+    options.finalizationTimeoutMs ??
+    options.finalizeTimeoutMs ??
+    ESCROW_FINALIZE_WATCHDOG_MS;
+  const overallTimeoutMs =
+    options.overallTimeoutMs ?? ESCROW_STREAMING_OVERALL_TIMEOUT_MS;
+  const pollIntervalMs =
+    options.httpPollingIntervalMs ??
+    options.pollIntervalMs ??
+    ESCROW_POLL_INTERVAL_MS;
+  const now = options.now ?? Date.now;
+
+  const stateMachine = new EscrowConfirmationStateMachine(
+    cleanSignature,
+    options.callbacks,
+    now,
+  );
+
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  let finalizeTimer: ReturnType<typeof setTimeout> | undefined;
+  let overallTimer: ReturnType<typeof setTimeout> | undefined;
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let isUnsubscribed = false;
+  let isPollingActive = false;
+
+  let connection: Connection | null = options.connection ?? null;
+  const pool = options.pool ?? getEscrowRpcPool();
+
+  let processedSubId: number | undefined;
+  let confirmedSubId: number | undefined;
+  let finalizedSubId: number | undefined;
+
+  const cleanupListeners = () => {
+    if (connection) {
+      const activeConn = connection;
+      if (processedSubId !== undefined) {
+        const id = processedSubId;
+        processedSubId = undefined;
+        try {
+          void activeConn.removeSignatureListener(id);
+        } catch {}
+      }
+      if (confirmedSubId !== undefined) {
+        const id = confirmedSubId;
+        confirmedSubId = undefined;
+        try {
+          void activeConn.removeSignatureListener(id);
+        } catch {}
+      }
+      if (finalizedSubId !== undefined) {
+        const id = finalizedSubId;
+        finalizedSubId = undefined;
+        try {
+          void activeConn.removeSignatureListener(id);
+        } catch {}
+      }
+    }
+  };
+
+  const cleanupTimers = () => {
+    if (confirmTimer) {
+      clearTimeout(confirmTimer);
+      confirmTimer = undefined;
+    }
+    if (finalizeTimer) {
+      clearTimeout(finalizeTimer);
+      finalizeTimer = undefined;
+    }
+    if (overallTimer) {
+      clearTimeout(overallTimer);
+      overallTimer = undefined;
+    }
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = undefined;
+    }
+  };
+
+  const unsubscribe = () => {
+    if (isUnsubscribed) return;
+    isUnsubscribed = true;
+    cleanupTimers();
+    void cleanupListeners();
+  };
+
+  // Start overall timeout timer
+  overallTimer = setTimeout(() => {
+    if (stateMachine.isDone() || isUnsubscribed) return;
+    stateMachine.transition(
+      "timeout",
+      isPollingActive ? "http_polling" : "websocket",
+      {
+        error: `Confirmation timed out after ${overallTimeoutMs}ms`,
+      },
+    );
+    unsubscribe();
+  }, overallTimeoutMs);
+  overallTimer.unref?.();
+
+  // Helper to trigger HTTP fallback polling loop
+  const triggerHttpFallback = (reason?: string) => {
+    if (stateMachine.isDone() || isUnsubscribed || isPollingActive) return;
+    isPollingActive = true;
+    stateMachine.transition("fallback_polling", "http_polling", {
+      error: reason,
+    });
+    void pollOnce();
+  };
+
+  // Helper to poll signature status once
+  const pollOnce = async () => {
+    if (stateMachine.isDone() || isUnsubscribed) return;
+
+    let status: SignatureStatus | null = null;
+    try {
+      if (options.pollSignatureStatus) {
+        status = await options.pollSignatureStatus(cleanSignature);
+      } else {
+        const res = await pool.execute((conn) =>
+          conn.getSignatureStatuses([cleanSignature], {
+            searchTransactionHistory: true,
+          }),
+        );
+        status = res.value?.[0] ?? null;
+      }
+    } catch (pollErr) {
+      console.warn(
+        `[EscrowStreaming] HTTP poll failed for ${cleanSignature}:`,
+        pollErr,
+      );
+      scheduleNextPoll();
+      return;
+    }
+
+    if (stateMachine.isDone() || isUnsubscribed) return;
+
+    if (status) {
+      if (status.err) {
+        stateMachine.transition("failed", "http_polling", {
+          slot: status.slot,
+          error:
+            typeof status.err === "string"
+              ? status.err
+              : JSON.stringify(status.err),
+        });
+        unsubscribe();
+        return;
+      }
+
+      const commitment = status.confirmationStatus;
+      if (commitment === "finalized" || status.confirmations === null) {
+        stateMachine.transition("finalized", "http_polling", {
+          slot: status.slot,
+        });
+        unsubscribe();
+        return;
+      }
+
+      if (commitment === "confirmed") {
+        stateMachine.transition("confirmed", "http_polling", {
+          slot: status.slot,
+        });
+        // Continue polling for finalization
+        if (!finalizeTimer) {
+          finalizeTimer = setTimeout(() => {
+            // Watchdog: If finalizeTimer expires, polling continues
+          }, finalizeTimeoutMs);
+          finalizeTimer.unref?.();
+        }
+      } else if (commitment === "processed") {
+        stateMachine.transition("processed", "http_polling", {
+          slot: status.slot,
+        });
+      }
+    }
+
+    scheduleNextPoll();
+  };
+
+  const scheduleNextPoll = () => {
+    if (stateMachine.isDone() || isUnsubscribed) return;
+    pollTimer = setTimeout(() => {
+      void pollOnce();
+    }, pollIntervalMs);
+    pollTimer.unref?.();
+  };
+
+  // Stage 1 Confirmation Watchdog (30s): If confirmed is not reached within 30s, activate HTTP fallback
+  confirmTimer = setTimeout(() => {
+    if (stateMachine.getCommitmentRank() < 2 && !stateMachine.isDone()) {
+      triggerHttpFallback("30-second WebSocket confirmation watchdog expired");
+    }
+  }, confirmTimeoutMs);
+  confirmTimer.unref?.();
+
+  const setupListeners = (conn: Connection) => {
+    connection = conn;
+    if (stateMachine.isDone() || isUnsubscribed) return;
+
+    // 1. Processed commitment listener
+    try {
+      processedSubId = conn.onSignatureWithOptions(
+        cleanSignature,
+        (notification, context) => {
+          if (stateMachine.isDone() || isUnsubscribed) return;
+          const err =
+            (notification as any)?.err ??
+            (notification as any)?.result?.err;
+          if (err) {
+            stateMachine.transition("failed", "websocket", {
+              slot: context?.slot,
+              error: typeof err === "string" ? err : JSON.stringify(err),
+            });
+            unsubscribe();
+            return;
+          }
+          stateMachine.transition("processed", "websocket", {
+            slot: context?.slot,
+          });
+        },
+        { commitment: "processed" },
+      );
+    } catch (e) {
+      console.warn(
+        "[EscrowStreaming] Failed to subscribe to processed notification:",
+        e,
+      );
+    }
+
+    // 2. Confirmed commitment listener
+    try {
+      confirmedSubId = conn.onSignatureWithOptions(
+        cleanSignature,
+        (notification, context) => {
+          if (stateMachine.isDone() || isUnsubscribed) return;
+          const err =
+            (notification as any)?.err ??
+            (notification as any)?.result?.err;
+          if (err) {
+            stateMachine.transition("failed", "websocket", {
+              slot: context?.slot,
+              error: typeof err === "string" ? err : JSON.stringify(err),
+            });
+            unsubscribe();
+            return;
+          }
+
+          // Clear Stage 1 confirmation watchdog
+          if (confirmTimer) {
+            clearTimeout(confirmTimer);
+            confirmTimer = undefined;
+          }
+
+          stateMachine.transition("confirmed", "websocket", {
+            slot: context?.slot,
+          });
+
+          // Start Stage 2 Finalization Watchdog (15s):
+          // If finalized is not received within 15s of confirmed, trigger HTTP polling
+          if (!finalizeTimer && !stateMachine.isDone()) {
+            finalizeTimer = setTimeout(() => {
+              if (
+                stateMachine.getCommitmentRank() < 3 &&
+                !stateMachine.isDone()
+              ) {
+                triggerHttpFallback(
+                  "15-second post-confirmation finalization watchdog expired",
+                );
+              }
+            }, finalizeTimeoutMs);
+            finalizeTimer.unref?.();
+          }
+        },
+        { commitment: "confirmed" },
+      );
+    } catch (e) {
+      console.warn(
+        "[EscrowStreaming] Failed to subscribe to confirmed notification:",
+        e,
+      );
+    }
+
+    // 3. Finalized commitment listener
+    try {
+      finalizedSubId = conn.onSignatureWithOptions(
+        cleanSignature,
+        (notification, context) => {
+          if (stateMachine.isDone() || isUnsubscribed) return;
+          const err =
+            (notification as any)?.err ??
+            (notification as any)?.result?.err;
+          if (err) {
+            stateMachine.transition("failed", "websocket", {
+              slot: context?.slot,
+              error: typeof err === "string" ? err : JSON.stringify(err),
+            });
+            unsubscribe();
+            return;
+          }
+
+          stateMachine.transition("finalized", "websocket", {
+            slot: context?.slot,
+          });
+          unsubscribe();
+        },
+        { commitment: "finalized" },
+      );
+    } catch (e) {
+      console.warn(
+        "[EscrowStreaming] Failed to subscribe to finalized notification:",
+        e,
+      );
+    }
+
+    // If all three subscriptions failed to register, fall back immediately to HTTP polling
+    if (
+      processedSubId === undefined &&
+      confirmedSubId === undefined &&
+      finalizedSubId === undefined
+    ) {
+      triggerHttpFallback(
+        "WebSocket subscription registration failed across all commitments",
+      );
+    }
+  };
+
+  // Initialize WebSocket subscriptions
+  if (connection) {
+    setupListeners(connection);
+  } else {
+    (async () => {
+      try {
+        let conn: Connection | undefined;
+        if (typeof (pool as any).getActiveConnection === "function") {
+          conn = await (pool as any).getActiveConnection();
+        } else if (typeof (pool as any).getConnection === "function") {
+          conn = await (pool as any).getConnection();
+        } else {
+          conn = await pool.execute((c) => Promise.resolve(c));
+        }
+
+        if (conn && !isUnsubscribed && !stateMachine.isDone()) {
+          setupListeners(conn);
+        }
+      } catch (connErr) {
+        console.warn(
+          "[EscrowStreaming] Failed to acquire connection for WebSocket subscription:",
+          connErr,
+        );
+        triggerHttpFallback(
+          "Failed to acquire connection for WebSocket subscription",
+        );
+      }
+    })();
+  }
+
+  return {
+    signature: cleanSignature,
+    getStatus: () => stateMachine.getStatus(),
+    getLatestEvent: () => stateMachine.getLatestEvent(),
+    unsubscribe,
+    promise: stateMachine.promise,
+  };
 }
 
 export * from "./solanaPayEscrow";

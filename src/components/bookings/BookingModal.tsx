@@ -1,11 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 
 import { CopyBookingReferenceButton } from '@/components/bookings/CopyBookingReferenceButton';
 import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
 import { storeOfflinePasscardsFromBooking } from '@/lib/security/offlinePasscardStore';
+import type { EscrowConfirmationStatus } from '@/lib/solana/escrowClient';
+
+export type { EscrowConfirmationStatus };
 
 interface BookingModalProps {
   venueId: string;
@@ -13,6 +16,31 @@ interface BookingModalProps {
   onClose: () => void;
   onSuccess: (confirmationId: string) => void;
   confirmationId?: string;
+  bookingId?: string;
+  escrowSignature?: string;
+  escrowStatus?: EscrowConfirmationStatus;
+  onEscrowStatusChange?: (status: EscrowConfirmationStatus) => void;
+}
+
+export function getEscrowStatusLabel(status: EscrowConfirmationStatus): string {
+  switch (status) {
+    case 'pending':
+      return 'Pending escrow deposit...';
+    case 'processed':
+      return 'Transaction processed on Solana (optimistic)...';
+    case 'confirmed':
+      return 'Transaction confirmed by cluster...';
+    case 'finalized':
+      return 'Transaction finalized on Solana...';
+    case 'fallback_polling':
+      return 'Confirming via RPC polling...';
+    case 'failed':
+      return 'Escrow transaction failed';
+    case 'timeout':
+      return 'Confirmation timed out';
+    default:
+      return 'Confirming reservation...';
+  }
 }
 
 export function BookingModal({
@@ -21,6 +49,10 @@ export function BookingModal({
   onClose,
   onSuccess,
   confirmationId,
+  bookingId,
+  escrowSignature,
+  escrowStatus: propEscrowStatus,
+  onEscrowStatusChange,
 }: BookingModalProps) {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -32,11 +64,92 @@ export function BookingModal({
     confirmationId || null,
   );
   const [copyError, setCopyError] = useState(false);
-  const isSubmittingRef = React.useRef(false);
+  const [internalEscrowStatus, setInternalEscrowStatus] =
+    useState<EscrowConfirmationStatus | null>(
+      propEscrowStatus || (escrowSignature ? 'pending' : null),
+    );
+  const isSubmittingRef = useRef(false);
 
+  const currentEscrowStatus = propEscrowStatus || internalEscrowStatus;
   const activeConfirmationId = confirmedId || confirmationId;
+  const effectiveError =
+    error ||
+    (currentEscrowStatus === 'failed'
+      ? 'Escrow transaction failed'
+      : currentEscrowStatus === 'timeout'
+        ? 'Confirmation timed out'
+        : '');
 
-  React.useEffect(() => {
+  // SSE streaming for real-time escrow confirmation monitoring
+  useEffect(() => {
+    if (!escrowSignature) return;
+
+    const targetBookingId = bookingId || activeConfirmationId || 'pending-booking';
+    const sseUrl = `/api/pay/solana?bookingId=${encodeURIComponent(
+      targetBookingId,
+    )}&signature=${encodeURIComponent(escrowSignature)}`;
+
+    let eventSource: EventSource | null = null;
+
+    if (typeof window !== 'undefined' && typeof window.EventSource !== 'undefined') {
+      try {
+        eventSource = new window.EventSource(sseUrl);
+
+        eventSource.addEventListener('status', (e: MessageEvent) => {
+          try {
+            const payload = JSON.parse(e.data);
+            const status = payload.status as EscrowConfirmationStatus;
+            if (status) {
+              setInternalEscrowStatus(status);
+              onEscrowStatusChange?.(status);
+
+              if (status === 'failed' || status === 'timeout') {
+                setError(
+                  payload.error ||
+                    (status === 'timeout'
+                      ? 'Confirmation timed out'
+                      : 'Escrow transaction failed'),
+                );
+                eventSource?.close();
+              } else if (status === 'finalized' || status === 'confirmed') {
+                const confId = bookingId || activeConfirmationId || 'WS-SOL-CONFIRMED';
+                if (!confirmedId) {
+                  setConfirmedId(confId);
+                  onSuccess?.(confId);
+                }
+                if (status === 'finalized') {
+                  eventSource?.close();
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('[BookingModal] Failed to parse SSE status data:', err);
+          }
+        });
+
+        eventSource.addEventListener('error', () => {
+          // If SSE fails or disconnects, keep existing status or allow fallback
+        });
+      } catch (err) {
+        console.warn('[BookingModal] EventSource initialization failed:', err);
+      }
+    }
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [
+    escrowSignature,
+    bookingId,
+    activeConfirmationId,
+    confirmedId,
+    onEscrowStatusChange,
+    onSuccess,
+  ]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (!isSubmittingRef.current && !loading && !isSubmitting) {
@@ -103,7 +216,16 @@ export function BookingModal({
     onClose();
   };
 
-  const isPending = loading || isSubmitting;
+  const isPending =
+    loading ||
+    isSubmitting ||
+    Boolean(
+      (escrowSignature || propEscrowStatus) &&
+        !activeConfirmationId &&
+        currentEscrowStatus &&
+        currentEscrowStatus !== 'failed' &&
+        currentEscrowStatus !== 'timeout',
+    );
 
   return (
     <div
@@ -126,9 +248,22 @@ export function BookingModal({
             className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-zinc-900/90 backdrop-blur-sm p-6 text-center"
           >
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-violet-500 border-t-transparent" />
-            <p className="mt-4 text-sm font-semibold text-white">
-              Confirming reservation...
+            <p
+              data-testid="booking-loading-message"
+              className="mt-4 text-sm font-semibold text-white"
+            >
+              {currentEscrowStatus
+                ? getEscrowStatusLabel(currentEscrowStatus)
+                : 'Confirming reservation...'}
             </p>
+            {currentEscrowStatus && (
+              <span
+                data-testid="escrow-confirmation-status"
+                className="mt-1 text-xs text-violet-300 font-mono"
+              >
+                Status: {currentEscrowStatus}
+              </span>
+            )}
           </div>
         )}
 
@@ -164,6 +299,21 @@ export function BookingModal({
                   onError={() => setCopyError(true)}
                 />
               </div>
+
+              {currentEscrowStatus && (
+                <div
+                  data-testid="escrow-status-card"
+                  className="mt-3 flex items-center justify-between rounded-lg border border-white/5 bg-black/30 px-3 py-2 text-xs"
+                >
+                  <span className="text-zinc-400">Escrow Status:</span>
+                  <span
+                    data-testid="escrow-confirmation-status"
+                    className="font-mono font-medium text-violet-300 capitalize"
+                  >
+                    {currentEscrowStatus}
+                  </span>
+                </div>
+              )}
 
               {copyError && (
                 <div
@@ -209,13 +359,13 @@ export function BookingModal({
               Book a desk at {venueName}
             </p>
 
-            {error && (
+            {effectiveError && (
               <div
                 role="alert"
                 data-testid="booking-error-alert"
                 className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400"
               >
-                <p className="font-medium">{error}</p>
+                <p className="font-medium">{effectiveError}</p>
                 <div className="mt-2 flex items-center gap-3">
                   <button
                     type="button"

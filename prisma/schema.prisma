@@ -1152,6 +1152,26 @@ model VenueCancellationWebhookEvent {
   @@index([expiresAt])
 }
 
+model WebhookOutboxEvent {
+  id                           String           @id
+  userId                       String
+  eventType                    WebhookEventType
+  data                         Json
+  state                        String           @default("PENDING")
+  attempts                     Int              @default(0)
+  completedEndpointIds         String[]         @default([])
+  permanentFailureEndpointIds  String[]         @default([])
+  lastError                    String?
+  nextAttemptAt                DateTime         @default(now())
+  lockedUntil                  DateTime?
+  deadLetteredAt               DateTime?
+  createdAt                    DateTime         @default(now())
+  updatedAt                    DateTime         @updatedAt
+
+  @@index([state, nextAttemptAt])
+  @@index([state, lockedUntil])
+}
+
 model VenueSlaAudit {
   id                         String   @id @default(cuid())
   venueId                    String

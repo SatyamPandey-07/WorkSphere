@@ -2,6 +2,8 @@
 // A test fails if this drifts from the .wgsl file: edit the .wgsl, then copy it here.
 export const ACOUSTIC_RAYTRACE_WGSL = `// Real-time acoustic ray tracing. One invocation = one ray.
 // Room is an axis aligned box (shoebox) with per-wall materials plus spherical occupants.
+// Up to 16 simultaneous emitters. Each invocation picks one source (idx % count), so the
+// total ray budget stays constant as sources are added.
 // Output 1: absorbed energy per (band, time bin) -> RT60 via backward integration on the CPU side.
 // Output 2: path energy density on a coarse grid -> dead zone map.
 // Keep the consts below in sync with acousticTypes.ts (a test checks this).
@@ -12,7 +14,7 @@ const GRID_X: u32 = 16u;
 const GRID_Y: u32 = 8u;
 const GRID_Z: u32 = 16u;
 const HUMAN_MATERIAL: u32 = 4u;
-const GRID_SCALE: f32 = 256.0;
+const MAX_SOURCES: u32 = 16u;
 const PI: f32 = 3.14159265359;
 const EPS: f32 = 0.0001;
 const FAR: f32 = 1.0e30;
@@ -29,6 +31,23 @@ struct Params {
   rayCount: u32,
   energyScale: f32,
   walls: array<vec4<u32>, 2>, // -x +x -y +y -z +z material ids
+  densityScale: f32,
+  sourceCount: u32,
+}
+
+struct AcousticSource {
+  origin: vec4<f32>, // xyz position, w gain
+  spectrumLo: vec4<f32>, // bands 0..3
+  spectrumHi: vec4<f32>, // bands 4..5, coneCos, outerGain
+  direction: vec4<f32>, // xyz cone axis, w unused
+}
+
+struct SourceBlock {
+  count: u32,
+  pad0: u32,
+  pad1: u32,
+  pad2: u32,
+  sources: array<AcousticSource, 16>,
 }
 
 struct Material {
@@ -41,6 +60,7 @@ struct Material {
 @group(0) @binding(2) var<storage, read> occupants: array<vec4<f32>>; // xyz center, w radius
 @group(0) @binding(3) var<storage, read_write> histogram: array<atomic<u32>>;
 @group(0) @binding(4) var<storage, read_write> pathDensity: array<atomic<u32>>;
+@group(0) @binding(5) var<uniform> sourceBlock: SourceBlock;
 
 fn pcg(v: u32) -> u32 {
   let state = v * 747796405u + 2891336453u;
@@ -72,8 +92,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let idx = gid.x;
   if (idx >= params.rayCount) { return; }
 
+  // round-robin over active sources keeps the total ray budget constant
+  let sourceCount = max(params.sourceCount, 1u);
+  let sourceIndex = idx % sourceCount;
+  let source = sourceBlock.sources[sourceIndex];
+  let sourceSeed = params.seed ^ (sourceIndex * 0x9e3779b9u);
+
   // uniform random direction on the unit sphere
-  var rng = pcg(idx ^ params.seed);
+  var rng = pcg(idx ^ sourceSeed);
   rng = pcg(rng);
   let u = f32(rng) / 4294967296.0;
   rng = pcg(rng);
@@ -83,9 +109,24 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let phi = 2.0 * PI * v;
   var dir = vec3<f32>(r * cos(phi), r * sin(phi), z);
 
-  var pos = params.source;
+  // cone directivity: full energy inside, outerGain outside, soft edge
+  let coneCos = source.spectrumHi.z;
+  let omni = coneCos <= -1.5;
+  let cosTheta = dot(dir, source.direction.xyz);
+  let insideCone = smoothstep(coneCos - 0.01, coneCos + 0.01, cosTheta);
+  let directivity = select(mix(source.spectrumHi.w, 1.0, insideCone), 1.0, omni);
+  let sourceGain = source.origin.w * directivity;
+
+  var pos = source.origin.xyz;
   var dist = 0.0;
-  var energy = array<f32, 6>(1.0, 1.0, 1.0, 1.0, 1.0, 1.0);
+  var energy = array<f32, 6>(
+    source.spectrumLo.x * sourceGain,
+    source.spectrumLo.y * sourceGain,
+    source.spectrumLo.z * sourceGain,
+    source.spectrumLo.w * sourceGain,
+    source.spectrumHi.x * sourceGain,
+    source.spectrumHi.y * sourceGain,
+  );
 
   for (var bounce = 0u; bounce < params.maxBounces; bounce = bounce + 1u) {
     // nearest wall
@@ -122,7 +163,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var sumE = 0.0;
     for (var band = 0u; band < BAND_COUNT; band = band + 1u) { sumE = sumE + energy[band]; }
     let meanE = sumE / f32(BAND_COUNT);
-    atomicAdd(&pathDensity[cell_of(pos + dir * (tHit * 0.5))], u32(meanE * GRID_SCALE));
+    atomicAdd(&pathDensity[cell_of(pos + dir * (tHit * 0.5))], u32(meanE * params.densityScale));
 
     pos = pos + dir * tHit;
     dist = dist + tHit;

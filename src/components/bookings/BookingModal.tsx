@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 
 import { CopyBookingReferenceButton } from '@/components/bookings/CopyBookingReferenceButton';
+import { ReservationTimerBadge } from '@/components/bookings/ReservationTimerBadge';
 import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
 import { storeOfflinePasscardsFromBooking } from '@/lib/security/offlinePasscardStore';
 
@@ -13,6 +14,10 @@ interface BookingModalProps {
   onClose: () => void;
   onSuccess: (confirmationId: string) => void;
   confirmationId?: string;
+  initialExpiresAt?: number;
+  holdDurationSeconds?: number;
+  remainingHoldSeconds?: number;
+  onHoldExpire?: () => void;
 }
 
 export function BookingModal({
@@ -21,6 +26,10 @@ export function BookingModal({
   onClose,
   onSuccess,
   confirmationId,
+  initialExpiresAt,
+  holdDurationSeconds,
+  remainingHoldSeconds,
+  onHoldExpire,
 }: BookingModalProps) {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -32,9 +41,22 @@ export function BookingModal({
     confirmationId || null,
   );
   const [copyError, setCopyError] = useState(false);
+  const [isHoldExpired, setIsHoldExpired] = useState(false);
   const isSubmittingRef = React.useRef(false);
 
   const activeConfirmationId = confirmedId || confirmationId;
+
+  const handleHoldExpire = React.useCallback(() => {
+    setIsHoldExpired(true);
+    setError('Your 10-minute seat reservation hold has expired. Please retry.');
+    onHoldExpire?.();
+  }, [onHoldExpire]);
+
+  React.useEffect(() => {
+    if (remainingHoldSeconds !== undefined && remainingHoldSeconds <= 0) {
+      handleHoldExpire();
+    }
+  }, [remainingHoldSeconds, handleHoldExpire]);
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -62,6 +84,11 @@ export function BookingModal({
   }
 
   const handleReserve = async () => {
+    if (isHoldExpired) {
+      return setError(
+        'Your 10-minute seat reservation hold has expired. Please retry.',
+      );
+    }
     if (!date || !time) return setError('Please select both a date and time');
     if (loading || isSubmitting || isSubmittingRef.current) return;
 
@@ -202,12 +229,22 @@ export function BookingModal({
           </div>
         ) : (
           <div>
-            <h2 id="booking-modal-title" className="mb-2 text-xl font-bold">
-              Reserve Workspace
-            </h2>
-            <p className="mb-6 text-sm text-zinc-400">
-              Book a desk at {venueName}
-            </p>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 id="booking-modal-title" className="text-xl font-bold">
+                  Reserve Workspace
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  Book a desk at {venueName}
+                </p>
+              </div>
+              <ReservationTimerBadge
+                remainingSeconds={remainingHoldSeconds}
+                initialExpiresAt={initialExpiresAt}
+                totalDurationSeconds={holdDurationSeconds ?? 600}
+                onExpire={handleHoldExpire}
+              />
+            </div>
 
             {error && (
               <div
@@ -219,7 +256,11 @@ export function BookingModal({
                 <div className="mt-2 flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={handleReserve}
+                    onClick={() => {
+                      setIsHoldExpired(false);
+                      setError('');
+                      handleReserve();
+                    }}
                     data-testid="booking-retry-btn"
                     className="rounded-lg bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/30 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                   >

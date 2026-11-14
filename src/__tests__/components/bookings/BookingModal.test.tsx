@@ -267,4 +267,82 @@ describe('BookingModal Component (#7725)', () => {
       'Please select both a date and time',
     );
   });
+
+  describe('Seat Reservation Hold Timer Ring Integration (#7756)', () => {
+    it('renders ReservationTimerBadge in form view with circular progress ring', () => {
+      render(
+        <BookingModal
+          venueId="venue-1"
+          venueName="Silicon Loft"
+          onClose={jest.fn()}
+          onSuccess={jest.fn()}
+          remainingHoldSeconds={600}
+        />,
+      );
+
+      expect(
+        screen.getByTestId('reservation-timer-badge'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId('reservation-timer-ring'),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('reservation-timer-text')).toHaveTextContent(
+        'Hold: 10:00',
+      );
+    });
+
+    it('updates badge color and pulsing state below 120 seconds', () => {
+      render(
+        <BookingModal
+          venueId="venue-1"
+          venueName="Silicon Loft"
+          onClose={jest.fn()}
+          onSuccess={jest.fn()}
+          remainingHoldSeconds={90}
+        />,
+      );
+
+      const badge = screen.getByTestId('reservation-timer-badge');
+      expect(badge).toHaveAttribute('data-color', 'red');
+      expect(badge).toHaveClass('animate-pulse');
+      expect(screen.getByTestId('reservation-timer-text')).toHaveTextContent(
+        'Hold: 01:30',
+      );
+    });
+
+    it('triggers hold expiration and displays alert when hold time expires', async () => {
+      const onHoldExpire = jest.fn();
+
+      render(
+        <BookingModal
+          venueId="venue-1"
+          venueName="Silicon Loft"
+          onClose={jest.fn()}
+          onSuccess={jest.fn()}
+          remainingHoldSeconds={0}
+          onHoldExpire={onHoldExpire}
+        />,
+      );
+
+      // Try to confirm when hold has expired
+      fireEvent.change(screen.getByLabelText(/date/i), {
+        target: { value: '2026-12-01' },
+      });
+      fireEvent.change(screen.getByLabelText(/time/i), {
+        target: { value: '10:00' },
+      });
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: /confirm booking/i }),
+        );
+      });
+
+      expect(
+        screen.getByTestId('booking-error-alert'),
+      ).toHaveTextContent(
+        /reservation hold has expired/i,
+      );
+    });
+  });
 });

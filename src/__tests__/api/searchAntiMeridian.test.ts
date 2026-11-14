@@ -189,3 +189,22 @@ describe("Anti-Meridian (180°/-180°) Bounding Box Search (#api/search)", () =>
     });
   });
 });
+
+describe("Free-text filter normalization (#7670)", () => {
+  const likePatterns = (query: string): unknown[] =>
+    buildBoundingBoxQuery({ query }).predicates.flatMap((p) => p.values);
+
+  it("collapses repeated whitespace so spaced queries match the same venues", () => {
+    expect(likePatterns("quiet   cafe")).toEqual([
+      "%quiet cafe%",
+      "%quiet cafe%",
+    ]);
+    expect(likePatterns(" quiet cafe ")).toEqual(likePatterns("quiet cafe"));
+  });
+
+  it("adds no predicate for a whitespace-only query", () => {
+    expect(buildBoundingBoxQuery({ query: "   \t " }).predicates).toHaveLength(
+      0,
+    );
+  });
+});

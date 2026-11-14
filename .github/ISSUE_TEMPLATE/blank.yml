@@ -15,8 +15,8 @@ body:
     id: description
     attributes:
       label: Description
-      description: A clear and concise description of what this issue is about.
-      placeholder: Describe your issue here...
+      description: "A clear and concise description of what this issue is about."
+      placeholder: "Describe your issue here..."
     validations:
       required: true
 
@@ -24,8 +24,8 @@ body:
     id: additional_context
     attributes:
       label: Additional Context
-      description: Add any other context, links, or screenshots here.
-      placeholder: Any extra information...
+      description: "Add any other context, links, or screenshots here."
+      placeholder: "Any extra information..."
     validations:
       required: false
 
@@ -33,7 +33,7 @@ body:
     id: checklist
     attributes:
       label: Checklist
-      description: Please check all that apply.
+      description: "Please check all that apply."
       options:
-        - label: I have searched existing issues to ensure this is not a duplicate.
+        - label: "I have searched existing issues to ensure this is not a duplicate."
           required: true

@@ -388,7 +388,7 @@ export async function searchVenuesWithRrf(
     )
     SELECT
       fused_scores."id",
-      fused_scores.rrf_score AS score,
+      fused_scores.rrf_score * (1.0 - LEAST(100, GREATEST(0, COALESCE(v."slaPenaltyPoints", 0))) / 100.0) AS score,
       v."searchEmbedding" IS NULL AS needs_embedding,
       concat_ws(' ',
         v."name", v."category", v."address",
@@ -407,7 +407,7 @@ export async function searchVenuesWithRrf(
       ) AS search_document
     FROM fused_scores
     JOIN "Venue" v ON v."id" = fused_scores."id"
-    ORDER BY fused_scores.rrf_score DESC, fused_scores."id"
+    ORDER BY score DESC, fused_scores."id"
   `);
 
   let ranked: RankedVenueList = Object.assign([...(results ?? [])], {
@@ -444,7 +444,8 @@ export async function searchVenuesWithRrf(
           v."id",
           v."name",
           SIMILARITY(v."name", ${searchQuery}) AS similarity,
-          SIMILARITY(v."name", ${searchQuery}) AS score,
+          SIMILARITY(v."name", ${searchQuery}) *
+            (1.0 - LEAST(100, GREATEST(0, COALESCE(v."slaPenaltyPoints", 0))) / 100.0) AS score,
           v."searchEmbedding" IS NULL AS needs_embedding,
           concat_ws(' ',
             v."name", v."category", v."address",
@@ -464,7 +465,7 @@ export async function searchVenuesWithRrf(
         FROM "Venue" v
         WHERE SIMILARITY(v."name", ${searchQuery}) >= ${minSimilarity}
         ${venueFilters}
-        ORDER BY SIMILARITY(v."name", ${searchQuery}) DESC, v."id"
+        ORDER BY score DESC, v."id"
         LIMIT ${candidateLimit}
       `);
 

@@ -74,6 +74,10 @@ export interface RouteSegment {
   name?: string;
   corridorClearanceCm?: number;
   isSharpCorner?: boolean;
+  /** Highest absolute slope percentage measured for this route segment. */
+  maxGradePercent?: number;
+  /** OpenRouteService wheelchair suitability score (0-10), when available. */
+  suitabilityScore?: number;
 }
 
 export interface AccessibilityWeightedRoute {
@@ -139,7 +143,11 @@ export class AccessibleRouter {
    * @param segments Route segments from OSRM.
    * @param wheelchairMode If true, strictly penalizes non-compliant segments.
    */
-  public evaluateRoute(segments: RouteSegment[], wheelchairMode: boolean = true): AccessibilityWeightedRoute {
+  public evaluateRoute(
+    segments: RouteSegment[],
+    wheelchairMode: boolean = true,
+    maxAllowedGradePercent: number = 8.33,
+  ): AccessibilityWeightedRoute {
     let totalDistance = 0;
     let totalDuration = 0;
     let totalElevationGain = 0;
@@ -169,9 +177,14 @@ export class AccessibleRouter {
         }
 
         // Simulate elevation check (in real impl, this uses DEM data per segment)
-        const simulatedGrade = this.elevationMatrix.calculateGrade(segment.elevationGain, segment.distance);
-        if (simulatedGrade > 8.33) {
-          segmentMultiplier += (simulatedGrade - 8.33) / 5; // Progressive penalty for steepness
+        const measuredGrade = Number.isFinite(segment.maxGradePercent)
+          ? Math.max(0, segment.maxGradePercent as number)
+          : this.elevationMatrix.calculateGrade(segment.elevationGain, segment.distance);
+        const maxAllowedGrade = Number.isFinite(maxAllowedGradePercent)
+          ? Math.max(1, maxAllowedGradePercent)
+          : 8.33;
+        if (measuredGrade > maxAllowedGrade) {
+          segmentMultiplier += (measuredGrade - maxAllowedGrade) / 5;
         }
       }
 

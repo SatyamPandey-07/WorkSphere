@@ -25,6 +25,12 @@
 #define MAX_FRAMES 4096
 #define MAX_STAGES 8
 #define LANES 4
+#define AGC_TARGET_PEAK 0.5f
+#define AGC_MIN_GAIN 0.5f
+#define AGC_MAX_GAIN 2.5f
+/* Coefficients for a 48 kHz stream: approximately 10 ms attack and 500 ms release. */
+#define AGC_ATTACK_COEFFICIENT 0.9979198f
+#define AGC_RELEASE_COEFFICIENT 0.9999583f
 
 #define EXPORT(name) __attribute__((export_name(#name)))
 
@@ -45,9 +51,40 @@ _Alignas(16) static float state_z2[MAX_STAGES][MAX_CHANNELS];
 static int num_stages = 0;
 static float output_gain = 1.0f;
 static int simd_enabled = 1;
+static int agc_enabled = 0;
+static float agc_peak[MAX_CHANNELS];
 
 static void zero_floats(float* dst, int count) {
     for (int i = 0; i < count; i++) dst[i] = 0.0f;
+}
+
+static float absolute_value(float value) {
+    return value < 0.0f ? -value : value;
+}
+
+static void reset_agc(void) {
+    for (int c = 0; c < MAX_CHANNELS; c++) agc_peak[c] = AGC_TARGET_PEAK;
+}
+
+static void apply_agc(int num_channels, int num_frames) {
+    if (!agc_enabled) return;
+
+    for (int c = 0; c < num_channels; c++) {
+        float* samples = io_buffer + c * MAX_FRAMES;
+        float peak = agc_peak[c];
+        for (int t = 0; t < num_frames; t++) {
+            const float amplitude = absolute_value(samples[t]);
+            const float coefficient =
+                amplitude > peak ? AGC_ATTACK_COEFFICIENT : AGC_RELEASE_COEFFICIENT;
+            peak = coefficient * peak + (1.0f - coefficient) * amplitude;
+
+            float gain = AGC_TARGET_PEAK / peak;
+            if (gain < AGC_MIN_GAIN) gain = AGC_MIN_GAIN;
+            if (gain > AGC_MAX_GAIN) gain = AGC_MAX_GAIN;
+            samples[t] *= gain;
+        }
+        agc_peak[c] = peak;
+    }
 }
 
 /* Flush denormal-range state to zero so decaying filters stay fast. */
@@ -209,6 +246,7 @@ EXPORT(setSIMDEnabled) void setSIMDEnabled(int enabled) { simd_enabled = enabled
 EXPORT(reset) void reset(void) {
     zero_floats(&state_z1[0][0], MAX_STAGES * MAX_CHANNELS);
     zero_floats(&state_z2[0][0], MAX_STAGES * MAX_CHANNELS);
+    reset_agc();
 }
 
 /* Returns 0 on success, -1 if count is out of range. Resets filter state. */
@@ -231,6 +269,7 @@ EXPORT(setStage) int setStage(int index, float b0, float b1, float b2, float a1,
 }
 
 EXPORT(setOutputGain) void setOutputGain(float gain) { output_gain = gain; }
+EXPORT(setAGCEnabled) void setAGCEnabled(int enabled) { agc_enabled = enabled ? 1 : 0; }
 
 /**
  * Filter `num_frames` samples of `num_channels` planar channels in place
@@ -248,6 +287,7 @@ EXPORT(process) int process(int num_channels, int num_frames) {
             }
         }
         if (output_gain != 1.0f) apply_gain_simd(num_channels, num_frames);
+        apply_agc(num_channels, num_frames);
         flush_denormals(num_channels);
         return 0;
     }
@@ -255,6 +295,7 @@ EXPORT(process) int process(int num_channels, int num_frames) {
 
     for (int c = 0; c < num_channels; c++) process_channel_scalar(c, num_frames);
     if (output_gain != 1.0f) apply_gain_scalar(num_channels, num_frames);
+    apply_agc(num_channels, num_frames);
     flush_denormals(num_channels);
     return 0;
 }

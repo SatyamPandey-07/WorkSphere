@@ -6,3 +6,13 @@ export type {
   WillpowerStatusInfo,
 } from "./LanternPowerRing";
 export { default as CarbonFootprintTracker } from "./CarbonFootprintTracker";
+export {
+  AmbientNoiseSparkline,
+  generateCubicBezierPath,
+  formatHour,
+  getNoiseLevelCategory,
+} from "./AmbientNoiseSparkline";
+export type {
+  HourlyDecibelPoint,
+  AmbientNoiseSparklineProps,
+} from "./AmbientNoiseSparkline";

@@ -15,6 +15,7 @@ import {
   evaluateNetworkCondition,
   computeScaleResolutionDownBy,
 } from "./simulcastController";
+import { AbrController } from "./abrController";
 import {
   Resolution,
   NetworkStats,
@@ -94,7 +95,7 @@ export async function attachSimulcastVideoTrack(
     throw new Error("Failed to obtain RTCRtpSender for video track");
   }
 
-  const controller = new SimulcastAdaptiveController(pc, sender, options);
+  const controller = new AbrController(pc, sender, options);
   controller.start();
 
   return { sender, controller };

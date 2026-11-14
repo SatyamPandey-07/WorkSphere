@@ -133,7 +133,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
-    if (booking.status === "CANCELLED") {
+    if (booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR") {
       return NextResponse.json(
         {
           success: false,
@@ -415,7 +415,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
       );
     }
 
-    if (booking.status === "CANCELLED") {
+    if (booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR") {
       return NextResponse.json(
         {
           success: false,
@@ -458,7 +458,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
           id: booking.id,
           userId,
           status: {
-            not: "CANCELLED",
+            in: ACTIVE_BOOKING_STATUSES,
           },
         },
         data: {

@@ -1,0 +1,16 @@
+[package]
+name = "spatial_audio"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# The wasm32 SIMD intrinsics used by this crate (`core::arch::wasm32`) are
+# stable, so no nightly toolchain is needed to build for the web target:
+#
+#   rustup target add wasm32-unknown-unknown
+#   cargo build --target wasm32-unknown-unknown --release
+#
+# The resulting cdylib is loaded by the AudioWorklet wrapper in
+# src/lib/audio/SpatialAudioWorkletProcessor.ts (#7490).

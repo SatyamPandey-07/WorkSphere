@@ -13,7 +13,7 @@ import L from "leaflet";
 import {
   WebGLHeatmapRenderer,
   HeatmapPoint,
-} from "@/lib/webgl/webglHeatmapRenderer";
+} from "@/lib/webgl/WebGLHeatmapRenderer";
 
 export interface GeoTelemetryPoint {
   lat: number;

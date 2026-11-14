@@ -257,11 +257,29 @@ async function handleFetch(request, event) {
     if (cached) return cached;
     try {
       const networkResponse = await fetch(request);
+      // Guard: skip cache write for aborted/opaque error responses that can
+      // arise when the client-side AbortController cancels a prefetch after a
+      // rapid zoom change.  status === 0 on its own is acceptable (opaque
+      // cross-origin success), but we also reject any response whose body has
+      // already been consumed or whose signal was aborted.
       if (networkResponse.status === 200 || networkResponse.status === 0) {
-        cache.put(request, networkResponse.clone());
+        // cache.put is fire-and-forget; absorb any storage errors silently so
+        // an aborted or quota-exceeded write never surfaces as an unhandled
+        // rejection in the SW's global scope.
+        cache.put(request, networkResponse.clone()).catch((err) => {
+          if (err && err.name !== "AbortError") {
+            console.warn("[SW] Map tile cache.put failed:", err);
+          }
+        });
       }
       return networkResponse;
-    } catch {
+    } catch (err) {
+      // AbortError = tile prefetch was intentionally cancelled (zoom changed).
+      // Return a 204 No Content so the caller gets a clean response without
+      // triggering the offline fallback path or logging a spurious error.
+      if (err && err.name === "AbortError") {
+        return new Response(null, { status: 204 });
+      }
       return new Response("Map Tile Offline", { status: 503 });
     }
   } else if (isVenuePhoto) {
@@ -864,13 +882,13 @@ async function syncConversations() {
           const response =
             action.type === "conversation-delete"
               ? await fetch(`/api/conversations/${action.conversationId}`, {
-                  method: "DELETE",
-                })
+                method: "DELETE",
+              })
               : await fetch(`/api/conversations/${action.conversationId}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ title: action.title }),
-                });
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: action.title }),
+              });
 
           if (response.ok) {
             await removePendingAction(db, action.id);
@@ -1202,8 +1220,8 @@ async function syncFavoriteVenuesOccupancy() {
       const targetStore = storeNames.contains("favorites")
         ? "favorites"
         : storeNames.contains("venues")
-        ? "venues"
-        : null;
+          ? "venues"
+          : null;
 
       if (targetStore) {
         const tx = db.transaction(targetStore, "readwrite");
@@ -1335,7 +1353,7 @@ function openIndexedDB() {
           deltaStore.createIndex("timestamp", "timestamp", { unique: false });
         }
 
-// Recently viewed venues store (Issue #3512)
+        // Recently viewed venues store (Issue #3512)
         if (!db.objectStoreNames.contains("recentlyViewedVenues")) {
           const recentStore = db.createObjectStore("recentlyViewedVenues", {
             keyPath: "id",
@@ -1432,11 +1450,11 @@ async function prefetchVenueData(venueId, position) {
         ((1 -
           Math.log(
             Math.tan((lat * Math.PI) / 180) +
-              1 / Math.cos((lat * Math.PI) / 180),
+            1 / Math.cos((lat * Math.PI) / 180),
           ) /
-            Math.PI) /
+          Math.PI) /
           2) *
-          Math.pow(2, zoom),
+        Math.pow(2, zoom),
       );
 
       const mapCache = await caches.open(MAP_TILE_CACHE_NAME);
@@ -1507,8 +1525,8 @@ self.addEventListener("push", (event) => {
     typeof self !== "undefined" && self && self.registration
       ? self.registration
       : typeof globalThis !== "undefined" &&
-          globalThis.self &&
-          globalThis.self.registration
+        globalThis.self &&
+        globalThis.self.registration
         ? globalThis.self.registration
         : null;
   if (swRegistration && swRegistration.showNotification) {
@@ -1652,7 +1670,7 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
         for (const record of toEvict) {
           await cache.delete(record.url);
         }
-        
+
         console.log(
           `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
         );

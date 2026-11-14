@@ -11,8 +11,8 @@ import {
   Maximize2,
   Minimize2,
 } from "lucide-react";
-import { useEffect, useState, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { motion } from "framer-motion";
 
 const AGENTS = [
   {

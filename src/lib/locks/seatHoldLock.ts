@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Distributed Seat-Hold Lock (WebLocks / Redis / PartyKit Integration)
  *
  * Implements a distributed lock mechanism with a 5-minute TTL to prevent
@@ -29,6 +29,44 @@ export class LockValidityError extends Error {
   }
 }
 
+export class QuorumFencingError extends Error {
+  readonly code = "QUORUM_FENCING_ERROR";
+  readonly achievedNodes: number;
+  readonly requiredQuorum: number;
+
+  constructor(message: string, achievedNodes: number, requiredQuorum: number) {
+    super(message);
+    this.name = "QuorumFencingError";
+    this.achievedNodes = achievedNodes;
+    this.requiredQuorum = requiredQuorum;
+  }
+}
+
+export class StaleFencingTokenError extends Error {
+  readonly code = "STALE_FENCING_TOKEN";
+  readonly submittedToken: bigint;
+  readonly lastSeenToken: bigint;
+
+  constructor(message: string, submittedToken: bigint, lastSeenToken: bigint) {
+    super(message);
+    this.name = "StaleFencingTokenError";
+    this.submittedToken = submittedToken;
+    this.lastSeenToken = lastSeenToken;
+  }
+}
+
+export interface RedlockRedisNode {
+  id: string;
+  incr: (key: string) => Promise<number | string | bigint>;
+  get?: (key: string) => Promise<string | number | null>;
+  set?: (
+    key: string,
+    value: string,
+    options?: { ex?: number; nx?: boolean },
+  ) => Promise<unknown>;
+  eval?: (script: string, keys: string[], args: string[]) => Promise<unknown>;
+}
+
 /**
  * High-resolution monotonic nanosecond clock backed by process.hrtime.bigint().
  */
@@ -45,6 +83,15 @@ export function getMonotonicNowNs(): bigint {
 }
 
 let monotonicFencingSeq: bigint = BigInt(0);
+const resourceLastSeenTokens = new Map<string, bigint>();
+let registeredRedlockNodes: RedlockRedisNode[] | null = null;
+
+/**
+ * Configures independent Redis nodes for N/2+1 Redlock quorum consensus.
+ */
+export function configureRedlockNodes(nodes: RedlockRedisNode[] | null): void {
+  registeredRedlockNodes = nodes;
+}
 
 /**
  * Generates a strictly monotonic 64-bit BigInt fencing token immune to 32-bit wrap-around.
@@ -68,6 +115,150 @@ export function resetMonotonicFencingSequence(
   initial: bigint = BigInt(0),
 ): void {
   monotonicFencingSeq = initial;
+  resourceLastSeenTokens.clear();
+}
+
+function getFencingSequenceKey(resourceKey: string): string {
+  return `seat:fence:seq:${resourceKey}`;
+}
+
+/**
+ * Issues a strictly monotonic fencing token using Redis INCR against a persistent
+ * sequence key with majority quorum confirmation across N/2+1 independent Redis nodes.
+ * Ensures that even across master-replica failovers or partitions, a promoted replica
+ * with a lagging counter cannot issue a token <= an earlier partitioned master's token.
+ */
+export async function acquireQuorumFencingToken(
+  resourceKey: string,
+  nodes?: RedlockRedisNode[],
+): Promise<{
+  token: bigint;
+  quorumAchieved: number;
+  quorumRequired: number;
+}> {
+  const activeNodes =
+    nodes && nodes.length > 0
+      ? nodes
+      : registeredRedlockNodes && registeredRedlockNodes.length > 0
+        ? registeredRedlockNodes
+        : null;
+
+  if (!activeNodes) {
+    const fallback = nextMonotonicFencingToken(
+      resourceLastSeenTokens.get(resourceKey),
+    );
+    resourceLastSeenTokens.set(resourceKey, fallback);
+    return { token: fallback, quorumAchieved: 1, quorumRequired: 1 };
+  }
+
+  const totalNodes = activeNodes.length;
+  const requiredQuorum = Math.floor(totalNodes / 2) + 1;
+  const seqKey = getFencingSequenceKey(resourceKey);
+
+  const results = await Promise.allSettled(
+    activeNodes.map(async (node) => {
+      const rawVal = await node.incr(seqKey);
+      return BigInt(rawVal);
+    }),
+  );
+
+  const succeededTokens: bigint[] = [];
+  for (const res of results) {
+    if (res.status === "fulfilled") {
+      succeededTokens.push(res.value);
+    }
+  }
+
+  if (succeededTokens.length < requiredQuorum) {
+    throw new QuorumFencingError(
+      `Failed to achieve Redlock fencing quorum (${succeededTokens.length}/${requiredQuorum} nodes responded)`,
+      succeededTokens.length,
+      requiredQuorum,
+    );
+  }
+
+  // Take the maximum INCR value across the responding quorum and enforce strict monotonicity
+  // against any previously observed token for this resource so lagging replicas cannot regress.
+  let quorumMax = succeededTokens[0];
+  for (const val of succeededTokens) {
+    if (val > quorumMax) {
+      quorumMax = val;
+    }
+  }
+
+  const lastSeen = resourceLastSeenTokens.get(resourceKey) ?? BigInt(0);
+  const candidate = quorumMax > lastSeen ? quorumMax : lastSeen + BigInt(1);
+  const finalToken = nextMonotonicFencingToken(candidate - BigInt(1));
+
+  resourceLastSeenTokens.set(resourceKey, finalToken);
+
+  // Best-effort bump on any lagging quorum nodes whose counter was behind finalToken
+  await Promise.allSettled(
+    activeNodes.map(async (node, idx) => {
+      const res = results[idx];
+      if (res.status === "fulfilled" && res.value < finalToken && node.set) {
+        await node.set(seqKey, finalToken.toString());
+      }
+    }),
+  );
+
+  return {
+    token: finalToken,
+    quorumAchieved: succeededTokens.length,
+    quorumRequired: requiredQuorum,
+  };
+}
+
+export interface FencingTokenStore {
+  getLastSeenToken: (
+    resourceKey: string,
+  ) => Promise<bigint | string | number | null | undefined>;
+  saveLastSeenToken: (resourceKey: string, token: bigint) => Promise<void>;
+}
+
+/**
+ * Verifies inside a database transaction that a submitted fencing token satisfies
+ * `token > last_seen_token` before recording the new high-water mark.
+ * Rejects stale/overlapping tokens (e.g., from a partitioned master or lagging replica)
+ * with StaleFencingTokenError to preserve strict serializability.
+ */
+export async function verifyAndAdvanceDbFencingToken(
+  resourceKey: string,
+  submittedToken: bigint | string | number,
+  store?: FencingTokenStore,
+): Promise<{ accepted: true; token: bigint; previousToken: bigint }> {
+  const token =
+    typeof submittedToken === "bigint"
+      ? submittedToken
+      : BigInt(submittedToken);
+
+  const rawLastSeen = store
+    ? await store.getLastSeenToken(resourceKey)
+    : resourceLastSeenTokens.get(resourceKey);
+
+  const lastSeenToken =
+    rawLastSeen !== undefined && rawLastSeen !== null
+      ? BigInt(rawLastSeen)
+      : BigInt(0);
+
+  if (token <= lastSeenToken) {
+    throw new StaleFencingTokenError(
+      `Rejected stale fencing token ${token.toString()} <= last_seen_token ${lastSeenToken.toString()} for ${resourceKey}`,
+      token,
+      lastSeenToken,
+    );
+  }
+
+  if (store) {
+    await store.saveLastSeenToken(resourceKey, token);
+  }
+  resourceLastSeenTokens.set(resourceKey, token);
+
+  return {
+    accepted: true,
+    token,
+    previousToken: lastSeenToken,
+  };
 }
 
 /**
@@ -110,7 +301,7 @@ export interface AcquireLockResult {
   heldByName?: string;
   expiresAt?: number;
   remainingSeconds?: number;
-  reason?: "ALREADY_HELD" | "ERROR";
+  reason?: "ALREADY_HELD" | "QUORUM_FAILED" | "ERROR";
 }
 
 /**
@@ -170,14 +361,6 @@ const memoryLocks = new Map<string, SeatLockData>();
  * ARGV[1] = requesting userId
  * ARGV[2] = JSON payload for a brand-new lock
  * ARGV[3] = TTL in seconds
- *
- * Returns { 1, payload } when the caller now holds the lock (fresh acquire or
- * renewal by the same user) and { 0, currentPayload } when someone else holds it.
- *
- * Doing the existence check, the ownership check and the write inside one
- * script is what makes this a real lock: with separate SET NX / GET / SET round
- * trips the key can expire (and be taken by another user) between the calls, and
- * the renewing user then silently overwrites the new owner's lock.
  */
 export const SEAT_LOCK_ACQUIRE_LUA = `
 local current = redis.call('GET', KEYS[1])
@@ -199,10 +382,6 @@ return { 0, current }
 
 /**
  * Atomic compare-and-delete.
- *
- * KEYS[1] = lock key, ARGV[1] = userId that wants to release.
- * Only deletes the key if it is still owned by that user, so a holder whose
- * lock already expired can never delete the lock of whoever acquired it next.
  */
 export const SEAT_LOCK_RELEASE_LUA = `
 local current = redis.call('GET', KEYS[1])
@@ -242,8 +421,8 @@ function pruneMemoryLocks(now: number = Date.now()) {
 }
 
 /**
- * Attempts to acquire an exclusive 5-minute lock on a seat.
- * Returns success: true if acquired, or success: false with hold details if already locked.
+ * Attempts to acquire an exclusive 5-minute lock on a seat using Redlock quorum
+ * fencing token generation when a multi-node cluster is configured.
  */
 export async function acquireSeatWebLock(
   venueId: string,
@@ -251,6 +430,7 @@ export async function acquireSeatWebLock(
   userId: string,
   userName?: string,
   ttlSeconds: number = DEFAULT_LOCK_TTL_SECONDS,
+  redlockNodes?: RedlockRedisNode[],
 ): Promise<AcquireLockResult> {
   const key = getLockKey(venueId, seatId);
   const acquireStartNs = getMonotonicNowNs();
@@ -261,7 +441,23 @@ export async function acquireSeatWebLock(
   const clampedTtl = Math.min(Math.max(validTtl, 10), 600);
   const ttlMs = clampedTtl * 1000;
   const expiresAt = now + ttlMs;
-  const initialToken = nextMonotonicFencingToken();
+
+  let initialToken: bigint;
+  try {
+    const quorum = await acquireQuorumFencingToken(
+      `${venueId}:${seatId}`,
+      redlockNodes,
+    );
+    initialToken = quorum.token;
+  } catch (err) {
+    if (err instanceof QuorumFencingError) {
+      return {
+        success: false,
+        reason: "QUORUM_FAILED",
+      };
+    }
+    throw err;
+  }
 
   const redis = getRedis();
 
@@ -279,8 +475,6 @@ export async function acquireSeatWebLock(
         acquiredMonotonicNs: acquireStartNs.toString(),
       };
 
-      // Single atomic round trip: acquire if free, renew if we already own it,
-      // otherwise report the current holder.
       const rawResult = await redis.eval(
         SEAT_LOCK_ACQUIRE_LUA,
         [key],
@@ -298,7 +492,6 @@ export async function acquireSeatWebLock(
       const currentLock = parseLockValue(rawLock);
 
       if (Number(flag) === 1) {
- fix/redlock-monotonic-fencing-drift
         const resolvedLock: SeatLockData = {
           ...(currentLock ?? lockPayload),
           driftAllowanceMs,
@@ -307,21 +500,17 @@ export async function acquireSeatWebLock(
         const resolvedToken = resolvedLock.fencingToken
           ? BigInt(resolvedLock.fencingToken)
           : initialToken;
+        getRedisKeyspaceManager().registerDeskTimer(
+          venueId,
+          seatId,
+          resolvedLock.expiresAt,
+        );
         return {
           success: true,
           lock: resolvedLock,
           fencingToken: resolvedToken,
           driftAllowanceMs,
         };
-
-        const finalLock = currentLock ?? lockPayload;
-        getRedisKeyspaceManager().registerDeskTimer(
-          venueId,
-          seatId,
-          finalLock.expiresAt,
-        );
-        return { success: true, lock: finalLock };
- main
       }
 
       const remainingSec = currentLock
@@ -366,7 +555,14 @@ export async function acquireSeatWebLock(
   const elapsedNs =
     acquireEndNs >= acquireStartNs ? acquireEndNs - acquireStartNs : BigInt(0);
   const driftAllowanceMs = computeDynamicClockDriftMs(ttlMs, elapsedNs);
-  const token = nextMonotonicFencingToken(existing?.fencingToken);
+  const prevExisting = existing?.fencingToken
+    ? BigInt(existing.fencingToken)
+    : BigInt(0);
+  const token =
+    initialToken > prevExisting
+      ? initialToken
+      : nextMonotonicFencingToken(prevExisting);
+  resourceLastSeenTokens.set(`${venueId}:${seatId}`, token);
 
   const lockPayload: SeatLockData = {
     venueId,
@@ -382,20 +578,17 @@ export async function acquireSeatWebLock(
   };
 
   memoryLocks.set(key, lockPayload);
- fix/redlock-monotonic-fencing-drift
+  getRedisKeyspaceManager().registerDeskTimer(
+    venueId,
+    seatId,
+    lockPayload.expiresAt,
+  );
   return {
     success: true,
     lock: lockPayload,
     fencingToken: token,
     driftAllowanceMs,
   };
-  getRedisKeyspaceManager().registerDeskTimer(
-    venueId,
-    seatId,
-    lockPayload.expiresAt,
-  );
-  return { success: true, lock: lockPayload };
- main
 }
 
 /**
@@ -413,7 +606,6 @@ export async function releaseSeatWebLock(
 
   if (redis) {
     try {
-      // Atomic compare-and-delete: never removes a lock owned by someone else.
       const released = await redis.eval(SEAT_LOCK_RELEASE_LUA, [key], [userId]);
       return Number(released) === 1;
     } catch (err) {
@@ -424,7 +616,6 @@ export async function releaseSeatWebLock(
     }
   }
 
-  // Memory fallback
   const existing = memoryLocks.get(key);
   if (existing && existing.userId === userId) {
     memoryLocks.delete(key);
@@ -477,7 +668,6 @@ export async function getSeatWebLock(
 
 /**
  * Renews a seat hold lock held by the designated user.
- * Atomically updates TTL, increments version, and preserves heldAt timestamp.
  */
 export async function renewSeatWebLock(
   venueId: string,
@@ -526,11 +716,6 @@ function getHeartbeatKey(
   return userId ? `${venueId}:${seatId}:${userId}` : `${venueId}:${seatId}`;
 }
 
-/**
- * Starts an automatic background heartbeat to renew an acquired seat lock.
- * Fires periodically at half the TTL interval (or specified intervalMs).
- * Automatically cancels if renewal fails (e.g., lock expired and taken by another user).
- */
 export function startSeatLockRenewalHeartbeat(
   options: SeatLockHeartbeatOptions,
 ): () => void {
@@ -547,11 +732,9 @@ export function startSeatLockRenewalHeartbeat(
 
   const key = getHeartbeatKey(venueId, seatId, userId);
 
-  // Stop any existing heartbeat for this seat & user
   stopSeatLockRenewalHeartbeat(venueId, seatId, userId);
 
   const heartbeatFn = async () => {
-    // If heartbeat was cancelled or stopped, abort immediately
     if (!activeHeartbeats.has(key)) return;
 
     try {
@@ -563,7 +746,6 @@ export function startSeatLockRenewalHeartbeat(
         ttlSeconds,
       );
 
-      // Re-verify heartbeat was not cancelled during async renewal roundtrip
       if (!activeHeartbeats.has(key)) return;
 
       if (result.success && result.lock) {
@@ -573,17 +755,17 @@ export function startSeatLockRenewalHeartbeat(
         }
         onRenewSuccess?.(result.lock);
       } else {
-        // Renewal failed - stop the heartbeat before invoking callback
         stopSeatLockRenewalHeartbeat(venueId, seatId, userId);
         onRenewFailed?.(result.reason || "RENEWAL_REJECTED");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn(
         `[SeatLock Heartbeat] Renewal failed for ${venueId}:${seatId}:`,
         err,
       );
       stopSeatLockRenewalHeartbeat(venueId, seatId, userId);
-      onRenewFailed?.(err?.message || "HEARTBEAT_ERROR");
+      const msg = err instanceof Error ? err.message : "HEARTBEAT_ERROR";
+      onRenewFailed?.(msg);
     }
   };
 
@@ -600,9 +782,6 @@ export function startSeatLockRenewalHeartbeat(
   };
 }
 
-/**
- * Stops an active lock renewal heartbeat for a seat hold.
- */
 export function stopSeatLockRenewalHeartbeat(
   venueId: string,
   seatId: string,
@@ -619,7 +798,6 @@ export function stopSeatLockRenewalHeartbeat(
     return false;
   }
 
-  // If no userId provided, match all heartbeats for venueId & seatId
   let stopped = false;
   const prefix = `${venueId}:${seatId}:`;
   for (const [k, entry] of activeHeartbeats.entries()) {
@@ -632,9 +810,6 @@ export function stopSeatLockRenewalHeartbeat(
   return stopped;
 }
 
-/**
- * Stops all currently active seat lock renewal heartbeats.
- */
 export function stopAllSeatLockRenewalHeartbeats(): void {
   for (const entry of activeHeartbeats.values()) {
     clearInterval(entry.timer);
@@ -642,9 +817,6 @@ export function stopAllSeatLockRenewalHeartbeats(): void {
   activeHeartbeats.clear();
 }
 
-/**
- * Returns a list of all currently active heartbeat sessions.
- */
 export function getActiveSeatLockHeartbeats(): ActiveHeartbeatInfo[] {
   const list: ActiveHeartbeatInfo[] = [];
   for (const entry of activeHeartbeats.values()) {
@@ -660,9 +832,6 @@ export function getActiveSeatLockHeartbeats(): ActiveHeartbeatInfo[] {
   return list;
 }
 
-/**
- * Singleton service wrapper for seat hold lock renewal heartbeats.
- */
 export const SeatHoldHeartbeatService = {
   start: startSeatLockRenewalHeartbeat,
   stop: stopSeatLockRenewalHeartbeat,
@@ -677,11 +846,9 @@ export const SeatHoldHeartbeatService = {
 export function resetMemorySeatLocks(): void {
   stopAllSeatLockRenewalHeartbeats();
   memoryLocks.clear();
- fix/redlock-monotonic-fencing-drift
   resetMonotonicFencingSequence();
-
+  registeredRedlockNodes = null;
   getRedisKeyspaceManager().reset();
- main
 }
 
 export interface SeatWebLockOptions {
@@ -689,12 +856,6 @@ export interface SeatWebLockOptions {
   signal?: AbortSignal;
 }
 
-/**
- * Client-side Web Locks helper using Navigator.locks API.
- * Holds an exclusive lock named `seat-hold:${venueId}:${seatId}` for as long as the seat is held,
- * ensuring that if the tab or worker terminates unexpectedly, the lock is released immediately (#5489).
- * Includes timeout fallback and AbortController cancellation to prevent indefinite hangs (#4921).
- */
 export async function withSeatWebLock<T>(
   venueId: string,
   seatId: string,
@@ -719,7 +880,6 @@ export async function withSeatWebLock<T>(
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
 
-    // Link caller's abort signal if supplied
     if (typeof options === "object" && options?.signal) {
       if (options.signal.aborted) {
         throw new Error(`Lock request for ${lockName} aborted`);
@@ -794,6 +954,5 @@ export async function withSeatWebLock<T>(
     }
   }
 
-  // Fallback when Web Locks API is unavailable
   return callback(() => {});
 }

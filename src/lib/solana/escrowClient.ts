@@ -440,33 +440,338 @@ export interface ReconcileOptions {
   retryIntervalMs?: number;
 }
 
+export type EscrowConsensusState =
+  "PENDING_CONSENSUS" | "FINALIZED" | "ROLLED_BACK" | "QUORUM_FAILED";
+
+export interface QuorumNodeTelemetry {
+  endpoint: string;
+  latencyMs: number;
+  ok: boolean;
+  slot?: number;
+  error?: string;
+}
+
+export interface QuorumTelemetryRecord {
+  signature?: string;
+  quorumTarget: number;
+  totalNodes: number;
+  achievedConfirmations: number;
+  quorumLatencyMs: number;
+  nodes: QuorumNodeTelemetry[];
+  timestamp: number;
+}
+
+export interface EscrowQuorumSimulationOptions {
+  endpoints?: string[];
+  connections?: Connection[];
+  signature?: string;
+  quorumSize?: number;
+  pollIntervalMs?: number;
+  maxPollAttempts?: number;
+  onRollback?: (signature: string, reason: string) => Promise<void> | void;
+  onTelemetry?: (record: QuorumTelemetryRecord) => void;
+}
+
+export interface EscrowQuorumSimulationResult extends SimulationResult {
+  state: EscrowConsensusState;
+  signature?: string;
+  optimisticSlot: number;
+  quorumReached: boolean;
+  telemetry: QuorumTelemetryRecord;
+  commitmentPromise: Promise<{
+    state: "FINALIZED" | "ROLLED_BACK";
+    finalizedSlot: number | null;
+    rolledBack: boolean;
+    rollbackReason?: string;
+    telemetry: QuorumTelemetryRecord;
+  }>;
+}
+
 /**
- * Simulates a signed Solana transaction on RPC nodes before broadcasting.
+ * Simulates a signed Solana transaction across primary and backup RPC endpoints
+ * using 2-of-3 quorum consensus. Returns optimistic PENDING_CONSENSUS immediately
+ * upon first valid quorum simulation while background polling verifies on-chain
+ * slot commitment and rolls back if the signature drops from the leader queue.
  */
 export async function simulateEscrowTransaction(
-  connection: Connection,
+  connectionOrConnections: Connection | Connection[],
   transaction: Transaction | VersionedTransaction,
-): Promise<SimulationResult> {
-  try {
-    const res = await connection.simulateTransaction(transaction as any);
-    if (res.value.err) {
-      return {
-        success: false,
-        logs: res.value.logs || [],
-        error: JSON.stringify(res.value.err),
-      };
+  options: EscrowQuorumSimulationOptions = {},
+): Promise<EscrowQuorumSimulationResult> {
+  const poolConnections: Array<{ endpoint: string; conn: Connection }> = [];
+
+  if (Array.isArray(connectionOrConnections)) {
+    connectionOrConnections.forEach((conn, idx) => {
+      poolConnections.push({
+        endpoint:
+          options.endpoints?.[idx] ??
+          (conn as unknown as { rpcEndpoint?: string }).rpcEndpoint ??
+          `rpc-node-${idx}`,
+        conn,
+      });
+    });
+  } else if (options.connections && options.connections.length > 0) {
+    options.connections.forEach((conn, idx) => {
+      poolConnections.push({
+        endpoint:
+          options.endpoints?.[idx] ??
+          (conn as unknown as { rpcEndpoint?: string }).rpcEndpoint ??
+          `rpc-node-${idx}`,
+        conn,
+      });
+    });
+  } else {
+    poolConnections.push({
+      endpoint:
+        options.endpoints?.[0] ??
+        (connectionOrConnections as unknown as { rpcEndpoint?: string })
+          .rpcEndpoint ??
+        "rpc-primary",
+      conn: connectionOrConnections,
+    });
+    if (options.endpoints && options.endpoints.length > 1) {
+      const pool = getEscrowRpcPool({ endpoints: options.endpoints });
+      for (let i = 1; i < options.endpoints.length; i++) {
+        const ep = options.endpoints[i];
+        const backupConn = await pool
+          .getConnectionForEndpoint(ep)
+          .catch(() => connectionOrConnections);
+        poolConnections.push({ endpoint: ep, conn: backupConn });
+      }
+    }
+  }
+
+  const quorumTarget =
+    options.quorumSize ?? Math.min(2, poolConnections.length);
+  const pollIntervalMs = options.pollIntervalMs ?? 500;
+  const maxPollAttempts = options.maxPollAttempts ?? 8;
+  const signature = options.signature;
+
+  const simStart = performance.now();
+  const simTelemetryNodes: QuorumNodeTelemetry[] = [];
+  const validSims: Array<{ endpoint: string; slot: number; logs: string[] }> =
+    [];
+
+  await Promise.all(
+    poolConnections.map(async ({ endpoint, conn }) => {
+      const nodeStart = performance.now();
+      try {
+        const res = await conn.simulateTransaction(transaction as any);
+        const latencyMs =
+          Math.round((performance.now() - nodeStart) * 100) / 100;
+        const slot =
+          (res.value as unknown as { slot?: number })?.slot ??
+          (res as unknown as { context?: { slot?: number } }).context?.slot ??
+          0;
+        if (res.value?.err) {
+          const errStr = JSON.stringify(res.value.err);
+          simTelemetryNodes.push({
+            endpoint,
+            latencyMs,
+            ok: false,
+            slot,
+            error: errStr,
+          });
+        } else {
+          simTelemetryNodes.push({ endpoint, latencyMs, ok: true, slot });
+          validSims.push({ endpoint, slot, logs: res.value?.logs || [] });
+        }
+      } catch (err: unknown) {
+        const latencyMs =
+          Math.round((performance.now() - nodeStart) * 100) / 100;
+        const msg = err instanceof Error ? err.message : "Simulation failed";
+        simTelemetryNodes.push({ endpoint, latencyMs, ok: false, error: msg });
+      }
+    }),
+  );
+
+  const simTelemetry: QuorumTelemetryRecord = {
+    signature,
+    quorumTarget,
+    totalNodes: poolConnections.length,
+    achievedConfirmations: validSims.length,
+    quorumLatencyMs: Math.round((performance.now() - simStart) * 100) / 100,
+    nodes: simTelemetryNodes,
+    timestamp: Date.now(),
+  };
+
+  console.info("[solana-escrow] Simulation quorum telemetry", simTelemetry);
+  options.onTelemetry?.(simTelemetry);
+
+  if (validSims.length < quorumTarget) {
+    const firstErr =
+      simTelemetryNodes.find((n) => !n.ok)?.error ??
+      `Simulation quorum failed (${validSims.length}/${quorumTarget})`;
+    if (signature) {
+      await options.onRollback?.(signature, firstErr);
     }
     return {
-      success: true,
-      logs: res.value.logs || [],
-    };
-  } catch (err: any) {
-    return {
       success: false,
+      state: "QUORUM_FAILED",
+      signature,
+      optimisticSlot: 0,
+      quorumReached: false,
       logs: [],
-      error: err.message || "RPC Simulation failed",
+      error: firstErr,
+      telemetry: simTelemetry,
+      commitmentPromise: Promise.resolve({
+        state: "ROLLED_BACK",
+        finalizedSlot: null,
+        rolledBack: true,
+        rollbackReason: firstErr,
+        telemetry: simTelemetry,
+      }),
     };
   }
+
+  const optimisticSlot = Math.max(0, ...validSims.map((s) => s.slot));
+  const mergedLogs = validSims[0]?.logs ?? [];
+
+  const commitmentPromise = (async () => {
+    if (!signature) {
+      return {
+        state: "FINALIZED" as const,
+        finalizedSlot: optimisticSlot,
+        rolledBack: false,
+        telemetry: simTelemetry,
+      };
+    }
+
+    let seenInLeaderQueue = false;
+    let consecutiveMissing = 0;
+    let latestTelemetry = simTelemetry;
+
+    for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
+      if (attempt > 0 && pollIntervalMs > 0) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+      }
+
+      const pollStart = performance.now();
+      const pollNodes: QuorumNodeTelemetry[] = [];
+      const activeStatuses: Array<{
+        slot: number;
+        confirmationStatus: string | null;
+      }> = [];
+
+      await Promise.all(
+        poolConnections.map(async ({ endpoint, conn }) => {
+          const nodeStart = performance.now();
+          try {
+            const statusRes = await conn.getSignatureStatuses([signature], {
+              searchTransactionHistory: true,
+            });
+            const latencyMs =
+              Math.round((performance.now() - nodeStart) * 100) / 100;
+            const entry = statusRes?.value?.[0] ?? null;
+            if (!entry || entry.err) {
+              pollNodes.push({
+                endpoint,
+                latencyMs,
+                ok: false,
+                error: entry?.err
+                  ? JSON.stringify(entry.err)
+                  : "Signature not in leader queue",
+              });
+            } else {
+              pollNodes.push({
+                endpoint,
+                latencyMs,
+                ok: true,
+                slot: entry.slot,
+              });
+              activeStatuses.push({
+                slot: entry.slot,
+                confirmationStatus: entry.confirmationStatus ?? null,
+              });
+            }
+          } catch (err: unknown) {
+            const latencyMs =
+              Math.round((performance.now() - nodeStart) * 100) / 100;
+            pollNodes.push({
+              endpoint,
+              latencyMs,
+              ok: false,
+              error: err instanceof Error ? err.message : "Status poll failed",
+            });
+          }
+        }),
+      );
+
+      latestTelemetry = {
+        signature,
+        quorumTarget,
+        totalNodes: poolConnections.length,
+        achievedConfirmations: activeStatuses.length,
+        quorumLatencyMs:
+          Math.round((performance.now() - pollStart) * 100) / 100,
+        nodes: pollNodes,
+        timestamp: Date.now(),
+      };
+      console.info(
+        "[solana-escrow] Commitment quorum telemetry",
+        latestTelemetry,
+      );
+      options.onTelemetry?.(latestTelemetry);
+
+      if (activeStatuses.length >= quorumTarget) {
+        seenInLeaderQueue = true;
+        consecutiveMissing = 0;
+
+        const finalizedCount = activeStatuses.filter(
+          (s) => s.confirmationStatus === "finalized",
+        ).length;
+        if (finalizedCount >= quorumTarget) {
+          const finalizedSlot = Math.max(
+            optimisticSlot,
+            ...activeStatuses.map((s) => s.slot ?? 0),
+          );
+          return {
+            state: "FINALIZED" as const,
+            finalizedSlot,
+            rolledBack: false,
+            telemetry: latestTelemetry,
+          };
+        }
+      } else {
+        consecutiveMissing++;
+        if (seenInLeaderQueue || consecutiveMissing >= 2) {
+          const reason = seenInLeaderQueue
+            ? "Transaction signature dropped from leader queue before finalized commitment"
+            : "Transaction signature failed to reach quorum commitment across RPC nodes";
+          await options.onRollback?.(signature, reason);
+          return {
+            state: "ROLLED_BACK" as const,
+            finalizedSlot: null,
+            rolledBack: true,
+            rollbackReason: reason,
+            telemetry: latestTelemetry,
+          };
+        }
+      }
+    }
+
+    const timeoutReason =
+      "Timed out waiting for finalized quorum commitment; rolling back optimistic reservation";
+    await options.onRollback?.(signature, timeoutReason);
+    return {
+      state: "ROLLED_BACK" as const,
+      finalizedSlot: null,
+      rolledBack: true,
+      rollbackReason: timeoutReason,
+      telemetry: latestTelemetry,
+    };
+  })();
+
+  return {
+    success: true,
+    state: "PENDING_CONSENSUS",
+    signature,
+    optimisticSlot,
+    quorumReached: true,
+    logs: mergedLogs,
+    telemetry: simTelemetry,
+    commitmentPromise,
+  };
 }
 
 /**

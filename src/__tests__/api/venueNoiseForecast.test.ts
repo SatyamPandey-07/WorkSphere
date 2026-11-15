@@ -72,6 +72,28 @@ describe("GET /api/venues/[venueId]/noise-metrics/forecast", () => {
     );
   });
 
+  it("isolates cached forecasts by requested timezone", async () => {
+    const utcResponse = await GET(
+      new Request("http://localhost/api/venues/venue-1/noise-metrics/forecast?tz=UTC"),
+      { params: Promise.resolve({ venueId: "venue-1" }) },
+    );
+    const kolkataResponse = await GET(
+      new Request("http://localhost/api/venues/venue-1/noise-metrics/forecast?tz=Asia%2FKolkata"),
+      { params: Promise.resolve({ venueId: "venue-1" }) },
+    );
+
+    expect(utcResponse.status).toBe(200);
+    expect(kolkataResponse.status).toBe(200);
+    const readKeys = redis.get.mock.calls.map(([key]) => key);
+    const writeKeys = redis.set.mock.calls.map(([key]) => key);
+    expect(readKeys).toHaveLength(2);
+    expect(writeKeys).toHaveLength(2);
+    expect(readKeys[0]).toContain(":UTC");
+    expect(readKeys[1]).toContain(":Asia/Kolkata");
+    expect(readKeys[0]).not.toBe(readKeys[1]);
+    expect(writeKeys[0]).not.toBe(writeKeys[1]);
+  });
+
   it("serves a cached weekly forecast without re-querying telemetry", async () => {
     const cached = { venueId: "venue-1", weeklyForecast: { matrix: [] } };
     redis.get.mockResolvedValue(cached);

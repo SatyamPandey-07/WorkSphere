@@ -52,7 +52,7 @@ Passcard signing is designed to never abort or fail a successful booking transac
 
 1. **Active Signing Key**: The active signing key in `OFFLINE_PASSCARD_PRIVATE_KEY_JWK` is used to sign all newly created bookings.
 2. **Public Verification Keys**: The environment variable `OFFLINE_PASSCARD_PUBLIC_JWKS` contains the current active public key along with previously issued retained public keys.
-3. **Multi-Key Verification**: Scanners verify tokens against the set of retained public keys. Verification tries the retained keys sequentially (bounded to at most 10 keys). Tokens signed with older keys remain valid until their `validUntil` expiration timestamp passes.
+3. **Multi-Key Verification**: Scanners verify tokens against the set of retained public keys. `importVerificationKeys(jwks)` imports the published key set and `verifyOfflinePasscardWithKeys(token, keys)` tries the keys sequentially (bounded to at most 10 keys). Tokens signed with older keys remain valid until their `validUntil` expiration timestamp passes.
 4. **Key Retirement**: Once all tokens issued by a retired key have expired, the old public key can be removed from `OFFLINE_PASSCARD_PUBLIC_JWKS`.
 
 ## Public Verification Endpoint

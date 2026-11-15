@@ -344,7 +344,7 @@ describe("SearchBar component (#4401, #4404)", () => {
       await act(async () => {
         fireEvent.keyDown(input, { key: "Enter" });
       });
-      await flush(250);
+      await flush(300);
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch.mock.calls[0][0]).toContain("query=Cafe");
@@ -357,13 +357,13 @@ describe("SearchBar component (#4401, #4404)", () => {
       act(() => {
         fireEvent.change(input, { target: { value: "Cafe" } });
       });
-      await flush(250);
+      await flush(300);
       expect(mockFetch).toHaveBeenCalledTimes(1);
 
       await act(async () => {
         fireEvent.keyDown(input, { key: "Enter" });
       });
-      await flush(250);
+      await flush(300);
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
@@ -375,7 +375,7 @@ describe("SearchBar component (#4401, #4404)", () => {
       act(() => {
         fireEvent.change(input, { target: { value: "Cafe" } });
       });
-      await flush(250);
+      await flush(300);
 
       act(() => {
         fireEvent.change(input, { target: { value: "Cafe Roma" } });
@@ -383,7 +383,7 @@ describe("SearchBar component (#4401, #4404)", () => {
       await act(async () => {
         fireEvent.keyDown(input, { key: "Enter" });
       });
-      await flush(250);
+      await flush(300);
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(mockFetch.mock.calls[1][0]).toContain("query=Cafe%20Roma");

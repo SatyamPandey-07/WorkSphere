@@ -6,7 +6,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { sanitizeSearchQuery } from "@/lib/searchSanitizer";
+import {
+  normalizeSearchQuery,
+  sanitizeSearchQuery,
+} from "@/lib/searchSanitizer";
 
 export interface BoundingBoxQueryOptions {
   minLon?: number;
@@ -98,7 +101,8 @@ export function buildBoundingBoxQuery(options: BoundingBoxQueryOptions): {
 
   // Free text query filter
   if (options.query && options.query.trim()) {
-    const sanitized = sanitizeSearchQuery(options.query);
+    // Collapse repeated whitespace so "quiet   cafe" matches "quiet cafe".
+    const sanitized = normalizeSearchQuery(sanitizeSearchQuery(options.query));
     if (sanitized) {
       const pattern = `%${sanitized}%`;
       predicates.push(

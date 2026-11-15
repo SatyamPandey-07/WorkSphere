@@ -1207,6 +1207,8 @@ model SolanaEscrow {
   id                String             @id @default(cuid())
   bookingId         String             @unique
   depositorWallet   String
+  /// Base58 signature of the deposit transaction. Written upon broadcast.
+  depositTxSignature String?            @unique
   amountLamports    BigInt
   currency          String             @default("SOL")
   status            SolanaEscrowStatus @default(PENDING)

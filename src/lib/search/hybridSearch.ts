@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { getGeminiClient, isGeminiConfigured } from "@/lib/ai/gemini";
 import { getRedis } from "@/lib/redis";
+import { normalizeSearchQuery } from "@/lib/searchSanitizer";
 
 const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
 
@@ -46,12 +47,16 @@ function hashCacheContext(value: string): string {
  * Builds an embedding cache key without exposing authenticated identifiers in
  * Redis. Public queries retain the shared cache, while personalized queries
  * are isolated by user identity or authorization tier.
+ *
+ * The query is normalized first (trimmed, inner whitespace collapsed,
+ * lowercased) so whitespace and casing variants of the same search share one
+ * cache entry instead of each paying for a new embedding.
  */
 export function buildQueryEmbeddingCacheKey(
   query: string,
   context: QueryCacheContext = {},
 ): string {
-  const normalizedQuery = query.toLowerCase().trim();
+  const normalizedQuery = normalizeSearchQuery(query);
   const userId =
     typeof context.userId === "string" ? context.userId.trim() : "";
   const authorizationTier =
@@ -221,6 +226,9 @@ export async function getQueryEmbedding(
   context: QueryCacheContext = {},
 ): Promise<number[]> {
   const cacheKey = buildQueryEmbeddingCacheKey(query, context);
+  // Embed the same canonical text the cache key is derived from, so the stored
+  // vector is identical no matter which spelling of the query arrived first.
+  const normalizedQuery = normalizeSearchQuery(query);
   const redis = getRedis();
 
   if (redis) {
@@ -238,9 +246,10 @@ export async function getQueryEmbedding(
             remainingMs > 0 &&
             shouldRefreshEmbeddingEarly(remainingMs, cached.deltaMs)
           ) {
-            scheduleEmbeddingRefresh(cacheKey, query, async () => {
+            scheduleEmbeddingRefresh(cacheKey, normalizedQuery, async () => {
               if (!isGeminiConfigured()) return;
-              const { embedding, deltaMs } = await computeEmbedding(query);
+              const { embedding, deltaMs } =
+                await computeEmbedding(normalizedQuery);
               if (embedding.length > 0) {
                 await writeEmbeddingCache(redis, cacheKey, embedding, deltaMs);
               }
@@ -262,7 +271,7 @@ export async function getQueryEmbedding(
   }
 
   try {
-    const { embedding, deltaMs } = await computeEmbedding(query);
+    const { embedding, deltaMs } = await computeEmbedding(normalizedQuery);
 
     if (redis && embedding.length > 0) {
       try {

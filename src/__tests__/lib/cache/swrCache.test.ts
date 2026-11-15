@@ -35,6 +35,16 @@ import {
   inMemorySWRCache,
   inFlightRevalidations,
 } from "@/lib/cache/swrCache";
+import {
+  getOrSetVenueAvailability,
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
+import { getRedis } from "@/lib/redis";
+
+jest.mock("@/lib/redis", () => ({
+  getRedis: jest.fn().mockReturnValue(null),
+}));
 
 describe("swrCache Utility (Issue #7266)", () => {
   const testKey = "test:swr:resource:123";
@@ -48,6 +58,7 @@ describe("swrCache Utility (Issue #7266)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     clearMemorySWRCache();
+    (getRedis as jest.Mock).mockReturnValue(null);
 
     mockRedis = {
       get: jest.fn().mockImplementation(async (k: string) => {
@@ -62,6 +73,59 @@ describe("swrCache Utility (Issue #7266)", () => {
         return 1;
       }),
     };
+  });
+
+  it("uses shared Redis caching and atomic invalidation for venue availability", async () => {
+    (getRedis as jest.Mock).mockReturnValue(mockRedis);
+    const key = venueAvailabilityCacheKey("venue-1");
+    const fetcher = jest.fn().mockResolvedValue({ availableDesks: 4 });
+
+    await getOrSetVenueAvailability(key, fetcher, 60);
+
+    expect(key).toBe("venue:availability:venue-1");
+    expect(mockRedis.get).toHaveBeenCalledWith(getCacheVersionKey(key));
+    expect(mockRedis.get).toHaveBeenCalledWith(
+      `${key}:generation:uuid-test-token-1`,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    await invalidateVenueAvailability(key);
+
+    expect(mockRedis.set).toHaveBeenCalledWith(
+      getCacheVersionKey(key),
+      expect.any(String),
+    );
+  });
+
+  it("deduplicates concurrent Redis-configured availability cache misses", async () => {
+    (getRedis as jest.Mock).mockReturnValue(mockRedis);
+    const key = venueAvailabilityCacheKey("venue-concurrent");
+    const fetcher = jest.fn().mockResolvedValue({ availableDesks: 4 });
+
+    await Promise.all(
+      Array.from({ length: 20 }, () =>
+        getOrSetVenueAvailability(key, fetcher, 60),
+      ),
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports Redis invalidation failures and bypasses cache for that venue", async () => {
+    (getRedis as jest.Mock).mockReturnValue(mockRedis);
+    mockRedis.set.mockRejectedValueOnce(new Error("Redis unavailable"));
+    const key = venueAvailabilityCacheKey("venue-redis-failure");
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation();
+
+    await expect(invalidateVenueAvailability(key)).resolves.toBe(false);
+    const fetcher = jest.fn().mockResolvedValue({ availableDesks: 3 });
+    await expect(getOrSetVenueAvailability(key, fetcher, 60)).resolves.toEqual({
+      availableDesks: 3,
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   describe("Cache Miss", () => {

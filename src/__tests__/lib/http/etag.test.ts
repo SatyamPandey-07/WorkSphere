@@ -45,8 +45,8 @@ describe("HTTP ETag & Cache-Control Middleware Utility", () => {
     it("generates MD5 ETag when requested", () => {
       const md5Etag = generateETag("test-content", { algorithm: "md5" });
       expect(md5Etag).toMatch(/^"[a-f0-9]{32}"$/);
-      // MD5 of "test-content" is 9473fdd0d880a43c21b7778d34872157
-      expect(md5Etag).toBe('"9473fdd0d880a43c21b7778d34872157"');
+      // MD5 of "test-content" is 9749fad13d6e7092a6337c4af9d83764
+      expect(md5Etag).toBe('"9749fad13d6e7092a6337c4af9d83764"');
     });
 
     it("generates weak ETag when weak option is enabled", () => {

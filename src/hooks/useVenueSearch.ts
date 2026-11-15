@@ -15,6 +15,8 @@ export interface VenueSearchResult {
   hasOutlets?: boolean;
   noiseLevel?: string | null;
   imageUrl?: string | null;
+  /** Set by the API when the venue came from the low-confidence fuzzy fallback. */
+  fuzzyMatched?: boolean;
   [key: string]: unknown;
 }
 

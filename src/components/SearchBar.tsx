@@ -397,11 +397,21 @@ export function SearchBar({
                   </div>
                 )}
               </div>
-              {venue.category && (
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-                  {venue.category}
-                </span>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {venue.fuzzyMatched === true && (
+                  <span
+                    data-testid="search-bar-fuzzy-badge"
+                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+                  >
+                    Fuzzy match suggestion
+                  </span>
+                )}
+                {venue.category && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                    {venue.category}
+                  </span>
+                )}
+              </div>
             </li>
           ))}
         </ul>

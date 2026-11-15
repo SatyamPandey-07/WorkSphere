@@ -1151,7 +1151,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### ✈️ Nomad Travel, Smart Housing & Collab War Rooms
 
-- **Yjs-Based CRDT Collaborative Notes Engine Over PartyKit**: Real-time multi-user document and scratchpad collaboration utilizing Yjs CRDTs, awareness presence cursor tracking, IndexedDB local persistence (`y-indexeddb`), and PartyKit edge WebSocket broadcasting (`src/components/notes/GroupNotesEditor.tsx`, `party/notes.ts`).
+- **Yjs-Based CRDT Collaborative Notes Engine Over PartyKit**: Real-time multi-user document and scratchpad collaboration utilizing Yjs CRDTs, awareness presence cursor tracking, IndexedDB local persistence (`y-indexeddb`), and PartyKit edge WebSocket broadcasting (`src/components/notes/GroupNotesEditor.tsx`, `party/server.ts`). See the [Group Notes Collaboration Guide](docs/crdt/NOTES_COLLABORATION_GUIDE.md).
 - **CRDT State Vector Exchange & Differential Compaction Protocol**: Ultra-low-bandwidth collaborative whiteboard synchronization utilizing Yjs state vector exchanges, incremental update compaction, and differential snapshot pruning ([docs/crdt/CRDT_VECTOR_COMPACTION.md](./docs/crdt/CRDT_VECTOR_COMPACTION.md)).
 - **IndexedDB CRDT Offline Change-Journal Replay Buffer**: Resilient append-only transaction journal capturing serialized `Y.encodeStateAsUpdate` frames during intermittent nomad connectivity, providing topological re-streaming and seamless state reconciliation upon reconnect (`src/lib/crdt/canvasProvider.ts`).
 - **Flight-Delay Itinerary Auto-Rerouting**: Webhook integration with aviation feeds automatically rescheduling booked coworking passes when flights are delayed or cancelled (`/api/travel/reroute`).
@@ -1289,6 +1289,7 @@ WorkSphere brings together geospatial data, ambient intelligence, and real-time 
 
 - [Redlock Lease Fencing Token Protocol](docs/architecture/REDLOCK_FENCING_TOKENS.md): how fencing tokens are generated, renewed and checked at the reservation transaction boundary, with failover and lease-renewal sequence diagrams.
 - [Architecture documentation index](docs/architecture/README.md)
+- [Group Notes Collaboration Guide](docs/crdt/NOTES_COLLABORATION_GUIDE.md): the Yjs document, PartyKit sync and auth, awareness cursors, offline outbox and local setup for `GroupNotesEditor`.
 
 ---
 

@@ -314,35 +314,143 @@ docs: document NIOSH daily sound exposure calculation and formula reference (clo
 
 > **Mandatory Rule**: The `(closes #<issue_number>)` suffix is strictly required. It enables automated GitHub issue linking and closes the associated issue upon merge. Never invent dummy issue numbers or reference unrelated issues.
 
-### 1.4 Conventional Commit Standards
+### 1.4 Commit Message Conventions
 
-WorkSphere enforces the [Conventional Commits](https://www.conventionalcommits.org/) specification for all git commit messages. Commit messages must be structured as:
+WorkSphere follows the [Conventional Commits](https://www.conventionalcommits.org/) specification.
+
+Use this format:
+
+`<type>(<scope>): <short description> (closes #<issue_number>)`
+
+The issue-closing suffix is mandatory. Replace the placeholder with the actual related issue number.
+
+#### Supported Commit Types
+
+| Type       | Purpose                                                       |
+| ---------- | ------------------------------------------------------------- |
+| `feat`     | Introduces a new feature.                                     |
+| `fix`      | Fixes a bug or incorrect behavior.                            |
+| `docs`     | Adds or updates documentation.                                |
+| `style`    | Makes formatting changes without changing functionality.      |
+| `refactor` | Restructures code without changing behavior.                  |
+| `test`     | Adds or updates tests.                                        |
+| `chore`    | Handles maintenance, scripts, dependencies, or configuration. |
+| `perf`     | Improves performance.                                         |
+| `build`    | Changes build tools or configuration.                         |
+| `ci`       | Changes CI workflows or automation.                           |
+| `revert`   | Reverts a previous commit.                                    |
+
+The first seven types are the standard types highlighted by this guide. The additional types are also accepted.
+
+#### Supported Scopes
+
+Use the scope that best identifies the affected project area.
+
+| Scope    | When to use it                                           |
+| -------- | -------------------------------------------------------- |
+| `venues` | Venue features, listings, and availability.              |
+| `crdt`   | Conflict-free replicated data types and synchronization. |
+| `zkp`    | Zero-knowledge proofs and circuits.                      |
+| `audio`  | Audio processing and sound-related features.             |
+| `web3`   | Blockchain and Web3 integrations.                        |
+| `ui`     | Shared UI components and visual behavior.                |
+| `a11y`   | Accessibility improvements.                              |
+
+Use a listed scope when it applies. If none accurately describes the change, an unscoped commit is acceptable.
+
+#### Valid Commit Message Templates
 
 ```text
-<type>: <short description in present tense>
+feat(venues): add venue availability filters (closes #<issue_number>)
+fix(crdt): resolve synchronization conflict (closes #<issue_number>)
+docs(ui): document component guidelines (closes #<issue_number>)
+style(ui): align modal formatting (closes #<issue_number>)
+refactor(zkp): simplify proof verification (closes #<issue_number>)
+test(audio): add sound classifier coverage (closes #<issue_number>)
+chore(web3): update integration configuration (closes #<issue_number>)
 ```
 
-#### Supported Commit Types:
+Replace `<issue_number>` with a real issue number before committing.
 
-| Commit Type    | Purpose & Scope                                                           | Example Commit Message                                                    |
-| :------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------------ |
-| **`feat`**     | Introducing a new feature, user-facing capability, or algorithm           | `feat: add hourly ambient noise decibel trend graph`                      |
-| **`fix`**      | Patching a bug, crash, calculation error, or broken behavior              | `fix: clamp user distance calculation when latitude exceeds bounds`       |
-| **`docs`**     | Creating or updating documentation, specs, runbooks, or guides            | `docs: document commit message format and PR guidelines for OSCI'26`      |
-| **`perf`**     | Optimizations enhancing execution speed, latency, or memory consumption   | `perf: vectorize audio FFT filter coefficients using WASM SIMD`           |
-| **`test`**     | Adding, updating, or fixing unit tests, RTL mocks, or E2E suites          | `test: add unit coverage for coordinate boundary clamping`                |
-| **`chore`**    | Maintenance, script updates, dependency tweaks, or workspace configs      | `chore: configure dynamic co-authorship attribution in merge workflows`   |
-| **`refactor`** | Restructuring code without altering functional behavior or features       | `refactor: extract geographic distance calculations into modular helpers` |
-| **`style`**    | Code formatting, whitespace, or lint-only fixes with no code logic change | `style: format acoustics module with prettier`                            |
-| **`build`**    | Build system, bundler, Prisma generation, or Next.js config updates       | `build: upgrade prisma adapter and engine configurations`                 |
-| **`ci`**       | GitHub Actions workflow, automation scripts, or deployment pipelines      | `ci: add automated triage and label assignment for OSCI'26 PRs`           |
-| **`revert`**   | Reverting a previous commit that introduced an unintended defect          | `revert: rollback rating distribution safari patch`                       |
+#### Invalid Commit Message Examples
 
-#### Commit Best Practices:
+| Invalid message              | Why it is invalid                                     |
+| ---------------------------- | ----------------------------------------------------- |
+| `Added venue filters`        | Missing the commit type and separator.                |
+| `FEAT(venues): add filters`  | Commit type must be lowercase.                        |
+| `feat venues: add filters`   | Missing parentheses around the scope.                 |
+| `feat(unknown): add filters` | Uses an unsupported scope.                            |
+| `feat(venues) add filters`   | Missing the colon.                                    |
+| `fix(ui): fixed modal`       | Uses past tense and omits the mandatory issue suffix. |
+| `feat(venues): add filters`  | Missing the mandatory issue suffix.                   |
 
-- **Imperative Mood**: Use imperative, present tense: `fix: clamp latitude` (not `fixed` or `fixes`).
-- **Atomic Commits**: Keep each commit focused on one cohesive logical change. Avoid monolithic commits that mix unrelated bug fixes and UI updates.
-- **No Unrelated Changes**: Do not bundle stylistic reformatting of unrelated files or unnecessary dependency updates in a bug-fix PR.
+#### Commit Best Practices
+
+- Use imperative descriptions, such as `fix(venues): clamp invalid coordinates (closes #<issue_number>)`.
+- Keep commits focused on one logical change.
+- Select the most relevant scope.
+- Include the correct mandatory issue-closing suffix.
+- Avoid unrelated formatting changes and dependency updates.
+
+#### Running Lint and Formatting Checks
+
+Run these commands from the repository root before committing:
+
+```bash
+npm run lint
+npm run format
+```
+
+- `npm run lint` runs ESLint.
+- Stage the files you want to check before running `npm run format`.
+- `npm run format` runs `lint-staged` on staged files, applying the configured ESLint and Prettier tasks.
+- Fix reported issues and review your changes before committing.
+
+#### Pre-Commit Hook Troubleshooting
+
+WorkSphere uses Husky and lint-staged to run checks on staged files.
+
+**Husky or lint-staged fails**
+
+- Install dependencies using `npm install`.
+- Initialize hooks using `npm run prepare`.
+- Stage the intended files again using `git add`.
+- Read and fix the error reported by the hook.
+
+**Prettier reports formatting errors**
+
+- Stage the intended files, then run `npm run format`.
+- For a specific file, run `npx prettier --write <file>`.
+- Review the resulting changes.
+
+**ESLint reports errors**
+
+- Run `npm run lint`.
+- Fix the reported errors.
+- For a specific JavaScript or TypeScript file, run `npx eslint <file>`.
+
+**Windows hook problems**
+
+See the [Windows Husky & Git Hooks Troubleshooting Guide](docs/contributing/WINDOWS_HOOKS_TROUBLESHOOTING.md) for PowerShell execution-policy, line-ending, and Git hook issues.
+
+#### Pre-Commit Hook Bypass Rules
+
+Avoid bypassing Git hooks. They help identify formatting and lint problems before committing.
+
+The `--no-verify` option skips applicable Git hooks:
+
+```bash
+git commit --no-verify -m "..."
+```
+
+Use a bypass only when a hook is genuinely unavailable or broken and the reason is understood. Before bypassing:
+
+1. Run the relevant lint and formatting checks manually.
+2. Review staged changes using `git diff --cached`.
+3. Explain the reason in contribution or review notes.
+4. Resolve the underlying hook problem as soon as possible.
+
+Do not assume CI blocks every lint or formatting issue. Run the required checks locally and address their results before submitting a pull request.
 
 ### 1.5 AI Coding Assistant & Subagent Guidelines
 

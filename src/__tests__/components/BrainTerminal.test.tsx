@@ -56,7 +56,9 @@ describe("BrainTerminal command input and history buffer (#6051)", () => {
       />,
     );
 
-    const input = screen.getByTestId("terminal-command-input") as HTMLInputElement;
+    const input = screen.getByTestId(
+      "terminal-command-input",
+    ) as HTMLInputElement;
     const submitBtn = screen.getByTestId("terminal-submit-btn");
 
     fireEvent.change(input, { target: { value: "scan venue noise" } });
@@ -81,7 +83,9 @@ describe("BrainTerminal command input and history buffer (#6051)", () => {
   it("preserves submitted command in history buffer for recall via ArrowUp and ArrowDown", () => {
     render(<BrainTerminal isOpen={true} />);
 
-    const input = screen.getByTestId("terminal-command-input") as HTMLInputElement;
+    const input = screen.getByTestId(
+      "terminal-command-input",
+    ) as HTMLInputElement;
     const form = screen.getByTestId("terminal-command-form");
 
     // Submit first command
@@ -128,10 +132,9 @@ describe("BrainTerminal command input and history buffer (#6051)", () => {
 
   it("announces terminal output through a polite log region", () => {
     render(<BrainTerminal isOpen={true} />);
-    expect(screen.getByRole("log", { name: "Brain terminal execution log" })).toHaveAttribute(
-      "aria-live",
-      "polite",
-    );
+    expect(
+      screen.getByRole("log", { name: "Brain terminal execution log" }),
+    ).toHaveAttribute("aria-live", "polite");
     expect(screen.getByTestId("terminal-log-region")).toHaveAttribute(
       "aria-atomic",
       "false",
@@ -140,7 +143,9 @@ describe("BrainTerminal command input and history buffer (#6051)", () => {
 
   it("clears terminal output, draft, and history with Ctrl+K or Cmd+K", () => {
     render(<BrainTerminal isOpen={true} />);
-    const input = screen.getByTestId("terminal-command-input") as HTMLInputElement;
+    const input = screen.getByTestId(
+      "terminal-command-input",
+    ) as HTMLInputElement;
     const form = screen.getByTestId("terminal-command-form");
 
     fireEvent.change(input, { target: { value: "first-command" } });
@@ -163,10 +168,69 @@ describe("BrainTerminal command input and history buffer (#6051)", () => {
 
   it("does not intercept Ctrl+K when focus is outside the terminal", () => {
     render(<BrainTerminal isOpen={true} />);
-    const input = screen.getByTestId("terminal-command-input") as HTMLInputElement;
+    const input = screen.getByTestId(
+      "terminal-command-input",
+    ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "keep-this-command" } });
 
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(input.value).toBe("keep-this-command");
+  });
+
+  it("recognizes Green Lantern oath aliases without dispatching them as normal commands", () => {
+    const handleCommand = jest.fn();
+    const handleSubmitCommand = jest.fn();
+
+    render(
+      <BrainTerminal
+        isOpen={true}
+        onCommand={handleCommand}
+        onSubmitCommand={handleSubmitCommand}
+      />,
+    );
+
+    const input = screen.getByTestId(
+      "terminal-command-input",
+    ) as HTMLInputElement;
+    const form = screen.getByTestId("terminal-command-form");
+
+    const aliases = ["oath", "lantern", "hal", "/oath", "OATH"];
+
+    aliases.forEach((alias) => {
+      fireEvent.change(input, { target: { value: alias } });
+      fireEvent.submit(form);
+
+      expect(input.value).toBe("");
+      expect(
+        screen.getByTestId("green-lantern-oath-output"),
+      ).toBeInTheDocument();
+    });
+
+    expect(handleCommand).not.toHaveBeenCalled();
+    expect(handleSubmitCommand).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "normal-command" } });
+    fireEvent.submit(form);
+
+    expect(handleCommand).toHaveBeenCalledWith("normal-command");
+    expect(handleSubmitCommand).toHaveBeenCalledWith("normal-command");
+  });
+
+  it("clears Green Lantern oath output with Ctrl+K", () => {
+    render(<BrainTerminal isOpen={true} />);
+
+    const input = screen.getByTestId("terminal-command-input");
+    const form = screen.getByTestId("terminal-command-form");
+
+    fireEvent.change(input, { target: { value: "oath" } });
+    fireEvent.submit(form);
+
+    expect(screen.getByTestId("green-lantern-oath-output")).toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: "k", ctrlKey: true });
+
+    expect(
+      screen.queryByTestId("green-lantern-oath-output"),
+    ).not.toBeInTheDocument();
   });
 });

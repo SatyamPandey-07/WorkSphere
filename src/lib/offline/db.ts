@@ -322,15 +322,77 @@ export function closeOfflineDB(): void {
 }
 
 /**
+ * Reads every record of one store from the existing offline database. The
+ * database is opened without a version, at whatever version it has, so a
+ * schema newer than this build does not raise a VersionError. Returns an
+ * empty list when the database or the store cannot be read.
+ */
+async function readExistingStore(storeName: string): Promise<unknown[]> {
+  if (typeof indexedDB === "undefined") return [];
+
+  return new Promise<unknown[]>((resolve) => {
+    let request: IDBOpenDBRequest;
+    try {
+      request = indexedDB.open(OFFLINE_DB_NAME);
+    } catch {
+      resolve([]);
+      return;
+    }
+    request.onerror = () => resolve([]);
+    request.onblocked = () => resolve([]);
+    request.onsuccess = () => {
+      const database = request.result;
+      const finish = (items: unknown[]) => {
+        database.close();
+        resolve(items);
+      };
+      if (!database.objectStoreNames.contains(storeName)) {
+        finish([]);
+        return;
+      }
+      try {
+        const getAll = database
+          .transaction([storeName], "readonly")
+          .objectStore(storeName)
+          .getAll();
+        getAll.onsuccess = () => finish(getAll.result ?? []);
+        getAll.onerror = () => finish([]);
+      } catch {
+        finish([]);
+      }
+    };
+  });
+}
+
+function recordId(item: unknown): unknown {
+  return item && typeof item === "object"
+    ? (item as { id?: unknown }).id
+    : undefined;
+}
+
+/**
  * Non-destructive database reset utility:
- * Snapshots pending queue items in memory, closes/deletes the conflicted IndexedDB schema,
- * re-initializes the latest schema cleanly, and restores all pending items.
+ * Snapshots the pending items already stored in `storeName` together with
+ * `preserveItems` (for example an in-memory fallback queue), deletes the
+ * conflicted IndexedDB schema, re-initializes the latest schema cleanly, and
+ * restores all of those items. An item present in both places is restored
+ * once, from `preserveItems`.
  */
 export async function resetOfflineDBNonDestructive(
   preserveItems: unknown[] = [],
   storeName = "pending_sync_queue",
 ): Promise<{ restoredCount: number }> {
   closeOfflineDB();
+
+  const stored = await readExistingStore(storeName);
+  const byId = new Map<unknown, unknown>();
+  const withoutId: unknown[] = [];
+  for (const item of [...stored, ...preserveItems]) {
+    const id = recordId(item);
+    if (id === undefined) withoutId.push(item);
+    else byId.set(id, item);
+  }
+  const itemsToRestore = [...byId.values(), ...withoutId];
 
   if (typeof indexedDB !== "undefined") {
     await new Promise<void>((resolve) => {
@@ -344,13 +406,13 @@ export async function resetOfflineDBNonDestructive(
   const freshDb = await initOfflineDB();
 
   if (
-    preserveItems.length > 0 &&
+    itemsToRestore.length > 0 &&
     freshDb.objectStoreNames.contains(storeName)
   ) {
     await new Promise<void>((resolve, reject) => {
       const tx = freshDb.transaction([storeName], "readwrite");
       const store = tx.objectStore(storeName);
-      for (const item of preserveItems) {
+      for (const item of itemsToRestore) {
         store.put(item);
       }
       tx.oncomplete = () => resolve();
@@ -358,5 +420,5 @@ export async function resetOfflineDBNonDestructive(
     });
   }
 
-  return { restoredCount: preserveItems.length };
+  return { restoredCount: itemsToRestore.length };
 }

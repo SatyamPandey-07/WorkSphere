@@ -351,7 +351,7 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
                   {passcardExpired ? "Expired" : "Expires in " + countdownLabel}
                 </div>
               )}
-              {activeToken && bookingId && (
+              {activeToken && bookingId && remainingMs !== null && remainingMs <= 30 * 60 * 1000 && (
                 <button type="button" onClick={handleRefreshPasscard} disabled={!isOnline || isRefreshingPasscard} data-testid="flight-clearance-refresh-passcard" className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 px-2 py-1 text-[10px] font-semibold text-emerald-200 disabled:cursor-not-allowed disabled:opacity-40">
                   <RefreshCw className={isRefreshingPasscard ? "h-3 w-3 animate-spin" : "h-3 w-3"} aria-hidden="true" />
                   {isRefreshingPasscard ? "Refreshing…" : "Refresh passcard"}

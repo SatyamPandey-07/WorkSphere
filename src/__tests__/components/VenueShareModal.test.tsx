@@ -162,6 +162,119 @@ describe("VenueShareModal Component (#4402)", () => {
     });
   });
 
+  it.each([2, 3])(
+    "only starts one clipboard operation for %i rapid clicks",
+    async (clickCount) => {
+      // @ts-expect-error - intentional test simulation
+      delete (navigator as any).share;
+      let resolveWrite: () => void = () => {};
+      const writeText = jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+      Object.assign(navigator, { clipboard: { writeText } });
+
+      render(<VenueShareModal venue={mockVenue} />);
+      fireEvent.click(
+        screen.getByRole("button", { name: /share cafe artisan/i }),
+      );
+
+      const copyBtn = screen.getByRole("button", { name: /copy/i });
+      act(() => {
+        for (let click = 0; click < clickCount; click += 1) {
+          fireEvent.click(copyBtn);
+        }
+      });
+
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(copyBtn).toBeDisabled();
+
+      await act(async () => {
+        resolveWrite();
+      });
+
+      expect(screen.getByText("Copied")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /copied/i })).toBeEnabled();
+    },
+  );
+
+  it("does not show stale copy confirmation after closing during a pending write", async () => {
+    // @ts-expect-error - intentional test simulation
+    delete (navigator as any).share;
+    let resolveWrite: () => void = () => {};
+    const writeText = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(<VenueShareModal venue={mockVenue} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /copy/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /close dialog/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveWrite();
+    });
+
+    expect(mockToast).not.toHaveBeenCalledWith(
+      "Link copied to clipboard!",
+      "success",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
+    expect(screen.getByRole("button", { name: /copy/i })).toBeEnabled();
+    expect(
+      screen.queryByTestId("copy-clipboard-tooltip"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not schedule confirmation after unmounting during a pending write", async () => {
+    jest.useFakeTimers();
+    const setTimeoutSpy = jest.spyOn(window, "setTimeout");
+    // @ts-expect-error - intentional test simulation
+    delete (navigator as any).share;
+    let resolveWrite: () => void = () => {};
+    const writeText = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    const { unmount } = render(<VenueShareModal venue={mockVenue} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /copy/i }));
+
+    unmount();
+    expect(jest.getTimerCount()).toBe(0);
+
+    await act(async () => {
+      resolveWrite();
+    });
+
+    expect(
+      setTimeoutSpy.mock.calls.some(([, delay]) => delay === 2000),
+    ).toBe(false);
+    expect(mockToast).not.toHaveBeenCalledWith(
+      "Link copied to clipboard!",
+      "success",
+    );
+    setTimeoutSpy.mockRestore();
+  });
+
   it("dismisses copy tooltip and resets Copied state smoothly after 2000ms", async () => {
     jest.useFakeTimers();
     // @ts-expect-error - intentional test simulation
@@ -181,15 +294,101 @@ describe("VenueShareModal Component (#4402)", () => {
     expect(screen.getByTestId("copy-clipboard-tooltip")).toBeInTheDocument();
     expect(screen.getByText("Copied")).toBeInTheDocument();
 
-    // Advance timers by 2000ms
+    fireEvent.click(copyBtn);
     act(() => {
-      jest.advanceTimersByTime(2000);
+      jest.advanceTimersByTime(1999);
+    });
+    expect(screen.getByTestId("copy-clipboard-tooltip")).toBeInTheDocument();
+    expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      jest.advanceTimersByTime(1);
     });
 
     expect(
       screen.queryByTestId("copy-clipboard-tooltip"),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument();
+  });
+
+  it("shows an error and does not display confirmation when clipboard and fallback fail", async () => {
+    // @ts-expect-error - intentional test simulation
+    delete (navigator as any).share;
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: jest.fn().mockRejectedValue(new Error("Clipboard denied")),
+      },
+    });
+    const execCommandMock = jest.fn().mockReturnValue(false);
+    Object.assign(document, { execCommand: execCommandMock });
+    const consoleError = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    render(<VenueShareModal venue={mockVenue} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /copy/i }));
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(
+        "Unable to copy to clipboard",
+        "error",
+      );
+    });
+    expect(
+      screen.queryByTestId("copy-clipboard-tooltip"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy/i })).toBeEnabled();
+    expect(execCommandMock).toHaveBeenCalledWith("copy");
+
+    consoleError.mockRestore();
+  });
+
+  it("allows retrying after a failed clipboard operation", async () => {
+    // @ts-expect-error - intentional test simulation
+    delete (navigator as any).share;
+    const writeText = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("Clipboard denied"))
+      .mockResolvedValueOnce(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const execCommandMock = jest.fn().mockReturnValue(false);
+    Object.assign(document, { execCommand: execCommandMock });
+    const consoleError = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    render(<VenueShareModal venue={mockVenue} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /copy/i }));
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(
+        "Unable to copy to clipboard",
+        "error",
+      );
+    });
+    expect(screen.getByRole("button", { name: /copy/i })).toBeEnabled();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(execCommandMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /copy/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId("copy-clipboard-tooltip")).toBeInTheDocument();
+    });
+
+    expect(writeText).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Copied")).toBeInTheDocument();
+    expect(mockToast).toHaveBeenCalledWith(
+      "Link copied to clipboard!",
+      "success",
+    );
+    consoleError.mockRestore();
   });
 
   it("falls back gracefully when navigator.clipboard.writeText is unavailable or throws", async () => {

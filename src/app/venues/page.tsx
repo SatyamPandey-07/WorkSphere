@@ -10,7 +10,8 @@ const demoVenues = [
     name: "WorkSphere Hub #1 - Downtown Core",
     category: "coworking",
     noise: "42 dB • Quiet",
-    description: "High-speed fiber optics, ergonomic standing desks, and soundproof pod access.",
+    description:
+      "High-speed fiber optics, ergonomic standing desks, and soundproof pod access.",
     distance: "450m away",
     desks: 12,
     amenities: ["wifi", "outlets", "quiet", "wheelchair"],
@@ -50,7 +51,8 @@ const demoVenues = [
     name: "WorkSphere Hub #5 - Innovation Park",
     category: "coworking",
     noise: "40 dB • Quiet",
-    description: "Dedicated quiet zones, power at every desk, and step-free access.",
+    description:
+      "Dedicated quiet zones, power at every desk, and step-free access.",
     distance: "1.4km away",
     desks: 16,
     amenities: ["wifi", "outlets", "quiet", "wheelchair"],
@@ -77,7 +79,8 @@ export default function VenuesDiscoveryPage() {
           Coworking Discovery Feed
         </h1>
         <p className="text-xs text-slate-400">
-          Explore verified spaces, acoustic ratings, and real-time mesh occupancy.
+          Explore verified spaces, acoustic ratings, and real-time mesh
+          occupancy.
         </p>
       </div>
 
@@ -109,18 +112,25 @@ export default function VenuesDiscoveryPage() {
               key={venue.id}
               className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-emerald-500/50 transition cursor-pointer shadow-lg space-y-2"
             >
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-100">
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="min-w-0 text-sm font-bold text-slate-100">
                   {venue.name}
                 </h3>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                <span
+                  data-testid="venue-noise-badge"
+                  title={venue.noise}
+                  className="max-w-[60%] shrink-0 truncate whitespace-nowrap text-[9px] sm:text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+                >
                   {venue.noise}
                 </span>
               </div>
               <p className="text-xs text-slate-400">{venue.description}</p>
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-2 border-t border-slate-800/80">
-                <span>📍 {venue.distance}</span>
-                <span className="text-emerald-400">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] text-slate-500 font-mono pt-2 border-t border-slate-800/80">
+                <span className="whitespace-nowrap">📍 {venue.distance}</span>
+                <span
+                  data-testid="venue-desks-status"
+                  className="whitespace-nowrap text-emerald-400"
+                >
                   {venue.desks} Desks Available
                 </span>
               </div>
@@ -143,7 +153,8 @@ export default function VenuesDiscoveryPage() {
           Interactive Leaflet Map View
         </h3>
         <p className="text-xs text-slate-400 max-w-xs mx-auto">
-          Vector raster tiles rendered with automatic tile provider fallback and proximity markers.
+          Vector raster tiles rendered with automatic tile provider fallback and
+          proximity markers.
         </p>
       </div>
     </div>

@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { toPng } from 'html-to-image';
 import { Download, Printer, Shield, Plane, X, WifiOff, RefreshCw, Clock } from 'lucide-react';
-import { getOfflinePasscardRecord } from '@/lib/security/offlinePasscardStore';
+import { getOfflinePasscardRecord, saveOfflinePasscard } from '@/lib/security/offlinePasscardStore';
 import { decodeOfflinePasscardPayload } from '@/lib/security/offlineQrSigner';
 
 export interface FlightClearanceBookingDetails {
@@ -53,6 +53,7 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
   const [storedToken, setStoredToken] = useState<string | null>(null);
+  const [renewedToken, setRenewedToken] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [isRefreshingPasscard, setIsRefreshingPasscard] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -103,7 +104,7 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
       cancelled = true;
     };
   }, [isOpen, bookingId, offlineToken]);
-  const activeToken = offlineToken || storedToken;
+  const activeToken = renewedToken || offlineToken || storedToken;
   const passcardPayload = useMemo(
     () => (activeToken ? decodeOfflinePasscardPayload(activeToken) : null),
     [activeToken],
@@ -163,7 +164,15 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
       if (!response.ok || typeof responsePayload.offlinePasscard !== "string") {
         throw new Error(responsePayload.error || "Unable to renew this passcard.");
       }
+      setRenewedToken(responsePayload.offlinePasscard);
       setStoredToken(responsePayload.offlinePasscard);
+      try {
+        await saveOfflinePasscard(responsePayload.offlinePasscard);
+      } catch (storageError) {
+        // Keep the renewed token usable for this open modal when IndexedDB
+        // is unavailable; persistence is best effort.
+        console.warn("[FlightClearancePasscard] Could not persist renewed token:", storageError);
+      }
       setNowMs(Date.now());
     } catch (error) {
       setRefreshError(error instanceof Error ? error.message : "Unable to renew this passcard.");

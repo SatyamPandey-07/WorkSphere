@@ -161,11 +161,13 @@ A scanner that needs more should keep its own record of the `bookingId` values i
 
 ### Clock skew
 
-The validity check has no tolerance. A passcard is valid when:
+By default the validity check has no tolerance. A passcard is valid when:
 
 ```
-validFrom * 1000 <= now <= validUntil * 1000    (milliseconds)
+validFrom * 1000 - skew <= now <= validUntil * 1000 + skew    (milliseconds)
 ```
+
+`skew` is `clockSkewSeconds * 1000`. The option defaults to 0 and is capped at 300 seconds (`MAX_CLOCK_SKEW_SECONDS`); a negative or non-finite value counts as 0.
 
 `now` is the scanner's clock unless the caller passes the `now` option. A scanner that has been offline for a long time can drift, with these effects:
 
@@ -177,7 +179,7 @@ validFrom * 1000 <= now <= validUntil * 1000    (milliseconds)
 Recommendations for a scanner:
 
 - Synchronise the clock whenever the network is available, and record when that last happened.
-- To allow a tolerance, call `verifyOfflinePasscard` with `enforceWindow: false` and compare `validFrom` and `validUntil` yourself with the margin you accept. Keep it small: every second of tolerance also extends the replay window.
+- To allow a tolerance, pass `clockSkewSeconds` to `verifyOfflinePasscard` or `verifyOfflinePasscardWithKeys`. Keep it small: every second of tolerance also extends the replay window.
 - Treat a clock that has not been synchronised for a long time as untrusted and fall back to a manual check.
 
 ### Revocation

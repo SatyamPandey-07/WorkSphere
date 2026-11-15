@@ -57,11 +57,19 @@ export interface VerifyOfflinePasscardOptions {
   now?: Date | number;
   /** Set to false to check the signature only. Default: true. */
   enforceWindow?: boolean;
+  /**
+   * How many seconds the verifier's clock may be off. The validity window is widened by this much on
+   * both sides. Default: 0. Capped at `MAX_CLOCK_SKEW_SECONDS`, because the tolerance also lengthens the
+   * time a copied passcard can be replayed; a negative or non-finite value counts as 0.
+   */
+  clockSkewSeconds?: number;
 }
 
 export const OFFLINE_PASSCARD_VERSION = 1;
 /** A raw P-256 ECDSA signature is r and s, 32 bytes each. */
 export const SIGNATURE_BYTES = 64;
+/** Largest clock skew tolerance a verifier may ask for (5 minutes). */
+export const MAX_CLOCK_SKEW_SECONDS = 300;
 /** How many verification keys are tried for one token; matches the retained public key limit. */
 export const MAX_VERIFICATION_KEYS = 10;
 /** Longest accepted text field, which keeps the token (and the QR) small. */
@@ -212,6 +220,12 @@ export async function signOfflinePasscard(
   return `${uint8ArrayToBase64Url(payloadBytes)}.${uint8ArrayToBase64Url(signature)}`;
 }
 
+function clockSkewMs(seconds: number | undefined): number {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0)
+    return 0;
+  return Math.min(seconds, MAX_CLOCK_SKEW_SECONDS) * 1000;
+}
+
 /**
  * Checks a token against the venue's public verification key, with no network. The signature is checked
  * first; only then is the validity window looked at, so a "not-yet-valid" or "expired" result still means
@@ -246,9 +260,10 @@ export async function verifyOfflinePasscard(
       options.now instanceof Date
         ? options.now.getTime()
         : (options.now ?? Date.now());
-    if (nowMs < payload.validFrom * 1000)
+    const skewMs = clockSkewMs(options.clockSkewSeconds);
+    if (nowMs < payload.validFrom * 1000 - skewMs)
       return { valid: false, reason: "not-yet-valid", payload };
-    if (nowMs > payload.validUntil * 1000)
+    if (nowMs > payload.validUntil * 1000 + skewMs)
       return { valid: false, reason: "expired", payload };
   }
   return { valid: true, payload };

@@ -29,12 +29,11 @@
 [![PartyKit](https://img.shields.io/badge/PartyKit-WebSockets-FF5722?style=for-the-badge&logo=partykit&logoColor=white)](https://partykit.io/)
 [![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 
-
 <br />
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-133%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-136%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -52,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-133-active-rockstars"><b>👥 Contributors (133)</b></a> •
+  <a href="#-contributors-136-active-rockstars"><b>👥 Contributors (136)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -75,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (133 Active Rockstars)
+### 🚀 Contributors (136 Active Rockstars)
 
-A massive thank you to all **133 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **136 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -913,6 +912,26 @@ A massive thank you to all **133 brilliant contributors and bots** building Work
       <a href="https://github.com/suganthijg">
         <img src="https://avatars.githubusercontent.com/u/234875145?v=4" width="55px;" height="55px;" alt="suganthijg" style="border-radius: 50%; object-fit: cover;"/><br />
         <sub><b>suganthijg</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/starkhushi">
+        <img src="https://avatars.githubusercontent.com/u/122792668?v=4" width="55px;" height="55px;" alt="starkhushi" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>starkhushi</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/riteshbonthalakoti">
+        <img src="https://avatars.githubusercontent.com/u/199930184?v=4" width="55px;" height="55px;" alt="riteshbonthalakoti" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>riteshbonthalakoti</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/pragyasslwsb">
+        <img src="https://avatars.githubusercontent.com/u/272576577?v=4" width="55px;" height="55px;" alt="pragyasslwsb" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>pragyasslwsb</b></sub>
       </a>
     </td>
   </tr>

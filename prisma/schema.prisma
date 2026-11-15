@@ -387,6 +387,7 @@ enum BookingStatus {
   CHECKED_IN
   CANCELLED
   COMPLETED
+  CANCELLED_BY_OPERATOR // added to the database by 20261111110000_operator_cancellation_webhook
 }
 
 model UserMemory {

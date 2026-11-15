@@ -40,6 +40,7 @@ import {
   getEscrowState,
   subscribeToEscrowConfirmation,
   toBaseUnits,
+  getPriorityFeeEstimator,
 } from "@/lib/solana/escrowClient";
 
 // ---------------------------------------------------------------------------
@@ -256,13 +257,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    // 7. Build the unsigned transaction
+    // 7. Estimate dynamic priority fee (#7848)
+    let priorityFeeMicroLamports: number | undefined;
+    try {
+      const pool = getEscrowRpcPool();
+      const estimator = getPriorityFeeEstimator();
+      const estimate = await pool.execute((conn) =>
+        estimator.estimatePriorityFee(conn, [payerWallet]),
+      );
+      priorityFeeMicroLamports = estimate.microLamports;
+    } catch {
+      // Fallback is handled transparently inside estimator / transaction builder
+    }
+
+    // 8. Build the unsigned transaction with dynamic priority fee
     const result = await buildDepositTransaction({
       payerWallet,
       bookingId,
       amount,
       currency,
       rpcUrl,
+      priorityFeeMicroLamports,
     });
 
     return NextResponse.json({

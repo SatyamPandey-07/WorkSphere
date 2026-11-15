@@ -14,4 +14,4 @@
 - [Cryptographic booking receipt specification](./security/cryptographic-receipt-spec.md)
 - [WebAuthn passkey security guide](./security/passkey-webauthn-guide.md)
 
-- [Offline sync testing playbook](./testing/OFFLINE_SYNC_TESTING_PLAYBOOK.md) — deterministic IndexedDB, Web Locks, online/offline and Playwright test recipes.
+- [Community badge catalog](./badges/BADGE_CATALOG.md) — current analytics badges, visual components, unlock criteria and registry guidance.

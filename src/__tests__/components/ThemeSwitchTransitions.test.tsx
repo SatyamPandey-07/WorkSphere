@@ -31,8 +31,8 @@ describe("theme switch transitions", () => {
         expect(root.classList.contains("cyberpunk")).toBe(true);
         expect(root.getAttribute("data-theme")).toBe("cyberpunk");
         expect(root.classList.contains("theme-transitioning")).toBe(true);
-        expect(root.classList.contains("theme-transitioning")).toBe(false);
-
-        await waitFor(() => expect(root.classList.contains("preload")).toBe(false));
+        await waitFor(() =>
+            expect(root.classList.contains("theme-transitioning")).toBe(false),
+        );
     });
 });

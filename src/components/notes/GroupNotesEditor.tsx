@@ -3,13 +3,24 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import * as Y from "yjs";
 import YPartyKitProvider from "y-partykit/provider";
-import { Bold, Italic, Loader2, Trash2, Underline, Wifi, WifiOff, FileDown } from "lucide-react";
+import { IndexeddbPersistence } from "y-indexeddb";
+import {
+  Bold,
+  Italic,
+  Loader2,
+  Trash2,
+  Underline,
+  Wifi,
+  WifiOff,
+  FileDown,
+} from "lucide-react";
 import { applyYTextDiff } from "@/lib/crdt/applyYTextDiff";
 import {
   enqueueNotesUpdate,
@@ -22,6 +33,14 @@ import {
 } from "@/lib/crdt/notesOutbox";
 import { useToast } from "@/components/ui/Toast";
 
+export type AwarenessPeer = {
+  clientId: number;
+  name: string;
+  avatarUrl?: string;
+  color: string;
+  cursorIndex?: number;
+};
+
 export type GroupNotesEditorProps = {
   /** PartyKit room id (e.g. venue or coworking group id) */
   roomId: string;
@@ -29,19 +48,46 @@ export type GroupNotesEditorProps = {
   /** Shared Y.Text key inside the document */
   textKey?: string;
   venueName?: string;
+  /** Current user identity for shared awareness cursors */
+  currentUser?: {
+    name: string;
+    avatarUrl?: string;
+    color?: string;
+  };
 };
 
 type ConnStatus = "connecting" | "connected" | "offline";
 
+const CURSOR_PALETTE = [
+  "#2563eb",
+  "#16a34a",
+  "#d97706",
+  "#9333ea",
+  "#e11d48",
+  "#0891b2",
+];
+
+function getCaretCharacterOffset(element: HTMLElement): number {
+  if (typeof window === "undefined") return 0;
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return 0;
+  const range = selection.getRangeAt(0);
+  const preCaretRange = range.cloneRange();
+  preCaretRange.selectNodeContents(element);
+  preCaretRange.setEnd(range.endContainer, range.endOffset);
+  return preCaretRange.toString().length;
+}
+
 /**
- * Offline-first CRDT group notes editor (#1023).
- * Y.Text ↔ contenteditable, IndexedDB outbox, PartyKit sync.
+ * Offline-first CRDT group notes editor (#1023, #7228).
+ * Y.Text ↔ contenteditable, y-indexeddb + outbox persistence, PartyKit sync & awareness cursors.
  */
 export function GroupNotesEditor({
   roomId,
   placeholder = "Start writing group notes…",
   textKey = "group-notes",
   venueName,
+  currentUser,
 }: GroupNotesEditorProps) {
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [pendingOutbox, setPendingOutbox] = useState(0);
@@ -49,6 +95,7 @@ export function GroupNotesEditor({
     null,
   );
   const [editorText, setEditorText] = useState("");
+  const [activePeers, setActivePeers] = useState<AwarenessPeer[]>([]);
 
   const { toast } = useToast();
 
@@ -57,6 +104,31 @@ export function GroupNotesEditor({
   const yTextRef = useRef<Y.Text | null>(null);
   const providerRef = useRef<YPartyKitProvider | null>(null);
   const applyingRemoteRef = useRef(false);
+
+  const localIdentity = useMemo(() => {
+    const fallbackIndex =
+      roomId.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0) %
+      CURSOR_PALETTE.length;
+    return {
+      name: currentUser?.name || "Coworker",
+      avatarUrl: currentUser?.avatarUrl,
+      color: currentUser?.color || CURSOR_PALETTE[fallbackIndex],
+    };
+  }, [currentUser, roomId]);
+
+  const broadcastCursorAwareness = useCallback(
+    (cursorIndex: number) => {
+      const awareness = providerRef.current?.awareness;
+      if (!awareness) return;
+      awareness.setLocalStateField("user", {
+        name: localIdentity.name,
+        avatarUrl: localIdentity.avatarUrl,
+        color: localIdentity.color,
+        cursorIndex,
+      });
+    },
+    [localIdentity],
+  );
 
   const syncEditorFromYText = useCallback(() => {
     const editor = editorRef.current;
@@ -78,9 +150,60 @@ export function GroupNotesEditor({
     const ytext = ydoc.getText(textKey);
     yTextRef.current = ytext;
 
+    // Offline local caching with y-indexeddb for deterministic CRDT merge on reconnect
+    let idbProvider: IndexeddbPersistence | null = null;
+    if (typeof indexedDB !== "undefined") {
+      idbProvider = new IndexeddbPersistence(`worksphere-notes-${roomId}`, ydoc);
+      idbProvider.on("synced", () => {
+        if (!cancelled) syncEditorFromYText();
+      });
+    }
+
     const host = process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
     const provider = new YPartyKitProvider(host, `notes-${roomId}`, ydoc);
     providerRef.current = provider;
+
+    // Initialize shared awareness state (user avatar, name, cursor)
+    const awareness = provider.awareness;
+    const syncPeersFromAwareness = () => {
+      if (!awareness || cancelled) return;
+      const states = awareness.getStates();
+      const peers: AwarenessPeer[] = [];
+      states.forEach((state, clientId) => {
+        if (clientId === awareness.clientID) return;
+        const userState = state?.user as
+          | {
+              name?: string;
+              avatarUrl?: string;
+              color?: string;
+              cursorIndex?: number;
+            }
+          | undefined;
+        if (userState?.name) {
+          peers.push({
+            clientId,
+            name: userState.name,
+            avatarUrl: userState.avatarUrl,
+            color:
+              userState.color ||
+              CURSOR_PALETTE[clientId % CURSOR_PALETTE.length],
+            cursorIndex: userState.cursorIndex,
+          });
+        }
+      });
+      setActivePeers(peers);
+    };
+
+    if (awareness) {
+      awareness.setLocalStateField("user", {
+        name: localIdentity.name,
+        avatarUrl: localIdentity.avatarUrl,
+        color: localIdentity.color,
+        cursorIndex: 0,
+      });
+      awareness.on("change", syncPeersFromAwareness);
+      syncPeersFromAwareness();
+    }
 
     const onUpdate = (update: Uint8Array, origin: unknown) => {
       if (
@@ -160,16 +283,23 @@ export function GroupNotesEditor({
       ydoc.off("update", onUpdate);
       provider.off("status", onStatus);
       provider.off("sync", onSync);
-      // provider.destroy() closes the underlying WebSocket and removes all
-      // internal Yjs bindings — more thorough than disconnect() alone, which
-      // only stops reconnection without guaranteed socket closure.
-      provider.destroy();
+      if (awareness) {
+        awareness.off("change", syncPeersFromAwareness);
+      }
+      if (idbProvider) {
+        void idbProvider.destroy();
+      }
+      if (typeof provider.destroy === "function") {
+        provider.destroy();
+      } else if (typeof provider.disconnect === "function") {
+        provider.disconnect();
+      }
       ydoc.destroy();
       yDocRef.current = null;
       yTextRef.current = null;
       providerRef.current = null;
     };
-  }, [roomId, syncEditorFromYText, textKey, toast]);
+  }, [localIdentity, roomId, syncEditorFromYText, textKey, toast]);
 
   const handleInput = () => {
     if (applyingRemoteRef.current) return;
@@ -178,6 +308,13 @@ export function GroupNotesEditor({
     if (!editor || !ytext) return;
     setEditorText(editor.innerText);
     applyYTextDiff(ytext, editor.innerText);
+    broadcastCursorAwareness(getCaretCharacterOffset(editor));
+  };
+
+  const handleSelectionChange = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    broadcastCursorAwareness(getCaretCharacterOffset(editor));
   };
 
   const execFormat = (command: "bold" | "italic" | "underline") => {
@@ -293,9 +430,47 @@ export function GroupNotesEditor({
   return (
     <div className="flex w-full flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
-        <h3 className="text-sm font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
-          Group Notes
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
+            Group Notes
+          </h3>
+          {activePeers.length > 0 && (
+            <div
+              data-testid="awareness-cursors-bar"
+              className="flex items-center gap-1.5"
+            >
+              {activePeers.map((peer) => (
+                <span
+                  key={peer.clientId}
+                  style={{ borderColor: peer.color }}
+                  className="inline-flex items-center gap-1 rounded-full border bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                >
+                  {peer.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={peer.avatarUrl}
+                      alt={peer.name}
+                      className="h-3.5 w-3.5 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span
+                      style={{ backgroundColor: peer.color }}
+                      className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold text-white"
+                    >
+                      {peer.name.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  <span>{peer.name}</span>
+                  {typeof peer.cursorIndex === "number" && (
+                    <span className="text-[9px] text-zinc-400">
+                      @{peer.cursorIndex}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-800 dark:bg-zinc-900">
           {status === "connecting" && (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
@@ -343,6 +518,8 @@ export function GroupNotesEditor({
         contentEditable={status !== "connecting"}
         suppressContentEditableWarning
         onInput={handleInput}
+        onKeyUp={handleSelectionChange}
+        onClick={handleSelectionChange}
         data-placeholder={placeholder}
         className="min-h-[160px] rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)] focus:ring-2 focus:ring-blue-500/40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
       />

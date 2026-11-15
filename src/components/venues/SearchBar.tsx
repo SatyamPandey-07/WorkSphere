@@ -2,8 +2,9 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { Search, X, Loader2, MapPin } from "lucide-react";
+import { Search, X, Loader2, MapPin, History } from "lucide-react";
 import { useVenueSearch, VenueSearchResult } from "@/hooks/useVenueSearch";
+import { useRecentSearches } from "@/hooks/useRecentSearches";
 import { AmenityFilterPills } from "./AmenityFilterPills";
 import { ShortcutTooltip } from "../ui/ShortcutTooltip";
 
@@ -53,6 +54,7 @@ export function SearchBar({
   onDistanceChange,
 }: SearchBarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [activeRecentIndex, setActiveRecentIndex] = useState(-1);
   const [shortcutKey, setShortcutKey] = useState("Ctrl+K");
   const [internalDistance, setInternalDistance] = useState(distance ?? 0);
 
@@ -87,6 +89,20 @@ export function SearchBar({
     clear,
     search,
   } = useVenueSearch({ initialQuery, debounceMs, minQueryLength });
+
+  const {
+    recent: recentSearches,
+    add: addRecent,
+    remove: removeRecent,
+    clear: clearRecent,
+  } = useRecentSearches();
+  const showRecent =
+    isOpen && query.trim().length === 0 && recentSearches.length > 0;
+
+  // Keep the keyboard highlight valid when the list or its visibility changes
+  useEffect(() => {
+    setActiveRecentIndex(-1);
+  }, [showRecent, recentSearches.length]);
 
   // Preserve cursor selection range across debounced controlled re-renders
   useEffect(() => {
@@ -182,17 +198,32 @@ export function SearchBar({
         setIsOpen(false);
         return;
       }
+      addRecent(trimmed);
       onSearch?.(trimmed);
       updateUrlQuery(trimmed);
       void search(trimmed);
     },
-    [query, clear, onSearch, updateUrlQuery, search],
+    [query, clear, onSearch, updateUrlQuery, search, addRecent],
+  );
+
+  // One tap re-query: fill the input and search straight away
+  const handleSelectRecent = useCallback(
+    (recentQuery: string) => {
+      cursorRef.current = { start: null, end: null };
+      setQuery(recentQuery);
+      setActiveRecentIndex(-1);
+      setIsOpen(true);
+      handleSearchSubmit(recentQuery);
+      inputRef.current?.focus();
+    },
+    [setQuery, handleSearchSubmit],
   );
 
   const handleSelectVenue = (venue: VenueSearchResult) => {
     cursorRef.current = { start: null, end: null };
     const trimmedName = trimSearchQuery(venue.name);
     setQuery(trimmedName);
+    addRecent(trimmedName);
     setIsOpen(false);
     onSelect?.(venue);
     onSearch?.(trimmedName);
@@ -221,11 +252,32 @@ export function SearchBar({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const recentCount = recentSearches.length;
+    const canNavigateRecent = query.trim().length === 0 && recentCount > 0;
+
+    if (canNavigateRecent && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        return;
+      }
+      setActiveRecentIndex((index) => {
+        if (e.key === "ArrowDown") return index + 1 >= recentCount ? 0 : index + 1;
+        return index <= 0 ? recentCount - 1 : index - 1;
+      });
+      return;
+    }
+
     if (e.key === "Enter") {
       e.preventDefault();
+      if (showRecent && activeRecentIndex >= 0 && recentSearches[activeRecentIndex]) {
+        handleSelectRecent(recentSearches[activeRecentIndex]);
+        return;
+      }
       handleSearchSubmit();
     } else if (e.key === "Escape") {
       e.preventDefault();
+      setActiveRecentIndex(-1);
       cursorRef.current = { start: null, end: null };
       clear();
       onSearch?.("");
@@ -257,9 +309,8 @@ export function SearchBar({
             setIsOpen(true);
           }}
           onFocus={() => {
-            if (query.trim().length > 0) {
-              setIsOpen(true);
-            }
+            // Empty input shows recent searches (nothing renders when there are none)
+            setIsOpen(true);
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
@@ -267,8 +318,15 @@ export function SearchBar({
           role="combobox"
           aria-autocomplete="list"
           aria-label={placeholder}
-          aria-expanded={isOpen && venues.length > 0}
-          aria-controls="search-bar-results-list"
+          aria-expanded={isOpen && (venues.length > 0 || showRecent)}
+          aria-controls={
+            showRecent ? "search-bar-recent-list" : "search-bar-results-list"
+          }
+          aria-activedescendant={
+            showRecent && activeRecentIndex >= 0
+              ? `search-bar-recent-option-${activeRecentIndex}`
+              : undefined
+          }
           className="w-full pl-10 pr-16 py-2.5 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
         />
 
@@ -353,6 +411,79 @@ export function SearchBar({
             <option value={3}>3km</option>
             <option value={5}>5km</option>
           </select>
+        </div>
+      )}
+
+      {showRecent && (
+        <div
+          data-testid="search-bar-recent"
+          className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl overflow-hidden"
+        >
+          <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-100 dark:border-zinc-800/60">
+            <span
+              id="search-bar-recent-heading"
+              className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
+            >
+              Recent searches
+            </span>
+            <button
+              type="button"
+              data-testid="search-bar-recent-clear-all"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                clearRecent();
+                inputRef.current?.focus();
+              }}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              Clear all
+            </button>
+          </div>
+          <ul
+            id="search-bar-recent-list"
+            role="listbox"
+            aria-labelledby="search-bar-recent-heading"
+            className="max-h-60 overflow-y-auto py-1"
+          >
+            {recentSearches.map((recentQuery, index) => (
+              <li
+                key={recentQuery.toLocaleLowerCase()}
+                id={`search-bar-recent-option-${index}`}
+                role="option"
+                aria-selected={index === activeRecentIndex}
+                data-testid="search-bar-recent-item"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelectRecent(recentQuery)}
+                className={`flex items-center gap-2 px-4 py-2 cursor-pointer text-sm text-zinc-800 dark:text-zinc-200 transition-colors ${
+                  index === activeRecentIndex
+                    ? "bg-zinc-100 dark:bg-zinc-800"
+                    : "hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                }`}
+              >
+                <History
+                  aria-hidden="true"
+                  className="w-3.5 h-3.5 shrink-0 text-zinc-400"
+                />
+                <span className="flex-1 truncate">{recentQuery}</span>
+                <button
+                  type="button"
+                  data-testid="search-bar-recent-remove"
+                  aria-label={`Remove ${recentQuery} from recent searches`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeRecent(recentQuery);
+                  }}
+                  className="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

@@ -113,7 +113,10 @@ const VALID_SIGNATURE =
 const OTHER_SIGNATURE =
   "4VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYj7WQ35MQR52vMm6vKEG7G5gF24yuvWiJJ43WDN3yvUJkLSzLj888";
 
-function setupValidParsedTx(bookingId: string = VALID_BOOKING_ID, payerWallet: string = VALID_WALLET) {
+function setupValidParsedTx(
+  bookingId: string = VALID_BOOKING_ID,
+  payerWallet: string = VALID_WALLET,
+) {
   const { address: escrowVault } = deriveEscrowPDA(bookingId);
   mockGetParsedTransaction.mockResolvedValue({
     meta: {
@@ -263,7 +266,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
 
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error).toMatch(/cannot register deposit for a cancelled booking/i);
+      expect(json.error).toMatch(
+        /cannot register deposit for a cancelled booking/i,
+      );
     });
 
     it("returns 409 Conflict when a different signature is already registered for this booking", async () => {
@@ -290,7 +295,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
 
       expect(res.status).toBe(409);
       const json = await res.json();
-      expect(json.error).toMatch(/conflict: a different deposit signature is already registered/i);
+      expect(json.error).toMatch(
+        /conflict: a different deposit signature is already registered/i,
+      );
     });
 
     it("returns idempotent 200 when registering the same signature again", async () => {
@@ -329,7 +336,8 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         status: "PENDING",
       } as never);
       // No escrow for this booking yet
-      jest.mocked(prisma.solanaEscrow.findUnique)
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
         .mockResolvedValueOnce(null as never) // findUnique by bookingId
         .mockResolvedValueOnce({
           id: "escrow-other",
@@ -347,7 +355,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
 
       expect(res.status).toBe(409);
       const json = await res.json();
-      expect(json.error).toMatch(/already been registered for another booking/i);
+      expect(json.error).toMatch(
+        /already been registered for another booking/i,
+      );
     });
 
     it("returns 400 when on-chain transaction is not found", async () => {
@@ -357,7 +367,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         userId: VALID_USER_ID,
         status: "PENDING",
       } as never);
-      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue(null as never);
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
+        .mockResolvedValue(null as never);
       mockGetParsedTransaction.mockResolvedValue(null);
 
       const res = await POST(
@@ -370,7 +382,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
 
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error).toMatch(/Deposit verification failed: Transaction not found on-chain/i);
+      expect(json.error).toMatch(
+        /Deposit verification failed: Transaction not found on-chain/i,
+      );
     });
 
     it("returns 400 when on-chain transaction has failed", async () => {
@@ -380,7 +394,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         userId: VALID_USER_ID,
         status: "PENDING",
       } as never);
-      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue(null as never);
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
+        .mockResolvedValue(null as never);
       mockGetParsedTransaction.mockResolvedValue({
         meta: { err: { InstructionError: [0, "Custom"] } },
         transaction: { message: { accountKeys: [] } },
@@ -406,7 +422,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         userId: VALID_USER_ID,
         status: "PENDING",
       } as never);
-      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue(null as never);
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
+        .mockResolvedValue(null as never);
 
       // On-chain signer is OTHER_WALLET
       setupValidParsedTx(VALID_BOOKING_ID, OTHER_WALLET);
@@ -432,7 +450,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         userId: VALID_USER_ID,
         status: "PENDING",
       } as never);
-      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue(null as never);
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
+        .mockResolvedValue(null as never);
 
       // Vault is derived for a different booking
       setupValidParsedTx("different_booking_id", VALID_WALLET);
@@ -447,7 +467,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
 
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error).toMatch(/Escrow vault not found in transaction accounts/i);
+      expect(json.error).toMatch(
+        /Escrow vault not found in transaction accounts/i,
+      );
     });
 
     it("returns 400 when on-chain deposit amount is insufficient", async () => {
@@ -457,7 +479,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         userId: VALID_USER_ID,
         status: "PENDING",
       } as never);
-      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue(null as never);
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
+        .mockResolvedValue(null as never);
 
       const { address: escrowVault } = deriveEscrowPDA(VALID_BOOKING_ID);
       mockGetParsedTransaction.mockResolvedValue({
@@ -506,7 +530,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         userId: VALID_USER_ID,
         status: "PENDING",
       } as never);
-      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue(null as never);
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
+        .mockResolvedValue(null as never);
 
       setupValidParsedTx(VALID_BOOKING_ID, VALID_WALLET);
 
@@ -532,9 +558,37 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
       expect(prisma.solanaEscrow.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { bookingId: VALID_BOOKING_ID },
-          update: expect.objectContaining({ depositTxSignature: VALID_SIGNATURE }),
+          update: expect.objectContaining({
+            depositTxSignature: VALID_SIGNATURE,
+          }),
         }),
       );
+    });
+
+    it("only selects booking fields that exist on the Booking model", async () => {
+      jest.mocked(auth).mockResolvedValue({ userId: VALID_USER_ID } as never);
+      jest.mocked(prisma.booking.findFirst).mockResolvedValue(null as never);
+      jest.mocked(prisma.booking.findUnique).mockResolvedValue(null as never);
+
+      await POST(
+        makeRegisterRequest({
+          action: "register_deposit",
+          bookingId: VALID_BOOKING_ID,
+          depositTxSignature: VALID_SIGNATURE,
+        }),
+      );
+
+      // The real Prisma client rejects unknown fields; the mock does not,
+      // so check the select itself.
+      for (const fn of [prisma.booking.findFirst, prisma.booking.findUnique]) {
+        const select = jest.mocked(fn).mock.calls[0]?.[0]?.select ?? {};
+        expect(Object.keys(select).sort()).toEqual([
+          "confirmationId",
+          "id",
+          "status",
+          "userId",
+        ]);
+      }
     });
 
     it("resolves booking using confirmationId if passed instead of database id", async () => {
@@ -545,7 +599,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         userId: VALID_USER_ID,
         status: "PENDING",
       } as never);
-      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue(null as never);
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
+        .mockResolvedValue(null as never);
 
       setupValidParsedTx(VALID_BOOKING_ID, VALID_WALLET);
 
@@ -662,7 +718,9 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
         id: VALID_BOOKING_ID,
         userId: VALID_USER_ID,
       } as never);
-      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue(null as never);
+      jest
+        .mocked(prisma.solanaEscrow.findUnique)
+        .mockResolvedValue(null as never);
 
       const res = await GET(
         makeGetRequest({
@@ -764,6 +822,54 @@ describe("Solana Escrow Streaming & Registration API (#7773)", () => {
       expect(decoded).toContain("event: connected");
       expect(decoded).toContain(VALID_SIGNATURE);
 
+      await reader.cancel();
+    });
+
+    it("keeps the stream open after the connected event while the deposit is pending", async () => {
+      jest.mocked(auth).mockResolvedValue({ userId: VALID_USER_ID } as never);
+      jest.mocked(prisma.booking.findFirst).mockResolvedValue({
+        id: VALID_BOOKING_ID,
+        userId: VALID_USER_ID,
+      } as never);
+      jest.mocked(prisma.solanaEscrow.findUnique).mockResolvedValue({
+        id: "escrow-1",
+        depositTxSignature: VALID_SIGNATURE,
+        status: "PENDING",
+        createdAt: new Date(),
+      } as never);
+
+      const res = await GET(
+        makeGetRequest({
+          bookingId: VALID_BOOKING_ID,
+          signature: VALID_SIGNATURE,
+        }),
+      );
+      const reader = res.body!.getReader();
+
+      // Read everything the stream produces in the first moment. A failure
+      // while the stream is being set up makes a read reject.
+      const outcome = await new Promise<string>((resolve) => {
+        const timer = setTimeout(() => resolve("still open"), 200);
+        const readMore = (): void => {
+          reader.read().then(
+            ({ done }) => {
+              if (done) {
+                clearTimeout(timer);
+                resolve("closed");
+              } else {
+                readMore();
+              }
+            },
+            (error: unknown) => {
+              clearTimeout(timer);
+              resolve(`errored: ${String(error)}`);
+            },
+          );
+        };
+        readMore();
+      });
+
+      expect(outcome).toBe("still open");
       await reader.cancel();
     });
 

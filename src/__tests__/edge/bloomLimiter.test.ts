@@ -13,7 +13,7 @@ class MockKVStore implements EdgeKVStore {
   }
 }
 
-describe("DistributedBloomLimiter Edge Fallback", () => {
+describe("DistributedBloomLimiter Edge Fallback (#7928)", () => {
   let limiter: DistributedBloomLimiter;
   let mockKV: MockKVStore;
 
@@ -83,5 +83,59 @@ describe("DistributedBloomLimiter Edge Fallback", () => {
     const finalReq = node2.checkAndIncrement(ip);
 
     expect(finalReq.limited).toBe(true);
+  });
+
+  it("decays counters on demand when decayCounters is invoked", () => {
+    const ip = "192.168.2.10";
+    for (let i = 0; i < 4; i++) {
+      limiter.checkAndIncrement(ip);
+    }
+
+    expect(limiter.getEstimatedCount(ip)).toBe(4);
+
+    limiter.decayCounters(0.5);
+    expect(limiter.getEstimatedCount(ip)).toBe(2);
+
+    limiter.decayCounters(0.5);
+    expect(limiter.getEstimatedCount(ip)).toBe(1);
+  });
+
+  it("automatically attenuates counters across sliding time windows in checkAndIncrement", () => {
+    const windowLimiter = new DistributedBloomLimiter({
+      sizeBytes: 1024,
+      thresholdCount: 4,
+      windowDurationMs: 10_000,
+      decayFactor: 0.5,
+    });
+
+    const ip = "10.0.0.5";
+    const t0 = 100_000;
+
+    // Send 3 requests at t0
+    for (let i = 0; i < 3; i++) {
+      const r = windowLimiter.checkAndIncrement(ip, t0);
+      expect(r.limited).toBe(false);
+    }
+    expect(windowLimiter.getEstimatedCount(ip)).toBe(3);
+
+    // Advance time by 1 window (10s) -> 3 * 0.5 = 1, increment gives 2
+    const resAfterWindow = windowLimiter.checkAndIncrement(ip, t0 + 10_000);
+    expect(resAfterWindow.limited).toBe(false);
+    expect(resAfterWindow.maxCount).toBe(2);
+  });
+
+  it("completely clears counters when reset is called", () => {
+    const ip = "192.168.10.99";
+    for (let i = 0; i < 5; i++) {
+      limiter.checkAndIncrement(ip);
+    }
+    expect(limiter.getEstimatedCount(ip)).toBe(5);
+
+    limiter.reset();
+    expect(limiter.getEstimatedCount(ip)).toBe(0);
+
+    const freshReq = limiter.checkAndIncrement(ip);
+    expect(freshReq.limited).toBe(false);
+    expect(freshReq.maxCount).toBe(1);
   });
 });

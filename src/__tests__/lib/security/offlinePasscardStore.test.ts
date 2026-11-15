@@ -121,6 +121,43 @@ describe("offline passcard store", () => {
     expect(await getOfflinePasscard("bk-1", during)).toBeNull();
   });
 
+  it("with a key set, accepts a token signed by any key in the set", async () => {
+    const rotatedOut = await issue({}, () => other.privateKey);
+    await expect(
+      saveOfflinePasscard(rotatedOut, {
+        verificationKeys: [pair.publicKey, other.publicKey],
+      }),
+    ).resolves.toMatchObject({ token: rotatedOut });
+  });
+
+  it("with a key set, refuses a token no key in the set signed", async () => {
+    const stranger = await generateOfflinePasscardKeyPair();
+    const forged = await issue({}, () => stranger.privateKey);
+    await expect(
+      saveOfflinePasscard(forged, {
+        verificationKeys: [pair.publicKey, other.publicKey],
+      }),
+    ).rejects.toThrow("bad-signature");
+    expect(await getOfflinePasscard("bk-1", during)).toBeNull();
+  });
+
+  it("with an empty key set, refuses the token instead of skipping the check", async () => {
+    const token = await issue();
+    await expect(
+      saveOfflinePasscard(token, { verificationKeys: [] }),
+    ).rejects.toThrow("bad-signature");
+  });
+
+  it("checks the single key and the key set together", async () => {
+    const token = await issue({}, () => other.privateKey);
+    await expect(
+      saveOfflinePasscard(token, {
+        verificationKey: pair.publicKey,
+        verificationKeys: [other.publicKey],
+      }),
+    ).resolves.toMatchObject({ token });
+  });
+
   it("with a verification key, accepts a genuine token even outside its window (a saved future pass)", async () => {
     const token = await issue();
     await expect(

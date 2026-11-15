@@ -62,6 +62,8 @@ export interface VerifyOfflinePasscardOptions {
 export const OFFLINE_PASSCARD_VERSION = 1;
 /** A raw P-256 ECDSA signature is r and s, 32 bytes each. */
 export const SIGNATURE_BYTES = 64;
+/** How many verification keys are tried for one token; matches the retained public key limit. */
+export const MAX_VERIFICATION_KEYS = 10;
 /** Longest accepted text field, which keeps the token (and the QR) small. */
 export const MAX_FIELD_LENGTH = 128;
 
@@ -252,6 +254,27 @@ export async function verifyOfflinePasscard(
   return { valid: true, payload };
 }
 
+/**
+ * Checks a token against a set of verification keys, for example the keys kept through a key rotation.
+ * A token does not say which key signed it, so the keys are tried in order, at most
+ * `MAX_VERIFICATION_KEYS` of them. The first key the signature is genuine under decides the result,
+ * which can still be "not-yet-valid" or "expired". "bad-signature" means no key matched.
+ */
+export async function verifyOfflinePasscardWithKeys(
+  token: string,
+  verificationKeys: readonly CryptoKey[],
+  options: VerifyOfflinePasscardOptions = {},
+): Promise<OfflinePasscardVerification> {
+  // A malformed token is malformed under every key, so report it even when there is no key to try.
+  if (!splitToken(token)) return { valid: false, reason: "malformed" };
+
+  for (const key of verificationKeys.slice(0, MAX_VERIFICATION_KEYS)) {
+    const result = await verifyOfflinePasscard(token, key, options);
+    if (result.valid || result.reason !== "bad-signature") return result;
+  }
+  return { valid: false, reason: "bad-signature" };
+}
+
 // -- keys ---------------------------------------------------------------------------------------
 
 /** A fresh P-256 key pair. The issuer keeps the private key; the public half goes to scanners. */
@@ -274,6 +297,32 @@ export async function importVerificationKey(
     throw new Error("A verification key must not contain private key material");
   }
   return subtle().importKey("jwk", jwk, ECDSA_KEY_PARAMS, true, ["verify"]);
+}
+
+/**
+ * Imports the public keys of a JWKS (`{ keys: [...] }`, as served by
+ * `/api/security/offline-passcards/keys`) or of a plain array of JWKs. An entry that is not a usable
+ * public P-256 key, or that carries private key material, is skipped. At most `MAX_VERIFICATION_KEYS`
+ * entries are read.
+ */
+export async function importVerificationKeys(
+  jwks: unknown,
+): Promise<CryptoKey[]> {
+  const entries: unknown = Array.isArray(jwks)
+    ? jwks
+    : (jwks as { keys?: unknown } | null | undefined)?.keys;
+  if (!Array.isArray(entries)) return [];
+
+  const keys: CryptoKey[] = [];
+  for (const entry of entries.slice(0, MAX_VERIFICATION_KEYS)) {
+    if (!entry || typeof entry !== "object") continue;
+    try {
+      keys.push(await importVerificationKey(entry as JsonWebKey));
+    } catch {
+      // Not a usable verification key: leave it out.
+    }
+  }
+  return keys;
 }
 
 /** Imports a private signing key (server side only). */

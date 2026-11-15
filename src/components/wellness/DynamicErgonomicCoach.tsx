@@ -28,6 +28,8 @@ import {
   ErgonomicCoachEngine,
 } from "@/lib/wellness/ergonomicCoachEngine";
 import { ErgonomicChimeSynthesizer } from "@/lib/audio/ErgonomicChimeSynthesizer";
+import { calculateSitStandRatio } from "@/lib/wellness/deskPostureAnalytics";
+import { SitStandRatioAnalytics } from "./SitStandRatioAnalytics";
 import { FocusTrap } from "@/components/ui/FocusTrap";
 
 export default function DynamicErgonomicCoach() {

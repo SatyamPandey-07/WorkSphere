@@ -87,6 +87,24 @@ export async function saveOfflinePasscard(
   return record;
 }
 
+/**
+ * Reads the saved passcard record without pruning it. This is intended for
+ * UI display only (for example, showing an expired countdown state). It must
+ * never be used as proof of validity; verifiers must validate the signature
+ * and validity window independently.
+ */
+export async function getOfflinePasscardRecord(
+  bookingId: string,
+): Promise<StoredOfflinePasscard | null> {
+  if (!available() || !bookingId) return null;
+  const db = await open();
+  try {
+    return (await db.get(STORE, bookingId)) ?? null;
+  } finally {
+    db.close();
+  }
+}
+
 /** The stored token for a booking, or null when there is none or it has expired (an expired one is deleted). */
 export async function getOfflinePasscard(
   bookingId: string,

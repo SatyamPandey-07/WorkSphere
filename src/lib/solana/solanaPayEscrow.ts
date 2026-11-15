@@ -91,6 +91,7 @@ interface ActiveSubscription {
   pollAborted?: boolean;
   connection: Connection;
   callbacks?: SeatReservationCallbacks;
+  stateRemovers?: Array<() => void>;
 }
 
 /**
@@ -297,6 +298,47 @@ export class SolanaPayEscrowManager {
     }, timeoutMs);
     subRecord.timeoutTimer.unref?.();
 
+    // Fallback trigger helper to initiate background polling if WebSocket disconnects
+    let fallbackInitiated = false;
+    const triggerFallbackPolling = (reason: string) => {
+      if (fallbackInitiated || subRecord.pollTimer || subRecord.pollAborted) return;
+      fallbackInitiated = true;
+      console.warn(
+        `[SolanaPayEscrow] WebSocket subscription degraded (${reason}); activating background status polling fallback.`,
+      );
+      this.scheduleNextPoll(
+        subRecord,
+        signature,
+        pollIntervalMs,
+        pollSignatureStatus,
+      );
+    };
+
+    const attachDisconnectListener = (subId: number) => {
+      let wasSubscribed = false;
+      const connAny = connection as any;
+      if (typeof connAny._onSubscriptionStateChange === "function") {
+        try {
+          const remove = connAny._onSubscriptionStateChange(
+            subId,
+            (state: string) => {
+              if (state === "subscribed") {
+                wasSubscribed = true;
+              } else if (state === "error") {
+                triggerFallbackPolling("subscription error");
+              } else if (state === "pending" && wasSubscribed) {
+                triggerFallbackPolling("subscription dropped to pending");
+              }
+            },
+          );
+          if (typeof remove === "function") {
+            subRecord.stateRemovers = subRecord.stateRemovers || [];
+            subRecord.stateRemovers.push(remove);
+          }
+        } catch {}
+      }
+    };
+
     // Handle WebSocket listener for 'confirmed' commitment
     try {
       subRecord.confirmedSubId = connection.onSignatureWithOptions(
@@ -316,6 +358,9 @@ export class SolanaPayEscrowManager {
         },
         { commitment: "confirmed" },
       );
+      if (subRecord.confirmedSubId !== undefined) {
+        attachDisconnectListener(subRecord.confirmedSubId);
+      }
     } catch (err) {
       console.error(
         "[SolanaPayEscrow] Failed to subscribe to confirmed notification:",
@@ -342,11 +387,31 @@ export class SolanaPayEscrowManager {
         },
         { commitment: "finalized" },
       );
+      if (subRecord.finalizedSubId !== undefined) {
+        attachDisconnectListener(subRecord.finalizedSubId);
+      }
     } catch (err) {
       console.error(
         "[SolanaPayEscrow] Failed to subscribe to finalized notification:",
         err,
       );
+    }
+
+    // Attach connection-level socket close/error listeners if present
+    const connAny = connection as any;
+    if (typeof connAny.on === "function") {
+      const onSocketClose = () => triggerFallbackPolling("socket closed/error");
+      connAny.on("close", onSocketClose);
+      connAny.on("error", onSocketClose);
+      connAny.on("disconnect", onSocketClose);
+      subRecord.stateRemovers = subRecord.stateRemovers || [];
+      subRecord.stateRemovers.push(() => {
+        try {
+          connAny.off?.("close", onSocketClose);
+          connAny.off?.("error", onSocketClose);
+          connAny.off?.("disconnect", onSocketClose);
+        } catch {}
+      });
     }
 
     this.activeSubscriptions.set(seatId, subRecord);
@@ -626,6 +691,15 @@ export class SolanaPayEscrowManager {
   private cleanupSubscription(seatId: string): void {
     const sub = this.activeSubscriptions.get(seatId);
     if (!sub) return;
+
+    if (sub.stateRemovers) {
+      for (const remover of sub.stateRemovers) {
+        try {
+          remover();
+        } catch {}
+      }
+      sub.stateRemovers = undefined;
+    }
 
     // Halt any background polling loop for this reservation
     sub.pollAborted = true;

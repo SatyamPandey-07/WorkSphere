@@ -57,8 +57,9 @@ export function StorageStatsDrawer({
   const [stats, setStats] = useState<OfflineStorageStats | null>(initialStats);
   const [loading, setLoading] = useState(!initialStats);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [staleStats, setStaleStats] =
-    useState<StaleFloorPlanCacheStats | null>(null);
+  const [staleStats, setStaleStats] = useState<StaleFloorPlanCacheStats | null>(
+    null,
+  );
   const [isCalculatingStale, setIsCalculatingStale] = useState(true);
   const [isPurgingStale, setIsPurgingStale] = useState(false);
   const [showCleanConfirmation, setShowCleanConfirmation] = useState(false);
@@ -598,7 +599,7 @@ export function StorageStatsDrawer({
                     ) : (
                       <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
                         {staleStats?.count
-                          ? `${(staleStats.reclaimableBytes / (1024 * 1024)).toFixed(2)} MB reclaimable from ${staleStats.count} plan${staleStats.count === 1 ? "" : "s"}`
+                          ? `${(staleStats.reclaimableBytes / (1024 * 1024)).toFixed(2)} MB reclaimable from ${staleStats.count} plan${staleStats.count === 1 ? "" : "s"} older than 30 days.`
                           : "No stale floor plans found. Storage is optimized."}
                       </p>
                     )}
@@ -717,6 +718,7 @@ export function StorageStatsDrawer({
             Close Drawer
           </button>
         </div>
+      </div>
 
       {/* Clean Stale Floor Plans Confirmation Modal */}
       {showCleanConfirmation && (
@@ -731,22 +733,22 @@ export function StorageStatsDrawer({
           }}
         >
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-            role="presentation"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget && !isPurgingStale) {
-                setShowCleanConfirmation(false);
-              }
-            }}
+            className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-purge-title"
           >
-            <div
-              className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="confirm-purge-title"
-            >
-              Clean stale floor plans?
-            </h4>
+            <div className="flex items-center gap-2.5 text-blue-600 dark:text-blue-400">
+              <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-950/50">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <h4
+                id="confirm-purge-title"
+                className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
+              >
+                Clean stale floor plans?
+              </h4>
+            </div>
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
               This will remove {staleStats?.count ?? 0} cached floor plan
               {staleStats?.count === 1 ? "" : "s"} not accessed in 30 days,
@@ -806,19 +808,17 @@ export function StorageStatsDrawer({
                 <Trash2 className="w-5 h-5" />
               </div>
               <h4
-                id="confirm-purge-title"
+                id="confirm-clear-cache-title"
                 className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
               >
-                Clean stale floor plans?
+                Clear Offline Cache?
               </h4>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                This will remove {staleStats?.count ?? 0} cached floor plan
-                {staleStats?.count === 1 ? "" : "s"} not accessed in 30 days,
-                freeing approximately{" "}
-                {((staleStats?.reclaimableBytes ?? 0) / (1024 * 1024)).toFixed(
-                  2,
-                )}{" "}
-                MB.
+            </div>
+
+            <div className="mt-3 space-y-3">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                This action will delete all locally cached venues, floor plans,
+                and offline IndexedDB data.
               </p>
 
               {/* Formatted byte size readout */}
@@ -881,104 +881,8 @@ export function StorageStatsDrawer({
               </button>
             </div>
           </div>
-        )}
-
-        {/* Clear Offline Cache Confirmation Modal */}
-        {showClearCacheConfirmation && (
-          <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-            role="presentation"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget && !isClearingCache) {
-                setShowClearCacheConfirmation(false);
-              }
-            }}
-          >
-            <div
-              className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="confirm-clear-cache-title"
-            >
-              <div className="flex items-center gap-2.5 text-red-600 dark:text-red-400">
-                <div className="p-2 rounded-xl bg-red-100 dark:bg-red-950/50">
-                  <Trash2 className="w-5 h-5" />
-                </div>
-                <h4
-                  id="confirm-clear-cache-title"
-                  className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
-                >
-                  Clear Offline Cache?
-                </h4>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  This action will delete all locally cached venues, floor plans,
-                  and offline IndexedDB data.
-                </p>
-
-                {/* Formatted byte size readout */}
-                <div
-                  data-testid="free-up-bytes-badge"
-                  className="flex items-center gap-2 p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800/60 text-zinc-800 dark:text-zinc-200 text-xs font-semibold"
-                >
-                  <HardDrive className="w-4 h-4 text-blue-500 shrink-0" />
-                  <span>
-                    Free up {(usageBytes / (1024 * 1024)).toFixed(1)} MB
-                  </span>
-                  <span className="text-zinc-400 dark:text-zinc-500 font-normal ml-auto">
-                    ({formattedTotalUsage})
-                  </span>
-                </div>
-
-                {/* Unsaved offline changes warning */}
-                {unsyncedCheckIns > 0 ? (
-                  <div
-                    role="alert"
-                    data-testid="unsaved-changes-warning"
-                    className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-xs space-y-1.5"
-                  >
-                    <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-100">
-                      <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                      Unsaved Offline Changes Detected
-                    </div>
-                    <p className="leading-relaxed">
-                      Warning: You have {unsyncedCheckIns} unsynced offline
-                      check-in draft{unsyncedCheckIns === 1 ? "" : "s"}. Unsaved
-                      offline changes will be discarded.
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowClearCacheConfirmation(false)}
-                  disabled={isClearingCache}
-                  className="px-4 py-2 text-sm font-medium rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmClearCache}
-                  disabled={isClearingCache}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
-                >
-                  {isClearingCache ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-4 h-4" />
-                  )}
-                  {isClearingCache ? "Clearing…" : "Clear Cache"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

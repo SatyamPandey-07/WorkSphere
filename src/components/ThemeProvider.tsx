@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AccentColor } from "@/lib/constants/theme";
+export type { AccentColor } from "@/lib/constants/theme";
 import {
   ACCENT_HEX_MAP,
   ACCENT_STORAGE_KEY,
@@ -39,7 +39,10 @@ const STORAGE_KEY = "worksphere-theme";
 const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)";
 
 function getSystemTheme(): "light" | "dark" {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
     return "light";
   }
   return window.matchMedia(COLOR_SCHEME_QUERY).matches ? "dark" : "light";
@@ -325,3 +328,49 @@ export function ThemeProvider({
   }, []);
 
   const value = useMemo<ThemeContextValue>(
+    () => ({
+      theme,
+      setTheme,
+      toggleTheme,
+      accent,
+      accentHex,
+      setAccent,
+      highContrast,
+      setHighContrast,
+      toggleHighContrast,
+    }),
+    [
+      theme,
+      setTheme,
+      toggleTheme,
+      accent,
+      accentHex,
+      setAccent,
+      highContrast,
+      setHighContrast,
+      toggleHighContrast,
+    ],
+  );
+
+  return (
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+  );
+}
+
+export function useTheme() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) {
+    return {
+      theme: "light" as Theme,
+      setTheme: () => {},
+      toggleTheme: () => {},
+      accent: DEFAULT_ACCENT,
+      accentHex: ACCENT_HEX_MAP[DEFAULT_ACCENT],
+      setAccent: () => {},
+      highContrast: false,
+      setHighContrast: () => {},
+      toggleHighContrast: () => {},
+    };
+  }
+  return ctx;
+}

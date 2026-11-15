@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { AlertCircle } from "lucide-react";
 
-import { CopyBookingReferenceButton } from '@/components/bookings/CopyBookingReferenceButton';
-import { ReservationTimerBadge } from '@/components/bookings/ReservationTimerBadge';
-import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
-import { storeOfflinePasscardsFromBooking } from '@/lib/security/offlinePasscardStore';
-import type { EscrowConfirmationStatus } from '@/lib/solana/escrowClient';
+import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
+import { ReservationTimerBadge } from "@/components/bookings/ReservationTimerBadge";
+import { VenueSeatWaitlistModal } from "@/components/venues/VenueSeatWaitlistModal";
+import { storeOfflinePasscardsFromBooking } from "@/lib/security/offlinePasscardStore";
+import type { EscrowConfirmationStatus } from "@/lib/solana/escrowClient";
 
 export type { EscrowConfirmationStatus };
 
@@ -17,10 +17,35 @@ interface BookingModalProps {
   onClose: () => void;
   onSuccess: (confirmationId: string) => void;
   confirmationId?: string;
+  bookingId?: string;
+  escrowSignature?: string;
+  escrowStatus?: EscrowConfirmationStatus;
+  onEscrowStatusChange?: (status: EscrowConfirmationStatus) => void;
   initialExpiresAt?: number;
   holdDurationSeconds?: number;
   remainingHoldSeconds?: number;
   onHoldExpire?: () => void;
+}
+
+export function getEscrowStatusLabel(status: EscrowConfirmationStatus): string {
+  switch (status) {
+    case "pending":
+      return "Pending escrow deposit...";
+    case "processed":
+      return "Transaction processed on Solana (optimistic)...";
+    case "confirmed":
+      return "Transaction confirmed by cluster...";
+    case "finalized":
+      return "Transaction finalized on Solana...";
+    case "fallback_polling":
+      return "Confirming via RPC polling...";
+    case "failed":
+      return "Escrow transaction failed";
+    case "timeout":
+      return "Confirmation timed out";
+    default:
+      return "Confirming reservation...";
+  }
 }
 
 export function BookingModal({
@@ -29,21 +54,29 @@ export function BookingModal({
   onClose,
   onSuccess,
   confirmationId,
+  bookingId,
+  escrowSignature,
+  escrowStatus: propEscrowStatus,
+  onEscrowStatusChange,
   initialExpiresAt,
   holdDurationSeconds,
   remainingHoldSeconds,
   onHoldExpire,
 }: BookingModalProps) {
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [showWaitlist, setShowWaitlist] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedId, setConfirmedId] = useState<string | null>(
     confirmationId || null,
   );
   const [copyError, setCopyError] = useState(false);
+  const [internalEscrowStatus, setInternalEscrowStatus] =
+    useState<EscrowConfirmationStatus | null>(
+      propEscrowStatus || (escrowSignature ? "pending" : null),
+    );
   const [isHoldExpired, setIsHoldExpired] = useState(false);
   const isSubmittingRef = React.useRef(false);
 
@@ -51,28 +84,32 @@ export function BookingModal({
   const activeConfirmationId = confirmedId || confirmationId;
   const effectiveError =
     error ||
-    (currentEscrowStatus === 'failed'
-      ? 'Escrow transaction failed'
-      : currentEscrowStatus === 'timeout'
-        ? 'Confirmation timed out'
-        : '');
+    (currentEscrowStatus === "failed"
+      ? "Escrow transaction failed"
+      : currentEscrowStatus === "timeout"
+        ? "Confirmation timed out"
+        : "");
 
   // SSE streaming for real-time escrow confirmation monitoring
   useEffect(() => {
     if (!escrowSignature) return;
 
-    const targetBookingId = bookingId || activeConfirmationId || 'pending-booking';
+    const targetBookingId =
+      bookingId || activeConfirmationId || "pending-booking";
     const sseUrl = `/api/pay/solana?bookingId=${encodeURIComponent(
       targetBookingId,
     )}&signature=${encodeURIComponent(escrowSignature)}`;
 
     let eventSource: EventSource | null = null;
 
-    if (typeof window !== 'undefined' && typeof window.EventSource !== 'undefined') {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.EventSource !== "undefined"
+    ) {
       try {
         eventSource = new window.EventSource(sseUrl);
 
-        eventSource.addEventListener('status', (e: MessageEvent) => {
+        eventSource.addEventListener("status", (e: MessageEvent) => {
           try {
             const payload = JSON.parse(e.data);
             const status = payload.status as EscrowConfirmationStatus;
@@ -80,41 +117,59 @@ export function BookingModal({
               setInternalEscrowStatus(status);
               onEscrowStatusChange?.(status);
 
-              if (status === 'failed' || status === 'timeout') {
+              if (status === "failed" || status === "timeout") {
                 setError(
                   payload.error ||
-                    (status === 'timeout'
-                      ? 'Confirmation timed out'
-                      : 'Escrow transaction failed'),
+                    (status === "timeout"
+                      ? "Confirmation timed out"
+                      : "Escrow transaction failed"),
                 );
                 eventSource?.close();
-              } else if (status === 'finalized' || status === 'confirmed') {
-                const confId = bookingId || activeConfirmationId || 'WS-SOL-CONFIRMED';
+              } else if (status === "finalized" || status === "confirmed") {
+                const confId =
+                  bookingId || activeConfirmationId || "WS-SOL-CONFIRMED";
                 if (!confirmedId) {
                   setConfirmedId(confId);
                   onSuccess?.(confId);
                 }
-                if (status === 'finalized') {
+                if (status === "finalized") {
                   eventSource?.close();
                 }
               }
             }
           } catch (err) {
-            console.warn('[BookingModal] Failed to parse SSE status data:', err);
+            console.warn(
+              "[BookingModal] Failed to parse SSE status data:",
+              err,
+            );
           }
         });
 
-        eventSource.addEventListener('error', () => {
+        eventSource.addEventListener("error", () => {
           // If SSE fails or disconnects, keep existing status or allow fallback
         });
       } catch (err) {
-        console.warn('[BookingModal] EventSource initialization failed:', err);
+        console.warn("[BookingModal] EventSource initialization failed:", err);
       }
     }
 
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [
+    escrowSignature,
+    bookingId,
+    activeConfirmationId,
+    confirmedId,
+    onEscrowStatusChange,
+    onSuccess,
+  ]);
+
   const handleHoldExpire = React.useCallback(() => {
     setIsHoldExpired(true);
-    setError('Your 10-minute seat reservation hold has expired. Please retry.');
+    setError("Your 10-minute seat reservation hold has expired. Please retry.");
     onHoldExpire?.();
   }, [onHoldExpire]);
 
@@ -126,14 +181,14 @@ export function BookingModal({
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         if (!isSubmittingRef.current && !loading && !isSubmitting) {
           onClose();
         }
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [loading, isSubmitting, onClose]);
 
   if (showWaitlist) {
@@ -152,27 +207,27 @@ export function BookingModal({
   const handleReserve = async () => {
     if (isHoldExpired) {
       return setError(
-        'Your 10-minute seat reservation hold has expired. Please retry.',
+        "Your 10-minute seat reservation hold has expired. Please retry.",
       );
     }
-    if (!date || !time) return setError('Please select both a date and time');
+    if (!date || !time) return setError("Please select both a date and time");
     if (loading || isSubmitting || isSubmittingRef.current) return;
 
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const res = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ venueId, date, time }),
       });
 
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(json.error || 'Failed to book');
+        throw new Error(json.error || "Failed to book");
       }
 
       // Keep the signed offline passcard (when the server issued one) for use with no network. Best effort:
@@ -182,7 +237,7 @@ export function BookingModal({
       setConfirmedId(json.data.confirmationId);
       onSuccess(json.data.confirmationId);
     } catch (err: any) {
-      setError(err.message || 'Failed to book');
+      setError(err.message || "Failed to book");
     } finally {
       setLoading(false);
       setIsSubmitting(false);
@@ -201,10 +256,10 @@ export function BookingModal({
     isSubmitting ||
     Boolean(
       (escrowSignature || propEscrowStatus) &&
-        !activeConfirmationId &&
-        currentEscrowStatus &&
-        currentEscrowStatus !== 'failed' &&
-        currentEscrowStatus !== 'timeout',
+      !activeConfirmationId &&
+      currentEscrowStatus &&
+      currentEscrowStatus !== "failed" &&
+      currentEscrowStatus !== "timeout",
     );
 
   return (
@@ -234,7 +289,7 @@ export function BookingModal({
             >
               {currentEscrowStatus
                 ? getEscrowStatusLabel(currentEscrowStatus)
-                : 'Confirming reservation...'}
+                : "Confirming reservation..."}
             </p>
             {currentEscrowStatus && (
               <span
@@ -253,8 +308,8 @@ export function BookingModal({
               Booking Confirmed!
             </h2>
             <p className="mb-6 text-sm text-zinc-400">
-              Your workspace at{' '}
-              <span className="font-semibold text-zinc-200">{venueName}</span>{' '}
+              Your workspace at{" "}
+              <span className="font-semibold text-zinc-200">{venueName}</span>{" "}
               is reserved.
             </p>
 
@@ -361,7 +416,7 @@ export function BookingModal({
                     type="button"
                     onClick={() => {
                       setIsHoldExpired(false);
-                      setError('');
+                      setError("");
                       handleReserve();
                     }}
                     data-testid="booking-retry-btn"
@@ -442,7 +497,7 @@ export function BookingModal({
                 disabled={isPending}
                 className="flex-1 rounded-xl bg-violet-600 p-3 font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed"
               >
-                {isPending ? 'Confirming...' : 'Confirm Booking'}
+                {isPending ? "Confirming..." : "Confirm Booking"}
               </button>
             </div>
           </div>

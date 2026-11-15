@@ -8,7 +8,7 @@
 
 import { initOfflineDB, resetOfflineDBNonDestructive } from "./db";
 import type { OfflineQueueItem, OfflineQueueHandler } from "./types";
-import { withWebLock, OFFLINE_WRITE_LOCK } from "@/lib/weblock";
+import { withWebLock, OFFLINE_WRITE_LOCK } from "@/lib/webLock";
 
 export const QUEUE_STORE_NAME = "pending_sync_queue";
 export const SYNC_QUEUE_CHANNEL = "worksphere:sync-queue-channel";
@@ -64,7 +64,9 @@ export class SyncQueueManager {
     }
   }
 
-  public static getInstance(options?: SyncQueueManagerOptions): SyncQueueManager {
+  public static getInstance(
+    options?: SyncQueueManagerOptions,
+  ): SyncQueueManager {
     if (!SyncQueueManager.instance) {
       SyncQueueManager.instance = new SyncQueueManager(options);
     } else if (options?.onWarningToast) {
@@ -197,13 +199,16 @@ export class SyncQueueManager {
 
     try {
       const db = await initOfflineDB();
-      const dbItems = await new Promise<OfflineQueueItem[]>((resolve, reject) => {
-        const tx = db.transaction([QUEUE_STORE_NAME], "readonly");
-        const store = tx.objectStore(QUEUE_STORE_NAME);
-        const req = store.getAll();
-        req.onsuccess = () => resolve((req.result as OfflineQueueItem[]) || []);
-        req.onerror = () => reject(req.error);
-      });
+      const dbItems = await new Promise<OfflineQueueItem[]>(
+        (resolve, reject) => {
+          const tx = db.transaction([QUEUE_STORE_NAME], "readonly");
+          const store = tx.objectStore(QUEUE_STORE_NAME);
+          const req = store.getAll();
+          req.onsuccess = () =>
+            resolve((req.result as OfflineQueueItem[]) || []);
+          req.onerror = () => reject(req.error);
+        },
+      );
       const merged = new Map<string, OfflineQueueItem>();
       for (const item of dbItems) merged.set(item.id, item);
       for (const item of this.inMemoryQueue.values()) merged.set(item.id, item);
@@ -284,7 +289,9 @@ export class SyncQueueManager {
    * Non-destructive database reset: preserves pending in-memory items while rebuilding
    * the IndexedDB schema cleanly.
    */
-  public async resetDatabaseNonDestructive(): Promise<{ restoredCount: number }> {
+  public async resetDatabaseNonDestructive(): Promise<{
+    restoredCount: number;
+  }> {
     return withWebLock(async () => {
       const pendingItems = Array.from(this.inMemoryQueue.values());
       const result = await resetOfflineDBNonDestructive(
@@ -304,7 +311,9 @@ export class SyncQueueManager {
   public async syncItem(item: OfflineQueueItem): Promise<boolean> {
     const handler = this.handlers.get(item.entity);
     if (!handler) {
-      console.warn(`[SyncQueueManager] No handler registered for entity: ${item.entity}`);
+      console.warn(
+        `[SyncQueueManager] No handler registered for entity: ${item.entity}`,
+      );
       return false;
     }
 
@@ -315,12 +324,17 @@ export class SyncQueueManager {
         return true;
       }
     } catch (error) {
-      console.error(`[SyncQueueManager] Handler error for item ${item.id}:`, error);
+      console.error(
+        `[SyncQueueManager] Handler error for item ${item.id}:`,
+        error,
+      );
     }
 
     const nextRetry = item.retryCount + 1;
     if (nextRetry >= this.maxRetries) {
-      console.warn(`[SyncQueueManager] Max retries (${this.maxRetries}) exceeded for item ${item.id}`);
+      console.warn(
+        `[SyncQueueManager] Max retries (${this.maxRetries}) exceeded for item ${item.id}`,
+      );
       await this.dequeue(item.id);
       return false;
     }

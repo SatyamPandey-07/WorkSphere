@@ -828,7 +828,7 @@ export function VenueCard({
                       : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
                 return (
                   <span
-                    className={`mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
+                    className={`mt-0.5 inline-flex max-w-full items-center whitespace-nowrap px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
                     title={`${Math.round(pct)}% occupancy — ${label}`}
                     aria-label={`Venue is currently ${label} — ${Math.round(pct)}% occupied`}
                   >
@@ -949,7 +949,7 @@ export function VenueCard({
               <Clock className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
               {isClient && operatingStatus.badgeText ? (
                 <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight ${
+                  className={`inline-flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap px-2 sm:px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium tracking-tight ${
                     isOpen || is24Hours
                       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
                       : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200/60 dark:border-zinc-700/50"
@@ -963,7 +963,9 @@ export function VenueCard({
                         : "bg-zinc-400 dark:bg-zinc-500"
                     }`}
                   />
-                  {operatingStatus.badgeText}
+                  <span className="min-w-0 truncate">
+                    {operatingStatus.badgeText}
+                  </span>
                 </span>
               ) : (
                 <span className="truncate">{hoursStr}</span>
@@ -1628,7 +1630,10 @@ export function VenueCard({
             venue.powerTypes.includes("ac_wall") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <Plug className="w-4 h-4 text-yellow-600 shrink-0" />
-                <span className="max-w-[140px] sm:max-w-[180px] truncate" title="AC Outlets">
+                <span
+                  className="max-w-[140px] sm:max-w-[180px] truncate"
+                  title="AC Outlets"
+                >
                   AC Outlets
                 </span>
               </div>
@@ -1638,7 +1643,10 @@ export function VenueCard({
             venue.powerTypes.includes("usb_c") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <Smartphone className="w-4 h-4 text-blue-500 shrink-0" />
-                <span className="max-w-[140px] sm:max-w-[180px] truncate" title="USB-C PD">
+                <span
+                  className="max-w-[140px] sm:max-w-[180px] truncate"
+                  title="USB-C PD"
+                >
                   USB-C PD
                 </span>
               </div>
@@ -1648,7 +1656,10 @@ export function VenueCard({
             venue.powerTypes.includes("wireless") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <BatteryCharging className="w-4 h-4 text-green-500 shrink-0" />
-                <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Wireless">
+                <span
+                  className="max-w-[140px] sm:max-w-[180px] truncate"
+                  title="Wireless"
+                >
                   Wireless
                 </span>
               </div>
@@ -1691,7 +1702,10 @@ export function VenueCard({
 
           {venue.patioOnly && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Patio Only">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Patio Only"
+              >
                 🌿 Patio Only
               </span>
             </div>
@@ -1699,14 +1713,20 @@ export function VenueCard({
 
           {venue.waterBowlsProvided && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Water Bowls">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Water Bowls"
+              >
                 💧 Water Bowls
               </span>
             </div>
           )}
           {venue.singleOriginBeans && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Single-Origin">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Single-Origin"
+              >
                 ☕ Single-Origin
               </span>
             </div>
@@ -1725,7 +1745,10 @@ export function VenueCard({
 
           {venue.oatAlmondMilk && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Oat/Almond Milk">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Oat/Almond Milk"
+              >
                 🥛 Oat/Almond Milk
               </span>
             </div>
@@ -1733,7 +1756,10 @@ export function VenueCard({
 
           {venue.pourOverAvailable && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="Pour Over">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="Pour Over"
+              >
                 🫖 Pour Over
               </span>
             </div>
@@ -1760,7 +1786,10 @@ export function VenueCard({
           )}
           {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span className="max-w-[140px] sm:max-w-[180px] truncate" title="No Music Played">
+              <span
+                className="max-w-[140px] sm:max-w-[180px] truncate"
+                title="No Music Played"
+              >
                 🔇 No Music Played
               </span>
             </div>

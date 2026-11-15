@@ -29,6 +29,7 @@
 [![PartyKit](https://img.shields.io/badge/PartyKit-WebSockets-FF5722?style=for-the-badge&logo=partykit&logoColor=white)](https://partykit.io/)
 [![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 
+
 <br />
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)

@@ -11,27 +11,25 @@ import {
 import * as Y from "yjs";
 import YPartyKitProvider from "y-partykit/provider";
 import { IndexeddbPersistence } from "y-indexeddb";
-import {
-  Bold,
-  Italic,
-  Loader2,
-  Trash2,
-  Underline,
-  Wifi,
-  WifiOff,
-  FileDown,
-} from "lucide-react";
+import { Bold, Italic, Trash2, Underline, FileDown } from "lucide-react";
 import { applyYTextDiff } from "@/lib/crdt/applyYTextDiff";
 import {
   enqueueNotesUpdate,
   flushNotesOutbox,
   loadNotesDocState,
   saveNotesDocState,
+  listNotesOutbox,
   resolveConflictsKeepLocal,
   resolveConflictsUseRemote,
   type NotesOutboxConflict,
 } from "@/lib/crdt/notesOutbox";
 import { useToast } from "@/components/ui/Toast";
+import {
+  ConnectionStatusPill,
+  type ConnectionStatus,
+} from "./ConnectionStatusPill";
+import { OfflineSyncBanner } from "./OfflineSyncBanner";
+import { CollaboratorPresence } from "./CollaboratorPresence";
 
 export type AwarenessPeer = {
   clientId: number;
@@ -56,7 +54,7 @@ export type GroupNotesEditorProps = {
   };
 };
 
-type ConnStatus = "connecting" | "connected" | "offline";
+export type { ConnectionStatus };
 
 const CURSOR_PALETTE = [
   "#2563eb",
@@ -79,8 +77,9 @@ function getCaretCharacterOffset(element: HTMLElement): number {
 }
 
 /**
- * Offline-first CRDT group notes editor (#1023, #7228).
+ * Offline-first CRDT group notes editor (#1023, #7228, #7843).
  * Y.Text ↔ contenteditable, y-indexeddb + outbox persistence, PartyKit sync & awareness cursors.
+ * Includes connection status pill, active collaborator presence, offline banner, and unsynced edits counter.
  */
 export function GroupNotesEditor({
   roomId,
@@ -89,8 +88,10 @@ export function GroupNotesEditor({
   venueName,
   currentUser,
 }: GroupNotesEditorProps) {
-  const [status, setStatus] = useState<ConnStatus>("connecting");
-  const [pendingOutbox, setPendingOutbox] = useState(0);
+  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isLocalPersistenceReady, setIsLocalPersistenceReady] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [conflicts, setConflicts] = useState<NotesOutboxConflict[] | null>(
     null,
   );
@@ -104,6 +105,7 @@ export function GroupNotesEditor({
   const yTextRef = useRef<Y.Text | null>(null);
   const providerRef = useRef<YPartyKitProvider | null>(null);
   const applyingRemoteRef = useRef(false);
+  const isFlushingRef = useRef(false);
 
   const localIdentity = useMemo(() => {
     const fallbackIndex =
@@ -150,28 +152,67 @@ export function GroupNotesEditor({
     const ytext = ydoc.getText(textKey);
     yTextRef.current = ytext;
 
+    // Load initial pending outbox count from IndexedDB
+    void (async () => {
+      try {
+        const pending = await listNotesOutbox(roomId);
+        if (!cancelled) {
+          setPendingCount(pending.length);
+        }
+      } catch {
+        // outbox check error handled safely
+      }
+    })();
+
     // Offline local caching with y-indexeddb for deterministic CRDT merge on reconnect
     let idbProvider: IndexeddbPersistence | null = null;
     if (typeof indexedDB !== "undefined") {
-      idbProvider = new IndexeddbPersistence(`worksphere-notes-${roomId}`, ydoc);
-      idbProvider.on("synced", () => {
-        if (!cancelled) syncEditorFromYText();
-      });
+      try {
+        idbProvider = new IndexeddbPersistence(
+          `worksphere-notes-${roomId}`,
+          ydoc,
+        );
+        idbProvider.on("synced", () => {
+          if (!cancelled) {
+            setIsLocalPersistenceReady(true);
+            syncEditorFromYText();
+          }
+        });
+        setIsLocalPersistenceReady(true);
+      } catch (err) {
+        console.warn("Failed to initialize IndexedDB persistence", err);
+        setIsLocalPersistenceReady(false);
+      }
+    } else {
+      setIsLocalPersistenceReady(false);
     }
 
     const host = process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
-    const provider = new YPartyKitProvider(host, `notes-${roomId}`, ydoc);
-    providerRef.current = provider;
+    let provider: YPartyKitProvider | null = null;
+    try {
+      provider = new YPartyKitProvider(host, `notes-${roomId}`, ydoc);
+      providerRef.current = provider;
+      const initialStatus: ConnectionStatus = provider.wsconnected
+        ? "connected"
+        : provider.wsconnecting
+          ? "connecting"
+          : "disconnected";
+      setStatus(initialStatus);
+    } catch (err) {
+      console.warn("Failed to initialize PartyKit provider", err);
+      setStatus("disconnected");
+    }
 
     // Initialize shared awareness state (user avatar, name, cursor)
-    const awareness = provider.awareness;
+    const awareness = provider?.awareness;
     const syncPeersFromAwareness = () => {
       if (!awareness || cancelled) return;
       const states = awareness.getStates();
-      const peers: AwarenessPeer[] = [];
+      const peersMap = new Map<number, AwarenessPeer>();
       states.forEach((state, clientId) => {
         if (clientId === awareness.clientID) return;
-        const userState = state?.user as
+        if (!state) return;
+        const userState = state.user as
           | {
               name?: string;
               avatarUrl?: string;
@@ -179,19 +220,21 @@ export function GroupNotesEditor({
               cursorIndex?: number;
             }
           | undefined;
-        if (userState?.name) {
-          peers.push({
-            clientId,
-            name: userState.name,
-            avatarUrl: userState.avatarUrl,
-            color:
-              userState.color ||
-              CURSOR_PALETTE[clientId % CURSOR_PALETTE.length],
-            cursorIndex: userState.cursorIndex,
-          });
-        }
+        const name =
+          typeof userState?.name === "string" && userState.name.trim()
+            ? userState.name.trim()
+            : `Collaborator ${clientId}`;
+        peersMap.set(clientId, {
+          clientId,
+          name,
+          avatarUrl: userState?.avatarUrl,
+          color:
+            userState?.color ||
+            CURSOR_PALETTE[clientId % CURSOR_PALETTE.length],
+          cursorIndex: userState?.cursorIndex,
+        });
       });
-      setActivePeers(peers);
+      setActivePeers(Array.from(peersMap.values()));
     };
 
     if (awareness) {
@@ -214,13 +257,26 @@ export function GroupNotesEditor({
         return;
       }
       void (async () => {
-        await saveNotesDocState(roomId, ydoc);
-        const online =
-          typeof navigator !== "undefined" ? navigator.onLine : true;
-        const wsOpen = provider.ws?.readyState === WebSocket.OPEN;
-        if (!online || !wsOpen) {
-          await enqueueNotesUpdate(roomId, update);
-          setPendingOutbox((n) => n + 1);
+        try {
+          await saveNotesDocState(roomId, ydoc);
+        } catch {
+          // ignore doc snapshot save error
+        }
+        const wsOpen =
+          providerRef.current?.wsconnected &&
+          providerRef.current?.ws?.readyState === WebSocket.OPEN;
+        if (!wsOpen) {
+          try {
+            await enqueueNotesUpdate(roomId, update);
+            const pending = await listNotesOutbox(roomId);
+            if (!cancelled) {
+              setPendingCount(pending.length);
+            }
+          } catch {
+            if (!cancelled) {
+              setPendingCount((n) => n + 1);
+            }
+          }
         }
       })();
     };
@@ -231,12 +287,15 @@ export function GroupNotesEditor({
     };
     ytext.observe(observer);
 
-    const handleFlushResult = (result: {
-      flushed: number;
-      conflicts: NotesOutboxConflict[];
-    }) => {
-      if (result.flushed > 0 || result.conflicts.length > 0)
-        setPendingOutbox(0);
+    const handleFlushResult = (
+      result: {
+        flushed: number;
+        conflicts: NotesOutboxConflict[];
+      },
+      remainingCount: number,
+    ) => {
+      if (cancelled) return;
+      setPendingCount(remainingCount);
       syncEditorFromYText();
       if (result.conflicts.length > 0) {
         setConflicts(result.conflicts);
@@ -250,30 +309,68 @@ export function GroupNotesEditor({
       }
     };
 
+    const runFlush = async () => {
+      if (isFlushingRef.current || cancelled) return;
+      isFlushingRef.current = true;
+      setIsSyncing(true);
+      try {
+        const result = await flushNotesOutbox(roomId, ydoc);
+        let remainingCount = 0;
+        try {
+          const remaining = await listNotesOutbox(roomId);
+          remainingCount = remaining.length;
+        } catch {
+          remainingCount = result.conflicts.length;
+        }
+        if (!cancelled) {
+          handleFlushResult(result, remainingCount);
+        }
+      } catch (err) {
+        console.warn("Failed to flush notes outbox", err);
+      } finally {
+        isFlushingRef.current = false;
+        if (!cancelled) {
+          setIsSyncing(false);
+        }
+      }
+    };
+
     const onStatus = (event: { status: string }) => {
+      if (cancelled) return;
       if (event.status === "connected") {
         setStatus("connected");
-        void flushNotesOutbox(roomId, ydoc).then(handleFlushResult);
+        void runFlush();
       } else if (event.status === "disconnected") {
-        setStatus("offline");
-      } else {
+        setStatus("disconnected");
+        setIsSyncing(false);
+      } else if (event.status === "connecting") {
         setStatus("connecting");
       }
     };
-    provider.on("status", onStatus);
 
     const onSync = (synced: boolean) => {
       if (!synced || cancelled) return;
-      void flushNotesOutbox(roomId, ydoc).then(handleFlushResult);
+      void runFlush();
     };
-    provider.on("sync", onSync);
+
+    if (provider) {
+      provider.on("status", onStatus);
+      provider.on("sync", onSync);
+    }
 
     void (async () => {
-      const saved = await loadNotesDocState(roomId);
-      if (cancelled) return;
-      if (saved) {
-        Y.applyUpdate(ydoc, saved, "idb-load");
-        syncEditorFromYText();
+      try {
+        const saved = await loadNotesDocState(roomId);
+        if (cancelled) return;
+        if (saved) {
+          Y.applyUpdate(ydoc, saved, "idb-load");
+          syncEditorFromYText();
+        }
+      } catch (err) {
+        console.warn("Failed to load saved notes doc state", err);
+        if (!cancelled) {
+          setIsLocalPersistenceReady(false);
+        }
       }
     })();
 
@@ -281,18 +378,20 @@ export function GroupNotesEditor({
       cancelled = true;
       ytext.unobserve(observer);
       ydoc.off("update", onUpdate);
-      provider.off("status", onStatus);
-      provider.off("sync", onSync);
+      if (provider) {
+        provider.off("status", onStatus);
+        provider.off("sync", onSync);
+        if (typeof provider.destroy === "function") {
+          provider.destroy();
+        } else if (typeof provider.disconnect === "function") {
+          provider.disconnect();
+        }
+      }
       if (awareness) {
         awareness.off("change", syncPeersFromAwareness);
       }
       if (idbProvider) {
         void idbProvider.destroy();
-      }
-      if (typeof provider.destroy === "function") {
-        provider.destroy();
-      } else if (typeof provider.disconnect === "function") {
-        provider.disconnect();
       }
       ydoc.destroy();
       yDocRef.current = null;
@@ -338,6 +437,12 @@ export function GroupNotesEditor({
           "Remote changes were kept. Your offline edits were discarded.",
           "warning",
         );
+      }
+      try {
+        const remaining = await listNotesOutbox(roomId);
+        setPendingCount(remaining.length);
+      } catch {
+        setPendingCount(0);
       }
       syncEditorFromYText();
       setConflicts(null);
@@ -424,70 +529,33 @@ export function GroupNotesEditor({
   }, [roomId, toast, venueName]);
 
   const trimmedEditorText = editorText.trim();
-  const wordCount = trimmedEditorText ? trimmedEditorText.split(/\s+/).length : 0;
+  const wordCount = trimmedEditorText
+    ? trimmedEditorText.split(/\s+/).length
+    : 0;
   const charCount = editorText.length;
 
   return (
     <div className="flex w-full flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      {/* Header / Toolbar */}
       <div className="flex items-center justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
             Group Notes
           </h3>
-          {activePeers.length > 0 && (
-            <div
-              data-testid="awareness-cursors-bar"
-              className="flex items-center gap-1.5"
-            >
-              {activePeers.map((peer) => (
-                <span
-                  key={peer.clientId}
-                  style={{ borderColor: peer.color }}
-                  className="inline-flex items-center gap-1 rounded-full border bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                >
-                  {peer.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={peer.avatarUrl}
-                      alt={peer.name}
-                      className="h-3.5 w-3.5 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span
-                      style={{ backgroundColor: peer.color }}
-                      className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold text-white"
-                    >
-                      {peer.name.charAt(0).toUpperCase()}
-                    </span>
-                  )}
-                  <span>{peer.name}</span>
-                  {typeof peer.cursorIndex === "number" && (
-                    <span className="text-[9px] text-zinc-400">
-                      @{peer.cursorIndex}
-                    </span>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
+          <CollaboratorPresence peers={activePeers} />
         </div>
-        <div className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-800 dark:bg-zinc-900">
-          {status === "connecting" && (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
-          )}
-          {status === "connected" && (
-            <Wifi className="h-3.5 w-3.5 text-green-500" />
-          )}
-          {status === "offline" && (
-            <WifiOff className="h-3.5 w-3.5 text-orange-500" />
-          )}
-          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-            {status}
-            {pendingOutbox > 0 ? ` · ${pendingOutbox} queued` : ""}
-          </span>
-        </div>
+        <ConnectionStatusPill status={status} pendingCount={pendingCount} />
       </div>
 
+      {/* Persistent Offline / Sync Warning Banner */}
+      <OfflineSyncBanner
+        status={status}
+        pendingCount={pendingCount}
+        isLocalPersistenceReady={isLocalPersistenceReady}
+        isSyncing={isSyncing}
+      />
+
+      {/* Formatting & action buttons */}
       <div className="flex items-center justify-between">
         <div className="flex gap-1">
           <FormatButton label="Bold" onClick={() => execFormat("bold")}>
@@ -496,12 +564,18 @@ export function GroupNotesEditor({
           <FormatButton label="Italic" onClick={() => execFormat("italic")}>
             <Italic className="h-3.5 w-3.5" />
           </FormatButton>
-          <FormatButton label="Underline" onClick={() => execFormat("underline")}>
+          <FormatButton
+            label="Underline"
+            onClick={() => execFormat("underline")}
+          >
             <Underline className="h-3.5 w-3.5" />
           </FormatButton>
         </div>
         <div className="flex items-center gap-1">
-          <FormatButton label="Export Markdown (.md)" onClick={handleExportMarkdown}>
+          <FormatButton
+            label="Export Markdown (.md)"
+            onClick={handleExportMarkdown}
+          >
             <FileDown className="h-3.5 w-3.5 text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400 transition-colors" />
           </FormatButton>
           <FormatButton label="Clear notes" onClick={handleDeleteNotes}>
@@ -510,12 +584,13 @@ export function GroupNotesEditor({
         </div>
       </div>
 
+      {/* ContentEditable Notes Scratchpad */}
       <div
         ref={editorRef}
         role="textbox"
         aria-multiline="true"
         aria-label="Coworking group notes editor"
-        contentEditable={status !== "connecting"}
+        contentEditable
         suppressContentEditableWarning
         onInput={handleInput}
         onKeyUp={handleSelectionChange}
@@ -524,9 +599,10 @@ export function GroupNotesEditor({
         className="min-h-[160px] rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)] focus:ring-2 focus:ring-blue-500/40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
       />
 
+      {/* Footer bar */}
       <div className="flex items-center justify-between text-xs text-zinc-400 dark:text-zinc-500">
         <div>
-          {status === "offline" && (
+          {status === "disconnected" && (
             <p className="text-[10px] font-bold text-orange-500">
               Offline — edits are saved to IndexedDB and will sync over PartyKit
               when you reconnect.
@@ -547,6 +623,7 @@ export function GroupNotesEditor({
         </div>
       </div>
 
+      {/* Conflict Resolution Modal */}
       {conflicts && conflicts.length > 0 && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
@@ -648,3 +725,5 @@ function FormatButton({
     </button>
   );
 }
+
+export default GroupNotesEditor;

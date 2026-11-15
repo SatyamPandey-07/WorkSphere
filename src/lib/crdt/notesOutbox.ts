@@ -206,3 +206,13 @@ export async function resolveConflictsUseRemote(
     if (c.entry.id != null) await db.delete(OUTBOX_STORE, c.entry.id);
   }
 }
+
+/**
+ * Returns the exact count of pending unsynchronized updates in the outbox (#7843).
+ */
+export async function getPendingNotesUpdateCount(
+  roomId: string,
+): Promise<number> {
+  const pending = await listNotesOutbox(roomId);
+  return pending.length;
+}

@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+﻿import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { cookies, headers } from "next/headers";
@@ -17,6 +17,7 @@ import { SyncManager } from "../hooks/usePWA";
 import { ToastProvider } from "../components/ui/Toast";
 import { PWAUpdateListener } from "../components/PWAUpdateListener";
 import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
+import { KeyboardShortcutModal } from "../components/ui/KeyboardShortcutModal";
 import { CommandPalette } from "../components/CommandPalette";
 import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";
 import { StorageQuotaWarningBanner } from "../components/ui/StorageQuotaWarningBanner";
@@ -100,6 +101,7 @@ export default async function RootLayout({
             <RateLimitBanner />
             <PWAUpdateListener />
             <KeyboardShortcutsModal />
+            <KeyboardShortcutModal />
             <CommandPalette />
             <IdleSessionDialog />
             <StorageQuotaWarningBanner />
@@ -163,3 +165,4 @@ export default async function RootLayout({
     </html>
   );
 }
+

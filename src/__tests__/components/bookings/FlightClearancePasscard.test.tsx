@@ -208,7 +208,7 @@ describe('FlightClearancePasscard Component', () => {
   it('shows a live countdown for the signed passcard and requests renewal', async () => {
     const now = Math.floor(Date.now() / 1000);
     const token = Buffer.from(
-      JSON.stringify([1, 'booking-countdown', 'user-1', 'venue-1', now - 60, now + 3 * 3600, 'A-1']),
+      JSON.stringify([1, 'booking-countdown', 'user-1', 'venue-1', now - 60, now + 20 * 60, 'A-1']),
     ).toString('base64url') + '.' + Buffer.from(new Uint8Array(64)).toString('base64url');
     mockGetOfflinePasscardRecord.mockResolvedValue({
       bookingId: 'booking-countdown',

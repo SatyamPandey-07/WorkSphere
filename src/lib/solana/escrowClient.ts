@@ -2576,12 +2576,21 @@ export interface EscrowConfirmationCallbacks {
 export interface SubscribeToEscrowConfirmationOptions {
   connection?: Connection;
   pool?: EscrowRpcConnectionPool;
+  commitment?: "processed" | "confirmed" | "finalized";
   confirmTimeoutMs?: number; // Stage 1 watchdog: 30s default
+  confirmationTimeoutMs?: number; // alias
   finalizeTimeoutMs?: number; // Stage 2 watchdog: 15s default
+  finalizationTimeoutMs?: number; // alias
   overallTimeoutMs?: number; // Overall budget timeout: 55s default
-  pollIntervalMs?: number; // HTTP fallback poll cadence: 2s default
+  pollIntervalMs?: number; // HTTP fallback poll initial interval: 2s or 500ms default
+  httpPollingIntervalMs?: number; // alias
+  minPollIntervalMs?: number; // Minimum backoff interval (default: 500ms)
+  maxPollIntervalMs?: number; // Maximum backoff cap (default: 8000ms)
+  pollBackoffMultiplier?: number; // Exponential backoff multiplier (default: 2.0)
+  lastValidBlockHeight?: number; // For blockhash expiration detection
   callbacks?: EscrowConfirmationCallbacks;
   pollSignatureStatus?: (signature: string) => Promise<SignatureStatus | null>;
+  onWebSocketDisconnect?: (reason?: string) => void;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -2597,6 +2606,10 @@ export interface EscrowConfirmationSubscription {
 export const ESCROW_CONFIRM_WATCHDOG_MS = 30_000;
 export const ESCROW_FINALIZE_WATCHDOG_MS = 15_000;
 export const ESCROW_STREAMING_OVERALL_TIMEOUT_MS = 55_000;
+export const ESCROW_STREAMING_POLL_INTERVAL_MS = 2_000;
+export const ESCROW_MIN_POLL_INTERVAL_MS = 500;
+export const ESCROW_MAX_POLL_INTERVAL_MS = 8_000;
+export const ESCROW_POLL_BACKOFF_MULTIPLIER = 2.0;
 
 export class EscrowConfirmationStateMachine {
   private currentStatus: EscrowConfirmationStatus = "pending";
@@ -2608,6 +2621,9 @@ export class EscrowConfirmationStateMachine {
   private readonly callbacks?: EscrowConfirmationCallbacks;
   private readonly now: () => number;
   private listeners: Array<(event: EscrowConfirmationEvent) => void> = [];
+  public readonly promise: Promise<EscrowConfirmationEvent>;
+  private resolvePromise!: (value: EscrowConfirmationEvent) => void;
+  private rejectPromise!: (reason: any) => void;
 
   constructor(
     signature: string,
@@ -2625,6 +2641,19 @@ export class EscrowConfirmationStateMachine {
       error: null,
       timestamp: this.now(),
     };
+
+    this.promise = new Promise<EscrowConfirmationEvent>((resolve, reject) => {
+      this.resolvePromise = resolve;
+      this.rejectPromise = reject;
+    });
+  }
+
+  public abort(reason = "Subscription cancelled"): void {
+    if (this._isTerminal) return;
+    this._isTerminal = true;
+    const err = new Error(reason);
+    this.promise.catch(() => {});
+    this.rejectPromise(err);
   }
 
   public getStatus(): EscrowConfirmationStatus {
@@ -2726,6 +2755,14 @@ export class EscrowConfirmationStateMachine {
       newStatus === "timeout"
     ) {
       this._isTerminal = true;
+      if (newStatus === "finalized") {
+        this.resolvePromise(event);
+      } else {
+        const err = new Error(options.error || `Escrow confirmation ended in state: ${newStatus}`);
+        // Avoid unhandled rejection crash if caller doesn't attach .catch to promise
+        this.promise.catch(() => {});
+        this.rejectPromise(err);
+      }
     }
 
     // Fire listeners and callbacks safely
@@ -2787,11 +2824,20 @@ export function subscribeToEscrowConfirmation(
     ESCROW_FINALIZE_WATCHDOG_MS;
   const overallTimeoutMs =
     options.overallTimeoutMs ?? ESCROW_STREAMING_OVERALL_TIMEOUT_MS;
-  const pollIntervalMs =
+  const initialPollDelayMs =
     options.httpPollingIntervalMs ??
     options.pollIntervalMs ??
-    ESCROW_POLL_INTERVAL_MS;
+    options.minPollIntervalMs ??
+    ESCROW_MIN_POLL_INTERVAL_MS;
+  const maxPollIntervalMs =
+    options.maxPollIntervalMs ?? ESCROW_MAX_POLL_INTERVAL_MS;
+  const pollBackoffMultiplier =
+    options.pollBackoffMultiplier ?? ESCROW_POLL_BACKOFF_MULTIPLIER;
+  const lastValidBlockHeight = options.lastValidBlockHeight;
+  const targetCommitment = options.commitment ?? "finalized";
   const now = options.now ?? Date.now;
+
+  let currentPollDelayMs = initialPollDelayMs;
 
   const stateMachine = new EscrowConfirmationStateMachine(
     cleanSignature,
@@ -2812,8 +2858,16 @@ export function subscribeToEscrowConfirmation(
   let processedSubId: number | undefined;
   let confirmedSubId: number | undefined;
   let finalizedSubId: number | undefined;
+  let subStateRemovers: Array<() => void> = [];
 
   const cleanupListeners = () => {
+    for (const remover of subStateRemovers) {
+      try {
+        remover();
+      } catch {}
+    }
+    subStateRemovers = [];
+
     if (connection) {
       const activeConn = connection;
       if (processedSubId !== undefined) {
@@ -2864,6 +2918,7 @@ export function subscribeToEscrowConfirmation(
     isUnsubscribed = true;
     cleanupTimers();
     void cleanupListeners();
+    stateMachine.abort("Subscription unsubscribed by caller");
   };
 
   // Start overall timeout timer
@@ -2884,10 +2939,31 @@ export function subscribeToEscrowConfirmation(
   const triggerHttpFallback = (reason?: string) => {
     if (stateMachine.isDone() || isUnsubscribed || isPollingActive) return;
     isPollingActive = true;
+    options.onWebSocketDisconnect?.(reason);
     stateMachine.transition("fallback_polling", "http_polling", {
       error: reason,
     });
     void pollOnce();
+  };
+
+  // Helper to check blockhash expiration
+  const checkBlockhashExpired = async (): Promise<boolean> => {
+    if (lastValidBlockHeight === undefined || lastValidBlockHeight === null) {
+      return false;
+    }
+    try {
+      let currentHeight: number;
+      if (connection) {
+        currentHeight = await connection.getBlockHeight(targetCommitment);
+      } else {
+        currentHeight = await pool.execute((conn) =>
+          conn.getBlockHeight(targetCommitment),
+        );
+      }
+      return currentHeight > lastValidBlockHeight;
+    } catch {
+      return false;
+    }
   };
 
   // Helper to poll signature status once
@@ -2898,6 +2974,11 @@ export function subscribeToEscrowConfirmation(
     try {
       if (options.pollSignatureStatus) {
         status = await options.pollSignatureStatus(cleanSignature);
+      } else if (connection) {
+        const res = await connection.getSignatureStatuses([cleanSignature], {
+          searchTransactionHistory: true,
+        });
+        status = res.value?.[0] ?? null;
       } else {
         const res = await pool.execute((conn) =>
           conn.getSignatureStatuses([cleanSignature], {
@@ -2943,6 +3024,12 @@ export function subscribeToEscrowConfirmation(
         stateMachine.transition("confirmed", "http_polling", {
           slot: status.slot,
         });
+
+        if (targetCommitment === "confirmed") {
+          unsubscribe();
+          return;
+        }
+
         // Continue polling for finalization
         if (!finalizeTimer) {
           finalizeTimer = setTimeout(() => {
@@ -2954,6 +3041,69 @@ export function subscribeToEscrowConfirmation(
         stateMachine.transition("processed", "http_polling", {
           slot: status.slot,
         });
+        if (targetCommitment === "processed") {
+          unsubscribe();
+          return;
+        }
+      }
+    } else {
+      // If status is not found, check if blockhash expired
+      const isExpired = await checkBlockhashExpired();
+      if (isExpired && !stateMachine.isDone() && !isUnsubscribed) {
+        let finalCheckSucceeded = false;
+        try {
+          let finalRes: SignatureStatus | null = null;
+          if (options.pollSignatureStatus) {
+            finalRes = await options.pollSignatureStatus(cleanSignature);
+            finalCheckSucceeded = true;
+          } else if (connection) {
+            const res = await connection.getSignatureStatuses([cleanSignature], {
+              searchTransactionHistory: true,
+            });
+            finalRes = res.value?.[0] ?? null;
+            finalCheckSucceeded = true;
+          } else {
+            const res = await pool.execute((conn) =>
+              conn.getSignatureStatuses([cleanSignature], {
+                searchTransactionHistory: true,
+              }),
+            );
+            finalRes = res.value?.[0] ?? null;
+            finalCheckSucceeded = true;
+          }
+
+          if (finalRes && !finalRes.err) {
+            const finalCommitment = finalRes.confirmationStatus;
+            if (
+              finalCommitment === "finalized" ||
+              finalRes.confirmations === null
+            ) {
+              stateMachine.transition("finalized", "http_polling", {
+                slot: finalRes.slot,
+              });
+              unsubscribe();
+              return;
+            } else if (finalCommitment === "confirmed") {
+              stateMachine.transition("confirmed", "http_polling", {
+                slot: finalRes.slot,
+              });
+              if (targetCommitment === "confirmed") {
+                unsubscribe();
+                return;
+              }
+            }
+          }
+        } catch {
+          finalCheckSucceeded = false;
+        }
+
+        if (finalCheckSucceeded && !stateMachine.isDone() && !isUnsubscribed) {
+          stateMachine.transition("timeout", "http_polling", {
+            error: `Transaction blockhash expired (current block height exceeded ${lastValidBlockHeight})`,
+          });
+          unsubscribe();
+          return;
+        }
       }
     }
 
@@ -2962,9 +3112,16 @@ export function subscribeToEscrowConfirmation(
 
   const scheduleNextPoll = () => {
     if (stateMachine.isDone() || isUnsubscribed) return;
+    const delay = currentPollDelayMs;
+    // Exponential backoff
+    currentPollDelayMs = Math.min(
+      maxPollIntervalMs,
+      Math.round(currentPollDelayMs * pollBackoffMultiplier),
+    );
+
     pollTimer = setTimeout(() => {
       void pollOnce();
-    }, pollIntervalMs);
+    }, delay);
     pollTimer.unref?.();
   };
 
@@ -2976,9 +3133,59 @@ export function subscribeToEscrowConfirmation(
   }, confirmTimeoutMs);
   confirmTimer.unref?.();
 
+  const registerSubDisconnectListener = (conn: any, subId: number) => {
+    let wasSubscribed = false;
+    if (typeof conn._onSubscriptionStateChange === "function") {
+      try {
+        const remove = conn._onSubscriptionStateChange(
+          subId,
+          (state: string) => {
+            if (stateMachine.isDone() || isUnsubscribed) return;
+            if (state === "subscribed") {
+              wasSubscribed = true;
+            } else if (state === "error") {
+              triggerHttpFallback(
+                `WebSocket subscription ${subId} entered state 'error'`,
+              );
+            } else if (state === "pending" && wasSubscribed) {
+              // Only trigger fallback if subscription was previously active and dropped back to pending
+              triggerHttpFallback(
+                `WebSocket subscription ${subId} disconnected (dropped to 'pending')`,
+              );
+            }
+          },
+        );
+        if (typeof remove === "function") {
+          subStateRemovers.push(remove);
+        }
+      } catch {}
+    }
+  };
+
   const setupListeners = (conn: Connection) => {
     connection = conn;
     if (stateMachine.isDone() || isUnsubscribed) return;
+
+    // Attach connection-level socket error/close listeners if present (for mock or custom providers)
+    const connAny = conn as any;
+    if (typeof connAny.on === "function") {
+      const onWsError = (err: any) => {
+        triggerHttpFallback(`WebSocket error: ${err?.message || err}`);
+      };
+      const onWsClose = () => {
+        triggerHttpFallback("WebSocket connection closed");
+      };
+      connAny.on("error", onWsError);
+      connAny.on("close", onWsClose);
+      connAny.on("disconnect", onWsClose);
+      subStateRemovers.push(() => {
+        try {
+          connAny.off?.("error", onWsError);
+          connAny.off?.("close", onWsClose);
+          connAny.off?.("disconnect", onWsClose);
+        } catch {}
+      });
+    }
 
     // 1. Processed commitment listener
     try {
@@ -3000,9 +3207,15 @@ export function subscribeToEscrowConfirmation(
           stateMachine.transition("processed", "websocket", {
             slot: context?.slot,
           });
+          if (targetCommitment === "processed") {
+            unsubscribe();
+          }
         },
         { commitment: "processed" },
       );
+      if (processedSubId !== undefined) {
+        registerSubDisconnectListener(conn, processedSubId);
+      }
     } catch (e) {
       console.warn(
         "[EscrowStreaming] Failed to subscribe to processed notification:",
@@ -3038,6 +3251,11 @@ export function subscribeToEscrowConfirmation(
             slot: context?.slot,
           });
 
+          if (targetCommitment === "confirmed") {
+            unsubscribe();
+            return;
+          }
+
           // Start Stage 2 Finalization Watchdog (15s):
           // If finalized is not received within 15s of confirmed, trigger HTTP polling
           if (!finalizeTimer && !stateMachine.isDone()) {
@@ -3056,6 +3274,9 @@ export function subscribeToEscrowConfirmation(
         },
         { commitment: "confirmed" },
       );
+      if (confirmedSubId !== undefined) {
+        registerSubDisconnectListener(conn, confirmedSubId);
+      }
     } catch (e) {
       console.warn(
         "[EscrowStreaming] Failed to subscribe to confirmed notification:",
@@ -3088,6 +3309,9 @@ export function subscribeToEscrowConfirmation(
         },
         { commitment: "finalized" },
       );
+      if (finalizedSubId !== undefined) {
+        registerSubDisconnectListener(conn, finalizedSubId);
+      }
     } catch (e) {
       console.warn(
         "[EscrowStreaming] Failed to subscribe to finalized notification:",

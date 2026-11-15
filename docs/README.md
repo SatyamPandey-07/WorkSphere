@@ -13,3 +13,5 @@
 - [Solana gasless relayer threat model](./security/solana-relayer-threat-model.md)
 - [Cryptographic booking receipt specification](./security/cryptographic-receipt-spec.md)
 - [WebAuthn passkey security guide](./security/passkey-webauthn-guide.md)
+
+- [Automated Solana escrow refund lifecycle](./solana/SOLANA_ESCROW_REFUND_CRON.md) — escrow statuses, cron transitions, idempotency, environment and testing.

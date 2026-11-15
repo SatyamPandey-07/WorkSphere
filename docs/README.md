@@ -13,3 +13,5 @@
 - [Solana gasless relayer threat model](./security/solana-relayer-threat-model.md)
 - [Cryptographic booking receipt specification](./security/cryptographic-receipt-spec.md)
 - [WebAuthn passkey security guide](./security/passkey-webauthn-guide.md)
+
+- [Offline sync testing playbook](./testing/OFFLINE_SYNC_TESTING_PLAYBOOK.md) — deterministic IndexedDB, Web Locks, online/offline and Playwright test recipes.

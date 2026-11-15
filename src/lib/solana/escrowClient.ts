@@ -2246,6 +2246,20 @@ export class EscrowRpcConnectionPool {
     return this.getConnection(endpoint);
   }
 
+  /**
+   * Connection for one specific endpoint of the pool, creating it on first use.
+   * Rejects for an endpoint that is not part of this pool.
+   */
+  public async getConnectionForEndpoint(endpoint: string): Promise<Connection> {
+    if (!this.endpoints.includes(endpoint)) {
+      throw new EscrowRpcFailoverError(
+        [],
+        `RPC endpoint ${endpoint} is not part of this pool`,
+      );
+    }
+    return this.getConnection(endpoint);
+  }
+
   /** Snapshot of per-endpoint health across the cluster. */
   public getHealthReport(): EscrowRpcEndpointHealth[] {
     return this.endpoints.map((endpoint) => {

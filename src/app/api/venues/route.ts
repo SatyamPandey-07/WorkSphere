@@ -16,6 +16,7 @@ import { getFuzzyThreshold, isFuzzyMatch } from "@/lib/search/fuzzySearch";
 import {
   indexVenueSearchEmbedding,
   searchVenuesWithRrf,
+  labelFuzzySuggestions,
 } from "@/lib/search/hybridVenueSearch";
 
 // Search/autocomplete is expected to fire on every keystroke (debounced client-side
@@ -262,7 +263,10 @@ export async function GET(req: NextRequest) {
           .filter((venue): venue is (typeof matchingVenues)[number] =>
             Boolean(venue),
           );
-        const venues = orderedVenues.slice(skip, skip + limit);
+        const venues = labelFuzzySuggestions(
+          orderedVenues.slice(skip, skip + limit),
+          ranked,
+        );
         const total = orderedVenues.length;
 
         return NextResponse.json({
@@ -275,6 +279,7 @@ export async function GET(req: NextRequest) {
             hasNextPage: skip + venues.length < total,
           },
           fuzzyMatched: Boolean(ranked.fuzzyMatched),
+          ...(ranked.lowConfidenceFallback && { lowConfidenceFallback: true }),
           ...(ranked.suggestedQuery
             ? {
                 suggestedQuery: ranked.suggestedQuery,
@@ -545,6 +550,7 @@ export async function GET(req: NextRequest) {
     let total: number;
     let venues: any[];
     let fuzzyMatched = false;
+    let lowConfidenceFallback = false;
     let suggestedQuery: string | undefined;
 
     if (querySearch) {
@@ -569,6 +575,7 @@ export async function GET(req: NextRequest) {
             : undefined,
       });
       fuzzyMatched = Boolean(ranked.fuzzyMatched);
+      lowConfidenceFallback = Boolean(ranked.lowConfidenceFallback);
       suggestedQuery = ranked.suggestedQuery;
       const rankedIds = ranked.map(({ id }) => id);
       const matchingVenues = rankedIds.length
@@ -589,7 +596,10 @@ export async function GET(req: NextRequest) {
           Boolean(venue),
         );
       total = orderedVenues.length;
-      venues = orderedVenues.slice(skip, skip + limit);
+      venues = labelFuzzySuggestions(
+        orderedVenues.slice(skip, skip + limit),
+        ranked,
+      );
     } else {
       total = await prisma.venue.count({ where });
       venues = await prisma.venue.findMany({
@@ -688,6 +698,7 @@ export async function GET(req: NextRequest) {
         hasNextPage: skip + venues.length < total,
       },
       fuzzyMatched: Boolean(fuzzyMatched),
+      ...(lowConfidenceFallback && { lowConfidenceFallback: true }),
       ...(suggestedQuery
         ? {
             suggestedQuery,

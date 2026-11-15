@@ -17,6 +17,11 @@ export interface HybridVenueSearchFilters {
   enableFuzzyFallback?: boolean;
   /** Minimum pg_trgm similarity for a fuzzy match (default 0.25). */
   minSimilarity?: number;
+  /**
+   * Best cosine similarity below which a semantic-only result set counts as
+   * low confidence and trigram matches are mixed in (default 0.65).
+   */
+  semanticConfidenceThreshold?: number;
 }
 
 export interface RankedVenueId {
@@ -33,6 +38,8 @@ export interface RankedVenueId {
 export interface RankedVenueList extends Array<RankedVenueId> {
   fuzzyMatched?: boolean;
   suggestedQuery?: string;
+  /** True when trigram matches were mixed into low-confidence semantic results. */
+  lowConfidenceFallback?: boolean;
 }
 
 export interface HybridVenueSearchResult {
@@ -42,6 +49,49 @@ export interface HybridVenueSearchResult {
 }
 
 export const DEFAULT_RRF_K = 60;
+export const DEFAULT_SEMANTIC_CONFIDENCE_THRESHOLD = 0.65;
+export const DEFAULT_MIN_TRIGRAM_SIMILARITY = 0.25;
+/** Trigram matches mixed into a low-confidence result set are capped here. */
+export const LOW_CONFIDENCE_FUZZY_LIMIT = 20;
+
+function resolveMinSimilarity(value?: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0.05, Math.min(1.0, value))
+    : DEFAULT_MIN_TRIGRAM_SIMILARITY;
+}
+
+function resolveConfidenceThreshold(value?: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(1, value))
+    : DEFAULT_SEMANTIC_CONFIDENCE_THRESHOLD;
+}
+
+/**
+ * Alternates trigram matches with semantic results, trigram match first, and
+ * keeps one entry per venue. A venue found by both keeps its trigram entry,
+ * so the caller can still label it as a fuzzy match.
+ */
+export function interleaveFuzzyAndSemantic(
+  fuzzy: RankedVenueId[],
+  semantic: RankedVenueId[],
+): RankedVenueId[] {
+  const fuzzyIds = new Set(fuzzy.map((venue) => venue.id));
+  const remainingSemantic = semantic.filter((venue) => !fuzzyIds.has(venue.id));
+  const seen = new Set<string>();
+  const merged: RankedVenueId[] = [];
+
+  const longest = Math.max(fuzzy.length, remainingSemantic.length);
+  for (let index = 0; index < longest; index++) {
+    for (const venue of [fuzzy[index], remainingSemantic[index]]) {
+      if (venue && !seen.has(venue.id)) {
+        seen.add(venue.id);
+        merged.push(venue);
+      }
+    }
+  }
+
+  return merged;
+}
 
 /**
  * Validates and clamps the RRF smoothing constant k to an integer >= 1.
@@ -227,6 +277,86 @@ async function embedSearchQuery(query: string): Promise<number[] | null> {
   }
 }
 
+/**
+ * Marks the venues that came from the trigram fallback of a low-confidence
+ * search, so the UI can show a "Fuzzy match suggestion" badge. Any other
+ * result set is returned unchanged.
+ */
+export function labelFuzzySuggestions<T extends { id: string }>(
+  venues: T[],
+  ranked: RankedVenueList,
+): Array<T & { fuzzyMatched?: boolean }> {
+  if (!ranked.lowConfidenceFallback) return venues;
+  const fuzzyIds = new Set(
+    ranked.filter((venue) => venue.fuzzyMatched).map((venue) => venue.id),
+  );
+  return venues.map((venue) =>
+    fuzzyIds.has(venue.id) ? { ...venue, fuzzyMatched: true } : venue,
+  );
+}
+
+interface RankedSearchRow extends RankedVenueId {
+  top_vector_similarity?: number | string | null;
+  has_text_match?: boolean | null;
+}
+
+/**
+ * Trigram matches on venue name, address and amenities (food tags and power
+ * types). The name is compared as a whole; the longer address and amenity
+ * text is compared by its best-matching word run.
+ */
+async function findTrigramMatches(
+  searchQuery: string,
+  venueFilters: Prisma.Sql,
+  minSimilarity: number,
+  limit: number,
+): Promise<RankedVenueId[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      name: string;
+      similarity: number;
+      score: number;
+      needs_embedding: boolean;
+    }>
+  >(Prisma.sql`
+    SELECT
+      v."id",
+      v."name",
+      m.similarity,
+      m.similarity *
+        (1.0 - LEAST(100, GREATEST(0, COALESCE(v."slaPenaltyPoints", 0))) / 100.0) AS score,
+      v."searchEmbedding" IS NULL AS needs_embedding
+    FROM "Venue" v
+    CROSS JOIN LATERAL (
+      SELECT GREATEST(
+        SIMILARITY(v."name", ${searchQuery}),
+        WORD_SIMILARITY(${searchQuery}, COALESCE(v."address", '')),
+        WORD_SIMILARITY(
+          ${searchQuery},
+          concat_ws(' ',
+            array_to_string(v."foodTags", ' '),
+            array_to_string(v."powerTypes", ' ')
+          )
+        )
+      ) AS similarity
+    ) m
+    WHERE m.similarity >= ${minSimilarity}
+    ${venueFilters}
+    ORDER BY score DESC, v."id"
+    LIMIT ${limit}
+  `);
+
+  return (rows ?? []).map((row) => ({
+    id: row.id,
+    score: Number(row.score ?? row.similarity ?? 0),
+    needs_embedding: Boolean(row.needs_embedding),
+    fuzzyMatched: true,
+    similarity: Number(row.similarity ?? 0),
+    matchedName: row.name,
+  }));
+}
+
 export async function searchVenuesWithRrf(
   query: string,
   filters: HybridVenueSearchFilters = {},
@@ -319,7 +449,7 @@ export async function searchVenuesWithRrf(
     ? Prisma.sql`AND ${Prisma.join(predicates, " AND ")}`
     : Prisma.empty;
 
-  const results = await prisma.$queryRaw<RankedVenueId[]>(Prisma.sql`
+  const results = await prisma.$queryRaw<RankedSearchRow[]>(Prisma.sql`
     WITH search_input AS (
       SELECT
         ${searchQuery}::text AS query_text,
@@ -362,7 +492,8 @@ export async function searchVenuesWithRrf(
         v."id",
         ROW_NUMBER() OVER (
           ORDER BY v."searchEmbedding" <=> i.query_embedding, v."id"
-        ) AS rank_vector
+        ) AS rank_vector,
+        1 - (v."searchEmbedding" <=> i.query_embedding) AS cosine_similarity
       FROM "Venue" v
       CROSS JOIN search_input i
       WHERE i.query_embedding IS NOT NULL
@@ -390,6 +521,8 @@ export async function searchVenuesWithRrf(
       fused_scores."id",
       fused_scores.rrf_score * (1.0 - LEAST(100, GREATEST(0, COALESCE(v."slaPenaltyPoints", 0))) / 100.0) AS score,
       v."searchEmbedding" IS NULL AS needs_embedding,
+      (SELECT MAX(cosine_similarity) FROM vector_candidates) AS top_vector_similarity,
+      EXISTS (SELECT 1 FROM text_candidates) AS has_text_match,
       concat_ws(' ',
         v."name", v."category", v."address",
         array_to_string(v."foodTags", ' '),
@@ -410,10 +543,66 @@ export async function searchVenuesWithRrf(
     ORDER BY score DESC, fused_scores."id"
   `);
 
-  let ranked: RankedVenueList = Object.assign([...(results ?? [])], {
+  // The confidence columns repeat on every row; read them once and keep them
+  // out of the returned venues.
+  const rows = results ?? [];
+  const topVectorSimilarity = rows[0]?.top_vector_similarity;
+  const hasTextMatch = rows[0]?.has_text_match === true;
+  const venues: RankedVenueId[] = rows.map(
+    ({ top_vector_similarity: _top, has_text_match: _text, ...venue }) => venue,
+  );
+
+  let ranked: RankedVenueList = Object.assign(venues, {
     fuzzyMatched: false,
     suggestedQuery: undefined,
   });
+
+  // ── Low-confidence semantic fallback (#7846) ────────────────────────────────
+  // Vector search always returns its nearest neighbours, even for a query it
+  // does not understand (a typo, a name it has never seen). When nothing
+  // matched the text and the best cosine similarity is under the threshold,
+  // mix in trigram matches on name, address and amenities.
+  const isLowConfidence =
+    embeddingString !== null &&
+    ranked.length > 0 &&
+    !hasTextMatch &&
+    topVectorSimilarity !== null &&
+    topVectorSimilarity !== undefined &&
+    Number.isFinite(Number(topVectorSimilarity)) &&
+    Number(topVectorSimilarity) <
+      resolveConfidenceThreshold(filters.semanticConfidenceThreshold);
+
+  if (
+    isLowConfidence &&
+    filters.enableFuzzyFallback !== false &&
+    searchQuery.length >= 3
+  ) {
+    try {
+      const fuzzyMatches = await findTrigramMatches(
+        searchQuery,
+        venueFilters,
+        resolveMinSimilarity(filters.minSimilarity),
+        Math.min(candidateLimit, LOW_CONFIDENCE_FUZZY_LIMIT),
+      );
+
+      if (fuzzyMatches.length > 0) {
+        ranked = Object.assign(
+          interleaveFuzzyAndSemantic(fuzzyMatches, ranked),
+          {
+            fuzzyMatched: true,
+            suggestedQuery: undefined,
+            lowConfidenceFallback: true,
+          },
+        );
+      }
+    } catch (fuzzyError) {
+      // Keep the semantic results; the fallback is an improvement, not a requirement.
+      console.warn(
+        "Low-confidence pg_trgm fallback failed, keeping semantic results:",
+        fuzzyError,
+      );
+    }
+  }
 
   // ── Typo tolerance fuzzy matching fallback (pg_trgm SIMILARITY) (#5771) ──────
   // When standard full-text / ts_query search yields 0 rows, trigger trigram similarity
@@ -423,11 +612,7 @@ export async function searchVenuesWithRrf(
     filters.enableFuzzyFallback !== false &&
     searchQuery.length >= 3
   ) {
-    const minSimilarity =
-      typeof filters.minSimilarity === "number" &&
-      Number.isFinite(filters.minSimilarity)
-        ? Math.max(0.05, Math.min(1.0, filters.minSimilarity))
-        : 0.25;
+    const minSimilarity = resolveMinSimilarity(filters.minSimilarity);
 
     try {
       const fuzzyResults = await prisma.$queryRaw<

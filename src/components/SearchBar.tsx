@@ -60,17 +60,11 @@ export function SearchBar({
     end: null,
   });
 
-  // Navigation hooks with fallback for unit test environments
-  let router: any = null;
-  let searchParams: any = null;
-  let pathname: any = null;
-  try {
-    router = useRouter();
-    searchParams = useSearchParams();
-    pathname = usePathname();
-  } catch {
-    // Graceful fallback
-  }
+  // Hooks must run unconditionally on every render (rules of hooks). Unit
+  // tests get these from the next/navigation mock in jest.setup.js.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
 
   const {
     query,

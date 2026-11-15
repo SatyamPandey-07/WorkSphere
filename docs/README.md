@@ -14,4 +14,4 @@
 - [Cryptographic booking receipt specification](./security/cryptographic-receipt-spec.md)
 - [WebAuthn passkey security guide](./security/passkey-webauthn-guide.md)
 
-- [Community badge catalog](./badges/BADGE_CATALOG.md) — current analytics badges, visual components, unlock criteria and registry guidance.
+- [Automated Solana escrow refund lifecycle](./solana/SOLANA_ESCROW_REFUND_CRON.md) — escrow statuses, cron transitions, idempotency, environment and testing.

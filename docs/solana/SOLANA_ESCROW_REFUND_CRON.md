@@ -2,17 +2,33 @@
 
 `GET /api/cron/escrow-refund` settles expired desk-booking escrow holds on
 Solana. Vercel Cron invokes it periodically with
-`Authorization: Bearer $CRON_SECRET`.
+`Authorization: Bearer $CRON_SECRET`. The route is server-only and returns
+`401` when the bearer secret is missing or invalid.
 
 ## Status lifecycle
 
+The Prisma enum contains five states: `PENDING`, `REFUND_PENDING`,
+`REFUNDED`, `RELEASED`, and `FAILED`. The refund cron only claims expired
+rows in `PENDING`; it does not process already released or terminally failed
+escrows.
+
+```mermaid
+stateDiagram-v2
+  [*] --> PENDING
+  PENDING --> REFUND_PENDING: expired hold + atomic claim
+  REFUND_PENDING --> REFUNDED: signature confirmed on-chain
+  REFUND_PENDING --> REFUND_PENDING: signature pending or unknown
+  REFUND_PENDING --> PENDING: explicit on-chain failure; signature cleared
+  REFUND_PENDING --> PENDING: stale claim with no signature
+  PENDING --> FAILED: terminal failure recorded by booking/escrow workflow
+  PENDING --> RELEASED: escrow released by booking/settlement workflow
 ```
-PENDING ──claim (atomic)──▶ REFUND_PENDING ──confirmed──▶ REFUNDED
-   ▲                              │
-   │                              ├── pending / unknown ──▶ stays REFUND_PENDING
-   │                              └── reverted on-chain ──▶ PENDING (signature cleared)
-   └── preflight failure (nothing broadcast) ──────────────┘
-```
+
+The cron's safety-critical refund path is `PENDING → REFUND_PENDING →
+REFUNDED`. The `PENDING → FAILED` and `PENDING → RELEASED` transitions
+belong to the broader escrow lifecycle; they are not performed by this cron
+route. In particular, a signature that is still `pending` or `unknown` must
+remain `REFUND_PENDING`, because the signed transaction may still land.
 
 A hold is refundable once `holdExpiresAt <= now`. Claims older than
 `ESCROW_REFUND_STALE_CLAIM_MS` that never produced a signature are re-queued,
@@ -65,3 +81,40 @@ Apply the `20261114150000_solana_escrow_refund` migration before enabling the
 cron. Rows are stored in `SolanaEscrow` with a unique `bookingId`, the
 depositor wallet, `amountLamports`, hold expiry, status, and refund
 signature/error bookkeeping.
+
+
+## State and environment contract
+
+The cron route requires `NEXT_PUBLIC_ESCROW_PROGRAM_ID` and
+`SOLANA_ESCROW_AUTHORITY_SECRET_KEY`; it returns `503` with a missing-config
+list when either is absent and refuses a placeholder program ID. The
+`CRON_SECRET` value is checked by `isAuthorizedCronRequest`.
+
+The supported RPC environment names referenced by the client/configuration
+are `NEXT_PUBLIC_SOLANA_RPC_URLS` and `SOLANA_RPC_URLS`. Do not configure
+`SOLANA_RPC_QUORUM_URLS` or `SOLANA_REFUND_CRON_SECRET` based only on older
+issue wording; those names are not read by the current cron handler shown in
+this repository.
+
+The optional cron tuning values are:
+- `ESCROW_REFUND_CONFIRMATION_TIMEOUT_MS` (default 30,000; capped at 60,000)
+- `ESCROW_REFUND_POLL_INTERVAL_MS` (default 2,000; capped at 30,000)
+- `ESCROW_REFUND_STALE_CLAIM_MS` (default 600,000; capped at 24 hours)
+- `ESCROW_REFUND_MAX_RUN_MS` (default 45,000; capped at 55,000)
+
+The optional `limit` query parameter defaults to 20 and is capped at 100.
+Each write is guarded by the row status and claim timestamp so an older worker
+cannot finalize a row after a newer attempt has taken ownership.
+
+## Local test procedure
+
+Run the focused cron route suite after changing this state machine:
+
+```bash
+npm test -- --runInBand src/__tests__/api/cronEscrowRefund.test.ts
+```
+
+The tests should cover unauthorized requests, missing configuration,
+atomic-claim races, signature persistence before broadcast, confirmed
+transactions, pending/unknown signatures, explicit on-chain failure,
+recovery of claims without signatures, and the per-invocation time budget.

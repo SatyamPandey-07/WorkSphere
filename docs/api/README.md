@@ -20,3 +20,5 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Telemetry](./telemetry.md)
 
 For project-wide endpoint and stream documentation, see [the REST API reference](../API.md).
+
+- [Venue flagging](./VENUE_FLAGGING.md) — authenticated flag submission, reason validation, duplicate behavior and hourly rate limit.

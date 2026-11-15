@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import DefaultVenueFilterBar, {
   VenueFilterBar,
@@ -70,6 +70,42 @@ describe("VenueFilterBar Component", () => {
   describe("Exports", () => {
     it("exports VenueFilterBar as both named and default export", () => {
       expect(DefaultVenueFilterBar).toBe(VenueFilterBar);
+    });
+  });
+
+  describe("Screen-reader filter announcements", () => {
+    it("announces the matching venue count after filter changes settle", async () => {
+      render(<VenueFilterBar resultCount={14} announcementDebounceMs={0} />);
+
+      fireEvent.click(screen.getByTestId("venue-category-tab-cafe"));
+
+      const announcement = screen.getByTestId(
+        "venue-filter-result-announcement",
+      );
+      expect(announcement).toHaveAttribute("role", "status");
+      expect(announcement).toHaveAttribute("aria-live", "polite");
+      expect(announcement).toHaveAttribute("aria-atomic", "true");
+      await waitFor(() => {
+        expect(announcement).toHaveTextContent(
+          "Found 14 venues matching the selected filters.",
+        );
+      });
+    });
+
+    it("announces an empty result set without changing the visual layout", async () => {
+      render(<VenueFilterBar resultCount={0} announcementDebounceMs={0} />);
+
+      fireEvent.click(screen.getByTestId("venue-category-tab-cafe"));
+
+      const announcement = screen.getByTestId(
+        "venue-filter-result-announcement",
+      );
+      expect(announcement).toHaveClass("sr-only");
+      await waitFor(() => {
+        expect(announcement).toHaveTextContent(
+          "No venues match the selected filters.",
+        );
+      });
     });
   });
 

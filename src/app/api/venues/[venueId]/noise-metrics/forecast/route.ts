@@ -61,30 +61,40 @@ export async function GET(
 
     const windowEnd = new Date();
     const windowStart = new Date(windowEnd.getTime() - WEEK_MS);
-    const ratings = await prisma.venueRating.findMany({
-      where: {
-        venueId: venue.id,
-        avgDecibels: { not: null },
-        createdAt: { gte: windowStart, lte: windowEnd },
-      },
-      select: {
-        avgDecibels: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: "asc" },
-    });
+    const [allTimeRatings, weeklyRatings] = await Promise.all([
+      // Preserve the original all-history 24-hour summary for existing clients.
+      prisma.venueRating.findMany({
+        where: { venueId: venue.id, avgDecibels: { not: null } },
+        select: { avgDecibels: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      // Keep the new weekday/hour forecast bounded to the trailing seven days.
+      prisma.venueRating.findMany({
+        where: {
+          venueId: venue.id,
+          avgDecibels: { not: null },
+          createdAt: { gte: windowStart, lte: windowEnd },
+        },
+        select: { avgDecibels: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
 
-    const rawData = ratings.map((rating) => ({
+    const rawData = allTimeRatings.map((rating) => ({
+      avgDecibels: rating.avgDecibels as number,
+      timestamp: rating.createdAt,
+    }));
+    const weeklyRawData = weeklyRatings.map((rating) => ({
       avgDecibels: rating.avgDecibels as number,
       timestamp: rating.createdAt,
     }));
 
     const result = {
       venueId: venue.id,
-      // Retain the original 24-hour summary for existing clients.
+      // Keep the pre-existing all-history hourly summary unchanged.
       forecast: generateNoiseForecast(rawData, timeZone),
-      // The 7 x 24 weekday/hour matrix is the new weekly forecast contract.
-      weeklyForecast: generateWeeklyNoiseForecast(rawData, {
+      // The 7 x 24 weekday/hour matrix uses only the trailing seven days.
+      weeklyForecast: generateWeeklyNoiseForecast(weeklyRawData, {
         timeZone,
         windowStart,
         windowEnd,

@@ -80,6 +80,10 @@ export interface VenueFilterBarProps {
   /** Additional class names applied to the outermost wrapper element. */
   className?: string;
   "data-testid"?: string;
+  /** Exact number of venues matching the resolved filters, when available. */
+  resultCount?: number;
+  /** Debounce interval for screen-reader filter announcements. */
+  announcementDebounceMs?: number;
 }
 
 export const DEFAULT_DECIBEL_RANGE: [number, number] = [30, 85];
@@ -169,6 +173,8 @@ export function VenueFilterBar({
   showCustomRangeFilters = true,
   className = "",
   "data-testid": testId = "venue-filter-bar",
+  resultCount,
+  announcementDebounceMs = 250,
 }: VenueFilterBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -421,6 +427,45 @@ export function VenueFilterBar({
     return set;
   }, [controlledSelected, searchParams, filters]);
 
+  const hasAnnouncedFiltersRef = useRef(false);
+  const [filterAnnouncement, setFilterAnnouncement] = useState("");
+
+  useEffect(() => {
+    // Do not announce the initial render; only announce a user's resolved
+    // filter/category changes after the debounce window.
+    if (!hasAnnouncedFiltersRef.current) {
+      hasAnnouncedFiltersRef.current = true;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (typeof resultCount === "number" && Number.isFinite(resultCount)) {
+        setFilterAnnouncement(
+          resultCount === 0
+            ? "No venues match the selected filters."
+            : `Found ${resultCount} venues matching the selected filters.`,
+        );
+        return;
+      }
+
+      const activeFilterCount =
+        activeSet.size + (hasCustomRangeActive ? 1 : 0);
+      setFilterAnnouncement(
+        activeFilterCount === 0
+          ? "All venues are shown."
+          : `${activeFilterCount} venue filters selected.`,
+      );
+    }, Math.max(0, announcementDebounceMs));
+
+    return () => window.clearTimeout(timer);
+  }, [
+    activeSet,
+    currentCategory,
+    hasCustomRangeActive,
+    resultCount,
+    announcementDebounceMs,
+  ]);
+
   // -------------------------------------------------------------------------
   // Scroll-edge detection — drives the mask-image gradient
   // -------------------------------------------------------------------------
@@ -591,6 +636,15 @@ export function VenueFilterBar({
       data-testid={testId}
       className={cn("relative w-full space-y-2", className)}
     >
+      <p
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="venue-filter-result-announcement"
+        className="sr-only"
+      >
+        {filterAnnouncement}
+      </p>
       {/* Category Tabs with Framer Motion layoutId sliding pill indicator */}
       {showCategoryTabs && categories.length > 0 && (
         <LayoutGroup id="venue-filter-categories">

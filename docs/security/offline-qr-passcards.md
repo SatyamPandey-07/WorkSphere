@@ -2,6 +2,8 @@
 
 A passcard that needs the network is useless in a basement or a shielded coworking space. An offline passcard is one compact token, signed with ECDSA (P-256, SHA-256) through the Web Crypto API and drawn as a QR code. A scanner that holds the venue's public verification key can check it with no network.
 
+For the request and response schemas, the scanner workflow and the threat model, see [OFFLINE_QR_PASSCARD_SPEC.md](./OFFLINE_QR_PASSCARD_SPEC.md).
+
 Code:
 - Shared crypto: `src/lib/security/offlineQrSigner.ts` (sign and verify)
 - Client IndexedDB store: `src/lib/security/offlinePasscardStore.ts`

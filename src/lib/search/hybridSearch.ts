@@ -14,10 +14,16 @@ const XFETCH_ETA = 3;
 const DEFAULT_COMPUTE_MS = 250;
 const REFRESH_LOCK_TTL_MS = 30_000;
 
+/** Dimension of `Venue."searchEmbedding"` (`vector(1024)` in the Prisma schema). */
+export const VENUE_EMBEDDING_DIMENSIONS = 1024;
+export const MAX_HYBRID_SEARCH_LIMIT = 100;
+const CANDIDATES_PER_BRANCH = 50;
+
 export interface HybridSearchResult {
   id: string;
   name: string;
-  description: string;
+  address: string | null;
+  category: string;
   score: number;
 }
 
@@ -294,7 +300,83 @@ export function _resetEmbeddingRefreshStateForTesting(): void {
 }
 
 /**
- * Executes Reciprocal Rank Fusion (RRF) combining vector cosine distance (<->) and FTS ts_rank_cd.
+ * Whether an embedding can be compared with `Venue."searchEmbedding"`.
+ * pgvector refuses a distance between vectors of different dimensions, and an
+ * all-zero vector (the fallback when no embedding could be computed) carries
+ * no meaning to rank by.
+ */
+export function isUsableVenueEmbedding(
+  embedding: unknown,
+): embedding is number[] {
+  return (
+    Array.isArray(embedding) &&
+    embedding.length === VENUE_EMBEDDING_DIMENSIONS &&
+    embedding.every(
+      (value) => typeof value === "number" && Number.isFinite(value),
+    ) &&
+    embedding.some((value) => value !== 0)
+  );
+}
+
+function clampInteger(
+  value: number,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+/**
+ * Hybrid venue search: Reciprocal Rank Fusion (RRF) of pgvector distance on
+ * `"searchEmbedding"` and full-text rank on `"searchVector"`.
+ *
+ * Parameters: $1 query text, $2 RRF k, $3 result limit, $4 query embedding
+ * (or NULL, which turns the vector branch off).
+ */
+const HYBRID_SEARCH_SQL = `
+    WITH vector_matches AS (
+      SELECT
+        "id",
+        ROW_NUMBER() OVER (ORDER BY "searchEmbedding" <-> $4::vector, "id") AS vec_rank
+      FROM "Venue"
+      WHERE $4::vector IS NOT NULL
+        AND "searchEmbedding" IS NOT NULL
+      ORDER BY "searchEmbedding" <-> $4::vector, "id"
+      LIMIT ${CANDIDATES_PER_BRANCH}
+    ),
+    fts_matches AS (
+      SELECT
+        "id",
+        ROW_NUMBER() OVER (
+          ORDER BY ts_rank_cd("searchVector", websearch_to_tsquery('english', $1)) DESC, "id"
+        ) AS fts_rank
+      FROM "Venue"
+      WHERE "searchVector" @@ websearch_to_tsquery('english', $1)
+      ORDER BY ts_rank_cd("searchVector", websearch_to_tsquery('english', $1)) DESC, "id"
+      LIMIT ${CANDIDATES_PER_BRANCH}
+    )
+    SELECT
+      venue."id",
+      venue."name",
+      venue."address",
+      venue."category",
+      (
+        COALESCE(1.0 / ($2::int + v.vec_rank), 0.0) +
+        COALESCE(1.0 / ($2::int + f.fts_rank), 0.0)
+      )::float8 AS score
+    FROM vector_matches v
+    FULL OUTER JOIN fts_matches f ON v."id" = f."id"
+    JOIN "Venue" venue ON venue."id" = COALESCE(v."id", f."id")
+    ORDER BY score DESC, venue."id"
+    LIMIT $3::int;
+  `;
+
+/**
+ * Runs the hybrid search. The vector branch is used only when the query
+ * embedding matches the column's dimension; otherwise results are ranked by
+ * full-text search alone.
  */
 export async function executeHybridSearch(
   query: string,
@@ -304,45 +386,17 @@ export async function executeHybridSearch(
   cacheContext: QueryCacheContext = {},
 ): Promise<HybridSearchResult[]> {
   const embedding = await getQueryEmbedding(query, cacheContext);
-  const vectorStr = `[${embedding.join(",")}]`;
+  const vectorParam = isUsableVenueEmbedding(embedding)
+    ? `[${embedding.join(",")}]`
+    : null;
 
-  // Reciprocal Rank Fusion (RRF) raw SQL execution
-  const results = await prismaClient.$queryRawUnsafe(
-    `
-    WITH vector_matches AS (
-      SELECT 
-        id, 
-        name, 
-        description,
-        ROW_NUMBER() OVER (ORDER BY embedding <-> '${vectorStr}'::vector) AS vec_rank
-      FROM "Venue"
-      WHERE embedding IS NOT NULL
-      LIMIT 50
-    ),
-    fts_matches AS (
-      SELECT 
-        id, 
-        name, 
-        description,
-        ROW_NUMBER() OVER (ORDER BY ts_rank_cd(search_vector, websearch_to_tsquery('english', $1)) DESC) AS fts_rank
-      FROM "Venue"
-      WHERE search_vector @@ websearch_to_tsquery('english', $1)
-      LIMIT 50
-    )
-    SELECT 
-      COALESCE(v.id, f.id) AS id,
-      COALESCE(v.name, f.name) AS name,
-      COALESCE(v.description, f.description) AS description,
-      (COALESCE(1.0 / ($2 + v.vec_rank), 0.0) + COALESCE(1.0 / ($2 + f.fts_rank), 0.0)) AS score
-    FROM vector_matches v
-    FULL OUTER JOIN fts_matches f ON v.id = f.id
-    ORDER BY score DESC
-    LIMIT $3;
-  `,
+  const rows: HybridSearchResult[] = await prismaClient.$queryRawUnsafe(
+    HYBRID_SEARCH_SQL,
     query,
-    rrfK,
-    limit,
+    clampInteger(rrfK, 60, 1, 10_000),
+    clampInteger(limit, 10, 1, MAX_HYBRID_SEARCH_LIMIT),
+    vectorParam,
   );
 
-  return results;
+  return (rows ?? []).map((row) => ({ ...row, score: Number(row.score) }));
 }

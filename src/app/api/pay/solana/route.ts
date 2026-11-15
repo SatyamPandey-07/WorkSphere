@@ -507,7 +507,6 @@ async function handleRegisterDeposit(body: unknown, userId: string) {
           userId: true,
           status: true,
           confirmationId: true,
-          totalAmount: true,
         },
       });
     }
@@ -522,7 +521,6 @@ async function handleRegisterDeposit(body: unknown, userId: string) {
           userId: true,
           status: true,
           confirmationId: true,
-          totalAmount: true,
         },
       })
       .catch(() => null);
@@ -601,8 +599,8 @@ async function handleRegisterDeposit(body: unknown, userId: string) {
 
   // 4. On-chain verification: fetch on-chain transaction and verify validity
   const rpcUrl = getSolanaRpcUrl();
-  const expectedAmount =
-    amount ?? (booking.totalAmount ? Number(booking.totalAmount) : undefined);
+  // Booking has no stored amount, so the expected amount comes from the request.
+  const expectedAmount = amount;
 
   const verification = await verifyDeposit(
     signature,
@@ -1244,7 +1242,7 @@ export async function GET(request: Request) {
             cleanup();
           }
         }, streamBudgetMs);
-        budgetTimer.unref?.();
+        session.budgetTimer.unref?.();
 
         request.signal.addEventListener("abort", cleanup);
       },

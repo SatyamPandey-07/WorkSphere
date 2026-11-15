@@ -2,7 +2,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { cookies, headers } from "next/headers";
-
+import Script from "next/script";
 import "./globals.css";
 
 import I18nProvider from "../components/I18nProvider";
@@ -131,7 +131,7 @@ export default async function RootLayout({
     </ClerkProvider>
   );
 
-  return (
+ return (
     <html
       lang="en"
       data-theme={theme}
@@ -141,28 +141,19 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head suppressHydrationWarning>
-        <script
-          id="theme-init"
-          suppressHydrationWarning
-          nonce={nonce}
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
-        <SkipToContent />
-        <ScrollProgress />
-        <ScrollToTopButton />
+      <body suppressHydrationWarning>
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
         {bodyContent}
-        <CookieBanner />
       </body>
     </html>
-  );
+  )
 }
-

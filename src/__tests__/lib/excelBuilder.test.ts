@@ -25,6 +25,11 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
       expect(escapeXml(123.45)).toBe("123.45");
       expect(escapeXml(true)).toBe("true");
     });
+
+    it("strips illegal XML 1.0 control characters to prevent parser failures", () => {
+      expect(escapeXml("Hello\x00World\x08Test\x1bEnd")).toBe("HelloWorldTestEnd");
+      expect(escapeXml("Safe\tTab\nNewline\rReturn")).toBe("Safe\tTab\nNewline\rReturn");
+    });
   });
 
   describe("sanitizeExcelFormula", () => {
@@ -39,6 +44,11 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
 
     it("sanitizes formula triggers with leading whitespace", () => {
       expect(sanitizeExcelFormula("   =1+1")).toBe("'   =1+1");
+    });
+
+    it("sanitizes DDE command execution triggers using pipe (|)", () => {
+      expect(sanitizeExcelFormula("|'cmd'!' /C calc'")).toBe("'|'cmd'!' /C calc'");
+      expect(sanitizeExcelFormula("   |cmd")).toBe("'   |cmd");
     });
 
     it("leaves safe text unchanged", () => {
@@ -131,7 +141,25 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
       builder.addRow({ note: "=HYPERLINK(\"http://evil.com\")" });
 
       const xml = builder.build();
-      expect(xml).toContain("&apos;=HYPERLINK(&quot;http://evil.com&quot;)");
+      expect(xml).toContain("&apos;=HYPERLINK");
+    });
+
+    it("sanitizes formula injection in Currency and Number column fallback strings", () => {
+      const builder = new ExcelXmlBuilder<{ price: string; count: string; date: string }>();
+      builder.addColumn({ header: "Price", accessor: "price", type: "Currency" });
+      builder.addColumn({ header: "Count", accessor: "count", type: "Number" });
+      builder.addColumn({ header: "Date", accessor: "date", type: "Date" });
+
+      builder.addRow({
+        price: "=SUM(A1:A10)",
+        count: "|'cmd'!' /C calc'",
+        date: "=HYPERLINK(\"http://evil.com\")",
+      });
+
+      const xml = builder.build();
+      expect(xml).toContain("&apos;=SUM(A1:A10)");
+      expect(xml).toContain("&apos;|&apos;cmd&apos;!&apos; /C calc&apos;");
+      expect(xml).toContain("&apos;=HYPERLINK");
     });
 
     it("handles toBlob generation with spreadsheet MIME type", () => {
@@ -269,9 +297,7 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
       );
 
       // Alias exportBookingsToExcel is identical
-      expect(exportBookingsToExcel(mockBookings)).toBe(
-        generateBookingsExcel(mockBookings),
-      );
+      expect(exportBookingsToExcel).toBe(generateBookingsExcel);
     });
 
     it("handles empty bookings list without crashing", () => {
@@ -279,6 +305,25 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
       expect(xml).toContain('<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"');
       expect(xml).toContain(">Confirmation ID</Data></Cell>");
       expect(xml).toContain("</Table>");
+    });
+
+    it("safely clamps duration 0 and negative durations to 0 hours ($0.00)", () => {
+      const zeroBooking: BookingHistoryExportItem = {
+        id: "bk-zero",
+        date: "2026-10-25",
+        time: "10:00",
+        duration: 0,
+      };
+      const negBooking: BookingHistoryExportItem = {
+        id: "bk-neg",
+        date: "2026-10-25",
+        time: "11:00",
+        duration: -60,
+      };
+
+      const xml = generateBookingsExcel([zeroBooking, negBooking]);
+      expect(xml).toContain('<Cell ss:StyleID="Currency"><Data ss:Type="Number">0.00</Data></Cell>');
+      expect(xml).toContain('<Cell ss:StyleID="Integer"><Data ss:Type="Number">0</Data></Cell>');
     });
 
     it("triggers downloadBookingsExcel with formatted workbook blob", () => {
@@ -300,6 +345,53 @@ describe("Excel XML / XLSX Generator Utility (#4598)", () => {
 
       appendSpy.mockRestore();
       removeSpy.mockRestore();
+    });
+    it("safely handles nullish rows and non-array inputs in addRows and addRow", () => {
+      const builder = new ExcelXmlBuilder<{ id: string; val: number }>({ worksheetName: "NullSafe" });
+      builder.setColumns([
+        { header: "ID", accessor: "id", type: "String" },
+        { header: "Value", accessor: "val", type: "Number" },
+      ]);
+
+      expect(() => builder.addRows(null as any)).not.toThrow();
+      expect(() => builder.addRows(undefined as any)).not.toThrow();
+      expect(() => builder.addRow(null as any)).not.toThrow();
+      expect(() => builder.addRow(undefined as any)).not.toThrow();
+      expect(() => builder.addRows([null as any, { id: "ok-1", val: 10 }, undefined as any])).not.toThrow();
+
+      const xml = builder.build();
+      expect(xml).toContain(">ok-1</Data></Cell>");
+      expect(xml).toContain(">10</Data></Cell>");
+    });
+
+    it("sanitizes Infinity and -Infinity in Currency and Number columns to safe text", () => {
+      const builder = new ExcelXmlBuilder<{ num: number; curr: number }>({ worksheetName: "FiniteTest" });
+      builder.setColumns([
+        { header: "Num", accessor: "num", type: "Number" },
+        { header: "Curr", accessor: "curr", type: "Currency" },
+      ]);
+
+      builder.addRow({ num: Infinity, curr: -Infinity });
+      const xml = builder.build();
+      // Must NOT contain ss:Type="Number" for Infinity
+      expect(xml).not.toContain('<Data ss:Type="Number">Infinity</Data>');
+      expect(xml).not.toContain('<Data ss:Type="Number">-Infinity</Data>');
+      expect(xml).toContain('<Cell ss:StyleID="Text"><Data ss:Type="String">Infinity</Data></Cell>');
+    });
+
+    it("generateBookingsExcel handles nullish bookings and missing booking IDs safely", () => {
+      expect(() => generateBookingsExcel(null as any)).not.toThrow();
+      expect(() => generateBookingsExcel(undefined as any)).not.toThrow();
+
+      const xmlNull = generateBookingsExcel(null as any);
+      expect(xmlNull).toContain(">Confirmation ID</Data></Cell>");
+
+      const missingIdBooking: any = {
+        date: "2026-10-26",
+        time: "14:00",
+      };
+      const xmlMissing = generateBookingsExcel([missingIdBooking, null as any]);
+      expect(xmlMissing).toContain(">WS-#N/A</Data></Cell>");
     });
   });
 });

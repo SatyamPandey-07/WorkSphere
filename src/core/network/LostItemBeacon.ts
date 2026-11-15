@@ -53,13 +53,13 @@ export class LostItemBeacon {
         const keyData = new TextEncoder().encode(this.currentRotationKey + this.lastRotation);
         const cryptoKey = await crypto.subtle.importKey(
             'raw',
-            this.secretSeed,
+            this.secretSeed as unknown as BufferSource,
             { name: 'HMAC', hash: 'SHA-256' },
             false,
             ['sign']
         );
 
-        const signature = await crypto.subtle.sign('HMAC', cryptoKey, keyData);
+        const signature = await crypto.subtle.sign('HMAC', cryptoKey, keyData as unknown as BufferSource);
         const hashArray = Array.from(new Uint8Array(signature));
         const newKey = hashArray.slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('');
 

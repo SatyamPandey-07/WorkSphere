@@ -1,11 +1,10 @@
-// @ts-nocheck
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 export interface Waypoint {
   id: string;
   name: string;
   bearing: number;
-  elevation: number;
+  elevation?: number;
   distanceMeters: number;
 }
 
@@ -15,21 +14,67 @@ export interface CollimatedHUDOverlayProps {
   onSessionEnd?: () => void;
 }
 
-export const CollimatedHUDOverlay = ({
+interface XRSessionLike {
+  addEventListener: (type: string, listener: (e: any) => void) => void;
+  removeEventListener?: (type: string, listener: (e: any) => void) => void;
+  end: () => Promise<void>;
+  visibilityState?: string;
+}
+
+export const CollimatedHUDOverlay: React.FC<CollimatedHUDOverlayProps> = ({
   waypoints = [],
   accentColor = '#22c55e',
   onSessionEnd,
-}: CollimatedHUDOverlayProps) => {
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [xrSession, setXrSession] = useState<any>(null);
+  const [xrSession, setXrSession] = useState<XRSessionLike | null>(null);
   const [sessionState, setSessionState] = useState<'idle' | 'running' | 'paused' | 'unsupported'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const xrSessionRef = useRef<XRSessionLike | null>(null);
   const orientationRef = useRef({
     pitch: 0,
     roll: 0,
   });
 
+  // Keep xrSessionRef synchronized with state
+  useEffect(() => {
+    xrSessionRef.current = xrSession;
+  }, [xrSession]);
+
+  // Clean up active WebXR session on unmount
+  useEffect(() => {
+    return () => {
+      if (xrSessionRef.current) {
+        try {
+          xrSessionRef.current.end().catch(() => {});
+        } catch {
+          // Ignore XR teardown errors during unmount
+        }
+      }
+    };
+  }, []);
+
+  // Listen to device orientation events for pitch and roll collimation
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      if (typeof e.beta === 'number' && Number.isFinite(e.beta)) {
+        orientationRef.current.pitch = Math.max(-90, Math.min(90, e.beta));
+      }
+      if (typeof e.gamma === 'number' && Number.isFinite(e.gamma)) {
+        orientationRef.current.roll = Math.max(-90, Math.min(90, e.gamma));
+      }
+    };
+
+    window.addEventListener('deviceorientation', handleOrientation);
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+    };
+  }, []);
+
+  // Check WebXR immersive-ar hardware support
   useEffect(() => {
     const nav = typeof window !== 'undefined' ? (window.navigator as any) : null;
     if (nav?.xr?.isSessionSupported) {
@@ -59,7 +104,7 @@ export const CollimatedHUDOverlay = ({
       });
 
       const handleVisibilityChange = (e: any) => {
-        if (e.session?.visibilityState === 'hidden') {
+        if (e?.session?.visibilityState === 'hidden') {
           setSessionState('paused');
         } else {
           setSessionState('running');
@@ -98,6 +143,8 @@ export const CollimatedHUDOverlay = ({
       const cx = width / 2;
       const cy = height / 2;
       const { pitch, roll } = orientationRef.current;
+      const safePitch = Number.isFinite(pitch) ? pitch : 0;
+      const safeRoll = Number.isFinite(roll) ? roll : 0;
 
       ctx.save();
       ctx.strokeStyle = accentColor;
@@ -106,10 +153,10 @@ export const CollimatedHUDOverlay = ({
       ctx.font = '14px monospace';
 
       ctx.translate(cx, cy);
-      ctx.rotate((-roll * Math.PI) / 180);
+      ctx.rotate((-safeRoll * Math.PI) / 180);
 
       const pitchPixelScale = 8;
-      const pitchOffset = pitch * pitchPixelScale;
+      const pitchOffset = safePitch * pitchPixelScale;
 
       // 1. Central Boresight Crosshair (Infinite optical collimation)
       ctx.beginPath();
@@ -153,35 +200,47 @@ export const CollimatedHUDOverlay = ({
         ctx.fillText(`${angle}°`, rungWidth + 8, y + 4);
       });
 
-      // 3. Waypoint Navigation Reticles
-      waypoints.forEach((wp: Waypoint) => {
-        const wpAngleRad = (wp.bearing * Math.PI) / 180;
-        const radius = 140;
-        const wpX = Math.sin(wpAngleRad) * radius;
-        const wpY = -Math.cos(wpAngleRad) * radius;
+      // 3. Waypoint Navigation Reticles with NaN protection
+      if (Array.isArray(waypoints)) {
+        waypoints.forEach((wp: Waypoint) => {
+          if (!wp || typeof wp !== 'object') return;
+          const bearing = Number.isFinite(wp.bearing) ? wp.bearing : 0;
+          const distance = Number.isFinite(wp.distanceMeters) ? Math.max(0, wp.distanceMeters) : 0;
+          const name = wp.name ? String(wp.name) : 'Waypoint';
 
-        ctx.save();
-        ctx.translate(wpX, wpY);
-        ctx.rotate(wpAngleRad);
+          const wpAngleRad = (bearing * Math.PI) / 180;
+          const radius = 140;
+          const wpX = Math.sin(wpAngleRad) * radius;
+          const wpY = -Math.cos(wpAngleRad) * radius;
 
-        ctx.beginPath();
-        ctx.moveTo(0, -12);
-        ctx.lineTo(-8, 8);
-        ctx.lineTo(0, 4);
-        ctx.lineTo(8, 8);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
+          if (!Number.isFinite(wpX) || !Number.isFinite(wpY)) return;
 
-        ctx.fillText(`${wp.name} [${wp.distanceMeters}m]`, wpX + 12, wpY);
-      });
+          ctx.save();
+          ctx.translate(wpX, wpY);
+          ctx.rotate(wpAngleRad);
+
+          ctx.beginPath();
+          ctx.moveTo(0, -12);
+          ctx.lineTo(-8, 8);
+          ctx.lineTo(0, 4);
+          ctx.lineTo(8, 8);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
+          ctx.fillText(`${name} [${Math.round(distance)}m]`, wpX + 12, wpY);
+        });
+      }
 
       ctx.restore();
     },
     [accentColor, waypoints]
   );
 
+  // Canvas render loop, pausing when sessionState is paused to conserve battery
   useEffect(() => {
+    if (sessionState === 'paused') return;
+
     let animId: number;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -190,8 +249,10 @@ export const CollimatedHUDOverlay = ({
     if (!ctx) return;
 
     const handleResize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      if (typeof window !== 'undefined') {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
     };
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -206,12 +267,13 @@ export const CollimatedHUDOverlay = ({
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
     };
-  }, [renderHUD]);
+  }, [renderHUD, sessionState]);
 
   return (
     <div className="relative w-full h-full min-h-screen bg-transparent overflow-hidden">
       <canvas
         ref={canvasRef}
+        data-testid="hud-canvas"
         className="pointer-events-none absolute inset-0 z-50 w-full h-full"
       />
 
@@ -219,6 +281,7 @@ export const CollimatedHUDOverlay = ({
         <div className="flex items-center gap-2">
           <span className="font-bold tracking-wider">HUD STATUS:</span>
           <span
+            data-testid="hud-session-state"
             className={`px-2 py-0.5 rounded text-[10px] uppercase ${
               sessionState === 'running'
                 ? 'bg-emerald-500/20 text-emerald-300'
@@ -229,7 +292,7 @@ export const CollimatedHUDOverlay = ({
           </span>
         </div>
 
-        {errorMsg && <div className="text-red-400 max-w-xs">{errorMsg}</div>}
+        {errorMsg && <div data-testid="hud-error-msg" className="text-red-400 max-w-xs">{errorMsg}</div>}
 
         <div className="flex gap-2 mt-1">
           {sessionState !== 'running' ? (

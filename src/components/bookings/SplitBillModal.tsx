@@ -1,20 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   X,
   CreditCard,
-  DollarSign,
-  Share2,
   Copy,
   Check,
-  Send,
   Mail,
   MessageSquare,
   Users,
   Loader2,
-  Sparkles,
-  ExternalLink,
   ShieldCheck,
 } from "lucide-react";
 import type { BookingSummary } from "./BookingList";
@@ -24,12 +19,21 @@ export interface SplitBillModalProps {
   booking: BookingSummary;
   isOpen: boolean;
   onClose: () => void;
+  className?: string;
+  testId?: string;
+}
+
+function formatCurrency(val: number | undefined | null): string {
+  if (typeof val !== "number" || isNaN(val)) return "0.00";
+  return val.toFixed(2);
 }
 
 export function SplitBillModal({
   booking,
   isOpen,
   onClose,
+  className = "",
+  testId = "split-bill-modal",
 }: SplitBillModalProps) {
   const [splitData, setSplitData] = useState<SplitBillSummary | null>(null);
   const [totalAmount, setTotalAmount] = useState<number>(30);
@@ -37,34 +41,89 @@ export function SplitBillModal({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clean up copy timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Keyboard navigation: Escape key dismiss
   useEffect(() => {
     if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  // Load split data
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (!booking?.id) {
+      setLoading(false);
+      setError("No booking details provided");
+      return;
+    }
+
+    const abortController = new AbortController();
+    let isSubscribed = true;
 
     async function loadSplit() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/bookings/${booking.id}/split-bill`);
+        const res = await fetch(`/api/bookings/${booking.id}/split-bill`, {
+          signal: abortController.signal,
+        });
         const json = await res.json();
+        if (!isSubscribed) return;
+
         if (!res.ok) {
           throw new Error(json.error || "Failed to load split bill");
         }
         setSplitData(json.split);
-        if (json.split?.totalAmount) {
+        if (typeof json.split?.totalAmount === "number" && !isNaN(json.split.totalAmount)) {
           setTotalAmount(json.split.totalAmount);
         }
-      } catch (err: any) {
-        setError(err.message || "Could not calculate split bill");
+      } catch (err: unknown) {
+        if (!isSubscribed || abortController.signal.aborted) return;
+        const message = err instanceof Error ? err.message : "Could not calculate split bill";
+        setError(message);
       } finally {
-        setLoading(false);
+        if (isSubscribed) {
+          setLoading(false);
+        }
       }
     }
 
     loadSplit();
-  }, [booking.id, isOpen]);
+
+    return () => {
+      isSubscribed = false;
+      abortController.abort();
+    };
+  }, [booking?.id, isOpen]);
 
   const handleUpdateTotal = async (newTotal: number) => {
+    if (isNaN(newTotal) || newTotal < 0) return;
     setTotalAmount(newTotal);
+
+    if (!booking?.id) return;
+
     try {
       const res = await fetch(`/api/bookings/${booking.id}/split-bill`, {
         method: "POST",
@@ -75,25 +134,48 @@ export function SplitBillModal({
       if (res.ok && json.split) {
         setSplitData(json.split);
       }
-    } catch {}
+    } catch {
+      // Ignore network errors on total update debounce
+    }
   };
 
   const handleCopy = (url: string, id: string) => {
-    navigator.clipboard.writeText(url);
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).catch(() => {});
+    }
     setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
+    copyTimeoutRef.current = setTimeout(() => {
+      setCopiedId(null);
+    }, 2000);
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
+
+  const guestShares = Array.isArray(splitData?.guestShares) ? splitData.guestShares : [];
 
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="split-bill-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      data-testid={testId}
+      onClick={handleBackdropClick}
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in duration-200 ${className}`.trim()}
     >
-      <div className="w-full max-w-xl rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-100 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div
+        className="w-full max-w-xl rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-100 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/50">
           <div className="flex items-center gap-3">
@@ -108,12 +190,14 @@ export function SplitBillModal({
                 Split Bill &amp; Guest Passes
               </h2>
               <p className="text-xs text-zinc-400">
-                {booking.venue?.name ?? "Workspace"} · {booking.date}
+                {booking?.venue?.name ?? "Workspace"} · {booking?.date ?? ""}
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            data-testid="split-bill-close-btn"
             className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
             aria-label="Close modal"
           >
@@ -124,12 +208,18 @@ export function SplitBillModal({
         {/* Content */}
         <div className="flex-1 overflow-auto p-6 space-y-6">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-zinc-400">
+            <div
+              data-testid="split-bill-loading"
+              className="py-12 flex flex-col items-center justify-center text-zinc-400"
+            >
               <Loader2 className="w-6 h-6 animate-spin text-violet-400 mb-2" />
               <p className="text-xs">Calculating auto-payment split links...</p>
             </div>
           ) : error ? (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs text-rose-300">
+            <div
+              data-testid="split-bill-error"
+              className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs text-rose-300"
+            >
               {error}
             </div>
           ) : (
@@ -146,8 +236,12 @@ export function SplitBillModal({
                       type="number"
                       min="5"
                       max="1000"
-                      value={totalAmount}
-                      onChange={(e) => handleUpdateTotal(Number(e.target.value))}
+                      data-testid="split-bill-total-input"
+                      value={isNaN(totalAmount) ? "" : totalAmount}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        handleUpdateTotal(isNaN(val) ? 0 : val);
+                      }}
                       className="w-24 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 text-right text-sm font-bold text-white focus:outline-none focus:ring-1 focus:ring-violet-500 font-mono"
                     />
                     <span className="text-xs text-zinc-500 font-medium">USD</span>
@@ -158,8 +252,11 @@ export function SplitBillModal({
                   <span className="text-zinc-400">
                     Your Share (Host):
                   </span>
-                  <span className="font-bold text-emerald-400 font-mono">
-                    ${splitData?.hostShare.toFixed(2)} USD
+                  <span
+                    data-testid="split-bill-host-share"
+                    className="font-bold text-emerald-400 font-mono"
+                  >
+                    ${formatCurrency(splitData?.hostShare)} USD
                   </span>
                 </div>
               </div>
@@ -169,17 +266,20 @@ export function SplitBillModal({
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5" /> Guest Auto-Payment Links (
-                    {splitData?.guestShares.length || 0})
+                    {guestShares.length})
                   </h3>
                   {splitData?.paidCount !== undefined && (
                     <span className="text-xs text-zinc-400 font-mono">
-                      {splitData.paidCount}/{splitData.guestShares.length} Paid
+                      {splitData.paidCount}/{guestShares.length} Paid
                     </span>
                   )}
                 </div>
 
-                {splitData?.guestShares.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-zinc-800 p-6 text-center text-zinc-500 space-y-1">
+                {guestShares.length === 0 ? (
+                  <div
+                    data-testid="split-bill-empty-guests"
+                    className="rounded-2xl border border-dashed border-zinc-800 p-6 text-center text-zinc-500 space-y-1"
+                  >
                     <p className="text-xs font-medium text-zinc-300">
                       No guests added to this booking yet
                     </p>
@@ -189,11 +289,12 @@ export function SplitBillModal({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {splitData?.guestShares.map((guest) => {
+                    {guestShares.map((guest) => {
                       const isCopied = copiedId === guest.guestId;
                       return (
                         <div
                           key={guest.guestId}
+                          data-testid={`split-guest-card-${guest.guestId}`}
                           className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3"
                         >
                           <div className="flex items-center justify-between">
@@ -209,7 +310,7 @@ export function SplitBillModal({
                             </div>
                             <div className="text-right">
                               <div className="text-sm font-bold text-emerald-400 font-mono">
-                                ${guest.amount.toFixed(2)} USD
+                                ${formatCurrency(guest.amount)} USD
                               </div>
                               <span
                                 className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
@@ -225,27 +326,34 @@ export function SplitBillModal({
 
                           {/* 1-Tap Share Actions */}
                           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-zinc-800/60">
-                            <a
-                              href={guest.shareLinks.whatsapp}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs font-semibold transition-colors"
-                            >
-                              <MessageSquare className="w-3.5 h-3.5" />
-                              WhatsApp
-                            </a>
+                            {guest.shareLinks?.whatsapp && (
+                              <a
+                                href={guest.shareLinks.whatsapp}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                data-testid={`whatsapp-link-${guest.guestId}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs font-semibold transition-colors"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                WhatsApp
+                              </a>
+                            )}
 
-                            <a
-                              href={guest.shareLinks.email}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors"
-                            >
-                              <Mail className="w-3.5 h-3.5" />
-                              Email
-                            </a>
+                            {guest.shareLinks?.email && (
+                              <a
+                                href={guest.shareLinks.email}
+                                data-testid={`email-link-${guest.guestId}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors"
+                              >
+                                <Mail className="w-3.5 h-3.5" />
+                                Email
+                              </a>
+                            )}
 
                             <button
                               type="button"
-                              onClick={() => handleCopy(guest.paymentUrl, guest.guestId)}
+                              onClick={() => handleCopy(guest.paymentUrl || "", guest.guestId)}
+                              data-testid={`copy-btn-${guest.guestId}`}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors ml-auto"
                             >
                               {isCopied ? (
@@ -278,7 +386,9 @@ export function SplitBillModal({
             Automatic pass issuance upon payment
           </span>
           <button
+            type="button"
             onClick={onClose}
+            data-testid="split-bill-done-btn"
             className="px-4 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-medium transition-colors"
           >
             Done
@@ -288,3 +398,5 @@ export function SplitBillModal({
     </div>
   );
 }
+
+export default SplitBillModal;

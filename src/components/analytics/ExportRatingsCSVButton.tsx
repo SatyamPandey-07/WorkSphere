@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Download, Check, FileSpreadsheet } from "lucide-react";
 import {
   VenueRatingRecord,
@@ -29,16 +29,28 @@ export function ExportRatingsCSVButton({
   onExport,
 }: ExportRatingsCSVButtonProps) {
   const [downloaded, setDownloaded] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   const handleDownload = () => {
     if (disabled || ratings.length === 0) return;
 
-    downloadRatingsCSV(ratings, venueName, filename);
+    downloadRatingsCSV(ratings, { venueName, filename });
     setDownloaded(true);
     if (onExport) {
       onExport();
     }
-    setTimeout(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
       setDownloaded(false);
     }, 2500);
   };

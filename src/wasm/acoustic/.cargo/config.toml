@@ -1,0 +1,4 @@
+# wasm32 128-bit SIMD is stable in Rust; no nightly toolchain required.
+# Override with RUSTFLAGS="" to build the scalar fallback (see build.sh).
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

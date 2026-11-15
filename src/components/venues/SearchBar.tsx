@@ -5,13 +5,17 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Search, X, Loader2, MapPin } from "lucide-react";
 import { useVenueSearch, VenueSearchResult } from "@/hooks/useVenueSearch";
 import { AmenityFilterPills } from "./AmenityFilterPills";
+import { ShortcutTooltip } from "../ui/ShortcutTooltip";
 
 export interface SearchBarProps {
   placeholder?: string;
   onSelect?: (venue: VenueSearchResult) => void;
   onSearch?: (query: string) => void;
   className?: string;
+  /** Wait this long after the last keystroke before searching (default: 300ms). Enter searches at once. */
   debounceMs?: number;
+  /** Shortest trimmed query that is sent to the server (default: 2). An empty query resets the search. */
+  minQueryLength?: number;
   initialQuery?: string;
   autoFocus?: boolean;
   showAmenityPills?: boolean;
@@ -29,15 +33,17 @@ export function trimSearchQuery(query: string): string {
 }
 
 /**
- * Reusable SearchBar component with 250ms input debounce and AbortController (#3513, #3773)
- * Cancels stale in-flight requests and avoids race conditions on fast typing.
+ * Reusable SearchBar component with a 300ms input debounce, a 2 character minimum and AbortController
+ * (#3513, #3773, #7673). Cancels stale in-flight requests and avoids race conditions on fast typing.
+ * Shorter queries send no request, Enter searches at once, and a typing indicator shows while waiting.
  */
 export function SearchBar({
   placeholder = "Search venues by name, address, or tag...",
   onSelect,
   onSearch,
   className = "",
-  debounceMs = 250,
+  debounceMs = 300,
+  minQueryLength = 2,
   initialQuery = "",
   autoFocus = false,
   showAmenityPills = false,
@@ -71,8 +77,16 @@ export function SearchBar({
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  const { query, setQuery, venues, suggestedQuery, isLoading, clear, search } =
-    useVenueSearch({ initialQuery, debounceMs });
+  const {
+    query,
+    setQuery,
+    venues,
+    suggestedQuery,
+    isLoading,
+    isDebouncing,
+    clear,
+    search,
+  } = useVenueSearch({ initialQuery, debounceMs, minQueryLength });
 
   // Preserve cursor selection range across debounced controlled re-renders
   useEffect(() => {
@@ -92,9 +106,7 @@ export function SearchBar({
   // Detect OS for shortcut display badge (⌘K on macOS, Ctrl+K elsewhere)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const isMac = /Mac|iPod|iPhone|iPad/.test(
-        navigator.platform || navigator.userAgent,
-      );
+      const isMac = /Mac|iPod|iPhone|iPad/i.test(navigator.userAgent);
       setShortcutKey(isMac ? "⌘K" : "Ctrl+K");
     }
   }, []);
@@ -261,6 +273,17 @@ export function SearchBar({
         />
 
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-auto">
+          {isDebouncing && !isLoading && (
+            <span
+              data-testid="search-bar-typing-indicator"
+              aria-hidden="true"
+              className="flex items-center gap-0.5"
+            >
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse" />
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse [animation-delay:150ms]" />
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse [animation-delay:300ms]" />
+            </span>
+          )}
           {isLoading && (
             <Loader2
               data-testid="search-bar-loader"
@@ -268,13 +291,20 @@ export function SearchBar({
             />
           )}
           {query.trim().length === 0 && (
-            <kbd
-              data-testid="search-bar-shortcut-badge"
-              onClick={() => inputRef.current?.focus()}
-              className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 bg-zinc-200/60 dark:bg-zinc-700/60 border border-zinc-300/60 dark:border-zinc-600/60 rounded cursor-pointer hover:bg-zinc-300/60 dark:hover:bg-zinc-600/60 transition-colors select-none shrink-0"
+            <ShortcutTooltip
+              content="Press Ctrl+K / ⌘K to search anywhere"
+              shortcut="K"
+              position="bottom"
             >
-              {shortcutKey}
-            </kbd>
+              <kbd
+                data-testid="search-bar-shortcut-badge"
+                title="Press Ctrl+K / ⌘K to search anywhere"
+                onClick={() => inputRef.current?.focus()}
+                className="hidden md:inline-flex items-center border border-zinc-700 bg-zinc-800/80 text-zinc-400 text-[10px] font-mono px-1.5 py-0.5 rounded cursor-pointer hover:bg-zinc-700/80 transition-colors select-none shrink-0"
+              >
+                {shortcutKey}
+              </kbd>
+            </ShortcutTooltip>
           )}
           {query.trim().length > 0 && (
             <button

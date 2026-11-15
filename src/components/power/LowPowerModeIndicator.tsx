@@ -44,8 +44,20 @@ export function LowPowerModeIndicator({
     optimalDpr,
   } = useBatteryLowPowerThrottle();
 
+  const safeBatteryLevel =
+    typeof batteryLevel === "number" && Number.isFinite(batteryLevel)
+      ? Math.max(0, Math.min(1, batteryLevel))
+      : null;
+
   const batteryPercent =
-    batteryLevel !== null ? Math.round(batteryLevel * 100) : null;
+    safeBatteryLevel !== null ? Math.round(safeBatteryLevel * 100) : null;
+
+  const telemetryHz =
+    typeof audioWorkletPolicy.telemetryIntervalMs === "number" &&
+    audioWorkletPolicy.telemetryIntervalMs > 0 &&
+    Number.isFinite(audioWorkletPolicy.telemetryIntervalMs)
+      ? Math.round(1000 / audioWorkletPolicy.telemetryIntervalMs)
+      : 0;
 
   const modeBadgeColor = isCritical
     ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
@@ -215,10 +227,8 @@ export function LowPowerModeIndicator({
             <div className="flex justify-between">
               <span className="text-zinc-500">IPC Telemetry Rate:</span>
               <span>
-                {audioWorkletPolicy.enableTelemetry
-                  ? `${audioWorkletPolicy.telemetryIntervalMs} ms (~${Math.round(
-                      1000 / audioWorkletPolicy.telemetryIntervalMs,
-                    )} Hz)`
+                {audioWorkletPolicy.enableTelemetry && telemetryHz > 0
+                  ? `${audioWorkletPolicy.telemetryIntervalMs} ms (~${telemetryHz} Hz)`
                   : "DISABLED (ZERO IPC)"}
               </span>
             </div>
@@ -250,6 +260,7 @@ export function LowPowerModeIndicator({
             <button
               type="button"
               data-testid="power-mode-normal-btn"
+              aria-pressed={mode === "normal" && manualOverride === "normal"}
               onClick={() => setManualOverride("normal")}
               className={`px-2.5 py-1 rounded-lg font-bold border transition-colors ${
                 mode === "normal" && manualOverride === "normal"
@@ -262,6 +273,7 @@ export function LowPowerModeIndicator({
             <button
               type="button"
               data-testid="power-mode-low-btn"
+              aria-pressed={mode === "low_power" && manualOverride === "low_power"}
               onClick={() => setManualOverride("low_power")}
               className={`px-2.5 py-1 rounded-lg font-bold border transition-colors ${
                 mode === "low_power" && manualOverride === "low_power"
@@ -274,6 +286,7 @@ export function LowPowerModeIndicator({
             <button
               type="button"
               data-testid="power-mode-critical-btn"
+              aria-pressed={mode === "critical" && manualOverride === "critical"}
               onClick={() => setManualOverride("critical")}
               className={`px-2.5 py-1 rounded-lg font-bold border transition-colors ${
                 mode === "critical" && manualOverride === "critical"
@@ -287,6 +300,7 @@ export function LowPowerModeIndicator({
               <button
                 type="button"
                 data-testid="power-mode-auto-btn"
+                aria-label="Reset to autonomous battery sensing"
                 onClick={() => setManualOverride(null)}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-colors"
                 title="Reset to autonomous battery sensing"

@@ -16,9 +16,14 @@ export function clampDecibels(
   floor = MIN_ACOUSTIC_DB,
   ceiling = MAX_ACOUSTIC_DB,
 ): number {
+  const safeFloor = typeof floor === "number" && Number.isFinite(floor) ? floor : MIN_ACOUSTIC_DB;
+  const safeCeiling =
+    typeof ceiling === "number" && Number.isFinite(ceiling) && ceiling >= safeFloor
+      ? ceiling
+      : Math.max(safeFloor, MAX_ACOUSTIC_DB);
   if (typeof db !== "number" || !Number.isFinite(db) || Number.isNaN(db))
-    return floor;
-  return Math.min(ceiling, Math.max(floor, db));
+    return safeFloor;
+  return Math.min(safeCeiling, Math.max(safeFloor, db));
 }
 
 /**
@@ -30,8 +35,14 @@ export function normalizeAcousticDecibels(
   floor = MIN_ACOUSTIC_DB,
   ceiling = MAX_ACOUSTIC_DB,
 ): number {
-  const clamped = clampDecibels(db, floor, ceiling);
-  return Number(((clamped - floor) / (ceiling - floor)).toFixed(4));
+  const safeFloor = typeof floor === "number" && Number.isFinite(floor) ? floor : MIN_ACOUSTIC_DB;
+  const safeCeiling =
+    typeof ceiling === "number" && Number.isFinite(ceiling) && ceiling > safeFloor
+      ? ceiling
+      : safeFloor + 1;
+  const clamped = clampDecibels(db, safeFloor, safeCeiling);
+  const normalized = (clamped - safeFloor) / (safeCeiling - safeFloor);
+  return Number(normalized.toFixed(4));
 }
 
 export interface SoundEmitter {
@@ -86,9 +97,16 @@ export function calculatePointSPL(
   absorptionFactor = 0.08,
 ): number {
   const clampedSourceDb = clampDecibels(sourceDb);
-  const r = Math.max(1.0, distanceUnits);
+  const safeDistance =
+    typeof distanceUnits === "number" && Number.isFinite(distanceUnits)
+      ? Math.max(1.0, distanceUnits)
+      : 1.0;
+  const safeAbsorption =
+    typeof absorptionFactor === "number" && Number.isFinite(absorptionFactor) && absorptionFactor >= 0
+      ? absorptionFactor
+      : 0.08;
   // Geometric divergence: 20 * log10(r) + atmospheric/partition absorption
-  const decay = 18 * Math.log10(r) + absorptionFactor * r;
+  const decay = 18 * Math.log10(safeDistance) + safeAbsorption * safeDistance;
   return clampDecibels(Number((clampedSourceDb - decay).toFixed(1)));
 }
 
@@ -102,21 +120,32 @@ export function generateAcousticField(
   gridWidth = 40,
   gridHeight = 25,
 ): AcousticFieldMap {
-  const activeEmitters = emitters
-    .filter((e) => e.isActive)
+  const safeGridW =
+    typeof gridWidth === "number" && Number.isFinite(gridWidth) && gridWidth >= 2
+      ? Math.floor(gridWidth)
+      : 40;
+  const safeGridH =
+    typeof gridHeight === "number" && Number.isFinite(gridHeight) && gridHeight >= 2
+      ? Math.floor(gridHeight)
+      : 25;
+
+  const activeEmitters = (Array.isArray(emitters) ? emitters : [])
+    .filter((e) => e && e.isActive)
     .map((e) => ({
       ...e,
+      x: typeof e.x === "number" && Number.isFinite(e.x) ? e.x : 0,
+      y: typeof e.y === "number" && Number.isFinite(e.y) ? e.y : 0,
       baseDecibels: clampDecibels(e.baseDecibels),
     }));
 
   const grid: number[][] = [];
 
-  for (let r = 0; r < gridHeight; r++) {
+  for (let r = 0; r < safeGridH; r++) {
     const row: number[] = [];
-    const py = (r / (gridHeight - 1)) * 100;
+    const py = (r / (safeGridH - 1)) * 100;
 
-    for (let c = 0; c < gridWidth; c++) {
-      const px = (c / (gridWidth - 1)) * 100;
+    for (let c = 0; c < safeGridW; c++) {
+      const px = (c / (safeGridW - 1)) * 100;
 
       // Combine acoustic energy from all active emitters: L_total = 10 * log10( sum( 10^(L_i / 10) ) )
       let totalLinearEnergy = Math.pow(10, 30 / 10); // 30 dB ambient room floor
@@ -136,13 +165,16 @@ export function generateAcousticField(
   }
 
   // Calculate ratings for specific desks
-  const desks: DeskSoundRating[] = desksInput.map((desk) => {
+  const desks: DeskSoundRating[] = (Array.isArray(desksInput) ? desksInput : []).map((desk) => {
+    const safeX = typeof desk.x === "number" && Number.isFinite(desk.x) ? desk.x : 0;
+    const safeY = typeof desk.y === "number" && Number.isFinite(desk.y) ? desk.y : 0;
+
     let totalLinearEnergy = Math.pow(10, 30 / 10);
     let nearestEmitterName = "Ambient Room";
     let shortestDist = 9999;
 
     for (const emitter of activeEmitters) {
-      const dist = Math.hypot(desk.x - emitter.x, desk.y - emitter.y);
+      const dist = Math.hypot(safeX - emitter.x, safeY - emitter.y);
       if (dist < shortestDist) {
         shortestDist = dist;
         nearestEmitterName = emitter.name;
@@ -164,8 +196,8 @@ export function generateAcousticField(
     return {
       seatId: desk.id,
       seatNumber: desk.seatNumber,
-      x: desk.x,
-      y: desk.y,
+      x: safeX,
+      y: safeY,
       predictedDecibels,
       nearestEmitter: nearestEmitterName,
       distanceToEmitterMeters: Number((shortestDist * 0.25).toFixed(1)), // approximate 1 unit = 0.25m
@@ -174,10 +206,10 @@ export function generateAcousticField(
   });
 
   return {
-    gridWidth,
-    gridHeight,
+    gridWidth: safeGridW,
+    gridHeight: safeGridH,
     grid,
-    emitters,
+    emitters: Array.isArray(emitters) ? emitters : [],
     desks,
   };
 }

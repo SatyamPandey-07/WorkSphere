@@ -125,4 +125,48 @@ describe("BrainTerminal command input and history buffer (#6051)", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(handleClose).toHaveBeenCalledTimes(1);
   });
+
+  it("announces terminal output through a polite log region", () => {
+    render(<BrainTerminal isOpen={true} />);
+    expect(screen.getByRole("log", { name: "Brain terminal execution log" })).toHaveAttribute(
+      "aria-live",
+      "polite",
+    );
+    expect(screen.getByTestId("terminal-log-region")).toHaveAttribute(
+      "aria-atomic",
+      "false",
+    );
+  });
+
+  it("clears terminal output, draft, and history with Ctrl+K or Cmd+K", () => {
+    render(<BrainTerminal isOpen={true} />);
+    const input = screen.getByTestId("terminal-command-input") as HTMLInputElement;
+    const form = screen.getByTestId("terminal-command-form");
+
+    fireEvent.change(input, { target: { value: "first-command" } });
+    fireEvent.submit(form);
+    fireEvent.change(input, { target: { value: "draft-command" } });
+
+    fireEvent.keyDown(input, { key: "k", ctrlKey: true });
+    expect(input.value).toBe("");
+    expect(screen.queryByText("first-command")).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "second-command" } });
+    fireEvent.submit(form);
+    fireEvent.change(input, { target: { value: "draft-two" } });
+    fireEvent.keyDown(input, { key: "k", metaKey: true });
+    expect(input.value).toBe("");
+
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(input.value).toBe("");
+  });
+
+  it("does not intercept Ctrl+K when focus is outside the terminal", () => {
+    render(<BrainTerminal isOpen={true} />);
+    const input = screen.getByTestId("terminal-command-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "keep-this-command" } });
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(input.value).toBe("keep-this-command");
+  });
 });

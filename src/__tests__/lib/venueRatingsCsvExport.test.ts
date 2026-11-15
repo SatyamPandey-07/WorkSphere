@@ -69,9 +69,11 @@ describe("venueRatingsCsvExport", () => {
       expect(formatCSVUser("Bob Builder")).toBe("Bob Builder");
     });
 
-    it("returns Anonymous for null or missing user", () => {
+    it("returns Anonymous for null, missing, or empty user object", () => {
       expect(formatCSVUser(null)).toBe("Anonymous");
       expect(formatCSVUser(undefined)).toBe("Anonymous");
+      expect(formatCSVUser({})).toBe("Anonymous");
+      expect(formatCSVUser({ firstName: "", lastName: null })).toBe("Anonymous");
     });
   });
 
@@ -137,6 +139,27 @@ describe("venueRatingsCsvExport", () => {
       const csv = generateRatingsCSV(records, "Fallback Cafe");
       expect(csv).toContain("Fallback Cafe");
     });
+
+    it("supports options object for default venue name", () => {
+      const records: VenueRatingRecord[] = [
+        {
+          createdAt: "2026-09-20T12:00:00Z",
+          wifiQuality: 4,
+          noiseLevel: "quiet",
+          hasOutlets: true,
+          comment: "Cozy spot",
+        },
+      ];
+      const csv = generateRatingsCSV(records, { venueName: "Options Cafe" });
+      expect(csv).toContain("Options Cafe");
+    });
+
+    it("handles nullish or non-array records gracefully", () => {
+      const csv = generateRatingsCSV(null as unknown as VenueRatingRecord[]);
+      expect(csv).toBe(
+        "Date,Venue Name,User,WiFi Quality,Noise Level,Outlets,Review Text",
+      );
+    });
   });
 
   describe("downloadRatingsCSV", () => {
@@ -151,7 +174,7 @@ describe("venueRatingsCsvExport", () => {
       jest.clearAllMocks();
     });
 
-    it("creates a CSV blob with correct MIME type", () => {
+    it("creates a CSV blob with correct MIME type using options object", () => {
       const records: VenueRatingRecord[] = [
         {
           createdAt: "2026-10-01",
@@ -163,6 +186,21 @@ describe("venueRatingsCsvExport", () => {
       ];
 
       const blob = downloadRatingsCSV(records, { venueName: "Cafe Central" });
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe("text/csv;charset=utf-8;");
+    });
+
+    it("supports string defaultVenueName and custom filename", () => {
+      const records: VenueRatingRecord[] = [
+        {
+          createdAt: "2026-10-01",
+          wifiQuality: 4,
+          noiseLevel: "quiet",
+          hasOutlets: true,
+        },
+      ];
+
+      const blob = downloadRatingsCSV(records, "Legacy Cafe", "custom-export.csv");
       expect(blob).toBeInstanceOf(Blob);
       expect(blob.type).toBe("text/csv;charset=utf-8;");
     });

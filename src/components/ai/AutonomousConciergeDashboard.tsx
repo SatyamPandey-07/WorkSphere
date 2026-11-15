@@ -21,6 +21,7 @@ import {
   Satellite,
   User,
   ShieldAlert,
+  Radar,
 } from "lucide-react";
 import {
   EnvironmentalSensorFeed,
@@ -28,6 +29,7 @@ import {
   RebalanceRecommendation,
   AutonomousConciergeEngine,
 } from "@/lib/ai/autonomousConciergeEngine";
+import { TacticalAirTrafficControlBoard } from "@/components/admin/TacticalAirTrafficControlBoard";
 
 export const INITIAL_SENSORS: EnvironmentalSensorFeed[] = [
   {
@@ -249,6 +251,7 @@ export interface AutonomousConciergeDashboardProps {
   initialMembers?: MemberWorkspaceSession[];
   initialAgents?: AIAgentFlightProfile[];
   defaultAutoPilot?: boolean;
+  defaultShowAtcRadar?: boolean;
   onMigrationApplied?: (recommendation: RebalanceRecommendation) => void;
   onAutoPilotToggle?: (enabled: boolean) => void;
   onScenarioTriggered?: (scenario: "rain" | "noise" | "hvac_reset") => void;
@@ -302,6 +305,7 @@ export function AutonomousConciergeDashboard({
   initialMembers = INITIAL_MEMBERS,
   initialAgents = INITIAL_AI_AGENTS,
   defaultAutoPilot = true,
+  defaultShowAtcRadar = false,
   onMigrationApplied,
   onAutoPilotToggle,
   onScenarioTriggered,
@@ -315,6 +319,7 @@ export function AutonomousConciergeDashboard({
   );
   const [agents] = useState<AIAgentFlightProfile[]>(initialAgents);
   const [autoPilotGlobal, setAutoPilotGlobal] = useState(defaultAutoPilot);
+  const [showAtcBoard, setShowAtcBoard] = useState(defaultShowAtcRadar);
   const [appliedMigrations, setAppliedMigrations] = useState<string[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string>(
@@ -586,12 +591,30 @@ export function AutonomousConciergeDashboard({
               </span>
             </button>
           </BoundarySafeTooltip>
+          <button
+            onClick={() => setShowAtcBoard(!showAtcBoard)}
+            data-testid="toggle-atc-radar-view"
+            className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold border transition-all flex items-center gap-2 cursor-pointer ${
+              showAtcBoard
+                ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
+                : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <Radar className="w-4 h-4 text-emerald-400" />
+            <span>{showAtcBoard ? "MISSION CONTROL VIEW" : "PRIMARY ATC RADAR"}</span>
+          </button>
         </div>
       </div>
 
-      {/* TACTICAL COMMAND EVENT INJECTOR (GLOWING EMERALD BUTTONS) */}
-      <div
-        data-testid="tactical-command-panel"
+      {showAtcBoard ? (
+        <div data-testid="atc-radar-view-container" className="pt-2">
+          <TacticalAirTrafficControlBoard onExit={() => setShowAtcBoard(false)} />
+        </div>
+      ) : (
+        <>
+          {/* TACTICAL COMMAND EVENT INJECTOR (GLOWING EMERALD BUTTONS) */}
+          <div
+            data-testid="tactical-command-panel"
         className="p-4 bg-zinc-900/70 backdrop-blur-sm rounded-2xl border border-zinc-800/90 flex flex-wrap items-center justify-between gap-3 text-xs"
       >
         <span className="font-mono font-bold text-emerald-400 flex items-center gap-2 tracking-wider uppercase text-[11px]">
@@ -1060,6 +1083,8 @@ export function AutonomousConciergeDashboard({
           <div ref={terminalEndRef} />
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

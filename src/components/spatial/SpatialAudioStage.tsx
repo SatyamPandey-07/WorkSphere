@@ -336,7 +336,7 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
           const ctx = new AudioCtxClass();
           audioContextRef.current = ctx;
           ownContextRef.current = true;
-          setIsAudioActive(ctx.state === "running");
+          setIsAudioActive((ctx.state as AudioContextState) === "running");
 
           const handleState = () => setIsAudioActive(ctx.state === "running");
           ctx.addEventListener("statechange", handleState);
@@ -539,7 +539,7 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
     const ctx = audioContextRef.current;
     if (ctx && ctx.state === "suspended") {
       await ctx.resume();
-      setIsAudioActive(ctx.state === "running");
+      setIsAudioActive((ctx.state as AudioContextState) === "running");
     }
   };
 

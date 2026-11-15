@@ -26,8 +26,12 @@ export interface QuietWindowPrediction {
   hourlyProfile: HourlyNoiseProfile[];
 }
 
-function classifyNoiseLevelDb(db: number | null): "Quiet" | "Moderate" | "Loud" {
-  if (db === null) return "Moderate";
+export function classifyNoiseLevelDb(
+  db: number | null | undefined,
+): "Quiet" | "Moderate" | "Loud" {
+  if (db === null || db === undefined || !Number.isFinite(db) || db < 0) {
+    return "Moderate";
+  }
   if (db < QUIET_THRESHOLD_DB) return "Quiet";
   if (db < PEAK_THRESHOLD_DB) return "Moderate";
   return "Loud";
@@ -40,29 +44,61 @@ function classifyNoiseLevelDb(db: number | null): "Quiet" | "Moderate" | "Loud" 
 export async function getHourlyNoiseProfile(
   venueId: string,
 ): Promise<HourlyNoiseProfile[]> {
+  const buckets: { sum: number; count: number }[] = Array.from(
+    { length: 24 },
+    () => ({ sum: 0, count: 0 }),
+  );
+
+  if (!venueId || typeof venueId !== "string" || venueId.trim().length === 0) {
+    return buckets.map((b, hour) => ({
+      hour,
+      averageDb: null,
+      label: "Moderate",
+      samples: 0,
+    }));
+  }
+
   // Fetch all ratings with decibel data for this venue
   const ratings = await prisma.venueRating.findMany({
-    where: { venueId },
+    where: { venueId: venueId.trim() },
     select: {
       avgDecibels: true,
       createdAt: true,
     },
   });
 
-  const buckets: { sum: number; count: number }[] = Array.from(
-    { length: 24 },
-    () => ({ sum: 0, count: 0 }),
-  );
+  for (const r of ratings || []) {
+    if (
+      !r ||
+      r.avgDecibels == null ||
+      typeof r.avgDecibels !== "number" ||
+      !Number.isFinite(r.avgDecibels) ||
+      r.avgDecibels < 0
+    ) {
+      continue;
+    }
 
-  for (const r of ratings) {
-    if (r.avgDecibels === null) continue;
-    const hour = r.createdAt.getUTCHours();
+    let hour = -1;
+    if (r.createdAt instanceof Date) {
+      hour = Number.isNaN(r.createdAt.getTime()) ? -1 : r.createdAt.getUTCHours();
+    } else if (typeof r.createdAt === "string" || typeof r.createdAt === "number") {
+      const parsed = new Date(r.createdAt);
+      hour = Number.isNaN(parsed.getTime()) ? -1 : parsed.getUTCHours();
+    }
+
+    if (hour < 0 || hour > 23 || !Number.isFinite(hour)) {
+      continue;
+    }
+
     buckets[hour].sum += r.avgDecibels;
     buckets[hour].count++;
   }
 
   return buckets.map((b, hour) => {
-    const averageDb = b.count > 0 ? Math.round((b.sum / b.count) * 10) / 10 : null;
+    const averageDb =
+      b.count > 0 && Number.isFinite(b.sum)
+        ? Math.round((b.sum / b.count) * 10) / 10
+        : null;
     return {
       hour,
       averageDb,
@@ -79,11 +115,17 @@ export async function getHourlyNoiseProfile(
 export async function predictQuietHours(
   venueId: string,
 ): Promise<QuietWindowPrediction> {
-  const hourlyProfile = await getHourlyNoiseProfile(venueId);
+  const safeVenueId = typeof venueId === "string" ? venueId.trim() : "";
+  const hourlyProfile = await getHourlyNoiseProfile(safeVenueId);
 
-  // Identify quiet hours (averageDb !== null and averageDb < QUIET_THRESHOLD)
+  // Identify quiet hours (averageDb is finite and averageDb < QUIET_THRESHOLD)
   const quietHours = hourlyProfile
-    .filter((h) => h.averageDb !== null && h.averageDb < QUIET_THRESHOLD_DB)
+    .filter(
+      (h) =>
+        typeof h.averageDb === "number" &&
+        Number.isFinite(h.averageDb) &&
+        h.averageDb < QUIET_THRESHOLD_DB,
+    )
     .map((h) => h.hour);
 
   // Merge contiguous quiet hours into windows
@@ -96,29 +138,42 @@ export async function predictQuietHours(
       windowStart = i;
     } else if (!isQuiet && windowStart !== null) {
       const windowHours = hourlyProfile.slice(windowStart, i);
-      const validDbs = windowHours.map((h) => h.averageDb).filter((d) => d !== null) as number[];
-      const avgDb = validDbs.length > 0
-        ? Math.round((validDbs.reduce((a, b) => a + b, 0) / validDbs.length) * 10) / 10
-        : 0;
+      const validDbs = windowHours
+        .map((h) => h.averageDb)
+        .filter((d): d is number => typeof d === "number" && Number.isFinite(d));
+      const avgDb =
+        validDbs.length > 0
+          ? Math.round((validDbs.reduce((a, b) => a + b, 0) / validDbs.length) * 10) / 10
+          : 0;
       quietWindows.push({ startHour: windowStart, endHour: i - 1, avgDb });
       windowStart = null;
     }
   }
   if (windowStart !== null) {
     const windowHours = hourlyProfile.slice(windowStart);
-    const validDbs = windowHours.map((h) => h.averageDb).filter((d) => d !== null) as number[];
-    const avgDb = validDbs.length > 0
-      ? Math.round((validDbs.reduce((a, b) => a + b, 0) / validDbs.length) * 10) / 10
-      : 0;
+    const validDbs = windowHours
+      .map((h) => h.averageDb)
+      .filter((d): d is number => typeof d === "number" && Number.isFinite(d));
+    const avgDb =
+      validDbs.length > 0
+        ? Math.round((validDbs.reduce((a, b) => a + b, 0) / validDbs.length) * 10) / 10
+        : 0;
     quietWindows.push({ startHour: windowStart, endHour: 23, avgDb });
   }
 
   const peakHours = hourlyProfile
-    .filter((h) => h.averageDb !== null && h.averageDb >= PEAK_THRESHOLD_DB)
+    .filter(
+      (h) =>
+        typeof h.averageDb === "number" &&
+        Number.isFinite(h.averageDb) &&
+        h.averageDb >= PEAK_THRESHOLD_DB,
+    )
     .map((h) => h.hour);
 
   // Build human-readable summary
-  const format = (h: number) => `${(h % 24).toString().padStart(2, "0")}:00`;
+  const format = (h: number) =>
+    h === 24 ? "24:00" : `${(h % 24).toString().padStart(2, "0")}:00`;
+
   const windowDescs = quietWindows.slice(0, 3).map(
     (w) => `${format(w.startHour)}–${format(w.endHour + 1)} (~${w.avgDb} dB)`,
   );
@@ -132,5 +187,5 @@ export async function predictQuietHours(
         }`
       : "Insufficient noise data to predict quiet windows.";
 
-  return { venueId, quietWindows, peakHours, summary, hourlyProfile };
+  return { venueId: safeVenueId, quietWindows, peakHours, summary, hourlyProfile };
 }

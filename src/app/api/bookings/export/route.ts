@@ -1,118 +1,114 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { ensureUserExists } from "@/lib/auth";
-import { bookingsToCSV } from "@/lib/pdfHelpers";
-import { resolveDateRange, filterBookingsByRange } from "@/lib/taxExport";
-import { generateTaxExportPdf } from "@/lib/pdfGenerator";
-import { generateBookingsExcel } from "@/lib/export/domain/bookingHistoryExporter";
 
-export async function POST(req: NextRequest) {
+function escapeCsvField(field: any): string {
+  if (field === null || field === undefined) return '""';
+  const stringified = String(field);
+  if (/[",\n\r]/.test(stringified)) {
+    return `"${stringified.replace(/"/g, '""')}"`;
+  }
+  return `"${stringified}"`;
+}
+
+export async function GET(req: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    await ensureUserExists(userId);
 
-    const body = await req.json();
-    const { bookingIds, format, taxYear, startDate, endDate } = body;
+    const { searchParams } = new URL(req.url);
+    const format = (searchParams.get("format") || "json").toLowerCase();
+    const statusParam = searchParams.get("status");
 
-    if (
-      format !== "pdf" &&
-      format !== "csv" &&
-      format !== "xlsx" &&
-      format !== "excel"
-    ) {
-      return NextResponse.json({ error: "Invalid format" }, { status: 400 });
+    const whereClause: any = { userId };
+    if (statusParam) {
+      whereClause.status = statusParam;
     }
 
-    const usingDateRange = !bookingIds && (taxYear || (startDate && endDate));
+    const bookings = await prisma.booking.findMany({
+      where: whereClause,
+      include: {
+        venue: {
+          select: {
+            name: true,
+            address: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-    if (!Array.isArray(bookingIds) && !usingDateRange) {
-      return NextResponse.json(
-        { error: "Provide either bookingIds or a taxYear/date range" },
-        { status: 400 },
-      );
-    }
-
-    let bookings;
-
-    if (Array.isArray(bookingIds) && bookingIds.length > 0) {
-      // Only fetch bookings that belong to this user - never trust client-supplied ownership
-      bookings = await (prisma as any).booking.findMany({
-        where: { id: { in: bookingIds }, userId },
-        include: { venue: true, user: true },
-        orderBy: { createdAt: "desc" },
-      });
-    } else {
-      // Date-range / tax-year path (issue #198)
-      let range;
-      try {
-        range = resolveDateRange({ taxYear, startDate, endDate });
-      } catch (err: any) {
-        return NextResponse.json({ error: err.message }, { status: 400 });
-      }
-
-      const allUserBookings = await (prisma as any).booking.findMany({
-        where: { userId },
-        include: { venue: true, user: true },
-        orderBy: { createdAt: "desc" },
-      });
-
-      bookings = filterBookingsByRange(allUserBookings, range);
-    }
-
-    if (bookings.length === 0) {
-      return NextResponse.json(
-        { error: "No matching bookings found" },
-        { status: 404 },
-      );
-    }
+    const timestamp = Date.now();
 
     if (format === "csv") {
-      const csv =
-        "Estimate only - $15/hr flat rate, 8% flat tax - verify against your invoices\n" +
-        bookingsToCSV(bookings);
-      return new NextResponse(csv, {
+      const headers = [
+        "Booking ID",
+        "Venue Name",
+        "Address",
+        "Date",
+        "Time",
+        "Duration (Min)",
+        "Status",
+        "Price",
+        "Currency",
+      ];
+
+      const rows = bookings.map((b: any) => {
+        const bookingDate = new Date(
+          b.bookingDate || b.createdAt || Date.now(),
+        );
+        const dateStr = bookingDate.toISOString().split("T")[0];
+        const timeStr =
+          bookingDate.toISOString().split("T")[1]?.slice(0, 5) || "00:00";
+
+        return [
+          escapeCsvField(b.id),
+          escapeCsvField(b.venue?.name || "N/A"),
+          escapeCsvField(b.venue?.address || "N/A"),
+          escapeCsvField(dateStr),
+          escapeCsvField(timeStr),
+          escapeCsvField(b.durationMinutes || b.duration || 60),
+          escapeCsvField(b.status),
+          escapeCsvField(b.price || b.totalAmount || 0),
+          escapeCsvField(b.currency || "USD"),
+        ].join(",");
+      });
+
+      const csvContent = [headers.join(","), ...rows].join("\n");
+
+      return new NextResponse(csvContent, {
         status: 200,
         headers: {
-          "Content-Type": "text/csv",
-          "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.csv"`,
-          "Cache-Control": "no-cache",
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="worksphere-bookings-${timestamp}.csv"`,
         },
       });
     }
 
-    if (format === "xlsx" || format === "excel") {
-      const excelXml = generateBookingsExcel(bookings, {
-        venueName: bookings[0]?.venue?.name || "Workspace",
-      });
-      return new NextResponse(excelXml, {
-        status: 200,
-        headers: {
-          "Content-Type":
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.xlsx"`,
-          "Cache-Control": "no-cache",
-        },
-      });
-    }
+    // Default: JSON response
+    const formattedBookings = bookings.map((b: any) => ({
+      id: b.id,
+      venueName: b.venue?.name || "N/A",
+      address: b.venue?.address || "N/A",
+      bookingDate: new Date(b.bookingDate || b.createdAt).toISOString(),
+      durationMinutes: b.durationMinutes || b.duration || 60,
+      status: b.status,
+      price: b.price || b.totalAmount || 0,
+      currency: b.currency || "USD",
+      createdAt: new Date(b.createdAt).toISOString(),
+    }));
 
-    const pdfBytes = await generateTaxExportPdf(bookings);
-    return new NextResponse(Buffer.from(pdfBytes), {
+    return new NextResponse(JSON.stringify({ bookings: formattedBookings }), {
       status: 200,
       headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.pdf"`,
-        "Cache-Control": "no-cache",
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="worksphere-bookings-${timestamp}.json"`,
       },
     });
   } catch (error: any) {
-    console.error("[Bookings Export Error]:", error);
-    return NextResponse.json(
-      { error: "Failed to generate export" },
-      { status: 500 },
-    );
+    console.error("Booking export error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

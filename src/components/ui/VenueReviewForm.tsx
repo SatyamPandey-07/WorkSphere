@@ -184,10 +184,8 @@ export function VenueReviewForm({
       try {
         submitReviewWithOfflineSync({
           venueId: venueId || "default",
-          data: {
-            comment: trimmed,
-            rating: currentRating,
-          },
+          comment: trimmed,
+          rating: currentRating,
         }).catch(() => {});
       } catch {
         // Ignore offline sync queue failure

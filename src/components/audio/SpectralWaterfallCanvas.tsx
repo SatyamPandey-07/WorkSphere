@@ -83,14 +83,26 @@ export function createSpectralProgram(
   fsSource: string = FRAGMENT_SHADER_SOURCE,
 ): WebGLProgram | null {
   const vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+  if (!vs) return null;
+
   const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
-  if (!vs || !fs) return null;
+  if (!fs) {
+    gl.deleteShader(vs);
+    return null;
+  }
 
   const program = gl.createProgram();
-  if (!program) return null;
+  if (!program) {
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    return null;
+  }
   gl.attachShader(program, vs);
   gl.attachShader(program, fs);
   gl.linkProgram(program);
+
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
 
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     console.warn("[WebGL Waterfall] Program link failed:", gl.getProgramInfoLog(program));
@@ -119,6 +131,23 @@ export function SpectralWaterfallCanvas({
   const animFrameIdRef = useRef<number | null>(null);
   const isContextLostRef = useRef(false);
   const [isReady, setIsReady] = useState(false);
+
+  const safeWidth = Math.max(
+    1,
+    Math.floor(Number.isFinite(width) && width > 0 ? width : 640),
+  );
+  const safeHeight = Math.max(
+    1,
+    Math.floor(Number.isFinite(height) && height > 0 ? height : 240),
+  );
+  const safeSpeed = Math.max(
+    1,
+    Math.min(
+      WATERFALL_HEIGHT - 1,
+      Math.floor(Number.isFinite(speed) && speed > 0 ? speed : 1),
+    ),
+  );
+  const safeGain = Number.isFinite(gain) && gain >= 0 ? gain : 1.0;
 
   // History buffer for waterfall scrolling: rows x columns
   const historyRef = useRef<Uint8Array>(
@@ -188,7 +217,7 @@ export function SpectralWaterfallCanvas({
       const uGain = gl.getUniformLocation(program, "uGain");
 
       gl.uniform1i(uTexture, 0);
-      gl.uniform1f(uGain, gain);
+      gl.uniform1f(uGain, safeGain);
 
       return {
         gl,
@@ -198,13 +227,14 @@ export function SpectralWaterfallCanvas({
         uGain,
       };
     },
-    [gain],
+    [safeGain],
   );
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    let isMounted = true;
     let webglResources = initWebGL(canvas);
     if (!webglResources) return;
     setIsReady(true);
@@ -220,6 +250,7 @@ export function SpectralWaterfallCanvas({
     };
 
     const handleRestored = () => {
+      if (!isMounted) return;
       isContextLostRef.current = false;
       webglResources = initWebGL(canvas);
       onContextRestored?.();
@@ -235,7 +266,7 @@ export function SpectralWaterfallCanvas({
     );
 
     const renderLoop = () => {
-      if (isContextLostRef.current || !canvas || !webglResources) return;
+      if (!isMounted || isContextLostRef.current || !canvas || !webglResources) return;
 
       const { gl, texture, uGain } = webglResources;
 
@@ -254,13 +285,25 @@ export function SpectralWaterfallCanvas({
       // 2. Scroll waterfall history: shift rows down by speed
       const rowBytes = WATERFALL_WIDTH;
       const history = historyRef.current;
-      history.copyWithin(rowBytes * speed, 0, rowBytes * (WATERFALL_HEIGHT - speed));
+      history.copyWithin(
+        rowBytes * safeSpeed,
+        0,
+        rowBytes * (WATERFALL_HEIGHT - safeSpeed),
+      );
 
       // 3. Resample new FFT data into the top row (0 to 20kHz)
-      const binStep = freqBinBuffer.length / WATERFALL_WIDTH;
-      for (let i = 0; i < WATERFALL_WIDTH; i++) {
-        const binIndex = Math.min(Math.floor(i * binStep), freqBinBuffer.length - 1);
-        history[i] = freqBinBuffer[binIndex] || 0;
+      const binCount = freqBinBuffer.length;
+      if (binCount > 0) {
+        const binStep = binCount / WATERFALL_WIDTH;
+        for (let i = 0; i < WATERFALL_WIDTH; i++) {
+          const binIndex = Math.min(
+            Math.floor(i * binStep),
+            binCount - 1,
+          );
+          history[i] = freqBinBuffer[binIndex] || 0;
+        }
+      } else {
+        history.fill(0, 0, WATERFALL_WIDTH);
       }
 
       // 4. Upload updated texture to GPU
@@ -279,7 +322,7 @@ export function SpectralWaterfallCanvas({
 
       // 5. Update uniforms & Draw
       if (uGain) {
-        gl.uniform1f(uGain, gain);
+        gl.uniform1f(uGain, safeGain);
       }
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -289,6 +332,7 @@ export function SpectralWaterfallCanvas({
     renderLoop();
 
     return () => {
+      isMounted = false;
       if (animFrameIdRef.current) {
         cancelAnimationFrame(animFrameIdRef.current);
       }
@@ -306,7 +350,7 @@ export function SpectralWaterfallCanvas({
         }
       }
     };
-  }, [analyserNode, fftData, gain, speed, initWebGL, onContextLost, onContextRestored]);
+  }, [analyserNode, fftData, safeGain, safeSpeed, initWebGL, onContextLost, onContextRestored]);
 
   return (
     <div
@@ -316,8 +360,8 @@ export function SpectralWaterfallCanvas({
       <canvas
         ref={canvasRef}
         data-testid="spectral-waterfall-canvas"
-        width={width}
-        height={height}
+        width={safeWidth}
+        height={safeHeight}
         className="w-full h-full block"
       />
 

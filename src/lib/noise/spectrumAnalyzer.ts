@@ -360,7 +360,7 @@ export function createSpectrumAnalyzer(
     if (isDisposed || !buffer) {
       return analyzeFrequencyBands([], audioContext.sampleRate, fftSize);
     }
-    analyser.getFloatFrequencyData(buffer);
+    analyser.getFloatFrequencyData(buffer as any);
     return analyzeFrequencyBands(buffer, audioContext.sampleRate, fftSize);
   };
 
@@ -397,7 +397,11 @@ export function disposeSpectrumAnalyzer(
 ): void {
   if (sourceNode) {
     try {
-      sourceNode.disconnect(analyser ?? undefined);
+      if (analyser) {
+        sourceNode.disconnect(analyser);
+      } else {
+        sourceNode.disconnect();
+      }
     } catch {
       // Disconnect might throw if node is already disconnected
     }

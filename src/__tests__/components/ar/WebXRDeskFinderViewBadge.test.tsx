@@ -252,4 +252,35 @@ describe("WebXRDeskFinderView Distance & Walking Time HUD Badge (#5388)", () => 
       expect(badge).toHaveStyle({ opacity: "0" });
     });
   });
+  describe("Compass Calibration Modal Integration (#6499)", () => {
+    it("opens calibration modal when calibration button is clicked and returns to AR on dismiss", async () => {
+      await act(async () => {
+        render(<WebXRDeskFinderView />);
+      });
+
+      // Modal is initially closed
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+      // Click the manual calibration button in the top HUD
+      const calibrateBtn = screen.getByTestId("open-compass-calibration-modal");
+      expect(calibrateBtn).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(calibrateBtn);
+      });
+
+      // Modal is now open
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText(/Compass Sensor Calibration/i)).toBeInTheDocument();
+
+      // Click "Calibrate Later" to dismiss
+      const dismissBtn = screen.getByTestId("calibration-dismiss-btn");
+      await act(async () => {
+        fireEvent.click(dismissBtn);
+      });
+
+      // Modal is closed and returns control to AR view
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
 });

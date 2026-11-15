@@ -58,7 +58,19 @@ export function calculateSolarTimes(
   const rad = Math.PI / 180;
   const deg = 180 / Math.PI;
 
-  const validDate = isNaN(date.getTime()) ? new Date() : date;
+  const validDate =
+    date instanceof Date && !isNaN(date.getTime())
+      ? date
+      : typeof date === "string" || typeof date === "number"
+      ? (!isNaN(new Date(date).getTime()) ? new Date(date) : new Date())
+      : new Date();
+
+  // Sanitize coordinates to valid geographic bounds
+  const safeLat = Number.isFinite(latitude)
+    ? Math.max(-90, Math.min(90, latitude))
+    : 0;
+  const rawLng = Number.isFinite(longitude) ? longitude : 0;
+  const safeLng = ((((rawLng + 180) % 360) + 360) % 360) - 180;
 
   // Day of the year (1 - 365)
   const startOfYear = new Date(Date.UTC(validDate.getUTCFullYear(), 0, 1));
@@ -94,16 +106,25 @@ export function calculateSolarTimes(
   const declDeg = declRad * deg;
 
   // Solar Noon in UTC minutes from midnight: 720 - 4*longitude - eqtime
-  const solarNoonUtcMinutes = 720 - 4 * longitude - eqtime;
+  const solarNoonUtcMinutes = 720 - 4 * safeLng - eqtime;
 
   // Standard zenith angle for sunrise/sunset taking atmospheric refraction into account: 90.833 degrees
   const zenithRad = 90.833 * rad;
-  const latRad = latitude * rad;
+  const latRad = safeLat * rad;
 
   // Hour angle calculation: cos(omega) = (cos(zenith) - sin(lat)*sin(decl)) / (cos(lat)*cos(decl))
-  const cosHourAngle =
-    (Math.cos(zenithRad) - Math.sin(latRad) * Math.sin(declRad)) /
-    (Math.cos(latRad) * Math.cos(declRad));
+  const cosLat = Math.cos(latRad);
+  const cosDecl = Math.cos(declRad);
+  const denom = cosLat * cosDecl;
+
+  let cosHourAngle = 0;
+  if (Math.abs(denom) < 1e-12) {
+    // At exact poles, determine polar day vs polar night based on latitude and declination sign
+    cosHourAngle = safeLat * declRad >= 0 ? -1.0 : 1.0;
+  } else {
+    cosHourAngle =
+      (Math.cos(zenithRad) - Math.sin(latRad) * Math.sin(declRad)) / denom;
+  }
 
   let halfDayMinutes = 0;
   let isPolarDay = false;
@@ -143,7 +164,7 @@ export function calculateSolarTimes(
     : new Date(baseUtcMidnight + (solarNoonUtcMinutes + halfDayMinutes) * 60 * 1000);
 
   // True solar time for current instant
-  const timeOffset = eqtime + 4 * longitude;
+  const timeOffset = eqtime + 4 * safeLng;
   const tstMinutes =
     validDate.getUTCHours() * 60 +
     validDate.getUTCMinutes() +
@@ -160,7 +181,8 @@ export function calculateSolarTimes(
     Math.sin(latRad) * Math.sin(declRad) +
     Math.cos(latRad) * Math.cos(declRad) * Math.cos(currentHaRad);
   const currentZenithRad = Math.acos(Math.max(-1, Math.min(1, cosZenith)));
-  const solarElevationDeg = Number((90 - currentZenithRad * deg).toFixed(2));
+  const elevation = 90 - currentZenithRad * deg;
+  const solarElevationDeg = Number(Number.isFinite(elevation) ? elevation.toFixed(2) : 0);
 
   // Determine Solar Phase & Twilight
   let solarPhase: "daylight" | "golden_hour" | "sunset" | "twilight" | "night";
@@ -207,16 +229,25 @@ export function calculateCircadianColorTemperature(
   minTemp: number = DEFAULT_MIN_COLOR_TEMP,
   maxTemp: number = DEFAULT_MAX_COLOR_TEMP
 ): number {
+  const parsedMin = Number(minTemp);
+  const parsedMax = Number(maxTemp);
+
+  const rawMin = Number.isFinite(parsedMin) && parsedMin >= 1000 ? parsedMin : DEFAULT_MIN_COLOR_TEMP;
+  const rawMax = Number.isFinite(parsedMax) && parsedMax >= 1000 ? parsedMax : DEFAULT_MAX_COLOR_TEMP;
+
+  const safeMin = Math.min(rawMin, rawMax);
+  const safeMax = Math.max(rawMin, rawMax);
+
   const { solarElevationDeg } = calculateSolarTimes(latitude, longitude, date);
 
   // Full daylight (> 10 degrees elevation): Max color temperature (alertness)
   if (solarElevationDeg >= 10) {
-    return maxTemp;
+    return safeMax;
   }
 
   // Deep night (elevation < -6 degrees civil twilight): Warm amber / melatonin protection
   if (solarElevationDeg <= -DEFAULT_CIVIL_TWILIGHT_ANGLE) {
-    return minTemp;
+    return safeMin;
   }
 
   // Smooth cosine/linear interpolation during golden hour and twilight [-6 deg, 10 deg]
@@ -227,7 +258,7 @@ export function calculateCircadianColorTemperature(
   // Smooth s-curve transition
   const smoothFactor = (1 - Math.cos(clampedFactor * Math.PI)) / 2;
 
-  const temp = minTemp + smoothFactor * (maxTemp - minTemp);
+  const temp = safeMin + smoothFactor * (safeMax - safeMin);
   return Math.round(temp);
 }
 
@@ -241,6 +272,10 @@ export function calculateCircadianAmberTint(
   date: Date = new Date()
 ): number {
   const { solarElevationDeg } = calculateSolarTimes(latitude, longitude, date);
+
+  if (!Number.isFinite(solarElevationDeg)) {
+    return 0;
+  }
 
   // High sun: 0 amber tint
   if (solarElevationDeg >= 8) {
@@ -265,7 +300,11 @@ export function calculateCircadianAmberTint(
  * Formats amber tint value for CSS variable `--screen-amber-tint`.
  */
 export function formatCssAmberTint(tintLevel: number): string {
-  const clamped = Math.max(0, Math.min(1, tintLevel));
+  const val = Number(tintLevel);
+  if (!Number.isFinite(val)) {
+    return val > 0 ? "1" : "0";
+  }
+  const clamped = Math.max(0, Math.min(1, val));
   return `${Number(clamped.toFixed(3))}`;
 }
 
@@ -289,8 +328,8 @@ export function applyCircadianAmberTint(
   const cssValue = formatCssAmberTint(tintLevel);
   target.style.setProperty("--screen-amber-tint", cssValue);
 
-  if (colorTemperatureK) {
-    target.style.setProperty("--screen-color-temp", `${colorTemperatureK}K`);
+  if (Number.isFinite(colorTemperatureK) && (colorTemperatureK as number) > 0) {
+    target.style.setProperty("--screen-color-temp", `${Math.round(colorTemperatureK as number)}K`);
   }
 }
 
@@ -372,9 +411,10 @@ export class CircadianFilterManager {
   public start(intervalMs: number = 60000): void {
     this.stop();
     this.apply();
+    const safeInterval = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 60000;
     this.timerId = setInterval(() => {
       this.apply();
-    }, intervalMs);
+    }, safeInterval);
   }
 
   /**

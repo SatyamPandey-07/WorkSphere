@@ -27,17 +27,35 @@ const LOW: BitrateTier = {
 const DATA_SAVER_BITRATE_RATIO = 0.36;
 const DATA_SAVER_MAX_BITRATE = 900_000;
 
-export function pickBitrateTier(input: {
+export function pickBitrateTier(input?: {
   rttMs?: number;
   packetsLost?: number;
   packetsSent?: number;
   jitterMs?: number;
-}): BitrateTier {
-  const rtt = input.rttMs ?? 0;
-  const sent = input.packetsSent ?? 0;
-  const lost = input.packetsLost ?? 0;
-  const jitter = input.jitterMs ?? 0;
-  const lossRatio = sent > 0 ? lost / sent : 0;
+} | null): BitrateTier {
+  if (!input || typeof input !== "object") {
+    return MEDIUM;
+  }
+
+  // If telemetry contains NaN or non-finite values, it indicates unstable/unreliable telemetry;
+  // fall back conservatively to MEDIUM rather than defaulting to HIGH.
+  const hasCorruptedTelemetry =
+    (input.rttMs !== undefined && !Number.isFinite(input.rttMs)) ||
+    (input.packetsLost !== undefined && !Number.isFinite(input.packetsLost)) ||
+    (input.packetsSent !== undefined && !Number.isFinite(input.packetsSent)) ||
+    (input.jitterMs !== undefined && !Number.isFinite(input.jitterMs));
+
+  if (hasCorruptedTelemetry) {
+    return MEDIUM;
+  }
+
+  const rtt = typeof input.rttMs === "number" && input.rttMs > 0 ? input.rttMs : 0;
+  const sent = typeof input.packetsSent === "number" && input.packetsSent > 0 ? input.packetsSent : 0;
+  const lost = typeof input.packetsLost === "number" && input.packetsLost > 0 ? input.packetsLost : 0;
+  const jitter = typeof input.jitterMs === "number" && input.jitterMs > 0 ? input.jitterMs : 0;
+
+  const rawLossRatio = sent > 0 ? lost / sent : 0;
+  const lossRatio = Math.max(0, Math.min(1, rawLossRatio));
 
   if (rtt > 250 || lossRatio > 0.08 || jitter > 50) return LOW;
   if (rtt > 120 || lossRatio > 0.03 || jitter > 20) return MEDIUM;
@@ -45,7 +63,7 @@ export function pickBitrateTier(input: {
 }
 
 /** Read rough RTT, loss, and jitter from an RTCPeerConnection stats report. */
-export function readNetworkHints(report: RTCStatsReport): {
+export function readNetworkHints(report?: RTCStatsReport | null): {
   rttMs?: number;
   packetsLost?: number;
   packetsSent?: number;
@@ -56,7 +74,13 @@ export function readNetworkHints(report: RTCStatsReport): {
   let packetsSent: number | undefined;
   let jitterMs: number | undefined;
 
+  if (!report || typeof report.forEach !== "function") {
+    return {};
+  }
+
   report.forEach((stat) => {
+    if (!stat || typeof stat !== "object" || !("type" in stat)) return;
+
     if (
       stat.type === "candidate-pair" &&
       (("state" in stat && stat.state === "succeeded") ||
@@ -64,31 +88,55 @@ export function readNetworkHints(report: RTCStatsReport): {
     ) {
       if (
         "currentRoundTripTime" in stat &&
-        typeof stat.currentRoundTripTime === "number"
+        typeof stat.currentRoundTripTime === "number" &&
+        Number.isFinite(stat.currentRoundTripTime) &&
+        stat.currentRoundTripTime >= 0
       ) {
         rttMs = stat.currentRoundTripTime * 1000;
       }
     }
     if (stat.type === "remote-inbound-rtp") {
-      if ("roundTripTime" in stat && typeof stat.roundTripTime === "number") {
+      if (
+        "roundTripTime" in stat &&
+        typeof stat.roundTripTime === "number" &&
+        Number.isFinite(stat.roundTripTime) &&
+        stat.roundTripTime >= 0
+      ) {
         rttMs = stat.roundTripTime * 1000;
       }
-      if ("jitter" in stat && typeof stat.jitter === "number") {
-        const jMs = stat.jitter * 1000;
-        jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
-      }
-      if ("packetsLost" in stat && typeof stat.packetsLost === "number") {
-        packetsLost = (packetsLost ?? 0) + stat.packetsLost;
-      }
-    }
-    if (stat.type === "inbound-rtp") {
-      if ("jitter" in stat && typeof stat.jitter === "number") {
+      if (
+        "jitter" in stat &&
+        typeof stat.jitter === "number" &&
+        Number.isFinite(stat.jitter) &&
+        stat.jitter >= 0
+      ) {
         const jMs = stat.jitter * 1000;
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
       if (
         "packetsLost" in stat &&
         typeof stat.packetsLost === "number" &&
+        Number.isFinite(stat.packetsLost) &&
+        stat.packetsLost >= 0
+      ) {
+        packetsLost = (packetsLost ?? 0) + stat.packetsLost;
+      }
+    }
+    if (stat.type === "inbound-rtp") {
+      if (
+        "jitter" in stat &&
+        typeof stat.jitter === "number" &&
+        Number.isFinite(stat.jitter) &&
+        stat.jitter >= 0
+      ) {
+        const jMs = stat.jitter * 1000;
+        jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
+      }
+      if (
+        "packetsLost" in stat &&
+        typeof stat.packetsLost === "number" &&
+        Number.isFinite(stat.packetsLost) &&
+        stat.packetsLost >= 0 &&
         packetsLost === undefined
       ) {
         packetsLost = (packetsLost ?? 0) + stat.packetsLost;
@@ -96,10 +144,15 @@ export function readNetworkHints(report: RTCStatsReport): {
       if (
         "packetsReceived" in stat &&
         typeof stat.packetsReceived === "number" &&
+        Number.isFinite(stat.packetsReceived) &&
+        stat.packetsReceived >= 0 &&
         packetsSent === undefined
       ) {
         const lost =
-          "packetsLost" in stat && typeof stat.packetsLost === "number"
+          "packetsLost" in stat &&
+          typeof stat.packetsLost === "number" &&
+          Number.isFinite(stat.packetsLost) &&
+          stat.packetsLost >= 0
             ? stat.packetsLost
             : 0;
         packetsSent = (packetsSent ?? 0) + stat.packetsReceived + lost;
@@ -109,11 +162,18 @@ export function readNetworkHints(report: RTCStatsReport): {
       if (
         "packetsLost" in stat &&
         typeof stat.packetsLost === "number" &&
+        Number.isFinite(stat.packetsLost) &&
+        stat.packetsLost >= 0 &&
         packetsLost === undefined
       ) {
         packetsLost = (packetsLost ?? 0) + stat.packetsLost;
       }
-      if ("packetsSent" in stat && typeof stat.packetsSent === "number") {
+      if (
+        "packetsSent" in stat &&
+        typeof stat.packetsSent === "number" &&
+        Number.isFinite(stat.packetsSent) &&
+        stat.packetsSent >= 0
+      ) {
         packetsSent = (packetsSent ?? 0) + stat.packetsSent;
       }
     }
@@ -123,10 +183,17 @@ export function readNetworkHints(report: RTCStatsReport): {
 }
 
 export async function adaptVideoBitrate(
-  pc: RTCPeerConnection,
+  pc: RTCPeerConnection | null | undefined,
   options: { dataSaverMode?: boolean } = {},
 ): Promise<BitrateTier | null> {
-  if (pc.signalingState === "closed" || (pc.connectionState && pc.connectionState === "closed")) {
+  if (
+    !pc ||
+    typeof pc !== "object" ||
+    pc.signalingState === "closed" ||
+    (pc.connectionState && pc.connectionState === "closed") ||
+    typeof pc.getSenders !== "function" ||
+    typeof pc.getStats !== "function"
+  ) {
     return null;
   }
   let senders: RTCRtpSender[] = [];
@@ -156,9 +223,11 @@ export async function adaptVideoBitrate(
             DATA_SAVER_MAX_BITRATE,
           )
         : tier.maxBitrate;
-      const perEncodingBitrate = Math.floor(
-        videoBitrate / params.encodings.length,
+      const rawPerEncoding = Math.floor(
+        videoBitrate / (params.encodings.length || 1),
       );
+      // Floor at 50 kbps minimum bitrate to avoid invalid zero/negative encoding values
+      const perEncodingBitrate = Math.max(50_000, rawPerEncoding);
       for (const encoding of params.encodings) {
         encoding.maxBitrate = perEncodingBitrate;
       }
@@ -174,7 +243,8 @@ export async function adaptVideoBitrate(
       if (!params.encodings?.length) {
         params.encodings = [{}];
       }
-      params.encodings[0].maxBitrate = tier.audioMaxBitrate;
+      // Floor at 8 kbps minimum audio bitrate
+      params.encodings[0].maxBitrate = Math.max(8_000, tier.audioMaxBitrate);
       try {
         await audioSender.setParameters(params);
       } catch {

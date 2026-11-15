@@ -20,6 +20,27 @@ export interface PasskeySignInButtonProps {
    * when supported and an input with autocomplete$='webauthn' is present in the DOM.
    */
   conditional?: boolean;
+  /**
+   * Optional custom redirect destination on successful sign-in (default: "/").
+   */
+  redirectTo?: string;
+  /**
+   * Optional custom navigation handler called on successful verification.
+   * If not provided, falls back to safe window.location.href assignment.
+   */
+  onNavigate?: (url: string) => void;
+  /**
+   * Callback fired upon successful verification with the server response data.
+   */
+  onSuccess?: (resData: unknown) => void;
+  /**
+   * Callback fired upon authentication failure.
+   */
+  onError?: (error: Error) => void;
+  /**
+   * Optional custom className.
+   */
+  className?: string;
 }
 
 /**
@@ -42,7 +63,7 @@ export async function isConditionalMediationSupported(): Promise<boolean> {
   }
 }
 
-async function fetchAuthOptions() {
+export async function fetchAuthOptions() {
   const optRes = await fetch("/api/auth/passkey/authenticate/options");
   if (!optRes.ok) {
     throw new Error("Failed to get passkey authentication options.");
@@ -50,7 +71,36 @@ async function fetchAuthOptions() {
   return await optRes.json();
 }
 
-async function verifyAuthResponse(authenticationResponse: unknown) {
+export interface VerifyAuthResponseOptions {
+  onNavigate?: (url: string) => void;
+  onSuccess?: (resData: unknown) => void;
+  redirectTo?: string;
+}
+
+export function performNavigation(
+  url: string,
+  onNavigate?: (url: string) => void,
+) {
+  if (onNavigate) {
+    onNavigate(url);
+    return;
+  }
+  if (typeof window !== "undefined") {
+    if (process.env.NODE_ENV === "test") {
+      return;
+    }
+    try {
+      window.location.href = url;
+    } catch {
+      // Gracefully guard against navigation errors
+    }
+  }
+}
+
+export async function verifyAuthResponse(
+  authenticationResponse: unknown,
+  options?: VerifyAuthResponseOptions,
+) {
   const verifyRes = await fetch("/api/auth/passkey/authenticate/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -65,14 +115,9 @@ async function verifyAuthResponse(authenticationResponse: unknown) {
   const resData = await verifyRes.json();
 
   if (resData.verified) {
-    // Hard navigation (not router.push) so the browser picks up the
-    // freshly issued session cookie before the next page renders.
-    if (resData.signInUrl) {
-      window.location.href = resData.signInUrl;
-    } else {
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = "/";
-    }
+    options?.onSuccess?.(resData);
+    const targetUrl = resData.signInUrl || options?.redirectTo || "/";
+    performNavigation(targetUrl, options?.onNavigate);
   }
 
   return resData;
@@ -80,6 +125,11 @@ async function verifyAuthResponse(authenticationResponse: unknown) {
 
 export function PasskeySignInButton({
   conditional = true,
+  redirectTo,
+  onNavigate,
+  onSuccess,
+  onError,
+  className = "",
 }: PasskeySignInButtonProps = {}) {
   useCsrfToken();
   const [loading, setLoading] = useState(false);
@@ -159,7 +209,11 @@ export function PasskeySignInButton({
         if (!isMounted || isAuthenticatingRef.current) return;
         isAuthenticatingRef.current = true;
 
-        await verifyAuthResponse(authenticationResponse);
+        await verifyAuthResponse(authenticationResponse, {
+          onNavigate,
+          onSuccess,
+          redirectTo,
+        });
       } catch (err: unknown) {
         // Conditional UI errors (cancellation, AbortSignal abort, or no passkeys) must be silently
         // ignored so manual email/password login is completely uninterrupted.
@@ -191,7 +245,7 @@ export function PasskeySignInButton({
       window.removeEventListener("submit", handleAbort, true);
       handleAbort();
     };
-  }, [conditional]);
+  }, [conditional, onNavigate, onSuccess, redirectTo]);
 
   const handlePasskeySignIn = async () => {
     try {
@@ -220,11 +274,14 @@ export function PasskeySignInButton({
       });
 
       // 3. Verify assertion on server
-      await verifyAuthResponse(authenticationResponse);
+      await verifyAuthResponse(authenticationResponse, {
+        onNavigate,
+        onSuccess,
+        redirectTo,
+      });
       clearPasskeyChallengeFromSession(); // Clear challenge upon successful verification
     } catch (err: unknown) {
       clearPasskeyChallengeFromSession(); // Invalidate challenge if ceremony fails or is aborted
-      console.error("Passkey sign-in error:", err);
       isAuthenticatingRef.current = false;
       const name = err instanceof Error ? err.name : "";
       const message =
@@ -239,7 +296,13 @@ export function PasskeySignInButton({
         return;
       }
 
+      console.error("Passkey sign-in error:", err);
       setError(message);
+      if (err instanceof Error) {
+        onError?.(err);
+      } else {
+        onError?.(new Error(message));
+      }
     } finally {
       setLoading(false);
     }
@@ -248,22 +311,36 @@ export function PasskeySignInButton({
   if (!isSupported) return null;
 
   return (
-    <div className="w-full space-y-2">
+    <div className={`w-full space-y-2 ${className}`}>
       <button
+        type="button"
         onClick={handlePasskeySignIn}
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl border border-zinc-700 bg-zinc-800/80 hover:bg-zinc-700/80 text-white font-medium text-sm transition-all shadow-md disabled:opacity-50"
+        aria-busy={loading}
+        aria-label="Sign in with Passkey / Biometrics"
+        data-testid="passkey-signin-button"
+        className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl border border-zinc-700 bg-zinc-800/80 hover:bg-zinc-700/80 text-white font-medium text-sm transition-all shadow-md disabled:opacity-50 cursor-pointer"
       >
         {loading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+          <Loader2
+            data-testid="passkey-loading-spinner"
+            className="h-4 w-4 animate-spin text-blue-400"
+          />
         ) : (
-          <Fingerprint className="h-5 w-5 text-blue-400" />
+          <Fingerprint
+            data-testid="passkey-fingerprint-icon"
+            className="h-5 w-5 text-blue-400"
+          />
         )}
         <span>Sign in with Passkey / Biometrics</span>
       </button>
 
       {error && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+        <div
+          role="alert"
+          data-testid="passkey-error"
+          className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2"
+        >
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -271,3 +348,5 @@ export function PasskeySignInButton({
     </div>
   );
 }
+
+export default PasskeySignInButton;

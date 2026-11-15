@@ -6,6 +6,10 @@ export type { VenueBeaconDiagnosticDrawerProps } from "./VenueBeaconDiagnosticDr
 
 export { IndoorPositioningMap } from "./IndoorPositioningMap";
 
+export { ProximityBoundaryZone } from "./ProximityBoundaryZone";
+export type { ProximityBoundaryZoneProps } from "./ProximityBoundaryZone";
+
+
 export {
   SpatialAudioStage,
   stageToAudioCoordinates,
@@ -18,3 +22,19 @@ export type {
   LocalUserAvatar,
   StagePosition,
 } from "./SpatialAudioStage";
+
+export {
+  calculateProximityFadeGain,
+  getProximityZoneTier,
+  sanitizeProximityZoneConfig,
+  calculate3DDistance,
+  DEFAULT_PROXIMITY_ZONE_CONFIG,
+  PROXIMITY_ZONE_PRESETS,
+} from "@/core/audio/ProximityBoundaryZone";
+export type {
+  ProximityBoundaryZoneConfig,
+  FadeOutCurve,
+  ProximityZoneTier,
+  ProximityZonePresetId,
+} from "@/core/audio/ProximityBoundaryZone";
+

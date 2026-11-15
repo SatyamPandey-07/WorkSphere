@@ -8,12 +8,12 @@ export interface PasskeyRegistrationOptions {
     challenge: string;
     rp: { name: string; id: string };
     user: { id: string; name: string; displayName: string };
-    pubKeyCredParams: { type: string; alg: number }[];
+    pubKeyCredParams: { type: "public-key"; alg: number }[];
     timeout: number;
-    attestation: string;
+    attestation: AttestationConveyancePreference;
     authenticatorSelection: {
-        residentKey: string;
-        userVerification: string;
+        residentKey: ResidentKeyRequirement;
+        userVerification: UserVerificationRequirement;
     };
 }
 

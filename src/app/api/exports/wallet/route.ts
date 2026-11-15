@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         const renderer = new ItineraryPdfRenderer();
         const pdfBytes = await renderer.generate(mockData);
 
-        return new NextResponse(pdfBytes, {
+        return new NextResponse(new Uint8Array(pdfBytes), {
             headers: {
                 'Content-Type': 'application/pdf',
                 'Content-Disposition': `attachment; filename="itinerary-${bookingId}.pdf"`
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
 
         const pkPassBuffer = await generator.createPkPassArchive(passData, mockAssets);
 
-        return new NextResponse(pkPassBuffer, {
+        return new NextResponse(new Uint8Array(pkPassBuffer), {
             headers: {
                 'Content-Type': 'application/vnd.apple.pkpass',
                 'Content-Disposition': `attachment; filename="booking-${bookingId}.pkpass"`

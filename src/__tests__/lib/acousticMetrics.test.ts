@@ -292,6 +292,23 @@ describe("IEC 61672-1 Acoustic Metrics Engine", () => {
       expect(classifyAcousticComfort(74.9).category).toBe("lively");
       expect(classifyAcousticComfort(75.0).category).toBe("hazardous_loud");
     });
+
+    test("handles non-finite or invalid Leq values by defaulting to baseline quiet conditions", () => {
+      expect(classifyAcousticComfort(NaN).category).toBe("deep_focus");
+      expect(classifyAcousticComfort(-10).category).toBe("deep_focus");
+      expect(classifyAcousticComfort(Infinity).category).toBe("deep_focus");
+    });
+
+    test("incorporates ambient background noise floor (l90) into comfort classification", () => {
+      // Leq is quiet (45 dBA), but persistent background noise floor l90 is 55 dBA -> degrades to conversational
+      expect(classifyAcousticComfort(45, 55).category).toBe("conversational");
+      // Leq is 45 dBA, but l90 is 68 dBA -> degrades to lively
+      expect(classifyAcousticComfort(45, 68).category).toBe("lively");
+      // Leq is 45 dBA, and l90 is 40 dBA -> stays deep_focus
+      expect(classifyAcousticComfort(45, 40).category).toBe("deep_focus");
+      // Non-finite l90 does not distort classification
+      expect(classifyAcousticComfort(45, NaN).category).toBe("deep_focus");
+    });
   });
 
   describe("calculateDailyNoiseDose", () => {
@@ -333,6 +350,16 @@ describe("IEC 61672-1 Acoustic Metrics Engine", () => {
       expect(result.dosePercentage).toBe(0.0);
       expect(result.exposureHours).toBe(0.0);
       expect(result.isExceeded).toBe(false);
+    });
+
+    test("handles non-finite decibelLevel and duration gracefully", () => {
+      const nanDose = calculateDailyNoiseDose(NaN, 60, "NIOSH");
+      expect(nanDose.dosePercentage).toBe(0.0);
+      expect(nanDose.isExceeded).toBe(false);
+
+      const nanDur = calculateDailyNoiseDose(85, NaN, "NIOSH");
+      expect(nanDur.dosePercentage).toBe(0.0);
+      expect(nanDur.isExceeded).toBe(false);
     });
   });
 

@@ -67,11 +67,14 @@ const FPS_DEFICIT_TO_LOAD = 6 / 45; // 6G spread over the 60 → 15fps deficit b
  */
 export function calculateGForceLoad(fps: number, scrollVelocity: number, latencyMs: number): number {
   // --- Scroll inertia: 1G baseline + up to +2G of dynamic load. ----------
-  const speed = Math.max(0, scrollVelocity);
+  const safeScroll =
+    typeof scrollVelocity === "number" && Number.isFinite(scrollVelocity) ? scrollVelocity : 0;
+  const speed = Math.max(0, safeScroll);
   const scrollLoad = SCROLL_MAX_LOAD * Math.min(speed / SCROLL_SATURATION_PX_MS, 1);
 
   // --- Frame-drop stall: deficits below 60fps charge toward +9G. ---------
-  const fpsClamped = Math.min(Math.max(fps, 0), 120);
+  const safeFps = typeof fps === "number" && Number.isFinite(fps) ? fps : 60;
+  const fpsClamped = Math.min(Math.max(safeFps, 0), 120);
   const fpsDeficit = Math.max(0, 60 - fpsClamped); // 0 → 60
   // Below ~15fps the loop is considered fully stalled and pegs the redline.
   const stallLoad =
@@ -80,13 +83,15 @@ export function calculateGForceLoad(fps: number, scrollVelocity: number, latency
       : fpsDeficit * FPS_DEFICIT_TO_LOAD;
 
   // --- Input latency: clean <50ms; inverted negative load beyond 200ms. --
+  const safeLatency =
+    typeof latencyMs === "number" && Number.isFinite(latencyMs) ? Math.max(0, latencyMs) : 0;
   let latencyLoad = 0;
-  if (latencyMs > LATENCY_STALL_MS) {
+  if (safeLatency > LATENCY_STALL_MS) {
     // 200ms → 0G, 700ms → -3G (deepest negative load).
-    latencyLoad = -Math.min((latencyMs - LATENCY_STALL_MS) / (500 / 3), 3);
-  } else if (latencyMs > LATENCY_CLEAN_MS) {
+    latencyLoad = -Math.min((safeLatency - LATENCY_STALL_MS) / (500 / 3), 3);
+  } else if (safeLatency > LATENCY_CLEAN_MS) {
     // Mild 50–200ms lag neutralises the 1G baseline gradually toward 0G.
-    latencyLoad = -((latencyMs - LATENCY_CLEAN_MS) / (LATENCY_STALL_MS - LATENCY_CLEAN_MS)) * 1;
+    latencyLoad = -((safeLatency - LATENCY_CLEAN_MS) / (LATENCY_STALL_MS - LATENCY_CLEAN_MS)) * 1;
   }
 
   const load = G_LOAD_LIMITS.nominal + scrollLoad + stallLoad + latencyLoad;
@@ -95,9 +100,10 @@ export function calculateGForceLoad(fps: number, scrollVelocity: number, latency
 
 /** Classification bucket used for colouring the readout. */
 export function classifyLoad(load: number): 'nominal' | 'elevated' | 'critical' | 'stalled' {
-  if (load < 0) return 'stalled';
-  if (load < 2) return 'nominal';
-  if (load < 6) return 'elevated';
+  const safeLoad = typeof load === 'number' && Number.isFinite(load) ? load : G_LOAD_LIMITS.nominal;
+  if (safeLoad < 0) return 'stalled';
+  if (safeLoad < 2) return 'nominal';
+  if (safeLoad < 6) return 'elevated';
   return 'critical';
 }
 
@@ -115,8 +121,10 @@ const PAD_Y = 20;
 
 /** Map a G value (-3 … 9) to a y coordinate inside the padded viewBox. */
 function gToY(g: number): number {
+  const safeG = typeof g === 'number' && Number.isFinite(g) ? g : G_LOAD_LIMITS.nominal;
+  const clampedG = Math.min(Math.max(safeG, G_LOAD_LIMITS.maxNegative), G_LOAD_LIMITS.maxPositive);
   const span = G_LOAD_LIMITS.maxPositive - G_LOAD_LIMITS.maxNegative;
-  const t = (g - G_LOAD_LIMITS.maxNegative) / span;
+  const t = span > 0 ? (clampedG - G_LOAD_LIMITS.maxNegative) / span : 0.5;
   return PAD_Y + (VIEW_H - PAD_Y * 2) * (1 - t);
 }
 
@@ -136,7 +144,13 @@ export function TacticalTelemetryGForceGraph({
   title = 'Responsiveness flight envelope (V-n diagram)',
   className,
 }: TacticalTelemetryGForceGraphProps) {
-  const load = calculateGForceLoad(fps, scrollVelocity, latencyMs);
+  const safeFps = typeof fps === 'number' && Number.isFinite(fps) ? fps : 60;
+  const safeScroll =
+    typeof scrollVelocity === 'number' && Number.isFinite(scrollVelocity) ? scrollVelocity : 0;
+  const safeLatency =
+    typeof latencyMs === 'number' && Number.isFinite(latencyMs) ? Math.max(0, latencyMs) : 0;
+
+  const load = calculateGForceLoad(safeFps, safeScroll, safeLatency);
   const bucket = classifyLoad(load);
   const color = CLASS_STYLES[bucket];
 
@@ -149,13 +163,14 @@ export function TacticalTelemetryGForceGraph({
 
   return (
     <div
+      data-testid="tactical-telemetry-gforce-graph"
       className={`bg-gray-800 border border-gray-700 rounded-xl p-4 ${className ?? ''}`}
     >
       <h3 className="text-sm font-medium text-gray-400 mb-2">{title}</h3>
       <svg
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         role="img"
-        aria-label={`${title}: current load ${load.toFixed(1)}G, ${fps} FPS`}
+        aria-label={`${title}: current load ${load.toFixed(1)}G, ${safeFps} FPS`}
         className="w-full h-auto"
         preserveAspectRatio="xMidYMid meet"
       >
@@ -180,15 +195,47 @@ export function TacticalTelemetryGForceGraph({
         ))}
 
         {/* Current load marker */}
-        <line x1={PAD_X} y1={plotY} x2={VIEW_W - PAD_X} y2={plotY} stroke={color} strokeWidth="1.5" opacity="0.6" />
-        <circle cx={plotX} cy={plotY} r="5" fill={color} stroke="#0f172a" strokeWidth="1.5" />
+        <line
+          data-testid="load-marker-line"
+          x1={PAD_X}
+          y1={plotY}
+          x2={VIEW_W - PAD_X}
+          y2={plotY}
+          stroke={color}
+          strokeWidth="1.5"
+          opacity="0.6"
+        />
+        <circle
+          data-testid="load-marker-pip"
+          cx={plotX}
+          cy={plotY}
+          r="5"
+          fill={color}
+          stroke="#0f172a"
+          strokeWidth="1.5"
+        />
 
         {/* Readout */}
-        <text x={VIEW_W - PAD_X} y={PAD_Y + 10} textAnchor="end" fontSize="12" fontWeight="bold" fill={color}>
+        <text
+          data-testid="gforce-load-readout"
+          x={VIEW_W - PAD_X}
+          y={PAD_Y + 10}
+          textAnchor="end"
+          fontSize="12"
+          fontWeight="bold"
+          fill={color}
+        >
           {load.toFixed(1)}G
         </text>
-        <text x={VIEW_W / 2} y={VIEW_H - 4} textAnchor="middle" fontSize="9" fill="#94a3b8">
-          {fps} FPS · {scrollVelocity.toFixed(1)} px/ms · {Math.round(latencyMs)} ms latency
+        <text
+          data-testid="telemetry-summary-readout"
+          x={VIEW_W / 2}
+          y={VIEW_H - 4}
+          textAnchor="middle"
+          fontSize="9"
+          fill="#94a3b8"
+        >
+          {safeFps} FPS · {safeScroll.toFixed(1)} px/ms · {Math.round(safeLatency)} ms latency
         </text>
       </svg>
     </div>

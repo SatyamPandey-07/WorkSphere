@@ -107,7 +107,7 @@ export function NoiseLevelBadge({
       <span
         role="status"
         aria-label="Ambient noise level: Unknown"
-        className={`inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-500 dark:text-zinc-400 font-medium ${
+        className={`inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-500 dark:text-zinc-300 font-medium ${
           size === "sm"
             ? "px-2 py-0.5 text-[11px]"
             : size === "lg"
@@ -315,7 +315,7 @@ export function MachSpeedBadge({
       <span
         role="status"
         aria-label="Aerospace WiFi speed: Unknown"
-        className={`inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-500 dark:text-zinc-400 font-medium ${
+        className={`inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-500 dark:text-zinc-300 font-medium ${
           size === "sm"
             ? "px-2 py-0.5 text-[11px]"
             : size === "lg"

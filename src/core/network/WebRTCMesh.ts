@@ -2,6 +2,10 @@
  * WebRTCMesh.ts
  * Manages the lifecycle of RTCPeerConnections and negotiates DataChannels for local mesh networking.
  * Handles the signaling state machine and ICE candidate exchange.
+ *
+ * Renegotiation uses the W3C "Perfect Negotiation" pattern (RFC 8829 §3.5) so
+ * that two peers which simultaneously dispatch `createOffer` (glare) resolve
+ * deterministically instead of deadlocking in `have-local-offer`.
  */
 
 export interface MeshPeer {
@@ -9,6 +13,31 @@ export interface MeshPeer {
     connection: RTCPeerConnection;
     dataChannel: RTCDataChannel | null;
     status: 'connecting' | 'connected' | 'disconnected';
+    /** True for the polite peer; it yields when an offer collides. */
+    polite: boolean;
+    /** Set while a local offer is being created/sent. */
+    makingOffer: boolean;
+    /** Set when the impolite peer should ignore an incoming offer. */
+    ignoreOffer: boolean;
+    /** Monotonic token used to discard an offer superseded by a remote one. */
+    negotiationId: number;
+    /** ICE candidates that arrived before a remote description existed. */
+    pendingCandidates: RTCIceCandidateInit[];
+}
+
+/** Signaling channel used to shuttle SDP/ICE between peers (e.g. PartyKit). */
+export interface MeshSignaling {
+    sendDescription(peerId: string, description: RTCSessionDescriptionInit): void;
+    sendCandidate(peerId: string, candidate: RTCIceCandidateInit): void;
+}
+
+/**
+ * Deterministic, symmetric tie-breaker: exactly one side of a pair is polite.
+ * Both peers compute the same result from the same two node IDs, so they never
+ * disagree about who rolls back.
+ */
+export function isPolitePeer(localPeerId: string, remotePeerId: string): boolean {
+    return localPeerId < remotePeerId;
 }
 
 export interface PendingTransferBuffer {
@@ -39,8 +68,12 @@ export class WebRTCMesh {
     // Chunk reassembly maps for terminated peer IDs: peerId -> Map<fileId, Map<number, ArrayBuffer>>
     private chunkReassemblyMaps: Map<string, Map<string, Map<number, ArrayBuffer>>>;
 
-    constructor(localPeerId: string) {
+    // Signaling transport used to exchange SDP/ICE with remote peers.
+    private signaling: MeshSignaling | null;
+
+    constructor(localPeerId: string, signaling: MeshSignaling | null = null) {
         this.localPeerId = localPeerId;
+        this.signaling = signaling;
         this.peers = new Map();
         this.onMessageCallback = null;
         this.onPeerConnectedCallback = null;
@@ -49,6 +82,11 @@ export class WebRTCMesh {
         this.multiPathRoutes = new Map();
         this.transferBuffers = new Map();
         this.chunkReassemblyMaps = new Map();
+    }
+
+    /** Attach (or replace) the signaling transport after construction. */
+    public setSignaling(signaling: MeshSignaling | null): void {
+        this.signaling = signaling;
     }
 
     public async createPeerConnection(targetPeerId: string, isInitiator: boolean): Promise<void> {
@@ -62,32 +100,60 @@ export class WebRTCMesh {
         };
 
         const pc = new RTCPeerConnection(config);
-        let dataChannel: RTCDataChannel | null = null;
+
+        const peer: MeshPeer = {
+            peerId: targetPeerId,
+            connection: pc,
+            dataChannel: null,
+            status: 'connecting',
+            polite: isPolitePeer(this.localPeerId, targetPeerId),
+            makingOffer: false,
+            ignoreOffer: false,
+            negotiationId: 0,
+            pendingCandidates: [],
+        };
 
         if (isInitiator) {
-            dataChannel = pc.createDataChannel('fileTransfer', {
+            peer.dataChannel = pc.createDataChannel('fileTransfer', {
                 ordered: true,
                 maxRetransmits: 3
             });
-            this.setupDataChannel(dataChannel, targetPeerId);
+            this.setupDataChannel(peer.dataChannel, targetPeerId);
         } else {
             pc.ondatachannel = (event) => {
-                dataChannel = event.channel;
-                this.setupDataChannel(dataChannel, targetPeerId);
+                peer.dataChannel = event.channel;
+                this.setupDataChannel(peer.dataChannel, targetPeerId);
             };
         }
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
                 // In production, send this candidate to the target peer via PartyKit signaling
-                console.log('New ICE candidate:', event.candidate.candidate);
+                this.signaling?.sendCandidate(
+                    targetPeerId,
+                    typeof event.candidate.toJSON === 'function'
+                        ? event.candidate.toJSON()
+                        : (event.candidate as unknown as RTCIceCandidateInit),
+                );
             }
         };
 
+        // Any track/DataChannel change schedules a (re)negotiation. The glare
+        // guard inside negotiate() makes concurrent triggers safe.
+        pc.onnegotiationneeded = () => {
+            void this.negotiate(targetPeerId);
+        };
+
+        // Candidates queued before a remote description can only be applied once
+        // the signaling state settles.
+        pc.onsignalingstatechange = () => {
+            void this.flushPendingCandidates(targetPeerId);
+        };
+
         pc.onconnectionstatechange = () => {
-            const peer = this.peers.get(targetPeerId);
-            if (peer) {
-                peer.status = pc.connectionState as MeshPeer['status'];
+            const current = this.peers.get(targetPeerId);
+            if (current) {
+                current.status = pc.connectionState as MeshPeer['status'];
                 if (pc.connectionState === 'connected' && this.onPeerConnectedCallback) {
                     this.onPeerConnectedCallback(targetPeerId);
                 } else if (
@@ -100,17 +166,69 @@ export class WebRTCMesh {
             }
         };
 
-        this.peers.set(targetPeerId, {
-            peerId: targetPeerId,
-            connection: pc,
-            dataChannel,
-            status: 'connecting'
-        });
+        this.peers.set(targetPeerId, peer);
 
         if (isInitiator) {
+            await this.negotiate(targetPeerId);
+        }
+    }
+
+    /**
+     * Creates and sends a local offer, unless a negotiation is already in
+     * flight. An offer is only produced from a stable signaling state; if a
+     * remote description supersedes it while `createOffer` is awaited, the
+     * offer is discarded.
+     */
+    public async negotiate(peerId: string): Promise<void> {
+        const peer = this.peers.get(peerId);
+        if (!peer) {
+            return;
+        }
+        const pc = peer.connection;
+
+        if (peer.makingOffer || pc.signalingState !== 'stable') {
+            return;
+        }
+
+        const negotiationId = ++peer.negotiationId;
+        peer.makingOffer = true;
+        try {
             const offer = await pc.createOffer();
+            if (peer.negotiationId !== negotiationId || pc.signalingState !== 'stable') {
+                return;
+            }
             await pc.setLocalDescription(offer);
-            // In production, send offer to target peer via PartyKit
+            if (peer.negotiationId !== negotiationId) {
+                return;
+            }
+            this.signaling?.sendDescription(peerId, pc.localDescription ?? offer);
+        } catch (err) {
+            console.error(`[WebRTCMesh] Failed to negotiate with ${peerId}:`, err);
+        } finally {
+            peer.makingOffer = false;
+        }
+    }
+
+    private async flushPendingCandidates(peerId: string): Promise<void> {
+        const peer = this.peers.get(peerId);
+        if (!peer) {
+            return;
+        }
+        const pc = peer.connection;
+        if (!pc.remoteDescription || peer.pendingCandidates.length === 0) {
+            return;
+        }
+
+        const queued = peer.pendingCandidates;
+        peer.pendingCandidates = [];
+        for (const candidate of queued) {
+            try {
+                await pc.addIceCandidate(candidate);
+            } catch (err) {
+                if (!peer.ignoreOffer) {
+                    console.error(`[WebRTCMesh] Failed to flush queued ICE candidate for ${peerId}:`, err);
+                }
+            }
         }
     }
 
@@ -420,30 +538,85 @@ export class WebRTCMesh {
         this.onPeerDisconnectedCallback = callback;
     }
 
-    public async handleRemoteOffer(peerId: string, offer: RTCSessionDescriptionInit): Promise<void> {
+    /**
+     * Applies an incoming SDP description using the Perfect Negotiation glare
+     * rules. On an offer collision the polite peer rolls back its own offer and
+     * accepts the remote one; the impolite peer ignores the collision and keeps
+     * its offer.
+     */
+    public async handleRemoteDescription(
+        peerId: string,
+        description: RTCSessionDescriptionInit,
+    ): Promise<void> {
         let peer = this.peers.get(peerId);
         if (!peer) {
             await this.createPeerConnection(peerId, false);
             peer = this.peers.get(peerId)!;
         }
 
-        await peer.connection.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peer.connection.createAnswer();
-        await peer.connection.setLocalDescription(answer);
-        // In production, send answer to peerId via PartyKit
-    }
+        const pc = peer.connection;
 
-    public async handleRemoteAnswer(peerId: string, answer: RTCSessionDescriptionInit): Promise<void> {
-        const peer = this.peers.get(peerId);
-        if (peer) {
-            await peer.connection.setRemoteDescription(new RTCSessionDescription(answer));
+        const offerCollision =
+            description.type === 'offer' &&
+            (peer.makingOffer || pc.signalingState !== 'stable');
+
+        peer.ignoreOffer = !peer.polite && offerCollision;
+        if (peer.ignoreOffer) {
+            // Impolite peer insists on its own offer and drops the collision.
+            return;
+        }
+
+        // This remote description supersedes any local offer still in flight.
+        peer.negotiationId++;
+
+        try {
+            if (offerCollision && peer.polite) {
+                // Polite peer yields: roll back its local offer, then accept.
+                await pc.setLocalDescription({ type: 'rollback' });
+            }
+
+            await pc.setRemoteDescription(description);
+
+            if (description.type === 'offer') {
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                this.signaling?.sendDescription(peerId, pc.localDescription ?? answer);
+            }
+
+            await this.flushPendingCandidates(peerId);
+        } catch (err) {
+            console.error(`[WebRTCMesh] Failed to apply remote description from ${peerId}:`, err);
         }
     }
 
+    public async handleRemoteOffer(peerId: string, offer: RTCSessionDescriptionInit): Promise<void> {
+        await this.handleRemoteDescription(peerId, offer);
+    }
+
+    public async handleRemoteAnswer(peerId: string, answer: RTCSessionDescriptionInit): Promise<void> {
+        await this.handleRemoteDescription(peerId, answer);
+    }
+
     public async handleRemoteIceCandidate(peerId: string, candidate: RTCIceCandidateInit): Promise<void> {
-        const peer = this.peers.get(peerId);
-        if (peer) {
-            await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
+        let peer = this.peers.get(peerId);
+        if (!peer) {
+            await this.createPeerConnection(peerId, false);
+            peer = this.peers.get(peerId)!;
+        }
+        const pc = peer.connection;
+
+        // Candidates cannot be applied until a remote description exists.
+        if (!pc.remoteDescription || pc.signalingState === 'closed') {
+            peer.pendingCandidates.push(candidate);
+            return;
+        }
+
+        try {
+            await pc.addIceCandidate(candidate);
+        } catch (err) {
+            if (!peer.ignoreOffer) {
+                console.error(`[WebRTCMesh] Failed to add ICE candidate from ${peerId}:`, err);
+            }
         }
     }
 

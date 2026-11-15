@@ -1,4 +1,4 @@
-name: Bulk Triage Issues - Add OSCI'26, Remove ECSoC & Unassign
+name: Bulk Triage Issues - Ensure WOCS & Unassign
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
   triage-open-issues:
     runs-on: ubuntu-latest
     steps:
-      - name: Add OSCI'26 label, remove ECSoC labels, and unassign all open issues
+      - name: Ensure WOCS label, remove stale OSCI/ECSoC labels, and unassign all open issues
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -27,7 +27,7 @@ jobs:
 
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const targetLabel = "OSCI'26";
+            const targetLabel = "wocs";
 
             // 1. Ensure target label exists
             try {
@@ -45,8 +45,8 @@ jobs:
                     owner,
                     repo,
                     name: targetLabel,
-                    color: '5319e7',
-                    description: "Open Source Contribution Initiative '26"
+                    color: '00b4d8',
+                    description: "Winter of Code Social 2026 contribution"
                   });
                   console.log(`Label "${targetLabel}" created successfully.`);
                 }
@@ -69,7 +69,7 @@ jobs:
 
             let labeledCount = 0;
             let unassignedCount = 0;
-            let ecsocRemovedCount = 0;
+            let staleRemovedCount = 0;
             let errorCount = 0;
 
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -79,12 +79,16 @@ jobs:
               const issueNumber = issue.number;
               const issueLabels = issue.labels.map(l => (typeof l === 'string' ? l : l.name));
               const hasTargetLabel = issueLabels.includes(targetLabel);
-              const ecsocLabels = issueLabels.filter(l => l.toLowerCase().includes('ecsoc') || l.toLowerCase().includes('ecwoc'));
+              const staleLabels = issueLabels.filter(l => 
+                l.toLowerCase().includes('ecsoc') || 
+                l.toLowerCase().includes('ecwoc') || 
+                l.toLowerCase().includes('osci')
+              );
               const assignees = (issue.assignees || []).map(a => a.login);
 
               console.log(`[${i + 1}/${openIssues.length}] Issue #${issueNumber}: "${issue.title}"`);
 
-              // Add OSCI'26 label if missing
+              // Add wocs label if missing
               if (!hasTargetLabel) {
                 console.log(`  -> Adding label "${targetLabel}" to #${issueNumber}`);
                 if (!isDryRun) {
@@ -103,28 +107,26 @@ jobs:
                 } else {
                   labeledCount++;
                 }
-              } else {
-                console.log(`  -> Label "${targetLabel}" already present.`);
               }
 
-              // Remove ECSoC-related labels if present
-              for (const ecsocLabel of ecsocLabels) {
-                console.log(`  -> Removing label "${ecsocLabel}" from #${issueNumber}`);
+              // Remove stale (ECSoC / OSCI) labels if present
+              for (const staleLabel of staleLabels) {
+                console.log(`  -> Removing stale label "${staleLabel}" from #${issueNumber}`);
                 if (!isDryRun) {
                   try {
                     await github.rest.issues.removeLabel({
                       owner,
                       repo,
                       issue_number: issueNumber,
-                      name: ecsocLabel
+                      name: staleLabel
                     });
-                    ecsocRemovedCount++;
+                    staleRemovedCount++;
                   } catch (err) {
-                    console.error(`  Error removing label "${ecsocLabel}" from #${issueNumber}: ${err.message}`);
+                    console.error(`  Error removing label "${staleLabel}" from #${issueNumber}: ${err.message}`);
                     errorCount++;
                   }
                 } else {
-                  ecsocRemovedCount++;
+                  staleRemovedCount++;
                 }
               }
 

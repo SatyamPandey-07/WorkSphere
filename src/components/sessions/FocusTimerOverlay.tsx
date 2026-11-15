@@ -5,7 +5,7 @@ import { Rocket, Pause, Play, Volume2, X, Timer } from "lucide-react";
 
 export type FocusTimerTheme = "default" | "mach-lock";
 
-interface FocusTimerOverlayProps {
+export interface FocusTimerOverlayProps {
   /** Total duration of the focus session in seconds. */
   durationSeconds: number;
   /** Whether a focus session is currently running. */
@@ -19,12 +19,15 @@ interface FocusTimerOverlayProps {
   theme?: FocusTimerTheme;
 }
 
-type MotionPreference = "full" | "dimmed" | "paused";
+export type MotionPreference = "full" | "dimmed" | "paused";
 
-const MACH_LOCK_THEME: FocusTimerTheme = "mach-lock";
+export const MACH_LOCK_THEME: FocusTimerTheme = "mach-lock";
 
-function formatClock(totalSeconds: number): string {
-  const safe = Math.max(0, Math.floor(totalSeconds));
+export function formatClock(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return "00:00";
+  }
+  const safe = Math.floor(totalSeconds);
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   const seconds = safe % 60;
@@ -39,7 +42,7 @@ function formatClock(totalSeconds: number): string {
  * Respects the user's motion preference (full / dimmed / paused) and
  * falls back to a static field when prefers-reduced-motion is set.
  */
-function StarfieldCanvas({
+export function StarfieldCanvas({
   motion,
   active,
 }: {
@@ -68,13 +71,13 @@ function StarfieldCanvas({
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    let width = canvas.offsetWidth;
-    let height = canvas.offsetHeight;
+    let width = Math.max(canvas.offsetWidth || canvas.width || 300, 50);
+    let height = Math.max(canvas.offsetHeight || canvas.height || 200, 50);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const resize = () => {
-      width = canvas.offsetWidth;
-      height = canvas.offsetHeight;
+      width = Math.max(canvas.offsetWidth || canvas.width || 300, 50);
+      height = Math.max(canvas.offsetHeight || canvas.height || 200, 50);
       canvas.width = width * dpr;
       canvas.height = height * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -86,8 +89,8 @@ function StarfieldCanvas({
       starsRef.current = Array.from({ length: starCount }, () => ({
         x: (Math.random() - 0.5) * width,
         y: (Math.random() - 0.5) * height,
-        z: Math.random() * width,
-        pz: 0,
+        z: Math.max(Math.random() * width, 1),
+        pz: Math.max(Math.random() * width, 1),
       }));
     }
 
@@ -96,8 +99,9 @@ function StarfieldCanvas({
       ctx.fillRect(0, 0, width, height);
       ctx.fillStyle = "rgba(148, 197, 255, 0.9)";
       for (const s of starsRef.current) {
-        const px = (s.x / s.z) * width * 0.5 + width / 2;
-        const py = (s.y / s.z) * height * 0.5 + height / 2;
+        const safeZ = Math.max(s.z, 0.001);
+        const px = (s.x / safeZ) * width * 0.5 + width / 2;
+        const py = (s.y / safeZ) * height * 0.5 + height / 2;
         if (px < 0 || px > width || py < 0 || py > height) continue;
         const size = Math.max(0.5, (1 - s.z / width) * 1.8);
         ctx.fillRect(px, py, size, size);
@@ -107,8 +111,14 @@ function StarfieldCanvas({
     if (prefersReduced) {
       // Static starfield only — no animation frames at all.
       drawStatic();
+      const onResizeReduced = () => {
+        resize();
+        drawStatic();
+      };
+      window.addEventListener("resize", onResizeReduced);
       return () => {
         if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+        window.removeEventListener("resize", onResizeReduced);
       };
     }
 
@@ -131,8 +141,9 @@ function StarfieldCanvas({
         if (currentMotion === "dimmed") {
           ctx.fillStyle = "rgba(148, 197, 255, 0.35)";
           for (const s of starsRef.current) {
-            const px = (s.x / s.z) * width * 0.5 + width / 2;
-            const py = (s.y / s.z) * height * 0.5 + height / 2;
+            const safeZ = Math.max(s.z, 0.001);
+            const px = (s.x / safeZ) * width * 0.5 + width / 2;
+            const py = (s.y / safeZ) * height * 0.5 + height / 2;
             if (px < 0 || px > width || py < 0 || py > height) continue;
             const size = Math.max(0.5, (1 - s.z / width) * 1.8);
             ctx.fillRect(px, py, size, size);
@@ -160,14 +171,16 @@ function StarfieldCanvas({
           s.y = (Math.random() - 0.5) * height;
         }
 
-        const px = (s.x / s.z) * width * 0.5 + cx;
-        const py = (s.y / s.z) * height * 0.5 + cy;
-        const prevX = (s.x / s.pz) * width * 0.5 + cx;
-        const prevY = (s.y / s.pz) * height * 0.5 + cy;
+        const safeZ = Math.max(s.z, 0.001);
+        const safePZ = Math.max(s.pz, 0.001);
+        const px = (s.x / safeZ) * width * 0.5 + cx;
+        const py = (s.y / safeZ) * height * 0.5 + cy;
+        const prevX = (s.x / safePZ) * width * 0.5 + cx;
+        const prevY = (s.y / safePZ) * height * 0.5 + cy;
 
         if (px < 0 || px > width || py < 0 || py > height) continue;
 
-        const depth = 1 - s.z / width;
+        const depth = Math.max(0, Math.min(1, 1 - s.z / width));
         const lineW = Math.max(0.6, depth * 2.2);
         ctx.strokeStyle =
           currentMotion === "dimmed"
@@ -206,8 +219,11 @@ function StarfieldCanvas({
  * a descending filtered noise "wind-down" plus falling tone, so no
  * audio asset is required and it works offline.
  */
-function playJetDecelerationSound(): void {
+export function playJetDecelerationSound(volume: number = 1): void {
   try {
+    if (!Number.isFinite(volume) || volume <= 0) return;
+    const safeVolume = Math.max(0.001, Math.min(1, volume));
+
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext?: typeof AudioContext })
@@ -218,7 +234,7 @@ function playJetDecelerationSound(): void {
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.5, now + 0.15);
+    master.gain.exponentialRampToValueAtTime(0.5 * safeVolume, now + 0.15);
     master.gain.exponentialRampToValueAtTime(0.0001, now + 2.6);
     master.connect(ctx.destination);
 
@@ -236,8 +252,9 @@ function playJetDecelerationSound(): void {
     osc.stop(now + 2.7);
 
     // Wind / air-brake noise
-    const bufferLen = ctx.sampleRate * 2.7;
-    const noiseBuffer = ctx.createBuffer(1, bufferLen, ctx.sampleRate);
+    const sampleRate = ctx.sampleRate || 44100;
+    const bufferLen = Math.max(1, Math.floor(sampleRate * 2.7));
+    const noiseBuffer = ctx.createBuffer(1, bufferLen, sampleRate);
     const data = noiseBuffer.getChannelData(0);
     for (let i = 0; i < bufferLen; i++) data[i] = Math.random() * 2 - 1;
     const noise = ctx.createBufferSource();
@@ -248,15 +265,36 @@ function playJetDecelerationSound(): void {
     noiseFilter.frequency.exponentialRampToValueAtTime(180, now + 2.5);
     noiseFilter.Q.value = 0.8;
     const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.6, now);
+    noiseGain.gain.setValueAtTime(0.6 * safeVolume, now);
     noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 2.6);
     noise.connect(noiseFilter).connect(noiseGain).connect(master);
     noise.start(now);
     noise.stop(now + 2.7);
 
+    // Fallback timer ensures AudioContext is always freed even if onended doesn't fire.
+    const teardownTimer = setTimeout(() => {
+      try {
+        if (ctx.state !== "closed") {
+          void ctx.close().catch(() => undefined);
+        }
+      } catch {
+        /* noop */
+      }
+    }, 3000);
+    if (typeof (teardownTimer as unknown as { unref?: () => void })?.unref === "function") {
+      (teardownTimer as unknown as { unref: () => void }).unref();
+    }
+
     // Release the AudioContext after playback finishes.
     osc.onended = () => {
-      void ctx.close().catch(() => undefined);
+      clearTimeout(teardownTimer);
+      try {
+        if (ctx.state !== "closed") {
+          void ctx.close().catch(() => undefined);
+        }
+      } catch {
+        /* noop */
+      }
     };
   } catch {
     // Audio is a nice-to-have; never break the session over it.
@@ -271,7 +309,11 @@ export default function FocusTimerOverlay({
   runningOverride,
   theme = "default",
 }: FocusTimerOverlayProps) {
-  const [remaining, setRemaining] = useState(durationSeconds);
+  const safeDuration =
+    Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? Math.floor(durationSeconds)
+      : 0;
+  const [remaining, setRemaining] = useState(safeDuration);
   const [running, setRunning] = useState(runningOverride ?? isRunning);
   const [motionPreference, setMotionPreference] =
     useState<MotionPreference>("full");
@@ -286,6 +328,13 @@ export default function FocusTimerOverlay({
     if (runningOverride !== undefined) setRunning(runningOverride);
   }, [runningOverride]);
 
+  // Sync remaining when duration changes while not complete.
+  useEffect(() => {
+    if (!sessionComplete) {
+      setRemaining(safeDuration);
+    }
+  }, [safeDuration, sessionComplete]);
+
   // Countdown engine.
   useEffect(() => {
     if (!running) return;
@@ -298,18 +347,19 @@ export default function FocusTimerOverlay({
         return prev - 1;
       });
     }, 1000);
+
     return () => window.clearInterval(interval);
   }, [running]);
 
   // Fire completion exactly once when the timer hits zero.
   useEffect(() => {
-    if (remaining === 0 && !firedRef.current && durationSeconds > 0) {
+    if (remaining === 0 && !firedRef.current && safeDuration > 0) {
       firedRef.current = true;
       setSessionComplete(true);
       if (soundEnabled) playJetDecelerationSound();
       onComplete?.();
     }
-  }, [remaining, durationSeconds, soundEnabled, onComplete]);
+  }, [remaining, safeDuration, soundEnabled, onComplete]);
 
   const handleToggleRunning = useCallback(() => {
     setRunning((prev) => !prev);
@@ -318,9 +368,9 @@ export default function FocusTimerOverlay({
   const handleRestart = useCallback(() => {
     firedRef.current = false;
     setSessionComplete(false);
-    setRemaining(durationSeconds);
+    setRemaining(safeDuration);
     setRunning(true);
-  }, [durationSeconds]);
+  }, [safeDuration]);
 
   const handleMotionChange = useCallback((next: MotionPreference) => {
     setMotionPreference(next);
@@ -328,8 +378,8 @@ export default function FocusTimerOverlay({
 
   const clockLabel = formatClock(remaining);
   const progress =
-    durationSeconds > 0
-      ? Math.min(100, ((durationSeconds - remaining) / durationSeconds) * 100)
+    safeDuration > 0
+      ? Math.max(0, Math.min(100, ((safeDuration - remaining) / safeDuration) * 100))
       : 0;
 
   return (

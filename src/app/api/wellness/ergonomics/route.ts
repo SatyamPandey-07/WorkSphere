@@ -41,8 +41,15 @@ export async function GET(req: NextRequest) {
       skippedBreaksCount: 1,
     };
 
+    const targetRatio = Number(searchParams.get("targetRatio")) || 2.0;
+
     const initialScore = ErgonomicCoachEngine.calculateStrainScore(defaultState);
     const nextStretch = ErgonomicCoachEngine.getRecommendedStretch(defaultState);
+    const sitStandRatio = ErgonomicCoachEngine.calculateSitStandRatio(
+      defaultState.totalSittingSeconds,
+      defaultState.totalStandingSeconds
+    );
+    const weeklyAnalytics = ErgonomicCoachEngine.computeWeeklySummary(undefined, targetRatio);
 
     return NextResponse.json({
       success: true,
@@ -50,6 +57,8 @@ export async function GET(req: NextRequest) {
       defaultState,
       initialScore,
       nextStretch,
+      sitStandRatio,
+      weeklyAnalytics,
     });
   } catch (error: any) {
     console.error("[GET /api/wellness/ergonomics] Error:", error);
@@ -78,15 +87,27 @@ export async function POST(req: NextRequest) {
       waterTargetMl: Number(body.waterTargetMl) || 2000,
       eyeBreaksCompleted: Number(body.eyeBreaksCompleted) || 0,
       skippedBreaksCount: Number(body.skippedBreaksCount) || 0,
+      transitionsCount: Number(body.transitionsCount) || 0,
+      targetSitStandRatio: Number(body.targetSitStandRatio) || 2.0,
     };
 
+    const targetRatio = sessionState.targetSitStandRatio || 2.0;
     const strainScore = ErgonomicCoachEngine.calculateStrainScore(sessionState);
     const recommendedStretch = ErgonomicCoachEngine.getRecommendedStretch(sessionState);
+    const sitStandRatio = ErgonomicCoachEngine.calculateSitStandRatio(
+      sessionState.totalSittingSeconds,
+      sessionState.totalStandingSeconds
+    );
+
+    const dailyRecords = Array.isArray(body.dailyRecords) ? body.dailyRecords : undefined;
+    const weeklyAnalytics = ErgonomicCoachEngine.computeWeeklySummary(dailyRecords, targetRatio);
 
     return NextResponse.json({
       success: true,
       strainScore,
       recommendedStretch,
+      sitStandRatio,
+      weeklyAnalytics,
       updatedState: sessionState,
       timestamp: new Date().toISOString(),
     });

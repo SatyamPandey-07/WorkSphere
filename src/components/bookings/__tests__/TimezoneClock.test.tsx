@@ -1,12 +1,11 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { TimezoneClock } from "../TimezoneClock";
 
 describe("TimezoneClock", () => {
   beforeAll(() => {
     jest.useFakeTimers();
-    // Set a fixed system time so tests are deterministic.
-    // Oct 15, 2023 at 12:00:00 UTC
+    // Set a fixed system time so tests are deterministic: Oct 15, 2023 at 12:00:00 UTC
     jest.setSystemTime(new Date("2023-10-15T12:00:00Z"));
   });
 
@@ -43,7 +42,9 @@ describe("TimezoneClock", () => {
 
   it("handles invalid timezone identifiers gracefully", () => {
     render(<TimezoneClock timeZone="Invalid/Timezone" />);
-    jest.runOnlyPendingTimers();
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
     expect(screen.getByText("--:--:-- --")).toBeInTheDocument();
     expect(screen.getByText("Invalid/Timezone")).toBeInTheDocument();
   });
@@ -60,25 +61,28 @@ describe("TimezoneClock", () => {
 
     // Open dropdown
     const button = screen.getByTestId("timezone-selector-button");
-    button.click();
+    fireEvent.click(button);
 
     const searchInput = screen.getByTestId("timezone-search-input") as HTMLInputElement;
     expect(searchInput).toBeInTheDocument();
 
     // Type query "Tokyo"
-    searchInput.value = "Tokyo";
-    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    fireEvent.change(searchInput, { target: { value: "Tokyo" } });
 
     // Advance fake timer for debounce (200ms)
-    jest.advanceTimersByTime(250);
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
 
     // Should find Tokyo
     expect(screen.getByText(/Tokyo/i)).toBeInTheDocument();
 
     // Clear query button
     const clearBtn = screen.getByTestId("timezone-clear-query-button");
-    clearBtn.click();
-    jest.advanceTimersByTime(250);
+    fireEvent.click(clearBtn);
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
 
     expect(searchInput.value).toBe("");
   });
@@ -87,20 +91,100 @@ describe("TimezoneClock", () => {
     render(<TimezoneClock timeZone="UTC" selectable />);
 
     const button = screen.getByTestId("timezone-selector-button");
-    button.click();
+    fireEvent.click(button);
 
     const searchInput = screen.getByTestId("timezone-search-input") as HTMLInputElement;
-    searchInput.value = "NonExistentTimezoneXYZ";
-    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    fireEvent.change(searchInput, { target: { value: "NonExistentTimezoneXYZ" } });
 
-    jest.advanceTimersByTime(250);
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
 
     expect(screen.getByText("No matching timezones found")).toBeInTheDocument();
 
     const resetBtn = screen.getByTestId("timezone-clear-search-btn");
-    resetBtn.click();
-    jest.advanceTimersByTime(250);
+    fireEvent.click(resetBtn);
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
 
     expect(screen.queryByText("No matching timezones found")).not.toBeInTheDocument();
+  });
+
+  it("selects timezone item, calls callback, and closes dropdown", () => {
+    const handleTimezoneChange = jest.fn();
+    render(
+      <TimezoneClock
+        timeZone="UTC"
+        selectable
+        onTimezoneChange={handleTimezoneChange}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("timezone-selector-button"));
+
+    const searchInput = screen.getByTestId("timezone-search-input");
+    fireEvent.change(searchInput, { target: { value: "Tokyo" } });
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    const item = screen.getByTestId("timezone-item-Asia/Tokyo");
+    fireEvent.click(item);
+
+    expect(handleTimezoneChange).toHaveBeenCalledWith("Asia/Tokyo");
+    expect(screen.queryByTestId("timezone-dropdown-panel")).not.toBeInTheDocument();
+  });
+
+  it("closes dropdown on Escape key", () => {
+    render(<TimezoneClock timeZone="UTC" selectable />);
+
+    fireEvent.click(screen.getByTestId("timezone-selector-button"));
+    expect(screen.getByTestId("timezone-dropdown-panel")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("timezone-dropdown-panel")).not.toBeInTheDocument();
+  });
+
+  it("navigates with ArrowDown, ArrowUp, and selects with Enter", () => {
+    const handleTimezoneChange = jest.fn();
+    render(
+      <TimezoneClock
+        timeZone="UTC"
+        selectable
+        onTimezoneChange={handleTimezoneChange}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("timezone-selector-button"));
+
+    const searchInput = screen.getByTestId("timezone-search-input");
+    fireEvent.change(searchInput, { target: { value: "London" } });
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    expect(handleTimezoneChange).toHaveBeenCalledWith("Europe/London");
+    expect(screen.queryByTestId("timezone-dropdown-panel")).not.toBeInTheDocument();
+  });
+
+  it("closes dropdown on outside mouse down", () => {
+    render(
+      <div>
+        <div data-testid="outside">Outside area</div>
+        <TimezoneClock timeZone="UTC" selectable />
+      </div>
+    );
+
+    fireEvent.click(screen.getByTestId("timezone-selector-button"));
+    expect(screen.getByTestId("timezone-dropdown-panel")).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByTestId("outside"));
+    expect(screen.queryByTestId("timezone-dropdown-panel")).not.toBeInTheDocument();
   });
 });

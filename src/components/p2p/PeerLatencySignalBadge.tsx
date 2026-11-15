@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, memo } from "react";
 import { MeshPeerNode } from "@/lib/p2p/meshCollabEngine";
+import { cn } from "@/lib/utils";
 
 export type LatencyTier = "strong" | "fair" | "high_latency";
 
@@ -36,7 +37,14 @@ export function calculateRttPing(
   sentAt: number,
   receivedAt: number = Date.now(),
 ): number {
-  if (typeof sentAt !== "number" || isNaN(sentAt)) return 0;
+  if (
+    typeof sentAt !== "number" ||
+    !Number.isFinite(sentAt) ||
+    typeof receivedAt !== "number" ||
+    !Number.isFinite(receivedAt)
+  ) {
+    return 0;
+  }
   return Math.max(0, Math.round(receivedAt - sentAt));
 }
 
@@ -61,7 +69,7 @@ export function handleHeartbeatPong(
   pong: { sentAt: number; receivedAt?: number },
   now: number = Date.now(),
 ): number {
-  return calculateRttPing(pong.sentAt, pong.receivedAt ?? now);
+  return calculateRttPing(pong?.sentAt, pong?.receivedAt ?? now);
 }
 
 /**
@@ -71,8 +79,12 @@ export function handleHeartbeatPong(
  * - Red (>= 150ms): 1 bar, "High Latency"
  */
 export function getLatencyTier(latencyMs: number): LatencyTierInfo {
-  const clamped = Math.max(0, latencyMs);
-  if (clamped < 50) {
+  const safeLatency =
+    typeof latencyMs === "number" && Number.isFinite(latencyMs)
+      ? Math.max(0, latencyMs)
+      : 0;
+
+  if (safeLatency < 50) {
     return {
       tier: "strong",
       label: "Strong",
@@ -83,7 +95,7 @@ export function getLatencyTier(latencyMs: number): LatencyTierInfo {
       borderClass: "border-emerald-500/20",
     };
   }
-  if (clamped < 150) {
+  if (safeLatency < 150) {
     return {
       tier: "fair",
       label: "Fair",
@@ -110,14 +122,18 @@ export function getLatencyTier(latencyMs: number): LatencyTierInfo {
  * "28 ms - Strong", "145 ms - Fair", ">300 ms - High Latency"
  */
 export function formatLatencyLabel(latencyMs: number): string {
-  const tier = getLatencyTier(latencyMs);
+  const safeLatency =
+    typeof latencyMs === "number" && Number.isFinite(latencyMs)
+      ? Math.max(0, latencyMs)
+      : 0;
+  const tier = getLatencyTier(safeLatency);
   const latencyDisplay =
-    latencyMs > 300 ? ">300 ms" : `${Math.round(Math.max(0, latencyMs))} ms`;
+    safeLatency > 300 ? ">300 ms" : `${Math.round(safeLatency)} ms`;
   return `${latencyDisplay} - ${tier.label}`;
 }
 
 export interface PeerLatencySignalBadgeProps {
-  peer: MeshPeerNode;
+  peer?: MeshPeerNode;
   initialLatencyMs?: number;
   intervalMs?: number;
   onMeasurePing?: () => number | Promise<number>;
@@ -132,18 +148,27 @@ function PeerLatencySignalBadgeComponent({
   intervalMs = 5000,
   onMeasurePing,
   onLatencyUpdate,
-  className = "",
+  className,
   showTextLabel = true,
 }: PeerLatencySignalBadgeProps) {
+  const safeInitialLatency =
+    typeof initialLatencyMs === "number" && Number.isFinite(initialLatencyMs)
+      ? initialLatencyMs
+      : undefined;
+
   const [latencyMs, setLatencyMs] = useState<number>(() => {
-    return initialLatencyMs ?? peer.latencyMs ?? 0;
+    if (safeInitialLatency !== undefined) return safeInitialLatency;
+    if (typeof peer?.latencyMs === "number" && Number.isFinite(peer.latencyMs)) {
+      return peer.latencyMs;
+    }
+    return 0;
   });
 
   useEffect(() => {
-    if (initialLatencyMs !== undefined) {
-      setLatencyMs(initialLatencyMs);
+    if (safeInitialLatency !== undefined) {
+      setLatencyMs(safeInitialLatency);
     }
-  }, [initialLatencyMs]);
+  }, [safeInitialLatency]);
 
   // Update latency metrics every 5 seconds without triggering unnecessary parent re-renders
   useEffect(() => {
@@ -153,26 +178,32 @@ function PeerLatencySignalBadgeComponent({
         const res = onMeasurePing();
         if (typeof (res as Promise<number>)?.then === "function") {
           (res as Promise<number>).then((val) => {
-            setLatencyMs(val);
-            onLatencyUpdate?.(val);
+            const sanitized = Number.isFinite(val) ? val : 0;
+            setLatencyMs(sanitized);
+            onLatencyUpdate?.(sanitized);
           });
           return;
         }
-        nextLatency = res as number;
-      } else if (peer.dataChannel && peer.dataChannel.readyState === "open") {
+        nextLatency = Number.isFinite(res as number) ? (res as number) : 0;
+      } else if (peer?.dataChannel && peer.dataChannel.readyState === "open") {
         const ping = createHeartbeatPing(peer.peerId, Date.now());
         try {
           peer.dataChannel.send(JSON.stringify(ping));
         } catch {
           // Fallback if send buffer full
         }
-        nextLatency = peer.latencyMs ?? 20;
+        nextLatency =
+          typeof peer.latencyMs === "number" && Number.isFinite(peer.latencyMs)
+            ? peer.latencyMs
+            : 20;
       } else {
         const sentTime = Date.now();
         const base =
-          initialLatencyMs !== undefined
-            ? initialLatencyMs
-            : (peer.latencyMs ?? 25);
+          safeInitialLatency !== undefined
+            ? safeInitialLatency
+            : typeof peer?.latencyMs === "number" && Number.isFinite(peer.latencyMs)
+              ? peer.latencyMs
+              : 25;
         const jitter = (Math.random() - 0.5) * 4;
         const rttDuration = Math.max(1, base + jitter);
         nextLatency = calculateRttPing(sentTime, sentTime + rttDuration);
@@ -190,10 +221,10 @@ function PeerLatencySignalBadgeComponent({
 
     return () => clearInterval(timer);
   }, [
-    peer.peerId,
-    peer.latencyMs,
-    peer.dataChannel,
-    initialLatencyMs,
+    peer?.peerId,
+    peer?.latencyMs,
+    peer?.dataChannel,
+    safeInitialLatency,
     intervalMs,
     onMeasurePing,
     onLatencyUpdate,
@@ -205,9 +236,16 @@ function PeerLatencySignalBadgeComponent({
   return (
     <div
       role="status"
+      data-testid="peer-latency-signal-badge"
       aria-label={`Ping: ${displayLabel}`}
       title={`WebRTC DataChannel Ping: ${displayLabel}`}
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-mono font-medium transition-colors ${tierInfo.bgClass} ${tierInfo.borderClass} ${tierInfo.colorClass} ${className}`}
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-mono font-medium transition-colors",
+        tierInfo.bgClass,
+        tierInfo.borderClass,
+        tierInfo.colorClass,
+        className,
+      )}
     >
       {/* 3-bar signal badge */}
       <div
@@ -217,27 +255,30 @@ function PeerLatencySignalBadgeComponent({
       >
         <span
           data-testid="signal-bar-1"
-          className={`w-1 rounded-sm transition-colors h-1.5 ${
+          className={cn(
+            "w-1 rounded-sm transition-colors h-1.5",
             tierInfo.activeBars >= 1
               ? tierInfo.barColorClass
-              : "bg-slate-700/60"
-          }`}
+              : "bg-slate-700/60",
+          )}
         />
         <span
           data-testid="signal-bar-2"
-          className={`w-1 rounded-sm transition-colors h-2.5 ${
+          className={cn(
+            "w-1 rounded-sm transition-colors h-2.5",
             tierInfo.activeBars >= 2
               ? tierInfo.barColorClass
-              : "bg-slate-700/60"
-          }`}
+              : "bg-slate-700/60",
+          )}
         />
         <span
           data-testid="signal-bar-3"
-          className={`w-1 rounded-sm transition-colors h-3.5 ${
+          className={cn(
+            "w-1 rounded-sm transition-colors h-3.5",
             tierInfo.activeBars >= 3
               ? tierInfo.barColorClass
-              : "bg-slate-700/60"
-          }`}
+              : "bg-slate-700/60",
+          )}
         />
       </div>
 
@@ -255,3 +296,4 @@ function PeerLatencySignalBadgeComponent({
 }
 
 export const PeerLatencySignalBadge = memo(PeerLatencySignalBadgeComponent);
+export default PeerLatencySignalBadge;

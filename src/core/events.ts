@@ -55,6 +55,25 @@ export interface AppEvents {
     userId: string;
     previousStatus: string;
   };
+  "desk:reservation:held": {
+    venueId: string;
+    deskId: string;
+    userId: string;
+    userName?: string;
+    expiresAt: number;
+    ttlSeconds: number;
+  };
+  "desk:reservation:expired": {
+    venueId: string;
+    deskId: string;
+    expiredAt: number;
+  };
+  "desk:reservation:released": {
+    venueId: string;
+    deskId: string;
+    userId: string;
+    releasedAt: number;
+  };
 }
 
 export type EventName = keyof AppEvents;

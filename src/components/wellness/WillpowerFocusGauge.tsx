@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface WillpowerFocusGaugeProps {
@@ -7,22 +6,81 @@ export interface WillpowerFocusGaugeProps {
   accentColor?: string;
 }
 
+const parseInitialMinutes = (minutes?: number): number => {
+  if (typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0) {
+    return minutes;
+  }
+  return 25;
+};
+
 export const WillpowerFocusGauge: React.FC<WillpowerFocusGaugeProps> = ({
   initialMinutes = 25,
   onComplete,
   accentColor = '#10b981',
 }) => {
-  const totalSeconds = initialMinutes * 60;
+  const validMinutes = parseInitialMinutes(initialMinutes);
+  const totalSeconds = Math.max(1, Math.round(validMinutes * 60));
   const [secondsLeft, setSecondsLeft] = useState<number>(totalSeconds);
   const [isActive, setIsActive] = useState<boolean>(false);
   const [isFlare, setIsFlare] = useState<boolean>(false);
 
-  // Play chime using Web Audio API
+  const prevMinutesRef = useRef<number>(validMinutes);
+  const activeAudioContextsRef = useRef<Set<AudioContext>>(new Set());
+
+  // Clean up AudioContext instances on unmount
+  useEffect(() => {
+    const activeContexts = activeAudioContextsRef.current;
+    return () => {
+      activeContexts.forEach((ctx) => {
+        try {
+          if (ctx.state !== 'closed') {
+            ctx.close();
+          }
+        } catch {
+          // Ignore AudioContext close errors during teardown
+        }
+      });
+      activeContexts.clear();
+    };
+  }, []);
+
+  // Sync timer when initialMinutes prop changes while timer is inactive
+  useEffect(() => {
+    if (prevMinutesRef.current !== validMinutes) {
+      prevMinutesRef.current = validMinutes;
+      if (!isActive) {
+        setSecondsLeft(totalSeconds);
+      }
+    }
+  }, [validMinutes, totalSeconds, isActive]);
+
+  // Play chime using Web Audio API with automatic cleanup to prevent resource exhaustion
   const playChime = useCallback((freq = 880, duration = 0.25) => {
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      activeAudioContextsRef.current.add(ctx);
+
+      let fallbackTimer: NodeJS.Timeout | null = null;
+
+      const cleanup = () => {
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
+        try {
+          activeAudioContextsRef.current.delete(ctx);
+          if (ctx.state !== 'closed') {
+            ctx.close();
+          }
+        } catch {
+          // AudioContext already closed or unsupported
+        }
+      };
+
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
@@ -35,8 +93,16 @@ export const WillpowerFocusGauge: React.FC<WillpowerFocusGaugeProps> = ({
       osc.connect(gain);
       gain.connect(ctx.destination);
 
+      osc.onended = cleanup;
+
       osc.start();
       osc.stop(ctx.currentTime + duration);
+
+      // Fallback cleanup timer in case onended doesn't fire
+      fallbackTimer = setTimeout(cleanup, (duration + 0.1) * 1000);
+      if (typeof fallbackTimer === 'object' && typeof fallbackTimer.unref === 'function') {
+        fallbackTimer.unref();
+      }
     } catch {
       // AudioContext fallback for unsupported environments
     }
@@ -50,6 +116,9 @@ export const WillpowerFocusGauge: React.FC<WillpowerFocusGaugeProps> = ({
       interval = setInterval(() => {
         setSecondsLeft((prev) => prev - 1);
       }, 1000);
+      if (typeof interval === 'object' && typeof interval.unref === 'function') {
+        interval.unref();
+      }
     } else if (secondsLeft === 0 && isActive) {
       setIsActive(false);
       setIsFlare(true);
@@ -78,13 +147,18 @@ export const WillpowerFocusGauge: React.FC<WillpowerFocusGaugeProps> = ({
   // Circular SVG geometry
   const radius = 80;
   const circumference = 2 * Math.PI * radius;
-  const progressRatio = (totalSeconds - secondsLeft) / totalSeconds;
-  const strokeDashoffset = circumference - progressRatio * circumference;
+  const safeSecondsLeft = Math.max(0, Math.min(secondsLeft, totalSeconds));
+  const progressRatio = totalSeconds > 0
+    ? Math.max(0, Math.min(1, (totalSeconds - safeSecondsLeft) / totalSeconds))
+    : 0;
+  const strokeDashoffset = Number.isFinite(progressRatio)
+    ? circumference - progressRatio * circumference
+    : circumference;
 
-  const minutes = Math.floor(secondsLeft / 60);
-  const seconds = secondsLeft % 60;
+  const minutes = Math.floor(safeSecondsLeft / 60);
+  const seconds = safeSecondsLeft % 60;
   const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  const percentage = Math.round(progressRatio * 100);
+  const percentage = Number.isFinite(progressRatio) ? Math.round(progressRatio * 100) : 0;
 
   return (
     <div className="relative flex flex-col items-center justify-center p-6 bg-zinc-950/80 rounded-2xl border border-emerald-900/40 text-emerald-100 shadow-xl">

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DocumentDataExtractor } from '@/core/ai/DocumentDataExtractor';
-import { VisaFormFiller, FormFieldMapping } from '@/core/compliance/VisaFormFiller';
+import { VisaFormFiller, FormFieldMapping, type ExtractedUserData } from '@/core/compliance/VisaFormFiller';
 
 const extractor = new DocumentDataExtractor(process.env.GROQ_API_KEY || 'mock_key');
 
@@ -33,10 +33,11 @@ export async function POST(req: NextRequest) {
         }
 
         // 2. Generate fill instructions
-        const instructions = filler.generateFillInstructions(extractionResult.data);
+        const extracted = extractionResult.data as ExtractedUserData;
+        const instructions = filler.generateFillInstructions(extracted);
 
         // 3. Validate
-        const missing = filler.validateRequiredFields(extractionResult.data);
+        const missing = filler.validateRequiredFields(extracted);
         if (missing.length > 0) {
             return NextResponse.json({
                 warning: 'Missing required fields',

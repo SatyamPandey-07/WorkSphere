@@ -2,7 +2,9 @@ import {
   queueOfflineFavorite,
   getQueuedFavorites,
   withWebLock,
+  LockTimeoutError,
 } from "../../lib/offlineStore";
+import { OFFLINE_WRITE_LOCK } from "../../lib/webLock";
 
 describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
   it("uses Web Locks API (navigator.locks) to serialize multi-tab storage access", async () => {
@@ -61,7 +63,7 @@ describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
       jest.restoreAllMocks();
     });
 
-    it("executes the callback if navigator.locks.request hangs for 5 seconds", async () => {
+    it("executes the callback if navigator.locks.request hangs for 5 seconds when fallbackOnTimeout is enabled", async () => {
       const mockRequest = jest.fn().mockImplementation(() => {
         // Simulates a hanging lock acquisition (e.g. Firefox Private Browsing)
         return new Promise(() => {}); // never resolves
@@ -74,7 +76,7 @@ describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
       });
 
       const callback = jest.fn().mockResolvedValue("success");
-      const promise = withWebLock(callback);
+      const promise = withWebLock(callback, OFFLINE_WRITE_LOCK, { fallbackOnTimeout: true });
 
       // Advance timers by 4.9 seconds - should not trigger
       jest.advanceTimersByTime(4900);
@@ -114,7 +116,7 @@ describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
       });
 
       const callback = jest.fn().mockResolvedValue("success");
-      const promise = withWebLock(callback);
+      const promise = withWebLock(callback, OFFLINE_WRITE_LOCK, { fallbackOnTimeout: true });
 
       // Advance past 5s
       jest.advanceTimersByTime(5000);
@@ -137,6 +139,38 @@ describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
       jest.useRealTimers();
       const result = await promise;
       expect(result).toBe("success");
+    });
+
+    it("rejects with LockTimeoutError and does not execute callback when fallback is disabled by default (Issue #2118)", async () => {
+      const mockRequest = jest.fn().mockImplementation(() => {
+        return new Promise(() => {});
+      });
+
+      Object.defineProperty(navigator, "locks", {
+        value: { request: mockRequest },
+        configurable: true,
+        writable: true,
+      });
+
+      const callback = jest.fn().mockResolvedValue("success");
+      let caughtError: any = null;
+      const promise = withWebLock(callback).catch((err) => {
+        caughtError = err;
+      });
+
+      jest.advanceTimersByTime(5000);
+
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(callback).not.toHaveBeenCalled();
+
+      jest.useRealTimers();
+      await promise;
+      expect(caughtError).toBeInstanceOf(LockTimeoutError);
+      expect(caughtError.name).toBe("LockTimeoutError");
+      expect(caughtError.message).toContain(OFFLINE_WRITE_LOCK);
     });
   });
 });

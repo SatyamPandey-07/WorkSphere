@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Check, Users, Radio, AlertCircle } from "lucide-react";
 import {
   VibeSummary,
@@ -8,15 +8,16 @@ import {
   VIBE_OPTIONS,
 } from "@/lib/venues/liveVibeTypes";
 
-interface VenueLiveVibeWidgetProps {
+export interface VenueLiveVibeWidgetProps {
   venueId: string;
   initialVibe?: VibeSummary | null;
   compact?: boolean;
   showReactionBar?: boolean;
+  onVoteSubmitted?: (vibe: VibeSummary) => void;
   className?: string;
 }
 
-const PULSE_STYLES = {
+export const PULSE_STYLES = {
   emerald: {
     badgeBg: "bg-emerald-500/10 dark:bg-emerald-950/40",
     badgeBorder: "border-emerald-500/30",
@@ -54,31 +55,53 @@ export function VenueLivePulseBadge({
   vibe: VibeSummary | null;
   className?: string;
 }) {
-  const pulseColor = vibe?.pulseColor || "zinc";
-  const styles = PULSE_STYLES[pulseColor];
+  const pulseColor =
+    vibe?.pulseColor && vibe.pulseColor in PULSE_STYLES
+      ? vibe.pulseColor
+      : "zinc";
+  const styles =
+    PULSE_STYLES[pulseColor as keyof typeof PULSE_STYLES] || PULSE_STYLES.zinc;
+
+  let formattedTime = "";
+  if (vibe?.lastUpdated) {
+    try {
+      formattedTime = new Date(vibe.lastUpdated).toLocaleTimeString();
+    } catch {
+      formattedTime = "";
+    }
+  }
 
   return (
     <div
       data-testid="venue-live-pulse-badge"
       className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold backdrop-blur-sm transition-all ${styles.badgeBg} ${styles.badgeBorder} ${styles.badgeText} ${className}`}
       title={
-        vibe?.lastUpdated
-          ? `Last reported: ${new Date(vibe.lastUpdated).toLocaleTimeString()}`
+        formattedTime
+          ? `Last reported: ${formattedTime}`
           : "Live crowd vibe"
       }
     >
-      <span className="relative flex h-2 w-2">
+      <span
+        className="relative flex h-2 w-2"
+        data-testid="live-pulse-dot-container"
+      >
         {pulseColor !== "zinc" && (
           <span
+            data-testid="live-pulse-ping"
             className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${styles.pingBg}`}
           />
         )}
         <span
+          data-testid="live-pulse-dot"
           className={`relative inline-flex rounded-full h-2 w-2 ${styles.dotBg}`}
         />
       </span>
-      <span>
-        {vibe?.emoji && <span className="mr-1">{vibe.emoji}</span>}
+      <span data-testid="live-pulse-text">
+        {vibe?.emoji && (
+          <span className="mr-1" data-testid="live-pulse-emoji">
+            {vibe.emoji}
+          </span>
+        )}
         {vibe?.badgeText || "Live Vibe · Checking…"}
       </span>
     </div>
@@ -90,27 +113,39 @@ export function VenueLiveVibeWidget({
   initialVibe = null,
   compact = false,
   showReactionBar = true,
+  onVoteSubmitted,
   className = "",
 }: VenueLiveVibeWidgetProps) {
   const [vibe, setVibe] = useState<VibeSummary | null>(initialVibe);
-  const [_loading, setLoading] = useState(!initialVibe);
   const [submitting, setSubmitting] = useState(false);
   const [selectedVibe, setSelectedVibe] = useState<VibeType | null>(null);
   const [votedMessage, setVotedMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const isMountedRef = useRef(true);
+  const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const fetchLiveVibe = useCallback(async () => {
+    if (!venueId) return;
     try {
-      const res = await fetch(`/api/venues/${venueId}/vibe`);
+      const res = await fetch(`/api/venues/${encodeURIComponent(venueId)}/vibe`);
       if (!res.ok) return;
       const data = await res.json();
-      if (data?.vibe) {
+      if (isMountedRef.current && data?.vibe) {
         setVibe(data.vibe);
       }
     } catch {
       // Ignore background fetch errors
-    } finally {
-      setLoading(false);
     }
   }, [venueId]);
 
@@ -119,12 +154,14 @@ export function VenueLiveVibeWidget({
       void fetchLiveVibe();
     }
     // Refresh live vibe periodically every 45 seconds
-    const interval = setInterval(fetchLiveVibe, 45000);
+    const interval = setInterval(() => {
+      void fetchLiveVibe();
+    }, 45000);
     return () => clearInterval(interval);
   }, [fetchLiveVibe, initialVibe]);
 
   const handleVote = async (type: VibeType) => {
-    if (submitting) return;
+    if (submitting || !venueId) return;
     setSubmitting(true);
     setSelectedVibe(type);
     setError(null);
@@ -133,23 +170,26 @@ export function VenueLiveVibeWidget({
     // Optimistic breakdown update
     const previousVibe = vibe;
     if (vibe) {
-      setVibe((prev) => {
-        if (!prev) return null;
-        const newBreakdown = {
-          ...prev.breakdown,
-          [type]: prev.breakdown[type] + 1,
-        };
-        const newTotal = prev.totalVotes + 1;
-        return {
-          ...prev,
-          totalVotes: newTotal,
-          breakdown: newBreakdown,
-        };
+      const currentBreakdown = vibe.breakdown || {
+        silent_focus: 0,
+        moderate_buzz: 0,
+        lively: 0,
+      };
+      const currentCount = currentBreakdown[type] || 0;
+      const newBreakdown = {
+        ...currentBreakdown,
+        [type]: currentCount + 1,
+      };
+      const newTotal = (vibe.totalVotes || 0) + 1;
+      setVibe({
+        ...vibe,
+        totalVotes: newTotal,
+        breakdown: newBreakdown,
       });
     }
 
     try {
-      const res = await fetch(`/api/venues/${venueId}/vibe`, {
+      const res = await fetch(`/api/venues/${encodeURIComponent(venueId)}/vibe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vibe: type }),
@@ -160,20 +200,44 @@ export function VenueLiveVibeWidget({
         throw new Error(data?.error || "Unable to submit vibe vote.");
       }
 
-      setVibe(data.vibe);
-      setVotedMessage("Thanks for keeping WorkSphere live & accurate!");
-      setTimeout(() => setVotedMessage(null), 4000);
-    } catch (err: any) {
-      setError(err?.message || "Failed to record vote.");
-      if (previousVibe) {
-        setVibe(previousVibe);
+      if (isMountedRef.current) {
+        const updatedVibe = data.vibe || vibe;
+        setVibe(updatedVibe);
+        if (updatedVibe && onVoteSubmitted) {
+          onVoteSubmitted(updatedVibe);
+        }
+        setVotedMessage("Thanks for keeping WorkSphere live & accurate!");
+        if (messageTimeoutRef.current) {
+          clearTimeout(messageTimeoutRef.current);
+        }
+        messageTimeoutRef.current = setTimeout(() => {
+          if (isMountedRef.current) {
+            setVotedMessage(null);
+          }
+        }, 4000);
+      }
+    } catch (err: unknown) {
+      if (isMountedRef.current) {
+        const errorMessage =
+          err instanceof Error ? err.message : "Failed to record vote.";
+        setError(errorMessage);
+        if (previousVibe) {
+          setVibe(previousVibe);
+        }
       }
     } finally {
-      setSubmitting(false);
+      if (isMountedRef.current) {
+        setSubmitting(false);
+      }
     }
   };
 
-  const totalVotes = vibe?.totalVotes || 0;
+  const totalVotes = Math.max(0, Number(vibe?.totalVotes) || 0);
+  const breakdown = vibe?.breakdown || {
+    silent_focus: 0,
+    moderate_buzz: 0,
+    lively: 0,
+  };
 
   return (
     <div
@@ -192,14 +256,20 @@ export function VenueLiveVibeWidget({
       </div>
 
       {error && (
-        <div className="mb-3 flex items-center gap-1.5 p-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50">
+        <div
+          data-testid="live-vibe-error-banner"
+          className="mb-3 flex items-center gap-1.5 p-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50"
+        >
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {votedMessage && (
-        <div className="mb-3 flex items-center gap-1.5 p-2 rounded-lg bg-green-50 dark:bg-green-950/30 text-xs text-green-600 dark:text-green-400 border border-green-200 dark:border-green-900/50">
+        <div
+          data-testid="live-vibe-voted-banner"
+          className="mb-3 flex items-center gap-1.5 p-2 rounded-lg bg-green-50 dark:bg-green-950/30 text-xs text-green-600 dark:text-green-400 border border-green-200 dark:border-green-900/50"
+        >
           <Check className="w-3.5 h-3.5 shrink-0" />
           <span>{votedMessage}</span>
         </div>
@@ -220,7 +290,7 @@ export function VenueLiveVibeWidget({
             data-testid="live-vibe-reaction-bar"
           >
             {VIBE_OPTIONS.map((opt) => {
-              const count = vibe?.breakdown[opt.type] || 0;
+              const count = breakdown[opt.type] || 0;
               const pct =
                 totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
               const isSelected = selectedVibe === opt.type;
@@ -230,6 +300,8 @@ export function VenueLiveVibeWidget({
                   key={opt.type}
                   type="button"
                   data-testid={`vibe-btn-${opt.type}`}
+                  aria-label={`Vote vibe: ${opt.label}`}
+                  aria-pressed={isSelected}
                   onClick={() => handleVote(opt.type)}
                   disabled={submitting}
                   className={`group relative flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all ${
@@ -246,7 +318,10 @@ export function VenueLiveVibeWidget({
                     {opt.label}
                   </span>
                   {totalVotes > 0 && !compact && (
-                    <span className="mt-1 text-[10px] text-zinc-400 font-mono">
+                    <span
+                      data-testid={`vibe-pct-${opt.type}`}
+                      className="mt-1 text-[10px] text-zinc-400 font-mono"
+                    >
                       {pct}%
                     </span>
                   )}
@@ -257,36 +332,48 @@ export function VenueLiveVibeWidget({
 
           {/* Breakdown progress bar if votes exist */}
           {totalVotes > 0 && !compact && (
-            <div className="space-y-1 pt-1">
-              <div className="h-1.5 w-full rounded-full overflow-hidden flex bg-zinc-100 dark:bg-zinc-800">
+            <div
+              className="space-y-1 pt-1"
+              data-testid="live-vibe-progress-bar-container"
+            >
+              <div
+                data-testid="live-vibe-progress-bar"
+                className="h-1.5 w-full rounded-full overflow-hidden flex bg-zinc-100 dark:bg-zinc-800"
+              >
                 <div
+                  data-testid="live-vibe-bar-silent-focus"
                   style={{
-                    width: `${Math.round(((vibe?.breakdown.silent_focus || 0) / totalVotes) * 100)}%`,
+                    width: `${Math.round(((breakdown.silent_focus || 0) / totalVotes) * 100)}%`,
                   }}
                   className="bg-emerald-500 transition-all duration-500"
-                  title={`Silent Focus: ${vibe?.breakdown.silent_focus} votes`}
+                  title={`Silent Focus: ${breakdown.silent_focus || 0} votes`}
                 />
                 <div
+                  data-testid="live-vibe-bar-moderate-buzz"
                   style={{
-                    width: `${Math.round(((vibe?.breakdown.moderate_buzz || 0) / totalVotes) * 100)}%`,
+                    width: `${Math.round(((breakdown.moderate_buzz || 0) / totalVotes) * 100)}%`,
                   }}
                   className="bg-amber-500 transition-all duration-500"
-                  title={`Moderate Buzz: ${vibe?.breakdown.moderate_buzz} votes`}
+                  title={`Moderate Buzz: ${breakdown.moderate_buzz || 0} votes`}
                 />
                 <div
+                  data-testid="live-vibe-bar-lively"
                   style={{
-                    width: `${Math.round(((vibe?.breakdown.lively || 0) / totalVotes) * 100)}%`,
+                    width: `${Math.round(((breakdown.lively || 0) / totalVotes) * 100)}%`,
                   }}
                   className="bg-purple-500 transition-all duration-500"
-                  title={`Lively: ${vibe?.breakdown.lively} votes`}
+                  title={`Lively: ${breakdown.lively || 0} votes`}
                 />
               </div>
               <div className="flex justify-between text-[10px] text-zinc-400 font-medium">
-                <span>
+                <span data-testid="live-vibe-reports-count">
                   {totalVotes} live report{totalVotes > 1 ? "s" : ""}
                 </span>
                 {vibe?.verifiedCheckIns ? (
-                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <span
+                    data-testid="live-vibe-verified-badge"
+                    className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold"
+                  >
                     <Users className="w-3 h-3" /> {vibe.verifiedCheckIns}{" "}
                     verified on-site
                   </span>
@@ -299,3 +386,5 @@ export function VenueLiveVibeWidget({
     </div>
   );
 }
+
+export default VenueLiveVibeWidget;

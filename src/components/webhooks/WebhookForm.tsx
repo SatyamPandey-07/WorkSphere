@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createWebhookEndpoint } from "@/app/dashboard/webhooks/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
-const EVENT_TYPES: { value: string; label: string }[] = [
+export const EVENT_TYPES: { value: string; label: string }[] = [
   { value: "BOOKING_CONFIRMED", label: "Booking confirmed" },
   { value: "BOOKING_CANCELLED", label: "Booking cancelled" },
   { value: "BOOKING_RESCHEDULED", label: "Booking rescheduled" },
@@ -17,7 +18,29 @@ const EVENT_TYPES: { value: string; label: string }[] = [
   { value: "DOCUMENT_SIGNED", label: "Document signed" },
 ];
 
-export function WebhookForm() {
+export interface WebhookEndpointResult {
+  ok: boolean;
+  error?: string;
+  data?: unknown;
+}
+
+export interface WebhookFormProps {
+  className?: string;
+  onSuccess?: () => void;
+  onError?: (err: string) => void;
+  onCreateEndpoint?: (params: {
+    url: string;
+    eventTypes: string[];
+    headers: Record<string, string>;
+  }) => Promise<{ ok: boolean; error?: string }>;
+}
+
+export function WebhookForm({
+  className,
+  onSuccess,
+  onError,
+  onCreateEndpoint = createWebhookEndpoint,
+}: WebhookFormProps = {}) {
   const [url, setUrl] = useState("");
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [headersList, setHeadersList] = useState<
@@ -25,6 +48,14 @@ export function WebhookForm() {
   >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const toggleEvent = (event: string) => {
     setSelectedEvents((prev) =>
@@ -64,30 +95,46 @@ export function WebhookForm() {
           {},
         );
 
-      const result = await createWebhookEndpoint({
+      const result = await onCreateEndpoint({
         url,
         eventTypes: selectedEvents,
         headers: formattedHeaders,
       });
+
+      if (!isMountedRef.current) return;
+
       if (!result.ok) {
-        setError(result.error);
+        const errorMsg = result.error || "Could not create the webhook.";
+        setError(errorMsg);
+        onError?.(errorMsg);
         return;
       }
+
       setUrl("");
       setSelectedEvents([]);
       setHeadersList([]);
-    } catch (error) {
-      console.error(error);
-      setError("Could not create the webhook. Please try again.");
+      onSuccess?.();
+    } catch (err) {
+      console.error(err);
+      if (!isMountedRef.current) return;
+      const errorMsg = "Could not create the webhook. Please try again.";
+      setError(errorMsg);
+      onError?.(errorMsg);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   return (
     <form
+      data-testid="webhook-form"
       onSubmit={handleSubmit}
-      className="space-y-4 bg-white/50 dark:bg-zinc-900/50 p-6 rounded-lg border border-zinc-200 dark:border-zinc-800"
+      className={cn(
+        "space-y-4 bg-white/50 dark:bg-zinc-900/50 p-6 rounded-lg border border-zinc-200 dark:border-zinc-800",
+        className,
+      )}
     >
       <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
         Add New Webhook
@@ -97,6 +144,7 @@ export function WebhookForm() {
         <Label htmlFor="url">Payload URL</Label>
         <Input
           id="url"
+          data-testid="webhook-url-input"
           type="url"
           required
           placeholder="https://your-domain.com/webhook"
@@ -114,6 +162,7 @@ export function WebhookForm() {
           <Label>Custom Headers</Label>
           <button
             type="button"
+            data-testid="webhook-add-header-btn"
             onClick={addHeader}
             className="text-xs text-primary hover:underline focus:outline-none"
           >
@@ -122,11 +171,16 @@ export function WebhookForm() {
         </div>
 
         {headersList.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2" data-testid="webhook-headers-list">
             {headersList.map((header, idx) => (
-              <div key={`header-${idx}`} className="flex items-center gap-2">
+              <div
+                key={`header-${idx}`}
+                data-testid={`webhook-header-row-${idx}`}
+                className="flex items-center gap-2"
+              >
                 <Input
                   type="text"
+                  data-testid={`webhook-header-key-${idx}`}
                   placeholder="Key (e.g. Authorization)"
                   value={header.key}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -136,6 +190,7 @@ export function WebhookForm() {
                 />
                 <Input
                   type="text"
+                  data-testid={`webhook-header-value-${idx}`}
                   placeholder="Value"
                   value={header.value}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -145,6 +200,7 @@ export function WebhookForm() {
                 />
                 <button
                   type="button"
+                  data-testid={`webhook-header-remove-${idx}`}
                   onClick={(e) => removeHeader(e, idx)}
                   className="text-red-500 hover:text-red-400 text-xs px-1"
                 >
@@ -166,6 +222,7 @@ export function WebhookForm() {
             >
               <input
                 type="checkbox"
+                data-testid={`webhook-event-checkbox-${event.value}`}
                 checked={selectedEvents.includes(event.value)}
                 onChange={() => toggleEvent(event.value)}
                 className="rounded border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-primary focus:ring-primary"
@@ -177,13 +234,18 @@ export function WebhookForm() {
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p
+          role="alert"
+          data-testid="webhook-error-alert"
+          className="text-sm text-red-400"
+        >
           {error}
         </p>
       )}
 
       <Button
         type="submit"
+        data-testid="webhook-submit-btn"
         disabled={loading || selectedEvents.length === 0 || !url}
       >
         {loading ? "Creating..." : "Create Webhook"}
@@ -191,3 +253,5 @@ export function WebhookForm() {
     </form>
   );
 }
+
+export default WebhookForm;

@@ -41,7 +41,7 @@ export class VideoQualityAdapter {
         }
 
         parameters.encodings[0].maxBitrate = profile.maxBitrate;
-        parameters.encodings[0].minBitrate = profile.minBitrate;
+        (parameters.encodings[0] as any).minBitrate = profile.minBitrate;
         parameters.encodings[0].maxFramerate = profile.maxFramerate;
         parameters.encodings[0].scaleResolutionDownBy = profile.scaleResolutionDownBy;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Laptop,
   Tv,
@@ -14,16 +14,17 @@ import {
   Key,
   CheckCircle2,
   AlertCircle,
-  Clock,
-  DollarSign,
-  ShieldCheck,
   RefreshCw,
-  Sparkles,
   Wifi,
   WifiOff,
 } from "lucide-react";
-import type { PeripheralItem, PeripheralRental } from "@/lib/peripherals/peripheralEngine";
+import type {
+  PeripheralItem,
+  PeripheralRental,
+} from "@/lib/peripherals/peripheralEngine";
 import { usePeerLifecycle } from "@/hooks/usePeerLifecycle";
+import { BatteryIndicator } from "@/components/p2p/BatteryIndicator";
+import { getLowBatteryWarning } from "@/lib/peripherals/battery";
 
 interface PeripheralLockerGridProps {
   venueId?: string;
@@ -37,8 +38,12 @@ export default function PeripheralLockerGrid({
   const [items, setItems] = useState<PeripheralItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [loading, setLoading] = useState(true);
-  const [activeRental, setActiveRental] = useState<PeripheralRental | null>(null);
-  const [activeModalItem, setActiveModalItem] = useState<PeripheralItem | null>(null);
+  const [activeRental, setActiveRental] = useState<PeripheralRental | null>(
+    null,
+  );
+  const [activeModalItem, setActiveModalItem] = useState<PeripheralItem | null>(
+    null,
+  );
   const [checkingOut, setCheckingOut] = useState(false);
   const [returnSummary, setReturnSummary] = useState<any | null>(null);
 
@@ -51,10 +56,12 @@ export default function PeripheralLockerGrid({
     missedHeartbeatThreshold: 3,
   });
 
-  const fetchInventory = async () => {
+  const fetchInventory = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/peripherals/inventory?venueId=${venueId}&category=${selectedCategory}`);
+      const res = await fetch(
+        `/api/peripherals/inventory?venueId=${venueId}&category=${selectedCategory}`,
+      );
       const data = await res.json();
       if (data.success) {
         setItems(data.inventory);
@@ -64,11 +71,11 @@ export default function PeripheralLockerGrid({
     } finally {
       setLoading(false);
     }
-  };
+  }, [venueId, selectedCategory]);
 
   useEffect(() => {
     fetchInventory();
-  }, [selectedCategory, venueId]);
+  }, [fetchInventory]);
 
   // Simulate heartbeat to keep the "connection" alive for demo purposes
   // In production, this would be triggered by actual WebSocket messages from the lockers
@@ -81,9 +88,11 @@ export default function PeripheralLockerGrid({
 
   // Handle automatic cleanup if the locker controller goes offline
   useEffect(() => {
-    if (connectionState === 'closed' || connectionState === 'failed') {
+    if (connectionState === "closed" || connectionState === "failed") {
       // In a real app, we might disable all checkout buttons or show a global error
-      console.warn("Locker controller connection lost. Disabling interactions.");
+      console.warn(
+        "Locker controller connection lost. Disabling interactions.",
+      );
     }
   }, [connectionState]);
 
@@ -107,7 +116,9 @@ export default function PeripheralLockerGrid({
         setActiveModalItem(null);
         // Mark item as checked out in local state
         setItems((prev) =>
-          prev.map((i) => (i.id === item.id ? { ...i, isAvailable: false } : i))
+          prev.map((i) =>
+            i.id === item.id ? { ...i, isAvailable: false } : i,
+          ),
         );
       }
     } catch (err) {
@@ -131,7 +142,9 @@ export default function PeripheralLockerGrid({
         setReturnSummary(data.summary);
         // Free item in local state
         setItems((prev) =>
-          prev.map((i) => (i.id === activeRental.itemId ? { ...i, isAvailable: true } : i))
+          prev.map((i) =>
+            i.id === activeRental.itemId ? { ...i, isAvailable: true } : i,
+          ),
         );
         setActiveRental(null);
       }
@@ -159,8 +172,10 @@ export default function PeripheralLockerGrid({
         return <Laptop className="w-4 h-4 text-blue-400" />;
     }
   };
-
-  const isNetworkOnline = connectionState === 'connected';
+  const lowBatteryWarning = activeModalItem
+    ? getLowBatteryWarning(activeModalItem.name, activeModalItem.batteryPercent)
+    : null;
+  const isNetworkOnline = connectionState === "connected";
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
@@ -169,31 +184,45 @@ export default function PeripheralLockerGrid({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold uppercase tracking-wider">
-              <Layers className="w-3.5 h-3.5" /> Hardware & Peripheral Lending Pool
+              <Layers className="w-3.5 h-3.5" /> Hardware & Peripheral Lending
+              Pool
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
               Smart Hardware Locker & Peripheral Lending
             </h1>
             <p className="text-xs md:text-sm text-slate-300 max-w-2xl">
-              Forgot your 140W charger or need a secondary 4K display? Unlock on-site peripherals instantly from smart locker bays with low hourly rates and automated deposit release.
+              Forgot your 140W charger or need a secondary 4K display? Unlock
+              on-site peripherals instantly from smart locker bays with low
+              hourly rates and automated deposit release.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
             <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs space-y-1 font-mono">
-              <span className="text-slate-400 block text-[10px]">Location Hub</span>
+              <span className="text-slate-400 block text-[10px]">
+                Location Hub
+              </span>
               <strong className="text-white text-xs block">{venueName}</strong>
             </div>
 
             {/* Network Status Indicator based on Peer Lifecycle */}
-            <div className={`p-3.5 rounded-2xl border text-xs space-y-1 font-mono flex items-center gap-2 ${isNetworkOnline
-                ? "bg-emerald-900/20 border-emerald-500/30 text-emerald-400"
-                : "bg-amber-900/20 border-amber-500/30 text-amber-400 animate-pulse"
-              }`}>
-              {isNetworkOnline ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+            <div
+              className={`p-3.5 rounded-2xl border text-xs space-y-1 font-mono flex items-center gap-2 ${
+                isNetworkOnline
+                  ? "bg-emerald-900/20 border-emerald-500/30 text-emerald-400"
+                  : "bg-amber-900/20 border-amber-500/30 text-amber-400 animate-pulse"
+              }`}
+            >
+              {isNetworkOnline ? (
+                <Wifi className="w-4 h-4" />
+              ) : (
+                <WifiOff className="w-4 h-4" />
+              )}
               <div className="flex flex-col">
                 <span className="text-[10px] opacity-70">System Status</span>
-                <strong className="text-xs">{isNetworkOnline ? "Online" : "Reconnecting..."}</strong>
+                <strong className="text-xs">
+                  {isNetworkOnline ? "Online" : "Reconnecting..."}
+                </strong>
               </div>
             </div>
           </div>
@@ -208,14 +237,23 @@ export default function PeripheralLockerGrid({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-white">Active Rental in Progress</span>
+                  <span className="text-xs font-bold text-white">
+                    Active Rental in Progress
+                  </span>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/40 text-emerald-300">
                     Locker Bay #{activeRental.lockerBayNumber}
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 font-mono">
-                  Unlock PIN: <strong className="text-emerald-400 text-sm font-bold">{activeRental.unlockPin}</strong> • Started at{" "}
-                  {new Date(activeRental.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  Unlock PIN:{" "}
+                  <strong className="text-emerald-400 text-sm font-bold">
+                    {activeRental.unlockPin}
+                  </strong>{" "}
+                  • Started at{" "}
+                  {new Date(activeRental.startTime).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </p>
               </div>
             </div>
@@ -235,7 +273,9 @@ export default function PeripheralLockerGrid({
             <div className="flex items-center gap-2 text-slate-200">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               <span>
-                Rental Complete! Billed ${returnSummary.rentalCostUsd} USD for {returnSummary.durationHours} hr(s). Refunded ${returnSummary.depositRefundedUsd} deposit.
+                Rental Complete! Billed ${returnSummary.rentalCostUsd} USD for{" "}
+                {returnSummary.durationHours} hr(s). Refunded $
+                {returnSummary.depositRefundedUsd} deposit.
               </span>
             </div>
             <button
@@ -250,14 +290,23 @@ export default function PeripheralLockerGrid({
 
       {/* Category Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-        {["ALL", "MONITOR", "CHARGER", "KEYBOARD", "MOUSE", "HEADSET", "ADAPTER"].map((cat) => (
+        {[
+          "ALL",
+          "MONITOR",
+          "CHARGER",
+          "KEYBOARD",
+          "MOUSE",
+          "HEADSET",
+          "ADAPTER",
+        ].map((cat) => (
           <button
             key={cat}
             onClick={() => setSelectedCategory(cat)}
-            className={`px-3.5 py-1.5 rounded-xl font-semibold capitalize whitespace-nowrap transition ${selectedCategory === cat
+            className={`px-3.5 py-1.5 rounded-xl font-semibold capitalize whitespace-nowrap transition ${
+              selectedCategory === cat
                 ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/30"
                 : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
-              }`}
+            }`}
           >
             {cat.toLowerCase()}
           </button>
@@ -268,39 +317,52 @@ export default function PeripheralLockerGrid({
       {loading ? (
         <div className="p-12 rounded-3xl bg-slate-900/40 border border-slate-800 flex flex-col items-center justify-center gap-3 text-slate-400">
           <RefreshCw className="w-6 h-6 animate-spin text-cyan-400" />
-          <p className="text-sm">Querying locker bay sensors and item inventory...</p>
+          <p className="text-sm">
+            Querying locker bay sensors and item inventory...
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {items.map((item) => (
             <div
               key={item.id}
-              className={`p-5 rounded-3xl border flex flex-col justify-between space-y-4 backdrop-blur-md transition-all duration-200 ${item.isAvailable
+              className={`p-5 rounded-3xl border flex flex-col justify-between space-y-4 backdrop-blur-md transition-all duration-200 ${
+                item.isAvailable
                   ? "bg-slate-900/80 border-slate-800 hover:border-cyan-500/40 shadow-lg"
                   : "bg-slate-950/60 border-slate-800/60 opacity-60"
-                }`}
+              }`}
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
                     {getCategoryIcon(item.category)}
-                    <span className="capitalize">{item.category.toLowerCase()}</span>
+                    <span className="capitalize">
+                      {item.category.toLowerCase()}
+                    </span>
                   </div>
 
                   <span
-                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${item.isAvailable
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                      item.isAvailable
                         ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
                         : "bg-amber-500/10 border-amber-500/30 text-amber-400"
-                      }`}
+                    }`}
                   >
-                    {item.isAvailable ? `🟢 Bay #${item.lockerBayNumber} Ready` : "🟡 In Use"}
+                    {item.isAvailable
+                      ? `🟢 Bay #${item.lockerBayNumber} Ready`
+                      : "🟡 In Use"}
                   </span>
                 </div>
 
                 <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-white line-clamp-2">{item.name}</h3>
-                  <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{item.description}</p>
+                  <h3 className="text-sm font-bold text-white line-clamp-2">
+                    {item.name}
+                  </h3>
+                  <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                    {item.description}
+                  </p>
                 </div>
+                <BatteryIndicator percent={item.batteryPercent} />
 
                 <div className="flex flex-wrap gap-1 pt-1">
                   {item.specifications.map((spec, idx) => (
@@ -316,13 +378,21 @@ export default function PeripheralLockerGrid({
 
               <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
                 <div className="text-xs font-mono">
-                  <strong className="text-cyan-400 text-sm">${item.hourlyRateUsd}</strong>
+                  <strong className="text-cyan-400 text-sm">
+                    ${item.hourlyRateUsd}
+                  </strong>
                   <span className="text-slate-400 text-[11px]"> / hr</span>
-                  <span className="block text-[10px] text-slate-500">(${item.depositUsd} deposit)</span>
+                  <span className="block text-[10px] text-slate-500">
+                    (${item.depositUsd} deposit)
+                  </span>
                 </div>
 
                 <button
-                  disabled={!item.isAvailable || activeRental !== null || !isNetworkOnline}
+                  disabled={
+                    !item.isAvailable ||
+                    activeRental !== null ||
+                    !isNetworkOnline
+                  }
                   onClick={() => setActiveModalItem(item)}
                   className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-md transition disabled:opacity-40 flex items-center gap-1.5"
                 >
@@ -340,7 +410,8 @@ export default function PeripheralLockerGrid({
           <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-slate-700 p-6 space-y-5 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Key className="w-4 h-4 text-cyan-400" /> Unlock Locker Bay #{activeModalItem.lockerBayNumber}
+                <Key className="w-4 h-4 text-cyan-400" /> Unlock Locker Bay #
+                {activeModalItem.lockerBayNumber}
               </h3>
               <button
                 onClick={() => setActiveModalItem(null)}
@@ -352,23 +423,48 @@ export default function PeripheralLockerGrid({
 
             <div className="space-y-3 text-xs">
               <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
-                <span className="text-slate-400 block text-[10px]">Item Selected</span>
-                <strong className="text-white text-sm block">{activeModalItem.name}</strong>
+                <span className="text-slate-400 block text-[10px]">
+                  Item Selected
+                </span>
+                <strong className="text-white text-sm block">
+                  {activeModalItem.name}
+                </strong>
               </div>
 
+              {lowBatteryWarning && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-[11px] leading-relaxed text-rose-200"
+                >
+                  <AlertCircle
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span>{lowBatteryWarning}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-slate-400 block text-[10px]">Hourly Rate</span>
-                  <strong className="text-cyan-400 font-mono text-sm">${activeModalItem.hourlyRateUsd} USD</strong>
+                  <span className="text-slate-400 block text-[10px]">
+                    Hourly Rate
+                  </span>
+                  <strong className="text-cyan-400 font-mono text-sm">
+                    ${activeModalItem.hourlyRateUsd} USD
+                  </strong>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-slate-400 block text-[10px]">Refundable Deposit</span>
-                  <strong className="text-slate-200 font-mono text-sm">${activeModalItem.depositUsd} USD</strong>
+                  <span className="text-slate-400 block text-[10px]">
+                    Refundable Deposit
+                  </span>
+                  <strong className="text-slate-200 font-mono text-sm">
+                    ${activeModalItem.depositUsd} USD
+                  </strong>
                 </div>
               </div>
 
               <p className="text-slate-400 text-[11px] leading-relaxed">
-                Deposit hold is automatically authorized and released back to your payment method when the locker door is closed upon return.
+                Deposit hold is automatically authorized and released back to
+                your payment method when the locker door is closed upon return.
               </p>
             </div>
 
@@ -384,7 +480,11 @@ export default function PeripheralLockerGrid({
                 disabled={checkingOut || !isNetworkOnline}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 flex items-center gap-1.5 transition disabled:opacity-50"
               >
-                {checkingOut ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Unlock className="w-3.5 h-3.5" />}
+                {checkingOut ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Unlock className="w-3.5 h-3.5" />
+                )}
                 <span>Authorize & Unlock Bay</span>
               </button>
             </div>

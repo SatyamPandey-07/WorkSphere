@@ -99,7 +99,7 @@ export function useCrossTabBookingSync(
     const calculateRemaining = () => {
       const remaining = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
       setTimeRemainingSeconds(remaining);
-      if (remaining === 0 && status !== "expired") {
+      if (remaining === 0) {
         setStatus("expired");
       }
     };

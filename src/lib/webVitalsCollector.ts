@@ -43,6 +43,9 @@ export function getWebVitalRating(
   name: WebVitalMetricName,
   value: number
 ): WebVitalRating {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return "good";
+  }
   const threshold = WEB_VITALS_THRESHOLDS[name];
   if (!threshold) return "good";
 
@@ -66,7 +69,14 @@ export function calculatePercentiles(values: number[]): {
     return { p50: 0, p75: 0, p90: 0, min: 0, max: 0, count: 0 };
   }
 
-  const sorted = [...values].sort((a, b) => a - b);
+  const validValues = values.filter(
+    (v) => typeof v === "number" && Number.isFinite(v) && v >= 0
+  );
+  if (validValues.length === 0) {
+    return { p50: 0, p75: 0, p90: 0, min: 0, max: 0, count: 0 };
+  }
+
+  const sorted = [...validValues].sort((a, b) => a - b);
   const count = sorted.length;
 
   const getPercentile = (p: number) => {
@@ -119,8 +129,10 @@ export interface AggregatedWebVitals {
  * Weights: LCP (30%), INP (25%), CLS (25%), FCP (10%), TTFB (10%).
  */
 export function calculatePerformanceScore(
-  metrics: Partial<Record<WebVitalMetricName, MetricSummary>>
+  metrics: Partial<Record<WebVitalMetricName, MetricSummary>> | null | undefined
 ): number {
+  if (!metrics || typeof metrics !== "object") return 100;
+
   const weights: Record<WebVitalMetricName, number> = {
     LCP: 0.3,
     INP: 0.25,
@@ -136,10 +148,19 @@ export function calculatePerformanceScore(
   (Object.keys(weights) as WebVitalMetricName[]).forEach((name) => {
     const metric = metrics[name];
     const weight = weights[name];
-    if (!metric || metric.sampleCount === 0 || weight === 0) return;
+    if (
+      !metric ||
+      metric.sampleCount === 0 ||
+      typeof metric.p75 !== "number" ||
+      !Number.isFinite(metric.p75) ||
+      weight === 0
+    ) {
+      return;
+    }
 
     const threshold = WEB_VITALS_THRESHOLDS[name];
-    const p75 = metric.p75;
+    if (!threshold) return;
+    const p75 = Math.max(0, metric.p75);
 
     let metricScore = 100;
     if (p75 <= threshold.good) {
@@ -188,7 +209,15 @@ export function aggregateWebVitals(
 
   let validCount = 0;
   (list || []).forEach((entry) => {
-    if (!entry || !entry.name || typeof entry.value !== "number") return;
+    if (
+      !entry ||
+      !entry.name ||
+      typeof entry.value !== "number" ||
+      !Number.isFinite(entry.value) ||
+      entry.value < 0
+    ) {
+      return;
+    }
     validCount += 1;
 
     if (groupedByName[entry.name]) {
@@ -310,8 +339,23 @@ const STORAGE_KEY = "worksphere_web_vitals_telemetry";
  * Stores a web vital metric entry into browser localStorage for client telemetry aggregation.
  */
 export function recordWebVital(entry: Omit<WebVitalEntry, "id" | "timestamp">): WebVitalEntry {
+  const safeValue =
+    typeof entry?.value === "number" && Number.isFinite(entry.value) && entry.value >= 0
+      ? entry.value
+      : 0;
+  const safeRating = entry?.rating || getWebVitalRating(entry?.name, safeValue);
+  const safeDelta =
+    typeof entry?.delta === "number" && Number.isFinite(entry.delta) && entry.delta >= 0
+      ? entry.delta
+      : safeValue;
+
   const fullEntry: WebVitalEntry = {
     ...entry,
+    name: entry?.name || "LCP",
+    value: safeValue,
+    rating: safeRating,
+    delta: safeDelta,
+    route: entry?.route || "/",
     id: `wv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     timestamp: Date.now(),
   };

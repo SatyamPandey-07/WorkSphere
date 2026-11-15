@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { Crop, Loader2, Minus, Plus, X } from "lucide-react";
 
@@ -11,7 +11,7 @@ import {
   type PixelCrop,
 } from "@/lib/avatar-crop";
 
-type AvatarCropModalProps = {
+export type AvatarCropModalProps = {
   imageSource: string;
   originalFileName: string;
   isOpen: boolean;
@@ -24,13 +24,13 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.1;
 
-const ASPECT_PRESETS = [
+export const ASPECT_PRESETS = [
   { label: "1:1", value: 1, description: "Square (profile picture)" },
   { label: "4:3", value: 4 / 3, description: "Standard" },
   { label: "16:9", value: 16 / 9, description: "Widescreen" },
 ] as const;
 
-type AspectPreset = typeof ASPECT_PRESETS[number]["value"];
+export type AspectPreset = typeof ASPECT_PRESETS[number]["value"];
 
 export function AvatarCropModal({
   imageSource,
@@ -45,6 +45,14 @@ export function AvatarCropModal({
   const [croppedPixels, setCroppedPixels] = useState<PixelCrop | null>(null);
   const [cropError, setCropError] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState<AspectPreset>(1);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
@@ -105,11 +113,13 @@ export function AvatarCropModal({
       const file = createCroppedAvatarFile(blob, originalFileName);
       await onConfirm(file);
     } catch (error) {
-      setCropError(
-        error instanceof Error
-          ? error.message
-          : "Unable to crop the selected image.",
-      );
+      if (isMountedRef.current) {
+        setCropError(
+          error instanceof Error
+            ? error.message
+            : "Unable to crop the selected image.",
+        );
+      }
     }
   };
 
@@ -119,6 +129,7 @@ export function AvatarCropModal({
 
   return (
     <div
+      data-testid="avatar-crop-backdrop"
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
       role="presentation"
       onMouseDown={(event) => {
@@ -132,6 +143,7 @@ export function AvatarCropModal({
         aria-modal="true"
         aria-labelledby="avatar-crop-title"
         aria-describedby="avatar-crop-description"
+        data-testid="avatar-crop-dialog"
         className="w-full max-w-xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -139,6 +151,7 @@ export function AvatarCropModal({
           <div>
             <h2
               id="avatar-crop-title"
+              data-testid="avatar-crop-title"
               className="flex items-center gap-2 text-lg font-semibold text-zinc-950 dark:text-white"
             >
               <Crop className="h-5 w-5" aria-hidden="true" />
@@ -146,6 +159,7 @@ export function AvatarCropModal({
             </h2>
             <p
               id="avatar-crop-description"
+              data-testid="avatar-crop-description"
               className="mt-1 text-sm text-zinc-500 dark:text-zinc-400"
             >
               Drag the image and use zoom to choose a square avatar.
@@ -157,6 +171,7 @@ export function AvatarCropModal({
             onClick={onCancel}
             disabled={isProcessing}
             aria-label="Close image crop dialog"
+            data-testid="avatar-crop-close-btn"
             className="rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-zinc-900 dark:hover:text-white"
           >
             <X className="h-5 w-5" aria-hidden="true" />
@@ -173,6 +188,7 @@ export function AvatarCropModal({
               <button
                 key={preset.label}
                 type="button"
+                data-testid={`avatar-crop-aspect-preset-${preset.label}`}
                 onClick={() => {
                   setAspectRatio(preset.value);
                   setCrop({ x: 0, y: 0 });
@@ -191,8 +207,11 @@ export function AvatarCropModal({
             ))}
           </div>
 
-          <div className="relative w-full max-h-[55vh] overflow-hidden rounded-xl bg-zinc-950"
-               style={{ aspectRatio: `${aspectRatio}` }}>
+          <div
+            data-testid="avatar-crop-cropper-container"
+            className="relative w-full max-h-[55vh] overflow-hidden rounded-xl bg-zinc-950"
+            style={{ aspectRatio: `${aspectRatio}` }}
+          >
             <Cropper
               image={imageSource}
               crop={crop}
@@ -217,7 +236,7 @@ export function AvatarCropModal({
               >
                 Zoom
               </label>
-              <span className="text-xs tabular-nums text-zinc-500">
+              <span data-testid="avatar-crop-zoom-value" className="text-xs tabular-nums text-zinc-500">
                 {zoom.toFixed(1)}×
               </span>
             </div>
@@ -226,6 +245,7 @@ export function AvatarCropModal({
               <button
                 type="button"
                 aria-label="Zoom out"
+                data-testid="avatar-crop-zoom-out-btn"
                 onClick={() => changeZoom(zoom - ZOOM_STEP)}
                 disabled={isProcessing || zoom <= MIN_ZOOM}
                 className="rounded-lg border border-zinc-200 p-2 text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
@@ -236,6 +256,7 @@ export function AvatarCropModal({
               <input
                 id="avatar-crop-zoom"
                 type="range"
+                data-testid="avatar-crop-zoom-slider"
                 min={MIN_ZOOM}
                 max={MAX_ZOOM}
                 step={ZOOM_STEP}
@@ -248,6 +269,7 @@ export function AvatarCropModal({
               <button
                 type="button"
                 aria-label="Zoom in"
+                data-testid="avatar-crop-zoom-in-btn"
                 onClick={() => changeZoom(zoom + ZOOM_STEP)}
                 disabled={isProcessing || zoom >= MAX_ZOOM}
                 className="rounded-lg border border-zinc-200 p-2 text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
@@ -263,8 +285,9 @@ export function AvatarCropModal({
 
             {cropError && (
               <p
-                className="mt-3 text-sm text-red-600 dark:text-red-400"
                 role="alert"
+                data-testid="avatar-crop-error-msg"
+                className="mt-3 text-sm text-red-600 dark:text-red-400"
               >
                 {cropError}
               </p>
@@ -277,6 +300,7 @@ export function AvatarCropModal({
             type="button"
             onClick={onCancel}
             disabled={isProcessing}
+            data-testid="avatar-crop-cancel-btn"
             className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
           >
             Cancel
@@ -286,6 +310,7 @@ export function AvatarCropModal({
             type="button"
             onClick={handleConfirm}
             disabled={!croppedPixels || isProcessing}
+            data-testid="avatar-crop-confirm-btn"
             className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
           >
             {isProcessing ? (
@@ -305,3 +330,5 @@ export function AvatarCropModal({
     </div>
   );
 }
+
+export default AvatarCropModal;

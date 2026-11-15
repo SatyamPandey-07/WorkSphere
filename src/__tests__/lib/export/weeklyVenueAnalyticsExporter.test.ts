@@ -71,7 +71,7 @@ describe("Weekly Venue Analytics CSV Exporter & Automated Email Dispatch (#5070)
       expect(csv).toContain("Report Window,2026-10-01 to 2026-10-08");
       expect(csv).toContain("Total Venues Reported,2");
       expect(csv).toContain(
-        "Venue ID,Venue Name,Category,Manager Email,Total Bookings,Total Revenue,Currency,Foot Traffic Check-Ins,Average Rating",
+        "Venue ID,Venue Name,Category,Manager Email,Total Bookings,Total Revenue,Foot Traffic Check-Ins,Average Rating",
       );
       expect(csv).toContain(
         "venue-alpha-100,Downtown WorkHub,Coworking Space,manager@workhub.com,24,$1200.50,42,4.8",
@@ -194,6 +194,59 @@ describe("Weekly Venue Analytics CSV Exporter & Automated Email Dispatch (#5070)
       expect(result.csvContent).toContain("WEEKLY VENUE ANALYTICS");
       expect(result.emailSent).toBe(true);
       expect(result.recipient).toBe("admin@worksphere.app");
+    });
+  });
+
+  describe("Defensive formatters and null-safety (#6772)", () => {
+    it("handles nullish reportData and corrupted venues gracefully", () => {
+      const nullCsv = generateWeeklyVenueAnalyticsCSV(null);
+      expect(nullCsv).toContain("WEEKLY VENUE ANALYTICS & FOOT-TRAFFIC REPORT");
+      expect(nullCsv).toContain("Total Venues Reported,0");
+
+      const corruptedData: WeeklyVenueAnalyticsData = {
+        startDate: "2026-10-01",
+        endDate: "2026-10-08",
+        generatedAt: "2026-10-08T12:00:00.000Z",
+        venues: [
+          {
+            venueId: "venue-corrupt",
+            venueName: "Corrupt Workspace",
+            category: "Coworking",
+            managerEmail: "manager@test.com",
+            totalBookings: NaN as any,
+            totalRevenue: NaN as any,
+            currency: null as any,
+            footTrafficCount: NaN as any,
+            averageRating: NaN as any,
+          },
+          {
+            venueId: "venue-undef",
+            venueName: "Undef Workspace",
+            category: "Cafe",
+            managerEmail: "owner@test.com",
+            totalBookings: 10,
+            totalRevenue: 200,
+            currency: "$",
+            footTrafficCount: 5,
+            averageRating: undefined as any,
+          },
+        ],
+      };
+
+      const csv = generateWeeklyVenueAnalyticsCSV(corruptedData);
+      expect(csv).toContain("venue-corrupt,Corrupt Workspace,Coworking,manager@test.com,0,$0.00,0,N/A");
+      expect(csv).toContain("venue-undef,Undef Workspace,Cafe,owner@test.com,10,$200.00,5,N/A");
+    });
+
+    it("handles invalid Date instances in fetchWeeklyVenueAnalyticsData without throwing", async () => {
+      findManyMock.mockResolvedValue([]);
+      const result = await fetchWeeklyVenueAnalyticsData({
+        startDate: new Date("invalid"),
+        endDate: new Date("invalid"),
+      });
+      expect(result.venues).toEqual([]);
+      expect(typeof result.startDate).toBe("string");
+      expect(typeof result.endDate).toBe("string");
     });
   });
 });

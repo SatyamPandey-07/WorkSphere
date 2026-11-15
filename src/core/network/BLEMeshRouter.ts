@@ -537,7 +537,7 @@ export class BLEMeshRouter {
 
         try {
           const serialized = this.protocol.serializeBundle(bundle);
-          await characteristic.writeValue(serialized);
+          await characteristic.writeValue(serialized as unknown as BufferSource);
           this.recordDeliverySuccess(dest, bundleId);
         } catch (writeError) {
           const { retriesExhausted } = this.recordDeliveryFailure(dest, bundleId);

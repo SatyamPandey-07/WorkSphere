@@ -72,14 +72,17 @@ describe("SpectralWaterfallCanvas (WebGL 2D Audio Spectrum Visualizer)", () => {
     }) as any;
 
     jest.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
-      return setTimeout(cb, 16) as unknown as number;
+      const timer = setTimeout(cb, 16);
+      (timer as any)?.unref?.();
+      return timer as unknown as number;
     });
     jest.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
-      clearTimeout(id);
+      clearTimeout(id as any);
     });
   });
 
   afterEach(() => {
+    jest.clearAllTimers();
     jest.restoreAllMocks();
   });
 
@@ -99,7 +102,17 @@ describe("SpectralWaterfallCanvas (WebGL 2D Audio Spectrum Visualizer)", () => {
       const program = createSpectralProgram(mockGl);
       expect(mockGl.createProgram).toHaveBeenCalled();
       expect(mockGl.linkProgram).toHaveBeenCalled();
+      expect(mockGl.deleteShader).toHaveBeenCalledTimes(2);
       expect(program).toBeDefined();
+    });
+
+    it("cleans up vertex shader if fragment compilation fails", () => {
+      mockGl.getShaderParameter
+        .mockImplementationOnce(() => true)
+        .mockImplementationOnce(() => false);
+      const program = createSpectralProgram(mockGl);
+      expect(program).toBeNull();
+      expect(mockGl.deleteShader).toHaveBeenCalled();
     });
 
     it("fragment shader includes glowing cyan-to-emerald gradient mapping", () => {
@@ -171,6 +184,33 @@ describe("SpectralWaterfallCanvas (WebGL 2D Audio Spectrum Visualizer)", () => {
 
       expect(onRestored).toHaveBeenCalled();
       expect(mockGl.createProgram).toHaveBeenCalled();
+    });
+  });
+
+  describe("Input Sanitization & Boundary Handling", () => {
+    it("sanitizes speed and gain under NaN, negative, and out-of-bound values", () => {
+      render(
+        <SpectralWaterfallCanvas
+          speed={NaN}
+          gain={NaN}
+          width={0}
+          height={-100}
+        />,
+      );
+      const canvas = screen.getByTestId("spectral-waterfall-canvas");
+      expect(canvas).toHaveAttribute("width", "640");
+      expect(canvas).toHaveAttribute("height", "240");
+      expect(mockGl.uniform1f).toHaveBeenCalledWith(expect.anything(), 1.0);
+    });
+
+    it("clamps extreme speed values within [1, 127]", () => {
+      render(
+        <SpectralWaterfallCanvas
+          speed={9999}
+          gain={2.5}
+        />,
+      );
+      expect(mockGl.uniform1f).toHaveBeenCalledWith(expect.anything(), 2.5);
     });
   });
 });

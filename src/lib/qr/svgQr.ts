@@ -4,6 +4,8 @@
  */
 
 import { sanitizeColor, sanitizeSvg } from "@/lib/security/svgSanitizer";
+import { matrixToSvgPath } from "./matrixPath";
+import { triggerBrowserDownload } from "@/lib/export/csvBuilder";
 
 // GF(256) with primitive polynomial x^8 + x^4 + x^3 + x^2 + 1 (0x11d = 285)
 const EXP_TABLE = new Uint8Array(512);
@@ -272,7 +274,8 @@ function getMaskCondition(mask: number): (r: number, c: number) => boolean {
 }
 
 export function generateQRMatrix(text: string): boolean[][] {
-  const versionInfo = selectVersion(new TextEncoder().encode(text).length);
+  const safeText = typeof text === "string" ? text : String(text ?? "");
+  const versionInfo = selectVersion(new TextEncoder().encode(safeText).length);
   const size = versionInfo.version * 4 + 17;
   const matrix = createMatrix(versionInfo.version);
 
@@ -319,7 +322,7 @@ export function generateQRMatrix(text: string): boolean[][] {
   }
 
   // 6. Codewords
-  const dataBytes = encodeData(text, versionInfo);
+  const dataBytes = encodeData(safeText, versionInfo);
   const codewords = generateCodewords(dataBytes, versionInfo);
 
   // Convert codewords to bit stream
@@ -424,16 +427,7 @@ export function generateQRCodeSVG(
   const viewBoxSize = moduleCount + padding * 2;
   const safeTitle = escapeXmlText(title);
 
-  let pathData = "";
-  for (let r = 0; r < moduleCount; r++) {
-    for (let c = 0; c < moduleCount; c++) {
-      if (matrix[r][c]) {
-        const x = c + padding;
-        const y = r + padding;
-        pathData += `M${x},${y}h1v1h-1z `;
-      }
-    }
-  }
+  const pathData = matrixToSvgPath(matrix, padding);
 
   const rawSvg = (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxSize} ${viewBoxSize}" ` +
@@ -442,7 +436,7 @@ export function generateQRCodeSVG(
     (bgColor && bgColor !== "transparent"
       ? `<rect width="${viewBoxSize}" height="${viewBoxSize}" fill="${bgColor}" />`
       : "") +
-    `<path d="${pathData.trim()}" fill="${fgColor}" />` +
+    `<path d="${pathData}" fill="${fgColor}" />` +
     `</svg>`
   );
 
@@ -452,18 +446,18 @@ export function generateQRCodeSVG(
 /**
  * Triggers a browser file download of the SVG string.
  */
-export function downloadSVG(svgString: string, filename: string): void {
+export function downloadSVG(svgString: string, filename?: string): void {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return;
   }
 
+  const safeFilename =
+    filename && typeof filename === "string" && filename.trim().length > 0
+      ? filename.trim().endsWith(".svg")
+        ? filename.trim()
+        : `${filename.trim()}.svg`
+      : "qr-code.svg";
+
   const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename.endsWith(".svg") ? filename : `${filename}.svg`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
+  triggerBrowserDownload(blob, safeFilename);
 }

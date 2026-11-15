@@ -55,7 +55,7 @@ export async function computeChunkHash(
     globalThis.crypto.subtle &&
     typeof globalThis.crypto.subtle.digest === "function"
   ) {
-    const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", buffer);
+    const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", buffer as unknown as BufferSource);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   }
@@ -250,7 +250,7 @@ export class ChunkIntegrityVerifier {
       parts.push(chunk);
     }
 
-    return new Blob(parts, { type: mimeType });
+    return new Blob(parts as any, { type: mimeType });
   }
 
   getVerifiedChunkCount(): number {

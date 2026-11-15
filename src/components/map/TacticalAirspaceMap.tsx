@@ -41,8 +41,8 @@ export const TacticalAirspaceMap: React.FC<TacticalAirspaceMapProps> = memo(({
   ],
   mode = "walking",
   waypoints = [
-    { id: "wp-origin", name: "Alpha Hub (Nomad Base)", coordinates: [100, 480], type: "origin", eta: "00:00" },
-    { id: "wp-dest", name: "Green Lantern Cowork Lab", coordinates: [720, 160], type: "destination", eta: "+18m", altitude: "FL045" },
+    { id: "wp-origin", name: "Alpha Hub (Nomad Base)", coordinates: [100, 480] as [number, number], type: "origin" as const, eta: "00:00" },
+    { id: "wp-dest", name: "Green Lantern Cowork Lab", coordinates: [720, 160] as [number, number], type: "destination" as const, eta: "+18m", altitude: "FL045" },
   ],
   glowIntensity = "normal",
   flightCallsign = "SECTOR-2814 // AIRSPACE-01",

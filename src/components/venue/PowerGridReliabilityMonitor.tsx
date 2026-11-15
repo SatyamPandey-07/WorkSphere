@@ -28,15 +28,20 @@ import type {
   PowerGridStatus,
 } from "@/lib/telemetry/powerGridEngine";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { cn } from "@/lib/utils";
 
-interface PowerGridReliabilityMonitorProps {
+export interface PowerGridReliabilityMonitorProps {
   venueId?: string;
   venueName?: string;
+  className?: string;
+  "data-testid"?: string;
 }
 
-export default function PowerGridReliabilityMonitor({
+export function PowerGridReliabilityMonitor({
   venueId = "venue-sf-01",
   venueName = "Mission Focus Coworking & Cafe",
+  className = "",
+  ...props
 }: PowerGridReliabilityMonitorProps) {
   const [summary, setSummary] = useState<VenuePowerGridSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -265,7 +270,10 @@ export default function PowerGridReliabilityMonitor({
   const currentGridBadge = summary ? getGridStatusBadge(summary.gridStatus) : null;
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-6">
+    <div
+      data-testid={props["data-testid"] || "power-grid-reliability-monitor"}
+      className={cn("w-full max-w-5xl mx-auto space-y-6", className)}
+    >
       {/* Top Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-amber-950/30 to-slate-900 border border-amber-500/30 p-6 md:p-8 backdrop-blur-xl shadow-2xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -561,3 +569,5 @@ export default function PowerGridReliabilityMonitor({
     </div>
   );
 }
+
+export default PowerGridReliabilityMonitor;

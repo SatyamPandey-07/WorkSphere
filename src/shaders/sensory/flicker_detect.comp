@@ -1,0 +1,34 @@
+#version 310 es
+// WebGL Compute Shader (WebGPU style syntax for modern WebGL2 extensions/WebGPU contexts)
+// Analyzes temporal pixel variance across consecutive frames to isolate fluorescent light flicker.
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(rgba8) uniform readonly image2D u_CurrentFrame;
+layout(rgba8) uniform readonly image2D u_PreviousFrame;
+layout(r32f) uniform writeonly image2D u_FlickerMap;
+
+uniform float u_Threshold;
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_CurrentFrame);
+    
+    if (pos.x >= size.x || pos.y >= size.y) return;
+
+    vec4 curr = imageLoad(u_CurrentFrame, pos);
+    vec4 prev = imageLoad(u_PreviousFrame, pos);
+    
+    // Calculate luminance difference
+    float lumCurr = dot(curr.rgb, vec3(0.299, 0.587, 0.114));
+    float lumPrev = dot(prev.rgb, vec3(0.299, 0.587, 0.114));
+    
+    float delta = abs(lumCurr - lumPrev);
+    
+    // High frequency flicker detection
+    if (delta > u_Threshold) {
+        imageStore(u_FlickerMap, pos, vec4(1.0, 0.0, 0.0, 1.0));
+    } else {
+        imageStore(u_FlickerMap, pos, vec4(0.0, 0.0, 0.0, 1.0));
+    }
+}

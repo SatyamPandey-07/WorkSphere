@@ -5,7 +5,7 @@ import DynamicErgonomicCoach from "@/components/wellness/DynamicErgonomicCoach";
 export const metadata: Metadata = {
   title: "Dynamic Ergonomic Health & Biometric Break Coach | WorkSphere",
   description:
-    "Real-time posture checks, 20-20-20 eye strain countdowns, sit-to-stand posture ratios, micro-stretch routines, and ergonomic wellness tracking for hybrid professionals.",
+    "Real-time posture checks, sit-to-stand desk duration ratio tracking with weekly summary analytics, 20-20-20 eye strain countdowns, micro-stretch routines, and ergonomic wellness tracking for hybrid professionals.",
 };
 
 export default function ErgonomicsPage() {
@@ -17,8 +17,8 @@ export default function ErgonomicsPage() {
             Ergonomic Health & Biometric Break Coach
           </h1>
           <p className="text-sm sm:text-base text-slate-400 max-w-2xl mx-auto">
-            Stay pain-free and hyper-focused with automated 20-20-20 eye rest intervals, posture
-            assessments, guided micro-stretch sequences, and hydration tracking.
+            Stay pain-free and hyper-focused with real-time sitting vs. standing desk duration ratio tracking,
+            weekly summary analytics, automated 20-20-20 eye rest intervals, posture assessments, and guided micro-stretch sequences.
           </p>
         </div>
 

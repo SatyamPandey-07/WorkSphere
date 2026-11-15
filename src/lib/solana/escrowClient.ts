@@ -7,6 +7,7 @@ import {
   TransactionInstruction,
   VersionedTransaction,
   LAMPORTS_PER_SOL,
+  ComputeBudgetProgram,
 } from "@solana/web3.js";
 import type { Commitment, SignatureStatus } from "@solana/web3.js";
 import {
@@ -15,6 +16,10 @@ import {
   type ReserveSeatOptions,
   type SeatReservationState,
 } from "./solanaPayEscrow";
+import {
+  getPriorityFeeEstimator,
+  type PriorityFeeEstimate,
+} from "./priorityFeeEstimator";
 
 export const TOKEN_PROGRAM_ID = new PublicKey(
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -77,6 +82,7 @@ export interface EscrowDepositParams {
   amount: number;
   currency: EscrowCurrency;
   rpcUrl: string;
+  priorityFeeMicroLamports?: number;
 }
 
 export interface EscrowDepositResult {
@@ -176,6 +182,30 @@ export async function buildSolDepositTransaction(
     feePayer: payer,
   });
 
+  // Dynamic Priority Fee: estimate automatically if not explicitly provided
+  let priorityFee = params.priorityFeeMicroLamports;
+  if (priorityFee === undefined || priorityFee === null) {
+    try {
+      const estimator = getPriorityFeeEstimator();
+      const estimate = await estimator.estimatePriorityFee(connection, [
+        payer,
+        escrowVault,
+      ]);
+      priorityFee = estimate.microLamports;
+    } catch {
+      priorityFee = undefined;
+    }
+  }
+
+  // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+  if (typeof priorityFee === "number" && priorityFee > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: Math.floor(priorityFee),
+      }),
+    );
+  }
+
   const memoData = Buffer.from(
     JSON.stringify({ bookingId: params.bookingId, type: "escrow_deposit" }),
   );
@@ -240,6 +270,31 @@ export async function buildUsdcDepositTransaction(
     recentBlockhash: blockhash,
     feePayer: payer,
   });
+
+  // Dynamic Priority Fee: estimate automatically if not explicitly provided
+  let priorityFee = params.priorityFeeMicroLamports;
+  if (priorityFee === undefined || priorityFee === null) {
+    try {
+      const estimator = getPriorityFeeEstimator();
+      const estimate = await estimator.estimatePriorityFee(connection, [
+        payer,
+        payerAta,
+        vaultAta,
+      ]);
+      priorityFee = estimate.microLamports;
+    } catch {
+      priorityFee = undefined;
+    }
+  }
+
+  // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+  if (typeof priorityFee === "number" && priorityFee > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: Math.floor(priorityFee),
+      }),
+    );
+  }
 
   const memoData = Buffer.from(
     JSON.stringify({
@@ -1537,6 +1592,7 @@ export interface SubmitEscrowRefundParams {
   onSigned?: (signature: string) => Promise<void> | void;
   confirmationTimeoutMs?: number;
   pollIntervalMs?: number;
+  priorityFeeMicroLamports?: number;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -1636,6 +1692,34 @@ export async function submitEscrowRefundTransaction(
       recentBlockhash: blockhash,
       feePayer: authority.publicKey,
     });
+
+    // Dynamic Priority Fee: estimate automatically if not explicitly provided
+    let priorityFee = params.priorityFeeMicroLamports;
+    if (priorityFee === undefined || priorityFee === null) {
+      try {
+        const estimator = getPriorityFeeEstimator();
+        const estimate = (await pool.execute((conn) =>
+          estimator.estimatePriorityFee(conn, [
+            address,
+            authority.publicKey,
+            depositor,
+          ]),
+        )) as PriorityFeeEstimate;
+        priorityFee = estimate.microLamports;
+      } catch {
+        priorityFee = undefined;
+      }
+    }
+
+    // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+    if (typeof priorityFee === "number" && priorityFee > 0) {
+      transaction.add(
+        ComputeBudgetProgram.setComputeUnitPrice({
+          microLamports: Math.floor(priorityFee),
+        }),
+      );
+    }
+
     transaction.add(instruction);
     transaction.sign(authority);
 
@@ -3371,3 +3455,5 @@ export function subscribeToEscrowConfirmation(
 }
 
 export * from "./solanaPayEscrow";
+export * from "./priorityFeeEstimator";
+export * from "./escrowTransactionRetry";

@@ -10,6 +10,7 @@ import {
 } from "react";
 import * as Y from "yjs";
 import YPartyKitProvider from "y-partykit/provider";
+import { useAuth } from "@clerk/nextjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Bold, Italic, Trash2, Underline, FileDown } from "lucide-react";
 import { applyYTextDiff } from "@/lib/crdt/applyYTextDiff";
@@ -99,6 +100,12 @@ export function GroupNotesEditor({
   const [activePeers, setActivePeers] = useState<AwarenessPeer[]>([]);
 
   const { toast } = useToast();
+
+  // PartyKit treats a connection without a token as read-only and drops its
+  // updates, so send a fresh Clerk token on every (re)connect.
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
 
   const editorRef = useRef<HTMLDivElement>(null);
   const yDocRef = useRef<Y.Doc | null>(null);
@@ -190,7 +197,11 @@ export function GroupNotesEditor({
     const host = process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
     let provider: YPartyKitProvider | null = null;
     try {
-      provider = new YPartyKitProvider(host, `notes-${roomId}`, ydoc);
+      provider = new YPartyKitProvider(host, `notes-${roomId}`, ydoc, {
+        params: async () => ({
+          token: (await getTokenRef.current?.()) ?? "",
+        }),
+      });
       providerRef.current = provider;
       const initialStatus: ConnectionStatus = provider.wsconnected
         ? "connected"

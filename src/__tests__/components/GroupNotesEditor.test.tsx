@@ -38,6 +38,7 @@ class MockPartyKitProvider {
     public host: string,
     public room: string,
     public doc: any,
+    public options?: { params?: () => Promise<Record<string, string>> },
   ) {
     if (MockPartyKitProvider.shouldThrowOnConstruct) {
       throw new Error("PartyKit initialization error");
@@ -153,6 +154,36 @@ describe("GroupNotesEditor", () => {
     idbThrowOnConstruct = false;
     mockOutboxStore.clear();
     jest.clearAllMocks();
+  });
+
+  it("sends the user's Clerk token so PartyKit does not make the connection read-only", async () => {
+    const getToken = jest.fn().mockResolvedValue("clerk-session-token");
+    const useAuthSpy = jest
+      .spyOn(jest.requireMock("@clerk/nextjs"), "useAuth")
+      .mockReturnValue({ userId: "test-user", isSignedIn: true, getToken });
+
+    await renderEditor({ roomId: "venue-42" });
+
+    const provider = MockPartyKitProvider.instances[0];
+    expect(provider.room).toBe("notes-venue-42");
+    await expect(provider.options?.params?.()).resolves.toEqual({
+      token: "clerk-session-token",
+    });
+
+    // A new token is fetched on each (re)connect.
+    getToken.mockResolvedValueOnce("refreshed-token");
+    await expect(provider.options?.params?.()).resolves.toEqual({
+      token: "refreshed-token",
+    });
+
+    useAuthSpy.mockRestore();
+  });
+
+  it("connects with an empty token when no token is available", async () => {
+    await renderEditor({ roomId: "venue-anon" });
+
+    const provider = MockPartyKitProvider.instances[0];
+    await expect(provider.options?.params?.()).resolves.toEqual({ token: "" });
   });
 
   it("renders the rich-text group notes chrome", async () => {

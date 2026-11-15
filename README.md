@@ -1499,6 +1499,10 @@ or authentication redirection loops with Clerk, or map tile loading failures.
   ```
 - Restart `npm run dev` after updating `.env.local` to allow Next.js to reload environment variables.
 
+### 5. Offline Storage Warnings (IndexedDB `VersionError`, Timeouts, Private Browsing)
+
+If you see "switched to temporary in-memory sync queue", a `VersionError` or a `TimeoutError` from `[OfflineDB]` in the console, see the [IndexedDB Migration and Sync Queue Troubleshooting guide](docs/offline/INDEXEDDB_MIGRATION_TROUBLESHOOTING.md).
+
 ---
 
 ## 🧪 Testing

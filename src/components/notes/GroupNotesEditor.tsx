@@ -325,7 +325,7 @@ export function GroupNotesEditor({
       isFlushingRef.current = true;
       setIsSyncing(true);
       try {
-        const result = await flushNotesOutbox(roomId, ydoc);
+        const result = await flushNotesOutbox(roomId, ydoc, textKey);
         let remainingCount = 0;
         try {
           const remaining = await listNotesOutbox(roomId);

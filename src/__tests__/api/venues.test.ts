@@ -134,8 +134,13 @@ describe("GET /api/venues - Search and Pagination", () => {
     expect(sql).toContain("WITH search_input");
     expect(sql).toContain("rank_bm25");
     expect(sql).toContain("rank_vector");
-    expect(sql).toContain("1.0 / (60 + rank_bm25)");
-    expect(sql).toContain("1.0 / (60 + rank_vector)");
+    // The RRF weights and k are query parameters, not literals in the SQL.
+    expect(sql).toContain("FLOOR(rank_bm25)::bigint");
+    expect(sql).toContain("FLOOR(rank_vector)::bigint");
+    expect(queryTemplate.values).toContain(60);
+    // No query embedding in tests: full-text carries the whole weight.
+    expect(queryTemplate.values).toContain(1.0);
+    expect(queryTemplate.values).toContain(0.0);
     expect(prisma.venue.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: { in: ["1"] } } }),
     );

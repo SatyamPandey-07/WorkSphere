@@ -40,6 +40,8 @@ export interface StorageStatsDrawerProps {
   onClearCache?: () => Promise<void> | void;
   /** Optional initial unsynced check-ins count override (e.g. for testing) */
   initialUnsyncedCheckIns?: number;
+  /** How long success announcements remain available to assistive technology. */
+  successAnnouncementTimeoutMs?: number;
 }
 
 export function StorageStatsDrawer({
@@ -50,6 +52,7 @@ export function StorageStatsDrawer({
   refreshTrigger,
   onClearCache,
   initialUnsyncedCheckIns,
+  successAnnouncementTimeoutMs = 4000,
 }: StorageStatsDrawerProps) {
   const isMountedRef = useRef(true);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -199,7 +202,9 @@ export function StorageStatsDrawer({
       await purgeStaleFloorPlanCache();
       if (!isMountedRef.current) return;
       setShowCleanConfirmation(false);
-      setSuccessMessage("Stale cache successfully purged!");
+      setSuccessMessage(
+        `Stale cache successfully purged. ${formatBytes(staleStats?.reclaimableBytes ?? 0)} reclaimed.`,
+      );
       await Promise.all([
         fetchStats(),
         fetchStaleStats(),
@@ -208,7 +213,7 @@ export function StorageStatsDrawer({
       if (successTimerRef.current) clearTimeout(successTimerRef.current);
       successTimerRef.current = setTimeout(() => {
         if (isMountedRef.current) setSuccessMessage(null);
-      }, 4000);
+      }, successAnnouncementTimeoutMs);
     } catch (err) {
       console.error("[StorageStatsDrawer] Failed to purge stale cache:", err);
       if (isMountedRef.current) {
@@ -258,7 +263,7 @@ export function StorageStatsDrawer({
 
       if (!isMountedRef.current) return;
       setShowClearCacheConfirmation(false);
-      setSuccessMessage("Offline cache successfully cleared!");
+      setSuccessMessage("Offline cache successfully cleared.");
       await Promise.all([
         fetchStats(),
         fetchStaleStats(),
@@ -621,6 +626,9 @@ export function StorageStatsDrawer({
                 {successMessage && (
                   <p
                     data-testid="storage-stats-success-message"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
                     className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" /> {successMessage}

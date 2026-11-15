@@ -13,3 +13,5 @@
 - [Solana gasless relayer threat model](./security/solana-relayer-threat-model.md)
 - [Cryptographic booking receipt specification](./security/cryptographic-receipt-spec.md)
 - [WebAuthn passkey security guide](./security/passkey-webauthn-guide.md)
+
+- [WebGPU acoustic simulation](./audio/WEBGPU_ACOUSTIC_SIMULATION.md) — WGSL bindings, buffer layouts, stackless BVH traversal, CPU fallback and benchmarking.

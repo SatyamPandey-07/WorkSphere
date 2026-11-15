@@ -14,4 +14,4 @@
 - [Cryptographic booking receipt specification](./security/cryptographic-receipt-spec.md)
 - [WebAuthn passkey security guide](./security/passkey-webauthn-guide.md)
 
-- [Automated Solana escrow refund lifecycle](./solana/SOLANA_ESCROW_REFUND_CRON.md) — escrow statuses, cron transitions, idempotency, environment and testing.
+- [WebGPU acoustic simulation](./audio/WEBGPU_ACOUSTIC_SIMULATION.md) — WGSL bindings, buffer layouts, stackless BVH traversal, CPU fallback and benchmarking.

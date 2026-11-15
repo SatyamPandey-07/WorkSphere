@@ -128,7 +128,13 @@ export async function GET(req: NextRequest) {
     // Fallback: If no coordinates are provided, return all venues (or filtered by cities/query)
     if (!searchParams.get("lat") || !searchParams.get("lng")) {
       const citiesParam = searchParams.get("cities");
-      const queryParam = searchParams.get("query") || searchParams.get("q");
+      // Trim before the value is used for filtering, ranking or suggestions. A
+      // blank `query` must not shadow a real `q`, and a whitespace-only value
+      // means "no text query" rather than a search for nothing (#7727).
+      const queryParam =
+        [searchParams.get("query"), searchParams.get("q")]
+          .map((value) => value?.trim() ?? "")
+          .find((value) => value !== "") || null;
       const minLatParam = searchParams.get("minLat");
       const maxLatParam = searchParams.get("maxLat");
       const minLngParam = searchParams.get("minLng");

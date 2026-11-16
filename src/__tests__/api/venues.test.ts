@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { GET } from "@/app/api/venues/route";
 import { prisma } from "@/lib/prisma";
 import { resetRateLimit } from "@/lib/rateLimit";
+import { clearMemorySWRCache } from "@/lib/cache/swrCache";
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
@@ -22,6 +23,7 @@ describe("GET /api/venues - Search and Pagination", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetRateLimit();
+    clearMemorySWRCache();
   });
 
   it("should return paginated venues with default values in fallback mode", async () => {

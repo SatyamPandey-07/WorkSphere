@@ -126,12 +126,12 @@ describe("AcousticSpectrumAnalyzer Component", () => {
       if (originalAudioContext) {
         Object.defineProperty(window, "AudioContext", originalAudioContext);
       } else {
-        delete (window as Window & { AudioContext?: typeof AudioContext }).AudioContext;
+        delete (window as any).AudioContext;
       }
       if (originalMediaDevices) {
         Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
       } else {
-        delete (navigator as Navigator & { mediaDevices?: MediaDevices }).mediaDevices;
+        delete (navigator as any).mediaDevices;
       }
     }
   });

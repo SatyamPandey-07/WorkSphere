@@ -12,6 +12,7 @@ export * from './health/JetlagRecoveryEngine';
 export * from './health/SolarExposureTracker';
 export * from './nutrition/AllergenMatcher';
 export * from './iot/LuggageLockerProtocol';
+export * from './iot/BLEProximityAttestor';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

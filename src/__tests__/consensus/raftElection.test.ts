@@ -1,5 +1,5 @@
 import { RaftNode } from '../../lib/consensus/raftNode';
-import { RaftNetwork, RequestVoteArgs, RequestVoteReply, AppendEntriesArgs, AppendEntriesReply } from '../../lib/consensus/types';
+import type { RaftNetwork, RequestVoteArgs, RequestVoteReply, AppendEntriesArgs, AppendEntriesReply, LogEntry } from '../../lib/consensus/types';
 
 class SimulatedClusterNetwork implements RaftNetwork {
   private nodes: Map<string, RaftNode> = new Map();
@@ -24,7 +24,7 @@ class SimulatedClusterNetwork implements RaftNetwork {
   }
 }
 
-describe('Raft Consensus State Machine & Leader Election', () => {
+describe('Raft Consensus State Machine & Leader Election (#7960)', () => {
   let network: SimulatedClusterNetwork;
   let node1: RaftNode;
   let node2: RaftNode;
@@ -77,5 +77,39 @@ describe('Raft Consensus State Machine & Leader Election', () => {
 
     expect(remainingLeaders.length).toBe(1);
     expect(remainingLeaders[0].currentTerm).toBeGreaterThan(currentLeader!.currentTerm);
+  });
+
+  test('Leader accepts proposal, replicates to peers, reaches quorum, and applies to state machine', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    const nodes = [node1, node2, node3];
+    const leader = nodes.find((n) => n.state === 'Leader');
+    expect(leader).toBeDefined();
+
+    const appliedEntries: LogEntry[] = [];
+    leader!.onApply((entry) => appliedEntries.push(entry));
+
+    const result = await leader!.propose({ action: 'UPDATE_VENUE_CAPACITY', venueId: 'venue-101', capacity: 25 });
+    expect(result.success).toBe(true);
+    expect(result.index).toBe(1);
+
+    // Wait for append entries cycle to replicate and advance commitIndex
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(leader!.commitIndex).toBe(1);
+    expect(leader!.lastApplied).toBe(1);
+    expect(appliedEntries.length).toBe(1);
+    expect((appliedEntries[0].command as any).action).toBe('UPDATE_VENUE_CAPACITY');
+  });
+
+  test('Followers reject client proposals directly', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    const nodes = [node1, node2, node3];
+    const follower = nodes.find((n) => n.state === 'Follower');
+    expect(follower).toBeDefined();
+
+    const result = await follower!.propose({ action: 'INVALID_WRITE' });
+    expect(result.success).toBe(false);
   });
 });

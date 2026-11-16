@@ -19,3 +19,4 @@ export * from './zkp';
 export * from './p2p';
 export * from './crypto';
 export * from './crdt';
+export * from './webrtc';

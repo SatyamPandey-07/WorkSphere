@@ -4,3 +4,4 @@
  */
 
 export * from './ZKMembershipVerifier';
+export * from './ZKRangeVerifier';

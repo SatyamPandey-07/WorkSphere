@@ -859,3 +859,5 @@ export class PeerLossMonitor {
     this.zeroLossCount = 0;
   }
 }
+
+export * from "./AudioFecManager";

@@ -15,3 +15,7 @@
 - [WebAuthn passkey security guide](./security/passkey-webauthn-guide.md)
 
 - [WebGPU acoustic simulation](./audio/WEBGPU_ACOUSTIC_SIMULATION.md) — WGSL bindings, buffer layouts, stackless BVH traversal, CPU fallback and benchmarking.
+
+## Edge runtime
+
+- [Distributed Bloom limiter](./edge/DISTRIBUTED_BLOOM_LIMITER.md) — counting Bloom filter fallback rate limiter: sliding window decay math, hash derivation, false positive sizing, gossip sync, configuration profiles and middleware integration.

@@ -239,3 +239,122 @@ const scorer = new GossipSubPeerScorer({
 
 Always call `scorer.dispose()` when the scorer is no longer needed. It clears the
 decay timer and all tracked peers.
+
+## 7. Extending and inspecting the scorer
+
+`GossipSubPeerScorer` has no hook for registering a score inspector. Everything
+below is built from public methods, so nothing here changes the scorer itself.
+
+### 7.1 Feed an application-specific score
+
+`setAppSpecificScore()` replaces the stored value, and `score()` multiplies it by
+`appSpecificWeight` (default `1.0`). Call it whenever your own reputation signal
+changes. A `NaN` value makes the peer score `-1000`.
+
+```ts
+import { GossipSubPeerScorer } from "@/core/p2p/GossipSubPeerScorer";
+
+const scorer = new GossipSubPeerScorer();
+
+function applyReputation(
+  peerId: string,
+  verified: boolean,
+  strikes: number,
+): void {
+  const value = (verified ? 5 : 0) - strikes * 2;
+  scorer.setAppSpecificScore(peerId, Number.isFinite(value) ? value : 0);
+}
+```
+
+### 7.2 Attach a read-only score inspector
+
+This helper polls `getAllPeerScores()` and passes a snapshot to your callback.
+It returns a function that stops polling.
+
+```ts
+import { GossipSubPeerScorer } from "@/core/p2p/GossipSubPeerScorer";
+
+type ScoreInspector = (scores: ReadonlyMap<string, number>) => void;
+
+export function attachScoreInspector(
+  scorer: GossipSubPeerScorer,
+  inspector: ScoreInspector,
+  intervalMs = 5000,
+): () => void {
+  const timer = setInterval(() => {
+    try {
+      inspector(scorer.getAllPeerScores());
+    } catch (error) {
+      console.error("[score-inspector] inspector threw", error);
+    }
+  }, intervalMs);
+  return () => clearInterval(timer);
+}
+
+// Example: log peers that crossed the graylist threshold
+const detach = attachScoreInspector(scorer, (scores) => {
+  for (const [peerId, value] of scores) {
+    if (scorer.isGraylisted(peerId)) {
+      console.warn(`[scoring] graylisted ${peerId} score=${value.toFixed(1)}`);
+    }
+  }
+});
+// later: detach();
+```
+
+`getAllPeerScores()` recomputes every peer and topic, so keep the interval
+reasonable on large meshes. Wrap callbacks in `try/catch` as above so one faulty
+inspector cannot stop the timer.
+
+### 7.3 Inspect one peer's counters
+
+`getPeerStats()` returns the live record, typed `Readonly`. Treat it as read-only.
+
+```ts
+import type { GossipSubPeerScorer } from "@/core/p2p/GossipSubPeerScorer";
+
+export function describePeer(
+  scorer: GossipSubPeerScorer,
+  peerId: string,
+): string {
+  const stats = scorer.getPeerStats(peerId);
+  if (!stats) return `${peerId}: unknown`;
+  const topics = Array.from(stats.topics.entries()).map(
+    ([topic, s]) =>
+      `${topic}{mesh=${s.inMesh} first=${s.firstMessageDeliveries.toFixed(2)} ` +
+      `deliveries=${s.meshMessageDeliveries.toFixed(2)} failures=${s.meshFailures.toFixed(2)} ` +
+      `invalid=${s.invalidMessages.toFixed(2)}}`,
+  );
+  return `${peerId}: score=${scorer.score(peerId).toFixed(2)} ip=${stats.ip ?? "n/a"} ${topics.join(" ")}`;
+}
+```
+
+### 7.4 Retune a topic at runtime
+
+`setTopicParams(topic, partial)` merges into the topic's current params. Existing
+counters are kept, and the next `score()` call uses the new values.
+
+```ts
+scorer.setTopicParams("alerts", { invalidMessageDeliveriesWeight: -20 });
+```
+
+## 8. Troubleshooting
+
+| Symptom                                    | Likely cause                                                      | What to check                                                           |
+| ------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| New mesh peer is immediately denied gossip | P3 cold-start penalty below `gossipThreshold`                     | Cold-start rule in [section 6.1](#61-two-rules-of-thumb)                |
+| P1 never grows                             | Timer disabled and `elapsedMeshMs` not passed                     | `decayIntervalMs`, [section 4.1](#41-decay-step-versus-decayintervalms) |
+| Mesh time grows slower than wall clock     | Custom `decayIntervalMs` with the timer's fixed 1000 ms step      | Drive `decayScores(stepMs)` yourself                                    |
+| `acceptPXThreshold` has no effect          | The class never evaluates it                                      | Gate peer exchange in your own code                                     |
+| `meshMessageDeliveriesCap` has no effect   | Declared but not applied                                          | Cap deliveries before calling `deliverMessage()` if needed              |
+| Honest peers penalised together            | Shared IP above `ipColocationThreshold`                           | Raise the threshold                                                     |
+| Peer stuck at `-1000`                      | Clamp reached, or a `NaN` app-specific score                      | `getPeerStats(id)`; validate input to `setAppSpecificScore()`           |
+| Penalties never wear off                   | Decay not running, or an invalid decay factor preserving counters | Timer, `decayScores()` calls, decay values in range `0` to `1`          |
+
+## 9. References
+
+- [GossipSub v1.1 specification](https://github.com/libp2p/specs/blob/master/pubsub/gossipsub/gossipsub-v1.1.md)
+- Vyzovitis et al., "GossipSub: Attack-Resilient Message Propagation in the
+  Filecoin and ETH2.0 Networks" (2020)
+- [`GossipSubPeerScorer.ts`](../../src/core/p2p/GossipSubPeerScorer.ts) and its
+  [unit tests](../../src/__tests__/p2p/GossipSubPeerScorer.test.ts)

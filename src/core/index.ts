@@ -16,3 +16,4 @@ export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './consensus';
 export * from './zkp';
+export * from './p2p';

@@ -19,3 +19,7 @@
 ## Edge runtime
 
 - [Distributed Bloom limiter](./edge/DISTRIBUTED_BLOOM_LIMITER.md) — counting Bloom filter fallback rate limiter: sliding window decay math, hash derivation, false positive sizing, gossip sync, configuration profiles and middleware integration.
+
+## WebRTC
+
+- [ICE reconnect state machine](./webrtc/ICE_RECONNECT_STATE_MACHINE.md) — `ICEReconnectManager` states and Mermaid diagram, backoff and jitter math, disconnect grace period, ICE restart and trickle ICE, fallback ICE servers, telemetry events, and troubleshooting for strict NATs and corporate firewalls.

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { AlertCircle } from "lucide-react";
+import { AddToCalendarButton } from '@/components/bookings/AddToCalendarButton';
 
 import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
 import { ReservationTimerBadge } from "@/components/bookings/ReservationTimerBadge";
@@ -120,9 +121,9 @@ export function BookingModal({
               if (status === "failed" || status === "timeout") {
                 setError(
                   payload.error ||
-                    (status === "timeout"
-                      ? "Confirmation timed out"
-                      : "Escrow transaction failed"),
+                  (status === "timeout"
+                    ? "Confirmation timed out"
+                    : "Escrow transaction failed"),
                 );
                 eventSource?.close();
               } else if (status === "finalized" || status === "confirmed") {

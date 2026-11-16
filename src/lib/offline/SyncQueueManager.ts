@@ -9,6 +9,10 @@
 import { initOfflineDB, resetOfflineDBNonDestructive } from "./db";
 import type { OfflineQueueItem, OfflineQueueHandler } from "./types";
 import { withWebLock, OFFLINE_WRITE_LOCK } from "@/lib/webLock";
+import {
+  SeatSyncCoordinator,
+  seatSyncCoordinator,
+} from "./SeatSyncCoordinator";
 
 export const QUEUE_STORE_NAME = "pending_sync_queue";
 export const SYNC_QUEUE_CHANNEL = "worksphere:sync-queue-channel";
@@ -317,31 +321,53 @@ export class SyncQueueManager {
       return false;
     }
 
-    try {
-      const result = await handler(item);
-      if (result !== false) {
-        await this.dequeue(item.id);
-        return true;
+    const isCheckIn = item.entity === "checkin";
+    const payload = isCheckIn
+      ? (item.payload as { venueId?: string; seatId?: string } | undefined)
+      : undefined;
+    const venueId = payload?.venueId;
+    const seatId = payload?.seatId;
+
+    const performSync = async (): Promise<boolean> => {
+      if (isCheckIn && venueId) {
+        seatSyncCoordinator.markReconciliationStart(venueId, seatId);
       }
-    } catch (error) {
-      console.error(
-        `[SyncQueueManager] Handler error for item ${item.id}:`,
-        error,
-      );
-    }
+      try {
+        const result = await handler(item);
+        if (result !== false) {
+          await this.dequeue(item.id);
+          return true;
+        }
+      } catch (error) {
+        console.error(
+          `[SyncQueueManager] Handler error for item ${item.id}:`,
+          error,
+        );
+      } finally {
+        if (isCheckIn && venueId) {
+          seatSyncCoordinator.markReconciliationEnd(venueId, seatId);
+        }
+      }
 
-    const nextRetry = item.retryCount + 1;
-    if (nextRetry >= this.maxRetries) {
-      console.warn(
-        `[SyncQueueManager] Max retries (${this.maxRetries}) exceeded for item ${item.id}`,
-      );
-      await this.dequeue(item.id);
+      const nextRetry = item.retryCount + 1;
+      if (nextRetry >= this.maxRetries) {
+        console.warn(
+          `[SyncQueueManager] Max retries (${this.maxRetries}) exceeded for item ${item.id}`,
+        );
+        await this.dequeue(item.id);
+        return false;
+      }
+
+      item.retryCount = nextRetry;
+      await this.updateItem(item);
       return false;
+    };
+
+    if (isCheckIn && venueId) {
+      return seatSyncCoordinator.runWithSeatLock(venueId, seatId, performSync);
     }
 
-    item.retryCount = nextRetry;
-    await this.updateItem(item);
-    return false;
+    return performSync();
   }
 
   /**
@@ -426,6 +452,7 @@ export class SyncQueueManager {
       SyncQueueManager.instance.warningToastShown = false;
       SyncQueueManager.instance = null;
     }
+    SeatSyncCoordinator.resetInstance();
   }
 }
 

@@ -18,3 +18,4 @@ export * from './consensus';
 export * from './zkp';
 export * from './p2p';
 export * from './crypto';
+export * from './crdt';

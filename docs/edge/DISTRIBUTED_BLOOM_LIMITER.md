@@ -64,12 +64,12 @@ value     = isHigh ? (byte >> 4) & 0x0f : byte & 0x0f
 
 Increments **saturate at 15**: a counter at 15 stays at 15. Two consequences:
 
-* `thresholdCount` greater than 15 can never trigger. With `thresholdCount: 20` a single client sent 100 requests and none were limited (the counter stopped at 15). Keep `1 <= thresholdCount <= 15`.
+* `thresholdCount` greater than 15 could never trigger, so the constructor clamps it to 15. Before this was enforced, `thresholdCount: 20` silently disabled limiting: a single client sent 100 requests and none were limited. Keep `1 <= thresholdCount <= 15`.
 * Heavy clients stop contributing to collisions beyond 15 per counter, which bounds the damage a single abusive client can do to its neighbours.
 
 > The header comment in the source mentions "524,288 4-bit counters" for 64 KB. 64 KiB is 65,536 bytes, which is 131,072 counters. 524,288 counters would need `sizeBytes: 262144` (256 KiB). All formulas here use `m = 2 * sizeBytes`.
 
-`exportState()` returns a copy of the bytes and `importState(data)` loads them when `data.length === sizeBytes` (other lengths are ignored silently).
+`sizeBytes` must be a finite number of at least 1 (a fractional value is rounded down); anything else falls back to the default of 65,536. `exportState()` returns a copy of the bytes and `importState(data)` loads them when `data.length === sizeBytes` (other lengths are ignored silently).
 
 ---
 
@@ -109,7 +109,7 @@ Notes:
 
 `checkAndIncrement(key, now = Date.now())` does the following, in order:
 
-1. **Clock guard.** If `lastDecayTime` is `0` or in the future (clock moved backwards) it is set to `now`.
+1. **Clock guard.** A finite `now` is clamped to the range 0 to `Number.MAX_SAFE_INTEGER`. `NaN` and `+/-Infinity` carry no time information, so they are replaced by the last decay time: no decay happens and the state is left alone. Then, if `lastDecayTime` is `0` or in the future (clock moved backwards), it is set to `now`.
 2. **Decay** (only when `windowDurationMs > 0`), see [section 5](#5-sliding-window-decay).
 3. **Read.** Compute the `k` indexes and `maxCount`, the **largest** of the `k` counters.
 4. **Blocked.** If `maxCount >= thresholdCount`, return `{ limited: true, maxCount }`. Counters are **not** incremented.
@@ -196,13 +196,19 @@ Pick `f` inside that interval (its midpoint is the most forgiving). Example: `B 
 
 ### 5.5 Valid parameter ranges
 
+The constructor normalizes its options so a bad value cannot corrupt counters or silently disable limiting:
+
 | Parameter | Valid | Behavior outside |
 | --- | --- | --- |
-| `thresholdCount` | 1 to 15 | Above 15 never limits (saturation) |
-| `decayFactor` | greater than 0 and less than 1 | `<= 0` resets all counters on every decay. `1` never decays. Above 1 corrupts counters: `decayCounters(1.5)` turned a counter of 15 into 6 because the scaled value overflows the 4-bit nibble. |
-| `windowDurationMs` | positive integer, or `0` to disable | `0` disables automatic decay. Counters then fall only through `decayCounters()` or `reset()`. |
+| `thresholdCount` | 1 to 15 | Above 15 is clamped to 15 (a counter cannot go higher). A fractional value is rounded up. Below 1, `NaN` or `Infinity` fall back to the default of 10. |
+| `decayFactor` | greater than 0 and at most 1 | `NaN` falls back to 0.5. Above 1 (including `Infinity`) is clamped to 1, which means no decay: a larger factor would overflow the 4-bit nibble into its neighbour. `0` or less keeps its meaning of resetting all counters on every decay. |
+| `windowDurationMs` | positive number, or `0` to disable | `0`, negative, `NaN` or `Infinity` disable automatic decay. Counters then fall only through `decayCounters()` or `reset()`. |
+| `hashFunctionsCount` | integer of at least 1 | A fractional value is rounded down. Below 1, `NaN` or `Infinity` fall back to the default of 4 (a count of 0 or less would have made the limiter never limit). |
+| `sizeBytes` | integer of at least 1 | A fractional value is rounded down. Anything else falls back to 65,536 (a negative value used to throw `RangeError`). |
 
-The constructor does not validate these. Validate them in your own configuration layer.
+`decayCounters(factor)` applies the same rules to the factor it receives: `NaN` uses the configured factor, a factor above 1 does nothing, `0` or less resets. Before this normalization existed, `decayCounters(1.5)` turned a counter of 15 into 6 (the scaled value overflowed into the neighbouring counter) and `decayCounters(NaN)` wiped the whole filter.
+
+Counters cannot exceed 15 under any load: increments saturate, requests that are already limited do not increment, and a long stall (for example a blocked event loop) is handled by the four window reset in [section 5.3](#53-the-four-window-shortcut).
 
 ### 5.6 Manual control
 
@@ -344,7 +350,7 @@ Behaviors to know:
 * **The merge takes a maximum, never a sum.** Two instances that each served 5 requests for the same client both end at 5, not 10 (measured). A client whose traffic is spread over `M` instances can obtain up to roughly `M * (T - 1)` accepted requests. Treat `thresholdCount` as a per instance view of the client, not a global quota.
 * **Gossip can undo decay.** A maximum merge cannot lower a counter. Measured: instance A decayed a counter from 8 to 4 and counted one request (5), then merged with instance B that had not decayed yet, and A went back to 8. Use windows that are several gossip cycles long (`windowDurationMs` of 10 s or more with a 5 s cycle) so instances decay close together.
 * **Read, merge, write is not atomic.** Concurrent publishers overwrite each other and increments can be lost. This is acceptable for a degraded mode fallback.
-* **All instances sharing a `gossipKey` must use the same `sizeBytes`.**
+* **All instances sharing a `gossipKey` must use the same `sizeBytes`.** A remote state of a different size is not merged: the cycle is skipped with a `console.warn`, nothing is written back, and the local counters are untouched. (Before this check, a shorter remote state turned the missing bytes into `NaN` and zeroed most of the local state.)
 * **Use one `gossipKey` per limiter profile.** Two profiles sharing a key would merge unrelated counters.
 * **Check your KV provider.** The class writes a `sizeBytes` value every cycle with a 10 second TTL. Confirm the provider allows values of that size, that frequency of writes to one key, and a TTL that short.
 
@@ -494,19 +500,17 @@ Operational notes:
 
 ## 10. Known limitations and tuning checklist
 
-Limitations (all verified against the code at the time of writing):
+Limitations (verified against the code at the time of writing):
 
 1. The decision uses the maximum counter, which raises false limits compared with a count-min rule ([6.2](#62-what-actually-matters-false-limits)).
-2. `thresholdCount` above 15 never limits ([2](#2-data-structure)).
-3. `decayFactor` of 1 or more is invalid; above 1 corrupts counters ([5.5](#55-valid-parameter-ranges)).
-4. The four window reset shortcut is exact only for `decayFactor <= 0.5` ([5.3](#53-the-four-window-shortcut)).
-5. Gossip merges per byte, takes a maximum instead of a sum, and can undo decay ([7](#7-gossip-synchronization)).
-6. Default sizing does not give "under 1% at 100k items" ([6.1](#61-textbook-membership-probability)).
-7. The constructor performs no validation of its options.
+2. The four window reset shortcut is exact only for `decayFactor <= 0.5` ([5.3](#53-the-four-window-shortcut)).
+3. Gossip merges per byte, takes a maximum instead of a sum, and can undo decay ([7](#7-gossip-synchronization)).
+4. Default sizing does not give "under 1% at 100k items" ([6.1](#61-textbook-membership-probability)).
+5. Out of range options are corrected silently rather than rejected, so check your configuration against [section 5.5](#55-valid-parameter-ranges).
 
 Before deploying a profile:
 
-* [ ] `1 <= thresholdCount <= 15`
+* [ ] `1 <= thresholdCount <= 15` (other values are corrected, so confirm the value you meant is the value in use)
 * [ ] `0 < decayFactor < 1` and `T - 1 - floor(f * T) > 0`
 * [ ] `windowDurationMs` is at least two gossip cycles
 * [ ] `falseLimitProbability(...)` is acceptable for your expected active clients

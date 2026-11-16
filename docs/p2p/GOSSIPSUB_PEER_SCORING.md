@@ -32,7 +32,7 @@ Source files:
 
 ## 1. How the score is used
 
-The scorer is a pure policy oracle. It computes a number per peer and answers
+The scorer is a policy helper. It computes a number per peer and answers
 three yes/no questions. Your networking code is responsible for acting on the
 answers.
 
@@ -106,6 +106,75 @@ Notes:
 
 All counters are sanitised: `NaN`, negative and non-finite values are coerced to
 safe values, and counters are bounded by `Number.MAX_SAFE_INTEGER`.
+
+## 3. Score thresholds
+
+The default thresholds are:
+
+| Threshold           | Default | Behaviour                                             |
+| ------------------- | ------: | ----------------------------------------------------- |
+| `gossipThreshold`   |     -10 | `shouldGossip()` returns true at or above this score  |
+| `publishThreshold`  |     -40 | `shouldPublish()` returns true at or above this score |
+| `graylistThreshold` |     -80 | `isGraylisted()` returns true below this score        |
+| `acceptPXThreshold` |      10 | Stored, but not evaluated by this scorer              |
+
+Threshold comparisons are inclusive for gossip and publishing, but exclusive
+for graylisting. A score of exactly `-80` is not graylisted.
+
+The class does not implement a separate blacklist threshold. The networking
+layer must enforce the decisions returned by these methods.
+
+## 4. Counter decay and mesh time
+
+`decayScores()` applies geometric decay to delivery and penalty counters. For a
+counter value `C` and decay factor `d`, each decay invocation applies:
+
+```text
+newCounter = C * d
+```
+
+The half-life, measured in decay invocations, is:
+
+```text
+halfLife = ln(0.5) / ln(decayFactor)
+```
+
+| Counter                    | Default decay |  Half-life |
+| -------------------------- | ------------: | ---------: |
+| First message deliveries   |          0.90 | 6.58 ticks |
+| Mesh message deliveries    |          0.90 | 6.58 ticks |
+| Mesh failures              |          0.85 | 4.27 ticks |
+| Invalid message deliveries |          0.80 | 3.11 ticks |
+
+A tick is one call to `decayScores()`. With the default one-second timer, these
+values are approximately seconds. If you change the timer interval, the number
+of ticks remains the same but the elapsed wall-clock time changes.
+
+### 4.1 Decay step versus decayIntervalMs
+
+The constructor's `decayIntervalMs` controls how frequently the automatic timer
+calls `decayScores()`. However, the timer calls `decayScores()` without an
+argument, so each invocation uses the default `timeStepMs = 1000`.
+
+This means the mesh-time counter advances by one second per timer callback, not by the configured timer interval. For example:
+
+- `decayIntervalMs: 500` advances mesh time by 1000 ms every 500 ms.
+- `decayIntervalMs: 2000` advances mesh time by 1000 ms every 2000 ms.
+
+For custom timing, disable or account for the automatic timer and call
+`decayScores(stepMs)` yourself. You can also pass `elapsedMeshMs` to
+`score(peerId, elapsedMeshMs)` to include additional elapsed mesh time in that
+calculation without updating stored mesh time.
+
+### 4.2 Choosing decay factors
+
+A factor closer to `1` retains counter history longer. A smaller factor removes history faster.
+
+Use finite factors between `0` and `1` for normal decay. The implementation
+treats negative or non-finite factors as `1`, preserving the counter. Factors
+greater than `1` are accepted and can increase counters rather than decay them.
+
+Validate custom topic parameters before applying them with `setTopicParams()`.
 
 ## 5. Sybil attack mitigation
 
@@ -308,7 +377,9 @@ inspector cannot stop the timer.
 
 ### 7.3 Inspect one peer's counters
 
-`getPeerStats()` returns the live record, typed `Readonly`. Treat it as read-only.
+`getPeerStats()` returns the live peer record with a shallow `Readonly` TypeScript
+type. Its nested `Map` and runtime object are not deeply immutable. Treat the
+returned data as read-only and create a snapshot before exposing it externally.
 
 ```ts
 import type { GossipSubPeerScorer } from "@/core/p2p/GossipSubPeerScorer";

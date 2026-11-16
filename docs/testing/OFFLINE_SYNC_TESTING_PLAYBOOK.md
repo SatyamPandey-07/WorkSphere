@@ -192,3 +192,48 @@ commands.
 - [ ] Failed writes are not silently reported as synced.
 - [ ] Tests preserve queued work when storage is unavailable.
 - [ ] Playwright contexts are isolated between scenarios.
+
+## Reproducible blocked-upgrade browser test
+
+The following Playwright snippet holds version 1 of a database open in one page, requests version 2 from another page, observes `blocked`, then closes the first connection and waits for the upgrade to finish. It can be placed in a browser test using the existing `page` fixture:
+
+```ts
+const result = await page.evaluate(async () => {
+  const databaseName = `worksphere-blocked-upgrade-${Date.now()}`;
+  const firstOpen = indexedDB.open(databaseName, 1);
+  const firstDb = await new Promise<IDBDatabase>((resolve, reject) => {
+    firstOpen.onsuccess = () => resolve(firstOpen.result);
+    firstOpen.onerror = () => reject(firstOpen.error);
+  });
+
+  const upgrade = indexedDB.open(databaseName, 2);
+  const sawBlocked = await new Promise<boolean>((resolve, reject) => {
+    const timeout = window.setTimeout(() => resolve(false), 2_000);
+    upgrade.onblocked = () => {
+      window.clearTimeout(timeout);
+      resolve(true);
+    };
+    upgrade.onerror = () => {
+      window.clearTimeout(timeout);
+      reject(upgrade.error);
+    };
+  });
+
+  firstDb.close();
+  const upgradedDb = await new Promise<IDBDatabase>((resolve, reject) => {
+    upgrade.onsuccess = () => resolve(upgrade.result);
+    upgrade.onerror = () => reject(upgrade.error);
+  });
+  upgradedDb.close();
+  await new Promise<void>((resolve, reject) => {
+    const deletion = indexedDB.deleteDatabase(databaseName);
+    deletion.onsuccess = () => resolve();
+    deletion.onerror = () => reject(deletion.error);
+  });
+  return sawBlocked;
+});
+
+expect(result).toBe(true);
+```
+
+The timeout bounds a broken test rather than asserting that a fixed delay is the browser's upgrade behavior. Always close both connections and delete the temporary database, including in a test teardown if an assertion fails.

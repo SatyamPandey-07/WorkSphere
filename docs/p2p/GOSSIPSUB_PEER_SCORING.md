@@ -152,3 +152,90 @@ reaches the same stages with fewer peers (3 peers `-10`, 4 peers `-40`).
   together. Raise `ipColocationThreshold` for deployments where that is common.
 - Sybils that stay under the threshold, or spread over many IPs, are only limited
   by P3 and P4.
+
+## 6. Tuning guidelines
+
+The values below are starting points derived from the formulas in this guide.
+They have not been benchmarked against a live mesh, so validate them with your
+own traffic.
+
+### 6.1 Two rules of thumb
+
+**Cold-start penalty.** There is no activation window, so a peer that joins the
+mesh with zero deliveries immediately scores `-(threshold^2 * |weight|)` from P3.
+Keep this at or above `gossipThreshold`, otherwise every new peer is denied
+gossip until it delivers something:
+
+```text
+meshMessageDeliveriesThreshold^2 * |meshMessageDeliveriesWeight|  <=  |gossipThreshold|
+```
+
+The defaults give `5^2 * 0.5 = 12.5`, which is just over `10`. A new mesh peer
+starts at `-12.5` and returns to `-8` after its first delivery.
+
+**Steady-state count.** A peer delivering `r` messages per tick settles near
+`r / (1 - decay)` deliveries. To avoid a P3 penalty, you need
+`r / (1 - decay) >= threshold`. With defaults (`decay 0.9`, threshold `5`), that is
+roughly 0.5 messages per second.
+
+### 6.2 Scenario guide
+
+| Scenario                | Parameters to change                                                                                | Direction                                                  | Trade-off                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------- |
+| Low-bandwidth mesh      | `meshMessageDeliveriesThreshold`, `meshMessageDeliveriesWeight`, decay factors                      | Lower threshold and weight, decays toward `0.95` to `0.97` | Slower to expose genuinely bad peers    |
+| High-throughput node    | `meshMessageDeliveriesThreshold`, `firstMessageDeliveriesCap` and weight, mesh/first-delivery decay | Higher threshold with a smaller weight, faster decay       | Penalises brief stalls sooner           |
+| Shared NAT / datacenter | `ipColocationThreshold`                                                                             | Raise it (for example `5`)                                 | Weaker Sybil resistance per IP          |
+| Stricter spam policy    | `invalidMessageDeliveriesWeight`, `graylistThreshold`                                               | More negative weight or higher graylist                    | More false positives from buggy clients |
+
+### 6.3 Low-bandwidth example
+
+Few messages arrive, so expect fewer deliveries per peer, remember problems for
+longer, and punish silence lightly:
+
+```ts
+import {
+  GossipSubPeerScorer,
+  DEFAULT_TOPIC_SCORE_PARAMS,
+  type TopicScoreParams,
+} from "@/core/p2p/GossipSubPeerScorer";
+
+const lowBandwidthTopic: TopicScoreParams = {
+  ...DEFAULT_TOPIC_SCORE_PARAMS,
+  meshMessageDeliveriesThreshold: 2, // cold start: 2^2 * 0.25 = 1.0
+  meshMessageDeliveriesWeight: -0.25,
+  firstMessageDeliveriesDecay: 0.97, // half-life about 22.8 ticks
+  meshMessageDeliveriesDecay: 0.97, // steady state r / 0.03, so about 1 message per 17 s keeps P3 at 0
+  meshFailureDecay: 0.95, // half-life about 13.5 ticks
+  invalidMessageDeliveriesDecay: 0.95, // keep invalid-message memory longer
+};
+
+const scorer = new GossipSubPeerScorer({
+  topics: new Map([["alerts", lowBandwidthTopic]]),
+});
+```
+
+### 6.4 High-throughput example
+
+Plenty of traffic, so require more deliveries, forget faster, and reward first
+deliveries more. Keep the cold-start rule in mind: a threshold of `10` needs a
+weight no heavier than `-0.1`.
+
+```ts
+const highThroughputTopic: TopicScoreParams = {
+  ...DEFAULT_TOPIC_SCORE_PARAMS,
+  meshMessageDeliveriesThreshold: 10, // cold start: 10^2 * 0.1 = 10, exactly at gossipThreshold
+  meshMessageDeliveriesWeight: -0.1,
+  meshMessageDeliveriesDecay: 0.8, // half-life about 3.1 ticks, steady state 5r so r >= 2 per second
+  firstMessageDeliveriesDecay: 0.8,
+  firstMessageDeliveriesCap: 100,
+  firstMessageDeliveriesWeight: 0.5,
+};
+
+const scorer = new GossipSubPeerScorer({
+  topics: new Map([["feed", highThroughputTopic]]),
+  ipColocationThreshold: 5,
+});
+```
+
+Always call `scorer.dispose()` when the scorer is no longer needed. It clears the
+decay timer and all tracked peers.

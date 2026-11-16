@@ -170,6 +170,67 @@ describe('ICEReconnectManager', () => {
     expect(fatalListener).toHaveBeenCalledWith(3);
   });
 
+  it('does not exhaust the retry budget from duplicate events while a timer is pending', async () => {
+    manager.dispose();
+    manager = new ICEReconnectManager({
+      baseDelayMs: 200,
+      maxDelayMs: 200,
+      backoffFactor: 2,
+      jitterRatio: 0,
+      maxAttempts: 1,
+      disconnectGracePeriodMs: 1000,
+      fallbackAttemptThreshold: 2,
+      fallbackIceServers: [{ urls: 'turn:fallback.turn.org:3478' }],
+    });
+    manager.attach(mockPC as unknown as RTCPeerConnection, renegotiateMock);
+
+    manager.handleIceConnectionStateChange('failed');
+    manager.handleIceConnectionStateChange('failed');
+    manager.handleConnectionStateChange('failed');
+
+    expect(manager.getAttemptCount()).toBe(1);
+    expect(manager.getState()).toBe('reconnecting');
+
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(mockPC.restartIce).toHaveBeenCalledTimes(1);
+    expect(manager.getState()).toBe('reconnecting');
+  });
+
+  it('coalesces rapid failure events while renegotiation is in flight', async () => {
+    let finishRenegotiation!: () => void;
+    const pendingRenegotiation = new Promise<void>((resolve) => {
+      finishRenegotiation = resolve;
+    });
+    renegotiateMock.mockImplementationOnce(() => pendingRenegotiation);
+
+    manager.handleIceConnectionStateChange('failed');
+    vi.advanceTimersByTime(300);
+    await Promise.resolve();
+
+    expect(mockPC.restartIce).toHaveBeenCalledTimes(1);
+    expect(manager.getAttemptCount()).toBe(1);
+
+    // Both state-change APIs can report the same failure during negotiation.
+    manager.handleIceConnectionStateChange('failed');
+    manager.handleConnectionStateChange('failed');
+    manager.handleIceConnectionStateChange('failed');
+
+    expect(mockPC.restartIce).toHaveBeenCalledTimes(1);
+    expect(manager.getAttemptCount()).toBe(1);
+
+    finishRenegotiation();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The burst is represented by one follow-up timer, not parallel cycles.
+    expect(manager.getAttemptCount()).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(mockPC.restartIce).toHaveBeenCalledTimes(2);
+    expect(renegotiateMock).toHaveBeenCalledTimes(2);
+  });
+
   it('supports manual reconnect invocation', async () => {
     const success = await manager.manualReconnect(true);
     expect(success).toBe(true);

@@ -50,6 +50,10 @@ export class ICEReconnectManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private graceTimer: ReturnType<typeof setTimeout> | null = null;
   private fallbackApplied = false;
+  /** True while one ICE restart/renegotiation cycle is awaiting completion. */
+  private reconnectInFlight = false;
+  /** Coalesces failure notifications received during an active reconnect cycle. */
+  private reconnectRequested = false;
 
   private stateChangeListeners = new Set<StateChangeHandler>();
   private attemptListeners = new Set<AttemptHandler>();
@@ -99,6 +103,7 @@ export class ICEReconnectManager {
       case 'completed':
         this.clearGraceTimer();
         this.clearReconnectTimer();
+        this.reconnectRequested = false;
         this.attemptCount = 0;
         this.fallbackApplied = false;
         this.transitionState('connected');
@@ -110,7 +115,11 @@ export class ICEReconnectManager {
 
       case 'failed':
         this.clearGraceTimer();
-        this.transitionState('disconnected');
+        // Preserve an already-scheduled or active retry state when duplicate
+        // failure events arrive; the current cycle owns the next transition.
+        if (!this.reconnectInFlight && this.reconnectTimer === null) {
+          this.transitionState('disconnected');
+        }
         this.scheduleReconnect();
         break;
 
@@ -147,7 +156,7 @@ export class ICEReconnectManager {
    * Disconnect grace period handling: delays reconnection if disconnected might be transient.
    */
   private handleTransientDisconnect(): void {
-    if (this.graceTimer) return;
+    if (this.graceTimer !== null) return;
 
     this.transitionState('disconnected');
     this.graceTimer = setTimeout(() => {
@@ -179,22 +188,31 @@ export class ICEReconnectManager {
   private scheduleReconnect(): void {
     if (this.state === 'closed') return;
 
+    // A notification during an active ICE restart should request at most one
+    // follow-up attempt; it must never start a second negotiation concurrently.
+    if (this.reconnectInFlight) {
+      this.reconnectRequested = true;
+      return;
+    }
+
+    // A pending timeout already represents the next reconnect attempt. Check it
+    // before the retry budget so duplicate events cannot exhaust the budget early.
+    if (this.reconnectTimer !== null) return;
+
     if (this.attemptCount >= this.config.maxAttempts) {
       this.transitionState('failed');
       this.fatalFailureListeners.forEach((cb) => cb(this.attemptCount));
       return;
     }
 
-    if (this.reconnectTimer) return;
-
     this.attemptCount++;
     const delay = this.computeBackoff(this.attemptCount);
     this.transitionState('reconnecting');
     this.attemptListeners.forEach((cb) => cb(this.attemptCount, delay));
 
-    this.reconnectTimer = setTimeout(async () => {
+    this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      await this.executeReconnectCycle();
+      void this.executeReconnectCycle();
     }, delay);
   }
 
@@ -204,19 +222,27 @@ export class ICEReconnectManager {
   public async executeReconnectCycle(): Promise<boolean> {
     if (this.state === 'closed') return false;
 
-    // Check if we should activate fallback ICE servers
-    if (
-      !this.fallbackApplied &&
-      this.attemptCount >= this.config.fallbackAttemptThreshold &&
-      this.config.fallbackIceServers.length > 0 &&
-      this.peerConnection
-    ) {
-      this.applyFallbackIceServers();
+    if (this.reconnectInFlight) {
+      this.reconnectRequested = true;
+      return false;
     }
 
-    // Trigger ICE restart if enabled
-    if (this.config.enableIceRestart && this.peerConnection) {
-      try {
+    this.reconnectInFlight = true;
+    this.reconnectRequested = false;
+
+    try {
+      // Check if we should activate fallback ICE servers
+      if (
+        !this.fallbackApplied &&
+        this.attemptCount >= this.config.fallbackAttemptThreshold &&
+        this.config.fallbackIceServers.length > 0 &&
+        this.peerConnection
+      ) {
+        this.applyFallbackIceServers();
+      }
+
+      // Trigger ICE restart if enabled
+      if (this.config.enableIceRestart && this.peerConnection) {
         if (typeof this.peerConnection.restartIce === 'function') {
           this.peerConnection.restartIce();
         }
@@ -225,16 +251,21 @@ export class ICEReconnectManager {
         if (this.renegotiateOfferHandler) {
           await this.renegotiateOfferHandler();
         }
-        return true;
-      } catch (err) {
-        console.warn('[ICEReconnectManager] ICE restart error:', err);
-        // Continue retry cycle
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('[ICEReconnectManager] ICE restart error:', err);
+      // The finally block schedules one coalesced retry after releasing the lock.
+      this.reconnectRequested = true;
+      return false;
+    } finally {
+      this.reconnectInFlight = false;
+      if (this.reconnectRequested && this.state !== 'closed') {
+        this.reconnectRequested = false;
         this.scheduleReconnect();
-        return false;
       }
     }
-
-    return true;
   }
 
   /**
@@ -264,6 +295,11 @@ export class ICEReconnectManager {
    */
   public async manualReconnect(resetAttempts = false): Promise<boolean> {
     if (this.state === 'closed') return false;
+
+    if (this.reconnectInFlight) {
+      this.reconnectRequested = true;
+      return false;
+    }
 
     if (resetAttempts) {
       this.attemptCount = 0;
@@ -308,7 +344,7 @@ export class ICEReconnectManager {
   }
 
   private clearReconnectTimer(): void {
-    if (this.reconnectTimer) {
+    if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
@@ -365,6 +401,7 @@ export class ICEReconnectManager {
   public reset(): void {
     this.clearGraceTimer();
     this.clearReconnectTimer();
+    this.reconnectRequested = false;
     this.attemptCount = 0;
     this.fallbackApplied = false;
     this.transitionState('idle');
@@ -376,6 +413,7 @@ export class ICEReconnectManager {
   public dispose(): void {
     this.clearGraceTimer();
     this.clearReconnectTimer();
+    this.reconnectRequested = false;
     this.state = 'closed';
     this.peerConnection = null;
     this.renegotiateOfferHandler = null;

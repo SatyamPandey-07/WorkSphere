@@ -37,7 +37,7 @@ describe("VenueCard Accessibility & Actions", () => {
     const bookmarkBtn = screen.getByRole("button", {
       name: `Bookmark ${mockVenue.name}`,
     });
-    expect(bookmarkBtn).toHaveClass("focus-visible:ring-emerald-500");
+    expect(bookmarkBtn).toHaveClass("focus-visible:ring-blue-500");
     expect(bookmarkBtn).toHaveClass("focus-visible:ring-offset-zinc-900");
   });
 

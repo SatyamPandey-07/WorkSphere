@@ -235,6 +235,10 @@ interface VoteMetricState {
   userVote: boolean | null;
 }
 
+// Shared keyboard focus style for the card's icon and action controls (#7941).
+const ACTION_FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500";
+
 export function VenueCard({
   venue,
   onGetDirections,
@@ -845,7 +849,7 @@ export function VenueCard({
                 ? `Remove ${venue.name} from favorites`
                 : `Add ${venue.name} to favorites`
             }
-            className={`p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${ACTION_FOCUS_RING} ${
               enableTransition ? "transition-colors duration-300" : ""
             } ${
               isFavorited
@@ -1573,7 +1577,10 @@ export function VenueCard({
                 >
                   {venue.noiseLevel}
                 </span>
-                <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
+                <AmbientSoundPlayer
+                  noiseLevel={venue.noiseLevel}
+                  venueName={venue.name}
+                />
               </div>
             )}
             {/* Lighting profile badge */}
@@ -1822,7 +1829,10 @@ export function VenueCard({
               >
                 {venue.noiseLevel}
               </span>
-              <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
+              <AmbientSoundPlayer
+                noiseLevel={venue.noiseLevel}
+                venueName={venue.name}
+              />
             </div>
           )}
           {venue.lighting && (
@@ -1855,25 +1865,28 @@ export function VenueCard({
         <div className="flex gap-2">
           <button
             onClick={() => onGetDirections?.(venue)}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors"
+            aria-label={`Directions to ${venue.name}`}
+            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors ${ACTION_FOCUS_RING}`}
           >
-            <Navigation className="w-4 h-4 shrink-0" />
+            <Navigation className="w-4 h-4 shrink-0" aria-hidden="true" />
             Directions
           </button>
           <button
             onClick={() => onRate?.(venue)}
-            className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+            aria-label={`Rate ${venue.name}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors ${ACTION_FOCUS_RING}`}
           >
-            <MessageSquare className="w-4 h-4 shrink-0" />
+            <MessageSquare className="w-4 h-4 shrink-0" aria-hidden="true" />
             Rate
           </button>
           {venue.id && (
             <button
               onClick={() => setShowFolderModal(true)}
-              className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+              aria-label={`Add ${venue.name} to a collection`}
+              className={`flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors ${ACTION_FOCUS_RING}`}
               title="Add to Collection"
             >
-              <FolderPlus className="w-4 h-4 shrink-0" />
+              <FolderPlus className="w-4 h-4 shrink-0" aria-hidden="true" />
             </button>
           )}
           {enrichData?.website && (
@@ -1881,9 +1894,10 @@ export function VenueCard({
               href={enrichData.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+              aria-label={`Visit the website of ${venue.name} (opens in a new tab)`}
+              className={`flex items-center justify-center px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors ${ACTION_FOCUS_RING}`}
             >
-              <ExternalLink className="w-4 h-4 shrink-0" />
+              <ExternalLink className="w-4 h-4 shrink-0" aria-hidden="true" />
             </a>
           )}
           {enrichData?.venueId && (
@@ -1896,7 +1910,7 @@ export function VenueCard({
           {enrichData?.venueId && (
             <a
               href={`/reserve/${enrichData.venueId}`}
-              className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 flex flex-col items-center leading-tight"
+              className={`rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 flex flex-col items-center leading-tight ${ACTION_FOCUS_RING}`}
             >
               <span>Reserve</span>
               <span className="text-[10px] opacity-80">

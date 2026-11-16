@@ -27,7 +27,7 @@ export interface VenueCardProps {
 }
 
 const focusRingClasses =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
 
 export const VenueCard: React.FC<VenueCardProps> = ({
   venue,

@@ -240,6 +240,15 @@ export class DistributedBloomLimiter {
     try {
       const remoteBuffer = await this.kvStore.get(this.gossipKey, "arrayBuffer");
       if (remoteBuffer) {
+        if (remoteBuffer.byteLength !== this.sizeBytes) {
+          // A differently sized state cannot be merged byte for byte. Merging it
+          // would turn the missing bytes into NaN (zeroed counters), so skip the
+          // whole cycle and leave the stored state untouched.
+          console.warn(
+            `[BloomLimiter] Ignoring gossip state of ${remoteBuffer.byteLength} bytes (expected ${this.sizeBytes}); sizeBytes must match on every instance.`
+          );
+          return;
+        }
         const remoteCounters = new Uint8Array(remoteBuffer);
         // Element-wise maximum merge to retain maximum observed count across edge instances
         for (let i = 0; i < this.sizeBytes; i++) {

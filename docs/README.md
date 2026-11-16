@@ -23,3 +23,7 @@
 ## WebRTC
 
 - [ICE reconnect state machine](./webrtc/ICE_RECONNECT_STATE_MACHINE.md) — `ICEReconnectManager` states and Mermaid diagram, backoff and jitter math, disconnect grace period, ICE restart and trickle ICE, fallback ICE servers, telemetry events, and troubleshooting for strict NATs and corporate firewalls.
+
+## P2P
+
+- [GossipSub peer scoring](./p2p/GOSSIPSUB_PEER_SCORING.md) — `GossipSubPeerScorer` score formula (P1 to P4, IP colocation, app-specific), default weights, decay half-lives, gating thresholds, Sybil mitigation, tuning guidance and extension examples.

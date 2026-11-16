@@ -118,3 +118,17 @@ The tests should cover unauthorized requests, missing configuration,
 atomic-claim races, signature persistence before broadcast, confirmed
 transactions, pending/unknown signatures, explicit on-chain failure,
 recovery of claims without signatures, and the per-invocation time budget.
+
+## Operational verification matrix
+
+| Scenario | Expected state/result | Required evidence |
+| --- | --- | --- |
+| Hold has not expired | Row remains `PENDING`; no refund transaction is broadcast | Route response reports no eligible claim |
+| Expired hold is atomically claimed | Row moves to `REFUND_PENDING` before signing/broadcast | Database row contains the current claim timestamp |
+| Signature is confirmed on-chain | Row becomes `REFUNDED` with signature and timestamp | Signature-status response is confirmed and persisted row is terminal |
+| Signature is pending or unknown | Row stays `REFUND_PENDING` | Subsequent run reconciles the existing signature instead of sending another refund |
+| On-chain transaction definitively fails | Row returns to `PENDING` only after the failed signature is cleared | Failure status is explicit; a later run may claim a fresh attempt |
+| Worker stops before a signature exists | Stale claim may be re-queued after the configured age | The claim timestamp is stale and signature is still absent |
+| Required signer or program configuration is missing | Route returns `503`; no refund is attempted | Response identifies missing configuration without exposing secret values |
+
+For incident review, correlate the booking ID, escrow row, persisted transaction signature, claim timestamp, and cron invocation. Never use a cron response that merely says an item was processed as proof of a refund; only a confirmed on-chain signature plus the persisted `REFUNDED` state establishes completion.

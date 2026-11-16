@@ -106,3 +106,49 @@ Notes:
 
 All counters are sanitised: `NaN`, negative and non-finite values are coerced to
 safe values, and counters are bounded by `Number.MAX_SAFE_INTEGER`.
+
+## 5. Sybil attack mitigation
+
+The scorer limits Sybil clusters with these mechanisms:
+
+1. **IP colocation penalty.** `setIP()` registers a peer in an IP bucket. When
+   more than `ipColocationThreshold` (default `2`) peers share an IP, every peer
+   in that bucket receives `(count - threshold)^2 * ipColocationWeight`.
+   The penalty is quadratic, so each extra peer costs more than the last, and it
+   applies to every peer in the bucket.
+2. **Mesh delivery deficit (P3).** Peers in the mesh that stay silent lose score,
+   so spinning up many idle identities is not free.
+3. **Invalid message penalty (P4).** Quadratic, with the heaviest default weight.
+4. **Clamping and fail-closed maths.** Scores are bounded to `[-1000, 100]`, and a
+   `NaN` score becomes `-1000`, so malformed inputs cannot dodge penalties.
+5. **Cleanup.** `prunePeer()` removes the peer and shrinks its IP bucket, which
+   lifts the penalty from the remaining peers.
+
+### 5.1 Penalty by number of peers on one IP (defaults)
+
+Colocation term only, with `ipColocationThreshold = 2` and `ipColocationWeight = -5`:
+
+| Peers on the IP | Excess | Penalty per peer            | Effect                                           |
+| --------------- | ------ | --------------------------- | ------------------------------------------------ |
+| 1 to 2          | 0      | `0`                         | none                                             |
+| 3               | 1      | `-5`                        | still gossips                                    |
+| 4               | 2      | `-20`                       | gossip stops (below `-10`)                       |
+| 5               | 3      | `-45`                       | publish stops (below `-40`)                      |
+| 6               | 4      | `-80`                       | exactly at the graylist boundary, not graylisted |
+| 7               | 5      | `-125`                      | graylisted                                       |
+| 20              | 18     | `-1620`, clamped to `-1000` | graylisted, at the floor                         |
+
+Other terms add to these figures. A cluster peer that also sends one invalid
+message is `-10` lower again. The unit tests use a heavier weight of `-10`, which
+reaches the same stages with fewer peers (3 peers `-10`, 4 peers `-40`).
+
+### 5.2 Limits to be aware of
+
+- Colocation is keyed on the **exact string** passed to `setIP()`. Different
+  addresses in one subnet, or one attacker rotating IPv6 addresses, are not grouped.
+- Your code must call `setIP()` with an address taken from the transport, not from
+  a value the peer claims about itself.
+- Honest peers behind carrier-grade NAT or a shared office gateway are penalised
+  together. Raise `ipColocationThreshold` for deployments where that is common.
+- Sybils that stay under the threshold, or spread over many IPs, are only limited
+  by P3 and P4.

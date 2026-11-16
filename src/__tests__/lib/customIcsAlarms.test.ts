@@ -61,3 +61,18 @@ describe("custom booking calendar alarms", () => {
     expect(content).toContain("DESCRIPTION:Valid reminder");
   });
 });
+
+describe("booking calendar status (#7966)", () => {
+  it.each([
+    ["CANCELLED", "STATUS:CANCELLED"],
+    ["CANCELLED_BY_OPERATOR", "STATUS:CANCELLED"],
+    ["PENDING", "STATUS:TENTATIVE"],
+    ["CONFIRMED", "STATUS:CONFIRMED"],
+  ])("exports a %s booking with %s", (status, expected) => {
+    const content = generateBookingIcs(
+      { ...booking, status },
+      { now: new Date("2026-11-12T00:00:00.000Z") },
+    );
+    expect(content).toContain(expected);
+  });
+});

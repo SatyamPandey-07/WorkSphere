@@ -233,7 +233,7 @@ export function AcousticSpectrumAnalyzer({
         }
       }
     }
-  }, [isMicActive, minDecibels, maxDecibels]);
+  }, [isMicActive, minDecibels, maxDecibels, cleanupInternalMicrophone]);
 
   // Keyboard shortcut listener (Space = pause/resume, F = fullscreen, Esc = close modal)
   useEffect(() => {

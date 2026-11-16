@@ -115,7 +115,11 @@ export class ICEReconnectManager {
 
       case 'failed':
         this.clearGraceTimer();
-        this.transitionState('disconnected');
+        // Preserve an already-scheduled or active retry state when duplicate
+        // failure events arrive; the current cycle owns the next transition.
+        if (!this.reconnectInFlight && this.reconnectTimer === null) {
+          this.transitionState('disconnected');
+        }
         this.scheduleReconnect();
         break;
 

@@ -14,6 +14,7 @@ export * from './nutrition/AllergenMatcher';
 export * from './iot/LuggageLockerProtocol';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
+export * from './spatial/GaussianVoxelEngine';
 export * from './consensus';
 export * from './zkp';
 export * from './p2p';

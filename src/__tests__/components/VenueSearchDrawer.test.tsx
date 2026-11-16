@@ -473,4 +473,68 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       );
     });
   });
+
+  describe("Mobile Backdrop Click Propagation Prevention (#8021)", () => {
+    it("renders backdrop with pointer-events-auto and calls onClose on backdrop click", () => {
+      const handleClose = jest.fn();
+      render(<VenueSearchDrawer isOpen={true} onClose={handleClose} />);
+
+      const backdrop = screen.getByTestId("filter-drawer-backdrop");
+      expect(backdrop).toBeInTheDocument();
+      expect(backdrop).toHaveClass("pointer-events-auto");
+
+      fireEvent.click(backdrop);
+      expect(handleClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops event propagation on backdrop click, pointer-down, and touch-start to protect underlying elements", () => {
+      const handleClose = jest.fn();
+      const parentClickHandler = jest.fn();
+      const parentPointerDownHandler = jest.fn();
+
+      render(
+        <div
+          data-testid="underlying-venue-card-layer"
+          onClick={parentClickHandler}
+          onPointerDown={parentPointerDownHandler}
+        >
+          <VenueSearchDrawer isOpen={true} onClose={handleClose} />
+        </div>,
+      );
+
+      const backdrop = screen.getByTestId("filter-drawer-backdrop");
+
+      // Pointer down on backdrop should not propagate to parent
+      fireEvent.pointerDown(backdrop);
+      expect(parentPointerDownHandler).not.toHaveBeenCalled();
+
+      // Click on backdrop should trigger onClose and not propagate to underlying element
+      fireEvent.click(backdrop);
+      expect(handleClose).toHaveBeenCalledTimes(1);
+      expect(parentClickHandler).not.toHaveBeenCalled();
+
+      // Touch start on backdrop should not propagate
+      const touchEvent = new Event("touchstart", { bubbles: true, cancelable: true });
+      const stopPropSpy = jest.spyOn(touchEvent, "stopPropagation");
+      backdrop.dispatchEvent(touchEvent);
+      expect(stopPropSpy).toHaveBeenCalled();
+    });
+
+    it("does not trigger onClose or propagate events when clicking inside the drawer content panel", () => {
+      const handleClose = jest.fn();
+      const parentClickHandler = jest.fn();
+
+      render(
+        <div onClick={parentClickHandler}>
+          <VenueSearchDrawer isOpen={true} onClose={handleClose} />
+        </div>,
+      );
+
+      const searchInput = screen.getByTestId("search-input");
+      fireEvent.click(searchInput);
+
+      expect(handleClose).not.toHaveBeenCalled();
+      expect(parentClickHandler).not.toHaveBeenCalled();
+    });
+  });
 });

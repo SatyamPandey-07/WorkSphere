@@ -429,16 +429,37 @@ export function VenueSearchDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm transition-opacity"
+      data-testid="filter-drawer-overlay"
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm transition-opacity pointer-events-auto"
       aria-modal="true"
       role="dialog"
       aria-label="Venue Search Filters"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
-      {/* Backdrop click to close */}
-      <div className="flex-1" onClick={onClose} />
+      {/* Backdrop click to close - prevents event bubbling to underlying elements (#8021) */}
+      <div
+        data-testid="filter-drawer-backdrop"
+        className="flex-1 cursor-pointer pointer-events-auto touch-none"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+        }}
+        onTouchStart={(e) => {
+          e.stopPropagation();
+        }}
+        aria-label="Close filters backdrop"
+      />
 
       {/* Mobile Bottom Drawer Panel */}
-      <div className="w-full max-h-[85vh] bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 rounded-t-[2rem] p-5 flex flex-col gap-5 overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-200">
+      <div
+        className="w-full max-h-[85vh] bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 rounded-t-[2rem] p-5 flex flex-col gap-5 overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-200 pointer-events-auto"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         {/* Drawer Header */}
         <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center gap-2">

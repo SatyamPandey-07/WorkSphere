@@ -203,67 +203,156 @@ export class BFTConsensusCoordinator<T = unknown> {
    * Ingests a vote from a validator and triggers QC formation if quorum is reached
    */
   public handleVote(vote: BFTVote): QuorumCertificate | null {
-    if (!this.validators.includes(vote.nodeId)) {
-      console.warn(`Vote rejected: node ${vote.nodeId} is not an authorized validator`);
+    try {
+      if (!vote || typeof vote !== 'object') {
+        console.warn('Vote rejected: malformed vote payload');
+        return null;
+      }
+
+      if (!this.validators.includes(vote.nodeId)) {
+        console.warn(`Vote rejected: node ${vote.nodeId} is not an authorized validator`);
+        return null;
+      }
+
+      // Equivocation check
+      const voteKey = `${vote.view}:${vote.sequence}:${vote.phase}:${vote.nodeId}`;
+      const priorVote = this.castVotes.get(voteKey);
+      if (priorVote && priorVote.blockHash !== vote.blockHash) {
+        this.slashValidator(
+          vote.nodeId,
+          `Equivocation detected: signed conflicting hashes for view ${vote.view}, seq ${vote.sequence}, phase ${vote.phase}`
+        );
+        return null;
+      }
+
+      // Verify cryptographic signature with error boundary
+      let isValidSignature = false;
+      try {
+        isValidSignature = this.verifyVoteSignature(vote);
+      } catch (err: unknown) {
+        console.warn(
+          `Vote rejected: cryptographic signature verification threw exception for ${vote.nodeId}:`,
+          err instanceof Error ? err.message : String(err)
+        );
+        return null;
+      }
+
+      if (!isValidSignature) {
+        console.warn(`Vote rejected: invalid cryptographic signature from ${vote.nodeId}`);
+        return null;
+      }
+
+      this.castVotes.set(voteKey, vote);
+
+      const poolKey = `${vote.phase}:${vote.view}:${vote.sequence}:${vote.blockHash}`;
+      if (!this.votePool.has(poolKey)) {
+        this.votePool.set(poolKey, new Map());
+      }
+      const pool = this.votePool.get(poolKey)!;
+      pool.set(vote.nodeId, vote);
+
+      if (pool.size >= this.quorumSize) {
+        const signatures: Record<string, string> = {};
+        pool.forEach((v, id) => {
+          signatures[id] = v.signature;
+        });
+
+        const qc: QuorumCertificate = {
+          view: vote.view,
+          sequence: vote.sequence,
+          blockHash: vote.blockHash,
+          phase: vote.phase,
+          signatures,
+          aggregatedAt: Date.now(),
+        };
+
+        // State machine progression
+        this.advancePhaseOnQC(qc);
+        return qc;
+      }
+
+      return null;
+    } catch (err: unknown) {
+      console.warn(
+        `Vote processing failed unexpectedly for node ${vote?.nodeId}:`,
+        err instanceof Error ? err.message : String(err)
+      );
       return null;
     }
+  }
 
-    // Equivocation check
-    const voteKey = `${vote.view}:${vote.sequence}:${vote.phase}:${vote.nodeId}`;
-    const priorVote = this.castVotes.get(voteKey);
-    if (priorVote && priorVote.blockHash !== vote.blockHash) {
-      this.slashValidator(vote.nodeId, `Equivocation detected: signed conflicting hashes for view ${vote.view}, seq ${vote.sequence}, phase ${vote.phase}`);
-      return null;
-    }
-    this.castVotes.set(voteKey, vote);
+  /**
+   * Ingests a vote with asynchronous worker verification and timeout guarding
+   */
+  public async handleVoteAsync(vote: BFTVote, timeoutMs?: number): Promise<QuorumCertificate | null> {
+    try {
+      if (!vote || typeof vote !== 'object') {
+        console.warn('Vote rejected: malformed vote payload');
+        return null;
+      }
 
-    // Verify cryptographic signature
-    if (!this.verifyVoteSignature(vote)) {
-      console.warn(`Vote rejected: invalid cryptographic signature from ${vote.nodeId}`);
-      return null;
-    }
+      if (!this.validators.includes(vote.nodeId)) {
+        console.warn(`Vote rejected: node ${vote.nodeId} is not an authorized validator`);
+        return null;
+      }
 
-    const poolKey = `${vote.phase}:${vote.view}:${vote.sequence}:${vote.blockHash}`;
-    if (!this.votePool.has(poolKey)) {
-      this.votePool.set(poolKey, new Map());
-    }
-    const pool = this.votePool.get(poolKey)!;
-    pool.set(vote.nodeId, vote);
-
-    if (pool.size >= this.quorumSize) {
-      const signatures: Record<string, string> = {};
-      pool.forEach((v, id) => {
-        signatures[id] = v.signature;
+      const isValid = await this.verifyNodeSignatureAsync(
+        vote.nodeId,
+        vote.phase,
+        vote.view,
+        vote.sequence,
+        vote.blockHash,
+        vote.signature,
+        timeoutMs ?? this.timeoutMs
+      ).catch((err: unknown) => {
+        console.warn(
+          `Vote verification rejected due to unhandled promise:`,
+          err instanceof Error ? err.message : String(err)
+        );
+        return false;
       });
 
-      const qc: QuorumCertificate = {
-        view: vote.view,
-        sequence: vote.sequence,
-        blockHash: vote.blockHash,
-        phase: vote.phase,
-        signatures,
-        aggregatedAt: Date.now(),
-      };
+      if (!isValid) {
+        console.warn(`Vote rejected: invalid or timed-out cryptographic signature from ${vote.nodeId}`);
+        return null;
+      }
 
-      // State machine progression
-      this.advancePhaseOnQC(qc);
-      return qc;
+      return this.handleVote(vote);
+    } catch (err: unknown) {
+      console.warn(
+        `Async vote ingestion failed for node ${vote?.nodeId}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+      return null;
     }
-
-    return null;
   }
 
   /**
    * Verifies that a Quorum Certificate possesses at least 2f+1 valid validator signatures
    */
   public verifyQuorumCertificate(qc: QuorumCertificate): boolean {
-    const validSignatures = Object.entries(qc.signatures).filter(([nodeId, sig]) => {
-      if (!this.validators.includes(nodeId)) return false;
-      const expectedSig = this.generateSignature(nodeId, qc.phase, qc.view, qc.sequence, qc.blockHash);
-      return sig === expectedSig;
-    });
+    try {
+      if (!qc || !qc.signatures || typeof qc.signatures !== 'object') {
+        return false;
+      }
 
-    return validSignatures.length >= this.quorumSize;
+      const validSignatures = Object.entries(qc.signatures).filter(([nodeId, sig]) => {
+        try {
+          if (!this.validators.includes(nodeId)) return false;
+          return this.verifyNodeSignature(nodeId, qc.phase, qc.view, qc.sequence, qc.blockHash, sig);
+        } catch {
+          return false;
+        }
+      });
+
+      return validSignatures.length >= this.quorumSize;
+    } catch (err: unknown) {
+      console.warn(
+        `Quorum certificate verification failed:`,
+        err instanceof Error ? err.message : String(err)
+      );
+      return false;
+    }
   }
 
   /**
@@ -391,14 +480,91 @@ export class BFTConsensusCoordinator<T = unknown> {
       .digest('hex');
   }
 
-  private verifyVoteSignature(vote: BFTVote): boolean {
-    const expected = this.generateSignature(
-      vote.nodeId,
-      vote.phase,
-      vote.view,
-      vote.sequence,
-      vote.blockHash
-    );
-    return vote.signature === expected;
+  /**
+   * Verifies an individual node signature with error boundary and validation checks.
+   * Catches corrupted signatures or unexpected exceptions.
+   */
+  public verifyNodeSignature(
+    nodeId: string,
+    phase: BFTPhase,
+    view: number,
+    sequence: number,
+    blockHash: string,
+    signature: string
+  ): boolean {
+    try {
+      if (!nodeId || !phase || view === undefined || sequence === undefined || !blockHash || !signature) {
+        return false;
+      }
+      if (typeof signature !== 'string') {
+        return false;
+      }
+      const expected = this.generateSignature(nodeId, phase, view, sequence, blockHash);
+      return signature === expected;
+    } catch (err: unknown) {
+      console.warn(
+        `Cryptographic signature verification failed for node ${nodeId}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Asynchronous verification boundary with timeout protection for cryptographic workers
+   */
+  public async verifyNodeSignatureAsync(
+    nodeId: string,
+    phase: BFTPhase,
+    view: number,
+    sequence: number,
+    blockHash: string,
+    signature: string,
+    timeoutMs: number = 1000
+  ): Promise<boolean> {
+    try {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const verifyPromise = new Promise<boolean>((resolve) => {
+        resolve(this.verifyNodeSignature(nodeId, phase, view, sequence, blockHash, signature));
+      });
+
+      const timeoutPromise = new Promise<boolean>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`Signature verification timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      });
+
+      return await Promise.race([verifyPromise, timeoutPromise]).finally(() => {
+        if (timer) clearTimeout(timer);
+      });
+    } catch (err: unknown) {
+      console.warn(
+        `Cryptographic signature verification failed or timed out for node ${nodeId}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+      return false;
+    }
+  }
+
+  public verifyVoteSignature(vote: BFTVote): boolean {
+    try {
+      if (!vote || typeof vote !== 'object') {
+        return false;
+      }
+      return this.verifyNodeSignature(
+        vote.nodeId,
+        vote.phase,
+        vote.view,
+        vote.sequence,
+        vote.blockHash,
+        vote.signature
+      );
+    } catch (err: unknown) {
+      console.warn(
+        `Cryptographic signature verification error for vote from ${vote?.nodeId}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+      return false;
+    }
   }
 }

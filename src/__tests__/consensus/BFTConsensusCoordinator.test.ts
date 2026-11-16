@@ -278,4 +278,155 @@ describe('BFTConsensusCoordinator', () => {
       expect(node0.getCurrentLeader()).toBe('node-1');
     });
   });
+
+  describe('Cryptographic Signature Verification Error Boundaries & Timeout Protection (#8025)', () => {
+    it('catches and rejects corrupted or malformed signature in vote without crashing coordinator', () => {
+      const coordinator = new BFTConsensusCoordinator({
+        nodeId: 'node-0',
+        validators: validators4,
+      });
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // Corrupted signature
+      const corruptedVote: any = {
+        nodeId: 'node-1',
+        view: 0,
+        sequence: 1,
+        blockHash: 'valid-block-hash-123',
+        phase: 'COMMIT',
+        signature: 'corrupted-ecdsa-sig-000',
+        timestamp: Date.now(),
+      };
+
+      const result = coordinator.handleVote(corruptedVote);
+      expect(result).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('invalid cryptographic signature from node-1')
+      );
+
+      // Non-string signature or malformed payload
+      const nonStringSigVote: any = {
+        nodeId: 'node-2',
+        view: 0,
+        sequence: 1,
+        blockHash: 'valid-block-hash-123',
+        phase: 'COMMIT',
+        signature: { r: '0x123', s: '0x456' }, // Object instead of string
+        timestamp: Date.now(),
+      };
+
+      expect(coordinator.handleVote(nonStringSigVote)).toBeNull();
+
+      warnSpy.mockRestore();
+    });
+
+    it('catches unexpected exceptions thrown during cryptographic verification and rejects vote', () => {
+      const coordinator = new BFTConsensusCoordinator({
+        nodeId: 'node-0',
+        validators: validators4,
+      });
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // Mock verifyVoteSignature to simulate a cryptographic worker throwing
+      jest.spyOn(coordinator, 'verifyVoteSignature').mockImplementationOnce(() => {
+        throw new Error('ECDSA worker crashed: memory allocation failure');
+      });
+
+      const throwingVote = {
+        nodeId: 'node-1',
+        view: 0,
+        sequence: 1,
+        blockHash: 'block-hash-xyz',
+        phase: 'PREPARE' as const,
+        signature: 'some-sig',
+        timestamp: Date.now(),
+      };
+
+      expect(() => {
+        const res = coordinator.handleVote(throwingVote);
+        expect(res).toBeNull();
+      }).not.toThrow();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('cryptographic signature verification threw exception'),
+        expect.stringContaining('ECDSA worker crashed')
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('handles asynchronous worker verification timeout without unhandled promise rejection', async () => {
+      const coordinator = new BFTConsensusCoordinator({
+        nodeId: 'node-0',
+        validators: validators4,
+      });
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // Simulate a verification call that exceeds the timeout
+      jest.spyOn(coordinator, 'verifyNodeSignature').mockImplementationOnce(() => {
+        // block/hang
+        return false;
+      });
+
+      // Directly test verifyNodeSignatureAsync timeout
+      jest.spyOn(coordinator, 'verifyNodeSignatureAsync').mockImplementationOnce(async () => {
+        throw new Error('Signature verification timed out after 50ms');
+      });
+
+      const vote = {
+        nodeId: 'node-1',
+        view: 0,
+        sequence: 1,
+        blockHash: 'hash-abc',
+        phase: 'COMMIT' as const,
+        signature: 'sig-timeout',
+        timestamp: Date.now(),
+      };
+
+      const result = await coordinator.handleVoteAsync(vote, 50);
+      expect(result).toBeNull();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Vote verification rejected due to unhandled promise:'),
+        expect.stringContaining('timed out')
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('verifyQuorumCertificate handles malformed or null signatures gracefully without throwing', () => {
+      const coordinator = new BFTConsensusCoordinator({
+        nodeId: 'node-0',
+        validators: validators4,
+      });
+
+      const malformedQC: any = {
+        view: 0,
+        sequence: 1,
+        blockHash: 'hash-123',
+        phase: 'PREPARE',
+        signatures: null, // malformed
+        aggregatedAt: Date.now(),
+      };
+
+      expect(coordinator.verifyQuorumCertificate(malformedQC)).toBe(false);
+
+      const invalidSigsQC: any = {
+        view: 0,
+        sequence: 1,
+        blockHash: 'hash-123',
+        phase: 'PREPARE',
+        signatures: {
+          'node-0': 12345, // invalid type
+          'node-1': undefined,
+        },
+        aggregatedAt: Date.now(),
+      };
+
+      expect(coordinator.verifyQuorumCertificate(invalidSigsQC)).toBe(false);
+    });
+  });
 });

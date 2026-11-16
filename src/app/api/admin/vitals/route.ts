@@ -1,22 +1,22 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import {
   buildSystemVitalsSnapshot,
   formatSystemVitalsPrometheus,
   sharedVitalsBuffer,
-} from '@/lib/export/domain/systemVitalsExporter';
+} from "@/lib/export/domain/systemVitalExporter";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const formatParam = searchParams.get('format')?.toLowerCase();
-  const acceptHeader = request.headers.get('accept')?.toLowerCase() ?? '';
+  const formatParam = searchParams.get("format")?.toLowerCase();
+  const acceptHeader = request.headers.get("accept")?.toLowerCase() ?? "";
 
   const wantsPrometheus =
-    formatParam === 'prometheus' ||
-    formatParam === 'prom' ||
-    acceptHeader.includes('text/plain') ||
-    acceptHeader.includes('application/openmetrics-text');
+    formatParam === "prometheus" ||
+    formatParam === "prom" ||
+    acceptHeader.includes("text/plain") ||
+    acceptHeader.includes("application/openmetrics-text");
 
   const snapshot = buildSystemVitalsSnapshot(sharedVitalsBuffer);
 
@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
     return new NextResponse(prometheusBody, {
       status: 200,
       headers: {
-        'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
-        'Cache-Control': 'no-store, max-age=0',
+        "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+        "Cache-Control": "no-store, max-age=0",
       },
     });
   }
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(snapshot, {
     status: 200,
     headers: {
-      'Cache-Control': 'no-store, max-age=0',
+      "Cache-Control": "no-store, max-age=0",
     },
   });
 }

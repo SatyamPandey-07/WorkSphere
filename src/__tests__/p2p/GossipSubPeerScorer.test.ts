@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   GossipSubPeerScorer,
   DEFAULT_TOPIC_SCORE_PARAMS,
+  MIN_PEER_SCORE,
+  MAX_PEER_SCORE,
 } from '../../core/p2p/GossipSubPeerScorer';
 
 describe('GossipSubPeerScorer', () => {
@@ -85,6 +87,45 @@ describe('GossipSubPeerScorer', () => {
     scorer.recordInvalidMessage('peer-bad', 'alerts');
     const score2 = scorer.score('peer-bad');
     expect(score2).toBeLessThanOrEqual(-40);
+  });
+
+  it('clamps extreme peer scores to finite configured bounds', () => {
+    scorer.setAppSpecificScore('peer-positive', Number.MAX_VALUE);
+    scorer.setAppSpecificScore('peer-negative', -Number.MAX_VALUE);
+    scorer.setAppSpecificScore('peer-not-a-number', Number.NaN);
+
+    expect(scorer.score('peer-positive')).toBe(MAX_PEER_SCORE);
+    expect(scorer.score('peer-negative')).toBe(MIN_PEER_SCORE);
+    expect(scorer.score('peer-not-a-number')).toBe(MIN_PEER_SCORE);
+    expect(Number.isFinite(scorer.score('peer-positive'))).toBe(true);
+    expect(Number.isFinite(scorer.score('peer-negative'))).toBe(true);
+  });
+
+  it('bounds extreme invalid-message penalties without numeric underflow', () => {
+    scorer.setTopicParams('alerts', {
+      invalidMessageDeliveriesWeight: -Number.MAX_VALUE,
+    });
+    scorer.joinTopic('peer-abusive', 'alerts');
+    for (let index = 0; index < 50; index++) {
+      scorer.recordInvalidMessage('peer-abusive', 'alerts');
+    }
+
+    expect(scorer.score('peer-abusive')).toBe(MIN_PEER_SCORE);
+    expect(Number.isFinite(scorer.getPeerStats('peer-abusive')?.overallScore)).toBe(true);
+  });
+
+  it('preserves finite counters when a decay factor is invalid', () => {
+    scorer.setTopicParams('alerts', {
+      invalidMessageDeliveriesDecay: Number.NaN,
+    });
+    scorer.recordInvalidMessage('peer-decay', 'alerts');
+
+    scorer.decayScores();
+
+    const topicStats = scorer.getPeerStats('peer-decay')?.topics.get('alerts');
+    expect(Number.isFinite(topicStats?.invalidMessages)).toBe(true);
+    expect(topicStats?.invalidMessages).toBe(1);
+    expect(scorer.score('peer-decay')).toBeCloseTo(-10, 2);
   });
 
   it('enforces behavioral thresholds (gossip, publish, graylist)', () => {

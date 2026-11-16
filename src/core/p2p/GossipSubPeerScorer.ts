@@ -83,6 +83,44 @@ export const DEFAULT_THRESHOLDS: PeerScoreThresholds = {
   acceptPXThreshold: 10,
 };
 
+/** Hard bounds for scores consumed by mesh pruning and peer-policy decisions. */
+export const MIN_PEER_SCORE = -1000;
+export const MAX_PEER_SCORE = 100;
+
+const MAX_TRACKED_METRIC = Number.MAX_SAFE_INTEGER;
+
+function safeMetric(value: number): number {
+  if (Number.isNaN(value) || value === Infinity) return MAX_TRACKED_METRIC;
+  if (!Number.isFinite(value) || value < 0) return 0;
+  return Math.min(value, MAX_TRACKED_METRIC);
+}
+
+function incrementMetric(value: number): number {
+  return Math.min(safeMetric(value) + 1, MAX_TRACKED_METRIC);
+}
+
+function meshTimeAfterStep(current: number, timeStep: number): number {
+  const next = safeMetric(current) + safeMetric(timeStep);
+  return Number.isFinite(next) ? Math.min(next, MAX_TRACKED_METRIC) : MAX_TRACKED_METRIC;
+}
+
+/** Keeps decayed counters finite; invalid decay settings preserve the metric. */
+function decayMetric(value: number, factor: number): number {
+  const safeValue = safeMetric(value);
+  const safeFactor = Number.isFinite(factor) && factor >= 0 ? factor : 1;
+  const decayed = safeValue * safeFactor;
+  return Number.isFinite(decayed)
+    ? Math.min(decayed, MAX_TRACKED_METRIC)
+    : MAX_TRACKED_METRIC;
+}
+
+/** Non-finite scores fail closed so NaN cannot bypass peer penalties. */
+function clampPeerScore(score: number): number {
+  if (Number.isNaN(score) || score === -Infinity) return MIN_PEER_SCORE;
+  if (score === Infinity) return MAX_PEER_SCORE;
+  return Math.max(MIN_PEER_SCORE, Math.min(MAX_PEER_SCORE, score));
+}
+
 export class GossipSubPeerScorer {
   private topicsParams = new Map<string, TopicScoreParams>();
   private defaultTopicParams: TopicScoreParams;
@@ -193,26 +231,26 @@ export class GossipSubPeerScorer {
   public deliverFirstMessage(peerId: string, topic: string): void {
     const peer = this.getOrCreatePeer(peerId);
     const state = this.getOrCreateTopicState(peer, topic);
-    state.firstMessageDeliveries++;
-    state.meshMessageDeliveries++;
+    state.firstMessageDeliveries = incrementMetric(state.firstMessageDeliveries);
+    state.meshMessageDeliveries = incrementMetric(state.meshMessageDeliveries);
   }
 
   public deliverMessage(peerId: string, topic: string): void {
     const peer = this.getOrCreatePeer(peerId);
     const state = this.getOrCreateTopicState(peer, topic);
-    state.meshMessageDeliveries++;
+    state.meshMessageDeliveries = incrementMetric(state.meshMessageDeliveries);
   }
 
   public recordDeliveryFailure(peerId: string, topic: string): void {
     const peer = this.getOrCreatePeer(peerId);
     const state = this.getOrCreateTopicState(peer, topic);
-    state.meshFailures++;
+    state.meshFailures = incrementMetric(state.meshFailures);
   }
 
   public recordInvalidMessage(peerId: string, topic: string): void {
     const peer = this.getOrCreatePeer(peerId);
     const state = this.getOrCreateTopicState(peer, topic);
-    state.invalidMessages++;
+    state.invalidMessages = incrementMetric(state.invalidMessages);
   }
 
   public setAppSpecificScore(peerId: string, score: number): void {
@@ -232,11 +270,16 @@ export class GossipSubPeerScorer {
     // 1. Topic Scores
     for (const [topic, state] of peer.topics.entries()) {
       const params = this.getTopicParams(topic);
+      const meshTimeMs = safeMetric(state.meshTimeMs);
+      const firstMessageDeliveries = safeMetric(state.firstMessageDeliveries);
+      const meshMessageDeliveries = safeMetric(state.meshMessageDeliveries);
+      const meshFailures = safeMetric(state.meshFailures);
+      const invalidMessages = safeMetric(state.invalidMessages);
       let topicScore = 0;
 
       // P1: Time In Mesh
       if (state.inMesh) {
-        const totalMeshTime = state.meshTimeMs + elapsedMeshMs;
+        const totalMeshTime = meshTimeMs + safeMetric(elapsedMeshMs);
         const quanta = Math.floor(totalMeshTime / params.timeInMeshQuantumMs);
         const p1 = Math.min(quanta * params.timeInMeshWeight, params.timeInMeshCap);
         topicScore += p1;
@@ -244,25 +287,25 @@ export class GossipSubPeerScorer {
 
       // P2: First Message Deliveries
       const p2 =
-        Math.min(state.firstMessageDeliveries, params.firstMessageDeliveriesCap) *
+        Math.min(firstMessageDeliveries, params.firstMessageDeliveriesCap) *
         params.firstMessageDeliveriesWeight;
       topicScore += p2;
 
       // P3: Mesh Message Delivery Deficit (penalty if below threshold)
-      if (state.inMesh && state.meshMessageDeliveries < params.meshMessageDeliveriesThreshold) {
-        const deficit = params.meshMessageDeliveriesThreshold - state.meshMessageDeliveries;
+      if (state.inMesh && meshMessageDeliveries < params.meshMessageDeliveriesThreshold) {
+        const deficit = params.meshMessageDeliveriesThreshold - meshMessageDeliveries;
         const p3 = deficit * deficit * params.meshMessageDeliveriesWeight;
         topicScore += p3; // Negative weight creates penalty
       }
 
       // P3b: Mesh Message Delivery Failures
-      const p3b = state.meshFailures * params.meshFailureWeight;
+      const p3b = meshFailures * params.meshFailureWeight;
       topicScore += p3b;
 
       // P4: Invalid Messages (quadratic penalty)
-      if (state.invalidMessages > 0) {
+      if (invalidMessages > 0) {
         const p4 =
-          state.invalidMessages * state.invalidMessages * params.invalidMessageDeliveriesWeight;
+          invalidMessages * invalidMessages * params.invalidMessageDeliveriesWeight;
         topicScore += p4;
       }
 
@@ -281,8 +324,9 @@ export class GossipSubPeerScorer {
     // 3. Application Specific Score
     totalScore += peer.appSpecificScore * this.appSpecificWeight;
 
-    peer.overallScore = totalScore;
-    return totalScore;
+    const boundedScore = clampPeerScore(totalScore);
+    peer.overallScore = boundedScore;
+    return boundedScore;
   }
 
   /**
@@ -294,19 +338,29 @@ export class GossipSubPeerScorer {
         const params = this.getTopicParams(topic);
 
         if (state.inMesh) {
-          state.meshTimeMs += timeStepMs;
+          const nextMeshTime = meshTimeAfterStep(state.meshTimeMs, timeStepMs);
+          state.meshTimeMs = nextMeshTime;
         }
 
-        state.firstMessageDeliveries *= params.firstMessageDeliveriesDecay;
+        state.firstMessageDeliveries = decayMetric(
+          state.firstMessageDeliveries,
+          params.firstMessageDeliveriesDecay,
+        );
         if (state.firstMessageDeliveries < 0.01) state.firstMessageDeliveries = 0;
 
-        state.meshMessageDeliveries *= params.meshMessageDeliveriesDecay;
+        state.meshMessageDeliveries = decayMetric(
+          state.meshMessageDeliveries,
+          params.meshMessageDeliveriesDecay,
+        );
         if (state.meshMessageDeliveries < 0.01) state.meshMessageDeliveries = 0;
 
-        state.meshFailures *= params.meshFailureDecay;
+        state.meshFailures = decayMetric(state.meshFailures, params.meshFailureDecay);
         if (state.meshFailures < 0.01) state.meshFailures = 0;
 
-        state.invalidMessages *= params.invalidMessageDeliveriesDecay;
+        state.invalidMessages = decayMetric(
+          state.invalidMessages,
+          params.invalidMessageDeliveriesDecay,
+        );
         if (state.invalidMessages < 0.01) state.invalidMessages = 0;
       }
 

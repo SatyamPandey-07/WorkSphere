@@ -6,3 +6,4 @@
 export * from './KademliaRoutingTable';
 export * from './GossipSubPeerScorer';
 export * from './GossipSubRouter';
+export * from './MeshTopologyCoordinator';

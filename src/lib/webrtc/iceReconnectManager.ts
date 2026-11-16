@@ -191,14 +191,15 @@ export class ICEReconnectManager {
       return;
     }
 
+    // A pending timeout already represents the next reconnect attempt. Check it
+    // before the retry budget so duplicate events cannot exhaust the budget early.
+    if (this.reconnectTimer !== null) return;
+
     if (this.attemptCount >= this.config.maxAttempts) {
       this.transitionState('failed');
       this.fatalFailureListeners.forEach((cb) => cb(this.attemptCount));
       return;
     }
-
-    // A pending timeout already represents the next reconnect attempt.
-    if (this.reconnectTimer !== null) return;
 
     this.attemptCount++;
     const delay = this.computeBackoff(this.attemptCount);
@@ -290,6 +291,11 @@ export class ICEReconnectManager {
    */
   public async manualReconnect(resetAttempts = false): Promise<boolean> {
     if (this.state === 'closed') return false;
+
+    if (this.reconnectInFlight) {
+      this.reconnectRequested = true;
+      return false;
+    }
 
     if (resetAttempts) {
       this.attemptCount = 0;

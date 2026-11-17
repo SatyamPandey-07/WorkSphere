@@ -7,6 +7,7 @@
  */
 
 import { initOfflineDB } from "./db";
+import { withWebLock, type WebLockOptions } from "../webLock";
 
 export interface OfflineStorageStats {
   /** Total bytes currently consumed across all origins/stores */
@@ -40,6 +41,7 @@ export const DEFAULT_OFFLINE_STORAGE_STATS: OfflineStorageStats = {
 
 export const STORAGE_STATS_CACHE_KEY = "worksphere_offline_storage_stats";
 export const STALE_FLOOR_PLAN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+export const STALE_FLOOR_PLAN_PURGE_LOCK = "worksphere:storage:stale-floor-plan-purge";
 
 const FLOOR_PLAN_STORES = ["venues", "favorites", "recentlyViewedVenues"] as const;
 
@@ -281,51 +283,77 @@ export async function getStaleFloorPlanCacheStats(
  * Removes floorplan payloads from stale records while preserving cached venue metadata.
  * Access timestamps are checked again inside the write transaction to avoid removing a
  * floorplan that was accessed after the user reviewed the confirmation prompt.
+ *
+ * Coordinated across browser tabs using the Web Locks API (`STALE_FLOOR_PLAN_PURGE_LOCK`)
+ * to prevent concurrent destructive transaction passes and InvalidStateError (#7953).
+ *
+ * Safety requirement: Because this is a destructive purge affecting multiple object stores,
+ * it requires genuine cross-tab mutual exclusion via `navigator.locks`. If the Web Locks
+ * API is unavailable, the purge safely aborts before opening any IndexedDB transaction to
+ * prevent uncoordinated concurrent data deletion.
  */
 export async function purgeStaleFloorPlanCache(
   now = Date.now(),
+  options?: WebLockOptions | number,
 ): Promise<StaleFloorPlanCacheStats> {
-  const database = await initOfflineDB();
-  const storeNames = FLOOR_PLAN_STORES.filter((name) =>
-    database.objectStoreNames.contains(name),
-  );
-  if (storeNames.length === 0) return { count: 0, reclaimableBytes: 0 };
+  const hasLocksApi =
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    typeof navigator.locks?.request === "function";
 
-  const cutoff = now - STALE_FLOOR_PLAN_AGE_MS;
-  const transaction = database.transaction([...storeNames], "readwrite");
-  let count = 0;
-  let reclaimableBytes = 0;
-
-  for (const storeName of storeNames) {
-    const request = transaction.objectStore(storeName).openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) return;
-
-      const record = cursor.value as CachedFloorPlanRecord;
-      if (
-        record?.floorplan != null &&
-        typeof record.lastAccessedAt === "number" &&
-        record.lastAccessedAt < cutoff
-      ) {
-        const { floorplan, ...metadata } = record;
-        count++;
-        reclaimableBytes += calculateFloorPlanByteSize(floorplan);
-        cursor.update(metadata);
-      }
-      cursor.continue();
-    };
+  if (!hasLocksApi) {
+    throw new Error(
+      "Cannot purge stale floor plans: Web Locks API is not supported in this environment, so safe cross-tab coordination cannot be guaranteed.",
+    );
   }
 
-  await new Promise<void>((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () =>
-      reject(transaction.error ?? new Error("Failed purging stale floorplans"));
-    transaction.onabort = () =>
-      reject(transaction.error ?? new Error("Stale floorplan cleanup was aborted"));
-  });
+  return withWebLock(
+    async () => {
+      const database = await initOfflineDB();
+      const storeNames = FLOOR_PLAN_STORES.filter((name) =>
+        database.objectStoreNames.contains(name),
+      );
+      if (storeNames.length === 0) return { count: 0, reclaimableBytes: 0 };
 
-  return { count, reclaimableBytes };
+      const cutoff = now - STALE_FLOOR_PLAN_AGE_MS;
+      const transaction = database.transaction([...storeNames], "readwrite");
+      let count = 0;
+      let reclaimableBytes = 0;
+
+      for (const storeName of storeNames) {
+        const request = transaction.objectStore(storeName).openCursor();
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (!cursor) return;
+
+          const record = cursor.value as CachedFloorPlanRecord;
+          if (
+            record?.floorplan != null &&
+            typeof record.lastAccessedAt === "number" &&
+            record.lastAccessedAt < cutoff
+          ) {
+            const { floorplan, ...metadata } = record;
+            count++;
+            reclaimableBytes += calculateFloorPlanByteSize(floorplan);
+            cursor.update(metadata);
+          }
+          cursor.continue();
+        };
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () =>
+          reject(transaction.error ?? new Error("Failed purging stale floorplans"));
+        transaction.onabort = () =>
+          reject(transaction.error ?? new Error("Stale floorplan cleanup was aborted"));
+      });
+
+      return { count, reclaimableBytes };
+    },
+    STALE_FLOOR_PLAN_PURGE_LOCK,
+    options,
+  );
 }
 
 /**

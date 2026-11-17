@@ -4,7 +4,9 @@ import React, { useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useFocusTrap, UseFocusTrapOptions } from "@/hooks/useFocusTrap";
 
-export interface FocusTrapProps extends UseFocusTrapOptions {
+export interface FocusTrapProps
+  extends React.HTMLAttributes<HTMLElement>,
+    UseFocusTrapOptions {
   children: React.ReactNode;
   className?: string;
   as?: keyof React.JSX.IntrinsicElements;
@@ -30,6 +32,7 @@ export function FocusTrap({
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
   "aria-describedby": ariaDescribedBy,
+  "data-testid": testId = "focus-trap",
   ...rest
 }: FocusTrapProps) {
   const containerRef = useRef<HTMLElement | null>(null);
@@ -53,7 +56,7 @@ export function FocusTrap({
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
       aria-describedby={ariaDescribedBy}
-      data-testid={rest["data-testid"] || "focus-trap"}
+      data-testid={testId}
       className={cn(className)}
       {...rest}
     >

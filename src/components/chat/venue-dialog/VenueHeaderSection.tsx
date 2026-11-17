@@ -33,8 +33,8 @@ export interface VenueHeaderSectionProps {
   photoLoading?: boolean;
   setImageError?: (error: boolean) => void;
   sentiment?: any;
-  activeTab: "overview" | "reviews" | "menu";
-  setActiveTab: (tab: "overview" | "reviews" | "menu") => void;
+  activeTab: "overview" | "reviews" | "menu" | "developer";
+  setActiveTab: (tab: "overview" | "reviews" | "menu" | "developer") => void;
   onClose: () => void;
   onOpenLightbox?: (index?: number) => void;
   voteMetrics?: Record<string, VoteMetricState>;
@@ -225,14 +225,14 @@ export function VenueHeaderSection({
             data-testid="close-venue-btn"
             onClick={onClose}
             aria-label="Close venue details"
-            className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90"
+            className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
         <div className="absolute bottom-6 left-6 right-6 pointer-events-none">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black accent-bg-80 backdrop-blur-md accent-border-50 text-white px-2.5 py-1 rounded shadow-lg pointer-events-auto">
               <CategoryIcon className="w-3.5 h-3.5" />
               {venue?.category?.replace("_", " ") || "Workspace"}
@@ -290,6 +290,7 @@ export function VenueHeaderSection({
           { id: "overview", label: "Overview" },
           { id: "reviews", label: reviewsLabel },
           { id: "menu", label: "Menus & Prices" },
+          { id: "developer", label: "Developer" },
         ].map((tab) => (
           <button
             key={tab.id}

@@ -2,6 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const mockToPng = jest.fn();
+const mockGetOfflinePasscardRecord = jest.fn();
+const mockSaveOfflinePasscard = jest.fn();
 
 jest.mock(
   'html-to-image',
@@ -10,6 +12,13 @@ jest.mock(
   }),
   { virtual: true }
 );
+
+jest.mock('@/lib/security/offlinePasscardStore', () => ({
+  getOfflinePasscardRecord: (...args: unknown[]) =>
+    mockGetOfflinePasscardRecord(...args),
+  saveOfflinePasscard: (...args: unknown[]) =>
+    mockSaveOfflinePasscard(...args),
+}));
 
 jest.mock(
   'qrcode.react',
@@ -31,6 +40,8 @@ describe('FlightClearancePasscard Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetOfflinePasscardRecord.mockResolvedValue(null);
+    mockSaveOfflinePasscard.mockResolvedValue(undefined);
     window.print = jest.fn();
     mockToPng.mockResolvedValue('data:image/png;base64,mockPngData');
     clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
@@ -194,4 +205,88 @@ describe('FlightClearancePasscard Component', () => {
       'https://workspace.sector.command/verify?code=CODE%2FWITH%20SPECIAL%23CHARS'
     );
   });
+  it('shows a live countdown for the signed passcard and requests renewal', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = Buffer.from(
+      JSON.stringify([1, 'booking-countdown', 'user-1', 'venue-1', now - 60, now + 20 * 60, 'A-1']),
+    ).toString('base64url') + '.' + Buffer.from(new Uint8Array(64)).toString('base64url');
+    mockGetOfflinePasscardRecord.mockResolvedValue({
+      bookingId: 'booking-countdown',
+      venueId: 'venue-1',
+      token,
+      validFrom: now - 60,
+      validUntil: now + 3 * 3600,
+      storedAt: Date.now(),
+    });
+    const renewedToken = Buffer.from(
+      JSON.stringify([1, 'booking-countdown', 'user-1', 'venue-1', now - 30, now + 3 * 3600, 'A-1']),
+    ).toString('base64url') + '.' + Buffer.from(new Uint8Array(64).fill(1)).toString('base64url');
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, offlinePasscard: renewedToken }),
+    }) as jest.Mock;
+
+    const { rerender } = render(
+      <FlightClearancePasscard
+        isOpen={true}
+        onClose={jest.fn()}
+        bookingId="booking-countdown"
+      />,
+    );
+
+    const countdown = await screen.findByTestId('flight-clearance-expiry-countdown');
+    expect(countdown).toHaveAttribute('data-expiry-state', 'healthy');
+    expect(countdown.textContent).toContain('Expires in');
+
+    fireEvent.click(screen.getByTestId('flight-clearance-refresh-passcard'));
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/security/qr-passcard/issue',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ bookingId: 'booking-countdown' }),
+        }),
+      );
+      expect(mockSaveOfflinePasscard).toHaveBeenCalledWith(renewedToken);
+    });
+
+    // Switching bookings must discard the refreshed token from the old booking.
+    mockGetOfflinePasscardRecord.mockResolvedValueOnce(null);
+    rerender(
+      <FlightClearancePasscard
+        isOpen={true}
+        onClose={jest.fn()}
+        bookingId="booking-next"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-qrcode")).toHaveAttribute(
+        "data-value",
+        "https://workspace.sector.command/verify?code=GL-8940-SEC4",
+      );
+    });
+  });
+
+  it('disables the QR code after the signed payload expires', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const expiredToken = Buffer.from(
+      JSON.stringify([1, 'booking-expired', 'user-1', 'venue-1', now - 3600, now - 1, 'B-4']),
+    ).toString('base64url') + '.' + Buffer.from(new Uint8Array(64)).toString('base64url');
+    render(
+      <FlightClearancePasscard
+        isOpen={true}
+        onClose={jest.fn()}
+        bookingId="booking-expired"
+        offlineToken={expiredToken}
+      />,
+    );
+
+    expect(await screen.findByTestId('flight-clearance-expired-qr')).toBeInTheDocument();
+    expect(screen.queryByTestId('mock-qrcode')).not.toBeInTheDocument();
+    expect(screen.getByTestId('flight-clearance-expiry-countdown')).toHaveAttribute(
+      'data-expiry-state',
+      'critical',
+    );
+  });
+
 });

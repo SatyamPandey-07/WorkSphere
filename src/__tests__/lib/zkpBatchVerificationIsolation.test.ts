@@ -16,32 +16,42 @@ import {
   type GenericBatchProofItem,
   type BatchStudentDiscountRequest,
 } from "@/lib/zkp/batch";
+import { POST as batchZkpVerifyPost } from "@/app/api/venues/batch-zkp-verify/route";
+import * as zkNullifierVerifier from "@/lib/crypto/zkNullifierVerifier";
+import { prisma } from "@/lib/prisma";
 
 // Mock dependencies
-jest.mock("./verify", () => ({
+jest.mock("@/lib/zkp/verify", () => ({
   verifyMembershipProof: jest.fn(),
 }));
 
-jest.mock("./poseidon", () => ({
+jest.mock("@/lib/zkp/poseidon", () => ({
   poseidonHash: jest.fn((inputs: bigint[]) => BigInt(inputs[0] || 1n) * 12345n),
 }));
 
-jest.mock("./studentMembership", () => ({
+jest.mock("@/lib/zkp/studentMembership", () => ({
   isUniversityMerkleRootActive: jest.fn(),
 }));
 
-jest.mock("@/lib/prisma", () => ({
-  prisma: {
+jest.mock("@/lib/prisma", () => {
+  const mockPrisma = {
     studentClaimNullifier: {
       findUnique: jest.fn(),
       create: jest.fn(),
     },
+    venueCheckInNullifier: {
+      createMany: jest.fn(),
+    },
     user: {
       update: jest.fn(),
     },
-    $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
-  },
-}));
+    $transaction: jest.fn(),
+  };
+  mockPrisma.$transaction.mockImplementation(async (operation: any) =>
+    typeof operation === "function" ? operation(mockPrisma) : Promise.all(operation),
+  );
+  return { prisma: mockPrisma };
+});
 
 jest.mock("fs", () => ({
   existsSync: jest.fn(() => true),
@@ -54,9 +64,18 @@ jest.mock("snarkjs", () => ({
   },
 }));
 
-const { verifyMembershipProof } = require("./verify");
-const { isUniversityMerkleRootActive } = require("./studentMembership");
-const snarkjs = require("snarkjs");
+import { verifyMembershipProof as verifyMembershipProofFunction } from "@/lib/zkp/verify";
+import {
+  isUniversityMerkleRootActive as isUniversityMerkleRootActiveFunction,
+} from "@/lib/zkp/studentMembership";
+import * as snarkjsModule from "snarkjs";
+
+const verifyMembershipProof = verifyMembershipProofFunction as jest.Mock;
+const isUniversityMerkleRootActive =
+  isUniversityMerkleRootActiveFunction as jest.Mock;
+const snarkjs = {
+  groth16: { verify: snarkjsModule.groth16.verify as jest.Mock },
+};
 
 describe("ZKP Batch Verification Isolation & Error Handling (#5034)", () => {
   beforeEach(() => {
@@ -147,6 +166,170 @@ describe("ZKP Batch Verification Isolation & Error Handling (#5034)", () => {
         index: 3,
         venueId: "venue-valid-2",
         valid: true,
+      });
+    });
+
+    describe("POST /api/venues/batch-zkp-verify", () => {
+      const createProof = (nullifierHash: string, venueId = "venue-1") => ({
+        nullifierHash,
+        proof: {
+          pi_a: ["1", "2"],
+          pi_b: [
+            ["1", "2"],
+            ["3", "4"],
+          ],
+          pi_c: ["5", "6"],
+        },
+        publicSignals: ["root-1", nullifierHash, venueId, "2026"],
+      });
+
+      const post = (body: unknown) =>
+        batchZkpVerifyPost({ json: async () => body } as any);
+
+      beforeEach(() => {
+        jest.restoreAllMocks();
+        jest.clearAllMocks();
+        snarkjs.groth16.verify.mockReset();
+      });
+
+      it("verifies and inserts a batch of 50 proofs in one serializable transaction", async () => {
+        const proofs = Array.from({ length: 50 }, (_, index) =>
+          createProof(`nullifier-${index}`),
+        );
+        jest
+          .spyOn(zkNullifierVerifier, "verifyZkNullifierProofs")
+          .mockResolvedValue(proofs.map(() => ({ valid: true })));
+        (prisma.venueCheckInNullifier.createMany as jest.Mock).mockResolvedValue({
+          count: proofs.length,
+        });
+
+        const response = await post({ venueId: "venue-1", proofs });
+        const payload = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(payload).toMatchObject({
+          valid: true,
+          venueId: "venue-1",
+          verifiedCount: 50,
+          storedCount: 50,
+          totalCount: 50,
+        });
+        expect(payload.results).toHaveLength(50);
+        expect(payload.results[49]).toMatchObject({
+          index: 49,
+          nullifierHash: "nullifier-49",
+          proofValid: true,
+          nullifierStored: true,
+        });
+        expect(zkNullifierVerifier.verifyZkNullifierProofs).toHaveBeenCalledTimes(1);
+        expect(
+          (prisma.venueCheckInNullifier.createMany as jest.Mock).mock.calls[0][0],
+        ).toEqual({
+          data: proofs.map((proof) => ({
+            nullifierHash: proof.nullifierHash,
+            epoch: 2026,
+            venueId: "venue-1",
+          })),
+          skipDuplicates: false,
+        });
+        expect((prisma.$transaction as jest.Mock).mock.calls[0][1]).toEqual({
+          isolationLevel: "Serializable",
+        });
+      });
+
+      it("rejects a batch with an invalid proof without writing any nullifiers", async () => {
+        const proofs = [createProof("nullifier-1"), createProof("nullifier-2")];
+        jest
+          .spyOn(zkNullifierVerifier, "verifyZkNullifierProofs")
+          .mockResolvedValue([{ valid: true }, { valid: false }]);
+
+        const response = await post({ venueId: "venue-1", proofs });
+        const payload = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(payload.verifiedCount).toBe(1);
+        expect(payload.storedCount).toBe(0);
+        expect(payload.results).toEqual([
+          expect.objectContaining({
+            index: 0,
+            proofValid: true,
+            nullifierStored: false,
+            error: "Batch was not recorded because another proof failed.",
+          }),
+          expect.objectContaining({
+            index: 1,
+            proofValid: false,
+            nullifierStored: false,
+            error: "Invalid zero-knowledge proof.",
+          }),
+        ]);
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.venueCheckInNullifier.createMany).not.toHaveBeenCalled();
+      });
+
+      it("rolls back the batch when a nullifier conflicts with an already-spent value", async () => {
+        const proofs = [createProof("nullifier-1"), createProof("nullifier-2")];
+        jest
+          .spyOn(zkNullifierVerifier, "verifyZkNullifierProofs")
+          .mockResolvedValue(proofs.map(() => ({ valid: true })));
+        (prisma.venueCheckInNullifier.createMany as jest.Mock).mockRejectedValue({
+          code: "P2002",
+        });
+
+        const response = await post({ venueId: "venue-1", proofs });
+        const payload = await response.json();
+
+        expect(response.status).toBe(409);
+        expect(payload.storedCount).toBe(0);
+        expect(payload.results.every((result: any) => !result.nullifierStored)).toBe(
+          true,
+        );
+        expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      });
+
+      it("rejects a proof whose signals do not bind the requested venue and nullifier", async () => {
+        const proof = createProof("nullifier-1", "other-venue");
+
+        const response = await post({ venueId: "venue-1", proofs: [proof] });
+
+        expect(response.status).toBe(400);
+        expect(zkNullifierVerifier.verifyZkNullifierProofs).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      });
+
+      it("runs each Groth16 check concurrently within the proof batch", async () => {
+        let started = 0;
+        let release!: () => void;
+        const allStarted = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+
+        snarkjs.groth16.verify.mockImplementation(async () => {
+          started++;
+          if (started === 2) release();
+          await allStarted;
+          return true;
+        });
+
+        const results = await zkNullifierVerifier.verifyZkNullifierProofs([
+          { proof: {}, publicSignals: ["1"] },
+          { proof: {}, publicSignals: ["2"] },
+        ]);
+
+        expect(started).toBe(2);
+        expect(results).toEqual([{ valid: true }, { valid: true }]);
+      });
+
+      it("rejects batches larger than 50 before cryptographic verification", async () => {
+        const proofs = Array.from({ length: 51 }, (_, index) =>
+          createProof(`nullifier-${index}`),
+        );
+
+        const response = await post({ venueId: "venue-1", proofs });
+
+        expect(response.status).toBe(400);
+        expect(zkNullifierVerifier.verifyZkNullifierProofs).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
       });
     });
 

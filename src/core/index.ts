@@ -17,6 +17,7 @@ export * from './audio';
 export * from './security/HomomorphicAuditAggregator';
 export * from './ai/EdgeIntentClassifier';
 export * from './ai/SpeculativeTokenCache';
+export * from './ai/HNSWVectorStore';
 export * from './batching/AdaptiveRequestBatcher';
 export * from './sync/CausalVectorClockEngine';
 export * from './finance';

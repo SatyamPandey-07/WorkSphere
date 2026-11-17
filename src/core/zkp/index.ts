@@ -14,3 +14,4 @@ export * from './PoseidonCipher';
 export * from './IPAPolynomialCommitment';
 export * from './ShuffleProofAccumulator';
 export * from './PolyEvalArgument';
+export * from './IPAInnerProductRangeProver';

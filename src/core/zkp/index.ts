@@ -5,3 +5,4 @@
 
 export * from './ZKMembershipVerifier';
 export * from './ZKRangeVerifier';
+export * from './OccupancyZKPProver';

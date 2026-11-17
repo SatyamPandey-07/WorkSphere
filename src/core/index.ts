@@ -44,6 +44,7 @@ export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';
 export * from './spatial/PlaneMeshExtractor';
 export * from './agents/ActionItemSynthesizer';
+export * from './sustainability/EmbodiedCarbonEstimator';
 export * from './consensus';
 export * from './zkp';
 export * from './p2p';

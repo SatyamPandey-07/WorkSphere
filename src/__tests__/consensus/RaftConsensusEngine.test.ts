@@ -138,6 +138,57 @@ describe('RaftConsensusEngine & Distributed Cluster Orchestration', () => {
       }
     });
 
+    it('reserves and releases a desk through the elected leader', async () => {
+      // One node is its own majority, so the commands commit without depending
+      // on election timing between peers. The test is about how the engine
+      // passes a reservation on to the node.
+      engine = await RaftConsensusEngine.create({
+        ...clusterConfig,
+        clusterId: 'test-cluster-desks',
+        peerIds: ['solo-1'],
+      });
+
+      // Wait for the cluster to elect a leader.
+      for (let i = 0; i < 60 && !engine.getLeader(); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(engine.getLeader()).toBeDefined();
+
+      const before = Date.now();
+      const reserved = await engine.reserveDesk('desk-1', 'user-1', 60_000);
+      expect(reserved.success).toBe(true);
+      expect(reserved.error).toBeUndefined();
+      expect(reserved.result?.status).toBe('committed');
+      expect(reserved.result?.reservation).toMatchObject({
+        deskId: 'desk-1',
+        memberId: 'user-1',
+        venueId: 'test-cluster-desks',
+      });
+      expect(reserved.result?.reservation?.expiresAt).toBeGreaterThanOrEqual(before + 60_000);
+
+      // The desk is locked for everyone else.
+      const taken = await engine.reserveDesk('desk-1', 'user-2', 60_000);
+      expect(taken.success).toBe(false);
+      expect(taken.error).toBe('desk-already-reserved');
+
+      // Only the member holding the desk can release it.
+      const wrongMember = await engine.releaseDesk('desk-1', 'user-2');
+      expect(wrongMember.success).toBe(false);
+      expect(wrongMember.error).toContain('reserved by another member');
+
+      const released = await engine.releaseDesk('desk-1', 'user-1');
+      expect(released.success).toBe(true);
+      expect(released.result?.status).toBe('committed');
+
+      const nothingHeld = await engine.releaseDesk('desk-1', 'user-1');
+      expect(nothingHeld.success).toBe(false);
+      expect(nothingHeld.error).toContain('No reservation is held');
+
+      // Free again for the next member.
+      const again = await engine.reserveDesk('desk-1', 'user-2', 60_000);
+      expect(again.success).toBe(true);
+    }, 15000);
+
     it('successfully stops all nodes without leaking timers', async () => {
       engine = await RaftConsensusEngine.create(clusterConfig);
       expect(() => engine.stopAll()).not.toThrow();

@@ -15,6 +15,8 @@ export interface VenueSearchResult {
   hasOutlets?: boolean;
   noiseLevel?: string | null;
   imageUrl?: string | null;
+  /** Set by the API when the venue came from the low-confidence fuzzy fallback. */
+  fuzzyMatched?: boolean;
   [key: string]: unknown;
 }
 
@@ -43,6 +45,8 @@ export interface UseVenueSearchReturn<T = VenueSearchResult> {
   suggestedQuery: string | null;
   isLoading: boolean;
   loading: boolean;
+  /** True while a debounced search is waiting to fire (the user is still typing). */
+  isDebouncing: boolean;
   error: string | null;
   clear: () => void;
   abort: () => void;
@@ -81,6 +85,7 @@ export function useVenueSearch<T = VenueSearchResult>(
   const [venues, setVenues] = useState<T[]>([]);
   const [suggestedQuery, setSuggestedQuery] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDebouncing, setIsDebouncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -103,6 +108,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
+    setIsDebouncing(false);
     abort();
     setVenues([]);
     setSuggestedQuery(null);
@@ -242,6 +248,7 @@ export function useVenueSearch<T = VenueSearchResult>(
 
     const trimmed = activeQuery.trim();
     if (!trimmed || trimmed.length < minQueryLength) {
+      setIsDebouncing(false);
       abort();
       setVenues([]);
       setSuggestedQuery(null);
@@ -254,6 +261,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     abortControllerRef.current = controller;
 
     if (debounceMs <= 0) {
+      setIsDebouncing(false);
       void performSearch(trimmed, controller);
       return () => {
         requestIdRef.current += 1;
@@ -261,7 +269,10 @@ export function useVenueSearch<T = VenueSearchResult>(
       };
     }
 
+    setIsDebouncing(true);
     debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      setIsDebouncing(false);
       void performSearch(trimmed, controller);
     }, debounceMs);
 
@@ -283,6 +294,7 @@ export function useVenueSearch<T = VenueSearchResult>(
           clearTimeout(debounceTimerRef.current);
           debounceTimerRef.current = null;
         }
+        setIsDebouncing(false);
         abort();
         setVenues([]);
         setIsLoading(false);
@@ -302,6 +314,8 @@ export function useVenueSearch<T = VenueSearchResult>(
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
+      // An explicit search (Enter) bypasses the debounce, so nothing is pending any more.
+      setIsDebouncing(false);
 
       const target =
         typeof queryOverride === "string" ? queryOverride : activeQuery;
@@ -323,6 +337,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     suggestedQuery,
     isLoading,
     loading: isLoading,
+    isDebouncing,
     error,
     clear,
     abort,

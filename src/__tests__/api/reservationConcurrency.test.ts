@@ -6,6 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
+import { invalidateVenueAvailability } from "@/lib/cache/venueAvailabilityCache";
+
+jest.mock("@/lib/cache/venueAvailabilityCache", () => ({
+  getOrSetVenueAvailability: jest.fn(),
+  invalidateVenueAvailability: jest.fn(),
+  venueAvailabilityCacheKey: (venueId: string) =>
+    `venue:availability:${venueId}`,
+}));
 
 jest.mock("@clerk/nextjs/server", () => ({
   auth: jest.fn(),
@@ -191,6 +199,26 @@ describe("POST /api/reservations/book", () => {
     expect(lockSql).toContain("FOR UPDATE NOWAIT");
   });
 
+  it("invalidates venue availability after the booking transaction commits", async () => {
+    let transactionCommitted = false;
+    const tx = makeTx();
+    (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
+      const result = await cb(tx);
+      transactionCommitted = true;
+      return result;
+    });
+    (invalidateVenueAvailability as jest.Mock).mockImplementation(() => {
+      expect(transactionCommitted).toBe(true);
+    });
+
+    const res = await POST(request({ seatId: "seat_1" }));
+
+    expect(res.status).toBe(201);
+    expect(invalidateVenueAvailability).toHaveBeenCalledWith(
+      "venue:availability:venue_1",
+    );
+  });
+
   it("returns 409 when the seat is already taken for an overlapping slot", async () => {
     const tx = makeTx([{ time: "10:00", duration: 60 }]);
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) =>
@@ -201,6 +229,18 @@ describe("POST /api/reservations/book", () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toContain("reserved");
     expect(tx.booking.create).not.toHaveBeenCalled();
+    expect(invalidateVenueAvailability).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate venue availability when the booking transaction fails", async () => {
+    (prisma.$transaction as jest.Mock).mockRejectedValue(
+      new Error("database transaction failed"),
+    );
+
+    const res = await POST(request({ seatId: "seat_1" }));
+
+    expect(res.status).toBe(500);
+    expect(invalidateVenueAvailability).not.toHaveBeenCalled();
   });
 
   it("returns 409 when an earlier booking runs past midnight into the requested date", async () => {
@@ -380,6 +420,7 @@ describe("POST /api/reservations/book", () => {
     expect(body.code).toBe("SEAT_LOCK_CONTENTION");
     expect(body.retryable).toBe(true);
     expect(body.seats).toEqual(["seat_1"]);
+    expect(invalidateVenueAvailability).not.toHaveBeenCalled();
   });
 
   it("maps the active-booking unique constraint violation (P2002) to 409", async () => {

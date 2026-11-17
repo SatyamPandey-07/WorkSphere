@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AccentColor } from "@/lib/constants/theme";
+export type { AccentColor } from "@/lib/constants/theme";
 import {
   ACCENT_HEX_MAP,
   ACCENT_STORAGE_KEY,
@@ -39,7 +39,10 @@ const STORAGE_KEY = "worksphere-theme";
 const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)";
 
 function getSystemTheme(): "light" | "dark" {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
     return "light";
   }
   return window.matchMedia(COLOR_SCHEME_QUERY).matches ? "dark" : "light";
@@ -49,59 +52,60 @@ function resolveTheme(theme: Theme): ResolvedTheme {
   return theme === "system" ? getSystemTheme() : theme;
 }
 
-/**
- * Runs a DOM change with CSS transitions disabled via a temporary
- * `preload` class on <html>, so theme variables swap instantly instead
- * of animating through intermediate (white or half styled) frames.
- */
-function withoutTransitions(change: () => void) {
-  const root = document.documentElement;
-  root.classList.add("preload");
-  change();
-  // Force a reflow so the new styles apply while transitions are off.
-  void window.getComputedStyle(root).opacity;
-  const release = () => root.classList.remove("preload");
-  if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(() => window.requestAnimationFrame(release));
-  } else {
-    window.setTimeout(release, 50);
-  }
-}
+let themeTransitionTimeout: number | undefined;
 
-function applyTheme(theme: Theme) {
+/**
+ * Applies a resolved theme. Only interactive theme changes opt into the
+ * short transition; the initial provider effect stays instant to avoid
+ * animating the server-rendered page during hydration.
+ */
+function applyTheme(theme: Theme, animate = false) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   const resolved = resolveTheme(theme);
 
-  withoutTransitions(() => {
-    root.setAttribute("data-theme", resolved);
-    root.classList.remove("dark", "cyberpunk");
+  const prefersReducedMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    if (resolved === "dark") {
-      root.classList.add("dark");
-    } else if (resolved === "cyberpunk") {
-      root.classList.add("cyberpunk");
+  if (animate && !prefersReducedMotion) {
+    root.classList.add("theme-transitioning");
+    if (themeTransitionTimeout !== undefined) {
+      window.clearTimeout(themeTransitionTimeout);
     }
+    themeTransitionTimeout = window.setTimeout(() => {
+      root.classList.remove("theme-transitioning");
+      themeTransitionTimeout = undefined;
+    }, 240);
+  }
 
-    const bg =
-      resolved === "dark"
-        ? "#0a0a0a"
-        : resolved === "cyberpunk"
-          ? "#090014"
-          : "#ffffff";
-    const fg =
-      resolved === "dark"
-        ? "#ededed"
-        : resolved === "cyberpunk"
-          ? "#f4f4ff"
-          : "#171717";
+  root.setAttribute("data-theme", resolved);
+  root.classList.remove("dark", "cyberpunk");
 
-    root.style.colorScheme = resolved === "light" ? "light" : "dark";
-    root.style.backgroundColor = bg;
-    root.style.color = fg;
-    root.style.setProperty("--background", bg);
-    root.style.setProperty("--foreground", fg);
-  });
+  if (resolved === "dark") {
+    root.classList.add("dark");
+  } else if (resolved === "cyberpunk") {
+    root.classList.add("cyberpunk");
+  }
+
+  const bg =
+    resolved === "dark"
+      ? "#0a0a0a"
+      : resolved === "cyberpunk"
+        ? "#090014"
+        : "#ffffff";
+  const fg =
+    resolved === "dark"
+      ? "#ededed"
+      : resolved === "cyberpunk"
+        ? "#f4f4ff"
+        : "#171717";
+
+  root.style.colorScheme = resolved === "light" ? "light" : "dark";
+  root.style.backgroundColor = bg;
+  root.style.color = fg;
+  root.style.setProperty("--background", bg);
+  root.style.setProperty("--foreground", fg);
 }
 
 function applyHighContrast(enabled: boolean) {
@@ -219,7 +223,7 @@ export function ThemeProvider({
 
     const mediaQuery = window.matchMedia(COLOR_SCHEME_QUERY);
     const handleChange = () => {
-      applyTheme("system");
+      applyTheme("system", true);
     };
 
     if (typeof mediaQuery.addEventListener === "function") {
@@ -249,7 +253,7 @@ export function ThemeProvider({
     setThemeState(next);
     window.localStorage.setItem(STORAGE_KEY, next);
     document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
-    applyTheme(next);
+    applyTheme(next, true);
   }, []);
 
   const toggleTheme = useCallback(() => {
@@ -261,7 +265,7 @@ export function ThemeProvider({
 
       window.localStorage.setItem(STORAGE_KEY, next);
       document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
-      applyTheme(next);
+      applyTheme(next, true);
       return next;
     });
   }, []);
@@ -306,7 +310,7 @@ export function ThemeProvider({
           e.newValue === "system")
       ) {
         setThemeState(e.newValue as Theme);
-        applyTheme(e.newValue as Theme);
+        applyTheme(e.newValue as Theme, true);
       }
       if (e.key === ACCENT_STORAGE_KEY) {
         const parsedAccent = parseAccentColor(e.newValue);
@@ -325,3 +329,49 @@ export function ThemeProvider({
   }, []);
 
   const value = useMemo<ThemeContextValue>(
+    () => ({
+      theme,
+      setTheme,
+      toggleTheme,
+      accent,
+      accentHex,
+      setAccent,
+      highContrast,
+      setHighContrast,
+      toggleHighContrast,
+    }),
+    [
+      theme,
+      setTheme,
+      toggleTheme,
+      accent,
+      accentHex,
+      setAccent,
+      highContrast,
+      setHighContrast,
+      toggleHighContrast,
+    ],
+  );
+
+  return (
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+  );
+}
+
+export function useTheme() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) {
+    return {
+      theme: "light" as Theme,
+      setTheme: () => {},
+      toggleTheme: () => {},
+      accent: DEFAULT_ACCENT,
+      accentHex: ACCENT_HEX_MAP[DEFAULT_ACCENT],
+      setAccent: () => {},
+      highContrast: false,
+      setHighContrast: () => {},
+      toggleHighContrast: () => {},
+    };
+  }
+  return ctx;
+}

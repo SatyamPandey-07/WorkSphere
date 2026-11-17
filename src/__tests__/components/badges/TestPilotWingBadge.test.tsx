@@ -14,7 +14,29 @@ describe("TestPilotWingBadge", () => {
     const { container } = render(<TestPilotWingBadge />);
 
     expect(container.querySelector("svg")).toBeInTheDocument();
-    expect(container.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector("svg")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  });
+
+  it("preserves the badge and SVG dimensions in a narrow flex container", () => {
+    render(
+      <div className="flex w-48 items-center gap-2">
+        <TestPilotWingBadge />
+        <span className="truncate">
+          A very long username or status label next to the badge
+        </span>
+      </div>,
+    );
+
+    const badge = screen.getByTestId("test-pilot-wing-badge");
+    const wrapper = badge.parentElement;
+    const svg = badge.querySelector("svg");
+
+    expect(wrapper).toHaveClass("shrink-0");
+    expect(svg).toHaveAttribute("viewBox", "0 0 120 52");
+    expect(svg).toHaveClass("h-7", "w-16", "shrink-0");
   });
 
   it("shows the exact tooltip on mouse hover", () => {
@@ -29,7 +51,7 @@ describe("TestPilotWingBadge", () => {
 
     expect(tooltip).toBeVisible();
     expect(tooltip).toHaveTextContent(
-      "Test Pilot Wings: Awarded for high-velocity global coworking missions."
+      "Test Pilot Wings: Awarded for high-velocity global coworking missions.",
     );
 
     fireEvent.mouseLeave(badge);
@@ -57,7 +79,7 @@ describe("TestPilotWingBadge", () => {
 
     expect(screen.getByTestId("test-pilot-wing-badge")).toHaveAttribute(
       "tabIndex",
-      "0"
+      "0",
     );
   });
 
@@ -66,7 +88,7 @@ describe("TestPilotWingBadge", () => {
       <TestPilotWingBadge
         className="custom-badge"
         testId="custom-test-pilot"
-      />
+      />,
     );
 
     const badge = screen.getByTestId("custom-test-pilot");

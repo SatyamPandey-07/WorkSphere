@@ -87,6 +87,10 @@ export interface VenueFilterBarProps {
   /** Additional class names applied to the outermost wrapper element. */
   className?: string;
   "data-testid"?: string;
+  /** Exact number of venues matching the resolved filters, when available. */
+  resultCount?: number;
+  /** Debounce interval for screen-reader filter announcements. */
+  announcementDebounceMs?: number;
 }
 
 export const DEFAULT_DECIBEL_RANGE: [number, number] = [30, 85];
@@ -167,6 +171,8 @@ export function VenueFilterBar({
   showCustomRangeFilters = true,
   className = "",
   "data-testid": testId = "venue-filter-bar",
+  resultCount,
+  announcementDebounceMs = 250,
 }: VenueFilterBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -461,6 +467,45 @@ export function VenueFilterBar({
     return set;
   }, [controlledSelected, searchParams, filters]);
 
+  const hasAnnouncedFiltersRef = useRef(false);
+  const [filterAnnouncement, setFilterAnnouncement] = useState("");
+
+  useEffect(() => {
+    // Do not announce the initial render; only announce a user's resolved
+    // filter/category changes after the debounce window.
+    if (!hasAnnouncedFiltersRef.current) {
+      hasAnnouncedFiltersRef.current = true;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (typeof resultCount === "number" && Number.isFinite(resultCount)) {
+        setFilterAnnouncement(
+          resultCount === 0
+            ? "No venues match the selected filters."
+            : `Found ${resultCount} venues matching the selected filters.`,
+        );
+        return;
+      }
+
+      const activeFilterCount =
+        activeSet.size + (hasCustomRangeActive ? 1 : 0);
+      setFilterAnnouncement(
+        activeFilterCount === 0
+          ? "All venues are shown."
+          : `${activeFilterCount} venue filters selected.`,
+      );
+    }, Math.max(0, announcementDebounceMs));
+
+    return () => window.clearTimeout(timer);
+  }, [
+    activeSet,
+    currentCategory,
+    hasCustomRangeActive,
+    resultCount,
+    announcementDebounceMs,
+  ]);
+
   // -------------------------------------------------------------------------
   // Scroll-edge detection
   // -------------------------------------------------------------------------
@@ -627,6 +672,7 @@ export function VenueFilterBar({
       data-testid={testId}
       className={cn("relative w-full space-y-2", className)}
     >
+ fix/zkp-worker-memory-cleanup
       {/* Category Tabs & Sort Dropdown Row */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         {showCategoryTabs && categories.length > 0 && (
@@ -710,6 +756,74 @@ export function VenueFilterBar({
               <option value="rating">Highest Rated</option>
               <option value="distance">Distance: Nearest First</option>
             </select>
+
+      <p
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="venue-filter-result-announcement"
+        className="sr-only"
+      >
+        {filterAnnouncement}
+      </p>
+      {/* Category Tabs with Framer Motion layoutId sliding pill indicator */}
+      {showCategoryTabs && categories.length > 0 && (
+        <LayoutGroup id="venue-filter-categories">
+          <div
+            role="tablist"
+            aria-label="Venue categories"
+            data-testid="venue-category-tabs"
+            className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1 scroll-smooth touch-pan-x"
+          >
+            {categories.map((cat, index) => {
+              const isSelected = currentCategory === cat.id;
+              const Icon = cat.icon;
+
+              return (
+                <button
+                  key={cat.id}
+                  ref={(el) => {
+                    tabRefs.current[index] = el;
+                  }}
+                  type="button"
+                  role="tab"
+                  id={`venue-category-tab-${cat.id}`}
+                  aria-selected={isSelected}
+                  tabIndex={isSelected ? 0 : -1}
+                  data-testid={`venue-category-tab-${cat.id}`}
+                  data-selected={isSelected}
+                  onClick={() => handleSelectCategory(cat.id)}
+                  onKeyDown={(e) => handleCategoryKeyDown(e, index)}
+                  className={cn(
+                    "relative inline-flex items-center justify-center gap-1.5",
+                    "min-h-[40px] sm:min-h-[44px] px-4 py-1.5 rounded-full",
+                    "text-xs font-semibold shrink-0 select-none",
+                    "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
+                    isSelected
+                      ? "text-white"
+                      : "text-zinc-600 hover:text-zinc-900 bg-zinc-100/80 hover:bg-zinc-200/80 border border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
+                  )}
+                >
+                  {isSelected && (
+                    <motion.div
+                      layoutId="activeFilterPill"
+                      transition={{
+                        type: "spring",
+                        stiffness: 450,
+                        damping: 30,
+                      }}
+                      className="absolute inset-0 bg-blue-600 rounded-full shadow-sm"
+                      data-testid="active-filter-pill-indicator"
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center gap-1.5">
+                    {Icon && <Icon className="w-3.5 h-3.5" />}
+                    <span>{cat.label}</span>
+                  </span>
+                </button>
+              );
+            })}
+ main
           </div>
         )}
       </div>

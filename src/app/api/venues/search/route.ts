@@ -1,55 +1,61 @@
-// src/app/api/venues/search/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { isAbortError } from '@/lib/search/semanticSearchClient';
 
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { getLatestVenueTimestamp, generateETag, BoundingBox } from '@/lib/cache/venueCache';
+const SearchRequestSchema = z.object({
+  query: z.string().min(1).max(500),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  radiusMeters: z.number().positive().max(50_000).optional(),
+  maxNoiseDb: z.number().min(20).max(120).optional(),
+  amenities: z.array(z.string()).optional(),
+  limit: z.number().int().min(1).max(50).default(15),
+});
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const bbox: BoundingBox = {
-      minLat: parseFloat(searchParams.get('minLat') || '0'),
-      maxLat: parseFloat(searchParams.get('maxLat') || '0'),
-      minLng: parseFloat(searchParams.get('minLng') || '0'),
-      maxLng: parseFloat(searchParams.get('maxLng') || '0'),
-    };
-
-    // 1. Get latest venue timestamp for ETag generation
-    const latestTimestamp = await getLatestVenueTimestamp(bbox);
-    const etag = generateETag(latestTimestamp);
-
-    // 2. Check If-None-Match header for conditional GET request (304 Not Modified)
-    const ifNoneMatch = request.headers.get('if-none-match');
-    if (ifNoneMatch === etag) {
-      return new NextResponse(null, {
-        status: 304,
-        headers: {
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-          'ETag': etag,
-        },
-      });
+    if (request.signal.aborted) {
+      return new NextResponse(null, { status: 499 });
     }
 
-    // 3. Fetch venues from database (simulate data fetching here)
-    const venues = [
-      // { id: '1', name: 'Coffee House', ... }
-    ];
+    const body = await request.json();
+    const parsed = SearchRequestSchema.safeParse(body);
 
-    // 4. Return successful response with Edge caching headers & ETag
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid semantic search parameters', details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const { query, latitude, longitude, radiusMeters, maxNoiseDb, amenities, limit } =
+      parsed.data;
+
+    // Pass request.signal to your hybrid/embedding search runner so client aborts
+    // immediately cancel upstream Groq/OpenAI embedding API calls:
+    // const results = await runHybridVenueSearch(
+    //   { query, latitude, longitude, radiusMeters, maxNoiseDb, amenities, limit },
+    //   { signal: request.signal }
+    // );
+
+    if (request.signal.aborted) {
+      return new NextResponse(null, { status: 499 });
+    }
+
+    return NextResponse.json({
+      query,
+      results: [], // Replace with `results` from hybridSearch
+      filters: { latitude, longitude, radiusMeters, maxNoiseDb, amenities, limit },
+    });
+  } catch (error: unknown) {
+    if (isAbortError(error) || request.signal.aborted) {
+      // Client disconnected / cancelled request; exit cleanly without 500 error logging
+      return new NextResponse(null, { status: 499 });
+    }
+
+    console.error('[SemanticVenueSearch] Error:', error);
     return NextResponse.json(
-      { success: true, count: venues.length, data: venues },
-      {
-        status: 200,
-        headers: {
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-          'ETag': etag,
-        },
-      }
-    );
-  } catch (error) {
-    console.error('Venue search caching error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal Server Error' },
+      { error: 'Failed to execute semantic venue search' },
       { status: 500 }
     );
   }

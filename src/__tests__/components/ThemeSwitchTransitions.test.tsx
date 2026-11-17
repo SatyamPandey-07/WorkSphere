@@ -15,8 +15,8 @@ beforeEach(() => {
     document.documentElement.removeAttribute("style");
 });
 
-describe("theme switch transition suppression", () => {
-    it("adds preload while switching and removes it afterwards", async () => {
+describe("theme switch transitions", () => {
+    it("animates user-triggered theme changes and removes the transition class", async () => {
         render(
             <ThemeProvider>
                 <Switcher />
@@ -30,8 +30,9 @@ describe("theme switch transition suppression", () => {
         const root = document.documentElement;
         expect(root.classList.contains("cyberpunk")).toBe(true);
         expect(root.getAttribute("data-theme")).toBe("cyberpunk");
-        expect(root.classList.contains("preload")).toBe(true);
-
-        await waitFor(() => expect(root.classList.contains("preload")).toBe(false));
+        expect(root.classList.contains("theme-transitioning")).toBe(true);
+        await waitFor(() =>
+            expect(root.classList.contains("theme-transitioning")).toBe(false),
+        );
     });
 });

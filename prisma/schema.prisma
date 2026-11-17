@@ -387,6 +387,7 @@ enum BookingStatus {
   CHECKED_IN
   CANCELLED
   COMPLETED
+  CANCELLED_BY_OPERATOR // added to the database by 20261111110000_operator_cancellation_webhook
 }
 
 model UserMemory {
@@ -1207,6 +1208,8 @@ model SolanaEscrow {
   id                String             @id @default(cuid())
   bookingId         String             @unique
   depositorWallet   String
+  /// Base58 signature of the deposit transaction. Written upon broadcast.
+  depositTxSignature String?            @unique
   amountLamports    BigInt
   currency          String             @default("SOL")
   status            SolanaEscrowStatus @default(PENDING)

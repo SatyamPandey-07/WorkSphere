@@ -1,9 +1,11 @@
-import { createHash } from "node:crypto";
 import {
   AccessibleRouter,
   type RouteSegment,
 } from "@/core/accessibility/AccessibleRouter";
-import { getRedis } from "@/lib/redis";
+import {
+  buildRouteCacheKey,
+  getOrRefreshRoute,
+} from "@/lib/accessibility/routeCache";
 
 export interface AccessibilityCoordinate {
   lat: number;
@@ -245,37 +247,39 @@ export interface FetchAccessibleRouteOptions {
   apiKey?: string;
   baseUrl?: string;
   fetchFn?: typeof fetch;
-  /** Disable shared Redis caching in tests or for explicit fresh-route requests. */
+  /** Disable route caching in tests or for explicit fresh-route requests. */
   cache?: boolean;
 }
 
-const ROUTE_CACHE_TTL_SECONDS = 300;
-
-async function readCachedRoute(key: string): Promise<AccessibleRouteResult | null> {
-  const redis = getRedis();
-  if (!redis) return null;
-  try {
-    return await redis.get<AccessibleRouteResult>(key);
-  } catch (error) {
-    console.warn("[Accessibility] Redis route-cache read failed:", error);
-    return null;
-  }
-}
-
-async function writeCachedRoute(key: string, value: AccessibleRouteResult): Promise<void> {
-  const redis = getRedis();
-  if (!redis) return;
-  try {
-    await redis.set(key, value, { ex: ROUTE_CACHE_TTL_SECONDS });
-  } catch (error) {
-    console.warn("[Accessibility] Redis route-cache write failed:", error);
-  }
-}
-
+/**
+ * Fetches an accessible route. Results are cached (coordinates rounded to
+ * 5 decimals, 15 minute TTL, stale-while-revalidate) unless `cache: false`.
+ */
 export async function fetchAccessibleRoute(
   start: AccessibilityCoordinate,
   end: AccessibilityCoordinate,
   options: FetchAccessibleRouteOptions = {},
+): Promise<AccessibleRouteResult> {
+  if (options.cache === false) {
+    return requestAccessibleRoute(start, end, options);
+  }
+  const wheelchairMode = options.wheelchairMode !== false;
+  const maxAllowedGrade = Math.max(1, Math.min(20, options.maxAllowedGradePercent ?? 8.33));
+  const cacheKey = buildRouteCacheKey({
+    profile: wheelchairMode ? "wheelchair" : "foot-walking",
+    start,
+    end,
+    maxAllowedGrade,
+  });
+  return getOrRefreshRoute(cacheKey, () =>
+    requestAccessibleRoute(start, end, options),
+  );
+}
+
+async function requestAccessibleRoute(
+  start: AccessibilityCoordinate,
+  end: AccessibilityCoordinate,
+  options: FetchAccessibleRouteOptions,
 ): Promise<AccessibleRouteResult> {
   const apiKey =
     options.apiKey ??
@@ -295,16 +299,6 @@ export async function fetchAccessibleRoute(
   const fetchFn = options.fetchFn ?? fetch;
   const maxAllowedGrade = Math.max(1, Math.min(20, options.maxAllowedGradePercent ?? 8.33));
   const orsMaximumIncline = maxAllowedGrade <= 3 ? 3 : maxAllowedGrade <= 6 ? 6 : maxAllowedGrade <= 10 ? 10 : 15;
-  const cacheKey = `accessibility:route:v1:${createHash("sha256").update(JSON.stringify({
-    profile,
-    start: [start.lat, start.lng],
-    end: [end.lat, end.lng],
-    maxAllowedGrade,
-  })).digest("hex")}`;
-  if (options.cache !== false) {
-    const cached = await readCachedRoute(cacheKey);
-    if (cached) return cached;
-  }
 
   let response: Response;
   try {
@@ -454,6 +448,5 @@ export async function fetchAccessibleRoute(
     barriers,
     dataSource: "OpenRouteService",
   };
-  if (options.cache !== false) await writeCachedRoute(cacheKey, result);
   return result;
 }

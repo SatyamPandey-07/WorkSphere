@@ -16,3 +16,4 @@ export * from './HomomorphicCiphertextComparator';
 export * from './VerifiablePolynomialDelegation';
 export * from './ThresholdDecryptionVerifiableBuffer';
 export * from './VerifiableSecretRedistribution';
+export * from './ThresholdBlindSignatures';

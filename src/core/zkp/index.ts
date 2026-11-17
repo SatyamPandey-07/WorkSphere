@@ -22,3 +22,4 @@ export * from './SparsePolyMultiplier';
 export * from './BulletproofsVectorFolding';
 export * from './SparseMatrixZKPProver';
 export * from './MultiScalarExpArgument';
+export * from './RangePartitionProver';

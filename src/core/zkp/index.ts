@@ -23,3 +23,4 @@ export * from './BulletproofsVectorFolding';
 export * from './SparseMatrixZKPProver';
 export * from './MultiScalarExpArgument';
 export * from './RangePartitionProver';
+export * from './PermutationPolynomialArgument';

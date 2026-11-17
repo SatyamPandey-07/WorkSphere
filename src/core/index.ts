@@ -58,3 +58,4 @@ export * from './crdt';
 export * from './webrtc';
 export * from './wasm';
 export * from './partykit';
+export * from './biometrics';

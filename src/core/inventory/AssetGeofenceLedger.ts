@@ -76,6 +76,15 @@ export interface SecurityAlert {
   message: string;
 }
 
+interface PendingZoneTransition {
+  zoneId: string;
+  confirmationCount: number;
+  firstSeenAt: number;
+}
+
+const ZONE_TRANSITION_CONFIRMATION_SAMPLES = 3;
+const ZONE_TRANSITION_COOLDOWN_MS = 1500;
+
 export class AssetGeofenceLedger {
   private zones = new Map<string, GeofenceZone>();
   private assets = new Map<string, AssetEntity>(); // assetId -> AssetEntity
@@ -83,6 +92,8 @@ export class AssetGeofenceLedger {
 
   private custodyLedger: CustodyTransitionEvent[] = [];
   private securityAlerts: SecurityAlert[] = [];
+  private pendingZoneTransitions = new Map<string, PendingZoneTransition>();
+  private lastZoneTransitionAt = new Map<string, number>();
   private latestLedgerHash = '0'.repeat(64); // Genesis hash
 
   public registerZone(zone: GeofenceZone): void {
@@ -92,6 +103,8 @@ export class AssetGeofenceLedger {
   public registerAsset(asset: AssetEntity): void {
     this.assets.set(asset.assetId, { ...asset });
     this.rfidToAssetId.set(asset.rfidTagEpId, asset.assetId);
+    this.pendingZoneTransitions.delete(asset.assetId);
+    this.lastZoneTransitionAt.delete(asset.assetId);
   }
 
   public getAsset(assetId: string): AssetEntity | undefined {
@@ -182,6 +195,8 @@ export class AssetGeofenceLedger {
 
     const detectedZone = this.locateZone(coordinates, floorNumber);
     if (!detectedZone) {
+      // An out-of-zone reading breaks the consecutive confirmation sequence.
+      this.pendingZoneTransitions.delete(assetId);
       return { updated: true, currentZoneId: asset.currentZoneId };
     }
 
@@ -219,18 +234,52 @@ export class AssetGeofenceLedger {
       this.securityAlerts.push(alert);
     }
 
-    // If zone transitioned, append to custody ledger
-    if (oldZoneId !== newZoneId) {
-      asset.currentZoneId = newZoneId;
-      event = this.appendEvent({
-        assetId: asset.assetId,
-        fromCustodian: asset.currentCustodianUserId,
-        toCustodian: asset.currentCustodianUserId,
-        fromZone: oldZoneId,
-        toZone: newZoneId,
-        eventType: detectedZone.isEgressPerimeter ? 'EGRESS_CHECKOUT' : 'ZONE_TRANSITION',
-        timestamp: currentTime,
-      });
+    // A single boundary reading is not enough to move custody. Require three
+    // consecutive readings for the same destination zone, spanning at least
+    // 1500ms, and enforce a 1500ms cooldown between committed transitions.
+    if (oldZoneId === newZoneId) {
+      this.pendingZoneTransitions.delete(assetId);
+    } else {
+      const pending = this.pendingZoneTransitions.get(assetId);
+      const nextPending: PendingZoneTransition =
+        pending && pending.zoneId === newZoneId && currentTime >= pending.firstSeenAt
+          ? {
+              zoneId: newZoneId,
+              confirmationCount: pending.confirmationCount + 1,
+              firstSeenAt: pending.firstSeenAt,
+            }
+          : {
+              zoneId: newZoneId,
+              confirmationCount: 1,
+              firstSeenAt: currentTime,
+            };
+      this.pendingZoneTransitions.set(assetId, nextPending);
+
+      const lastTransitionAt = this.lastZoneTransitionAt.get(assetId);
+      const cooldownElapsed =
+        lastTransitionAt === undefined ||
+        currentTime - lastTransitionAt >= ZONE_TRANSITION_COOLDOWN_MS;
+      const confirmationElapsed =
+        currentTime - nextPending.firstSeenAt >= ZONE_TRANSITION_COOLDOWN_MS;
+
+      if (
+        nextPending.confirmationCount >= ZONE_TRANSITION_CONFIRMATION_SAMPLES &&
+        confirmationElapsed &&
+        cooldownElapsed
+      ) {
+        asset.currentZoneId = newZoneId;
+        event = this.appendEvent({
+          assetId: asset.assetId,
+          fromCustodian: asset.currentCustodianUserId,
+          toCustodian: asset.currentCustodianUserId,
+          fromZone: oldZoneId,
+          toZone: newZoneId,
+          eventType: detectedZone.isEgressPerimeter ? 'EGRESS_CHECKOUT' : 'ZONE_TRANSITION',
+          timestamp: currentTime,
+        });
+        this.pendingZoneTransitions.delete(assetId);
+        this.lastZoneTransitionAt.set(assetId, currentTime);
+      }
     }
 
     return {

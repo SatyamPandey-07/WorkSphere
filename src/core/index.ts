@@ -56,3 +56,4 @@ export * from './crypto';
 export * from './crdt';
 export * from './webrtc';
 export * from './wasm';
+export * from './partykit';

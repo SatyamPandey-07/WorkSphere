@@ -4,6 +4,7 @@
  */
 
 export * from './DeltaSnapshotEngine';
+export * from './DeltaCRDTStore';
 export * from './CrdtVectorClock';
 export * from './CrdtDocument';
 export * from './ClipboardCRDT';

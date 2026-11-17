@@ -19,6 +19,7 @@ export * from './audio/SpatialAudioConvolver';
 export * from './audio/BinauralSpatializer';
 export * from './security/HomomorphicAuditAggregator';
 export * from './ai/EdgeIntentClassifier';
+export * from './ai/SpeculativeTokenCache';
 export * from './batching/AdaptiveRequestBatcher';
 export * from './sync/CausalVectorClockEngine';
 export * from './finance/StreamingPaymentChannel';

@@ -34,6 +34,7 @@ export * from './routing/AnycastLatencyOptimizer';
 export * from './pricing/SpotPricingAuctioneer';
 export * from './pdf/PDFSignerEngine';
 export * from './legal/EscrowClauseValidator';
+export * from './auctions';
 export * from './matchmaking/TeamMatchmaker';
 export * from './inventory/AssetGeofenceLedger';
 export * from './health/CircadianLightingController';

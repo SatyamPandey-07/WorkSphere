@@ -38,3 +38,4 @@ export * from './VerifiableVectorShufflingProof';
 export * from './CompressedPolyEvalArgument';
 export * from './VerifiableStateTransitionProof';
 export * from './NonInteractiveVectorCommitment';
+export * from './SuccinctRecursiveRollupVerifier';

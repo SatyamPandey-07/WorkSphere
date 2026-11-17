@@ -37,3 +37,4 @@ export * from './SubvectorAggregationProver';
 export * from './VerifiableVectorShufflingProof';
 export * from './CompressedPolyEvalArgument';
 export * from './VerifiableStateTransitionProof';
+export * from './NonInteractiveVectorCommitment';

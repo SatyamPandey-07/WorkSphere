@@ -9,3 +9,4 @@ export * from './OccupancyZKPProver';
 export * from './ShufflingZKPProver';
 export * from './ZKCredentialAccumulator';
 export * from './SparseMerkleTree';
+export * from './VerkleTree';

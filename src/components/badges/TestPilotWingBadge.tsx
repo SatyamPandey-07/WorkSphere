@@ -29,11 +29,11 @@ export function TestPilotWingBadge({
         onMouseLeave={() => setIsTooltipVisible(false)}
         onFocus={() => setIsTooltipVisible(true)}
         onBlur={() => setIsTooltipVisible(false)}
-        className={`inline-flex items-center gap-2 rounded-full border border-emerald-600/30 bg-gradient-to-r from-zinc-100 via-white to-emerald-50 px-3 py-2 text-emerald-900 shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:border-emerald-400/30 dark:from-zinc-800 dark:via-zinc-900 dark:to-emerald-950 dark:text-emerald-200 dark:focus-visible:ring-offset-zinc-900 ${className}`.trim()}
+        className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-emerald-600/30 bg-gradient-to-r from-zinc-100 via-white to-emerald-50 px-2 py-1.5 sm:px-3 sm:py-2 text-emerald-900 shadow-sm transition-all duration-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:border-emerald-400/30 dark:from-zinc-800 dark:via-zinc-900 dark:to-emerald-950 dark:text-emerald-200 dark:focus-visible:ring-offset-zinc-900 ${className}`.trim()}
       >
         <svg
           viewBox="0 0 120 52"
-          className="h-7 w-16 shrink-0"
+          className="h-6 w-12 sm:h-7 sm:w-16 shrink-0"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"

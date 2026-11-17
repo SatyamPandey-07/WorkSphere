@@ -29,3 +29,4 @@ export * from './LogarithmicLookupProver';
 export * from './FoldingAccumulatorProver';
 export * from './SetIntersectionArgument';
 export * from './VerifiableSecretShuffle';
+export * from './BatchedPoseidonTranscript';

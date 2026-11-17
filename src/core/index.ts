@@ -24,7 +24,7 @@ export * from './batching/AdaptiveRequestBatcher';
 export * from './sync/CausalVectorClockEngine';
 export * from './finance/StreamingPaymentChannel';
 export * from './gamification/VerifiableLeaderboard';
-export * from './sensors/AmbientNoiseDosimeter';
+export * from './sensors';
 export * from './itinerary/TransitOptimizer';
 export * from './ocr/ReceiptLineItemExtractor';
 export * from './chat/DoubleRatchetSession';

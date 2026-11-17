@@ -1,33 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
-import {
-  verifyMultiVenueBatchProofs,
-  MultiVenueBatchVerifyRequest,
-} from "@/lib/zkp/batch";
+import { NextResponse } from 'next/server';
+import { ZkNullifierVerifier } from '@/lib/crypto/zkNullifierVerifier';
 
-export async function POST(req: NextRequest) {
+const verifier = new ZkNullifierVerifier();
+
+export async function POST(request: Request) {
   try {
-    const body: MultiVenueBatchVerifyRequest = await req.json();
+    const body = await request.json();
+    const { nullifiers, proof, publicSignals } = body;
 
-    if (
-      !body ||
-      !Array.isArray(body.venueProofs) ||
-      body.venueProofs.length === 0
-    ) {
-      return NextResponse.json(
-        { error: "Invalid request payload. venueProofs array is required." },
-        { status: 400 },
-      );
+    if (!Array.isArray(nullifiers) || nullifiers.length === 0) {
+      return NextResponse.json({ error: 'Invalid or empty nullifiers array' }, { status: 400 });
     }
 
-    const verification = await verifyMultiVenueBatchProofs(body);
+    const result = await verifier.verifyBatch(nullifiers, proof, publicSignals);
 
-    return NextResponse.json(verification, {
-      status: verification.valid ? 200 : 422,
-    });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message || "Failed to process batch ZKP verification." },
-      { status: 500 },
-    );
+    return NextResponse.json({ success: true, ...result }, { status: 200 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'Batch verification failed' }, { status: 500 });
   }
 }

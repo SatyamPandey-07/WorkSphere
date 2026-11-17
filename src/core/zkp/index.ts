@@ -24,3 +24,4 @@ export * from './SparseMatrixZKPProver';
 export * from './MultiScalarExpArgument';
 export * from './RangePartitionProver';
 export * from './PermutationPolynomialArgument';
+export * from './BilinearAccumulator';

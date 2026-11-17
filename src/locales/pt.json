@@ -11,5 +11,16 @@
     "viewSpeedtest": "Ver captura do teste de velocidade",
     "translate": "Traduzir",
     "translating": "Traduzindo..."
+  },
+  "auth": {
+    "biometricTitle": "Desbloqueio Biométrico Lantern Ring",
+    "biometricSubtitle": "Autentique com segurança usando passkey ou reconhecimento biométrico",
+    "promptBiometric": "Coloque o dedo no leitor biométrico",
+    "passkeyTitle": "Gerenciador de Passkeys",
+    "registerPasskey": "Registrar nova Passkey",
+    "cancel": "Cancelar",
+    "success": "Autenticação bem-sucedida",
+    "error": "Falha na autenticação. Tente novamente."
   }
+
 }

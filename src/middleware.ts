@@ -1,41 +1,82 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { NextRequest, NextResponse } from 'next/server';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import {
-  runMiddlewarePipeline,
-  isCsrfExemptRoute,
-  ROUTE_PERMISSIONS,
-  type RoutePermissionRule,
-} from "./lib/middleware";
-import { generateCryptographicNonce, generateCsp } from "./lib/security/csp";
-import { matchRateTier, getClientIp } from "./lib/tokenBucketRateLimit";
+  buildSignInRedirectUrl,
+  isAuthRoute,
+  sanitizeRedirectUrl,
+} from '@/lib/auth/redirectSanitizer';
 
-/**
- * WorkSphere Orchestrated Edge Middleware Pipeline
- * Chains Rate Limiting, Authentication & Authorization, Security Headers (CSP & Nonce), and CSRF Protection.
- */
-export default clerkMiddleware(async (auth, req) => {
-  return await runMiddlewarePipeline(req, {
-    auth,
-    protect: auth.protect,
-  });
+const isPublicRoute = createRouteMatcher([
+  '/',
+  '/sign-in(.*)',
+  '/sign-up(.*)',
+  '/sso-callback(.*)',
+  '/offline',
+  '/api/health(.*)',
+  '/api/webhooks/(.*)',
+  '/api/venues/search(.*)',
+]);
+
+const isProtectedWorkspaceRoute = createRouteMatcher([
+  '/workspace(.*)',
+  '/dashboard(.*)',
+  '/admin(.*)',
+  '/user-profile(.*)',
+  '/analytics/nomad-tax(.*)',
+]);
+
+export default clerkMiddleware(async (auth, req: NextRequest) => {
+  const { pathname, search } = req.nextUrl;
+
+  // 1. If the user is already on `/sign-in` or `/sign-up` (for example, when third-party
+  //    or session cookies are blocked in incognito/Safari), NEVER redirect to `/sign-in` again.
+  //    Only normalize the `redirect_url` param if it is recursively nested or unsafe.
+  if (isAuthRoute(pathname)) {
+    const rawRedirect = req.nextUrl.searchParams.get('redirect_url');
+    if (rawRedirect) {
+      const sanitized = sanitizeRedirectUrl(rawRedirect);
+      if (sanitized !== rawRedirect) {
+        const cleanedUrl = new URL(pathname, req.nextUrl.origin);
+        req.nextUrl.searchParams.forEach((value, key) => {
+          if (key !== 'redirect_url') {
+            cleanedUrl.searchParams.set(key, value);
+          }
+        });
+        cleanedUrl.searchParams.set('redirect_url', sanitized);
+        return NextResponse.redirect(cleanedUrl);
+      }
+    }
+    return NextResponse.next();
+  }
+
+  // 2. Allow public routes through without auth enforcement
+  if (isPublicRoute(req) && !isProtectedWorkspaceRoute(req)) {
+    return NextResponse.next();
+  }
+
+  // 3. Enforce authentication on protected routes with loop-safe single-level `redirect_url`
+  const session = await auth();
+  if (!session.userId && (isProtectedWorkspaceRoute(req) || !isPublicRoute(req))) {
+    const signInUrl = buildSignInRedirectUrl(req.nextUrl, '/sign-in');
+
+    // Guard against no-op self-redirect loops
+    const currentFull = `${pathname}${search}`;
+    const targetFull = `${signInUrl.pathname}${signInUrl.search}`;
+    if (currentFull === targetFull) {
+      return NextResponse.next();
+    }
+
+    return NextResponse.redirect(signInUrl);
+  }
+
+  return NextResponse.next();
 });
-
-export {
-  generateCryptographicNonce,
-  generateCsp,
-  isCsrfExemptRoute,
-  matchRateTier,
-  getClientIp,
-  ROUTE_PERMISSIONS,
-  type RoutePermissionRule,
-};
 
 export const config = {
   matcher: [
-    // Skip static assets (including manifest/service worker) so they aren't gated by auth
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf|eot|css|js|json|txt|xml|webmanifest)|manifest\\.json|sw\\.js|service-worker\\.js|robots\\.txt).*)",
+    // Skip Next.js internals and all static files
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest|wasm)).*)',
     // Always run for API routes
-    "/(api|trpc)(.*)",
-    // Clerk internal proxy routes
-    "/__clerk/:path*",
+    '/(api|trpc)(.*)',
   ],
 };

@@ -13,29 +13,30 @@ import { resolveVenue } from "@/lib/venueResolver";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { getRedis } from "@/lib/redis";
 import {
-  ReviewSubmissionParams,
-  ReviewSubmissionResult,
-} from "./types";
+  swrCache,
+  getVenueReviewsCacheKey,
+  invalidateVenueReviewsCache,
+} from "@/lib/cache/swrCache";
+import { ReviewSubmissionParams, ReviewSubmissionResult } from "./types";
 import {
   VenueReviewRepository,
   defaultVenueReviewRepository,
 } from "./venueReviewRepository";
-import {
-  ReviewModerator,
-  defaultReviewModerator,
-} from "./reviewModerator";
-import {
-  RatingAggregator,
-  defaultRatingAggregator,
-} from "./ratingAggregator";
+import { ReviewModerator, defaultReviewModerator } from "./reviewModerator";
+import { RatingAggregator, defaultRatingAggregator } from "./ratingAggregator";
 
 // In-memory fallback for idempotency tracking
-const idempotencyCache = new Map<string, { ratingId: string; expiresAt: number }>();
+const idempotencyCache = new Map<
+  string,
+  { ratingId: string; expiresAt: number }
+>();
 
 // In-flight mutex promise map to serialize concurrent requests with identical idempotency key
 const inFlightRequests = new Map<string, Promise<ReviewSubmissionResult>>();
 
-export async function getIdempotencyRecord(key: string): Promise<string | null> {
+export async function getIdempotencyRecord(
+  key: string,
+): Promise<string | null> {
   const redis = getRedis();
   if (redis) {
     try {
@@ -437,6 +438,19 @@ export class VenueReviewService {
       comment: rating.comment,
     });
 
+    // Invalidate cached reviews for this venue (Issue #7266)
+    try {
+      await invalidateVenueReviewsCache(finalVenueId);
+      if (venueId && venueId !== finalVenueId) {
+        await invalidateVenueReviewsCache(venueId);
+      }
+    } catch (cacheErr) {
+      console.error(
+        "[venueReviewService] Failed to invalidate venue reviews cache:",
+        cacheErr,
+      );
+    }
+
     // 11. Record idempotency key for 24h
     if (effectiveIdempotencyKey) {
       const cacheKey = `worksphere:idempotency:review:${userId}:${effectiveIdempotencyKey}`;
@@ -495,8 +509,11 @@ export class VenueReviewService {
       return { reviews: [] };
     }
 
-    const reviews = await this.repository.findVenueRatings(venue.id, {
-      includeUser: true,
+    const cacheKey = getVenueReviewsCacheKey(venue.id);
+    const reviews = await swrCache(cacheKey, async () => {
+      return await this.repository.findVenueRatings(venue.id, {
+        includeUser: true,
+      });
     });
 
     return {

@@ -15,3 +15,4 @@ export * from './ThresholdVerifiableEncryption';
 export * from './HomomorphicCiphertextComparator';
 export * from './VerifiablePolynomialDelegation';
 export * from './ThresholdDecryptionVerifiableBuffer';
+export * from './VerifiableSecretRedistribution';

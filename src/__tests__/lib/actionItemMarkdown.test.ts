@@ -3,6 +3,7 @@ import {
   formatActionItemAsMarkdown,
   formatAssignee,
   formatDueDate,
+  toExportableActionItem,
 } from "@/lib/ai/actionItemMarkdown";
 
 describe("formatActionItemAsMarkdown", () => {
@@ -83,5 +84,38 @@ describe("buildMarkdownChecklist", () => {
   it("joins items by newline and adds an optional heading", () => {
     const out = buildMarkdownChecklist([{ title: "One" }, { title: "Two" }], "Action Items");
     expect(out).toBe("## Action Items\n\n- [ ] **One**\n- [ ] **Two**\n");
+  });
+});
+
+describe("toExportableActionItem", () => {
+  const base = {
+    id: "1",
+    task: "Ship it",
+    assignee: "alice",
+    assigner: "bob",
+    priority: "HIGH" as const,
+    status: "PENDING" as const,
+    confidenceScore: 1,
+    contextQuote: "",
+    dependencies: [],
+  };
+
+  it("maps the UNASSIGNED sentinel to no assignee", () => {
+    const out = toExportableActionItem({ ...base, assignee: "UNASSIGNED" });
+    expect(out.assignee).toBeNull();
+    expect(formatActionItemAsMarkdown(out)).toBe("- [ ] **Ship it**");
+  });
+
+  it("marks COMPLETED items as checked and keeps the due date", () => {
+    const out = toExportableActionItem({ ...base, status: "COMPLETED", dueDate: "2026-12-01" });
+    expect(formatActionItemAsMarkdown(out)).toBe(
+      "- [x] **Ship it** (Assignee: @alice, Due: 2026-12-01)",
+    );
+  });
+
+  it("truncates long context quotes", () => {
+    const out = toExportableActionItem({ ...base, contextQuote: "x".repeat(300) });
+    expect(out.description?.length).toBe(140);
+    expect(out.description?.endsWith("…")).toBe(true);
   });
 });

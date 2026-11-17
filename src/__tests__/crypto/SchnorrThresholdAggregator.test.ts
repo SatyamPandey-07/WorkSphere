@@ -111,6 +111,37 @@ describe('SchnorrThresholdAggregator', () => {
         });
     });
 
+    it('rejects a second partial signature from the same signer without replacing the accepted share', () => {
+        const sessionId = 'session-test-duplicate-signer';
+        const session = aggregator.createSession(sessionId, participants, message);
+        const noncesA = SchnorrThresholdAggregator.generateNoncePair('alice');
+        const noncesB = SchnorrThresholdAggregator.generateNoncePair('bob');
+        const noncesC = SchnorrThresholdAggregator.generateNoncePair('charlie');
+
+        aggregator.submitNonces(sessionId, noncesA.publicNonces);
+        aggregator.submitNonces(sessionId, noncesB.publicNonces);
+        aggregator.submitNonces(sessionId, noncesC.publicNonces);
+
+        const sigA = aggregator.signPartial(session, 'alice', cosignerA.privateKey, noncesA);
+        const sigB = aggregator.signPartial(session, 'bob', cosignerB.privateKey, noncesB);
+        const sigC = aggregator.signPartial(session, 'charlie', cosignerC.privateKey, noncesC);
+
+        aggregator.submitPartialSignature(sessionId, 'alice', sigA);
+        expect(() => {
+            aggregator.submitPartialSignature(sessionId, 'alice', sigA + 1n);
+        }).toThrow('Duplicate partial signature rejected from participant alice');
+
+        expect(session.partialSignatures.size).toBe(1);
+        expect(session.partialSignatures.get('alice')).toBe(sigA);
+        expect(session.state).toBe('NONCES_EXCHANGED');
+
+        // Other signers can still contribute exactly once and complete the session.
+        aggregator.submitPartialSignature(sessionId, 'bob', sigB);
+        aggregator.submitPartialSignature(sessionId, 'charlie', sigC);
+        expect(session.partialSignatures.size).toBe(3);
+        expect(session.state).toBe('PARTIALS_COLLECTED');
+    });
+
     describe('End-to-End Signature Aggregation & BIP 340 Verification', () => {
         it('successfully produces a 64-byte aggregated Schnorr signature that verifies against P_agg', () => {
             const session = aggregator.createSession('session-test-03', participants, message);

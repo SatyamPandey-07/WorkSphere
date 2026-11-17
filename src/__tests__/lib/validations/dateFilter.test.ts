@@ -359,3 +359,27 @@ describe("DateFilter ISO 8601 Validation & Normalization", () => {
     });
   });
 });
+
+describe("parseDateFilter error messages", () => {
+  it("reports an unparseable timestamp as an invalid value", () => {
+    const result = parseDateFilter({ startDate: "not-a-date" });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.message).toBe("Invalid timestamp value");
+      expect(result.issues).toEqual([
+        { path: "startDate", message: "Invalid timestamp value" },
+      ]);
+    }
+  });
+
+  it("reports a timestamp of the wrong type as an invalid format", () => {
+    const result = parseDateFilter({ endDate: { year: 2026 } });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.message).toBe("Invalid timestamp format");
+      expect(result.issues[0].path).toBe("endDate");
+    }
+  });
+});

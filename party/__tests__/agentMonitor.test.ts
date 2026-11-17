@@ -3,16 +3,28 @@ import AgentMonitorRoom, {
   DEFAULT_AGENT_HEARTBEAT_TIMEOUT_MS,
   DEFAULT_AGENT_PURGE_TTL_MS,
 } from "../agentMonitor.room";
+import { verifyToken } from "@clerk/backend";
 
-describe("AgentMonitorRoom PartyKit Server (#7926)", () => {
+// Mock verifyToken for Clerk JWT authentication
+jest.mock("@clerk/backend", () => ({
+  verifyToken: jest.fn().mockResolvedValue({ sub: "test-user-id" }),
+}));
+
+describe("AgentMonitorRoom PartyKit Server (#7926, #7951)", () => {
   let mockRoom: any;
   let mockConnection: any;
   let roomInstance: AgentMonitorRoom;
 
   beforeEach(() => {
+    jest.clearAllMocks();
+    (verifyToken as jest.Mock).mockResolvedValue({ sub: "test-user-id" });
+
     mockConnection = {
       id: "conn-123",
+      readyState: 1, // WebSocket.OPEN
       send: jest.fn(),
+      setState: jest.fn(),
+      close: jest.fn(),
     };
 
     mockRoom = {
@@ -158,5 +170,130 @@ describe("AgentMonitorRoom PartyKit Server (#7926)", () => {
     const reply = JSON.parse(mockConnection.send.mock.calls[0][0]);
     expect(reply.type).toBe("ERROR");
     expect(reply.message).toBe("Invalid message payload format");
+  });
+
+  describe("Authentication Handshake and Connection Close Handling (#7951)", () => {
+    it("successfully authenticates and initializes connection state when socket remains open", async () => {
+      const mockCtx: any = {
+        request: {
+          url: "https://example.partykit.dev/parties/agent-monitor/room-1?token=valid-jwt-token&agentId=agent-007",
+        },
+      };
+
+      await roomInstance.onConnect(mockConnection, mockCtx);
+
+      expect(verifyToken).toHaveBeenCalledWith("valid-jwt-token", {
+        secretKey: process.env.CLERK_SECRET_KEY,
+      });
+      expect(mockConnection.setState).toHaveBeenCalledWith({
+        authenticated: true,
+        userId: "test-user-id",
+        agentId: "agent-007",
+      });
+      expect(mockConnection.send).toHaveBeenCalledTimes(1);
+      const sentData = JSON.parse(mockConnection.send.mock.calls[0][0]);
+      expect(sentData.type).toBe("INITIAL_STATE");
+    });
+
+    it("aborts handshake without setting state or sending snapshot if socket closes before JWT verification resolves", async () => {
+      let resolveAuth: (value: any) => void;
+      const authPromise = new Promise((resolve) => {
+        resolveAuth = resolve;
+      });
+      (verifyToken as jest.Mock).mockReturnValue(authPromise);
+
+      const mockCtx: any = {
+        request: {
+          url: "https://example.partykit.dev/parties/agent-monitor/room-1?token=jwt-in-flight&agentId=agent-early-close",
+        },
+      };
+
+      const connectPromise = roomInstance.onConnect(mockConnection, mockCtx);
+
+      // Socket disconnects abruptly while verification is in-flight (readyState changes to 3 / CLOSED)
+      mockConnection.readyState = 3;
+
+      // Resolve verification after socket closed
+      resolveAuth!({ sub: "user-delayed" });
+      await connectPromise;
+
+      // Ensure state was not set and no snapshot was sent to closed connection
+      expect(mockConnection.setState).not.toHaveBeenCalled();
+      expect(mockConnection.send).not.toHaveBeenCalled();
+      expect(roomInstance.getAgentStates()).toHaveLength(0);
+    });
+
+    it("does not dispatch presence update or heartbeat update if closed socket was unauthenticated", async () => {
+      let resolveAuth: (value: any) => void;
+      const authPromise = new Promise((resolve) => {
+        resolveAuth = resolve;
+      });
+      (verifyToken as jest.Mock).mockReturnValue(authPromise);
+
+      const mockCtx: any = {
+        request: {
+          url: "https://example.partykit.dev/parties/agent-monitor/room-1?token=jwt-race",
+        },
+      };
+
+      const connectPromise = roomInstance.onConnect(mockConnection, mockCtx);
+
+      // Simulate connection close during async auth
+      mockConnection.readyState = 3;
+      resolveAuth!({ sub: "user-race" });
+      await connectPromise;
+
+      // Now close event arrives
+      mockRoom.broadcast.mockClear();
+      await roomInstance.onClose(mockConnection);
+
+      // Since the agentId was never mapped to this connection, no AGENT_HEARTBEAT_UPDATE should fire
+      const calls = mockRoom.broadcast.mock.calls.map((c: any) => JSON.parse(c[0]));
+      const agentUpdates = calls.filter((c: any) => c.type === "AGENT_HEARTBEAT_UPDATE");
+      expect(agentUpdates).toHaveLength(0);
+    });
+
+    it("closes socket with 4001 when token verification rejects", async () => {
+      (verifyToken as jest.Mock).mockRejectedValue(new Error("Invalid or expired token"));
+
+      const mockCtx: any = {
+        request: {
+          url: "https://example.partykit.dev/parties/agent-monitor/room-1?token=bad-token",
+        },
+      };
+
+      await roomInstance.onConnect(mockConnection, mockCtx);
+
+      expect(mockConnection.close).toHaveBeenCalledWith(
+        4001,
+        "Unauthorized: Token verification failed"
+      );
+      expect(mockConnection.setState).not.toHaveBeenCalled();
+      expect(mockConnection.send).not.toHaveBeenCalled();
+    });
+
+    it("does not access undefined connection context or throw if socket closes during verification", async () => {
+      let resolveAuth: (value: any) => void;
+      (verifyToken as jest.Mock).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAuth = resolve;
+          })
+      );
+
+      const mockCtx: any = {
+        request: {
+          url: "https://example.partykit.dev/parties/agent-monitor/room-1?token=slow-token",
+        },
+      };
+
+      const connectPromise = roomInstance.onConnect(mockConnection, mockCtx);
+
+      mockConnection.readyState = 2; // CLOSING
+      resolveAuth!({ sub: "slow-user" });
+
+      await expect(connectPromise).resolves.not.toThrow();
+      expect(mockConnection.setState).not.toHaveBeenCalled();
+    });
   });
 });

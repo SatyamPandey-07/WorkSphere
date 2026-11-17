@@ -675,91 +675,6 @@ export function VenueFilterBar({
       data-testid={testId}
       className={cn("relative w-full space-y-2", className)}
     >
- fix/zkp-worker-memory-cleanup
-      {/* Category Tabs & Sort Dropdown Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        {showCategoryTabs && categories.length > 0 && (
-          <LayoutGroup id="venue-filter-categories">
-            <div
-              role="tablist"
-              aria-label="Venue categories"
-              data-testid="venue-category-tabs"
-              className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1 scroll-smooth touch-pan-x flex-1"
-            >
-              {categories.map((cat, index) => {
-                const isSelected = currentCategory === cat.id;
-                const Icon = cat.icon;
-
-                return (
-                  <button
-                    key={cat.id}
-                    ref={(el) => {
-                      tabRefs.current[index] = el;
-                    }}
-                    type="button"
-                    role="tab"
-                    id={`venue-category-tab-${cat.id}`}
-                    aria-selected={isSelected}
-                    tabIndex={isSelected ? 0 : -1}
-                    data-testid={`venue-category-tab-${cat.id}`}
-                    data-selected={isSelected}
-                    onClick={() => handleSelectCategory(cat.id)}
-                    onKeyDown={(e) => handleCategoryKeyDown(e, index)}
-                    className={cn(
-                      "relative inline-flex items-center justify-center gap-1.5",
-                      "min-h-[40px] sm:min-h-[44px] px-4 py-1.5 rounded-full",
-                      "text-xs font-semibold shrink-0 select-none",
-                      "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
-                      isSelected
-                        ? "text-white"
-                        : "text-zinc-600 hover:text-zinc-900 bg-zinc-100/80 hover:bg-zinc-200/80 border border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
-                    )}
-                  >
-                    {isSelected && (
-                      <motion.div
-                        layoutId="activeFilterPill"
-                        transition={{
-                          type: "spring",
-                          stiffness: 450,
-                          damping: 30,
-                        }}
-                        className="absolute inset-0 bg-blue-600 rounded-full shadow-sm"
-                        data-testid="active-filter-pill-indicator"
-                      />
-                    )}
-                    <span className="relative z-10 flex items-center gap-1.5">
-                      {Icon && <Icon className="w-3.5 h-3.5" />}
-                      <span>{cat.label}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </LayoutGroup>
-        )}
-
-        {/* Sort Dropdown (Requirement 2) */}
-        {showSortDropdown && (
-          <div className="flex items-center gap-2 px-1 shrink-0">
-            <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
-            <select
-              id="venue-sort-select"
-              data-testid="venue-sort-select"
-              value={currentSort}
-              onChange={(e) => handleSortChange(e.target.value)}
-              aria-label="Sort venues"
-              className={cn(
-                "min-h-[40px] sm:min-h-[44px] px-3 py-1.5 rounded-xl text-xs font-semibold select-none",
-                "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border border-zinc-200/80",
-                "dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
-              )}
-            >
-              <option value="recommended">Recommended</option>
-              <option value="rating">Highest Rated</option>
-              <option value="distance">Distance: Nearest First</option>
-            </select>
-
       <p
         role="status"
         aria-live="polite"
@@ -769,66 +684,6 @@ export function VenueFilterBar({
       >
         {filterAnnouncement}
       </p>
- fix/zkp-worker-memory-cleanup
-      {/* Category Tabs with Framer Motion layoutId sliding pill indicator */}
-      {showCategoryTabs && categories.length > 0 && (
-        <LayoutGroup id="venue-filter-categories">
-          <div
-            role="tablist"
-            aria-label="Venue categories"
-            data-testid="venue-category-tabs"
-            className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1 scroll-smooth touch-pan-x"
-          >
-            {categories.map((cat, index) => {
-              const isSelected = currentCategory === cat.id;
-              const Icon = cat.icon;
-
-              return (
-                <button
-                  key={cat.id}
-                  ref={(el) => {
-                    tabRefs.current[index] = el;
-                  }}
-                  type="button"
-                  role="tab"
-                  id={`venue-category-tab-${cat.id}`}
-                  aria-selected={isSelected}
-                  tabIndex={isSelected ? 0 : -1}
-                  data-testid={`venue-category-tab-${cat.id}`}
-                  data-selected={isSelected}
-                  onClick={() => handleSelectCategory(cat.id)}
-                  onKeyDown={(e) => handleCategoryKeyDown(e, index)}
-                  className={cn(
-                    "relative inline-flex items-center justify-center gap-1.5",
-                    "min-h-[40px] sm:min-h-[44px] px-4 py-1.5 rounded-full",
-                    "text-xs font-semibold shrink-0 select-none",
-                    "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
-                    isSelected
-                      ? "text-white"
-                      : "text-zinc-600 hover:text-zinc-900 bg-zinc-100/80 hover:bg-zinc-200/80 border border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
-                  )}
-                >
-                  {isSelected && (
-                    <motion.div
-                      layoutId="activeFilterPill"
-                      transition={{
-                        type: "spring",
-                        stiffness: 450,
-                        damping: 30,
-                      }}
-                      className="absolute inset-0 bg-blue-600 rounded-full shadow-sm"
-                      data-testid="active-filter-pill-indicator"
-                    />
-                  )}
-                  <span className="relative z-10 flex items-center gap-1.5">
-                    {Icon && <Icon className="w-3.5 h-3.5" />}
-                    <span>{cat.label}</span>
-                  </span>
-                </button>
-              );
-            })}
- main
-
 
       {/* Category Tabs & Sort Dropdown Row */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -913,7 +768,6 @@ export function VenueFilterBar({
               <option value="rating">Highest Rated</option>
               <option value="distance">Distance: Nearest First</option>
             </select>
- main
           </div>
         )}
       </div>

@@ -35,3 +35,4 @@ export * from './DynamicMembershipMMR';
 export * from './ZKProofCompositionEngine';
 export * from './SubvectorAggregationProver';
 export * from './VerifiableVectorShufflingProof';
+export * from './CompressedPolyEvalArgument';

@@ -20,6 +20,7 @@ export * from './ai/EdgeIntentClassifier';
 export * from './batching/AdaptiveRequestBatcher';
 export * from './sync/CausalVectorClockEngine';
 export * from './finance/StreamingPaymentChannel';
+export * from './gamification/VerifiableLeaderboard';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

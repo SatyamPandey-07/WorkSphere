@@ -18,3 +18,4 @@ export * from './ThresholdDecryptionVerifiableBuffer';
 export * from './VerifiableSecretRedistribution';
 export * from './ThresholdBlindSignatures';
 export * from './DistributedKeyRotationProtocol';
+export * from './VerifiableMultiPartyAggregation';

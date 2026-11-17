@@ -34,3 +34,4 @@ export * from './SuccinctVectorCommitment';
 export * from './DynamicMembershipMMR';
 export * from './ZKProofCompositionEngine';
 export * from './SubvectorAggregationProver';
+export * from './VerifiableVectorShufflingProof';

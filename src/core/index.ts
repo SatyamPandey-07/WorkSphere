@@ -54,3 +54,4 @@ export * from './p2p';
 export * from './crypto';
 export * from './crdt';
 export * from './webrtc';
+export * from './wasm';

@@ -42,6 +42,28 @@ describe('PlaneMeshExtractor', () => {
             expect(eq!.c).toBeCloseTo(0, 4);
         });
 
+        it('rejects collinear, nearly collinear, and non-finite point triplets', () => {
+            const collinear = PlaneMeshExtractor.fitPlaneFrom3Points(
+                { x: 0, y: 0, z: 0 },
+                { x: 1, y: 1, z: 1 },
+                { x: 2, y: 2, z: 2 }
+            );
+            const nearlyCollinear = PlaneMeshExtractor.fitPlaneFrom3Points(
+                { x: 0, y: 0, z: 0 },
+                { x: 1, y: 0, z: 0 },
+                { x: 2, y: 1e-7, z: 0 }
+            );
+            const nonFinite = PlaneMeshExtractor.fitPlaneFrom3Points(
+                { x: 0, y: 0, z: 0 },
+                { x: 1, y: 0, z: 0 },
+                { x: Number.NaN, y: 1, z: 0 }
+            );
+
+            expect(collinear).toBeNull();
+            expect(nearlyCollinear).toBeNull();
+            expect(nonFinite).toBeNull();
+        });
+
         it('calculates point-to-plane Euclidean distance', () => {
             const plane: PlaneEquation = { a: 0, b: 1, c: 0, d: -0.75 }; // y = 0.75
             const p: Vec3 = { x: 2, y: 0.85, z: 5 };

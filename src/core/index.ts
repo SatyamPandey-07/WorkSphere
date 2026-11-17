@@ -27,6 +27,7 @@ export * from './sensors';
 export * from './itinerary/TransitOptimizer';
 export * from './ocr/ReceiptLineItemExtractor';
 export * from './chat/DoubleRatchetSession';
+export * from './chat/SkippedMessageKeyStore';
 export * from './predictive/OccupancyForecaster';
 export * from './compliance/DataResidencyGuard';
 export * from './dtn';

@@ -12,3 +12,4 @@ export * from './AsynchronousByzantineAgreement';
 export * from './VerifiableRandomBeacon';
 export * from './AsynchronousReliableBroadcast';
 export * from './BullsharkDAGCoordinator';
+export * from './AsynchronousSharedMempool';

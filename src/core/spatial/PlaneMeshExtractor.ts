@@ -116,7 +116,9 @@ export class PlaneMeshExtractor {
         const v2 = PlaneMeshExtractor.subtract(p3, p1);
         const normal = PlaneMeshExtractor.cross(v1, v2);
         const len = PlaneMeshExtractor.norm(normal);
-        if (len < 1e-6) return null; // Collinear points
+        // RANSAC can select duplicate, collinear, nearly-collinear, or corrupt
+        // points. Reject non-finite/near-zero normals before any normalization.
+        if (!Number.isFinite(len) || len < 1e-6) return null;
 
         const a = normal.x / len;
         const b = normal.y / len;

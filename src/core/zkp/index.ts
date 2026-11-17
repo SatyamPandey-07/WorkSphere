@@ -17,3 +17,4 @@ export * from './PolyEvalArgument';
 export * from './IPAInnerProductRangeProver';
 export * from './MembershipArgumentProver';
 export * from './WaksmanShuffleNetwork';
+export * from './LookupArgumentProver';

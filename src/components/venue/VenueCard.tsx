@@ -1,8 +1,11 @@
 "use client";
 
+ fix/solana-concurrency-retry
+
  fix/double-ratchet-header-validation
 
  feat/compressed-desk-pass-minter
+ main
  main
 import React from "react";
 import Image from "next/image";
@@ -85,6 +88,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/solana-concurrency-retry
+}
+
  fix/double-ratchet-header-validation
 }
 
@@ -226,5 +232,6 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main

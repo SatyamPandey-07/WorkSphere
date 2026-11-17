@@ -16,3 +16,4 @@ export * from './ShuffleProofAccumulator';
 export * from './PolyEvalArgument';
 export * from './IPAInnerProductRangeProver';
 export * from './MembershipArgumentProver';
+export * from './WaksmanShuffleNetwork';

@@ -16,6 +16,7 @@ export * from './iot/BLEProximityAttestor';
 export * from './iot/IAQVentilationController';
 export * from './culture/SoulboundSkillAttestor';
 export * from './audio/SpatialAudioConvolver';
+export * from './audio/BinauralSpatializer';
 export * from './security/HomomorphicAuditAggregator';
 export * from './ai/EdgeIntentClassifier';
 export * from './batching/AdaptiveRequestBatcher';

@@ -77,7 +77,7 @@ export class DistributedBloomLimiter {
         ? options.windowDurationMs
         : 0;
     this.decayFactor = sanitizeDecayFactor(options.decayFactor, DEFAULT_DECAY_FACTOR);
-    this.lastDecayTime = Date.now();
+    this.lastDecayTime = -1;
   }
 
   /**
@@ -149,8 +149,8 @@ export class DistributedBloomLimiter {
       const low = byte & 0x0f;
       const high = (byte >> 4) & 0x0f;
 
-      const newLow = Math.min(MAX_COUNTER, Math.floor(low * safeFactor));
-      const newHigh = Math.min(MAX_COUNTER, Math.floor(high * safeFactor));
+      const newLow = Math.max(0, Math.min(MAX_COUNTER, Math.floor(low * safeFactor)));
+      const newHigh = Math.max(0, Math.min(MAX_COUNTER, Math.floor(high * safeFactor)));
 
       this.counters[i] = (newHigh << 4) | newLow;
     }
@@ -161,7 +161,7 @@ export class DistributedBloomLimiter {
    */
   public reset(): void {
     this.counters.fill(0);
-    this.lastDecayTime = Date.now();
+    this.lastDecayTime = -1;
   }
 
   /**
@@ -173,7 +173,7 @@ export class DistributedBloomLimiter {
     if (typeof now === "number" && Number.isFinite(now)) {
       return Math.min(Math.max(now, 0), Number.MAX_SAFE_INTEGER);
     }
-    return this.lastDecayTime || Date.now();
+    return this.lastDecayTime >= 0 ? this.lastDecayTime : Date.now();
   }
 
   /**
@@ -186,7 +186,7 @@ export class DistributedBloomLimiter {
   ): { limited: boolean; maxCount: number } {
     now = this.normalizeNow(now);
 
-    if (this.lastDecayTime === 0 || this.lastDecayTime > now) {
+    if (this.lastDecayTime < 0) {
       this.lastDecayTime = now;
     }
 

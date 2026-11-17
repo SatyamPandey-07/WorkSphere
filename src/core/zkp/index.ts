@@ -26,3 +26,4 @@ export * from './RangePartitionProver';
 export * from './PermutationPolynomialArgument';
 export * from './BilinearAccumulator';
 export * from './LogarithmicLookupProver';
+export * from './FoldingAccumulatorProver';

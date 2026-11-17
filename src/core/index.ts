@@ -22,7 +22,7 @@ export * from './ai/EdgeIntentClassifier';
 export * from './ai/SpeculativeTokenCache';
 export * from './batching/AdaptiveRequestBatcher';
 export * from './sync/CausalVectorClockEngine';
-export * from './finance/StreamingPaymentChannel';
+export * from './finance';
 export * from './gamification/VerifiableLeaderboard';
 export * from './sensors';
 export * from './itinerary/TransitOptimizer';

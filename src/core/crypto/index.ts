@@ -5,3 +5,4 @@
 
 export * from './ThresholdSignatureScheme';
 export * from './SchnorrThresholdAggregator';
+export * from './LatticeSignatureVerifier';

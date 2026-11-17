@@ -12,3 +12,4 @@ export * from './ThresholdElGamalDecryption';
 export * from './ThresholdPedersenVSS';
 export * from './AsynchronousDKG';
 export * from './ThresholdVerifiableEncryption';
+export * from './HomomorphicCiphertextComparator';

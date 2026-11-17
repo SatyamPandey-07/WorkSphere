@@ -133,6 +133,42 @@ describe('WebRTCMesh Lifecycle, Automated ICE Restart & Cleanup', () => {
     expect(mesh.getPeer('remote-peer-1')).toBeUndefined();
   });
 
+  it('releases DataChannel event handlers across 50 sequential peer teardowns', async () => {
+    const mesh = new WebRTCMesh('local-node');
+    const disconnectedChannels: MockRTCDataChannel[] = [];
+
+    for (let index = 0; index < 50; index++) {
+      const peerId = `stress-peer-${index}`;
+      await mesh.createPeerConnection(peerId, true);
+
+      const peer = mesh.getPeer(peerId)!;
+      const channel = peer.dataChannel as MockRTCDataChannel;
+      disconnectedChannels.push(channel);
+
+      expect(channel.onmessage).not.toBeNull();
+      expect(channel.onopen).not.toBeNull();
+      expect(channel.onclose).not.toBeNull();
+      expect(channel.onerror).not.toBeNull();
+
+      mesh.onPeerDisconnect(peerId);
+
+      expect(channel.onmessage).toBeNull();
+      expect(channel.onopen).toBeNull();
+      expect(channel.onclose).toBeNull();
+      expect(channel.onerror).toBeNull();
+      expect(mesh.getPeer(peerId)).toBeUndefined();
+    }
+
+    expect(mesh.getPeerCount()).toBe(0);
+    expect(disconnectedChannels).toHaveLength(50);
+    expect(disconnectedChannels.every((channel) =>
+      channel.onmessage === null &&
+      channel.onopen === null &&
+      channel.onclose === null &&
+      channel.onerror === null
+    )).toBe(true);
+  });
+
   it('triggers automated ICE restart when connection transitions to failed state', async () => {
     const mockSignaling = {
       sendDescription: jest.fn(),

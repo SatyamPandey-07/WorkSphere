@@ -99,8 +99,45 @@ export function AcousticSpectrumAnalyzer({
 
   // Internal Web Audio refs for live microphone capture
   const internalAudioCtxRef = useRef<AudioContext | null>(null);
+  const internalSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const internalAnalyserRef = useRef<AnalyserNode | null>(null);
   const internalMicStreamRef = useRef<MediaStream | null>(null);
+  const isMountedRef = useRef(true);
+
+  // Release only resources created by this component. Props supplied by a
+  // parent (analyserNode/audioContext) remain owned by that parent.
+  const cleanupInternalMicrophone = useCallback(() => {
+    if (internalSourceRef.current) {
+      try {
+        internalSourceRef.current.disconnect();
+      } catch {
+        // The source may already have been disconnected.
+      }
+      internalSourceRef.current = null;
+    }
+
+    if (internalAnalyserRef.current) {
+      try {
+        internalAnalyserRef.current.disconnect();
+      } catch {
+        // The analyser may already have been disconnected.
+      }
+      internalAnalyserRef.current = null;
+    }
+
+    if (internalMicStreamRef.current) {
+      internalMicStreamRef.current.getTracks().forEach((track) => track.stop());
+      internalMicStreamRef.current = null;
+    }
+
+    const context = internalAudioCtxRef.current;
+    internalAudioCtxRef.current = null;
+    if (context && context.state !== "closed") {
+      void context.close().catch(() => {
+        // Cleanup is best-effort when the browser has already closed the context.
+      });
+    }
+  }, []);
 
   // Peak hold state for 32 bands in decibels (initialized to minDecibels)
   const peakDbValuesRef = useRef<Float32Array>(new Float32Array(NUM_FREQUENCY_BARS).fill(minDecibels));
@@ -141,20 +178,12 @@ export function AcousticSpectrumAnalyzer({
   // Microphone toggle
   const toggleMicrophone = useCallback(async () => {
     if (isMicActive) {
-      // Disconnect mic
-      if (internalMicStreamRef.current) {
-        internalMicStreamRef.current.getTracks().forEach((track) => track.stop());
-        internalMicStreamRef.current = null;
-      }
-      if (internalAudioCtxRef.current && internalAudioCtxRef.current.state !== "closed") {
-        await internalAudioCtxRef.current.close().catch(() => {});
-        internalAudioCtxRef.current = null;
-      }
-      internalAnalyserRef.current = null;
+      cleanupInternalMicrophone();
       setIsMicActive(false);
       setMicError(null);
     } else {
-      // Connect mic
+      // Connect mic. Store each resource as soon as it is created so a later
+      // failure or unmount can release everything acquired so far.
       try {
         setMicError(null);
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -165,26 +194,46 @@ export function AcousticSpectrumAnalyzer({
           },
         });
 
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (!isMountedRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        internalMicStreamRef.current = stream;
+
+        const AudioContextConstructor =
+          window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextConstructor) {
+          throw new Error("Web Audio API is not supported in this browser");
+        }
+
+        const ctx: AudioContext = new AudioContextConstructor();
+        internalAudioCtxRef.current = ctx;
+
         const source = ctx.createMediaStreamSource(stream);
+        internalSourceRef.current = source;
+
         const analyser = ctx.createAnalyser();
+        internalAnalyserRef.current = analyser;
         analyser.fftSize = 1024;
         analyser.smoothingTimeConstant = 0.75;
         analyser.minDecibels = minDecibels;
         analyser.maxDecibels = maxDecibels;
 
         source.connect(analyser);
-
-        internalMicStreamRef.current = stream;
-        internalAudioCtxRef.current = ctx;
-        internalAnalyserRef.current = analyser;
+        if (!isMountedRef.current) {
+          cleanupInternalMicrophone();
+          return;
+        }
         setIsMicActive(true);
       } catch (err: any) {
-        setMicError(err?.message || "Microphone access denied");
-        setIsMicActive(false);
+        cleanupInternalMicrophone();
+        if (isMountedRef.current) {
+          setMicError(err?.message || "Microphone access denied");
+          setIsMicActive(false);
+        }
       }
     }
-  }, [isMicActive, minDecibels, maxDecibels]);
+  }, [isMicActive, minDecibels, maxDecibels, cleanupInternalMicrophone]);
 
   // Keyboard shortcut listener (Space = pause/resume, F = fullscreen, Esc = close modal)
   useEffect(() => {
@@ -209,17 +258,15 @@ export function AcousticSpectrumAnalyzer({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [togglePause, toggleExpand, isExpanded, onExpandChange]);
 
-  // Cleanup internal mic on unmount
+  // Cleanup internal mic resources on unmount. External audioContext/analyser
+  // props are deliberately not closed or disconnected by this component.
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
-      if (internalMicStreamRef.current) {
-        internalMicStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
-      if (internalAudioCtxRef.current && internalAudioCtxRef.current.state !== "closed") {
-        internalAudioCtxRef.current.close().catch(() => {});
-      }
+      isMountedRef.current = false;
+      cleanupInternalMicrophone();
     };
-  }, []);
+  }, [cleanupInternalMicrophone]);
 
   /**
    * Main render loop for the 32 frequency bars and floating peak hold decay.

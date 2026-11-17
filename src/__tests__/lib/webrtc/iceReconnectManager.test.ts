@@ -1,4 +1,3 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   ICEReconnectManager,
   ReconnectState,
@@ -10,22 +9,22 @@ class MockRTCPeerConnection {
   public connectionState: RTCPeerConnectionState = 'new';
   private config: RTCConfiguration = {};
 
-  public restartIce = vi.fn();
-  public setConfiguration = vi.fn((newConfig: RTCConfiguration) => {
+  public restartIce = jest.fn();
+  public setConfiguration = jest.fn((newConfig: RTCConfiguration) => {
     this.config = newConfig;
   });
-  public getConfiguration = vi.fn(() => this.config);
+  public getConfiguration = jest.fn(() => this.config);
 }
 
 describe('ICEReconnectManager', () => {
   let manager: ICEReconnectManager;
   let mockPC: MockRTCPeerConnection;
-  let renegotiateMock: ReturnType<typeof vi.fn>;
+  let renegotiateMock: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
-    vi.useFakeTimers();
+    jest.useFakeTimers();
     mockPC = new MockRTCPeerConnection();
-    renegotiateMock = vi.fn().mockResolvedValue(undefined);
+    renegotiateMock = jest.fn().mockResolvedValue(undefined);
     manager = new ICEReconnectManager({
       baseDelayMs: 200,
       maxDelayMs: 2000,
@@ -41,7 +40,7 @@ describe('ICEReconnectManager', () => {
 
   afterEach(() => {
     manager.dispose();
-    vi.useRealTimers();
+    jest.useRealTimers();
   });
 
   it('initializes with idle state and configures default params', () => {
@@ -81,12 +80,12 @@ describe('ICEReconnectManager', () => {
     expect(manager.getAttemptCount()).toBe(0);
 
     // Advance 500ms (less than 1000ms grace period)
-    vi.advanceTimersByTime(500);
+    jest.advanceTimersByTime(500);
     expect(manager.getState()).toBe('disconnected');
     expect(manager.getAttemptCount()).toBe(0);
 
     // Advance past grace period (1000ms total)
-    vi.advanceTimersByTime(501);
+    jest.advanceTimersByTime(501);
     expect(manager.getState()).toBe('reconnecting');
     expect(manager.getAttemptCount()).toBe(1);
   });
@@ -96,13 +95,13 @@ describe('ICEReconnectManager', () => {
     expect(manager.getState()).toBe('disconnected');
 
     // Connection restores before grace period expires
-    vi.advanceTimersByTime(400);
+    jest.advanceTimersByTime(400);
     manager.handleIceConnectionStateChange('connected');
     expect(manager.getState()).toBe('connected');
     expect(manager.getAttemptCount()).toBe(0);
 
     // Advance time further to ensure no delayed reconnect fires
-    vi.advanceTimersByTime(1000);
+    jest.advanceTimersByTime(1000);
     expect(manager.getState()).toBe('connected');
   });
 
@@ -113,14 +112,14 @@ describe('ICEReconnectManager', () => {
   });
 
   it('executes restartIce and renegotiation during reconnect cycle', async () => {
-    const iceRestartListener = vi.fn();
+    const iceRestartListener = jest.fn();
     manager.onIceRestart(iceRestartListener);
 
     manager.handleIceConnectionStateChange('failed');
     expect(manager.getState()).toBe('reconnecting');
 
     // Advance timer to trigger execution
-    await vi.advanceTimersByTimeAsync(300);
+    await jest.advanceTimersByTimeAsync(300);
 
     expect(mockPC.restartIce).toHaveBeenCalledTimes(1);
     expect(renegotiateMock).toHaveBeenCalledTimes(1);
@@ -128,17 +127,17 @@ describe('ICEReconnectManager', () => {
   });
 
   it('applies fallback ICE servers when reaching threshold', async () => {
-    const fallbackListener = vi.fn();
+    const fallbackListener = jest.fn();
     manager.onFallbackApplied(fallbackListener);
 
     // First attempt
     manager.handleIceConnectionStateChange('failed');
-    await vi.advanceTimersByTimeAsync(300);
+    await jest.advanceTimersByTimeAsync(300);
     expect(manager.isFallbackActive()).toBe(false);
 
     // Second attempt (threshold = 2)
     manager.handleIceConnectionStateChange('failed');
-    await vi.advanceTimersByTimeAsync(500);
+    await jest.advanceTimersByTimeAsync(500);
 
     expect(manager.isFallbackActive()).toBe(true);
     expect(mockPC.setConfiguration).toHaveBeenCalledWith({
@@ -148,20 +147,20 @@ describe('ICEReconnectManager', () => {
   });
 
   it('stops and emits onFatalFailure when maxAttempts exceeded', async () => {
-    const fatalListener = vi.fn();
+    const fatalListener = jest.fn();
     manager.onFatalFailure(fatalListener);
 
     // Attempt 1
     manager.handleIceConnectionStateChange('failed');
-    await vi.advanceTimersByTimeAsync(300);
+    await jest.advanceTimersByTimeAsync(300);
 
     // Attempt 2
     manager.handleIceConnectionStateChange('failed');
-    await vi.advanceTimersByTimeAsync(500);
+    await jest.advanceTimersByTimeAsync(500);
 
     // Attempt 3
     manager.handleIceConnectionStateChange('failed');
-    await vi.advanceTimersByTimeAsync(900);
+    await jest.advanceTimersByTimeAsync(900);
 
     // Attempt 4 -> exceeds maxAttempts (3)
     manager.handleIceConnectionStateChange('failed');
@@ -191,7 +190,7 @@ describe('ICEReconnectManager', () => {
     expect(manager.getAttemptCount()).toBe(1);
     expect(manager.getState()).toBe('reconnecting');
 
-    await vi.advanceTimersByTimeAsync(200);
+    await jest.advanceTimersByTimeAsync(200);
 
     expect(mockPC.restartIce).toHaveBeenCalledTimes(1);
     expect(manager.getState()).toBe('reconnecting');
@@ -205,7 +204,7 @@ describe('ICEReconnectManager', () => {
     renegotiateMock.mockImplementationOnce(() => pendingRenegotiation);
 
     manager.handleIceConnectionStateChange('failed');
-    vi.advanceTimersByTime(300);
+    jest.advanceTimersByTime(300);
     await Promise.resolve();
 
     expect(mockPC.restartIce).toHaveBeenCalledTimes(1);
@@ -226,7 +225,7 @@ describe('ICEReconnectManager', () => {
     // The burst is represented by one follow-up timer, not parallel cycles.
     expect(manager.getAttemptCount()).toBe(2);
 
-    await vi.advanceTimersByTimeAsync(500);
+    await jest.advanceTimersByTimeAsync(500);
     expect(mockPC.restartIce).toHaveBeenCalledTimes(2);
     expect(renegotiateMock).toHaveBeenCalledTimes(2);
   });
@@ -239,7 +238,7 @@ describe('ICEReconnectManager', () => {
   });
 
   it('cleans up all timers and listeners upon dispose()', () => {
-    const stateListener = vi.fn();
+    const stateListener = jest.fn();
     manager.onStateChange(stateListener);
 
     manager.handleIceConnectionStateChange('disconnected');
@@ -248,7 +247,7 @@ describe('ICEReconnectManager', () => {
     expect(manager.getState()).toBe('closed');
 
     // Advancing timers should not cause any errors or state changes
-    vi.advanceTimersByTime(2000);
+    jest.advanceTimersByTime(2000);
     expect(stateListener).toHaveBeenCalledWith('disconnected');
     expect(stateListener).not.toHaveBeenCalledWith('reconnecting');
   });

@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   AwarenessCompactor,
   PeerAwarenessEntry,
@@ -8,7 +7,7 @@ describe('AwarenessCompactor', () => {
   let compactor: AwarenessCompactor<{ user: string; cursor?: { x: number; y: number } }>;
 
   beforeEach(() => {
-    vi.useFakeTimers();
+    jest.useFakeTimers();
     compactor = new AwarenessCompactor(101, {
       heartbeatTimeoutMs: 10_000,
       tombstoneRetentionMs: 5_000,
@@ -19,7 +18,7 @@ describe('AwarenessCompactor', () => {
 
   afterEach(() => {
     compactor.dispose();
-    vi.useRealTimers();
+    jest.useRealTimers();
   });
 
   it('monotonically increments local clock on setLocalState', () => {

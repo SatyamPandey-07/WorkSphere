@@ -1,6 +1,9 @@
 /**
  * @file CompressedDeskPassMinter.ts
+ feat/circadian-lighting-runbook
+
  fix/solana-concurrency-retry
+ main
  * @description Handles compressed desk pass minting on Solana with optimistic retry logic
  * for Concurrent Merkle Tree sequence number collisions.
  */
@@ -18,6 +21,8 @@ export interface MintPassOptions {
   treeAddress: PublicKey;
   recipient?: PublicKey;
   maxRetries?: number;
+ feat/circadian-lighting-runbook
+
 
  feat/compressed-desk-pass-minter
  * @description State-compressed desk pass minter using SPL Account Compression
@@ -44,11 +49,15 @@ export interface MintCompressedPassParams {
   treeAddress: PublicKey;
   collectionMetadata: DeskPassMetadata;
  main
+ main
 }
 
 export class CompressedDeskPassMinter {
   /**
+ feat/circadian-lighting-runbook
+
  fix/solana-concurrency-retry
+ main
    * Mints a compressed desk pass with optimistic retry and exponential backoff
    * to handle sequence number mismatches on concurrent tree updates.
    */
@@ -127,6 +136,8 @@ export class CompressedDeskPassMinter {
       "Failed to mint compressed desk pass after maximum retry attempts due to persistent sequence collisions.",
     );
   }
+ feat/circadian-lighting-runbook
+
 
    * Constructs a transaction instruction for minting a compressed desk pass (cNFT).
    */
@@ -657,6 +668,7 @@ export class CompressedDeskPassMinter {
 
         return currentLevel.get(0) || this.computeEmptyRoot(this.config.maxDepth);
     }
+ main
  main
  main
 }

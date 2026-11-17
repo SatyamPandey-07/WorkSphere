@@ -21,6 +21,7 @@ export * from './batching/AdaptiveRequestBatcher';
 export * from './sync/CausalVectorClockEngine';
 export * from './finance/StreamingPaymentChannel';
 export * from './gamification/VerifiableLeaderboard';
+export * from './sensors/AmbientNoiseDosimeter';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

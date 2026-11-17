@@ -1,4 +1,5 @@
 import type * as Party from "partykit/server";
+import { verifyToken } from "@clerk/backend";
 
 export type AgentState =
   | "IDLE"
@@ -8,6 +9,12 @@ export type AgentState =
   | "OFFLINE"
   | "ERROR"
   | "TERMINATED";
+
+export interface AgentConnectionState {
+  agentId?: string;
+  userId?: string;
+  authenticated?: boolean;
+}
 
 export interface AgentHeartbeatPayload {
   agentId: string;
@@ -98,7 +105,44 @@ export default class AgentMonitorRoom implements Party.Server {
     return { expired, purged };
   }
 
-  async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
+  async onConnect(conn: Party.Connection<AgentConnectionState>, ctx: Party.ConnectionContext) {
+    // If request contains an auth token, perform asynchronous authentication handshake
+    if (ctx?.request?.url) {
+      try {
+        const url = new URL(ctx.request.url);
+        const token = url.searchParams.get("token");
+        const queryAgentId = url.searchParams.get("agentId") || undefined;
+
+        if (token) {
+          const secretKey = process.env.CLERK_SECRET_KEY;
+          const verified = await verifyToken(token, { secretKey });
+
+          // If connection closed while verification was in flight, abort cleanly
+          if (conn.readyState !== undefined && conn.readyState !== 1) {
+            return;
+          }
+
+          conn.setState({
+            authenticated: true,
+            userId: verified?.sub,
+            agentId: queryAgentId,
+          });
+
+          if (queryAgentId) {
+            this.connectionToAgentMap.set(conn.id, queryAgentId);
+          }
+        }
+      } catch (_err) {
+        conn.close(4001, "Unauthorized: Token verification failed");
+        return;
+      }
+    }
+
+    // Ensure socket is still open before continuing or dispatching snapshots
+    if (conn.readyState !== undefined && conn.readyState !== 1) {
+      return;
+    }
+
     // Proactively prune stale states so the connecting client receives accurate snapshot
     this.pruneStaleAgents();
 

@@ -11,3 +11,4 @@ export * from './PipelineStateMachineReplication';
 export * from './AsynchronousByzantineAgreement';
 export * from './VerifiableRandomBeacon';
 export * from './AsynchronousReliableBroadcast';
+export * from './BullsharkDAGCoordinator';

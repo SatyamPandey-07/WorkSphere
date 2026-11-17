@@ -42,6 +42,7 @@ export * from './solana/CompressedDeskPassMinter';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';
+export * from './spatial/PlaneMeshExtractor';
 export * from './consensus';
 export * from './zkp';
 export * from './p2p';

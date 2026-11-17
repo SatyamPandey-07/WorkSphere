@@ -21,3 +21,4 @@ export * from './LookupArgumentProver';
 export * from './SparsePolyMultiplier';
 export * from './BulletproofsVectorFolding';
 export * from './SparseMatrixZKPProver';
+export * from './MultiScalarExpArgument';

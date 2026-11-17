@@ -1,5 +1,11 @@
-export { BookmarkVenueButton } from "./BookmarkVenueButton";
-export type { BookmarkVenueButtonProps } from "./BookmarkVenueButton";
+export {
+  BookmarkVenueButton,
+  VenueBookmarkButton,
+} from "./BookmarkVenueButton";
+export type {
+  BookmarkVenueButtonProps,
+  VenueBookmarkButtonProps,
+} from "./BookmarkVenueButton";
 export { RecentlyViewedVenues } from "./RecentlyViewedVenues";
 export { RecentlyViewedTracker } from "./RecentlyViewedTracker";
 export { SearchBar } from "./SearchBar";
@@ -24,3 +30,44 @@ export type {
 } from "./HybridSearchWeightSlider";
 export { VenueList } from "./VenueList";
 export type { VenueListProps } from "./VenueList";
+export { VenueFilterBar, DEFAULT_VENUE_CATEGORIES } from "./VenueFilterBar";
+export type {
+  VenueFilterBarProps,
+  VenueFilterItem,
+  VenueCategoryItem,
+} from "./VenueFilterBar";
+export { HourlyCrowdForecast } from "./HourlyCrowdForecast";
+export type {
+  HourlyCrowdForecastProps,
+  HourlyForecastItem,
+} from "./HourlyCrowdForecast";
+export { HourlyNoiseHeatGraph } from "./HourlyNoiseHeatGraph";
+export type {
+  HourlyNoiseHeatGraphProps,
+  HourlyNoiseDataPoint,
+  DayProfileType,
+} from "./HourlyNoiseHeatGraph";
+export { VenueDetailModal, AmbientNoiseSparkline } from "./VenueDetailModal";
+export type {
+  VenueDetailModalProps,
+  AmbientNoiseSparklineProps,
+  HourlyDecibelPoint,
+} from "./VenueDetailModal";
+export { VenueCheckInButton } from "./VenueCheckInButton";
+export type { VenueCheckInButtonProps } from "./VenueCheckInButton";
+
+export {
+  VenueReviewModal,
+  validateReviewComment,
+  REVIEW_MIN_LENGTH,
+  REVIEW_MAX_LENGTH,
+  REVIEW_ERROR_MESSAGE,
+  REVIEW_MAX_ERROR_MESSAGE,
+} from "./VenueReviewModal";
+export type { VenueReviewModalProps } from "./VenueReviewModal";
+
+export { VenueFilterDropdown } from "./VenueFilterDropdown";
+export type {
+  VenueFilterDropdownProps,
+  FilterOption,
+} from "./VenueFilterDropdown";

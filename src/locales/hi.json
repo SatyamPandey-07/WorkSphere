@@ -11,5 +11,15 @@
     "viewSpeedtest": "स्पीडटेस्ट स्क्रीनशॉट देखें",
     "translate": "अनुवाद करें",
     "translating": "अनुवाद हो रहा है..."
+  },
+  "auth" : {
+    "biometricTitle": "lantern ring बायोमेट्रिक अनलॉक",
+    "biometricSubtitle": "पासकी या biometric पहचान के साथ सुरक्षित रूप से प्रमाणित करें",
+    "promptBiometric": "biometric स्कैनर पर उंगली रखें",
+    "passkeyTitle": "पासकी प्रबंधक",
+    "registerPasskey": "नई पासकी पंजीकृत करें",
+    "cancel": "रद्द करें",
+    "success": "प्रमाणन सफल रहा",
+    "error": "प्रमाणन विफल रहा। कृपया पुनः प्रयास करें।"
   }
 }

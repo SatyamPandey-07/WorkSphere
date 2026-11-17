@@ -97,19 +97,22 @@ export function useUserLocation(options: UseUserLocationOptions = {}) {
 
   const isMountedRef = useRef(true);
 
-  // Fallback to IP-based location API or default coordinates
+  // Fallback to server IP geolocation API (/api/routing/ip-location) or default coordinates
   const fallbackToIp = useCallback(async () => {
     try {
-      const response = await fetch("/api/location");
+      const response = await fetch("/api/routing/ip-location");
       if (response.ok) {
         const data = await response.json();
+        const resolvedLat = data.latitude ?? data.lat;
+        const resolvedLng = data.longitude ?? data.lng;
+
         if (
-          Number.isFinite(data.lat) &&
-          Number.isFinite(data.lng) &&
-          !(data.lat === 0 && data.lng === 0)
+          Number.isFinite(resolvedLat) &&
+          Number.isFinite(resolvedLng) &&
+          !(resolvedLat === 0 && resolvedLng === 0)
         ) {
           if (!isMountedRef.current) return;
-          setLocation({ latitude: data.lat, longitude: data.lng });
+          setLocation({ latitude: resolvedLat, longitude: resolvedLng });
           const nameParts = [data.city, data.region || data.country].filter(
             Boolean,
           );
@@ -196,7 +199,11 @@ export function useUserLocation(options: UseUserLocationOptions = {}) {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
 
-        if (Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0)) {
+        if (
+          Number.isFinite(lat) &&
+          Number.isFinite(lng) &&
+          !(lat === 0 && lng === 0)
+        ) {
           setLocation({ latitude: lat, longitude: lng });
           setSource("gps");
           setPermissionState("granted");

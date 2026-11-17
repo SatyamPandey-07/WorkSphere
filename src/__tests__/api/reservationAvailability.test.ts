@@ -4,6 +4,11 @@
 import { GET } from "@/app/api/reservations/availability/route";
 import { prisma } from "@/lib/prisma";
 import { NextRequest } from "next/server";
+import { clearMemorySWRCache } from "@/lib/cache/swrCache";
+import {
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 jest.mock("@/lib/reservations/seed-layout", () => ({
   ensureVenueLayout: jest.fn().mockResolvedValue(undefined),
@@ -49,6 +54,7 @@ async function availability(params: Record<string, string>) {
 describe("GET /api/reservations/availability", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    clearMemorySWRCache();
     (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
       id: "v1",
       name: "Venue",
@@ -64,14 +70,23 @@ describe("GET /api/reservations/availability", () => {
       ["unparseable time", { date: "2026-10-10", time: "banana" }],
       ["out-of-range time", { date: "2026-10-10", time: "99:99" }],
       ["impossible date", { date: "2026-02-31", time: "10:00" }],
-      ["non-integer duration", { date: "2026-10-10", time: "10:00", duration: "60.5" }],
-      ["duration over 8 hours", { date: "2026-10-10", time: "10:00", duration: "600" }],
-    ])("returns 400 for %s instead of showing every seat as free", async (_n, params) => {
-      const { res, body } = await availability(params);
-      expect(res.status).toBe(400);
-      expect(body.error).toBeDefined();
-      expect(prisma.booking.findMany).not.toHaveBeenCalled();
-    });
+      [
+        "non-integer duration",
+        { date: "2026-10-10", time: "10:00", duration: "60.5" },
+      ],
+      [
+        "duration over 8 hours",
+        { date: "2026-10-10", time: "10:00", duration: "600" },
+      ],
+    ])(
+      "returns 400 for %s instead of showing every seat as free",
+      async (_n, params) => {
+        const { res, body } = await availability(params);
+        expect(res.status).toBe(400);
+        expect(body.error).toBeDefined();
+        expect(prisma.booking.findMany).not.toHaveBeenCalled();
+      },
+    );
 
     it("keeps the existing 400 for missing parameters", async () => {
       const { res } = await availability({ date: "2026-10-10" });
@@ -79,7 +94,10 @@ describe("GET /api/reservations/availability", () => {
     });
 
     it("accepts a 12-hour time and echoes the normalised value", async () => {
-      const { res, body } = await availability({ date: "2026-10-10", time: "9:05 AM" });
+      const { res, body } = await availability({
+        date: "2026-10-10",
+        time: "9:05 AM",
+      });
       expect(res.status).toBe(200);
       expect(body.time).toBe("09:05");
     });
@@ -95,9 +113,86 @@ describe("GET /api/reservations/availability", () => {
   });
 
   describe("conflict detection", () => {
+    it("keeps checked-in reservations unavailable", async () => {
+      stubBookings([
+        {
+          seatId: "s1",
+          date: "2026-10-10",
+          time: "10:00",
+          duration: 60,
+          timeZone: "UTC",
+          status: "CHECKED_IN",
+        },
+      ]);
+
+      const { map } = await availability({
+        date: "2026-10-10",
+        time: "10:30",
+      });
+
+      expect(map).toEqual({ s1: false, s2: true });
+      expect(
+        (prisma.booking.findMany as jest.Mock).mock.calls[0][0].where.status.in,
+      ).toContain("CHECKED_IN");
+    });
+
+    it("caches the live slot response and returns updated seats after venue invalidation", async () => {
+      const params = { date: "2026-10-10", time: "10:00" };
+      const first = await availability(params);
+      expect(first.map.s1).toBe(true);
+
+      stubBookings([
+        {
+          seatId: "s1",
+          date: "2026-10-10",
+          time: "10:00",
+          duration: 60,
+          timeZone: "UTC",
+        },
+      ]);
+      const cached = await availability(params);
+      expect(cached.map.s1).toBe(true);
+      expect(prisma.booking.findMany).toHaveBeenCalledTimes(1);
+
+      await invalidateVenueAvailability(venueAvailabilityCacheKey("v1"));
+      const refreshed = await availability(params);
+
+      expect(refreshed.map).toEqual({ s1: false, s2: true });
+      expect(prisma.booking.findMany).toHaveBeenCalledTimes(2);
+    });
+
+    it("uses separate cache entries for different availability parameters", async () => {
+      await availability({
+        date: "2026-10-10",
+        time: "10:00",
+        duration: "60",
+        timeZone: "UTC",
+      });
+      await availability({
+        date: "2026-10-10",
+        time: "10:00",
+        duration: "90",
+        timeZone: "UTC",
+      });
+      await availability({
+        date: "2026-10-10",
+        time: "10:00",
+        duration: "90",
+        timeZone: "Asia/Colombo",
+      });
+
+      expect(prisma.booking.findMany).toHaveBeenCalledTimes(3);
+    });
+
     it("marks only the seat with an overlapping booking unavailable", async () => {
       stubBookings([
-        { seatId: "s1", date: "2026-10-10", time: "10:00", duration: 60, timeZone: "UTC" },
+        {
+          seatId: "s1",
+          date: "2026-10-10",
+          time: "10:00",
+          duration: 60,
+          timeZone: "UTC",
+        },
       ]);
       const { map } = await availability({ date: "2026-10-10", time: "10:30" });
       expect(map).toEqual({ s1: false, s2: true });
@@ -105,7 +200,13 @@ describe("GET /api/reservations/availability", () => {
 
     it("treats back-to-back bookings as available", async () => {
       stubBookings([
-        { seatId: "s1", date: "2026-10-10", time: "10:00", duration: 60, timeZone: "UTC" },
+        {
+          seatId: "s1",
+          date: "2026-10-10",
+          time: "10:00",
+          duration: 60,
+          timeZone: "UTC",
+        },
       ]);
       const { map } = await availability({ date: "2026-10-10", time: "11:00" });
       expect(map.s1).toBe(true);
@@ -113,7 +214,13 @@ describe("GET /api/reservations/availability", () => {
 
     it("sees a booking that runs past midnight from the next day", async () => {
       stubBookings([
-        { seatId: "s1", date: "2026-10-10", time: "23:00", duration: 120, timeZone: "UTC" },
+        {
+          seatId: "s1",
+          date: "2026-10-10",
+          time: "23:00",
+          duration: 120,
+          timeZone: "UTC",
+        },
       ]);
       const { map } = await availability({ date: "2026-10-11", time: "00:30" });
       expect(map.s1).toBe(false);
@@ -121,7 +228,13 @@ describe("GET /api/reservations/availability", () => {
 
     it("compares real instants across timezones", async () => {
       stubBookings([
-        { seatId: "s1", date: "2026-10-10", time: "09:00", duration: 60, timeZone: "Asia/Colombo" },
+        {
+          seatId: "s1",
+          date: "2026-10-10",
+          time: "09:00",
+          duration: 60,
+          timeZone: "Asia/Colombo",
+        },
       ]);
       const same = await availability({
         date: "2026-10-10",
@@ -140,7 +253,13 @@ describe("GET /api/reservations/availability", () => {
 
     it("honours legacy rows stored as 12-hour times", async () => {
       stubBookings([
-        { seatId: "s1", date: "2026-10-10", time: "10:00 AM", duration: null, timeZone: null },
+        {
+          seatId: "s1",
+          date: "2026-10-10",
+          time: "10:00 AM",
+          duration: null,
+          timeZone: null,
+        },
       ]);
       const { map } = await availability({ date: "2026-10-10", time: "10:15" });
       expect(map.s1).toBe(false);
@@ -148,7 +267,8 @@ describe("GET /api/reservations/availability", () => {
 
     it("queries a window of dates, not just the requested one", async () => {
       await availability({ date: "2026-10-10", time: "10:00" });
-      const where = (prisma.booking.findMany as jest.Mock).mock.calls[0][0].where;
+      const where = (prisma.booking.findMany as jest.Mock).mock.calls[0][0]
+        .where;
       expect(where.date.in).toEqual(
         expect.arrayContaining(["2026-10-09", "2026-10-10", "2026-10-11"]),
       );

@@ -7,6 +7,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyWorkHopPassToken } from "@/lib/bundles/workHopEngine";
+import {
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,14 +18,17 @@ export async function POST(req: NextRequest) {
     const { qrToken, venueId, legIndex } = body;
 
     if (!qrToken) {
-      return NextResponse.json({ error: "Missing QR pass token" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing QR pass token" },
+        { status: 400 },
+      );
     }
 
     const verification = verifyWorkHopPassToken(qrToken);
     if (!verification.isValid) {
       return NextResponse.json(
         { error: verification.error || "Invalid or counterfeit pass" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -39,7 +46,7 @@ export async function POST(req: NextRequest) {
     if (!matchingBooking) {
       return NextResponse.json(
         { error: "No matching booking leg found for this pass at this venue" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -48,6 +55,10 @@ export async function POST(req: NextRequest) {
       where: { id: matchingBooking.id },
       data: { status: "CHECKED_IN" },
     });
+
+    await invalidateVenueAvailability(
+      venueAvailabilityCacheKey(matchingBooking.venueId),
+    );
 
     return NextResponse.json({
       success: true,
@@ -67,7 +78,7 @@ export async function POST(req: NextRequest) {
     console.error("[POST /api/bookings/bundles/verify] Error:", error);
     return NextResponse.json(
       { error: "Verification error", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

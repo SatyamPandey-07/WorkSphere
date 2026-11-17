@@ -1,31 +1,62 @@
 "use client";
 
-import { useState, useEffect, ReactNode, Suspense } from "react";
+import { useState, useEffect, ReactNode, Suspense, useRef, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import YProvider from "y-partykit/provider";
 import * as Y from "yjs";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
+import {
+  AwarenessProtocol,
+  PeerPresenceState,
+  FocusTimerState,
+} from "@/core/crdt/AwarenessProtocol";
 
 interface PartyKitPresenceWrapperProps {
   children: ReactNode;
   fallback?: ReactNode;
+  deskId?: string;
+  focusTimer?: FocusTimerState | null;
+  trackCursor?: boolean;
 }
 
-function PresenceIndicator() {
+function PresenceIndicator({
+  deskId,
+  focusTimer,
+  trackCursor = false,
+}: {
+  deskId?: string;
+  focusTimer?: FocusTimerState | null;
+  trackCursor?: boolean;
+}) {
   const { user, isSignedIn } = useUser();
   const searchParams = useSearchParams();
   const folderId = searchParams?.get("folderId") || "global";
   const roomId = `presence-room-${folderId}`;
 
   const [users, setUsers] = useState<any[]>([]);
+  const awarenessProtocolRef = useRef<AwarenessProtocol | null>(null);
+
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!trackCursor || !awarenessProtocolRef.current) return;
+      awarenessProtocolRef.current.updateCursor({
+        x: e.clientX,
+        y: e.clientY,
+      });
+    },
+    [trackCursor]
+  );
 
   useEffect(() => {
     const doc = new Y.Doc();
     const host = process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
     const provider = new YProvider(host, roomId, doc);
     const awareness = provider.awareness;
+
+    const protocol = new AwarenessProtocol(doc, awareness);
+    awarenessProtocolRef.current = protocol;
 
     const localUserName =
       isSignedIn && user
@@ -35,48 +66,50 @@ function PresenceIndicator() {
     const localUserAvatar = isSignedIn && user ? user.imageUrl : null;
     const localUserRole = isSignedIn ? "Member" : "Guest";
 
-    awareness.setLocalState({
-      user: {
-        name: localUserName,
-        avatar: localUserAvatar,
-        role: localUserRole,
-        status: "active",
-      },
+    const initialStatus = focusTimer?.isActive ? "focusing" : "active";
+
+    // Set initial broadcast state including deskId, focus timer, and user info
+    protocol.setLocalState({
+      username: localUserName,
+      avatar: localUserAvatar,
+      deskId: deskId || null,
+      focusTimer: focusTimer || null,
+      status: initialStatus,
     });
 
-    const handleAwarenessChange = () => {
-      const states = Array.from(awareness.getStates().values());
-      const activeUsers = states.map((s: any) => s.user).filter(Boolean);
-      setUsers(activeUsers);
-    };
-
-    awareness.on("change", handleAwarenessChange);
-    handleAwarenessChange();
+    // Subscribe to awareness updates from peers
+    const unsubscribe = protocol.onChange((activePeers) => {
+      const activeList: any[] = [];
+      activePeers.forEach((state) => {
+        activeList.push({
+          name: state.username,
+          avatar: state.avatar,
+          role: localUserRole,
+          status: state.status,
+          deskId: state.deskId,
+          focusTimer: state.focusTimer,
+          cursor: state.cursor,
+        });
+      });
+      setUsers(activeList);
+    });
 
     let idleTimeout: ReturnType<typeof setTimeout>;
 
     const resetIdleTimer = () => {
       clearTimeout(idleTimeout);
-      const localState = awareness.getLocalState();
-      if (localState?.user?.status !== "active") {
-        awareness.setLocalState({
-          ...localState,
-          user: {
-            ...localState?.user,
-            status: "active",
-          },
+      const localState = protocol.getLocalState();
+      if (localState?.status === "idle") {
+        protocol.setLocalState({
+          status: focusTimer?.isActive ? "focusing" : "active",
         });
       }
 
       idleTimeout = setTimeout(() => {
-        const currentLocalState = awareness.getLocalState();
-        if (currentLocalState) {
-          awareness.setLocalState({
-            ...currentLocalState,
-            user: {
-              ...currentLocalState.user,
-              status: "idle",
-            },
+        const current = protocol.getLocalState();
+        if (current && current.status !== "focusing") {
+          protocol.setLocalState({
+            status: "idle",
           });
         }
       }, 60000); // 1 minute idle
@@ -85,6 +118,9 @@ function PresenceIndicator() {
     window.addEventListener("mousemove", resetIdleTimer);
     window.addEventListener("keydown", resetIdleTimer);
     window.addEventListener("click", resetIdleTimer);
+    if (trackCursor) {
+      window.addEventListener("mousemove", handleMouseMove);
+    }
 
     resetIdleTimer();
 
@@ -92,16 +128,16 @@ function PresenceIndicator() {
       window.removeEventListener("mousemove", resetIdleTimer);
       window.removeEventListener("keydown", resetIdleTimer);
       window.removeEventListener("click", resetIdleTimer);
+      if (trackCursor) {
+        window.removeEventListener("mousemove", handleMouseMove);
+      }
       clearTimeout(idleTimeout);
-      awareness.off("change", handleAwarenessChange);
+      unsubscribe();
+      protocol.destroy();
       provider.destroy();
       doc.destroy();
+      awarenessProtocolRef.current = null;
     };
-    // Depend on primitives derived from `user`, not the object itself — a
-    // hook returning a fresh object each render (as some environments do)
-    // would otherwise re-run this effect every render, tearing down and
-    // recreating the PartyKit connection in a tight loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     user?.id,
     user?.fullName,
@@ -109,6 +145,10 @@ function PresenceIndicator() {
     user?.imageUrl,
     isSignedIn,
     roomId,
+    deskId,
+    focusTimer,
+    trackCursor,
+    handleMouseMove,
   ]);
 
   if (users.length === 0) return null;
@@ -145,13 +185,23 @@ function PresenceIndicator() {
               </div>
               <span
                 className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-zinc-900 ${
-                  u.status === "active" ? "bg-green-500" : "bg-yellow-500"
+                  u.status === "active"
+                    ? "bg-green-500"
+                    : u.status === "focusing"
+                    ? "bg-purple-500"
+                    : "bg-yellow-500"
                 }`}
               />
               <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5 bg-zinc-950/90 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 border border-zinc-800 backdrop-blur-sm">
                 <p className="font-bold">{u.name}</p>
+                {u.deskId && (
+                  <p className="text-[10px] text-zinc-300">Desk: {u.deskId}</p>
+                )}
+                {u.focusTimer?.isActive && (
+                  <p className="text-[10px] text-purple-300">Focusing: {u.focusTimer.remainingSeconds}s</p>
+                )}
                 <p className="text-[10px] text-zinc-400 font-medium">
-                  {u.role}
+                  {u.role || "Member"}
                 </p>
               </div>
             </motion.div>
@@ -165,6 +215,9 @@ function PresenceIndicator() {
 export function PartyKitPresenceWrapper({
   children,
   fallback = null,
+  deskId,
+  focusTimer,
+  trackCursor = false,
 }: PartyKitPresenceWrapperProps) {
   const [isMounted, setIsMounted] = useState(false);
 
@@ -179,9 +232,15 @@ export function PartyKitPresenceWrapper({
   return (
     <>
       <Suspense fallback={null}>
-        <PresenceIndicator />
+        <PresenceIndicator
+          deskId={deskId}
+          focusTimer={focusTimer}
+          trackCursor={trackCursor}
+        />
       </Suspense>
       {children}
     </>
   );
 }
+
+export default PartyKitPresenceWrapper;

@@ -1,6 +1,5 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
 import { NextOpeningTimeBadge } from "@/components/venue/NextOpeningTimeBadge";
 
 describe("NextOpeningTimeBadge Component", () => {
@@ -68,7 +67,23 @@ describe("NextOpeningTimeBadge Component", () => {
       },
     });
 
-    // Sunday Oct 11, 2026 at 14:00 (closed Sunday, opens Monday)
+    // Saturday Oct 10, 2026 at 17:00: closed since 16:00, closed all Sunday,
+    // so the next opening is two days away and is named by its weekday.
+    const saturdayEvening = new Date(2026, 9, 10, 17, 0);
+
+    const { unmount } = render(
+      <NextOpeningTimeBadge
+        hours={weeklySchedule}
+        nowInput={saturdayEvening}
+      />,
+    );
+
+    const badge = screen.getByTestId("next-opening-time-badge");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent("Closed · Opens 8 AM Monday");
+    unmount();
+
+    // Sunday Oct 11, 2026 at 14:00: the same Monday opening is now the next day.
     const sundayAfternoon = new Date(2026, 9, 11, 14, 0);
 
     render(
@@ -78,9 +93,9 @@ describe("NextOpeningTimeBadge Component", () => {
       />,
     );
 
-    const badge = screen.getByTestId("next-opening-time-badge");
-    expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent("Closed · Opens 8 AM Monday");
+    expect(screen.getByTestId("next-opening-time-badge")).toHaveTextContent(
+      "Closed · Opens 8 AM tomorrow",
+    );
   });
 
   it("returns null for empty or missing hours", () => {

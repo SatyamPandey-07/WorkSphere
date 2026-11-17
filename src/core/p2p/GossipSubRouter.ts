@@ -34,7 +34,7 @@ export const GOSSIP_D_LOW = 4;
 export const GOSSIP_D_HIGH = 12;
 
 /* ------------------------------------------------------------------ */
-/* Crypto helpers                                                      */
+/* Crypto helpers                                                     */
 /* ------------------------------------------------------------------ */
 
 export interface GossipIdentity {
@@ -114,7 +114,7 @@ export async function verifyEd25519(
 }
 
 /* ------------------------------------------------------------------ */
-/* Duplicate suppression                                               */
+/* Duplicate suppression                                              */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -123,10 +123,6 @@ export async function verifyEd25519(
  * one starts, so memory stays bounded while the last 1x-2x `capacity` messages are
  * remembered. Bit indices use double hashing (Kirsch-Mitzenmacher) taken directly
  * from the ID bytes, which are already uniformly distributed.
- *
- * Bloom filters can return false positives (a never-seen ID reported as seen); the
- * default 1e-6 target makes that negligible, and a false negative never occurs
- * inside the retention window.
  */
 export class RotatingBloomFilter {
   private readonly bitCount: number;
@@ -180,7 +176,7 @@ export class RotatingBloomFilter {
 }
 
 /* ------------------------------------------------------------------ */
-/* Router                                                              */
+/* Router                                                             */
 /* ------------------------------------------------------------------ */
 
 export interface GossipMessage {
@@ -427,17 +423,11 @@ export class GossipSubRouter {
   public isFECActiveForTopic(topic: string): boolean {
     const targets = this.publishTargets(topic);
     if (targets.length === 0) return false;
-    // Active if any target peer in the mesh has measured loss > 5%
     return targets.some(
       (peerId) => this.peerLossMonitors.get(peerId)?.isFECEnabled() ?? false,
     );
   }
 
-  /**
-   * Publishes an audio frame to the topic.
-   * If FEC is active (measured loss > 5%), encodes with FEC and transmits parity frames when block completes.
-   * If FEC is inactive (0% loss), publishes raw frame payload without FEC overhead.
-   */
   async publishAudio(
     topic: string,
     rawPayload: Uint8Array,
@@ -448,13 +438,11 @@ export class GossipSubRouter {
     const isFEC = this.isFECActiveForTopic(topic);
 
     if (!isFEC) {
-      // Non-FEC path: broadcast raw payload directly
       const id = await this.publish(topic, rawPayload);
       publishedIds.push(id);
       return publishedIds;
     }
 
-    // FEC Path:
     let encoder = this.fecEncoders.get(topic);
     if (!encoder) {
       encoder = new FECEncoder();
@@ -481,9 +469,6 @@ export class GossipSubRouter {
     return publishedIds;
   }
 
-  /**
-   * Ingests WebRTC transport stats for a peer to update packet-loss estimation.
-   */
   public updatePeerStats(
     peerId: string,
     packetsLost: number,
@@ -497,22 +482,19 @@ export class GossipSubRouter {
     monitor.updateStats(packetsLost, packetsSentOrReceived);
   }
 
-  /** Retrieves the loss monitor for a given peer */
   public getPeerLossMonitor(peerId: string): PeerLossMonitor | undefined {
     return this.peerLossMonitors.get(peerId);
   }
 
-  /** Gets receiver for a peer */
   public getFECReceiver(peerId: string): FECReceiver | undefined {
     return this.fecReceivers.get(peerId);
   }
 
   /* ----- inbound ----- */
 
-  /** Feed raw bytes received from `peerId` (e.g. from an RTCDataChannel `message` event). */
   async handlePacket(peerId: string, data: Uint8Array): Promise<void> {
     const subscribedTopics = this.peers.get(peerId);
-    if (!subscribedTopics) return; // unknown peer
+    if (!subscribedTopics) return;
 
     let packet;
     try {
@@ -565,12 +547,10 @@ export class GossipSubRouter {
       return;
     }
 
-    // Verify before remembering the ID so a forged copy cannot shadow the genuine message.
     if (!(await verifyEd25519(packet.from, signingBytes, packet.signature))) {
       this.stats.invalidDropped++;
       return;
     }
-    // Another copy may have been accepted while we were awaiting verification.
     if (this.seen.has(idBytes)) {
       this.stats.duplicatesDropped++;
       return;
@@ -601,7 +581,6 @@ export class GossipSubRouter {
     this.stats.delivered++;
     this.opts.onMessage?.(message);
 
-    // If the payload is an FEC audio or parity packet, process via receiver
     if (isFECPacket(message.payload)) {
       try {
         const decoded = decodeFECPacket(message.payload);
@@ -621,19 +600,17 @@ export class GossipSubRouter {
         });
 
         for (const frame of readyFrames) {
-          // Pass newly available frame to onAudioFrame (unless already called via onRecovered)
           if (
             decoded.type === AudioPacketType.AudioWithFEC &&
             frame.frameSeq === decoded.frame.frameSeq
           ) {
             this.opts.onAudioFrame?.(frame, message.receivedFrom);
           } else if (decoded.type === AudioPacketType.FECParity) {
-            // readyFrames returned from parity packet processing are recovered frames
             this.opts.onAudioFrame?.(frame, message.receivedFrom);
           }
         }
       } catch {
-        // Discard invalid FEC payloads safely without affecting gossip delivery
+        // Discard invalid FEC payloads safely
       }
     }
   }

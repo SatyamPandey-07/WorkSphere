@@ -15,11 +15,9 @@ import {
   type RequestVoteResponse,
   type AppendEntriesRequest,
   type AppendEntriesResponse,
-} from './RaftClusterNode';
-import {
-  RaftLogStorage,
   type RaftCommandResult,
-} from './RaftLogStorage';
+} from './RaftClusterNode';
+import { RaftLogStorage } from './RaftLogStorage';
 
 export interface ClusterConfig {
   clusterId: string;
@@ -224,12 +222,22 @@ export class RaftConsensusEngine {
     }
 
     try {
-      const result = await target.reserveDesk(deskId, userId, durationMs);
+      // The node takes the reservation as one command object. The cluster is the
+      // scope of the desks it locks, so its id is recorded as the venue.
+      const result = await target.reserveDesk({
+        deskId,
+        venueId: this.clusterId,
+        memberId: userId,
+        expiresAt: Date.now() + durationMs,
+      });
       return {
-        success: result.success,
+        success: result.status === 'committed',
         term: target.getCurrentTerm(),
         leaderId: target.id,
         result,
+        ...(result.status === 'committed'
+          ? {}
+          : { error: result.reason ?? 'Reservation rejected' }),
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -262,13 +270,33 @@ export class RaftConsensusEngine {
       };
     }
 
-    try {
-      const result = await target.releaseDesk(deskId, userId);
+    // The node releases by reservation id, so find the lock held on this desk.
+    const lock = target.getDeskReservation(deskId);
+    if (!lock) {
       return {
-        success: result.success,
+        success: false,
+        leaderId: target.id,
+        error: `No reservation is held on desk ${deskId}`,
+      };
+    }
+    if (lock.memberId !== userId) {
+      return {
+        success: false,
+        leaderId: target.id,
+        error: `Desk ${deskId} is reserved by another member`,
+      };
+    }
+
+    try {
+      const result = await target.releaseDesk(lock.reservationId);
+      return {
+        success: result.status === 'committed',
         term: target.getCurrentTerm(),
         leaderId: target.id,
         result,
+        ...(result.status === 'committed'
+          ? {}
+          : { error: result.reason ?? 'Release rejected' }),
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

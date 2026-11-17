@@ -7,8 +7,6 @@ import {
   DEFAULT_FLOOR_PLAN_SEATS,
   Seat2D,
 } from "../../components/venue/FloorPlanCanvas";
-import { describe, it, expect, vi } from "vitest";
-
 describe("FloorPlanCanvas Keyboard Navigation Matrix (#4414)", () => {
   describe("findNearestSpatialSeat Spatial Calculation Helper", () => {
     it("finds nearest seat directly ABOVE current seat position", () => {
@@ -161,8 +159,8 @@ describe("FloorPlanCanvas Keyboard Navigation Matrix (#4414)", () => {
 
   describe("Enter / Space Selection & Reservation Triggers", () => {
     it("triggers onSelectSeat and onReserveSeat callbacks on Enter key press", () => {
-      const handleSelect = vi.fn();
-      const handleReserve = vi.fn();
+      const handleSelect = jest.fn();
+      const handleReserve = jest.fn();
 
       render(
         <FloorPlanCanvas
@@ -183,8 +181,8 @@ describe("FloorPlanCanvas Keyboard Navigation Matrix (#4414)", () => {
     });
 
     it("triggers callbacks on Space key press", () => {
-      const handleSelect = vi.fn();
-      const handleReserve = vi.fn();
+      const handleSelect = jest.fn();
+      const handleReserve = jest.fn();
 
       render(
         <FloorPlanCanvas
@@ -202,8 +200,8 @@ describe("FloorPlanCanvas Keyboard Navigation Matrix (#4414)", () => {
     });
 
     it("prevents reservation selection on reserved seats", () => {
-      const handleSelect = vi.fn();
-      const handleReserve = vi.fn();
+      const handleSelect = jest.fn();
+      const handleReserve = jest.fn();
 
       render(
         <FloorPlanCanvas

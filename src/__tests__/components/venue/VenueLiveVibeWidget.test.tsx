@@ -1,5 +1,11 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import {
   VenueLiveVibeWidget,
   VenueLivePulseBadge,
@@ -20,6 +26,39 @@ const mockVibe: VibeSummary = {
   verifiedCheckIns: 4,
   lastUpdated: "2026-10-30T10:00:00.000Z",
 };
+
+describe("VenueLivePulseBadge single-line layout on small screens (#7726)", () => {
+  it("keeps the badge on one line and inside its container", () => {
+    render(<VenueLivePulseBadge vibe={mockVibe} />);
+    const className = screen.getByTestId("venue-live-pulse-badge").className;
+    expect(className).toContain("whitespace-nowrap");
+    expect(className).toContain("max-w-full");
+  });
+
+  it("uses a smaller font below the sm breakpoint", () => {
+    render(<VenueLivePulseBadge vibe={mockVibe} />);
+    const className = screen.getByTestId("venue-live-pulse-badge").className;
+    expect(className).toContain("text-[11px]");
+    expect(className).toContain("sm:text-xs");
+  });
+
+  it("truncates the label and keeps the pulse dot from shrinking", () => {
+    render(<VenueLivePulseBadge vibe={mockVibe} />);
+    expect(screen.getByTestId("live-pulse-text").className).toContain(
+      "truncate",
+    );
+    expect(screen.getByTestId("live-pulse-dot-container").className).toContain(
+      "shrink-0",
+    );
+  });
+
+  it("keeps the full text in the DOM for screen readers when truncated", () => {
+    render(<VenueLivePulseBadge vibe={mockVibe} />);
+    expect(screen.getByTestId("live-pulse-text")).toHaveTextContent(
+      "Silent Focus · Deep Work",
+    );
+  });
+});
 
 describe("VenueLivePulseBadge", () => {
   it("renders with fallback styles when vibe is null", () => {
@@ -139,9 +178,7 @@ describe("VenueLiveVibeWidget", () => {
 
     expect(screen.getByTestId("live-vibe-reaction-bar")).toBeInTheDocument();
     expect(screen.queryByTestId("vibe-pct-silent_focus")).toBeNull();
-    expect(
-      screen.queryByTestId("live-vibe-progress-bar-container"),
-    ).toBeNull();
+    expect(screen.queryByTestId("live-vibe-progress-bar-container")).toBeNull();
   });
 
   it("hides reaction bar completely when showReactionBar is false", () => {
@@ -226,7 +263,9 @@ describe("VenueLiveVibeWidget", () => {
     await waitFor(() => {
       const errorBanner = screen.getByTestId("live-vibe-error-banner");
       expect(errorBanner).toBeInTheDocument();
-      expect(errorBanner).toHaveTextContent("Rate limit exceeded. Try again later.");
+      expect(errorBanner).toHaveTextContent(
+        "Rate limit exceeded. Try again later.",
+      );
     });
 
     // Total votes rolled back

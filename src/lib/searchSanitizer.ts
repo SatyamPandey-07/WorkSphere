@@ -25,7 +25,28 @@ export function sanitizeSearchQuery(value: unknown): string {
   if (typeof value !== "string") {
     return "";
   }
-  return value.replace(CONTROL_CHARACTERS, "").trim().slice(0, MAX_SEARCH_QUERY_LENGTH);
+  return value
+    .replace(CONTROL_CHARACTERS, "")
+    .trim()
+    .slice(0, MAX_SEARCH_QUERY_LENGTH);
+}
+
+/**
+ * Canonical form of a free-text query for cache key derivation.
+ *
+ * Every run of whitespace (spaces, tabs, newlines, non-breaking and other
+ * Unicode spaces) collapses to a single space, leading and trailing whitespace
+ * is dropped, and the result is lowercased. `" Quiet   Cafe "` and
+ * `"quiet cafe"` therefore map to the same string and share one cache entry.
+ *
+ * Uses `toLowerCase` rather than `toLocaleLowerCase` so the result never
+ * depends on the server locale.
+ */
+export function normalizeSearchQuery(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 /**

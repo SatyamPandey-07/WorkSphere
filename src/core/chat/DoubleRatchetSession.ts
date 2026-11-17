@@ -1,5 +1,8 @@
 /**
+ fix/solana-concurrency-retry
+
  fix/double-ratchet-header-validation
+ main
  * @file DoubleRatchetSession.ts
  * @description Secure Double Ratchet encryption session with pure header validation
  * to prevent session lockouts on malformed or truncated P2P packets.
@@ -97,6 +100,8 @@ export class DoubleRatchetSession {
       this.isStateValid = false;
       throw new Error(`Ratchet decryption failed: ${(err as Error).message}`);
     }
+ fix/solana-concurrency-retry
+
 
  * DoubleRatchetSession.ts
  * Signal Protocol-compatible Double Ratchet E2EE session engine.
@@ -375,6 +380,7 @@ export class DoubleRatchetSession {
     decrypted += decipher.final('utf8');
 
     return decrypted;
+ main
  main
   }
 }

@@ -36,3 +36,4 @@ export * from './ZKProofCompositionEngine';
 export * from './SubvectorAggregationProver';
 export * from './VerifiableVectorShufflingProof';
 export * from './CompressedPolyEvalArgument';
+export * from './VerifiableStateTransitionProof';

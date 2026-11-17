@@ -14,3 +14,4 @@ export * from './AsynchronousDKG';
 export * from './ThresholdVerifiableEncryption';
 export * from './HomomorphicCiphertextComparator';
 export * from './VerifiablePolynomialDelegation';
+export * from './ThresholdDecryptionVerifiableBuffer';

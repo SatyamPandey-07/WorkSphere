@@ -7,3 +7,4 @@ export * from './ThresholdSignatureScheme';
 export * from './SchnorrThresholdAggregator';
 export * from './LatticeSignatureVerifier';
 export * from './SPDZEngine';
+export * from './CrystalsKyberKEM';

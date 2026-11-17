@@ -4,6 +4,8 @@
  *   - [ ] **Title**: description (Assignee: @name, Due: YYYY-MM-DD)
  */
 
+import type { ActionItem } from "@/core/agents/ActionItemSynthesizer";
+
 export interface ExportableActionItem {
   title: string;
   description?: string | null;
@@ -68,4 +70,32 @@ export function buildMarkdownChecklist(
   if (!items || items.length === 0) return "";
   const body = items.map(formatActionItemAsMarkdown).join("\n");
   return heading ? `## ${singleLine(heading)}\n\n${body}\n` : `${body}\n`;
+}
+
+const MAX_DESCRIPTION_LENGTH = 140;
+
+/**
+ * Maps a synthesizer ActionItem to the exportable shape:
+ * - `task` becomes the title and `contextQuote` the (truncated) description
+ * - the 'UNASSIGNED' sentinel becomes "no assignee"
+ * - status COMPLETED becomes a checked box
+ */
+export function toExportableActionItem(item: ActionItem): ExportableActionItem {
+  const assignee =
+    item.assignee && item.assignee.trim().toUpperCase() !== "UNASSIGNED"
+      ? item.assignee
+      : null;
+  const quote = item.contextQuote ? singleLine(item.contextQuote) : "";
+  const description =
+    quote.length > MAX_DESCRIPTION_LENGTH
+      ? `${quote.slice(0, MAX_DESCRIPTION_LENGTH - 1).trimEnd()}…`
+      : quote || null;
+
+  return {
+    title: item.task,
+    description,
+    assignee,
+    dueDate: item.dueDate ?? null,
+    completed: item.status === "COMPLETED",
+  };
 }

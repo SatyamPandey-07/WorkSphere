@@ -23,6 +23,7 @@ export * from './finance/StreamingPaymentChannel';
 export * from './gamification/VerifiableLeaderboard';
 export * from './sensors/AmbientNoiseDosimeter';
 export * from './itinerary/TransitOptimizer';
+export * from './ocr/ReceiptLineItemExtractor';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

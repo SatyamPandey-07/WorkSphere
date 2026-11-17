@@ -102,7 +102,17 @@ export class TokenBucketLimiter implements IRateLimiter {
         retryAfter,
         identity: identifier,
       };
-    } catch {
+    } catch (err: any) {
+      if (err instanceof Error && /timeout|etimedout|timed out|abort/i.test(err.message)) {
+        return {
+          success: true,
+          limit: this.limit,
+          remaining: this.limit,
+          reset: Math.ceil((Date.now() + this.windowMs) / 1000),
+          retryAfter: 0,
+          identity: identifier,
+        };
+      }
       return null;
     }
   }

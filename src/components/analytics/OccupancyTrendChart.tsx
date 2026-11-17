@@ -61,7 +61,10 @@ export function calculateDayOfWeekOccupancy(
   }));
 
   const validBookings = bookings.filter(
-    (b) => !b.status || b.status.toUpperCase() !== "CANCELLED",
+    (b) =>
+      !b.status ||
+      (b.status.toUpperCase() !== "CANCELLED" &&
+        b.status.toUpperCase() !== "CANCELLED_BY_OPERATOR"),
   );
 
   validBookings.forEach((b) => {

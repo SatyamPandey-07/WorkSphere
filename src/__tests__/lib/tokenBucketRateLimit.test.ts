@@ -33,12 +33,13 @@ describe("Multi-Tier Token Bucket Rate Limiting (#3529)", () => {
       });
     });
 
-    it("maps authentication endpoints to 5 req/min tier", () => {
+    it("maps authentication and CSRF issuance endpoints to 30 req/min tier", () => {
       const authPaths = [
         "/api/auth/verify-otp",
         "/api/auth/reset-password",
         "/api/auth/forgot-password",
         "/api/auth/passkey/authenticate/verify",
+        "/api/auth/csrf-token",
         "/api/partykit/auth",
         "/api/user/verify-student",
       ];
@@ -47,7 +48,25 @@ describe("Multi-Tier Token Bucket Rate Limiting (#3529)", () => {
         const tier = matchRateTier(path);
         expect(tier).not.toBeNull();
         expect(tier?.name).toBe("auth");
-        expect(tier?.limit).toBe(5);
+        expect(tier?.limit).toBe(30);
+      });
+    });
+
+    it("maps mutating actions (reviews, bookings) to 10 req/min tier", () => {
+      const mutatingCases = [
+        { path: "/api/bookings", method: "POST" },
+        { path: "/api/bookings/confirm", method: "POST" },
+        { path: "/api/bookings/b-123", method: "DELETE" },
+        { path: "/api/venues/v-123/reviews", method: "POST" },
+        { path: "/api/reviews", method: "POST" },
+        { path: "/api/bookings", method: undefined },
+      ];
+
+      mutatingCases.forEach(({ path, method }) => {
+        const tier = matchRateTier(path, method);
+        expect(tier).not.toBeNull();
+        expect(tier?.name).toBe("mutations");
+        expect(tier?.limit).toBe(10);
       });
     });
 
@@ -104,22 +123,41 @@ describe("Multi-Tier Token Bucket Rate Limiting (#3529)", () => {
   });
 
   describe("checkInMemoryTokenBucket", () => {
-    it("allows up to 5 requests for auth tier, then rejects with 429 info", () => {
+    it("allows up to 30 requests for auth tier, then rejects with 429 info", () => {
       const tier = RATE_TIERS.auth;
       const id = "test-auth-client";
 
-      // 5 allowed requests
-      for (let i = 0; i < 5; i++) {
+      // 30 allowed requests
+      for (let i = 0; i < 30; i++) {
         const result = checkInMemoryTokenBucket(tier, id);
         expect(result.success).toBe(true);
-        expect(result.limit).toBe(5);
-        expect(result.remaining).toBe(4 - i);
+        expect(result.limit).toBe(30);
+        expect(result.remaining).toBe(29 - i);
       }
 
-      // 6th request is blocked
+      // 31st request is blocked
       const blocked = checkInMemoryTokenBucket(tier, id);
       expect(blocked.success).toBe(false);
-      expect(blocked.limit).toBe(5);
+      expect(blocked.limit).toBe(30);
+      expect(blocked.remaining).toBe(0);
+      expect(blocked.retryAfter).toBeGreaterThan(0);
+      expect(blocked.reset).toBeGreaterThan(0);
+    });
+
+    it("allows up to 10 requests for mutations tier, then rejects with 429 info", () => {
+      const tier = RATE_TIERS.mutations;
+      const id = "test-mutations-client";
+
+      for (let i = 0; i < 10; i++) {
+        const result = checkInMemoryTokenBucket(tier, id);
+        expect(result.success).toBe(true);
+        expect(result.limit).toBe(10);
+        expect(result.remaining).toBe(9 - i);
+      }
+
+      const blocked = checkInMemoryTokenBucket(tier, id);
+      expect(blocked.success).toBe(false);
+      expect(blocked.limit).toBe(10);
       expect(blocked.remaining).toBe(0);
       expect(blocked.retryAfter).toBeGreaterThan(0);
       expect(blocked.reset).toBeGreaterThan(0);
@@ -144,18 +182,18 @@ describe("Multi-Tier Token Bucket Rate Limiting (#3529)", () => {
     it("refills tokens over time", () => {
       jest.useFakeTimers();
       try {
-        const tier = RATE_TIERS.auth; // 5 tokens per 60,000 ms (1 token every 12,000 ms)
+        const tier = RATE_TIERS.mutations; // 10 tokens per 60,000 ms (1 token every 6,000 ms)
         const id = "refill-client";
 
-        // Exhaust all 5 tokens
-        for (let i = 0; i < 5; i++) {
+        // Exhaust all 10 tokens
+        for (let i = 0; i < 10; i++) {
           checkInMemoryTokenBucket(tier, id);
         }
 
         expect(checkInMemoryTokenBucket(tier, id).success).toBe(false);
 
-        // Advance time by 12 seconds
-        jest.advanceTimersByTime(12_000);
+        // Advance time by 6 seconds
+        jest.advanceTimersByTime(6_000);
 
         // One token refilled
         const refilledResult = checkInMemoryTokenBucket(tier, id);
@@ -175,13 +213,13 @@ describe("Multi-Tier Token Bucket Rate Limiting (#3529)", () => {
     it("maintains independent rate limit buckets across tiers for the same client IP", () => {
       const clientIp = "192.168.1.100";
 
-      // Exhaust all 5 tokens for auth tier
-      for (let i = 0; i < 5; i++) {
+      // Exhaust all 30 tokens for auth tier
+      for (let i = 0; i < 30; i++) {
         const authRes = checkInMemoryTokenBucket(RATE_TIERS.auth, clientIp);
         expect(authRes.success).toBe(true);
       }
 
-      // 6th auth request is blocked
+      // 31st auth request is blocked
       const authBlocked = checkInMemoryTokenBucket(RATE_TIERS.auth, clientIp);
       expect(authBlocked.success).toBe(false);
 

@@ -1,0 +1,6 @@
+services:
+  postgres:
+    image: worksphere-postgres-test:local
+    build:
+      context: .
+      dockerfile: .github/test-postgres/Dockerfile

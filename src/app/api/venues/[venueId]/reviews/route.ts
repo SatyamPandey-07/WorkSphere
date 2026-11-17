@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { processVenueReviewSubmission } from "@/lib/venueReviewService";
 import { apiError } from "@/lib/apiResponse";
+import { swrCache, getVenueReviewsCacheKey } from "@/lib/cache/swrCache";
+import { executeIdempotent, IdempotencyConflictError } from "@/lib/idempotency";
 
 // GET /api/venues/[venueId]/reviews - Get all reviews/ratings for a venue
 export async function GET(
@@ -35,24 +37,27 @@ export async function GET(
       return NextResponse.json({ reviews: [] });
     }
 
-    const reviews = await prisma.venueRating.findMany({
-      where: { venueId: venue.id },
-      include: {
-        user: {
-          select: {
-            firstName: true,
-            lastName: true,
+    const cacheKey = getVenueReviewsCacheKey(venue.id);
+    const reviews = await swrCache(cacheKey, async () => {
+      return await prisma.venueRating.findMany({
+        where: { venueId: venue.id },
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: "desc" },
+      });
     });
 
     return NextResponse.json({
-      reviews: reviews.map((r) => ({
+      reviews: reviews.map((r: any) => ({
         ...r,
         user: userId
-          ? { firstName: r.user.firstName, lastName: r.user.lastName }
+          ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
           : null,
       })),
     });
@@ -86,30 +91,57 @@ export async function POST(
       body?.forceOverwrite === true ||
       req.headers.get("x-force-overwrite") === "true";
 
-    const result = await processVenueReviewSubmission({
-      userId,
-      venueId,
-      body,
-      idempotencyKey,
-      forceOverwrite,
-    });
+    const submitAction = async () => {
+      const result = await processVenueReviewSubmission({
+        userId,
+        venueId,
+        body,
+        idempotencyKey,
+        forceOverwrite,
+      });
 
-    if (result.status >= 400) {
-      return apiError(
-        result.error ?? "Request failed",
-        result.status,
-        result.status === 409 ? "CONFLICT" : "VALIDATION_FAILED",
-        {
-          conflictType: result.conflictType,
-          serverReview: result.serverReview,
-          serverVenue: result.serverVenue,
-          message: result.message,
-        },
+      if (result.status >= 400) {
+        return {
+          status: result.status,
+          body: {
+            error: result.error ?? "Request failed",
+            code: result.status === 409 ? "CONFLICT" : "VALIDATION_FAILED",
+            conflictType: result.conflictType,
+            serverReview: result.serverReview,
+            serverVenue: result.serverVenue,
+            message: result.message,
+          },
+        };
+      }
+
+      return {
+        status: result.status,
+        body: result.data,
+      };
+    };
+
+    if (idempotencyKey) {
+      const scopedKey = `venue:${venueId}:review:${idempotencyKey}`;
+      const { response, cacheHit } = await executeIdempotent(
+        scopedKey,
+        { venueId, userId, body },
+        submitAction,
       );
+
+      return NextResponse.json(response.body, {
+        status: response.status,
+        headers: {
+          "X-Cache-Lookup": cacheHit ? "HIT" : "MISS",
+        },
+      });
     }
 
-    return NextResponse.json(result.data, { status: result.status });
-  } catch (error) {
+    const res = await submitAction();
+    return NextResponse.json(res.body, { status: res.status });
+  } catch (error: unknown) {
+    if (error instanceof IdempotencyConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.error("POST /api/venues/[venueId]/reviews error:", error);
     return apiError("Failed to submit review", 500, "INTERNAL_ERROR");
   }

@@ -5,3 +5,4 @@
 
 export * from './CircadianOptimizer';
 export * from './AmbientNoiseDosimeter';
+export * from './GlassBreakDetector';

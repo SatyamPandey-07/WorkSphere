@@ -46,6 +46,7 @@ export * from './spatial/PlaneMeshExtractor';
 export * from './agents/ActionItemSynthesizer';
 export * from './sustainability/EmbodiedCarbonEstimator';
 export * from './accessibility/WCAGContrastAuditor';
+export * from './queue/FairShareScheduler';
 export * from './consensus';
 export * from './zkp';
 export * from './p2p';

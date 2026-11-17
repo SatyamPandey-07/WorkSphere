@@ -14,3 +14,4 @@ export * from './AsynchronousReliableBroadcast';
 export * from './BullsharkDAGCoordinator';
 export * from './AsynchronousSharedMempool';
 export * from './AsynchronousEpochTransition';
+export * from './DelayEncryptionOrdering';

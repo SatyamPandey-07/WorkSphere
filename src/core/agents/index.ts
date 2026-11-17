@@ -5,3 +5,4 @@
 
 export * from './AgentTaskPlanner';
 export * from './ActionItemSynthesizer';
+export * from './AgentNegotiationProtocol';

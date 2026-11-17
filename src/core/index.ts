@@ -30,7 +30,7 @@ export * from './ocr/ReceiptLineItemExtractor';
 export * from './chat/DoubleRatchetSession';
 export * from './predictive/OccupancyForecaster';
 export * from './compliance/DataResidencyGuard';
-export * from './dtn/BundleRoutingCoordinator';
+export * from './dtn';
 export * from './webgl/VolumetricLightingShader';
 export * from './ergonomics/ErgonomicStrainAnalyzer';
 export * from './routing/AnycastLatencyOptimizer';

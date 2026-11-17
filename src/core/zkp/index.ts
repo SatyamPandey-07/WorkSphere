@@ -32,3 +32,4 @@ export * from './VerifiableSecretShuffle';
 export * from './BatchedPoseidonTranscript';
 export * from './SuccinctVectorCommitment';
 export * from './DynamicMembershipMMR';
+export * from './ZKProofCompositionEngine';

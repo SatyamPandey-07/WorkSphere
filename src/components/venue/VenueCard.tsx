@@ -1,6 +1,9 @@
 "use client";
 
+ fix/double-ratchet-header-validation
+
  feat/compressed-desk-pass-minter
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -82,6 +85,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/double-ratchet-header-validation
+}
+
 }
 import React, { useState } from "react";
 import { Bookmark, CalendarCheck, Heart, Share2 } from "lucide-react";
@@ -220,4 +226,5 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main

@@ -31,6 +31,7 @@ export * from './dtn/BundleRoutingCoordinator';
 export * from './webgl/VolumetricLightingShader';
 export * from './ergonomics/ErgonomicStrainAnalyzer';
 export * from './routing/AnycastLatencyOptimizer';
+export * from './pricing/SpotPricingAuctioneer';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

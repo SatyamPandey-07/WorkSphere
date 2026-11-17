@@ -9,3 +9,4 @@ export * from './CrdtVectorClock';
 export * from './CrdtDocument';
 export * from './ClipboardCRDT';
 export * from './AwarenessProtocol';
+export * from './StateGraphCRDT';

@@ -182,7 +182,7 @@ export default function TaxExportModal({
               type="date"
               data-testid="tax-export-start-date-input"
               aria-label="Start Date"
-              className="w-full rounded border p-2"
+              className="w-full rounded border p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
@@ -190,7 +190,7 @@ export default function TaxExportModal({
               type="date"
               data-testid="tax-export-end-date-input"
               aria-label="End Date"
-              className="w-full rounded border p-2"
+              className="w-full rounded border p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />

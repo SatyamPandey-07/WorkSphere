@@ -21,3 +21,15 @@ export {
   type FuelCalculationResult,
 } from "./FuelReserveGauge";
 export { default as WillpowerFocusGauge } from "./WillpowerFocusGauge";
+export {
+  default as CircadianLightingCard,
+  getScheduleKelvin,
+  kelvinToRgb,
+  MIN_KELVIN,
+  MAX_KELVIN,
+  OVERRIDE_DURATION_MS,
+  OVERRIDE_STORAGE_KEY,
+  type CircadianLightingCardProps,
+  type CircadianOverride,
+  type CircadianOverrideReason,
+} from "./CircadianLightingCard";

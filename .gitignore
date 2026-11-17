@@ -64,3 +64,6 @@ __pycache__/
 /tsc_output.txt
 /scratch_test.mjs
 /test-webhook.js
+
+# CDC logical replication checkpoint state
+/.cdc-state/

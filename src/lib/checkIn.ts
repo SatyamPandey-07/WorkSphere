@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { calculateStreak, getUnlockedMilestones } from "./streak";
 import { emitWebhookEvent } from "./webhooks/deliver";
+import { invalidateXpLeaderboard } from "./leaderboards/xpLeaderboard";
 
 /** A check-in counts toward live occupancy for this long unless renewed. */
 export const CHECK_IN_TTL_MS = 4 * 60 * 60 * 1000;
@@ -73,6 +74,7 @@ export async function recordCheckIn(
     checkedInAt: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
   });
+  void invalidateXpLeaderboard();
 
   return {
     checkIn: {

@@ -1,0 +1,92 @@
+{
+  "meetingId": "meet-launch-sync-01",
+  "title": "Launch Readiness Sync",
+  "summary": "Synthesized 7 action item(s) (4 assigned, 3 unassigned) and 1 key decision(s) for meeting: \"Launch Readiness Sync\".",
+  "totalItems": 7,
+  "assignedItems": [
+    {
+      "id": "act-0-1",
+      "task": "Deploy the staging database migration",
+      "assignee": "Alice",
+      "assigner": "Alice",
+      "dueDate": "2026-11-18",
+      "priority": "MEDIUM",
+      "status": "PENDING",
+      "confidenceScore": 0.95,
+      "contextQuote": "Thanks everyone. We decided to move the launch to 2026-12-01. I will deploy the staging database migration by tomorrow.",
+      "dependencies": []
+    },
+    {
+      "id": "act-0-2",
+      "task": "Build the API client once Alice finishes the migration",
+      "assignee": "Bob",
+      "assigner": "Bob",
+      "priority": "HIGH",
+      "status": "PENDING",
+      "confidenceScore": 0.95,
+      "contextQuote": "I will build the API client once Alice finishes the migration. High priority.",
+      "dependencies": ["act-0-1"]
+    },
+    {
+      "id": "act-0-3",
+      "task": "Write the end-to-end tests in 3 days",
+      "assignee": "Charlie",
+      "assigner": "Alice",
+      "dueDate": "2026-11-20",
+      "priority": "HIGH",
+      "status": "PENDING",
+      "confidenceScore": 0.85,
+      "contextQuote": "Charlie, can you write the end-to-end tests in 3 days? This is important.",
+      "dependencies": []
+    },
+    {
+      "id": "act-0-7",
+      "task": "Look into the cache issue if possible",
+      "assignee": "Dana",
+      "assigner": "Dana",
+      "priority": "MEDIUM",
+      "status": "PENDING",
+      "confidenceScore": 0.6,
+      "contextQuote": "I'll look into the cache issue if possible.",
+      "dependencies": []
+    }
+  ],
+  "unassignedItems": [
+    {
+      "id": "act-0-4",
+      "task": "Update the runbook",
+      "assignee": "UNASSIGNED",
+      "assigner": "Charlie",
+      "dueDate": "2026-11-24",
+      "priority": "MEDIUM",
+      "status": "PENDING",
+      "confidenceScore": 0.9,
+      "contextQuote": "Action item: update the runbook next week.",
+      "dependencies": []
+    },
+    {
+      "id": "act-0-5",
+      "task": "Rotate the API keys",
+      "assignee": "UNASSIGNED",
+      "assigner": "Dana",
+      "priority": "MEDIUM",
+      "status": "PENDING",
+      "confidenceScore": 0.65,
+      "contextQuote": "Someone should rotate the API keys. We need to confirm the retention policy.",
+      "dependencies": []
+    },
+    {
+      "id": "act-0-6",
+      "task": "Confirm the retention policy",
+      "assignee": "UNASSIGNED",
+      "assigner": "Dana",
+      "priority": "MEDIUM",
+      "status": "PENDING",
+      "confidenceScore": 0.65,
+      "contextQuote": "Someone should rotate the API keys. We need to confirm the retention policy.",
+      "dependencies": []
+    }
+  ],
+  "keyDecisions": ["move the launch to 2026-12-01"],
+  "criticalPath": ["act-0-1", "act-0-2"]
+}

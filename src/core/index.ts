@@ -13,6 +13,7 @@ export * from './health/SolarExposureTracker';
 export * from './nutrition/AllergenMatcher';
 export * from './iot/LuggageLockerProtocol';
 export * from './iot/BLEProximityAttestor';
+export * from './iot/IAQVentilationController';
 export * from './culture/SoulboundSkillAttestor';
 export * from './audio/SpatialAudioConvolver';
 export * from './security/HomomorphicAuditAggregator';

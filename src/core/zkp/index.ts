@@ -6,3 +6,4 @@
 export * from './ZKMembershipVerifier';
 export * from './ZKRangeVerifier';
 export * from './OccupancyZKPProver';
+export * from './ShufflingZKPProver';

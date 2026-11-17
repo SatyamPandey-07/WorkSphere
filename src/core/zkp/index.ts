@@ -8,3 +8,4 @@ export * from './ZKRangeVerifier';
 export * from './OccupancyZKPProver';
 export * from './ShufflingZKPProver';
 export * from './ZKCredentialAccumulator';
+export * from './SparseMerkleTree';

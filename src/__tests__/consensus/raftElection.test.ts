@@ -5,19 +5,29 @@ class SimulatedClusterNetwork implements RaftNetwork {
   private nodes: Map<string, RaftNode> = new Map();
   public partitionedNodes: Set<string> = new Set();
 
+  /**
+   * A partitioned node is cut off in both directions: it receives nothing and
+   * nothing it sends arrives. Blocking only the messages sent to it would let a
+   * partitioned leader keep sending heartbeats, so the others would never
+   * start an election.
+   */
+  private isCutOff(targetId: string, senderId: string): boolean {
+    return this.partitionedNodes.has(targetId) || this.partitionedNodes.has(senderId);
+  }
+
   register(node: RaftNode) {
     this.nodes.set(node.id, node);
   }
 
   async sendRequestVote(targetId: string, args: RequestVoteArgs): Promise<RequestVoteReply> {
-    if (this.partitionedNodes.has(targetId)) throw new Error('Network partition');
+    if (this.isCutOff(targetId, args.candidateId)) throw new Error('Network partition');
     const target = this.nodes.get(targetId);
     if (!target) throw new Error('Node not found');
     return target.onRequestVote(args);
   }
 
   async sendAppendEntries(targetId: string, args: AppendEntriesArgs): Promise<AppendEntriesReply> {
-    if (this.partitionedNodes.has(targetId)) throw new Error('Network partition');
+    if (this.isCutOff(targetId, args.leaderId)) throw new Error('Network partition');
     const target = this.nodes.get(targetId);
     if (!target) throw new Error('Node not found');
     return target.onAppendEntries(args);

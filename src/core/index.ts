@@ -17,6 +17,7 @@ export * from './culture/SoulboundSkillAttestor';
 export * from './audio/SpatialAudioConvolver';
 export * from './security/HomomorphicAuditAggregator';
 export * from './ai/EdgeIntentClassifier';
+export * from './batching/AdaptiveRequestBatcher';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

@@ -11,3 +11,4 @@ export * from './ZKCredentialAccumulator';
 export * from './SparseMerkleTree';
 export * from './VerkleTree';
 export * from './PoseidonCipher';
+export * from './IPAPolynomialCommitment';

@@ -1,3 +1,36 @@
+ feat/redlock-fencing-consensus
+import Redis from 'ioredis';
+import { Pool } from 'pg';
+import crypto from 'crypto';
+
+export interface RedlockOptions {
+  redisClients: Redis[];
+  pgPool: Pool;
+  retryCount?: number;
+  retryDelayMin?: number;
+  retryDelayMax?: number;
+  driftFactor?: number;
+}
+
+export class StaleFencingTokenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StaleFencingTokenError';
+  }
+}
+
+export class SeatHoldLockManager {
+  private redisClients: Redis[];
+  private pgPool: Pool;
+  private retryCount: number;
+  private retryDelayMin: number;
+  private retryDelayMax: number;
+  private driftFactor: number;
+
+  constructor(options: RedlockOptions) {
+    if (!options.redisClients || options.redisClients.length === 0) {
+      throw new Error('Redlock requires at least one Redis client/node.');
+
 ﻿/**
  * Distributed Seat-Hold Lock (WebLocks / Redis / PartyKit Integration)
  *
@@ -528,25 +561,24 @@ function parseLockValue(raw: unknown): SeatLockData | null {
       return JSON.parse(raw) as SeatLockData;
     } catch {
       return null;
+ main
     }
+    this.redisClients = options.redisClients;
+    this.pgPool = options.pgPool;
+    this.retryCount = options.retryCount ?? 3;
+    this.retryDelayMin = options.retryDelayMin ?? 200;
+    this.retryDelayMax = options.retryDelayMax ?? 400;
+    this.driftFactor = options.driftFactor ?? 0.01;
   }
-  if (raw && typeof raw === "object") {
-    return raw as SeatLockData;
-  }
-  return null;
-}
 
-function getLockKey(venueId: string, seatId: string): string {
-  return `seat:hold:${venueId}:${seatId}`;
-}
-
-function pruneMemoryLocks(now: number = Date.now()) {
-  for (const [key, lock] of memoryLocks.entries()) {
-    if (now >= lock.expiresAt) {
-      memoryLocks.delete(key);
-    }
+  private getQuorum(): number {
+    return Math.floor(this.redisClients.length / 2) + 1;
   }
-}
+
+ feat/redlock-fencing-consensus
+  async acquireLock(resourceKey: string, ttlMs: number): Promise<{ lockValue: string; validityTime: number; fencingToken: number } | null> {
+    const lockValue = crypto.randomBytes(16).toString('hex');
+    const quorum = this.getQuorum();
 
 /**
  * Attempts to acquire an exclusive 5-minute lock on a seat using Redlock quorum
@@ -586,8 +618,37 @@ export async function acquireSeatWebLock(
     }
     throw err;
   }
+ main
 
-  const redis = getRedis();
+    for (let attempt = 0; attempt < this.retryCount; attempt++) {
+      const startTime = Date.now();
+      let successCount = 0;
+
+ feat/redlock-fencing-consensus
+      const acquisitionPromises = this.redisClients.map(async (client) => {
+        try {
+          const res = await client.set(resourceKey, lockValue, 'PX', ttlMs, 'NX');
+          return res === 'OK';
+        } catch {
+          return false;
+        }
+      });
+
+      const results = await Promise.all(acquisitionPromises);
+      successCount = results.filter(Boolean).length;
+
+      const elapsedTime = Date.now() - startTime;
+      const clockDrift = Math.floor(ttlMs * this.driftFactor) + 2;
+      const validityTime = ttlMs - elapsedTime - clockDrift;
+
+      if (successCount >= quorum && validityTime > 0) {
+        const fencingToken = await this.incrementAndGetFencingToken(resourceKey);
+        return { lockValue, validityTime, fencingToken };
+      }
+
+      await this.releaseLock(resourceKey, lockValue);
+      const delay = Math.random() * (this.retryDelayMax - this.retryDelayMin) + this.retryDelayMin;
+      await new Promise((resolve) => setTimeout(resolve, delay));
 
   if (redis) {
     try {
@@ -658,12 +719,49 @@ export async function acquireSeatWebLock(
         "[SeatLock] Redis lock acquisition failed, falling back to memory:",
         err,
       );
+ main
+    }
+
+ feat/redlock-fencing-consensus
+    return null;
+  }
+
+  private async incrementAndGetFencingToken(resourceKey: string): Promise<number> {
+    const client = await this.pgPool.connect();
+    try {
+      await client.query('BEGIN');
+      const updateRes = await client.query(
+        `INSERT INTO lock_fencing_counters (resource_key, fencing_token, updated_at)
+         VALUES ($1, 1, NOW())
+         ON CONFLICT (resource_key)
+         DO UPDATE SET fencing_token = lock_fencing_counters.fencing_token + 1, updated_at = NOW()
+         RETURNING fencing_token`,
+        [resourceKey]
+      );
+      const token = updateRes.rows[0].fencing_token;
+      await client.query('COMMIT');
+      return token;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
   }
 
-  // Fallback: In-memory distributed lock simulation
-  pruneMemoryLocks(now);
-  const existing = memoryLocks.get(key);
+  async executeWithFencingToken(seatId: string, fencingToken: number, seatData: any): Promise<boolean> {
+    const client = await this.pgPool.connect();
+    try {
+      const res = await client.query(
+        `UPDATE seat_allocations
+         SET status = $1, fencing_token = $2, updated_at = NOW()
+         WHERE seat_id = $3 AND (fencing_token IS NULL OR $2 > fencing_token)`,
+        [seatData.status, fencingToken, seatId]
+      );
+      if ((res.rowCount ?? 0) === 0) {
+        throw new StaleFencingTokenError(`Stale fencing token ${fencingToken} rejected for seat ${seatId}`);
+      }
+      return true;
 
   if (existing && now < existing.expiresAt && existing.userId !== userId) {
     return {
@@ -1076,12 +1174,31 @@ export async function withSeatWebLock<T>(
 
     try {
       return await Promise.race([lockPromise, timeoutPromise]);
+ main
     } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+      client.release();
     }
   }
 
+ feat/redlock-fencing-consensus
+  async releaseLock(resourceKey: string, lockValue: string): Promise<void> {
+    const luaScript = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      else
+        return 0
+      end
+    `;
+    await Promise.all(
+      this.redisClients.map(async (client) => {
+        try {
+          await client.eval(luaScript, 1, resourceKey, lockValue);
+        } catch {}
+      })
+    );
+  }
+}
+
   return callback(() => {});
 }
+ main

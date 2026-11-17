@@ -1,5 +1,6 @@
 "use client";
 
+ feat/redlock-fencing-consensus
  feat/circadian-lighting-runbook
 
  fix/solana-concurrency-retry
@@ -7,6 +8,7 @@
  fix/double-ratchet-header-validation
 
  feat/compressed-desk-pass-minter
+ main
  main
  main
  main
@@ -91,6 +93,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/redlock-fencing-consensus
+}
+
  feat/circadian-lighting-runbook
 }
 
@@ -238,6 +243,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

@@ -4,3 +4,4 @@
  */
 
 export * from './ThresholdSignatureScheme';
+export * from './SchnorrThresholdAggregator';

@@ -9,3 +9,4 @@ export * from './WesolowskiVDFBeacon';
 export * from './PipelinedBFTCoordinator';
 export * from './PipelineStateMachineReplication';
 export * from './AsynchronousByzantineAgreement';
+export * from './VerifiableRandomBeacon';

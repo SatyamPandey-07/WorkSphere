@@ -10,3 +10,4 @@ export * from './SPDZEngine';
 export * from './CrystalsKyberKEM';
 export * from './ThresholdElGamalDecryption';
 export * from './ThresholdPedersenVSS';
+export * from './AsynchronousDKG';

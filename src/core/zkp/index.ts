@@ -12,3 +12,4 @@ export * from './SparseMerkleTree';
 export * from './VerkleTree';
 export * from './PoseidonCipher';
 export * from './IPAPolynomialCommitment';
+export * from './ShuffleProofAccumulator';

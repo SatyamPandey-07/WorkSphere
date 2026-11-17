@@ -13,3 +13,4 @@ export * from './VerkleTree';
 export * from './PoseidonCipher';
 export * from './IPAPolynomialCommitment';
 export * from './ShuffleProofAccumulator';
+export * from './PolyEvalArgument';

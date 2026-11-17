@@ -96,6 +96,68 @@ describe('AssetGeofenceLedger', () => {
   });
 
   describe('Telemetry & Security Violation Detection', () => {
+    it('requires three consecutive readings spanning 1500ms before recording a zone transition', () => {
+      const first = ledger.recordBeaconTelemetry(
+        'rfid_tag_998877',
+        { x: 50, y: 50 },
+        1,
+        10000
+      );
+      const second = ledger.recordBeaconTelemetry(
+        'rfid_tag_998877',
+        { x: 55, y: 55 },
+        1,
+        10750
+      );
+      const third = ledger.recordBeaconTelemetry(
+        'rfid_tag_998877',
+        { x: 60, y: 60 },
+        1,
+        11500
+      );
+
+      expect(first.event).toBeUndefined();
+      expect(second.event).toBeUndefined();
+      expect(first.currentZoneId).toBe('zone-fablab-1');
+      expect(second.currentZoneId).toBe('zone-fablab-1');
+      expect(third.event).toBeDefined();
+      expect(third.event?.fromZone).toBe('zone-fablab-1');
+      expect(third.event?.toZone).toBe('zone-lobby-1');
+      expect(third.currentZoneId).toBe('zone-lobby-1');
+      expect(ledger.getCustodyHistory('asset-vr-001')).toHaveLength(1);
+    });
+
+    it('resets confirmation when readings bounce back across the geofence boundary', () => {
+      ledger.recordBeaconTelemetry(
+        'rfid_tag_998877',
+        { x: 50, y: 50 },
+        1,
+        10000
+      );
+      ledger.recordBeaconTelemetry(
+        'rfid_tag_998877',
+        { x: 50, y: 50 },
+        2,
+        10500
+      );
+      ledger.recordBeaconTelemetry(
+        'rfid_tag_998877',
+        { x: 50, y: 50 },
+        1,
+        11000
+      );
+      const stillPending = ledger.recordBeaconTelemetry(
+        'rfid_tag_998877',
+        { x: 50, y: 50 },
+        1,
+        12500
+      );
+
+      expect(stillPending.event).toBeUndefined();
+      expect(stillPending.currentZoneId).toBe('zone-fablab-1');
+      expect(ledger.getCustodyHistory('asset-vr-001')).toHaveLength(0);
+    });
+
     it('triggers CRITICAL alert when restricted asset crosses egress perimeter without authorization', () => {
       const result = ledger.recordBeaconTelemetry(
         'rfid_tag_998877',

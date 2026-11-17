@@ -15,3 +15,4 @@ export * from './IPAPolynomialCommitment';
 export * from './ShuffleProofAccumulator';
 export * from './PolyEvalArgument';
 export * from './IPAInnerProductRangeProver';
+export * from './MembershipArgumentProver';

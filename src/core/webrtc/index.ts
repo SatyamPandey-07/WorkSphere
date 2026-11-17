@@ -4,3 +4,4 @@
  */
 
 export * from './WebRTCJitterBuffer';
+export * from './FECReedSolomon';

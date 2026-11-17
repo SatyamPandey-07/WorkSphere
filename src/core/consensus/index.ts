@@ -7,3 +7,4 @@ export * from './PietrzakVDFEngine';
 export * from './ThresholdEd25519Coordinator';
 export * from './WesolowskiVDFBeacon';
 export * from './PipelinedBFTCoordinator';
+export * from './PipelineStateMachineReplication';

@@ -4,3 +4,4 @@
  */
 
 export * from './CircadianOptimizer';
+export * from './AmbientNoiseDosimeter';

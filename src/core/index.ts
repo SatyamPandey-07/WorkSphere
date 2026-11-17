@@ -25,6 +25,7 @@ export * from './sensors/AmbientNoiseDosimeter';
 export * from './itinerary/TransitOptimizer';
 export * from './ocr/ReceiptLineItemExtractor';
 export * from './chat/DoubleRatchetSession';
+export * from './predictive/OccupancyForecaster';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

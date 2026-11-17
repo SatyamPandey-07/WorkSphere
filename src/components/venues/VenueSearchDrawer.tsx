@@ -425,6 +425,49 @@ export function VenueSearchDrawer({
     if (onClearFilters) onClearFilters();
   };
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  // Focus the search box on open; restore focus to the trigger on close
+  useEffect(() => {
+    if (!isOpen) return;
+    triggerRef.current = document.activeElement as HTMLElement | null;
+    panelRef.current
+      ?.querySelector<HTMLElement>('[data-testid="search-input"]')
+      ?.focus();
+    return () => {
+      triggerRef.current?.focus?.();
+      triggerRef.current = null;
+    };
+  }, [isOpen]);
+
+  const handleDrawerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape" && !e.defaultPrevented) {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const items = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || !panel.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !panel.contains(active))) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -434,6 +477,7 @@ export function VenueSearchDrawer({
       aria-modal="true"
       role="dialog"
       aria-label="Venue Search Filters"
+      onKeyDown={handleDrawerKeyDown}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -456,6 +500,7 @@ export function VenueSearchDrawer({
 
       {/* Mobile Bottom Drawer Panel */}
       <div
+        ref={panelRef}
         className="w-full max-h-[85vh] bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 rounded-t-[2rem] p-5 flex flex-col gap-5 overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-200 pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
@@ -536,6 +581,7 @@ export function VenueSearchDrawer({
                     e.preventDefault();
                     handleSavePreset();
                   } else if (e.key === "Escape") {
+                    e.preventDefault();
                     setIsSavingPreset(false);
                   }
                 }}

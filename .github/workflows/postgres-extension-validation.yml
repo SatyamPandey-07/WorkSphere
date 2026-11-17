@@ -1,0 +1,40 @@
+name: PostgreSQL Extension Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - docs/docker-postgres-pgvector-guide-7721
+    paths:
+      - .github/test-postgres/**
+      - .github/workflows/postgres-extension-validation.yml
+      - docker-compose.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build and start services
+        run: docker compose -f docker-compose.yml -f .github/test-postgres/compose.override.yml up -d --build --wait
+
+      - name: Check PostgreSQL readiness
+        run: docker compose -f docker-compose.yml -f .github/test-postgres/compose.override.yml exec -T postgres pg_isready -U worksphere -d worksphere_dev
+
+      - name: Install and verify required extensions
+        shell: bash
+        run: |
+          COMPOSE="docker compose -f docker-compose.yml -f .github/test-postgres/compose.override.yml"
+          $COMPOSE exec -T postgres psql -U worksphere -d worksphere_dev -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector;" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" -c "CREATE EXTENSION IF NOT EXISTS postgis;" -c "CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"
+          COUNT=$($COMPOSE exec -T postgres psql -U worksphere -d worksphere_dev -Atc "SELECT count(*) FROM pg_extension WHERE extname IN ('vector', 'pg_trgm', 'postgis', 'fuzzystrmatch');")
+          echo "Installed extensions: $COUNT"
+          test "$COUNT" = "4"
+
+      - name: Stop test services
+        if: always()
+        run: docker compose -f docker-compose.yml -f .github/test-postgres/compose.override.yml down -v

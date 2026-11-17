@@ -1,10 +1,11 @@
+
 /**
  * Centralized Domain Types for Venues
  *
  * Unified type definitions for venues across client and server components.
  */
 
-export type NoiseLevel = "quiet" | "moderate" | "loud" | string | null;
+export type NoiseLevel = "quiet" | "moderate" | "loud" | null;
 
 export interface VenueCoordinates {
   lat: number;
@@ -26,6 +27,7 @@ export interface VenueAmenities {
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
   hasAncHeadsetRental?: boolean;
+
   petsAllowedIndoors?: boolean;
   largeDogsAllowed?: boolean;
   smallDogsOnly?: boolean;
@@ -35,19 +37,24 @@ export interface VenueAmenities {
   waterBowlsProvided?: boolean;
   dogFriendly?: boolean;
   catsAllowed?: boolean;
+
   singleOriginBeans?: boolean;
   specialtyEspresso?: boolean;
   oatAlmondMilk?: boolean;
   pourOverAvailable?: boolean;
+
   seating?: number;
   coffee?: number;
   lighting?: string;
   musicStyle?: string;
   isWellLit?: boolean;
+
   hasCCTV?: boolean;
   safetyScore?: number | null;
+
   tableSize?: string | null;
   equipmentLoadout?: string | null;
+
   amenities?: Record<string, unknown>;
 }
 
@@ -63,22 +70,30 @@ export interface Venue extends VenueCoordinates, VenueAmenities, VenuePricing {
   id: string;
   name: string;
   category: string;
+
   address?: string;
   description?: string;
+
   rating?: number | null;
   score?: number;
   reviewCount?: number;
+
   placeId?: string;
   noiseLevel?: NoiseLevel;
+
   openingHours?: string;
+
   isClaimed?: boolean;
   ownerId?: string | null;
   hostMessage?: string | null;
+
   imageUrl?: string | null;
   photos?: string[];
   photoUrl?: string | null;
+
   currentOccupancy?: number;
   maxCapacity?: number;
+
   createdAt?: string | Date;
   updatedAt?: string | Date;
 }
@@ -89,3 +104,4 @@ export interface ClientVenue extends Venue {
   clusterScore?: number;
   cluster?: number;
 }
+

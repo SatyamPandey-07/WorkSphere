@@ -1,30 +1,29 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { TranslatedMessage } from "@/components/chat/TranslatedMessage";
 import * as useMessageTranslationModule from "@/hooks/useMessageTranslation";
 
 describe("TranslatedMessage Copy Button (#5630)", () => {
-  const mockTranslate = vi.fn();
-  const mockToggleOriginal = vi.fn();
+  const mockTranslate = jest.fn();
+  const mockToggleOriginal = jest.fn();
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
+    jest.clearAllMocks();
+    jest.useFakeTimers();
 
     // Mock clipboard writeText
     Object.assign(navigator, {
       clipboard: {
-        writeText: vi.fn().mockResolvedValue(undefined),
+        writeText: jest.fn().mockResolvedValue(undefined),
       },
     });
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    jest.useRealTimers();
   });
 
   it("renders copy button beside translated text and triggers clipboard writeText with tooltip confirmation", async () => {
-    vi.spyOn(useMessageTranslationModule, "useMessageTranslation").mockReturnValue({
+    jest.spyOn(useMessageTranslationModule, "useMessageTranslation").mockReturnValue({
       translation: {
         messageId: "msg-1",
         originalText: "Hola mundo",
@@ -59,7 +58,7 @@ describe("TranslatedMessage Copy Button (#5630)", () => {
 
     // After 2 seconds, tooltip reverts
     act(() => {
-      vi.advanceTimersByTime(2000);
+      jest.advanceTimersByTime(2000);
     });
 
     expect(screen.queryByRole("status")).not.toBeInTheDocument();

@@ -209,6 +209,12 @@ export const RoutingOptimizer = forwardRef<HTMLDivElement, RoutingOptimizerProps
   ) {
     const currentMode = normalizeTransportationMode(travelProfile);
 
+    const modeAriaLabels: Record<"walking" | "cycling" | "driving", string> = {
+      walking: "Select walking route mode",
+      cycling: "Select biking route mode",
+      driving: "Select driving route mode",
+    };
+
     return (
       <div
         ref={ref}
@@ -222,7 +228,7 @@ export const RoutingOptimizer = forwardRef<HTMLDivElement, RoutingOptimizerProps
           {routingQueue.length > 0 && onClearQueue && (
             <button
               onClick={onClearQueue}
-              className="text-xs text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+              className="text-xs text-red-400 hover:text-red-300 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded"
             >
               Clear Queue
             </button>
@@ -230,12 +236,19 @@ export const RoutingOptimizer = forwardRef<HTMLDivElement, RoutingOptimizerProps
         </div>
 
         {/* Travel Mode Selectors */}
-        <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-zinc-900 p-1 text-xs">
+        <div
+          className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-zinc-900 p-1 text-xs"
+          role="group"
+          aria-label="Travel mode selection"
+        >
           {(["walking", "cycling", "driving"] as const).map((mode) => (
             <button
               key={mode}
+              type="button"
               onClick={() => onTravelProfileChange?.(mode)}
-              className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
+              aria-label={modeAriaLabels[mode]}
+              aria-pressed={currentMode === mode}
+              className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                 currentMode === mode
                   ? "accent-bg text-white shadow"
                   : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
@@ -275,7 +288,7 @@ export const RoutingOptimizer = forwardRef<HTMLDivElement, RoutingOptimizerProps
                   {onRemoveVenue && (
                     <button
                       onClick={() => onRemoveVenue(idx)}
-                      className="ml-2 text-zinc-500 hover:text-zinc-300 text-sm cursor-pointer"
+                      className="ml-2 text-zinc-500 hover:text-zinc-300 text-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded"
                       aria-label={`Remove ${venue.name} from route`}
                     >
                       ×
@@ -289,7 +302,7 @@ export const RoutingOptimizer = forwardRef<HTMLDivElement, RoutingOptimizerProps
             {routingQueue.length >= 2 && onCalculateRoute && (
               <button
                 onClick={onCalculateRoute}
-                className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98] cursor-pointer"
+                className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                 style={{
                   background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 80%, #4f46e5))`,
                 }}

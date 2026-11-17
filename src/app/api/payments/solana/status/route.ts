@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   type SolanaPayStatusResponse,
   SOLANA_PAY_DEFAULT_TIMEOUT_MS,
+  SolanaRpcFailoverError,
   isSolanaPaymentExpired,
+  verifySolanaPayment,
 } from "@/lib/payments/solanaPay";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +34,7 @@ export async function GET(req: NextRequest) {
 
     const simulateConfirm = searchParams.get("simulate") === "true";
     const simulateExpired = searchParams.get("expired") === "true";
+    const signature = searchParams.get("signature");
 
     // Strict simulation rejection if not explicitly permitted
     if (simulateConfirm || simulateExpired) {
@@ -76,6 +79,72 @@ export async function GET(req: NextRequest) {
       };
       referenceStore.set(reference, statusData);
       return NextResponse.json(statusData);
+    }
+
+    // On-chain verification path: when a client supplies the transaction
+    // signature, trust the RPC-confirmed state instead of local memory. RPC
+    // outages (rate limits / 503s) are surfaced as PROCESSING + 503 so a
+    // completed transaction is never misclassified as unpaid (#5364).
+    if (signature) {
+      const createdAt = referenceStore.get(reference)?.createdAt ?? now;
+
+      try {
+        const verification = await verifySolanaPayment(signature);
+
+        if (verification.status === "CONFIRMED") {
+          const confirmedData: SolanaPayStatusResponse = {
+            reference,
+            status: "CONFIRMED",
+            signature: verification.signature,
+            slot: verification.slot,
+            timestamp: new Date().toISOString(),
+            createdAt,
+          };
+          referenceStore.set(reference, confirmedData);
+          return NextResponse.json(confirmedData);
+        }
+
+        if (verification.status === "FAILED") {
+          const failedData: SolanaPayStatusResponse = {
+            reference,
+            status: "FAILED",
+            signature: verification.signature,
+            slot: verification.slot,
+            error: verification.error ?? "Transaction failed on-chain",
+            timestamp: new Date().toISOString(),
+            createdAt,
+          };
+          referenceStore.set(reference, failedData);
+          return NextResponse.json(failedData);
+        }
+
+        // Still unconfirmed on-chain: track it as PENDING so the local TTL
+        // expiry logic can eventually retire the reference.
+        const pendingData: SolanaPayStatusResponse = {
+          reference,
+          status: "PENDING",
+          signature: verification.signature,
+          slot: verification.slot,
+          timestamp: new Date().toISOString(),
+          createdAt,
+        };
+        referenceStore.set(reference, pendingData);
+        return NextResponse.json(pendingData);
+      } catch (error) {
+        const rpcExhausted = error instanceof SolanaRpcFailoverError;
+        return NextResponse.json(
+          {
+            reference,
+            status: "PROCESSING",
+            message: rpcExhausted
+              ? "Payment verification is temporarily unavailable. Please retry shortly."
+              : "Unable to verify the payment right now. Please retry shortly.",
+            timestamp: new Date().toISOString(),
+            createdAt,
+          },
+          { status: 503 },
+        );
+      }
     }
 
     // Default / Production path: Fail-closed initialization without synthetic metadata

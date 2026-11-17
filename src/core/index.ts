@@ -34,6 +34,7 @@ export * from './routing/AnycastLatencyOptimizer';
 export * from './pricing/SpotPricingAuctioneer';
 export * from './pdf/PDFSignerEngine';
 export * from './legal/EscrowClauseValidator';
+export * from './matchmaking/TeamMatchmaker';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

@@ -1,5 +1,7 @@
 "use client";
 
+ feat/redlock-fencing-zkp-batch
+
  feat/redlock-fencing-consensus
  feat/circadian-lighting-runbook
 
@@ -8,6 +10,7 @@
  fix/double-ratchet-header-validation
 
  feat/compressed-desk-pass-minter
+ main
  main
  main
  main
@@ -93,6 +96,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/redlock-fencing-zkp-batch
+}
+
  feat/redlock-fencing-consensus
 }
 
@@ -243,6 +249,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

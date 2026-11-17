@@ -38,6 +38,7 @@ export * from './legal/EscrowClauseValidator';
 export * from './matchmaking/TeamMatchmaker';
 export * from './inventory/AssetGeofenceLedger';
 export * from './health/CircadianLightingController';
+export * from './solana/CompressedDeskPassMinter';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

@@ -27,6 +27,7 @@ export * from './ocr/ReceiptLineItemExtractor';
 export * from './chat/DoubleRatchetSession';
 export * from './predictive/OccupancyForecaster';
 export * from './compliance/DataResidencyGuard';
+export * from './dtn/BundleRoutingCoordinator';
 export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';

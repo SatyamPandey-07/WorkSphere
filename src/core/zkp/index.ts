@@ -63,3 +63,4 @@ export * from './NovaIVCStepVerifier';
 export * from './DualVerifiableSecretSharing';
 export * from './ZKInclusionAccumulator';
 export * from './ThresholdAdaptorSignature';
+export * from './GKRLayeredCircuitVerifier';

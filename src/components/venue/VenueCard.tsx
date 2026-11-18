@@ -1,6 +1,9 @@
 "use client";
 
+ feat/wocs-contributions-final
+
  feat/offline-ticket-queue
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -82,6 +85,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/wocs-contributions-final
+}
+
 }
 
 import React, { useState } from "react";
@@ -221,4 +227,5 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main

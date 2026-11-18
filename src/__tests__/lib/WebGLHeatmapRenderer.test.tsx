@@ -1,4 +1,4 @@
-import { WebGLHeatmapRenderer } from "@/lib/webgl/webglHeatmapRenderer";
+import { WebGLHeatmapRenderer } from "@/lib/webgl/WebGLHeatmapRenderer";
 import {
   HEATMAP_VERTEX_SHADER,
   HEATMAP_FRAGMENT_SHADER,

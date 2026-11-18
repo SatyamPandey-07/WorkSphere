@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { invalidateXpLeaderboard } from "@/lib/leaderboards/xpLeaderboard";
+import { normalizeRequiredText } from "@/lib/amenityVoteInput";
 
 const MIN_VOTES_TO_HIDE = 5;
 const HIDE_THRESHOLD = 60;
@@ -76,6 +78,7 @@ async function trackAccurateContributions(
         create: { userId: vote.userId, badgeType: "verified_explorer" },
       });
     }
+    await invalidateXpLeaderboard();
   }
 }
 
@@ -89,7 +92,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const { venueId, amenity, isUpvote } = await request.json();
+    const body = await request.json();
+    const venueId = normalizeRequiredText(body?.venueId);
+    const amenity = normalizeRequiredText(body?.amenity);
+    const isUpvote = body?.isUpvote;
 
     if (!venueId || !amenity || typeof isUpvote !== "boolean") {
       return NextResponse.json(

@@ -14,4 +14,11 @@ export type {
   FlightRankInfo,
 } from "./WingmanBadge";
 export { ProfileOverview } from "./ProfileOverview";
+export { NomadStatsCard } from "./NomadStatsCard";
+export type { NomadStatsCardProps } from "./NomadStatsCard";
 export type { ProfileOverviewProps } from "./ProfileOverview";
+export {
+  NomadPassportCoin,
+  NomadPassportCoinSkeleton,
+} from "./NomadPassportCoin";
+export type { NomadPassportCoinProps } from "./NomadPassportCoin";

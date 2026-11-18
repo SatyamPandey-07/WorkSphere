@@ -61,7 +61,7 @@ export function useGeoProximityCheckIn(
     const todayStr = now.toISOString().slice(0, 10);
 
     for (const b of bookings) {
-      if (b.status === "CANCELLED") continue;
+      if (b.status === "CANCELLED" || b.status === "CANCELLED_BY_OPERATOR") continue;
       if (dismissedBookingIds.has(b.id)) continue;
       if (!b.venue?.latitude || !b.venue?.longitude) continue;
 

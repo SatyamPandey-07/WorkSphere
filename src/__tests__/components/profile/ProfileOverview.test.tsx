@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { ProfileOverview } from "@/components/profile/ProfileOverview";
 
@@ -92,5 +92,57 @@ describe("ProfileOverview", () => {
     render(<ProfileOverview className="custom-test-card" />);
 
     expect(screen.getByTestId("profile-overview-card")).toHaveClass("custom-test-card");
+  });
+});
+
+
+describe("ProfileOverview carbon impact badge", () => {
+  it("renders cumulative commute offset and progress toward the profile goal", () => {
+    render(
+      <ProfileOverview
+        stats={{
+          coWorkingHours: 10,
+          sharedSessionsCount: 2,
+          visitedVenuesCount: 3,
+          commuteTrips: [
+            { distanceKm: 10, mode: "walking" },
+            { distanceKm: 5, mode: "cycling" },
+          ],
+          carbonOffsetGoalKgCo2: 5,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("profile-carbon-offset-kg")).toHaveTextContent("2.55 kg");
+    expect(screen.getByTestId("profile-carbon-trees")).toHaveTextContent("0.12 trees/year");
+    expect(screen.getByTestId("profile-carbon-progress")).toHaveAttribute(
+      "aria-valuenow",
+      "51",
+    );
+  });
+
+  it("opens a shareable badge with social sharing actions", () => {
+    render(
+      <ProfileOverview
+        stats={{
+          commuteTrips: [{ distanceKm: 10, mode: "walking" }],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("profile-carbon-share-button"));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("profile-carbon-share-x")).toHaveAttribute(
+      "href",
+      expect.stringContaining("twitter.com/intent/tweet"),
+    );
+    expect(screen.getByTestId("profile-carbon-share-linkedin")).toHaveAttribute(
+      "href",
+      expect.stringContaining("linkedin.com/sharing/share-offsite"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close share dialog" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

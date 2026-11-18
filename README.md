@@ -922,6 +922,8 @@ A massive thank you to all **132 brilliant contributors and bots** building Work
   - [Spatial Computing, WebXR & Ergonomics](#-spatial-computing-webxr--ergonomics)
   - [Digital Twin & Building IoT Orchestration](#-digital-twin--building-iot-orchestration)
   - [Decentralized Networking & Survival Mesh](#-decentralized-networking--survival-mesh)
+- [GossipSub WebRTC Mesh](docs/architecture/GOSSIPSUB_WEBRTC_MESH.md) — GossipSub parameters,
+  heartbeat intervals, peer score metrics, and IHAVE/IWANT lifecycle.
   - [Nomad Travel, Housing & War Rooms](#-nomad-travel-smart-housing--collab-war-rooms)
   - [Zero-Knowledge Proofs & Security](#-zero-knowledge-proofs-security--compliance)
 - [Core Platform Capabilities](#-core-platform-capabilities)

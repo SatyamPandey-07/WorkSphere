@@ -114,7 +114,14 @@ interface PIDState {
     integralError: number;
     lastError: number;
     lastTimestamp: number;
+    smoothedCo2?: number;
+    co2DemandActive: boolean;
+    lastDamperOpenPercent: number;
 }
+
+const CO2_EMA_ALPHA = 0.2;
+const CO2_DEADBAND_PPM = 25;
+const MAX_DAMPER_CHANGE_PERCENT_PER_SECOND = 2;
 
 export class IAQVentilationController {
     private zoneConfigs: Map<string, ZoneVentilationConfig> = new Map();
@@ -153,7 +160,10 @@ export class IAQVentilationController {
         this.pidStates.set(config.zoneId, {
             integralError: 0,
             lastError: 0,
-            lastTimestamp: Date.now()
+            lastTimestamp: Date.now(),
+            smoothedCo2: undefined,
+            co2DemandActive: false,
+            lastDamperOpenPercent: config.damperMinPercent
         });
     }
 
@@ -403,14 +413,41 @@ export class IAQVentilationController {
         // Closed-Loop PID Calculation
         let pidState = this.pidStates.get(reading.zoneId);
         if (!pidState) {
-            pidState = { integralError: 0, lastError: 0, lastTimestamp: reading.timestamp };
+            pidState = {
+                integralError: 0,
+                lastError: 0,
+                lastTimestamp: reading.timestamp,
+                smoothedCo2: reading.co2,
+                co2DemandActive: false,
+                lastDamperOpenPercent: config.damperMinPercent
+            };
             this.pidStates.set(reading.zoneId, pidState);
         }
 
         const dt = Math.max(1, (reading.timestamp - pidState.lastTimestamp) / 1000); // in seconds
 
-        // Combined normalized error: primarily CO2 error with secondary TVOC contribution
-        const co2Error = Math.max(0, reading.co2 - config.targetCo2);
+        // Smooth noisy CO2 telemetry per zone before feeding the actuator control loop.
+        const previousSmoothedCo2 = pidState.smoothedCo2 ?? reading.co2;
+        const smoothedCo2 =
+            previousSmoothedCo2 +
+            CO2_EMA_ALPHA * (reading.co2 - previousSmoothedCo2);
+        pidState.smoothedCo2 = smoothedCo2;
+
+        // Schmitt trigger: activate above target + 25 ppm and stay active until
+        // CO2 falls below target - 25 ppm. Readings inside the deadband do not
+        // toggle the ventilation demand state.
+        if (!pidState.co2DemandActive &&
+            smoothedCo2 >= config.targetCo2 + CO2_DEADBAND_PPM) {
+            pidState.co2DemandActive = true;
+        } else if (pidState.co2DemandActive &&
+            smoothedCo2 <= config.targetCo2 - CO2_DEADBAND_PPM) {
+            pidState.co2DemandActive = false;
+        }
+
+        // Combined normalized error: primarily smoothed CO2 error with secondary TVOC contribution.
+        const co2Error = pidState.co2DemandActive
+            ? Math.max(0, smoothedCo2 - config.targetCo2)
+            : 0;
         const tvocError = Math.max(0, reading.tvoc - config.targetTvoc);
         const effectiveError = (co2Error / 10.0) + (tvocError / 20.0);
 
@@ -433,13 +470,26 @@ export class IAQVentilationController {
         pidState.lastError = effectiveError;
         pidState.lastTimestamp = reading.timestamp;
 
-        // Calculate Damper Opening Percentage
+        // Calculate desired damper opening, then apply a slew-rate limit so
+        // telemetry noise cannot make the physical actuator cycle rapidly.
         const baseDamper = config.damperMinPercent;
         const rawDamper = baseDamper + pTerm + iTerm + dTerm;
-        const damperOpenPercent = Math.max(
+        const desiredDamperOpenPercent = Math.max(
             config.damperMinPercent,
             Math.min(config.damperMaxPercent, Math.round(rawDamper * 10) / 10)
         );
+        const maxDamperStep =
+            MAX_DAMPER_CHANGE_PERCENT_PER_SECOND * dt;
+        const damperDelta = desiredDamperOpenPercent - pidState.lastDamperOpenPercent;
+        const damperOpenPercent = Math.max(
+            config.damperMinPercent,
+            Math.min(
+                config.damperMaxPercent,
+                pidState.lastDamperOpenPercent +
+                    Math.sign(damperDelta) * Math.min(Math.abs(damperDelta), maxDamperStep)
+            )
+        );
+        pidState.lastDamperOpenPercent = damperOpenPercent;
 
         // Calculate Target VAV CFM Output
         const baseRequiredCfm = assessment.requiredOutdoorAirCfm;
@@ -496,6 +546,10 @@ export class IAQVentilationController {
             state.integralError = 0;
             state.lastError = 0;
             state.lastTimestamp = Date.now();
+            state.smoothedCo2 = undefined;
+            state.co2DemandActive = false;
+            state.lastDamperOpenPercent =
+                this.zoneConfigs.get(zoneId)?.damperMinPercent ?? state.lastDamperOpenPercent;
         }
     }
 }

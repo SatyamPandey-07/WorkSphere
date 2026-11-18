@@ -62,7 +62,7 @@ paths:
           in: query
           description: >
             Filter bookings by status. Accepts single status or comma-separated values 
-            (e.g., `CONFIRMED`, `CANCELLED`, `COMPLETED`, `PENDING`).
+            (e.g., `CONFIRMED`, `CANCELLED`, `CANCELLED_BY_OPERATOR`, `COMPLETED`, `PENDING`).
             Note: `COMPLETED` includes bookings explicitly marked `COMPLETED` or `CONFIRMED` with a past date.
           required: false
           schema:
@@ -200,7 +200,7 @@ components:
           example: "America/Los_Angeles"
         status:
           type: string
-          enum: [PENDING, CONFIRMED, COMPLETED, CANCELLED]
+          enum: [PENDING, CONFIRMED, COMPLETED, CANCELLED, CANCELLED_BY_OPERATOR]
           example: "CONFIRMED"
         confirmationId:
           type: string
@@ -267,7 +267,7 @@ components:
 | `limit` | `number` | `20` | `1` to `100` | Page size limit. Alias: `take`. |
 | `take` | `number` | `20` | `1` to `100` | Alias for `limit`. |
 | `cursor` | `string` | `null` | Valid record ID | Opaque cursor ID matching the last booking ID returned in the previous response. |
-| `status` | `string` | `null` | Comma-separated | Filter by booking status (`PENDING`, `CONFIRMED`, `COMPLETED`, `CANCELLED`). |
+| `status` | `string` | `null` | Comma-separated | Filter by booking status (`PENDING`, `CONFIRMED`, `COMPLETED`, `CANCELLED`, `CANCELLED_BY_OPERATOR`). |
 | `sort` | `string` | `desc` | `asc`, `desc` | Sort ordering by date and timestamp. Aliases: `order`, `dateSort`. |
 | `order` | `string` | `desc` | `asc`, `desc` | Alias for `sort`. |
 | `dateSort` | `string` | `desc` | `asc`, `desc` | Alias for `sort`. |

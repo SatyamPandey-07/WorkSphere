@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Wifi,
   QrCode,
@@ -75,15 +75,28 @@ export function VenueWifiConnectModal({
     loadWifiData();
   }, [isOpen, venueId]);
 
+  const triggerElementRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!isOpen) return;
+    if (typeof document !== "undefined") {
+      triggerElementRef.current = document.activeElement as HTMLElement | null;
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (
+        triggerElementRef.current &&
+        typeof triggerElementRef.current.focus === "function"
+      ) {
+        triggerElementRef.current.focus();
+      }
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -176,7 +189,7 @@ export function VenueWifiConnectModal({
             data-testid="wifi-connect-close-btn"
             aria-label="Close modal"
             onClick={onClose}
-            className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+            className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <X className="w-4 h-4" />
           </button>

@@ -274,3 +274,41 @@ All signaling messages travel over TLS WebSockets (`wss://`) managed by PartyKit
 | `answer`     | Peer → Peer (via server) | `{ sdp: RTCSessionDescription }` | Transmits SDP answer with `a=fingerprint:sha-256` for mutual cert pinning |
 | `ice`        | Peer → Peer (via server) | `{ candidate: RTCIceCandidate }` | Trickles ICE network candidates securely through signaling channel        |
 | `peer-leave` | Server → peers           | `{ peerId }`                     | Prompts immediate peer teardown, DataChannel closure, and key destruction |
+
+
+
+## 7. WebRTC Signaling Exchange Sequence Diagram
+
+The following Mermaid sequence diagram illustrates the complete handshake and connection establishment between two peers mediated by the PartyKit signaling server:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor PeerA as Peer A
+    participant Server as PartyKit Signaling Server
+    actor PeerB as Peer B
+
+    Note over PeerA,PeerB: Room Discovery & WebSocket Connection
+    PeerA->>Server: Connect & Join Coworking Room
+    PeerB->>Server: Connect & Join Coworking Room
+    Server-->>PeerA: Peer Joined Notification
+    Server-->>PeerB: Peer Joined Notification
+
+    Note over PeerA,PeerB: SDP Offer / Answer Exchange
+    PeerA->>Server: Send SDP Offer
+    Server->>PeerB: Forward SDP Offer
+    
+    PeerB->>Server: Send SDP Answer
+    Server->>PeerA: Forward SDP Answer
+
+    Note over PeerA,PeerB: Interactive Connectivity Establishment (ICE)
+    par Candidate Exchange
+        PeerA->>Server: Send ICE Candidate A
+        Server->>PeerB: Forward ICE Candidate A
+    and
+        PeerB->>Server: Send ICE Candidate B
+        Server->>PeerA: Forward ICE Candidate B
+    end
+
+    Note over PeerA,PeerB: Direct P2P Tunnel Active
+    PeerA->>PeerB: Direct P2P DataChannel Established (Encrypted DTLS)

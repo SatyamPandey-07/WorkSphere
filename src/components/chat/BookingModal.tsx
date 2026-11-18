@@ -97,7 +97,7 @@ function browserTimeZone(): string {
 }
 
 const inputClass =
-  "w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.7)] focus:accent-border outline-none transition-all";
+  "w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:accent-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 outline-none transition-all";
 const labelClass =
   "block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1.5";
 

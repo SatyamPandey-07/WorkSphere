@@ -8,6 +8,7 @@ import { DrawingCanvas } from "@/components/whiteboard/DrawingCanvas";
 import { RemoteCursors } from "@/components/whiteboard/RemoteCursors";
 import { StickyNotes } from "@/components/whiteboard/StickyNotes";
 import { KeyboardShortcutModal } from "@/components/whiteboard/KeyboardShortcutModal";
+import { StateChecksumVerifier } from "@/components/crdt/StateChecksumVerifier";
 import {
   exportCanvasAsPng,
   exportCanvasAsSvg,
@@ -52,6 +53,7 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
     releaseNoteLease,
     noteLeaseOwners,
     updateCursor,
+    yDoc,
   } = useMeshCanvasWhiteboard(canvasId, {
     userName,
     userColor,
@@ -240,6 +242,13 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
         isOpen={isShortcutModalOpen}
         onClose={() => setIsShortcutModalOpen(false)}
       />
+
+      {yDoc && (
+        <StateChecksumVerifier
+          documentId={canvasId}
+          doc={yDoc}
+        />
+      )}
     </div>
   );
 }

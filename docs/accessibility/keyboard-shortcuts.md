@@ -13,6 +13,7 @@ This reference cheat sheet documents keyboard interactions, focus trap managemen
 | Context / Dialog | Shortcut / Key | Target Element | Action / Behavior |
 | :--- | :--- | :--- | :--- |
 | **Global Workspace** | `Ctrl + K` / `⌘ + K` | Venue Search Bar | Focuses search input and activates search auto-complete dropdown from anywhere in the application. |
+| **Brain Terminal** | `Ctrl + K` / `⌘ + K` | Focus inside Brain Terminal | Clears the terminal log, current draft, and command history; focus remains in the command input. |
 | **Global Modals & Drawers** | `Escape` | Active Dialog / Sheet / Modal | Closes current dialog, restores focus to the invoking trigger element, and resets pending uncommitted state. |
 | **Search Bar** | `Escape` | Search Input | Clears current query string, triggers `onSearch("")`, closes suggestions dropdown, and blurs input focus. |
 | **Modal / Dialog Windows** | `Tab` | Next focusable element | Advances focus sequentially forward within the active dialog container (enforced by focus trap). |

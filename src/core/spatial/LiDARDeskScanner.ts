@@ -78,7 +78,10 @@ export class LiDARDeskScanner {
         const pose = frame.getViewerPose(this.xrRefSpace);
         if (!pose) return;
 
-        const depthInfo = frame.getDepthInformation(pose.views[0]);
+        const view = pose.views[0];
+        if (!view || !frame.getDepthInformation) return;
+
+        const depthInfo = frame.getDepthInformation(view);
         if (!depthInfo) return;
 
         const points = this.processDepthBuffer(depthInfo, pose.views[0]);

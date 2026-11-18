@@ -50,3 +50,4 @@ export * from './Halo2AccumulatorProver';
 export * from './PlookupTableProver';
 export * from './UnivariateSumcheckProver';
 export * from './BLSPoPAggregator';
+export * from './RangeBitmapProver';

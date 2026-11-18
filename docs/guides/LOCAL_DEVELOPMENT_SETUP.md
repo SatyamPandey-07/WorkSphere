@@ -1,6 +1,9 @@
+ feat/brain-terminal-a11y-docs
+
  feat/release-expired-locks-cron
 
  docs/brain-terminal-accessibility-guide
+ main
  main
 # Local Development Guide: Clerk Webhooks & Profile Sync
 
@@ -18,6 +21,9 @@ This guide walks you through setting up local webhook ingestion and profile sync
 6. Once created, copy the **Signing Secret** (`whsec_...`).
 7. Open your local `.env.local` file and add the secret:
    ```env
+ feat/brain-terminal-a11y-docs
+   CLERK_WEBHOOK_SECRET=whsec_your_actual_signing_secret_here
+
  feat/release-expired-locks-cron
    CLERK_WEBHOOK_SECRET=whsec_your_actual_signing_secret_here
 
@@ -210,5 +216,6 @@ docker compose up -d postgres redis
 npx prisma db push
 npm run db:seed
 ```
+ main
  main
  main

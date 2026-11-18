@@ -100,3 +100,4 @@ export * from './ZeroKnowledgeRangeIntersectionProver';
 export * from './ThresholdSignatureKeyRefreshProver';
 export * from './ZeroKnowledgeGraphColoringProver';
 export * from './BulletproofInnerProductVerifier';
+export * from './ZeroKnowledgeMerkleSparseNonInclusionProver';

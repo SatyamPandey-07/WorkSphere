@@ -16,6 +16,7 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { VolumeX, Wifi, Layers, MapPin, Contrast, Search } from "lucide-react";
+import { OPEN_COMMAND_PALETTE_EVENT } from "@/hooks/usePlatformModifier";
 
 export function detectPlatformShortcut(
   userAgent?: string,
@@ -180,6 +181,13 @@ export function CommandPalette({ reducedMotion }: CommandPaletteProps = {}) {
   }, [open]);
 
   useEffect(() => {
+    const handleOpen = () => setOpen(true);
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpen);
+    return () =>
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpen);
+  }, []);
+
+  useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -293,6 +301,7 @@ export function CommandPalette({ reducedMotion }: CommandPaletteProps = {}) {
             aria-expanded={open}
             aria-controls="command-palette-listbox"
             aria-activedescendant={activeItem?.id}
+            aria-keyshortcuts="Control+K Meta+K"
             aria-label="Search workspace commands"
             placeholder="Type a command or search workspace..."
           />

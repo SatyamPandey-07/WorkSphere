@@ -74,3 +74,4 @@ export * from './VerifiableEncryptionElGamal';
 export * from './ThresholdBlindTokenIssuer';
 export * from './RecursiveSNARKBridgeVerifier';
 export * from './SuccinctZKStateRollupProver';
+export * from './HomomorphicPedersenAuditProver';

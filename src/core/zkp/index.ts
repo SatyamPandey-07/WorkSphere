@@ -81,3 +81,4 @@ export * from './ZeroKnowledgeCredentialRevocationAccumulator';
 export * from './ObliviousTransferBatchProver';
 export * from './ZeroKnowledgeAuctionSealedBidProver';
 export * from './VerifiableRandomFunctionECVRF';
+export * from './ZeroKnowledgeVotingElGamalTally';

@@ -257,12 +257,21 @@ export function SignInClient({
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2"
-              >
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label
+                  htmlFor="password"
+                  className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider"
+                >
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  data-testid="sign-in-forgot-password-link"
+                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                 <input

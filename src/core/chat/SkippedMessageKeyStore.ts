@@ -1,4 +1,7 @@
+ fix/seat-hold-concurrency-race
+
  fix/skipped-key-eviction-lru
+ main
 export class SkippedMessageKeyStore {
   private static SKIPPED_KEYS_MAX_PER_CHAIN = 100;
   private cache = new Map<string, { key: string; timestamp: number; activeWindow: boolean }>();
@@ -31,6 +34,9 @@ export class SkippedMessageKeyStore {
       this.cache.delete(oldestKey);
     }
   }
+ fix/seat-hold-concurrency-race
+}
+
 }
 
 /**
@@ -590,4 +596,5 @@ export class SkippedMessageKeyStore {
     return oldestId;
   }
 }
+ main
  main

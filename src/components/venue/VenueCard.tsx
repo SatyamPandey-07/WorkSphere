@@ -1,5 +1,7 @@
 "use client";
 
+ fix/seat-hold-concurrency-race
+
  fix/skipped-key-eviction-lru
 
  docs/redlock-fencing-protocol
@@ -19,6 +21,7 @@
  feat/wocs-contributions-final
 
  feat/offline-ticket-queue
+ main
  main
  main
  main
@@ -109,6 +112,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/seat-hold-concurrency-race
+}
+
  fix/skipped-key-eviction-lru
 }
 
@@ -275,6 +281,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

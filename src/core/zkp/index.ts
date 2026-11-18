@@ -78,3 +78,4 @@ export * from './HomomorphicPedersenAuditProver';
 export * from './ThresholdECDSAPresignatureVerifier';
 export * from './VerifiableDelayFunctionWesolowski';
 export * from './ZeroKnowledgeCredentialRevocationAccumulator';
+export * from './ObliviousTransferBatchProver';

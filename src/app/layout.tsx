@@ -16,7 +16,7 @@ import { CurrencyProvider } from "@/context/CurrencyContext";
 import { SyncManager } from "../hooks/usePWA";
 import { ToastProvider } from "../components/ui/Toast";
 import { PWAUpdateListener } from "../components/PWAUpdateListener";
-import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
+import { KeyboardShortcutsModal } from "../components/ui/KeyboardShortcutsModal";
 import { KeyboardShortcutModal } from "../components/ui/KeyboardShortcutModal";
 import { CommandPalette } from "../components/CommandPalette";
 import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";

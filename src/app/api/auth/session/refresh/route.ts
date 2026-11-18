@@ -5,12 +5,16 @@ import {
   rotateRefreshToken,
   getRefreshCookieOptions,
 } from "@/lib/auth/sessionTokens";
+import { prisma } from "@/lib/prisma";
 
 /**
  * POST /api/auth/session/refresh
  *
  * Silently rotates the refresh token stored in an httpOnly cookie and issues
  * a fresh short-lived access JWT token.
+ *
+ * If the user's password has been changed since the refresh token was issued,
+ * the old token is rejected (STALE_REFTERM) to prevent persistent API access.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -36,7 +40,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await rotateRefreshToken(refreshToken);
+    // Verify the refresh token to get claims (userId, iat, etc.)
+    const claims = await (
+      await import("@/lib/auth/sessionTokens")
+    ).verifyJwt(
+      refreshToken,
+      undefined,
+      { checkPasswordChange: true }
+    );
+
+    if (!claims || claims.tokenType !== "refresh") {
+      return NextResponse.json(
+        { error: "Session expired or invalid. Please sign in again.", code: "INVALID" },
+        { status: 401 },
+      );
+    }
+
+    const { sub: userId, iat } = claims;
+
+    // Fetch user's passwordChangedAt to check token freshness
+    const user = await prisma.user.findUnique({ where: { id: userId } } as any);
+    const passwordChangedAt = user?.passwordChangedAt
+      ? Math.floor(user.passwordChangedAt.getTime() / 1000)
+      : undefined;
+
+    // Check that refresh token was issued after password change
+    let passwordCheckResult;
+    if (passwordChangedAt !== undefined && iat !== undefined && iat < passwordChangedAt) {
+      passwordCheckResult = { success: false, error: "STALE_REFTERM" };
+    } else {
+      passwordCheckResult = { success: true };
+    }
+
+    if (!passwordCheckResult.success) {
+      return NextResponse.json(
+        {
+          error:
+            "Session invalidated. Your password was changed on another device. Please sign in again.",
+          code: "STALE_REFTERM",
+        },
+        { status: 401 },
+      );
+    }
+
+    // Rotate the refresh token with password change check
+    const result = await rotateRefreshToken(
+      refreshToken,
+      undefined,
+      passwordChangedAt
+    );
 
     if (!result.success) {
       const response = NextResponse.json(

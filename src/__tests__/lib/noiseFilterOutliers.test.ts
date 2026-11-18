@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from "vitest";
 import {
   NoiseAggregator,
   calculateMedian,
@@ -122,6 +121,42 @@ describe("NoiseAggregator: Hampel Outlier Rejection & Exponential Decay Smoothin
     });
   });
 
+  describe("Sustained level change", () => {
+    it("accepts a new level once it holds, and reports how long it was rejected", () => {
+      const now = Date.now();
+      for (let i = 0; i < 10; i++) {
+        aggregator.processSample({ decibel: 45, timestamp: now + i * 1000 });
+      }
+
+      const flags: boolean[] = [];
+      for (let i = 10; i < 30; i++) {
+        flags.push(
+          aggregator.processSample({ decibel: 75, timestamp: now + i * 1000 })
+            .isOutlier,
+        );
+      }
+
+      // Rejected while 75 dB is the minority of the 10-sample window, accepted after.
+      expect(flags.slice(0, 4).every(Boolean)).toBe(true);
+      expect(flags.slice(6).some(Boolean)).toBe(false);
+    });
+
+    it("still rejects a single spike in a steady room", () => {
+      const now = Date.now();
+      for (let i = 0; i < 10; i++) {
+        aggregator.processSample({ decibel: 45, timestamp: now + i * 1000 });
+      }
+
+      const spike = aggregator.processSample({ decibel: 110, timestamp: now + 10_000 });
+      const after = aggregator.processSample({ decibel: 45, timestamp: now + 11_000 });
+
+      expect(spike.isOutlier).toBe(true);
+      expect(spike.filteredDecibel).toBe(45);
+      expect(after.isOutlier).toBe(false);
+      expect(after.emaDecibel).toBe(45);
+    });
+  });
+
   describe("Exponential Moving Average (EMA, α=0.15) Tracking", () => {
     it("smoothly tracks sustained acoustic transitions from quiet (45 dB) to loud (75 dB)", () => {
       const now = Date.now();
@@ -210,7 +245,9 @@ describe("NoiseAggregator: Hampel Outlier Rejection & Exponential Decay Smoothin
 
       const nextValid = aggregator.processSample({ decibel: 51, timestamp: now + 4000 });
       expect(nextValid.isOutlier).toBe(false);
-      expect(nextValid.emaDecibel).toBeCloseTo(51, 0);
+      // The average is what the three valid readings alone give (alpha = 0.15):
+      // 50, then 0.15 * 52 + 0.85 * 50 = 50.3, then 0.15 * 51 + 0.85 * 50.3.
+      expect(nextValid.emaDecibel).toBeCloseTo(0.15 * 51 + 0.85 * 50.3, 5);
     });
   });
 });

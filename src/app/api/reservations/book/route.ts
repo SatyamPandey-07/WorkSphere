@@ -19,6 +19,10 @@ import {
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { conflictDateWindow, hasBookingConflict } from "@/lib/bookingOverlap";
 import { releaseSeatWebLock } from "@/lib/locks/seatHoldLock";
+import {
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 const PAST_GRACE_MS = 15 * 60 * 1000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -275,6 +279,8 @@ async function handleBooking(request: NextRequest): Promise<NextResponse> {
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
+
+      await invalidateVenueAvailability(venueAvailabilityCacheKey(venueId));
 
       if (guestEmails.length > 0) {
         await prisma.bookingGuest

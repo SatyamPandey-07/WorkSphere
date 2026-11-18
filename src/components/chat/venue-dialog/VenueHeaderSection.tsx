@@ -232,7 +232,7 @@ export function VenueHeaderSection({
         </div>
 
         <div className="absolute bottom-6 left-6 right-6 pointer-events-none">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black accent-bg-80 backdrop-blur-md accent-border-50 text-white px-2.5 py-1 rounded shadow-lg pointer-events-auto">
               <CategoryIcon className="w-3.5 h-3.5" />
               {venue?.category?.replace("_", " ") || "Workspace"}

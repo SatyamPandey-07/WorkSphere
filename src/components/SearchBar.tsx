@@ -11,7 +11,10 @@ export interface SearchBarProps {
   onSelect?: (venue: VenueSearchResult) => void;
   onSearch?: (query: string) => void;
   className?: string;
+  /** Wait this long after the last keystroke before searching (default: 300ms). Enter searches at once. */
   debounceMs?: number;
+  /** Shortest trimmed query that is sent to the server (default: 2). An empty query resets the search. */
+  minQueryLength?: number;
   initialQuery?: string;
   autoFocus?: boolean;
   showAmenityPills?: boolean;
@@ -41,7 +44,8 @@ export function SearchBar({
   onSelect,
   onSearch,
   className = "",
-  debounceMs = 250,
+  debounceMs = 300,
+  minQueryLength = 2,
   initialQuery = "",
   autoFocus = false,
   syncWithUrl = true,
@@ -56,17 +60,11 @@ export function SearchBar({
     end: null,
   });
 
-  // Navigation hooks with fallback for unit test environments
-  let router: any = null;
-  let searchParams: any = null;
-  let pathname: any = null;
-  try {
-    router = useRouter();
-    searchParams = useSearchParams();
-    pathname = usePathname();
-  } catch {
-    // Graceful fallback
-  }
+  // Hooks must run unconditionally on every render (rules of hooks). Unit
+  // tests get these from the next/navigation mock in jest.setup.js.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
 
   const {
     query,
@@ -74,9 +72,10 @@ export function SearchBar({
     venues,
     suggestedQuery,
     isLoading,
+    isDebouncing,
     clear,
     search,
-  } = useVenueSearch({ initialQuery, debounceMs });
+  } = useVenueSearch({ initialQuery, debounceMs, minQueryLength });
 
   // Detect OS for shortcut display badge (⌘K on macOS, Ctrl+K elsewhere)
   useEffect(() => {
@@ -279,6 +278,17 @@ export function SearchBar({
         />
 
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-auto">
+          {isDebouncing && !isLoading && (
+            <span
+              data-testid="search-bar-typing-indicator"
+              aria-hidden="true"
+              className="flex items-center gap-0.5"
+            >
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse" />
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse [animation-delay:150ms]" />
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse [animation-delay:300ms]" />
+            </span>
+          )}
           {isLoading && (
             <Loader2
               data-testid="search-bar-loader"
@@ -381,11 +391,21 @@ export function SearchBar({
                   </div>
                 )}
               </div>
-              {venue.category && (
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-                  {venue.category}
-                </span>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {venue.fuzzyMatched === true && (
+                  <span
+                    data-testid="search-bar-fuzzy-badge"
+                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+                  >
+                    Fuzzy match suggestion
+                  </span>
+                )}
+                {venue.category && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                    {venue.category}
+                  </span>
+                )}
+              </div>
             </li>
           ))}
         </ul>

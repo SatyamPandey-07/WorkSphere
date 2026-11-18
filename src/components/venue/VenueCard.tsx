@@ -1,8 +1,19 @@
 "use client";
 
- fix/telemetry-ws-backoff-jitter
+ feat/redlock-fencing-zkp-batch
 
- fix/canvas-provider-idb-memory-leak
+ feat/redlock-fencing-consensus
+ feat/circadian-lighting-runbook
+
+ fix/solana-concurrency-retry
+
+ fix/double-ratchet-header-validation
+
+ feat/compressed-desk-pass-minter
+ main
+ main
+ main
+ main
  main
 import React from "react";
 import Image from "next/image";
@@ -85,11 +96,22 @@ export function VenueCard({
       </div>
     </div>
   );
- fix/telemetry-ws-backoff-jitter
+ feat/redlock-fencing-zkp-batch
+}
+
+ feat/redlock-fencing-consensus
+}
+
+ feat/circadian-lighting-runbook
+}
+
+ fix/solana-concurrency-retry
+}
+
+ fix/double-ratchet-header-validation
 }
 
 }
-
 import React, { useState } from "react";
 import { Bookmark, CalendarCheck, Heart, Share2 } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
@@ -117,7 +139,7 @@ export interface VenueCardProps {
 }
 
 const focusRingClasses =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
 
 export const VenueCard: React.FC<VenueCardProps> = ({
   venue,
@@ -227,5 +249,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
+ main
+ main
+ main
  main
  main

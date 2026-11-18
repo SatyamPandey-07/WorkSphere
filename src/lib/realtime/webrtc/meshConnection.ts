@@ -100,3 +100,77 @@ export async function attachSimulcastVideoTrack(
 
   return { sender, controller };
 }
+
+import * as Y from "yjs";
+import { CrdtDeltaSyncSession } from "@/lib/crdt/canvasProvider";
+
+export interface CrdtDataChannelBinding {
+  session: CrdtDeltaSyncSession;
+  detach: () => void;
+}
+
+export function attachCrdtDeltaSyncChannel(
+  channel: RTCDataChannel,
+  doc: Y.Doc,
+  peerId: string,
+  options?: { maxChunkPayloadSize?: number },
+): CrdtDataChannelBinding {
+  channel.binaryType = "arraybuffer";
+
+  const session = new CrdtDeltaSyncSession({
+    doc,
+    peerId,
+    maxChunkPayloadSize: options?.maxChunkPayloadSize,
+    sendFrame: (frame) => {
+      if (channel.readyState === "open") {
+        const buffer = frame.buffer.slice(
+          frame.byteOffset,
+          frame.byteOffset + frame.byteLength,
+        ) as ArrayBuffer;
+        channel.send(buffer);
+      }
+    },
+  });
+
+  const handleMessage = (event: MessageEvent) => {
+    if (event.data instanceof ArrayBuffer) {
+      session.receiveFrame(new Uint8Array(event.data));
+    } else if (ArrayBuffer.isView(event.data)) {
+      session.receiveFrame(
+        new Uint8Array(
+          event.data.buffer,
+          event.data.byteOffset,
+          event.data.byteLength,
+        ),
+      );
+    }
+  };
+
+  const handleOpen = () => {
+    session.initiateStateVectorHandshake();
+  };
+
+  const handleLocalDocUpdate = (update: Uint8Array, origin: unknown) => {
+    if (origin === "crdt-delta-sync-remote") return;
+    if (channel.readyState === "open") {
+      session.broadcastLocalDelta(update);
+    }
+  };
+
+  channel.addEventListener("message", handleMessage);
+  channel.addEventListener("open", handleOpen);
+  doc.on("update", handleLocalDocUpdate);
+
+  if (channel.readyState === "open") {
+    session.initiateStateVectorHandshake();
+  }
+
+  return {
+    session,
+    detach: () => {
+      channel.removeEventListener("message", handleMessage);
+      channel.removeEventListener("open", handleOpen);
+      doc.off("update", handleLocalDocUpdate);
+    },
+  };
+}

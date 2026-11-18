@@ -7,6 +7,11 @@ import {
   isStateVectorBehind,
 } from "./snapshotManager";
 import { compressYjsUpdate } from "./yjsCompression";
+import {
+  CrdtFrameMessageType,
+  CrdtFrameReassembler,
+  encodeCrdtFrames,
+} from "./dataChannelFraming";
 
 /* ------------------------------------------------------------------------- *
  * IndexedDB change-journal provider (#7713)
@@ -277,24 +282,7 @@ export class CanvasJournalProvider {
 
 /* ------------------------------------------------------------------------- *
  * Offline change-journal replay buffer for decentralized canvas sync (#7528)
- *
- * When a nomad is editing a board over unstable mobile coverage the socket can
- * drop mid-edit. The journal persists every unconfirmed local transaction block
- * to IndexedDB (surviving browser restarts) and re-streams the backlog in
- * sequence order once the transport reconnects, before awareness sync resumes.
- * A per-block checksum plus a post-sync document checksum let peers detect
- * corruption and divergence instead of silently drifting apart.
- *
  * Differential snapshot pruning and state-vector compaction (#7741)
- *
- * Long drawing sessions append thousands of micro-updates to the journal. Once
- * the room holds more than `DEFAULT_MAX_JOURNAL_RECORDS` raw records or more
- * than `DEFAULT_MAX_COMPACTION_BYTES` of them, a background worker encodes the
- * whole document with `Y.encodeStateAsUpdate(doc)` and, in one atomic
- * IndexedDB transaction, stores that baseline snapshot and deletes every
- * historical record the snapshot's state vector supersedes. The document is
- * round-tripped through a scratch `Y.Doc` before and after the write so a
- * failed compaction can never silently drop edits.
  * ------------------------------------------------------------------------- */
 
 export const CANVAS_JOURNAL_DB = "worksphere-crdt-canvas-journal";
@@ -315,14 +303,14 @@ export const JOURNAL_REPLAY_ORIGIN = "journal-replay";
 /** Sentinel transaction origin for updates applied from a stored snapshot. */
 export const SNAPSHOT_RECOVERY_ORIGIN = "snapshot-recovery";
 
+/** Sentinel transaction origin for internal tombstone enforcement. */
+export const TOMBSTONE_ENFORCEMENT_ORIGIN = "crdt-tombstone-enforcement";
+
 /** A single durable, ordered change block queued while offline. */
 export interface JournalBlock {
-  /** Monotonic per-room sequence number (the replay ordering key). */
   seq: number;
   roomName: string;
-  /** Serialized `Y.encodeStateAsUpdate` bytes, stored as a plain array. */
   update: number[];
-  /** FNV-1a 64-bit checksum of `update` for corruption detection. */
   checksum: string;
   createdAt: number;
 }
@@ -330,13 +318,9 @@ export interface JournalBlock {
 /** A consolidated baseline for a room produced by journal compaction. */
 export interface CanvasSnapshot {
   roomName: string;
-  /** `Y.encodeStateAsUpdate(doc)` bytes, stored as a plain array. */
   update: number[];
-  /** `Y.encodeStateVector(doc)` bytes captured alongside `update`. */
   stateVector: number[];
-  /** FNV-1a checksum of `update` for integrity verification. */
   checksum: string;
-  /** Number of raw journal records folded into this snapshot. */
   opsAtSnapshot: number;
   createdAt: number;
 }
@@ -345,7 +329,6 @@ export interface CanvasSnapshot {
 export interface CanvasJournalMeta {
   roomName: string;
   lastSeq: number;
-  /** Number of records folded into the most recent snapshot. */
   opsAtSnapshot?: number;
   compactedAt?: number;
 }
@@ -353,13 +336,9 @@ export interface CanvasJournalMeta {
 /** Snapshot of the journal's on-disk footprint for a room. */
 export interface CanvasJournalStats {
   roomName: string;
-  /** Number of raw update records still stored. */
   recordCount: number;
-  /** Sum of the raw update payload sizes, in bytes. */
   totalBytes: number;
-  /** Highest sequence number ever issued for the room. */
   latestSeq: number;
-  /** Records folded into the last snapshot. */
   opsSinceSnapshot: number;
   hasSnapshot: boolean;
   snapshotChecksum: string | null;
@@ -369,15 +348,12 @@ export interface CanvasJournalStats {
 /** Outcome of an atomic snapshot + prune transaction. */
 export interface CanvasCompactionResult {
   snapshot: CanvasSnapshot;
-  /** Number of raw journal records deleted by the transaction. */
   deletedRecords: number;
-  /** Bytes of raw journal records reclaimed by the transaction. */
   reclaimedBytes: number;
 }
 
 /** Outcome of replaying a stored snapshot plus any surviving journal blocks. */
 export interface JournalRestoreResult {
-  /** True when applying the snapshot/journal changed the local document. */
   restored: boolean;
   appliedBlocks: number;
   checksum: string;
@@ -394,18 +370,11 @@ export class CanvasSnapshotIntegrityError extends Error {
 
 /** Outcome of a journal replay, including post-sync convergence state. */
 export interface ReplayResult {
-  /** Number of blocks successfully re-streamed and cleared. */
   replayed: number;
-  /** Checksum of the local document after replay. */
   checksum: string;
-  /** Whether local and remote checksums matched (`null` when not supplied). */
   converged: boolean | null;
 }
 
-/**
- * Minimal transport abstraction the provider streams updates through. The
- * caller wires this to its WebSocket/PartyKit connection.
- */
 export interface CanvasTransport {
   send(update: Uint8Array): void;
   isConnected(): boolean;
@@ -414,26 +383,14 @@ export interface CanvasTransport {
 export interface CompactionConfig {
   maxOperations?: number;
   checkpointIntervalMs?: number;
-  /**
-   * Force-enable/disable the IndexedDB journal. Defaults to on whenever a
-   * transport is supplied and IndexedDB is available.
-   */
   enableJournal?: boolean;
-  /** Override the journal database name (tests / multiple boards). */
   journalDbName?: string;
-  /** Transport used for live streaming and offline replay. */
   transport?: CanvasTransport;
-  /** Invoked after a reconnect replay completes, to resume awareness sync. */
   onReconnected?: (result: ReplayResult) => void;
-  /** Raw journal record threshold. Defaults to 500. */
   maxJournalRecords?: number;
-  /** Raw journal byte threshold. Defaults to 5 MB. */
   maxCompactionBytes?: number;
-  /** Run threshold compaction in the background. Defaults to on. */
   enableAutoCompaction?: boolean;
-  /** Invoked after a successful compaction. */
   onCompacted?: (result: CanvasCompactionResult) => void;
-  /** Invoked when a background compaction fails. */
   onCompactionError?: (error: unknown) => void;
 }
 
@@ -468,13 +425,6 @@ interface IdleGlobal {
 
 const SNAPSHOT_REDIS_KEY_PREFIX = "crdt:room:";
 
-/**
- * FNV-1a 64-bit hash of a byte array, rendered as a zero-padded hex string.
- * Deterministic and dependency-free so it runs identically in the browser and
- * on the server. Two peers that have integrated the same set of Yjs updates
- * produce byte-identical `Y.encodeStateAsUpdate` output, so equal checksums
- * imply converged documents.
- */
 export function computeChecksum(bytes: Uint8Array): string {
   let hash = 0xcbf29ce484222325n;
   const prime = 0x100000001b3n;
@@ -486,7 +436,6 @@ export function computeChecksum(bytes: Uint8Array): string {
   return hash.toString(16).padStart(16, "0");
 }
 
-/** True when two encoded state vectors describe the same client clocks. */
 export function stateVectorsEqual(
   left: Uint8Array,
   right: Uint8Array,
@@ -500,24 +449,33 @@ export function stateVectorsEqual(
   return true;
 }
 
-/**
- * Yields to the event loop so a background compaction never monopolises the
- * main thread for the whole encode/verify/commit sequence.
- */
 function yieldToMainThread(): Promise<void> {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
   });
 }
 
-/**
- * Durable, room-scoped append-only journal backed by IndexedDB.
- *
- * Sequence numbers are persisted in a companion `meta` store so they stay
- * monotonic across removals and browser restarts. Consolidated snapshots live
- * in their own store, one per room, and are written in the same transaction
- * that prunes the journal records they supersede.
- */
+const journalWriteQueues = new Map<string, Promise<void>>();
+
+function withJournalWriteLock<T>(
+  databaseName: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = journalWriteQueues.get(databaseName) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  const settled = current.then(
+    () => undefined,
+    () => undefined,
+  );
+  journalWriteQueues.set(databaseName, settled);
+  void settled.then(() => {
+    if (journalWriteQueues.get(databaseName) === settled) {
+      journalWriteQueues.delete(databaseName);
+    }
+  });
+  return current;
+}
+
 export class CanvasChangeJournal {
   private dbPromise: Promise<IDBPDatabase<CanvasJournalDB>> | null = null;
 
@@ -549,12 +507,10 @@ export class CanvasChangeJournal {
     return this.dbPromise;
   }
 
-  /** Drop the cached connection (test isolation / forced reopen). */
   resetCache(): void {
     this.dbPromise = null;
   }
 
-  /** Close the cached connection once pending work settles. */
   async close(): Promise<void> {
     const dbPromise = this.dbPromise;
     this.dbPromise = null;
@@ -566,13 +522,6 @@ export class CanvasChangeJournal {
     }
   }
 
-  /**
-   * Persist one transaction block with the next sequence number.
-   *
-   * The counter read-modify-write and the block insert share a single
-   * `readwrite` transaction so concurrent offline edits can't observe a stale
-   * counter and collide on the same sequence number.
-   */
   async append(
     roomName: string,
     update: Uint8Array,
@@ -580,30 +529,30 @@ export class CanvasChangeJournal {
     if (!roomName || !roomName.trim() || !update || update.length === 0) {
       return null;
     }
-    const trimmed = roomName.trim();
-    const db = await this.getDb();
+    return withJournalWriteLock(this.dbName, async () => {
+      const trimmed = roomName.trim();
+      const db = await this.getDb();
+      const tx = db.transaction([JOURNAL_META_STORE, JOURNAL_STORE], "readwrite");
+      const metaStore = tx.objectStore(JOURNAL_META_STORE);
+      const journalStore = tx.objectStore(JOURNAL_STORE);
 
-    const tx = db.transaction([JOURNAL_META_STORE, JOURNAL_STORE], "readwrite");
-    const metaStore = tx.objectStore(JOURNAL_META_STORE);
-    const journalStore = tx.objectStore(JOURNAL_STORE);
+      const meta = await metaStore.get(trimmed);
+      const seq = (meta?.lastSeq ?? 0) + 1;
+      await metaStore.put({ ...meta, roomName: trimmed, lastSeq: seq });
 
-    const meta = await metaStore.get(trimmed);
-    const seq = (meta?.lastSeq ?? 0) + 1;
-    await metaStore.put({ ...meta, roomName: trimmed, lastSeq: seq });
-
-    const block: JournalBlock = {
-      seq,
-      roomName: trimmed,
-      update: Array.from(update),
-      checksum: computeChecksum(update),
-      createdAt: Date.now(),
-    };
-    await journalStore.put(block);
-    await tx.done;
-    return block;
+      const block: JournalBlock = {
+        seq,
+        roomName: trimmed,
+        update: Array.from(update),
+        checksum: computeChecksum(update),
+        createdAt: Date.now(),
+      };
+      await journalStore.put(block);
+      await tx.done;
+      return block;
+    });
   }
 
-  /** All pending blocks for a room, ordered by ascending sequence. */
   async listPending(roomName: string): Promise<JournalBlock[]> {
     const db = await this.getDb();
     const blocks = await db.getAllFromIndex(
@@ -615,26 +564,29 @@ export class CanvasChangeJournal {
   }
 
   async remove(seq: number): Promise<void> {
-    const db = await this.getDb();
-    await db.delete(JOURNAL_STORE, seq);
+    await withJournalWriteLock(this.dbName, async () => {
+      const db = await this.getDb();
+      await db.delete(JOURNAL_STORE, seq);
+    });
   }
 
   async clearRoom(roomName: string): Promise<void> {
-    const trimmed = roomName.trim();
-    const blocks = await this.listPending(trimmed);
-    const db = await this.getDb();
-    const tx = db.transaction(JOURNAL_STORE, "readwrite");
-    await Promise.all([
-      ...blocks.map((block) => tx.store.delete(block.seq)),
-      tx.done,
-    ]);
+    await withJournalWriteLock(this.dbName, async () => {
+      const trimmed = roomName.trim();
+      const blocks = await this.listPending(trimmed);
+      const db = await this.getDb();
+      const tx = db.transaction(JOURNAL_STORE, "readwrite");
+      await Promise.all([
+        ...blocks.map((block) => tx.store.delete(block.seq)),
+        tx.done,
+      ]);
+    });
   }
 
   async size(roomName: string): Promise<number> {
     return (await this.listPending(roomName)).length;
   }
 
-  /** On-disk footprint of a room's raw records and baseline snapshot. */
   async getStats(roomName: string): Promise<CanvasJournalStats> {
     const trimmed = roomName.trim();
     const db = await this.getDb();
@@ -664,83 +616,389 @@ export class CanvasChangeJournal {
     };
   }
 
-  /** Stored baseline snapshot for a room, if any. */
   async loadSnapshot(roomName: string): Promise<CanvasSnapshot | null> {
     const db = await this.getDb();
     const snapshot = await db.get(SNAPSHOT_STORE, roomName.trim());
     return snapshot ?? null;
   }
 
-  /** Persist a snapshot without pruning (repair / test helper). */
   async saveSnapshot(snapshot: CanvasSnapshot): Promise<CanvasSnapshot> {
-    const record: CanvasSnapshot = {
-      ...snapshot,
-      roomName: snapshot.roomName.trim(),
-    };
-    const db = await this.getDb();
-    await db.put(SNAPSHOT_STORE, record);
-    return record;
+    return withJournalWriteLock(this.dbName, async () => {
+      const record: CanvasSnapshot = {
+        ...snapshot,
+        roomName: snapshot.roomName.trim(),
+      };
+      const db = await this.getDb();
+      await db.put(SNAPSHOT_STORE, record);
+      return record;
+    });
   }
 
   async deleteSnapshot(roomName: string): Promise<void> {
-    const db = await this.getDb();
-    await db.delete(SNAPSHOT_STORE, roomName.trim());
+    await withJournalWriteLock(this.dbName, async () => {
+      const db = await this.getDb();
+      await db.delete(SNAPSHOT_STORE, roomName.trim());
+    });
   }
 
-  /**
-   * Atomically stores `snapshot` and deletes every journal record whose
-   * sequence number is at or below `throughSeq`.
-   *
-   * Both writes share one `readwrite` transaction across the snapshot, journal
-   * and meta stores, so a crash can never leave the baseline persisted while
-   * the superseded history survives (or vice versa). A snapshot whose state
-   * vector does not cover a record is never allowed to prune it.
-   */
   async compact(
     snapshot: CanvasSnapshot,
     throughSeq: number,
   ): Promise<CanvasCompactionResult> {
-    const record: CanvasSnapshot = {
-      ...snapshot,
-      roomName: snapshot.roomName.trim(),
-    };
-    const db = await this.getDb();
-    const tx = db.transaction(
-      [SNAPSHOT_STORE, JOURNAL_STORE, JOURNAL_META_STORE],
-      "readwrite",
-    );
+    return withJournalWriteLock(this.dbName, async () => {
+      const record: CanvasSnapshot = {
+        ...snapshot,
+        roomName: snapshot.roomName.trim(),
+      };
+      const db = await this.getDb();
+      const tx = db.transaction(
+        [SNAPSHOT_STORE, JOURNAL_STORE, JOURNAL_META_STORE],
+        "readwrite",
+      );
 
-    const snapshotStore = tx.objectStore(SNAPSHOT_STORE);
-    const journalStore = tx.objectStore(JOURNAL_STORE);
-    const metaStore = tx.objectStore(JOURNAL_META_STORE);
+      const snapshotStore = tx.objectStore(SNAPSHOT_STORE);
+      const journalStore = tx.objectStore(JOURNAL_STORE);
+      const metaStore = tx.objectStore(JOURNAL_META_STORE);
 
-    await snapshotStore.put(record);
+      await snapshotStore.put(record);
 
-    const blocks = await journalStore.index("by-room").getAll(record.roomName);
-    const superseded = blocks.filter((block) => block.seq <= throughSeq);
-    await Promise.all(
-      superseded.map((block) => journalStore.delete(block.seq)),
-    );
+      const blocks = await journalStore.index("by-room").getAll(record.roomName);
+      const superseded = blocks.filter((block) => block.seq <= throughSeq);
+      await Promise.all(
+        superseded.map((block) => journalStore.delete(block.seq)),
+      );
 
-    const meta = await metaStore.get(record.roomName);
-    await metaStore.put({
-      ...meta,
-      roomName: record.roomName,
-      lastSeq: Math.max(meta?.lastSeq ?? 0, throughSeq),
-      opsAtSnapshot: record.opsAtSnapshot,
-      compactedAt: record.createdAt,
+      const meta = await metaStore.get(record.roomName);
+      await metaStore.put({
+        ...meta,
+        roomName: record.roomName,
+        lastSeq: Math.max(meta?.lastSeq ?? 0, throughSeq),
+        opsAtSnapshot: record.opsAtSnapshot,
+        compactedAt: record.createdAt,
+      });
+
+      await tx.done;
+
+      return {
+        snapshot: record,
+        deletedRecords: superseded.length,
+        reclaimedBytes: superseded.reduce(
+          (sum, block) => sum + block.update.length,
+          0,
+        ),
+      };
     });
+  }
+}
 
-    await tx.done;
+/* ------------------------------------------------------------------------- *
+ * CRDT Tombstone-Safe Canvas Element Abstraction (#7492)
+ *
+ * Enforces tombstone semantics across decentralized Yjs peers:
+ * - Once an element is marked `deleted: true` (or removed from the active
+ *   elements map and recorded in the `tombstones` Y.Map), concurrent attribute
+ *   mutations (e.g. color/position updates arriving over high-latency links)
+ *   are silently discarded and never resurrect ghost elements.
+ * - Only an explicit `restoreElement()` call clears the tombstone and
+ *   re-enables mutations on that item ID.
+ * ------------------------------------------------------------------------- */
 
+export interface CanvasVectorElement {
+  id: string;
+  type: "rect" | "circle" | "stroke" | "text" | "sticky";
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  color: string;
+  label?: string;
+  deleted?: boolean;
+  deletedAt?: number;
+  updatedAt: number;
+}
+
+export interface TombstoneRecord {
+  id: string;
+  deleted: true;
+  deletedAt: number;
+  snapshot?: Omit<CanvasVectorElement, "deleted" | "deletedAt">;
+}
+
+export const CANVAS_ELEMENTS_MAP = "canvas:elements";
+export const CANVAS_TOMBSTONES_MAP = "canvas:tombstones";
+
+/**
+ * Tombstone-aware CRDT abstraction over a Yjs document's vector elements.
+ */
+export class TombstoneCanvasState {
+  public readonly doc: Y.Doc;
+  public readonly elements: Y.Map<Y.Map<unknown>>;
+  public readonly tombstones: Y.Map<TombstoneRecord>;
+  private enforcing = false;
+
+  constructor(doc: Y.Doc) {
+    this.doc = doc;
+    this.elements = doc.getMap<Y.Map<unknown>>(CANVAS_ELEMENTS_MAP);
+    this.tombstones = doc.getMap<TombstoneRecord>(CANVAS_TOMBSTONES_MAP);
+
+    // Observe remote or concurrent updates to ensure deleted items are never
+    // resurrected by late-arriving property mutations.
+    this.doc.on("afterTransaction", (tx: Y.Transaction) => {
+      if (this.enforcing || tx.origin === TOMBSTONE_ENFORCEMENT_ORIGIN) return;
+      this.reconcileTombstones();
+    });
+  }
+
+  /**
+   * Reconciles `elements` against `tombstones` after any Yjs transaction so
+   * concurrent attribute updates on a deleted key cannot resurrect the item.
+   */
+  public reconcileTombstones(): void {
+    this.enforcing = true;
+    try {
+      this.doc.transact(() => {
+        // 1. Any item recorded in `tombstones` with `deleted: true` must remain
+        //    deleted and absent from active canvas elements.
+        this.tombstones.forEach((record, id) => {
+          if (record?.deleted === true && this.elements.has(id)) {
+            const entry = this.elements.get(id);
+            if (entry && entry.get("deleted") !== true) {
+              entry.set("deleted", true);
+            }
+            this.elements.delete(id);
+          }
+        });
+
+        // 2. Any item inside `elements` carrying `deleted: true` must be
+        //    recorded in `tombstones` and pruned from active `elements`.
+        const toTombstone: string[] = [];
+        this.elements.forEach((entry, id) => {
+          if (entry instanceof Y.Map && entry.get("deleted") === true) {
+            toTombstone.push(id);
+          }
+        });
+
+        for (const id of toTombstone) {
+          const entry = this.elements.get(id);
+          if (!this.tombstones.has(id)) {
+            const snapshot = entry ? this.extractPlainElement(id, entry) : undefined;
+            this.tombstones.set(id, {
+              id,
+              deleted: true,
+              deletedAt:
+                typeof entry?.get("deletedAt") === "number"
+                  ? (entry.get("deletedAt") as number)
+                  : Date.now(),
+              snapshot: snapshot
+                ? (({ deleted: _d, deletedAt: _da, ...rest }) => rest)(snapshot)
+                : undefined,
+            });
+          }
+          this.elements.delete(id);
+        }
+      }, TOMBSTONE_ENFORCEMENT_ORIGIN);
+    } finally {
+      this.enforcing = false;
+    }
+  }
+
+  private extractPlainElement(
+    id: string,
+    entry: Y.Map<unknown>,
+  ): CanvasVectorElement {
     return {
-      snapshot: record,
-      deletedRecords: superseded.length,
-      reclaimedBytes: superseded.reduce(
-        (sum, block) => sum + block.update.length,
-        0,
-      ),
+      id,
+      type: (entry.get("type") as CanvasVectorElement["type"]) ?? "rect",
+      x: typeof entry.get("x") === "number" ? (entry.get("x") as number) : 0,
+      y: typeof entry.get("y") === "number" ? (entry.get("y") as number) : 0,
+      width:
+        typeof entry.get("width") === "number"
+          ? (entry.get("width") as number)
+          : undefined,
+      height:
+        typeof entry.get("height") === "number"
+          ? (entry.get("height") as number)
+          : undefined,
+      color:
+        typeof entry.get("color") === "string"
+          ? (entry.get("color") as string)
+          : "#3b82f6",
+      label:
+        typeof entry.get("label") === "string"
+          ? (entry.get("label") as string)
+          : undefined,
+      deleted: entry.get("deleted") === true,
+      deletedAt:
+        typeof entry.get("deletedAt") === "number"
+          ? (entry.get("deletedAt") as number)
+          : undefined,
+      updatedAt:
+        typeof entry.get("updatedAt") === "number"
+          ? (entry.get("updatedAt") as number)
+          : Date.now(),
     };
+  }
+
+  public isTombstoned(id: string): boolean {
+    const tombstone = this.tombstones.get(id);
+    if (tombstone?.deleted === true) return true;
+    const entry = this.elements.get(id);
+    return entry instanceof Y.Map && entry.get("deleted") === true;
+  }
+
+  /**
+   * Creates or upserts an active vector element unless its ID is tombstoned.
+   */
+  public upsertElement(
+    element: Omit<CanvasVectorElement, "deleted" | "deletedAt" | "updatedAt"> & {
+      updatedAt?: number;
+    },
+    origin?: unknown,
+  ): boolean {
+    if (this.isTombstoned(element.id)) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      let entry = this.elements.get(element.id);
+      if (!entry) {
+        entry = new Y.Map<unknown>();
+        this.elements.set(element.id, entry);
+      }
+      entry.set("id", element.id);
+      entry.set("type", element.type);
+      entry.set("x", element.x);
+      entry.set("y", element.y);
+      if (element.width !== undefined) entry.set("width", element.width);
+      if (element.height !== undefined) entry.set("height", element.height);
+      entry.set("color", element.color);
+      if (element.label !== undefined) entry.set("label", element.label);
+      entry.set("deleted", false);
+      entry.set("updatedAt", element.updatedAt ?? Date.now());
+    }, origin);
+
+    return true;
+  }
+
+  /**
+   * Mutates attributes (such as `color`, `x`, `y`) on an existing active element.
+   * If the element has been tombstoned (`deleted: true` or removed from parent
+   * `Y.Map`), the mutation is silently discarded rather than recreating a ghost
+   * element.
+   */
+  public updateElementAttributes(
+    id: string,
+    patch: Partial<Omit<CanvasVectorElement, "id" | "deleted" | "deletedAt">>,
+    origin?: unknown,
+  ): boolean {
+    if (this.isTombstoned(id)) {
+      return false;
+    }
+
+    const entry = this.elements.get(id);
+    if (!entry || entry.get("deleted") === true) {
+      return false;
+    }
+
+    this.doc.transact(() => {
+      if (patch.type !== undefined) entry.set("type", patch.type);
+      if (patch.x !== undefined) entry.set("x", patch.x);
+      if (patch.y !== undefined) entry.set("y", patch.y);
+      if (patch.width !== undefined) entry.set("width", patch.width);
+      if (patch.height !== undefined) entry.set("height", patch.height);
+      if (patch.color !== undefined) entry.set("color", patch.color);
+      if (patch.label !== undefined) entry.set("label", patch.label);
+      entry.set("updatedAt", patch.updatedAt ?? Date.now());
+    }, origin);
+
+    return true;
+  }
+
+  /**
+   * Marks an item with `deleted: true`, records a durable tombstone, and removes
+   * it from the active `Y.Map` so concurrent delta updates cannot resurrect it.
+   */
+  public deleteElement(id: string, origin?: unknown): boolean {
+    if (this.isTombstoned(id) && !this.elements.has(id)) {
+      return false;
+    }
+
+    const now = Date.now();
+    this.doc.transact(() => {
+      const entry = this.elements.get(id);
+      const snapshot = entry ? this.extractPlainElement(id, entry) : undefined;
+      if (entry) {
+        entry.set("deleted", true);
+        entry.set("deletedAt", now);
+      }
+      this.tombstones.set(id, {
+        id,
+        deleted: true,
+        deletedAt: now,
+        snapshot: snapshot
+          ? (({ deleted: _d, deletedAt: _da, ...rest }) => rest)(snapshot)
+          : undefined,
+      });
+      this.elements.delete(id);
+    }, origin);
+
+    return true;
+  }
+
+  /**
+   * Explicitly restores a previously deleted element (undo/restore flow).
+   */
+  public restoreElement(
+    id: string,
+    fallback?: Omit<CanvasVectorElement, "id" | "deleted" | "deletedAt" | "updatedAt">,
+    origin?: unknown,
+  ): boolean {
+    const tombstone = this.tombstones.get(id);
+    if (!tombstone) return false;
+
+    const base =
+      tombstone.snapshot ??
+      (fallback ? { id, ...fallback, updatedAt: Date.now() } : undefined);
+    if (!base) return false;
+
+    this.doc.transact(() => {
+      this.tombstones.delete(id);
+      const entry = new Y.Map<unknown>();
+      entry.set("id", id);
+      entry.set("type", base.type);
+      entry.set("x", base.x);
+      entry.set("y", base.y);
+      if (base.width !== undefined) entry.set("width", base.width);
+      if (base.height !== undefined) entry.set("height", base.height);
+      entry.set("color", base.color);
+      if (base.label !== undefined) entry.set("label", base.label);
+      entry.set("deleted", false);
+      entry.set("updatedAt", Date.now());
+      this.elements.set(id, entry);
+    }, origin);
+
+    return true;
+  }
+
+  /**
+   * Returns all active (non-tombstoned) vector elements on the canvas.
+   */
+  public getActiveElements(): CanvasVectorElement[] {
+    const active: CanvasVectorElement[] = [];
+    this.elements.forEach((entry, id) => {
+      if (this.isTombstoned(id)) return;
+      if (!(entry instanceof Y.Map)) return;
+      if (entry.get("deleted") === true) return;
+      active.push(this.extractPlainElement(id, entry));
+    });
+    return active;
+  }
+
+  public getElement(id: string): CanvasVectorElement | null {
+    if (this.isTombstoned(id)) return null;
+    const entry = this.elements.get(id);
+    if (!entry || entry.get("deleted") === true) return null;
+    return this.extractPlainElement(id, entry);
   }
 }
 
@@ -752,6 +1010,7 @@ export class NomadCanvasProvider {
   public doc: Y.Doc;
   public roomName: string;
   public readonly journal: CanvasChangeJournal | null;
+  public readonly canvasState: TombstoneCanvasState;
 
   private opCount = 0;
   private readonly maxOps: number;
@@ -782,6 +1041,7 @@ export class NomadCanvasProvider {
   constructor(roomName: string, config: CompactionConfig = {}) {
     this.roomName = roomName;
     this.doc = new Y.Doc();
+    this.canvasState = new TombstoneCanvasState(this.doc);
     this.maxOps = Math.max(1, Math.floor(config.maxOperations ?? 500));
     this.maxJournalRecords = Math.max(
       1,
@@ -811,8 +1071,6 @@ export class NomadCanvasProvider {
 
     // Listen to local & remote update transactions.
     this.doc.on("update", (update: Uint8Array, origin: unknown) => {
-      // Replayed blocks and recovered snapshots are already persisted; never
-      // re-journal them or count them toward the compaction threshold.
       if (
         origin === JOURNAL_REPLAY_ORIGIN ||
         origin === SNAPSHOT_RECOVERY_ORIGIN
@@ -831,14 +1089,9 @@ export class NomadCanvasProvider {
       this.dispatchUpdate(update);
     });
 
-    // Start the periodic checkpoint timer.
     this.startPeriodicCheckpoint();
   }
 
-  /**
-   * Routes a fresh local update either straight to the wire (online) or into
-   * the durable journal (offline).
-   */
   private dispatchUpdate(update: Uint8Array): void {
     if (!this.transport) return;
     if (this.transport.isConnected()) {
@@ -871,7 +1124,6 @@ export class NomadCanvasProvider {
     }
   }
 
-  /** Seeds the in-memory footprint counters from an existing database. */
   private async ensureJournalCounters(): Promise<void> {
     if (this.countersLoaded || !this.journal) return;
     const stats = await this.journal.getStats(this.roomName);
@@ -880,20 +1132,14 @@ export class NomadCanvasProvider {
     this.countersLoaded = true;
   }
 
-  /** Current connection state as tracked by the provider. */
   public get isConnected(): boolean {
     return this.connected;
   }
 
-  /** Result of the most recent successful compaction, if any. */
   public get lastCompaction(): CanvasCompactionResult | null {
     return this.lastCompactionResult;
   }
 
-  /**
-   * Update connection state. Transitioning from offline to online triggers a
-   * journal replay so queued blocks are flushed before live sync resumes.
-   */
   public setConnected(connected: boolean): void {
     const wasOffline = !this.connected;
     this.connected = connected;
@@ -902,29 +1148,20 @@ export class NomadCanvasProvider {
     }
   }
 
-  /** Number of unconfirmed blocks currently buffered for this room. */
   public async pendingJournalCount(): Promise<number> {
     return this.journal ? this.journal.size(this.roomName) : 0;
   }
 
-  /** Storage footprint of the journal and baseline snapshot for this room. */
   public async getJournalStats(): Promise<CanvasJournalStats | null> {
     return this.journal ? this.journal.getStats(this.roomName) : null;
   }
 
-  /** Resolves once every queued offline journal write has settled. */
   public async flushPendingWrites(): Promise<void> {
     for (let guard = 0; guard < 1024 && this.pendingWrites.size > 0; guard++) {
       await Promise.all([...this.pendingWrites]);
     }
   }
 
-  /**
-   * Re-streams all pending journal blocks in topological (sequence) order,
-   * verifying each block's checksum before it goes on the wire and clearing it
-   * once acknowledged. If `remoteChecksum` is supplied, the local document
-   * checksum is compared against it to confirm post-sync convergence.
-   */
   public async replayJournal(remoteChecksum?: string): Promise<ReplayResult> {
     if (this.replaying) {
       return {
@@ -954,7 +1191,6 @@ export class NomadCanvasProvider {
           continue;
         }
 
-        // Nothing to stream to yet: keep the backlog for the next attempt.
         if (!this.transport) break;
 
         try {
@@ -988,30 +1224,18 @@ export class NomadCanvasProvider {
     }
   }
 
-  /** Checksum of the current local document state. */
   public getDocumentChecksum(): string {
     return computeChecksum(Y.encodeStateAsUpdate(this.doc));
   }
 
-  /** True when the local document matches the supplied remote checksum. */
   public verifyConvergence(remoteChecksum: string): boolean {
     return this.getDocumentChecksum() === remoteChecksum;
   }
 
-  /**
-   * Encodes current Y.Doc transaction history into a single update blob using
-   * `Y.encodeStateAsUpdate`, without touching storage.
-   */
   public compactState(): Uint8Array {
     return Y.encodeStateAsUpdate(this.doc);
   }
 
-  /**
-   * Evaluates the configured 500-record / 5 MB thresholds and schedules a
-   * background compaction when either is exceeded.
-   *
-   * @returns `true` when a compaction was scheduled by this call.
-   */
   public async maybeScheduleCompaction(): Promise<boolean> {
     if (!this.journal || this.destroyed || !this.autoCompaction) return false;
 
@@ -1030,7 +1254,6 @@ export class NomadCanvasProvider {
     return false;
   }
 
-  /** Resolves once any scheduled and in-flight compaction has settled. */
   public async waitForCompaction(): Promise<void> {
     for (let guard = 0; guard < 16; guard++) {
       const pending = this.scheduledCompaction ?? this.compactionInFlight;
@@ -1039,14 +1262,6 @@ export class NomadCanvasProvider {
     }
   }
 
-  /**
-   * Compacts the IndexedDB journal: encodes the full document into one
-   * baseline snapshot, then atomically swaps it in for the raw records it
-   * supersedes. The document is verified to round-trip both before the write
-   * and after it is persisted.
-   *
-   * @returns the compaction result, or `null` when there is nothing to prune.
-   */
   public async compactJournal(): Promise<CanvasCompactionResult | null> {
     if (this.destroyed || !this.journal) return null;
     if (this.compactionInFlight) return this.compactionInFlight;
@@ -1064,18 +1279,11 @@ export class NomadCanvasProvider {
     const journal = this.journal;
     if (!journal || this.destroyed) return null;
 
-    // Capture the journal boundary *before* encoding. Records appended while
-    // we encode carry a higher sequence and are therefore never pruned by a
-    // snapshot that predates them.
     const stats = await journal.getStats(this.roomName);
     if (stats.recordCount === 0) return null;
 
-    // Hydrate the document from the stored baseline and every surviving block
-    // before encoding. Without this a cold-started provider could snapshot a
-    // partially restored document and prune history it never integrated.
     await this.restoreFromJournal();
 
-    // --- Verify document state before compaction -------------------------
     const update = Y.encodeStateAsUpdate(this.doc);
     const stateVector = Y.encodeStateVector(this.doc);
     const checksum = computeChecksum(update);
@@ -1094,7 +1302,6 @@ export class NomadCanvasProvider {
 
     await yieldToMainThread();
 
-    // --- Atomic snapshot write + superseded history purge ----------------
     const result = await journal.compact(
       {
         roomName: this.roomName,
@@ -1119,7 +1326,6 @@ export class NomadCanvasProvider {
 
     await yieldToMainThread();
 
-    // --- Verify document state after compaction --------------------------
     const persisted = await journal.loadSnapshot(this.roomName);
     if (!persisted) {
       throw new CanvasSnapshotIntegrityError(
@@ -1146,7 +1352,6 @@ export class NomadCanvasProvider {
       "post-compaction",
     );
 
-    // The live document must still cover everything the snapshot represents.
     if (isStateVectorBehind(Y.encodeStateVector(this.doc), persistedVector)) {
       throw new CanvasSnapshotIntegrityError(
         `Post-compaction document for room ${this.roomName} lost state covered by the snapshot`,
@@ -1159,10 +1364,6 @@ export class NomadCanvasProvider {
     return result;
   }
 
-  /**
-   * Applies `update` to a scratch document and asserts that it round-trips to
-   * the same checksum and state vector.
-   */
   private assertSnapshotReconstructs(
     update: Uint8Array,
     stateVector: Uint8Array,
@@ -1191,10 +1392,6 @@ export class NomadCanvasProvider {
     }
   }
 
-  /**
-   * Flushes the compacted document snapshot to Redis storage and returns the
-   * encoded bytes.
-   */
   public async compactAndCheckpoint(): Promise<Uint8Array> {
     const result = await this.compactJournal();
     const bytes = result
@@ -1219,11 +1416,6 @@ export class NomadCanvasProvider {
     return bytes;
   }
 
-  /**
-   * Restores this room from its compacted baseline plus any journal blocks
-   * that survived the last purge. A snapshot that fails checksum or state
-   * vector verification is rejected instead of being applied.
-   */
   public async restoreFromJournal(): Promise<JournalRestoreResult> {
     const journal = this.journal;
     const localBefore = this.getDocumentChecksum();
@@ -1282,10 +1474,6 @@ export class NomadCanvasProvider {
     };
   }
 
-  /**
-   * Loads the compacted snapshot for a joining peer and merges it into the
-   * document.
-   */
   public async loadRoomSnapshot(): Promise<boolean> {
     const redisKey = `${SNAPSHOT_REDIS_KEY_PREFIX}${this.roomName}:snapshot`;
     try {
@@ -1318,10 +1506,6 @@ export class NomadCanvasProvider {
     }, this.checkpointIntervalMs);
   }
 
-  /**
-   * Defers a compaction to an idle callback so encoding and IndexedDB writes do
-   * not compete with pointer/drawing events on the main thread.
-   */
   private scheduleCompaction(): Promise<CanvasCompactionResult | null> {
     if (this.destroyed || !this.journal) return Promise.resolve(null);
     if (this.scheduledCompaction) return this.scheduledCompaction;
@@ -1380,5 +1564,198 @@ export class NomadCanvasProvider {
 
     this.pendingWrites.clear();
     this.doc.destroy();
+  }
+}
+
+export const DELTA_SYNC_REMOTE_ORIGIN = "crdt-delta-sync-remote";
+
+export interface DeltaSyncMetrics {
+  stateVectorBytesSent: number;
+  deltaBytesSent: number;
+  fullStateBytesEquivalent: number;
+  framesSent: number;
+  framesReceived: number;
+  duplicateUpdatesIgnored: number;
+}
+
+function fingerprintUpdate(bytes: Uint8Array): string {
+  let hash = 0x811c9ce5;
+  for (let i = 0; i < bytes.length; i++) {
+    hash ^= bytes[i];
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${bytes.length}:${(hash >>> 0).toString(16)}`;
+}
+
+export class CrdtDeltaSyncSession {
+  public readonly doc: Y.Doc;
+  public readonly peerId: string;
+  public readonly canvasState: TombstoneCanvasState;
+  private readonly sendFrame: (frame: Uint8Array) => void;
+  private readonly maxChunkPayloadSize?: number;
+  private readonly reassembler = new CrdtFrameReassembler();
+  private readonly appliedFingerprints = new Set<string>();
+  private nextMessageId = 1;
+  private lastKnownRemoteStateVector: Uint8Array | null = null;
+
+  public readonly metrics: DeltaSyncMetrics = {
+    stateVectorBytesSent: 0,
+    deltaBytesSent: 0,
+    fullStateBytesEquivalent: 0,
+    framesSent: 0,
+    framesReceived: 0,
+    duplicateUpdatesIgnored: 0,
+  };
+
+  constructor(options: {
+    doc: Y.Doc;
+    peerId: string;
+    sendFrame: (frame: Uint8Array) => void;
+    maxChunkPayloadSize?: number;
+  }) {
+    this.doc = options.doc;
+    this.peerId = options.peerId;
+    this.canvasState = new TombstoneCanvasState(this.doc);
+    this.sendFrame = options.sendFrame;
+    this.maxChunkPayloadSize = options.maxChunkPayloadSize;
+  }
+
+  private allocateMessageId(): number {
+    const id = this.nextMessageId >>> 0;
+    this.nextMessageId = (this.nextMessageId + 1) >>> 0 || 1;
+    return id;
+  }
+
+  public initiateStateVectorHandshake(): Uint8Array {
+    const stateVector = Y.encodeStateVector(this.doc);
+    const frames = encodeCrdtFrames(stateVector, {
+      messageId: this.allocateMessageId(),
+      messageType: CrdtFrameMessageType.STATE_VECTOR,
+      maxChunkPayloadSize: this.maxChunkPayloadSize,
+    });
+
+    this.metrics.stateVectorBytesSent += stateVector.byteLength;
+    this.metrics.framesSent += frames.length;
+
+    for (const frame of frames) {
+      this.sendFrame(frame);
+    }
+    return stateVector;
+  }
+
+  public sendDeltaForStateVector(remoteStateVector: Uint8Array): Uint8Array {
+    this.lastKnownRemoteStateVector = new Uint8Array(remoteStateVector);
+    const delta = Y.encodeStateAsUpdate(this.doc, remoteStateVector);
+    const fullEquivalent = Y.encodeStateAsUpdate(this.doc);
+
+    this.metrics.deltaBytesSent += delta.byteLength;
+    this.metrics.fullStateBytesEquivalent += fullEquivalent.byteLength;
+
+    this.appliedFingerprints.add(fingerprintUpdate(delta));
+
+    const frames = encodeCrdtFrames(delta, {
+      messageId: this.allocateMessageId(),
+      messageType: CrdtFrameMessageType.DELTA_UPDATE,
+      maxChunkPayloadSize: this.maxChunkPayloadSize,
+    });
+
+    this.metrics.framesSent += frames.length;
+    for (const frame of frames) {
+      this.sendFrame(frame);
+    }
+    return delta;
+  }
+
+  public broadcastLocalDelta(update: Uint8Array): void {
+    if (!update || update.byteLength === 0) return;
+    this.appliedFingerprints.add(fingerprintUpdate(update));
+
+    const frames = encodeCrdtFrames(update, {
+      messageId: this.allocateMessageId(),
+      messageType: CrdtFrameMessageType.DELTA_UPDATE,
+      maxChunkPayloadSize: this.maxChunkPayloadSize,
+    });
+
+    this.metrics.deltaBytesSent += update.byteLength;
+    this.metrics.framesSent += frames.length;
+    for (const frame of frames) {
+      this.sendFrame(frame);
+    }
+  }
+
+  public receiveFrame(rawFrame: Uint8Array | ArrayBuffer): {
+    completed: boolean;
+    messageType?: CrdtFrameMessageType;
+    appliedDelta?: boolean;
+  } {
+    this.metrics.framesReceived += 1;
+    const message = this.reassembler.pushFrame(rawFrame);
+    if (!message) {
+      return { completed: false };
+    }
+
+    if (message.messageType === CrdtFrameMessageType.STATE_VECTOR) {
+      this.sendDeltaForStateVector(message.payload);
+      return {
+        completed: true,
+        messageType: CrdtFrameMessageType.STATE_VECTOR,
+      };
+    }
+
+    if (
+      message.messageType === CrdtFrameMessageType.DELTA_UPDATE ||
+      message.messageType === CrdtFrameMessageType.FULL_SYNC_FALLBACK
+    ) {
+      const applied = this.applyDeltaIdempotently(message.payload);
+      return {
+        completed: true,
+        messageType: message.messageType,
+        appliedDelta: applied,
+      };
+    }
+
+    return { completed: true, messageType: message.messageType };
+  }
+
+  public applyDeltaIdempotently(delta: Uint8Array): boolean {
+    if (!delta || delta.byteLength === 0) {
+      this.metrics.duplicateUpdatesIgnored += 1;
+      return false;
+    }
+
+    const fp = fingerprintUpdate(delta);
+    if (this.appliedFingerprints.has(fp)) {
+      this.metrics.duplicateUpdatesIgnored += 1;
+      return false;
+    }
+
+    const beforeVector = Y.encodeStateVector(this.doc);
+    Y.applyUpdate(this.doc, delta, DELTA_SYNC_REMOTE_ORIGIN);
+    this.canvasState.reconcileTombstones();
+    const afterVector = Y.encodeStateVector(this.doc);
+
+    this.appliedFingerprints.add(fp);
+    if (this.appliedFingerprints.size > 1024) {
+      const oldest = this.appliedFingerprints.values().next().value;
+      if (oldest !== undefined) {
+        this.appliedFingerprints.delete(oldest);
+      }
+    }
+
+    if (
+      beforeVector.byteLength === afterVector.byteLength &&
+      beforeVector.every((b, idx) => b === afterVector[idx])
+    ) {
+      this.metrics.duplicateUpdatesIgnored += 1;
+      return false;
+    }
+
+    return true;
+  }
+
+  public getLastKnownRemoteStateVector(): Uint8Array | null {
+    return this.lastKnownRemoteStateVector
+      ? new Uint8Array(this.lastKnownRemoteStateVector)
+      : null;
   }
 }

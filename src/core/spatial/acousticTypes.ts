@@ -172,6 +172,267 @@ export function packSourceBlock(
   return buffer;
 }
 
+/** Triangle mesh primitive used by the venue acoustic ray tracer. */
+export interface AcousticTriangle {
+  a: Vec3;
+  b: Vec3;
+  c: Vec3;
+  materialId: AcousticMaterialId;
+}
+export interface FlatAcousticBvhNode {
+  boundsMin: Vec3;
+  boundsMax: Vec3;
+  firstTriangle: number;
+  triangleCount: number;
+  escapeIndex: number;
+}
+export interface AcousticBvh {
+  nodes: FlatAcousticBvhNode[];
+  triangles: AcousticTriangle[];
+}
+export interface AcousticTriangleHit {
+  distance: number;
+  normal: Vec3;
+  materialId: AcousticMaterialId;
+}
+export const MAX_ACOUSTIC_TRIANGLES = 32_768;
+export const MAX_ACOUSTIC_BVH_NODES = MAX_ACOUSTIC_TRIANGLES * 2 - 1;
+export const ACOUSTIC_BVH_NODE_BYTES = 48;
+export const ACOUSTIC_TRIANGLE_BYTES = 64;
+export const ACOUSTIC_BVH_LEAF_SIZE = 4;
+
+/** Slab test; returns the closest non-negative entry distance or null on a miss. */
+export function intersectRayAabb(
+  origin: Vec3,
+  direction: Vec3,
+  boundsMin: Vec3,
+  boundsMax: Vec3,
+  maxDistance = Number.POSITIVE_INFINITY,
+): number | null {
+  let near = 0;
+  let far = maxDistance;
+  for (let axis = 0; axis < 3; axis++) {
+    const o = origin[axis];
+    const d = direction[axis];
+    if (Math.abs(d) < 1e-8) {
+      if (o < boundsMin[axis] || o > boundsMax[axis]) return null;
+      continue;
+    }
+    const inv = 1 / d;
+    let t1 = (boundsMin[axis] - o) * inv;
+    let t2 = (boundsMax[axis] - o) * inv;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    near = Math.max(near, t1);
+    far = Math.min(far, t2);
+    if (far < near) return null;
+  }
+  return far >= 0 && near <= maxDistance ? near : null;
+}
+
+/** Möller–Trumbore ray/triangle test; returned normal faces against the ray. */
+export function intersectRayTriangle(
+  origin: Vec3,
+  direction: Vec3,
+  triangle: AcousticTriangle,
+  maxDistance = Number.POSITIVE_INFINITY,
+): AcousticTriangleHit | null {
+  const e1: Vec3 = [
+    triangle.b[0] - triangle.a[0],
+    triangle.b[1] - triangle.a[1],
+    triangle.b[2] - triangle.a[2],
+  ];
+  const e2: Vec3 = [
+    triangle.c[0] - triangle.a[0],
+    triangle.c[1] - triangle.a[1],
+    triangle.c[2] - triangle.a[2],
+  ];
+  const p = [
+    direction[1] * e2[2] - direction[2] * e2[1],
+    direction[2] * e2[0] - direction[0] * e2[2],
+    direction[0] * e2[1] - direction[1] * e2[0],
+  ];
+  const det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2];
+  if (Math.abs(det) < 1e-8) return null;
+  const invDet = 1 / det;
+  const tVec = [
+    origin[0] - triangle.a[0],
+    origin[1] - triangle.a[1],
+    origin[2] - triangle.a[2],
+  ];
+  const u = (tVec[0] * p[0] + tVec[1] * p[1] + tVec[2] * p[2]) * invDet;
+  if (u < 0 || u > 1) return null;
+  const q = [
+    tVec[1] * e1[2] - tVec[2] * e1[1],
+    tVec[2] * e1[0] - tVec[0] * e1[2],
+    tVec[0] * e1[1] - tVec[1] * e1[0],
+  ];
+  const v = (direction[0] * q[0] + direction[1] * q[1] + direction[2] * q[2]) * invDet;
+  if (v < 0 || u + v > 1) return null;
+  const distance = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * invDet;
+  if (distance <= 1e-4 || distance >= maxDistance) return null;
+
+  let nx = e1[1] * e2[2] - e1[2] * e2[1];
+  let ny = e1[2] * e2[0] - e1[0] * e2[2];
+  let nz = e1[0] * e2[1] - e1[1] * e2[0];
+  const length = Math.hypot(nx, ny, nz);
+  if (length <= 1e-12) return null;
+  nx /= length; ny /= length; nz /= length;
+  if (nx * direction[0] + ny * direction[1] + nz * direction[2] > 0) {
+    nx = -nx; ny = -ny; nz = -nz;
+  }
+  return { distance, normal: [nx, ny, nz], materialId: triangle.materialId };
+}
+
+/** Build a median-split depth-first BVH. Each node stores its subtree escape index. */
+export function buildAcousticBvh(
+  triangles: readonly AcousticTriangle[],
+  leafSize = ACOUSTIC_BVH_LEAF_SIZE,
+): AcousticBvh {
+  if (!Number.isInteger(leafSize) || leafSize < 1) {
+    throw new RangeError("BVH leafSize must be a positive integer");
+  }
+  if (triangles.length > MAX_ACOUSTIC_TRIANGLES) {
+    throw new RangeError(`at most ${MAX_ACOUSTIC_TRIANGLES} triangles are supported`);
+  }
+  const nodes: FlatAcousticBvhNode[] = [];
+  const ordered: AcousticTriangle[] = [];
+  if (triangles.length === 0) return { nodes, triangles: ordered };
+  const centroid = (t: AcousticTriangle, axis: number) =>
+    (t.a[axis] + t.b[axis] + t.c[axis]) / 3;
+
+  const build = (indices: number[]): void => {
+    const nodeIndex = nodes.length;
+    nodes.push({
+      boundsMin: [Infinity, Infinity, Infinity],
+      boundsMax: [-Infinity, -Infinity, -Infinity],
+      firstTriangle: 0,
+      triangleCount: 0,
+      escapeIndex: 0,
+    });
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    const cLo = [Infinity, Infinity, Infinity];
+    const cHi = [-Infinity, -Infinity, -Infinity];
+    for (const index of indices) {
+      const t = triangles[index];
+      for (const vertex of [t.a, t.b, t.c]) {
+        for (let axis = 0; axis < 3; axis++) {
+          lo[axis] = Math.min(lo[axis], vertex[axis]);
+          hi[axis] = Math.max(hi[axis], vertex[axis]);
+        }
+      }
+      for (let axis = 0; axis < 3; axis++) {
+        const c = centroid(t, axis);
+        cLo[axis] = Math.min(cLo[axis], c);
+        cHi[axis] = Math.max(cHi[axis], c);
+      }
+    }
+    const boundsMin = lo as unknown as Vec3;
+    const boundsMax = hi as unknown as Vec3;
+    if (indices.length <= leafSize) {
+      const firstTriangle = ordered.length;
+      indices.forEach((index) => ordered.push(triangles[index]));
+      nodes[nodeIndex] = {
+        boundsMin, boundsMax, firstTriangle,
+        triangleCount: indices.length, escapeIndex: nodes.length,
+      };
+      return;
+    }
+    let axis = 0;
+    for (let candidate = 1; candidate < 3; candidate++) {
+      if (cHi[candidate] - cLo[candidate] > cHi[axis] - cLo[axis]) axis = candidate;
+    }
+    const sorted = [...indices].sort(
+      (a, b) => centroid(triangles[a], axis) - centroid(triangles[b], axis) || a - b,
+    );
+    const middle = Math.floor(sorted.length / 2);
+    build(sorted.slice(0, middle));
+    build(sorted.slice(middle));
+    nodes[nodeIndex] = {
+      boundsMin, boundsMax, firstTriangle: 0,
+      triangleCount: 0, escapeIndex: nodes.length,
+    };
+  };
+  build(triangles.map((_, index) => index));
+  return { nodes, triangles: ordered };
+}
+
+/** Stackless traversal jumps over a missed subtree using its escape index. */
+export function findNearestBvhTriangleHit(
+  bvh: AcousticBvh,
+  origin: Vec3,
+  direction: Vec3,
+  maxDistance = Number.POSITIVE_INFINITY,
+): AcousticTriangleHit | null {
+  let result: AcousticTriangleHit | null = null;
+  let nearest = maxDistance;
+  let nodeIndex = 0;
+  let visits = 0;
+  while (nodeIndex < bvh.nodes.length && visits++ < bvh.nodes.length) {
+    const node = bvh.nodes[nodeIndex];
+    const entry = intersectRayAabb(origin, direction, node.boundsMin, node.boundsMax, nearest);
+    if (entry === null) {
+      nodeIndex = node.escapeIndex;
+      continue;
+    }
+    if (node.triangleCount === 0) {
+      nodeIndex++;
+      continue;
+    }
+    for (let i = 0; i < node.triangleCount; i++) {
+      const hit = intersectRayTriangle(origin, direction, bvh.triangles[node.firstTriangle + i], nearest);
+      if (hit) { result = hit; nearest = hit.distance; }
+    }
+    nodeIndex = node.escapeIndex;
+  }
+  return result;
+}
+
+/** Linear reference kept for correctness comparisons and benchmark baselines. */
+export function findNearestLinearTriangleHit(
+  triangles: readonly AcousticTriangle[],
+  origin: Vec3,
+  direction: Vec3,
+  maxDistance = Number.POSITIVE_INFINITY,
+): AcousticTriangleHit | null {
+  let result: AcousticTriangleHit | null = null;
+  let nearest = maxDistance;
+  for (const triangle of triangles) {
+    const hit = intersectRayTriangle(origin, direction, triangle, nearest);
+    if (hit) { result = hit; nearest = hit.distance; }
+  }
+  return result;
+}
+
+/** WGSL storage format: BVH nodes are 48 bytes and triangles are 64 bytes. */
+export function packAcousticBvh(bvh: AcousticBvh): {
+  nodeBuffer: ArrayBuffer;
+  triangleBuffer: ArrayBuffer;
+} {
+  const nodeBuffer = new ArrayBuffer(Math.max(1, bvh.nodes.length) * ACOUSTIC_BVH_NODE_BYTES);
+  const floats = new Float32Array(nodeBuffer);
+  const ints = new Uint32Array(nodeBuffer);
+  bvh.nodes.forEach((node, i) => {
+    const base = i * 12;
+    floats.set([...node.boundsMin, 0], base);
+    floats.set([...node.boundsMax, 0], base + 4);
+    ints[base + 8] = node.firstTriangle;
+    ints[base + 9] = node.triangleCount;
+    ints[base + 10] = node.escapeIndex;
+  });
+  const triangleBuffer = new ArrayBuffer(Math.max(1, bvh.triangles.length) * ACOUSTIC_TRIANGLE_BYTES);
+  const triangleFloats = new Float32Array(triangleBuffer);
+  const triangleInts = new Uint32Array(triangleBuffer);
+  bvh.triangles.forEach((triangle, i) => {
+    const base = i * 16;
+    triangleFloats.set([...triangle.a, 0], base);
+    triangleFloats.set([...triangle.b, 0], base + 4);
+    triangleFloats.set([...triangle.c, 0], base + 8);
+    triangleInts[base + 12] = triangle.materialId;
+  });
+  return { nodeBuffer, triangleBuffer };
+}
+
 export interface AcousticScene {
   roomMin: Vec3;
   roomMax: Vec3;
@@ -182,12 +443,16 @@ export interface AcousticScene {
   /** Materials for the walls in this order: -x, +x, -y, +y, -z, +z */
   wallMaterials: readonly AcousticMaterialId[];
   occupants?: readonly Occupant[];
+  /** Optional polygonal venue mesh; room walls remain the enclosing fallback. */
+  triangles?: readonly AcousticTriangle[];
 }
 
 export interface AcousticOptions {
   rayCount?: number;
   maxBounces?: number;
   seed?: number;
+  /** Disable BVH only for benchmark baselines; accelerated traversal is the default. */
+  useBvh?: boolean;
 }
 
 export interface RawAcousticOutput {
@@ -326,6 +591,30 @@ export function validateAcousticInput(
   ) {
     throw new RangeError("wallMaterials needs 6 valid material ids");
   }
+  const triangles = scene.triangles ?? [];
+  if (triangles.length > MAX_ACOUSTIC_TRIANGLES) {
+    throw new RangeError(`at most ${MAX_ACOUSTIC_TRIANGLES} acoustic triangles are supported`);
+  }
+  for (const triangle of triangles) {
+    const vertices = [triangle.a, triangle.b, triangle.c];
+    if (
+      vertices.some((vertex) => vertex.some((value) => !Number.isFinite(value))) ||
+      !Number.isInteger(triangle.materialId) ||
+      triangle.materialId < 0 ||
+      triangle.materialId >= MATERIAL_COUNT
+    ) {
+      throw new RangeError("each acoustic triangle needs finite vertices and a valid material id");
+    }
+    const e1 = [triangle.b[0] - triangle.a[0], triangle.b[1] - triangle.a[1], triangle.b[2] - triangle.a[2]];
+    const e2 = [triangle.c[0] - triangle.a[0], triangle.c[1] - triangle.a[1], triangle.c[2] - triangle.a[2]];
+    const area2 = Math.hypot(
+      e1[1] * e2[2] - e1[2] * e2[1],
+      e1[2] * e2[0] - e1[0] * e2[2],
+      e1[0] * e2[1] - e1[1] * e2[0],
+    );
+    if (area2 <= 1e-9) throw new RangeError("acoustic triangles must have non-zero area");
+  }
+
   const occ = scene.occupants ?? [];
   if (occ.length > MAX_OCCUPANTS) {
     throw new RangeError(`at most ${MAX_OCCUPANTS} occupants are supported`);

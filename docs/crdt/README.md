@@ -8,6 +8,7 @@ collaborative data layer. All documents describe the Yjs 13.6.33 /
 
 | Document                                                                               | Kind                 | Scope                                                                                                                                                          |
 | -------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`CRDT_MULTI_PEER_VECTOR_GC.md`](./CRDT_MULTI_PEER_VECTOR_GC.md) | Formal specification | Multi-peer acknowledgement frontier, tombstone reclamation invariant, network-partition handling, and retention-epoch rebase requirements. |
 | [`CRDT_VECTOR_COMPACTION_SPECIFICATION.md`](./CRDT_VECTOR_COMPACTION_SPECIFICATION.md) | Formal specification | State-vector domination for squashing update chunks into a base snapshot, convergence proofs, tombstone reclamation, and retention-epoch peer eviction.        |
 | [`CRDT_VECTOR_COMPACTION.md`](./CRDT_VECTOR_COMPACTION.md)                             | Protocol             | Two-phase state-vector handshake, differential update generation, checkpoint lifecycle, compaction heuristics, offline reconnect, and the invariant checklist. |
 | [`CRDT_VECTOR_MATHEMATICAL_SPEC.md`](./CRDT_VECTOR_MATHEMATICAL_SPEC.md)               | Theory               | State-vector algebra, the missing-update function, Lamport ordering, and the tombstone GC sketch.                                                              |
@@ -19,11 +20,12 @@ collaborative data layer. All documents describe the Yjs 13.6.33 /
 
 1. [`whiteboard-architecture.md`](./whiteboard-architecture.md) for the system
    shape and where persistence happens.
-2. [`CRDT_VECTOR_COMPACTION.md`](./CRDT_VECTOR_COMPACTION.md) for the wire
+2. [`CRDT_MULTI_PEER_VECTOR_GC.md`](./CRDT_MULTI_PEER_VECTOR_GC.md) for the multi-peer safety invariant and partition/retention protocol.
+3. [`CRDT_VECTOR_COMPACTION.md`](./CRDT_VECTOR_COMPACTION.md) for the wire
    protocol and operational compaction flow.
-3. [`CRDT_VECTOR_COMPACTION_SPECIFICATION.md`](./CRDT_VECTOR_COMPACTION_SPECIFICATION.md)
+4. [`CRDT_VECTOR_COMPACTION_SPECIFICATION.md`](./CRDT_VECTOR_COMPACTION_SPECIFICATION.md)
    for the formal model, the squash-eligibility predicate, and the proofs.
-4. [`CRDT_VECTOR_MATHEMATICAL_SPEC.md`](./CRDT_VECTOR_MATHEMATICAL_SPEC.md) and
+5. [`CRDT_VECTOR_MATHEMATICAL_SPEC.md`](./CRDT_VECTOR_MATHEMATICAL_SPEC.md) and
    [`state-based-resolution.md`](./state-based-resolution.md) for the underlying
    algebra.
 

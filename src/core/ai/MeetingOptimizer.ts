@@ -10,8 +10,15 @@ import type { OverlapSlot } from "@/core/scheduling/TimezoneOverlapMatrix";
 import {
   MultiAgentOrchestrator,
   type AgentToolDeclaration,
+  type SubagentExecutionResult,
   type TokenTelemetryRecord,
 } from "@/lib/agents/MultiAgentOrchestrator";
+import {
+  getErrorStatus,
+  isRetryableLlmError,
+  retryWithBackoff,
+  type RetryOptions,
+} from "@/lib/ai/retryWithBackoff";
 
 export interface ParticipantBusyInterval {
   startUTC: number;
@@ -21,6 +28,12 @@ export interface ParticipantBusyInterval {
 export interface MeetingOptimizerOptions {
   /** Minimum recovery gap between meetings. Defaults to 15 minutes. */
   bufferMinutes?: number;
+  /**
+   * Retry policy for the LLM reasoning call in optimizeMeetingWithGovernor.
+   * Transient errors (429, 502, 503, 504) are retried with exponential backoff
+   * and jitter, 3 attempts by default.
+   */
+  retry?: RetryOptions;
 }
 
 export interface MeetingContext {
@@ -204,14 +217,38 @@ export class MeetingOptimizer {
 
     const taskInstruction = `Evaluate the following candidate meeting slots for meeting '${context.title}' with urgency '${context.urgency}' and preferred time '${context.preferredTimeOfDay}'. Candidates: ${JSON.stringify(candidateSummary)}. Select the best slot index and explain why.`;
 
-    const subagentResult = await this.orchestrator.invokeSubagent({
-      subagentName: "MeetingSchedulingAgent",
-      instruction: taskInstruction,
-      context: { context, candidateSummary },
-      tools,
-    });
-
     const selectedSlot = sortedSlots[0] || null;
+
+    let subagentResult: SubagentExecutionResult;
+    try {
+      subagentResult = await retryWithBackoff(
+        () =>
+          this.orchestrator.invokeSubagent({
+            subagentName: "MeetingSchedulingAgent",
+            instruction: taskInstruction,
+            context: { context, candidateSummary },
+            tools,
+            rethrowRetryableErrors: true,
+          }),
+        this.options.retry,
+      );
+    } catch (error) {
+      if (!isRetryableLlmError(error)) {
+        throw error;
+      }
+      // Retries are exhausted. The deterministic ranking is still valid, so keep
+      // the negotiation session alive instead of failing the whole request.
+      console.warn(
+        `[MeetingOptimizer] LLM reasoning unavailable after retries (status ${getErrorStatus(error)}); using deterministic ranking.`,
+      );
+      return {
+        slots: sortedSlots,
+        selectedSlot,
+        rationale:
+          "AI reasoning is temporarily unavailable (upstream rate limit or outage). Showing the top ranked slot from deterministic scoring.",
+        telemetry: null,
+      };
+    }
 
     return {
       slots: sortedSlots,

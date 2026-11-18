@@ -5,6 +5,7 @@ import { getTotalPendingMutationsCount } from "@/lib/offlineStorage";
 import { getQueuedReviews } from "@/lib/offlineReviewSync";
 
 const SYNC_POLL_INTERVAL_MS = 1_000;
+const PENDING_COUNT_REFRESH_INTERVAL_MS = 3_000;
 const MAX_SYNC_INDICATOR_MS = 20_000;
 
 export interface OfflineSyncStatus {
@@ -88,6 +89,7 @@ export function useOfflineSyncStatus(): OfflineSyncStatus {
 
     let disposed = false;
     let pollTimer: ReturnType<typeof setInterval> | undefined;
+    let countRefreshTimer: ReturnType<typeof setInterval> | undefined;
     let stopTimer: ReturnType<typeof setTimeout> | undefined;
 
     const stopSyncWatch = () => {
@@ -145,11 +147,18 @@ export function useOfflineSyncStatus(): OfflineSyncStatus {
 
     const handleSyncProgress = (event: Event) => {
       const detail = (event as CustomEvent<{ type?: string }>).detail;
-      if (detail?.type === "SYNC_STARTED") setIsSyncing(true);
+      if (detail?.type === "SYNC_STARTED") {
+        startSyncWatch();
+        return;
+      }
       void refreshPendingCount();
     };
 
     void refreshPendingCount();
+    // Keep the badge accurate when writes are queued while the device remains offline.
+    countRefreshTimer = setInterval(() => {
+      void refreshPendingCount();
+    }, PENDING_COUNT_REFRESH_INTERVAL_MS);
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
@@ -160,6 +169,7 @@ export function useOfflineSyncStatus(): OfflineSyncStatus {
     return () => {
       disposed = true;
       stopSyncWatch();
+      if (countRefreshTimer) clearInterval(countRefreshTimer);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("trigger-sync", handleStorageChange);

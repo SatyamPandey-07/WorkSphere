@@ -17,3 +17,4 @@ export * from './AsynchronousEpochTransition';
 export * from './DelayEncryptionOrdering';
 export * from './BFTStateCheckpointVerifier';
 export * from './AsynchronousGradedAgreement';
+export * from './HotStuff2ChainedEngine';

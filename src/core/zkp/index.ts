@@ -58,3 +58,4 @@ export * from './InnerProductEqualityProver';
 export * from './DistributedKeySwitching';
 export * from './KZGDivisionWitnessProver';
 export * from './VerifiableTimedSignature';
+export * from './SparseVectorLookupProver';

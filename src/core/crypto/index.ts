@@ -21,3 +21,4 @@ export * from './DistributedKeyRotationProtocol';
 export * from './VerifiableMultiPartyAggregation';
 export * from './ShareConversionProtocol';
 export * from './ThresholdOPRFProtocol';
+export * from './ThresholdSchnorrMuSig';

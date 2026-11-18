@@ -1,5 +1,7 @@
 "use client";
 
+ feat/nomad-passport-haptics
+
  feat/redlock-fencing-zkp-batch
 
  feat/redlock-fencing-consensus
@@ -10,6 +12,7 @@
  fix/double-ratchet-header-validation
 
  feat/compressed-desk-pass-minter
+ main
  main
  main
  main
@@ -96,6 +99,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/nomad-passport-haptics
+}
+
  feat/redlock-fencing-zkp-batch
 }
 
@@ -249,6 +255,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

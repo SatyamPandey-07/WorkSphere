@@ -1,13 +1,14 @@
-import type { Metadata, Viewport } from "next";
+﻿import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { cookies, headers } from "next/headers";
-
+import Script from "next/script";
 import "./globals.css";
 
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
 import { SoundProvider } from "../components/SoundProvider";
+import { SkipToContent } from "../components/ui/SkipToContent";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { ScrollToTopButton } from "../components/ui/ScrollToTopButton";
 import { CookieBanner } from "../components/CookieBanner";
@@ -16,6 +17,7 @@ import { SyncManager } from "../hooks/usePWA";
 import { ToastProvider } from "../components/ui/Toast";
 import { PWAUpdateListener } from "../components/PWAUpdateListener";
 import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
+import { KeyboardShortcutModal } from "../components/ui/KeyboardShortcutModal";
 import { CommandPalette } from "../components/CommandPalette";
 import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";
 import { StorageQuotaWarningBanner } from "../components/ui/StorageQuotaWarningBanner";
@@ -99,14 +101,19 @@ export default async function RootLayout({
             <RateLimitBanner />
             <PWAUpdateListener />
             <KeyboardShortcutsModal />
+            <KeyboardShortcutModal />
             <CommandPalette />
             <IdleSessionDialog />
             <StorageQuotaWarningBanner />
-            <I18nProvider>{children}</I18nProvider>
+            <I18nProvider>
+              <main id="main-content" tabIndex={-1} className="outline-none">
+                {children}
+              </main>
+            </I18nProvider>
+            <SyncManager />
           </CurrencyProvider>
         </ToastProvider>
       </SoundProvider>
-      <SyncManager />
     </ThemeProvider>
   );
 
@@ -124,7 +131,7 @@ export default async function RootLayout({
     </ClerkProvider>
   );
 
-  return (
+ return (
     <html
       lang="en"
       data-theme={theme}
@@ -134,26 +141,19 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head suppressHydrationWarning>
-        <script
-          id="theme-init"
-          suppressHydrationWarning
-          nonce={nonce}
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
-        <ScrollProgress />
-        <ScrollToTopButton />
+      <body suppressHydrationWarning>
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
         {bodyContent}
-        <CookieBanner />
       </body>
     </html>
-  );
+  )
 }

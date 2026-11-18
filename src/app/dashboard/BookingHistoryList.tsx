@@ -5,7 +5,6 @@ import {
   Search,
   Calendar,
   MapPin,
-  Download,
   CalendarPlus,
   Ban,
   QrCode,
@@ -17,6 +16,7 @@ import { ExportBookingsCSVButton } from "@/components/bookings/ExportBookingsCSV
 import { RescheduleModal } from "@/components/bookings/RescheduleModal";
 import { MobileWalletPassModal } from "@/components/bookings/MobileWalletPassModal";
 import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
+import { ReceiptDownloadButton } from "@/components/bookings/ReceiptDownloadButton";
 
 export interface BookingHistoryListProps {
   bookings: BookingSummary[];
@@ -65,7 +65,7 @@ export function BookingHistoryList({
   // Filtered list
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
-      const cancelled = b.status === "CANCELLED";
+      const cancelled = (b.status === "CANCELLED" || b.status === "CANCELLED_BY_OPERATOR");
       const future = !cancelled && isUpcoming(b);
       const currentStatus = cancelled
         ? "CANCELLED"
@@ -265,7 +265,7 @@ export function BookingHistoryList({
               className="space-y-3"
             >
               {itemsToRender.map(({ booking }) => {
-                const cancelled = booking.status === "CANCELLED";
+                const cancelled = ((booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR") || booking.status === "CANCELLED_BY_OPERATOR");
                 const future = !cancelled && isUpcoming(booking);
                 const venueName = booking.venue?.name ?? "Workspace";
                 const address = booking.venue?.address ?? "";
@@ -348,14 +348,11 @@ export function BookingHistoryList({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 mt-3 pl-7">
-                      <a
-                        href={`/api/bookings/${booking.id}/download`}
+                      <ReceiptDownloadButton
+                        bookingId={booking.id}
+                        confirmationId={booking.confirmationId}
                         className={chipClass}
-                        aria-label="Download receipt"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        Receipt
-                      </a>
+                      />
                       <a
                         href={`/api/bookings/${booking.id}/itinerary`}
                         className={chipClass}

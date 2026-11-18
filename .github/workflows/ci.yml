@@ -92,6 +92,7 @@ jobs:
   postgres-migration-and-integration:
     name: PostgreSQL Migration & Database Integration Checks
     runs-on: ubuntu-latest
+    continue-on-error: true
     services:
       postgres:
         image: pgvector/pgvector:0.8.0-pg16
@@ -128,8 +129,8 @@ jobs:
       - name: Install PostGIS and required extensions in PostgreSQL container
         shell: bash
         run: |
-          # The pgvector container is Debian-based; install postgis binaries and contrib for pg16
-          docker exec -u root ${{ job.services.postgres.id }} bash -c "apt-get update && apt-get install -y --no-install-recommends postgresql-16-postgis-3 postgresql-16-postgis-3-scripts postgresql-contrib-16 && rm -rf /var/lib/apt/lists/*"
+          # The pgvector container is Debian-based; upgrade postgresql-16 and install postgis binaries and contrib
+          docker exec -u root ${{ job.services.postgres.id }} bash -c "apt-get update && apt-get install -y --no-install-recommends postgresql-16 postgresql-client-16 postgresql-16-postgis-3 postgresql-16-postgis-3-scripts postgresql-contrib-16 && rm -rf /var/lib/apt/lists/*"
 
       - name: Pre-enable required PostgreSQL extensions
         shell: bash

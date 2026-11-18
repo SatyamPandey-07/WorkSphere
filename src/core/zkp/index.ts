@@ -85,3 +85,4 @@ export * from './ZeroKnowledgeVotingElGamalTally';
 export * from './PedersenMerkleAuditTree';
 export * from './DistributedDKGComplaintVerifier';
 export * from './ThresholdDecryptionShareProver';
+export * from './VerifiableShuffleReencryptionProver';

@@ -110,3 +110,14 @@ describe("Fuzzy Typo-Tolerant Search (#3958)", () => {
   });
 });
 
+
+
+describe("Venue name typo examples", () => {
+  it("matches WeWorkk to WeWork within the configured typo threshold", () => {
+    expect(isFuzzyMatch("WeWorkk", "WeWork").matched).toBe(true);
+  });
+
+  it("matches Spaces Cowrking to Spaces Coworking", () => {
+    expect(isFuzzyMatch("Spaces Cowrking", "Spaces Coworking").matched).toBe(true);
+  });
+});

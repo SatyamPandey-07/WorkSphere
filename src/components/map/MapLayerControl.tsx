@@ -1,5 +1,18 @@
 import React from 'react';
-import { useMapLayers } from '../../hooks/useMapLayers';
+import { useMapLayers, type MapLayersState } from '../../hooks/useMapLayers';
+
+/**
+ * High-visibility two-tone keyboard focus indicator (#7724): a blue ring separated from
+ * the control by a dark offset, so it stays visible on light, dark and satellite maps.
+ */
+export const MAP_LAYER_FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900';
+
+const LAYER_OPTIONS: ReadonlyArray<{ key: keyof MapLayersState; label: string }> = [
+  { key: 'seatingHeatmap', label: 'Seating Occupancy Heatmap' },
+  { key: 'noiseContours', label: 'Ambient Noise Contours' },
+  { key: 'powerOutlets', label: 'Power Outlet Availability Pins' },
+];
 
 export const MapLayerControl: React.FC = () => {
   const { layers, toggleLayer } = useMapLayers();
@@ -11,42 +24,35 @@ export const MapLayerControl: React.FC = () => {
         <span className="text-xs text-emerald-400 font-mono">Live</span>
       </div>
 
-      <div className="space-y-3">
-        <label className="flex items-center justify-between cursor-pointer group">
-          <span className="text-sm text-slate-300 group-hover:text-white transition">
-            Seating Occupancy Heatmap
-          </span>
-          <input
-            type="checkbox"
-            checked={layers.seatingHeatmap}
-            onChange={() => toggleLayer('seatingHeatmap')}
-            className="w-4 h-4 accent-emerald-500 rounded bg-slate-800 border-slate-700 cursor-pointer"
-          />
-        </label>
-
-        <label className="flex items-center justify-between cursor-pointer group">
-          <span className="text-sm text-slate-300 group-hover:text-white transition">
-            Ambient Noise Contours
-          </span>
-          <input
-            type="checkbox"
-            checked={layers.noiseContours}
-            onChange={() => toggleLayer('noiseContours')}
-            className="w-4 h-4 accent-emerald-500 rounded bg-slate-800 border-slate-700 cursor-pointer"
-          />
-        </label>
-
-        <label className="flex items-center justify-between cursor-pointer group">
-          <span className="text-sm text-slate-300 group-hover:text-white transition">
-            Power Outlet Availability Pins
-          </span>
-          <input
-            type="checkbox"
-            checked={layers.powerOutlets}
-            onChange={() => toggleLayer('powerOutlets')}
-            className="w-4 h-4 accent-emerald-500 rounded bg-slate-800 border-slate-700 cursor-pointer"
-          />
-        </label>
+      <div role="group" aria-label="Map layers" className="space-y-1">
+        {LAYER_OPTIONS.map(({ key, label }) => {
+          const pressed = layers[key];
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={pressed}
+              onClick={() => toggleLayer(key)}
+              className={`group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left cursor-pointer ${MAP_LAYER_FOCUS_RING}`}
+            >
+              <span className="text-sm text-slate-300 group-hover:text-white transition">
+                {label}
+              </span>
+              <span
+                aria-hidden="true"
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
+                  pressed ? 'bg-emerald-500 border-emerald-400' : 'bg-slate-800 border-slate-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                    pressed ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

@@ -35,6 +35,31 @@ export function VenueSeatWaitlistModal({
   const [claiming, setClaiming] = useState(false);
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number | null>(null);
   const expiredRefetchRef = useRef(false);
+  const triggerElementRef = useRef<HTMLElement | null>(null);
+
+  // Capture trigger element and handle ESC key to dismiss modal and restore focus
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      triggerElementRef.current = document.activeElement as HTMLElement | null;
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (
+        triggerElementRef.current &&
+        typeof triggerElementRef.current.focus === "function"
+      ) {
+        triggerElementRef.current.focus();
+      }
+    };
+  }, [onClose]);
 
   // Fetch active waitlist entries for this venue
   const fetchStatus = useCallback(async () => {
@@ -215,7 +240,7 @@ export function VenueSeatWaitlistModal({
           </div>
           <button
             onClick={onClose}
-            className="rounded-full p-2 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+            className="rounded-full p-2 text-zinc-400 transition hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
             aria-label="Close modal"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -340,7 +365,7 @@ export function VenueSeatWaitlistModal({
                   onChange={(e) => setDate(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
                   required
-                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-sm text-white focus:border-violet-500 focus:outline-none transition"
+                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-sm text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition"
                 />
               </div>
               <div>
@@ -350,7 +375,7 @@ export function VenueSeatWaitlistModal({
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
                   required
-                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-sm text-white focus:border-violet-500 focus:outline-none transition"
+                  className="w-full rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-sm text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition"
                 />
               </div>
             </div>
@@ -392,11 +417,10 @@ export function VenueSeatWaitlistModal({
                 <button
                   type="button"
                   onClick={() => setRequiresQuiet(!requiresQuiet)}
-                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition ${
-                    requiresQuiet
-                      ? 'border-violet-500 bg-violet-500/20 text-violet-300'
-                      : 'border-white/10 bg-black/40 text-zinc-400 hover:border-white/20'
-                  }`}
+                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition ${requiresQuiet
+                    ? 'border-violet-500 bg-violet-500/20 text-violet-300'
+                    : 'border-white/10 bg-black/40 text-zinc-400 hover:border-white/20'
+                    }`}
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
@@ -408,11 +432,10 @@ export function VenueSeatWaitlistModal({
                 <button
                   type="button"
                   onClick={() => setRequiresOutlets(!requiresOutlets)}
-                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition ${
-                    requiresOutlets
-                      ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300'
-                      : 'border-white/10 bg-black/40 text-zinc-400 hover:border-white/20'
-                  }`}
+                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition ${requiresOutlets
+                    ? 'border-cyan-500 bg-cyan-500/20 text-cyan-300'
+                    : 'border-white/10 bg-black/40 text-zinc-400 hover:border-white/20'
+                    }`}
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -426,7 +449,7 @@ export function VenueSeatWaitlistModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-zinc-300 hover:bg-white/5 transition"
+                className="flex-1 rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-zinc-300 hover:bg-white/5 transition focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 Cancel
               </button>

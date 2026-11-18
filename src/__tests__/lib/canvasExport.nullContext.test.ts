@@ -1,4 +1,3 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   exportCanvasAsPng,
   exportCanvasToBlob,
@@ -24,7 +23,7 @@ describe("canvasExport null 2D context handling", () => {
 
   afterEach(() => {
     HTMLCanvasElement.prototype.getContext = originalGetContext;
-    vi.restoreAllMocks();
+    jest.restoreAllMocks();
   });
 
   const sampleShapes: ShapeData[] = [
@@ -39,8 +38,8 @@ describe("canvasExport null 2D context handling", () => {
 
   it("handles null context in exportCanvasAsPng without throwing TypeError and emits export error notification", async () => {
     // Mock getContext to return null simulating context allocation failure
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null as any);
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    jest.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null as any);
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await exportCanvasAsPng(sampleShapes);
 
@@ -51,8 +50,8 @@ describe("canvasExport null 2D context handling", () => {
   });
 
   it("rejects with descriptive Error in exportCanvasToBlob when getContext('2d') returns null", async () => {
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null as any);
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    jest.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null as any);
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(exportCanvasToBlob(sampleShapes)).rejects.toThrow(
       "Failed to acquire 2D rendering context from canvas: getContext('2d') returned null"

@@ -16,6 +16,7 @@ export interface SabineRoomInput {
  * allowing divide-by-zero, negative, NaN, or infinite values into the UI.
  */
 export function calculateSabineRt60(input: SabineRoomInput): number | null {
+  if (!input || typeof input !== "object") return null;
   const { volumeM3, surfaces } = input;
 
   if (
@@ -29,6 +30,7 @@ export function calculateSabineRt60(input: SabineRoomInput): number | null {
 
   let equivalentAbsorptionArea = 0;
   for (const surface of surfaces) {
+    if (!surface || typeof surface !== "object") return null;
     if (
       !Number.isFinite(surface.areaM2) ||
       surface.areaM2 <= 0 ||

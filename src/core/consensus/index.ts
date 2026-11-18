@@ -15,3 +15,4 @@ export * from './BullsharkDAGCoordinator';
 export * from './AsynchronousSharedMempool';
 export * from './AsynchronousEpochTransition';
 export * from './DelayEncryptionOrdering';
+export * from './BFTStateCheckpointVerifier';

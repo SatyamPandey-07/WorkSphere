@@ -8,6 +8,7 @@ import {
   PARTY_SOCKET_RECONNECT_OPTIONS,
 } from "@/lib/partySocketReconnect";
 import {
+  calculateFullJitterBackoff,
   calculateJitteredBackoff,
   type CalculateJitteredBackoffOptions,
 } from "@/lib/utils/backoff";
@@ -17,6 +18,7 @@ import {
 } from "@/lib/realtime/connectionState";
 
 export {
+  calculateFullJitterBackoff,
   calculateJitteredBackoff,
   type CalculateJitteredBackoffOptions,
   ConnectionLifecycleState,
@@ -121,7 +123,7 @@ export function usePartySocket(options: PartySocketOptions) {
 
   const {
     baseDelay = PARTY_SOCKET_RECONNECT_OPTIONS.minReconnectionDelay,
-    maxDelay = PARTY_SOCKET_RECONNECT_OPTIONS.maxReconnectionDelay,
+    maxDelay = 10_000,
     onConnectionStatusChange,
     ...socketOptions
   } = options;
@@ -354,7 +356,7 @@ export function usePartySocket(options: PartySocketOptions) {
     if (s) {
       (s as any)._getNextDelay = function () {
         const attempt = (this._retryCount ?? 0) + 1;
-        return calculateJitteredBackoff(attempt, { baseDelay, maxDelay });
+        return calculateFullJitterBackoff(attempt, { baseDelay, maxDelay });
       };
     }
     return s;

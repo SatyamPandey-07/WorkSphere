@@ -69,3 +69,4 @@ export * from './Groth16QAPVerifier';
 export * from './PLONKPermutationProver';
 export * from './FRILowDegreeTester';
 export * from './ChaumPedersenBatchVerifier';
+export * from './ZeroKnowledgeSetMembershipMerkle';

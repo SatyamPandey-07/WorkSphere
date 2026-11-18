@@ -57,3 +57,4 @@ export * from './PedersenBatchOpener';
 export * from './InnerProductEqualityProver';
 export * from './DistributedKeySwitching';
 export * from './KZGDivisionWitnessProver';
+export * from './VerifiableTimedSignature';

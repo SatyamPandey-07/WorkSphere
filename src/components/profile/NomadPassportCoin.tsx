@@ -11,6 +11,11 @@ export interface NomadPassportCoinProps {
   isLoaded?: boolean;
   className?: string;
   onReady?: () => void;
+  passportId?: string;
+  nomadName?: string;
+  countryCode?: string;
+  stampsCount?: number;
+  isVerified?: boolean;
 }
 
 const DEFAULT_STAMP: PassportStamp = {
@@ -348,6 +353,19 @@ export function NomadPassportCoin({
     onReady?.();
   };
 
+  const triggerHaptic = (pattern: number | number[]) => {
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.vibrate === "function"
+      ) {
+        navigator.vibrate(pattern);
+      }
+    } catch {
+      // Gracefully ignore environments where vibration is denied or unsupported
+    }
+  };
+
   const fallback = <CoinFallback stamp={stamp} flipped={flipped} />;
 
   return (
@@ -370,11 +388,20 @@ export function NomadPassportCoin({
             ? "opacity-0 pointer-events-none"
             : "opacity-100 transition-opacity duration-300"
         }`}
-        onMouseEnter={() => setFlipped(true)}
+        onMouseEnter={() => {
+          setFlipped(true);
+          triggerHaptic(15);
+        }}
         onMouseLeave={() => setFlipped(false)}
-        onFocus={() => setFlipped(true)}
+        onFocus={() => {
+          setFlipped(true);
+          triggerHaptic(15);
+        }}
         onBlur={() => setFlipped(false)}
-        onClick={() => setFlipped(true)}
+        onClick={() => {
+          setFlipped((prev) => !prev);
+          triggerHaptic([10, 30, 10]);
+        }}
       >
         {webglSupported ? (
           <CoinErrorBoundary fallback={fallback}>

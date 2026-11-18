@@ -1,9 +1,32 @@
 /**
  * @file IAQVentilationController.ts
- * @description Automated Indoor Air Quality (IAQ) and HVAC ventilation controller
- * compliant with ASHRAE 62.1-2022 standards. Manages multi-pollutant telemetry,
- * dynamic demand-controlled ventilation (DCV), PID closed-loop damper/fan modulation,
- * and emergency wildfire/smog outdoor recirculation overrides.
+ * @description Automated Indoor Air Quality (IAQ) and HVAC ventilation controller.
+ * Implements multi-pollutant telemetry processing, ASHRAE 62.1-2022 breathing zone
+ * airflow rate calculations, dynamic Demand-Controlled Ventilation (DCV), closed-loop
+ * discrete PID damper and VAV airflow modulation with anti-windup clamping, and emergency
+ * purge / wildfire defense safety overrides.
+ *
+ * Architecture & Closed-Loop Control:
+ * 1. Sensor Telemetry Ingestion: Samples CO2 (ppm), PM2.5 (ug/m3), TVOC (ppb), temperature (deg C),
+ *    and relative humidity (%).
+ * 2. Multi-Pollutant IAQ Scoring: Generates sub-scores and a composite 0-100 index weighted as:
+ *    CO2 (35%), PM2.5 (35%), TVOC (20%), and Thermal Comfort (10%).
+ * 3. Ventilation Demand Calculation: Computes baseline / DCV outdoor airflow Voz = Vbz / Ez using
+ *    ASHRAE 62.1-2022 Table 6-1 default rates (Rp, Ra) and space distribution effectiveness Ez.
+ * 4. Error Formulation: Computes normalized effective error e_eff = (e_CO2 / 10) + (e_TVOC / 20)
+ *    where positive excursion above setpoint drives actuation.
+ * 5. Discrete PID Execution: Applies proportional (Kp=0.08), integral (Ki=0.015, integrated per minute
+ *    with anti-windup bounds [-30, 50]), and derivative (Kd=0.04) terms to modulate motorized damper %.
+ * 6. Actuator Mapping: Maps damper opening to target VAV CFM (vavTargetCfm), floor-clamped at Voz,
+ *    and stages fan speed (low / medium / high), HEPA filtration boost, and air ionization.
+ * 7. Safety Overrides: Triggers PURGE on severe indoor contamination (CO2 > 1400 ppm or TVOC > 1000 ppb)
+ *    and WILDFIRE_DEFENSE during hazardous ambient air (ambient PM2.5 > 100 ug/m3, AQI >= 200, or wildfire flag)
+ *    to throttle outdoor intake to minimum safety stops and maximize internal HEPA recirculation.
+ *
+ * Safety & Compliance Limitations:
+ * Execution of this controller does not certify ASHRAE 62.1 regulatory compliance. Full compliance
+ * requires multi-zone system ventilation efficiency (Ev) balancing, certified testing and balancing (TAB),
+ * central outdoor intake airflow measurement, and adherence to applicable local mechanical codes.
  */
 
 export interface IAQSensorReading {
@@ -91,7 +114,14 @@ interface PIDState {
     integralError: number;
     lastError: number;
     lastTimestamp: number;
+    smoothedCo2?: number;
+    co2DemandActive: boolean;
+    lastDamperOpenPercent: number;
 }
+
+const CO2_EMA_ALPHA = 0.2;
+const CO2_DEADBAND_PPM = 25;
+const MAX_DAMPER_CHANGE_PERCENT_PER_SECOND = 2;
 
 export class IAQVentilationController {
     private zoneConfigs: Map<string, ZoneVentilationConfig> = new Map();
@@ -130,7 +160,10 @@ export class IAQVentilationController {
         this.pidStates.set(config.zoneId, {
             integralError: 0,
             lastError: 0,
-            lastTimestamp: Date.now()
+            lastTimestamp: Date.now(),
+            smoothedCo2: undefined,
+            co2DemandActive: false,
+            lastDamperOpenPercent: config.damperMinPercent
         });
     }
 
@@ -149,9 +182,22 @@ export class IAQVentilationController {
     }
 
     /**
-     * Calculates the baseline outdoor air requirement based on ASHRAE Standard 62.1-2022.
-     * Vbz = Rp * Pz + Ra * Az
-     * Voz = Vbz / Ez
+     * Calculates the baseline outdoor air requirement based on the ASHRAE Standard 62.1-2022
+     * Ventilation Rate Procedure (VRP):
+     *
+     * Vbz = Rp * Pz + Ra * Az (Breathing Zone Outdoor Airflow)
+     * Voz = Vbz / Ez          (Zone Outdoor Airflow)
+     *
+     * Where:
+     * - Rp: Outdoor airflow rate per person (CFM/person, Table 6-1)
+     * - Pz: Zone population (occupant count; uses currentOccupancy when provided for DCV, otherwise designOccupancy)
+     * - Ra: Outdoor airflow rate per unit area (CFM/sqft, Table 6-1)
+     * - Az: Occupiable floor area (sqft)
+     * - Ez: Zone air distribution effectiveness (Table 6-4, clamped to min 0.1)
+     *
+     * @param zoneId - The unique identifier of the registered zone.
+     * @param currentOccupancy - Optional real-time occupant count for Demand-Controlled Ventilation.
+     * @returns Required outdoor airflow Voz rounded to two decimal places (CFM).
      */
     public calculateRequiredAirflow(zoneId: string, currentOccupancy?: number): number {
         const config = this.zoneConfigs.get(zoneId);
@@ -169,6 +215,23 @@ export class IAQVentilationController {
 
     /**
      * Assesses comprehensive IAQ indices based on multi-sensor reading.
+     * Computes individual sub-scores (0-100) and a composite index weighted as:
+     * - CO2: 35% (target <= 800 ppm; piecewise penalty above 600 ppm)
+     * - PM2.5: 35% (target <= 12 ug/m3; EPA NAAQS-aligned piecewise penalty)
+     * - TVOC: 20% (target <= 220 ppb; piecewise penalty above 220 ppb)
+     * - Thermal Comfort: 10% (ideal 20-24 C and 30-60% RH; penalized on deviation)
+     *
+     * Note: PM10 and formaldehyde are accepted in sensor telemetry but not evaluated in composite score.
+     *
+     * Overall Score = round(0.35 * CO2 + 0.35 * PM2.5 + 0.20 * TVOC + 0.10 * Thermal, 1)
+     * Grades: EXCELLENT (>=90), GOOD (>=75), MODERATE (>=60), POOR (>=45), UNHEALTHY (>=30), HAZARDOUS (<30).
+     *
+     * AshraeCompliance flag represents an operational diagnostic check:
+     * (CO2 <= targetCo2 AND PM2.5 <= 35.4 ug/m3). It is not an official certification.
+     *
+     * @param reading - Environmental sensor readings for the zone.
+     * @param currentOccupancy - Optional real-time occupant count for dynamic DCV evaluation.
+     * @returns IAQAssessment containing scores, grade, critical pollutant, and compliance flag.
      */
     public assessIAQ(reading: IAQSensorReading, currentOccupancy?: number): IAQAssessment {
         const config = this.zoneConfigs.get(reading.zoneId);
@@ -261,6 +324,39 @@ export class IAQVentilationController {
 
     /**
      * Executes closed-loop PID control and safety logic to compute HVAC modulation signals.
+     *
+     * Control & Safety Workflow:
+     * 1. Ambient Override (Wildfire Defense):
+     *    If outdoor AQI >= 200, outdoor PM2.5 > 100 ug/m3, or wildfireWarning is true:
+     *    Throttles damper intake to max(10%, damperMinPercent), surges internal VAV delivery
+     *    to vavMaxCfm, sets fan to 'high', and activates HEPA filtration and air ionization.
+     * 2. Operating Mode Selection:
+     *    - PURGE: Triggered if CO2 > 1400 ppm or TVOC > 1000 ppb (fan 'high', HEPA boost).
+     *    - DEMAND_CONTROLLED: Active when currentOccupancy < designOccupancy.
+     *    - NORMAL: Standard occupied operation.
+     * 3. Normalized Error Calculation:
+     *    co2Error = max(0, reading.co2 - config.targetCo2)
+     *    tvocError = max(0, reading.tvoc - config.targetTvoc)
+     *    effectiveError = (co2Error / 10.0) + (tvocError / 20.0)
+     * 4. Discrete PID Integration:
+     *    - P = Kp * effectiveError (default Kp = 0.08)
+     *    - I = Ki * clamp(integralError + effectiveError * (dt / 60), antiWindupMin, antiWindupMax)
+     *      (default Ki = 0.015, anti-windup clamp [-30.0, 50.0])
+     *    - D = Kd * (effectiveError - lastError) / dt (default Kd = 0.04)
+     * 5. Damper Actuator Modulation:
+     *    rawDamper = damperMinPercent + P + I + D
+     *    damperOpenPercent = clamp(round(rawDamper, 1), damperMinPercent, damperMaxPercent)
+     * 6. VAV CFM Target Output:
+     *    scaledCfm = vavMinCfm + (vavMaxCfm - vavMinCfm) * normalizedDamperTravel
+     *    vavTargetCfm = clamp(round(scaledCfm), baseRequiredCfm, vavMaxCfm)
+     * 7. Auxiliary Actuation:
+     *    - Fan speed staged: 'high' (>=80% damper or Purge), 'medium' (>=45%), 'low' (<45%).
+     *    - HEPA Boost: PM2.5 > 25 ug/m3 OR TVOC > 400 ppb OR Purge.
+     *    - Air Ionization: TVOC > 500 ppb OR PM2.5 > 35 ug/m3.
+     *
+     * @param reading - Ingested indoor environmental telemetry packet.
+     * @param currentOccupancy - Optional dynamic occupant headcount.
+     * @returns Actionable VentilationControlSignal dispatched to dampers, VAV, and fans.
      */
     public processSensorReading(
         reading: IAQSensorReading,
@@ -317,14 +413,41 @@ export class IAQVentilationController {
         // Closed-Loop PID Calculation
         let pidState = this.pidStates.get(reading.zoneId);
         if (!pidState) {
-            pidState = { integralError: 0, lastError: 0, lastTimestamp: reading.timestamp };
+            pidState = {
+                integralError: 0,
+                lastError: 0,
+                lastTimestamp: reading.timestamp,
+                smoothedCo2: reading.co2,
+                co2DemandActive: false,
+                lastDamperOpenPercent: config.damperMinPercent
+            };
             this.pidStates.set(reading.zoneId, pidState);
         }
 
         const dt = Math.max(1, (reading.timestamp - pidState.lastTimestamp) / 1000); // in seconds
 
-        // Combined normalized error: primarily CO2 error with secondary TVOC contribution
-        const co2Error = Math.max(0, reading.co2 - config.targetCo2);
+        // Smooth noisy CO2 telemetry per zone before feeding the actuator control loop.
+        const previousSmoothedCo2 = pidState.smoothedCo2 ?? reading.co2;
+        const smoothedCo2 =
+            previousSmoothedCo2 +
+            CO2_EMA_ALPHA * (reading.co2 - previousSmoothedCo2);
+        pidState.smoothedCo2 = smoothedCo2;
+
+        // Schmitt trigger: activate above target + 25 ppm and stay active until
+        // CO2 falls below target - 25 ppm. Readings inside the deadband do not
+        // toggle the ventilation demand state.
+        if (!pidState.co2DemandActive &&
+            smoothedCo2 >= config.targetCo2 + CO2_DEADBAND_PPM) {
+            pidState.co2DemandActive = true;
+        } else if (pidState.co2DemandActive &&
+            smoothedCo2 <= config.targetCo2 - CO2_DEADBAND_PPM) {
+            pidState.co2DemandActive = false;
+        }
+
+        // Combined normalized error: primarily smoothed CO2 error with secondary TVOC contribution.
+        const co2Error = pidState.co2DemandActive
+            ? Math.max(0, smoothedCo2 - config.targetCo2)
+            : 0;
         const tvocError = Math.max(0, reading.tvoc - config.targetTvoc);
         const effectiveError = (co2Error / 10.0) + (tvocError / 20.0);
 
@@ -347,13 +470,26 @@ export class IAQVentilationController {
         pidState.lastError = effectiveError;
         pidState.lastTimestamp = reading.timestamp;
 
-        // Calculate Damper Opening Percentage
+        // Calculate desired damper opening, then apply a slew-rate limit so
+        // telemetry noise cannot make the physical actuator cycle rapidly.
         const baseDamper = config.damperMinPercent;
         const rawDamper = baseDamper + pTerm + iTerm + dTerm;
-        const damperOpenPercent = Math.max(
+        const desiredDamperOpenPercent = Math.max(
             config.damperMinPercent,
             Math.min(config.damperMaxPercent, Math.round(rawDamper * 10) / 10)
         );
+        const maxDamperStep =
+            MAX_DAMPER_CHANGE_PERCENT_PER_SECOND * dt;
+        const damperDelta = desiredDamperOpenPercent - pidState.lastDamperOpenPercent;
+        const damperOpenPercent = Math.max(
+            config.damperMinPercent,
+            Math.min(
+                config.damperMaxPercent,
+                pidState.lastDamperOpenPercent +
+                    Math.sign(damperDelta) * Math.min(Math.abs(damperDelta), maxDamperStep)
+            )
+        );
+        pidState.lastDamperOpenPercent = damperOpenPercent;
 
         // Calculate Target VAV CFM Output
         const baseRequiredCfm = assessment.requiredOutdoorAirCfm;
@@ -410,6 +546,10 @@ export class IAQVentilationController {
             state.integralError = 0;
             state.lastError = 0;
             state.lastTimestamp = Date.now();
+            state.smoothedCo2 = undefined;
+            state.co2DemandActive = false;
+            state.lastDamperOpenPercent =
+                this.zoneConfigs.get(zoneId)?.damperMinPercent ?? state.lastDamperOpenPercent;
         }
     }
 }

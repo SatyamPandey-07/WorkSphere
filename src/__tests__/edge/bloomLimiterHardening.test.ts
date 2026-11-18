@@ -260,6 +260,195 @@ describe("DistributedBloomLimiter counter hardening (#7952)", () => {
       const result = limiter.checkAndIncrement("client", -5_000);
       expect(result).toEqual({ limited: false, maxCount: 1 });
     });
+
+    describe("boundary and out-of-order timestamp regression (#8027)", () => {
+      it("handles requests arriving exactly at decay transition boundaries without negative counter underflow", () => {
+        const limiter = new DistributedBloomLimiter({
+          sizeBytes: 64,
+          thresholdCount: 15,
+          windowDurationMs: 1_000,
+          decayFactor: 0.5,
+        });
+
+        const t0 = 100_000;
+        // Seed count to 8
+        for (let i = 0; i < 8; i++) {
+          limiter.checkAndIncrement("client", t0);
+        }
+        expect(limiter.getEstimatedCount("client")).toBe(8);
+
+        // Immediately before boundary (t0 + 999ms) -> no decay, increments to 9
+        const beforeBoundary = limiter.checkAndIncrement("client", t0 + 999);
+        expect(beforeBoundary.limited).toBe(false);
+        expect(beforeBoundary.maxCount).toBe(9);
+
+        // Exactly at boundary (t0 + 1000ms) -> 1 window passed: floor(9 * 0.5) = 4, increment to 5
+        const atBoundary = limiter.checkAndIncrement("client", t0 + 1000);
+        expect(atBoundary.limited).toBe(false);
+        expect(atBoundary.maxCount).toBe(5);
+        expect(atBoundary.maxCount).toBeGreaterThanOrEqual(0);
+
+        // Immediately after boundary (t0 + 1001ms) -> no new window passed, increments to 6
+        const afterBoundary = limiter.checkAndIncrement("client", t0 + 1001);
+        expect(afterBoundary.limited).toBe(false);
+        expect(afterBoundary.maxCount).toBe(6);
+
+        // Repeated requests at the exact same timestamp
+        const sameTs1 = limiter.checkAndIncrement("client", t0 + 1001);
+        const sameTs2 = limiter.checkAndIncrement("client", t0 + 1001);
+        expect(sameTs1.maxCount).toBe(7);
+        expect(sameTs2.maxCount).toBe(8);
+        expect(Number.isFinite(sameTs2.maxCount)).toBe(true);
+      });
+
+      it("handles out-of-order clock ticks without corrupting state or counter underflow", () => {
+        const limiter = new DistributedBloomLimiter({
+          sizeBytes: 64,
+          thresholdCount: 15,
+          windowDurationMs: 1_000,
+          decayFactor: 0.5,
+        });
+
+        const t0 = 200_000;
+        for (let i = 0; i < 6; i++) {
+          limiter.checkAndIncrement("client", t0);
+        }
+        expect(limiter.getEstimatedCount("client")).toBe(6);
+
+        // Advance to t0 + 2000 (2 windows elapsed): floor(6 * 0.5 * 0.5) = 1, increment to 2
+        const futureReq = limiter.checkAndIncrement("client", t0 + 2000);
+        expect(futureReq.maxCount).toBe(2);
+
+        // Out-of-order clock tick: timestamp jumps backward to an earlier timestamp
+        // Clock anchor does not move backwards; no double decay is triggered
+        const outOfOrderReq = limiter.checkAndIncrement("client", t0 + 1500);
+        expect(outOfOrderReq.maxCount).toBe(3);
+        expect(outOfOrderReq.maxCount).toBeGreaterThanOrEqual(0);
+        expect(Number.isFinite(outOfOrderReq.maxCount)).toBe(true);
+
+        // Subsequent forward request at t0 + 2500 is within 1000ms of the forward anchor (t0 + 2000)
+        // so no spurious extra decay window is triggered over overlapping [1500, 2000] interval
+        const nextReq = limiter.checkAndIncrement("client", t0 + 2500);
+        expect(nextReq.maxCount).toBe(4); // 3 + 1 = 4 (no overlapping decay)
+        expect(nextReq.maxCount).toBeGreaterThanOrEqual(0);
+      });
+
+      it("strictly enforces monotonicity on 2000 -> 1500 -> 2100 sequence without duplicate decay", () => {
+        const limiter = new DistributedBloomLimiter({
+          sizeBytes: 64,
+          thresholdCount: 15,
+          windowDurationMs: 1_000,
+          decayFactor: 0.5,
+        });
+
+        // 1. Seed counter to 8 at timestamp 1000
+        for (let i = 0; i < 8; i++) {
+          limiter.checkAndIncrement("client-seq", 1000);
+        }
+        expect(limiter.getEstimatedCount("client-seq")).toBe(8);
+
+        // 2. Process request at timestamp 2000 (1 whole window from 1000)
+        // Decay: floor(8 * 0.5) = 4, then increment -> 5
+        const res2000 = limiter.checkAndIncrement("client-seq", 2000);
+        expect(res2000.maxCount).toBe(5);
+
+        // 3. Out-of-order timestamp at 1500 arrives
+        // Must NOT regress decay anchor backwards, must NOT apply negative decay
+        const res1500 = limiter.checkAndIncrement("client-seq", 1500);
+        expect(res1500.maxCount).toBe(6);
+        expect(res1500.maxCount).toBeGreaterThanOrEqual(0);
+
+        // 4. Subsequent request at timestamp 2100 arrives
+        // Interval [1500, 2000] was already decayed; from 2000 to 2100 is only 100ms (< 1 window)
+        // Must NOT decay again: count increments from 6 to 7
+        const res2100 = limiter.checkAndIncrement("client-seq", 2100);
+        expect(res2100.maxCount).toBe(7);
+        expect(res2100.maxCount).toBeGreaterThanOrEqual(0);
+        expect(Number.isFinite(res2100.maxCount)).toBe(true);
+
+        // Repeated request at exact same timestamp 2100 does not trigger decay
+        const res2100Repeat = limiter.checkAndIncrement("client-seq", 2100);
+        expect(res2100Repeat.maxCount).toBe(8);
+
+        // 5. Future request at timestamp 3000 (1 full window from anchor 2000)
+        // Decay: floor(8 * 0.5) = 4, then increment -> 5
+        const res3000 = limiter.checkAndIncrement("client-seq", 3000);
+        expect(res3000.maxCount).toBe(5);
+      });
+
+      it("guarantees non-negative and finite counters under jittered concurrent boundary requests", () => {
+        const limiter = new DistributedBloomLimiter({
+          sizeBytes: 256,
+          thresholdCount: 10,
+          windowDurationMs: 1_000,
+          decayFactor: 0.5,
+        });
+
+        const baseTime = 500_000;
+        // Fill initial counters
+        for (let i = 0; i < 5; i++) {
+          limiter.checkAndIncrement("client-concurrent", baseTime);
+        }
+
+        // Simulate high concurrency around boundary with jittered timestamps [-50ms, +50ms]
+        const jitterDeltas = [0, -10, 15, -20, 20, 1000, 999, 1001, 1000, 998, 1002, 2000, 1999, 2001];
+        for (const delta of jitterDeltas) {
+          const res = limiter.checkAndIncrement("client-concurrent", baseTime + delta);
+          expect(res.maxCount).toBeGreaterThanOrEqual(0);
+          expect(res.maxCount).toBeLessThanOrEqual(15);
+          expect(Number.isFinite(res.maxCount)).toBe(true);
+        }
+
+        // Inspect all internal bytes in the filter
+        for (const byte of limiter.exportState()) {
+          const low = byte & 0x0f;
+          const high = (byte >> 4) & 0x0f;
+          expect(low).toBeGreaterThanOrEqual(0);
+          expect(low).toBeLessThanOrEqual(15);
+          expect(high).toBeGreaterThanOrEqual(0);
+          expect(high).toBeLessThanOrEqual(15);
+        }
+
+        const estimate = limiter.getEstimatedCount("client-concurrent");
+        expect(estimate).toBeGreaterThanOrEqual(0);
+        expect(estimate).toBeLessThanOrEqual(15);
+        expect(Number.isFinite(estimate)).toBe(true);
+      });
+
+      it("maintains strict rate-limiting enforcement without bypassing limits on boundary requests", () => {
+        const limiter = new DistributedBloomLimiter({
+          sizeBytes: 128,
+          thresholdCount: 5,
+          windowDurationMs: 1_000,
+          decayFactor: 0.5,
+        });
+
+        const t0 = 100_000;
+        // Reach limit exactly
+        for (let i = 0; i < 4; i++) {
+          const res = limiter.checkAndIncrement("ip-limit", t0);
+          expect(res.limited).toBe(false);
+        }
+        const fourthReq = limiter.checkAndIncrement("ip-limit", t0);
+        expect(fourthReq.limited).toBe(true);
+        expect(fourthReq.maxCount).toBe(5);
+
+        // Immediate subsequent request at same timestamp is still limited
+        const immediateBlocked = limiter.checkAndIncrement("ip-limit", t0);
+        expect(immediateBlocked.limited).toBe(true);
+        expect(immediateBlocked.maxCount).toBe(5);
+
+        // Request right before window boundary is still limited
+        const boundaryBlocked = limiter.checkAndIncrement("ip-limit", t0 + 999);
+        expect(boundaryBlocked.limited).toBe(true);
+        expect(boundaryBlocked.maxCount).toBe(5);
+
+        // Exactly at window boundary (1000ms), decays: floor(5 * 0.5) = 2, then +1 = 3, allowed
+        const boundaryAllowed = limiter.checkAndIncrement("ip-limit", t0 + 1000);
+        expect(boundaryAllowed.limited).toBe(false);
+        expect(boundaryAllowed.maxCount).toBe(3);
+      });
+    });
   });
 
   describe("gossip state of an unexpected size", () => {

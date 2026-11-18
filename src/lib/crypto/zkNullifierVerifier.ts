@@ -1,7 +1,7 @@
- feat/redlock-fencing-zkp-batch
-import { groth16 } from 'snarkjs';
+import { groth16 } from "snarkjs";
 
-const BN254_MODULUS = 2188824287183927522246405745257275088548364400416034343698204186575808495617n;
+const BN254_MODULUS =
+  2188824287183927522246405745257275088548364400416034343698204186575808495617n;
 const MAX_BATCH_SIZE = 32;
 
 export interface ZkpVerificationResult {
@@ -14,7 +14,11 @@ export class ZkNullifierVerifier {
   /**
    * Safely chunks and verifies nullifiers within BN254 scalar field constraints
    */
-  async verifyBatch(nullifiers: string[], proof: any, publicSignals: any): Promise<ZkpVerificationResult> {
+  async verifyBatch(
+    nullifiers: string[],
+    proof: any,
+    publicSignals: any,
+  ): Promise<ZkpVerificationResult> {
     // Validate scalar field modulus constraints for individual nullifiers
     for (const n of nullifiers) {
       const val = BigInt(n);
@@ -41,11 +45,15 @@ export class ZkNullifierVerifier {
     return {
       verified: allVerified,
       batchCount: subBatches.length,
-      processedNullifiers: nullifiers.length
+      processedNullifiers: nullifiers.length,
     };
   }
 
-  private async verifySubBatch(subBatch: string[], proof: any, publicSignals: any): Promise<boolean> {
+  private async verifySubBatch(
+    subBatch: string[],
+    proof: any,
+    publicSignals: any,
+  ): Promise<boolean> {
     if (subBatch.length === 0) return true;
     // Perform cryptographic verification on the sub-batch
     return await groth16.verify(publicSignals, proof, proof);
@@ -189,11 +197,7 @@ export async function verifyZkNullifierProofs(
           }
         }
 
-        const isValid = await verifyFn!(
-          verificationKey,
-          publicSignals,
-          proof,
-        );
+        const isValid = await verifyFn!(verificationKey, publicSignals, proof);
 
         if (!isValid) {
           return {
@@ -220,4 +224,3 @@ export async function verifyZkNullifierProofs(
     }),
   );
 }
- main

@@ -1,14 +1,12 @@
- feat/redlock-fencing-zkp-batch
-import { ZkNullifierVerifier } from '../../../src/lib/crypto/zkNullifierVerifier';
-import { groth16 } from 'snarkjs';
+import { ZkNullifierVerifier } from "../../../src/lib/crypto/zkNullifierVerifier";
 
-jest.mock('snarkjs', () => ({
+jest.mock("snarkjs", () => ({
   groth16: {
-    verify: jest.fn().mockResolvedValue(true)
-  }
+    verify: jest.fn().mockResolvedValue(true),
+  },
 }));
 
-describe('ZkNullifierVerifier - Batch Partitioning & Field Modulus', () => {
+describe("ZkNullifierVerifier - Batch Partitioning & Field Modulus", () => {
   let verifier: ZkNullifierVerifier;
 
   beforeEach(() => {
@@ -16,26 +14,33 @@ describe('ZkNullifierVerifier - Batch Partitioning & Field Modulus', () => {
     jest.clearAllMocks();
   });
 
-  test('should successfully partition and verify batches from 1 to 64 nullifiers', async () => {
+  test("should successfully partition and verify batches from 1 to 64 nullifiers", async () => {
     for (let count = 1; count <= 64; count++) {
-      const mockNullifiers = Array.from({ length: count }, (_, i) => (BigInt(1000 + i)).toString());
+      const mockNullifiers = Array.from({ length: count }, (_, i) =>
+        BigInt(1000 + i).toString(),
+      );
       const mockProof = { pi_a: [], pi_b: [], pi_c: [] };
-      const mockSignals = ['1'];
+      const mockSignals = ["1"];
 
-      const result = await verifier.verifyBatch(mockNullifiers, mockProof, mockSignals);
-      
+      const result = await verifier.verifyBatch(
+        mockNullifiers,
+        mockProof,
+        mockSignals,
+      );
+
       expect(result.verified).toBe(true);
       expect(result.processedNullifiers).toBe(count);
       expect(result.batchCount).toBe(Math.ceil(count / 32));
     }
   });
 
-  test('should throw error when nullifier exceeds BN254 scalar field modulus', async () => {
-    const invalidNullifier = '2188824287183927522246405745257275088548364400416034343698204186575808495618';
+  test("should throw error when nullifier exceeds BN254 scalar field modulus", async () => {
+    const invalidNullifier =
+      "2188824287183927522246405745257275088548364400416034343698204186575808495618";
     const mockProof = { pi_a: [], pi_b: [], pi_c: [] };
 
     await expect(
-      verifier.verifyBatch([invalidNullifier], mockProof, ['1'])
+      verifier.verifyBatch([invalidNullifier], mockProof, ["1"]),
     ).rejects.toThrow(/exceeds BN254 scalar field modulus/);
   });
 });
@@ -43,7 +48,6 @@ describe('ZkNullifierVerifier - Batch Partitioning & Field Modulus', () => {
 import {
   verifyZkNullifierProofs,
   InMemoryNullifierStore,
-  setVerificationKey,
   resetVerificationKey,
   type ZkNullifierProof,
 } from "../../lib/crypto/zkNullifierVerifier";
@@ -131,4 +135,3 @@ describe("zkNullifierVerifier ZKP Replay Protection (#7962)", () => {
     expect(store.has("0xdeadbeef1234")).toBe(false);
   });
 });
- main

@@ -1,3 +1,39 @@
+ feat/biometric-commit-auth
+
+ feat/brain-terminal-a11y-docs
+
+ feat/release-expired-locks-cron
+
+ docs/brain-terminal-accessibility-guide
+ main
+ main
+ main
+# Local Development Guide: Clerk Webhooks & Profile Sync
+
+## 1. Overview
+This guide walks you through setting up local webhook ingestion and profile synchronization for WorkSphere using Clerk and tunneling tools.
+
+---
+
+## 2. Configuring `CLERK_WEBHOOK_SECRET`
+1. Log in to your [Clerk Dashboard](https://dashboard.clerk.com/).
+2. Navigate to your application and select **Webhooks** from the sidebar.
+3. Click **Add Endpoint**.
+4. Enter your local endpoint URL (e.g., `https://your-tunnel-url.ngrok-free.app/api/webhooks`).
+5. Select the events you want to subscribe to (e.g., `user.created`, `user.updated`).
+6. Once created, copy the **Signing Secret** (`whsec_...`).
+7. Open your local `.env.local` file and add the secret:
+   ```env
+ feat/biometric-commit-auth
+   CLERK_WEBHOOK_SECRET=whsec_your_actual_signing_secret_here
+ feat/brain-terminal-a11y-docs
+   CLERK_WEBHOOK_SECRET=whsec_your_actual_signing_secret_here
+
+ feat/release-expired-locks-cron
+   CLERK_WEBHOOK_SECRET=whsec_your_actual_signing_secret_here
+
+   CLERK_WEBHOOK_SECRET=whsec_your_actual_signing_secret_here
+
 # 🐳 Local Development Setup Guide: Docker, PostgreSQL & Redis
 
 This guide walks first-time contributors through setting up the complete local database and caching infrastructure for **WorkSphere** using Docker Compose. Following these steps ensures your local environment mirrors production without needing external cloud database subscriptions.
@@ -185,3 +221,7 @@ docker compose up -d postgres redis
 npx prisma db push
 npm run db:seed
 ```
+ main
+ main
+ main
+ main

@@ -1,9 +1,17 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import NomadPassportCoin, {
-  NomadPassportCoinSkeleton,
-} from "@/components/profile/NomadPassportCoin";
-import type { PassportStamp } from "@/lib/zkp/nomadProof";
+
+// Mock Three.js for JSDOM test environment
+jest.mock("three", () => ({
+  CanvasTexture: jest.fn().mockImplementation(() => ({
+    colorSpace: "",
+    anisotropy: 0,
+    dispose: jest.fn(),
+  })),
+  DoubleSide: 2,
+  Group: jest.fn(),
+  SRGBColorSpace: "srgb",
+}));
 
 // Mock @react-three/fiber Canvas
 jest.mock("@react-three/fiber", () => ({
@@ -15,6 +23,11 @@ jest.mock("@react-three/fiber", () => ({
   },
   useFrame: jest.fn(),
 }));
+
+import NomadPassportCoin, {
+  NomadPassportCoinSkeleton,
+} from "@/components/profile/NomadPassportCoin";
+import type { PassportStamp } from "@/lib/zkp/nomadProof";
 
 describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
   const mockStamp: PassportStamp = {
@@ -91,7 +104,9 @@ describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
         />,
       );
 
-      expect(screen.queryByTestId("nomad-coin-skeleton")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("nomad-coin-skeleton"),
+      ).not.toBeInTheDocument();
 
       const button = screen.getByRole("button");
       expect(button).toHaveClass("opacity-100");
@@ -129,6 +144,31 @@ describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
 
       fireEvent.mouseLeave(button);
       expect(button).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("triggers haptic vibration feedback on hover, focus, and click", () => {
+      const vibrateMock = jest.fn().mockReturnValue(true);
+      Object.defineProperty(navigator, "vibrate", {
+        value: vibrateMock,
+        configurable: true,
+        writable: true,
+      });
+
+      render(
+        <NomadPassportCoin
+          stamp={mockStamp}
+          isLoading={false}
+          isLoaded={true}
+        />,
+      );
+
+      const button = screen.getByRole("button");
+      fireEvent.mouseEnter(button);
+      expect(vibrateMock).toHaveBeenCalledWith(15);
+
+      vibrateMock.mockClear();
+      fireEvent.click(button);
+      expect(vibrateMock).toHaveBeenCalledWith([10, 30, 10]);
     });
   });
 });

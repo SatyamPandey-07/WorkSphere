@@ -1,115 +1,8 @@
 /**
- feat/circadian-lighting-runbook
-
- fix/solana-concurrency-retry
-
- fix/double-ratchet-header-validation
- main
- main
- * @file DoubleRatchetSession.ts
- * @description Secure Double Ratchet encryption session with pure header validation
- * to prevent session lockouts on malformed or truncated P2P packets.
- */
-
-export interface RatchetHeader {
-  dh: Uint8Array;
-  pn: number;
-  n: number;
-}
-
-export interface EncryptedMessage {
-  header: RatchetHeader;
-  ciphertext: Uint8Array;
-}
-
-export class DoubleRatchetSession {
-  private dhs: { privateKey: Uint8Array; publicKey: Uint8Array } | null = null;
-  private dhr: Uint8Array | null = null;
-  private cks: Uint8Array | null = null;
-  private ckr: Uint8Array | null = null;
-  private ns = 0;
-  private nr = 0;
-  private pn = 0;
-  private mksm: Map<string, Uint8Array> = new Map();
-  private isStateValid = true;
-
-  constructor(
-    sharedSecret: Uint8Array,
-    isInitiator: boolean,
-    remotePublicKey?: Uint8Array,
-  ) {
-    // Session initialization logic
-    if (isInitiator && remotePublicKey) {
-      this.dhr = remotePublicKey;
-    }
-  }
-
-  /**
-   * Pure parsing and validation stage for incoming message headers.
-   * Ensures headers are fully validated before any session state is mutated.
-   */
-  public parseAndValidateHeader(data: Uint8Array): EncryptedMessage {
-    if (!this.isStateValid) {
-      throw new Error("Session in invalid state");
-    }
-
-    if (data.length < 37) {
-      // Minimum size: 32-byte DH pubkey + 4-byte N + 1-byte payload/overhead check
-      throw new Error("Malformed packet: truncated header");
-    }
-
-    // Extract header components safely without mutating state
-    const dh = data.subarray(0, 32);
-    if (dh.length !== 32) {
-      throw new Error("Invalid ephemeral DH public key length");
-    }
-
-    const view = new DataView(data.buffer, data.byteOffset + 32, 8);
-    const pn = view.getUint32(0);
-    const n = view.getUint32(4);
-
-    const ciphertext = data.subarray(40);
-
-    return {
-      header: { dh, pn, n },
-      ciphertext,
-    };
-  }
-
-  /**
-   * Decrypts an incoming message with pre-validation to protect ratchet state integrity.
-   */
-  public ratchetDecrypt(packetBytes: Uint8Array): Uint8Array {
-    if (!this.isStateValid) {
-      throw new Error("Session in invalid state");
-    }
-
-    // Step 1: Pure parsing and validation stage (does not mutate state)
-    const { header, ciphertext } = this.parseAndValidateHeader(packetBytes);
-
-    try {
-      // Step 2: State mutation occurs only after validation passes successfully
-      this.dhr = header.dh;
-      this.nr = header.n;
-      this.pn = header.pn;
-
-      // Simulated decryption logic using ciphertext
-      const decryptedPayload = new Uint8Array(ciphertext.length);
-      decryptedPayload.set(ciphertext); // Placeholder for actual AEAD decryption
-
-      return decryptedPayload;
-    } catch (err) {
-      // Mark state invalid only on genuine decryption failure, keeping header validation isolated
-      this.isStateValid = false;
-      throw new Error(`Ratchet decryption failed: ${(err as Error).message}`);
-    }
- feat/circadian-lighting-runbook
-
- fix/solana-concurrency-retry
-
-
  * DoubleRatchetSession.ts
- * Signal Protocol-compatible Double Ratchet E2EE session engine.
+ * Signal Protocol-compatible Double Ratchet E2EE session engine with skipped message key storage,
+ * bounded capacity eviction, 7-day forward secrecy TTL, and authenticated header parsing.
+ *
  * Combines Diffie-Hellman ephemeral ratchet with symmetric KDF chain ratchets,
  * providing Forward Secrecy, Post-Compromise Security, and out-of-order message caching.
  */
@@ -122,6 +15,13 @@ import {
   randomBytes,
   ECDH,
 } from 'crypto';
+import {
+  SkippedMessageKeyStore,
+  EncryptedSkippedKeyRecord,
+  SKIPPED_KEYS_MAX_GLOBAL,
+  SKIPPED_KEYS_MAX_PER_CHAIN,
+  SKIPPED_KEYS_RETENTION_TTL_MS,
+} from './SkippedMessageKeyStore';
 
 export interface MessageHeader {
   dhPublicKey: string; // Hex-encoded public key
@@ -138,12 +38,29 @@ export interface EncryptedMessageEnvelope {
 
 export interface RatchetSessionConfig {
   sessionId: string;
-  maxSkippedKeys?: number; // Limit on cached skipped message keys (default 1000)
+  maxSkippedKeys?: number;
+  maxKeysPerChain?: number;
+  skippedKeyTtlMs?: number;
+  timeProvider?: () => number;
+  storageKey?: Buffer;
+}
+
+export interface SerializedDoubleRatchetSession {
+  sessionId: string;
+  localPublicKeyHex: string;
+  remotePublicKeyHex: string | null;
+  rkHex: string;
+  cksHex: string | null;
+  ckrHex: string | null;
+  ns: number;
+  nr: number;
+  pn: number;
+  skippedKeys: EncryptedSkippedKeyRecord[];
 }
 
 export class DoubleRatchetSession {
   private readonly sessionId: string;
-  private readonly maxSkippedKeys: number;
+  private readonly timeProvider: () => number;
 
   private dhs: ECDH;                          // Local DH key pair
   private dhr: Buffer | null = null;          // Remote DH public key
@@ -154,17 +71,29 @@ export class DoubleRatchetSession {
   private nr: number = 0;                     // Receiving message number
   private pn: number = 0;                     // Previous sending chain length
 
-  // Out-of-order message key store: key = `${dhrHex}:${messageNumber}` -> 32-byte MK Buffer
-  private skippedMessageKeys: Map<string, Buffer> = new Map();
+  // Dedicated encrypted skipped message key store
+  private readonly skippedKeyStore: SkippedMessageKeyStore;
+  private isDestroyed = false;
 
   constructor(config: RatchetSessionConfig, initialRootKey: Buffer) {
     this.sessionId = config.sessionId;
-    this.maxSkippedKeys = config.maxSkippedKeys ?? 1000;
+    this.timeProvider = config.timeProvider ?? (() => Date.now());
     this.rk = Buffer.from(initialRootKey);
 
     // Initialize local curve P-256 (prime256v1) key pair
     this.dhs = createECDH('prime256v1');
     this.dhs.generateKeys();
+
+    // Initialize skipped key store
+    this.skippedKeyStore = new SkippedMessageKeyStore({
+      sessionId: this.sessionId,
+      rootKey: this.rk,
+      storageKey: config.storageKey,
+      maxGlobalKeys: config.maxSkippedKeys ?? SKIPPED_KEYS_MAX_GLOBAL,
+      maxKeysPerChain: config.maxKeysPerChain ?? SKIPPED_KEYS_MAX_PER_CHAIN,
+      ttlMs: config.skippedKeyTtlMs ?? SKIPPED_KEYS_RETENTION_TTL_MS,
+      timeProvider: this.timeProvider,
+    });
   }
 
   // --- Session Initialization Handshakes ---
@@ -185,8 +114,8 @@ export class DoubleRatchetSession {
     // Alice performs initial DH step with her key and Bob's key
     const dhSecret = session.dhs.computeSecret(bobPubKey);
     const [newRk, cks] = session.kdfRk(session.rk, dhSecret);
+    dhSecret.fill(0);
     session.rk = newRk;
-    session.cks = cks;
     session.cks = cks;
 
     return session;
@@ -219,12 +148,19 @@ export class DoubleRatchetSession {
     return this.dhs.getPublicKey().toString('hex');
   }
 
+  public getSkippedKeyStore(): SkippedMessageKeyStore {
+    return this.skippedKeyStore;
+  }
+
   // --- Ratchet Encryption ---
 
   /**
    * Encrypts a plaintext message under the current sending chain ratchet.
    */
   public encrypt(plaintext: string): EncryptedMessageEnvelope {
+    if (this.isDestroyed) {
+      throw new Error('DoubleRatchetSession has been destroyed');
+    }
     if (!this.cks) {
       throw new Error('Sending chain key not established in session');
     }
@@ -252,6 +188,9 @@ export class DoubleRatchetSession {
     ciphertext += cipher.final('hex');
     const authTag = cipher.getAuthTag().toString('hex');
 
+    // Secure zeroization of message key buffer after encryption
+    mk.fill(0);
+
     return {
       header,
       ciphertext,
@@ -267,15 +206,35 @@ export class DoubleRatchetSession {
    * and skipped message key lookups.
    */
   public decrypt(envelope: EncryptedMessageEnvelope): string {
+    if (this.isDestroyed) {
+      throw new Error('DoubleRatchetSession has been destroyed');
+    }
+
+    // Pure validation of incoming message envelope header
+    this.validateEnvelope(envelope);
+
     const header = envelope.header;
-    const remotePubKey = Buffer.from(header.dhPublicKey, 'hex');
+    const remotePubKeyHex = header.dhPublicKey.toLowerCase();
+    const remotePubKey = Buffer.from(remotePubKeyHex, 'hex');
 
     // 1. Check if message key was previously skipped and cached
-    const skippedKeyId = `${header.dhPublicKey}:${header.n}`;
-    if (this.skippedMessageKeys.has(skippedKeyId)) {
-      const mk = this.skippedMessageKeys.get(skippedKeyId)!;
-      this.skippedMessageKeys.delete(skippedKeyId);
-      return this.aesGcmDecrypt(envelope, mk);
+    if (this.skippedKeyStore.hasSkippedKey(remotePubKeyHex, header.n)) {
+      const reservation = this.skippedKeyStore.reserveSkippedKey(remotePubKeyHex, header.n);
+      if (reservation) {
+        try {
+          const decrypted = this.aesGcmDecrypt(envelope, reservation.messageKey);
+          // Commit and permanently delete only after successful AEAD authentication
+          this.skippedKeyStore.commitSkippedKey(reservation.reservationId);
+          return decrypted;
+        } catch (err) {
+          // Release reservation on authentication failure to preserve key for valid packet
+          this.skippedKeyStore.releaseSkippedKey(reservation.reservationId);
+          throw err;
+        } finally {
+          // Always zeroize decrypted message key buffer
+          reservation.messageKey.fill(0);
+        }
+      }
     }
 
     // 2. If new remote public key received, perform DH ratchet step
@@ -299,7 +258,36 @@ export class DoubleRatchetSession {
     this.ckr = nextCkr;
     this.nr++;
 
-    return this.aesGcmDecrypt(envelope, mk);
+    try {
+      return this.aesGcmDecrypt(envelope, mk);
+    } finally {
+      mk.fill(0);
+    }
+  }
+
+  private validateEnvelope(envelope: EncryptedMessageEnvelope): void {
+    if (!envelope || !envelope.header) {
+      throw new Error('Malformed envelope: missing header');
+    }
+    const { dhPublicKey, pn, n } = envelope.header;
+    if (!dhPublicKey || typeof dhPublicKey !== 'string' || !/^[0-9a-fA-F]{64,}$/.test(dhPublicKey)) {
+      throw new Error('Malformed envelope: invalid DH public key');
+    }
+    if (!Number.isSafeInteger(pn) || pn < 0) {
+      throw new Error('Malformed envelope: invalid pn counter');
+    }
+    if (!Number.isSafeInteger(n) || n < 0) {
+      throw new Error('Malformed envelope: invalid n counter');
+    }
+    if (!envelope.ciphertext || typeof envelope.ciphertext !== 'string') {
+      throw new Error('Malformed envelope: missing ciphertext');
+    }
+    if (!envelope.iv || typeof envelope.iv !== 'string' || envelope.iv.length !== 24) {
+      throw new Error('Malformed envelope: invalid IV');
+    }
+    if (!envelope.authTag || typeof envelope.authTag !== 'string' || envelope.authTag.length !== 32) {
+      throw new Error('Malformed envelope: invalid authTag');
+    }
   }
 
   // --- Internal Ratchet Mechanics ---
@@ -313,6 +301,7 @@ export class DoubleRatchetSession {
     // Step 1: Compute DH with our current key and their new key to update receiving chain
     const dhSecret1 = this.dhs.computeSecret(remotePubKey);
     const [rk1, ckr] = this.kdfRk(this.rk, dhSecret1);
+    dhSecret1.fill(0);
     this.rk = rk1;
     this.ckr = ckr;
 
@@ -323,6 +312,7 @@ export class DoubleRatchetSession {
     // Step 3: Compute DH with our new key and their key to update sending chain
     const dhSecret2 = this.dhs.computeSecret(remotePubKey);
     const [rk2, cks] = this.kdfRk(this.rk, dhSecret2);
+    dhSecret2.fill(0);
     this.rk = rk2;
     this.cks = cks;
   }
@@ -330,21 +320,20 @@ export class DoubleRatchetSession {
   private skipMessageKeys(untilNr: number): void {
     if (!this.dhr || !this.ckr) return;
 
-    if (this.nr + 100 < untilNr) {
+    if (this.nr + SKIPPED_KEYS_MAX_PER_CHAIN < untilNr) {
       throw new Error('Too many missed messages to skip');
     }
+
+    const dhrHex = this.dhr.toString('hex').toLowerCase();
 
     while (this.nr < untilNr) {
       const [nextCkr, mk] = this.kdfCk(this.ckr);
       this.ckr = nextCkr;
 
-      const keyId = `${this.dhr.toString('hex')}:${this.nr}`;
-      this.skippedMessageKeys.set(keyId, mk);
-
-      if (this.skippedMessageKeys.size > this.maxSkippedKeys) {
-        // Evict oldest skipped key
-        const oldestKey = this.skippedMessageKeys.keys().next().value;
-        if (oldestKey) this.skippedMessageKeys.delete(oldestKey);
+      try {
+        this.skippedKeyStore.storeSkippedKey(dhrHex, this.nr, mk);
+      } finally {
+        mk.fill(0);
       }
 
       this.nr++;
@@ -360,6 +349,7 @@ export class DoubleRatchetSession {
     const prk = createHmac('sha256', rk).update(dhOut).digest();
     const newRk = createHmac('sha256', prk).update(Buffer.from('RootKeyNext', 'utf8')).digest();
     const newCk = createHmac('sha256', prk).update(Buffer.from('ChainKeyNext', 'utf8')).digest();
+    prk.fill(0);
     return [newRk, newCk];
   }
 
@@ -385,8 +375,118 @@ export class DoubleRatchetSession {
     decrypted += decipher.final('utf8');
 
     return decrypted;
- main
- main
- main
+  }
+
+  /**
+   * Explicit cleanup to purge expired skipped keys.
+   */
+  public purgeExpiredSkippedKeys(): number {
+    return this.skippedKeyStore.purgeExpired();
+  }
+
+  /**
+   * Serializes session state including encrypted skipped key records for persistent storage.
+   * NEVER serializes plaintext message keys or storage encryption keys.
+   */
+  public serialize(): SerializedDoubleRatchetSession {
+    return {
+      sessionId: this.sessionId,
+      localPublicKeyHex: this.getLocalPublicKeyHex(),
+      remotePublicKeyHex: this.dhr ? this.dhr.toString('hex') : null,
+      rkHex: this.rk.toString('hex'),
+      cksHex: this.cks ? this.cks.toString('hex') : null,
+      ckrHex: this.ckr ? this.ckr.toString('hex') : null,
+      ns: this.ns,
+      nr: this.nr,
+      pn: this.pn,
+      skippedKeys: this.skippedKeyStore.exportEncryptedRecords(),
+    };
+  }
+
+  /**
+   * Restores a session from serialized state and private key.
+   * Requires an externally supplied 32-byte storage key (`options.storageKey`)
+   * from a trusted key management boundary (e.g. KeyManager, WebAuthn PRF vault, or hardware enclave)
+   * to decrypt retained encrypted skipped-key records.
+   */
+  public static restore(
+    serialized: SerializedDoubleRatchetSession,
+    localPrivateKeyHex: string,
+    options: {
+      storageKey: Buffer;
+      maxSkippedKeys?: number;
+      maxKeysPerChain?: number;
+      skippedKeyTtlMs?: number;
+      timeProvider?: () => number;
+    }
+  ): DoubleRatchetSession {
+    if (!options || !options.storageKey) {
+      throw new Error(
+        'Missing required storageKey for session restoration: storage key must be provided independently by key management'
+      );
+    }
+    if (!Buffer.isBuffer(options.storageKey) || options.storageKey.length !== 32) {
+      throw new Error('Invalid storageKey: must be a 32-byte Buffer');
+    }
+
+    const rk = Buffer.from(serialized.rkHex, 'hex');
+    const config: RatchetSessionConfig = {
+      sessionId: serialized.sessionId,
+      maxSkippedKeys: options?.maxSkippedKeys,
+      maxKeysPerChain: options?.maxKeysPerChain,
+      skippedKeyTtlMs: options?.skippedKeyTtlMs,
+      timeProvider: options?.timeProvider,
+      storageKey: options.storageKey,
+    };
+
+    const session = new DoubleRatchetSession(config, rk);
+
+    // Restore local key pair
+    const dhs = createECDH('prime256v1');
+    dhs.setPrivateKey(Buffer.from(localPrivateKeyHex, 'hex'));
+    session.dhs = dhs;
+
+    if (serialized.remotePublicKeyHex) {
+      session.dhr = Buffer.from(serialized.remotePublicKeyHex, 'hex');
+    }
+    if (serialized.cksHex) {
+      session.cks = Buffer.from(serialized.cksHex, 'hex');
+    }
+    if (serialized.ckrHex) {
+      session.ckr = Buffer.from(serialized.ckrHex, 'hex');
+    }
+    session.ns = serialized.ns;
+    session.nr = serialized.nr;
+    session.pn = serialized.pn;
+
+    // Restore encrypted skipped keys (validates metadata and enforces TTL/capacities)
+    if (serialized.skippedKeys && Array.isArray(serialized.skippedKeys)) {
+      session.skippedKeyStore.importEncryptedRecords(serialized.skippedKeys);
+    }
+
+    return session;
+  }
+
+  /**
+   * Securely destroys the session, zeroizing secret buffers and clearing storage.
+   */
+  public destroy(): void {
+    if (this.isDestroyed) return;
+    this.isDestroyed = true;
+
+    if (this.rk) {
+      this.rk.fill(0);
+    }
+    if (this.cks) {
+      this.cks.fill(0);
+      this.cks = null;
+    }
+    if (this.ckr) {
+      this.ckr.fill(0);
+      this.ckr = null;
+    }
+    this.dhr = null;
+
+    this.skippedKeyStore.destroy();
   }
 }

@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (137 Active Rockstars)
+### 🚀 Contributors (138 Active Rockstars)
 
-A massive thank you to all **137 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **138 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -940,6 +940,18 @@ A massive thank you to all **137 brilliant contributors and bots** building Work
         <sub><b>rajshree051205-cloud</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/AKIB2005">
+        <img src="https://avatars.githubusercontent.com/u/71378420?v=4" width="55px;" height="55px;" alt="AKIB2005" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>AKIB2005</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/theMadhavR">
+        <img src="https://avatars.githubusercontent.com/u/198954301?v=4" width="55px;" height="55px;" alt="theMadhavR" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>theMadhavR</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -954,6 +966,8 @@ A massive thank you to all **137 brilliant contributors and bots** building Work
   - [Spatial Computing, WebXR & Ergonomics](#-spatial-computing-webxr--ergonomics)
   - [Digital Twin & Building IoT Orchestration](#-digital-twin--building-iot-orchestration)
   - [Decentralized Networking & Survival Mesh](#-decentralized-networking--survival-mesh)
+- [GossipSub WebRTC Mesh](docs/architecture/GOSSIPSUB_WEBRTC_MESH.md) — GossipSub parameters,
+  heartbeat intervals, peer score metrics, and IHAVE/IWANT lifecycle.
   - [Nomad Travel, Housing & War Rooms](#-nomad-travel-smart-housing--collab-war-rooms)
   - [Zero-Knowledge Proofs & Security](#-zero-knowledge-proofs-security--compliance)
 - [Core Platform Capabilities](#-core-platform-capabilities)
@@ -1046,9 +1060,12 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
   - Orchestrator → Context → Data → Reasoning → Action
 - **Transparent Reasoning**: See each agent's thought process
 - **Parallel Processing**: Efficient query handling
+- **Autonomous Meeting Action Item Synthesizer**: End-to-end multi-agent NLP pipeline automatically extracting structured action items, assignees, priorities, and deadlines from meeting transcripts with markdown export and optimistic caching (`src/core/ai/ActionItemSynthesizer.ts`, `docs/ai/ACTION_ITEM_SYNTHESIZER.md`).
 
 ### ⭐ User Features
 
+- **Haptic Tactile Feedback on Nomad Passport Coin**: Mobile PWA haptic vibration pulses (`navigator.vibrate`) triggering 15ms tactile feedback on card flip and [10, 30, 10]ms double-pulse upon cryptographic stamp verification (`src/components/profile/NomadPassportCoin.tsx`).
+- **Circadian Lighting Simulator & Dynamic Workspace Preview**: Interactive color-temperature control matching real-time solar elevation angles to optimize focus and melatonin rhythms (`src/components/wellness/CircadianLightingCard.tsx`).
 - **Visual Countdown Hold Timer Ring**: SVG-based animated countdown ring badge on seat reservation hold modals with color transitions (blue → amber → red) reflecting real-time expiration progress (`src/components/bookings/BookingModal.tsx`).
 - **Venue Share Modal Copy-to-Clipboard Animated Feedback**: One-click sharing with animated tooltip confirmations and clipboard fallback support (`src/components/venue/VenueShareModal.tsx`).
 - **Test Pilot Wings Contributor Badge**: Dynamic gamified SVG achievement badge awarded to early adopters testing bleeding-edge nomad features (`src/components/badges/TestPilotWingBadge.tsx`).
@@ -1150,6 +1167,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 👓 Spatial Computing, WebXR & Ergonomics
 
+- **LiDAR Point Cloud Plane Mesh Extraction**: Hardware-accelerated RANSAC plane segmentation extracting navigable floors, walls, and desk surfaces from raw LiDAR spatial scans for AR wayfinding (`src/core/spatial/PlaneMeshExtractor.ts`, `docs/spatial/PLANE_MESH_EXTRACTION_SPEC.md`).
 - **Accessible Venue Grid Tooltips & Keyboard Shortcuts**: Full WCAG-compliant keyboard navigation (`G` for Grid, `C` for Compact, `M` for Map) with animated tooltip overlays and focus ring management (`src/components/ui/VenueGrid.tsx`).
 - **Ergonomic Posture Audio Coach & Dynamic Mute Controls**: Integrated audio coaching engine providing real-time ergonomics nudges with accessible mute toggles and persistent user preference state (`src/components/venue/VenueCard.tsx`, `/wellness/ergonomics`).
 - **WebXR SLAM Venue Scanner & Voxel Octree**: Camera-based spatial mapping for desk geometry, power outlet coordinates, and indoor navigation paths (`/ar/finder`).
@@ -1188,6 +1206,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🛡️ Zero-Knowledge Proofs, Security & Compliance
 
+- **Threshold Schnorr Signature Aggregator & MuSig2 Co-Signing**: Multi-party cryptographic signature aggregation and rogue-key defense for high-value escrow settlements (`src/core/crypto/SchnorrThresholdAggregator.ts`, `docs/crypto/SCHNORR_THRESHOLD_AGGREGATOR.md`).
 - **Server-Side Offline QR Passcard Issuance**: Cryptographically secure HMAC-SHA256 and Ed25519 passcard minting route validating user membership, venue clearance level, and expiration timestamps with tamper-proof signature generation (`/api/security/qr-passcard/issue`, `src/lib/security/offlineQrSigner.ts`).
 - **N/2+1 Monotonic Redlock Fencing Token Quorum**: Distributed seat hold locking mechanism enforcing multi-instance Redis consensus with strict monotonic database fencing token validation across cluster failovers (`src/lib/locks/seatHoldLock.ts`).
 - **Cryptographically Signed Offline QR Code Passcards**: Ed25519 digital signatures and tamper-evident IndexedDB passcard storage enabling physical venue entry and clearance verification during offline network outages (`src/lib/security/offlineQrSigner.ts`, `src/lib/security/offlinePasscardStore.ts`).

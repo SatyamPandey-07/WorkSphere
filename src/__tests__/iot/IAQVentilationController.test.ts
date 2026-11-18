@@ -143,7 +143,71 @@ describe('IAQVentilationController', () => {
     });
 
     describe('Closed-Loop PID Modulation & Control Signals', () => {
-        it('modulates damper and VAV airflow in response to elevated CO2', () => {
+        it('smooths CO2 readings and holds ventilation demand through the 25 ppm hysteresis band', () => {
+        const base = Date.now();
+        const send = (co2: number, offsetMs: number) =>
+            controller.processSensorReading({
+                zoneId: 'zone-east-open-office',
+                timestamp: base + offsetMs,
+                co2,
+                pm25: 8,
+                pm10: 12,
+                tvoc: 150,
+                temperature: 22,
+                humidity: 45
+            });
+
+        send(798, 0);
+        send(803, 1000);
+        send(798, 2000);
+        const noisySignal = send(803, 3000);
+        const state = (controller as any).pidStates.get('zone-east-open-office');
+
+        expect(state.smoothedCo2).toBeCloseTo(799.64, 2);
+        expect(state.co2DemandActive).toBe(false);
+        expect(noisySignal.damperOpenPercent).toBe(15);
+
+        // Sustained readings cross the upper Schmitt threshold and activate demand.
+        send(900, 4000);
+        send(900, 5000);
+        expect(state.co2DemandActive).toBe(true);
+
+        // Returning to the setpoint is inside the deadband; demand stays active
+        // until the filtered value crosses the lower threshold (target - 25 ppm).
+        send(800, 6000);
+        expect(state.co2DemandActive).toBe(true);
+        send(700, 7000);
+        send(700, 8000);
+        send(700, 9000);
+        send(700, 10000);
+        expect(state.smoothedCo2).toBeLessThan(775);
+        expect(state.co2DemandActive).toBe(false);
+    });
+
+    it('limits damper movement to two percentage points per second', () => {
+        const base = Date.now();
+        const send = (timestamp: number) =>
+            controller.processSensorReading({
+                zoneId: 'zone-east-open-office',
+                timestamp,
+                co2: 1600,
+                pm25: 8,
+                pm10: 12,
+                tvoc: 150,
+                temperature: 22,
+                humidity: 45
+            });
+
+        const first = send(base);
+        const second = send(base + 1000);
+        const third = send(base + 2000);
+
+        expect(first.damperOpenPercent).toBeLessThanOrEqual(17);
+        expect(second.damperOpenPercent - first.damperOpenPercent).toBeLessThanOrEqual(2);
+        expect(third.damperOpenPercent - second.damperOpenPercent).toBeLessThanOrEqual(2);
+    });
+
+    it('modulates damper and VAV airflow in response to elevated CO2', () => {
             const now = Date.now();
             const reading: IAQSensorReading = {
                 zoneId: 'zone-east-open-office',

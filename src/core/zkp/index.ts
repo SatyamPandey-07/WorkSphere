@@ -72,3 +72,4 @@ export * from './ChaumPedersenBatchVerifier';
 export * from './ZeroKnowledgeSetMembershipMerkle';
 export * from './VerifiableEncryptionElGamal';
 export * from './ThresholdBlindTokenIssuer';
+export * from './RecursiveSNARKBridgeVerifier';

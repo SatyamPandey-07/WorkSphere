@@ -96,3 +96,4 @@ export * from './ObliviousPseudoRandomFunctionProver';
 export * from './ZeroKnowledgeMatrixMultiplicationProver';
 export * from './IncrementalMerkleStateAccumulator';
 export * from './ZeroKnowledgeEqualityDiscreteLogBatch';
+export * from './ZeroKnowledgeRangeIntersectionProver';

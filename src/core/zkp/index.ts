@@ -95,3 +95,4 @@ export * from './VerifiableSecretResharingProver';
 export * from './ObliviousPseudoRandomFunctionProver';
 export * from './ZeroKnowledgeMatrixMultiplicationProver';
 export * from './IncrementalMerkleStateAccumulator';
+export * from './ZeroKnowledgeEqualityDiscreteLogBatch';

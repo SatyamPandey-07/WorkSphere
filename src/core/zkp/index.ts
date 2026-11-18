@@ -61,3 +61,4 @@ export * from './VerifiableTimedSignature';
 export * from './SparseVectorLookupProver';
 export * from './NovaIVCStepVerifier';
 export * from './DualVerifiableSecretSharing';
+export * from './ZKInclusionAccumulator';

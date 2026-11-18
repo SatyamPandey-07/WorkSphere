@@ -12,11 +12,14 @@ syncQueueManager.registerHandler("checkin", async (item) => {
   const payload = item.payload as { venueId: string };
   if (!payload?.venueId) return;
 
-  const res = await fetch(`/api/venues/${encodeURIComponent(payload.venueId)}/check-in`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ timestamp: item.timestamp }),
-  });
+  const res = await fetch(
+    `/api/venues/${encodeURIComponent(payload.venueId)}/check-in`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp: item.timestamp }),
+    },
+  );
   if (!res.ok) {
     throw new Error(`Check-in sync failed: ${res.statusText}`);
   }
@@ -24,14 +27,21 @@ syncQueueManager.registerHandler("checkin", async (item) => {
 
 // Register amenity_vote handler with consolidated SyncQueueManager
 syncQueueManager.registerHandler("amenity_vote", async (item) => {
-  const payload = item.payload as { venueId: string; amenityId?: string; vote?: number };
+  const payload = item.payload as {
+    venueId: string;
+    amenityId?: string;
+    vote?: number;
+  };
   if (!payload?.venueId) return;
 
-  const res = await fetch(`/api/venues/${encodeURIComponent(payload.venueId)}/amenity-votes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const res = await fetch(
+    `/api/venues/${encodeURIComponent(payload.venueId)}/amenity-votes`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
   if (!res.ok) {
     throw new Error(`Amenity vote sync failed: ${res.statusText}`);
   }
@@ -56,6 +66,7 @@ export interface OfflineAction {
 export interface OfflineCheckIn {
   id?: number;
   venueId: string;
+  seatId?: string;
   timestamp: number;
   retryCount?: number;
 }
@@ -133,7 +144,9 @@ export function getDB(): Promise<IDBDatabase> {
         settled = true;
         dbInstance = null;
         dbPromise = null;
-        console.warn("[OfflineStore] IndexedDB open timed out (likely Safari Private Browsing)");
+        console.warn(
+          "[OfflineStore] IndexedDB open timed out (likely Safari Private Browsing)",
+        );
         reject(new DOMException("IndexedDB open timed out", "SecurityError"));
       }
     }, 3000);
@@ -142,7 +155,9 @@ export function getDB(): Promise<IDBDatabase> {
       const request = indexedDB.open(DB_NAME, 3);
 
       request.onblocked = () => {
-        console.warn("[OfflineStore] Database upgrade blocked by open connection, closing inactive connections");
+        console.warn(
+          "[OfflineStore] Database upgrade blocked by open connection, closing inactive connections",
+        );
         if (dbInstance) {
           try {
             dbInstance.close();
@@ -160,15 +175,23 @@ export function getDB(): Promise<IDBDatabase> {
 
         if (transaction) {
           transaction.onabort = (e) => {
-            console.warn("[OfflineStore] Upgrade transaction aborted", transaction.error || e);
+            console.warn(
+              "[OfflineStore] Upgrade transaction aborted",
+              transaction.error || e,
+            );
           };
           transaction.onerror = (e) => {
-            console.warn("[OfflineStore] Upgrade transaction error", transaction.error || e);
+            console.warn(
+              "[OfflineStore] Upgrade transaction error",
+              transaction.error || e,
+            );
           };
         }
 
         db.onversionchange = () => {
-          console.warn("[OfflineStore] Database version change during upgrade, closing connection gracefully");
+          console.warn(
+            "[OfflineStore] Database version change during upgrade, closing connection gracefully",
+          );
           try {
             db.close();
           } catch {
@@ -208,7 +231,9 @@ export function getDB(): Promise<IDBDatabase> {
         // DB version).  Close the stale connection and clear the singleton so
         // the next getDB() call re-opens with the new version.
         db.onversionchange = () => {
-          console.warn("[OfflineStore] Database version change detected, closing connection gracefully");
+          console.warn(
+            "[OfflineStore] Database version change detected, closing connection gracefully",
+          );
           try {
             db.close();
           } catch {
@@ -241,7 +266,10 @@ export function getDB(): Promise<IDBDatabase> {
         if (err.name === "SecurityError") {
           showPrivateBrowsingAlert();
         } else if (err.name === "AbortError") {
-          console.warn("[OfflineStore] Transaction abort error during schema upgrade handled gracefully", err);
+          console.warn(
+            "[OfflineStore] Transaction abort error during schema upgrade handled gracefully",
+            err,
+          );
         }
         reject(err);
       };
@@ -283,9 +311,7 @@ export async function queueOfflineFavorite(
         request.onsuccess = () => {
           const queued = (request.result || []) as OfflineAction[];
 
-          const sameVenue = queued.filter(
-            (item) => item.venueId === venueId,
-          );
+          const sameVenue = queued.filter((item) => item.venueId === venueId);
 
           const existing = sameVenue[0];
 
@@ -333,7 +359,7 @@ export async function queueOfflineFavorite(
     }
   });
 }
- /**
+/**
  * Retrieves all currently queued actions awaiting synchronization
  * @deprecated Use @/lib/offline instead.
  */
@@ -453,19 +479,28 @@ export async function dequeueOfflineAction(id: number): Promise<void> {
  * Pushes a check-in action into the client IndexedDB checkin queue.
  * @deprecated Use @/lib/offline instead.
  */
-export async function queueOfflineCheckIn(venueId: string): Promise<void> {
+export async function queueOfflineCheckIn(
+  venueId: string,
+  seatId?: string,
+): Promise<void> {
   return withWebLock(async () => {
     try {
       const db = await getDB();
 
-      // Check for existing identical un-synced checkin for same venue
+      // Check for existing identical un-synced checkin for same venue and seat
       const existing = await new Promise<OfflineCheckIn | undefined>(
         (resolve, reject) => {
           const tx = db.transaction(CHECKIN_STORE_NAME, "readonly");
           const store = tx.objectStore(CHECKIN_STORE_NAME);
           const request = store.getAll();
           request.onsuccess = () =>
-            resolve((request.result || []).find((a) => a.venueId === venueId));
+            resolve(
+              (request.result || []).find(
+                (a) =>
+                  a.venueId === venueId &&
+                  (seatId === undefined || a.seatId === seatId),
+              ),
+            );
           request.onerror = () => reject(request.error);
         },
       );
@@ -476,6 +511,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
         const store = tx.objectStore(CHECKIN_STORE_NAME);
         store.add({
           venueId,
+          seatId,
           timestamp: Date.now(),
           retryCount: 0,
         });
@@ -483,7 +519,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
           .enqueue<OfflineCheckIn>({
             entity: "checkin",
             action: "create",
-            payload: { venueId, timestamp: Date.now() },
+            payload: { venueId, seatId, timestamp: Date.now() },
           })
           .catch(() => {});
         tx.oncomplete = () => resolve();

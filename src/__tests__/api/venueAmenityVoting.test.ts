@@ -847,3 +847,114 @@ describe("Venue Amenity Voting and Leaderboard API - Extended Coverage (Issue #3
     });
   });
 });
+
+describe("Amenity vote whitespace validation (Issue #7614)", () => {
+  const venueId = "venue-ws-1";
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (auth as unknown as jest.Mock).mockResolvedValue({ userId: "user-ws" });
+    (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
+      id: venueId,
+      name: "Whitespace Cafe",
+    });
+    (prisma.amenityValidation.upsert as jest.Mock).mockResolvedValue({
+      id: "val-ws",
+      upvotes: 0,
+      downvotes: 0,
+    });
+    (prisma.amenityVote.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.amenityVote.create as jest.Mock).mockResolvedValue({});
+    (prisma.amenityValidation.update as jest.Mock).mockResolvedValue({
+      upvotes: 1,
+      downvotes: 0,
+    });
+    (prisma.amenityVote.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.userBadge.findMany as jest.Mock).mockResolvedValue([]);
+  });
+
+  describe("POST /api/venues/amenity-vote", () => {
+    it.each([["   "], ["\n\t  "], [123], [{}]])(
+      "rejects amenity %p with 400 and writes nothing",
+      async (amenity) => {
+        const res = await postAmenityVoteGeneral(
+          voteRequest({ venueId, amenity, isUpvote: true }),
+        );
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe("Missing required parameters");
+        expect(prisma.amenityValidation.upsert).not.toHaveBeenCalled();
+        expect(prisma.amenityVote.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it("rejects a whitespace-only venueId with 400 before touching the database", async () => {
+      const res = await postAmenityVoteGeneral(
+        voteRequest({ venueId: "   ", amenity: "wifi", isUpvote: true }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(prisma.venue.findUnique).not.toHaveBeenCalled();
+      expect(prisma.amenityValidation.upsert).not.toHaveBeenCalled();
+    });
+
+    it("trims surrounding whitespace from valid input before storing it", async () => {
+      const res = await postAmenityVoteGeneral(
+        voteRequest({
+          venueId: ` ${venueId} `,
+          amenity: "  wifi\n",
+          isUpvote: true,
+        }),
+      );
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).amenity).toBe("wifi");
+      expect(prisma.venue.findUnique).toHaveBeenCalledWith({
+        where: { id: venueId },
+      });
+      expect(prisma.amenityValidation.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { venueId_amenity: { venueId, amenity: "wifi" } },
+          create: expect.objectContaining({ venueId, amenity: "wifi" }),
+        }),
+      );
+    });
+  });
+
+  describe("POST /api/venues/[venueId]/amenity-votes", () => {
+    const post = (body: unknown) =>
+      postAmenityVoteByVenue(
+        makeRequest(
+          `http://localhost/api/venues/${venueId}/amenity-votes`,
+          "POST",
+          body,
+        ),
+        venueContext(venueId),
+      );
+
+    it.each([["   "], ["\n\t  "], [123]])(
+      "rejects amenity %p with 400 and writes nothing",
+      async (amenity) => {
+        const res = await post({ amenity, isUpvote: false });
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe("Missing required parameters");
+        expect(prisma.amenityValidation.upsert).not.toHaveBeenCalled();
+        expect(prisma.amenityVote.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it("trims a padded amenity name and records the vote", async () => {
+      const res = await post({ amenity: "  outlets  ", isUpvote: true });
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).amenity).toBe("outlets");
+      expect(prisma.amenityValidation.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { venueId_amenity: { venueId, amenity: "outlets" } },
+        }),
+      );
+      expect(prisma.amenityVote.create).toHaveBeenCalledTimes(1);
+    });
+  });
+});

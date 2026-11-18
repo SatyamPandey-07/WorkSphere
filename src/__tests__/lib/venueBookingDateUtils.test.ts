@@ -13,7 +13,7 @@ describe("Date utilities", () => {
     const dow = new Date(ms).getUTCDay();
     return dow === 0 || dow === 6;
   }
-  const MON = 1_762_074_000_000; // 2026-11-02 Monday
+  const MON = 1_762_160_400_000; // 2025-11-03 09:00 UTC, a Monday
   it("startOfDayUtc removes time", () => { expect(new Date(startOfDayUtc(MON)).getUTCHours()).toBe(0); });
   it("addDays adds 7 days", () => { expect(daysBetween(MON, addDays(MON, 7))).toBe(7); });
   it("daysBetween calculates correctly", () => { expect(daysBetween(MON, MON + 3 * 86_400_000)).toBe(3); });

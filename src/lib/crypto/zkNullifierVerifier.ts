@@ -1,6 +1,9 @@
+ docs/local-docker-troubleshooting
+
  feat/network-health-ai-diagnostic
 
  feat/cross-chain-escrow-zkp
+ main
  main
 export class ZkNullifierVerifier {
   private static MAX_BATCH_SIZE = 32;
@@ -35,6 +38,8 @@ export class ZkNullifierVerifier {
     }
     return result;
   }
+ docs/local-docker-troubleshooting
+
  feat/network-health-ai-diagnostic
 
 
@@ -263,6 +268,7 @@ export async function verifyZkNullifierProofs(
       }
     }),
   );
+ main
  main
  main
 }

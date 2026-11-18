@@ -1,5 +1,7 @@
 "use client";
 
+ docs/local-docker-troubleshooting
+
  feat/network-health-ai-diagnostic
 
  feat/cross-chain-escrow-zkp
@@ -9,6 +11,7 @@
  feat/wocs-contributions-final
 
  feat/offline-ticket-queue
+ main
  main
  main
  main
@@ -94,6 +97,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ docs/local-docker-troubleshooting
+}
+
  feat/network-health-ai-diagnostic
 }
 
@@ -245,6 +251,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

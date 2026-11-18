@@ -52,3 +52,4 @@ export * from './UnivariateSumcheckProver';
 export * from './BLSPoPAggregator';
 export * from './RangeBitmapProver';
 export * from './ThresholdReencryptionMix';
+export * from './MultilinearExtensionProver';

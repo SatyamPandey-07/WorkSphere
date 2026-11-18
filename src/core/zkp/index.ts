@@ -56,3 +56,4 @@ export * from './MultilinearExtensionProver';
 export * from './PedersenBatchOpener';
 export * from './InnerProductEqualityProver';
 export * from './DistributedKeySwitching';
+export * from './KZGDivisionWitnessProver';

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ShieldCheck,
   Award,
@@ -18,6 +18,7 @@ import {
   Compass,
   Volume2,
   VolumeX,
+  Copy,
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import {
@@ -26,7 +27,7 @@ import {
   type NomadProductivityStatement,
   type PassportStamp,
 } from "@/lib/zkp/nomadProof";
-import { downloadSVG } from "@/lib/qr/svgQr";
+import { downloadSVG, generateQRCodeSVG } from "@/lib/qr/svgQr";
 import NomadPassportCoin from "./NomadPassportCoin";
 
 /**
@@ -180,6 +181,8 @@ export default function NomadPassportGallery({
     (initialStamps ?? INITIAL_EARNED_STAMPS)[0] ?? null
   );
   const [previewModalStamp, setPreviewModalStamp] = useState<PassportStamp | null>(null);
+  const [qrCopyStatus, setQrCopyStatus] = useState<"idle" | "success" | "error">("idle");
+  const qrCopyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
@@ -294,6 +297,78 @@ export default function NomadPassportGallery({
       document.body.removeChild(a);
     };
     img.src = url;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (qrCopyResetRef.current) {
+        clearTimeout(qrCopyResetRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setQrCopyStatus("idle");
+  }, [previewModalStamp?.stampId]);
+
+  const getPassportVerificationUrl = (stamp: PassportStamp) => {
+    if (typeof window === "undefined") return "";
+    const params = new URLSearchParams({
+      stampId: stamp.stampId,
+      signature: stamp.verificationSignature,
+    });
+    return `${window.location.origin}/verify/nomad-passport?${params.toString()}`;
+  };
+
+  const handleCopyPassportQr = async (stamp: PassportStamp) => {
+    const verificationUrl = getPassportVerificationUrl(stamp);
+    if (!verificationUrl || typeof navigator === "undefined") {
+      setQrCopyStatus("error");
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(verificationUrl);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = verificationUrl;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        let copied = false;
+        try {
+          textArea.select();
+          copied = document.execCommand("copy");
+        } finally {
+          document.body.removeChild(textArea);
+        }
+        if (!copied) {
+          throw new Error("Clipboard fallback was rejected");
+        }
+      }
+
+      const isMobile =
+        /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+        (typeof window !== "undefined" &&
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(pointer: coarse)").matches);
+      if (isMobile) {
+        navigator.vibrate?.([15]);
+      }
+
+      setQrCopyStatus("success");
+      if (qrCopyResetRef.current) {
+        clearTimeout(qrCopyResetRef.current);
+      }
+      qrCopyResetRef.current = setTimeout(() => {
+        setQrCopyStatus("idle");
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to copy Nomad Passport verification URL:", error);
+      setQrCopyStatus("error");
+    }
   };
 
   return (
@@ -628,6 +703,43 @@ export default function NomadPassportGallery({
             </div>
 
             <NomadPassportCoin stamp={previewModalStamp} />
+
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-800 bg-white p-4">
+              <div
+                data-testid="nomad-passport-qr-code"
+                dangerouslySetInnerHTML={{
+                  __html: generateQRCodeSVG(getPassportVerificationUrl(previewModalStamp), {
+                    size: 176,
+                    padding: 4,
+                    title: "Nomad Passport verification QR code",
+                  }),
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => handleCopyPassportQr(previewModalStamp)}
+                aria-label={
+                  qrCopyStatus === "success"
+                    ? "Nomad Passport verification URL copied"
+                    : "Copy Nomad Passport verification URL"
+                }
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700"
+              >
+                {qrCopyStatus === "success" ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                ) : (
+                  <Copy className="h-4 w-4 text-cyan-400" />
+                )}
+                {qrCopyStatus === "success" ? "Copied" : "Copy verification link"}
+              </button>
+              <span aria-live="polite" className="sr-only">
+                {qrCopyStatus === "success"
+                  ? "Nomad Passport verification link copied to clipboard."
+                  : qrCopyStatus === "error"
+                    ? "Unable to copy the verification link."
+                    : ""}
+              </span>
+            </div>
 
             {/* Badge Metadata Details */}
             <div className="grid grid-cols-2 gap-3 text-xs bg-slate-950/60 p-4 rounded-2xl border border-slate-800 font-mono">

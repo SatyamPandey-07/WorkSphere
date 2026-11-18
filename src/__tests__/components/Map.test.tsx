@@ -193,8 +193,8 @@ jest.mock("leaflet", () => ({
 }));
 
 // Import after mocks
-import Map from "@/components/Map";
-import { MapMarker, MapRoute, MapView } from "@/types/map";
+import Map from "../../components/Map";
+import { MapMarker, MapRoute, MapView } from "../../types/map";
 
 describe("Map Component", () => {
   const defaultLocation = { latitude: 37.7749, longitude: -122.4194 };
@@ -547,6 +547,25 @@ describe("Map Component", () => {
       const mapContainer = screen.getByTestId("map-container");
       expect(mapContainer).toHaveStyle({ width: "95%", height: "95%" });
     });
+
+    it("keeps the reset control clear of map attribution with a 44px touch target", () => {
+      render(<Map {...defaultProps} />);
+
+      const resetButton = screen.getByRole("button", {
+        name: "Reset Map View",
+      });
+      expect(resetButton).toHaveClass(
+        "min-h-11",
+        "min-w-11",
+        "backdrop-blur-sm",
+        "shadow-md",
+      );
+      expect(resetButton.parentElement).toHaveClass(
+        "bottom-8",
+        "right-4",
+        "sm:bottom-4",
+      );
+    });
   });
 
   describe("Popup Header Clipping Prevention (#870)", () => {
@@ -591,7 +610,9 @@ describe("Map Component", () => {
 
   describe("Radar Sweep Search Radius Effect (#6183)", () => {
     it("renders user marker with radar sweep enabled by default and accepts custom radarRadius", () => {
-      render(<Map {...defaultProps} enableRadarSweep={true} radarRadius={200} />);
+      render(
+        <Map {...defaultProps} enableRadarSweep={true} radarRadius={200} />,
+      );
       const markers = screen.getAllByTestId("marker");
       expect(markers.length).toBeGreaterThanOrEqual(1);
     });

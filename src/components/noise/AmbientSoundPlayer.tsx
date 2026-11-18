@@ -289,6 +289,8 @@ export interface AmbientSoundPlayerProps {
   standalone?: boolean;
   /** Initial open state for the popover panel */
   defaultOpen?: boolean;
+  /** Venue the trigger belongs to; used to name the trigger button for screen readers */
+  venueName?: string;
   /** Optional custom class name */
   className?: string;
 }
@@ -297,6 +299,7 @@ export function AmbientSoundPlayer({
   noiseLevel,
   standalone = false,
   defaultOpen = false,
+  venueName,
   className = "",
 }: AmbientSoundPlayerProps) {
   const [showPanel, setShowPanel] = useState(defaultOpen);
@@ -570,7 +573,10 @@ export function AmbientSoundPlayer({
           <button
             type="button"
             onClick={toggleMasterMute}
-            aria-label={isMasterMuted ? "Unmute master" : "Mute master"}
+            aria-label={
+              isMasterMuted ? "Unmute audio guide" : "Mute audio guide"
+            }
+            aria-pressed={!isMasterMuted}
             data-testid="master-mute-btn"
             className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
           >
@@ -712,17 +718,26 @@ export function AmbientSoundPlayer({
         id={`ambient-player-trigger-${noiseLevel ?? "default"}`}
         type="button"
         onClick={() => setShowPanel((v) => !v)}
-        aria-label="Preset focus soundscapes player"
+        aria-label={
+          venueName
+            ? `Preset focus soundscapes player for ${venueName}`
+            : "Preset focus soundscapes player"
+        }
+        aria-expanded={showPanel}
         title="Focus Soundscapes: White Noise, Rain, Café Hum"
         data-testid="ambient-sound-trigger"
         className={`
           inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold
           transition-all duration-150 active:scale-95
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500
           text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-300 dark:border-zinc-700
           ${showPanel ? "ring-1 ring-blue-500 ring-offset-1" : ""}
         `}
       >
-        <Headphones className="w-3 h-3 shrink-0 text-blue-500" />
+        <Headphones
+          className="w-3 h-3 shrink-0 text-blue-500"
+          aria-hidden="true"
+        />
         <span className="sr-only">Focus soundscapes</span>
         {anyPlaying && <WaveBars active={!isMasterMuted} />}
       </button>

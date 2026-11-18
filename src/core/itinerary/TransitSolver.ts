@@ -8,7 +8,6 @@ import { ItineraryGraph, PriorityQueue } from "./ItineraryGraph";
 import {
   TimeWindowConstraint,
   validateBreakDuration,
-  type TransitConstraintOptions,
 } from "./TimeWindowConstraint";
 import type { TransitEdge, MobilityMode } from "./ItineraryGraph";
 
@@ -37,7 +36,10 @@ export interface ItinerarySolution {
 
 export type TransitOptimizationObjective = "time" | "cost" | "carbon";
 
-export const TRANSIT_EMISSION_COEFFICIENTS: Record<TransitEdge["mode"], number> = {
+export const TRANSIT_EMISSION_COEFFICIENTS: Record<
+  TransitEdge["mode"],
+  number
+> = {
   walking: 0,
   cycling: 4,
   train: 41,
@@ -88,7 +90,8 @@ export class TransitSolver {
     let bestCost = Infinity;
     const objective = options.objective ?? "time";
 
-    const globalBreak = options.customBreakDurationMinutes ?? options.breakDurationMinutes;
+    const globalBreak =
+      options.customBreakDurationMinutes ?? options.breakDurationMinutes;
     if (globalBreak !== undefined) {
       validateBreakDuration(globalBreak);
     }
@@ -172,7 +175,10 @@ export class TransitSolver {
       }
 
       // Bounding & Pruning: Compute admissible lower bound for remaining unvisited nodes
-      const remainingLowerBound = this.computeLowerBound(currentVenueId, remainingTargets);
+      const remainingLowerBound = this.computeLowerBound(
+        currentVenueId,
+        remainingTargets,
+      );
       const lowerBound =
         accumulatedTransitTime +
         accumulatedDwellTime +
@@ -186,7 +192,6 @@ export class TransitSolver {
       }
 
       // Branching: Sort unvisited candidates deterministically using a tie-breaking priority queue
-      // Priority criteria: 1) Transit time, 2) Node ID lexicographical order as deterministic tie-breaker
       const pq = new PriorityQueue<string>();
       for (const targetId of remainingTargets) {
         const edge = this.graph.getEdge(currentVenueId, targetId);
@@ -214,7 +219,7 @@ export class TransitSolver {
             segmentBreakDurations: options.segmentBreakDurations,
           },
           currentVenueId,
-          nextVenueId
+          nextVenueId,
         );
         const carbonGrams = this.calculateEdgeCarbonGrams(edge);
         const arrivalTimestamp = this.timeConstraint.calculateEarliestArrival(
@@ -222,7 +227,7 @@ export class TransitSolver {
           transitTime,
           {
             customBreakDurationMinutes: breakTime,
-          }
+          },
         );
 
         // Time Window Validation & Wait Time Computation
@@ -334,9 +339,11 @@ export class TransitSolver {
         ),
         mode: s.mode,
         carbonGrams: s.carbonGrams,
+        breakTimeMinutes: s.breakTimeMinutes,
       })),
       totalTravelMinutes: res.totalTransitTimeMinutes,
       totalDurationMinutes: res.totalDurationMinutes,
+      totalBreakTimeMinutes: res.totalBreakTimeMinutes,
       totalCarbonGrams: res.totalCarbonGrams,
       totalCost: res.totalCost,
       objective,

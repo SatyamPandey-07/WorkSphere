@@ -7,7 +7,6 @@ import {
   MapContainer,
   TileLayer,
   Marker,
-  Popup,
   useMap,
   LayersControl,
   LayerGroup,
@@ -21,24 +20,23 @@ import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import { Contrast } from "lucide-react";
-import { type HighContrastShape } from "@/lib/mapAccessibility";
-import { formatDistance } from "@/lib/geo/formatDistance";
-import { throttle } from "@/lib/utils";
 import {
   MapMarkerFactory,
-  getHighContrastIcon,
-  getVenueIcon,
-  getDestinationIcon,
   SEAT_RING_COLORS,
+  getUserLocationIcon,
 } from "./map/MapMarkerFactory";
 import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
+import RoutingOptimizer from "./map/RoutingOptimizer";
+import { MobileVenueDrawer } from "@/components/ui/MobileVenueDrawer";
 
 export { throttle } from "@/lib/utils";
 export {
   getHighContrastIcon,
   getVenueIcon,
   getDestinationIcon,
+  getUserLocationIcon,
+  RadarSweepLayer,
   SEAT_RING_COLORS,
 } from "./map/MapMarkerFactory";
 
@@ -67,12 +65,12 @@ function ResetMapViewControl({ center }: { center: [number, number] }) {
   const map = useMap();
 
   return (
-    <div className="absolute bottom-3 right-3 z-[1000]">
+    <div className="absolute bottom-8 right-4 z-[1000] sm:bottom-4">
       <button
         type="button"
         aria-label="Reset Map View"
         onClick={() => map.setView(center, 13)}
-        className="rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-md transition-colors hover:bg-zinc-800 hover:text-white"
+        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white"
       >
         Reset Map View
       </button>
@@ -405,7 +403,10 @@ export function latLngToPixel(
   lng: number,
   zoom: number,
 ): { x: number; y: number } {
-  const siny = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999);
+  const siny = Math.min(
+    Math.max(Math.sin((lat * Math.PI) / 180), -0.9999),
+    0.9999,
+  );
   const scale = 256 * Math.pow(2, zoom);
   return {
     x: (0.5 + lng / 360) * scale,
@@ -589,6 +590,12 @@ export interface MapProps {
   onHighContrastChange?: (enabled: boolean) => void;
   onViewportChange?: (bounds: MapViewportBounds) => void;
   enableClustering?: boolean;
+  enableRadarSweep?: boolean;
+  radarRadius?: number;
+  onSelectVenue?: (venue: MapMarker | null) => void;
+  selectedVenueId?: string | null;
+  onBookVenue?: (venue: MapMarker) => void;
+  onGetDirections?: (venue: MapMarker) => void;
 }
 
 const Map = ({
@@ -602,6 +609,12 @@ const Map = ({
   onHighContrastChange,
   onViewportChange,
   enableClustering = true,
+  enableRadarSweep = true,
+  radarRadius = 160,
+  onSelectVenue,
+  selectedVenueId,
+  onBookVenue,
+  onGetDirections,
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -659,6 +672,14 @@ const Map = ({
     initialLocation: location,
   });
 
+  const { latitude, longitude } = location;
+  const routingPanelRef = useRef<HTMLDivElement>(null);
+  // Forecast selector state
+  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // 0=Sun
+  const [selectedHour, setSelectedHour] = useState<number>(
+    new Date().getHours(),
+  );
+
   // Prevent touch/mouse/scroll event propagation on overlays from bubbling to Leaflet Map
   useEffect(() => {
     const el = routingPanelRef.current;
@@ -701,7 +722,7 @@ const Map = ({
   // marker offsets at a consistent on-screen pixel separation regardless of
   // how far the user has zoomed in/out.
   const [settledZoom, setSettledZoom] = useState<number>(13);
-  const [isZooming, setIsZooming] = useState(false);
+  const [, setIsZooming] = useState(false);
   const handleZoomSettled = useCallback((zoom: number) => {
     setSettledZoom(zoom);
     setIsZooming(false);
@@ -722,15 +743,36 @@ const Map = ({
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
-  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  const [internalSelectedMarkerId, setInternalSelectedMarkerId] = useState<
+    string | null
+  >(null);
+  const selectedMarkerId =
+    selectedVenueId !== undefined ? selectedVenueId : internalSelectedMarkerId;
+
+  const handleSelectMarker = useCallback(
+    (id: string | null) => {
+      setInternalSelectedMarkerId(id);
+      if (onSelectVenue) {
+        const found = id ? markers.find((m) => m.id === id) || null : null;
+        onSelectVenue(found);
+      }
+    },
+    [markers, onSelectVenue],
+  );
+
   useEffect(() => {
-  if (
-    selectedMarkerId !== null &&
-    !markers.some((marker) => marker.id === selectedMarkerId)
-  ) {
-    setSelectedMarkerId(null);
-  }
-}, [markers, selectedMarkerId]);
+    if (
+      selectedMarkerId !== null &&
+      !markers.some((marker) => marker.id === selectedMarkerId)
+    ) {
+      handleSelectMarker(null);
+    }
+  }, [markers, selectedMarkerId, handleSelectMarker]);
+
+  const activeVenueForDrawer = useMemo(() => {
+    if (!selectedMarkerId) return null;
+    return markers.find((m) => m.id === selectedMarkerId) || null;
+  }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -794,13 +836,25 @@ const Map = ({
       const data = await response.json();
 
       if (data.code === "Ok") {
+        const coords = data.routes[0].geometry.coordinates;
+        const hasElevation = coords.some(
+          (c: any[]) =>
+            Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
+        );
+        const elevationProfile =
+          data.routes[0].elevation_profile ||
+          data.routes[0].elevationProfile ||
+          (hasElevation ? coords.map((c: any[]) => c[2]) : undefined);
+
         setOptimizedRoute({
-          coordinates: data.routes[0].geometry.coordinates.map(
-            (coord: [number, number]) => [coord[1], coord[0]],
-          ),
+          coordinates: coords.map((coord: [number, number]) => [
+            coord[1],
+            coord[0],
+          ]),
           duration: data.routes[0].duration,
           distance: data.routes[0].distance,
           legs: data.routes[0].legs,
+          elevationProfile,
         });
       }
     } catch (error) {
@@ -880,59 +934,62 @@ const Map = ({
   }, [heatmapPoints, markers]);
 
   // Helper to spiderfy overlapping markers
-  const computeSpiderfiedMarkers = useCallback((markerList: MapMarker[], zoom: number) => {
-    const groups: { [key: string]: any[] } = {};
-    markerList.forEach((m) => {
-      if (
-        m &&
-        m.position &&
-        m.position.lat != null &&
-        m.position.lng != null &&
-        !isNaN(Number(m.position.lat)) &&
-        !isNaN(Number(m.position.lng))
-      ) {
-        const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
-        if (!groups[key]) {
-          groups[key] = [];
+  const computeSpiderfiedMarkers = useCallback(
+    (markerList: MapMarker[], zoom: number) => {
+      const groups: { [key: string]: any[] } = {};
+      markerList.forEach((m) => {
+        if (
+          m &&
+          m.position &&
+          m.position.lat != null &&
+          m.position.lng != null &&
+          !isNaN(Number(m.position.lat)) &&
+          !isNaN(Number(m.position.lng))
+        ) {
+          const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
+          if (!groups[key]) {
+            groups[key] = [];
+          }
+          groups[key].push(m);
         }
-        groups[key].push(m);
-      }
-    });
+      });
 
-    const result: any[] = [];
-    Object.keys(groups).forEach((key) => {
-      const groupItems = groups[key];
-      const n = groupItems.length;
-      if (n === 1) {
-        result.push({
-          ...groupItems[0],
-          renderedLat: Number(groupItems[0].position.lat),
-          renderedLng: Number(groupItems[0].position.lng),
-        });
-      } else {
-        const centerLat = Number(groupItems[0].position.lat);
-        const centerLng = Number(groupItems[0].position.lng);
-
-        const metersPerPixel =
-          (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
-          Math.pow(2, zoom);
-        const targetPixelSeparation = 24 + 2 * n;
-        const radius = (metersPerPixel * targetPixelSeparation) / 111320;
-
-        groupItems.forEach((item, index) => {
-          const angle = (2 * Math.PI * index) / n;
-          const offsetLat = centerLat + radius * Math.cos(angle);
-          const offsetLng = centerLng + radius * Math.sin(angle);
+      const result: any[] = [];
+      Object.keys(groups).forEach((key) => {
+        const groupItems = groups[key];
+        const n = groupItems.length;
+        if (n === 1) {
           result.push({
-            ...item,
-            renderedLat: offsetLat,
-            renderedLng: offsetLng,
+            ...groupItems[0],
+            renderedLat: Number(groupItems[0].position.lat),
+            renderedLng: Number(groupItems[0].position.lng),
           });
-        });
-      }
-    });
-    return result;
-  }, []);
+        } else {
+          const centerLat = Number(groupItems[0].position.lat);
+          const centerLng = Number(groupItems[0].position.lng);
+
+          const metersPerPixel =
+            (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
+            Math.pow(2, zoom);
+          const targetPixelSeparation = 24 + 2 * n;
+          const radius = (metersPerPixel * targetPixelSeparation) / 111320;
+
+          groupItems.forEach((item, index) => {
+            const angle = (2 * Math.PI * index) / n;
+            const offsetLat = centerLat + radius * Math.cos(angle);
+            const offsetLng = centerLng + radius * Math.sin(angle);
+            result.push({
+              ...item,
+              renderedLat: offsetLat,
+              renderedLng: offsetLng,
+            });
+          });
+        }
+      });
+      return result;
+    },
+    [],
+  );
 
   // Group and cluster or spiderfy overlapping markers
   const { clusteredMarkers, spiderfiedMarkers } = useMemo(() => {
@@ -959,23 +1016,13 @@ const Map = ({
     return null;
   }, [clerkUser.isLoaded, clerkUser.user]);
 
-  // Derive customIcon from iconUrl
+  // Derive customIcon from iconUrl with rotating radar sweep effect (#6183)
   const customIcon = useMemo(() => {
-    let html: string;
-
-    if (iconUrl && iconUrl !== "default") {
-      html = `<div class="image-marker" style="background-image: url(${iconUrl})" width="40" height="40"></div>`;
-    } else {
-      html = `<div class="default-dot-marker" width="20" height="20"></div>`;
-    }
-
-    return L.divIcon({
-      className: "custom-user-marker",
-      html: html,
-      iconSize: [40, 40],
-      iconAnchor: [20, 20],
+    return getUserLocationIcon(iconUrl, {
+      enableRadarSweep,
+      radarRadius,
     });
-  }, [iconUrl]);
+  }, [iconUrl, enableRadarSweep, radarRadius]);
 
   // Memoize the rendered CircleMarker JSX to prevent unnecessary SVG re-renders
   // and micro-flickering on every Map.tsx update (e.g. cursor socket events)
@@ -1001,12 +1048,14 @@ const Map = ({
   }, [spiderfiedMarkers, getAvailability]);
 
   const center: [number, number] = [latitude, longitude];
-  const tileUrl =
-    theme === "light"
-      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
+  const tileUrl = cartoKey
+    ? theme === "light"
+      ? `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : theme === "cyberpunk"
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+        ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -1214,6 +1263,13 @@ const Map = ({
         }
         .leaflet-popup-content {
           margin: 12px 16px;
+        }
+
+        /* Hide desktop-style centered popup on mobile touch screens in favor of MobileVenueDrawer */
+        @media (max-width: 767px) {
+          .leaflet-popup {
+            display: none !important;
+          }
         }
         
         /* Focus-visible ring for keyboard-navigated markers (Issue #3446) */
@@ -1479,6 +1535,13 @@ const Map = ({
           >
             <LayerGroup />
           </LayersControl.Overlay>
+
+          <LayersControl.Overlay
+            name="Radar Search Radius (Sweep)"
+            checked={enableRadarSweep}
+          >
+            <LayerGroup />
+          </LayersControl.Overlay>
         </LayersControl>
 
         <MapController mapView={mapView} />
@@ -1511,7 +1574,7 @@ const Map = ({
         <MapMarkerFactory
           markers={spiderfiedMarkers}
           selectedMarkerId={selectedMarkerId}
-          onSelectMarker={setSelectedMarkerId}
+          onSelectMarker={handleSelectMarker}
           isHighContrast={isHighContrast}
           getAvailability={getAvailability}
           checkIn={checkIn}
@@ -1532,121 +1595,34 @@ const Map = ({
           travelProfile={travelProfile}
         />
         {/* MULTI-STOP ROUTING OPTIMIZER CONTROL INTERFACE OVERLAY */}
-        <div
+        <RoutingOptimizer
           ref={routingPanelRef}
-          className="absolute bottom-6 left-6 z-[1000] w-80 rounded-xl border border-zinc-800 bg-zinc-950/90 p-4 text-white shadow-2xl backdrop-blur-md"
-        >
-          <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
-            <h3 className="font-semibold text-sm tracking-wide text-zinc-200">
-              📍 ROUTING OPTIMIZER
-            </h3>
-            {routingQueue.length > 0 && (
-              <button
-                onClick={() => {
-                  setRoutingQueue([]);
-                  setOptimizedRoute(null);
-                }}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors"
-              >
-                Clear Queue
-              </button>
-            )}
-          </div>
-
-          {/* Travel Mode Selectors */}
-          <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-zinc-900 p-1 text-xs">
-            {(["walking", "cycling", "driving"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setTravelProfile(mode)}
-                className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
-                  travelProfile === mode
-                    ? "accent-bg text-white shadow"
-                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                }`}
-              >
-                {mode === "walking"
-                  ? "🚶‍♂️ Walk"
-                  : mode === "cycling"
-                    ? "🚴‍♂️ Bike"
-                    : "🚗 Drive"}
-              </button>
-            ))}
-          </div>
-
-          {/* Queue Timeline Slots */}
-          {routingQueue.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
-              Click markers or venue listings to chain multiple destinations
-              into your hybrid workday route!
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                {routingQueue.map((venue, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-lg bg-zinc-900 p-2 text-xs border border-zinc-800"
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-950 text-[10px] font-bold text-blue-400 border border-blue-800/50">
-                        {idx + 1}
-                      </span>
-                      <span className="truncate font-medium text-zinc-300">
-                        {venue.name}
-                      </span>
-                    </div>
-                    <button
-                      aria-label={`Remove ${venue.name} from routing queue`}
-                      onClick={() => {
-                        const updated = routingQueue.filter(
-                          (_, i) => i !== idx,
-                        );
-                        setRoutingQueue(updated);
-                        calculateOptimizedRoute(updated);
-                      }}
-                      className="ml-2 text-zinc-500 hover:text-zinc-300 text-sm"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {/* Optimize Trigger Action Button */}
-              {routingQueue.length >= 2 && (
-                <button
-                  onClick={() => calculateOptimizedRoute()}
-                  className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98]"
-                  style={{
-                    background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 80%, #4f46e5))`,
-                  }}
-                >
-                  🚀 Calculate Combined Travel Timeline
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Dynamic Journey Metric Matrix */}
-          {optimizedRoute && (
-            <div className="mt-3 border-t border-zinc-800 pt-3 text-xs text-zinc-400 space-y-1">
-              <div className="flex justify-between">
-                <span>Total Distance:</span>
-                <span className="font-semibold text-zinc-200">
-                  {formatDistance(optimizedRoute.distance / 1000)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Est. Transit Time:</span>
-                <span className="font-semibold text-zinc-200">
-                  {Math.round(optimizedRoute.duration / 60)} mins
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
+          routingQueue={routingQueue}
+          onClearQueue={() => {
+            setRoutingQueue([]);
+            setOptimizedRoute(null);
+          }}
+          onRemoveVenue={(idx) => {
+            const updated = routingQueue.filter((_, i) => i !== idx);
+            setRoutingQueue(updated);
+            calculateOptimizedRoute(updated);
+          }}
+          travelProfile={travelProfile}
+          onTravelProfileChange={(mode) => setTravelProfile(mode)}
+          onCalculateRoute={() => calculateOptimizedRoute()}
+          optimizedRoute={optimizedRoute}
+        />
       </MapContainer>
+
+      {/* Mobile Draggable Venue Bottom Sheet Drawer */}
+      <MobileVenueDrawer
+        venue={activeVenueForDrawer}
+        isOpen={Boolean(activeVenueForDrawer)}
+        onClose={() => handleSelectMarker(null)}
+        onBook={onBookVenue}
+        onGetDirections={onGetDirections}
+        className="md:hidden"
+      />
     </>
   );
 };

@@ -17,20 +17,35 @@ import { BudgetSummary } from "@/lib/billing/budgetService";
 
 export interface MonthlyBudgetTrackerProps {
   initialSummary?: BudgetSummary | null;
+  spent?: number;
+  totalBudget?: number;
+}
+
+/**
+ * Calculates budget spending percentage: (spent / totalBudget) * 100.
+ */
+export function calculateBudgetPercentage(
+  spent: number,
+  totalBudget: number,
+): number {
+  if (!totalBudget || totalBudget <= 0) return 0;
+  return (spent / totalBudget) * 100;
 }
 
 /**
  * Returns dynamic color tokens and gradient classes based on budget utilization:
- * - < 70%: emerald
+ * - < 70%: green (emerald)
  * - 70% to 90%: amber
- * - > 90%: rose
+ * - > 90%: red (rose)
  */
 export function getBudgetProgressColor(utilizationPercentage: number) {
   if (utilizationPercentage > 90) {
     return {
       threshold: "rose" as const,
-      gradientClass: "bg-rose-500 bg-gradient-to-r from-rose-500 to-red-600",
-      textClass: "text-rose-600 dark:text-rose-400",
+      color: "red" as const,
+      gradientClass:
+        "bg-red-500 bg-rose-500 bg-gradient-to-r from-rose-500 to-red-600",
+      textClass: "text-red-600 dark:text-red-400 text-rose-600 dark:text-rose-400",
       badgeClass:
         "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30",
     };
@@ -38,6 +53,7 @@ export function getBudgetProgressColor(utilizationPercentage: number) {
   if (utilizationPercentage >= 70) {
     return {
       threshold: "amber" as const,
+      color: "amber" as const,
       gradientClass:
         "bg-amber-500 bg-gradient-to-r from-amber-500 to-orange-500",
       textClass: "text-amber-600 dark:text-amber-400",
@@ -47,9 +63,10 @@ export function getBudgetProgressColor(utilizationPercentage: number) {
   }
   return {
     threshold: "emerald" as const,
+    color: "green" as const,
     gradientClass:
-      "bg-emerald-500 bg-gradient-to-r from-emerald-500 to-teal-500",
-    textClass: "text-emerald-600 dark:text-emerald-400",
+      "bg-green-500 bg-emerald-500 bg-gradient-to-r from-emerald-500 to-teal-500",
+    textClass: "text-emerald-600 dark:text-emerald-400 text-green-600 dark:text-green-400",
     badgeClass:
       "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
   };
@@ -57,12 +74,35 @@ export function getBudgetProgressColor(utilizationPercentage: number) {
 
 export function MonthlyBudgetTracker({
   initialSummary = null,
+  spent,
+  totalBudget,
 }: MonthlyBudgetTrackerProps = {}) {
-  const [summary, setSummary] = useState<BudgetSummary | null>(initialSummary);
-  const [loading, setLoading] = useState<boolean>(!initialSummary);
+  const derivedSummary = useMemo<BudgetSummary | null>(() => {
+    if (initialSummary) return initialSummary;
+    if (spent !== undefined && totalBudget !== undefined) {
+      const percentage = calculateBudgetPercentage(spent, totalBudget);
+      return {
+        month: new Date().toISOString().slice(0, 7),
+        monthlyLimit: totalBudget,
+        totalSpent: spent,
+        remainingBudget: totalBudget - spent,
+        utilizationPercentage: percentage,
+        projectedMonthEndSpend: spent,
+        burnRatePerDay: 0,
+        isNearLimit: percentage >= 70 && percentage <= 90,
+        isOverLimit: percentage > 90,
+        departments: [],
+        recentExpenses: [],
+      };
+    }
+    return null;
+  }, [initialSummary, spent, totalBudget]);
+
+  const [summary, setSummary] = useState<BudgetSummary | null>(derivedSummary);
+  const [loading, setLoading] = useState<boolean>(!derivedSummary);
   const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
   const [newLimit, setNewLimit] = useState<number>(
-    initialSummary ? initialSummary.monthlyLimit : 500,
+    derivedSummary ? derivedSummary.monthlyLimit : 500,
   );
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -86,10 +126,14 @@ export function MonthlyBudgetTracker({
   }, []);
 
   useEffect(() => {
-    if (!initialSummary) {
+    if (derivedSummary) {
+      setSummary(derivedSummary);
+      setNewLimit(derivedSummary.monthlyLimit);
+      setLoading(false);
+    } else {
       fetchBudget();
     }
-  }, [fetchBudget, initialSummary]);
+  }, [fetchBudget, derivedSummary]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -248,7 +292,7 @@ export function MonthlyBudgetTracker({
             <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
               Total Monthly Utilization
             </div>
-            <div className="text-2xl font-black text-zinc-900 dark:text-white mt-0.5 flex items-baseline gap-2">
+            <div className="text-2xl font-black text-zinc-900 dark:text-white mt-0.5 flex flex-wrap items-baseline gap-2">
               <span>${summary.totalSpent}</span>
               <span className="text-sm font-normal text-zinc-500">
                 / ${summary.monthlyLimit}
@@ -259,6 +303,16 @@ export function MonthlyBudgetTracker({
               >
                 {Math.round(summary.utilizationPercentage)}% used
               </span>
+              {isDanger && (
+                <span
+                  role="alert"
+                  data-testid="alert-badge"
+                  className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Alert: Spending exceeds 90%</span>
+                </span>
+              )}
             </div>
           </div>
 
@@ -280,7 +334,7 @@ export function MonthlyBudgetTracker({
         </div>
 
         {/* Horizontal Accessible Progress Bar */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-testid="budget-progressbar">
           <div className="flex items-center justify-between text-xs text-zinc-500">
             <span>Budget Allowance Progress</span>
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">
@@ -296,10 +350,11 @@ export function MonthlyBudgetTracker({
             aria-valuemax={100}
             aria-valuetext={`${percentClamped}% of monthly budget spent`}
             aria-label="Monthly budget utilization progress"
-            data-testid="budget-progressbar"
+            data-testid="spending-progress-bar"
             className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-3.5 overflow-hidden relative shadow-inner"
           >
             <div
+              data-testid="spending-progress-bar-fill"
               className={`h-full transition-all duration-700 rounded-full ${progressStyle.gradientClass}`}
               style={{
                 width: `${Math.min(100, Math.max(0, summary.utilizationPercentage))}%`,

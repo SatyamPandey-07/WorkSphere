@@ -9,7 +9,9 @@ export {
   drawSafeText,
 } from "./export/pdfBuilder";
 
+
 export {
   type ExportableBooking,
   bookingsToCSV,
+  exportBookingsToJson,
 } from "./export/domain/taxExporter";

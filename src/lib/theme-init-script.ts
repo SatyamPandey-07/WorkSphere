@@ -20,6 +20,13 @@ export const THEME_INIT_SCRIPT = `
   }
 
   var root = document.documentElement;
+  // Suppress transitions until first paint so initial load never animates.
+  root.classList.add("preload");
+  window.addEventListener("load", function () {
+    window.requestAnimationFrame(function () {
+      root.classList.remove("preload");
+    });
+  });
   root.classList.remove("dark", "cyberpunk");
 
   if (theme === "dark") {
@@ -49,10 +56,14 @@ export const THEME_INIT_SCRIPT = `
       blue: "#3b82f6",
       purple: "#a855f7",
       emerald: "#10b981",
-      amber: "#f59e0b"
+      amber: "#f59e0b",
+      "lantern-emerald": "#00ff88"
     };
     var accent = accentColors[accentStored] || accentColors.blue;
     document.documentElement.style.setProperty("--primary-accent", accent);
+    if (accentStored === "lantern-emerald") {
+      document.documentElement.style.setProperty("--accent-lantern", "#00ff88");
+    }
   } catch {}
 
   try {

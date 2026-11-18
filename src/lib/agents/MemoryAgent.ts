@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Groq } from "groq-sdk";
+import { getRedis } from "@/lib/redis";
 
 let _groq: Groq | null = null;
 
@@ -691,4 +692,314 @@ export async function compactUserMemories(
     archivedIds,
   };
 }
+
+// ─── Redis Session Memory Store with Exponential Decay & LRU Pruning (#6468) ───
+
+export const REDIS_MEMORY_LRU_CAP = 50;
+export const MEMORY_DECAY_HALF_LIFE_DAYS = 7;
+export const MEMORY_DECAY_HALF_LIFE_HOURS = MEMORY_DECAY_HALF_LIFE_DAYS * 24; // 168 hours
+export const DEFAULT_DECAY_LAMBDA = Math.LN2 / MEMORY_DECAY_HALF_LIFE_HOURS; // ~0.00412588
+export const HIGH_SALIENCE_THRESHOLD = 0.8;
+
+export interface SessionMemoryItem {
+  id: string;
+  userId: string;
+  content: string;
+  baseScore: number;
+  decayedScore?: number;
+  timestamp: number; // Unix timestamp in ms
+  lastAccessedAt: number; // Unix timestamp in ms
+  isPinned?: boolean;
+  salience?: number; // 0.0 - 1.0 (>= 0.8 treated as high salience constraint)
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Calculates exponential time-decay relevance score for conversation memory items.
+ * Formula: score = baseScore * Math.exp(-lambda * deltaHours)
+ * Memories older than 7 days decay in relevance according to the configured lambda half-life.
+ */
+export function calculateMemoryDecay(
+  baseScore: number,
+  deltaHours: number,
+  lambda: number = DEFAULT_DECAY_LAMBDA,
+): number {
+  if (deltaHours <= 0) return baseScore;
+  const score = baseScore * Math.exp(-lambda * deltaHours);
+  return score;
+}
+
+/**
+ * Computes the decayed relevance score of a memory item given an optional reference time.
+ * Pinned items retain their base relevance score without decay.
+ */
+export function computeMemoryItemScore(
+  item: SessionMemoryItem,
+  referenceTime: number = Date.now(),
+  lambda: number = DEFAULT_DECAY_LAMBDA,
+): number {
+  if (item.isPinned) {
+    return item.baseScore;
+  }
+  const deltaHours = Math.max(0, (referenceTime - item.timestamp) / (1000 * 60 * 60));
+  return calculateMemoryDecay(item.baseScore, deltaHours, lambda);
+}
+
+/**
+ * Generates the Redis key for user session memories.
+ */
+export function getRedisSessionMemoryKey(userId: string): string {
+  return `worksphere:agent:session:${userId}:memories`;
+}
+
+// In-memory fallback map for environments or test suites without active Redis connection
+export const inMemorySessionMemoryStore = new Map<string, SessionMemoryItem[]>();
+
+/**
+ * Prunes conversation memory items to enforce an LRU pruning cap of 50 active context items per session.
+ * Protects pinned user preferences and high-salience workspace constraints from eviction.
+ * Evicts stale, low-relevance turns according to LRU and decayed relevance score.
+ */
+export function pruneSessionMemoriesLRU(
+  memories: SessionMemoryItem[],
+  maxCap: number = REDIS_MEMORY_LRU_CAP,
+  referenceTime: number = Date.now(),
+  lambda: number = DEFAULT_DECAY_LAMBDA,
+): SessionMemoryItem[] {
+  if (memories.length <= maxCap) {
+    return memories.map((m) => ({
+      ...m,
+      decayedScore: computeMemoryItemScore(m, referenceTime, lambda),
+    }));
+  }
+
+  // Calculate decayed score for all items
+  const itemsWithDecay = memories.map((m) => ({
+    ...m,
+    decayedScore: computeMemoryItemScore(m, referenceTime, lambda),
+  }));
+
+  // Separate pinned items (they must be preserved)
+  const pinnedItems = itemsWithDecay.filter((m) => m.isPinned);
+  const unpinnedItems = itemsWithDecay.filter((m) => !m.isPinned);
+
+  // If pinned items alone meet or exceed maxCap, keep the most recently accessed pinned items
+  if (pinnedItems.length >= maxCap) {
+    return pinnedItems
+      .sort((a, b) => (b.lastAccessedAt ?? b.timestamp) - (a.lastAccessedAt ?? a.timestamp))
+      .slice(0, maxCap);
+  }
+
+  const remainingSlots = maxCap - pinnedItems.length;
+
+  // For unpinned items, prioritize:
+  // 1. High-salience workspace constraints (salience >= 0.8)
+  // 2. High decayed relevance score
+  // 3. Most recently accessed (LRU tie-breaker)
+  const sortedUnpinned = [...unpinnedItems].sort((a, b) => {
+    const aHighSalience = (a.salience ?? 0) >= HIGH_SALIENCE_THRESHOLD ? 1 : 0;
+    const bHighSalience = (b.salience ?? 0) >= HIGH_SALIENCE_THRESHOLD ? 1 : 0;
+    if (aHighSalience !== bHighSalience) {
+      return bHighSalience - aHighSalience;
+    }
+
+    const aScore = a.decayedScore ?? a.baseScore;
+    const bScore = b.decayedScore ?? b.baseScore;
+    const scoreDiff = bScore - aScore;
+    if (Math.abs(scoreDiff) > 0.05) {
+      return scoreDiff;
+    }
+
+    // LRU tie-breaker: most recently accessed first
+    return (b.lastAccessedAt ?? b.timestamp) - (a.lastAccessedAt ?? a.timestamp);
+  });
+
+  const keptUnpinned = sortedUnpinned.slice(0, remainingSlots);
+  const finalSet = [...pinnedItems, ...keptUnpinned];
+
+  // Return sorted by most recently accessed
+  return finalSet.sort(
+    (a, b) => (b.lastAccessedAt ?? b.timestamp) - (a.lastAccessedAt ?? a.timestamp),
+  );
+}
+
+/**
+ * Retrieves session memories from Redis (or in-memory fallback), evaluating decay.
+ */
+export async function getSessionMemories(
+  userId: string,
+  options?: {
+    referenceTime?: number;
+    redisClient?: any;
+    prune?: boolean;
+    maxCap?: number;
+  },
+): Promise<SessionMemoryItem[]> {
+  const redis = options?.redisClient ?? getRedis();
+  const key = getRedisSessionMemoryKey(userId);
+  let items: SessionMemoryItem[] = [];
+
+  if (redis) {
+    try {
+      const data = await redis.get(key);
+      if (data) {
+        items = typeof data === "string" ? JSON.parse(data) : (data as SessionMemoryItem[]);
+      }
+    } catch (err) {
+      console.error("[MemoryAgent] Redis getSessionMemories failed, falling back to memory:", err);
+      items = inMemorySessionMemoryStore.get(key) || [];
+    }
+  } else {
+    items = inMemorySessionMemoryStore.get(key) || [];
+  }
+
+  const refTime = options?.referenceTime ?? Date.now();
+  if (options?.prune || items.length > (options?.maxCap ?? REDIS_MEMORY_LRU_CAP)) {
+    const pruned = pruneSessionMemoriesLRU(items, options?.maxCap ?? REDIS_MEMORY_LRU_CAP, refTime);
+    if (redis) {
+      try {
+        await redis.set(key, JSON.stringify(pruned));
+      } catch (err) {
+        console.error("[MemoryAgent] Redis set in getSessionMemories failed:", err);
+      }
+    }
+    inMemorySessionMemoryStore.set(key, pruned);
+    return pruned;
+  }
+
+  return items.map((m) => ({
+    ...m,
+    decayedScore: computeMemoryItemScore(m, refTime),
+  }));
+}
+
+/**
+ * Appends a conversation memory item to Redis session storage, enforcing the 50-item LRU cap.
+ */
+export async function addSessionMemory(
+  userId: string,
+  memory: {
+    id?: string;
+    content: string;
+    baseScore?: number;
+    timestamp?: number;
+    lastAccessedAt?: number;
+    isPinned?: boolean;
+    salience?: number;
+    metadata?: Record<string, any>;
+  },
+  options?: {
+    maxCap?: number;
+    referenceTime?: number;
+    redisClient?: any;
+  },
+): Promise<{ added: SessionMemoryItem; activeCount: number; memories: SessionMemoryItem[] }> {
+  const redis = options?.redisClient ?? getRedis();
+  const key = getRedisSessionMemoryKey(userId);
+  const now = options?.referenceTime ?? Date.now();
+
+  const currentMemories = await getSessionMemories(userId, {
+    referenceTime: now,
+    redisClient: redis,
+  });
+
+  const newItem: SessionMemoryItem = {
+    id: memory.id || `mem_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    userId,
+    content: memory.content,
+    baseScore: memory.baseScore ?? 1.0,
+    timestamp: memory.timestamp ?? now,
+    lastAccessedAt: memory.lastAccessedAt ?? now,
+    isPinned: memory.isPinned ?? false,
+    salience: memory.salience ?? 0.5,
+    metadata: memory.metadata,
+  };
+
+  const existingIndex = currentMemories.findIndex((m) => m.id === newItem.id);
+  let updatedList: SessionMemoryItem[];
+  if (existingIndex >= 0) {
+    updatedList = [...currentMemories];
+    updatedList[existingIndex] = {
+      ...updatedList[existingIndex],
+      ...newItem,
+      lastAccessedAt: now,
+    };
+  } else {
+    updatedList = [newItem, ...currentMemories];
+  }
+
+  const maxCap = options?.maxCap ?? REDIS_MEMORY_LRU_CAP;
+  const prunedList = pruneSessionMemoriesLRU(updatedList, maxCap, now);
+
+  if (redis) {
+    try {
+      await redis.set(key, JSON.stringify(prunedList));
+    } catch (err) {
+      console.error("[MemoryAgent] Redis addSessionMemory write failed:", err);
+    }
+  }
+  inMemorySessionMemoryStore.set(key, prunedList);
+
+  return {
+    added: newItem,
+    activeCount: prunedList.length,
+    memories: prunedList,
+  };
+}
+
+/**
+ * Updates the last accessed time of an item for LRU tracking.
+ */
+export async function touchSessionMemory(
+  userId: string,
+  memoryId: string,
+  options?: {
+    accessTime?: number;
+    redisClient?: any;
+  },
+): Promise<boolean> {
+  const redis = options?.redisClient ?? getRedis();
+  const key = getRedisSessionMemoryKey(userId);
+  const now = options?.accessTime ?? Date.now();
+
+  const currentMemories = await getSessionMemories(userId, {
+    referenceTime: now,
+    redisClient: redis,
+  });
+
+  const target = currentMemories.find((m) => m.id === memoryId);
+  if (!target) return false;
+
+  target.lastAccessedAt = now;
+
+  if (redis) {
+    try {
+      await redis.set(key, JSON.stringify(currentMemories));
+    } catch (err) {
+      console.error("[MemoryAgent] Redis touchSessionMemory failed:", err);
+    }
+  }
+  inMemorySessionMemoryStore.set(key, currentMemories);
+  return true;
+}
+
+/**
+ * Clears session memories for a user.
+ */
+export async function clearSessionMemories(
+  userId: string,
+  options?: { redisClient?: any },
+): Promise<void> {
+  const redis = options?.redisClient ?? getRedis();
+  const key = getRedisSessionMemoryKey(userId);
+  if (redis) {
+    try {
+      await redis.del(key);
+    } catch (err) {
+      console.error("[MemoryAgent] Redis clearSessionMemories failed:", err);
+    }
+  }
+  inMemorySessionMemoryStore.delete(key);
+}
+
 

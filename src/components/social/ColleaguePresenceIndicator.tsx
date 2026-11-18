@@ -284,8 +284,8 @@ export function ColleaguePresenceIndicator({
                     const lastSeenTimestamp =
                       c.lastSeen ??
                       c.lastActive ??
-                      (c as Record<string, unknown>).updatedAt ??
-                      (c as Record<string, unknown>).createdAt;
+                      (c as unknown as Record<string, unknown>).updatedAt ??
+                      (c as unknown as Record<string, unknown>).createdAt;
                     const relativeTime = formatRelativeLastSeen(
                       lastSeenTimestamp as
                         string | number | Date | null | undefined,

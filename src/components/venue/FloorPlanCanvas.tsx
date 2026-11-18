@@ -7,7 +7,16 @@ import React, {
   useMemo,
   KeyboardEvent,
 } from "react";
-import { Check, Lock, Armchair, Zap, Star, Sun } from "lucide-react";
+import {
+  Check,
+  Lock,
+  Armchair,
+  Zap,
+  Sun,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+} from "lucide-react";
 import { DeskFavoriteAlertButton } from "./DeskFavoriteAlertButton";
 import {
   recommendNaturalLightDesks,
@@ -16,18 +25,36 @@ import {
 
 export type SeatStatus = "available" | "reserved" | "held" | "selected";
 
+export type FloorPlanLOD = "low" | "medium" | "high";
+
+export const LOD_LOW_ZOOM_THRESHOLD = 0.8;
+export const LOD_HIGH_ZOOM_THRESHOLD = 1.5;
+
+/**
+ * Determines Level-of-Detail (LOD) tier based on zoom level:
+ * - low (< 0.8x): major zone boundaries & walls only (DOM element minimization)
+ * - medium (0.8x - 1.5x): standard desk seating layout
+ * - high (> 1.5x): individual power socket icons, desk numbers, and chair models
+ */
+export function getFloorPlanLOD(zoom: number): FloorPlanLOD {
+  if (zoom < LOD_LOW_ZOOM_THRESHOLD) return "low";
+  if (zoom > LOD_HIGH_ZOOM_THRESHOLD) return "high";
+  return "medium";
+}
+
 export interface Seat2D {
   id: string;
   label: string;
   row: number; // 0-indexed row position
   col: number; // 0-indexed column position
-  x: number;   // Spatial X coordinate in canvas units / meters
-  y: number;   // Spatial Y coordinate in canvas units / meters
+  x: number; // Spatial X coordinate in canvas units / meters
+  y: number; // Spatial Y coordinate in canvas units / meters
   status: SeatStatus;
   price?: number;
   type?: "standard" | "standing" | "booth" | "quiet";
   isBestNaturalLight?: boolean;
   hasNaturalLightBadge?: boolean;
+  hasPowerSocket?: boolean;
 }
 
 export interface FloorPlanCanvasProps {
@@ -40,47 +67,396 @@ export interface FloorPlanCanvasProps {
   venueId?: string;
   venueLocation?: { lat: number; lng: number } | null;
   venueCompassOrientation?: number;
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
 }
+
+export const FLOOR_PLAN_ZONES = [
+  {
+    id: "zone-quiet",
+    name: "Quiet Focus Zone (A)",
+    x: 35,
+    y: 35,
+    width: 660,
+    height: 75,
+    color: "border-blue-500/50 bg-blue-500/5 text-blue-600 dark:text-blue-400",
+  },
+  {
+    id: "zone-hotdesk",
+    name: "Hot Desk Zone (B)",
+    x: 35,
+    y: 125,
+    width: 660,
+    height: 75,
+    color: "border-emerald-500/50 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400",
+  },
+  {
+    id: "zone-booth",
+    name: "Collaboration Booths (C)",
+    x: 35,
+    y: 215,
+    width: 660,
+    height: 75,
+    color: "border-purple-500/50 bg-purple-500/5 text-purple-600 dark:text-purple-400",
+  },
+  {
+    id: "zone-standing",
+    name: "Standing Velocity Hub (D)",
+    x: 35,
+    y: 305,
+    width: 660,
+    height: 75,
+    color: "border-amber-500/50 bg-amber-500/5 text-amber-600 dark:text-amber-400",
+  },
+];
 
 /**
  * Default sample 2D floor plan layout grid (6 rows x 8 columns)
  */
 export const DEFAULT_FLOOR_PLAN_SEATS: Seat2D[] = [
   // Row 0 (Desks A1 - A8)
-  { id: "seat_a1", label: "A1", row: 0, col: 0, x: 50, y: 50, status: "available", price: 15, type: "quiet" },
-  { id: "seat_a2", label: "A2", row: 0, col: 1, x: 130, y: 50, status: "available", price: 15, type: "quiet" },
-  { id: "seat_a3", label: "A3", row: 0, col: 2, x: 210, y: 50, status: "reserved", price: 15, type: "quiet" },
-  { id: "seat_a4", label: "A4", row: 0, col: 3, x: 290, y: 50, status: "available", price: 15, type: "quiet" },
-  { id: "seat_a5", label: "A5", row: 0, col: 4, x: 410, y: 50, status: "available", price: 18, type: "standard" },
-  { id: "seat_a6", label: "A6", row: 0, col: 5, x: 490, y: 50, status: "held", price: 18, type: "standard" },
-  { id: "seat_a7", label: "A7", row: 0, col: 6, x: 570, y: 50, status: "available", price: 18, type: "standard" },
-  { id: "seat_a8", label: "A8", row: 0, col: 7, x: 650, y: 50, status: "available", price: 18, type: "standard" },
+  {
+    id: "seat_a1",
+    label: "A1",
+    row: 0,
+    col: 0,
+    x: 50,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_a2",
+    label: "A2",
+    row: 0,
+    col: 1,
+    x: 130,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_a3",
+    label: "A3",
+    row: 0,
+    col: 2,
+    x: 210,
+    y: 50,
+    status: "reserved",
+    price: 15,
+    type: "quiet",
+    hasPowerSocket: false,
+  },
+  {
+    id: "seat_a4",
+    label: "A4",
+    row: 0,
+    col: 3,
+    x: 290,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_a5",
+    label: "A5",
+    row: 0,
+    col: 4,
+    x: 410,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_a6",
+    label: "A6",
+    row: 0,
+    col: 5,
+    x: 490,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_a7",
+    label: "A7",
+    row: 0,
+    col: 6,
+    x: 570,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+    hasPowerSocket: false,
+  },
+  {
+    id: "seat_a8",
+    label: "A8",
+    row: 0,
+    col: 7,
+    x: 650,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+    hasPowerSocket: true,
+  },
 
   // Row 1 (Desks B1 - B8)
-  { id: "seat_b1", label: "B1", row: 1, col: 0, x: 50, y: 130, status: "available", price: 15, type: "standard" },
-  { id: "seat_b2", label: "B2", row: 1, col: 1, x: 130, y: 130, status: "reserved", price: 15, type: "standard" },
-  { id: "seat_b3", label: "B3", row: 1, col: 2, x: 210, y: 130, status: "available", price: 15, type: "standard" },
-  { id: "seat_b4", label: "B4", row: 1, col: 3, x: 290, y: 130, status: "available", price: 15, type: "standard" },
-  { id: "seat_b5", label: "B5", row: 1, col: 4, x: 410, y: 130, status: "available", price: 18, type: "standard" },
-  { id: "seat_b6", label: "B6", row: 1, col: 5, x: 490, y: 130, status: "available", price: 18, type: "standard" },
-  { id: "seat_b7", label: "B7", row: 1, col: 6, x: 570, y: 130, status: "reserved", price: 18, type: "standard" },
-  { id: "seat_b8", label: "B8", row: 1, col: 7, x: 650, y: 130, status: "available", price: 18, type: "standard" },
+  {
+    id: "seat_b1",
+    label: "B1",
+    row: 1,
+    col: 0,
+    x: 50,
+    y: 140,
+    status: "available",
+    price: 18,
+    type: "standard",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_b2",
+    label: "B2",
+    row: 1,
+    col: 1,
+    x: 130,
+    y: 140,
+    status: "available",
+    price: 18,
+    type: "standard",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_b3",
+    label: "B3",
+    row: 1,
+    col: 2,
+    x: 210,
+    y: 140,
+    status: "held",
+    price: 18,
+    type: "standard",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_b4",
+    label: "B4",
+    row: 1,
+    col: 3,
+    x: 290,
+    y: 140,
+    status: "available",
+    price: 18,
+    type: "standard",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_b5",
+    label: "B5",
+    row: 1,
+    col: 4,
+    x: 410,
+    y: 140,
+    status: "available",
+    price: 18,
+    type: "standard",
+    hasPowerSocket: false,
+  },
+  {
+    id: "seat_b6",
+    label: "B6",
+    row: 1,
+    col: 5,
+    x: 490,
+    y: 140,
+    status: "reserved",
+    price: 18,
+    type: "standard",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_b7",
+    label: "B7",
+    row: 1,
+    col: 6,
+    x: 570,
+    y: 140,
+    status: "available",
+    price: 18,
+    type: "standard",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_b8",
+    label: "B8",
+    row: 1,
+    col: 7,
+    x: 650,
+    y: 140,
+    status: "available",
+    price: 18,
+    type: "standard",
+    hasPowerSocket: true,
+  },
 
   // Row 2 (Booths C1 - C4)
-  { id: "seat_c1", label: "Booth C1", row: 2, col: 0, x: 60, y: 230, status: "available", price: 25, type: "booth" },
-  { id: "seat_c2", label: "Booth C2", row: 2, col: 2, x: 220, y: 230, status: "available", price: 25, type: "booth" },
-  { id: "seat_c3", label: "Booth C3", row: 2, col: 4, x: 420, y: 230, status: "reserved", price: 25, type: "booth" },
-  { id: "seat_c4", label: "Booth C4", row: 2, col: 6, x: 580, y: 230, status: "available", price: 25, type: "booth" },
+  {
+    id: "seat_c1",
+    label: "Booth C1",
+    row: 2,
+    col: 0,
+    x: 100,
+    y: 230,
+    status: "available",
+    price: 25,
+    type: "booth",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_c2",
+    label: "Booth C2",
+    row: 2,
+    col: 2,
+    x: 260,
+    y: 230,
+    status: "available",
+    price: 25,
+    type: "booth",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_c3",
+    label: "Booth C3",
+    row: 2,
+    col: 4,
+    x: 420,
+    y: 230,
+    status: "reserved",
+    price: 25,
+    type: "booth",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_c4",
+    label: "Booth C4",
+    row: 2,
+    col: 6,
+    x: 580,
+    y: 230,
+    status: "available",
+    price: 25,
+    type: "booth",
+    hasPowerSocket: true,
+  },
 
   // Row 3 (Standing Desks D1 - D8)
-  { id: "seat_d1", label: "D1", row: 3, col: 0, x: 50, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d2", label: "D2", row: 3, col: 1, x: 130, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d3", label: "D3", row: 3, col: 2, x: 210, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d4", label: "D4", row: 3, col: 3, x: 290, y: 320, status: "reserved", price: 20, type: "standing" },
-  { id: "seat_d5", label: "D5", row: 3, col: 4, x: 410, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d6", label: "D6", row: 3, col: 5, x: 490, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d7", label: "D7", row: 3, col: 6, x: 570, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d8", label: "D8", row: 3, col: 7, x: 650, y: 320, status: "available", price: 20, type: "standing" },
+  {
+    id: "seat_d1",
+    label: "D1",
+    row: 3,
+    col: 0,
+    x: 50,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_d2",
+    label: "D2",
+    row: 3,
+    col: 1,
+    x: 130,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_d3",
+    label: "D3",
+    row: 3,
+    col: 2,
+    x: 210,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_d4",
+    label: "D4",
+    row: 3,
+    col: 3,
+    x: 290,
+    y: 320,
+    status: "reserved",
+    price: 20,
+    type: "standing",
+    hasPowerSocket: false,
+  },
+  {
+    id: "seat_d5",
+    label: "D5",
+    row: 3,
+    col: 4,
+    x: 410,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_d6",
+    label: "D6",
+    row: 3,
+    col: 5,
+    x: 490,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_d7",
+    label: "D7",
+    row: 3,
+    col: 6,
+    x: 570,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+    hasPowerSocket: true,
+  },
+  {
+    id: "seat_d8",
+    label: "D8",
+    row: 3,
+    col: 7,
+    x: 650,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+    hasPowerSocket: true,
+  },
 ];
 
 /**
@@ -89,7 +465,7 @@ export const DEFAULT_FLOOR_PLAN_SEATS: Seat2D[] = [
 export function findNearestSpatialSeat(
   current: Seat2D,
   direction: "UP" | "DOWN" | "LEFT" | "RIGHT",
-  allSeats: Seat2D[]
+  allSeats: Seat2D[],
 ): Seat2D | null {
   if (!allSeats || allSeats.length <= 1) return null;
 
@@ -97,13 +473,25 @@ export function findNearestSpatialSeat(
     if (seat.id === current.id) return false;
     switch (direction) {
       case "UP":
-        return seat.y < current.y || (seat.row < current.row && Math.abs(seat.x - current.x) < 80);
+        return (
+          seat.y < current.y ||
+          (seat.row < current.row && Math.abs(seat.x - current.x) < 80)
+        );
       case "DOWN":
-        return seat.y > current.y || (seat.row > current.row && Math.abs(seat.x - current.x) < 80);
+        return (
+          seat.y > current.y ||
+          (seat.row > current.row && Math.abs(seat.x - current.x) < 80)
+        );
       case "LEFT":
-        return seat.x < current.x || (seat.col < current.col && Math.abs(seat.y - current.y) < 80);
+        return (
+          seat.x < current.x ||
+          (seat.col < current.col && Math.abs(seat.y - current.y) < 80)
+        );
       case "RIGHT":
-        return seat.x > current.x || (seat.col > current.col && Math.abs(seat.y - current.y) < 80);
+        return (
+          seat.x > current.x ||
+          (seat.col > current.col && Math.abs(seat.y - current.y) < 80)
+        );
       default:
         return false;
     }
@@ -128,9 +516,8 @@ export function findNearestSpatialSeat(
 }
 
 /**
- * Interactive FloorPlanCanvas component (#4414).
- * Implements a roving tabindex 2D matrix navigation engine for accessible
- * keyboard directional browsing (ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End).
+ * Interactive FloorPlanCanvas component (#4414, #6492).
+ * Implements Level-of-Detail (LOD) zoom rendering and roving tabindex 2D matrix navigation.
  */
 export function FloorPlanCanvas({
   seats = DEFAULT_FLOOR_PLAN_SEATS,
@@ -139,11 +526,27 @@ export function FloorPlanCanvas({
   onReserveSeat,
   className,
   venueName = "Interactive Seat Map",
+  venueId,
   venueLocation,
   venueCompassOrientation = 180,
+  zoom: propZoom,
+  onZoomChange,
 }: FloorPlanCanvasProps) {
+  const [internalZoom, setInternalZoom] = useState<number>(1.0);
+  const currentZoom = propZoom !== undefined ? propZoom : internalZoom;
+  const lod = getFloorPlanLOD(currentZoom);
+
+  const handleZoomChange = useCallback(
+    (newZoom: number) => {
+      const clamped = Math.max(0.4, Math.min(2.5, Math.round(newZoom * 100) / 100));
+      setInternalZoom(clamped);
+      onZoomChange?.(clamped);
+    },
+    [onZoomChange]
+  );
+
   const [focusedSeatId, setFocusedSeatId] = useState<string>(
-    selectedSeatId || (seats.length > 0 ? seats[0].id : "")
+    selectedSeatId || (seats.length > 0 ? seats[0].id : ""),
   );
 
   const seatRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -171,7 +574,7 @@ export function FloorPlanCanvas({
           latitude: venueLocation.lat,
           longitude: venueLocation.lng,
           venueCompassOrientation,
-        }
+        },
       );
       recs.forEach((r) => {
         if (r.isOptimalNaturalLight) {
@@ -239,7 +642,7 @@ export function FloorPlanCanvas({
         handleSeatFocus(targetSeat.id);
       }
     },
-    [seats, handleSeatFocus, onSelectSeat, onReserveSeat]
+    [seats, handleSeatFocus, onSelectSeat, onReserveSeat],
   );
 
   return (
@@ -250,7 +653,7 @@ export function FloorPlanCanvas({
         className || ""
       }`}
     >
-      {/* Header & Legend */}
+      {/* Header & Legend with LOD Zoom Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6 border-b border-zinc-200 dark:border-zinc-800 pb-4">
         <div>
           <h3 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2">
@@ -260,6 +663,46 @@ export function FloorPlanCanvas({
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
             Use Arrow Keys (↑ ↓ ← →) to navigate seat grid. Press Enter/Space to select.
           </p>
+        </div>
+
+        {/* Level of Detail (LOD) Zoom Toolbar */}
+        <div
+          data-testid="floorplan-zoom-controls"
+          className="flex items-center gap-1.5 p-1 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60"
+        >
+          <button
+            type="button"
+            data-testid="zoom-out-btn"
+            aria-label="Zoom Out"
+            onClick={() => handleZoomChange(currentZoom - 0.25)}
+            className="p-1 rounded text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <span
+            data-testid="zoom-level-display"
+            className="px-2 font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-200 min-w-[70px] text-center"
+          >
+            {Math.round(currentZoom * 100)}% ({lod.toUpperCase()})
+          </span>
+          <button
+            type="button"
+            data-testid="zoom-in-btn"
+            aria-label="Zoom In"
+            onClick={() => handleZoomChange(currentZoom + 0.25)}
+            className="p-1 rounded text-zinc-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            data-testid="zoom-reset-btn"
+            aria-label="Reset Zoom"
+            onClick={() => handleZoomChange(1.0)}
+            className="p-1 rounded text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-white dark:hover:bg-zinc-700 transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         {/* Status Legend */}
@@ -292,91 +735,182 @@ export function FloorPlanCanvas({
         </div>
       </div>
 
-      {/* 2D Interactive Seat Grid Matrix Container */}
+      {/* 2D Interactive Seat Grid Matrix Container with Level of Detail (LOD) */}
       <div
         role="grid"
         aria-label="Seat Matrix Grid"
         data-testid="floor-plan-grid"
-        className="relative w-full overflow-x-auto min-h-[400px] border border-zinc-100 dark:border-zinc-800/60 rounded-xl bg-zinc-50/50 dark:bg-zinc-950/40 p-4"
+        className="relative w-full overflow-hidden min-h-[420px] border border-zinc-100 dark:border-zinc-800/60 rounded-xl bg-zinc-50/50 dark:bg-zinc-950/40 p-4"
       >
-        <div className="relative w-[720px] h-[380px] mx-auto">
-          {seats.map((seat) => {
-            const isSelected = selectedSeatId === seat.id;
-            const isFocused = focusedSeatId === seat.id;
-            const isReserved = seat.status === "reserved";
-            const isHeld = seat.status === "held";
-            const isNaturalLight =
-              naturalLightMap.get(seat.id) ||
-              seat.isBestNaturalLight ||
-              seat.hasNaturalLightBadge;
+        <div
+          data-testid="floor-plan-transform-container"
+          data-zoom={currentZoom}
+          data-lod={lod}
+          style={{
+            transform: `scale(${currentZoom})`,
+            transformOrigin: "center center",
+            transition: "transform 200ms ease-out",
+          }}
+          className="relative w-[720px] h-[400px] mx-auto select-none"
+        >
+          {/* Major Zone Boundaries & Walls Layer (Always rendered for structural context) */}
+          <div data-testid="zone-boundaries-layer" className="absolute inset-0 pointer-events-none">
+            {/* Outer Perimeter Architectural Walls */}
+            <div className="absolute inset-2 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl pointer-events-none" />
 
-            let bgClass = "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20";
-            if (isSelected) {
-              bgClass = "bg-blue-600 text-white ring-4 ring-blue-400 shadow-blue-500/30";
-            } else if (isReserved) {
-              bgClass = "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed";
-            } else if (isHeld) {
-              bgClass = "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20";
-            }
-
-            return (
-              <button
-                key={seat.id}
-                ref={(el) => {
-                  if (el) seatRefs.current.set(seat.id, el);
-                  else seatRefs.current.delete(seat.id);
-                }}
-                type="button"
-                role="gridcell"
-                tabIndex={isFocused ? 0 : -1}
-                aria-label={`Seat ${seat.label}, Row ${seat.row + 1}, Column ${seat.col + 1}, ${seat.status}, $${seat.price || 15}/hr${isNaturalLight ? ", Best Natural Light" : ""}`}
-                aria-selected={isSelected}
-                aria-disabled={isReserved}
-                data-seat-id={seat.id}
-                data-testid={`seat-${seat.id}`}
+            {/* Zone Divisions */}
+            {FLOOR_PLAN_ZONES.map((zone) => (
+              <div
+                key={zone.id}
+                data-testid={`zone-boundary-${zone.id}`}
                 style={{
                   position: "absolute",
-                  left: `${seat.x}px`,
-                  top: `${seat.y}px`,
+                  left: `${zone.x}px`,
+                  top: `${zone.y}px`,
+                  width: `${zone.width}px`,
+                  height: `${zone.height}px`,
                 }}
-                onClick={() => {
-                  if (!isReserved) {
-                    setFocusedSeatId(seat.id);
-                    onSelectSeat?.(seat);
-                  }
-                }}
-                onFocus={() => setFocusedSeatId(seat.id)}
-                onKeyDown={(e) => handleKeyDown(e, seat)}
-                className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center font-semibold text-xs transition-all shadow-md focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-950 ${bgClass}`}
+                className={`rounded-lg border ${zone.color} p-1.5 transition-all`}
               >
-                {isNaturalLight && (
-                  <span
-                    data-testid={`natural-light-badge-${seat.id}`}
-                    title={BEST_NATURAL_LIGHT_BADGE}
-                    aria-label={BEST_NATURAL_LIGHT_BADGE}
-                    className="absolute -top-1.5 -right-1.5 bg-amber-400 text-amber-950 p-0.5 rounded-full shadow-sm ring-2 ring-white dark:ring-zinc-900"
+                <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">
+                  {zone.name}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Low Zoom (< 0.8x) Macro Overview Overlay */}
+          {lod === "low" && (
+            <div
+              data-testid="low-lod-overview"
+              className="absolute inset-0 z-20 flex flex-col justify-center items-center pointer-events-none bg-zinc-950/20 backdrop-blur-[1px] rounded-xl"
+            >
+              <div className="px-3 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-700 text-xs text-zinc-300 font-mono shadow-lg">
+                Macro Zone Overview Mode (Zoom &gt; 0.8x to inspect seats)
+              </div>
+            </div>
+          )}
+
+          {/* Fine-Grained Seat SVG & Interactive Layers (Rendered at medium and high zoom) */}
+          {lod !== "low" && (
+            <div data-testid="fine-grained-seats-layer">
+              {seats.map((seat) => {
+                const isSelected = selectedSeatId === seat.id;
+                const isFocused = focusedSeatId === seat.id;
+                const isReserved = seat.status === "reserved";
+                const isHeld = seat.status === "held";
+                const isNaturalLight =
+                  naturalLightMap.get(seat.id) ||
+                  seat.isBestNaturalLight ||
+                  seat.hasNaturalLightBadge;
+
+                let bgClass =
+                  "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20";
+                if (isSelected) {
+                  bgClass =
+                    "bg-blue-600 text-white ring-4 ring-blue-400 shadow-blue-500/30";
+                } else if (isReserved) {
+                  bgClass =
+                    "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed";
+                } else if (isHeld) {
+                  bgClass =
+                    "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20";
+                }
+
+                return (
+                  <button
+                    key={seat.id}
+                    ref={(el) => {
+                      if (el) seatRefs.current.set(seat.id, el);
+                      else seatRefs.current.delete(seat.id);
+                    }}
+                    type="button"
+                    role="gridcell"
+                    tabIndex={isFocused ? 0 : -1}
+                    aria-label={`Seat ${seat.label}, Row ${seat.row + 1}, Column ${seat.col + 1}, ${seat.status}, $${seat.price || 15}/hr${isNaturalLight ? ", Best Natural Light" : ""}`}
+                    aria-selected={isSelected}
+                    aria-disabled={isReserved}
+                    data-seat-id={seat.id}
+                    data-testid={`seat-${seat.id}`}
+                    style={{
+                      position: "absolute",
+                      left: `${seat.x}px`,
+                      top: `${seat.y}px`,
+                    }}
+                    onClick={() => {
+                      if (!isReserved) {
+                        setFocusedSeatId(seat.id);
+                        onSelectSeat?.(seat);
+                      }
+                    }}
+                    onFocus={() => setFocusedSeatId(seat.id)}
+                    onKeyDown={(e) => handleKeyDown(e, seat)}
+                    className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center font-semibold text-xs transition-all shadow-md focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-950 ${bgClass}`}
                   >
-                    <Sun className="w-2.5 h-2.5 fill-amber-500" />
-                  </span>
-                )}
-                <div className="flex items-center justify-center gap-1">
-                  {isReserved ? (
-                    <Lock className="w-3.5 h-3.5 opacity-60" />
-                  ) : isSelected ? (
-                    <Check className="w-3.5 h-3.5 text-white" />
-                  ) : isHeld ? (
-                    <Zap className="w-3.5 h-3.5" />
-                  ) : null}
-                  <span>{seat.label}</span>
-                </div>
-                {seat.price && (
-                  <span className="text-[10px] opacity-80 font-mono font-normal">
-                    ${seat.price}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+                    {isNaturalLight && (
+                      <span
+                        data-testid={`natural-light-badge-${seat.id}`}
+                        title={BEST_NATURAL_LIGHT_BADGE}
+                        aria-label={BEST_NATURAL_LIGHT_BADGE}
+                        className="absolute -top-1.5 -right-1.5 bg-amber-400 text-amber-950 p-0.5 rounded-full shadow-sm ring-2 ring-white dark:ring-zinc-900"
+                      >
+                        <Sun className="w-2.5 h-2.5 fill-amber-500" />
+                      </span>
+                    )}
+
+                    {/* High-Zoom (> 1.5x) Power Socket Icons */}
+                    {lod === "high" && seat.hasPowerSocket !== false && (
+                      <span
+                        data-testid="power-socket-icon"
+                        title="240V Power Socket Available"
+                        className="absolute top-1 left-1 p-0.5 rounded bg-zinc-900/80 text-amber-400 shadow-xs"
+                      >
+                        <Zap className="w-2 h-2 fill-amber-400" />
+                      </span>
+                    )}
+
+                    {/* High-Zoom (> 1.5x) Chair Models */}
+                    {lod === "high" && (
+                      <span
+                        data-testid="chair-model"
+                        title="Ergonomic Mesh Task Chair"
+                        className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 p-0.5 rounded bg-zinc-900/90 text-zinc-300 shadow-xs"
+                      >
+                        <Armchair className="w-2.5 h-2.5 text-zinc-300" />
+                      </span>
+                    )}
+
+                    <div className="flex items-center justify-center gap-1">
+                      {isReserved ? (
+                        <Lock className="w-3.5 h-3.5 opacity-60" />
+                      ) : isSelected ? (
+                        <Check className="w-3.5 h-3.5 text-white" />
+                      ) : isHeld ? (
+                        <Zap className="w-3.5 h-3.5" />
+                      ) : null}
+                      <span>{seat.label}</span>
+                    </div>
+
+                    {/* High-Zoom (> 1.5x) Detailed Desk Numbers */}
+                    {lod === "high" && (
+                      <span
+                        data-testid="high-lod-desk-number"
+                        className="text-[8px] font-mono opacity-90 uppercase tracking-tighter"
+                      >
+                        #{seat.id.replace("seat_", "")}
+                      </span>
+                    )}
+
+                    {seat.price && lod !== "high" && (
+                      <span className="text-[10px] opacity-80 font-mono font-normal">
+                        ${seat.price}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -385,11 +919,20 @@ export function FloorPlanCanvas({
         <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 text-xs font-medium text-zinc-700 dark:text-zinc-300">
           <div className="flex items-center gap-3 flex-wrap">
             <div>
-              Active Focus: <span className="font-bold text-zinc-900 dark:text-white">{activeFocusedSeat.label}</span>
+              Active Focus:{" "}
+              <span className="font-bold text-zinc-900 dark:text-white">
+                {activeFocusedSeat.label}
+              </span>
               {" • "}
-              Status: <span className="capitalize font-semibold">{activeFocusedSeat.status}</span>
+              Status:{" "}
+              <span className="capitalize font-semibold">
+                {activeFocusedSeat.status}
+              </span>
               {" • "}
-              Price: <span className="font-mono">${activeFocusedSeat.price || 15}/hr</span>
+              Price:{" "}
+              <span className="font-mono">
+                ${activeFocusedSeat.price || 15}/hr
+              </span>
             </div>
 
             {(naturalLightMap.get(activeFocusedSeat.id) ||
@@ -411,7 +954,10 @@ export function FloorPlanCanvas({
               deskLabel={activeFocusedSeat.label}
               deskType={activeFocusedSeat.type}
               price={activeFocusedSeat.price}
-              isOccupied={activeFocusedSeat.status === "reserved" || activeFocusedSeat.status === "held"}
+              isOccupied={
+                activeFocusedSeat.status === "reserved" ||
+                activeFocusedSeat.status === "held"
+              }
               variant="compact"
             />
           </div>

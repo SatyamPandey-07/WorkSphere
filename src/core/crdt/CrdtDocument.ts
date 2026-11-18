@@ -17,6 +17,10 @@ export interface CrdtOperation {
   timestamp: number;
   vectorClock: VectorClock;
   payload: Record<string, unknown>;
+  parentOpId?: string;
+  dependencies?: VectorClock;
+  hopCount?: number;
+  relayedBy?: string[];
 }
 
 export interface CrdtState {
@@ -30,17 +34,41 @@ export interface HistoryEntry {
   previousOp: CrdtOperation | null;
 }
 
+export type PeerMessageType =
+  | "STATE_VECTOR"
+  | "SYNC_OPERATIONS"
+  | "FORWARD_OPERATION"
+  | "RECONCILE_REQUEST";
+
+export interface PeerMessage {
+  type: PeerMessageType;
+  sourceNodeId: string;
+  targetNodeId?: string;
+  stateVector?: VectorClock;
+  operations?: CrdtOperation[];
+  hopCount?: number;
+  relayedBy?: string[];
+  dependencies?: VectorClock;
+  timestamp?: number;
+}
+
 export class CrdtDocument {
   private state: CrdtState;
   private nodeId: string;
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
   private maxHistorySize: number;
+  private operationLog: CrdtOperation[] = [];
+  private operationsById: Map<string, CrdtOperation> = new Map();
+  private pendingOperations: CrdtOperation[] = [];
+  private peerStateVectors: Map<string, VectorClock> = new Map();
+  private maxLogSize: number;
 
   constructor(
     nodeId: string,
     initialState: CrdtState = { elements: {}, vectorClock: {} },
     maxHistorySize: number = 100,
+    maxLogSize: number = 2000,
   ) {
     this.nodeId = nodeId;
     this.state = {
@@ -48,6 +76,39 @@ export class CrdtDocument {
       vectorClock: { ...initialState.vectorClock },
     };
     this.maxHistorySize = maxHistorySize;
+    this.maxLogSize = maxLogSize;
+
+    if (initialState.elements) {
+      for (const op of Object.values(initialState.elements)) {
+        this.recordOperation(op);
+      }
+    }
+  }
+
+  public getNodeId(): string {
+    return this.nodeId;
+  }
+
+  private recordOperation(op: CrdtOperation): void {
+    const authorTick = op.vectorClock[op.nodeId] || op.timestamp;
+    const opKey = `${op.id}@${op.nodeId}:${authorTick}`;
+
+    this.operationsById.set(opKey, op);
+    this.operationsById.set(op.id, op);
+
+    const exists = this.operationLog.some(
+      (existing) =>
+        existing.id === op.id &&
+        existing.nodeId === op.nodeId &&
+        (existing.vectorClock[existing.nodeId] || 0) ===
+          (op.vectorClock[op.nodeId] || 0),
+    );
+    if (!exists) {
+      this.operationLog.push(op);
+      if (this.operationLog.length > this.maxLogSize) {
+        this.operationLog.shift();
+      }
+    }
   }
 
   private applyInternal(op: Omit<CrdtOperation, "vectorClock">): CrdtOperation {
@@ -57,10 +118,14 @@ export class CrdtDocument {
     const fullOp: CrdtOperation = {
       ...op,
       vectorClock: vectorClock.getClock(),
+      hopCount: (op as CrdtOperation).hopCount ?? 0,
+      relayedBy: (op as CrdtOperation).relayedBy ?? [],
     };
 
     this.state.elements[op.id] = fullOp;
     this.state.vectorClock = vectorClock.getClock();
+
+    this.recordOperation(fullOp);
 
     return fullOp;
   }
@@ -71,7 +136,18 @@ export class CrdtDocument {
     const previousOp = this.state.elements[op.id]
       ? { ...this.state.elements[op.id] }
       : null;
-    const fullOp = this.applyInternal(op);
+
+    const opWithDependencies = {
+      ...op,
+      parentOpId:
+        (op as Partial<CrdtOperation>).parentOpId ??
+        (previousOp ? previousOp.id : undefined),
+      dependencies:
+        (op as Partial<CrdtOperation>).dependencies ??
+        { ...this.state.vectorClock },
+    };
+
+    const fullOp = this.applyInternal(opWithDependencies);
 
     // ponytail: push to local undo stack and clear redo on fresh local edit
     this.undoStack.push({
@@ -171,7 +247,107 @@ export class CrdtDocument {
     };
   }
 
-  public mergeRemoteOperation(op: CrdtOperation): boolean {
+  public isOperationCausallyReady(op: CrdtOperation): boolean {
+    // 1. Check parent operation requirement
+    if (op.parentOpId) {
+      const parentInElements = Boolean(this.state.elements[op.parentOpId]);
+      const parentInLog = this.operationsById.has(op.parentOpId);
+      if (!parentInElements && !parentInLog) {
+        return false;
+      }
+    }
+
+    // 2. Check transitive vector clock dependencies across multi-hop peer messages
+    if (op.dependencies) {
+      for (const [depNodeId, requiredTick] of Object.entries(op.dependencies)) {
+        // Skip dependencies authored by the operation's own node (allows skipped ticks for offline catchup)
+        if (depNodeId !== op.nodeId) {
+          const currentTick = this.state.vectorClock[depNodeId] || 0;
+          if (currentTick < requiredTick) {
+            return false;
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Replays a missing parent operation from history before applying the child edit (#5889).
+   */
+  public replayMissingParent(childOp: CrdtOperation): boolean {
+    if (!childOp.parentOpId) return false;
+    const parentOp = this.operationsById.get(childOp.parentOpId);
+    if (!parentOp) return false;
+
+    if (!this.state.elements[parentOp.id]) {
+      this.state.elements[parentOp.id] = parentOp;
+      const currentClock = new CrdtVectorClock(this.state.vectorClock);
+      currentClock.merge(parentOp.vectorClock);
+      this.state.vectorClock = currentClock.getClock();
+    }
+
+    return true;
+  }
+
+  /**
+   * Replays any buffered pending operations whose causal dependencies have been satisfied (#5889).
+   */
+  public replayPendingOperations(): number {
+    let replayedCount = 0;
+    let progressed = true;
+
+    while (progressed) {
+      progressed = false;
+      const remaining: CrdtOperation[] = [];
+
+      for (const pendingOp of this.pendingOperations) {
+        if (this.isOperationCausallyReady(pendingOp)) {
+          const applied = this.applyReadyRemoteOperation(pendingOp);
+          if (applied) {
+            replayedCount++;
+            progressed = true;
+          }
+        } else {
+          remaining.push(pendingOp);
+        }
+      }
+
+      this.pendingOperations = remaining;
+    }
+
+    return replayedCount;
+  }
+
+  public mergeRemoteOperation(
+    op: CrdtOperation,
+    options: { allowQueuing?: boolean } = { allowQueuing: true },
+  ): boolean {
+    // 1. Causal readiness check (#5889)
+    if (!this.isOperationCausallyReady(op)) {
+      // If missing parent exists in operation log, replay it before applying child edit
+      if (op.parentOpId && this.operationsById.has(op.parentOpId)) {
+        this.replayMissingParent(op);
+      } else if (options.allowQueuing !== false) {
+        // Buffer pending child edit until missing parent arrives
+        const isAlreadyPending = this.pendingOperations.some(
+          (p) =>
+            p.id === op.id &&
+            p.nodeId === op.nodeId &&
+            (p.vectorClock[p.nodeId] || 0) === (op.vectorClock[op.nodeId] || 0),
+        );
+        if (!isAlreadyPending) {
+          this.pendingOperations.push(op);
+        }
+        return false;
+      }
+    }
+
+    return this.applyReadyRemoteOperation(op);
+  }
+
+  private applyReadyRemoteOperation(op: CrdtOperation): boolean {
     const existingOp = this.state.elements[op.id];
 
     // If we already have this operation, ignore
@@ -179,24 +355,227 @@ export class CrdtDocument {
       const existingClock = new CrdtVectorClock(existingOp.vectorClock);
       const incomingClock = new CrdtVectorClock(op.vectorClock);
 
-      // If incoming is older or concurrent but lower nodeId, reject
-      if (incomingClock.compare(existingClock.getClock()) === "before") {
+      const relation = incomingClock.compare(existingClock.getClock());
+
+      // If incoming is older or has lower Lamport timestamp, reject
+      if (relation === "before") {
         return false;
       }
-      if (incomingClock.compare(existingClock.getClock()) === "concurrent") {
+
+      // If identical vector clocks:
+      if (relation === "equal") {
+        if (op.nodeId === existingOp.nodeId) {
+          // Idempotent rejection of exact duplicate operation
+          return false;
+        }
         if (op.nodeId < existingOp.nodeId) {
+          return false;
+        }
+        if (
+          op.nodeId === existingOp.nodeId &&
+          op.timestamp <= existingOp.timestamp
+        ) {
+          return false;
+        }
+      }
+
+      // If concurrent with equal Lamport timestamp: tie-break deterministically
+      if (relation === "concurrent") {
+        if (op.nodeId < existingOp.nodeId) {
+          return false;
+        }
+        if (
+          op.nodeId === existingOp.nodeId &&
+          op.timestamp <= existingOp.timestamp
+        ) {
           return false;
         }
       }
     }
 
-    this.state.elements[op.id] = op;
+    const canonicalOp: CrdtOperation = {
+      ...op,
+      hopCount: 0,
+      relayedBy: [],
+    };
+    this.state.elements[op.id] = canonicalOp;
 
     const currentClock = new CrdtVectorClock(this.state.vectorClock);
     currentClock.merge(op.vectorClock);
+    if (op.dependencies) {
+      currentClock.merge(op.dependencies);
+    }
     this.state.vectorClock = currentClock.getClock();
 
+    this.recordOperation(op);
+
+    // Replay any pending operations that are now causally unblocked (#5889)
+    this.replayPendingOperations();
+
     return true;
+  }
+
+  /**
+   * Merges a batch of remote operations in order, returning boolean status for each (#5277, #5889).
+   */
+  public mergeRemoteOperations(ops: CrdtOperation[]): boolean[] {
+    const results = ops.map((op) => this.mergeRemoteOperation(op));
+    this.replayPendingOperations();
+    return results;
+  }
+
+  public getStateVector(): VectorClock {
+    return { ...this.state.vectorClock };
+  }
+
+  public hasInStateVector(nodeId: string, tick: number): boolean {
+    return (this.state.vectorClock[nodeId] || 0) >= tick;
+  }
+
+  public getOperationLog(): CrdtOperation[] {
+    return [...this.operationLog];
+  }
+
+  public getPendingOperations(): CrdtOperation[] {
+    return [...this.pendingOperations];
+  }
+
+  public clearPendingOperations(): void {
+    this.pendingOperations = [];
+  }
+
+  public recordPeerStateVector(peerId: string, vector: VectorClock): void {
+    this.peerStateVectors.set(peerId, { ...vector });
+  }
+
+  public getPeerStateVector(peerId: string): VectorClock | undefined {
+    const vector = this.peerStateVectors.get(peerId);
+    return vector ? { ...vector } : undefined;
+  }
+
+  public getAllPeerStateVectors(): Record<string, VectorClock> {
+    const res: Record<string, VectorClock> = {};
+    for (const [peerId, vector] of this.peerStateVectors) {
+      res[peerId] = { ...vector };
+    }
+    return res;
+  }
+
+  /**
+   * Identifies all operations in the local log that a remote peer is missing
+   * according to its state vector (#5889).
+   */
+  public getMissingOperations(remoteStateVector: VectorClock): CrdtOperation[] {
+    const missing: CrdtOperation[] = [];
+    const seenOpKeys = new Set<string>();
+
+    for (const op of this.operationLog) {
+      const authorTick = op.vectorClock[op.nodeId] || 0;
+      const remoteTick = remoteStateVector[op.nodeId] || 0;
+
+      if (remoteTick < authorTick) {
+        const opKey = `${op.id}@${op.nodeId}:${authorTick}`;
+        if (!seenOpKeys.has(opKey)) {
+          seenOpKeys.add(opKey);
+          missing.push(op);
+        }
+      }
+    }
+
+    for (const op of Object.values(this.state.elements)) {
+      const authorTick = op.vectorClock[op.nodeId] || 0;
+      const remoteTick = remoteStateVector[op.nodeId] || 0;
+
+      if (remoteTick < authorTick) {
+        const opKey = `${op.id}@${op.nodeId}:${authorTick}`;
+        if (!seenOpKeys.has(opKey)) {
+          seenOpKeys.add(opKey);
+          missing.push(op);
+        }
+      }
+    }
+
+    return missing;
+  }
+
+  /**
+   * Generates a transitive sync message for a target peer containing missing operations,
+   * tagging operations with multi-hop metadata (#5889).
+   */
+  public createTransitiveSyncMessage(
+    targetNodeId: string,
+    remoteStateVector: VectorClock,
+  ): PeerMessage {
+    const missingOps = this.getMissingOperations(remoteStateVector).map(
+      (op) => ({
+        ...op,
+        hopCount: (op.hopCount || 0) + 1,
+        relayedBy: [...(op.relayedBy || []), this.nodeId],
+      }),
+    );
+
+    return {
+      type: "SYNC_OPERATIONS",
+      sourceNodeId: this.nodeId,
+      targetNodeId,
+      stateVector: this.getStateVector(),
+      operations: missingOps,
+      hopCount: 1,
+      relayedBy: [this.nodeId],
+      dependencies: { ...this.state.vectorClock },
+      timestamp: Date.now(),
+    };
+  }
+
+  /**
+   * Transitive state forwarding for bridge nodes to propagate missing operations
+   * between partitioned peers (#5889).
+   */
+  public forwardMissingOperations(
+    remoteStateVector: VectorClock,
+    targetNodeId?: string,
+  ): PeerMessage {
+    return this.createTransitiveSyncMessage(
+      targetNodeId || "broadcast",
+      remoteStateVector,
+    );
+  }
+
+  /**
+   * Processes an incoming multi-hop peer message with vector clock causality tracking (#5889).
+   */
+  public receivePeerMessage(msg: PeerMessage): {
+    appliedCount: number;
+    queuedCount: number;
+    replayedCount: number;
+  } {
+    if (msg.sourceNodeId && msg.stateVector) {
+      this.recordPeerStateVector(msg.sourceNodeId, msg.stateVector);
+    }
+
+    let appliedCount = 0;
+    let queuedCount = 0;
+
+    if (msg.operations && msg.operations.length > 0) {
+      for (const op of msg.operations) {
+        const multiHopOp: CrdtOperation = {
+          ...op,
+          hopCount: op.hopCount ?? (msg.hopCount || 1),
+          relayedBy: op.relayedBy ?? (msg.relayedBy || [msg.sourceNodeId]),
+        };
+
+        const applied = this.mergeRemoteOperation(multiHopOp);
+        if (applied) {
+          appliedCount++;
+        } else if (this.pendingOperations.some((p) => p.id === op.id)) {
+          queuedCount++;
+        }
+      }
+    }
+
+    const replayedCount = this.replayPendingOperations();
+
+    return { appliedCount, queuedCount, replayedCount };
   }
 
   public getState(): CrdtState {

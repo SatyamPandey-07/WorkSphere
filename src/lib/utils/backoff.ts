@@ -52,29 +52,33 @@ export interface CalculateJitteredBackoffOptions {
  */
 export function jitteredReconnectDelay(
   retryCount: number,
-  opts: Partial<BackoffOptions> | PartyReconnectOptions = PARTY_SOCKET_RECONNECT_OPTIONS,
+  opts:
+    | Partial<BackoffOptions>
+    | PartyReconnectOptions = PARTY_SOCKET_RECONNECT_OPTIONS,
   random: () => number = Math.random,
 ): number {
-  if (isNaN(retryCount) || !Number.isFinite(retryCount) || retryCount <= 0) return 0;
+  if (isNaN(retryCount) || !Number.isFinite(retryCount) || retryCount <= 0)
+    return 0;
 
+  const options: Partial<BackoffOptions> = opts;
   const min =
-    opts.minReconnectionDelay ??
-    opts.baseDelay ??
-    opts.initialDelayMs ??
+    options.minReconnectionDelay ??
+    options.baseDelay ??
+    options.initialDelayMs ??
     DEFAULT_BACKOFF_OPTIONS.minReconnectionDelay;
   const max =
-    opts.maxReconnectionDelay ??
-    opts.maxDelay ??
-    opts.maxDelayMs ??
+    options.maxReconnectionDelay ??
+    options.maxDelay ??
+    options.maxDelayMs ??
     DEFAULT_BACKOFF_OPTIONS.maxReconnectionDelay;
   const grow =
-    opts.reconnectionDelayGrowFactor ??
-    opts.factor ??
+    options.reconnectionDelayGrowFactor ??
+    options.factor ??
     DEFAULT_BACKOFF_OPTIONS.reconnectionDelayGrowFactor;
-  const randomFn = opts.random ?? random;
+  const randomFn = options.random ?? random;
 
   const base = Math.min(max, min * Math.pow(grow, retryCount - 1));
-  const jitterRatio = opts.jitterRatio ?? 0.2;
+  const jitterRatio = options.jitterRatio ?? 0.2;
   const jitter = base * (randomFn() * (jitterRatio * 2) - jitterRatio);
 
   return Math.round(Math.min(max, Math.max(min, base + jitter)));

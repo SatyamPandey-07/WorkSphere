@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useMemo } from "react";
 import type { ShapeData, ToolType } from "@/hooks/useCanvasWhiteboard";
 import {
+  type ConstructType,
+  renderConstructToCanvas,
+} from "@/lib/whiteboard/constructGenerator";
+import {
   type CanvasViewTransform,
   DEFAULT_VIEW_TRANSFORM,
   screenToWorld,
@@ -40,6 +44,8 @@ export interface DrawingCanvasProps {
   enableInteractiveZoomPan?: boolean;
   /** Enable Catmull-Rom spline curve smoothing for pencil/eraser strokes (default: true) */
   smoothSplines?: boolean;
+  /** Active construct shape type (shield, hexagon, flightArrow, gear, beam) */
+  constructType?: ConstructType;
 }
 
 export function renderShape(
@@ -55,6 +61,12 @@ export function renderShape(
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.globalAlpha = shape.opacity;
+
+  // Emerald Construct neon glow halo styling (#6186)
+  if (shape.color === "#00FF88" || shape.type === "construct") {
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "#10b981";
+  }
 
   if (shape.type === "pen" || shape.type === "eraser") {
     ctx.beginPath();
@@ -88,6 +100,8 @@ export function renderShape(
     ctx.beginPath();
     ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, Math.PI * 2);
     ctx.stroke();
+  } else if (shape.type === "construct") {
+    renderConstructToCanvas(ctx, shape);
   }
 
   ctx.restore();
@@ -142,6 +156,7 @@ export function DrawingCanvas({
   onViewTransformChange,
   enableInteractiveZoomPan = true,
   smoothSplines = true,
+  constructType = "shield",
 }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
@@ -165,6 +180,7 @@ export function DrawingCanvas({
   const shapeSnapshotsRef = useRef(shapeSnapshots);
   const pendingShapeRef = useRef<ShapeData | null>(null);
   const toolRef = useRef(tool);
+  const constructTypeRef = useRef<ConstructType>(constructType);
   const colorRef = useRef(color);
   const strokeWidthRef = useRef(strokeWidth);
   const onAddShapeRef = useRef(onAddShape);
@@ -201,6 +217,7 @@ export function DrawingCanvas({
 
   useEffect(() => {
     toolRef.current = tool;
+    constructTypeRef.current = constructType;
     colorRef.current = color;
     strokeWidthRef.current = strokeWidth;
     onAddShapeRef.current = onAddShape;
@@ -208,6 +225,7 @@ export function DrawingCanvas({
     onViewTransformChangeRef.current = onViewTransformChange;
   }, [
     tool,
+    constructType,
     color,
     strokeWidth,
     onAddShape,
@@ -345,11 +363,22 @@ export function DrawingCanvas({
       pendingShapeRef.current = {
         id,
         type: toolRef.current,
+        constructType:
+          toolRef.current === "construct"
+            ? constructTypeRef.current || "shield"
+            : undefined,
         points:
           toolRef.current === "sticky"
             ? [worldX, worldY, worldX + 220, worldY + 160]
-            : [worldX, worldY],
-        color: colorRef.current,
+            : toolRef.current === "construct"
+              ? [worldX, worldY, worldX, worldY]
+              : [worldX, worldY],
+        color:
+          toolRef.current === "construct"
+            ? colorRef.current && colorRef.current !== "#000000"
+              ? colorRef.current
+              : "#00FF88"
+            : colorRef.current,
         width: strokeWidthRef.current,
         opacity: 1,
         userId,
@@ -395,7 +424,8 @@ export function DrawingCanvas({
           p.type === "line" ||
           p.type === "rect" ||
           p.type === "circle" ||
-          p.type === "sticky"
+          p.type === "sticky" ||
+          p.type === "construct"
         ) {
           const [sx, sy] = [
             currentPointsRef.current[0],
@@ -429,7 +459,12 @@ export function DrawingCanvas({
         const shape: ShapeData = {
           id,
           type: finalType,
-          color: colorRef.current,
+          color:
+            finalType === "construct"
+              ? colorRef.current && colorRef.current !== "#000000"
+                ? colorRef.current
+                : "#00FF88"
+              : colorRef.current,
           width: strokeWidthRef.current,
           opacity: 1,
           points: points.slice(),
@@ -440,7 +475,8 @@ export function DrawingCanvas({
         if (
           finalType === "line" ||
           finalType === "rect" ||
-          finalType === "circle"
+          finalType === "circle" ||
+          finalType === "construct"
         ) {
           shape.points = [
             points[0],
@@ -448,6 +484,13 @@ export function DrawingCanvas({
             points[points.length - 2],
             points[points.length - 1],
           ];
+        }
+
+        if (finalType === "construct") {
+          shape.constructType =
+            pendingShapeRef.current?.constructType ||
+            constructTypeRef.current ||
+            "shield";
         }
 
         onAddShapeRef.current(shape);

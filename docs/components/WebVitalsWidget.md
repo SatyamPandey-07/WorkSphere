@@ -15,6 +15,7 @@ In WorkSphere, real-world user performance directly influences conversion rates,
 3. **Multi-Scale Radial Score Gauge:** Computes a composite 0–100 health score weighted across Largest Contentful Paint (LCP), Interaction to Next Paint (INP), Cumulative Layout Shift (CLS), First Contentful Paint (FCP), and Time to First Byte (TTFB).
 4. **Route-by-Route Breakdown:** Isolates performance regressions to specific routes (e.g. `/venues`, `/map`, `/bookings`, `/chat`).
 5. **Telemetry Export:** Generates instant CSV downloads of aggregated percentiles for offline analysis.
+6. **Avionics Telemetry Oscilloscope:** Real-time HTML5 2D Canvas cathode-ray beam visualizer tracing latency pulses and dynamic voltage blips with phosphor persistence decay, throttled at 30 FPS.
 
 ```mermaid
 flowchart TD
@@ -32,6 +33,7 @@ flowchart TD
 
     subgraph WidgetUI["Admin WebVitalsWidget Dashboard"]
         Radial["Radial Score Gauge (0-100)<br/>Emerald (&ge;90) | Amber (50-89) | Red (&lt;50)"]
+        Oscilloscope["Avionics Telemetry Oscilloscope<br/>HTML5 2D Canvas Waveform & Phosphor Trail (30 FPS)"]
         Gauges["5-Metric Gauge Cards<br/>Status Bar & Percentile Tiers"]
         RoutesTable["Route Performance Table<br/>p75 Metrics by Endpoint"]
         CSV["CSV Export Engine<br/>downloadWebVitalsCSV()"]
@@ -43,6 +45,7 @@ flowchart TD
     Store --> RouteGroup
     Percentile --> WeightedScore
     WeightedScore --> Radial
+    Store --> Oscilloscope
     Percentile --> Gauges
     RouteGroup --> RoutesTable
     Store --> CSV

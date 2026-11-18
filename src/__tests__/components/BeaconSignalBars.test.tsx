@@ -132,4 +132,54 @@ describe("BeaconSignalBars Component (#5766)", () => {
     expect(meter).toHaveAttribute("aria-label", "Custom Bluetooth Proximity Meter");
     expect(meter).toHaveAttribute("aria-valuenow", "4");
   });
+
+  describe("RSSI Boundary Clamping and Out-of-Range Fallbacks (#5766)", () => {
+    it("strictly clamps explicit bars greater than 5 down to 5 bars", () => {
+      render(<BeaconSignalBars bars={9} />);
+      const meter = screen.getByRole("meter");
+      expect(meter).toHaveAttribute("aria-valuenow", "5");
+      expect(meter).toHaveAttribute("aria-valuetext", "5 of 5 bars, Excellent");
+    });
+
+    it("strictly clamps negative or NaN explicit bars up to 0 bars", () => {
+      render(<BeaconSignalBars bars={-4} />);
+      const meter = screen.getByRole("meter");
+      expect(meter).toHaveAttribute("aria-valuenow", "0");
+      expect(meter).toHaveAttribute("aria-valuetext", "No beacon signal detected");
+    });
+
+    it("announces out-of-range signal for readings weaker than -100 dBm", () => {
+      render(<BeaconSignalBars rssi={-125} />);
+      const meter = screen.getByRole("meter");
+      expect(meter).toHaveAttribute("aria-valuenow", "0");
+      expect(meter).toHaveAttribute(
+        "aria-label",
+        "Signal strength: 0 of 5 bars (-125 dBm, Out of Range)"
+      );
+      expect(meter).toHaveAttribute("aria-valuetext", "No beacon signal detected");
+    });
+
+    it("clamps near-field strong signals (> -30 dBm) to 5 bars", () => {
+      render(<BeaconSignalBars rssi={-15} />);
+      const meter = screen.getByRole("meter");
+      expect(meter).toHaveAttribute("aria-valuenow", "5");
+    });
+
+    it("renders fallback label without NaN when rssi is null/NaN and labelFormat is both", () => {
+      render(
+        <BeaconSignalBars
+          rssi={null}
+          bars={3}
+          showLabel={true}
+          labelFormat="both"
+        />
+      );
+
+      const label = screen.getByTestId("signal-bars-label");
+      expect(label).toHaveTextContent("Fair");
+      expect(label).not.toHaveTextContent("NaN");
+      expect(label).not.toHaveTextContent("null");
+    });
+  });
 });
+

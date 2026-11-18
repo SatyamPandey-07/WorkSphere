@@ -268,4 +268,38 @@ describe("telemetryAnomalyDetector", () => {
       expect(globalAnomalyManager).toBeInstanceOf(VenueTelemetryAnomalyManager);
     });
   });
+  describe("Defensive NaN and non-finite metric hardening (#6764)", () => {
+    it("handles NaN in arrays for mathematical helpers safely", () => {
+      expect(calculateMedian([1, NaN, 3])).toBe(2);
+      expect(calculateMAD([1, NaN, 3])).toBe(1);
+      expect(calculateStandardDeviation([10, NaN, 10])).toBe(0);
+      expect(calculateModifiedZScore(NaN, 10, 2)).toBeNaN();
+    });
+
+    it("rejects NaN and non-finite values as sensor_fault even without physicalBounds", () => {
+      const genericDetector = new TelemetryAnomalyDetector("generic");
+      const resNaN = genericDetector.record(NaN);
+      expect(resNaN.isAnomaly).toBe(true);
+      expect(resNaN.severity).toBe("sensor_fault");
+      expect(genericDetector.getHistory().length).toBe(0);
+
+      const resInf = genericDetector.record(Infinity);
+      expect(resInf.isAnomaly).toBe(true);
+      expect(resInf.severity).toBe("sensor_fault");
+      expect(genericDetector.getHistory().length).toBe(0);
+    });
+
+    it("maintains clean baseline when receiving interleaved NaN and valid readings", () => {
+      const detector = new TelemetryAnomalyDetector("generic");
+      for (let i = 0; i < 5; i++) {
+        detector.record(10);
+        detector.record(NaN);
+      }
+      expect(detector.getHistory().length).toBe(5);
+      const baseline = detector.getBaseline();
+      expect(baseline.sampleCount).toBe(5);
+      expect(baseline.mean).toBe(10);
+      expect(baseline.median).toBe(10);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   X,
@@ -21,6 +21,7 @@ import {
   RotateCcw,
   Loader2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   type QuizAnswers,
   type DeskArchetype,
@@ -32,29 +33,51 @@ export interface DeskMatcherQuizModalProps {
   isOpen: boolean;
   onClose: () => void;
   onMatched?: (archetype: DeskArchetype) => void;
+  className?: string;
+  "data-testid"?: string;
+  initialStep?: number;
+  initialAnswers?: Partial<QuizAnswers>;
 }
 
 export function DeskMatcherQuizModal({
   isOpen,
   onClose,
   onMatched,
+  className,
+  "data-testid": testId = "desk-matcher-modal",
+  initialStep = 1,
+  initialAnswers,
 }: DeskMatcherQuizModalProps) {
   const router = useRouter();
 
-  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [currentStep, setCurrentStep] = useState<number>(initialStep);
   const [answers, setAnswers] = useState<Partial<QuizAnswers>>({
     primaryActivity: "dev",
     noisePreference: "silent",
     hardwareNeed: "dual_monitor",
     seatingPlacement: "corner_wall",
     sessionDuration: "half_day",
+    ...initialAnswers,
   });
 
   const [matchedResult, setMatchedResult] = useState<DeskArchetype | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  if (!isOpen) return null;
+  // Keyboard navigation & Escape dismissal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   const totalSteps = 5;
 
@@ -114,12 +137,23 @@ export function DeskMatcherQuizModal({
     );
   };
 
+  if (!isOpen) return null;
+
   return (
     <div
       role="dialog"
       aria-modal="true"
+      data-testid={testId}
       aria-labelledby="desk-matcher-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className={cn(
+        "fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200",
+        className,
+      )}
     >
       <div className="w-full max-w-xl rounded-3xl bg-zinc-950 border border-zinc-800 text-zinc-100 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
@@ -143,6 +177,8 @@ export function DeskMatcherQuizModal({
             </div>
           </div>
           <button
+            type="button"
+            data-testid="desk-matcher-close-btn"
             onClick={onClose}
             className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
             aria-label="Close modal"
@@ -198,10 +234,10 @@ export function DeskMatcherQuizModal({
         <div className="flex-1 overflow-auto p-6">
           {matchedResult ? (
             /* Results Screen */
-            <div className="space-y-6 animate-in zoom-in-95 duration-300">
+            <div data-testid="desk-matcher-result-card" className="space-y-6 animate-in zoom-in-95 duration-300">
               {/* Archetype Hero Card */}
               <div
-                className={`rounded-3xl border ${matchedResult.themeColor.border} bg-gradient-to-b ${matchedResult.themeColor.gradient} p-6 sm:p-7 space-y-4 shadow-xl text-center`}
+                className={`rounded-3xl border ${matchedResult.themeColor?.border ?? "border-violet-500/30"} bg-gradient-to-b ${matchedResult.themeColor?.gradient ?? "from-violet-950/40 to-zinc-950"} p-6 sm:p-7 space-y-4 shadow-xl text-center`}
               >
                 <div className="text-5xl mb-2">{matchedResult.icon}</div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider font-mono">
@@ -237,29 +273,31 @@ export function DeskMatcherQuizModal({
               </div>
 
               {/* Radar / Stat Indicators */}
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
-                <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                  Workspace Match DNA
-                </span>
-                <div className="space-y-2 text-xs">
-                  {Object.entries(matchedResult.radarScores).map(([key, score]) => (
-                    <div key={key} className="space-y-1">
-                      <div className="flex justify-between text-zinc-300">
-                        <span className="capitalize">
-                          {key.replace(/([A-Z])/g, " $1")}
-                        </span>
-                        <span className="font-mono font-bold">{score}%</span>
+              {matchedResult.radarScores && (
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
+                  <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                    Workspace Match DNA
+                  </span>
+                  <div className="space-y-2 text-xs">
+                    {Object.entries(matchedResult.radarScores).map(([key, score]) => (
+                      <div key={key} className="space-y-1">
+                        <div className="flex justify-between text-zinc-300">
+                          <span className="capitalize">
+                            {key.replace(/([A-Z])/g, " $1")}
+                          </span>
+                          <span className="font-mono font-bold">{score}%</span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-violet-500 to-emerald-400 rounded-full"
+                            style={{ width: `${score}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-violet-500 to-emerald-400 rounded-full"
-                          style={{ width: `${score}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             /* Quiz Step Questions */
@@ -286,6 +324,7 @@ export function DeskMatcherQuizModal({
                       <button
                         key={opt.id}
                         type="button"
+                        data-testid={`quiz-option-${opt.id}`}
                         onClick={() => handleSelect("primaryActivity", opt.id)}
                         className={`p-3.5 rounded-2xl border text-left transition-all ${
                           answers.primaryActivity === opt.id
@@ -321,6 +360,7 @@ export function DeskMatcherQuizModal({
                       <button
                         key={opt.id}
                         type="button"
+                        data-testid={`quiz-option-${opt.id}`}
                         onClick={() => handleSelect("noisePreference", opt.id)}
                         className={`p-3.5 rounded-2xl border text-left transition-all ${
                           answers.noisePreference === opt.id
@@ -357,6 +397,7 @@ export function DeskMatcherQuizModal({
                       <button
                         key={opt.id}
                         type="button"
+                        data-testid={`quiz-option-${opt.id}`}
                         onClick={() => handleSelect("hardwareNeed", opt.id)}
                         className={`p-3.5 rounded-2xl border text-left transition-all ${
                           answers.hardwareNeed === opt.id
@@ -393,6 +434,7 @@ export function DeskMatcherQuizModal({
                       <button
                         key={opt.id}
                         type="button"
+                        data-testid={`quiz-option-${opt.id}`}
                         onClick={() => handleSelect("seatingPlacement", opt.id)}
                         className={`p-3.5 rounded-2xl border text-left transition-all ${
                           answers.seatingPlacement === opt.id
@@ -428,6 +470,7 @@ export function DeskMatcherQuizModal({
                       <button
                         key={opt.id}
                         type="button"
+                        data-testid={`quiz-option-${opt.id}`}
                         onClick={() => handleSelect("sessionDuration", opt.id)}
                         className={`p-3.5 rounded-2xl border text-left transition-all ${
                           answers.sessionDuration === opt.id
@@ -452,6 +495,7 @@ export function DeskMatcherQuizModal({
             <div className="flex items-center justify-between w-full gap-3">
               <button
                 type="button"
+                data-testid="desk-matcher-retake-btn"
                 onClick={handleRetake}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-zinc-700 bg-zinc-800/80 text-xs font-semibold text-zinc-300 hover:bg-zinc-700 transition-colors"
               >
@@ -461,6 +505,7 @@ export function DeskMatcherQuizModal({
 
               <button
                 type="button"
+                data-testid="desk-matcher-explore-btn"
                 onClick={handleExploreDesks}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-500 hover:from-violet-500 hover:to-indigo-400 text-white text-xs font-bold shadow-lg shadow-violet-500/20 transition-all cursor-pointer"
               >
@@ -472,6 +517,7 @@ export function DeskMatcherQuizModal({
             <div className="flex items-center justify-between w-full">
               <button
                 type="button"
+                data-testid="desk-matcher-back-btn"
                 onClick={handleBack}
                 disabled={currentStep === 1}
                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
@@ -482,6 +528,7 @@ export function DeskMatcherQuizModal({
 
               <button
                 type="button"
+                data-testid="desk-matcher-next-btn"
                 onClick={handleNext}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
               >
@@ -495,3 +542,5 @@ export function DeskMatcherQuizModal({
     </div>
   );
 }
+
+export default DeskMatcherQuizModal;

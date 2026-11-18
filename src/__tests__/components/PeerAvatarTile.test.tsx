@@ -1,5 +1,8 @@
 import { render, screen, act } from "@testing-library/react";
-import { PeerAvatarTile } from "@/components/audio/PeerAvatarTile";
+import {
+  PeerAvatarTile,
+  calculateDecibelVolume,
+} from "@/components/audio/PeerAvatarTile";
 
 // Mock usePeakDecayLevel so tests control the smoothed audio level directly
 jest.mock("@/hooks/usePeakDecayLevel", () => ({
@@ -224,6 +227,187 @@ describe("PeerAvatarTile", () => {
 
       unmount();
       jest.useRealTimers();
+    });
+  });
+
+  describe("Radiating Circular Hard-Light Energy Shockwaves", () => {
+    it("calculates decibel volume from amplitude correctly", () => {
+      // Silence
+      const silent = calculateDecibelVolume(0);
+      expect(silent.decibels).toBe(-60);
+      expect(silent.normalizedDb).toBe(0);
+
+      // Peak volume
+      const peak = calculateDecibelVolume(1.0);
+      expect(peak.decibels).toBe(0);
+      expect(peak.normalizedDb).toBe(1);
+
+      // Moderate volume (0.1 amplitude => ~ -20 dB)
+      const moderate = calculateDecibelVolume(0.1);
+      expect(moderate.decibels).toBe(-20);
+      expect(moderate.normalizedDb).toBe(0.6);
+    });
+
+    it("renders radiating circular hard-light energy shockwaves when participant speaks", () => {
+      render(
+        <PeerAvatarTile
+          {...defaultProps}
+          audioEnabled={true}
+          isSpeaking={true}
+          audioLevel={0.6}
+        />,
+      );
+
+      const shockwaves = screen.getByTestId("radiating-shockwaves");
+      expect(shockwaves).toBeInTheDocument();
+
+      const ring1 = screen.getByTestId("shockwave-ring-1");
+      const ring2 = screen.getByTestId("shockwave-ring-2");
+      const ring3 = screen.getByTestId("shockwave-ring-3");
+
+      expect(ring1).toBeInTheDocument();
+      expect(ring2).toBeInTheDocument();
+      expect(ring3).toBeInTheDocument();
+
+      expect(ring1).toHaveClass("border-emerald-400");
+      expect(ring2).toHaveClass("border-emerald-400/70");
+      expect(ring3).toHaveClass("border-emerald-300/40");
+    });
+
+    it("modulates ripple wave radius scale and opacity based on decibel volume", () => {
+      const { unmount } = render(
+        <PeerAvatarTile
+          {...defaultProps}
+          audioEnabled={true}
+          isSpeaking={true}
+          audioLevel={0.05}
+        />,
+      );
+
+      const lowRing1 = screen.getByTestId("shockwave-ring-1");
+      const lowTransform = lowRing1.style.transform;
+      const lowOpacity = parseFloat(lowRing1.style.opacity);
+      unmount();
+
+      render(
+        <PeerAvatarTile
+          {...defaultProps}
+          audioEnabled={true}
+          isSpeaking={true}
+          audioLevel={0.95}
+        />,
+      );
+
+      const highRing1 = screen.getByTestId("shockwave-ring-1");
+      const highTransform = highRing1.style.transform;
+      const highOpacity = parseFloat(highRing1.style.opacity);
+
+      // Extract scales
+      const getScale = (tf: string) => {
+        const match = tf.match(/scale\(([^)]+)\)/);
+        return match ? parseFloat(match[1]) : 0;
+      };
+
+      expect(getScale(highTransform)).toBeGreaterThan(getScale(lowTransform));
+      expect(highOpacity).toBeGreaterThan(lowOpacity);
+    });
+
+    it("cleans up CSS animations and removes shockwaves on audio track silence", () => {
+      const { rerender } = render(
+        <PeerAvatarTile
+          {...defaultProps}
+          audioEnabled={true}
+          isSpeaking={true}
+          audioLevel={0.5}
+        />,
+      );
+
+      expect(screen.getByTestId("radiating-shockwaves")).toBeInTheDocument();
+
+      // Audio becomes silent
+      rerender(
+        <PeerAvatarTile
+          {...defaultProps}
+          audioEnabled={true}
+          isSpeaking={false}
+          audioLevel={0}
+        />,
+      );
+
+      expect(
+        screen.queryByTestId("radiating-shockwaves"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("cleans up shockwaves when audio is muted even if isSpeaking was true", () => {
+      render(
+        <PeerAvatarTile
+          {...defaultProps}
+          audioEnabled={false}
+          isSpeaking={true}
+          audioLevel={0.5}
+        />,
+      );
+
+      expect(
+        screen.queryByTestId("radiating-shockwaves"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("initializes and cleans up Web Audio AnalyserNode when stream is provided", () => {
+      const mockConnect = jest.fn();
+      const mockDisconnect = jest.fn();
+      const mockClose = jest.fn();
+      const mockGetByteFrequencyData = jest.fn();
+
+      class MockAudioContext {
+        state = "running";
+        createMediaStreamSource = jest.fn().mockReturnValue({
+          connect: mockConnect,
+          disconnect: mockDisconnect,
+        });
+        createAnalyser = jest.fn().mockReturnValue({
+          fftSize: 256,
+          smoothingTimeConstant: 0.3,
+          frequencyBinCount: 128,
+          getByteFrequencyData: mockGetByteFrequencyData,
+        });
+        close = mockClose;
+      }
+
+      // @ts-expect-error mocking AudioContext
+      window.AudioContext = MockAudioContext;
+
+      const mockTrack = {
+        kind: "audio",
+        enabled: true,
+        muted: false,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+      };
+
+      const mockStream = {
+        getAudioTracks: () => [mockTrack],
+        getVideoTracks: () => [],
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+      } as unknown as MediaStream;
+
+      const { unmount } = render(
+        <PeerAvatarTile
+          {...defaultProps}
+          stream={mockStream}
+          audioEnabled={true}
+          isSpeaking={false}
+        />,
+      );
+
+      expect(mockConnect).toHaveBeenCalled();
+
+      unmount();
+
+      expect(mockDisconnect).toHaveBeenCalled();
+      expect(mockClose).toHaveBeenCalled();
     });
   });
 });

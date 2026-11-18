@@ -2,9 +2,9 @@
 
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, CheckCircle2, MapPin, XCircle } from "lucide-react";
+import { Clock, CheckCircle2, MapPin, XCircle, type LucideIcon } from "lucide-react";
 
-export type BookingStatus = "PENDING" | "CONFIRMED" | "CHECKED_IN" | "CANCELLED" | "COMPLETED";
+export type BookingStatus = "PENDING" | "CONFIRMED" | "CHECKED_IN" | "CANCELLED" | "CANCELLED_BY_OPERATOR" | "COMPLETED";
 
 interface BookingStatusBadgeProps {
   status: BookingStatus;
@@ -16,7 +16,7 @@ const STATUS_CONFIG: Record<
   BookingStatus,
   {
     label: string;
-    icon: React.ElementType;
+    icon: LucideIcon;
     bg: string;
     text: string;
     border: string;
@@ -45,6 +45,13 @@ const STATUS_CONFIG: Record<
   },
   CANCELLED: {
     label: "Cancelled",
+    icon: XCircle,
+    bg: "bg-red-50 dark:bg-red-900/20",
+    text: "text-red-600 dark:text-red-400",
+    border: "border-red-200 dark:border-red-700/40",
+  },
+  CANCELLED_BY_OPERATOR: {
+    label: "Cancelled by venue",
     icon: XCircle,
     bg: "bg-red-50 dark:bg-red-900/20",
     text: "text-red-600 dark:text-red-400",

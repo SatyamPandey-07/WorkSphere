@@ -35,9 +35,6 @@ export class SlidingWindowLimiter implements IRateLimiter {
       const redisKey = `worksphere:ratelimit:${this.namespace}:${key}`;
       const storeKey = `${this.namespace}:${key}`;
 
-      // Enforce strict sub-bucket pruning & eviction of disconnected fallback entries on Redis reconnect (#5037)
-      await this.pruneAndSyncMemoryOnReconnect(redis, redisKey, storeKey, now);
-
       const atomicResult = await executeAtomicSlidingWindow(
         redis,
         redisKey,
@@ -46,6 +43,11 @@ export class SlidingWindowLimiter implements IRateLimiter {
         now
       );
       if (atomicResult !== null) {
+        // Redis just answered, so it is reachable: fold any hits that were only
+        // counted by the in-memory fallback during an outage back into the
+        // shared window (#5037). This must NOT happen before we know Redis is
+        // healthy, or the fallback counters are thrown away during the outage.
+        await this.syncFallbackHitsToRedis(redis, redisKey, storeKey, now);
         return atomicResult;
       }
     }
@@ -53,7 +55,15 @@ export class SlidingWindowLimiter implements IRateLimiter {
     return this.consumeMemory(key, points);
   }
 
-  private async pruneAndSyncMemoryOnReconnect(
+  /**
+   * Moves hits recorded by the in-memory fallback (while Redis was unavailable)
+   * into the Redis sorted set once Redis is reachable again.
+   *
+   * Local hits are only discarded after Redis has acknowledged them. If Redis
+   * rejects a write the remaining hits stay in memory, so the fallback keeps
+   * enforcing the limit instead of silently resetting to zero on every request.
+   */
+  private async syncFallbackHitsToRedis(
     redis: any,
     redisKey: string,
     storeKey: string,
@@ -65,28 +75,40 @@ export class SlidingWindowLimiter implements IRateLimiter {
       return;
     }
 
-    // Purge expired sub-bucket timestamps older than windowStart (now - windowMs)
+    // Expired sub-bucket timestamps (older than now - windowMs) no longer count.
     const validTimestamps = memoryEntry.timestamps.filter((ts) => ts > windowStart);
 
-    if (validTimestamps.length > 0) {
-      for (const ts of validTimestamps) {
-        const member = microTimestampMember(
-          Math.floor(ts / 1000),
-          (ts % 1000) * 1000,
-          Math.random().toString(36).slice(2, 10)
-        );
-        try {
-          if (typeof redis.zadd === "function") {
-            await redis.zadd(redisKey, { score: ts, member });
-          }
-        } catch {
-          // Non-blocking sync retry
-        }
+    if (validTimestamps.length === 0) {
+      this.memoryStore.deleteSlidingWindowEntry(storeKey);
+      return;
+    }
+
+    if (typeof redis.zadd !== "function") {
+      memoryEntry.timestamps = validTimestamps;
+      return;
+    }
+
+    let synced = 0;
+    for (const ts of validTimestamps) {
+      const member = microTimestampMember(
+        Math.floor(ts / 1000),
+        (ts % 1000) * 1000,
+        Math.random().toString(36).slice(2, 10)
+      );
+      try {
+        await redis.zadd(redisKey, { score: ts, member });
+        synced++;
+      } catch {
+        // Redis is flaky again: keep the unsynced hits locally and stop.
+        break;
       }
     }
 
-    // Purge local in-memory sub-bucket entry after syncing valid timestamps to Redis
-    this.memoryStore.deleteSlidingWindowEntry(storeKey);
+    if (synced === validTimestamps.length) {
+      this.memoryStore.deleteSlidingWindowEntry(storeKey);
+    } else {
+      memoryEntry.timestamps = validTimestamps.slice(synced);
+    }
   }
 
   private consumeMemory(key: string, _points = 1): RateLimitResult {
@@ -141,14 +163,8 @@ export class SlidingWindowLimiter implements IRateLimiter {
   }
 
   async check(key: string): Promise<RateLimitResult> {
+    // Read-only: inspecting a key must never mutate or discard its counters.
     const now = Date.now();
-    const redis = getRedisClient();
-    if (redis) {
-      const redisKey = `worksphere:ratelimit:${this.namespace}:${key}`;
-      const storeKey = `${this.namespace}:${key}`;
-      await this.pruneAndSyncMemoryOnReconnect(redis, redisKey, storeKey, now);
-    }
-
     const windowStart = now - this.windowMs;
     const storeKey = `${this.namespace}:${key}`;
 

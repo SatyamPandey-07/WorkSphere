@@ -2,12 +2,14 @@
 
 import React from "react";
 import { Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface VibeTagsProps {
   tags?: string[] | null;
   className?: string;
   maxDisplay?: number;
   size?: "sm" | "md" | "lg";
+  "data-testid"?: string;
 }
 
 /**
@@ -20,6 +22,7 @@ export function VibeTags({
   className = "",
   maxDisplay = 4,
   size = "md",
+  "data-testid": testId = "vibe-tags-container",
 }: VibeTagsProps) {
   // Early return null guard when tag list is missing or empty (#4369)
   if (!tags || !Array.isArray(tags) || tags.length === 0) {
@@ -58,16 +61,17 @@ export function VibeTags({
 
   return (
     <div
-      data-testid="vibe-tags-container"
-      className={`flex flex-wrap items-center gap-1.5 ${className}`}
+      data-testid={testId}
+      className={cn("flex flex-wrap items-center gap-1.5", className)}
     >
       {visibleTags.map((tag, index) => (
         <span
           key={`${tag}-${index}`}
           data-testid={`vibe-tag-${slugFor(tag, index)}`}
-          className={`inline-flex items-center font-medium rounded-full bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/60 transition-colors ${
+          className={cn(
+            "inline-flex items-center font-medium rounded-full bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/60 transition-colors",
             sizeClasses[size] || sizeClasses.md
-          }`}
+          )}
         >
           <Sparkles className="w-3 h-3 text-violet-500 shrink-0" />
           <span className="capitalize">{tag}</span>

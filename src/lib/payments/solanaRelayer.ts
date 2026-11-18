@@ -259,7 +259,7 @@ export async function getDynamicPriorityFee(
   try {
     const recentFees = await connection.getRecentPrioritizationFees(
       lockedWritableAccounts && lockedWritableAccounts.length > 0
-        ? lockedWritableAccounts
+        ? { lockedWritableAccounts }
         : undefined,
     );
 

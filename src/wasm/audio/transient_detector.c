@@ -15,6 +15,7 @@
 #define DEFAULT_SAMPLE_RATE 44100.0f
 #define MIN_SAMPLE_RATE 8000.0f
 #define MAX_SAMPLE_RATE 192000.0f
+#define DENORMAL_THRESHOLD 1e-6f
 
 typedef struct {
   float envelope;
@@ -113,8 +114,8 @@ int detect_transients(const float *audio_frame, int num_samples,
   float mean_amplitude = (valid_samples > 0) ? (frame_energy / (float)valid_samples) : 0.0f;
 
   // Maintain exponential moving average (EMA) spectral noise floor (#5769)
-  if (state->noise_floor <= 0.0f || isnan(state->noise_floor)) {
-    state->noise_floor = mean_amplitude;
+  if (state->noise_floor <= 0.0f || isnan(state->noise_floor) || isinf(state->noise_floor) || state->noise_floor < DENORMAL_THRESHOLD) {
+    state->noise_floor = (mean_amplitude >= DENORMAL_THRESHOLD) ? mean_amplitude : 0.0f;
   } else if (mean_amplitude < state->noise_floor) {
     // Rapid downward adaptation toward true background floor
     state->noise_floor = 0.90f * state->noise_floor + 0.10f * mean_amplitude;
@@ -123,13 +124,18 @@ int detect_transients(const float *audio_frame, int num_samples,
     state->noise_floor = 0.98f * state->noise_floor + 0.02f * mean_amplitude;
   }
 
+  // Flush denormals on noise floor
+  if (isnan(state->noise_floor) || isinf(state->noise_floor) || state->noise_floor < DENORMAL_THRESHOLD) {
+    state->noise_floor = 0.0f;
+  }
+
   // Subtract baseline noise power before evaluating transient peak threshold (#5769)
   float peak_power = max_amplitude * max_amplitude;
   float noise_power = state->noise_floor * state->noise_floor;
   float effective_power = (peak_power > noise_power) ? (peak_power - noise_power) : 0.0f;
   float effective_amplitude = sqrtf(effective_power);
 
-  if (max_amplitude <= state->noise_floor) {
+  if (max_amplitude <= state->noise_floor || isnan(effective_amplitude) || isinf(effective_amplitude)) {
     effective_amplitude = 0.0f;
   }
 
@@ -142,8 +148,16 @@ int detect_transients(const float *audio_frame, int num_samples,
         effective_amplitude + state->release_coeff * (state->envelope - effective_amplitude);
   }
 
+  // Flush denormal floating-point numbers to zero and guard against NaN / Inf
+  if (isnan(state->envelope) || isinf(state->envelope) || state->envelope < DENORMAL_THRESHOLD) {
+    state->envelope = 0.0f;
+  }
+
   // Adaptive thresholding based on envelope
   state->threshold = state->envelope * 1.5f + 0.01f;
+  if (isnan(state->threshold) || isinf(state->threshold) || state->threshold < 0.01f) {
+    state->threshold = 0.01f;
+  }
 
   if (effective_amplitude > state->threshold && state->envelope > 0.05f) {
     state->transient_detected = 1;
@@ -160,11 +174,18 @@ float get_transient_density(const TransientState *state) {
 }
 
 float get_noise_floor(const TransientState *state) {
-  return state ? state->noise_floor : 0.0f;
+  if (!state || isnan(state->noise_floor) || isinf(state->noise_floor) || state->noise_floor < DENORMAL_THRESHOLD) {
+    return 0.0f;
+  }
+  return state->noise_floor;
 }
 
 void set_noise_floor(TransientState *state, float noise_floor) {
   if (state) {
-    state->noise_floor = fmaxf(0.0f, noise_floor);
+    if (isnan(noise_floor) || isinf(noise_floor) || noise_floor < DENORMAL_THRESHOLD) {
+      state->noise_floor = 0.0f;
+    } else {
+      state->noise_floor = noise_floor;
+    }
   }
 }

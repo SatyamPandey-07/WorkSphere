@@ -3,20 +3,24 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Copy, Check } from "lucide-react";
 
-interface CopyToClipboardButtonProps {
+export interface CopyToClipboardButtonProps {
   textToCopy: string;
   className?: string;
   label?: string;
   toastMessage?: string;
   ariaLabel?: string;
+  onCopy?: (text: string) => void;
+  disabled?: boolean;
 }
 
-export function CopyToClipboardButton({ 
-  textToCopy, 
-  className = "", 
+export function CopyToClipboardButton({
+  textToCopy,
+  className = "",
   label = "Copy Address",
   toastMessage = "Address copied!",
-  ariaLabel
+  ariaLabel,
+  onCopy,
+  disabled = false,
 }: CopyToClipboardButtonProps) {
   const [isCopied, setIsCopied] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -35,7 +39,7 @@ export function CopyToClipboardButton({
   const fallbackCopyTextToClipboard = (text: string) => {
     const textArea = document.createElement("textarea");
     textArea.value = text;
-    
+
     // Avoid scrolling to bottom on mobile
     textArea.style.top = "0";
     textArea.style.left = "0";
@@ -58,6 +62,7 @@ export function CopyToClipboardButton({
   const handleCopy = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     e.preventDefault();
+    if (disabled) return;
 
     if (!navigator.clipboard) {
       fallbackCopyTextToClipboard(textToCopy);
@@ -83,7 +88,8 @@ export function CopyToClipboardButton({
     }
     setIsCopied(true);
     setShowToast(true);
-    
+    onCopy?.(textToCopy);
+
     // Reset back to normal after 2 seconds per issue criteria
     feedbackTimerRef.current = setTimeout(() => {
       feedbackTimerRef.current = null;
@@ -97,21 +103,33 @@ export function CopyToClipboardButton({
       <button
         onClick={handleCopy}
         type="button"
+        disabled={disabled}
+        data-testid="copy-to-clipboard-button"
         title={ariaLabel || "Copy to clipboard"}
         aria-label={ariaLabel || "Copy to clipboard"}
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-          isCopied 
-            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
-            : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          disabled
+            ? "opacity-50 cursor-not-allowed bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500"
+            : isCopied
+              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
         } ${className}`}
       >
-        <span className="shrink-0">{isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</span>
-        <span className="whitespace-nowrap max-w-[200px] truncate">{isCopied ? "Copied!" : label}</span>
+        <span className="shrink-0">
+          {isCopied ? (
+            <Check className="w-4 h-4" />
+          ) : (
+            <Copy className="w-4 h-4" />
+          )}
+        </span>
+        <span className="whitespace-nowrap max-w-[200px] truncate">
+          {isCopied ? "Copied!" : label}
+        </span>
       </button>
 
       {/* Self-contained Toast Notification */}
       {showToast && (
-        <div 
+        <div
           role="status"
           aria-live="polite"
           className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 text-sm font-medium text-white bg-zinc-900 dark:bg-zinc-100 dark:text-black rounded-lg shadow-xl animate-in fade-in slide-in-from-bottom-5 duration-300"

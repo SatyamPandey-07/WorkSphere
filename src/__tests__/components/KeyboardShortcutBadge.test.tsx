@@ -19,18 +19,38 @@ describe("KeyboardShortcutBadge", () => {
   });
 
   it("applies size classes appropriately", () => {
-    const { rerender } = render(<KeyboardShortcutBadge shortcut="/" size="xs" />);
-    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveClass("text-[10px]");
+    const { rerender } = render(
+      <KeyboardShortcutBadge shortcut="/" size="xs" />,
+    );
+    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveClass(
+      "text-[10px]",
+    );
 
     rerender(<KeyboardShortcutBadge shortcut="/" size="sm" />);
-    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveClass("text-xs");
+    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveClass(
+      "text-xs",
+    );
 
     rerender(<KeyboardShortcutBadge shortcut="/" size="md" />);
-    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveClass("text-xs");
+    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveClass(
+      "text-xs",
+    );
   });
 
   it("applies custom className", () => {
     render(<KeyboardShortcutBadge shortcut="K" className="custom-class" />);
-    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveClass("custom-class");
+    expect(screen.getByTestId("keyboard-shortcut-badge")).toHaveClass(
+      "custom-class",
+    );
+  });
+
+  it("renders standalone key badge without modifier when withModifier is false", () => {
+    render(<KeyboardShortcutBadge shortcut="/" withModifier={false} />);
+    const badge = screen.getByTestId("keyboard-shortcut-badge");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent("/");
+    expect(badge).toHaveAttribute("aria-label", "Shortcut: /");
+    expect(badge).not.toHaveTextContent("Ctrl");
+    expect(badge).not.toHaveTextContent("⌘");
   });
 });

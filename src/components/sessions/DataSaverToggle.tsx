@@ -8,6 +8,7 @@ import {
   getEstimatedSavedMB,
   DEFAULT_BASE_SESSION_SAVINGS_MB,
 } from "@/lib/dataSaver";
+import { cn } from "@/lib/utils";
 
 export interface DataSaverToggleProps {
   /** Controlled enabled state */
@@ -18,13 +19,16 @@ export interface DataSaverToggleProps {
   estimatedSavedMB?: number;
   /** Optional container CSS class */
   className?: string;
+  /** Optional test id hook */
+  "data-testid"?: string;
 }
 
 export function DataSaverToggle({
   enabled: controlledEnabled,
   onChange,
   estimatedSavedMB: customSavedMB,
-  className = "",
+  className,
+  "data-testid": testId,
 }: DataSaverToggleProps) {
   const [internalEnabled, setInternalEnabled] = useState<boolean>(() =>
     getDataSaverState(),
@@ -68,23 +72,26 @@ export function DataSaverToggle({
 
   return (
     <div
-      className={`flex flex-col sm:flex-row items-start sm:items-center gap-2.5 ${className}`}
+      data-testid={testId || "data-saver-toggle"}
+      className={cn("flex flex-col sm:flex-row items-start sm:items-center gap-2.5", className)}
     >
       <button
         type="button"
         role="switch"
+        data-testid="data-saver-toggle-button"
         aria-checked={isEnabled}
         aria-label="Data Saver Mode"
         onClick={handleToggle}
-        className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
+        className={cn(
+          "inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-colors cursor-pointer",
           isEnabled
             ? "border-cyan-500/40 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/20"
-            : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
-        }`}
+            : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10",
+        )}
       >
         <Gauge className="h-4 w-4" />
         <span>Data Saver Mode</span>
-        <span className="text-xs text-zinc-400">
+        <span data-testid="data-saver-status" className="text-xs text-zinc-400">
           {isEnabled ? "On" : "Off"}
         </span>
       </button>

@@ -9,6 +9,61 @@ import "@/core/subscribers/discord";
 
 const allowed = new Set(["GOING", "MAYBE", "DECLINED", "CANCELLED"]);
 
+type SessionIcsSource = {
+  title: string;
+  description: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  slug: string;
+  venue?: { name: string; address: string | null } | null;
+  host?: { firstName: string | null; lastName: string | null } | null;
+};
+
+function buildSessionIcs(session: SessionIcsSource): string {
+  return generateSessionIcs({
+    title: session.title,
+    description: session.description,
+    startsAt: session.startsAt,
+    endsAt: session.endsAt,
+    venueName: session.venue?.name,
+    venueAddress: session.venue?.address,
+    slug: session.slug,
+    organizerName: session.host
+      ? `${session.host.firstName || ""} ${session.host.lastName || ""}`.trim()
+      : undefined,
+  });
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string }> },
+) {
+  if (request.nextUrl.searchParams.get("download") !== "ics") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const { slug } = await params;
+
+  const session = await prisma.coworkingSession.findUnique({
+    where: { slug },
+    include: {
+      venue: { select: { name: true, address: true } },
+      host: { select: { firstName: true, lastName: true } },
+    },
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  return new NextResponse(buildSessionIcs(session), {
+    headers: {
+      "Content-Type": "text/calendar; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${session.slug}.ics"`,
+    },
+  });
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
@@ -40,6 +95,8 @@ export async function POST(
         const session = await tx.coworkingSession.findUnique({
           where: { slug },
           include: {
+            venue: { select: { name: true, address: true } },
+            host: { select: { firstName: true, lastName: true } },
             _count: {
               select: {
                 rsvps: {
@@ -117,19 +174,8 @@ export async function POST(
     const calendar =
       status === "GOING"
         ? {
-            icsString: generateSessionIcs({
-              title: session.title,
-              description: session.description,
-              startsAt: session.startsAt,
-              endsAt: session.endsAt,
-              venueName: session.venue?.name,
-              venueAddress: session.venue?.address,
-              slug: session.slug,
-              organizerName: session.host
-                ? `${session.host.firstName || ""} ${session.host.lastName || ""}`.trim()
-                : undefined,
-            }),
-            downloadUrl: `/api/social/sessions/${session.slug}/rsvp?download=ics`,
+            icsString: buildSessionIcs(result.session),
+            downloadUrl: `/api/social/sessions/${result.session.slug}/rsvp?download=ics`,
           }
         : null;
 

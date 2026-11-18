@@ -139,12 +139,20 @@ export async function deliverWebhookEvent(
     ignoreNotificationWindow?: boolean;
     eventId?: string;
     onlyEndpointId?: string;
+    excludeEndpointIds?: string[];
   } = {},
 ): Promise<DeliveryResult[]> {
   const endpoints = await prisma.webhookEndpoint.findMany({
     where: options.onlyEndpointId
       ? { id: options.onlyEndpointId, userId }
-      : { userId, isActive: true, eventTypes: { has: type } },
+      : {
+          userId,
+          isActive: true,
+          eventTypes: { has: type },
+          ...(options.excludeEndpointIds?.length
+            ? { id: { notIn: options.excludeEndpointIds } }
+            : {}),
+        },
   });
   if (endpoints.length === 0) return [];
 
@@ -216,8 +224,11 @@ export class WebhookNotificationChannel implements NotificationChannel {
   async send(message: NotificationMessage): Promise<DeliveryResult> {
     const envelope: WebhookEnvelope = {
       id: message.id || randomUUID(),
-      type: (message.type as WebhookEventType) || "venue.created",
-      timestamp: typeof message.timestamp === "string" ? message.timestamp : new Date().toISOString(),
+      type: (message.type as WebhookEventType) || "VENUE_CREATED",
+      timestamp:
+        typeof message.timestamp === "string"
+          ? message.timestamp
+          : new Date().toISOString(),
       data: message.data || {},
     };
 
@@ -226,10 +237,9 @@ export class WebhookNotificationChannel implements NotificationChannel {
         id: message.recipient || "direct-endpoint",
         url: message.url,
         secret: (message.options?.secret as string) || "whsec_insecuredefault",
-        enabled: true,
-        events: [envelope.type],
+        isActive: true,
+        eventTypes: [envelope.type],
         headers: (message.options?.headers as any) || null,
-        description: null,
         userId: "system",
         createdAt: new Date(),
         updatedAt: new Date(),

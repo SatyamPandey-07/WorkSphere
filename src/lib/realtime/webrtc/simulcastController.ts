@@ -3,17 +3,17 @@
  *
  * Implements:
  * 1. Three-tier simulcast video bitrate ladder:
- *    - High: 1280x720, 30 fps, 1500 kbps (scaleResolutionDownBy = 1.0)
- *    - Medium: 640x360, 20 fps, 500 kbps (scaleResolutionDownBy = 2.0)
- *    - Low: 320x180, 15 fps, 150 kbps (scaleResolutionDownBy = 4.0)
+ *    - Full: 1280x720, 30 fps, 1500 kbps (rid "f")
+ *    - Half: 640x360, 20 fps, 500 kbps (rid "h")
+ *    - Quarter: 320x180, 15 fps, 150 kbps (rid "q")
  * 2. RTCP statistics monitoring via getStats() polled every ~2 seconds:
  *    - packet loss fraction (preferring fractionLost, falling back to delta loss ratio)
  *    - RTT (remote-inbound-rtp or candidate-pair)
  *    - jitter (inbound / remote-inbound)
  * 3. Adaptive degradation state machine:
- *    - NORMAL -> DEGRADED when packet loss > 8% OR RTT > 350ms
- *    - High layer is dynamically disabled via RTCRtpSender.setParameters()
- *    - Medium and Low layers remain active; audio is never touched
+ *    - NORMAL -> DEGRADED when packet loss > 5% OR RTT > 350ms
+ *    - Full layer is dynamically disabled and active layers are bitrate-limited
+ *    - Half and Quarter layers remain active; audio is never touched
  *    - Recovers to NORMAL only after >15 consecutive seconds of stable healthy conditions
  *    - Any bad sample during recovery resets the recovery streak
  *    - Idempotent: avoids redundant setParameters() calls when state is unchanged
@@ -34,7 +34,7 @@ import {
  */
 export const SIMULCAST_BITRATE_LADDER: readonly SimulcastLayerConfig[] = [
   {
-    rid: "high",
+    rid: "f",
     targetResolution: { width: 1280, height: 720 },
     maxBitrate: 1_500_000, // 1500 kbps
     maxFramerate: 30,
@@ -42,7 +42,7 @@ export const SIMULCAST_BITRATE_LADDER: readonly SimulcastLayerConfig[] = [
     active: true,
   },
   {
-    rid: "medium",
+    rid: "h",
     targetResolution: { width: 640, height: 360 },
     maxBitrate: 500_000, // 500 kbps
     maxFramerate: 20,
@@ -50,7 +50,7 @@ export const SIMULCAST_BITRATE_LADDER: readonly SimulcastLayerConfig[] = [
     active: true,
   },
   {
-    rid: "low",
+    rid: "q",
     targetResolution: { width: 320, height: 180 },
     maxBitrate: 150_000, // 150 kbps
     maxFramerate: 15,
@@ -68,7 +68,14 @@ export function computeScaleResolutionDownBy(
   sourceHeight: number,
   targetHeight: number,
 ): number {
-  if (targetHeight <= 0 || sourceHeight <= 0) return 1.0;
+  if (
+    !Number.isFinite(sourceHeight) ||
+    !Number.isFinite(targetHeight) ||
+    targetHeight <= 0 ||
+    sourceHeight <= 0
+  ) {
+    return 1.0;
+  }
   const factor = sourceHeight / targetHeight;
   return Math.max(1.0, Math.round(factor * 100) / 100);
 }
@@ -80,7 +87,11 @@ export function computeScaleResolutionDownBy(
 export function createSimulcastEncodings(
   sourceResolution?: Resolution,
 ): RTCRtpEncodingParameters[] {
-  const sourceHeight = sourceResolution?.height ?? 720;
+  const rawHeight = sourceResolution?.height;
+  const sourceHeight =
+    typeof rawHeight === "number" && Number.isFinite(rawHeight) && rawHeight > 0
+      ? rawHeight
+      : 720;
 
   return SIMULCAST_BITRATE_LADDER.map((layer) => ({
     rid: layer.rid,
@@ -125,6 +136,7 @@ export async function configureSimulcastSender(
   const params = sender.getParameters() || {};
   if (params.encodings && params.encodings.length === encodings.length) {
     params.encodings.forEach((enc, i) => {
+      enc.rid = encodings[i].rid;
       enc.maxBitrate = encodings[i].maxBitrate;
       enc.maxFramerate = encodings[i].maxFramerate;
       enc.scaleResolutionDownBy = encodings[i].scaleResolutionDownBy;
@@ -172,7 +184,7 @@ export function extractRTCPStats(
       stat.type === "candidate-pair" &&
       (stat.state === "succeeded" || stat.nominated === true)
     ) {
-      if (typeof stat.currentRoundTripTime === "number") {
+      if (typeof stat.currentRoundTripTime === "number" && Number.isFinite(stat.currentRoundTripTime)) {
         const val = stat.currentRoundTripTime;
         rttMs = val < 10 ? val * 1000 : val;
       }
@@ -180,51 +192,51 @@ export function extractRTCPStats(
 
     // 2. Remote Inbound RTP
     if (stat.type === "remote-inbound-rtp") {
-      if (typeof stat.roundTripTime === "number") {
+      if (typeof stat.roundTripTime === "number" && Number.isFinite(stat.roundTripTime)) {
         const val = stat.roundTripTime;
         rttMs = val < 10 ? val * 1000 : val;
       }
-      if (typeof stat.jitter === "number") {
+      if (typeof stat.jitter === "number" && Number.isFinite(stat.jitter)) {
         const val = stat.jitter;
         const jMs = val < 10 ? val * 1000 : val;
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
-      if (typeof stat.fractionLost === "number") {
+      if (typeof stat.fractionLost === "number" && Number.isFinite(stat.fractionLost)) {
         let f = stat.fractionLost;
         if (f > 100) f /= 255;
         else if (f > 1) f /= 100;
         fractionLost = Math.max(0, Math.min(1, f));
       }
-      if (typeof stat.packetsLost === "number") {
-        cumPacketsLost = stat.packetsLost;
+      if (typeof stat.packetsLost === "number" && Number.isFinite(stat.packetsLost)) {
+        cumPacketsLost = Math.max(0, stat.packetsLost);
       }
     }
 
     // 3. Inbound RTP
     if (stat.type === "inbound-rtp") {
-      if (typeof stat.jitter === "number" && jitterMs === undefined) {
+      if (typeof stat.jitter === "number" && Number.isFinite(stat.jitter) && jitterMs === undefined) {
         const val = stat.jitter;
         const jMs = val < 10 ? val * 1000 : val;
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
-      if (typeof stat.fractionLost === "number" && fractionLost === undefined) {
+      if (typeof stat.fractionLost === "number" && Number.isFinite(stat.fractionLost) && fractionLost === undefined) {
         let f = stat.fractionLost;
         if (f > 100) f /= 255;
         else if (f > 1) f /= 100;
         fractionLost = Math.max(0, Math.min(1, f));
       }
-      if (typeof stat.packetsLost === "number" && cumPacketsLost === undefined) {
-        cumPacketsLost = stat.packetsLost;
+      if (typeof stat.packetsLost === "number" && Number.isFinite(stat.packetsLost) && cumPacketsLost === undefined) {
+        cumPacketsLost = Math.max(0, stat.packetsLost);
       }
-      if (typeof stat.packetsReceived === "number") {
-        cumPacketsReceived = stat.packetsReceived;
+      if (typeof stat.packetsReceived === "number" && Number.isFinite(stat.packetsReceived)) {
+        cumPacketsReceived = Math.max(0, stat.packetsReceived);
       }
     }
 
     // 4. Outbound RTP
     if (stat.type === "outbound-rtp") {
-      if (typeof stat.packetsSent === "number") {
-        cumPacketsSent = stat.packetsSent;
+      if (typeof stat.packetsSent === "number" && Number.isFinite(stat.packetsSent)) {
+        cumPacketsSent = Math.max(0, stat.packetsSent);
       }
     }
   });
@@ -302,8 +314,13 @@ export function evaluateNetworkCondition(stats: NetworkStats): {
   isHighRtt: boolean;
 } {
   const isHighLoss =
-    stats.packetLossFraction !== undefined && stats.packetLossFraction > 0.08;
-  const isHighRtt = stats.rttMs !== undefined && stats.rttMs > 350;
+    stats.packetLossFraction !== undefined &&
+    Number.isFinite(stats.packetLossFraction) &&
+    stats.packetLossFraction > 0.05;
+  const isHighRtt =
+    stats.rttMs !== undefined &&
+    Number.isFinite(stats.rttMs) &&
+    stats.rttMs > 350;
   const isBadSample = isHighLoss || isHighRtt;
 
   return { isBadSample, isHighLoss, isHighRtt };
@@ -326,7 +343,7 @@ export async function setHighLayerActive(
   }
 
   let highIndex = params.encodings.findIndex(
-    (e) => e.rid === "high" || e.rid === "h",
+    (e) => e.rid === "f" || e.rid === "high",
   );
   if (highIndex === -1) {
     if (params.encodings.length > 1) {
@@ -351,8 +368,72 @@ export async function setHighLayerActive(
     }
   });
 
-  await sender.setParameters(params);
-  return true;
+  try {
+    await sender.setParameters(params);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const DEGRADED_BITRATE_BY_RID: Record<string, number> = {
+  q: 120_000,
+  h: 350_000,
+  f: 0,
+  low: 120_000,
+  medium: 350_000,
+  high: 0,
+};
+
+/** Adjusts the simulcast bitrate ladder and disables the full-resolution layer. */
+export async function applyBandwidthDegradation(
+  sender: RTCRtpSender,
+  degraded: boolean,
+): Promise<boolean> {
+  if (sender.track && sender.track.kind !== "video") return false;
+  const params = sender.getParameters();
+  if (!params?.encodings?.length) return false;
+
+  let changed = false;
+  params.encodings.forEach((encoding) => {
+    const rid = encoding.rid ?? "";
+    const ladderLayer = SIMULCAST_BITRATE_LADDER.find(
+      (layer) =>
+        layer.rid === rid ||
+        (rid === "high" && layer.rid === "f") ||
+        (rid === "medium" && layer.rid === "h") ||
+        (rid === "low" && layer.rid === "q"),
+    );
+    if (degraded) {
+      const bitrate = DEGRADED_BITRATE_BY_RID[rid];
+      if (bitrate !== undefined && encoding.maxBitrate !== bitrate) {
+        encoding.maxBitrate = bitrate;
+        changed = true;
+      }
+      const active = rid !== "f" && rid !== "high";
+      if (encoding.active !== active) {
+        encoding.active = active;
+        changed = true;
+      }
+    } else if (ladderLayer) {
+      if (encoding.maxBitrate !== ladderLayer.maxBitrate) {
+        encoding.maxBitrate = ladderLayer.maxBitrate;
+        changed = true;
+      }
+      if (encoding.active !== true) {
+        encoding.active = true;
+        changed = true;
+      }
+    }
+  });
+
+  if (!changed) return false;
+  try {
+    await sender.setParameters(params);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -380,8 +461,18 @@ export class SimulcastAdaptiveController {
     this.pc = pc;
     this.videoSender = videoSender;
     this.options = options;
-    this.pollIntervalMs = options.pollIntervalMs ?? 2000;
-    this.recoveryThresholdMs = options.recoveryThresholdMs ?? 15000;
+    this.pollIntervalMs =
+      typeof options.pollIntervalMs === "number" &&
+      Number.isFinite(options.pollIntervalMs) &&
+      options.pollIntervalMs > 0
+        ? Math.max(200, options.pollIntervalMs)
+        : 2000;
+    this.recoveryThresholdMs =
+      typeof options.recoveryThresholdMs === "number" &&
+      Number.isFinite(options.recoveryThresholdMs) &&
+      options.recoveryThresholdMs > 0
+        ? Math.max(1000, options.recoveryThresholdMs)
+        : 15000;
   }
 
   public getState(): SimulcastAdaptationState {
@@ -475,7 +566,7 @@ export class SimulcastAdaptiveController {
         this.state = "DEGRADED";
         this.healthySince = null;
         this.consecutiveHealthySamples = 0;
-        await setHighLayerActive(this.videoSender, false);
+        await applyBandwidthDegradation(this.videoSender, true);
         this.options.onStateChange?.(this.state);
         return true;
       }
@@ -498,7 +589,7 @@ export class SimulcastAdaptiveController {
           this.state = "NORMAL";
           this.healthySince = null;
           this.consecutiveHealthySamples = 0;
-          await setHighLayerActive(this.videoSender, true);
+          await applyBandwidthDegradation(this.videoSender, false);
           this.options.onStateChange?.(this.state);
           return true;
         }

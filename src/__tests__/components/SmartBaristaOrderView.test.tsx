@@ -1,5 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import "@testing-library/jest-dom";
 import SmartBaristaOrderView from "@/components/cafe/SmartBaristaOrderView";
 import type { CafeOrder } from "@/lib/cafe/smartCafeEngine";
 
@@ -30,37 +30,36 @@ describe("SmartBaristaOrderView cancellation", () => {
   });
 
   it("only calls the cancellation API after explicit confirmation", async () => {
-    const user = userEvent.setup();
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, order }),
     });
 
     render(<SmartBaristaOrderView />);
-    await user.click(screen.getAllByRole("button", { name: /customize & add/i })[0]);
-    await user.click(screen.getByRole("button", { name: /add to cart/i }));
-    await user.click(screen.getByRole("button", { name: /place pre-order/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /customize & add/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /add to cart/i }));
+    fireEvent.click(screen.getByRole("button", { name: /place pre-order/i }));
 
     await screen.findByText("ID: order-123");
-    await user.click(screen.getByRole("button", { name: "Cancel Order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel Order" }));
 
     expect(
       screen.getByText("Are you sure you want to cancel your barista order?")
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "Keep Order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep Order" }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(
       screen.queryByText("Are you sure you want to cancel your barista order?")
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Cancel Order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel Order" }));
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, order: { ...order, status: "cancelled" } }),
     });
-    await user.click(screen.getByRole("button", { name: "Yes, Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, Cancel" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -70,16 +69,15 @@ describe("SmartBaristaOrderView cancellation", () => {
   });
 
   it("disables cancellation when the order is brewing", async () => {
-    const user = userEvent.setup();
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, order: { ...order, status: "brewing" } }),
     });
 
     render(<SmartBaristaOrderView />);
-    await user.click(screen.getAllByRole("button", { name: /customize & add/i })[0]);
-    await user.click(screen.getByRole("button", { name: /add to cart/i }));
-    await user.click(screen.getByRole("button", { name: /place pre-order/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /customize & add/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /add to cart/i }));
+    fireEvent.click(screen.getByRole("button", { name: /place pre-order/i }));
 
     const cancelButton = await screen.findByRole("button", { name: "Cancel Order" });
     expect(cancelButton).toBeDisabled();

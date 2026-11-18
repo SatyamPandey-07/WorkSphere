@@ -7,12 +7,7 @@
 import crypto from "crypto";
 
 export type PeripheralCategory =
-  | "CHARGER"
-  | "MONITOR"
-  | "KEYBOARD"
-  | "MOUSE"
-  | "HEADSET"
-  | "ADAPTER";
+  "CHARGER" | "MONITOR" | "KEYBOARD" | "MOUSE" | "HEADSET" | "ADAPTER";
 
 export interface PeripheralItem {
   id: string;
@@ -29,6 +24,8 @@ export interface PeripheralItem {
   currentRentalId?: string | null;
   specifications: string[];
   imageUrl?: string;
+  /** Current charge (0-100) for wireless devices; omit for wired items. */
+  batteryPercent?: number | null;
 }
 
 export interface PeripheralRental {
@@ -48,14 +45,21 @@ export interface PeripheralRental {
 
 // In-memory atomic lock registry for concurrent checkout prevention
 class PeripheralLockManager {
-  private activeLocks = new Map<string, { userId: string; expiresAt: number }>();
+  private activeLocks = new Map<
+    string,
+    { userId: string; expiresAt: number }
+  >();
   private activeRentals = new Map<string, PeripheralRental>(); // keyed by itemId
 
   /**
    * Attempts to atomically acquire a checkout lock for a peripheral item.
    * Prevents race conditions and concurrent double-checkouts.
    */
-  public tryAcquireLock(itemId: string, userId: string, ttlMs: number = 45000): boolean {
+  public tryAcquireLock(
+    itemId: string,
+    userId: string,
+    ttlMs: number = 45000,
+  ): boolean {
     const now = Date.now();
     const existingLock = this.activeLocks.get(itemId);
 
@@ -147,14 +151,17 @@ export function generateLockerPin(itemId: string, userId: string): string {
  */
 export function calculateRentalCompletion(
   rental: PeripheralRental,
-  returnTime = new Date()
+  returnTime = new Date(),
 ): { durationHours: number; rentalCost: number; refundedDeposit: number } {
   const start = new Date(rental.startTime);
   const elapsedMs = Math.max(0, returnTime.getTime() - start.getTime());
   const durationHours = Math.max(1, Math.ceil(elapsedMs / (1000 * 60 * 60))); // billed per hour minimum 1hr
 
   const rentalCost = Number((durationHours * rental.hourlyRate).toFixed(2));
-  const refundedDeposit = Math.max(0, Number((rental.depositAmount - rentalCost).toFixed(2)));
+  const refundedDeposit = Math.max(
+    0,
+    Number((rental.depositAmount - rentalCost).toFixed(2)),
+  );
 
   return {
     durationHours,
@@ -162,4 +169,3 @@ export function calculateRentalCompletion(
     refundedDeposit,
   };
 }
-

@@ -117,7 +117,7 @@ export class PeerConnectionManager {
 
     public send(data: string | ArrayBuffer | Blob): void {
         if (this.dataChannel && this.dataChannel.readyState === 'open') {
-            this.dataChannel.send(data);
+            this.dataChannel.send(data as any);
         }
     }
 

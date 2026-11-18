@@ -3,6 +3,8 @@ import {
   getPatioShadePercentage,
   clampZenith,
   normalizeAzimuth,
+  estimateUvRisk,
+  getSunExposure,
 } from "@/lib/sunPosition";
 
 describe("calculateSunPosition", () => {
@@ -199,5 +201,50 @@ describe("getPatioShadePercentage", () => {
     );
 
     expect(summer.shadePercentage).not.toBe(winter.shadePercentage);
+  });
+});
+
+describe("sunPosition edge cases and numerical hardening", () => {
+  it("sanitizes NaN and non-finite altitudes in estimateUvRisk to none", () => {
+    expect(estimateUvRisk(NaN)).toBe("none");
+    expect(estimateUvRisk(-5)).toBe("none");
+    expect(estimateUvRisk(Infinity)).toBe("none");
+    expect(estimateUvRisk("invalid" as any)).toBe("none");
+  });
+
+  it("handles invalid and nullish dates in calculateSunPosition gracefully", () => {
+    const invalidDatePos = calculateSunPosition(40.7128, -74.006, new Date("invalid"));
+    expect(Number.isNaN(invalidDatePos.altitude)).toBe(false);
+    expect(Number.isNaN(invalidDatePos.azimuth)).toBe(false);
+    expect(Number.isFinite(invalidDatePos.zenith)).toBe(true);
+
+    const nullDatePos = calculateSunPosition(40.7128, -74.006, null as any);
+    expect(Number.isNaN(nullDatePos.altitude)).toBe(false);
+    expect(Number.isFinite(nullDatePos.altitude)).toBe(true);
+  });
+
+  it("handles polar coordinates without division-by-zero or NaN azimuth", () => {
+    const northPole = calculateSunPosition(90, 0, new Date(Date.UTC(2026, 5, 21, 12, 0, 0)));
+    expect(Number.isNaN(northPole.altitude)).toBe(false);
+    expect(Number.isNaN(northPole.azimuth)).toBe(false);
+    expect(northPole.azimuth).toBeGreaterThanOrEqual(0);
+    expect(northPole.azimuth).toBeLessThan(360);
+
+    const southPole = calculateSunPosition(-90, 0, new Date(Date.UTC(2026, 11, 21, 12, 0, 0)));
+    expect(Number.isNaN(southPole.altitude)).toBe(false);
+    expect(Number.isNaN(southPole.azimuth)).toBe(false);
+  });
+
+  it("handles NaN patio azimuth and clamps shade percentage properly", () => {
+    const shade = getPatioShadePercentage(40.7128, -74.006, new Date(Date.UTC(2026, 5, 21, 16, 0, 0)), NaN);
+    expect(Number.isNaN(shade.shadePercentage)).toBe(false);
+    expect(shade.shadePercentage).toBeGreaterThanOrEqual(0);
+    expect(shade.shadePercentage).toBeLessThanOrEqual(100);
+  });
+
+  it("returns safe exposure and description for invalid dates", () => {
+    const exposure = getSunExposure(40.7128, -74.006, new Date("invalid"));
+    expect(exposure.uvRisk).toBeDefined();
+    expect(Number.isNaN(exposure.altitude)).toBe(false);
   });
 });

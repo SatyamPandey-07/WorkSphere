@@ -5,8 +5,8 @@
  * and the rendering loop for the 3D isometric environment.
  */
 
-import vertexShaderSource from '@/shaders/isometric/desk.vert?raw';
-import fragmentShaderSource from '@/shaders/isometric/desk.frag?raw';
+import { DESK_VERTEX_SHADER, DESK_FRAGMENT_SHADER } from '@/shaders/isometric/deskShaders';
+import { DepthOfFieldPass, type DepthOfFieldConfig } from '@/lib/webgl/postprocessing/DepthOfFieldPass';
 
 export interface DeskInstance {
     id: string;
@@ -51,6 +51,14 @@ export class IsometricRenderer {
     private availableOutlineColor: Float32Array = new Float32Array([0.1, 0.8, 0.4, 0.85]); // Emerald Green
     private outlineWidth: number = 0.08;
 
+    // Post-processing pipeline (Depth-of-Field)
+    private dofPass: DepthOfFieldPass | null = null;
+    private sceneFBO: WebGLFramebuffer | null = null;
+    private sceneColorTexture: WebGLTexture | null = null;
+    private sceneDepthTexture: WebGLTexture | null = null;
+    private viewportWidth: number = 800;
+    private viewportHeight: number = 600;
+
     private modelMatrix: Float32Array = new Float32Array([
         1, 0, 0, 0,
         0, 1, 0, 0,
@@ -58,22 +66,26 @@ export class IsometricRenderer {
         0, 0, 0, 1
     ]);
 
-    constructor(canvas: HTMLCanvasElement) {
+    constructor(canvas: HTMLCanvasElement, dofConfig?: DepthOfFieldConfig) {
         this.gl = canvas.getContext('webgl2', { alpha: true, antialias: true });
         if (!this.gl) {
             throw new Error('WebGL2 not supported');
         }
+        this.viewportWidth = canvas.width || 800;
+        this.viewportHeight = canvas.height || 600;
+
         this.initShaders();
         this.initGeometry();
         this.initTexture();
+        this.initDepthOfField(dofConfig);
     }
 
     private initShaders(): void {
         if (!this.gl) return;
         const gl = this.gl;
 
-        const vs = this.compileShader(gl.VERTEX_SHADER, vertexShaderSource);
-        const fs = this.compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const vs = this.compileShader(gl.VERTEX_SHADER, DESK_VERTEX_SHADER);
+        const fs = this.compileShader(gl.FRAGMENT_SHADER, DESK_FRAGMENT_SHADER);
 
         this.program = gl.createProgram();
         if (!this.program) throw new Error('Failed to create WebGL program');
@@ -99,6 +111,112 @@ export class IsometricRenderer {
         this.uOccupiedOutlineColorLocation = gl.getUniformLocation(this.program, 'u_occupied_outline_color');
         this.uAvailableOutlineColorLocation = gl.getUniformLocation(this.program, 'u_available_outline_color');
         this.uOutlineWidthLocation = gl.getUniformLocation(this.program, 'u_outline_width');
+    }
+
+    private initDepthOfField(dofConfig?: DepthOfFieldConfig): void {
+        if (!this.gl) return;
+        const gl = this.gl;
+
+        try {
+            this.dofPass = new DepthOfFieldPass(
+                gl,
+                this.viewportWidth,
+                this.viewportHeight,
+                dofConfig,
+            );
+            this.initSceneFramebuffer();
+        } catch (err) {
+            console.warn('[IsometricRenderer] DoF post-processing initialization bypassed:', err);
+            this.dofPass = null;
+        }
+    }
+
+    private initSceneFramebuffer(): void {
+        if (!this.gl) return;
+        const gl = this.gl;
+
+        if (this.sceneFBO) {
+            gl.deleteFramebuffer(this.sceneFBO);
+            this.sceneFBO = null;
+        }
+        if (this.sceneColorTexture) {
+            gl.deleteTexture(this.sceneColorTexture);
+            this.sceneColorTexture = null;
+        }
+        if (this.sceneDepthTexture) {
+            gl.deleteTexture(this.sceneDepthTexture);
+            this.sceneDepthTexture = null;
+        }
+
+        // Color texture
+        this.sceneColorTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.sceneColorTexture);
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA8,
+            this.viewportWidth,
+            this.viewportHeight,
+            0,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            null,
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        // Depth texture
+        this.sceneDepthTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.sceneDepthTexture);
+        gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.DEPTH_COMPONENT24,
+            this.viewportWidth,
+            this.viewportHeight,
+            0,
+            gl.DEPTH_COMPONENT,
+            gl.UNSIGNED_INT,
+            null,
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        // Framebuffer
+        this.sceneFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFBO);
+        gl.framebufferTexture2D(
+            gl.FRAMEBUFFER,
+            gl.COLOR_ATTACHMENT0,
+            gl.TEXTURE_2D,
+            this.sceneColorTexture,
+            0,
+        );
+        gl.framebufferTexture2D(
+            gl.FRAMEBUFFER,
+            gl.DEPTH_ATTACHMENT,
+            gl.TEXTURE_2D,
+            this.sceneDepthTexture,
+            0,
+        );
+
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        if (status !== gl.FRAMEBUFFER_COMPLETE) {
+            console.warn('[IsometricRenderer] Scene FBO incomplete (0x' + status.toString(16) + '), disabling DoF');
+            if (this.sceneFBO) gl.deleteFramebuffer(this.sceneFBO);
+            if (this.sceneColorTexture) gl.deleteTexture(this.sceneColorTexture);
+            if (this.sceneDepthTexture) gl.deleteTexture(this.sceneDepthTexture);
+            this.sceneFBO = null;
+            this.sceneColorTexture = null;
+            this.sceneDepthTexture = null;
+        }
     }
 
     private compileShader(type: number, source: string): WebGLShader {
@@ -248,6 +366,15 @@ export class IsometricRenderer {
         if (!this.gl || !this.program || !this.vao) return;
         const gl = this.gl;
 
+        const usePostProcessing = this.dofPass && this.dofPass.isEnabled() && this.sceneFBO;
+
+        if (usePostProcessing) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFBO);
+            gl.viewport(0, 0, this.viewportWidth, this.viewportHeight);
+        } else {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
+
         gl.clearColor(0.95, 0.95, 0.98, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         gl.enable(gl.DEPTH_TEST);
@@ -281,14 +408,50 @@ export class IsometricRenderer {
         } else {
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         }
+
+        // Post-processing execution
+        if (usePostProcessing && this.dofPass && this.sceneColorTexture) {
+            this.dofPass.render(this.sceneColorTexture, this.sceneDepthTexture, null);
+        }
     }
 
     public resize(width: number, height: number): void {
         if (!this.gl) return;
-        this.gl.viewport(0, 0, width, height);
+        this.viewportWidth = Math.max(1, width);
+        this.viewportHeight = Math.max(1, height);
+        this.gl.viewport(0, 0, this.viewportWidth, this.viewportHeight);
+
+        if (this.dofPass) {
+            this.dofPass.resize(this.viewportWidth, this.viewportHeight);
+            this.initSceneFramebuffer();
+        }
+    }
+
+    public getDepthOfFieldPass(): DepthOfFieldPass | null {
+        return this.dofPass;
+    }
+
+    public setDepthOfFieldEnabled(enabled: boolean): void {
+        this.dofPass?.setEnabled(enabled);
+    }
+
+    public setFocusDistance(distance: number): void {
+        this.dofPass?.setFocusDistance(distance);
     }
 
     public destroy(): void {
+        if (this.dofPass) {
+            this.dofPass.dispose();
+            this.dofPass = null;
+        }
+        if (this.gl) {
+            if (this.sceneFBO) this.gl.deleteFramebuffer(this.sceneFBO);
+            if (this.sceneColorTexture) this.gl.deleteTexture(this.sceneColorTexture);
+            if (this.sceneDepthTexture) this.gl.deleteTexture(this.sceneDepthTexture);
+            this.sceneFBO = null;
+            this.sceneColorTexture = null;
+            this.sceneDepthTexture = null;
+        }
         if (this.gl && this.program) {
             this.gl.deleteProgram(this.program);
             this.program = null;

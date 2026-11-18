@@ -12,9 +12,9 @@ export class SyncQueue {
     private conflictResolver: ConflictResolver;
     private isSyncing: boolean = false;
 
-    constructor() {
+    constructor(localNodeId: string = 'booking-sync-worker') {
         this.draftStore = new DraftStore();
-        this.conflictResolver = new ConflictResolver();
+        this.conflictResolver = new ConflictResolver(localNodeId);
         this.setupNetworkListeners();
     }
 
@@ -24,17 +24,25 @@ export class SyncQueue {
         }
     }
 
+    public getConflictResolver(): ConflictResolver {
+        return this.conflictResolver;
+    }
+
+    public getDraftStore(): DraftStore {
+        return this.draftStore;
+    }
+
     public async queueDraft(draft: BookingDraft): Promise<void> {
         await this.draftStore.init();
         await this.draftStore.saveDraft(draft);
 
-        if (navigator.onLine) {
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
             this.processQueue().catch(console.error);
         }
     }
 
     public async processQueue(): Promise<void> {
-        if (this.isSyncing || !navigator.onLine) return;
+        if (this.isSyncing || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
         this.isSyncing = true;
 
         try {
@@ -68,23 +76,29 @@ export class SyncQueue {
 
             const serverState: ServerState = await serverResponse.json();
 
-            // 2. Resolve conflicts
+            // 2. Resolve conflicts using Vector Clock CRDT
             const mergeResult = this.conflictResolver.resolve(draft, serverState);
 
             if (mergeResult.requiresUserInput) {
                 // Dispatch custom event to notify UI
-                window.dispatchEvent(new CustomEvent('booking_sync_conflict', { detail: mergeResult }));
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                        new CustomEvent('booking_sync_conflict', { detail: mergeResult }),
+                    );
+                }
                 return false; // Do not delete draft, wait for user resolution
             }
 
-            // 3. Apply merged state to server
+            // 3. Apply merged state to server with updated Vector Clock
             const updateResponse = await fetch(`/api/bookings/${draft.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     payload: mergeResult.resolvedPayload,
-                    version: serverState.version + 1
-                })
+                    version: (serverState.version || 0) + 1,
+                    vectorClock: mergeResult.resolvedVectorClock,
+                    causalOrder: mergeResult.causalOrder,
+                }),
             });
 
             return updateResponse.ok;
@@ -96,10 +110,16 @@ export class SyncQueue {
 
     private async createBooking(draft: BookingDraft): Promise<boolean> {
         try {
+            const bodyPayload = {
+                ...draft.payload,
+                venueId: draft.venueId,
+                userId: draft.userId,
+                vectorClock: draft.vectorClock,
+            };
             const response = await fetch('/api/bookings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(draft.payload)
+                body: JSON.stringify(bodyPayload),
             });
             return response.ok;
         } catch (error) {
@@ -110,3 +130,4 @@ export class SyncQueue {
 }
 
 export const globalSyncQueue = new SyncQueue();
+

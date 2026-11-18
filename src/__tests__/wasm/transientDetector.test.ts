@@ -152,15 +152,30 @@ function createTransientDetectorHarness(): TransientDetectorWasmModule {
     const meanAmplitude = validSamples > 0 ? frameEnergy / validSamples : 0.0;
 
     // Maintain exponential moving average (EMA) spectral noise floor (#5769)
+    const DENORMAL_THRESHOLD = 1e-6;
+
     let noiseFloor = floatView[stateIdx + 5];
-    if (noiseFloor <= 0.0 || Number.isNaN(noiseFloor)) {
-      noiseFloor = meanAmplitude;
+    if (
+      noiseFloor <= 0.0 ||
+      Number.isNaN(noiseFloor) ||
+      !Number.isFinite(noiseFloor) ||
+      noiseFloor < DENORMAL_THRESHOLD
+    ) {
+      noiseFloor = meanAmplitude >= DENORMAL_THRESHOLD ? meanAmplitude : 0.0;
     } else if (meanAmplitude < noiseFloor) {
       // Rapid downward adaptation to true background floor
       noiseFloor = 0.90 * noiseFloor + 0.10 * meanAmplitude;
     } else if (meanAmplitude < noiseFloor * 2.5) {
       // Gradual upward adaptation for ambient background rise
       noiseFloor = 0.98 * noiseFloor + 0.02 * meanAmplitude;
+    }
+
+    if (
+      Number.isNaN(noiseFloor) ||
+      !Number.isFinite(noiseFloor) ||
+      noiseFloor < DENORMAL_THRESHOLD
+    ) {
+      noiseFloor = 0.0;
     }
     floatView[stateIdx + 5] = noiseFloor;
 
@@ -170,7 +185,11 @@ function createTransientDetectorHarness(): TransientDetectorWasmModule {
     const effectivePower = peakPower > noisePower ? peakPower - noisePower : 0.0;
     let effectiveAmplitude = Math.sqrt(effectivePower);
 
-    if (maxAmplitude <= noiseFloor) {
+    if (
+      maxAmplitude <= noiseFloor ||
+      Number.isNaN(effectiveAmplitude) ||
+      !Number.isFinite(effectiveAmplitude)
+    ) {
       effectiveAmplitude = 0.0;
     }
 
@@ -180,9 +199,25 @@ function createTransientDetectorHarness(): TransientDetectorWasmModule {
     } else {
       envelope = effectiveAmplitude + releaseCoeff * (envelope - effectiveAmplitude);
     }
+
+    // Flush denormal floating-point numbers to zero and guard against NaN / Inf
+    if (
+      Number.isNaN(envelope) ||
+      !Number.isFinite(envelope) ||
+      envelope < DENORMAL_THRESHOLD
+    ) {
+      envelope = 0.0;
+    }
     floatView[stateIdx + 0] = envelope;
 
-    const threshold = envelope * 1.5 + 0.01;
+    let threshold = envelope * 1.5 + 0.01;
+    if (
+      Number.isNaN(threshold) ||
+      !Number.isFinite(threshold) ||
+      threshold < 0.01
+    ) {
+      threshold = 0.01;
+    }
     floatView[stateIdx + 1] = threshold;
 
     let transientCount = 0;
@@ -205,13 +240,25 @@ function createTransientDetectorHarness(): TransientDetectorWasmModule {
   const get_noise_floor = (statePtr: number): number => {
     if (statePtr <= 0 || statePtr % 4 !== 0) return 0.0;
     const stateIdx = statePtr / 4;
-    return floatView[stateIdx + 5];
+    const nf = floatView[stateIdx + 5];
+    if (Number.isNaN(nf) || !Number.isFinite(nf) || nf < 1e-6) {
+      return 0.0;
+    }
+    return nf;
   };
 
   const set_noise_floor = (statePtr: number, noiseFloor: number): void => {
     if (statePtr <= 0 || statePtr % 4 !== 0) return;
     const stateIdx = statePtr / 4;
-    floatView[stateIdx + 5] = Math.max(0.0, noiseFloor);
+    if (
+      Number.isNaN(noiseFloor) ||
+      !Number.isFinite(noiseFloor) ||
+      noiseFloor < 1e-6
+    ) {
+      floatView[stateIdx + 5] = 0.0;
+    } else {
+      floatView[stateIdx + 5] = noiseFloor;
+    }
   };
 
   return {
@@ -455,6 +502,73 @@ describe("transient_detector.c WASM DSP Module (#5737, #5769)", () => {
         wasm.HEAPF32[inIdx + i] = 0.15;
       }
       expect(wasm.detect_transients(AUDIO_PTR, numSamples, STATE_PTR, 44100)).toBe(0);
+    });
+
+    describe("Denormal float elimination and NaN guards (#5737)", () => {
+      it("flushes decaying envelope cleanly to 0.0 without lingering in denormal floats under extended silence", () => {
+        wasm.transient_init(STATE_PTR, 44100);
+        const numSamples = 512;
+        const inIdx = AUDIO_PTR / 4;
+
+        // Initialize with a transient spike to charge the envelope
+        wasm.HEAPF32[inIdx] = 0.9;
+        wasm.detect_transients(AUDIO_PTR, numSamples, STATE_PTR, 44100);
+        expect(wasm.HEAPF32[STATE_PTR / 4]).toBeGreaterThan(0.0);
+
+        // Feed silence (0.0f) for 100 consecutive frames to force envelope release decay
+        for (let i = 0; i < numSamples; i++) {
+          wasm.HEAPF32[inIdx + i] = 0.0;
+        }
+
+        for (let frame = 0; frame < 100; frame++) {
+          wasm.detect_transients(AUDIO_PTR, numSamples, STATE_PTR, 44100);
+        }
+
+        const envelope = wasm.HEAPF32[STATE_PTR / 4];
+        // Must flush completely to 0.0 and avoid subnormal values
+        expect(envelope).toBe(0.0);
+      });
+
+      it("guards against NaN, Inf, and negative values in set_noise_floor", () => {
+        wasm.transient_init(STATE_PTR, 44100);
+
+        wasm.set_noise_floor(STATE_PTR, NaN);
+        expect(wasm.get_noise_floor(STATE_PTR)).toBe(0.0);
+
+        wasm.set_noise_floor(STATE_PTR, Infinity);
+        expect(wasm.get_noise_floor(STATE_PTR)).toBe(0.0);
+
+        wasm.set_noise_floor(STATE_PTR, -5.0);
+        expect(wasm.get_noise_floor(STATE_PTR)).toBe(0.0);
+
+        wasm.set_noise_floor(STATE_PTR, 1e-12); // Denormal
+        expect(wasm.get_noise_floor(STATE_PTR)).toBe(0.0);
+
+        wasm.set_noise_floor(STATE_PTR, 0.25);
+        expect(wasm.get_noise_floor(STATE_PTR)).toBe(0.25);
+      });
+
+      it("ignores NaN audio samples without poisoning the DSP state with NaN", () => {
+        wasm.transient_init(STATE_PTR, 44100);
+        const numSamples = 512;
+        const inIdx = AUDIO_PTR / 4;
+
+        for (let i = 0; i < numSamples; i++) {
+          wasm.HEAPF32[inIdx + i] = NaN;
+        }
+
+        const detected = wasm.detect_transients(AUDIO_PTR, numSamples, STATE_PTR, 44100);
+        expect(detected).toBe(0);
+
+        const envelope = wasm.HEAPF32[STATE_PTR / 4];
+        const threshold = wasm.HEAPF32[STATE_PTR / 4 + 1];
+        const noiseFloor = wasm.get_noise_floor(STATE_PTR);
+
+        expect(Number.isNaN(envelope)).toBe(false);
+        expect(Number.isNaN(threshold)).toBe(false);
+        expect(Number.isNaN(noiseFloor)).toBe(false);
+        expect(envelope).toBe(0.0);
+      });
     });
   });
 });

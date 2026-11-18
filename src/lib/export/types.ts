@@ -2,7 +2,27 @@
  * Standardized Exporter Interfaces and Types.
  */
 
-export type ExportFormat = "csv" | "pdf" | "geojson" | "kml" | "txt";
+export type ExportFormat = "csv" | "pdf" | "geojson" | "kml" | "txt" | "xlsx";
+
+export type ExcelCellType =
+  | "String"
+  | "Number"
+  | "Date"
+  | "DateTime"
+  | "Currency";
+
+export interface ExcelColumn<T = any> {
+  header: string;
+  type?: ExcelCellType;
+  accessor: keyof T | ((row: T) => any);
+  width?: number;
+}
+
+export interface ExcelBuilderOptions {
+  worksheetName?: string;
+  author?: string;
+  sanitizeFormulas?: boolean;
+}
 
 export interface CsvColumn<T = any> {
   header: string;

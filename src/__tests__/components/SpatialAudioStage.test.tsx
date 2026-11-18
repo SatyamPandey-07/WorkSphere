@@ -1,11 +1,237 @@
 import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
+
+// Mock Three.js for JSDOM test environment
+jest.mock("three", () => {
+  class Vector3 {
+    x: number;
+    y: number;
+    z: number;
+    constructor(x = 0, y = 0, z = 0) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    }
+    set(x: number, y: number, z: number) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+      return this;
+    }
+    clone() {
+      return new Vector3(this.x, this.y, this.z);
+    }
+  }
+
+  class Object3D {
+    position = new Vector3();
+    rotation = new Vector3();
+    scale = new Vector3(1, 1, 1);
+    children: any[] = [];
+    name = "";
+    add(...objs: any[]) {
+      this.children.push(...objs);
+      return this;
+    }
+    remove(obj: any) {
+      const idx = this.children.indexOf(obj);
+      if (idx !== -1) this.children.splice(idx, 1);
+      return this;
+    }
+    getObjectByName(name: string): any {
+      for (const c of this.children) {
+        if (c.name === name) return c;
+        if (c.getObjectByName) {
+          const res = c.getObjectByName(name);
+          if (res) return res;
+        }
+      }
+      return null;
+    }
+  }
+
+  class Scene extends Object3D {}
+  class Group extends Object3D {}
+
+  class PerspectiveCamera extends Object3D {
+    fov: number;
+    aspect: number;
+    near: number;
+    far: number;
+    constructor(fov = 50, aspect = 1, near = 0.1, far = 100) {
+      super();
+      this.fov = fov;
+      this.aspect = aspect;
+      this.near = near;
+      this.far = far;
+    }
+    lookAt = jest.fn();
+  }
+
+  class WebGLRenderer {
+    domElement: any;
+    constructor(opts: any = {}) {
+      this.domElement = opts.canvas || {};
+    }
+    setSize = jest.fn();
+    setPixelRatio = jest.fn();
+    render = jest.fn();
+    dispose = jest.fn();
+  }
+
+  class BufferGeometry {
+    points: any[] = [];
+    setFromPoints = jest.fn().mockImplementation((pts) => {
+      this.points = pts;
+      return this;
+    });
+    dispose = jest.fn();
+  }
+
+  class SphereGeometry extends BufferGeometry {
+    radius: number;
+    widthSegments: number;
+    heightSegments: number;
+    phiStart: number;
+    phiLength: number;
+    thetaStart: number;
+    thetaLength: number;
+    constructor(
+      radius = 1,
+      widthSegments = 8,
+      heightSegments = 6,
+      phiStart = 0,
+      phiLength = Math.PI * 2,
+      thetaStart = 0,
+      thetaLength = Math.PI,
+    ) {
+      super();
+      this.radius = radius;
+      this.widthSegments = widthSegments;
+      this.heightSegments = heightSegments;
+      this.phiStart = phiStart;
+      this.phiLength = phiLength;
+      this.thetaStart = thetaStart;
+      this.thetaLength = thetaLength;
+    }
+  }
+
+  class WireframeGeometry extends BufferGeometry {
+    sourceGeometry: any;
+    constructor(geometry: any) {
+      super();
+      this.sourceGeometry = geometry;
+    }
+  }
+
+  class CylinderGeometry extends BufferGeometry {
+    radiusTop: number;
+    radiusBottom: number;
+    height: number;
+    constructor(radiusTop = 1, radiusBottom = 1, height = 1) {
+      super();
+      this.radiusTop = radiusTop;
+      this.radiusBottom = radiusBottom;
+      this.height = height;
+    }
+  }
+
+  class Material {
+    color = {
+      setHex: jest.fn(),
+    };
+    transparent = false;
+    opacity = 1;
+    dispose = jest.fn();
+  }
+
+  class LineBasicMaterial extends Material {
+    constructor(opts: any = {}) {
+      super();
+      if (opts.transparent !== undefined) this.transparent = opts.transparent;
+      if (opts.opacity !== undefined) this.opacity = opts.opacity;
+    }
+  }
+
+  class MeshBasicMaterial extends Material {
+    constructor(opts: any = {}) {
+      super();
+      if (opts.transparent !== undefined) this.transparent = opts.transparent;
+      if (opts.opacity !== undefined) this.opacity = opts.opacity;
+    }
+  }
+
+  class Mesh extends Object3D {
+    geometry: any;
+    material: any;
+    constructor(geo: any, mat: any) {
+      super();
+      this.geometry = geo;
+      this.material = mat;
+    }
+  }
+
+  class LineSegments extends Object3D {
+    geometry: any;
+    material: any;
+    constructor(geo: any, mat: any) {
+      super();
+      this.geometry = geo;
+      this.material = mat;
+    }
+  }
+
+  class LineLoop extends Object3D {
+    geometry: any;
+    material: any;
+    constructor(geo: any, mat: any) {
+      super();
+      this.geometry = geo;
+      this.material = mat;
+    }
+  }
+
+  class Line extends Object3D {
+    geometry: any;
+    material: any;
+    constructor(geo: any, mat: any) {
+      super();
+      this.geometry = geo;
+      this.material = mat;
+    }
+  }
+
+  return {
+    Vector3,
+    Object3D,
+    Scene,
+    Group,
+    PerspectiveCamera,
+    WebGLRenderer,
+    BufferGeometry,
+    SphereGeometry,
+    WireframeGeometry,
+    CylinderGeometry,
+    Material,
+    LineBasicMaterial,
+    MeshBasicMaterial,
+    Mesh,
+    LineSegments,
+    LineLoop,
+    Line,
+  };
+});
+
 import {
   SpatialAudioStage,
   stageToAudioCoordinates,
   updatePannerCoordinates,
   updateListenerCoordinates,
+  projectStageTo3DGround,
+  computeDomeSurfaceHeight,
+  createGeodesicRadarDomeScene,
+  getPeerAudioLevel,
   type PeerAvatar,
 } from "@/components/spatial/SpatialAudioStage";
 
@@ -346,6 +572,174 @@ describe("SpatialAudioStage Component (#5813)", () => {
 
       // Unmount should not throw
       unmount();
+    });
+  });
+
+  describe("3D Geodesic Radar Dome Acceptance Criteria", () => {
+    it("renders geodesic radar dome canvas and badge in UI", () => {
+      render(<SpatialAudioStage audioContext={mockContext} />);
+      expect(screen.getByTestId("geodesic-radar-dome")).toBeInTheDocument();
+      expect(screen.getByTestId("geodesic-dome-badge")).toBeInTheDocument();
+      expect(screen.getByTestId("geodesic-dome-badge")).toHaveTextContent(
+        "Geodesic Radar Dome 3D",
+      );
+    });
+
+    it("builds 3D wireframe hemisphere geometry with neon emerald lines and latitude rings", () => {
+      const controller = createGeodesicRadarDomeScene(null, {
+        radius: 5.0,
+        emeraldColor: 0x10b981,
+        neonHighlightColor: 0x34d399,
+      });
+
+      expect(controller.domeGroup).toBeDefined();
+      expect(controller.wireframeMesh).toBeDefined();
+
+      // Hemisphere geometry verification
+      const sphereGeo = controller.wireframeMesh.geometry.sourceGeometry as any;
+      expect(sphereGeo).toBeDefined();
+      expect(sphereGeo.radius).toBe(5.0);
+      expect(sphereGeo.thetaLength).toBeCloseTo(Math.PI / 2); // Hemisphere
+
+      // Neon emerald material verification
+      expect(controller.wireframeMesh.material.opacity).toBeCloseTo(0.65);
+
+      // Latitude grid rings verification (15, 30, 45, 60, 75 degrees)
+      expect(controller.latitudeRings.length).toBe(5);
+      expect(controller.equatorRing).toBeDefined();
+
+      // Rotating holographic hemisphere animation
+      const initialRotation = controller.domeGroup.rotation.y;
+      controller.animateFrame(0.016, 0);
+      expect(controller.domeGroup.rotation.y).toBeGreaterThan(initialRotation);
+
+      controller.dispose();
+    });
+
+    it("projects coworker positions onto 3D stage ground plane accurately", () => {
+      // Test coordinate projection helper
+      const centerCoords = projectStageTo3DGround(
+        { x: 300, y: 200 },
+        600,
+        400,
+        4.0,
+      );
+      expect(centerCoords.x).toBeCloseTo(0);
+      expect(centerCoords.y).toBe(0);
+      expect(centerCoords.z).toBeCloseTo(0);
+
+      const offsetCoords = projectStageTo3DGround(
+        { x: 450, y: 300 },
+        600,
+        400,
+        4.0,
+      );
+      expect(offsetCoords.x).toBeCloseTo(2.0);
+      expect(offsetCoords.y).toBe(0);
+      expect(offsetCoords.z).toBeCloseTo(2.0);
+
+      // Test dome surface height helper
+      expect(computeDomeSurfaceHeight(0, 0, 5.0)).toBeCloseTo(5.0);
+      expect(computeDomeSurfaceHeight(3.0, 4.0, 5.0)).toBeCloseTo(0); // At edge of dome
+      expect(computeDomeSurfaceHeight(6.0, 0, 5.0)).toBe(0); // Outside dome
+
+      // Test peer 3D projection marker in scene
+      const controller = createGeodesicRadarDomeScene(null, {
+        stageWidth: 600,
+        stageHeight: 400,
+        radius: 5.0,
+      });
+
+      const peer: PeerAvatar = {
+        id: "peer-elena",
+        name: "Elena",
+        position: { x: 450, y: 300 },
+        color: "#10b981",
+      };
+      const localUser = {
+        id: "local-user",
+        name: "Host",
+        position: { x: 300, y: 200 },
+      };
+
+      controller.updatePeers([peer], localUser);
+
+      // Verify peer marker exists and is placed on ground plane
+      const marker = controller.peerGroup.getObjectByName(
+        "peer-marker-peer-elena",
+      );
+      expect(marker).toBeDefined();
+      expect(marker.position.y).toBe(0);
+      expect(marker.position.x).toBeCloseTo(((450 - 300) / 300) * (5.0 * 0.82));
+      expect(marker.position.z).toBeCloseTo(((300 - 200) / 200) * (5.0 * 0.82));
+
+      // Verify base disc, halo ring, vertical ray, and dome contact beacon
+      expect(marker.getObjectByName("base-disc")).toBeDefined();
+      expect(marker.getObjectByName("halo-ring")).toBeDefined();
+      expect(marker.getObjectByName("vertical-projection-ray")).toBeDefined();
+      expect(marker.getObjectByName("dome-contact-beacon")).toBeDefined();
+
+      controller.dispose();
+    });
+
+    it("ties dome surface wave ripples to active peer voice audio streams", () => {
+      const controller = createGeodesicRadarDomeScene(null, {
+        stageWidth: 600,
+        stageHeight: 400,
+        radius: 5.0,
+      });
+
+      const peer: PeerAvatar = {
+        id: "peer-david",
+        name: "David",
+        position: { x: 200, y: 150 },
+      };
+      const localUser = {
+        id: "local-user",
+        name: "Host",
+        position: { x: 300, y: 200 },
+      };
+
+      // Set up peer in scene
+      controller.updatePeers([peer], localUser);
+
+      // Initially no wave ripples
+      expect(controller.rippleGroup.children.length).toBe(0);
+
+      // Trigger wave ripple for active peer voice audio stream
+      const ripple = controller.triggerAcousticRipple("peer-david", 0.8);
+      expect(ripple).toBeDefined();
+      expect(controller.rippleGroup.children.length).toBe(1);
+
+      // Animate frame with active audio energy: ripples expand and pulse emerald lines
+      const initialRadius = ripple!.radius;
+      controller.animateFrame(0.016, 0.85);
+
+      expect(ripple!.radius).toBeGreaterThan(initialRadius);
+      expect(
+        controller.wireframeMesh.material.color.setHex,
+      ).toHaveBeenCalledWith(0x00ff9d);
+
+      controller.dispose();
+    });
+
+    it("computes peer audio level from AnalyserNode correctly", () => {
+      const mockAnalyser = {
+        frequencyBinCount: 4,
+        getByteFrequencyData: jest
+          .fn()
+          .mockImplementation((arr: Uint8Array) => {
+            arr[0] = 128;
+            arr[1] = 128;
+            arr[2] = 128;
+            arr[3] = 128;
+          }),
+      } as unknown as AnalyserNode;
+
+      const level = getPeerAudioLevel(mockAnalyser);
+      expect(level).toBeCloseTo(128 / 255);
+
+      expect(getPeerAudioLevel(undefined)).toBe(0);
     });
   });
 });

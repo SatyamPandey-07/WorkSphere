@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
       offeringCategory: "DESIGN_UI",
       seekingSkill: "B2B SaaS Cold Outbound & GTM Strategy",
       seekingCategory: "GROWTH_MARKETING",
-      durationMinutes: 20,
+      durationMinutes: 15,
       meetupSpot: "Quiet Booth 2",
       status: "OPEN",
       reputationScore: 92,
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
       offeringCategory: "GROWTH_MARKETING",
       seekingSkill: "Design System & Figma Component Architecture",
       seekingCategory: "DESIGN_UI",
-      durationMinutes: 20,
+      durationMinutes: 15,
       meetupSpot: "Coffee Counter Island",
       status: "OPEN",
       reputationScore: 96,
@@ -87,9 +87,13 @@ export async function GET(req: NextRequest) {
     },
   ];
 
-  const filtered = category && category !== "ALL"
-    ? mockListings.filter((l) => l.offeringCategory === category || l.seekingCategory === category)
-    : mockListings;
+  const filtered =
+    category && category !== "ALL"
+      ? mockListings.filter(
+          (l) =>
+            l.offeringCategory === category || l.seekingCategory === category,
+        )
+      : mockListings;
 
   const matches = findComplementaryBarters(filtered);
 
@@ -122,7 +126,7 @@ export async function POST(req: NextRequest) {
     if (!offeringSkill || !seekingSkill) {
       return NextResponse.json(
         { error: "Both offeringSkill and seekingSkill are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -152,8 +156,11 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("[POST /api/social/skill-exchange] Error:", error);
     return NextResponse.json(
-      { error: "Failed to create skill barter listing", details: error.message },
-      { status: 500 }
+      {
+        error: "Failed to create skill barter listing",
+        details: error.message,
+      },
+      { status: 500 },
     );
   }
 }

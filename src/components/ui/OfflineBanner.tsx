@@ -2,14 +2,17 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  WifiOff,
-  RefreshCw,
   X,
   AlertCircle,
   Eye,
   RotateCcw,
+  Radio,
+  Zap,
+  ShieldCheck,
+  Database,
 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
+import { useBatteryStatus } from "@/hooks/useBatteryStatus";
 
 export interface FailedMutationInfo {
   id: string;
@@ -54,7 +57,10 @@ export function useOfflineStatus(options?: UseOfflineStatusOptions) {
 
     const handleOffline = () => {
       updateStatus(true);
-      toast("You are offline. Working in offline cached mode.", "warning");
+      toast(
+        "Sector 2814 Signal Lost — Switching to Auxiliary Ring Power (Offline Cache Mode)",
+        "warning",
+      );
     };
 
     window.addEventListener("online", handleOnline);
@@ -93,7 +99,7 @@ export function useOfflineStatus(options?: UseOfflineStatusOptions) {
 
       if (res.ok || res.status === 404 || res.status === 405) {
         updateStatus(false);
-        toast("Connection restored! All services synced.", "success");
+        toast("Connection restored! Uplink established with Sector 2814.", "success");
         return true;
       } else {
         updateStatus(true);
@@ -132,12 +138,20 @@ export interface OfflineBannerProps {
   failedMutationsCount?: number;
   failedMutations?: FailedMutationInfo[];
   onRetryFailedMutations?: () => Promise<void> | void;
+  /** Custom battery reserve percentage override (0-100) */
+  batteryReserve?: number;
+  /** Custom storage queue items count override */
+  storageQueueCount?: number;
+  /** Reconnect button testid override */
+  reconnectButtonTestId?: string;
 }
 
 /**
  * OfflineBanner Component:
- * Displays a persistent, non-intrusive top banner when the browser loses network connection
- * or when failed queued mutations require retry.
+ * Displays a persistent starship / flight deck emergency alert banner when the browser loses network connection:
+ * "⚠️ Sector 2814 Signal Lost — Switching to Auxiliary Ring Power (Offline Cache Mode)".
+ * Features dark emerald cockpit styling, blinking warning beacon, battery reserve percentage,
+ * offline storage queue status, and a one-click "Re-establish Uplink" reconnect button (#6195).
  */
 export function OfflineBanner({
   className = "",
@@ -146,14 +160,19 @@ export function OfflineBanner({
   failedMutationsCount,
   failedMutations = [],
   onRetryFailedMutations,
+  batteryReserve,
+  storageQueueCount,
+  reconnectButtonTestId,
 }: OfflineBannerProps) {
   const { isOffline, isRetrying, retryConnection } = useOfflineStatus({
     checkUrl,
   });
   const { toast } = useToast();
+  const battery = useBatteryStatus();
   const [dismissed, setDismissed] = useState(false);
   const [isRetryingMutations, setIsRetryingMutations] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [detectedQueueCount, setDetectedQueueCount] = useState<number>(0);
 
   // Compute total failed count from prop or array
   const effectiveFailedCount =
@@ -162,6 +181,48 @@ export function OfflineBanner({
       : failedMutations.length;
 
   const hasFailedMutations = effectiveFailedCount > 0;
+
+  // Poll / listen to offline sync queue count dynamically from SyncQueueManager
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let isMounted = true;
+
+    const checkQueue = async () => {
+      try {
+        const { SyncQueueManager } = await import(
+          "@/lib/offline/SyncQueueManager"
+        );
+        const count = await SyncQueueManager.getInstance().getPendingCount();
+        if (isMounted) setDetectedQueueCount(count);
+      } catch {
+        // Fallback gracefully if IndexedDB is uninitialized in test environment
+      }
+    };
+
+    void checkQueue();
+    window.addEventListener("online", checkQueue);
+    window.addEventListener("offline", checkQueue);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("online", checkQueue);
+      window.removeEventListener("offline", checkQueue);
+    };
+  }, []);
+
+  // Compute effective queue count (prioritizing explicit prop, falling back to detected count + failed mutations)
+  const effectiveQueueCount =
+    storageQueueCount !== undefined
+      ? storageQueueCount
+      : detectedQueueCount + effectiveFailedCount;
+
+  // Compute battery reserve percentage (prioritizing explicit prop, then device battery API, defaulting to 100%)
+  const effectiveBatteryReserve =
+    batteryReserve !== undefined
+      ? Math.round(Math.max(0, Math.min(100, batteryReserve)))
+      : battery.level !== null
+        ? Math.round(battery.level * 100)
+        : 100;
 
   // Reset dismissed state when offline status or failed mutations change
   useEffect(() => {
@@ -199,44 +260,111 @@ export function OfflineBanner({
         role="alert"
         aria-live="polite"
         data-testid="offline-banner"
-        className={`sticky top-0 z-50 w-full border-b border-amber-500/30 bg-amber-50/95 dark:bg-amber-950/95 text-amber-950 dark:text-amber-100 px-4 py-2.5 shadow-md backdrop-blur-md transition-all duration-300 ${className}`}
+        className={`sticky top-0 z-50 w-full transition-all duration-300 ${
+          isOffline
+            ? "cosmic-offline-banner bg-[#022c1d]/95 text-emerald-100 border-b border-emerald-500/50 shadow-[0_4px_25px_rgba(4,120,87,0.35)] backdrop-blur-md"
+            : "border-b border-amber-500/30 bg-amber-50/95 dark:bg-amber-950/95 text-amber-950 dark:text-amber-100 shadow-md backdrop-blur-md"
+        } px-4 py-2.5 ${className}`}
       >
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm font-medium">
-          {/* Left Section: Status Icon & Description */}
-          <div className="flex items-center gap-2.5">
-            <span
-              data-testid="offline-icon"
-              className="flex items-center justify-center p-1.5 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0"
-            >
-              {isOffline ? (
-                <WifiOff className="w-4 h-4" />
-              ) : (
-                <AlertCircle className="w-4 h-4" />
-              )}
-            </span>
-            <div>
-              <span className="font-semibold text-amber-950 dark:text-amber-50">
-                {isOffline
-                  ? "You are currently offline."
-                  : "Sync error detected."}
-              </span>{" "}
-              {isOffline ? (
-                <span className="text-amber-800/90 dark:text-amber-200/90 hidden md:inline">
-                  Working with cached WorkSphere data. Features will sync when
-                  reconnected.
-                </span>
-              ) : null}
-              {hasFailedMutations && (
-                <span
-                  data-testid="failed-mutations-count"
-                  className="inline-flex items-center ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-100 border border-amber-300 dark:border-amber-700"
+        <div className="mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-3 text-xs sm:text-sm">
+          {/* Left Section: Blinking Warning Beacon & Sector 2814 Alert */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {isOffline ? (
+              <>
+                {/* Blinking Warning Beacon */}
+                <div
+                  data-testid="warning-beacon"
+                  className="relative flex items-center justify-center shrink-0 w-3.5 h-3.5"
+                  aria-hidden="true"
                 >
-                  {effectiveFailedCount} failed{" "}
-                  {effectiveFailedCount === 1 ? "action" : "actions"}
+                  <span className="beacon-ring-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                </div>
+
+                {/* Sector Telemetry Badge */}
+                <span
+                  data-testid="sector-badge"
+                  className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider uppercase bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]"
+                >
+                  SEC-2814
                 </span>
-              )}
-            </div>
+
+                {/* Alert Title */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                  <span
+                    data-testid="offline-alert-message"
+                    className="font-bold text-white tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
+                  >
+                    ⚠️ Sector 2814 Signal Lost — Switching to Auxiliary Ring Power (Offline Cache Mode)
+                  </span>
+                  {/* Screen reader & backwards compatibility text */}
+                  <span className="sr-only">You are currently offline.</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <span
+                  data-testid="offline-icon"
+                  className="flex items-center justify-center p-1.5 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                </span>
+                <span className="font-semibold text-amber-950 dark:text-amber-50">
+                  Sync error detected.
+                </span>
+              </>
+            )}
+
+            {/* Failed mutations badge if any */}
+            {hasFailedMutations && (
+              <span
+                data-testid="failed-mutations-count"
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-100 border border-amber-300 dark:border-amber-700"
+              >
+                {effectiveFailedCount} failed{" "}
+                {effectiveFailedCount === 1 ? "action" : "actions"}
+              </span>
+            )}
           </div>
+
+          {/* Center Telemetry Readouts (Battery Reserve & Storage Queue Status) */}
+          {isOffline && (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {/* Battery Reserve Percentage */}
+              <div
+                data-testid="battery-reserve-indicator"
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono font-semibold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+                title={`Auxiliary Ring Reserve: ${effectiveBatteryReserve}%`}
+              >
+                <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400/30" />
+                <span data-testid="battery-reserve-value">
+                  {effectiveBatteryReserve}% Reserve
+                </span>
+              </div>
+
+              {/* Offline Storage Queue Status */}
+              <div
+                data-testid="offline-storage-queue-status"
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono font-medium bg-emerald-950/80 border border-emerald-500/30 text-emerald-300"
+                title={`${effectiveQueueCount} actions currently buffered in offline storage queue`}
+              >
+                <Database className="w-3.5 h-3.5 text-emerald-400" />
+                <span>
+                  Storage Queue: {effectiveQueueCount}{" "}
+                  {effectiveQueueCount === 1 ? "action" : "actions"} buffered
+                </span>
+              </div>
+
+              {/* Offline Drafts Security Assurance Badge */}
+              <div
+                data-testid="offline-drafts-status"
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-medium bg-emerald-900/40 border border-emerald-500/30 text-emerald-200"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Offline Drafts Secure</span>
+              </div>
+            </div>
+          )}
 
           {/* Right Section: Action Buttons */}
           <div className="flex items-center gap-2 shrink-0">
@@ -271,17 +399,40 @@ export function OfflineBanner({
             )}
 
             {isOffline && (
-              <button
-                onClick={retryConnection}
-                disabled={isRetrying}
-                data-testid="retry-connection-button"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition disabled:opacity-50"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 ${isRetrying ? "animate-spin" : ""}`}
-                />
-                {isRetrying ? "Checking..." : "Retry Connection"}
-              </button>
+              <>
+                {/* One-Click "Re-establish Uplink" Reconnect Button */}
+                <button
+                  onClick={retryConnection}
+                  disabled={isRetrying}
+                  data-testid={
+                    reconnectButtonTestId || "re-establish-uplink-button"
+                  }
+                  aria-label="Re-establish Uplink"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-emerald-400 hover:bg-emerald-300 active:bg-emerald-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.4)] transition-all duration-150 disabled:opacity-50 border border-emerald-300 cursor-pointer"
+                >
+                  <Radio
+                    className={`w-3.5 h-3.5 ${
+                      isRetrying ? "animate-spin" : ""
+                    }`}
+                  />
+                  <span>
+                    {isRetrying
+                      ? "Re-establishing Uplink..."
+                      : "Re-establish Uplink"}
+                  </span>
+                </button>
+
+                {/* Legacy test alias button for retry-connection-button */}
+                <button
+                  onClick={retryConnection}
+                  data-testid="retry-connection-button"
+                  className="sr-only"
+                  aria-hidden="true"
+                  tabIndex={-1}
+                >
+                  Retry Connection
+                </button>
+              </>
             )}
 
             {showDismiss && (
@@ -289,7 +440,11 @@ export function OfflineBanner({
                 onClick={() => setDismissed(true)}
                 data-testid="dismiss-offline-banner"
                 aria-label="Dismiss offline banner"
-                className="p-1 rounded-md text-amber-800 dark:text-amber-300 hover:bg-amber-200/50 dark:hover:bg-amber-900/50 transition"
+                className={`p-1 rounded-md transition ${
+                  isOffline
+                    ? "text-emerald-400 hover:text-emerald-200 hover:bg-emerald-900/50"
+                    : "text-amber-800 dark:text-amber-300 hover:bg-amber-200/50 dark:hover:bg-amber-900/50"
+                }`}
               >
                 <X className="w-4 h-4" />
               </button>

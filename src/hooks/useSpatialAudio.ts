@@ -1,259 +1,80 @@
-"use client";
+import { useEffect, useRef, useCallback } from "react";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  SpatialAudioRouter,
-  type PeerSpatialChain,
-} from "@/lib/spatial/SpatialAudioRouter";
-import {
-  RemoteListenerInterpolator,
-  type SpatialListenerUpdate,
-  type Vector3D,
-} from "@/lib/spatial/RemoteListenerInterpolator";
+export function useSpatialAudio(
+  audioContext: AudioContext | null,
+  sourceNode: AudioNode | null,
+) {
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
 
-export interface UseSpatialAudioOptions {
-  roomId: string;
-  userId: string;
-  localPosition?: Vector3D;
-  localForward?: Vector3D;
-  localUp?: Vector3D;
-  peerPositions?: Map<string, Vector3D>;
-  socket?:
-    WebSocket | { send: (data: string) => void; readyState: number } | null;
-  broadcastIntervalMs?: number;
-}
-
-export function useSpatialAudio({
-  roomId: _roomId,
-  userId,
-  localPosition = { x: 0, y: 0, z: 0 },
-  localForward = { x: 0, y: 0, z: 1 },
-  localUp = { x: 0, y: 1, z: 0 },
-  peerPositions,
-  socket,
-  broadcastIntervalMs = 50,
-}: UseSpatialAudioOptions) {
-  const [isReady, setIsReady] = useState(false);
-  const [contextState, setContextState] =
-    useState<AudioContextState>("suspended");
-  const [remoteListeners, setRemoteListeners] = useState<string[]>([]);
-
-  const routerRef = useRef<SpatialAudioRouter | null>(null);
-  const interpolatorRef = useRef<RemoteListenerInterpolator | null>(null);
-  const ctxRef = useRef<AudioContext | null>(null);
-
-  // 1. Initialize AudioContext and SpatialAudioRouter
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !audioContext || !sourceNode) return;
 
-    const AudioContextClass =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext;
-    if (!AudioContextClass) return;
+    let isMounted = true;
+    let localWorkletNode: AudioWorkletNode | null = null;
 
-    const ctx = new AudioContextClass();
-    ctxRef.current = ctx;
+    async function initWorklet() {
+      try {
+        await audioContext!.audioWorklet.addModule(
+          "/audio/SpatialAudioWorkletProcessor.js",
+        );
+        if (!isMounted) return;
 
-    const router = new SpatialAudioRouter(ctx);
-    const interpolator = new RemoteListenerInterpolator();
+        const NodeCtor =
+          window.AudioWorkletNode || (window as any).webkitAudioWorkletNode;
 
-    routerRef.current = router;
-    interpolatorRef.current = interpolator;
+        if (!NodeCtor) {
+          console.warn(
+            "AudioWorkletNode is not supported in this browser environment.",
+          );
+          return;
+        }
 
-    setContextState(ctx.state);
-    setIsReady(true);
+        localWorkletNode = new NodeCtor(
+          audioContext!,
+          "spatial-audio-worklet-processor",
+          {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+          },
+        );
 
-    const handleStateChange = () => {
-      setContextState(ctx.state);
-    };
-    ctx.addEventListener("statechange", handleStateChange);
+        sourceNode!.connect(localWorkletNode);
+        localWorkletNode.connect(audioContext!.destination);
+        workletNodeRef.current = localWorkletNode;
+      } catch (err) {
+        console.error("Failed to initialize spatial audio worklet:", err);
+      }
+    }
+
+    initWorklet();
 
     return () => {
-      ctx.removeEventListener("statechange", handleStateChange);
-      router.detachAll();
-      if (ctx.state !== "closed") {
-        ctx.close().catch(() => {});
+      isMounted = false;
+      if (localWorkletNode) {
+        try {
+          sourceNode?.disconnect(localWorkletNode);
+          localWorkletNode.disconnect();
+        } catch {
+          // Ignore cleanup errors on context teardown
+        }
       }
-      ctxRef.current = null;
-      routerRef.current = null;
-      interpolator.dispose();
-      interpolatorRef.current = null;
-      setIsReady(false);
+      workletNodeRef.current = null;
     };
-  }, []);
+  }, [audioContext, sourceNode]);
 
-  // Resume AudioContext on user gesture if suspended
-  const resumeAudioContext = useCallback(async () => {
-    const ctx = ctxRef.current;
-    if (ctx && ctx.state === "suspended") {
-      await ctx.resume();
-      setContextState(ctx.state);
-    }
-  }, []);
-
-  // 2. Sync local AudioListener position and orientation
-  useEffect(() => {
-    const router = routerRef.current;
-    if (!router || !isReady) return;
-
-    router.updateListenerPosition(
-      localPosition.x,
-      localPosition.y,
-      localPosition.z,
-    );
-    router.updateListenerOrientation(
-      localForward.x,
-      localForward.y,
-      localForward.z,
-      localUp.x,
-      localUp.y,
-      localUp.z,
-    );
-  }, [localPosition, localForward, localUp, isReady]);
-
-  // 3. Sync remote peer positions from peerPositions map
-  useEffect(() => {
-    const router = routerRef.current;
-    if (!router || !isReady || !peerPositions) return;
-
-    for (const [peerId, pos] of peerPositions.entries()) {
-      router.updatePeerPosition(peerId, pos.x, pos.y, pos.z);
-    }
-  }, [peerPositions, isReady]);
-
-  // Sync remote listener IDs from interpolator to state
-  const syncRemoteListeners = useCallback(() => {
-    const interpolator = interpolatorRef.current;
-    if (!interpolator) return;
-    setRemoteListeners((prev) => {
-      const next = interpolator.getUserIds();
-      if (prev.length === next.length && prev.every((id, i) => id === next[i])) {
-        return prev;
-      }
-      return next;
-    });
-  }, []);
-
-  // 4. Handle incoming spatial listener update messages
-  const handleIncomingMessage = useCallback((data: unknown) => {
-    if (!data || typeof data !== "object") return;
-    const msg = data as Partial<SpatialListenerUpdate>;
-
-    if (
-      msg.type === "spatial_listener_update" &&
-      msg.userId &&
-      msg.position &&
-      msg.forward
-    ) {
-      const update: SpatialListenerUpdate = {
-        type: "spatial_listener_update",
-        userId: msg.userId,
-        position: msg.position,
-        forward: msg.forward,
-        up: msg.up ?? { x: 0, y: 1, z: 0 },
-        timestamp: msg.timestamp ?? performance.now(),
-      };
-
-      const router = routerRef.current;
-      const interpolator = interpolatorRef.current;
-      if (router && interpolator) {
-        interpolator.applyUpdate(update, router);
-      }
-    }
-  }, []);
-
-  // Sync remote listeners after every incoming message batch
-  useEffect(() => {
-    if (!isReady) return;
-    const interval = setInterval(syncRemoteListeners, 1000);
-    return () => clearInterval(interval);
-  }, [isReady, syncRemoteListeners]);
-
-  // 5. Broadcast local listener coordinates to PartySocket at 20 Hz
-  useEffect(() => {
-    if (!socket || !isReady || !userId) return;
-
-    const timer = setInterval(() => {
-      const readyState = "readyState" in socket ? socket.readyState : 1;
-      if (readyState !== 1) return; // 1 = OPEN
-
-      const message: SpatialListenerUpdate = {
-        type: "spatial_listener_update",
-        userId,
-        position: localPosition,
-        forward: localForward,
-        up: localUp,
-        timestamp: performance.now(),
-      };
-
-      try {
-        socket.send(JSON.stringify(message));
-      } catch (err) {
-        console.error("[SpatialAudio] Broadcast failed:", err);
-      }
-    }, broadcastIntervalMs);
-
-    return () => clearInterval(timer);
-  }, [
-    socket,
-    userId,
-    localPosition,
-    localForward,
-    localUp,
-    isReady,
-    broadcastIntervalMs,
-  ]);
-
-  const attachRemoteTrack = useCallback(
-    (peerId: string, stream: MediaStream): PeerSpatialChain | undefined => {
-      resumeAudioContext();
-      return routerRef.current?.attachRemoteTrack(peerId, stream);
-    },
-    [resumeAudioContext],
-  );
-
-  const detachPeer = useCallback((peerId: string) => {
-    routerRef.current?.detachPeer(peerId);
-    interpolatorRef.current?.clearUser(peerId);
-  }, []);
-
-  const setPeerVolume = useCallback((peerId: string, volume: number) => {
-    routerRef.current?.setPeerVolume(peerId, volume);
-  }, []);
-
-  const updateLocalPosition = useCallback(
-    (pos: Vector3D, forward?: Vector3D, up?: Vector3D) => {
-      const router = routerRef.current;
-      if (!router) return;
-
-      router.updateListenerPosition(pos.x, pos.y, pos.z);
-      if (forward && up) {
-        router.updateListenerOrientation(
-          forward.x,
-          forward.y,
-          forward.z,
-          up.x,
-          up.y,
-          up.z,
-        );
+  const updateOrientation = useCallback(
+    (azimuth: number, elevation: number) => {
+      if (workletNodeRef.current) {
+        workletNodeRef.current.port.postMessage({
+          type: "UPDATE_ORIENTATION",
+          azimuth,
+          elevation,
+        });
       }
     },
     [],
   );
 
-  const getRouter = useCallback(() => routerRef.current, []);
-
-  return {
-    isReady,
-    contextState,
-    remoteListeners,
-    resumeAudioContext,
-    attachRemoteTrack,
-    detachPeer,
-    setPeerVolume,
-    updateLocalPosition,
-    handleIncomingMessage,
-    getRouter,
-  };
+  return { updateOrientation };
 }

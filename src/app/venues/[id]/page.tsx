@@ -10,6 +10,7 @@ import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
 import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
+import { HourlyNoiseHeatGraph } from "@/components/venues/HourlyNoiseHeatGraph";
 import { SeatingForecastChart } from "@/components/venue/SeatingForecastChart";
 import { OccupancyTrendChart } from "@/components/analytics/OccupancyTrendChart";
 import { RecentlyViewedTracker } from "@/components/venues/RecentlyViewedTracker";
@@ -23,9 +24,10 @@ import { VenueShareModal } from "@/components/venue/VenueShareModal";
 import { generateVenueJsonLd } from "@/lib/seo/venueJsonLd";
 import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
-import { CommuteCarbonEstimator } from "@/components/venue/CommuteCarbonEstimator";
 import { ColleaguePresenceIndicator } from "@/components/social/ColleaguePresenceIndicator";
 import { VenueWifiCard } from "@/components/venue/VenueWifiCard";
+import { AmenityStatusIncidentTracker } from "@/components/venue/AmenityStatusIncidentTracker";
+import { FavoriteDesksDrawer } from "@/components/venue/FavoriteDesksDrawer";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -71,9 +73,8 @@ export async function generateMetadata({
 
     const imageToUse = venue.imageUrl || fallbackImage;
     const title = `${venue.name} | WorkSphere`;
-    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${
-      venue.address ? ` ${venue.address}` : ""
-    }`;
+    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${venue.address ? ` ${venue.address}` : ""
+      }`;
 
     return {
       title,
@@ -224,7 +225,10 @@ export default async function VenuePage({ params }: PageProps) {
           </div>
 
           <div className="p-6 sm:p-8 space-y-8">
-            <ColleaguePresenceIndicator venueId={venue.id} venueName={venue.name} />
+            <ColleaguePresenceIndicator
+              venueId={venue.id}
+              venueName={venue.name}
+            />
 
             <VenueLiveVibeWidget venueId={venue.id} />
 
@@ -243,7 +247,10 @@ export default async function VenuePage({ params }: PageProps) {
                     </p>
                   </div>
                 </div>
-                <CopyToClipboardButton textToCopy={venue.address} ariaLabel="Copy venue address" />
+                <CopyToClipboardButton
+                  textToCopy={venue.address}
+                  ariaLabel="Copy venue address"
+                />
               </div>
             )}
             <VenueWifiCard venue={venue} />
@@ -279,19 +286,24 @@ export default async function VenuePage({ params }: PageProps) {
             <VenueSummary venueId={venue.id} />
 
             <VenueAccordion
-              amenities={[
-                venue.wifiQuality ? "High-Speed Wi-Fi" : null,
-                venue.hasOutlets ? "Power Outlets Available" : null,
-                venue.hasQuietZone ? "Dedicated Quiet Zone" : null,
-                venue.hasPhoneBooths ? "Soundproof Phone Booths" : null,
-                venue.hasErgonomic ? "Ergonomic Office Chairs" : null,
-                venue.hasAncHeadsetRental ? "ANC Headset Rental" : null,
-                venue.dogFriendly ? "Pet Friendly / Dogs Allowed" : null,
-              ].filter(Boolean) as string[]}
+              amenities={
+                [
+                  venue.wifiQuality ? "High-Speed Wi-Fi" : null,
+                  venue.hasOutlets ? "Power Outlets Available" : null,
+                  venue.hasQuietZone ? "Dedicated Quiet Zone" : null,
+                  venue.hasPhoneBooths ? "Soundproof Phone Booths" : null,
+                  venue.hasErgonomic ? "Ergonomic Office Chairs" : null,
+                  venue.hasAncHeadsetRental ? "ANC Headset Rental" : null,
+                  venue.dogFriendly ? "Pet Friendly / Dogs Allowed" : null,
+                ].filter(Boolean) as string[]
+              }
               openingHours={venue.openingHours}
             />
 
-            <AmenityStatusIncidentTracker venueId={venue.id} venueName={venue.name} />
+            <AmenityStatusIncidentTracker
+              venueId={venue.id}
+              venueName={venue.name}
+            />
 
             <FavoriteDesksDrawer venueId={venue.id} venueName={venue.name} />
 
@@ -300,6 +312,12 @@ export default async function VenuePage({ params }: PageProps) {
                 <span>Expected Noise Levels</span>
               </h3>
               <AmbientNoiseTrendGraph venueId={venue.id} />
+              <div className="mt-4">
+                <HourlyNoiseHeatGraph
+                  venueId={venue.id}
+                  venueName={venue.name}
+                />
+              </div>
               <div className="mt-4">
                 <NoiseForecastChart venueId={venue.id} />
               </div>

@@ -85,47 +85,6 @@ export function useSeatHoldLock({
     setIsMounted(true);
   }, []);
 
-  // Prevent stale lock leakage on page unmount, tab close, or navigation
-  useEffect(() => {
-    const handleReleaseOnUnload = () => {
-      const heldSeat = myHeldSeatIdRef.current;
-      if (!heldSeat) return;
-
-      if (socket && isConnected) {
-        try {
-          socket.send(
-            JSON.stringify({
-              type: "seat_release_request",
-              seatId: heldSeat,
-              venueId,
-              userId: effectiveUserId,
-            }),
-          );
-        } catch {
-          // ignore
-        }
-      }
-
-      try {
-        fetch(`/api/venues/${venueId}/seats/${heldSeat}/lock`, {
-          method: "DELETE",
-          keepalive: true,
-        }).catch(() => {});
-      } catch {
-        // ignore
-      }
-    };
-
-    window.addEventListener("pagehide", handleReleaseOnUnload);
-    window.addEventListener("beforeunload", handleReleaseOnUnload);
-
-    return () => {
-      window.removeEventListener("pagehide", handleReleaseOnUnload);
-      window.removeEventListener("beforeunload", handleReleaseOnUnload);
-      handleReleaseOnUnload();
-    };
-  }, [venueId, effectiveUserId, socket, isConnected]);
-
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
     room: isMounted ? targetRoom : `floorplan-${venueId}`,
@@ -307,6 +266,47 @@ export function useSeatHoldLock({
     },
   });
 
+  // Prevent stale lock leakage on page unmount, tab close, or navigation
+  useEffect(() => {
+    const handleReleaseOnUnload = () => {
+      const heldSeat = myHeldSeatIdRef.current;
+      if (!heldSeat) return;
+
+      if (socket && isConnected) {
+        try {
+          socket.send(
+            JSON.stringify({
+              type: "seat_release_request",
+              seatId: heldSeat,
+              venueId,
+              userId: effectiveUserId,
+            }),
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      try {
+        fetch(`/api/venues/${venueId}/seats/${heldSeat}/lock`, {
+          method: "DELETE",
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener("pagehide", handleReleaseOnUnload);
+    window.addEventListener("beforeunload", handleReleaseOnUnload);
+
+    return () => {
+      window.removeEventListener("pagehide", handleReleaseOnUnload);
+      window.removeEventListener("beforeunload", handleReleaseOnUnload);
+      handleReleaseOnUnload();
+    };
+  }, [venueId, effectiveUserId, socket, isConnected]);
+
   // Client-side 1-second countdown ticker & auto-release expired locks without page reload
   useEffect(() => {
     const interval = setInterval(() => {
@@ -319,7 +319,9 @@ export function useSeatHoldLock({
           if (now >= hold.expiresAt) {
             hasChanges = true;
             if (hold.isSelf) {
-              setMyHeldSeatId((current) => (current === seatId ? null : current));
+              setMyHeldSeatId((current) =>
+                current === seatId ? null : current,
+              );
               onHoldExpired?.(seatId);
             }
             continue; // Dropped automatically upon TTL expiration

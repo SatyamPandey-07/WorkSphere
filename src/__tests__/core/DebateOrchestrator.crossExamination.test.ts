@@ -146,4 +146,62 @@ describe('DebateOrchestrator Adversarial Cross-Examination Phase (#5775)', () =>
             expect(exam.isConceded).toBe(true);
         });
     });
+
+    describe('Zero-Variance Division Prevention & Epistemic Variance (#5775)', () => {
+        it('calculates zero epistemic variance when all scores are identical without division by zero', () => {
+            const identicalScores = [85, 85, 85];
+            const variance = DebateOrchestrator.calculateEpistemicVariance(identicalScores);
+            expect(variance).toBe(0.0);
+            expect(Number.isFinite(variance)).toBe(true);
+        });
+
+        it('handles single-element, empty, or non-finite score arrays gracefully', () => {
+            expect(DebateOrchestrator.calculateEpistemicVariance([])).toBe(0.0);
+            expect(DebateOrchestrator.calculateEpistemicVariance([70])).toBe(0.0);
+            expect(DebateOrchestrator.calculateEpistemicVariance([NaN, 80, NaN])).toBe(0.0);
+            expect(DebateOrchestrator.calculateEpistemicVariance([80, Infinity, 80])).toBe(0.0);
+        });
+
+        it('accurately computes sample variance for distinct scores', () => {
+            // Mean = 70. Differences: -10, 0, 10. Squared: 100, 0, 100. Sum = 200. Variance = 200 / 2 = 100.
+            const scores = [60, 70, 80];
+            const variance = DebateOrchestrator.calculateEpistemicVariance(scores);
+            expect(variance).toBe(100.0);
+        });
+
+        it('updateBayesianConviction handles zero/NaN temperature and matching peer scores without NaN drift', () => {
+            const conviction = DebateOrchestrator.updateBayesianConviction(
+                85,
+                [
+                    { persona: 'FOCUS_ADVOCATE', score: 85 },
+                    { persona: 'SOCIAL_NETWORKER', score: 85 },
+                ],
+                'BUDGET_CONSCIOUS',
+                { temperature: 0, plasticityRate: NaN }
+            );
+
+            expect(conviction.posteriorScore).toBe(85);
+            expect(conviction.shiftDelta).toBe(0);
+            expect(conviction.confidence).toBe(1.0);
+            expect(Number.isFinite(conviction.posteriorScore)).toBe(true);
+        });
+
+        it('runDebate tracks epistemicVariance and converges early on matching scores', async () => {
+            const orchestrator = new DebateOrchestrator(3, {
+                convergenceThreshold: 5.0,
+            });
+
+            const venueData = {
+                id: 'venue-conv-test',
+                name: 'Consensus Haven',
+            };
+
+            const result = await orchestrator.runDebate(venueData, { maxRounds: 3 });
+
+            expect(result.epistemicVariance).toBeDefined();
+            expect(Number.isFinite(result.epistemicVariance)).toBe(true);
+            expect(result.epistemicVariance).toBeGreaterThanOrEqual(0.0);
+        });
+    });
 });
+

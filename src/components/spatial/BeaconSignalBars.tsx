@@ -66,17 +66,31 @@ export function BeaconSignalBars({
   className = "",
   accessibleLabel,
 }: BeaconSignalBarsProps) {
-  const activeBars =
-    explicitBars !== undefined ? explicitBars : rssiToSignalBars(rssi);
+  const rawBars =
+    explicitBars !== undefined
+      ? (Number.isFinite(explicitBars) ? Math.round(explicitBars) : 0)
+      : rssiToSignalBars(rssi);
+  const activeBars = Math.max(0, Math.min(5, rawBars));
+
   const tier = getSignalTier(rssi);
-  const qualityLabel = getSignalQualityLabel(rssi);
+  const isRssiValid = rssi !== null && rssi !== undefined && Number.isFinite(rssi);
+
+  const qualityLabel = isRssiValid
+    ? getSignalQualityLabel(rssi)
+    : activeBars > 0
+      ? (["No Signal", "Weak", "Poor", "Fair", "Good", "Excellent"] as const)[activeBars]
+      : "No Signal";
+
   const colors = getSignalBarColors(activeBars);
 
   // Accessible descriptive label
-  const defaultLabel =
-    rssi !== null && rssi !== undefined && Number.isFinite(rssi)
+  const defaultLabel = isRssiValid
+    ? activeBars > 0
       ? `Signal strength: ${activeBars} of 5 bars (${rssi} dBm, ${qualityLabel})`
-      : `Signal strength: ${activeBars} of 5 bars (No Signal)`;
+      : `Signal strength: 0 of 5 bars (${rssi} dBm, Out of Range)`
+    : activeBars > 0
+      ? `Signal strength: ${activeBars} of 5 bars (${qualityLabel})`
+      : "No beacon signal detected";
   const finalAccessibleLabel = accessibleLabel || defaultLabel;
 
   // Sizing definitions
@@ -113,12 +127,12 @@ export function BeaconSignalBars({
       case "tier":
         return qualityLabel;
       case "both":
-        return rssi !== null && rssi !== undefined
+        return isRssiValid
           ? `${rssi} dBm (${qualityLabel})`
           : qualityLabel;
       case "rssi":
       default:
-        return rssi !== null && rssi !== undefined ? `${rssi} dBm` : "No Signal";
+        return isRssiValid ? `${rssi} dBm` : "No Signal";
     }
   };
 
@@ -134,7 +148,11 @@ export function BeaconSignalBars({
         aria-valuenow={activeBars}
         aria-valuemin={0}
         aria-valuemax={5}
-        aria-valuetext={`${activeBars} of 5 bars, ${qualityLabel}`}
+        aria-valuetext={
+          activeBars > 0
+            ? `${activeBars} of 5 bars, ${qualityLabel}`
+            : "No beacon signal detected"
+        }
         className={`flex items-end ${sizeConfig.containerHeight} ${sizeConfig.containerWidth} ${sizeConfig.gap} select-none`}
         data-bars={activeBars}
         data-rssi={rssi ?? "none"}

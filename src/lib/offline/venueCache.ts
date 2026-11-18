@@ -58,8 +58,10 @@ export class OfflineVenueCache {
       name: venue.name,
       savedAt: existing?.savedAt ?? venue.savedAt ?? now,
       lastAccessedAt: now,
-      isPinned: options.isPinned ?? venue.isPinned ?? existing?.isPinned ?? false,
-      isFavorite: options.isFavorite ?? venue.isFavorite ?? existing?.isFavorite ?? false,
+      isPinned:
+        options.isPinned ?? venue.isPinned ?? existing?.isPinned ?? false,
+      isFavorite:
+        options.isFavorite ?? venue.isFavorite ?? existing?.isFavorite ?? false,
     };
 
     this.store.set(venue.id, record);
@@ -166,7 +168,10 @@ export class OfflineVenueCache {
 // Persistent IndexedDB Venue & Floor Plan LRU Cache with Quota Recovery
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { MAX_RECENTLY_VIEWED_IDB, type RecentlyViewedVenuePayload } from "./types";
+import {
+  MAX_RECENTLY_VIEWED_IDB,
+  type RecentlyViewedVenuePayload,
+} from "./types";
 
 /**
  * Checks if an error is a browser IndexedDB storage quota exceeded error.
@@ -237,7 +242,11 @@ async function isVenueFavoritedOffline(
  */
 export async function saveVenueOfflineWithLru(
   venue: Partial<CachedVenue> & { id: string; name: string },
-  options: { isPinned?: boolean; isFavorite?: boolean; maxVenues?: number } = {},
+  options: {
+    isPinned?: boolean;
+    isFavorite?: boolean;
+    maxVenues?: number;
+  } = {},
 ): Promise<void> {
   return withWebLock(async () => {
     const database = await initOfflineDB();
@@ -271,17 +280,28 @@ export async function saveVenueOfflineWithLru(
 
     try {
       await attemptPut();
-      await purgeOfflineVenuesLru(options.maxVenues ?? DEFAULT_MAX_CACHED_VENUES);
+      await purgeOfflineVenuesLru(
+        options.maxVenues ?? DEFAULT_MAX_CACHED_VENUES,
+      );
     } catch (err) {
       if (isQuotaExceededError(err)) {
         console.warn(
           "[VenueCache] QuotaExceededError during venue save. Triggering emergency LRU eviction...",
         );
         const freed = await purgeOfflineVenuesLru(
-          Math.max(1, Math.floor((options.maxVenues ?? DEFAULT_MAX_CACHED_VENUES) / 2)),
+          Math.max(
+            1,
+            Math.floor((options.maxVenues ?? DEFAULT_MAX_CACHED_VENUES) / 2),
+          ),
         );
-        await pruneRecentlyViewedVenuesLru(Math.max(1, Math.floor(MAX_RECENTLY_VIEWED_IDB / 2)));
-        notifyQuotaExceeded({ venueId: venue.id, venueName: venue.name, freedCount: freed });
+        await pruneRecentlyViewedVenuesLru(
+          Math.max(1, Math.floor(MAX_RECENTLY_VIEWED_IDB / 2)),
+        );
+        notifyQuotaExceeded({
+          venueId: venue.id,
+          venueName: venue.name,
+          freedCount: freed,
+        });
 
         try {
           await attemptPut();
@@ -295,7 +315,10 @@ export async function saveVenueOfflineWithLru(
         }
       }
 
-      console.error("[VenueCache] Failed to save venue with LRU tracking:", err);
+      console.error(
+        "[VenueCache] Failed to save venue with LRU tracking:",
+        err,
+      );
       throw err;
     }
   });
@@ -403,19 +426,22 @@ export async function purgeOfflineVenuesLru(
 export async function pruneRecentlyViewedVenuesLru(
   maxItems = MAX_RECENTLY_VIEWED_IDB,
 ): Promise<number> {
-  return withWebLock("worksphere:recently-viewed-lru-lock", async () => {
+  return withWebLock(async () => {
     const database = await initOfflineDB();
     if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
       return 0;
     }
 
-    const allItems: RecentlyViewedVenuePayload[] = await new Promise((resolve, reject) => {
-      const tx = database.transaction(["recentlyViewedVenues"], "readonly");
-      const store = tx.objectStore("recentlyViewedVenues");
-      const req = store.getAll();
-      req.onsuccess = () => resolve((req.result as RecentlyViewedVenuePayload[]) || []);
-      req.onerror = () => reject(req.error);
-    });
+    const allItems: RecentlyViewedVenuePayload[] = await new Promise(
+      (resolve, reject) => {
+        const tx = database.transaction(["recentlyViewedVenues"], "readonly");
+        const store = tx.objectStore("recentlyViewedVenues");
+        const req = store.getAll();
+        req.onsuccess = () =>
+          resolve((req.result as RecentlyViewedVenuePayload[]) || []);
+        req.onerror = () => reject(req.error);
+      },
+    );
 
     const overflow = allItems.length - maxItems;
     if (overflow <= 0) return 0;
@@ -447,7 +473,7 @@ export async function pruneRecentlyViewedVenuesLru(
     });
 
     return deletedCount;
-  });
+  }, "worksphere:recently-viewed-lru-lock");
 }
 
 /**
@@ -458,7 +484,7 @@ export async function saveRecentlyViewedVenueOffline(
   venue: RecentlyViewedVenuePayload,
   options: { maxItems?: number } = {},
 ): Promise<void> {
-  return withWebLock("worksphere:recently-viewed-save-lock", async () => {
+  return withWebLock(async () => {
     const database = await initOfflineDB();
     if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
       return;
@@ -489,9 +515,17 @@ export async function saveRecentlyViewedVenueOffline(
         console.warn(
           "[RecentlyViewedCache] QuotaExceededError while caching floor plan. Pruning stale floor plans...",
         );
-        const freed = await pruneRecentlyViewedVenuesLru(Math.max(1, Math.floor(maxItems / 2)));
-        await purgeOfflineVenuesLru(Math.max(1, Math.floor(DEFAULT_MAX_CACHED_VENUES / 2)));
-        notifyQuotaExceeded({ venueId: venue.id, venueName: venue.name, freedCount: freed });
+        const freed = await pruneRecentlyViewedVenuesLru(
+          Math.max(1, Math.floor(maxItems / 2)),
+        );
+        await purgeOfflineVenuesLru(
+          Math.max(1, Math.floor(DEFAULT_MAX_CACHED_VENUES / 2)),
+        );
+        notifyQuotaExceeded({
+          venueId: venue.id,
+          venueName: venue.name,
+          freedCount: freed,
+        });
 
         try {
           await attemptPut();
@@ -506,7 +540,10 @@ export async function saveRecentlyViewedVenueOffline(
               ...payload,
               floorplan: null,
             };
-            const fallbackTx = database.transaction(["recentlyViewedVenues"], "readwrite");
+            const fallbackTx = database.transaction(
+              ["recentlyViewedVenues"],
+              "readwrite",
+            );
             fallbackTx.objectStore("recentlyViewedVenues").put(fallbackPayload);
             return;
           }
@@ -514,10 +551,13 @@ export async function saveRecentlyViewedVenueOffline(
         }
       }
 
-      console.warn("[RecentlyViewedCache] Failed to persist recently viewed venue:", err);
+      console.warn(
+        "[RecentlyViewedCache] Failed to persist recently viewed venue:",
+        err,
+      );
       throw err;
     }
-  });
+  }, "worksphere:recently-viewed-save-lock");
 }
 
 /**
@@ -547,7 +587,9 @@ export async function getRecentlyViewedVenueOffline(
 /**
  * Retrieves all recently viewed venues from IndexedDB, sorted by viewedAt descending.
  */
-export async function getRecentlyViewedVenuesOffline(): Promise<RecentlyViewedVenuePayload[]> {
+export async function getRecentlyViewedVenuesOffline(): Promise<
+  RecentlyViewedVenuePayload[]
+> {
   const database = await initOfflineDB();
   if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
     return [];
@@ -612,4 +654,3 @@ export function scheduleIdleVenueEviction(
     setTimeout(runPurge, 1000);
   }
 }
-

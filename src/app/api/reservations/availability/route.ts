@@ -8,6 +8,10 @@ import {
   conflictDateWindow,
   findConflictingBookings,
 } from "@/lib/booking";
+import {
+  getOrSetVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 export async function GET(request: NextRequest) {
   const venueId = request.nextUrl.searchParams.get("venueId");
@@ -16,7 +20,13 @@ export async function GET(request: NextRequest) {
   const duration = Number(request.nextUrl.searchParams.get("duration") ?? 60);
   const rawTimeZone = request.nextUrl.searchParams.get("timeZone");
 
-  if (!venueId || !date || !rawTime || !Number.isFinite(duration) || duration <= 0) {
+  if (
+    !venueId ||
+    !date ||
+    !rawTime ||
+    !Number.isFinite(duration) ||
+    duration <= 0
+  ) {
     return NextResponse.json(
       { error: "venueId, date, time and positive duration are required" },
       { status: 400 },
@@ -55,41 +65,60 @@ export async function GET(request: NextRequest) {
 
   await ensureVenueLayout(venueId);
 
-  const [seats, bookings] = await Promise.all([
-    prisma.venueSeat.findMany({
-      where: {
-        venueId,
-        isEnabled: true,
-      },
-      orderBy: { seatNumber: "asc" },
-    }),
-    prisma.booking.findMany({
-      where: {
-        venueId,
-        // Include neighbouring dates: a booking that runs past midnight or was
-        // made in another timezone is stored under a different date string.
-        date: { in: conflictDateWindow(date) },
-        status: {
-          in: ["CONFIRMED", "PENDING"],
-        },
-        seatId: {
-          not: null,
-        },
-      },
-      select: {
-        seatId: true,
-        date: true,
-        time: true,
-        duration: true,
-        timeZone: true,
-      },
-    }),
-  ]);
+  const cacheScopeKey = venueAvailabilityCacheKey(venueId);
+  const cacheKey = venueAvailabilityCacheKey(venueId, {
+    date,
+    time,
+    duration,
+    timeZone,
+  });
+  const seats = await getOrSetVenueAvailability(
+    cacheKey,
+    async () => {
+      const [seats, bookings] = await Promise.all([
+        prisma.venueSeat.findMany({
+          where: {
+            venueId,
+            isEnabled: true,
+          },
+          orderBy: { seatNumber: "asc" },
+        }),
+        prisma.booking.findMany({
+          where: {
+            venueId,
+            // Include neighbouring dates: a booking that runs past midnight or was
+            // made in another timezone is stored under a different date string.
+            date: { in: conflictDateWindow(date) },
+            status: {
+              in: ["CONFIRMED", "PENDING", "CHECKED_IN"],
+            },
+            seatId: {
+              not: null,
+            },
+          },
+          select: {
+            seatId: true,
+            date: true,
+            time: true,
+            duration: true,
+            timeZone: true,
+          },
+        }),
+      ]);
 
-  const unavailableSeatIds = new Set(
-    findConflictingBookings({ date, time, timeZone, duration }, bookings)
-      .map((booking) => booking.seatId)
-      .filter((seatId): seatId is string => Boolean(seatId)),
+      const unavailableSeatIds = new Set(
+        findConflictingBookings({ date, time, timeZone, duration }, bookings)
+          .map((booking) => booking.seatId)
+          .filter((seatId): seatId is string => Boolean(seatId)),
+      );
+
+      return seats.map((seat) => ({
+        ...seat,
+        available: !unavailableSeatIds.has(seat.id),
+      }));
+    },
+    60,
+    cacheScopeKey,
   );
 
   return NextResponse.json({
@@ -98,9 +127,6 @@ export async function GET(request: NextRequest) {
     time,
     timeZone,
     duration,
-    seats: seats.map((seat) => ({
-      ...seat,
-      available: !unavailableSeatIds.has(seat.id),
-    })),
+    seats,
   });
 }

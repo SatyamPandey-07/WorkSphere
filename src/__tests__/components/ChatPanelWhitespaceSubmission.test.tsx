@@ -1,7 +1,11 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import React, { useState } from "react";
-import { ChatPanel, ChatPanelProps } from "@/components/chat/ChatPanel";
+import {
+  ChatPanel,
+  ChatPanelProps,
+  sanitizeChatInput,
+} from "@/components/chat/ChatPanel";
 
 // Mock audio playback utility
 jest.mock("@/lib/chatSound", () => ({
@@ -385,4 +389,42 @@ describe("ChatPanel Whitespace Submission Prevention (#4367)", () => {
       });
     });
   });
+
+  describe("sanitizeChatInput & Security Filtering (#6068)", () => {
+    it("returns empty string for null, undefined, or empty values", () => {
+      expect(sanitizeChatInput(null)).toBe("");
+      expect(sanitizeChatInput(undefined)).toBe("");
+      expect(sanitizeChatInput("")).toBe("");
+      expect(sanitizeChatInput("   ")).toBe("");
+    });
+
+    it("normalizes and trims invisible zero-width and Unicode whitespace", () => {
+      expect(sanitizeChatInput("\u200B\u200C\u200D")).toBe("");
+      expect(sanitizeChatInput("  \u3000\u00A0  ")).toBe("");
+      expect(sanitizeChatInput("  \u200BHello WorkSphere\u200B  ")).toBe("Hello WorkSphere");
+    });
+
+    it("strips harmful script and iframe tags", () => {
+      const malicious = '<script>alert("xss")</script>Hello there';
+      expect(sanitizeChatInput(malicious)).toBe("Hello there");
+
+      const iframeInjection = '<iframe src="malicious.site"></iframe>Check this';
+      expect(sanitizeChatInput(iframeInjection)).toBe("Check this");
+    });
+
+    it("filters out empty messages from combinedMessages so blank bubbles do not render", () => {
+      const emptyMessages = [
+        { id: "1", role: "user", content: "   " },
+        { id: "2", role: "assistant", content: "" },
+        { id: "3", role: "user", content: "Valid message" },
+      ];
+
+      render(<ChatPanel messages={emptyMessages} />);
+
+      expect(screen.getByText("Valid message")).toBeInTheDocument();
+      expect(screen.queryByTestId("chat-message-1")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("chat-message-2")).not.toBeInTheDocument();
+    });
+  });
 });
+

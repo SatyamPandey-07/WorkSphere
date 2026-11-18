@@ -22,6 +22,7 @@ import {
 } from "@/lib/openingHours";
 import { OccupancyTrendChart } from "@/components/analytics/OccupancyTrendChart";
 import { BeaconCalibrationDialog } from "@/components/venue/BeaconCalibrationDialog";
+import { PowerGridPhaseMeter } from "@/components/admin/PowerGridPhaseMeter";
 import type { BeaconCalibration } from "@/lib/beaconCalibration";
 
 function VenueAdminContent() {
@@ -649,6 +650,14 @@ function VenueAdminContent() {
                     <OccupancyTrendChart
                       venueId={selectedVenue.id}
                       venueCapacity={selectedVenue.maxCapacity || 50}
+                    />
+                  </div>
+
+                  {/* Real-Time 3-Phase Power Grid Load Distribution Meter */}
+                  <div className="pt-4">
+                    <PowerGridPhaseMeter
+                      panelName={`${selectedVenue.name || "Venue"} Electrical Service Panel (MDP-1)`}
+                      ratedBreakerCapacity={100}
                     />
                   </div>
                 </div>

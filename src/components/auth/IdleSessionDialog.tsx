@@ -4,6 +4,7 @@ import React, { useRef } from "react";
 import { useIdleSession } from "@/hooks/useIdleSession";
 import { Clock, ShieldAlert, LogOut, CheckCircle2, Loader2 } from "lucide-react";
 import { FocusTrap } from "@/components/ui/FocusTrap";
+import { isModalBackdropClick } from "@/lib/modal-interactions";
 
 export interface IdleSessionDialogProps {
   /** Optional custom idle timeout in ms */
@@ -14,6 +15,8 @@ export interface IdleSessionDialogProps {
   redirectUrl?: string;
   /** Disable idle checking if needed */
   enabled?: boolean;
+  /** Whether clicking outside the dialog card should dismiss / extend session (default: true) */
+  closeOnBackdropClick?: boolean;
 }
 
 /**
@@ -28,6 +31,7 @@ export function IdleSessionDialog({
   warningDurationMs,
   redirectUrl = "/sign-in",
   enabled = true,
+  closeOnBackdropClick = true,
 }: IdleSessionDialogProps) {
   const {
     showWarning,
@@ -46,8 +50,19 @@ export function IdleSessionDialog({
 
   if (!showWarning) return null;
 
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!closeOnBackdropClick) return;
+    if (isModalBackdropClick(e)) {
+      extendSession();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      data-testid="idle-session-dialog-overlay"
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
+    >
       <FocusTrap
         role="dialog"
         aria-modal="true"
@@ -56,6 +71,7 @@ export function IdleSessionDialog({
         initialFocusRef={extendButtonRef}
         returnFocus={true}
         onEscape={extendSession}
+        data-testid="idle-session-dialog"
         className="w-full max-w-md bg-zinc-950/95 border border-zinc-800 text-zinc-100 rounded-2xl shadow-2xl p-6 sm:p-7 relative overflow-hidden"
       >
         {/* Top accent bar */}
@@ -69,11 +85,16 @@ export function IdleSessionDialog({
           <div className="space-y-1.5 flex-1">
             <h3
               id="idle-session-title"
+              data-testid="idle-session-title"
               className="text-lg font-semibold text-white tracking-tight flex items-center gap-2"
             >
               Session Timeout Warning
             </h3>
-            <p id="idle-session-desc" className="text-sm text-zinc-400 leading-relaxed">
+            <p
+              id="idle-session-desc"
+              data-testid="idle-session-desc"
+              className="text-sm text-zinc-400 leading-relaxed"
+            >
               You have been inactive for{" "}
               {idleTimeoutMs
                 ? `${Math.max(1, Math.round(idleTimeoutMs / 60000))} minutes`
@@ -84,12 +105,20 @@ export function IdleSessionDialog({
         </div>
 
         {/* Countdown timer pill */}
-        <div className="my-5 p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800/80 flex items-center justify-between">
+        <div
+          role="timer"
+          aria-live="polite"
+          data-testid="idle-session-countdown"
+          className="my-5 p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800/80 flex items-center justify-between"
+        >
           <div className="flex items-center gap-2 text-xs text-zinc-400">
             <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
             <span>Time remaining:</span>
           </div>
-          <span className="text-sm font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20">
+          <span
+            data-testid="idle-session-remaining-seconds"
+            className="text-sm font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20"
+          >
             {remainingSeconds}s
           </span>
         </div>

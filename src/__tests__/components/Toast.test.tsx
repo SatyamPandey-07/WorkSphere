@@ -341,4 +341,40 @@ describe("Toast functionality", () => {
     });
     expect(screen.queryByText("Sync triggered info")).not.toBeInTheDocument();
   });
+
+  it("auto-dismisses with custom duration when duration option is provided", () => {
+    function CustomDurationButton() {
+      const { toast } = useToast();
+      return (
+        <button
+          onClick={() =>
+            toast("Custom duration toast", "success", { duration: 2500 })
+          }
+        >
+          Show Custom
+        </button>
+      );
+    }
+
+    render(
+      <Wrapper>
+        <CustomDurationButton />
+      </Wrapper>,
+    );
+
+    fireEvent.click(screen.getByText("Show Custom"));
+    expect(screen.getByText("Custom duration toast")).toBeInTheDocument();
+
+    // At 2400ms, should still be in the document
+    act(() => {
+      jest.advanceTimersByTime(2400);
+    });
+    expect(screen.getByText("Custom duration toast")).toBeInTheDocument();
+
+    // At 2500ms, should be dismissed
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(screen.queryByText("Custom duration toast")).not.toBeInTheDocument();
+  });
 });

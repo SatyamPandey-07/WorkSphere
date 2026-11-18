@@ -220,6 +220,23 @@ export function resetCalibration(): void {
 }
 
 /**
+ * Configure low-power mode throttling for the AudioWorklet DSP processor.
+ * Decimates telemetry postMessage traffic across the AudioWorklet thread boundary.
+ */
+export function setAudioDSPLowPowerMode(
+  enabled: boolean,
+  telemetryIntervalMs = 100,
+  enableTelemetry = true,
+): void {
+  state.workletNode?.port.postMessage({
+    type: "setLowPowerMode",
+    enabled,
+    telemetryIntervalMs,
+    enableTelemetry,
+  });
+}
+
+/**
  * Get the current noise profile (for visualization).
  */
 export function getNoiseProfile(

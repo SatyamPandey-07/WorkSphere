@@ -76,6 +76,7 @@ export interface DebateResult {
     preCrossExamScores?: Record<PersonaType, number>;
     noveltyReports?: ArgumentNoveltyReport[];
     terminatedEarlyDueToCircularRebuttal?: boolean;
+    epistemicVariance?: number;
 }
 
 export interface DebateRunOptions {
@@ -149,17 +150,28 @@ export class DebateOrchestrator {
             },
         };
 
-        const alpha = Math.max(0.01, Math.min(1.0, config.plasticityRate));
-        const sigma = Math.max(1.0, config.temperature);
+        const safeCurrentScore = Number.isFinite(currentScore) ? currentScore : 50;
+        const alpha = Number.isFinite(config.plasticityRate)
+            ? Math.max(0.01, Math.min(1.0, config.plasticityRate))
+            : 0.30;
+        const sigma = Number.isFinite(config.temperature) && config.temperature > 0
+            ? Math.max(1.0, config.temperature)
+            : 20.0;
 
         let totalInfluence = 0;
         let influentialPeersCount = 0;
 
         for (const peer of peerScores) {
             if (peer.persona === persona) continue;
+            if (!Number.isFinite(peer.score)) continue;
 
             const kappa = config.credibilityMatrix?.[persona]?.[peer.persona] ?? 1.0;
-            const delta = peer.score - currentScore;
+            const delta = peer.score - safeCurrentScore;
+
+            if (Math.abs(delta) < 1e-6) {
+                influentialPeersCount++;
+                continue;
+            }
 
             // Bounded non-linear influence curve
             const tanhResponse = Math.tanh(delta / sigma);
@@ -168,18 +180,45 @@ export class DebateOrchestrator {
         }
 
         const shiftDelta = influentialPeersCount > 0 ? alpha * totalInfluence : 0;
-        const unclampedPosterior = currentScore + shiftDelta;
+        const unclampedPosterior = safeCurrentScore + shiftDelta;
         const posteriorScore = Math.max(0, Math.min(100, Math.round(unclampedPosterior * 10) / 10));
 
         // Confidence inversely scales with epistemic volatility
         const confidence = Math.max(0.1, Math.min(1.0, 1.0 - Math.abs(shiftDelta) / 40.0));
 
         return {
-            priorScore: currentScore,
+            priorScore: safeCurrentScore,
             posteriorScore,
             confidence: Math.round(confidence * 100) / 100,
             shiftDelta: Math.round(shiftDelta * 10) / 10,
         };
+    }
+
+    /**
+     * Calculates the sample epistemic variance among persona conviction scores,
+     * guarding against zero-variance division by zero or NaN propagation (#5775).
+     */
+    public static calculateEpistemicVariance(scores: number[]): number {
+        if (!scores || scores.length <= 1) {
+            return 0.0;
+        }
+
+        const validScores = scores.filter(s => typeof s === 'number' && Number.isFinite(s));
+        if (validScores.length <= 1) {
+            return 0.0;
+        }
+
+        const n = validScores.length;
+        const mean = validScores.reduce((sum, s) => sum + s, 0) / n;
+        const sumSquaredDiff = validScores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0);
+
+        // Guard against zero-variance / micro-float precision issues
+        if (sumSquaredDiff < 1e-6) {
+            return 0.0;
+        }
+
+        const variance = sumSquaredDiff / (n - 1);
+        return Number.isFinite(variance) ? Math.round(variance * 1000) / 1000 : 0.0;
     }
 
     /**
@@ -579,10 +618,14 @@ export class DebateOrchestrator {
                 consecutiveRepetitiveRounds = 0;
             }
 
-            // Check convergence criterion: max pairwise discrepancy < epsilon
-            const currentScoreValues = Object.values(currentScores);
-            const scoreSpread = Math.max(...currentScoreValues) - Math.min(...currentScoreValues);
-            if (scoreSpread <= this.convictionConfig.convergenceThreshold) {
+            // Check convergence criterion: max pairwise discrepancy < epsilon or zero epistemic variance
+            const currentScoreValues = Object.values(currentScores).filter(s => Number.isFinite(s));
+            const scoreSpread = currentScoreValues.length > 0
+                ? Math.max(...currentScoreValues) - Math.min(...currentScoreValues)
+                : 0;
+            const variance = DebateOrchestrator.calculateEpistemicVariance(currentScoreValues);
+
+            if (scoreSpread <= this.convictionConfig.convergenceThreshold || (currentScoreValues.length > 1 && variance <= 1e-4)) {
                 hasConverged = true;
                 break;
             }
@@ -641,12 +684,16 @@ export class DebateOrchestrator {
             SOCIAL_NETWORKER: Math.round(currentScores.SOCIAL_NETWORKER),
         };
 
+        const finalScoreValues = Object.values(currentScores).filter(s => Number.isFinite(s));
+        const finalEpistemicVariance = DebateOrchestrator.calculateEpistemicVariance(finalScoreValues);
+
         return {
             rounds,
             finalScores,
             convictionTrajectories,
             hasConverged,
             totalRoundsExecuted: executedRounds,
+            epistemicVariance: finalEpistemicVariance,
             crossExaminations: crossExaminations.length > 0 ? crossExaminations : undefined,
             preCrossExamScores: crossExaminations.length > 0 ? preCrossExamScores : undefined,
             noveltyReports: noveltyReports.length > 0 ? noveltyReports : undefined,

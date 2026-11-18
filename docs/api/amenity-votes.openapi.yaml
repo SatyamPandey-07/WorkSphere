@@ -1,0 +1,449 @@
+openapi: 3.1.0
+info:
+  title: WorkSphere Venue Amenity Voting API
+  version: 1.0.0
+  description: |
+    Read and submit community votes for venue amenities. Amenity identifiers
+    are restricted to the supported voting categories documented below.
+servers:
+  - url: /
+    description: Current WorkSphere deployment
+tags:
+  - name: Venue Amenity Votes
+    description: Venue-scoped amenity vote metrics and caller votes
+  - name: Amenity Vote Submission
+    description: Legacy body-scoped amenity vote submission endpoint
+paths:
+  /api/venues/{venueId}/amenity-votes:
+    parameters:
+      - $ref: "#/components/parameters/VenueId"
+    get:
+      operationId: getVenueAmenityVotes
+      tags:
+        - Venue Amenity Votes
+      summary: Get amenity vote metrics for a venue
+      description: Returns aggregate metrics and the authenticated caller's vote for each amenity.
+      security: []
+      responses:
+        "200":
+          description: Amenity vote metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmenityMetricsResponse"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    post:
+      operationId: submitVenueAmenityVote
+      tags:
+        - Venue Amenity Votes
+      summary: Submit or update a venue amenity vote
+      security:
+        - clerkBearerAuth: []
+      requestBody:
+        $ref: "#/components/requestBodies/AmenityVote"
+      responses:
+        "200":
+          description: Updated amenity vote metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmenityVoteResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      operationId: deleteVenueAmenityVote
+      tags:
+        - Venue Amenity Votes
+      summary: Delete the caller's vote for a venue amenity
+      description: Removes the authenticated caller's vote for the selected amenity.
+      security:
+        - clerkBearerAuth: []
+      requestBody:
+        $ref: "#/components/requestBodies/AmenityId"
+      responses:
+        "200":
+          description: Vote deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/venues/amenity-vote:
+    get:
+      operationId: getAmenityVoteEndpoint
+      tags:
+        - Amenity Vote Submission
+      summary: Get amenity vote endpoint metadata
+      description: Returns the supported amenity identifiers for clients using the body-scoped endpoint.
+      security: []
+      responses:
+        "200":
+          description: Supported amenity identifiers
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - amenities
+                properties:
+                  amenities:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AmenityId"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      operationId: submitAmenityVote
+      tags:
+        - Amenity Vote Submission
+      summary: Submit or update an amenity vote
+      security:
+        - clerkBearerAuth: []
+      requestBody:
+        $ref: "#/components/requestBodies/BodyScopedAmenityVote"
+      responses:
+        "200":
+          description: Updated amenity vote metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmenityVoteResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    delete:
+      operationId: deleteAmenityVote
+      tags:
+        - Amenity Vote Submission
+      summary: Delete the caller's amenity vote
+      description: Removes the authenticated caller's vote identified by venue and amenity.
+      security:
+        - clerkBearerAuth: []
+      requestBody:
+        $ref: "#/components/requestBodies/BodyScopedAmenityId"
+      responses:
+        "200":
+          description: Vote deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/VenueNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    clerkBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Clerk session token
+  parameters:
+    VenueId:
+      name: venueId
+      in: path
+      required: true
+      description: WorkSphere venue identifier
+      schema:
+        type: string
+        minLength: 1
+  requestBodies:
+    AmenityVote:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AmenityVoteRequest"
+          examples:
+            upvote:
+              value:
+                amenity: wifi_speed
+                isUpvote: true
+    BodyScopedAmenityVote:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/BodyScopedAmenityVoteRequest"
+          examples:
+            downvote:
+              value:
+                venueId: venue_123
+                amenity: quiet_zone
+                isUpvote: false
+    AmenityId:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AmenityIdRequest"
+          examples:
+            ergonomicChair:
+              value:
+                amenity: ergonomic_chair
+    BodyScopedAmenityId:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/BodyScopedAmenityIdRequest"
+          examples:
+            powerOutlets:
+              value:
+                venueId: venue_123
+                amenity: power_outlets
+  schemas:
+    AmenityId:
+      type: string
+      enum:
+        - wifi_speed
+        - ergonomic_chair
+        - natural_light
+        - quiet_zone
+        - power_outlets
+    AmenityIdRequest:
+      type: object
+      required:
+        - amenity
+      properties:
+        amenity:
+          $ref: "#/components/schemas/AmenityId"
+      additionalProperties: false
+    AmenityVoteRequest:
+      type: object
+      required:
+        - amenity
+        - isUpvote
+      properties:
+        amenity:
+          $ref: "#/components/schemas/AmenityId"
+        isUpvote:
+          type: boolean
+      additionalProperties: false
+    BodyScopedAmenityVoteRequest:
+      allOf:
+        - $ref: "#/components/schemas/AmenityVoteRequest"
+        - type: object
+          required:
+            - venueId
+          properties:
+            venueId:
+              type: string
+              minLength: 1
+          additionalProperties: false
+    BodyScopedAmenityIdRequest:
+      type: object
+      required:
+        - venueId
+        - amenity
+      properties:
+        venueId:
+          type: string
+          minLength: 1
+        amenity:
+          $ref: "#/components/schemas/AmenityId"
+      additionalProperties: false
+    AmenityMetric:
+      type: object
+      required:
+        - confidenceScore
+        - upvotes
+        - downvotes
+        - hidden
+        - userVote
+      properties:
+        confidenceScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+        upvotes:
+          type: integer
+          minimum: 0
+        downvotes:
+          type: integer
+          minimum: 0
+        hidden:
+          type: boolean
+        userVote:
+          type:
+            - boolean
+            - "null"
+    AmenityMetricsResponse:
+      type: object
+      required:
+        - success
+        - metrics
+      properties:
+        success:
+          const: true
+        metrics:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/AmenityMetric"
+    AmenityVoteResponse:
+      type: object
+      required:
+        - success
+        - amenity
+        - upvotes
+        - downvotes
+        - confidenceScore
+        - hidden
+      properties:
+        success:
+          const: true
+        amenity:
+          $ref: "#/components/schemas/AmenityId"
+        upvotes:
+          type: integer
+          minimum: 0
+        downvotes:
+          type: integer
+          minimum: 0
+        confidenceScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+        hidden:
+          type: boolean
+    SuccessResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          const: true
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          const: false
+        error:
+          type: string
+        code:
+          type: string
+    ErrorResponseWithoutSuccess:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+    UnauthorizedError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            code:
+              const: UNAUTHORIZED
+    VenueNotFoundError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponse"
+        - type: object
+          properties:
+            code:
+              const: VENUE_NOT_FOUND
+    RateLimitedError:
+      allOf:
+        - $ref: "#/components/schemas/ErrorResponseWithoutSuccess"
+        - type: object
+          properties:
+            code:
+              const: RATE_LIMITED
+  responses:
+    BadRequest:
+      description: Invalid request body or unsupported amenity identifier
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error: Missing required parameters
+            code: VALIDATION_FAILED
+    Unauthorized:
+      description: Clerk authentication is required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UnauthorizedError"
+          example:
+            success: false
+            error: Unauthorized
+            code: UNAUTHORIZED
+    VenueNotFound:
+      description: Venue was not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/VenueNotFoundError"
+          example:
+            success: false
+            error: Venue not found
+            code: VENUE_NOT_FOUND
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RateLimitedError"
+          example:
+            error: Rate limited
+            code: RATE_LIMITED
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

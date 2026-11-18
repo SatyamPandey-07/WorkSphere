@@ -143,4 +143,43 @@ describe("Session Invite Tokens & WebCrypto Generator (src/lib/sessionInviteToke
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Invalid invite token format.");
   });
+
+  describe("Hardening & Edge Cases (#6758)", () => {
+    it("rejects generateSessionInviteToken with invalid sessionId or NaN duration", async () => {
+      await expect(generateSessionInviteToken("")).rejects.toThrow("sessionId must be a non-empty string.");
+      await expect(generateSessionInviteToken("   ")).rejects.toThrow("sessionId must be a non-empty string.");
+      await expect(generateSessionInviteToken(null as any)).rejects.toThrow("sessionId must be a non-empty string.");
+      await expect(generateSessionInviteToken("session-1", NaN)).rejects.toThrow("expiresInHours must be a finite number.");
+      await expect(generateSessionInviteToken("session-1", Infinity)).rejects.toThrow("expiresInHours must be a finite number.");
+    });
+
+    it("safely generates secure nonce when bytesCount is negative, NaN, or non-integer", () => {
+      expect(generateSecureNonce(-5)).toHaveLength(32); // defaults to 16 bytes = 32 hex chars
+      expect(generateSecureNonce(NaN as any)).toHaveLength(32);
+      expect(generateSecureNonce(2.5 as any)).toHaveLength(32);
+    });
+
+    it("prevents participant capacity limit bypass with NaN or invalid count", async () => {
+      const token = await generateSessionInviteToken("session-cap", 24, 5);
+      // Valid count below limit
+      expect(validateSessionInviteToken(token, 4, "session-cap").valid).toBe(true);
+      // Exceeds limit
+      expect(validateSessionInviteToken(token, 5, "session-cap").valid).toBe(false);
+      // NaN or null participant count safely treated as 0 (not bypassing limit or throwing)
+      const resNaN = validateSessionInviteToken(token, NaN as any, "session-cap");
+      expect(resNaN.valid).toBe(true);
+    });
+
+    it("rejects token when payload has non-finite expiresAt or non-string sessionId", () => {
+      const payloadB64 = encodeBase64Url(JSON.stringify({ sessionId: 12345, expiresAt: NaN, nonce: "test" }));
+      // Generate with matching HMAC using testing default secret
+      const result = validateSessionInviteToken(`${payloadB64}.fake`);
+      expect(result.valid).toBe(false);
+    });
+
+    it("safely handles non-string inputs to base64 helpers", () => {
+      expect(encodeBase64Url(null as any)).toBe("");
+      expect(decodeBase64Url(null as any)).toBe("");
+    });
+  });
 });

@@ -346,3 +346,110 @@ The project uses Tailwind backdrop blur utilities to create translucent, glass-s
 | `backdrop-blur-xl` | Full-screen modals and dialogs              |
 
 Backdrop blur utilities are commonly combined with semi-transparent backgrounds, borders, and shadows to achieve the project's glassmorphism design.
+
+---
+
+## 9. Hal Jordan Lantern Emerald Design Tokens (`--construct-*` & `--glow-lantern`)
+
+The **Lantern Emerald** design system introduces high-energy willpower constructs and aerospace cockpit HUD aesthetics. It provides custom CSS properties, Tailwind utilities, and glowing box-shadow classes designed for hard-light holographic interfaces.
+
+### 9.1 Lantern Emerald Token Registry
+
+| CSS Custom Property | HEX / RGBA Value | Tailwind Utility Class | Semantic Purpose |
+| :--- | :--- | :--- | :--- |
+| `--construct-emerald` | `#10b981` | `text-emerald-500` / `bg-emerald-500` | Primary construct line work, active toggles, and glyphs |
+| `--construct-mint` | `#34d399` | `text-emerald-400` / `bg-emerald-400` | High-visibility reticles, cardinal pips, and HUD boresights |
+| `--construct-surface` | `rgba(4, 16, 12, 0.85)` | `bg-[#04100c]/85` | Deep cosmic obsidian backdrop fill |
+| `--construct-border` | `rgba(16, 185, 129, 0.25)`| `border-emerald-500/25` | Hairline translucent hard-light construct borders |
+| `--glow-lantern` | `0 0 16px rgba(16, 185, 129, 0.45)` | `.construct-glow` | Standard willpower construct ambient bloom |
+| `--glow-lantern-intense` | `0 0 24px rgba(52, 211, 153, 0.7)` | `.construct-glow-intense` | Lock-on reticles, alert strobes, and energy surges |
+| `--hud-font-display` | `'Orbitron', sans-serif` | `.font-hud-display` | Aerospace telemetry headers and callout badges |
+| `--hud-font-mono` | `'JetBrains Mono', monospace` | `.font-hud-mono` | Fixed-width coordinate streams and numeric readouts |
+
+### 9.2 CSS Class Declarations (`src/app/globals.css`)
+
+```css
+:root {
+  --construct-emerald: #10b981;
+  --construct-mint: #34d399;
+  --construct-surface: rgba(4, 16, 12, 0.85);
+  --construct-border: rgba(16, 185, 129, 0.25);
+  --glow-lantern: 0 0 16px rgba(16, 185, 129, 0.45);
+  --glow-lantern-intense: 0 0 24px rgba(52, 211, 153, 0.7);
+}
+
+.construct-glow {
+  box-shadow: var(--glow-lantern);
+}
+
+.construct-glow-intense {
+  box-shadow: var(--glow-lantern-intense);
+}
+
+.construct-glow-text {
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+```
+
+### 9.3 Code Example: Hard-Light Construct Card Component
+
+```tsx
+import React from "react";
+
+export function HardLightConstructCard({
+  title = "SECTOR 2814 // COWORKING CONSTRUCT",
+  status = "ENERGY OPTIMAL",
+  powerPercent = 100,
+}: {
+  title?: string;
+  status?: string;
+  powerPercent?: number;
+}) {
+  return (
+    <div className="relative p-6 rounded-2xl bg-[#04100c]/85 backdrop-blur-md backdrop-saturate-[1.8] border border-emerald-500/25 construct-glow overflow-hidden transition-all duration-200 hover:border-emerald-500/40">
+      {/* Top Edge High-Energy Light Guide */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent" />
+
+      {/* 45-Degree Tactical Corner Brackets */}
+      <div className="absolute top-2 left-2 w-2 h-2 border-t-2 border-l-2 border-emerald-400" />
+      <div className="absolute top-2 right-2 w-2 h-2 border-t-2 border-r-2 border-emerald-400" />
+      <div className="absolute bottom-2 left-2 w-2 h-2 border-b-2 border-l-2 border-emerald-400" />
+      <div className="absolute bottom-2 right-2 w-2 h-2 border-b-2 border-r-2 border-emerald-400" />
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-mono text-sm font-bold tracking-wider text-emerald-100 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+          {title}
+        </h3>
+        <span className="font-mono text-[10px] uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+          {status}
+        </span>
+      </div>
+
+      {/* Power Telemetry Bar */}
+      <div className="space-y-1 mb-4">
+        <div className="flex justify-between text-xs font-mono text-zinc-400">
+          <span>RING CHARGE</span>
+          <span className="text-emerald-400 font-bold">{powerPercent}%</span>
+        </div>
+        <div className="h-1.5 w-full bg-emerald-950/40 rounded-full overflow-hidden border border-emerald-500/20">
+          <div
+            className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full shadow-[0_0_8px_#10b981]"
+            style={{ width: `${powerPercent}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Construct Interaction Button */}
+      <button
+        type="button"
+        className="w-full py-2.5 px-4 rounded-xl font-mono text-xs font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-400/30 shadow-lg shadow-emerald-950/50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+      >
+        ENGAGE CONSTRUCT
+      </button>
+    </div>
+  );
+}
+```
+

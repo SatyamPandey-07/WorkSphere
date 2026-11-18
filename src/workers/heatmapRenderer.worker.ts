@@ -111,3 +111,5 @@ self.addEventListener(
     }
   },
 );
+
+export {};

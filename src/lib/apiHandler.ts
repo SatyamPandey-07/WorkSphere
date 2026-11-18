@@ -31,7 +31,7 @@ export function apiHandler<TBody = any, TParams = any>({
 }: ApiHandlerOptions<TBody, TParams>) {
   return async (
     req: NextRequest,
-    context?: { params?: Promise<TParams> | TParams },
+    context: any = {},
   ): Promise<NextResponse | Response> => {
     try {
       // 1. Authentication Check

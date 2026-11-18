@@ -11,8 +11,8 @@ import {
   Maximize2,
   Minimize2,
 } from "lucide-react";
-import { useEffect, useState, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { motion } from "framer-motion";
 
 const AGENTS = [
   {
@@ -54,6 +54,79 @@ const TERMINAL_MESSAGES = [
   "Calculating 'Focus-Mode' compatibility...",
   "Synthesizing results for WorkSphere AI...",
 ];
+// Green Lantern Easter egg output
+// Green Lantern oath displayed by the terminal Easter egg.
+const GREEN_LANTERN_OATH =
+  "In brightest day, in blackest night, no evil shall escape my sight. Let those who worship evil\u0027s might, beware my power: Green Lantern\u0027s light!";
+
+const playLanternChime = () => {
+  if (typeof window === "undefined" || !window.AudioContext) return;
+
+  let context: AudioContext | undefined;
+
+  try {
+    context = new window.AudioContext();
+
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const now = context.currentTime;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(660, now);
+    oscillator.frequency.exponentialRampToValueAtTime(990, now + 0.2);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+
+    oscillator.onended = () => {
+      void context?.close().catch(() => {});
+    };
+
+    void context.resume().catch(() => {});
+    oscillator.start(now);
+    oscillator.stop(now + 0.35);
+  } catch {
+    void context?.close().catch(() => {});
+  }
+};
+
+export interface AfterburnerChip {
+  id: string;
+  label: string;
+  payload: string;
+  description?: string;
+}
+
+export const AFTERBURNER_CHIPS: AfterburnerChip[] = [
+  {
+    id: "full-thrust",
+    label: "⚡ Full Thrust",
+    payload: "Activate Full Thrust for priority venue search",
+    description: "Maximum engine output for immediate search velocity",
+  },
+  {
+    id: "lock-sector",
+    label: "🎯 Lock Sector 2814",
+    payload: "Lock Sector 2814 tactical coordinates",
+    description: "Acquire telemetry lock on Sector 2814",
+  },
+  {
+    id: "hardlight-shield",
+    label: "🛡️ Hard-Light Shield",
+    payload: "Deploy Hard-Light Shield barrier",
+    description: "Construct defensive perimeter around desk zone",
+  },
+  {
+    id: "radar-sweep",
+    label: "📡 Radar Sweep",
+    payload: "Initiate 360-degree sector radar sweep",
+    description: "Sweep sector for nearby colleague presence",
+  },
+];
 
 export interface BrainTerminalProps {
   onClose?: () => void;
@@ -61,6 +134,7 @@ export interface BrainTerminalProps {
   className?: string;
   onCommand?: (command: string) => void;
   onSubmitCommand?: (command: string) => void;
+  afterburnerChips?: AfterburnerChip[];
 }
 
 export function BrainTerminal({
@@ -69,6 +143,7 @@ export function BrainTerminal({
   className = "",
   onCommand,
   onSubmitCommand,
+  afterburnerChips,
 }: BrainTerminalProps) {
   const [activeStep, setActiveStep] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
@@ -77,8 +152,10 @@ export function BrainTerminal({
   const [commandInput, setCommandInput] = useState("");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [lanternCommand, setLanternCommand] = useState("");
   const draftInputRef = useRef("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleCommandSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -93,11 +170,39 @@ export function BrainTerminal({
     // Preserve submitted command in history buffer
     setCommandHistory((prev) => [...prev, trimmed]);
 
+    const normalizedCommand = trimmed.toLowerCase().replace(/^\/+/, "");
+    if (["oath", "lantern", "hal"].includes(normalizedCommand)) {
+      setLanternCommand(trimmed);
+      playLanternChime();
+      return;
+    }
     // Append executed command to live logs
     setLogs((prev) => [...prev, trimmed].slice(-4));
 
     onCommand?.(trimmed);
     onSubmitCommand?.(trimmed);
+  };
+
+  const chips = afterburnerChips ?? AFTERBURNER_CHIPS;
+
+  const handleChipClick = (payload: string) => {
+    const trimmed = payload.trim();
+    if (!trimmed) return;
+
+    // Autofill command input state
+    setCommandInput(trimmed);
+    draftInputRef.current = "";
+    setHistoryIndex(-1);
+
+    // Preserve executed command in history buffer and live logs
+    setCommandHistory((prev) => [...prev, trimmed]);
+    setLogs((prev) => [...prev, trimmed].slice(-4));
+
+    // Dispatch predefined query payload to chat concierge
+    onCommand?.(trimmed);
+    onSubmitCommand?.(trimmed);
+
+    inputRef.current?.focus();
   };
 
   const handleCommandKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -135,12 +240,30 @@ export function BrainTerminal({
     }
   };
 
-  // Bind keydown event listener for Escape key to close terminal
+  // Terminal shortcuts are scoped to this panel so they never intercept
+  // the application's global keyboard shortcuts while focus is elsewhere.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         onClose?.();
+        return;
+      }
+
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "k" &&
+        e.target instanceof Node &&
+        containerRef.current?.contains(e.target)
+      ) {
+        e.preventDefault();
+        setLogs([]);
+        setLanternCommand("");
+        setCommandInput("");
+        setCommandHistory([]);
+        setHistoryIndex(-1);
+        draftInputRef.current = "";
+        inputRef.current?.focus();
       }
     },
     [onClose],
@@ -176,8 +299,10 @@ export function BrainTerminal({
 
   return (
     <div
+      ref={containerRef}
       data-testid="brain-terminal-container"
-      className={`glass-card rounded-2xl p-6 glow-accent mx-auto overflow-hidden transition-all duration-300 ${
+      tabIndex={-1}
+      className={`brain-terminal-panel glass-card rounded-2xl p-6 glow-accent mx-auto overflow-hidden transition-all duration-300 ${
         isMaximized ? "max-w-3xl w-full" : "max-w-lg"
       } ${className}`}
     >
@@ -343,7 +468,15 @@ export function BrainTerminal({
             Live Execution Logs
           </span>
         </div>
-        <div className="space-y-1">
+        <div
+          className="space-y-1"
+          role="log"
+          aria-label="Brain terminal execution log"
+          aria-live="polite"
+          aria-atomic="false"
+          aria-relevant="additions text"
+          data-testid="terminal-log-region"
+        >
           {logs.map((log, i) => (
             <div
               key={i}
@@ -356,6 +489,55 @@ export function BrainTerminal({
               )}
             </div>
           ))}
+          {lanternCommand && (
+            <motion.div
+              key={lanternCommand}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7 }}
+              data-testid="green-lantern-oath-output"
+              className="mt-3 rounded-lg border border-emerald-400/40 bg-emerald-950/30 p-4 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+            >
+              <div className="mb-3 text-center font-mono text-xs font-bold tracking-[0.3em] text-emerald-300 animate-pulse">
+                ✦ EMERALD POWER ACTIVATED ✦
+              </div>
+              <pre className="whitespace-pre-wrap text-center font-mono text-sm leading-relaxed text-emerald-300 [text-shadow:0_0_8px_rgba(52,211,153,0.8)]">
+                {GREEN_LANTERN_OATH}
+              </pre>
+              <div className="mt-3 text-center font-mono text-[9px] tracking-widest text-emerald-500">
+                GREEN LANTERN CORPS
+              </div>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Afterburner Quick-Prompt Flight Command Chips */}
+        <div
+          data-testid="afterburner-chips-container"
+          className="mt-3 pt-3 border-t border-white/5"
+        >
+          <div className="flex items-center justify-between mb-1.5 px-0.5">
+            <span className="text-[9px] uppercase tracking-widest text-emerald-400 font-mono font-bold flex items-center gap-1">
+              <span>⚡</span> Afterburner Flight Commands
+            </span>
+          </div>
+          <div
+            data-testid="afterburner-chips-list"
+            className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none"
+          >
+            {chips.map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                data-testid={`afterburner-chip-${chip.id}`}
+                onClick={() => handleChipClick(chip.payload)}
+                className="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-mono font-medium border border-emerald-500/30 bg-emerald-950/20 text-emerald-300 hover:bg-emerald-500/10 hover:border-emerald-400 hover:text-emerald-200 hover:shadow-[0_0_10px_rgba(16,185,129,0.35)] active:scale-95 transition-all duration-200 cursor-pointer"
+                title={chip.description || chip.payload}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Command Input Prompt */}

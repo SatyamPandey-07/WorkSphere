@@ -51,7 +51,7 @@ export class DTLSHandshake {
         ["sign", "verify"],
       );
 
-      this.localPrivateKey = keyPair.privateKey;
+      this.localPrivateKey = keyPair.privateKey as any;
 
       const exportedKey = await crypto.subtle.exportKey(
         "spki",

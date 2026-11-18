@@ -35,6 +35,10 @@ export interface OfflineVenue {
   amenities?: string[];
   floorplan?: unknown;
   hasAncHeadsetRental?: boolean;
+  wifiQuality?: number | null;
+  hasOutlets?: boolean;
+  noiseLevel?: string | null;
+  imageUrl?: string | null;
   savedAt?: number;
   lastAccessedAt?: number;
   isPinned?: boolean;
@@ -75,11 +79,7 @@ export interface ReceiptExportItem {
 }
 
 export type QueuedReviewStatus =
-  | "PENDING"
-  | "SYNCING"
-  | "FAILED"
-  | "CONFLICT"
-  | "AUTH_REQUIRED";
+  "PENDING" | "SYNCING" | "FAILED" | "CONFLICT" | "AUTH_REQUIRED";
 
 export interface QueuedVenueReview {
   id: string; // Client-generated UUID (idempotency key)
@@ -173,12 +173,7 @@ export interface IRepository<T, ID = string> {
 // ─── Generic Sync Engine Interface ────────────────────────────────────────────
 
 export type SyncItemStatus =
-  | "PENDING"
-  | "SYNCING"
-  | "SYNCED"
-  | "FAILED"
-  | "CONFLICT"
-  | "AUTH_REQUIRED";
+  "PENDING" | "SYNCING" | "SYNCED" | "FAILED" | "CONFLICT" | "AUTH_REQUIRED";
 
 export interface SyncItem<T = unknown> {
   id: string;
@@ -221,6 +216,5 @@ export interface OfflineQueueItem<T = unknown> {
 }
 
 export type OfflineQueueHandler<T = unknown> = (
-  item: OfflineQueueItem<T>
+  item: OfflineQueueItem<T>,
 ) => Promise<boolean | void>;
-

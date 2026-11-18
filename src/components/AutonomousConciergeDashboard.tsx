@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Sparkles,
   X,
@@ -11,6 +11,10 @@ import {
   Info,
   RotateCcw,
   ExternalLink,
+  Volume2,
+  VolumeX,
+  ShieldCheck,
+  ArrowRight,
 } from "lucide-react";
 
 export interface ConciergeNotification {
@@ -31,6 +35,20 @@ export interface AutonomousConciergeDashboardProps {
   className?: string;
   title?: string;
   subtitle?: string;
+  /** Real-time live decibel level from sensor or microphone telemetry */
+  liveDecibelLevel?: number;
+  /** Focus noise budget threshold in dB (default: 68 dB) */
+  acousticThresholdDb?: number;
+  /** Current user desk identifier (default: "Desk-Atrium-12") */
+  currentDeskId?: string;
+  /** Current user sector or zone name (default: "Glass Atrium") */
+  currentZoneName?: string;
+  /** Recommended quiet target zone for acoustic rerouting */
+  targetQuietZoneName?: string;
+  /** Callback fired when user engages tactical acoustic desk reroute */
+  onEngageAcousticReroute?: (targetZoneName: string, targetDeskId: string) => void;
+  /** Whether to render live acoustic telemetry controls & simulation trigger (default: true) */
+  enableAcousticTelemetry?: boolean;
 }
 
 export const SESSION_STORAGE_DISMISSED_KEY =
@@ -85,11 +103,77 @@ export function AutonomousConciergeDashboard({
   className = "",
   title = "Autonomous Concierge",
   subtitle = "AI-driven real-time recommendations & workspace insights tailored for you.",
+  liveDecibelLevel,
+  acousticThresholdDb = 68,
+  currentDeskId = "Desk-Atrium-12",
+  currentZoneName = "Sector-02 // Glass Atrium",
+  targetQuietZoneName = "Sector-03 // Acoustic Library",
+  onEngageAcousticReroute,
+  enableAcousticTelemetry = true,
 }: AutonomousConciergeDashboardProps) {
-  const allNotifications = customNotifications || DEFAULT_CONCIERGE_NOTIFICATIONS;
-
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => new Set());
   const [fadingOutIds, setFadingOutIds] = useState<Set<string>>(() => new Set());
+
+  // Real-time acoustic telemetry and simulated spike trigger
+  const [simulatedDb, setSimulatedDb] = useState<number | null>(null);
+  const currentDb = simulatedDb !== null ? simulatedDb : (liveDecibelLevel ?? 52);
+  const isAcousticTurbulence = currentDb > acousticThresholdDb;
+
+  // Active reroute confirmation status
+  const [rerouteConfirmation, setRerouteConfirmation] = useState<{
+    applied: boolean;
+    deskId: string;
+    zoneName: string;
+    timestamp: string;
+  } | null>(null);
+
+  const acousticNotificationId = "dynamic-acoustic-reroute-trigger";
+
+  const handleEngageReroute = useCallback(() => {
+    const targetDesk = "Desk-Quiet-3B";
+    if (onEngageAcousticReroute) {
+      onEngageAcousticReroute(targetQuietZoneName, targetDesk);
+    }
+    setRerouteConfirmation({
+      applied: true,
+      deskId: targetDesk,
+      zoneName: targetQuietZoneName,
+      timestamp: "Just now",
+    });
+  }, [onEngageAcousticReroute, targetQuietZoneName]);
+
+  const toggleSimulateSpike = useCallback(() => {
+    setSimulatedDb((prev) => (prev === 78 ? 44 : 78));
+  }, []);
+
+  // Dynamic acoustic reroute notification generated when noise exceeds focus threshold
+  const dynamicAcousticNotification: ConciergeNotification | null = useMemo(() => {
+    if (!isAcousticTurbulence || rerouteConfirmation?.applied) return null;
+    return {
+      id: acousticNotificationId,
+      title: "Acoustic Noise Spike Detected // Tactical Reroute Available",
+      message: `Ambient noise at your active desk ${currentDeskId} (${currentDb} dB) exceeds your focus threshold (${acousticThresholdDb} dB). Quiet Pod 3B (38 dB) in ${targetQuietZoneName} is open with zero transfer fee.`,
+      type: "alert",
+      timestamp: "Live telemetry",
+      actionLabel: "Engage Tactical Reroute",
+      category: "Acoustic Auto-Reroute",
+    };
+  }, [
+    isAcousticTurbulence,
+    rerouteConfirmation,
+    currentDb,
+    acousticThresholdDb,
+    currentDeskId,
+    targetQuietZoneName,
+  ]);
+
+  const allNotifications = useMemo(() => {
+    const base = customNotifications || DEFAULT_CONCIERGE_NOTIFICATIONS;
+    if (dynamicAcousticNotification && !dismissedIds.has(acousticNotificationId)) {
+      return [dynamicAcousticNotification, ...base];
+    }
+    return base;
+  }, [customNotifications, dynamicAcousticNotification, dismissedIds]);
 
   // Load dismissed notification IDs from session state
   useEffect(() => {
@@ -227,18 +311,80 @@ export function AutonomousConciergeDashboard({
           </div>
         </div>
 
-        {dismissedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Live Acoustic Telemetry Badge & Control */}
+          {enableAcousticTelemetry && (
+            <div className="flex items-center gap-2">
+              <div
+                data-testid="live-acoustic-telemetry"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-semibold border transition-all ${
+                  isAcousticTurbulence
+                    ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30 animate-pulse shadow-sm"
+                    : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                }`}
+                title={`Live acoustic monitor: ${currentDb} dB (focus threshold: ${acousticThresholdDb} dB)`}
+              >
+                {isAcousticTurbulence ? (
+                  <VolumeX className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                ) : (
+                  <Volume2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                )}
+                <span>{currentDb} dB</span>
+                <span className="text-[10px] text-zinc-400">/ max {acousticThresholdDb}</span>
+                {isAcousticTurbulence && (
+                  <span className="text-[9px] font-black uppercase tracking-wider px-1 py-0.5 rounded bg-red-500 text-white ml-0.5">
+                    SPIKE
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                data-testid="simulate-acoustic-spike-btn"
+                onClick={toggleSimulateSpike}
+                className="px-2.5 py-1.5 rounded-xl text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                title="Toggle simulated acoustic noise spike for testing"
+              >
+                {isAcousticTurbulence ? "Normalize dB (44)" : "Simulate Spike (78dB)"}
+              </button>
+            </div>
+          )}
+
+          {dismissedIds.size > 0 && (
+            <button
+              type="button"
+              onClick={handleResetDismissed}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 bg-zinc-100 dark:bg-zinc-800/60 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+              title="Restore hidden notifications"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Dismissed ({dismissedIds.size})</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Reroute Success Banner */}
+      {rerouteConfirmation?.applied && (
+        <div
+          data-testid="acoustic-reroute-success-banner"
+          className="mb-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs flex items-center justify-between gap-3 animate-in fade-in"
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span>
+              <strong>Tactical Reroute Engaged:</strong> Migrated from {currentZoneName} to <strong>{rerouteConfirmation.zoneName}</strong> ({rerouteConfirmation.deskId}). Zero cancellation fees applied.
+            </span>
+          </div>
           <button
             type="button"
-            onClick={handleResetDismissed}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 bg-zinc-100 dark:bg-zinc-800/60 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-            title="Restore hidden notifications"
+            onClick={() => setRerouteConfirmation(null)}
+            className="text-emerald-600 dark:text-emerald-400 hover:underline text-[11px] font-semibold shrink-0"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Dismissed ({dismissedIds.size})</span>
+            Dismiss
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Notifications Container */}
       <div
@@ -272,12 +418,17 @@ export function AutonomousConciergeDashboard({
         ) : (
           activeNotifications.map((n) => {
             const isFading = fadingOutIds.has(n.id);
+            const isAcousticRerouteCard = n.id === acousticNotificationId;
 
             return (
               <div
                 key={n.id}
                 data-testid={`concierge-notification-${n.id}`}
-                className={`group relative rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-800/40 p-4 transition-all duration-300 ease-in-out hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-md ${
+                className={`group relative rounded-xl border p-4 transition-all duration-300 ease-in-out hover:shadow-md ${
+                  isAcousticRerouteCard
+                    ? "border-amber-400/80 bg-amber-500/10 dark:bg-amber-950/20 shadow-amber-500/10"
+                    : "border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-800/40 hover:border-zinc-300 dark:hover:border-zinc-700"
+                } ${
                   isFading
                     ? "opacity-0 scale-95 translate-y-1 pointer-events-none"
                     : "opacity-100 scale-100 translate-y-0"
@@ -291,15 +442,21 @@ export function AutonomousConciergeDashboard({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
                     <div className="mt-0.5 p-1.5 rounded-lg bg-white dark:bg-zinc-900 shadow-sm border border-zinc-200/60 dark:border-zinc-800">
-                      {getTypeIcon(n.type)}
+                      {isAcousticRerouteCard ? (
+                        <VolumeX className="w-4 h-4 text-red-500 shrink-0" />
+                      ) : (
+                        getTypeIcon(n.type)
+                      )}
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <span
-                          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${getTypeBadgeStyle(
-                            n.type
-                          )}`}
+                          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+                            isAcousticRerouteCard
+                              ? "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30"
+                              : getTypeBadgeStyle(n.type)
+                          }`}
                         >
                           {n.category || n.type}
                         </span>
@@ -321,21 +478,37 @@ export function AutonomousConciergeDashboard({
 
                       {n.actionLabel && (
                         <div className="mt-2.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (n.actionUrl && typeof window !== "undefined") {
-                                window.location.href = n.actionUrl;
-                              } else if (onNotificationClick) {
-                                onNotificationClick(n);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
-                          >
-                            <span>{n.actionLabel}</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </button>
+                          {isAcousticRerouteCard ? (
+                            <button
+                              type="button"
+                              data-testid="engage-acoustic-reroute-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEngageReroute();
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <span>{n.actionLabel}</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (n.actionUrl && typeof window !== "undefined") {
+                                  window.location.href = n.actionUrl;
+                                } else if (onNotificationClick) {
+                                  onNotificationClick(n);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
+                            >
+                              <span>{n.actionLabel}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

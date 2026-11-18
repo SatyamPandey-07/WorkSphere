@@ -9,7 +9,7 @@ export interface TeamMemberLocation {
   name: string;
   latitude: number;
   longitude: number;
-  transitMode?: 'transit' | 'driving' | 'bicycling' | 'walking';
+  transitMode?: "transit" | "driving" | "bicycling" | "walking";
 }
 
 export interface CandidateVenue {
@@ -70,7 +70,7 @@ export function calculateHaversineDistanceMeters(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ): number {
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -89,13 +89,13 @@ export function calculateHaversineDistanceMeters(
  */
 function getSpeedMetersPerMinute(mode?: string): number {
   switch (mode) {
-    case 'driving':
+    case "driving":
       return (35 * 1000) / 60; // 35 km/h urban driving with traffic
-    case 'bicycling':
+    case "bicycling":
       return (16 * 1000) / 60; // 16 km/h cycling
-    case 'walking':
+    case "walking":
       return (4.8 * 1000) / 60; // 4.8 km/h walking
-    case 'transit':
+    case "transit":
     default:
       return (25 * 1000) / 60; // 25 km/h average public transit (including wait/transfer buffer)
   }
@@ -103,14 +103,17 @@ function getSpeedMetersPerMinute(mode?: string): number {
 
 export interface MeetHalfwayOptions {
   minRequiredSeats?: number;
-  transitPreference?: 'transit' | 'walking' | 'balanced';
+  transitPreference?: "transit" | "walking" | "balanced";
 }
 
 export class MeetHalfwayOptimizer {
   /**
    * Checks if all team members are co-located within a proximity threshold (default 150m).
    */
-  public static isTeamCoLocated(members: TeamMemberLocation[], thresholdMeters = 150): boolean {
+  public static isTeamCoLocated(
+    members: TeamMemberLocation[],
+    thresholdMeters = 150,
+  ): boolean {
     if (members.length <= 1) return true;
     const origin = members[0];
     for (let i = 1; i < members.length; i++) {
@@ -118,7 +121,7 @@ export class MeetHalfwayOptimizer {
         origin.latitude,
         origin.longitude,
         members[i].latitude,
-        members[i].longitude
+        members[i].longitude,
       );
       if (dist > thresholdMeters) {
         return false;
@@ -134,7 +137,7 @@ export class MeetHalfwayOptimizer {
   public static computeGeometricMedian(
     members: TeamMemberLocation[],
     maxIterations = 100,
-    tolerance = 1e-6
+    tolerance = 1e-6,
   ): { latitude: number; longitude: number } {
     if (!Array.isArray(members) || members.length === 0) {
       return { latitude: 0, longitude: 0 };
@@ -145,14 +148,18 @@ export class MeetHalfwayOptimizer {
 
     // If team is already co-located, arithmetic mean is exact and avoids division oscillations
     if (this.isTeamCoLocated(members)) {
-      const meanLat = members.reduce((sum, m) => sum + m.latitude, 0) / members.length;
-      const meanLng = members.reduce((sum, m) => sum + m.longitude, 0) / members.length;
+      const meanLat =
+        members.reduce((sum, m) => sum + m.latitude, 0) / members.length;
+      const meanLng =
+        members.reduce((sum, m) => sum + m.longitude, 0) / members.length;
       return { latitude: meanLat, longitude: meanLng };
     }
 
     // Initial estimate: Center of mass (arithmetic mean)
-    let curLat = members.reduce((sum, m) => sum + m.latitude, 0) / members.length;
-    let curLng = members.reduce((sum, m) => sum + m.longitude, 0) / members.length;
+    let curLat =
+      members.reduce((sum, m) => sum + m.latitude, 0) / members.length;
+    let curLng =
+      members.reduce((sum, m) => sum + m.longitude, 0) / members.length;
 
     for (let iter = 0; iter < maxIterations; iter++) {
       let numLat = 0;
@@ -162,7 +169,7 @@ export class MeetHalfwayOptimizer {
       for (const m of members) {
         const dist = Math.max(
           Math.hypot(m.latitude - curLat, m.longitude - curLng),
-          1e-8
+          1e-8,
         );
         const weight = 1 / dist;
         numLat += m.latitude * weight;
@@ -192,18 +199,18 @@ export class MeetHalfwayOptimizer {
     venue: CandidateVenue,
     centroid: { latitude: number; longitude: number },
     members: TeamMemberLocation[],
-    isCoLocated: boolean
+    isCoLocated: boolean,
   ): RankedVenueRecommendation {
     const availableCapacity = Math.max(
       0,
-      venue.availableSeatsCount ?? venue.maxCapacity - venue.currentOccupancy
+      venue.availableSeatsCount ?? venue.maxCapacity - venue.currentOccupancy,
     );
 
     const centroidDist = calculateHaversineDistanceMeters(
       centroid.latitude,
       centroid.longitude,
       venue.latitude,
-      venue.longitude
+      venue.longitude,
     );
 
     const memberEstimates: MemberTravelEstimate[] = members.map((member) => {
@@ -211,7 +218,7 @@ export class MeetHalfwayOptimizer {
         member.latitude,
         member.longitude,
         venue.latitude,
-        venue.longitude
+        venue.longitude,
       );
       const speed = getSpeedMetersPerMinute(member.transitMode);
       const durationMinutes = Math.round((distanceMeters / speed) * 1.2 + 2); // 20% routing overhead + 2 min buffer
@@ -221,13 +228,14 @@ export class MeetHalfwayOptimizer {
         memberName: member.name,
         distanceMeters: Math.round(distanceMeters),
         durationMinutes: Math.max(1, durationMinutes),
-        transitMode: member.transitMode || 'transit',
+        transitMode: member.transitMode || "transit",
       };
     });
 
     const durations = memberEstimates.map((e) => e.durationMinutes);
     const totalDuration = durations.reduce((sum, d) => sum + d, 0);
-    const avgDuration = durations.length > 0 ? totalDuration / durations.length : 0;
+    const avgDuration =
+      durations.length > 0 ? totalDuration / durations.length : 0;
     const maxDuration = durations.length > 0 ? Math.max(...durations) : 0;
 
     // Fairness score: for co-located participants, fairness is perfectly balanced (100)
@@ -249,7 +257,14 @@ export class MeetHalfwayOptimizer {
     const travelPenalty = avgDuration * 1.5;
     const compositeRankScore = Math.max(
       0,
-      Math.round(100 - travelPenalty + (fairnessScore * 0.4) + ratingBonus + wifiBonus + outletBonus)
+      Math.round(
+        100 -
+          travelPenalty +
+          fairnessScore * 0.4 +
+          ratingBonus +
+          wifiBonus +
+          outletBonus,
+      ),
     );
 
     return {
@@ -272,7 +287,7 @@ export class MeetHalfwayOptimizer {
   public static rankVenuesForTeam(
     members: TeamMemberLocation[],
     venues: CandidateVenue[],
-    minRequiredSeatsOrOptions?: number | MeetHalfwayOptions
+    minRequiredSeatsOrOptions?: number | MeetHalfwayOptions,
   ): OptimizationResult {
     if (!Array.isArray(members) || members.length === 0) {
       return {
@@ -280,12 +295,16 @@ export class MeetHalfwayOptimizer {
         recommendedVenues: [],
         searchRadiusMeters: 0,
         isCoLocated: true,
-        message: 'No members provided for optimization.',
+        message: "No members provided for optimization.",
       };
     }
 
     const centroid = this.computeGeometricMedian(members);
     const isCoLocated = this.isTeamCoLocated(members);
+    const minRequiredSeats =
+      (typeof minRequiredSeatsOrOptions === "number"
+        ? minRequiredSeatsOrOptions
+        : minRequiredSeatsOrOptions?.minRequiredSeats) ?? members.length;
 
     if (!Array.isArray(venues) || venues.length === 0) {
       return {
@@ -293,7 +312,7 @@ export class MeetHalfwayOptimizer {
         recommendedVenues: [],
         searchRadiusMeters: 5000,
         isCoLocated,
-        message: 'No candidate venues found within search radius.',
+        message: "No candidate venues found within search radius.",
       };
     }
 
@@ -301,7 +320,7 @@ export class MeetHalfwayOptimizer {
     const candidateVenues = venues.filter((venue) => {
       const availableCapacity = Math.max(
         0,
-        venue.availableSeatsCount ?? venue.maxCapacity - venue.currentOccupancy
+        venue.availableSeatsCount ?? venue.maxCapacity - venue.currentOccupancy,
       );
       return availableCapacity >= minRequiredSeats;
     });
@@ -311,31 +330,34 @@ export class MeetHalfwayOptimizer {
 
     if (candidateVenues.length > 0) {
       rankedRecommendations = candidateVenues.map((venue) =>
-        this.evaluateVenue(venue, centroid, members, isCoLocated)
+        this.evaluateVenue(venue, centroid, members, isCoLocated),
       );
     } else {
       // Zero venues found matching strict capacity: apply fallback relaxation
       fallbackApplied = true;
       rankedRecommendations = venues.map((venue) =>
-        this.evaluateVenue(venue, centroid, members, isCoLocated)
+        this.evaluateVenue(venue, centroid, members, isCoLocated),
       );
     }
 
     // Sort descending by composite ranking score
-    rankedRecommendations.sort((a, b) => b.compositeRankScore - a.compositeRankScore);
+    rankedRecommendations.sort(
+      (a, b) => b.compositeRankScore - a.compositeRankScore,
+    );
 
     const maxObservedDistance = rankedRecommendations.reduce(
       (max, r) => Math.max(max, r.centroidDistanceMeters),
-      5000
+      5000,
     );
 
     let message: string | undefined;
     if (isCoLocated) {
       message = fallbackApplied
-        ? 'Team members are co-located. Showing nearest workspaces with highest available capacity.'
-        : 'Team members are co-located. Recommendations optimized for shared proximity.';
+        ? "Team members are co-located. Showing nearest workspaces with highest available capacity."
+        : "Team members are co-located. Recommendations optimized for shared proximity.";
     } else if (fallbackApplied) {
-      message = 'No venues met the full group capacity. Showing best nearby alternatives.';
+      message =
+        "No venues met the full group capacity. Showing best nearby alternatives.";
     }
 
     return {
@@ -348,4 +370,3 @@ export class MeetHalfwayOptimizer {
     };
   }
 }
-

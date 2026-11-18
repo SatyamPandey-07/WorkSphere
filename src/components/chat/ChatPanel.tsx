@@ -85,6 +85,30 @@ export interface ChatPanelProps {
 }
 
 /**
+ * Sanitizes chat input text:
+ * - Trims leading and trailing whitespace
+ * - Normalizes Unicode zero-width characters and full-width whitespace
+ * - Strips dangerous script / iframe injection tags
+ * - Returns clean sanitized string or empty string
+ */
+export function sanitizeChatInput(rawInput: string | null | undefined): string {
+  if (typeof rawInput !== "string") return "";
+
+  // Normalize Unicode invisible spaces & zero-width characters
+  const normalized = rawInput
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // Zero-width spaces and joiners
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ") // Non-breaking / ideographic spaces
+    .trim();
+
+  if (!normalized) return "";
+
+  // Strip script and iframe injection tags
+  return normalized
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "");
+}
+
+/**
  * Formats large token counts compactly and readably according to repository requirements:
  * 800 -> 800
  * 1200 -> 1.2k
@@ -496,7 +520,10 @@ export function useDeduplicatedMessages<
     (msg: Omit<T, "clientMessageId"> & { clientMessageId?: string }): T => {
       const clientMessageId =
         msg.clientMessageId ||
-        generateClientMessageId(msg.content || "", msg.role || "user");
+        generateClientMessageId(
+          (msg.content as string | undefined) || "",
+          (msg.role as string | undefined) || "user",
+        );
       const optimistic = {
         ...msg,
         clientMessageId,
@@ -934,7 +961,10 @@ export function ChatPanel({
 
   const combinedMessages = useMemo(() => {
     const all = [...messages, ...(pendingMessages || [])];
-    const { deduplicated, reconciledCount } = deduplicateMessages([], all);
+    const { deduplicated, reconciledCount } = deduplicateMessages(
+      [],
+      all as ChatMessageLike[],
+    );
     if (reconciledCount > 0 && onMessageDeduplicated) {
       onMessageDeduplicated(reconciledCount);
     }
@@ -1025,7 +1055,15 @@ export function ChatPanel({
           </div>
         )}
         {!children &&
-          combinedMessages.map((m, idx) => {
+          combinedMessages
+            .filter((m) => {
+              const hasText = Boolean(m.content && m.content.trim().length > 0);
+              const hasVenue = Boolean(
+                m.venue || m.attachedVenue || (m.venues && m.venues.length > 0),
+              );
+              return hasText || hasVenue;
+            })
+            .map((m, idx) => {
             const messageKey = m.clientMessageId || m.id || `msg-${idx}`;
             const isPending = m.status === "pending" || m.status === "sending";
             const messageVenue = (m.venue ||
@@ -1092,8 +1130,8 @@ export function ChatPanel({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            const trimmed = (input || "").trim();
-            if ((!trimmed || trimmed.length === 0) && !attachedVenue) {
+            const sanitized = sanitizeChatInput(input);
+            if ((!sanitized || sanitized.length === 0) && !attachedVenue) {
               return;
             }
             if (attachedVenue && onShareVenue) {
@@ -1186,7 +1224,7 @@ export function ChatPanel({
 
             <button
               type="submit"
-              disabled={(!input || input.trim().length === 0) && !attachedVenue}
+              disabled={(!input || sanitizeChatInput(input).length === 0) && !attachedVenue}
               className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               Send

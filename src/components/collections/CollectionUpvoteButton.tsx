@@ -84,7 +84,7 @@ export function CollectionUpvoteButton({
     <button
       type="button"
       onClick={handleToggleUpvote}
-      disabled={isPending}
+      disabled={isLoading}
       aria-pressed={Boolean(hasUpvoted)}
       aria-label={
         hasUpvoted
@@ -103,7 +103,9 @@ export function CollectionUpvoteButton({
           className="w-3.5 h-3.5 animate-spin"
         />
       ) : (
-        <ThumbsUp className={`w-3.5 h-3.5 ${hasUpvoted ? "fill-current" : ""}`} />
+        <ThumbsUp
+          className={`w-3.5 h-3.5 ${hasUpvoted ? "fill-current" : ""}`}
+        />
       )}
       <span>{upvotes}</span>
     </button>

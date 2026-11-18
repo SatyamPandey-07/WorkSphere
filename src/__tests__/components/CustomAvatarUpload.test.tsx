@@ -1,7 +1,11 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { CustomAvatarUpload } from "@/components/CustomAvatarUpload";
+import {
+  CustomAvatarUpload,
+  AVATAR_PALETTE_COLORS,
+  getAvatarInitials,
+} from "@/components/CustomAvatarUpload";
 
 const mockSetProfileImage = jest.fn();
 const mockReload = jest.fn();
@@ -62,7 +66,6 @@ function mockImageDimensions(width: number, height: number) {
     };
     return img;
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (global as any).Image = ImageConstructorSpy;
   return ImageConstructorSpy;
 }
@@ -417,3 +420,100 @@ describe("CustomAvatarUpload Component Avatar Preview Thumbnail & Actions (#4592
     );
   });
 });
+
+describe("CustomAvatarUpload Component Avatar Color Palette Picker (#4821)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it("provides 8 preset color swatch buttons in profile avatar settings", () => {
+    render(<CustomAvatarUpload />);
+
+    expect(screen.getByTestId("avatar-color-palette")).toBeInTheDocument();
+
+    const expectedColors = [
+      "indigo",
+      "teal",
+      "rose",
+      "amber",
+      "violet",
+      "emerald",
+      "sky",
+      "fuchsia",
+    ];
+
+    expect(AVATAR_PALETTE_COLORS).toHaveLength(8);
+
+    expectedColors.forEach((colorId) => {
+      const swatch = screen.getByTestId(`color-swatch-${colorId}`);
+      expect(swatch).toBeInTheDocument();
+      expect(swatch).toHaveAttribute("data-color", colorId);
+      expect(swatch.className).toContain(`bg-${colorId}-500`);
+    });
+  });
+
+  it("displays selected color as avatar background when user has no custom photo", () => {
+    render(<CustomAvatarUpload hasCustomPhoto={false} />);
+
+    const initialsAvatar = screen.getByTestId("initials-avatar");
+    expect(initialsAvatar).toBeInTheDocument();
+    expect(initialsAvatar).toHaveTextContent("JN");
+    expect(initialsAvatar.className).toContain("bg-indigo-500");
+
+    // Click on 'rose' swatch
+    const roseSwatch = screen.getByTestId("color-swatch-rose");
+    fireEvent.click(roseSwatch);
+
+    expect(initialsAvatar.className).toContain("bg-rose-500");
+    expect(screen.getByTestId("avatar-display").className).toContain(
+      "bg-rose-500",
+    );
+  });
+
+  it("persists selected color choice to user settings in localStorage", () => {
+    const onColorChange = jest.fn();
+    render(
+      <CustomAvatarUpload
+        hasCustomPhoto={false}
+        onColorChange={onColorChange}
+      />,
+    );
+
+    const emeraldSwatch = screen.getByTestId("color-swatch-emerald");
+    fireEvent.click(emeraldSwatch);
+
+    expect(
+      localStorage.getItem("worksphere_avatar_color_user_test_123"),
+    ).toBe("emerald");
+    expect(localStorage.getItem("worksphere_avatar_color")).toBe("emerald");
+    expect(onColorChange).toHaveBeenCalledWith("emerald");
+
+    const initialsAvatar = screen.getByTestId("initials-avatar");
+    expect(initialsAvatar.className).toContain("bg-emerald-500");
+  });
+
+  it("loads previously persisted color from localStorage or initialColor prop", () => {
+    localStorage.setItem("worksphere_avatar_color_user_test_123", "fuchsia");
+
+    const { rerender } = render(<CustomAvatarUpload hasCustomPhoto={false} />);
+    let initialsAvatar = screen.getByTestId("initials-avatar");
+    expect(initialsAvatar.className).toContain("bg-fuchsia-500");
+
+    rerender(
+      <CustomAvatarUpload hasCustomPhoto={false} initialColor="amber" />,
+    );
+    initialsAvatar = screen.getByTestId("initials-avatar");
+    expect(initialsAvatar.className).toContain("bg-amber-500");
+  });
+
+  it("derives initials correctly using getAvatarInitials helper", () => {
+    expect(getAvatarInitials({ firstName: "John", lastName: "Doe" })).toBe(
+      "JD",
+    );
+    expect(getAvatarInitials({ fullName: "Alice Wonder" })).toBe("AW");
+    expect(getAvatarInitials({ fullName: "Single" })).toBe("SI");
+    expect(getAvatarInitials(null)).toBe("WS");
+  });
+});
+

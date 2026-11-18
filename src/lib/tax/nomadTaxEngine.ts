@@ -115,6 +115,53 @@ export function toCalendarDateString(timestamp: string): string {
   return date.toISOString().split("T")[0];
 }
 
+const MS_PER_DAY = 86_400_000;
+const DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Returns the "YYYY-MM-DD" calendar day written in a date string, or null when
+ * it is not a real calendar date. The day is read as written (no time-zone
+ * conversion), so a stay dated "2026-01-01" is always on 1 January.
+ */
+function toDayKey(value: string): string | null {
+  const key = typeof value === "string" ? value.slice(0, 10) : "";
+  if (!DAY_KEY_PATTERN.test(key)) return null;
+  const parsed = new Date(`${key}T00:00:00Z`);
+  return !isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === key
+    ? key
+    : null;
+}
+
+/** Adds whole calendar days to a "YYYY-MM-DD" key (UTC has no DST, so this is exact). */
+function addDaysToDayKey(dayKey: string, days: number): string {
+  return new Date(Date.parse(`${dayKey}T00:00:00Z`) + days * MS_PER_DAY)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
+ * Resolves the reference instant to the calendar day it falls on in `timeZone`
+ * (default UTC). A plain "YYYY-MM-DD" string is used as the day directly.
+ */
+function toReferenceDayKey(referenceDate: Date | string, timeZone = "UTC"): string {
+  if (typeof referenceDate === "string" && DAY_KEY_PATTERN.test(referenceDate)) {
+    const key = toDayKey(referenceDate);
+    if (key) return key;
+  }
+  const instant = new Date(referenceDate);
+  if (isNaN(instant.getTime())) {
+    throw new Error(`Invalid reference date: ${String(referenceDate)}`);
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const get = (type: string) => parts.find((p) => p.type === type)!.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
 /**
  * Calculates physical presence days across jurisdictions while resolving
  * multi-country collisions on transitional travel days without double-counting.
@@ -280,25 +327,32 @@ export function calculateNomadTaxPresence(
 }
 
 /**
- * Calculates rolling Schengen days used in the last 180 days from referenceDate.
+ * Calculates rolling Schengen days used in the 180-day window that ends on (and
+ * includes) the reference day.
+ *
+ * The window is made of whole calendar days, so the result never depends on the
+ * time of day or the server's time zone. `referenceDate` may be a Date or a
+ * "YYYY-MM-DD" string; pass `options.timeZone` (IANA name, default "UTC") to
+ * evaluate "today" in the traveller's own time zone.
  */
 export function calculateSchengenStay(
   records: NomadCheckInRecord[],
-  referenceDate = new Date()
+  referenceDate: Date | string = new Date(),
+  options: { timeZone?: string } = {}
 ): VisaZoneLimit {
   const windowDays = 180;
   const maxDays = 90;
 
-  const windowStart = new Date(referenceDate);
-  windowStart.setDate(windowStart.getDate() - windowDays);
+  const referenceDay = toReferenceDayKey(referenceDate, options.timeZone);
+  const windowStartDay = addDaysToDayKey(referenceDay, -(windowDays - 1));
 
   const uniqueSchengenDates = new Set<string>();
 
   records.forEach((r) => {
     if (r.isSchengen || SCHENGEN_COUNTRIES.has(r.countryCode.toUpperCase())) {
-      const recordDate = new Date(r.date);
-      if (recordDate >= windowStart && recordDate <= referenceDate) {
-        uniqueSchengenDates.add(r.date);
+      const recordDay = toDayKey(r.date);
+      if (recordDay && recordDay >= windowStartDay && recordDay <= referenceDay) {
+        uniqueSchengenDates.add(recordDay);
       }
     }
   });
@@ -326,7 +380,7 @@ export function calculateSchengenStay(
  */
 export function generateNomadComplianceReport(
   records: NomadCheckInRecord[],
-  taxYear = new Date().getFullYear()
+  taxYear = new Date().getUTCFullYear()
 ): NomadComplianceReport {
   const schengenStay = calculateSchengenStay(records);
 
@@ -346,8 +400,10 @@ export function generateNomadComplianceReport(
   let totalVatReclaimable = 0;
 
   records.forEach((r) => {
-    const recordYear = new Date(r.date).getFullYear();
-    if (recordYear === taxYear) {
+    // Read the year from the calendar date itself: getFullYear() would apply the
+    // server's time zone to a UTC-parsed date and push 1 Jan into the prior year.
+    const recordDay = toDayKey(r.date);
+    if (recordDay !== null && Number(recordDay.slice(0, 4)) === taxYear) {
       if (!countryMap.has(r.countryCode)) {
         countryMap.set(r.countryCode, {
           country: r.country,
@@ -360,7 +416,7 @@ export function generateNomadComplianceReport(
       }
 
       const c = countryMap.get(r.countryCode)!;
-      c.dates.add(r.date);
+      c.dates.add(recordDay);
       c.totalSpent += r.amountSpent;
       const vat = r.amountSpent * (r.vatRatePct / 100);
       c.vatReclaimable += vat;

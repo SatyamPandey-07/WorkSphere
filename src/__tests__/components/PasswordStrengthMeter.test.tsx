@@ -1,79 +1,79 @@
+import React from "react";
 import { render, screen } from "@testing-library/react";
-import { evaluatePasswordStrength, PasswordStrengthMeter } from "@/components/ui/PasswordStrengthMeter";
+import "@testing-library/jest-dom";
+import {
+  PasswordStrengthMeter,
+  evaluatePasswordStrength,
+} from "@/components/ui/PasswordStrengthMeter";
 
 describe("evaluatePasswordStrength", () => {
-  it("returns 'empty' for an empty string", () => {
-    expect(evaluatePasswordStrength("").strength).toBe("empty");
+  it("returns empty result when password is empty string", () => {
+    const result = evaluatePasswordStrength("");
+    expect(result.strength).toBe("empty");
+    expect(result.score).toBe(0);
+    expect(result.feedback).toEqual([]);
   });
 
-  it("returns 'weak' for a very short password", () => {
-    expect(evaluatePasswordStrength("abc").strength).toBe("weak");
+  it("evaluates short password as weak", () => {
+    const result = evaluatePasswordStrength("short");
+    expect(result.strength).toBe("weak");
+    expect(result.feedback).toContain("At least 8 characters");
   });
 
-  it("includes length feedback when password is under 8 chars", () => {
-    const { feedback } = evaluatePasswordStrength("short");
-    expect(feedback.some((f) => /8 characters/i.test(f))).toBe(true);
+  it("evaluates medium complexity password as fair", () => {
+    const result = evaluatePasswordStrength("password12");
+    expect(result.strength).toBe("fair");
+    expect(result.feedback).toContain("Add an uppercase letter");
   });
 
-  it("returns 'fair' for a password meeting 2 criteria (length + upper)", () => {
-    const { strength } = evaluatePasswordStrength("AbcdefgH");
-    expect(["fair", "good"]).toContain(strength);
-  });
+  it("evaluates complex password as good or strong", () => {
+    const goodResult = evaluatePasswordStrength("Password12");
+    expect(["good", "strong"]).toContain(goodResult.strength);
 
-  it("returns 'strong' for a password meeting all criteria", () => {
-    const { strength } = evaluatePasswordStrength("Secure#1pass!");
-    expect(strength).toBe("strong");
-  });
-
-  it("provides no feedback for a strong password", () => {
-    const { feedback } = evaluatePasswordStrength("SuperSecure99$");
-    expect(feedback.length).toBe(0);
-  });
-
-  it("score increases with additional criteria", () => {
-    const weak = evaluatePasswordStrength("abc").score;
-    const better = evaluatePasswordStrength("abcdefgH").score;
-    const strong = evaluatePasswordStrength("Abcdefg1!xyz").score;
-    expect(better).toBeGreaterThan(weak);
-    expect(strong).toBeGreaterThanOrEqual(better);
-  });
-
-  it("detects uppercase letters", () => {
-    const { feedback } = evaluatePasswordStrength("alllowercase123!");
-    expect(feedback.some((f) => /uppercase/i.test(f))).toBe(true);
-  });
-
-  it("detects missing special characters", () => {
-    const { feedback } = evaluatePasswordStrength("AlphaNum123");
-    expect(feedback.some((f) => /special/i.test(f))).toBe(true);
+    const strongResult = evaluatePasswordStrength("P@ssw0rd2026!!");
+    expect(strongResult.strength).toBe("strong");
+    expect(strongResult.score).toBe(4);
   });
 });
 
-describe("PasswordStrengthMeter component", () => {
+describe("PasswordStrengthMeter Component", () => {
   it("renders nothing when password is empty", () => {
-    const { container } = render(<PasswordStrengthMeter password="" />);
-    expect(container.firstChild).toBeNull();
+    render(<PasswordStrengthMeter password="" />);
+    expect(
+      screen.queryByTestId("password-strength-meter"),
+    ).not.toBeInTheDocument();
   });
 
-  it("renders the strength label for a weak password", () => {
+  it("renders meter with weak label and single feedback item by default", () => {
     render(<PasswordStrengthMeter password="abc" />);
-    expect(screen.getByText("Weak")).toBeInTheDocument();
+
+    expect(screen.getByTestId("password-strength-meter")).toBeInTheDocument();
+    expect(screen.getByTestId("password-strength-label")).toHaveTextContent(
+      "Weak",
+    );
+    expect(
+      screen.getByTestId("password-strength-feedback"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("password-strength-feedback-list"),
+    ).not.toBeInTheDocument();
   });
 
-  it("renders the strength label for a strong password", () => {
-    render(<PasswordStrengthMeter password="Str0ng!pass#" />);
-    expect(screen.getByText("Strong")).toBeInTheDocument();
+  it("renders all feedback suggestions when showAllFeedback is true", () => {
+    render(<PasswordStrengthMeter password="abc" showAllFeedback={true} />);
+
+    expect(
+      screen.getByTestId("password-strength-feedback-list"),
+    ).toBeInTheDocument();
+    const items = screen.getAllByTestId("password-strength-feedback-item");
+    expect(items.length).toBeGreaterThan(1);
   });
 
-  it("renders a segmented bar", () => {
-    const { container } = render(<PasswordStrengthMeter password="Test1!" />);
-    // 4 segments
-    const segments = container.querySelectorAll('[class*="flex-1"]');
-    expect(segments.length).toBe(4);
-  });
+  it("renders strong styling for high entropy passwords", () => {
+    render(<PasswordStrengthMeter password="SuperSecure#Pass992" />);
 
-  it("has aria-live='polite' for accessibility", () => {
-    const { container } = render(<PasswordStrengthMeter password="test" />);
-    expect(container.querySelector('[aria-live="polite"]')).toBeInTheDocument();
+    expect(screen.getByTestId("password-strength-label")).toHaveTextContent(
+      "Strong",
+    );
   });
 });

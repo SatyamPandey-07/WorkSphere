@@ -199,3 +199,208 @@ describe("Input sanitization on CommandPalette", () => {
     expect(sanitize("`cmd`")).toBe("cmd");
   });
 });
+
+describe("CommandPalette cockpit targeting reticle (Issue #6188)", () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it("renders corner bracket targeting reticles in glowing emerald on modal wrapper", () => {
+    render(<CommandPalette />);
+    const trigger = screen.getByTestId("command-palette-trigger");
+    fireEvent.click(trigger);
+
+    const wrapper = screen.getByTestId("command-palette-modal-wrapper");
+    expect(wrapper).toBeInTheDocument();
+
+    const reticles = screen.getByTestId("cockpit-targeting-reticles");
+    expect(reticles).toBeInTheDocument();
+
+    const tl = screen.getByTestId("corner-reticle-tl");
+    const tr = screen.getByTestId("corner-reticle-tr");
+    const bl = screen.getByTestId("corner-reticle-bl");
+    const br = screen.getByTestId("corner-reticle-br");
+
+    expect(tl).toBeInTheDocument();
+    expect(tr).toBeInTheDocument();
+    expect(bl).toBeInTheDocument();
+    expect(br).toBeInTheDocument();
+
+    // Verify glowing emerald HUD styling
+    expect(tl.getAttribute("class")).toContain("text-emerald-400");
+    expect(tr.getAttribute("class")).toContain("text-emerald-400");
+    expect(bl.getAttribute("class")).toContain("text-emerald-400");
+    expect(br.getAttribute("class")).toContain("text-emerald-400");
+  });
+
+  it("animates reticles inward with spring timing classes on modal mount", () => {
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    render(<CommandPalette />);
+    fireEvent.click(screen.getByTestId("command-palette-trigger"));
+
+    const tl = screen.getByTestId("corner-reticle-tl");
+    const tr = screen.getByTestId("corner-reticle-tr");
+    const bl = screen.getByTestId("corner-reticle-bl");
+    const br = screen.getByTestId("corner-reticle-br");
+
+    expect(tl.getAttribute("class")).toContain("animate-reticle-snap-tl");
+    expect(tr.getAttribute("class")).toContain("animate-reticle-snap-tr");
+    expect(bl.getAttribute("class")).toContain("animate-reticle-snap-bl");
+    expect(br.getAttribute("class")).toContain("animate-reticle-snap-br");
+  });
+
+  it("disables transform animations when prefers-reduced-motion is active", () => {
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: query.includes("prefers-reduced-motion: reduce"),
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    render(<CommandPalette />);
+    fireEvent.click(screen.getByTestId("command-palette-trigger"));
+
+    const reticles = screen.getByTestId("cockpit-targeting-reticles");
+    expect(reticles).toHaveAttribute("data-reduced-motion", "true");
+
+    const tl = screen.getByTestId("corner-reticle-tl");
+    const tr = screen.getByTestId("corner-reticle-tr");
+    const bl = screen.getByTestId("corner-reticle-bl");
+    const br = screen.getByTestId("corner-reticle-br");
+
+    expect(tl.getAttribute("class")).toContain("transform-none");
+    expect(tl.getAttribute("class")).not.toContain("animate-reticle-snap-tl");
+    expect(tr.getAttribute("class")).toContain("transform-none");
+    expect(tr.getAttribute("class")).not.toContain("animate-reticle-snap-tr");
+    expect(bl.getAttribute("class")).toContain("transform-none");
+    expect(bl.getAttribute("class")).not.toContain("animate-reticle-snap-bl");
+    expect(br.getAttribute("class")).toContain("transform-none");
+    expect(br.getAttribute("class")).not.toContain("animate-reticle-snap-br");
+  });
+
+  it("disables transform animations when reducedMotion prop is set to true", () => {
+    render(<CommandPalette reducedMotion={true} />);
+    fireEvent.click(screen.getByTestId("command-palette-trigger"));
+
+    const reticles = screen.getByTestId("cockpit-targeting-reticles");
+    expect(reticles).toHaveAttribute("data-reduced-motion", "true");
+
+    const tl = screen.getByTestId("corner-reticle-tl");
+    expect(tl.getAttribute("class")).toContain("transform-none");
+    expect(tl.getAttribute("class")).not.toContain("animate-reticle-snap-tl");
+  });
+});
+
+describe("CommandPalette WAI-ARIA combobox, focus trap & focus restoration", () => {
+  it("traps Tab and Shift+Tab strictly inside the modal while open", () => {
+    render(
+      <div>
+        <button type="button" data-testid="outside-before">
+          Outside Before
+        </button>
+        <CommandPalette />
+        <button type="button" data-testid="outside-after">
+          Outside After
+        </button>
+      </div>,
+    );
+
+    const trigger = screen.getByTestId("command-palette-trigger");
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog");
+    const combobox = screen.getByRole("combobox");
+    combobox.focus();
+    expect(document.activeElement).toBe(combobox);
+
+    // Tabbing forward wraps within modal instead of escaping to outside buttons
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(
+      screen.getByTestId("outside-after"),
+    );
+
+    // Shift+Tab wraps backward within modal instead of escaping to outside buttons
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(
+      screen.getByTestId("outside-before"),
+    );
+  });
+
+  it("restores focus to the previously active trigger element on Escape or backdrop click", () => {
+    render(
+      <div>
+        <button type="button" data-testid="custom-opener">
+          Opener
+        </button>
+        <CommandPalette />
+      </div>,
+    );
+
+    const trigger = screen.getByTestId("command-palette-trigger");
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // Dismiss with Escape and verify focus returns to trigger
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+
+    // Reopen and dismiss via backdrop click
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("command-palette-backdrop"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("exposes WAI-ARIA combobox/listbox attributes and scrolls highlighted options into view on ArrowDown/ArrowUp", () => {
+    const scrollIntoViewMock = jest.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+    render(<CommandPalette />);
+    fireEvent.click(screen.getByTestId("command-palette-trigger"));
+
+    const combobox = screen.getByRole("combobox");
+    const listbox = screen.getByRole("listbox");
+    const options = screen.getAllByRole("option");
+
+    expect(combobox).toHaveAttribute("aria-expanded", "true");
+    expect(combobox).toHaveAttribute("aria-controls", listbox.id);
+    expect(combobox).toHaveAttribute("aria-activedescendant", options[0].id);
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+
+    // Navigate down with ArrowDown
+    fireEvent.keyDown(combobox, { key: "ArrowDown" });
+    expect(combobox).toHaveAttribute("aria-activedescendant", options[1].id);
+    expect(options[1]).toHaveAttribute("aria-selected", "true");
+    expect(options[0]).toHaveAttribute("aria-selected", "false");
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({ block: "nearest" });
+
+    // Navigate up with ArrowUp
+    fireEvent.keyDown(combobox, { key: "ArrowUp" });
+    expect(combobox).toHaveAttribute("aria-activedescendant", options[0].id);
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+  });
+});

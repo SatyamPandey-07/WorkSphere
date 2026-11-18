@@ -141,3 +141,123 @@ describe("MultiCurrencyDeskCheckout Component", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("MultiCurrencyDeskCheckout - Satoshi Validation (#6156)", () => {
+  // Import the payment streaming checkout component and validator
+  const {
+    MultiCurrencyDeskCheckout: MicroCheckout,
+    initiateSatoshiPayment,
+  } = require("@/components/payments/MultiCurrencyDeskCheckout");
+  const {
+    validateSatoshiAmount,
+    MicroPaymentEngine,
+  } = require("@/lib/payments/microPaymentEngine");
+
+  describe("initiateSatoshiPayment validator", () => {
+    it("rejects negative satoshi amounts", () => {
+      expect(initiateSatoshiPayment(-1)).toBe(false);
+      expect(initiateSatoshiPayment(-100)).toBe(false);
+      expect(initiateSatoshiPayment(-50000)).toBe(false);
+    });
+
+    it("rejects zero satoshi amounts", () => {
+      expect(initiateSatoshiPayment(0)).toBe(false);
+    });
+
+    it("rejects fractional amounts where Math.floor is less than 1", () => {
+      expect(initiateSatoshiPayment(0.1)).toBe(false);
+      expect(initiateSatoshiPayment(0.5)).toBe(false);
+      expect(initiateSatoshiPayment(0.99)).toBe(false);
+    });
+
+    it("rejects NaN, null, undefined, and non-finite numbers", () => {
+      expect(initiateSatoshiPayment(NaN)).toBe(false);
+      expect(initiateSatoshiPayment(Infinity)).toBe(false);
+      expect(initiateSatoshiPayment(-Infinity)).toBe(false);
+      expect(initiateSatoshiPayment(null as any)).toBe(false);
+      expect(initiateSatoshiPayment(undefined as any)).toBe(false);
+    });
+
+    it("accepts valid positive integer satoshi amounts (>= 1)", () => {
+      expect(initiateSatoshiPayment(1)).toBe(true);
+      expect(initiateSatoshiPayment(100)).toBe(true);
+      expect(initiateSatoshiPayment(1460)).toBe(true);
+      expect(initiateSatoshiPayment(50000)).toBe(true);
+    });
+  });
+
+  describe("validateSatoshiAmount & MicroPaymentEngine.validateSats", () => {
+    it("validates satoshi amounts with descriptive error messages", () => {
+      const negativeResult = validateSatoshiAmount(-50);
+      expect(negativeResult.isValid).toBe(false);
+      expect(negativeResult.error).toContain("cannot be zero or negative");
+
+      const zeroResult = validateSatoshiAmount(0);
+      expect(zeroResult.isValid).toBe(false);
+      expect(zeroResult.error).toContain("at least 1 Satoshi");
+
+      const nanResult = validateSatoshiAmount(NaN);
+      expect(nanResult.isValid).toBe(false);
+      expect(nanResult.error).toContain("valid finite number");
+
+      const validResult = validateSatoshiAmount(500);
+      expect(validResult.isValid).toBe(true);
+      expect(validResult.sats).toBe(500);
+    });
+
+    it("MicroPaymentEngine.validateSats validates positive integers correctly", () => {
+      expect(MicroPaymentEngine.validateSats(-10)).toBe(false);
+      expect(MicroPaymentEngine.validateSats(0)).toBe(false);
+      expect(MicroPaymentEngine.validateSats(NaN)).toBe(false);
+      expect(MicroPaymentEngine.validateSats(1)).toBe(true);
+      expect(MicroPaymentEngine.validateSats(1000)).toBe(true);
+    });
+
+    it("MicroPaymentEngine.createMicroInvoice throws for non-positive satoshi amounts", () => {
+      expect(() =>
+        MicroPaymentEngine.createMicroInvoice("sess-1", -5.0, "lightning")
+      ).toThrow("Invalid satoshi amount");
+      expect(() =>
+        MicroPaymentEngine.createMicroInvoice("sess-1", 0, "lightning")
+      ).toThrow("Invalid satoshi amount");
+    });
+  });
+
+  describe("MultiCurrencyDeskCheckout Component UI behavior", () => {
+    it("displays validation warning and disables start session when negative discount makes satoshis < 1", () => {
+      render(<MicroCheckout />);
+
+      const discountInput = screen.getByTestId("custom-adjustment-input");
+      expect(discountInput).toBeInTheDocument();
+
+      // Enter a negative discount that causes net Satoshi balance to drop <= 0
+      fireEvent.change(discountInput, { target: { value: "-5.00" } });
+
+      const warning = screen.getByTestId("satoshi-validation-error");
+      expect(warning).toBeInTheDocument();
+      expect(warning).toHaveTextContent(/at least 1 Satoshi/i);
+
+      // Verify the start button is disabled
+      const startBtn = screen.getByTestId("start-session-button");
+      expect(startBtn).toBeDisabled();
+    });
+
+    it("clears validation error and enables button when a valid adjustment is provided", () => {
+      render(<MicroCheckout />);
+
+      const discountInput = screen.getByTestId("custom-adjustment-input");
+
+      // Enter negative discount first
+      fireEvent.change(discountInput, { target: { value: "-10.00" } });
+      expect(screen.getByTestId("satoshi-validation-error")).toBeInTheDocument();
+
+      // Fix with a positive gratuity
+      fireEvent.change(discountInput, { target: { value: "2.50" } });
+      expect(screen.queryByTestId("satoshi-validation-error")).not.toBeInTheDocument();
+
+      const startBtn = screen.getByTestId("start-session-button");
+      expect(startBtn).not.toBeDisabled();
+    });
+  });
+});
+

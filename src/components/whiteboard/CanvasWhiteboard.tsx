@@ -8,10 +8,12 @@ import { DrawingCanvas } from "@/components/whiteboard/DrawingCanvas";
 import { RemoteCursors } from "@/components/whiteboard/RemoteCursors";
 import { StickyNotes } from "@/components/whiteboard/StickyNotes";
 import { KeyboardShortcutModal } from "@/components/whiteboard/KeyboardShortcutModal";
+import { StateChecksumVerifier } from "@/components/crdt/StateChecksumVerifier";
 import {
   exportCanvasAsPng,
   exportCanvasAsSvg,
 } from "@/lib/whiteboard/canvasExport";
+import type { ConstructType } from "@/lib/whiteboard/constructGenerator";
 
 interface CanvasWhiteboardProps {
   canvasId: string;
@@ -27,6 +29,7 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
 
   const userAvatar = user?.imageUrl;
   const [isShortcutModalOpen, setIsShortcutModalOpen] = useState(false);
+  const [constructType, setConstructType] = useState<ConstructType>("shield");
 
   const {
     shapeSnapshots,
@@ -50,6 +53,7 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
     releaseNoteLease,
     noteLeaseOwners,
     updateCursor,
+    yDoc,
   } = useMeshCanvasWhiteboard(canvasId, {
     userName,
     userColor,
@@ -172,6 +176,9 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
         } else if (key === "n") {
           e.preventDefault();
           setTool("sticky");
+        } else if (key === "c") {
+          e.preventDefault();
+          setTool("construct");
         }
       }
     };
@@ -193,9 +200,11 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
           canRedo={canRedo}
           isConnected={isConnected}
           participants={participants}
+          constructType={constructType}
           onToolChange={setTool}
           onColorChange={setColor}
           onStrokeWidthChange={setStrokeWidth}
+          onConstructTypeChange={setConstructType}
           onUndo={undo}
           onRedo={redo}
           onClear={handleClear}
@@ -213,6 +222,7 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
           tool={tool}
           color={color}
           strokeWidth={strokeWidth}
+          constructType={constructType}
           onAddShape={handleAddShape}
           onUpdateShape={handleUpdateShape}
           onCursorMove={handleCursorMove}
@@ -232,6 +242,13 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
         isOpen={isShortcutModalOpen}
         onClose={() => setIsShortcutModalOpen(false)}
       />
+
+      {yDoc && (
+        <StateChecksumVerifier
+          documentId={canvasId}
+          doc={yDoc}
+        />
+      )}
     </div>
   );
 }

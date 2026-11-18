@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import type { CSSProperties } from "react";
 import {
   Play,
   Pause,
@@ -11,6 +12,8 @@ import {
   RotateCcw,
   BatteryLow,
   Battery,
+  Shield,
+  ShieldOff,
 } from "lucide-react";
 // Assuming these exist based on the prompt's new snippet requirements
 import { ParametricEQGraph } from "@/lib/audio/ParametricEQGraph";
@@ -43,6 +46,23 @@ export const EQ_BAND_LABELS: string[] = [
   "4kHz",
   "12kHz",
 ];
+
+/**
+ * Ambient Chatter Shield: a live peaking cut centred on the speech band that
+ * cafe noise occupies. 1600 Hz is the geometric centre of the 1-2.5 kHz range;
+ * at the requested Q = 1.5 the -3 dB points land near 1.15 kHz and 2.2 kHz, and
+ * -12 dB keeps voices intelligible while removing the chatter bed.
+ *
+ * The filter type is `peaking` rather than `notch` on purpose: `BiquadFilterNode`
+ * ignores its `gain` AudioParam for `notch`/`bandpass` types, so a notch cannot
+ * be faded in and out. A peaking cut has the same band-stop shape and is
+ * ramped by `setTargetAtTime`, which is what makes the toggle click-free.
+ */
+export const CHATTER_SHIELD_FREQUENCY_HZ = 1600;
+export const CHATTER_SHIELD_Q = 1.5;
+export const CHATTER_SHIELD_GAIN_DB = -12;
+export const CHATTER_SHIELD_RAMP_TIME_CONSTANT = 0.08;
+export const CHATTER_SHIELD_STORAGE_KEY = "webrtc_eq_chatter_shield";
 
 export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
   flat: {
@@ -186,6 +206,7 @@ export function AudioEqualizer({
   const [bandGains, setBandGains] = useState<number[]>(
     initialGains || [0, 0, 0, 0, 0],
   );
+  const [chatterShield, setChatterShield] = useState(false);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [batteryCharging, setBatteryCharging] = useState<boolean | null>(null);
   const batteryAutoPausedRef = useRef<boolean>(false);
@@ -195,10 +216,16 @@ export function AudioEqualizer({
   const masterGainRef = useRef<GainNode | null>(null);
   const compressorRef = useRef<DynamicsCompressorNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
+  const chatterShieldFilterRef = useRef<BiquadFilterNode | null>(null);
+  // Mirrors `chatterShield` so initAudio can seed a filter created after the
+  // toggle was flipped, without reading stale state from a closure.
+  const chatterShieldEnabledRef = useRef(false);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const jazzCleanupRef = useRef<(() => void) | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const resumeOnInteractionRef = useRef<(() => void) | null>(null);
+  const hasUserInteractedRef = useRef(false);
 
   // External Audio Refs (Parametric Mode)
   const eqRef = useRef<ParametricEQGraph | null>(null);
@@ -273,6 +300,17 @@ export function AudioEqualizer({
         } catch { }
       } else if (savedPreset && savedPreset !== "custom") {
         setBandGains(EQ_PRESETS[savedPreset].gains);
+      }
+
+      // Restore the chatter shield preference before any audio node exists;
+      // initAudio seeds the filter gain from the ref.
+      try {
+        if (window.localStorage.getItem(CHATTER_SHIELD_STORAGE_KEY) === "1") {
+          chatterShieldEnabledRef.current = true;
+          setChatterShield(true);
+        }
+      } catch {
+        // Storage can be unavailable in private browsing; default to off.
       }
     }
   }, []);
@@ -361,26 +399,62 @@ export function AudioEqualizer({
     for (let i = 0; i < filters.length - 1; i++) {
       filters[i].connect(filters[i + 1]);
     }
-    if (filters.length > 0) {
-      filters[filters.length - 1].connect(masterGain);
+
+    // Ambient Chatter Shield sits between the EQ cascade and the master gain so
+    // it attenuates the source before volume, mute, and the compressor.
+    const chatterShieldFilter = ctx.createBiquadFilter();
+    chatterShieldFilter.type = "peaking";
+    if (
+      chatterShieldFilter.frequency &&
+      typeof chatterShieldFilter.frequency.setValueAtTime === "function"
+    ) {
+      chatterShieldFilter.frequency.setValueAtTime(
+        CHATTER_SHIELD_FREQUENCY_HZ,
+        ctx.currentTime,
+      );
     }
+    if (
+      chatterShieldFilter.Q &&
+      typeof chatterShieldFilter.Q.setValueAtTime === "function"
+    ) {
+      chatterShieldFilter.Q.setValueAtTime(CHATTER_SHIELD_Q, ctx.currentTime);
+    }
+    if (
+      chatterShieldFilter.gain &&
+      typeof chatterShieldFilter.gain.setValueAtTime === "function"
+    ) {
+      chatterShieldFilter.gain.setValueAtTime(
+        chatterShieldEnabledRef.current ? CHATTER_SHIELD_GAIN_DB : 0,
+        ctx.currentTime,
+      );
+    }
+    if (filters.length > 0) {
+      filters[filters.length - 1].connect(chatterShieldFilter);
+    }
+    chatterShieldFilter.connect(masterGain);
 
     audioContextRef.current = ctx;
     masterGainRef.current = masterGain;
     eqFiltersRef.current = filters;
+    chatterShieldFilterRef.current = chatterShieldFilter;
     analyserRef.current = analyser;
 
-    // Safari iOS resume handler
+    // Safari iOS only allows resuming a suspended context from a user gesture.
     if (ctx.state === "suspended") {
       const resumeOnInteraction = () => {
-        if (!audioContextRef.current) return;
-        audioContextRef.current.resume().then(() => {
-          if (audioContextRef.current?.state === "running") {
+        if (ctx.state !== "suspended") return;
+        hasUserInteractedRef.current = true;
+        ctx.resume().then(() => {
+          if (ctx.state === "running") {
             document.removeEventListener("touchstart", resumeOnInteraction);
             document.removeEventListener("click", resumeOnInteraction);
+            resumeOnInteractionRef.current = null;
           }
-        }).catch(() => { });
+        }).catch(() => {
+          // Keep the listeners for a later user interaction.
+        });
       };
+      resumeOnInteractionRef.current = resumeOnInteraction;
       document.addEventListener("touchstart", resumeOnInteraction, { passive: true });
       document.addEventListener("click", resumeOnInteraction);
     }
@@ -579,10 +653,6 @@ export function AudioEqualizer({
     const masterGain = masterGainRef.current!;
     const audioEntryPoint = eqFiltersRef.current[0] || masterGain;
 
-    if (ctx.state === "suspended") {
-      ctx.resume();
-    }
-
     stopPlayingNodes();
 
     if (preset === "cafe") {
@@ -709,12 +779,39 @@ export function AudioEqualizer({
     // but if we had a gain node wrapper for external, we'd apply it here.
   }, [volume, muted]);
 
+  // Ambient Chatter Shield: persist the preference and ramp the live filter.
+  const toggleChatterShield = useCallback(() => {
+    const next = !chatterShieldEnabledRef.current;
+    chatterShieldEnabledRef.current = next;
+    setChatterShield(next);
+    try {
+      window.localStorage.setItem(CHATTER_SHIELD_STORAGE_KEY, next ? "1" : "0");
+    } catch {
+      // Persistence is best effort; the toggle still applies for this session.
+    }
+  }, []);
+
+  useEffect(() => {
+    const filter = chatterShieldFilterRef.current;
+    const ctx = audioContextRef.current;
+    // No context yet: initAudio seeds the gain from chatterShieldEnabledRef.
+    if (!filter || !ctx) return;
+    smoothSetAudioParam(
+      filter.gain,
+      chatterShield ? CHATTER_SHIELD_GAIN_DB : 0,
+      ctx.currentTime,
+      CHATTER_SHIELD_RAMP_TIME_CONSTANT,
+    );
+  }, [chatterShield]);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (
         document.visibilityState === "visible" &&
         audioContextRef.current &&
-        audioContextRef.current.state !== "closed"
+        audioContextRef.current.state !== "closed" &&
+        hasUserInteractedRef.current &&
+        audioContextRef.current.state === "suspended"
       ) {
         audioContextRef.current.resume().catch(() => { });
       }
@@ -724,6 +821,11 @@ export function AudioEqualizer({
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (resumeOnInteractionRef.current) {
+        document.removeEventListener("touchstart", resumeOnInteractionRef.current);
+        document.removeEventListener("click", resumeOnInteractionRef.current);
+        resumeOnInteractionRef.current = null;
+      }
       stopPlayingNodes();
       if (
         audioContextRef.current &&
@@ -736,6 +838,8 @@ export function AudioEqualizer({
         }
         audioContextRef.current = null;
       }
+      // The filter belonged to the context that was just closed.
+      chatterShieldFilterRef.current = null;
     };
   }, [stopPlayingNodes]);
 
@@ -940,6 +1044,31 @@ export function AudioEqualizer({
           )}
         </select>
 
+        {/* Ambient Chatter Shield: live -12 dB cut over the 1-2.5 kHz band */}
+        {!isExternalMode && (
+          <button
+            type="button"
+            onClick={toggleChatterShield}
+            aria-pressed={chatterShield}
+            aria-label="Ambient Chatter Shield"
+            title="Attenuate 1-2.5 kHz cafe chatter (-12 dB)"
+            data-testid="chatter-shield-toggle"
+            className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide border transition-colors ${chatterShield
+              ? "bg-indigo-500/20 border-indigo-400/50 text-indigo-200"
+              : isDarkMode
+                ? "bg-white/5 border-white/10 text-zinc-400 hover:text-zinc-200"
+                : "bg-white border-gray-300 text-gray-600 hover:text-gray-900"
+              }`}
+          >
+            {chatterShield ? (
+              <Shield className="w-3.5 h-3.5" />
+            ) : (
+              <ShieldOff className="w-3.5 h-3.5" />
+            )}
+            <span>Chatter Shield</span>
+          </button>
+        )}
+
         {/* Visualizer Area */}
         <div className="flex-1 flex items-end justify-center h-12 rounded-lg overflow-hidden border relative bg-black/5">
           {isExternalMode ? (
@@ -1008,77 +1137,71 @@ export function AudioEqualizer({
           </button>
         </div>
 
-        {/* New Vertical Sliders Layout from Snippet */}
-        {isExternalMode && eqRef.current ? (
-          <div className="grid grid-cols-5 gap-4">
-            {eqRef.current.bands.map((band) => (
-              <div key={band.id} className="flex flex-col items-center gap-2">
-                <label className="text-xs font-medium opacity-70 capitalize">
-                  {band.id.replace(/([A-Z])/g, ' $1').trim()}
-                </label>
-                <input
-                  type="range"
-                  min="-12"
-                  max="12"
-                  step="0.5"
-                  // We need to map band.id to index for our state, or just use local state logic
-                  // For simplicity in this merge, we'll look up the gain from our main state if indices match
-                  // Or better, rely on the component's internal state mapping if we refactored fully.
-                  // Here we assume the order matches EQ_BANDS for the visual representation
-                  value={bandGains[EQ_BANDS.indexOf(band.frequency)] ?? 0}
-                  onChange={(e) => {
-                    // Find index by frequency or ID
-                    const idx = EQ_BANDS.indexOf(band.frequency);
-                    if (idx !== -1) handleBandGainChange(idx, parseFloat(e.target.value));
-                  }}
-                  className="w-full h-32 appearance-none bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer accent-blue-500"
-                  style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any}
-                  aria-label={`${band.id} gain`}
-                />
-                <span className="text-xs font-mono opacity-60">
-                  {(bandGains[EQ_BANDS.indexOf(band.frequency)] ?? 0) > 0
-                    ? `+${bandGains[EQ_BANDS.indexOf(band.frequency)]}`
-                    : bandGains[EQ_BANDS.indexOf(band.frequency)]} dB
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          // Original Horizontal Sliders Layout
-          <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center">
-            {EQ_BAND_LABELS.map((label, idx) => (
+        <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center">
+          {EQ_BAND_LABELS.map((label, idx) => {
+            const gain = bandGains[idx] ?? 0;
+            const intensity = Math.min(1, Math.abs(gain) / 12);
+            const energyStyle = {
+              "--energy-glow": `${4 + intensity * 16}px`,
+            } as CSSProperties;
+            const levelStyle = {
+              height: `${(Math.min(Math.abs(gain), 20) / 40) * 100}%`,
+              opacity: 0.2 + intensity * 0.8,
+              boxShadow: `0 0 ${4 + intensity * 18}px rgba(74, 222, 128, ${0.2 + intensity * 0.6})`,
+            };
+
+            return (
               <div
                 key={label}
-                onDoubleClick={() => handleBandGainChange(idx, 0)}
-                className="flex flex-col items-center justify-between gap-1 sm:gap-1.5 min-w-0"
-                title="Double-click to reset to 0 dB"
+                className="flex min-w-0 flex-col items-center justify-between gap-1 sm:gap-1.5"
               >
-                <span className={`text-[9px] sm:text-[10px] font-mono whitespace-nowrap ${isDarkMode ? "text-zinc-400" : "text-gray-500"}`}>
+                <span className="whitespace-nowrap font-mono text-[9px] text-zinc-400 sm:text-[10px]">
                   {label}
                 </span>
-                <input
-                  type="range"
-                  min="-20"
-                  max="20"
-                  step="0.5"
-                  aria-label={`${label} Gain`}
-                  value={bandGains[idx]}
-                  onChange={(e) =>
-                    handleBandGainChange(idx, parseFloat(e.target.value))
-                  }
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    handleBandGainChange(idx, 0);
-                  }}
-                  className="w-full h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
-                />
-                <span className={`text-[8px] sm:text-[9px] font-mono whitespace-nowrap ${isDarkMode ? "text-indigo-400" : "text-blue-600"}`}>
-                  {bandGains[idx] > 0 ? `+${bandGains[idx]}` : bandGains[idx]} dB
+                <div
+                  className="relative flex h-28 w-10 items-center justify-center"
+                  style={energyStyle}
+                >
+                  <div className="pointer-events-none absolute inset-y-1 left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-emerald-950/80 shadow-[0_0_8px_rgba(34,197,94,0.12)]">
+                    <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-emerald-200/60 shadow-[0_0_5px_rgba(134,239,172,0.8)]" />
+                    {gain >= 0 ? (
+                      <div
+                        className="absolute inset-x-0 bottom-1/2 rounded-t-full bg-gradient-to-t from-emerald-500/70 to-lime-200 transition-[height,opacity,box-shadow] duration-150"
+                        style={levelStyle}
+                      />
+                    ) : (
+                      <div
+                        className="absolute inset-x-0 top-1/2 rounded-b-full bg-gradient-to-b from-emerald-500/70 to-lime-200 transition-[height,opacity,box-shadow] duration-150"
+                        style={levelStyle}
+                      />
+                    )}
+                  </div>
+                  <input
+                    type="range"
+                    min="-20"
+                    max="20"
+                    step="0.5"
+                    aria-label={`${label} Gain`}
+                    aria-valuetext={`${gain > 0 ? "plus " : gain < 0 ? "minus " : ""}${Math.abs(gain)} decibels`}
+                    aria-describedby="eq-slider-instructions"
+                    value={gain}
+                    onChange={(e) =>
+                      handleBandGainChange(idx, parseFloat(e.target.value))
+                    }
+                    className="audio-eq-energy-slider"
+                    style={energyStyle}
+                  />
+                </div>
+                <span className="whitespace-nowrap font-mono text-[8px] text-emerald-300 sm:text-[9px]">
+                  {gain > 0 ? `+${gain}` : gain} dB
                 </span>
               </div>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
+        <span id="eq-slider-instructions" className="sr-only">
+          Use the arrow keys to adjust gain in 0.5 decibel steps, from minus 20 to plus 20 decibels.
+        </span>
       </div>
 
       {reducedMotion && (

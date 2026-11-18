@@ -81,8 +81,9 @@ export function calculateRelativeBearing(
   targetBearing: number,
   deviceHeading: number,
 ): number {
-  if (!Number.isFinite(targetBearing) || !Number.isFinite(deviceHeading)) return 0;
-  return ((targetBearing - deviceHeading) % 360 + 360) % 360;
+  if (!Number.isFinite(targetBearing) || !Number.isFinite(deviceHeading))
+    return 0;
+  return (((targetBearing - deviceHeading) % 360) + 360) % 360;
 }
 
 export {
@@ -100,7 +101,9 @@ export {
  * @param heading Heading in degrees (0 - 360)
  * @returns Cardinal direction string (e.g. "N", "NE", "E", "SW")
  */
-export function getCompassDirection(heading: number | null | undefined): string {
+export function getCompassDirection(
+  heading: number | null | undefined,
+): string {
   if (
     heading == null ||
     typeof heading !== "number" ||
@@ -110,10 +113,22 @@ export function getCompassDirection(heading: number | null | undefined): string 
     return "--";
   }
   const directions = [
-    "N", "NNE", "NE", "ENE",
-    "E", "ESE", "SE", "SSE",
-    "S", "SSW", "SW", "WSW",
-    "W", "WNW", "NW", "NNW",
+    "N",
+    "NNE",
+    "NE",
+    "ENE",
+    "E",
+    "ESE",
+    "SE",
+    "SSE",
+    "S",
+    "SSW",
+    "SW",
+    "WSW",
+    "W",
+    "WNW",
+    "NW",
+    "NNW",
   ];
   const normalized = ((heading % 360) + 360) % 360;
   const index = Math.round(normalized / 22.5) % 16;
@@ -148,5 +163,43 @@ export function getRelativeDirectionDescription(
     return "Turn Left";
   } else {
     return "Turn Slight Left";
+  }
+}
+
+/**
+ * Returns a unicode directional arrow symbol matching the relative bearing.
+ *
+ * @param relativeBearing Relative bearing in degrees (0 - 360)
+ * @returns Direction arrow string e.g. "↑", "↗", "→", etc., or empty string if invalid
+ */
+export function getTurnArrow(
+  relativeBearing: number | null | undefined,
+): string {
+  if (
+    relativeBearing == null ||
+    typeof relativeBearing !== "number" ||
+    !Number.isFinite(relativeBearing) ||
+    isNaN(relativeBearing)
+  ) {
+    return "";
+  }
+
+  const norm = ((relativeBearing % 360) + 360) % 360;
+  if (norm <= 22.5 || norm >= 337.5) {
+    return "↑";
+  } else if (norm < 67.5) {
+    return "↗";
+  } else if (norm < 112.5) {
+    return "→";
+  } else if (norm < 157.5) {
+    return "↘";
+  } else if (norm <= 202.5) {
+    return "↓";
+  } else if (norm < 247.5) {
+    return "↙";
+  } else if (norm < 292.5) {
+    return "←";
+  } else {
+    return "↖";
   }
 }

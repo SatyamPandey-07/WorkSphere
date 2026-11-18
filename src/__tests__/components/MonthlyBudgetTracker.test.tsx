@@ -4,6 +4,7 @@ import "@testing-library/jest-dom";
 import {
   MonthlyBudgetTracker,
   getBudgetProgressColor,
+  calculateBudgetPercentage,
 } from "@/components/billing/MonthlyBudgetTracker";
 import type { BudgetSummary } from "@/lib/billing/budgetService";
 
@@ -42,35 +43,60 @@ describe("MonthlyBudgetTracker Component & Progress Bar", () => {
     ...overrides,
   });
 
+  describe("calculateBudgetPercentage Helper Function", () => {
+    it("calculates percentage accurately using (spent / totalBudget) * 100", () => {
+      expect(calculateBudgetPercentage(0, 1000)).toBe(0);
+      expect(calculateBudgetPercentage(450, 1000)).toBe(45);
+      expect(calculateBudgetPercentage(700, 1000)).toBe(70);
+      expect(calculateBudgetPercentage(800, 1000)).toBe(80);
+      expect(calculateBudgetPercentage(900, 1000)).toBe(90);
+      expect(calculateBudgetPercentage(950, 1000)).toBe(95);
+    });
+
+    it("returns 0 safely if totalBudget is 0 or negative", () => {
+      expect(calculateBudgetPercentage(100, 0)).toBe(0);
+      expect(calculateBudgetPercentage(100, -500)).toBe(0);
+    });
+  });
+
   describe("Percentage Threshold Color Function", () => {
-    it("returns emerald gradient when utilization is under 70%", () => {
+    it("returns emerald/green gradient when utilization is under 70%", () => {
       const colorInfo = getBudgetProgressColor(50);
       expect(colorInfo.threshold).toBe("emerald");
+      expect(colorInfo.color).toBe("green");
       expect(colorInfo.gradientClass).toContain("emerald");
+      expect(colorInfo.gradientClass).toContain("green");
     });
 
     it("returns amber gradient when utilization is between 70% and 90%", () => {
       const color70 = getBudgetProgressColor(70);
       expect(color70.threshold).toBe("amber");
+      expect(color70.color).toBe("amber");
       expect(color70.gradientClass).toContain("amber");
 
       const color85 = getBudgetProgressColor(85);
       expect(color85.threshold).toBe("amber");
+      expect(color85.color).toBe("amber");
       expect(color85.gradientClass).toContain("amber");
 
       const color90 = getBudgetProgressColor(90);
       expect(color90.threshold).toBe("amber");
+      expect(color90.color).toBe("amber");
       expect(color90.gradientClass).toContain("amber");
     });
 
-    it("returns rose gradient when utilization is greater than 90%", () => {
+    it("returns rose/red gradient when utilization is greater than 90%", () => {
       const color91 = getBudgetProgressColor(91);
       expect(color91.threshold).toBe("rose");
+      expect(color91.color).toBe("red");
       expect(color91.gradientClass).toContain("rose");
+      expect(color91.gradientClass).toContain("red");
 
       const color110 = getBudgetProgressColor(110);
       expect(color110.threshold).toBe("rose");
+      expect(color110.color).toBe("red");
       expect(color110.gradientClass).toContain("rose");
+      expect(color110.gradientClass).toContain("red");
     });
   });
 
@@ -172,6 +198,58 @@ describe("MonthlyBudgetTracker Component & Progress Bar", () => {
       expect(screen.getByTestId("projected-month-end-spend")).toHaveTextContent(
         "$850",
       );
+    });
+  });
+
+  describe("Acceptance Criteria: Display alert badge when spending exceeds 90%", () => {
+    it("displays alert badge when spending is greater than 90%", () => {
+      const summary = createMockSummary({
+        totalSpent: 950,
+        monthlyLimit: 1000,
+        utilizationPercentage: 95,
+      });
+
+      render(<MonthlyBudgetTracker initialSummary={summary} />);
+
+      const alertBadge = screen.getByTestId("alert-badge");
+      expect(alertBadge).toBeInTheDocument();
+      expect(alertBadge).toHaveAttribute("role", "alert");
+      expect(alertBadge).toHaveTextContent(/spending exceeds 90%/i);
+    });
+
+    it("does not display alert badge when spending is at or below 90%", () => {
+      const summary90 = createMockSummary({
+        totalSpent: 900,
+        monthlyLimit: 1000,
+        utilizationPercentage: 90,
+      });
+
+      const { rerender } = render(
+        <MonthlyBudgetTracker initialSummary={summary90} />,
+      );
+      expect(screen.queryByTestId("alert-badge")).not.toBeInTheDocument();
+
+      const summary65 = createMockSummary({
+        totalSpent: 650,
+        monthlyLimit: 1000,
+        utilizationPercentage: 65,
+      });
+      rerender(<MonthlyBudgetTracker initialSummary={summary65} />);
+      expect(screen.queryByTestId("alert-badge")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Interactive progress bar with spent & totalBudget direct props", () => {
+    it("computes percentage and renders spending-progress-bar with alert badge when spent/totalBudget props are passed", () => {
+      render(<MonthlyBudgetTracker spent={950} totalBudget={1000} />);
+
+      const progressbar = screen.getByTestId("spending-progress-bar");
+      expect(progressbar).toBeInTheDocument();
+      expect(progressbar).toHaveAttribute("role", "progressbar");
+      expect(progressbar).toHaveAttribute("aria-valuenow", "95");
+
+      const alertBadge = screen.getByTestId("alert-badge");
+      expect(alertBadge).toBeInTheDocument();
     });
   });
 

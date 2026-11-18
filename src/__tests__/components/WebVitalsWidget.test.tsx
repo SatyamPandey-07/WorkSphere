@@ -98,9 +98,20 @@ describe("WebVitalsWidget Component (#4145)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     clearStoredWebVitals();
+    HTMLCanvasElement.prototype.getContext = jest.fn().mockReturnValue({
+      fillRect: jest.fn(),
+      beginPath: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      stroke: jest.fn(),
+      arc: jest.fn(),
+      fill: jest.fn(),
+      save: jest.fn(),
+      restore: jest.fn(),
+    });
   });
 
-  it("renders Web Vitals widget title and overall performance score", async () => {
+  it("renders Web Vitals widget title, overall performance score, and telemetry oscilloscope", async () => {
     render(<WebVitalsWidget />);
 
     expect(screen.getByTestId("web-vitals-widget")).toBeInTheDocument();
@@ -111,6 +122,11 @@ describe("WebVitalsWidget Component (#4145)", () => {
     await waitFor(() => {
       expect(screen.getByText("88")).toBeInTheDocument();
       expect(screen.getByText("Overall Web Vitals Score")).toBeInTheDocument();
+      expect(screen.getByTestId("telemetry-oscilloscope")).toBeInTheDocument();
+      expect(screen.getByTestId("oscilloscope-canvas")).toBeInTheDocument();
+      expect(
+        screen.getByText("Avionics Telemetry Oscilloscope"),
+      ).toBeInTheDocument();
     });
   });
 

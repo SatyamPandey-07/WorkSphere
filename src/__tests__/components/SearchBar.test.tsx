@@ -346,7 +346,7 @@ describe("SearchBar component (#4401, #4404)", () => {
       });
       await flush(300);
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(mockFetch.mock.calls[0][0]).toContain("query=Cafe");
     });
 
@@ -358,7 +358,7 @@ describe("SearchBar component (#4401, #4404)", () => {
         fireEvent.change(input, { target: { value: "Cafe" } });
       });
       await flush(300);
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(global.fetch as jest.Mock).toHaveBeenCalledTimes(1);
 
       await act(async () => {
         fireEvent.keyDown(input, { key: "Enter" });
@@ -485,5 +485,132 @@ describe("SearchBar AbortController & generation counter race-condition preventi
     // Final UI state must contain only "Cafe Milano" and never revert to "Cafeteria Stale"
     expect(screen.getByText("Cafe Milano")).toBeInTheDocument();
     expect(screen.queryByText("Cafeteria Stale")).not.toBeInTheDocument();
+  });
+
+  describe("venue search query history (#7944)", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it("shows recent searches on focus and selects one immediately", async () => {
+      localStorage.setItem(
+        "ws-recent-searches",
+        JSON.stringify(["quiet cafe", "library"]),
+      );
+      const onSearch = jest.fn();
+      render(<SearchBar onSearch={onSearch} />);
+      const input = screen.getByTestId("search-bar-input");
+
+      fireEvent.focus(input);
+
+      expect(screen.getByTestId("search-bar-history")).toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("search-history-term-0"));
+      });
+
+      expect(input).toHaveValue("quiet cafe");
+      expect(onSearch).toHaveBeenCalledTimes(1);
+      expect(onSearch).toHaveBeenCalledWith("quiet cafe");
+      expect(global.fetch as jest.Mock).toHaveBeenCalledTimes(1);
+      expect(
+        screen.queryByTestId("search-bar-history"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("saves submitted queries and deduplicates them in LRU order", async () => {
+      localStorage.setItem(
+        "ws-recent-searches",
+        JSON.stringify(["library", "cafe"]),
+      );
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      fireEvent.change(input, { target: { value: "  quiet cafe  " } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(
+        JSON.parse(localStorage.getItem("ws-recent-searches") || "[]"),
+      ).toEqual(["quiet cafe", "library", "cafe"]);
+
+      fireEvent.change(input, { target: { value: "library" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(
+        JSON.parse(localStorage.getItem("ws-recent-searches") || "[]")[0],
+      ).toBe("library");
+    });
+
+    it("removes an individual term and clears all history", () => {
+      localStorage.setItem(
+        "ws-recent-searches",
+        JSON.stringify(["quiet cafe", "library"]),
+      );
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+      fireEvent.focus(input);
+
+      fireEvent.click(screen.getByTestId("search-history-remove-1"));
+      expect(
+        JSON.parse(localStorage.getItem("ws-recent-searches") || "[]"),
+      ).toEqual(["quiet cafe"]);
+
+      fireEvent.click(screen.getByTestId("search-history-clear"));
+      expect(localStorage.getItem("ws-recent-searches")).toBeNull();
+      expect(screen.getByTestId("search-history-empty")).toHaveTextContent(
+        "No recent searches",
+      );
+    });
+
+    it("shows an empty state on focus and closes with Escape", () => {
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      fireEvent.focus(input);
+      expect(screen.getByTestId("search-history-empty")).toHaveTextContent(
+        "No recent searches",
+      );
+
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(
+        screen.queryByTestId("search-bar-history"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("closes history on outside click", () => {
+      localStorage.setItem(
+        "ws-recent-searches",
+        JSON.stringify(["quiet cafe"]),
+      );
+      render(
+        <>
+          <SearchBar />
+          <button type="button">Outside</button>
+        </>,
+      );
+      const input = screen.getByTestId("search-bar-input");
+
+      fireEvent.focus(input);
+      expect(screen.getByTestId("search-bar-history")).toBeInTheDocument();
+      fireEvent.mouseDown(screen.getByText("Outside"));
+      expect(
+        screen.queryByTestId("search-bar-history"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not trigger onSearch when an item is removed or history is cleared", () => {
+      localStorage.setItem(
+        "ws-recent-searches",
+        JSON.stringify(["quiet cafe", "library"]),
+      );
+      const onSearch = jest.fn();
+      render(<SearchBar onSearch={onSearch} />);
+      const input = screen.getByTestId("search-bar-input");
+      fireEvent.focus(input);
+
+      fireEvent.click(screen.getByTestId("search-history-remove-1"));
+      expect(onSearch).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId("search-history-clear"));
+      expect(onSearch).not.toHaveBeenCalled();
+    });
   });
 });

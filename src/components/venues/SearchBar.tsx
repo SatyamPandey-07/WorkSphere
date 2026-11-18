@@ -2,10 +2,17 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { Search, X, Loader2, MapPin } from "lucide-react";
+import { Search, X, Loader2, MapPin, Clock } from "lucide-react";
 import { useVenueSearch, VenueSearchResult } from "@/hooks/useVenueSearch";
 import { AmenityFilterPills } from "./AmenityFilterPills";
 import { ShortcutTooltip } from "../ui/ShortcutTooltip";
+import {
+  clearVenueSearchHistory,
+  loadVenueSearchHistory,
+  removeVenueSearchQuery,
+  saveVenueSearchQuery,
+  VENUE_SEARCH_HISTORY_EVENT,
+} from "@/lib/venueSearchHistory";
 
 export interface SearchBarProps {
   placeholder?: string;
@@ -55,12 +62,26 @@ export function SearchBar({
   const [isOpen, setIsOpen] = useState(false);
   const [shortcutKey, setShortcutKey] = useState("Ctrl+K");
   const [internalDistance, setInternalDistance] = useState(distance ?? 0);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [activeHistoryIndex, setActiveHistoryIndex] = useState(-1);
 
   useEffect(() => {
     if (distance !== undefined) {
       setInternalDistance(distance);
     }
   }, [distance]);
+
+  useEffect(() => {
+    setRecentSearches(loadVenueSearchHistory());
+
+    const syncHistory = () => setRecentSearches(loadVenueSearchHistory());
+    window.addEventListener(VENUE_SEARCH_HISTORY_EVENT, syncHistory);
+    window.addEventListener("storage", syncHistory);
+    return () => {
+      window.removeEventListener(VENUE_SEARCH_HISTORY_EVENT, syncHistory);
+      window.removeEventListener("storage", syncHistory);
+    };
+  }, []);
 
   const handleDistanceSelect = (val: number) => {
     setInternalDistance(val);
@@ -182,6 +203,8 @@ export function SearchBar({
         setIsOpen(false);
         return;
       }
+      const updatedHistory = saveVenueSearchQuery(trimmed);
+      setRecentSearches(updatedHistory);
       onSearch?.(trimmed);
       updateUrlQuery(trimmed);
       void search(trimmed);
@@ -201,10 +224,43 @@ export function SearchBar({
 
   const handleSelectSuggestion = () => {
     if (!suggestedQuery) return;
+    const updatedHistory = saveVenueSearchQuery(suggestedQuery);
+    setRecentSearches(updatedHistory);
     setQuery(suggestedQuery);
     onSearch?.(suggestedQuery);
     updateUrlQuery(suggestedQuery);
     setIsOpen(true);
+  };
+
+  const handleSelectRecentSearch = (term: string) => {
+    const updatedHistory = saveVenueSearchQuery(term);
+    setRecentSearches(updatedHistory);
+    setActiveHistoryIndex(-1);
+    setQuery(term);
+    onSearch?.(term);
+    updateUrlQuery(term);
+    setIsOpen(false);
+    void search(term);
+  };
+
+  const handleRemoveRecentSearch = (
+    term: string,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setRecentSearches(removeVenueSearchQuery(term));
+    setActiveHistoryIndex(-1);
+  };
+
+  const handleClearRecentSearches = (
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearVenueSearchHistory();
+    setRecentSearches([]);
+    setActiveHistoryIndex(-1);
   };
 
   const handleClear = (e?: React.MouseEvent<HTMLButtonElement>) => {
@@ -221,19 +277,44 @@ export function SearchBar({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
+    const showHistory =
+      isOpen && query.trim().length === 0 && recentSearches.length > 0;
+
+    if (showHistory && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const direction = e.key === "ArrowDown" ? 1 : -1;
+      setActiveHistoryIndex((current) => {
+        if (direction === 1) {
+          return current === -1 ? 0 : (current + 1) % recentSearches.length;
+        }
+        return current === -1
+          ? recentSearches.length - 1
+          : (current - 1 + recentSearches.length) % recentSearches.length;
+      });
+    } else if (showHistory && e.key === "Enter" && activeHistoryIndex >= 0) {
+      e.preventDefault();
+      handleSelectRecentSearch(recentSearches[activeHistoryIndex]);
+    } else if (e.key === "Enter") {
       e.preventDefault();
       handleSearchSubmit();
     } else if (e.key === "Escape") {
       e.preventDefault();
       cursorRef.current = { start: null, end: null };
-      clear();
-      onSearch?.("");
-      updateUrlQuery("");
-      setIsOpen(false);
-      inputRef.current?.blur();
+      if (isOpen && query.trim().length === 0) {
+        setActiveHistoryIndex(-1);
+        setIsOpen(false);
+        inputRef.current?.blur();
+      } else {
+        clear();
+        onSearch?.("");
+        updateUrlQuery("");
+        setIsOpen(false);
+        inputRef.current?.blur();
+      }
     }
   };
+
+  const showHistoryPanel = isOpen && query.trim().length === 0;
 
   return (
     <div
@@ -257,9 +338,8 @@ export function SearchBar({
             setIsOpen(true);
           }}
           onFocus={() => {
-            if (query.trim().length > 0) {
-              setIsOpen(true);
-            }
+            setActiveHistoryIndex(-1);
+            setIsOpen(true);
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
@@ -267,8 +347,12 @@ export function SearchBar({
           role="combobox"
           aria-autocomplete="list"
           aria-label={placeholder}
-          aria-expanded={isOpen && venues.length > 0}
-          aria-controls="search-bar-results-list"
+          aria-expanded={showHistoryPanel || (isOpen && venues.length > 0)}
+          aria-controls={
+            showHistoryPanel
+              ? "search-bar-history-list"
+              : "search-bar-results-list"
+          }
           className="w-full pl-10 pr-16 py-2.5 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
         />
 
@@ -353,6 +437,77 @@ export function SearchBar({
             <option value={3}>3km</option>
             <option value={5}>5km</option>
           </select>
+        </div>
+      )}
+
+      {showHistoryPanel && (
+        <div
+          id="search-bar-history-list"
+          data-testid="search-bar-history"
+          role="region"
+          aria-label="Recent venue searches"
+          className="absolute z-50 left-0 right-0 mt-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 shadow-xl"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+              Recent searches
+            </span>
+            {recentSearches.length > 0 && (
+              <button
+                type="button"
+                data-testid="search-history-clear"
+                onMouseDown={handleClearRecentSearches}
+                onClick={handleClearRecentSearches}
+                className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+          {recentSearches.length === 0 ? (
+            <p
+              data-testid="search-history-empty"
+              className="px-1 py-2 text-sm text-zinc-500 dark:text-zinc-400"
+            >
+              No recent searches
+            </p>
+          ) : (
+            <ul className="space-y-1" aria-label="Recent search terms">
+              {recentSearches.map((term, index) => (
+                <li
+                  key={term}
+                  className={`flex items-center rounded-lg transition-colors ${
+                    activeHistoryIndex === index
+                      ? "bg-blue-50 dark:bg-blue-950/40"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    data-testid={`search-history-term-${index}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleSelectRecentSearch(term)}
+                    className="min-w-0 flex-1 truncate px-3 py-2 text-left text-sm text-zinc-700 dark:text-zinc-200"
+                  >
+                    {term}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`search-history-remove-${index}`}
+                    aria-label={`Remove ${term} from recent searches`}
+                    onMouseDown={(event) =>
+                      handleRemoveRecentSearch(term, event)
+                    }
+                    onClick={(event) => handleRemoveRecentSearch(term, event)}
+                    className="mr-1 rounded-full p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

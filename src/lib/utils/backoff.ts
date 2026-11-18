@@ -36,17 +36,30 @@ export const PARTY_SOCKET_RECONNECT_OPTIONS: PartyReconnectOptions = {
 export const DEFAULT_BACKOFF_OPTIONS = PARTY_SOCKET_RECONNECT_OPTIONS;
 
 
-/** Full-jitter exponential backoff for reconnecting clients. */
+/**
+ * Full-jitter exponential backoff for reconnecting clients. Each retry samples
+ * uniformly from zero to its capped exponential delay ceiling.
+ */
 export function calculateFullJitterBackoff(
   attempt: number,
   options: CalculateJitteredBackoffOptions = {},
 ): number {
-  if (!Number.isFinite(attempt) || attempt <= 0) return 0;
-  const baseDelay = options.baseDelay ?? PARTY_SOCKET_RECONNECT_OPTIONS.minReconnectionDelay;
+  if (!Number.isInteger(attempt) || attempt <= 0) return 0;
+
+  const baseDelay =
+    options.baseDelay ?? PARTY_SOCKET_RECONNECT_OPTIONS.minReconnectionDelay;
   const maxDelay = options.maxDelay ?? 10_000;
-  if (!Number.isFinite(baseDelay) || baseDelay < 0 || !Number.isFinite(maxDelay) || maxDelay < 0) return 0;
-  const ceiling = Math.min(maxDelay, baseDelay * Math.pow(2, Math.floor(attempt) - 1));
-  const sample = options.random ? options.random() : Math.random();
+  if (
+    !Number.isFinite(baseDelay) ||
+    baseDelay < 0 ||
+    !Number.isFinite(maxDelay) ||
+    maxDelay < 0
+  ) {
+    return 0;
+  }
+
+  const ceiling = Math.min(maxDelay, baseDelay * Math.pow(2, attempt - 1));
+  const sample = options.random?.() ?? Math.random();
   const bounded = Number.isFinite(sample) ? Math.min(1, Math.max(0, sample)) : 0;
   return Math.round(ceiling * bounded);
 }

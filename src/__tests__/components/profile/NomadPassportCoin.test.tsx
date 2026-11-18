@@ -1,5 +1,6 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { useThree } from "@react-three/fiber";
 
 // Mock Three.js for JSDOM test environment
 jest.mock("three", () => ({
@@ -27,6 +28,7 @@ jest.mock("@react-three/fiber", () => ({
 
 import NomadPassportCoin, {
   NomadPassportCoinSkeleton,
+  PassportCoinResourceCleanup,
   disposePassportCoinResources,
 } from "@/components/profile/NomadPassportCoin";
 import type { PassportStamp } from "@/lib/zkp/nomadProof";
@@ -43,6 +45,32 @@ describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
 
 
   describe("NomadPassportCoin resource disposal", () => {
+
+    it("releases GPU resources when the Canvas cleanup component unmounts", () => {
+      const geometry = { dispose: jest.fn() };
+      const texture = { isTexture: true, dispose: jest.fn() };
+      const material = { map: texture, dispose: jest.fn() };
+      const scene = {
+        traverse: (callback: (object: any) => void) => {
+          callback({ geometry, material });
+        },
+      };
+      const renderer = {
+        renderLists: { dispose: jest.fn() },
+        dispose: jest.fn(),
+      };
+      (useThree as unknown as jest.Mock).mockReturnValue({ scene, gl: renderer });
+
+      const view = render(<PassportCoinResourceCleanup />);
+      view.unmount();
+
+      expect(geometry.dispose).toHaveBeenCalledTimes(1);
+      expect(material.dispose).toHaveBeenCalledTimes(1);
+      expect(texture.dispose).toHaveBeenCalledTimes(1);
+      expect(renderer.renderLists.dispose).toHaveBeenCalledTimes(1);
+      expect(renderer.dispose).toHaveBeenCalledTimes(1);
+    });
+
     it("disposes scene geometries, materials, textures, render lists, and renderer", () => {
       const geometry = { dispose: jest.fn() };
       const texture = { isTexture: true, dispose: jest.fn() };

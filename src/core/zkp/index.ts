@@ -46,3 +46,4 @@ export * from './MatrixVectorZKPProver';
 export * from './ReedSolomonErasureProver';
 export * from './SetDisjointnessProver';
 export * from './PolynomialBatchOpeningProver';
+export * from './Halo2AccumulatorProver';

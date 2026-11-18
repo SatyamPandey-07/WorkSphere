@@ -1,5 +1,7 @@
 "use client";
 
+ feat/redis-rate-limiter
+
  fix/seat-hold-concurrency-race
 
  fix/skipped-key-eviction-lru
@@ -21,6 +23,7 @@
  feat/wocs-contributions-final
 
  feat/offline-ticket-queue
+ main
  main
  main
  main
@@ -112,6 +115,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/redis-rate-limiter
+}
+
  fix/seat-hold-concurrency-race
 }
 
@@ -281,6 +287,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

@@ -74,15 +74,13 @@ export function VenueLivePulseBadge({
   return (
     <div
       data-testid="venue-live-pulse-badge"
-      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold backdrop-blur-sm transition-all ${styles.badgeBg} ${styles.badgeBorder} ${styles.badgeText} ${className}`}
+      className={`inline-flex max-w-full items-center gap-2 whitespace-nowrap px-3 py-1 rounded-full border text-[11px] sm:text-xs font-semibold backdrop-blur-sm transition-all ${styles.badgeBg} ${styles.badgeBorder} ${styles.badgeText} ${className}`}
       title={
-        formattedTime
-          ? `Last reported: ${formattedTime}`
-          : "Live crowd vibe"
+        formattedTime ? `Last reported: ${formattedTime}` : "Live crowd vibe"
       }
     >
       <span
-        className="relative flex h-2 w-2"
+        className="relative flex h-2 w-2 shrink-0"
         data-testid="live-pulse-dot-container"
       >
         {pulseColor !== "zinc" && (
@@ -96,7 +94,7 @@ export function VenueLivePulseBadge({
           className={`relative inline-flex rounded-full h-2 w-2 ${styles.dotBg}`}
         />
       </span>
-      <span data-testid="live-pulse-text">
+      <span className="min-w-0 truncate" data-testid="live-pulse-text">
         {vibe?.emoji && (
           <span className="mr-1" data-testid="live-pulse-emoji">
             {vibe.emoji}
@@ -138,7 +136,9 @@ export function VenueLiveVibeWidget({
   const fetchLiveVibe = useCallback(async () => {
     if (!venueId) return;
     try {
-      const res = await fetch(`/api/venues/${encodeURIComponent(venueId)}/vibe`);
+      const res = await fetch(
+        `/api/venues/${encodeURIComponent(venueId)}/vibe`,
+      );
       if (!res.ok) return;
       const data = await res.json();
       if (isMountedRef.current && data?.vibe) {
@@ -189,11 +189,14 @@ export function VenueLiveVibeWidget({
     }
 
     try {
-      const res = await fetch(`/api/venues/${encodeURIComponent(venueId)}/vibe`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vibe: type }),
-      });
+      const res = await fetch(
+        `/api/venues/${encodeURIComponent(venueId)}/vibe`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vibe: type }),
+        },
+      );
 
       const data = await res.json();
       if (!res.ok) {

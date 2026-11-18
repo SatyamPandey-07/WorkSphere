@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { HRTFFilterEngine } from "@/core/audio/HRTFFilterEngine";
 
 describe("HRTFFilterEngine Dual-Convolver Ping-Pong & Equal-Power Cross-Fade (#5607)", () => {
@@ -10,45 +9,45 @@ describe("HRTFFilterEngine Dual-Convolver Ping-Pong & Equal-Power Cross-Fade (#5
     mockGainA = {
       gain: {
         value: 1.0,
-        setValueAtTime: vi.fn((val: number) => {
+        setValueAtTime: jest.fn((val: number) => {
           mockGainA.gain.value = val;
         }),
-        setValueCurveAtTime: vi.fn(),
+        setValueCurveAtTime: jest.fn(),
       },
-      connect: vi.fn(),
-      disconnect: vi.fn(),
+      connect: jest.fn(),
+      disconnect: jest.fn(),
     };
 
     mockGainB = {
       gain: {
         value: 0.0,
-        setValueAtTime: vi.fn((val: number) => {
+        setValueAtTime: jest.fn((val: number) => {
           mockGainB.gain.value = val;
         }),
-        setValueCurveAtTime: vi.fn(),
+        setValueCurveAtTime: jest.fn(),
       },
-      connect: vi.fn(),
-      disconnect: vi.fn(),
+      connect: jest.fn(),
+      disconnect: jest.fn(),
     };
 
     let gainCallCount = 0;
     mockAudioContext = {
       currentTime: 10.0,
       sampleRate: 48000,
-      createGain: vi.fn(() => {
+      createGain: jest.fn(() => {
         gainCallCount++;
         return gainCallCount % 2 === 1 ? mockGainA : mockGainB;
       }),
-      createConvolver: vi.fn(() => ({
+      createConvolver: jest.fn(() => ({
         buffer: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
+        connect: jest.fn(),
+        disconnect: jest.fn(),
       })),
-      createBuffer: vi.fn((channels, length, sampleRate) => ({
+      createBuffer: jest.fn((channels, length, sampleRate) => ({
         numberOfChannels: channels,
         length,
         sampleRate,
-        getChannelData: vi.fn(() => new Float32Array(length)),
+        getChannelData: jest.fn(() => new Float32Array(length)),
       })),
     };
   });

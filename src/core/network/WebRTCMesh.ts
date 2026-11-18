@@ -2,13 +2,53 @@
  * WebRTCMesh.ts
  * Manages the lifecycle of RTCPeerConnections and negotiates DataChannels for local mesh networking.
  * Handles the signaling state machine and ICE candidate exchange.
+ *
+ * Renegotiation uses the W3C "Perfect Negotiation" pattern (RFC 8829 §3.5) so
+ * that two peers which simultaneously dispatch `createOffer` (glare) resolve
+ * deterministically instead of deadlocking in `have-local-offer`.
  */
 
 export interface MeshPeer {
     peerId: string;
     connection: RTCPeerConnection;
     dataChannel: RTCDataChannel | null;
-    status: 'connecting' | 'connected' | 'disconnected';
+    status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+    /** True for the polite peer; it yields when an offer collides. */
+    polite: boolean;
+    /** Set while a local offer is being created/sent. */
+    makingOffer: boolean;
+    /** Set when the impolite peer should ignore an incoming offer. */
+    ignoreOffer: boolean;
+    /** Monotonic token used to discard an offer superseded by a remote one. */
+    negotiationId: number;
+    /** ICE candidates that arrived before a remote description existed. */
+    pendingCandidates: RTCIceCandidateInit[];
+    /** Number of automated ICE restart attempts initiated for this connection. */
+    iceRestartCount: number;
+    /** Active timeout handle for scheduled ICE restart backoff, if any. */
+    iceRestartTimer: any;
+}
+
+export interface WebRTCMeshOptions {
+    /** Maximum number of automated ICE restarts before disconnecting. Defaults to 3. */
+    maxIceRestarts?: number;
+    /** Base backoff duration in milliseconds for ICE restarts. Defaults to 1000ms. */
+    iceRestartBackoffMs?: number;
+}
+
+/** Signaling channel used to shuttle SDP/ICE between peers (e.g. PartyKit). */
+export interface MeshSignaling {
+    sendDescription(peerId: string, description: RTCSessionDescriptionInit): void;
+    sendCandidate(peerId: string, candidate: RTCIceCandidateInit): void;
+}
+
+/**
+ * Deterministic, symmetric tie-breaker: exactly one side of a pair is polite.
+ * Both peers compute the same result from the same two node IDs, so they never
+ * disagree about who rolls back.
+ */
+export function isPolitePeer(localPeerId: string, remotePeerId: string): boolean {
+    return localPeerId < remotePeerId;
 }
 
 export interface PendingTransferBuffer {
@@ -39,8 +79,21 @@ export class WebRTCMesh {
     // Chunk reassembly maps for terminated peer IDs: peerId -> Map<fileId, Map<number, ArrayBuffer>>
     private chunkReassemblyMaps: Map<string, Map<string, Map<number, ArrayBuffer>>>;
 
-    constructor(localPeerId: string) {
+    // Signaling transport used to exchange SDP/ICE with remote peers.
+    private signaling: MeshSignaling | null;
+
+    private maxIceRestarts: number;
+    private iceRestartBackoffMs: number;
+
+    constructor(
+        localPeerId: string,
+        signaling: MeshSignaling | null = null,
+        options: WebRTCMeshOptions = {}
+    ) {
         this.localPeerId = localPeerId;
+        this.signaling = signaling;
+        this.maxIceRestarts = options.maxIceRestarts ?? 3;
+        this.iceRestartBackoffMs = options.iceRestartBackoffMs ?? 1000;
         this.peers = new Map();
         this.onMessageCallback = null;
         this.onPeerConnectedCallback = null;
@@ -49,6 +102,11 @@ export class WebRTCMesh {
         this.multiPathRoutes = new Map();
         this.transferBuffers = new Map();
         this.chunkReassemblyMaps = new Map();
+    }
+
+    /** Attach (or replace) the signaling transport after construction. */
+    public setSignaling(signaling: MeshSignaling | null): void {
+        this.signaling = signaling;
     }
 
     public async createPeerConnection(targetPeerId: string, isInitiator: boolean): Promise<void> {
@@ -62,55 +120,185 @@ export class WebRTCMesh {
         };
 
         const pc = new RTCPeerConnection(config);
-        let dataChannel: RTCDataChannel | null = null;
+
+        const peer: MeshPeer = {
+            peerId: targetPeerId,
+            connection: pc,
+            dataChannel: null,
+            status: 'connecting',
+            polite: isPolitePeer(this.localPeerId, targetPeerId),
+            makingOffer: false,
+            ignoreOffer: false,
+            negotiationId: 0,
+            pendingCandidates: [],
+            iceRestartCount: 0,
+            iceRestartTimer: null,
+        };
 
         if (isInitiator) {
-            dataChannel = pc.createDataChannel('fileTransfer', {
+            peer.dataChannel = pc.createDataChannel('fileTransfer', {
                 ordered: true,
                 maxRetransmits: 3
             });
-            this.setupDataChannel(dataChannel, targetPeerId);
+            this.setupDataChannel(peer.dataChannel, targetPeerId);
         } else {
             pc.ondatachannel = (event) => {
-                dataChannel = event.channel;
-                this.setupDataChannel(dataChannel, targetPeerId);
+                peer.dataChannel = event.channel;
+                this.setupDataChannel(peer.dataChannel, targetPeerId);
             };
         }
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
                 // In production, send this candidate to the target peer via PartyKit signaling
-                console.log('New ICE candidate:', event.candidate.candidate);
+                this.signaling?.sendCandidate(
+                    targetPeerId,
+                    typeof event.candidate.toJSON === 'function'
+                        ? event.candidate.toJSON()
+                        : (event.candidate as unknown as RTCIceCandidateInit),
+                );
             }
         };
 
+        // Any track/DataChannel change schedules a (re)negotiation. The glare
+        // guard inside negotiate() makes concurrent triggers safe.
+        pc.onnegotiationneeded = () => {
+            void this.negotiate(targetPeerId);
+        };
+
+        // Candidates queued before a remote description can only be applied once
+        // the signaling state settles.
+        pc.onsignalingstatechange = () => {
+            void this.flushPendingCandidates(targetPeerId);
+        };
+
         pc.onconnectionstatechange = () => {
-            const peer = this.peers.get(targetPeerId);
-            if (peer) {
-                peer.status = pc.connectionState as MeshPeer['status'];
-                if (pc.connectionState === 'connected' && this.onPeerConnectedCallback) {
-                    this.onPeerConnectedCallback(targetPeerId);
+            const current = this.peers.get(targetPeerId);
+            if (current) {
+                if (pc.connectionState === 'connected') {
+                    current.status = 'connected';
+                    current.iceRestartCount = 0;
+                    if (current.iceRestartTimer) {
+                        clearTimeout(current.iceRestartTimer);
+                        current.iceRestartTimer = null;
+                    }
+                    if (this.onPeerConnectedCallback) {
+                        this.onPeerConnectedCallback(targetPeerId);
+                    }
                 } else if (
                     pc.connectionState === 'disconnected' ||
-                    pc.connectionState === 'failed' ||
-                    pc.connectionState === 'closed'
+                    pc.connectionState === 'failed'
                 ) {
+                    if (current.iceRestartCount < this.maxIceRestarts) {
+                        current.iceRestartCount++;
+                        current.status = 'reconnecting';
+                        const backoff = Math.min(
+                            this.iceRestartBackoffMs * Math.pow(2, current.iceRestartCount - 1),
+                            8000
+                        );
+                        if (current.iceRestartTimer) {
+                            clearTimeout(current.iceRestartTimer);
+                        }
+                        current.iceRestartTimer = setTimeout(() => {
+                            void this.restartIce(targetPeerId);
+                        }, backoff);
+                    } else {
+                        this.onPeerDisconnect(targetPeerId);
+                    }
+                } else if (pc.connectionState === 'closed') {
                     this.onPeerDisconnect(targetPeerId);
                 }
             }
         };
 
-        this.peers.set(targetPeerId, {
-            peerId: targetPeerId,
-            connection: pc,
-            dataChannel,
-            status: 'connecting'
-        });
+        this.peers.set(targetPeerId, peer);
 
         if (isInitiator) {
-            const offer = await pc.createOffer();
+            await this.negotiate(targetPeerId);
+        }
+    }
+
+    /**
+     * Initiates an ICE restart on an active peer connection to re-establish
+     * connectivity across changed network paths or failed sessions.
+     */
+    public async restartIce(peerId: string): Promise<void> {
+        const peer = this.peers.get(peerId);
+        if (!peer || peer.status === 'disconnected') {
+            return;
+        }
+        if (peer.iceRestartTimer) {
+            clearTimeout(peer.iceRestartTimer);
+            peer.iceRestartTimer = null;
+        }
+        peer.status = 'reconnecting';
+        await this.negotiate(peerId, { iceRestart: true });
+    }
+
+    /**
+     * Creates and sends a local offer, unless a negotiation is already in
+     * flight. An offer is only produced from a stable signaling state; if a
+     * remote description supersedes it while `createOffer` is awaited, the
+     * offer is discarded.
+     */
+    public async negotiate(peerId: string, options?: { iceRestart?: boolean }): Promise<void> {
+        const peer = this.peers.get(peerId);
+        if (!peer) {
+            return;
+        }
+        const pc = peer.connection;
+
+        if (peer.makingOffer || pc.signalingState !== 'stable') {
+            return;
+        }
+
+        const negotiationId = ++peer.negotiationId;
+        peer.makingOffer = true;
+        try {
+            if (options?.iceRestart && typeof (pc as any).restartIce === 'function') {
+                try {
+                    (pc as any).restartIce();
+                } catch {
+                    // Ignore if environment prefers createOffer({ iceRestart: true })
+                }
+            }
+            const offerOptions: RTCOfferOptions | undefined = options?.iceRestart ? { iceRestart: true } : undefined;
+            const offer = await pc.createOffer(offerOptions);
+            if (peer.negotiationId !== negotiationId || pc.signalingState !== 'stable') {
+                return;
+            }
             await pc.setLocalDescription(offer);
-            // In production, send offer to target peer via PartyKit
+            if (peer.negotiationId !== negotiationId) {
+                return;
+            }
+            this.signaling?.sendDescription(peerId, pc.localDescription ?? offer);
+        } catch (err) {
+            console.error(`[WebRTCMesh] Failed to negotiate with ${peerId}:`, err);
+        } finally {
+            peer.makingOffer = false;
+        }
+    }
+
+    private async flushPendingCandidates(peerId: string): Promise<void> {
+        const peer = this.peers.get(peerId);
+        if (!peer) {
+            return;
+        }
+        const pc = peer.connection;
+        if (!pc.remoteDescription || peer.pendingCandidates.length === 0) {
+            return;
+        }
+
+        const queued = peer.pendingCandidates;
+        peer.pendingCandidates = [];
+        for (const candidate of queued) {
+            try {
+                await pc.addIceCandidate(candidate);
+            } catch (err) {
+                if (!peer.ignoreOffer) {
+                    console.error(`[WebRTCMesh] Failed to flush queued ICE candidate for ${peerId}:`, err);
+                }
+            }
         }
     }
 
@@ -131,6 +319,10 @@ export class WebRTCMesh {
 
         channel.onclose = () => {
             console.log(`DataChannel to ${peerId} closed`);
+            const current = this.peers.get(peerId);
+            if (current && current.status === 'reconnecting') {
+                return;
+            }
             this.onPeerDisconnect(peerId);
         };
 
@@ -149,6 +341,11 @@ export class WebRTCMesh {
         if (peer) {
             peer.status = 'disconnected';
 
+            if (peer.iceRestartTimer) {
+                clearTimeout(peer.iceRestartTimer);
+                peer.iceRestartTimer = null;
+            }
+
             // Cleanly unregister data channel event listeners to prevent memory leaks
             if (peer.dataChannel) {
                 peer.dataChannel.onmessage = null;
@@ -165,10 +362,13 @@ export class WebRTCMesh {
                 peer.dataChannel = null;
             }
 
-            // Cleanly unregister RTCPeerConnection event listeners
+            // Cleanly unregister RTCPeerConnection event listeners to prevent closure retention
             peer.connection.onicecandidate = null;
             peer.connection.onconnectionstatechange = null;
             peer.connection.ondatachannel = null;
+            peer.connection.onnegotiationneeded = null;
+            peer.connection.onsignalingstatechange = null;
+            (peer.connection as any).ontrack = null;
             try {
                 if (peer.connection.connectionState !== 'closed') {
                     peer.connection.close();
@@ -420,30 +620,85 @@ export class WebRTCMesh {
         this.onPeerDisconnectedCallback = callback;
     }
 
-    public async handleRemoteOffer(peerId: string, offer: RTCSessionDescriptionInit): Promise<void> {
+    /**
+     * Applies an incoming SDP description using the Perfect Negotiation glare
+     * rules. On an offer collision the polite peer rolls back its own offer and
+     * accepts the remote one; the impolite peer ignores the collision and keeps
+     * its offer.
+     */
+    public async handleRemoteDescription(
+        peerId: string,
+        description: RTCSessionDescriptionInit,
+    ): Promise<void> {
         let peer = this.peers.get(peerId);
         if (!peer) {
             await this.createPeerConnection(peerId, false);
             peer = this.peers.get(peerId)!;
         }
 
-        await peer.connection.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peer.connection.createAnswer();
-        await peer.connection.setLocalDescription(answer);
-        // In production, send answer to peerId via PartyKit
-    }
+        const pc = peer.connection;
 
-    public async handleRemoteAnswer(peerId: string, answer: RTCSessionDescriptionInit): Promise<void> {
-        const peer = this.peers.get(peerId);
-        if (peer) {
-            await peer.connection.setRemoteDescription(new RTCSessionDescription(answer));
+        const offerCollision =
+            description.type === 'offer' &&
+            (peer.makingOffer || pc.signalingState !== 'stable');
+
+        peer.ignoreOffer = !peer.polite && offerCollision;
+        if (peer.ignoreOffer) {
+            // Impolite peer insists on its own offer and drops the collision.
+            return;
+        }
+
+        // This remote description supersedes any local offer still in flight.
+        peer.negotiationId++;
+
+        try {
+            if (offerCollision && peer.polite) {
+                // Polite peer yields: roll back its local offer, then accept.
+                await pc.setLocalDescription({ type: 'rollback' });
+            }
+
+            await pc.setRemoteDescription(description);
+
+            if (description.type === 'offer') {
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                this.signaling?.sendDescription(peerId, pc.localDescription ?? answer);
+            }
+
+            await this.flushPendingCandidates(peerId);
+        } catch (err) {
+            console.error(`[WebRTCMesh] Failed to apply remote description from ${peerId}:`, err);
         }
     }
 
+    public async handleRemoteOffer(peerId: string, offer: RTCSessionDescriptionInit): Promise<void> {
+        await this.handleRemoteDescription(peerId, offer);
+    }
+
+    public async handleRemoteAnswer(peerId: string, answer: RTCSessionDescriptionInit): Promise<void> {
+        await this.handleRemoteDescription(peerId, answer);
+    }
+
     public async handleRemoteIceCandidate(peerId: string, candidate: RTCIceCandidateInit): Promise<void> {
-        const peer = this.peers.get(peerId);
-        if (peer) {
-            await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
+        let peer = this.peers.get(peerId);
+        if (!peer) {
+            await this.createPeerConnection(peerId, false);
+            peer = this.peers.get(peerId)!;
+        }
+        const pc = peer.connection;
+
+        // Candidates cannot be applied until a remote description exists.
+        if (!pc.remoteDescription || pc.signalingState === 'closed') {
+            peer.pendingCandidates.push(candidate);
+            return;
+        }
+
+        try {
+            await pc.addIceCandidate(candidate);
+        } catch (err) {
+            if (!peer.ignoreOffer) {
+                console.error(`[WebRTCMesh] Failed to add ICE candidate from ${peerId}:`, err);
+            }
         }
     }
 
@@ -462,6 +717,26 @@ export class WebRTCMesh {
 
     public onPeerConnected(callback: (peerId: string) => void): void {
         this.onPeerConnectedCallback = callback;
+    }
+
+    public getPeer(peerId: string): MeshPeer | undefined {
+        return this.peers.get(peerId);
+    }
+
+    public getPeerStatus(peerId: string): MeshPeer['status'] | undefined {
+        return this.peers.get(peerId)?.status;
+    }
+
+    public getIceRestartCount(peerId: string): number {
+        return this.peers.get(peerId)?.iceRestartCount ?? 0;
+    }
+
+    public setMaxIceRestarts(count: number): void {
+        this.maxIceRestarts = Math.max(0, count);
+    }
+
+    public getMaxIceRestarts(): number {
+        return this.maxIceRestarts;
     }
 
     public closeAll(): void {

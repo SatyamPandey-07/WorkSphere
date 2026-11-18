@@ -1,6 +1,6 @@
 export type RateLimitTier = "anonymous" | "authenticated" | "public" | "admin" | "webhooks";
 
-export type RateTierType = "search" | "auth" | "telemetry";
+export type RateTierType = "search" | "auth" | "telemetry" | "mutations";
 
 export interface TierConfig {
   readonly limit: number;

@@ -98,3 +98,4 @@ export * from './IncrementalMerkleStateAccumulator';
 export * from './ZeroKnowledgeEqualityDiscreteLogBatch';
 export * from './ZeroKnowledgeRangeIntersectionProver';
 export * from './ThresholdSignatureKeyRefreshProver';
+export * from './ZeroKnowledgeGraphColoringProver';

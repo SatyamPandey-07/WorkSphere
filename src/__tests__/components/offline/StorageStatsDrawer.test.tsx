@@ -271,9 +271,11 @@ describe("StorageStatsDrawer Component (#6899)", () => {
       expect(
         screen.queryByTestId("confirm-purge-modal"),
       ).not.toBeInTheDocument();
-      expect(
-        screen.getByTestId("storage-stats-success-message"),
-      ).toHaveTextContent("Stale cache successfully purged!");
+      const announcement = screen.getByTestId("storage-stats-success-message");
+      expect(announcement).toHaveAttribute("role", "status");
+      expect(announcement).toHaveAttribute("aria-live", "polite");
+      expect(announcement).toHaveAttribute("aria-atomic", "true");
+      expect(announcement).toHaveTextContent("Stale cache successfully purged. 6.0 MB reclaimed.");
     });
 
     it("cancels stale cache cleanup when cancel button is clicked", async () => {

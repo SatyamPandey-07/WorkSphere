@@ -27,8 +27,8 @@ describe("VerifiedExplorerBadge", () => {
 
     const badge = screen.getByTestId("verified-explorer-badge");
     expect(badge).toBeInTheDocument();
-    expect(badge).toHaveAttribute("aria-label", "Verified Explorer Badge (0 of 5)");
-    expect(screen.getByText("Explorer (0/5)")).toBeInTheDocument();
+    expect(badge).toHaveAttribute("aria-label", "Verified Explorer Badge (0 of 10)");
+    expect(screen.getByText("Explorer (0/10)")).toBeInTheDocument();
   });
 
   it("toggles tooltip on click and triggers onTooltipToggle callback", () => {
@@ -143,6 +143,19 @@ describe("VerifiedExplorerBadge", () => {
     const progressBar = screen.getByTestId("badge-progress-bar");
     expect(progressBar).toBeInTheDocument();
     expect(progressBar.style.width).not.toContain("NaN");
+  });
+
+  it("uses the canonical ten-vote threshold when the earned prop is supplied", () => {
+    render(<VerifiedExplorerBadge earned={false} />);
+
+    const badge = screen.getByTestId("verified-explorer-badge");
+    expect(badge).toHaveAttribute(
+      "aria-label",
+      "Verified Explorer Badge (0 of 10)",
+    );
+
+    fireEvent.click(badge);
+    expect(screen.getByText("Explorer (0/10)")).toBeInTheDocument();
   });
 
   it("applies custom className, testId, and description", () => {

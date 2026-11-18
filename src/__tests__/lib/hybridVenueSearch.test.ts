@@ -176,7 +176,11 @@ describe("Reciprocal Rank Fusion (RRF) Formula & Boundary Guards (#5603)", () =>
           fullTextWeight: 0.3,
         });
 
-        expect(results).toEqual(mockVenues);
+        // The returned list also carries fuzzyMatched / suggestedQuery, so
+        // compare the venues themselves and check those properties separately.
+        expect([...results]).toEqual(mockVenues);
+        expect(results.fuzzyMatched).toBe(false);
+        expect(results.suggestedQuery).toBeUndefined();
         expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
 
         const querySql = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
@@ -200,7 +204,11 @@ describe("Reciprocal Rank Fusion (RRF) Formula & Boundary Guards (#5603)", () =>
           fullTextWeight: 0.5,
         });
 
-        expect(results).toEqual(mockVenues);
+        // The returned list also carries fuzzyMatched / suggestedQuery, so
+        // compare the venues themselves and check those properties separately.
+        expect([...results]).toEqual(mockVenues);
+        expect(results.fuzzyMatched).toBe(false);
+        expect(results.suggestedQuery).toBeUndefined();
         expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
 
         const querySql = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];

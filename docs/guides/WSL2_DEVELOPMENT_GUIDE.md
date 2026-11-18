@@ -1,5 +1,6 @@
 # WSL2 Development Guide
 
+ docs/clean-wsl2-guidesss
 ## 1. Node Version Management
 Use nvm to manage Node.js inside WSL2 Ubuntu.
 
@@ -14,3 +15,7 @@ Run git config --global core.autocrlf input to manage CRLF vs LF.
 
 ## 5. VS Code
 Install the Remote-WSL extension and run code . from your WSL terminal.
+
+## Node.js & Docker Setup
+Use nvm for Node and enable WSL2 integration in Docker Desktop.
+ main

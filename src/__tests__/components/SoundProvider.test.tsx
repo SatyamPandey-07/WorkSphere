@@ -7,7 +7,9 @@ function TestConsumer() {
   const { soundEnabled, toggleSound, setSoundEnabled } = useSound();
   return (
     <div>
-      <span data-testid="sound-status">{soundEnabled ? "enabled" : "disabled"}</span>
+      <span data-testid="sound-status">
+        {soundEnabled ? "enabled" : "disabled"}
+      </span>
       <button data-testid="toggle-btn" onClick={toggleSound}>
         Toggle
       </button>
@@ -22,8 +24,6 @@ function TestConsumer() {
 }
 
 describe("SoundProvider and useSound (#6931)", () => {
-  const originalLocalStorage = window.localStorage;
-
   beforeEach(() => {
     window.localStorage.clear();
     jest.spyOn(console, "warn").mockImplementation(() => {});
@@ -37,7 +37,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     const spy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     expect(() => render(<TestConsumer />)).toThrow(
-      "useSound must be used inside SoundProvider"
+      "useSound must be used inside SoundProvider",
     );
 
     spy.mockRestore();
@@ -47,7 +47,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
@@ -57,7 +57,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider defaultEnabled={false}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
@@ -69,7 +69,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
@@ -79,17 +79,15 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider defaultEnabled={true}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     const toggleBtn = screen.getByTestId("toggle-btn");
 
-    // Toggle to false
     fireEvent.click(toggleBtn);
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
     expect(window.localStorage.getItem("worksphere-sound")).toBe("false");
 
-    // Toggle back to true
     fireEvent.click(toggleBtn);
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
     expect(window.localStorage.getItem("worksphere-sound")).toBe("true");
@@ -99,7 +97,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider defaultEnabled={true}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     const disableBtn = screen.getByTestId("disable-btn");
@@ -120,7 +118,7 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider storageKey="custom-sound-key">
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
@@ -131,28 +129,33 @@ describe("SoundProvider and useSound (#6931)", () => {
   });
 
   it("handles localStorage read/write failures gracefully in private browsing", () => {
-    const mockGetItem = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("SecurityError: Access is denied for this document");
-    });
-    const mockSetItem = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("SecurityError: Access is denied for this document");
-    });
+    const mockGetItem = jest
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("SecurityError: Access is denied for this document");
+      });
+    const mockSetItem = jest
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("SecurityError: Access is denied for this document");
+      });
 
     render(
       <SoundProvider defaultEnabled={true}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
-    // Initial state remains functional
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
 
-    // Toggling works in memory without throwing
-    expect(() => fireEvent.click(screen.getByTestId("toggle-btn"))).not.toThrow();
+    expect(() =>
+      fireEvent.click(screen.getByTestId("toggle-btn")),
+    ).not.toThrow();
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
 
-    // Explicit setter works in memory without throwing
-    expect(() => fireEvent.click(screen.getByTestId("enable-btn"))).not.toThrow();
+    expect(() =>
+      fireEvent.click(screen.getByTestId("enable-btn")),
+    ).not.toThrow();
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
 
     mockGetItem.mockRestore();
@@ -163,12 +166,11 @@ describe("SoundProvider and useSound (#6931)", () => {
     render(
       <SoundProvider defaultEnabled={true}>
         <TestConsumer />
-      </SoundProvider>
+      </SoundProvider>,
     );
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("enabled");
 
-    // Simulate cross-tab change to "false"
     act(() => {
       const event = new StorageEvent("storage", {
         key: "worksphere-sound",
@@ -179,7 +181,6 @@ describe("SoundProvider and useSound (#6931)", () => {
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
 
-    // Simulate event with unrelated key (should be ignored)
     act(() => {
       const event = new StorageEvent("storage", {
         key: "other-key",

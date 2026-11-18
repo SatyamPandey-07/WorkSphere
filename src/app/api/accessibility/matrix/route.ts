@@ -1,68 +1,89 @@
-/**
- * route.ts
- * API endpoint that returns the accessibility-scored distance matrix for a given set of venue coordinates.
- */
+import { NextRequest, NextResponse } from "next/server";
+import {
+  fetchAccessibleRoute,
+  normalizeAccessibilityCoordinate,
+  RoutingProviderError,
+} from "@/lib/accessibility/openRouteService";
 
-import { NextRequest, NextResponse } from 'next/server';
-import { AccessibleRouter, RouteSegment } from '@/core/accessibility/AccessibleRouter';
+const MAX_COORDINATES = 6;
+const MAX_CONCURRENT_ROUTES = 3;
 
 export async function POST(request: NextRequest) {
-    try {
-        const body = await request.json();
-        const { coordinates, wheelchairMode = true } = body;
-
-        if (!Array.isArray(coordinates) || coordinates.length < 2) {
-            return NextResponse.json({ error: 'At least 2 coordinates are required' }, { status: 400 });
-        }
-
-        const router = new AccessibleRouter();
-        const matrix: Record<string, Record<string, any>> = {};
-
-        // Mock OSRM segment generation for demonstration
-        // In production, this would call the OSRM API and enrich with DEM/OSM data
-        for (let i = 0; i < coordinates.length; i++) {
-            matrix[i] = {};
-            for (let j = 0; j < coordinates.length; j++) {
-                if (i === j) {
-                    matrix[i][j] = { distance: 0, duration: 0, score: 100, isRecommended: true };
-                    continue;
-                }
-
-                // Mock segments
-                const mockSegments: RouteSegment[] = [
-                    {
-                        distance: 500,
-                        duration: 400,
-                        elevationGain: 10,
-                        osmTags: { highway: 'footway', footway: 'ramp', wheelchair: 'yes' }
-                    },
-                    {
-                        distance: 300,
-                        duration: 240,
-                        elevationGain: 25, // Steep
-                        osmTags: { highway: 'path', incline: 'up' }
-                    }
-                ];
-
-                const evaluation = router.evaluateRoute(mockSegments, wheelchairMode);
-
-                matrix[i][j] = {
-                    distance: evaluation.totalDistance,
-                    duration: evaluation.totalDuration,
-                    accessibilityScore: evaluation.accessibilityScore,
-                    isRecommended: evaluation.isRecommended,
-                    penaltyApplied: evaluation.penaltyMultiplier > 1.0
-                };
-            }
-        }
-
-        return NextResponse.json({
-            success: true,
-            matrix
-        }, { status: 200 });
-
-    } catch (error) {
-        console.error('Accessibility matrix API error:', error);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  try {
+    const body = await request.json();
+    if (!Array.isArray(body?.coordinates) || body.coordinates.length < 2 ||
+        body.coordinates.length > MAX_COORDINATES) {
+      return NextResponse.json(
+        { error: `coordinates must contain between 2 and ${MAX_COORDINATES} points.` },
+        { status: 400 },
+      );
     }
+
+    const coordinates = body.coordinates.map(normalizeAccessibilityCoordinate);
+    if (coordinates.some((coordinate) => coordinate === null)) {
+      return NextResponse.json(
+        { error: "Every coordinate must contain a valid latitude and longitude." },
+        { status: 400 },
+      );
+    }
+
+    const wheelchairMode = body.wheelchairMode !== false;
+    const requestedMaxGrade = Number(body.maxInclinePercent ?? 8.33);
+    const maxAllowedGradePercent = Number.isFinite(requestedMaxGrade)
+      ? Math.max(1, Math.min(20, requestedMaxGrade))
+      : 8.33;
+    const pairs: Array<{ from: number; to: number }> = [];
+    for (let from = 0; from < coordinates.length; from++) {
+      for (let to = 0; to < coordinates.length; to++) {
+        if (from !== to) pairs.push({ from, to });
+      }
+    }
+
+    const matrix: Record<string, Record<string, unknown>> = {};
+    for (let index = 0; index < coordinates.length; index++) {
+      matrix[index] = {
+        [index]: { distance: 0, duration: 0, accessibilityScore: 100, isRecommended: true },
+      };
+    }
+
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < pairs.length) {
+        const pair = pairs[cursor++];
+        const start = coordinates[pair.from]!;
+        const end = coordinates[pair.to]!;
+        const result = await fetchAccessibleRoute(start, end, {
+          wheelchairMode,
+          maxAllowedGradePercent,
+        });
+        matrix[pair.from][pair.to] = {
+          distance: result.totalDistanceMeters,
+          duration: result.evaluation.totalDuration,
+          accessibilityScore: result.evaluation.accessibilityScore,
+          isRecommended: result.evaluation.isRecommended,
+          penaltyMultiplier: result.evaluation.penaltyMultiplier,
+          warnings: result.warnings,
+          dataSource: result.dataSource,
+        };
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(MAX_CONCURRENT_ROUTES, pairs.length) }, () => worker()),
+    );
+
+    return NextResponse.json({
+      success: true,
+      matrix,
+      coordinateCount: coordinates.length,
+      routeCount: pairs.length,
+      dataSource: "OpenRouteService",
+    });
+  } catch (error) {
+    if (error instanceof RoutingProviderError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
+    console.error("[Accessibility Matrix] Routing failed:", error);
+    return NextResponse.json({ error: "Unable to calculate the accessibility matrix." }, { status: 500 });
+  }
 }

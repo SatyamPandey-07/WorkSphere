@@ -30,6 +30,269 @@ import {
   type PositioningSensorMetrics,
   type PositioningSourceMode,
 } from "@/lib/spatial/arWayfindingEngine";
+import { create3DDirectionArrowGroup } from "./DirectionArrow";
+
+/**
+ * Depth sensing mesh parameters and constants.
+ */
+export const DEPTH_MESH_GRID_SIZE = 32;
+export const MAX_DEPTH_METERS = 8.0;
+export const MIN_DEPTH_METERS = 0.1;
+export const DEPTH_DISCONTINUITY_THRESHOLD = 0.3;
+
+/**
+ * Creates an invisible real-world depth mesh for WebGL depth buffer occlusion.
+ * Configured with colorWrite: false, depthWrite: true, depthTest: true so that
+ * physical surfaces write directly into the depth buffer without occluding the
+ * camera video feed.
+ */
+export function createDepthOcclusionMesh(
+  gridSize: number = DEPTH_MESH_GRID_SIZE,
+): THREE.Mesh {
+  const vertexCount = gridSize * gridSize;
+  const positions = new Float32Array(vertexCount * 3);
+
+  // Pre-allocate maximum possible indices: (gridSize - 1)^2 quads * 2 triangles * 3 indices
+  const maxQuads = (gridSize - 1) * (gridSize - 1);
+  const indices = new Uint16Array(maxQuads * 6);
+
+  let geometry: THREE.BufferGeometry;
+  if (typeof (THREE as any).BufferGeometry === "function") {
+    geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(positions, 3),
+    );
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  } else {
+    geometry = {
+      setAttribute: () => {},
+      setIndex: () => {},
+      getAttribute: () => ({ array: positions, needsUpdate: false }),
+      getIndex: () => ({ array: indices, needsUpdate: false }),
+      setDrawRange: () => {},
+    } as any;
+  }
+
+  let material: THREE.Material;
+  if (typeof (THREE as any).MeshBasicMaterial === "function") {
+    material = new THREE.MeshBasicMaterial({
+      colorWrite: false, // Prevents drawing color (camera background stays visible)
+      depthWrite: true,  // Writes physical distance into the WebGL depth buffer
+      depthTest: true,   // Participates in depth tests
+    });
+  } else {
+    material = {
+      colorWrite: false,
+      depthWrite: true,
+      depthTest: true,
+    } as any;
+  }
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "webxr-depth-occlusion-mesh";
+  mesh.renderOrder = -1; // Render before virtual scene objects
+  mesh.frustumCulled = false;
+  mesh.visible = false;
+
+  return mesh;
+}
+
+/**
+ * Maps normalized view coordinates (uv) [0, 1] into normalized depth buffer coordinates
+ * using the normDepthBufferFromNormView transform matrix per the W3C WebXR Depth Sensing spec.
+ */
+export function mapViewToDepthUV(
+  u_v: number,
+  v_v: number,
+  normMatrix?: Float32Array | number[],
+): [number, number] {
+  if (!normMatrix || normMatrix.length < 16) {
+    return [u_v, v_v];
+  }
+  // normDepthBufferFromNormView matrix maps view UV [0,1] to depth UV [0,1]
+  // In column-major 4x4 matrix:
+  // [0]: M00, [1]: M10, [4]: M01, [5]: M11, [12]: M03, [13]: M13
+  const u_d = normMatrix[0] * u_v + normMatrix[4] * v_v + normMatrix[12];
+  const v_d = normMatrix[1] * u_v + normMatrix[5] * v_v + normMatrix[13];
+  return [u_d, v_d];
+}
+
+/**
+ * Unprojects a normalized view coordinate and metric depth into 3D camera eye-space coordinates
+ * using closed-form analytical perspective inversion.
+ */
+export function unprojectDepthPoint(
+  u_v: number,
+  v_v: number,
+  depthMeters: number,
+  proj: Float32Array | number[],
+): [number, number, number] {
+  if (!proj || proj.length < 16) {
+    return [0, 0, -depthMeters];
+  }
+  const P00 = proj[0];
+  const P11 = proj[5];
+  const P20 = proj[8];
+  const P21 = proj[9];
+
+  if (P00 === 0 || P11 === 0 || !Number.isFinite(P00) || !Number.isFinite(P11)) {
+    return [0, 0, -depthMeters];
+  }
+
+  const ndcX = 2 * u_v - 1;
+  const ndcY = 1 - 2 * v_v;
+
+  const xEye = ((ndcX + P20) / P00) * depthMeters;
+  const yEye = ((ndcY + P21) / P11) * depthMeters;
+  const zEye = -depthMeters;
+
+  return [
+    Number.isFinite(xEye) ? xEye : 0,
+    Number.isFinite(yEye) ? yEye : 0,
+    Number.isFinite(zEye) ? zEye : -depthMeters,
+  ];
+}
+
+/**
+ * Updates the depth occlusion mesh vertex positions and triangle index list from CPU depth information.
+ * Triangles spanning large depth discontinuities are pruned to prevent occlusion skinning artifacts.
+ */
+export function updateDepthOcclusionGeometry(
+  mesh: THREE.Mesh,
+  depthInfo: XRCPUDepthInformation,
+  projMatrix: Float32Array | number[],
+  gridSize: number = DEPTH_MESH_GRID_SIZE,
+): boolean {
+  if (!mesh || !depthInfo || !projMatrix) return false;
+  const geometry = mesh.geometry as THREE.BufferGeometry;
+  if (!geometry || !geometry.getAttribute) return false;
+
+  const posAttr = geometry.getAttribute("position") as any;
+  const indexAttr = geometry.getIndex() as any;
+  if (!posAttr || !indexAttr) return false;
+
+  const positions = posAttr.array as Float32Array;
+  const indices = indexAttr.array as Uint16Array;
+  const width = depthInfo.width;
+  const height = depthInfo.height;
+  const normMatrix = depthInfo.normDepthBufferFromNormView?.matrix;
+
+  if (!width || !height || width <= 0 || height <= 0) return false;
+
+  const depthGrid = new Float32Array(gridSize * gridSize);
+
+  for (let i = 0; i < gridSize; i++) {
+    const v_v = i / (gridSize - 1);
+    for (let j = 0; j < gridSize; j++) {
+      const u_v = j / (gridSize - 1);
+      const vertexIdx = i * gridSize + j;
+
+      const [u_d, v_d] = mapViewToDepthUV(u_v, v_v, normMatrix);
+
+      if (u_d < 0 || u_d > 1 || v_d < 0 || v_d > 1) {
+        depthGrid[vertexIdx] = 0;
+        positions[vertexIdx * 3] = 0;
+        positions[vertexIdx * 3 + 1] = 0;
+        positions[vertexIdx * 3 + 2] = 0;
+        continue;
+      }
+
+      const pixelX = Math.min(width - 1, Math.max(0, Math.floor(u_d * width)));
+      const pixelY = Math.min(height - 1, Math.max(0, Math.floor(v_d * height)));
+
+      let depthMeters = 0;
+      try {
+        if (typeof depthInfo.getDepthInMeters === "function") {
+          depthMeters = depthInfo.getDepthInMeters(pixelX, pixelY);
+        } else if (depthInfo.data) {
+          const rawVal = new DataView(depthInfo.data).getUint16(
+            (pixelY * width + pixelX) * 2,
+            true,
+          );
+          depthMeters = rawVal * (depthInfo.rawValueToMeters || 0.001);
+        }
+      } catch {
+        depthMeters = 0;
+      }
+
+      if (
+        !Number.isFinite(depthMeters) ||
+        depthMeters < MIN_DEPTH_METERS ||
+        depthMeters > MAX_DEPTH_METERS
+      ) {
+        depthGrid[vertexIdx] = 0;
+        positions[vertexIdx * 3] = 0;
+        positions[vertexIdx * 3 + 1] = 0;
+        positions[vertexIdx * 3 + 2] = 0;
+      } else {
+        depthGrid[vertexIdx] = depthMeters;
+        const [xEye, yEye, zEye] = unprojectDepthPoint(
+          u_v,
+          v_v,
+          depthMeters,
+          projMatrix,
+        );
+        positions[vertexIdx * 3] = xEye;
+        positions[vertexIdx * 3 + 1] = yEye;
+        positions[vertexIdx * 3 + 2] = zEye;
+      }
+    }
+  }
+
+  // Populate triangle indices with edge discontinuity pruning
+  let activeIndexCount = 0;
+  for (let i = 0; i < gridSize - 1; i++) {
+    for (let j = 0; j < gridSize - 1; j++) {
+      const v00 = i * gridSize + j;
+      const v01 = i * gridSize + (j + 1);
+      const v10 = (i + 1) * gridSize + j;
+      const v11 = (i + 1) * gridSize + (j + 1);
+
+      const d00 = depthGrid[v00];
+      const d01 = depthGrid[v01];
+      const d10 = depthGrid[v10];
+      const d11 = depthGrid[v11];
+
+      // Triangle 1: (v00, v10, v01)
+      if (
+        d00 > 0 &&
+        d10 > 0 &&
+        d01 > 0 &&
+        Math.abs(d00 - d10) <= DEPTH_DISCONTINUITY_THRESHOLD &&
+        Math.abs(d00 - d01) <= DEPTH_DISCONTINUITY_THRESHOLD &&
+        Math.abs(d10 - d01) <= DEPTH_DISCONTINUITY_THRESHOLD
+      ) {
+        indices[activeIndexCount++] = v00;
+        indices[activeIndexCount++] = v10;
+        indices[activeIndexCount++] = v01;
+      }
+
+      // Triangle 2: (v01, v10, v11)
+      if (
+        d01 > 0 &&
+        d10 > 0 &&
+        d11 > 0 &&
+        Math.abs(d01 - d10) <= DEPTH_DISCONTINUITY_THRESHOLD &&
+        Math.abs(d01 - d11) <= DEPTH_DISCONTINUITY_THRESHOLD &&
+        Math.abs(d10 - d11) <= DEPTH_DISCONTINUITY_THRESHOLD
+      ) {
+        indices[activeIndexCount++] = v01;
+        indices[activeIndexCount++] = v10;
+        indices[activeIndexCount++] = v11;
+      }
+    }
+  }
+
+  if (posAttr) posAttr.needsUpdate = true;
+  if (indexAttr) indexAttr.needsUpdate = true;
+  if (typeof geometry.setDrawRange === "function") {
+    geometry.setDrawRange(0, activeIndexCount);
+  }
+  mesh.visible = activeIndexCount > 0;
+
+  return activeIndexCount > 0;
+}
 
 /**
  * Custom Emerald Emissive Bloom Shader for Green Lantern Power Ring Construct.
@@ -177,13 +440,15 @@ export function calculateSurfaceNormal(
   };
 }
 
-interface WebXRDeskFinderViewProps {
+export interface WebXRDeskFinderViewProps {
   venueId?: string;
   venueName?: string;
   targetSeatNumber?: string;
   initialSensorMetrics?: PositioningSensorMetrics;
   autoStartHitTest?: boolean;
+  enableDepthSensing?: boolean;
   onAnchorConfirmed?: (coords: Vector3D) => void;
+  onDepthStatusChange?: (active: boolean) => void;
 }
 
 export default function WebXRDeskFinderView({
@@ -197,7 +462,9 @@ export default function WebXRDeskFinderView({
     beaconCount: 3,
   },
   autoStartHitTest = false,
+  enableDepthSensing = true,
   onAnchorConfirmed,
+  onDepthStatusChange,
 }: WebXRDeskFinderViewProps) {
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [userPose, setUserPose] = useState<Vector3D>({ x: 0, y: 0, z: 0 });
@@ -229,11 +496,19 @@ export default function WebXRDeskFinderView({
     null,
   );
   const [isAnchored, setIsAnchored] = useState<boolean>(false);
+  const [isDepthSensingActive, setIsDepthSensingActive] =
+    useState<boolean>(false);
 
   const xrSessionRef = useRef<any>(null);
   const hitTestSourceRef = useRef<any>(null);
+  const referenceSpaceRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const threeGroupRef = useRef<THREE.Group | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const depthMeshRef = useRef<THREE.Mesh | null>(null);
+  const arrowMeshRef = useRef<THREE.Group | null>(null);
 
   const kalmanFilterRef = useRef<AdaptiveWayfindingKalmanFilter | null>(null);
   if (!kalmanFilterRef.current) {
@@ -264,7 +539,14 @@ export default function WebXRDeskFinderView({
       renderer.setSize(canvas.clientWidth || 800, canvas.clientHeight || 520);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
+      if (renderer.xr) {
+        renderer.xr.enabled = true;
+      }
+      rendererRef.current = renderer;
+
       const scene = new THREE.Scene();
+      sceneRef.current = scene;
+
       const camera = new THREE.PerspectiveCamera(
         60,
         (canvas.clientWidth || 800) / (canvas.clientHeight || 520),
@@ -272,14 +554,39 @@ export default function WebXRDeskFinderView({
         100,
       );
       camera.position.set(0, 0, 1.8);
+      cameraRef.current = camera;
 
+      // Add depth occlusion mesh to camera view space
+      try {
+        const depthMesh = createDepthOcclusionMesh();
+        depthMeshRef.current = depthMesh;
+        camera.add(depthMesh);
+        scene.add(camera);
+      } catch {
+        // Fallback for limited test mocks
+      }
+
+      // Add Power Ring Construct Group (Desk 3D marker)
       const group = createPowerRingConstructGroup();
       threeGroupRef.current = group;
       scene.add(group);
 
+      // Add 3D Wayfinding Direction Arrow Group
+      try {
+        const arrowGroup = create3DDirectionArrowGroup(
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0, -1.8),
+          targetSeatNumber,
+        );
+        arrowMeshRef.current = arrowGroup;
+        scene.add(arrowGroup);
+      } catch {
+        // Fallback for limited test mocks
+      }
+
       const clock = new THREE.Clock();
 
-      const animate = () => {
+      const renderFrame = (_time: number, frame?: any) => {
         const delta = clock.getDelta();
         const elapsed = clock.getElapsedTime();
 
@@ -307,26 +614,87 @@ export default function WebXRDeskFinderView({
             ? targetPos.y + 0.15
             : targetPos.y + 0.35 + Math.sin(elapsed * 3.0) * 0.05;
           group.position.set(targetPos.x * 0.5, hoverY, targetPos.z * 0.5);
+
+          if (arrowMeshRef.current) {
+            const arrowPos = new THREE.Vector3(
+              targetPos.x * 0.3,
+              hoverY - 0.15,
+              targetPos.z * 0.5,
+            );
+            arrowMeshRef.current.position.copy(arrowPos);
+            arrowMeshRef.current.rotation.y = (bearingDeg * Math.PI) / 180;
+          }
+        }
+
+        // WebXR Frame Depth Information Query
+        if (frame && typeof frame.getViewerPose === "function") {
+          const refSpace = referenceSpaceRef.current;
+          const pose = refSpace ? frame.getViewerPose(refSpace) : null;
+          if (pose && pose.views && pose.views.length > 0) {
+            const view = pose.views[0];
+            const depthInfo =
+              typeof frame.getDepthInformation === "function"
+                ? frame.getDepthInformation(view)
+                : null;
+
+            if (depthInfo && depthMeshRef.current && view.projectionMatrix) {
+              const updated = updateDepthOcclusionGeometry(
+                depthMeshRef.current,
+                depthInfo,
+                view.projectionMatrix,
+              );
+              if (updated) {
+                setIsDepthSensingActive(true);
+                onDepthStatusChange?.(true);
+              }
+            } else if (depthMeshRef.current) {
+              depthMeshRef.current.visible = false;
+            }
+          }
         }
 
         renderer?.render(scene, camera);
-        animId = requestAnimationFrame(animate);
       };
 
-      animId = requestAnimationFrame(animate);
+      if (typeof renderer.setAnimationLoop === "function") {
+        renderer.setAnimationLoop(renderFrame);
+      } else {
+        const animate = () => {
+          renderFrame(performance.now() * 0.001);
+          animId = requestAnimationFrame(animate);
+        };
+        animId = requestAnimationFrame(animate);
+      }
     } catch {
       // Non-WebGL / test environment fallback
     }
 
     return () => {
+      if (typeof renderer?.setAnimationLoop === "function") {
+        renderer.setAnimationLoop(null);
+      }
       if (animId) cancelAnimationFrame(animId);
+      if (xrSessionRef.current) {
+        try {
+          xrSessionRef.current.end();
+        } catch {
+          // safe
+        }
+      }
       try {
         renderer?.dispose();
       } catch {
         // cleanup safe
       }
     };
-  }, [isAnchored, anchoredPosition, hitTestResult]);
+  }, [
+    isAnchored,
+    anchoredPosition,
+    hitTestResult,
+    bearingDeg,
+    targetSeatNumber,
+    onDepthStatusChange,
+  ]);
 
   const fetchARRoute = useCallback(async () => {
     setLoading(true);
@@ -375,7 +743,7 @@ export default function WebXRDeskFinderView({
     }
   }, []);
 
-  // Request WebXR session with hit-test feature
+  // Request WebXR session with hit-test feature and optional depth-sensing
   const enterWebXRMode = async () => {
     if (
       typeof navigator !== "undefined" &&
@@ -383,19 +751,85 @@ export default function WebXRDeskFinderView({
       (navigator as any).xr
     ) {
       try {
-        const session = await (navigator as any).xr.requestSession(
-          "immersive-ar",
-          {
-            requiredFeatures: ["hit-test"],
-            optionalFeatures: ["local-floor", "anchors", "dom-overlay"],
-          },
-        );
+        const sessionOptions: any = {
+          requiredFeatures: ["hit-test"],
+          optionalFeatures: [
+            "local-floor",
+            "anchors",
+            "dom-overlay",
+            ...(enableDepthSensing ? ["depth-sensing"] : []),
+          ],
+          ...(enableDepthSensing
+            ? {
+                depthSensing: {
+                  usagePreference: ["cpu-optimized"],
+                  dataFormatPreference: ["float32", "luminance-alpha"],
+                },
+              }
+            : {}),
+        };
+
+        let session: any = null;
+        try {
+          session = await (navigator as any).xr.requestSession(
+            "immersive-ar",
+            sessionOptions,
+          );
+        } catch (depthErr) {
+          // If session with depth-sensing is rejected, fall back to standard session
+          if (enableDepthSensing) {
+            console.warn(
+              "[WebXR] Session with depth-sensing rejected, falling back to standard AR session:",
+              depthErr,
+            );
+            session = await (navigator as any).xr.requestSession(
+              "immersive-ar",
+              {
+                requiredFeatures: ["hit-test"],
+                optionalFeatures: ["local-floor", "anchors", "dom-overlay"],
+              },
+            );
+          } else {
+            throw depthErr;
+          }
+        }
+
         xrSessionRef.current = session;
         setIsWebXRMode(true);
         setHitTestActive(true);
 
-        // Request Hit Test Source
+        // Verify actual negotiated depth capability
+        const isDepthNegotiated = session?.depthUsage === "cpu-optimized";
+        setIsDepthSensingActive(isDepthNegotiated);
+        onDepthStatusChange?.(isDepthNegotiated);
+
+        // Connect WebXR session to Three.js renderer
+        if (rendererRef.current?.xr) {
+          rendererRef.current.xr.enabled = true;
+          try {
+            await rendererRef.current.xr.setSession(session);
+          } catch (bindErr) {
+            console.warn(
+              "[WebXR] Failed to bind session to Three.js renderer:",
+              bindErr,
+            );
+          }
+        }
+
+        // Request Reference Space and Hit Test Source
         try {
+          let refSpace: any = null;
+          try {
+            refSpace = await session.requestReferenceSpace("local-floor");
+          } catch {
+            try {
+              refSpace = await session.requestReferenceSpace("local");
+            } catch {
+              refSpace = await session.requestReferenceSpace("viewer");
+            }
+          }
+          referenceSpaceRef.current = refSpace;
+
           const viewerSpace = await session.requestReferenceSpace("viewer");
           const source = await session.requestHitTestSource({
             space: viewerSpace,
@@ -412,8 +846,17 @@ export default function WebXRDeskFinderView({
         session.addEventListener("end", () => {
           xrSessionRef.current = null;
           hitTestSourceRef.current = null;
+          referenceSpaceRef.current = null;
           setIsWebXRMode(false);
           setHitTestActive(false);
+          setIsDepthSensingActive(false);
+          onDepthStatusChange?.(false);
+          if (depthMeshRef.current) {
+            depthMeshRef.current.visible = false;
+          }
+          if (rendererRef.current?.xr) {
+            rendererRef.current.xr.setSession(null).catch(() => {});
+          }
         });
       } catch (err) {
         console.warn(
@@ -898,6 +1341,14 @@ export default function WebXRDeskFinderView({
                 className="ml-1 px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-sans font-medium flex items-center gap-1"
               >
                 <Target className="w-3 h-3 text-cyan-400" /> Hit-Test Active
+              </span>
+            )}
+            {isDepthSensingActive && (
+              <span
+                data-testid="depth-sensing-status-indicator"
+                className="ml-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-sans font-medium flex items-center gap-1"
+              >
+                <Scan className="w-3 h-3 text-emerald-400 animate-pulse" /> Depth Occlusion Active
               </span>
             )}
           </div>

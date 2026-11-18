@@ -7,6 +7,28 @@ import {
   generateVenueCurlSnippet,
 } from "@/components/venues/VenueDetailModal";
 
+let latestEventSource: {
+  onmessage: ((event: MessageEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  close: jest.Mock;
+} | null = null;
+const originalEventSource = global.EventSource;
+
+beforeAll(() => {
+  global.EventSource = jest.fn().mockImplementation(() => {
+    latestEventSource = {
+      onmessage: null,
+      onerror: null,
+      close: jest.fn(),
+    };
+    return latestEventSource;
+  }) as any;
+});
+
+afterAll(() => {
+  global.EventSource = originalEventSource;
+});
+
 describe("VenueDetailModal Developer Tab & cURL Snippet Generator", () => {
   describe("generateVenueCurlSnippet", () => {
     it("generates correct cURL command for a given venueId", () => {
@@ -84,6 +106,75 @@ describe("VenueDetailModal Developer Tab & cURL Snippet Generator", () => {
   });
 
   describe("VenueDetailModal Integration", () => {
+    it("renders live AQI updates and returns to calibrating when the stream is interrupted", () => {
+      const mockVenue = {
+        id: "venue-sf-01",
+        name: "Mission Roasters",
+        lat: 37.76,
+        lng: -122.42,
+        category: "cafe",
+      } as any;
+
+      render(
+        <VenueDetailModal
+          venue={mockVenue}
+          isOpen={true}
+          isFavorited={false}
+          onClose={jest.fn()}
+          onGetDirections={jest.fn()}
+          onToggleFavorite={jest.fn()}
+        />,
+      );
+
+      expect(screen.getByTestId("air-quality-calibrating")).toBeInTheDocument();
+
+      act(() => {
+        latestEventSource?.onmessage?.({
+          data: JSON.stringify({
+            type: "air_quality",
+            available: true,
+            payload: {
+              co2: 450,
+              pm25: 6,
+              tvoc: 80,
+              timestamp: "2026-11-18T15:00:00.000Z",
+            },
+          }),
+        } as MessageEvent);
+      });
+      expect(screen.getByTestId("air-quality-badge")).toHaveTextContent(
+        "AQI 28 · Good",
+      );
+
+      const connectedEventSource = latestEventSource;
+      fireEvent(document, new Event("visibilitychange"));
+      expect(connectedEventSource?.close).toHaveBeenCalled();
+      expect(screen.getByTestId("air-quality-calibrating")).toBeInTheDocument();
+
+      act(() => {
+        latestEventSource?.onmessage?.({
+          data: JSON.stringify({
+            type: "air_quality",
+            available: true,
+            payload: {
+              co2: 450,
+              pm25: 6,
+              tvoc: 80,
+              timestamp: "2026-11-18T15:00:15.000Z",
+            },
+          }),
+        } as MessageEvent);
+      });
+      expect(screen.getByTestId("air-quality-badge")).toHaveTextContent(
+        "AQI 28 · Good",
+      );
+
+      act(() => {
+        latestEventSource?.onerror?.({} as Event);
+      });
+      expect(screen.getByTestId("air-quality-calibrating")).toBeInTheDocument();
+    });
+
     it("renders Developer tab and displays cURL snippet on tab selection", () => {
       const mockVenue = {
         id: "venue-sf-01",

@@ -10,6 +10,7 @@ import { AmbientNoiseSpectrumVisualizer } from "@/components/noise/AmbientNoiseS
 import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
 import type { HourlyForecast } from "@/components/noise/NoiseTimelineChart";
 import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
+import { HourlyCrowdForecast } from "@/components/venues/HourlyCrowdForecast";
 
 const VenueNoiseChart = dynamic(
   () =>
@@ -229,6 +230,11 @@ export function VenueNoiseSection({
       {/* 24-Hour Forecast Graphs */}
       {safeNoiseForecast.length > 0 && (
         <div data-testid="noise-forecast-graphs-container">
+          <HourlyCrowdForecast
+            venueId={safeVenue.id}
+            venueName={safeVenue.name}
+            className="mb-6"
+          />
           <AmbientNoiseTrendGraph
             venueId={safeVenue.id || "venue-default"}
             forecast={safeNoiseForecast}

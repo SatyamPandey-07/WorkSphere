@@ -2,7 +2,6 @@ import {
   parseFiltersFromSearchParams,
   buildQueryStringWithFilters,
   DEFAULT_FILTER_STATE,
-  type VenueFilterState,
 } from "@/hooks/useVenueFilterParams";
 
 describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
@@ -51,6 +50,54 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
       expect(parsed.noiseLevel).toBe("quiet");
       expect(parsed.maxDistance).toBe(5);
       expect(parsed.view).toBe("list");
+    });
+
+    describe("whitespace normalization (#7727)", () => {
+      test("trims leading and trailing whitespace from q", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20%20quiet%20cafe%20%20"),
+        );
+        expect(parsed.query).toBe("quiet cafe");
+      });
+
+      test("treats a padded q and a clean q as the same state", () => {
+        const padded = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20cafe%20"),
+        );
+        const clean = parseFiltersFromSearchParams(
+          new URLSearchParams("q=cafe"),
+        );
+        expect(padded).toEqual(clean);
+      });
+
+      test("trims the query alias too", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("query=%09library%20"),
+        );
+        expect(parsed.query).toBe("library");
+      });
+
+      test("turns a whitespace-only q into an empty query", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20%20%20"),
+        );
+        expect(parsed.query).toBe("");
+        expect(parsed).toEqual(DEFAULT_FILTER_STATE);
+      });
+
+      test("falls back to the query alias when q is only whitespace", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20&query=coworking"),
+        );
+        expect(parsed.query).toBe("coworking");
+      });
+
+      test("keeps inner spaces untouched", () => {
+        const parsed = parseFiltersFromSearchParams(
+          new URLSearchParams("q=%20blue%20%20bottle%20"),
+        );
+        expect(parsed.query).toBe("blue  bottle");
+      });
     });
   });
 
@@ -152,7 +199,9 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
       const clearedQuery = buildQueryStringWithFilters(nextParams, {
         sortBy: "default",
       });
-      const clearedParams = new URLSearchParams(clearedQuery.replace(/^\?/, ""));
+      const clearedParams = new URLSearchParams(
+        clearedQuery.replace(/^\?/, ""),
+      );
       expect(clearedParams.has("sortBy")).toBe(false);
     });
   });

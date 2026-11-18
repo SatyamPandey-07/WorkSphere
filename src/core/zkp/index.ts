@@ -64,3 +64,4 @@ export * from './DualVerifiableSecretSharing';
 export * from './ZKInclusionAccumulator';
 export * from './ThresholdAdaptorSignature';
 export * from './GKRLayeredCircuitVerifier';
+export * from './RingSignatureLinkableProver';

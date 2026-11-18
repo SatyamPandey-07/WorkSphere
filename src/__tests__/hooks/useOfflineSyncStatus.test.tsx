@@ -28,7 +28,9 @@ describe("useOfflineSyncStatus", () => {
       value: true,
     });
     mockGetTotalPending.mockResolvedValue(2);
-    mockGetQueuedReviews.mockResolvedValue([{ id: "review-1" } as any]);
+    mockGetQueuedReviews.mockResolvedValue([
+      { id: "review-1" } as unknown as Awaited<ReturnType<typeof getQueuedReviews>>[number],
+    ]);
   });
 
   it("aggregates pending IndexedDB mutations and queued reviews", async () => {

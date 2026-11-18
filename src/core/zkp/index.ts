@@ -97,3 +97,4 @@ export * from './ZeroKnowledgeMatrixMultiplicationProver';
 export * from './IncrementalMerkleStateAccumulator';
 export * from './ZeroKnowledgeEqualityDiscreteLogBatch';
 export * from './ZeroKnowledgeRangeIntersectionProver';
+export * from './ThresholdSignatureKeyRefreshProver';

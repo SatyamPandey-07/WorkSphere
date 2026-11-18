@@ -175,11 +175,16 @@ export class NoiseAggregator {
       });
     } else {
       effectiveDecibel = raw;
-      // Add valid reading to sliding window
-      this.slidingWindow.push(raw);
-      if (this.slidingWindow.length > this.windowSize) {
-        this.slidingWindow.shift();
-      }
+    }
+
+    // The window slides over the raw readings, rejected ones included. A single
+    // spike cannot move the median, so it is still rejected. A level that stays
+    // (a venue that gets loud) takes over the window after about half its size
+    // and is then accepted. If rejected readings were left out, the window would
+    // never see the new level and every later reading would be rejected.
+    this.slidingWindow.push(raw);
+    if (this.slidingWindow.length > this.windowSize) {
+      this.slidingWindow.shift();
     }
 
     // Apply Exponential Moving Average (EMA)

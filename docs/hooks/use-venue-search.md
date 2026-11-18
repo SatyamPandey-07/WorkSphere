@@ -83,6 +83,7 @@ When building venue search bars and filter drawers (such as [`VenueSearchDrawer.
 | `results` | `T[]` | Alias to `venues` for drop-in compatibility. |
 | `isLoading` | `boolean` | `true` while a network search request is in-flight. |
 | `loading` | `boolean` | Alias to `isLoading`. |
+| `isDebouncing` | `boolean` | `true` while a search is waiting for the user to stop typing (from a keystroke until the `debounceMs` timer fires). Use it for a typing indicator. It is `false` for queries shorter than `minQueryLength`, after `search()` (Enter) and after `clear()`. |
 | `error` | `string \| null` | Error message string if the active search fails; `null` otherwise. |
 | `clear` | `() => void` | Clears search query, cancels in-flight requests, and resets venue results to `[]`. |
 | `abort` | `() => void` | Cancels any currently pending in-flight HTTP request. |
@@ -97,6 +98,8 @@ The hook stores a timer handle in `debounceTimerRef: useRef<NodeJS.Timeout | nul
 1. Any active timeout is canceled via `clearTimeout(debounceTimerRef.current)`.
 2. If `activeQuery.trim().length < minQueryLength`, all in-flight requests are aborted and results are immediately reset to `[]`.
 3. If valid, a new timer is scheduled for `debounceMs` (default $250\text{ms} - 300\text{ms}$).
+
+The hook keeps its own defaults (`debounceMs` 250, `minQueryLength` 1). The `SearchBar` components pass `debounceMs` 300 and `minQueryLength` 2, so typing sends no request until the user pauses for 300ms, a one character query sends none at all, and Enter calls `search()` to search at once (#7673).
 
 ### 3.2 Cancellation Tokens via `AbortController`
 To prevent race conditions, the hook maintains `abortControllerRef: useRef<AbortController | null>(null)`.

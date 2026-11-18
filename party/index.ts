@@ -9,6 +9,7 @@ import WorkspaceServer, {
 } from "./server";
 
 export type { PresenceUser, MusicGenre, ReplayableSessionEvent, SeatHold };
+export { default as agentMonitor } from "./agentMonitor.room";
 export {
   FOLDER_NOTES_ROOM_PREFIX,
   folderIdFromRoom,

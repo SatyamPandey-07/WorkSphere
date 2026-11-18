@@ -94,3 +94,4 @@ export * from './ZeroKnowledgePolynomialInterpolationProver';
 export * from './VerifiableSecretResharingProver';
 export * from './ObliviousPseudoRandomFunctionProver';
 export * from './ZeroKnowledgeMatrixMultiplicationProver';
+export * from './IncrementalMerkleStateAccumulator';

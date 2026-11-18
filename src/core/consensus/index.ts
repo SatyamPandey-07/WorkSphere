@@ -16,3 +16,4 @@ export * from './AsynchronousSharedMempool';
 export * from './AsynchronousEpochTransition';
 export * from './DelayEncryptionOrdering';
 export * from './BFTStateCheckpointVerifier';
+export * from './AsynchronousGradedAgreement';

@@ -573,6 +573,15 @@ export class SchnorrThresholdAggregator {
       );
     }
 
+    // One signer contributes exactly one share per session. Reject duplicates
+    // before verification so a later payload can never overwrite an accepted
+    // contribution in the keyed accumulator.
+    if (session.partialSignatures.has(participantId)) {
+      throw new Error(
+        `Duplicate partial signature rejected from participant ${participantId}.`,
+      );
+    }
+
     const isValid = this.verifyPartialSignature(
       session,
       participantId,

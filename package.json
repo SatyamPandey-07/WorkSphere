@@ -20,6 +20,7 @@
     "build:wasm:audio-filter": "bash wasm/audio-filter/build.sh",
     "build:wasm:sound-classifier": "bash src/wasm/acoustic/build.sh",
     "bench:audio-filter": "node scripts/bench-audio-filter-pool.mjs",
+    "bench:bloom-limiter": "node --experimental-strip-types scripts/bench-distributed-bloom-limiter.mjs",
     "postinstall": "prisma generate",
     "prepare": "husky"
   },

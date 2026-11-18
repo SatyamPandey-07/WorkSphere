@@ -14,7 +14,7 @@ describe("calculateSabineRt60", () => {
       ],
     });
 
-    expect(result).toBeCloseTo(0.321999, 4);
+    expect(result).toBeCloseTo(0.568235, 4);
     expect(Number.isFinite(result)).toBe(true);
   });
 

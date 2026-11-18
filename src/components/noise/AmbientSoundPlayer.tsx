@@ -573,7 +573,10 @@ export function AmbientSoundPlayer({
           <button
             type="button"
             onClick={toggleMasterMute}
-            aria-label={isMasterMuted ? "Unmute master" : "Mute master"}
+            aria-label={
+              isMasterMuted ? "Unmute audio guide" : "Mute audio guide"
+            }
+            aria-pressed={!isMasterMuted}
             data-testid="master-mute-btn"
             className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
           >

@@ -1,5 +1,7 @@
 "use client";
 
+ docs/brain-terminal-accessibility-guide
+
  feat/brain-terminal-a11y-docs
 
  feat/nomad-passport-haptics
@@ -14,6 +16,7 @@
  fix/double-ratchet-header-validation
 
  feat/compressed-desk-pass-minter
+ main
  main
  main
  main
@@ -102,6 +105,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ docs/brain-terminal-accessibility-guide
+}
+
  feat/brain-terminal-a11y-docs
 }
 
@@ -261,6 +267,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

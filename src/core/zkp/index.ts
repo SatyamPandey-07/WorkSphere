@@ -76,3 +76,4 @@ export * from './RecursiveSNARKBridgeVerifier';
 export * from './SuccinctZKStateRollupProver';
 export * from './HomomorphicPedersenAuditProver';
 export * from './ThresholdECDSAPresignatureVerifier';
+export * from './VerifiableDelayFunctionWesolowski';

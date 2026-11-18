@@ -86,3 +86,4 @@ export * from './PedersenMerkleAuditTree';
 export * from './DistributedDKGComplaintVerifier';
 export * from './ThresholdDecryptionShareProver';
 export * from './VerifiableShuffleReencryptionProver';
+export * from './ConfidentialAssetTransferProver';

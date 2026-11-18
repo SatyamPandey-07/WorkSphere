@@ -87,3 +87,4 @@ export * from './DistributedDKGComplaintVerifier';
 export * from './ThresholdDecryptionShareProver';
 export * from './VerifiableShuffleReencryptionProver';
 export * from './ConfidentialAssetTransferProver';
+export * from './VerifiableTimedCommitmentProver';

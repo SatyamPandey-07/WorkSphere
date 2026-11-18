@@ -70,3 +70,4 @@ export * from './PLONKPermutationProver';
 export * from './FRILowDegreeTester';
 export * from './ChaumPedersenBatchVerifier';
 export * from './ZeroKnowledgeSetMembershipMerkle';
+export * from './VerifiableEncryptionElGamal';

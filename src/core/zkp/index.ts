@@ -66,3 +66,4 @@ export * from './ThresholdAdaptorSignature';
 export * from './GKRLayeredCircuitVerifier';
 export * from './RingSignatureLinkableProver';
 export * from './Groth16QAPVerifier';
+export * from './PLONKPermutationProver';

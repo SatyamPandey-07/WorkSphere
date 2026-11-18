@@ -3,6 +3,25 @@ import {
   jitteredReconnectDelay,
   PARTY_SOCKET_RECONNECT_OPTIONS,
 } from "@/lib/partySocketReconnect";
+import { calculateFullJitterBackoff } from "@/lib/utils/backoff";
+
+
+describe("calculateFullJitterBackoff", () => {
+  it("samples uniformly from zero to the exponential retry ceiling", () => {
+    expect(calculateFullJitterBackoff(1, { baseDelay: 1000, maxDelay: 10_000, random: () => 0 })).toBe(0);
+    expect(calculateFullJitterBackoff(1, { baseDelay: 1000, maxDelay: 10_000, random: () => 1 })).toBe(1000);
+    expect(calculateFullJitterBackoff(2, { baseDelay: 1000, maxDelay: 10_000, random: () => 0.5 })).toBe(1000);
+  });
+
+  it("caps the retry ceiling at ten seconds", () => {
+    expect(calculateFullJitterBackoff(20, { baseDelay: 1000, maxDelay: 10_000, random: () => 1 })).toBe(10_000);
+  });
+
+  it("returns zero for invalid attempt or delay inputs", () => {
+    expect(calculateFullJitterBackoff(Number.NaN)).toBe(0);
+    expect(calculateFullJitterBackoff(1, { baseDelay: -1 })).toBe(0);
+  });
+});
 
 describe("PARTY_SOCKET_RECONNECT_OPTIONS", () => {
   it("caps retries instead of reconnecting forever", () => {

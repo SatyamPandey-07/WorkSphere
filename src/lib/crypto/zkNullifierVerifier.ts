@@ -1,8 +1,10 @@
+ docs/wsl2-development-guide
  docs/local-docker-troubleshooting
 
  feat/network-health-ai-diagnostic
 
  feat/cross-chain-escrow-zkp
+ main
  main
  main
 export class ZkNullifierVerifier {
@@ -38,6 +40,8 @@ export class ZkNullifierVerifier {
     }
     return result;
   }
+ docs/wsl2-development-guide
+
  docs/local-docker-troubleshooting
 
  feat/network-health-ai-diagnostic
@@ -268,6 +272,7 @@ export async function verifyZkNullifierProofs(
       }
     }),
   );
+ main
  main
  main
  main

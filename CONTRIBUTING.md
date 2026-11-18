@@ -1,17 +1,29 @@
 # Contributing to WorkSphere
 
 Welcome to **WorkSphere**! We are thrilled to have you contribute as part of Winter of Code Social (WOCS). To ensure a smooth collaboration and maintain high repository standards, please follow this guide for setting up your environment, running migrations, and submitting your pull requests.
+ docs/wsl2-development-guide
+
+
  docs/local-docker-troubleshooting
 
  feat/network-health-ai-diagnostic
  main
 
+ main
 ## 1. Prerequisites
 Before you begin, ensure you have the following installed on your local development workstation:
 * Node.js (v18.x or higher)
 * pnpm or npm (Package manager)
 * Git (Configured with your GitHub account)
 * PostgreSQL / Supabase (Local instance or cloud connection string)
+ docs/wsl2-development-guide
+
+## 2. Local Environment Setup
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
+   cd WorkSphere
+
  docs/local-docker-troubleshooting
 
 ## 2. Local Environment Setup
@@ -943,6 +955,7 @@ For details on multi-agent scoring and consensus workflows, see [docs/architectu
 ## Concurrent Development & Worktrees
 
 For guidelines on working on multiple issues concurrently using Git worktrees, see [docs/contributing/WORKTREE_GUIDE.md](docs/contributing/WORKTREE_GUIDE.md).
+ main
  main
  main
  main

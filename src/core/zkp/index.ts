@@ -39,3 +39,4 @@ export * from './CompressedPolyEvalArgument';
 export * from './VerifiableStateTransitionProof';
 export * from './NonInteractiveVectorCommitment';
 export * from './SuccinctRecursiveRollupVerifier';
+export * from './BlindPolynomialCommitment';

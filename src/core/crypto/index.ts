@@ -19,3 +19,4 @@ export * from './VerifiableSecretRedistribution';
 export * from './ThresholdBlindSignatures';
 export * from './DistributedKeyRotationProtocol';
 export * from './VerifiableMultiPartyAggregation';
+export * from './ShareConversionProtocol';

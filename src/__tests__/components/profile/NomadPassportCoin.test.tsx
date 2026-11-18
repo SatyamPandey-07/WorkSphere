@@ -15,6 +15,7 @@ jest.mock("three", () => ({
 
 // Mock @react-three/fiber Canvas
 jest.mock("@react-three/fiber", () => ({
+  useThree: jest.fn(),
   Canvas: ({ children, onCreated }: any) => {
     React.useEffect(() => {
       onCreated?.();
@@ -26,6 +27,7 @@ jest.mock("@react-three/fiber", () => ({
 
 import NomadPassportCoin, {
   NomadPassportCoinSkeleton,
+  disposePassportCoinResources,
 } from "@/components/profile/NomadPassportCoin";
 import type { PassportStamp } from "@/lib/zkp/nomadProof";
 
@@ -38,6 +40,46 @@ describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
     verificationSignature: "zk-sig-valid-stamp",
     countryCode: "US",
   };
+
+
+  describe("NomadPassportCoin resource disposal", () => {
+    it("disposes scene geometries, materials, textures, render lists, and renderer", () => {
+      const geometry = { dispose: jest.fn() };
+      const texture = { isTexture: true, dispose: jest.fn() };
+      const material = { map: texture, dispose: jest.fn() };
+      const scene = {
+        traverse: (callback: (object: any) => void) => {
+          callback({ geometry, material });
+          callback({ geometry, material });
+        },
+      };
+      const renderLists = { dispose: jest.fn() };
+      const renderer = { renderLists, dispose: jest.fn() };
+
+      disposePassportCoinResources(scene, renderer);
+
+      expect(geometry.dispose).toHaveBeenCalledTimes(1);
+      expect(material.dispose).toHaveBeenCalledTimes(1);
+      expect(texture.dispose).toHaveBeenCalledTimes(1);
+      expect(renderLists.dispose).toHaveBeenCalledTimes(1);
+      expect(renderer.dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it("disposes each material in a material array", () => {
+      const first = { dispose: jest.fn() };
+      const second = { dispose: jest.fn() };
+      const scene = {
+        traverse: (callback: (object: any) => void) => {
+          callback({ material: [first, second] });
+        },
+      };
+
+      disposePassportCoinResources(scene, { dispose: jest.fn() });
+
+      expect(first.dispose).toHaveBeenCalledTimes(1);
+      expect(second.dispose).toHaveBeenCalledTimes(1);
+    });
+  });
 
   describe("NomadPassportCoinSkeleton", () => {
     it("renders with role='status' and required Tailwind gradient animation classes", () => {

@@ -1,5 +1,7 @@
 "use client";
 
+ docs/clean-wsl2-guidesss
+
  docs/wsl2-development-guide
 
  docs/local-docker-troubleshooting
@@ -13,6 +15,7 @@
  feat/wocs-contributions-final
 
  feat/offline-ticket-queue
+ main
  main
  main
  main
@@ -100,6 +103,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ docs/clean-wsl2-guidesss
+}
+
  docs/wsl2-development-guide
 }
 
@@ -257,6 +263,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

@@ -8,6 +8,14 @@ Before you begin, ensure you have the following installed on your local developm
 * pnpm or npm (Package manager)
 * Git (Configured with your GitHub account)
 * PostgreSQL / Supabase (Local instance or cloud connection string)
+ feat/ai-triage-sla-watchdog
+
+## 2. Local Environment Setup
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
+   cd WorkSphere
+
 
  feat/wocs-contributions-final
 ## 2. Local Environment Setup
@@ -901,4 +909,5 @@ For details on multi-agent scoring and consensus workflows, see [docs/architectu
 ## Concurrent Development & Worktrees
 
 For guidelines on working on multiple issues concurrently using Git worktrees, see [docs/contributing/WORKTREE_GUIDE.md](docs/contributing/WORKTREE_GUIDE.md).
+ main
  main

@@ -1,4 +1,7 @@
+ feat/network-health-ai-diagnostic
+
  feat/cross-chain-escrow-zkp
+ main
 export class ZkNullifierVerifier {
   private static MAX_BATCH_SIZE = 32;
 
@@ -32,6 +35,8 @@ export class ZkNullifierVerifier {
     }
     return result;
   }
+ feat/network-health-ai-diagnostic
+
 
 import { groth16 } from "snarkjs";
 
@@ -258,5 +263,6 @@ export async function verifyZkNullifierProofs(
       }
     }),
   );
+ main
  main
 }

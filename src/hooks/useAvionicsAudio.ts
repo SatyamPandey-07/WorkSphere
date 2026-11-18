@@ -50,6 +50,20 @@ export interface AvionicsAudioReturn {
   setAudioSink: (deviceId: string) => Promise<void>;
   /** Get or initialize AudioContext */
   getAudioContext: () => Promise<AudioContext | null>;
+  /** Real-time spectral energy bins computed by Wasm SIMD AudioWorklet */
+  spectralBins: Float32Array;
+  /** Current sound pressure level in decibels (dB SPL) */
+  splDb: number;
+  /** Dominant noise peak frequency in Hz */
+  dominantFrequencyHz: number;
+  /** Last AudioWorklet FFT frame processing latency in ms (< 5ms target) */
+  analyzerLatencyMs: number;
+  /** True while the AudioWorklet frequency analyzer is actively running */
+  isAnalyzerActive: boolean;
+  /** Start WebAssembly SIMD AudioWorklet acoustic frequency analysis */
+  startFrequencyAnalyzer: (sourceStream?: MediaStream) => Promise<boolean>;
+  /** Stop and disconnect the AudioWorklet frequency analyzer */
+  stopFrequencyAnalyzer: () => void;
 }
 
 const CRITICAL_BATTERY_THRESHOLD = 0.05; // 5%
@@ -86,8 +100,9 @@ function getSharedAudioContext(preferredSinkId?: string): AudioContext | null {
 
 /**
  * useAvionicsAudio
- * Hook that procedurally synthesizes military jet Master Caution two-tone audio warnings
- * and provides output device (headphones/speakers) sink selection.
+ * Hook that procedurally synthesizes military jet Master Caution two-tone audio warnings,
+ * provides output device (headphones/speakers) sink selection, and runs a 128-bit SIMD
+ * WebAssembly acoustic frequency analyzer inside an AudioWorklet processor.
  */
 export function useAvionicsAudio({
   volume = 0.25,
@@ -103,6 +118,14 @@ export function useAvionicsAudio({
   );
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedSinkId, setSelectedSinkId] = useState<string>("default");
+
+  const [spectralBins, setSpectralBins] = useState<Float32Array>(
+    () => new Float32Array(256),
+  );
+  const [splDb, setSplDb] = useState<number>(20);
+  const [dominantFrequencyHz, setDominantFrequencyHz] = useState<number>(0);
+  const [analyzerLatencyMs, setAnalyzerLatencyMs] = useState<number>(0);
+  const [isAnalyzerActive, setIsAnalyzerActive] = useState<boolean>(false);
 
   const battery = useBatteryStatus();
   const isLowBattery = Boolean(
@@ -121,6 +144,10 @@ export function useAvionicsAudio({
   const masterGainRef = useRef<GainNode | null>(null);
   const cautionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const userInteractedRef = useRef(false);
+
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   // Load preferred sinkId from localStorage on mount
   useEffect(() => {
@@ -186,6 +213,17 @@ export function useAvionicsAudio({
       return ctx;
     }, [selectedSinkId]);
 
+  const unlockAudio = useCallback(async () => {
+    userInteractedRef.current = true;
+    const ctx = getSharedAudioContext(selectedSinkId);
+    if (ctx) {
+      if (ctx.state === "suspended") {
+        await ctx.resume().catch(() => {});
+      }
+      setIsAudioUnlocked(ctx.state === "running");
+    }
+  }, [selectedSinkId]);
+
   // Stop active caution chime
   const stopMasterCaution = useCallback(() => {
     if (activeNodesRef.current.length > 0) {
@@ -221,28 +259,111 @@ export function useAvionicsAudio({
     setIsCautionActive(false);
   }, []);
 
-  // Unlock audio context via user interaction or explicit permission
-  const unlockAudio = useCallback(async () => {
-    userInteractedRef.current = true;
-    const ctx = getSharedAudioContext(selectedSinkId);
-    if (!ctx) return;
-
-    if (ctx.state === "suspended") {
+  // Stop active WebAssembly SIMD AudioWorklet frequency analyzer
+  const stopFrequencyAnalyzer = useCallback(() => {
+    if (workletNodeRef.current) {
       try {
-        await ctx.resume();
+        workletNodeRef.current.port.onmessage = null;
+        workletNodeRef.current.disconnect();
       } catch {
-        // Autoplay policy or unsupported
+        // Ignore already disconnected node
       }
+      workletNodeRef.current = null;
     }
 
-    const running = ctx.state === "running";
-    setIsAudioUnlocked(running);
-  }, [selectedSinkId]);
+    if (mediaSourceRef.current) {
+      try {
+        mediaSourceRef.current.disconnect();
+      } catch {
+        // Ignore
+      }
+      mediaSourceRef.current = null;
+    }
 
-  // Set up user interaction listeners to safely unlock AudioContext per browser autoplay policy
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
+    }
+
+    setIsAnalyzerActive(false);
+  }, []);
+
+  // Start WebAssembly SIMD acoustic frequency analyzer in AudioWorkletGlobalScope
+  const startFrequencyAnalyzer = useCallback(
+    async (sourceStream?: MediaStream): Promise<boolean> => {
+      const ctx = await getAudioContext();
+      if (!ctx || !ctx.audioWorklet) return false;
+
+      stopFrequencyAnalyzer();
+
+      try {
+        await ctx.audioWorklet.addModule("/worklets/fft-processor.js");
+
+        const wasmResp = await fetch("/wasm/fft_analyzer.wasm");
+        const wasmBytes = await wasmResp.arrayBuffer();
+
+        const workletNode = new AudioWorkletNode(
+          ctx,
+          "fft-analyzer-processor",
+          {
+            processorOptions: {
+              fftSize: 512,
+              sampleRate: ctx.sampleRate || 48000,
+            },
+          },
+        );
+
+        workletNode.port.onmessage = (event: MessageEvent) => {
+          const data = event.data;
+          if (!data || data.type !== "SPECTRAL_FRAME") return;
+          if (data.bins instanceof Float32Array) {
+            setSpectralBins(data.bins);
+          }
+          if (typeof data.splDb === "number") {
+            setSplDb(data.splDb);
+          }
+          if (typeof data.dominantFrequencyHz === "number") {
+            setDominantFrequencyHz(data.dominantFrequencyHz);
+          }
+          if (typeof data.latencyMs === "number") {
+            setAnalyzerLatencyMs(data.latencyMs);
+          }
+        };
+
+        workletNode.port.postMessage({ type: "INIT_WASM", wasmBytes }, [
+          wasmBytes,
+        ]);
+
+        let stream = sourceStream ?? null;
+        if (
+          !stream &&
+          typeof navigator !== "undefined" &&
+          navigator.mediaDevices?.getUserMedia
+        ) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          micStreamRef.current = stream;
+        }
+
+        if (stream) {
+          const src = ctx.createMediaStreamSource(stream);
+          src.connect(workletNode);
+          mediaSourceRef.current = src;
+        }
+
+        workletNodeRef.current = workletNode;
+        setIsAnalyzerActive(true);
+        return true;
+      } catch (err) {
+        console.error("Failed to start Wasm SIMD frequency analyzer:", err);
+        stopFrequencyAnalyzer();
+        return false;
+      }
+    },
+    [getAudioContext, stopFrequencyAnalyzer],
+  );
+
+  // Unlock AudioContext on first user gesture
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
     const handleUserGesture = () => {
       userInteractedRef.current = true;
       const ctx = getSharedAudioContext(selectedSinkId);
@@ -459,8 +580,9 @@ export function useAvionicsAudio({
   useEffect(() => {
     return () => {
       stopMasterCaution();
+      stopFrequencyAnalyzer();
     };
-  }, [stopMasterCaution]);
+  }, [stopMasterCaution, stopFrequencyAnalyzer]);
 
   return {
     playMasterCaution,
@@ -476,5 +598,12 @@ export function useAvionicsAudio({
     selectedSinkId,
     setAudioSink,
     getAudioContext,
+    spectralBins,
+    splDb,
+    dominantFrequencyHz,
+    analyzerLatencyMs,
+    isAnalyzerActive,
+    startFrequencyAnalyzer,
+    stopFrequencyAnalyzer,
   };
 }

@@ -1,5 +1,7 @@
 "use client";
 
+ feat/release-expired-locks-cron
+
  docs/brain-terminal-accessibility-guide
 
  feat/brain-terminal-a11y-docs
@@ -16,6 +18,7 @@
  fix/double-ratchet-header-validation
 
  feat/compressed-desk-pass-minter
+ main
  main
  main
  main
@@ -105,6 +108,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/release-expired-locks-cron
+}
+
  docs/brain-terminal-accessibility-guide
 }
 
@@ -267,6 +273,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

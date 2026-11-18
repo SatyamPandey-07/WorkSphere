@@ -93,3 +93,4 @@ export * from './ZeroKnowledgeSetDifferenceProver';
 export * from './ZeroKnowledgePolynomialInterpolationProver';
 export * from './VerifiableSecretResharingProver';
 export * from './ObliviousPseudoRandomFunctionProver';
+export * from './ZeroKnowledgeMatrixMultiplicationProver';

@@ -1,69 +1,53 @@
+
 "use client";
 
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { CloudOff, RefreshCw, Cloud } from "lucide-react";
-import { useEffect } from "react";
 
 export function OfflineSyncBadge() {
   const { isOffline, hasPendingChanges, isSyncing } = useOfflineSync();
 
-  useEffect(() => {
-    // If it was syncing and now it's not, and there are no pending changes, show success briefly
-    if (!isSyncing && !hasPendingChanges && !isOffline) {
-      // Need a way to only show this when transitioning from syncing to success,
-      // but without complex previous state refs, we can just rely on the sync process
-      // completing.
-      // A slightly better way is just to not show success unless it actually did something,
-      // but keeping it subtle as per requirements.
-    }
-  }, [isSyncing, hasPendingChanges, isOffline]);
-
+  // Hide badge when everything is online and synchronized
   if (!isOffline && !hasPendingChanges && !isSyncing) {
     return null;
   }
 
-  let statusText = "Offline";
-  if (isOffline && hasPendingChanges) {
-    statusText = "Offline (Pending Sync)";
-  } else if (isOffline && !hasPendingChanges) {
-    statusText = "Offline";
-  } else if (!isOffline && isSyncing) {
-    statusText = "Syncing...";
-  } else if (!isOffline && !isSyncing && hasPendingChanges) {
-    statusText = "Pending Sync";
-  }
+  // Determine badge status
+  const status = isOffline
+    ? hasPendingChanges
+      ? "Offline (Pending Sync)"
+      : "Offline"
+    : isSyncing
+      ? "Syncing..."
+      : "Pending Sync";
+
+  // Determine icon
+  const Icon = isOffline
+    ? CloudOff
+    : isSyncing
+      ? RefreshCw
+      : Cloud;
+
+  // Determine icon styling
+  const iconClass = isSyncing
+    ? "text-blue-500 animate-spin"
+    : !isOffline
+      ? "text-blue-500"
+      : "";
 
   return (
     <div
       role="status"
-      aria-label={statusText}
-      title={statusText}
+      aria-label={status}
+      title={status}
       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-all"
     >
-      {isOffline && hasPendingChanges && (
-        <>
-          <CloudOff className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Offline (Pending Sync)</span>
-        </>
-      )}
-      {isOffline && !hasPendingChanges && (
-        <>
-          <CloudOff className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Offline</span>
-        </>
-      )}
-      {!isOffline && isSyncing && (
-        <>
-          <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-500" />
-          <span className="hidden sm:inline">Syncing...</span>
-        </>
-      )}
-      {!isOffline && !isSyncing && hasPendingChanges && (
-        <>
-          <Cloud className="w-3.5 h-3.5 text-blue-500" />
-          <span className="hidden sm:inline">Pending Sync</span>
-        </>
-      )}
+      <Icon className={`w-3.5 h-3.5 ${iconClass}`} />
+
+      <span className="hidden sm:inline">
+        {status}
+      </span>
     </div>
   );
 }
+

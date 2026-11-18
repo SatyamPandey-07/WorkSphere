@@ -199,3 +199,167 @@ PrismaClientKnownRequestError: Failed to prepare query: type "vector" does not e
 ### Error 3: `PrismaClientInitializationError: Failed to connect to database`
 - **Cause**: Database service is stopped or `DATABASE_URL` credentials in `.env.local` are incorrect.
 - **Fix**: Ensure PostgreSQL/Docker container is running (`docker ps` or `brew services list`). Check host port `5432`.
+---
+
+### Error 4: Docker Compose PostgreSQL fails to start
+
+Check the service status and logs:
+
+```bash
+docker compose ps
+docker compose logs postgres
+```
+
+Start the services:
+
+```bash
+docker compose up -d
+```
+
+- **Cause:** Docker Desktop may not be running, the image may have failed to download, or PostgreSQL initialization may have failed.
+- **Fix:** Start Docker Desktop, inspect the logs, resolve the reported error, and retry.
+
+### Error 5: Port 5432 is already in use
+
+- **Cause:** Another PostgreSQL instance or application is using port `5432`.
+
+On Windows PowerShell:
+
+```powershell
+Get-NetTCPConnection -LocalPort 5432 -State Listen
+```
+
+Inspect the process using its PID:
+
+```powershell
+Get-Process -Id <PID>
+```
+Replace `<PID>` with the numeric process ID returned by the previous command.
+
+Alternatively, change the host port mapping in `docker-compose.yml`:
+
+```yaml
+ports:
+  - "5433:5432"
+```
+
+Update the host port in `DATABASE_URL` to `5433`. The PostgreSQL container continues listening on port `5432`.
+
+### Error 6: `extension "vector" is not available`
+
+- **Cause:** The PostgreSQL image does not contain pgvector extension binaries.
+- **Fix:** Use a PostgreSQL image or custom image that includes pgvector and matches the PostgreSQL server version.
+
+The root Compose file currently uses `postgres:16-alpine`, which does not include pgvector by default.
+
+**Important:** WorkSphere requires `vector`, `pg_trgm`, and `postgis`. Its migrations also use `fuzzystrmatch`. A pgvector-only image is not necessarily sufficient. Verify that your selected image supports all four extensions.
+
+Once the required extension binaries are available, enable them in the database:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
+```
+
+### Error 7: PostgreSQL volume permission or initialization errors
+
+- **Cause:** PostgreSQL cannot access its data directory because of incorrect filesystem permissions, incompatible bind mounts, or initialization problems.
+
+Inspect logs and volumes:
+
+```bash
+docker compose logs postgres
+docker volume ls
+docker volume inspect <actual-volume-name>
+```
+
+- Prefer Docker-managed named volumes for local PostgreSQL data.
+- On Linux or WSL2, verify that mounted directories are accessible to the container.
+- On Windows, avoid manually changing permissions on PostgreSQL's internal data directory.
+- Do not delete database volumes as a routine troubleshooting step. This can permanently remove local database data.
+
+### PostgreSQL health check and extension validation
+
+Check service health:
+
+```bash
+docker compose ps
+```
+
+Check PostgreSQL readiness:
+
+```bash
+docker compose exec postgres pg_isready -U worksphere -d worksphere_dev
+```
+
+Expected output:
+
+```text
+/var/run/postgresql:5432 - accepting connections
+```
+
+Inspect installed extensions:
+
+```bash
+docker compose exec postgres psql -U worksphere -d worksphere_dev -c "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
+```
+
+A successful health check confirms database readiness, not that every required extension is installed.
+
+### Windows: Docker Desktop, WSL2, and native terminals
+
+Docker Desktop can be controlled from Windows PowerShell or a WSL2 Linux terminal. These are different terminal environments connecting to the Docker Desktop engine. Enable WSL integration when running Docker commands inside a WSL2 distribution.
+
+**Docker Desktop with WSL2:**
+
+- Install and start Docker Desktop.
+- Enable the WSL2-based engine in Docker Desktop settings.
+- Enable integration for your Linux distribution under WSL integration settings.
+- Check WSL configuration:
+
+```powershell
+wsl --status
+wsl --list --verbose
+```
+
+**Windows PowerShell:**
+
+- Docker commands use the Docker Desktop engine.
+- Ensure Docker Desktop is running.
+- If `docker` is not recognized, verify the installation and reopen PowerShell.
+
+**WSL2 filesystem advice:**
+
+- Keep Linux-based development projects in the WSL Linux filesystem for better bind-mount performance.
+- Prefer Docker-managed named volumes for PostgreSQL data.
+- Avoid manually modifying PostgreSQL container data-directory permissions from Windows.
+
+For additional guidance, see the official [Docker Desktop WSL documentation](https://docs.docker.com/desktop/features/wsl/) and [WSL best practices](https://docs.docker.com/desktop/features/wsl/best-practices/).
+
+### macOS: Docker Desktop and PostgreSQL troubleshooting
+
+**Docker Desktop for Mac:**
+- Install and start Docker Desktop for Mac.
+- Run Docker commands from the macOS Terminal.
+- Check that Docker is running:
+```bash
+open -a Docker
+docker info
+```
+
+**Port 5432 already in use:**
+Check which process is using the port:
+```bash
+lsof -nP -iTCP:5432 -sTCP:LISTEN
+```
+- Stop the conflicting service if appropriate, or change the host port mapping to `5433:5432` in `docker-compose.yml`.
+- Update the host port in `DATABASE_URL` if you change the port.
+
+**Volumes and file access:**
+- Prefer Docker-managed named volumes for PostgreSQL data.
+- Avoid manually modifying PostgreSQL container data-directory permissions.
+- Do not delete database volumes unless you intentionally want to remove their data.
+
+For more information, see the official [Docker Desktop for Mac documentation](https://docs.docker.com/desktop/setup/install/mac-install/).

@@ -18,11 +18,7 @@ export interface VenueFilterState {
   maxDistance: number;
   view: ViewMode;
   sortBy?:
-    | "default"
-    | "capacity_asc"
-    | "capacity_desc"
-    | "rating_desc"
-    | "rating_asc";
+    "default" | "capacity_asc" | "capacity_desc" | "rating_desc" | "rating_asc";
 }
 
 export const DEFAULT_FILTER_STATE: VenueFilterState = {
@@ -48,7 +44,12 @@ export function parseFiltersFromSearchParams(
 ): VenueFilterState {
   if (!params) return { ...DEFAULT_FILTER_STATE };
 
-  const query = params.get("q") ?? params.get("query") ?? "";
+  // Trim so "?q=%20cafe%20" and "?q=cafe" are the same search state, and a
+  // blank "q" falls back to the "query" alias instead of hiding it (#7727).
+  const query =
+    [params.get("q"), params.get("query")]
+      .map((value) => value?.trim() ?? "")
+      .find((value) => value !== "") ?? "";
   const category = params.get("category") ?? params.get("type") ?? "all";
   const wifi =
     params.get("wifi") === "true" || params.get("hasWifi") === "true";
@@ -73,8 +74,7 @@ export function parseFiltersFromSearchParams(
     params.get("outlets") === "true" ||
     params.get("hasOutlets") === "true" ||
     params.get("power") === "true";
-  const rawPrice =
-    params.get("price") ?? params.get("priceRange") ?? "all";
+  const rawPrice = params.get("price") ?? params.get("priceRange") ?? "all";
   const priceRange = (["$", "$$", "$$$", "all"] as const).includes(
     rawPrice as "$",
   )
@@ -96,11 +96,15 @@ export function parseFiltersFromSearchParams(
   }
   if (wifi && !amenities.includes("wifi")) amenities.push("wifi");
   if (outlets && !amenities.includes("outlets")) amenities.push("outlets");
-  if (noiseLevel === "quiet" && !amenities.includes("quiet")) amenities.push("quiet");
+  if (noiseLevel === "quiet" && !amenities.includes("quiet"))
+    amenities.push("quiet");
 
   const rawView = params.get("view")?.toLowerCase();
   const view: ViewMode =
-    rawView === "map" || rawView === "list" || rawView === "card" || rawView === "chat"
+    rawView === "map" ||
+    rawView === "list" ||
+    rawView === "card" ||
+    rawView === "chat"
       ? rawView
       : "list";
 

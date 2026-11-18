@@ -59,3 +59,4 @@ export * from './DistributedKeySwitching';
 export * from './KZGDivisionWitnessProver';
 export * from './VerifiableTimedSignature';
 export * from './SparseVectorLookupProver';
+export * from './NovaIVCStepVerifier';

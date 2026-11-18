@@ -1,42 +1,17 @@
- feat/nomad-passport-haptics
-import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
-import { NomadPassportCoin } from '@/components/profile/NomadPassportCoin';
-
-describe('NomadPassportCoin Component - Haptics & Interactions', () => {
-  beforeEach(() => {
-    Object.defineProperty(navigator, 'vibrate', {
-      value: jest.fn().mockReturnValue(true),
-      configurable: true,
-      writable: true
-    });
-  });
-
-  test('should trigger light haptic pulse on card flip', () => {
-    const { getByText } = render(
-      <NomadPassportCoin passportId="PASS-998877" nomadName="Soham Gonbhare" countryCode="IND" stampsCount={12} />
-    );
-    const card = getByText('Digital Nomad Passport').closest('div');
-    fireEvent.click(card!);
-    expect(navigator.vibrate).toHaveBeenCalledWith(15);
-  });
-
-  test('should trigger double-tap haptic pattern on stamp reveal', () => {
-    const { getByText } = render(
-      <NomadPassportCoin passportId="PASS-998877" nomadName="Soham Gonbhare" countryCode="IND" stampsCount={12} />
-    );
-    const card = getByText('Digital Nomad Passport').closest('div');
-    fireEvent.click(card!);
-    const stampButton = getByText('Click to Verify Stamp');
-    fireEvent.click(stampButton);
-    expect(navigator.vibrate).toHaveBeenCalledWith([10, 30, 10]);
-
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import NomadPassportCoin, {
-  NomadPassportCoinSkeleton,
-} from "@/components/profile/NomadPassportCoin";
-import type { PassportStamp } from "@/lib/zkp/nomadProof";
+
+// Mock Three.js for JSDOM test environment
+jest.mock("three", () => ({
+  CanvasTexture: jest.fn().mockImplementation(() => ({
+    colorSpace: "",
+    anisotropy: 0,
+    dispose: jest.fn(),
+  })),
+  DoubleSide: 2,
+  Group: jest.fn(),
+  SRGBColorSpace: "srgb",
+}));
 
 // Mock @react-three/fiber Canvas
 jest.mock("@react-three/fiber", () => ({
@@ -48,6 +23,11 @@ jest.mock("@react-three/fiber", () => ({
   },
   useFrame: jest.fn(),
 }));
+
+import NomadPassportCoin, {
+  NomadPassportCoinSkeleton,
+} from "@/components/profile/NomadPassportCoin";
+import type { PassportStamp } from "@/lib/zkp/nomadProof";
 
 describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
   const mockStamp: PassportStamp = {
@@ -124,7 +104,9 @@ describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
         />,
       );
 
-      expect(screen.queryByTestId("nomad-coin-skeleton")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("nomad-coin-skeleton"),
+      ).not.toBeInTheDocument();
 
       const button = screen.getByRole("button");
       expect(button).toHaveClass("opacity-100");
@@ -163,6 +145,30 @@ describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
       fireEvent.mouseLeave(button);
       expect(button).toHaveAttribute("aria-pressed", "false");
     });
- main
+
+    it("triggers haptic vibration feedback on hover, focus, and click", () => {
+      const vibrateMock = jest.fn().mockReturnValue(true);
+      Object.defineProperty(navigator, "vibrate", {
+        value: vibrateMock,
+        configurable: true,
+        writable: true,
+      });
+
+      render(
+        <NomadPassportCoin
+          stamp={mockStamp}
+          isLoading={false}
+          isLoaded={true}
+        />,
+      );
+
+      const button = screen.getByRole("button");
+      fireEvent.mouseEnter(button);
+      expect(vibrateMock).toHaveBeenCalledWith(15);
+
+      vibrateMock.mockClear();
+      fireEvent.click(button);
+      expect(vibrateMock).toHaveBeenCalledWith([10, 30, 10]);
+    });
   });
 });

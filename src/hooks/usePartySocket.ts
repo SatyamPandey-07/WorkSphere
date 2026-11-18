@@ -89,7 +89,7 @@ const HEARTBEAT_TIMEOUT_MS = 2500;
 /**
  * Custom PartySocket hook with:
  * 1. Multi-tab leadership coordination via BroadcastChannel (only 1 active WebSocket connection) (#3767).
- * 2. Full-jitter exponential backoff on disconnection up to a 30s cap (#3769).
+ * 2. Full-jitter exponential backoff on disconnection with a 10s default cap (#3769).
  * 3. Connection status indicator support ("Reconnecting...").
  * 4. Message handshake retry counter resets.
  * 5. Automatic leader election and smooth transfer on tab close.

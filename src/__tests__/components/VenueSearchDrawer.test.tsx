@@ -103,9 +103,15 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       render(<VenueSearchDrawer isOpen={true} onClose={jest.fn()} />);
 
       expect(screen.queryByTestId("clear-filters-btn")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("header-clear-all-btn")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("active-filters-bar")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("active-filter-badge")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("header-clear-all-btn"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("active-filters-bar"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("active-filter-badge"),
+      ).not.toBeInTheDocument();
     });
 
     it("does not treat search text alone as an active filter", () => {
@@ -115,9 +121,15 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       fireEvent.change(searchInput, { target: { value: "Library" } });
 
       expect(screen.queryByTestId("clear-filters-btn")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("header-clear-all-btn")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("active-filters-bar")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("active-filter-badge")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("header-clear-all-btn"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("active-filters-bar"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("active-filter-badge"),
+      ).not.toBeInTheDocument();
       expect(searchInput).toHaveValue("Library");
     });
 
@@ -145,8 +157,12 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       fireEvent.click(clearAllBtn);
 
       expect(screen.queryByTestId("clear-filters-btn")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("active-filters-bar")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("active-filter-badge")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("active-filters-bar"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("active-filter-badge"),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -165,13 +181,19 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       const moderateChip = screen.getByTestId("noise-moderate");
       const loudChip = screen.getByTestId("noise-loud");
 
-      expect(allChip).toHaveAttribute("aria-label", "Filter by Any Noise level");
+      expect(allChip).toHaveAttribute(
+        "aria-label",
+        "Filter by Any Noise level",
+      );
       expect(allChip).toHaveAttribute("aria-pressed", "false");
 
       expect(quietChip).toHaveAttribute("aria-label", "Filter by Quiet spaces");
       expect(quietChip).toHaveAttribute("aria-pressed", "true");
 
-      expect(moderateChip).toHaveAttribute("aria-label", "Filter by Moderate spaces");
+      expect(moderateChip).toHaveAttribute(
+        "aria-label",
+        "Filter by Moderate spaces",
+      );
       expect(moderateChip).toHaveAttribute("aria-pressed", "false");
 
       expect(loudChip).toHaveAttribute("aria-label", "Filter by Lively spaces");
@@ -236,11 +258,17 @@ describe("VenueSearchDrawer Component (#1429)", () => {
         />,
       );
 
-      const quietStudyPreset = screen.getByTestId("preset-item-preset-quiet-study");
+      const quietStudyPreset = screen.getByTestId(
+        "preset-item-preset-quiet-study",
+      );
       expect(quietStudyPreset).toBeInTheDocument();
       fireEvent.click(quietStudyPreset);
 
-      expect(handleAmenitiesChange).toHaveBeenCalledWith(["wifi", "outlets", "quiet"]);
+      expect(handleAmenitiesChange).toHaveBeenCalledWith([
+        "wifi",
+        "outlets",
+        "quiet",
+      ]);
       expect(handleNoiseChange).toHaveBeenCalledWith("quiet");
       expect(handleCategoryChange).toHaveBeenCalledWith("library");
     });
@@ -274,11 +302,15 @@ describe("VenueSearchDrawer Component (#1429)", () => {
         />,
       );
 
-      const sortSelect = screen.getByTestId("venue-sort-select") as HTMLSelectElement;
+      const sortSelect = screen.getByTestId(
+        "venue-sort-select",
+      ) as HTMLSelectElement;
       expect(sortSelect).toBeInTheDocument();
       expect(sortSelect.value).toBe("default");
 
-      expect(screen.getByRole("option", { name: "Default" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", { name: "Default" }),
+      ).toBeInTheDocument();
       expect(
         screen.getByRole("option", { name: "Capacity: Low to High" }),
       ).toBeInTheDocument();
@@ -333,14 +365,12 @@ describe("VenueSearchDrawer Component (#1429)", () => {
 
     it("hides clear button when search input is empty", () => {
       render(
-        <VenueSearchDrawer
-          isOpen={true}
-          onClose={jest.fn()}
-          searchText=""
-        />,
+        <VenueSearchDrawer isOpen={true} onClose={jest.fn()} searchText="" />,
       );
 
-      expect(screen.queryByTestId("clear-search-input-btn")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("clear-search-input-btn"),
+      ).not.toBeInTheDocument();
     });
 
     it("clears search query and blurs input when Escape key is pressed", () => {
@@ -361,6 +391,150 @@ describe("VenueSearchDrawer Component (#1429)", () => {
 
       expect(handleSearchChange).toHaveBeenCalledWith("");
       expect(blurSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("Category filter pills text wrapping and layout (#7950)", () => {
+    it("renders category pills with natural text wrapping and break classes to prevent text clipping", () => {
+      render(
+        <VenueSearchDrawer isOpen={true} onClose={jest.fn()} category="all" />,
+      );
+
+      const allButton = screen.getByTestId("category-all");
+      const cafeButton = screen.getByTestId("category-cafe");
+      const coworkingButton = screen.getByTestId("category-coworking");
+      const libraryButton = screen.getByTestId("category-library");
+
+      // Verify buttons are rendered and have wrapping and break classes
+      expect(allButton).toHaveClass(
+        "whitespace-normal",
+        "break-words",
+        "max-w-full",
+      );
+      expect(cafeButton).toHaveClass(
+        "whitespace-normal",
+        "break-words",
+        "max-w-full",
+      );
+      expect(coworkingButton).toHaveClass(
+        "whitespace-normal",
+        "break-words",
+        "max-w-full",
+      );
+      expect(libraryButton).toHaveClass(
+        "whitespace-normal",
+        "break-words",
+        "max-w-full",
+      );
+
+      // Verify button content text
+      expect(allButton).toHaveTextContent("All Types");
+      expect(cafeButton).toHaveTextContent("Cafes");
+      expect(coworkingButton).toHaveTextContent("Coworking");
+      expect(libraryButton).toHaveTextContent("Libraries");
+    });
+
+    it("handles category selection and deselection correctly with updated layout", () => {
+      const handleCategoryChange = jest.fn();
+      const { rerender } = render(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          category="cafe"
+          onCategoryChange={handleCategoryChange}
+        />,
+      );
+
+      const cafeButton = screen.getByTestId("category-cafe");
+      expect(cafeButton).toHaveClass("bg-blue-600", "text-white");
+
+      const libraryButton = screen.getByTestId("category-library");
+      expect(libraryButton).not.toHaveClass("bg-blue-600");
+
+      fireEvent.click(libraryButton);
+      expect(handleCategoryChange).toHaveBeenCalledWith("library");
+
+      // Rerender with new selection
+      rerender(
+        <VenueSearchDrawer
+          isOpen={true}
+          onClose={jest.fn()}
+          category="library"
+          onCategoryChange={handleCategoryChange}
+        />,
+      );
+
+      expect(screen.getByTestId("category-library")).toHaveClass(
+        "bg-blue-600",
+        "text-white",
+      );
+      expect(screen.getByTestId("category-cafe")).not.toHaveClass(
+        "bg-blue-600",
+      );
+    });
+  });
+
+  describe("Mobile Backdrop Click Propagation Prevention (#8021)", () => {
+    it("renders backdrop with pointer-events-auto and calls onClose on backdrop click", () => {
+      const handleClose = jest.fn();
+      render(<VenueSearchDrawer isOpen={true} onClose={handleClose} />);
+
+      const backdrop = screen.getByTestId("filter-drawer-backdrop");
+      expect(backdrop).toBeInTheDocument();
+      expect(backdrop).toHaveClass("pointer-events-auto");
+
+      fireEvent.click(backdrop);
+      expect(handleClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops event propagation on backdrop click, pointer-down, and touch-start to protect underlying elements", () => {
+      const handleClose = jest.fn();
+      const parentClickHandler = jest.fn();
+      const parentPointerDownHandler = jest.fn();
+
+      render(
+        <div
+          data-testid="underlying-venue-card-layer"
+          onClick={parentClickHandler}
+          onPointerDown={parentPointerDownHandler}
+        >
+          <VenueSearchDrawer isOpen={true} onClose={handleClose} />
+        </div>,
+      );
+
+      const backdrop = screen.getByTestId("filter-drawer-backdrop");
+
+      // Pointer down on backdrop should not propagate to parent
+      fireEvent.pointerDown(backdrop);
+      expect(parentPointerDownHandler).not.toHaveBeenCalled();
+
+      // Click on backdrop should trigger onClose and not propagate to underlying element
+      fireEvent.click(backdrop);
+      expect(handleClose).toHaveBeenCalledTimes(1);
+      expect(parentClickHandler).not.toHaveBeenCalled();
+
+      // Touch start on backdrop should not propagate
+      const touchEvent = new Event("touchstart", { bubbles: true, cancelable: true });
+      const stopPropSpy = jest.spyOn(touchEvent, "stopPropagation");
+      backdrop.dispatchEvent(touchEvent);
+      expect(stopPropSpy).toHaveBeenCalled();
+    });
+
+    it("does not trigger onClose or propagate events when clicking inside the drawer content panel", () => {
+      const handleClose = jest.fn();
+      const parentClickHandler = jest.fn();
+
+      render(
+        <div onClick={parentClickHandler}>
+          <VenueSearchDrawer isOpen={true} onClose={handleClose} />
+        </div>,
+      );
+
+      const searchInput = screen.getByTestId("search-input");
+      fireEvent.click(searchInput);
+
+      expect(handleClose).not.toHaveBeenCalled();
+      expect(parentClickHandler).not.toHaveBeenCalled();
     });
   });
 });

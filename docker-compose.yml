@@ -1,26 +1,38 @@
+version: "3.9"
+
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    image: postgres:16-alpine
     container_name: worksphere-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: worksphere
       POSTGRES_USER: worksphere
-      POSTGRES_PASSWORD: worksphere
+      POSTGRES_PASSWORD: worksphere_dev_password
+      POSTGRES_DB: worksphere_dev
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    restart: unless-stopped
+      - worksphere_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U worksphere -d worksphere_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     container_name: worksphere-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
-      - redisdata:/data
-    restart: unless-stopped
+      - worksphere_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
-  pgdata:
-  redisdata:
+  worksphere_pgdata:
+  worksphere_redisdata:

@@ -237,5 +237,34 @@ describe("SpatialAudioTest Interpolator (3D Coordinates)", () => {
 
       unmount();
     });
+
+    it("renders dynamic packet loss rate slider and updates FEC redundancy tier badge", async () => {
+      const { unmount } = render(<SpatialAudioTest />);
+
+      // Slider and tier badge should be in document
+      const slider = screen.getByTestId("fec-loss-slider");
+      const badge = screen.getByTestId("fec-tier-badge");
+      expect(slider).toBeInTheDocument();
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveTextContent(/Tier: NONE/i);
+
+      // Change loss slider to 0.25 (25% packet loss)
+      await act(async () => {
+        fireEvent.change(slider, { target: { value: "0.25" } });
+      });
+
+      // Redundancy tier adapts to HIGH (33%)
+      expect(badge).toHaveTextContent(/Tier: HIGH/i);
+
+      // Change loss slider to 0.35 (35% packet loss)
+      await act(async () => {
+        fireEvent.change(slider, { target: { value: "0.35" } });
+      });
+
+      // Redundancy tier adapts to EXTREME (50%)
+      expect(badge).toHaveTextContent(/Tier: EXTREME/i);
+
+      unmount();
+    });
   });
 });

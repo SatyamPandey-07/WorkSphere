@@ -24,11 +24,11 @@ import { StreakBadge } from "@/components/Header/StreakBadge";
 import { OfflineSyncProgressBar } from "@/components/OfflineSyncProgressBar";
 import { NetworkStatusPill } from "@/components/NetworkStatusPill";
 import { OfflineConflictBadge } from "@/components/offline/OfflineConflictBadge";
+import { StorageUsageWarningBadge } from "@/components/Header/StorageUsageWarningBadge";
 import { QuickSearchTrigger } from "@/components/ui/QuickSearchTrigger";
 import { LanternPowerRing } from "@/components/analytics/LanternPowerRing";
 
 interface TopNavProps {
-
   hideAuth?: boolean;
 }
 
@@ -151,9 +151,9 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
           <QuickSearchTrigger />
           <NetworkStatusPill />
           <OfflineConflictBadge />
+          <StorageUsageWarningBadge />
           <LanternPowerRing size="sm" className="hidden sm:inline-flex" />
           <ThemeToggle />
-
 
           {!hideAuth && (
             <>

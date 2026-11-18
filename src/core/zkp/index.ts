@@ -41,3 +41,4 @@ export * from './NonInteractiveVectorCommitment';
 export * from './SuccinctRecursiveRollupVerifier';
 export * from './BlindPolynomialCommitment';
 export * from './SuccinctMerkleMultiProof';
+export * from './PairingInnerProductArgument';

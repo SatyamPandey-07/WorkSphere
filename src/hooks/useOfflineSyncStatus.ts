@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getTotalPendingMutationsCount } from "@/lib/offlineStorage";
-import { getPendingReviewCount } from "@/lib/offlineReviewSync";
+import { getQueuedReviews } from "@/lib/offlineReviewSync";
 
 const SYNC_POLL_INTERVAL_MS = 1_000;
 const MAX_SYNC_INDICATOR_MS = 20_000;
@@ -17,11 +17,11 @@ export interface OfflineSyncStatus {
 async function readPendingMutationCount(): Promise<number> {
   const [storedCount, reviewCount] = await Promise.allSettled([
     getTotalPendingMutationsCount(),
-    getPendingReviewCount(),
+    getQueuedReviews(),
   ]);
 
   const stored = storedCount.status === "fulfilled" ? storedCount.value : null;
-  const reviews = reviewCount.status === "fulfilled" ? reviewCount.value : null;
+  const reviews = reviewCount.status === "fulfilled" ? reviewCount.value.length : null;
 
   if (stored === null && reviews === null) {
     throw new Error("Unable to read pending offline mutations");

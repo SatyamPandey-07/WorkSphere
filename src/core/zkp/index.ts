@@ -54,3 +54,4 @@ export * from './RangeBitmapProver';
 export * from './ThresholdReencryptionMix';
 export * from './MultilinearExtensionProver';
 export * from './PedersenBatchOpener';
+export * from './InnerProductEqualityProver';

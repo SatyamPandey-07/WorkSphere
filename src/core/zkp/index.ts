@@ -91,3 +91,4 @@ export * from './VerifiableTimedCommitmentProver';
 export * from './ThresholdRingSignatureVerifier';
 export * from './ZeroKnowledgeSetDifferenceProver';
 export * from './ZeroKnowledgePolynomialInterpolationProver';
+export * from './VerifiableSecretResharingProver';

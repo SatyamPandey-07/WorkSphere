@@ -19,3 +19,4 @@ export * from './BFTStateCheckpointVerifier';
 export * from './AsynchronousGradedAgreement';
 export * from './HotStuff2ChainedEngine';
 export * from './DAGCausalOrderer';
+export * from './VerifiableRandomSortition';

@@ -92,3 +92,4 @@ export * from './ThresholdRingSignatureVerifier';
 export * from './ZeroKnowledgeSetDifferenceProver';
 export * from './ZeroKnowledgePolynomialInterpolationProver';
 export * from './VerifiableSecretResharingProver';
+export * from './ObliviousPseudoRandomFunctionProver';

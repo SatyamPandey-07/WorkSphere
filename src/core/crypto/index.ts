@@ -23,3 +23,4 @@ export * from './ShareConversionProtocol';
 export * from './ThresholdOPRFProtocol';
 export * from './ThresholdSchnorrMuSig';
 export * from './WeightedThresholdEncryption';
+export * from './ObliviousTransferExtension';

@@ -89,3 +89,4 @@ export * from './VerifiableShuffleReencryptionProver';
 export * from './ConfidentialAssetTransferProver';
 export * from './VerifiableTimedCommitmentProver';
 export * from './ThresholdRingSignatureVerifier';
+export * from './ZeroKnowledgeSetDifferenceProver';

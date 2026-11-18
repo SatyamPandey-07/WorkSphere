@@ -53,3 +53,4 @@ export * from './BLSPoPAggregator';
 export * from './RangeBitmapProver';
 export * from './ThresholdReencryptionMix';
 export * from './MultilinearExtensionProver';
+export * from './PedersenBatchOpener';

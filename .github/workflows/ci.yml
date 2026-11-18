@@ -133,9 +133,11 @@ jobs:
 
       - name: Pre-enable required PostgreSQL extensions
         shell: bash
+        env:
+          PGPASSWORD: worksphere_ci_password
         run: |
-          docker exec -u worksphere_ci ${{ job.services.postgres.id }} psql -U worksphere_ci -d worksphere_ci_test -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector;" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" -c "CREATE EXTENSION IF NOT EXISTS postgis;" -c "CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"
-          COUNT=$(docker exec -u worksphere_ci ${{ job.services.postgres.id }} psql -U worksphere_ci -d worksphere_ci_test -Atc "SELECT count(*) FROM pg_extension WHERE extname IN ('vector', 'pg_trgm', 'postgis', 'fuzzystrmatch');")
+          docker exec -e PGPASSWORD ${{ job.services.postgres.id }} psql -U worksphere_ci -d worksphere_ci_test -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector;" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" -c "CREATE EXTENSION IF NOT EXISTS postgis;" -c "CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"
+          COUNT=$(docker exec -e PGPASSWORD ${{ job.services.postgres.id }} psql -U worksphere_ci -d worksphere_ci_test -Atc "SELECT count(*) FROM pg_extension WHERE extname IN ('vector', 'pg_trgm', 'postgis', 'fuzzystrmatch');")
           echo "Installed extensions count: $COUNT"
           test "$COUNT" = "4"
 

@@ -86,8 +86,8 @@ describeIfDb("PostgreSQL Database Integration Checks", () => {
 
     it("verifies expected core database tables exist", async () => {
       const res = await pool.query<{ tablename: string }>(
-        `SELECT tablename FROM pg_catalog.pg_tables 
-         WHERE schemaname = 'public' 
+        `SELECT tablename FROM pg_catalog.pg_tables
+         WHERE schemaname = 'public'
          AND tablename IN ('User', 'Venue', 'Booking', 'VenueSeat', 'CheckIn', '_prisma_migrations');`,
       );
       const tables = res.rows.map((r) => r.tablename);
@@ -101,8 +101,8 @@ describeIfDb("PostgreSQL Database Integration Checks", () => {
 
     it("verifies partial unique index on active booking seats exists", async () => {
       const res = await pool.query<{ indexname: string }>(
-        `SELECT indexname FROM pg_indexes 
-         WHERE tablename = 'Booking' 
+        `SELECT indexname FROM pg_indexes
+         WHERE tablename = 'Booking'
          AND indexname = 'Booking_active_seat_slot_key';`,
       );
       expect(res.rows.length).toBe(1);

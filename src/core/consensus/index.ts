@@ -21,3 +21,4 @@ export * from './HotStuff2ChainedEngine';
 export * from './DAGCausalOrderer';
 export * from './VerifiableRandomSortition';
 export * from './TendermintRoundEngine';
+export * from './MysticetiDAGCommitter';

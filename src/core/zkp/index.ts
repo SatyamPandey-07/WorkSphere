@@ -43,3 +43,4 @@ export * from './BlindPolynomialCommitment';
 export * from './SuccinctMerkleMultiProof';
 export * from './PairingInnerProductArgument';
 export * from './MatrixVectorZKPProver';
+export * from './ReedSolomonErasureProver';

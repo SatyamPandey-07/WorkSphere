@@ -101,9 +101,24 @@ export function fitPlaneFromTriplet(
         return null;
     }
 
-    const crossLen = Math.sqrt(crossLenSq);
-    if (!Number.isFinite(crossLen) || crossLen === 0) {
-        return null;
+    /**
+     * Fits a plane equation ax + by + cz + d = 0 from 3 points.
+     */
+    public static fitPlaneFrom3Points(p1: Vec3, p2: Vec3, p3: Vec3): PlaneEquation | null {
+        const v1 = PlaneMeshExtractor.subtract(p2, p1);
+        const v2 = PlaneMeshExtractor.subtract(p3, p1);
+        const normal = PlaneMeshExtractor.cross(v1, v2);
+        const len = PlaneMeshExtractor.norm(normal);
+        // RANSAC can select duplicate, collinear, nearly-collinear, or corrupt
+        // points. Reject non-finite/near-zero normals before any normalization.
+        if (!Number.isFinite(len) || len < 1e-6) return null;
+
+        const a = normal.x / len;
+        const b = normal.y / len;
+        const c = normal.z / len;
+        const d = -(a * p1.x + b * p1.y + c * p1.z);
+
+        return { a, b, c, d };
     }
 
     const invLen = 1 / crossLen;

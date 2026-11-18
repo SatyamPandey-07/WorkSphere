@@ -4,6 +4,12 @@ import { onConnect as onConnectYjs } from "y-partykit";
 /** Yjs rooms for collaborative collection notes: `folder-notes-{folderId}` (#3360). */
 export const FOLDER_NOTES_ROOM_PREFIX = "folder-notes-";
 
+/**
+ * Yjs rooms for shared venue notes (`GroupNotesEditor`): `notes-{venueId}`.
+ * They are not folders, so any signed-in user may edit them.
+ */
+export const GROUP_NOTES_ROOM_PREFIX = "notes-";
+
 /** Folder id for `folder-{id}` and `folder-notes-{id}` rooms (other rooms: the room id). */
 export function folderIdFromRoom(roomId: string): string {
   if (roomId.startsWith(FOLDER_NOTES_ROOM_PREFIX)) return roomId.slice(FOLDER_NOTES_ROOM_PREFIX.length);
@@ -224,8 +230,13 @@ export default class WorkspaceServer implements Party.Server {
         const userId = verifiedToken.sub;
         verifiedUserId = userId;
 
-        // Canvas whiteboard rooms: any authenticated user can edit
-        if (this.room.id.startsWith("canvas-")) {
+        // Canvas whiteboard and venue notes rooms: any authenticated user can
+        // edit. They are not folders, so a folder role lookup would always
+        // answer VIEWER and make the connection read-only.
+        if (
+          this.room.id.startsWith("canvas-") ||
+          this.room.id.startsWith(GROUP_NOTES_ROOM_PREFIX)
+        ) {
           isViewer = false;
         } else {
           const folderId = folderIdFromRoom(this.room.id);

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Activity, Bell, BellOff, Volume2, Wifi } from "lucide-react";
 import { NoiseMonitor } from "@/components/noise/NoiseMonitor";
 import { WifiWidget } from "@/components/telemetry/WifiWidget";
+import { NetworkQualityWidget } from "@/components/telemetry/NetworkQualityWidget";
 
 export interface VenueTelemetryDashboardProps {
   venueId?: string;
@@ -107,6 +108,14 @@ export function VenueTelemetryDashboard({
           alertsEnabled={noiseAlertsEnabled}
           onAlertsEnabledChange={setNoiseAlertsEnabled}
           onAlertTriggered={onAlertTriggered}
+        />
+
+        <NetworkQualityWidget
+          venueId={venueId}
+          venueName={venueName}
+          initialMedianRtt={pingMs}
+          initialJitter={jitterMs}
+          className="lg:col-span-2"
         />
       </div>
     </div>

@@ -1,7 +1,9 @@
 import { getRedis } from "@/lib/redis";
+import { prisma } from "@/lib/prisma";
+import type { WebhookEventType } from "@prisma/client";
 import { WebhookEvent } from "./schemas";
 
-// Resolved lazily so importing this module never throws when Redis is not configured.
+// Kept for compatibility with older workers and operational tooling.
 function requireRedis() {
   const redis = getRedis();
   if (!redis) throw new Error("Redis is not configured");
@@ -12,33 +14,37 @@ const WEBHOOK_PROCESSING_QUEUE_KEY = "work-sphere:webhook-events-processing";
 
 export const EventBus = {
   /**
-   * Emits an internal system event. This event will be pushed to a Redis queue.
-   * A background worker or cron job should consume this queue to dispatch webhooks.
+   * Persist events to the database outbox. The worker reads this durable source
+   * of truth, so enqueueing does not depend on Redis being configured or online.
    */
   emit: async (event: Omit<WebhookEvent, "id" | "timestamp">) => {
+    const fullEvent: WebhookEvent = {
+      ...event,
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+    };
     try {
-      const fullEvent: WebhookEvent = {
-        ...event,
-        id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-      };
-
-      // Push to the background queue (left push)
-      await requireRedis().lpush(WEBHOOK_QUEUE_KEY, JSON.stringify(fullEvent));
-
-      console.log(`[EventBus] Emitted event ${fullEvent.type} to queue.`);
+      await prisma.webhookOutboxEvent.create({
+        data: {
+          id: fullEvent.id,
+          userId: fullEvent.userId,
+          eventType: fullEvent.type as WebhookEventType,
+          data: fullEvent.data,
+          state: "PENDING",
+          nextAttemptAt: new Date(),
+        },
+      });
+      return fullEvent;
     } catch (error) {
-      console.error("[EventBus] Failed to emit event:", error);
-      // We do not throw to avoid failing the main user request when event logging fails
+      console.error("[EventBus] Failed to persist webhook event:", error);
+      // Preserve the non-blocking contract of existing producers.
+      return null;
     }
   },
 
-  /**
-   * Helper function for the worker to pop events from the queue reliably
-   */
+  /** Legacy Redis queue pop helper retained during migration. */
   popEvent: async (): Promise<WebhookEvent | null> => {
     try {
-      // Pop from the right side of the list and push to the processing list
       const raw = await requireRedis().lmove(
         WEBHOOK_QUEUE_KEY,
         WEBHOOK_PROCESSING_QUEUE_KEY,
@@ -46,45 +52,26 @@ export const EventBus = {
         "left",
       );
       if (!raw) return null;
-
-      let parsedObj;
-      if (typeof raw === "string") {
-        parsedObj = JSON.parse(raw);
-      } else {
-        parsedObj = raw;
-      }
-      return parsedObj as WebhookEvent;
+      return (typeof raw === "string" ? JSON.parse(raw) : raw) as WebhookEvent;
     } catch (error) {
-      console.error("[EventBus] Failed to pop event:", error);
+      console.error("[EventBus] Failed to pop legacy event:", error);
       return null;
     }
   },
 
-  /**
-   * Acknowledge and remove successfully processed event from the processing queue
-   */
+  /** Legacy Redis acknowledgement helper. */
   ackEvent: async (event: WebhookEvent | string) => {
     try {
       const redis = requireRedis();
       const eventStr = typeof event === "string" ? event : JSON.stringify(event);
-      const removed = await redis.lrem(
-        WEBHOOK_PROCESSING_QUEUE_KEY,
-        1,
-        eventStr,
-      );
-
-      // If exact string match failed, find by event ID across processing items
+      const removed = await redis.lrem(WEBHOOK_PROCESSING_QUEUE_KEY, 1, eventStr);
       if (removed === 0 && typeof event !== "string" && event?.id) {
-        const processingEvents = await redis.lrange(
-          WEBHOOK_PROCESSING_QUEUE_KEY,
-          0,
-          -1,
-        );
+        const processingEvents = await redis.lrange(WEBHOOK_PROCESSING_QUEUE_KEY, 0, -1);
         for (const item of processingEvents) {
           if (!item) continue;
           try {
             const parsed = typeof item === "string" ? JSON.parse(item) : item;
-            if (parsed && parsed.id === event.id) {
+            if (parsed?.id === event.id) {
               await redis.lrem(WEBHOOK_PROCESSING_QUEUE_KEY, 1, item);
               break;
             }
@@ -92,49 +79,34 @@ export const EventBus = {
         }
       }
     } catch (error) {
-      console.error("[EventBus] Failed to acknowledge event:", error);
+      console.error("[EventBus] Failed to acknowledge legacy event:", error);
     }
   },
 
-  /**
-   * Recover stale/abandoned webhook events from the processing queue
-   */
+  /** Legacy Redis recovery helper. Database outbox events are lease-recovered by the worker. */
   recoverStaleEvents: async () => {
     try {
-      const processingEvents = await requireRedis().lrange(
-        WEBHOOK_PROCESSING_QUEUE_KEY,
-        0,
-        -1,
-      );
-      if (!processingEvents || processingEvents.length === 0) return;
-
+      const redis = requireRedis();
+      const processingEvents = await redis.lrange(WEBHOOK_PROCESSING_QUEUE_KEY, 0, -1);
+      if (!processingEvents?.length) return;
       const now = Date.now();
-      const STALE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
       for (const eventStr of processingEvents) {
         if (!eventStr) continue;
         try {
           const event = JSON.parse(eventStr) as WebhookEvent;
-          const eventTime = new Date(event.timestamp).getTime();
-          const age = now - eventTime;
-
-          if (age > STALE_TIMEOUT_MS) {
-            console.log(
-              `[EventBus] Webhook event ${event.id} is stale (age: ${Math.round(age / 1000)}s). Re-queuing...`,
-            );
-            await requireRedis().lpush(WEBHOOK_QUEUE_KEY, eventStr);
-            await requireRedis().lrem(
-              WEBHOOK_PROCESSING_QUEUE_KEY,
-              1,
-              eventStr,
-            );
+          if (now - new Date(event.timestamp).getTime() > 5 * 60 * 1000) {
+            await redis.lpush(WEBHOOK_QUEUE_KEY, eventStr);
+            await redis.lrem(WEBHOOK_PROCESSING_QUEUE_KEY, 1, eventStr);
           }
-        } catch (err) {
-          console.error("[EventBus] Error parsing stale event:", eventStr, err);
+        } catch (error) {
+          console.error("[EventBus] Error recovering legacy event:", error);
         }
       }
     } catch (error) {
-      console.error("[EventBus] Failed to recover stale events:", error);
+      // Redis is optional after the database outbox migration.
+      if (process.env.NODE_ENV !== "test") {
+        console.warn("[EventBus] Legacy Redis recovery unavailable:", error);
+      }
     }
   },
 };

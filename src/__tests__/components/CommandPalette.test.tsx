@@ -1,10 +1,11 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import {
   CommandPalette,
   CommandPaletteTrigger,
   detectPlatformShortcut,
   isTouchOnlyDevice,
 } from "@/components/CommandPalette";
+import { QuickSearchTrigger } from "@/components/ui/QuickSearchTrigger";
 
 // CommandPalette uses next/navigation — mock it
 jest.mock("next/navigation", () => ({
@@ -169,6 +170,58 @@ describe("CommandPalette search trigger and shortcut badge", () => {
       "(pointer: fine)": true,
     });
     expect(isTouchOnlyDevice()).toBe(false);
+  });
+});
+
+describe("CommandPalette keyboard shortcut focus", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it.each([
+    ["Control+K", { ctrlKey: true }],
+    ["Meta+K", { metaKey: true }],
+  ])("opens and focuses the search input with %s", (_shortcut, modifiers) => {
+    render(<CommandPalette />);
+
+    fireEvent.keyDown(document, { key: "k", ...modifiers });
+
+    const searchInput = screen.getByRole("combobox");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(searchInput).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Control+K Meta+K",
+    );
+
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+
+    expect(document.activeElement).toBe(searchInput);
+  });
+
+  it("opens and focuses from the Header quick-search trigger", () => {
+    render(
+      <>
+        <QuickSearchTrigger />
+        <CommandPalette />
+      </>,
+    );
+
+    fireEvent.click(screen.getByTestId("quick-search-trigger"));
+
+    const searchInput = screen.getByRole("combobox");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+
+    expect(document.activeElement).toBe(searchInput);
   });
 });
 

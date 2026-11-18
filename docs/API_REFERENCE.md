@@ -315,6 +315,23 @@ Every rate-limited API response includes standard `X-RateLimit-*` diagnostic hea
 | **`Retry-After`** | `integer` | `45` | **Present on HTTP 429**: The number of seconds the client MUST wait before making a new request. |
 
 ---
+## Authentication & Security APIs
+
+### GET `/api/auth/csrf-token`
+
+Retrieves a Cryptographically Secure Pseudo-Random (CSPRNG) anti-CSRF token required for state-mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
+
+#### Request Header Requirements
+| Header | Type | Required | Description |
+|---|---|---|---|
+| `Accept` | `string` | No | Recommended: `application/json` |
+
+#### Response Schema (200 OK)
+```json
+{
+  "csrfToken": "e8f7a1b9c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7",
+  "expiresAt": "2026-11-08T10:23:00.000Z"
+}
 
 ### Sliding Window Counter Mechanics
 

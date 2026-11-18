@@ -1,29 +1,15 @@
-const mockMulti = {
-  zremrangebyscore: jest.fn().mockReturnThis(),
-  zadd: jest.fn().mockReturnThis(),
-  zcard: jest.fn().mockReturnThis(),
-  expire: jest.fn().mockReturnThis(),
-  exec: jest.fn(),
-};
-
-const mockZrem = jest.fn();
+const mockEval = jest.fn();
 
 const WINDOW_MS = 60_000;
 const WINDOW_SECONDS = 60;
 
 function resetMocks() {
-  mockMulti.exec.mockReset();
-  mockMulti.zremrangebyscore.mockClear();
-  mockMulti.zadd.mockClear();
-  mockMulti.zcard.mockClear();
-  mockMulti.expire.mockClear();
-  mockZrem.mockReset();
+  mockEval.mockReset();
 }
 
 jest.mock("@upstash/redis", () => ({
   Redis: jest.fn().mockImplementation(() => ({
-    multi: () => mockMulti,
-    zrem: mockZrem,
+    eval: mockEval,
   })),
 }));
 
@@ -33,6 +19,7 @@ import {
   resetRateLimit,
   resetRedisScripts,
   microTimestampMember,
+  SLIDING_WINDOW_LOG_LUA_SCRIPT,
 } from "@/lib/rateLimit";
 
 describe("Rate Limiting", () => {
@@ -171,7 +158,7 @@ describe("custom window duration", () => {
   });
 });
 
-describe("Redis sliding window atomic MULTI (ZREMRANGEBYSCORE + ZCARD)", () => {
+describe("Redis sliding window atomic Lua script (EVAL)", () => {
   beforeEach(() => {
     resetRedisScripts();
     resetMocks();
@@ -186,79 +173,48 @@ describe("Redis sliding window atomic MULTI (ZREMRANGEBYSCORE + ZCARD)", () => {
     resetRedisScripts();
   });
 
-  it("runs prune, add, card, and expire in one multi transaction", async () => {
+  it("evaluates the sliding window Lua script atomically", async () => {
     const now = 1_700_000_000_000;
     jest.spyOn(Date, "now").mockReturnValue(now);
-    mockMulti.exec.mockResolvedValueOnce([0, 1, 1, 1]);
+    mockEval.mockResolvedValueOnce([1, "4", 1_700_000_060, 0, "1"]);
 
-    expect(await rateLimit("redis-ip", 3)).toBe(true);
+    expect(await rateLimit("test-ip", 5)).toBe(true);
 
-    const key = "worksphere:ratelimit:redis-ip";
-    expect(mockMulti.zremrangebyscore).toHaveBeenCalledWith(
-      key,
-      0,
-      now - WINDOW_MS,
-    );
-    expect(mockMulti.zadd).toHaveBeenCalledTimes(1);
-    expect(mockMulti.zcard).toHaveBeenCalledWith(key);
-    expect(mockMulti.expire).toHaveBeenCalledWith(key, WINDOW_SECONDS);
-    expect(mockMulti.exec).toHaveBeenCalledTimes(1);
-    expect(mockZrem).not.toHaveBeenCalled();
+    const key = "worksphere:ratelimit:test-ip";
+    const evalCalls = mockEval.mock.calls;
+    const lastCall = evalCalls[evalCalls.length - 1];
+    // Verify the Lua script was called with correct args
+    expect(lastCall[0]).toBe(SLIDING_WINDOW_LOG_LUA_SCRIPT);
+    expect(lastCall[1]).toEqual([key]);
+    // Argv[1]=limit, Argv[2]=windowMs, Argv[3]=now, Argv[4]=member, Argv[5]=cost
+    expect(Number(lastCall[2][0])).toBe(5); // limit
+    expect(Number(lastCall[2][1])).toBe(60_000); // windowMs
+    expect(Number(lastCall[2][2])).toBe(now); // now
+    expect(typeof lastCall[2][3]).toBe("string"); // member (random nonce)
+    expect(Number(lastCall[2][4])).toBe(1); // cost
   });
 
-  it("rejects and removes the optimistic member when ZCARD exceeds the limit", async () => {
+  it("blocks requests when limit is exceeded", async () => {
     const now = 1_700_000_000_000;
     jest.spyOn(Date, "now").mockReturnValue(now);
-    mockMulti.exec.mockResolvedValueOnce([0, 1, 4, 1]);
+    mockEval.mockResolvedValueOnce([0, "0", 1_700_000_060, 30, "5"]);
 
-    expect(await rateLimit("full-ip", 3)).toBe(false);
-
-    const key = "worksphere:ratelimit:full-ip";
-    const [, zaddPayload] = mockMulti.zadd.mock.calls[0] as [
-      string,
-      { score: number; member: string },
-    ];
-    const member = zaddPayload.member;
-
-    expect(mockMulti.zremrangebyscore).toHaveBeenCalledWith(
-      key,
-      0,
-      now - WINDOW_MS,
-    );
-    expect(mockMulti.expire).toHaveBeenCalledWith(key, WINDOW_SECONDS);
-    expect(mockZrem).toHaveBeenCalledTimes(1);
-    expect(mockZrem).toHaveBeenCalledWith(key, member);
+    expect(await rateLimit("blocked-ip", 5)).toBe(false);
   });
 
-  it("allows until ZCARD goes past the limit across calls", async () => {
+  it("allows requests under the limit across multiple calls", async () => {
     const now = 1_700_000_000_000;
     jest.spyOn(Date, "now").mockReturnValue(now);
-    mockMulti.exec
-      .mockResolvedValueOnce([0, 1, 1, 1])
-      .mockResolvedValueOnce([0, 1, 2, 1])
-      .mockResolvedValueOnce([0, 1, 3, 1])
-      .mockResolvedValueOnce([0, 1, 4, 1]);
+    mockEval
+      .mockResolvedValueOnce([1, "4", 1_700_000_060, 0, "1"])
+      .mockResolvedValueOnce([1, "3", 1_700_000_060, 0, "2"])
+      .mockResolvedValueOnce([1, "2", 1_700_000_060, 0, "3"])
+      .mockResolvedValueOnce([0, "0", 1_700_000_060, 30, "5"]);
 
-    expect(await rateLimit("burst-ip", 3)).toBe(true);
-    expect(await rateLimit("burst-ip", 3)).toBe(true);
-    expect(await rateLimit("burst-ip", 3)).toBe(true);
-    expect(await rateLimit("burst-ip", 3)).toBe(false);
-
-    const key = "worksphere:ratelimit:burst-ip";
-    expect(mockMulti.exec).toHaveBeenCalledTimes(4);
-    expect(mockMulti.zremrangebyscore).toHaveBeenCalledWith(
-      key,
-      0,
-      now - WINDOW_MS,
-    );
-    expect(mockMulti.expire).toHaveBeenCalledWith(key, WINDOW_SECONDS);
-    expect(mockZrem).toHaveBeenCalledTimes(1);
-
-    const rejectedZadd = mockMulti.zadd.mock.calls[3] as [
-      string,
-      { score: number; member: string },
-    ];
-    expect(mockZrem).toHaveBeenCalledWith(key, rejectedZadd[1].member);
+    expect(await rateLimit("multi-ip", 3)).toBe(true);
+    expect(await rateLimit("multi-ip", 3)).toBe(true);
+    expect(await rateLimit("multi-ip", 3)).toBe(true);
+    expect(await rateLimit("multi-ip", 3)).toBe(false);
   });
 
   it("enforces strict sliding window sub-bucket eviction on Redis cluster reconnect (#5037)", async () => {
@@ -283,7 +239,7 @@ describe("Redis sliding window atomic MULTI (ZREMRANGEBYSCORE + ZCARD)", () => {
     process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
     resetRedisScripts();
 
-    mockMulti.exec.mockResolvedValueOnce([0, 1, 1, 1]);
+    mockEval.mockResolvedValueOnce([1, "2", 1_700_000_020, 0, "1"]);
 
     // Consuming on reconnect must purge expired sub-buckets and succeed without quota burst
     const res = await limiter.consume(ip);

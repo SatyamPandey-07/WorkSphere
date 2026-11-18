@@ -2,16 +2,21 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { Search, X, Loader2, MapPin } from "lucide-react";
+import { Search, X, Loader2, MapPin, History } from "lucide-react";
 import { useVenueSearch, VenueSearchResult } from "@/hooks/useVenueSearch";
+import { useRecentSearches } from "@/hooks/useRecentSearches";
 import { AmenityFilterPills } from "./AmenityFilterPills";
+import { ShortcutTooltip } from "../ui/ShortcutTooltip";
 
 export interface SearchBarProps {
   placeholder?: string;
   onSelect?: (venue: VenueSearchResult) => void;
   onSearch?: (query: string) => void;
   className?: string;
+  /** Wait this long after the last keystroke before searching (default: 300ms). Enter searches at once. */
   debounceMs?: number;
+  /** Shortest trimmed query that is sent to the server (default: 2). An empty query resets the search. */
+  minQueryLength?: number;
   initialQuery?: string;
   autoFocus?: boolean;
   showAmenityPills?: boolean;
@@ -29,15 +34,17 @@ export function trimSearchQuery(query: string): string {
 }
 
 /**
- * Reusable SearchBar component with 250ms input debounce and AbortController (#3513, #3773)
- * Cancels stale in-flight requests and avoids race conditions on fast typing.
+ * Reusable SearchBar component with a 300ms input debounce, a 2 character minimum and AbortController
+ * (#3513, #3773, #7673). Cancels stale in-flight requests and avoids race conditions on fast typing.
+ * Shorter queries send no request, Enter searches at once, and a typing indicator shows while waiting.
  */
 export function SearchBar({
   placeholder = "Search venues by name, address, or tag...",
   onSelect,
   onSearch,
   className = "",
-  debounceMs = 250,
+  debounceMs = 300,
+  minQueryLength = 2,
   initialQuery = "",
   autoFocus = false,
   showAmenityPills = false,
@@ -47,6 +54,7 @@ export function SearchBar({
   onDistanceChange,
 }: SearchBarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [activeRecentIndex, setActiveRecentIndex] = useState(-1);
   const [shortcutKey, setShortcutKey] = useState("Ctrl+K");
   const [internalDistance, setInternalDistance] = useState(distance ?? 0);
 
@@ -71,8 +79,30 @@ export function SearchBar({
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  const { query, setQuery, venues, suggestedQuery, isLoading, clear, search } =
-    useVenueSearch({ initialQuery, debounceMs });
+  const {
+    query,
+    setQuery,
+    venues,
+    suggestedQuery,
+    isLoading,
+    isDebouncing,
+    clear,
+    search,
+  } = useVenueSearch({ initialQuery, debounceMs, minQueryLength });
+
+  const {
+    recent: recentSearches,
+    add: addRecent,
+    remove: removeRecent,
+    clear: clearRecent,
+  } = useRecentSearches();
+  const showRecent =
+    isOpen && query.trim().length === 0 && recentSearches.length > 0;
+
+  // Keep the keyboard highlight valid when the list or its visibility changes
+  useEffect(() => {
+    setActiveRecentIndex(-1);
+  }, [showRecent, recentSearches.length]);
 
   // Preserve cursor selection range across debounced controlled re-renders
   useEffect(() => {
@@ -92,9 +122,7 @@ export function SearchBar({
   // Detect OS for shortcut display badge (⌘K on macOS, Ctrl+K elsewhere)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const isMac = /Mac|iPod|iPhone|iPad/.test(
-        navigator.platform || navigator.userAgent,
-      );
+      const isMac = /Mac|iPod|iPhone|iPad/i.test(navigator.userAgent);
       setShortcutKey(isMac ? "⌘K" : "Ctrl+K");
     }
   }, []);
@@ -170,17 +198,32 @@ export function SearchBar({
         setIsOpen(false);
         return;
       }
+      addRecent(trimmed);
       onSearch?.(trimmed);
       updateUrlQuery(trimmed);
       void search(trimmed);
     },
-    [query, clear, onSearch, updateUrlQuery, search],
+    [query, clear, onSearch, updateUrlQuery, search, addRecent],
+  );
+
+  // One tap re-query: fill the input and search straight away
+  const handleSelectRecent = useCallback(
+    (recentQuery: string) => {
+      cursorRef.current = { start: null, end: null };
+      setQuery(recentQuery);
+      setActiveRecentIndex(-1);
+      setIsOpen(true);
+      handleSearchSubmit(recentQuery);
+      inputRef.current?.focus();
+    },
+    [setQuery, handleSearchSubmit],
   );
 
   const handleSelectVenue = (venue: VenueSearchResult) => {
     cursorRef.current = { start: null, end: null };
     const trimmedName = trimSearchQuery(venue.name);
     setQuery(trimmedName);
+    addRecent(trimmedName);
     setIsOpen(false);
     onSelect?.(venue);
     onSearch?.(trimmedName);
@@ -209,11 +252,32 @@ export function SearchBar({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const recentCount = recentSearches.length;
+    const canNavigateRecent = query.trim().length === 0 && recentCount > 0;
+
+    if (canNavigateRecent && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        return;
+      }
+      setActiveRecentIndex((index) => {
+        if (e.key === "ArrowDown") return index + 1 >= recentCount ? 0 : index + 1;
+        return index <= 0 ? recentCount - 1 : index - 1;
+      });
+      return;
+    }
+
     if (e.key === "Enter") {
       e.preventDefault();
+      if (showRecent && activeRecentIndex >= 0 && recentSearches[activeRecentIndex]) {
+        handleSelectRecent(recentSearches[activeRecentIndex]);
+        return;
+      }
       handleSearchSubmit();
     } else if (e.key === "Escape") {
       e.preventDefault();
+      setActiveRecentIndex(-1);
       cursorRef.current = { start: null, end: null };
       clear();
       onSearch?.("");
@@ -245,9 +309,8 @@ export function SearchBar({
             setIsOpen(true);
           }}
           onFocus={() => {
-            if (query.trim().length > 0) {
-              setIsOpen(true);
-            }
+            // Empty input shows recent searches (nothing renders when there are none)
+            setIsOpen(true);
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
@@ -255,12 +318,30 @@ export function SearchBar({
           role="combobox"
           aria-autocomplete="list"
           aria-label={placeholder}
-          aria-expanded={isOpen && venues.length > 0}
-          aria-controls="search-bar-results-list"
+          aria-expanded={isOpen && (venues.length > 0 || showRecent)}
+          aria-controls={
+            showRecent ? "search-bar-recent-list" : "search-bar-results-list"
+          }
+          aria-activedescendant={
+            showRecent && activeRecentIndex >= 0
+              ? `search-bar-recent-option-${activeRecentIndex}`
+              : undefined
+          }
           className="w-full pl-10 pr-16 py-2.5 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
         />
 
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-auto">
+          {isDebouncing && !isLoading && (
+            <span
+              data-testid="search-bar-typing-indicator"
+              aria-hidden="true"
+              className="flex items-center gap-0.5"
+            >
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse" />
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse [animation-delay:150ms]" />
+              <span className="h-1 w-1 rounded-full bg-zinc-400 animate-pulse [animation-delay:300ms]" />
+            </span>
+          )}
           {isLoading && (
             <Loader2
               data-testid="search-bar-loader"
@@ -268,13 +349,20 @@ export function SearchBar({
             />
           )}
           {query.trim().length === 0 && (
-            <kbd
-              data-testid="search-bar-shortcut-badge"
-              onClick={() => inputRef.current?.focus()}
-              className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 bg-zinc-200/60 dark:bg-zinc-700/60 border border-zinc-300/60 dark:border-zinc-600/60 rounded cursor-pointer hover:bg-zinc-300/60 dark:hover:bg-zinc-600/60 transition-colors select-none shrink-0"
+            <ShortcutTooltip
+              content="Press Ctrl+K / ⌘K to search anywhere"
+              shortcut="K"
+              position="bottom"
             >
-              {shortcutKey}
-            </kbd>
+              <kbd
+                data-testid="search-bar-shortcut-badge"
+                title="Press Ctrl+K / ⌘K to search anywhere"
+                onClick={() => inputRef.current?.focus()}
+                className="hidden md:inline-flex items-center border border-zinc-700 bg-zinc-800/80 text-zinc-400 text-[10px] font-mono px-1.5 py-0.5 rounded cursor-pointer hover:bg-zinc-700/80 transition-colors select-none shrink-0"
+              >
+                {shortcutKey}
+              </kbd>
+            </ShortcutTooltip>
           )}
           {query.trim().length > 0 && (
             <button
@@ -323,6 +411,79 @@ export function SearchBar({
             <option value={3}>3km</option>
             <option value={5}>5km</option>
           </select>
+        </div>
+      )}
+
+      {showRecent && (
+        <div
+          data-testid="search-bar-recent"
+          className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl overflow-hidden"
+        >
+          <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-100 dark:border-zinc-800/60">
+            <span
+              id="search-bar-recent-heading"
+              className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
+            >
+              Recent searches
+            </span>
+            <button
+              type="button"
+              data-testid="search-bar-recent-clear-all"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                clearRecent();
+                inputRef.current?.focus();
+              }}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              Clear all
+            </button>
+          </div>
+          <ul
+            id="search-bar-recent-list"
+            role="listbox"
+            aria-labelledby="search-bar-recent-heading"
+            className="max-h-60 overflow-y-auto py-1"
+          >
+            {recentSearches.map((recentQuery, index) => (
+              <li
+                key={recentQuery.toLocaleLowerCase()}
+                id={`search-bar-recent-option-${index}`}
+                role="option"
+                aria-selected={index === activeRecentIndex}
+                data-testid="search-bar-recent-item"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelectRecent(recentQuery)}
+                className={`flex items-center gap-2 px-4 py-2 cursor-pointer text-sm text-zinc-800 dark:text-zinc-200 transition-colors ${
+                  index === activeRecentIndex
+                    ? "bg-zinc-100 dark:bg-zinc-800"
+                    : "hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                }`}
+              >
+                <History
+                  aria-hidden="true"
+                  className="w-3.5 h-3.5 shrink-0 text-zinc-400"
+                />
+                <span className="flex-1 truncate">{recentQuery}</span>
+                <button
+                  type="button"
+                  data-testid="search-bar-recent-remove"
+                  aria-label={`Remove ${recentQuery} from recent searches`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeRecent(recentQuery);
+                  }}
+                  className="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -377,11 +538,21 @@ export function SearchBar({
                   </div>
                 )}
               </div>
-              {venue.category && (
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-                  {venue.category}
-                </span>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {venue.fuzzyMatched === true && (
+                  <span
+                    data-testid="search-bar-fuzzy-badge"
+                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+                  >
+                    Fuzzy match suggestion
+                  </span>
+                )}
+                {venue.category && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                    {venue.category}
+                  </span>
+                )}
+              </div>
             </li>
           ))}
         </ul>

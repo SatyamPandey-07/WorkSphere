@@ -20,6 +20,13 @@ export const THEME_INIT_SCRIPT = `
   }
 
   var root = document.documentElement;
+  // Suppress transitions until first paint so initial load never animates.
+  root.classList.add("preload");
+  window.addEventListener("load", function () {
+    window.requestAnimationFrame(function () {
+      root.classList.remove("preload");
+    });
+  });
   root.classList.remove("dark", "cyberpunk");
 
   if (theme === "dark") {

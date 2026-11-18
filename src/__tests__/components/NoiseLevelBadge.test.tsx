@@ -305,3 +305,49 @@ describe("getMachSpeedTier & parseMachSpeed helpers (#6175)", () => {
     expect(NOISE_LEVEL_MAP.quiet.label).toBe("Quiet Focus");
   });
 });
+
+describe("NoiseLevelBadge single-line layout on small screens (#7726)", () => {
+  it.each(["quiet", "moderate", "loud"])(
+    "keeps the %s badge on one line and inside its container",
+    (level) => {
+      render(<NoiseLevelBadge noiseLevel={level} />);
+      const className = screen.getByRole("status").className;
+      expect(className).toContain("whitespace-nowrap");
+      expect(className).toContain("max-w-full");
+    },
+  );
+
+  it("truncates the label instead of wrapping when the space is too narrow", () => {
+    render(<NoiseLevelBadge noiseLevel="loud" />);
+    const label = screen.getByText(NOISE_LEVEL_MAP.loud.label);
+    expect(label.className).toContain("truncate");
+    expect(label.className).toContain("min-w-0");
+  });
+
+  it("keeps the status dot and icon from shrinking next to a long label", () => {
+    const { container } = render(<NoiseLevelBadge noiseLevel="quiet" />);
+    const svg = container.querySelector("svg");
+    expect(svg?.getAttribute("class")).toContain("shrink-0");
+    expect(
+      container.querySelector("span.rounded-full.shrink-0"),
+    ).not.toBeNull();
+  });
+
+  it("keeps the decibel range readable beside a truncated label", () => {
+    render(<NoiseLevelBadge noiseLevel="quiet" showDecibels />);
+    expect(screen.getByText("(< 50 dB)").className).toContain("shrink-0");
+  });
+
+  it("still shows the full label in the tooltip and accessible name", () => {
+    render(<NoiseLevelBadge noiseLevel="moderate" />);
+    const badge = screen.getByRole("status");
+    expect(badge).toHaveAttribute(
+      "title",
+      expect.stringContaining("Moderate Ambience"),
+    );
+    expect(badge).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Moderate Ambience"),
+    );
+  });
+});

@@ -1,6 +1,9 @@
 export async function confirmSeatPayment(seatId: string) {
   // Optimistic concurrency check: ensure status is PENDING and not expired before confirming
+ feat/cron-backup-db
+
  feat/realtime-sync-backoff-heartbeat
+ main
   const query = 
     UPDATE seat_holds 
     SET status = 'CONFIRMED' 
@@ -9,6 +12,9 @@ export async function confirmSeatPayment(seatId: string) {
   ;
   console.log(🔒 [Seat Service] Executing atomic confirmation check for seat );
   return query;
+ feat/cron-backup-db
+}
+
 }
 
   const query = `
@@ -20,4 +26,5 @@ export async function confirmSeatPayment(seatId: string) {
   console.log(`🔒 [Seat Service] Executing atomic confirmation check for seat ${seatId}`);
   return query;
 }
+ main
  main

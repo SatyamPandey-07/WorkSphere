@@ -488,17 +488,19 @@ export function SearchBar({
                     data-testid={`search-history-term-${index}`}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => handleSelectRecentSearch(term)}
-                    className="min-w-0 flex-1 truncate px-3 py-2 text-left text-sm text-zinc-700 dark:text-zinc-200"
+                    className="flex min-w-0 flex-1 items-center gap-2 truncate px-3 py-2 text-left text-sm text-zinc-700 dark:text-zinc-200"
                   >
+                    <Clock className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
                     {term}
                   </button>
                   <button
                     type="button"
                     data-testid={`search-history-remove-${index}`}
                     aria-label={`Remove ${term} from recent searches`}
-                    onMouseDown={(event) =>
-                      handleRemoveRecentSearch(term, event)
-                    }
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
                     onClick={(event) => handleRemoveRecentSearch(term, event)}
                     className="mr-1 rounded-full p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                   >

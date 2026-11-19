@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { SearchBar, trimSearchQuery } from "@/components/venues/SearchBar";
 
@@ -85,8 +85,8 @@ describe("SearchBar component (#4401, #4404)", () => {
     const clearBtn = screen.getByTestId("search-bar-clear-btn");
     const focusSpy = jest.spyOn(input, "focus");
 
-    const mouseDownEvent = fireEvent.mouseDown(clearBtn);
-    const clickEvent = fireEvent.click(clearBtn);
+    fireEvent.mouseDown(clearBtn);
+    fireEvent.click(clearBtn);
 
     expect(input).toHaveValue("");
     expect(focusSpy).toHaveBeenCalled();
@@ -325,5 +325,165 @@ describe("SearchBar component (#4401, #4404)", () => {
 
       expect(mockFetch).not.toHaveBeenCalled();
     });
+  });
+
+  describe("Enter key submits exactly one search request (#7612)", () => {
+    const flush = async (ms: number) => {
+      await act(async () => {
+        jest.advanceTimersByTime(ms);
+      });
+    };
+
+    it("sends one request when Enter is pressed before the debounce fires", async () => {
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe" } });
+      });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await flush(300);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls[0][0]).toContain("query=Cafe");
+    });
+
+    it("does not resend the same query when Enter is pressed after the debounced search ran", async () => {
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe" } });
+      });
+      await flush(300);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await flush(300);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("still searches when Enter is pressed for a new query", async () => {
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe" } });
+      });
+      await flush(300);
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe Roma" } });
+      });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+      await flush(300);
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch.mock.calls[1][0]).toContain("query=Cafe%20Roma");
+    });
+  });
+});
+
+describe("SearchBar AbortController & generation counter race-condition prevention", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    jest.useRealTimers();
+    global.fetch = originalFetch;
+    jest.clearAllMocks();
+  });
+
+  it("aborts the previous in-flight request on a new keystroke and discards out-of-order stale responses", async () => {
+    jest.useFakeTimers();
+
+    const signals: AbortSignal[] = [];
+    let resolveCaf!: (value: unknown) => void;
+    let resolveCafe!: (value: unknown) => void;
+
+    global.fetch = jest
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (init?.signal) {
+          signals.push(init.signal);
+        }
+        if (url.includes("query=caf&") || url.endsWith("query=caf")) {
+          return new Promise((resolve) => {
+            resolveCaf = resolve;
+          });
+        }
+        return new Promise((resolve) => {
+          resolveCafe = resolve;
+        });
+      });
+
+    render(<SearchBar debounceMs={100} />);
+    const input = screen.getByTestId("search-bar-input");
+
+    // Step 1: Type "caf" and let debounce dispatch request A
+    act(() => {
+      fireEvent.change(input, { target: { value: "caf" } });
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(signals[0].aborted).toBe(false);
+
+    // Step 2: Type "cafe" â€” useEffect cleanup aborts request A immediately
+    act(() => {
+      fireEvent.change(input, { target: { value: "cafe" } });
+    });
+    expect(signals[0].aborted).toBe(true);
+
+    // Let debounce dispatch request B ("cafe")
+    await act(async () => {
+      jest.advanceTimersByTime(100);
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(signals[1].aborted).toBe(false);
+
+    // Step 3: Resolve request B ("cafe") FIRST, then resolve stale request A ("caf") AFTER
+    await act(async () => {
+      resolveCafe({
+        ok: true,
+        json: async () => ({
+          venues: [
+            {
+              id: "2",
+              name: "Cafe Milano",
+              address: "42 Roastery Ave",
+              category: "cafe",
+            },
+          ],
+        }),
+      });
+    });
+
+    await act(async () => {
+      resolveCaf({
+        ok: true,
+        json: async () => ({
+          venues: [
+            {
+              id: "1",
+              name: "Cafeteria Stale",
+              address: "99 Old Rd",
+              category: "cafe",
+            },
+          ],
+        }),
+      });
+    });
+
+    // Final UI state must contain only "Cafe Milano" and never revert to "Cafeteria Stale"
+    expect(screen.getByText("Cafe Milano")).toBeInTheDocument();
+    expect(screen.queryByText("Cafeteria Stale")).not.toBeInTheDocument();
   });
 });

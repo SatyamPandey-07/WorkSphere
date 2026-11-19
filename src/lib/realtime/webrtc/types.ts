@@ -73,7 +73,7 @@ export interface MosMonitorConfig {
 }
 
 // Simulcast Types
-export type SimulcastLayerId = "high" | "medium" | "low";
+export type SimulcastLayerId = "q" | "h" | "f";
 
 export type SimulcastAdaptationState = "NORMAL" | "DEGRADED";
 

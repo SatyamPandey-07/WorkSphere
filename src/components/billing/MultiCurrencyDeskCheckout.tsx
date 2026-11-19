@@ -2,20 +2,16 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  QrCode,
   Copy,
   Check,
   ExternalLink,
   ShieldCheck,
   CreditCard,
-  RefreshCw,
   Clock,
   Sparkles,
-  AlertCircle,
   Loader2,
   Coins,
   CheckCircle2,
-  ArrowRight,
 } from "lucide-react";
 import {
   createSolanaPayUrl,
@@ -25,6 +21,7 @@ import {
   DEFAULT_TREASURY_SOLANA_ADDRESS,
   SolanaPayStatusResponse,
 } from "@/lib/payments/solanaPay";
+import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
 
 export type SupportedCurrency = "USD" | "EUR" | "GBP" | "SOL_USDC";
 
@@ -81,21 +78,33 @@ export function PureSvgQrCode({
       // Top-Left Finder
       if (r < 7 && c < 7) {
         row.push(
-          r === 0 || r === 6 || c === 0 || c === 6 || (r >= 2 && r <= 4 && c >= 2 && c <= 4)
+          r === 0 ||
+            r === 6 ||
+            c === 0 ||
+            c === 6 ||
+            (r >= 2 && r <= 4 && c >= 2 && c <= 4),
         );
       }
       // Top-Right Finder
       else if (r < 7 && c >= gridSize - 7) {
         const cc = c - (gridSize - 7);
         row.push(
-          r === 0 || r === 6 || cc === 0 || cc === 6 || (r >= 2 && r <= 4 && cc >= 2 && cc <= 4)
+          r === 0 ||
+            r === 6 ||
+            cc === 0 ||
+            cc === 6 ||
+            (r >= 2 && r <= 4 && cc >= 2 && cc <= 4),
         );
       }
       // Bottom-Left Finder
       else if (r >= gridSize - 7 && c < 7) {
         const rr = r - (gridSize - 7);
         row.push(
-          rr === 0 || rr === 6 || c === 0 || c === 6 || (rr >= 2 && rr <= 4 && c >= 2 && c <= 4)
+          rr === 0 ||
+            rr === 6 ||
+            c === 0 ||
+            c === 6 ||
+            (rr >= 2 && rr <= 4 && c >= 2 && c <= 4),
         );
       } else {
         // Data payload pattern derived from string & coordinates
@@ -129,8 +138,8 @@ export function PureSvgQrCode({
               fill="#0F172A"
               rx={cellSize * 0.15}
             />
-          ) : null
-        )
+          ) : null,
+        ),
       )}
     </svg>
   );
@@ -149,8 +158,8 @@ export function MultiCurrencyDeskCheckout({
     useState<SupportedCurrency>(defaultCurrency);
 
   // Solana Pay state
-  const [txReference, setTxReference] = useState<string>(() =>
-    generateSolanaPaymentReference()
+  const [txReference] = useState<string>(() =>
+    generateSolanaPaymentReference(),
   );
   const [solanaPayUrl, setSolanaPayUrl] = useState<string>("");
   const [copiedUrl, setCopiedUrl] = useState(false);
@@ -198,13 +207,15 @@ export function MultiCurrencyDeskCheckout({
   useEffect(() => {
     return () => {
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-      if (standardPayTimeoutRef.current) clearTimeout(standardPayTimeoutRef.current);
+      if (standardPayTimeoutRef.current)
+        clearTimeout(standardPayTimeoutRef.current);
     };
   }, []);
 
   // Expiration countdown timer
   useEffect(() => {
-    if (selectedCurrency !== "SOL_USDC" || paymentStatus === "CONFIRMED") return;
+    if (selectedCurrency !== "SOL_USDC" || paymentStatus === "CONFIRMED")
+      return;
 
     const interval = setInterval(() => {
       setSecondsRemaining((prev) => {
@@ -221,46 +232,56 @@ export function MultiCurrencyDeskCheckout({
   }, [selectedCurrency, paymentStatus]);
 
   // Poll transaction status from Solana endpoint
-  const pollStatus = useCallback(async (signal?: AbortSignal) => {
-    if (
-      selectedCurrency !== "SOL_USDC" ||
-      paymentStatus === "CONFIRMED" ||
-      paymentStatus === "FAILED"
-    ) {
-      return;
-    }
+  const pollStatus = useCallback(
+    async (signal?: AbortSignal) => {
+      if (
+        selectedCurrency !== "SOL_USDC" ||
+        paymentStatus === "CONFIRMED" ||
+        paymentStatus === "FAILED"
+      ) {
+        return;
+      }
 
-    try {
-      const res = await fetch(
-        `/api/payments/solana/status?reference=${encodeURIComponent(txReference)}`,
-        { signal }
-      );
-      if (signal?.aborted) return;
-      if (res.ok) {
-        const data: SolanaPayStatusResponse = await res.json();
+      try {
+        const res = await fetch(
+          `/api/payments/solana/status?reference=${encodeURIComponent(txReference)}`,
+          { signal },
+        );
         if (signal?.aborted) return;
-        setPollCount((p) => p + 1);
+        if (res.ok) {
+          const data: SolanaPayStatusResponse = await res.json();
+          if (signal?.aborted) return;
+          setPollCount((p) => p + 1);
 
-        if (data.status === "CONFIRMED" && data.signature) {
-          setPaymentStatus("CONFIRMED");
-          setTxSignature(data.signature);
-          if (onBookingConfirmed) {
-            onBookingConfirmed({
-              bookingId: item.bookingId,
-              currency: "SOL_USDC",
-              amount: item.priceUsd,
-              txSignature: data.signature,
-            });
+          if (data.status === "CONFIRMED" && data.signature) {
+            setPaymentStatus("CONFIRMED");
+            setTxSignature(data.signature);
+            if (onBookingConfirmed) {
+              onBookingConfirmed({
+                bookingId: item.bookingId,
+                currency: "SOL_USDC",
+                amount: item.priceUsd,
+                txSignature: data.signature,
+              });
+            }
           }
         }
+      } catch (err: any) {
+        if (err?.name === "AbortError" || signal?.aborted) {
+          return; // Component unmounted or request cancelled cleanly
+        }
+        console.warn("[MultiCurrencyDeskCheckout] Status poll error:", err);
       }
-    } catch (err: any) {
-      if (err?.name === "AbortError" || signal?.aborted) {
-        return; // Component unmounted or request cancelled cleanly
-      }
-      console.warn("[MultiCurrencyDeskCheckout] Status poll error:", err);
-    }
-  }, [selectedCurrency, paymentStatus, txReference, item.bookingId, item.priceUsd, onBookingConfirmed]);
+    },
+    [
+      selectedCurrency,
+      paymentStatus,
+      txReference,
+      item.bookingId,
+      item.priceUsd,
+      onBookingConfirmed,
+    ],
+  );
 
   useEffect(() => {
     if (selectedCurrency !== "SOL_USDC" || paymentStatus !== "POLLING") return;
@@ -315,7 +336,8 @@ export function MultiCurrencyDeskCheckout({
   const handleStandardPaySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessingStandard(true);
-    if (standardPayTimeoutRef.current) clearTimeout(standardPayTimeoutRef.current);
+    if (standardPayTimeoutRef.current)
+      clearTimeout(standardPayTimeoutRef.current);
     standardPayTimeoutRef.current = setTimeout(() => {
       setIsProcessingStandard(false);
       if (onBookingConfirmed) {
@@ -438,15 +460,26 @@ export function MultiCurrencyDeskCheckout({
               </div>
               <h3 className="text-base font-bold">Solana Payment Confirmed!</h3>
               <p className="text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed max-w-md mx-auto">
-                Your desk booking has been automatically finalized on the Solana blockchain.
+                Your desk booking has been automatically finalized on the Solana
+                blockchain.
               </p>
               {txSignature && (
                 <div className="space-y-3">
-                  <div className="p-3 rounded-xl bg-emerald-900/20 border border-emerald-500/20 text-[11px] font-mono break-all text-left">
-                    <span className="text-xs text-emerald-400 block font-sans font-semibold mb-0.5">
-                      Transaction Signature:
-                    </span>
-                    {txSignature}
+                  <div className="flex flex-wrap items-start gap-2">
+                    <div className="min-w-[220px] flex-1 p-3 rounded-xl bg-emerald-900/20 border border-emerald-500/20 text-[11px] font-mono break-all text-left">
+                      <span className="text-xs text-emerald-400 block font-sans font-semibold mb-0.5">
+                        Transaction Signature:
+                      </span>
+                      {txSignature}
+                    </div>
+                    <CopyToClipboardButton
+                      textToCopy={txSignature}
+                      label="Copy"
+                      ariaLabel="Copy transaction signature"
+                      toastMessage="Transaction signature copied!"
+                      errorToastMessage="Unable to copy the transaction signature. Please copy it manually."
+                      className="shrink-0"
+                    />
                   </div>
                   <div className="flex justify-center pt-1">
                     <a
@@ -595,7 +628,9 @@ export function MultiCurrencyDeskCheckout({
             ) : (
               <>
                 <ShieldCheck className="w-4 h-4" />
-                <span>Pay ${item.priceUsd.toFixed(2)} {selectedCurrency}</span>
+                <span>
+                  Pay ${item.priceUsd.toFixed(2)} {selectedCurrency}
+                </span>
               </>
             )}
           </button>

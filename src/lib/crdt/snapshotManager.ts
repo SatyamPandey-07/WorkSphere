@@ -1,3 +1,8 @@
+import {
+  nowMs,
+  recordCompression,
+  recordDecompression,
+} from "./compressionTelemetry";
 /**
  * snapshotManager.ts
  * Periodic Yjs snapshot compaction for long-running collaborative whiteboards
@@ -203,12 +208,22 @@ export function isCompressedPayload(bytes: Uint8Array): boolean {
  * If already uncompressed, returns the snapshot unmodified.
  */
 export function decompressSnapshot(snapshot: StoredSnapshot): StoredSnapshot {
+  const decompressStartedAt = nowMs();
+  const updateWasCompressed = isCompressedPayload(snapshot.update);
   const decompressedUpdate = isCompressedPayload(snapshot.update)
     ? decompressYjsUpdate(snapshot.update)
     : snapshot.update;
   const decompressedStateVector = isCompressedPayload(snapshot.stateVector)
     ? decompressYjsUpdate(snapshot.stateVector)
     : snapshot.stateVector;
+
+  if (updateWasCompressed) {
+    recordDecompression(
+      snapshot.update.length,
+      decompressedUpdate.length,
+      nowMs() - decompressStartedAt,
+    );
+  }
 
   return {
     ...snapshot,
@@ -336,9 +351,7 @@ export class RedisSnapshotStorage implements SnapshotStorage {
 
   async listDeltas(roomId: string): Promise<StoredDelta[]> {
     const record = await this.read(roomId);
-    return record.deltas
-      .map(deserializeDelta)
-      .sort((a, b) => a.seq - b.seq);
+    return record.deltas.map(deserializeDelta).sort((a, b) => a.seq - b.seq);
   }
 
   async deleteDeltasThrough(roomId: string, throughSeq: number): Promise<void> {
@@ -581,8 +594,15 @@ export class SnapshotManager {
         this.compressSnapshots &&
         uncompressedUpdate.length >= this.compressionThresholdBytes
       ) {
+        const compressStartedAt = nowMs();
         const compressed = compressYjsUpdate(uncompressedUpdate);
+        const compressDurationMs = nowMs() - compressStartedAt;
         if (isCompressedPayload(compressed)) {
+          recordCompression(
+            uncompressedUpdate.length,
+            compressed.length,
+            compressDurationMs,
+          );
           update = compressed;
           isCompressed = true;
         }
@@ -612,18 +632,12 @@ export class SnapshotManager {
       await this.storage.saveSnapshot(snapshot);
 
       if (flushedThroughSeq > 0) {
-        await this.storage.deleteDeltasThrough(
-          this.roomId,
-          flushedThroughSeq,
-        );
+        await this.storage.deleteDeltasThrough(this.roomId, flushedThroughSeq);
       }
 
       // Only retire the operations folded into this snapshot; keep counting
       // transactions that arrived while the async writes were in flight.
-      this.opsSinceSnapshot = Math.max(
-        0,
-        this.opsSinceSnapshot - flushedCount,
-      );
+      this.opsSinceSnapshot = Math.max(0, this.opsSinceSnapshot - flushedCount);
       this.onCompacted?.(snapshot);
       return snapshot;
     })();

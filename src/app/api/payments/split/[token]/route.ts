@@ -65,7 +65,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     const isPaid = guest.paidAt != null;
 
     if (!isPaid) {
-      if (booking.status === "CANCELLED") {
+      if (booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR") {
         return NextResponse.json(
           { error: "This booking was cancelled, so there is nothing to pay." },
           { status: 410 },
@@ -153,7 +153,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       if (guest.paidAt != null) {
         return { kind: "already_paid" } as const;
       }
-      if (guest.booking.status === "CANCELLED") {
+      if (guest.booking.status === "CANCELLED" || guest.booking.status === "CANCELLED_BY_OPERATOR") {
         return { kind: "booking_cancelled" } as const;
       }
       if (isInactiveGuest(guest.status)) {

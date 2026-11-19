@@ -10,6 +10,7 @@ import {
   verifyAndMintNomadPassportStamp,
   type ZkNomadProofPayload,
 } from "@/lib/zkp/nomadProof";
+import { invalidateXpLeaderboard } from "@/lib/leaderboards/xpLeaderboard";
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
           awardedAt: new Date(),
         },
       });
+      await invalidateXpLeaderboard();
     } catch (dbErr) {
       // User may be anonymous / mock in demo mode
     }

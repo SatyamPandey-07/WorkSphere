@@ -11,5 +11,15 @@
     "viewSpeedtest": "Speedtest-Screenshot anzeigen",
     "translate": "Übersetzen",
     "translating": "Übersetzen..."
+  },
+  "auth": {
+    "biometricTitle": "Lantern Ring Biometrische Entsperrung",
+    "biometricSubtitle": "Sicher authentifizieren mit Passkey oder biometrischer Erkennung",
+    "promptBiometric": "Legen Sie Ihren Finger auf den Biometrie-Scanner",
+    "passkeyTitle": "Passkey-Manager",
+    "registerPasskey": "Neuen Passkey registrieren",
+    "cancel": "Abbrechen",
+    "success": "Authentifizierung erfolgreich",
+    "error": "Authentifizierung fehlgeschlagen. Bitte versuchen Sie es erneut."
   }
 }

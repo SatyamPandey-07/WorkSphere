@@ -1,5 +1,6 @@
 import {
   MAX_SEARCH_QUERY_LENGTH,
+  normalizeSearchQuery,
   sanitizeSearchQuery,
   splitSearchList,
 } from "@/lib/searchSanitizer";
@@ -92,5 +93,55 @@ describe("splitSearchList", () => {
 
   it("returns an empty array for an empty value", () => {
     expect(splitSearchList("   ")).toEqual([]);
+  });
+});
+
+describe("normalizeSearchQuery", () => {
+  it("leaves an already canonical query untouched", () => {
+    expect(normalizeSearchQuery("quiet cafe")).toBe("quiet cafe");
+  });
+
+  it("trims leading and trailing whitespace", () => {
+    expect(normalizeSearchQuery("  quiet cafe  ")).toBe("quiet cafe");
+  });
+
+  it("collapses runs of inner whitespace to a single space", () => {
+    expect(normalizeSearchQuery("quiet     cafe")).toBe("quiet cafe");
+    expect(normalizeSearchQuery("quiet \t\n cafe")).toBe("quiet cafe");
+  });
+
+  it("treats non-breaking and ideographic spaces as whitespace", () => {
+    expect(normalizeSearchQuery("quiet\u00a0cafe")).toBe("quiet cafe");
+    expect(normalizeSearchQuery("\u3000quiet\u3000\u3000cafe\u3000")).toBe(
+      "quiet cafe",
+    );
+  });
+
+  it("lowercases the query", () => {
+    expect(normalizeSearchQuery("Quiet CAFE")).toBe("quiet cafe");
+  });
+
+  it("maps every spelling variant of the same query to one string", () => {
+    const variants = [
+      "quiet cafe",
+      " quiet cafe ",
+      "quiet  cafe",
+      "QUIET CAFE",
+      "\tQuiet\u00a0 Cafe\n",
+    ];
+    expect(new Set(variants.map(normalizeSearchQuery)).size).toBe(1);
+  });
+
+  it("does not merge genuinely different queries", () => {
+    expect(normalizeSearchQuery("quiet cafe")).not.toBe(
+      normalizeSearchQuery("quietcafe"),
+    );
+  });
+
+  it("returns an empty string for blank or non-string input", () => {
+    expect(normalizeSearchQuery("   ")).toBe("");
+    expect(normalizeSearchQuery(undefined)).toBe("");
+    expect(normalizeSearchQuery(null)).toBe("");
+    expect(normalizeSearchQuery(42)).toBe("");
   });
 });

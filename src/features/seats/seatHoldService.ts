@@ -1,5 +1,15 @@
 export async function confirmSeatPayment(seatId: string) {
   // Optimistic concurrency check: ensure status is PENDING and not expired before confirming
+ test/redlock-fencing-integration
+
+ feat/idempotency-key-guard
+
+ feat/cron-backup-db
+
+ feat/realtime-sync-backoff-heartbeat
+ main
+ main
+ main
   const query = 
     UPDATE seat_holds 
     SET status = 'CONFIRMED' 
@@ -8,4 +18,27 @@ export async function confirmSeatPayment(seatId: string) {
   ;
   console.log(🔒 [Seat Service] Executing atomic confirmation check for seat );
   return query;
+ test/redlock-fencing-integration
 }
+
+ feat/idempotency-key-guard
+}
+
+ feat/cron-backup-db
+}
+
+}
+
+  const query = `
+    UPDATE seat_holds 
+    SET status = 'CONFIRMED' 
+    WHERE seat_id = '${seatId}' AND status = 'PENDING' AND expires_at > NOW()
+    RETURNING *;
+  `;
+  console.log(`🔒 [Seat Service] Executing atomic confirmation check for seat ${seatId}`);
+  return query;
+}
+ main
+ main
+ main
+ main

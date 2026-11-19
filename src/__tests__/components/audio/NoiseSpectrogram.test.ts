@@ -8,8 +8,8 @@ describe("calculateFrequencyBandEnergy", () => {
 
     // A 46.875 Hz bin spacing places indices 0–5 in low, 6–63 in mid,
     // and the remaining indices in high.
-    bins.fill(255, 0, 6);
-    bins.fill(128, 6, 64);
+    bins.fill(255, 0, 7);
+    bins.fill(128, 7, 64);
     bins.fill(64, 64);
 
     const result = calculateFrequencyBandEnergy(bins, sampleRate, fftSize);

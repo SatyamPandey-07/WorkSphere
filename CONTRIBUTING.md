@@ -1,8 +1,74 @@
-# 🤝 Contributing to WorkSphere
+# Contributing to WorkSphere
 
-Thank you for your interest in contributing to WorkSphere! This document details the standards and guidelines for development, code styling, testing, and verifying changes before submitting a pull request.
+Welcome to **WorkSphere**! We are thrilled to have you contribute as part of Winter of Code Social (WOCS). To ensure a smooth collaboration and maintain high repository standards, please follow this guide for setting up your environment, running migrations, and submitting your pull requests.
+ docs/wsl2-development-guide
 
----
+
+ docs/local-docker-troubleshooting
+
+ feat/network-health-ai-diagnostic
+ main
+
+ main
+## 1. Prerequisites
+Before you begin, ensure you have the following installed on your local development workstation:
+* Node.js (v18.x or higher)
+* pnpm or npm (Package manager)
+* Git (Configured with your GitHub account)
+* PostgreSQL / Supabase (Local instance or cloud connection string)
+ docs/wsl2-development-guide
+
+## 2. Local Environment Setup
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
+   cd WorkSphere
+
+ docs/local-docker-troubleshooting
+
+## 2. Local Environment Setup
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
+   cd WorkSphere
+
+
+## 2. Local Environment Setup
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
+   cd WorkSphere
+
+
+## 1. Prerequisites
+Before you begin, ensure you have the following installed on your local development workstation:
+* Node.js (v18.x or higher)
+* pnpm or npm (Package manager)
+* Git (Configured with your GitHub account)
+* PostgreSQL / Supabase (Local instance or cloud connection string)
+ feat/cross-chain-escrow-zkp
+
+## 2. Local Environment Setup
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
+   cd WorkSphere
+
+ feat/ai-triage-sla-watchdog
+
+## 2. Local Environment Setup
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
+   cd WorkSphere
+
+
+ feat/wocs-contributions-final
+## 2. Local Environment Setup
+1. **Clone the repository:**
+   ```bash
+   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
+   cd WorkSphere
 
 ## Community Standards
 
@@ -226,7 +292,7 @@ To keep the repository clean and manageable, please follow this flow:
 
 3. **Write code** and ensure all [testing](#3-testing-conventions-jest--rtl) and [pre-commit checks](#5-pre-commit-quality-verification-checklist) pass.
 4. **Commit** your changes with clear, structured commit messages (e.g., `feat: add map route coordinates validation`). See below for detailed commit formatting rules.
-5. **Push** to your fork and open a **Pull Request (PR)** against the `main` branch. Ensure the PR title adheres to the strict formatting rules outlined in Section 1.2.
+5. **Push** to your fork and open a **Pull Request (PR)** against the `main` branch. Ensure the PR title adheres to the strict formatting rules outlined in [Section 1.3](#13-pull-request-title-conventions--format).
 
 ### Recommended Terminal Workflow
 
@@ -248,7 +314,7 @@ git diff --check
 
 # 4. Stage and commit your documentation changes
 git add CONTRIBUTING.md
-git commit -m "docs: improve contributing guide"
+git commit -m "docs: improve contributing guide (closes #<issue_number>)"
 
 # 5. Push your branch to your fork
 git push -u origin docs/contributing-guide
@@ -484,6 +550,7 @@ To lower contributor onboarding friction, WorkSphere provides a local developmen
    ```bash
    npx prisma db push
    ```
+   > **Note:** `db push` syncs the schema directly to your local database without creating a migration file, which makes it suitable for first-time setup and quick experiments. If your change modifies `prisma/schema.prisma` and will be committed, use `npx prisma migrate dev` instead (see [Section 7](#7-pr-pre-flight-checklist)).
 4. **Run the app**:
    ```bash
    npm run dev
@@ -567,13 +634,13 @@ Test files must reside inside `src/__tests__/` and be named matching their targe
 ### Running Jest Tests
 
 - **Run all unit/integration tests**:
-    `bash
-  npm test
-  `
+  ```bash
+  npm test
+  ```
 - **Run tests in watch mode** (useful during active development):
-    `bash
-  npm run test:watch
-  `
+  ```bash
+  npm run test:watch
+  ```
 
 ### Mocking Dependencies & External APIs
 
@@ -851,7 +918,8 @@ npm install
 
 # 3. Apply any pending Prisma schema migrations
 npx prisma generate
-npx prisma migrate dev   # only if schema.prisma changed
+npx prisma migrate dev   # only if schema.prisma changed; creates a migration file to commit
+                         # (use `npx prisma db push` only for throwaway local experiments)
 
 # 4. Run the app locally and verify your change works end-to-end
 npm run dev
@@ -886,4 +954,10 @@ For details on multi-agent scoring and consensus workflows, see [docs/architectu
 
 ## Concurrent Development & Worktrees
 
-For guidelines on working on multiple issues concurrently using Git worktrees, see [docs/WORKTREE_GUIDE.md](docs/WORKTREE_GUIDE.md).
+For guidelines on working on multiple issues concurrently using Git worktrees, see [docs/contributing/WORKTREE_GUIDE.md](docs/contributing/WORKTREE_GUIDE.md).
+ main
+ main
+ main
+ main
+ main
+ main

@@ -1233,3 +1233,41 @@ enum SolanaEscrowStatus {
   RELEASED
   FAILED
 }
+
+/// Persistent micro-billing session for pay-as-you-go desks (#8436).
+/// Replaces process-local in-memory storage to survive restarts and multi-instance concurrency.
+model MicroBillingSessionRecord {
+  id                String                    @id @default(cuid())
+  sessionId         String                    @unique
+  deskId            String
+  deskName          String
+  venueName         String
+  userId            String?
+  paymentRail       String
+  status            MicroBillingSessionStatus @default(ACTIVE)
+  startTime         DateTime
+  lastHeartbeatTime DateTime
+  elapsedSeconds    Int                       @default(0)
+  hourlyRateUsd     Decimal                   @db.Decimal(10, 4)
+  totalAccruedUsd   Decimal                   @default(0) @db.Decimal(10, 4)
+  totalAccruedSats  BigInt                    @default(0)
+  totalAccruedUsdc  Decimal                   @default(0) @db.Decimal(10, 4)
+  depositHoldUsd    Decimal                   @default(10.0) @db.Decimal(10, 4)
+  paymentProofHash  String?
+  settledAt         DateTime?
+  idempotencyKey    String?                   @unique
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@index([userId])
+  @@index([deskId])
+  @@index([status])
+}
+
+enum MicroBillingSessionStatus {
+  ACTIVE
+  PAUSED
+  SETTLING
+  SETTLED
+  FAILED
+}

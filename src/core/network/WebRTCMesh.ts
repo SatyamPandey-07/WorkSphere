@@ -12,7 +12,7 @@ export interface MeshPeer {
     peerId: string;
     connection: RTCPeerConnection;
     dataChannel: RTCDataChannel | null;
-    status: 'connecting' | 'connected' | 'disconnected';
+    status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
     /** True for the polite peer; it yields when an offer collides. */
     polite: boolean;
     /** Set while a local offer is being created/sent. */
@@ -23,6 +23,17 @@ export interface MeshPeer {
     negotiationId: number;
     /** ICE candidates that arrived before a remote description existed. */
     pendingCandidates: RTCIceCandidateInit[];
+    /** Number of automated ICE restart attempts initiated for this connection. */
+    iceRestartCount: number;
+    /** Active timeout handle for scheduled ICE restart backoff, if any. */
+    iceRestartTimer: any;
+}
+
+export interface WebRTCMeshOptions {
+    /** Maximum number of automated ICE restarts before disconnecting. Defaults to 3. */
+    maxIceRestarts?: number;
+    /** Base backoff duration in milliseconds for ICE restarts. Defaults to 1000ms. */
+    iceRestartBackoffMs?: number;
 }
 
 /** Signaling channel used to shuttle SDP/ICE between peers (e.g. PartyKit). */
@@ -71,9 +82,18 @@ export class WebRTCMesh {
     // Signaling transport used to exchange SDP/ICE with remote peers.
     private signaling: MeshSignaling | null;
 
-    constructor(localPeerId: string, signaling: MeshSignaling | null = null) {
+    private maxIceRestarts: number;
+    private iceRestartBackoffMs: number;
+
+    constructor(
+        localPeerId: string,
+        signaling: MeshSignaling | null = null,
+        options: WebRTCMeshOptions = {}
+    ) {
         this.localPeerId = localPeerId;
         this.signaling = signaling;
+        this.maxIceRestarts = options.maxIceRestarts ?? 3;
+        this.iceRestartBackoffMs = options.iceRestartBackoffMs ?? 1000;
         this.peers = new Map();
         this.onMessageCallback = null;
         this.onPeerConnectedCallback = null;
@@ -111,6 +131,8 @@ export class WebRTCMesh {
             ignoreOffer: false,
             negotiationId: 0,
             pendingCandidates: [],
+            iceRestartCount: 0,
+            iceRestartTimer: null,
         };
 
         if (isInitiator) {
@@ -153,14 +175,37 @@ export class WebRTCMesh {
         pc.onconnectionstatechange = () => {
             const current = this.peers.get(targetPeerId);
             if (current) {
-                current.status = pc.connectionState as MeshPeer['status'];
-                if (pc.connectionState === 'connected' && this.onPeerConnectedCallback) {
-                    this.onPeerConnectedCallback(targetPeerId);
+                if (pc.connectionState === 'connected') {
+                    current.status = 'connected';
+                    current.iceRestartCount = 0;
+                    if (current.iceRestartTimer) {
+                        clearTimeout(current.iceRestartTimer);
+                        current.iceRestartTimer = null;
+                    }
+                    if (this.onPeerConnectedCallback) {
+                        this.onPeerConnectedCallback(targetPeerId);
+                    }
                 } else if (
                     pc.connectionState === 'disconnected' ||
-                    pc.connectionState === 'failed' ||
-                    pc.connectionState === 'closed'
+                    pc.connectionState === 'failed'
                 ) {
+                    if (current.iceRestartCount < this.maxIceRestarts) {
+                        current.iceRestartCount++;
+                        current.status = 'reconnecting';
+                        const backoff = Math.min(
+                            this.iceRestartBackoffMs * Math.pow(2, current.iceRestartCount - 1),
+                            8000
+                        );
+                        if (current.iceRestartTimer) {
+                            clearTimeout(current.iceRestartTimer);
+                        }
+                        current.iceRestartTimer = setTimeout(() => {
+                            void this.restartIce(targetPeerId);
+                        }, backoff);
+                    } else {
+                        this.onPeerDisconnect(targetPeerId);
+                    }
+                } else if (pc.connectionState === 'closed') {
                     this.onPeerDisconnect(targetPeerId);
                 }
             }
@@ -174,12 +219,29 @@ export class WebRTCMesh {
     }
 
     /**
+     * Initiates an ICE restart on an active peer connection to re-establish
+     * connectivity across changed network paths or failed sessions.
+     */
+    public async restartIce(peerId: string): Promise<void> {
+        const peer = this.peers.get(peerId);
+        if (!peer || peer.status === 'disconnected') {
+            return;
+        }
+        if (peer.iceRestartTimer) {
+            clearTimeout(peer.iceRestartTimer);
+            peer.iceRestartTimer = null;
+        }
+        peer.status = 'reconnecting';
+        await this.negotiate(peerId, { iceRestart: true });
+    }
+
+    /**
      * Creates and sends a local offer, unless a negotiation is already in
      * flight. An offer is only produced from a stable signaling state; if a
      * remote description supersedes it while `createOffer` is awaited, the
      * offer is discarded.
      */
-    public async negotiate(peerId: string): Promise<void> {
+    public async negotiate(peerId: string, options?: { iceRestart?: boolean }): Promise<void> {
         const peer = this.peers.get(peerId);
         if (!peer) {
             return;
@@ -193,7 +255,15 @@ export class WebRTCMesh {
         const negotiationId = ++peer.negotiationId;
         peer.makingOffer = true;
         try {
-            const offer = await pc.createOffer();
+            if (options?.iceRestart && typeof (pc as any).restartIce === 'function') {
+                try {
+                    (pc as any).restartIce();
+                } catch {
+                    // Ignore if environment prefers createOffer({ iceRestart: true })
+                }
+            }
+            const offerOptions: RTCOfferOptions | undefined = options?.iceRestart ? { iceRestart: true } : undefined;
+            const offer = await pc.createOffer(offerOptions);
             if (peer.negotiationId !== negotiationId || pc.signalingState !== 'stable') {
                 return;
             }
@@ -249,6 +319,10 @@ export class WebRTCMesh {
 
         channel.onclose = () => {
             console.log(`DataChannel to ${peerId} closed`);
+            const current = this.peers.get(peerId);
+            if (current && current.status === 'reconnecting') {
+                return;
+            }
             this.onPeerDisconnect(peerId);
         };
 
@@ -267,6 +341,11 @@ export class WebRTCMesh {
         if (peer) {
             peer.status = 'disconnected';
 
+            if (peer.iceRestartTimer) {
+                clearTimeout(peer.iceRestartTimer);
+                peer.iceRestartTimer = null;
+            }
+
             // Cleanly unregister data channel event listeners to prevent memory leaks
             if (peer.dataChannel) {
                 peer.dataChannel.onmessage = null;
@@ -283,10 +362,13 @@ export class WebRTCMesh {
                 peer.dataChannel = null;
             }
 
-            // Cleanly unregister RTCPeerConnection event listeners
+            // Cleanly unregister RTCPeerConnection event listeners to prevent closure retention
             peer.connection.onicecandidate = null;
             peer.connection.onconnectionstatechange = null;
             peer.connection.ondatachannel = null;
+            peer.connection.onnegotiationneeded = null;
+            peer.connection.onsignalingstatechange = null;
+            (peer.connection as any).ontrack = null;
             try {
                 if (peer.connection.connectionState !== 'closed') {
                     peer.connection.close();
@@ -635,6 +717,26 @@ export class WebRTCMesh {
 
     public onPeerConnected(callback: (peerId: string) => void): void {
         this.onPeerConnectedCallback = callback;
+    }
+
+    public getPeer(peerId: string): MeshPeer | undefined {
+        return this.peers.get(peerId);
+    }
+
+    public getPeerStatus(peerId: string): MeshPeer['status'] | undefined {
+        return this.peers.get(peerId)?.status;
+    }
+
+    public getIceRestartCount(peerId: string): number {
+        return this.peers.get(peerId)?.iceRestartCount ?? 0;
+    }
+
+    public setMaxIceRestarts(count: number): void {
+        this.maxIceRestarts = Math.max(0, count);
+    }
+
+    public getMaxIceRestarts(): number {
+        return this.maxIceRestarts;
     }
 
     public closeAll(): void {

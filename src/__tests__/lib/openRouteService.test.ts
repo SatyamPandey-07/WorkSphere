@@ -3,6 +3,9 @@ import {
   normalizeAccessibilityCoordinate,
   RoutingProviderError,
 } from "@/lib/accessibility/openRouteService";
+import { clearRouteCache } from "@/lib/accessibility/routeCache";
+
+jest.mock("@/lib/redis", () => ({ getRedis: jest.fn(() => null) }));
 
 describe("OpenRouteService accessible routing", () => {
   const response = {
@@ -86,5 +89,90 @@ describe("OpenRouteService accessible routing", () => {
       { lat: 40.731, lng: -73.989 },
       { apiKey: "test-key", fetchFn: fetchFn as unknown as typeof fetch, cache: false },
     )).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  describe("route caching", () => {
+    const start = { lat: 40.73, lng: -73.99 };
+    const end = { lat: 40.731, lng: -73.989 };
+    const makeFetch = () =>
+      jest.fn().mockResolvedValue({ ok: true, json: async () => response });
+    const run = (
+      fetchFn: jest.Mock,
+      s = start,
+      e = end,
+      extra: Record<string, unknown> = {},
+    ) =>
+      fetchAccessibleRoute(s, e, {
+        apiKey: "test-key",
+        fetchFn: fetchFn as unknown as typeof fetch,
+        ...extra,
+      });
+
+    beforeEach(() => clearRouteCache());
+
+    it("does not hit the upstream API twice for the same origin and destination", async () => {
+      const fetchFn = makeFetch();
+      const first = await run(fetchFn);
+      const second = await run(fetchFn);
+
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      expect(second).toEqual(first);
+    });
+
+    it("reuses the cached route when coordinates differ by less than 5 decimals", async () => {
+      const fetchFn = makeFetch();
+      await run(fetchFn);
+      await run(fetchFn, { lat: 40.730001, lng: -73.990004 }, end);
+
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
+
+    it("serves the original venue from cache after toggling an alternate destination", async () => {
+      const fetchFn = makeFetch();
+      await run(fetchFn);
+      await run(fetchFn, start, { lat: 40.74, lng: -73.98 });
+      await run(fetchFn);
+
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps wheelchair and walking profiles in separate cache entries", async () => {
+      const fetchFn = makeFetch();
+      await run(fetchFn);
+      await run(fetchFn, start, end, { wheelchairMode: false });
+      await run(fetchFn, start, end, { wheelchairMode: false });
+
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+      expect(fetchFn.mock.calls[1][0]).toContain("/directions/foot-walking/");
+    });
+
+    it("keeps different grade limits in separate cache entries", async () => {
+      const fetchFn = makeFetch();
+      await run(fetchFn, start, end, { maxAllowedGradePercent: 5 });
+      await run(fetchFn, start, end, { maxAllowedGradePercent: 8.33 });
+
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("bypasses the cache when cache is false", async () => {
+      const fetchFn = makeFetch();
+      await run(fetchFn, start, end, { cache: false });
+      await run(fetchFn, start, end, { cache: false });
+
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not cache provider errors", async () => {
+      const failing = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        text: async () => "rate limited",
+      });
+      await expect(run(failing)).rejects.toBeInstanceOf(RoutingProviderError);
+
+      const fetchFn = makeFetch();
+      await expect(run(fetchFn)).resolves.toBeDefined();
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    });
   });
 });

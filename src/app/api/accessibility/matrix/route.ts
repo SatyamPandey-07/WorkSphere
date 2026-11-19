@@ -19,8 +19,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const coordinates = body.coordinates.map(normalizeAccessibilityCoordinate);
-    if (coordinates.some((coordinate) => coordinate === null)) {
+    const coordinates = body.coordinates.map((c: any) =>
+      normalizeAccessibilityCoordinate(c),
+    );
+    if (coordinates.some((coordinate: any) => coordinate === null)) {
       return NextResponse.json(
         { error: "Every coordinate must contain a valid latitude and longitude." },
         { status: 400 },

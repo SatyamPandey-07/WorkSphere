@@ -4,6 +4,8 @@ This is the API and security specification for offline QR passcards: how the ser
 
 [offline-qr-passcards.md](./offline-qr-passcards.md) is the implementation guide (token format, key rotation, client storage, display). This document does not repeat it; it adds the request and response schemas, the scanner workflow and the threat model.
 
+For the full signing scheme, payload specification, public key distribution and key rotation runbook, see [OFFLINE_QR_PASSCARDS_SPECIFICATION.md](./OFFLINE_QR_PASSCARDS_SPECIFICATION.md).
+
 ## What is implemented
 
 Everything below describes the code as it is today. It differs from some descriptions of this feature, so the differences are listed first.

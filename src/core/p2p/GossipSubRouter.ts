@@ -18,14 +18,23 @@ import {
   encodePacket,
   getSigningBytes,
   ED25519_PUBLIC_KEY_BYTES,
-} from './MeshPacketSerializer';
+} from "./MeshPacketSerializer";
+import {
+  AudioFrame,
+  AudioPacketType,
+  FECEncoder,
+  FECReceiver,
+  PeerLossMonitor,
+  decodeFECPacket,
+  isFECPacket,
+} from "./AudioFEC";
 
 export const GOSSIP_D = 6;
 export const GOSSIP_D_LOW = 4;
 export const GOSSIP_D_HIGH = 12;
 
 /* ------------------------------------------------------------------ */
-/* Crypto helpers                                                      */
+/* Crypto helpers                                                     */
 /* ------------------------------------------------------------------ */
 
 export interface GossipIdentity {
@@ -35,26 +44,37 @@ export interface GossipIdentity {
 }
 
 export async function sha256(data: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest('SHA-256', data as BufferSource));
+  return new Uint8Array(
+    await crypto.subtle.digest("SHA-256", data as BufferSource),
+  );
 }
 
 export function toHex(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, '0');
+  let out = "";
+  for (let i = 0; i < bytes.length; i++)
+    out += bytes[i].toString(16).padStart(2, "0");
   return out;
 }
 
 /** Generates a fresh Ed25519 identity using the Web Crypto API. */
 export async function generateEd25519Identity(): Promise<GossipIdentity> {
-  const pair = (await crypto.subtle.generateKey('Ed25519', true, [
-    'sign',
-    'verify',
+  const pair = (await crypto.subtle.generateKey("Ed25519", true, [
+    "sign",
+    "verify",
   ])) as CryptoKeyPair;
-  const publicKey = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
+  const publicKey = new Uint8Array(
+    await crypto.subtle.exportKey("raw", pair.publicKey),
+  );
   return {
     publicKey,
     sign: async (data) =>
-      new Uint8Array(await crypto.subtle.sign('Ed25519', pair.privateKey, data as BufferSource)),
+      new Uint8Array(
+        await crypto.subtle.sign(
+          "Ed25519",
+          pair.privateKey,
+          data as BufferSource,
+        ),
+      ),
   };
 }
 
@@ -64,28 +84,37 @@ const VERIFY_KEY_CACHE_MAX = 512;
 export async function verifyEd25519(
   publicKey: Uint8Array,
   data: Uint8Array,
-  signature: Uint8Array
+  signature: Uint8Array,
 ): Promise<boolean> {
   try {
     const cacheKey = toHex(publicKey);
     let key = verifyKeyCache.get(cacheKey);
     if (!key) {
-      key = await crypto.subtle.importKey('raw', publicKey as BufferSource, 'Ed25519', false, [
-        'verify',
-      ]);
+      key = await crypto.subtle.importKey(
+        "raw",
+        publicKey as BufferSource,
+        "Ed25519",
+        false,
+        ["verify"],
+      );
       if (verifyKeyCache.size >= VERIFY_KEY_CACHE_MAX) {
         verifyKeyCache.delete(verifyKeyCache.keys().next().value as string);
       }
       verifyKeyCache.set(cacheKey, key);
     }
-    return await crypto.subtle.verify('Ed25519', key, signature as BufferSource, data as BufferSource);
+    return await crypto.subtle.verify(
+      "Ed25519",
+      key,
+      signature as BufferSource,
+      data as BufferSource,
+    );
   } catch {
     return false;
   }
 }
 
 /* ------------------------------------------------------------------ */
-/* Duplicate suppression                                               */
+/* Duplicate suppression                                              */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -94,10 +123,6 @@ export async function verifyEd25519(
  * one starts, so memory stays bounded while the last 1x-2x `capacity` messages are
  * remembered. Bit indices use double hashing (Kirsch-Mitzenmacher) taken directly
  * from the ID bytes, which are already uniformly distributed.
- *
- * Bloom filters can return false positives (a never-seen ID reported as seen); the
- * default 1e-6 target makes that negligible, and a false negative never occurs
- * inside the retention window.
  */
 export class RotatingBloomFilter {
   private readonly bitCount: number;
@@ -108,11 +133,16 @@ export class RotatingBloomFilter {
 
   constructor(
     private readonly capacity = 4096,
-    falsePositiveRate = 1e-6
+    falsePositiveRate = 1e-6,
   ) {
-    if (capacity < 1) throw new RangeError('capacity must be >= 1');
-    this.bitCount = Math.ceil((-capacity * Math.log(falsePositiveRate)) / Math.LN2 ** 2);
-    this.hashCount = Math.max(1, Math.round((this.bitCount / capacity) * Math.LN2));
+    if (capacity < 1) throw new RangeError("capacity must be >= 1");
+    this.bitCount = Math.ceil(
+      (-capacity * Math.log(falsePositiveRate)) / Math.LN2 ** 2,
+    );
+    this.hashCount = Math.max(
+      1,
+      Math.round((this.bitCount / capacity) * Math.LN2),
+    );
     this.current = new Uint8Array(Math.ceil(this.bitCount / 8));
     this.previous = new Uint8Array(this.current.length);
   }
@@ -122,13 +152,15 @@ export class RotatingBloomFilter {
     const h1 = view.getUint32(0);
     const h2 = (view.getUint32(4) | 1) >>> 0; // force odd and unsigned
     const out: number[] = [];
-    for (let i = 0; i < this.hashCount; i++) out.push((h1 + i * h2) % this.bitCount);
+    for (let i = 0; i < this.hashCount; i++)
+      out.push((h1 + i * h2) % this.bitCount);
     return out;
   }
 
   has(id: Uint8Array): boolean {
     const idx = this.indices(id);
-    const test = (bits: Uint8Array) => idx.every((i) => (bits[i >> 3] & (1 << (i & 7))) !== 0);
+    const test = (bits: Uint8Array) =>
+      idx.every((i) => (bits[i >> 3] & (1 << (i & 7))) !== 0);
     return test(this.current) || test(this.previous);
   }
 
@@ -144,7 +176,7 @@ export class RotatingBloomFilter {
 }
 
 /* ------------------------------------------------------------------ */
-/* Router                                                              */
+/* Router                                                             */
 /* ------------------------------------------------------------------ */
 
 export interface GossipMessage {
@@ -167,6 +199,8 @@ export interface GossipSubOptions {
   /** Hands bytes to the transport (e.g. an RTCDataChannel) for one peer. */
   send: (peerId: string, data: Uint8Array) => void;
   onMessage?: (message: GossipMessage) => void;
+  /** Optional callback specifically for processed/recovered audio frames */
+  onAudioFrame?: (frame: AudioFrame, fromPeer: string | null) => void;
   D?: number;
   Dlow?: number;
   Dhigh?: number;
@@ -209,19 +243,28 @@ export class GossipSubRouter {
     unsubscribedDropped: 0,
   };
 
+  // Adaptive FEC State
+  private readonly peerLossMonitors = new Map<string, PeerLossMonitor>();
+  private readonly fecEncoders = new Map<string, FECEncoder>(); // topic/streamId -> encoder
+  private readonly fecReceivers = new Map<string, FECReceiver>(); // peerId -> receiver
+  private audioFrameSeq = 0;
+
   constructor(private readonly opts: GossipSubOptions) {
     this.D = opts.D ?? GOSSIP_D;
     this.Dlow = opts.Dlow ?? GOSSIP_D_LOW;
     this.Dhigh = opts.Dhigh ?? GOSSIP_D_HIGH;
     if (!(this.Dlow <= this.D && this.D <= this.Dhigh)) {
-      throw new RangeError('mesh degrees must satisfy D_low <= D <= D_high');
+      throw new RangeError("mesh degrees must satisfy D_low <= D <= D_high");
     }
     if (opts.identity.publicKey.length !== ED25519_PUBLIC_KEY_BYTES) {
-      throw new RangeError('identity.publicKey must be a 32-byte Ed25519 key');
+      throw new RangeError("identity.publicKey must be a 32-byte Ed25519 key");
     }
     this.maxHops = opts.maxHops ?? 16;
     this.random = opts.random ?? Math.random;
-    this.seen = new RotatingBloomFilter(opts.bloomCapacity, opts.bloomFalsePositiveRate);
+    this.seen = new RotatingBloomFilter(
+      opts.bloomCapacity,
+      opts.bloomFalsePositiveRate,
+    );
   }
 
   /* ----- peers & topics ----- */
@@ -229,6 +272,8 @@ export class GossipSubRouter {
   addPeer(peerId: string): void {
     if (this.peers.has(peerId) || peerId === this.opts.localPeerId) return;
     this.peers.set(peerId, new Set());
+    this.peerLossMonitors.set(peerId, new PeerLossMonitor());
+    this.fecReceivers.set(peerId, new FECReceiver());
     for (const topic of this.subscriptions) {
       this.sendControl(peerId, MeshPacketType.Subscribe, topic);
     }
@@ -236,6 +281,12 @@ export class GossipSubRouter {
 
   removePeer(peerId: string): void {
     this.peers.delete(peerId);
+    this.peerLossMonitors.delete(peerId);
+    const receiver = this.fecReceivers.get(peerId);
+    if (receiver) {
+      receiver.clear();
+      this.fecReceivers.delete(peerId);
+    }
     for (const members of this.mesh.values()) members.delete(peerId);
   }
 
@@ -252,7 +303,8 @@ export class GossipSubRouter {
   unsubscribe(topic: string): void {
     if (!this.subscriptions.delete(topic)) return;
     const members = this.mesh.get(topic) ?? new Set<string>();
-    for (const peerId of members) this.sendControl(peerId, MeshPacketType.Prune, topic);
+    for (const peerId of members)
+      this.sendControl(peerId, MeshPacketType.Prune, topic);
     this.mesh.delete(topic);
     for (const peerId of this.peers.keys()) {
       this.sendControl(peerId, MeshPacketType.Unsubscribe, topic);
@@ -294,14 +346,19 @@ export class GossipSubRouter {
 
     if (members.size < this.Dlow) {
       const candidates = this.shuffle(
-        [...this.peers].filter(([id, topics]) => topics.has(topic) && !members.has(id)).map(([id]) => id)
+        [...this.peers]
+          .filter(([id, topics]) => topics.has(topic) && !members.has(id))
+          .map(([id]) => id),
       );
       for (const peerId of candidates.slice(0, this.D - members.size)) {
         members.add(peerId);
         this.sendControl(peerId, MeshPacketType.Graft, topic);
       }
     } else if (members.size > this.Dhigh) {
-      for (const peerId of this.shuffle([...members]).slice(0, members.size - this.D)) {
+      for (const peerId of this.shuffle([...members]).slice(
+        0,
+        members.size - this.D,
+      )) {
         members.delete(peerId);
         this.sendControl(peerId, MeshPacketType.Prune, topic);
       }
@@ -313,7 +370,12 @@ export class GossipSubRouter {
   /** Signs and broadcasts `payload`; resolves with the hex message ID. */
   async publish(topic: string, payload: Uint8Array): Promise<string> {
     this.seqno = Math.max(this.seqno + 1, Date.now());
-    const unsigned = { topic, from: this.opts.identity.publicKey, seqno: this.seqno, payload };
+    const unsigned = {
+      topic,
+      from: this.opts.identity.publicKey,
+      seqno: this.seqno,
+      payload,
+    };
     const signingBytes = getSigningBytes(unsigned);
     const signature = await this.opts.identity.sign(signingBytes);
     const packet: PublishPacket = {
@@ -328,10 +390,19 @@ export class GossipSubRouter {
     this.stats.published++;
 
     const bytes = encodePacket({ ...packet, hops: 1 });
-    for (const peerId of this.publishTargets(topic)) this.opts.send(peerId, bytes);
+    for (const peerId of this.publishTargets(topic))
+      this.opts.send(peerId, bytes);
 
     if (this.subscriptions.has(topic)) {
-      this.deliver({ id, topic, from: toHex(packet.from), seqno: packet.seqno, payload, hops: 0, receivedFrom: null });
+      this.deliver({
+        id,
+        topic,
+        from: toHex(packet.from),
+        seqno: packet.seqno,
+        payload,
+        hops: 0,
+        receivedFrom: null,
+      });
     }
     return id;
   }
@@ -340,16 +411,90 @@ export class GossipSubRouter {
   private publishTargets(topic: string): string[] {
     const members = this.mesh.get(topic);
     if (members && members.size > 0) return [...members];
-    const subscribed = [...this.peers].filter(([, t]) => t.has(topic)).map(([id]) => id);
+    const subscribed = [...this.peers]
+      .filter(([, t]) => t.has(topic))
+      .map(([id]) => id);
     return this.shuffle(subscribed).slice(0, this.D);
+  }
+
+  /* ----- Adaptive FEC & Audio API ----- */
+
+  /** Returns whether FEC is currently active for the topic/target mesh */
+  public isFECActiveForTopic(topic: string): boolean {
+    const targets = this.publishTargets(topic);
+    if (targets.length === 0) return false;
+    return targets.some(
+      (peerId) => this.peerLossMonitors.get(peerId)?.isFECEnabled() ?? false,
+    );
+  }
+
+  async publishAudio(
+    topic: string,
+    rawPayload: Uint8Array,
+    timestamp = Date.now(),
+    streamId = this.opts.localPeerId,
+  ): Promise<string[]> {
+    const publishedIds: string[] = [];
+    const isFEC = this.isFECActiveForTopic(topic);
+
+    if (!isFEC) {
+      const id = await this.publish(topic, rawPayload);
+      publishedIds.push(id);
+      return publishedIds;
+    }
+
+    let encoder = this.fecEncoders.get(topic);
+    if (!encoder) {
+      encoder = new FECEncoder();
+      this.fecEncoders.set(topic, encoder);
+    }
+
+    const frame: AudioFrame = {
+      streamId,
+      frameSeq: this.audioFrameSeq++,
+      timestamp,
+      payload: rawPayload,
+    };
+
+    const { encodedAudioPacket, parityPacket } = encoder.addFrame(frame);
+
+    const audioId = await this.publish(topic, encodedAudioPacket);
+    publishedIds.push(audioId);
+
+    if (parityPacket) {
+      const parityId = await this.publish(topic, parityPacket);
+      publishedIds.push(parityId);
+    }
+
+    return publishedIds;
+  }
+
+  public updatePeerStats(
+    peerId: string,
+    packetsLost: number,
+    packetsSentOrReceived: number,
+  ): void {
+    let monitor = this.peerLossMonitors.get(peerId);
+    if (!monitor) {
+      monitor = new PeerLossMonitor();
+      this.peerLossMonitors.set(peerId, monitor);
+    }
+    monitor.updateStats(packetsLost, packetsSentOrReceived);
+  }
+
+  public getPeerLossMonitor(peerId: string): PeerLossMonitor | undefined {
+    return this.peerLossMonitors.get(peerId);
+  }
+
+  public getFECReceiver(peerId: string): FECReceiver | undefined {
+    return this.fecReceivers.get(peerId);
   }
 
   /* ----- inbound ----- */
 
-  /** Feed raw bytes received from `peerId` (e.g. from an RTCDataChannel `message` event). */
   async handlePacket(peerId: string, data: Uint8Array): Promise<void> {
     const subscribedTopics = this.peers.get(peerId);
-    if (!subscribedTopics) return; // unknown peer
+    if (!subscribedTopics) return;
 
     let packet;
     try {
@@ -386,7 +531,10 @@ export class GossipSubRouter {
     }
   }
 
-  private async handlePublish(fromPeer: string, packet: PublishPacket): Promise<void> {
+  private async handlePublish(
+    fromPeer: string,
+    packet: PublishPacket,
+  ): Promise<void> {
     if (packet.hops >= this.maxHops || !this.subscriptions.has(packet.topic)) {
       this.stats.unsubscribedDropped++;
       return;
@@ -399,12 +547,10 @@ export class GossipSubRouter {
       return;
     }
 
-    // Verify before remembering the ID so a forged copy cannot shadow the genuine message.
     if (!(await verifyEd25519(packet.from, signingBytes, packet.signature))) {
       this.stats.invalidDropped++;
       return;
     }
-    // Another copy may have been accepted while we were awaiting verification.
     if (this.seen.has(idBytes)) {
       this.stats.duplicatesDropped++;
       return;
@@ -434,12 +580,49 @@ export class GossipSubRouter {
   private deliver(message: GossipMessage): void {
     this.stats.delivered++;
     this.opts.onMessage?.(message);
+
+    if (isFECPacket(message.payload)) {
+      try {
+        const decoded = decodeFECPacket(message.payload);
+        const streamId =
+          decoded.type === AudioPacketType.AudioWithFEC
+            ? decoded.frame.streamId
+            : decoded.parityPacket.metadata.streamId;
+        const receiverKey = message.receivedFrom ?? streamId;
+        let receiver = this.fecReceivers.get(receiverKey);
+        if (!receiver) {
+          receiver = new FECReceiver();
+          this.fecReceivers.set(receiverKey, receiver);
+        }
+
+        const readyFrames = receiver.processPacket(decoded, (recovered) => {
+          this.opts.onAudioFrame?.(recovered, message.receivedFrom);
+        });
+
+        for (const frame of readyFrames) {
+          if (
+            decoded.type === AudioPacketType.AudioWithFEC &&
+            frame.frameSeq === decoded.frame.frameSeq
+          ) {
+            this.opts.onAudioFrame?.(frame, message.receivedFrom);
+          } else if (decoded.type === AudioPacketType.FECParity) {
+            this.opts.onAudioFrame?.(frame, message.receivedFrom);
+          }
+        }
+      } catch {
+        // Discard invalid FEC payloads safely
+      }
+    }
   }
 
   private sendControl(
     peerId: string,
-    type: MeshPacketType.Subscribe | MeshPacketType.Unsubscribe | MeshPacketType.Graft | MeshPacketType.Prune,
-    topic: string
+    type:
+      | MeshPacketType.Subscribe
+      | MeshPacketType.Unsubscribe
+      | MeshPacketType.Graft
+      | MeshPacketType.Prune,
+    topic: string,
   ): void {
     this.opts.send(peerId, encodePacket({ type, topic }));
   }

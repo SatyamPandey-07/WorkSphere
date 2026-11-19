@@ -1,3 +1,8 @@
+import {
+  nowMs,
+  recordCompression,
+  recordDecompression,
+} from "./compressionTelemetry";
 /**
  * snapshotManager.ts
  * Periodic Yjs snapshot compaction for long-running collaborative whiteboards
@@ -16,6 +21,11 @@
  */
 
 import * as Y from "yjs";
+import {
+  COMPRESSION_MAGIC_HEADER,
+  compressYjsUpdate,
+  decompressYjsUpdate,
+} from "./yjsCompression";
 
 /** Compact after this many local/remote transactions by default. */
 export const DEFAULT_SNAPSHOT_OP_THRESHOLD = 500;
@@ -25,15 +35,19 @@ export const DEFAULT_SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
 /** A consolidated document snapshot persisted for a room. */
 export interface StoredSnapshot {
   roomId: string;
-  /** `Y.encodeStateAsUpdate(doc)` bytes. */
+  /** `Y.encodeStateAsUpdate(doc)` bytes (compressed when compression is enabled). */
   update: Uint8Array;
   /** `Y.encodeStateVector(doc)` bytes captured alongside the snapshot. */
   stateVector: Uint8Array;
-  /** Deterministic checksum of `update` for integrity verification. */
+  /** Deterministic checksum of uncompressed `update` for integrity verification. */
   checksum: string;
   /** Number of operations folded into this snapshot. */
   opsAtSnapshot: number;
   createdAt: number;
+  /** Whether the update/stateVector payloads are compressed with LZ77. */
+  isCompressed?: boolean;
+  /** Uncompressed size in bytes if compressed. */
+  uncompressedSize?: number;
 }
 
 /** A single un-compacted Yjs update awaiting consolidation. */
@@ -142,6 +156,8 @@ export interface SerializedSnapshot {
   checksum: string;
   opsAtSnapshot: number;
   createdAt: number;
+  isCompressed?: boolean;
+  uncompressedSize?: number;
 }
 
 export interface SerializedDelta {
@@ -159,6 +175,8 @@ export function serializeSnapshot(
     ...snapshot,
     update: bytesToBase64(snapshot.update),
     stateVector: bytesToBase64(snapshot.stateVector),
+    isCompressed: snapshot.isCompressed,
+    uncompressedSize: snapshot.uncompressedSize,
   };
 }
 
@@ -169,6 +187,50 @@ export function deserializeSnapshot(
     ...snapshot,
     update: base64ToBytes(snapshot.update),
     stateVector: base64ToBytes(snapshot.stateVector),
+    isCompressed: snapshot.isCompressed,
+    uncompressedSize: snapshot.uncompressedSize,
+  };
+}
+
+/**
+ * Detects whether a binary payload has the Yjs compression magic header.
+ */
+export function isCompressedPayload(bytes: Uint8Array): boolean {
+  if (!bytes || bytes.length < COMPRESSION_MAGIC_HEADER.length) return false;
+  for (let i = 0; i < COMPRESSION_MAGIC_HEADER.length; i++) {
+    if (bytes[i] !== COMPRESSION_MAGIC_HEADER[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Ensures a stored snapshot has uncompressed update and stateVector bytes.
+ * If already uncompressed, returns the snapshot unmodified.
+ */
+export function decompressSnapshot(snapshot: StoredSnapshot): StoredSnapshot {
+  const decompressStartedAt = nowMs();
+  const updateWasCompressed = isCompressedPayload(snapshot.update);
+  const decompressedUpdate = isCompressedPayload(snapshot.update)
+    ? decompressYjsUpdate(snapshot.update)
+    : snapshot.update;
+  const decompressedStateVector = isCompressedPayload(snapshot.stateVector)
+    ? decompressYjsUpdate(snapshot.stateVector)
+    : snapshot.stateVector;
+
+  if (updateWasCompressed) {
+    recordDecompression(
+      snapshot.update.length,
+      decompressedUpdate.length,
+      nowMs() - decompressStartedAt,
+    );
+  }
+
+  return {
+    ...snapshot,
+    update: decompressedUpdate,
+    stateVector: decompressedStateVector,
+    isCompressed: false,
+    uncompressedSize: decompressedUpdate.length,
   };
 }
 
@@ -289,9 +351,7 @@ export class RedisSnapshotStorage implements SnapshotStorage {
 
   async listDeltas(roomId: string): Promise<StoredDelta[]> {
     const record = await this.read(roomId);
-    return record.deltas
-      .map(deserializeDelta)
-      .sort((a, b) => a.seq - b.seq);
+    return record.deltas.map(deserializeDelta).sort((a, b) => a.seq - b.seq);
   }
 
   async deleteDeltasThrough(roomId: string, throughSeq: number): Promise<void> {
@@ -384,6 +444,10 @@ export interface SnapshotManagerOptions {
   opThreshold?: number;
   /** Background checkpoint interval while edits are pending. Default 10 min. */
   intervalMs?: number;
+  /** Whether to compress snapshots with LZ77 wire codec. Default true. */
+  compressSnapshots?: boolean;
+  /** Minimum byte threshold before applying compression. Default 256 bytes. */
+  compressionThresholdBytes?: number;
   /** Clock injection for deterministic tests. */
   now?: () => number;
   /** Called after each successful compaction. */
@@ -403,6 +467,8 @@ export class SnapshotManager {
   private readonly storage: SnapshotStorage;
   private readonly opThreshold: number;
   private readonly intervalMs: number;
+  private readonly compressSnapshots: boolean;
+  private readonly compressionThresholdBytes: number;
   private readonly now: () => number;
   private readonly onCompacted?: (snapshot: StoredSnapshot) => void;
   private readonly onError?: (error: unknown) => void;
@@ -443,6 +509,11 @@ export class SnapshotManager {
     this.intervalMs = Math.max(
       0,
       Math.floor(options.intervalMs ?? DEFAULT_SNAPSHOT_INTERVAL_MS),
+    );
+    this.compressSnapshots = options.compressSnapshots ?? true;
+    this.compressionThresholdBytes = Math.max(
+      0,
+      Math.floor(options.compressionThresholdBytes ?? 256),
     );
     this.now = options.now ?? Date.now;
     this.onCompacted = options.onCompacted;
@@ -511,31 +582,62 @@ export class SnapshotManager {
       const flushedThroughSeq = this.nextDeltaSeq - 1;
       const flushedCount = await this.flushDeltas();
 
-      const update = Y.encodeStateAsUpdate(this.doc);
+      const uncompressedUpdate = Y.encodeStateAsUpdate(this.doc);
+      const uncompressedStateVector = Y.encodeStateVector(this.doc);
+      const checksum = computeSnapshotChecksum(uncompressedUpdate);
+
+      let update = uncompressedUpdate;
+      let stateVector = uncompressedStateVector;
+      let isCompressed = false;
+
+      if (
+        this.compressSnapshots &&
+        uncompressedUpdate.length >= this.compressionThresholdBytes
+      ) {
+        const compressStartedAt = nowMs();
+        const compressed = compressYjsUpdate(uncompressedUpdate);
+        const compressDurationMs = nowMs() - compressStartedAt;
+        if (isCompressedPayload(compressed)) {
+          recordCompression(
+            uncompressedUpdate.length,
+            compressed.length,
+            compressDurationMs,
+          );
+          update = compressed;
+          isCompressed = true;
+        }
+      }
+
+      if (
+        this.compressSnapshots &&
+        uncompressedStateVector.length >= this.compressionThresholdBytes
+      ) {
+        const compressed = compressYjsUpdate(uncompressedStateVector);
+        if (isCompressedPayload(compressed)) {
+          stateVector = compressed;
+        }
+      }
+
       const snapshot: StoredSnapshot = {
         roomId: this.roomId,
         update,
-        stateVector: Y.encodeStateVector(this.doc),
-        checksum: computeSnapshotChecksum(update),
+        stateVector,
+        checksum,
         opsAtSnapshot: this.opsSinceSnapshot,
         createdAt: this.now(),
+        isCompressed: isCompressed || isCompressedPayload(stateVector),
+        uncompressedSize: uncompressedUpdate.length,
       };
 
       await this.storage.saveSnapshot(snapshot);
 
       if (flushedThroughSeq > 0) {
-        await this.storage.deleteDeltasThrough(
-          this.roomId,
-          flushedThroughSeq,
-        );
+        await this.storage.deleteDeltasThrough(this.roomId, flushedThroughSeq);
       }
 
       // Only retire the operations folded into this snapshot; keep counting
       // transactions that arrived while the async writes were in flight.
-      this.opsSinceSnapshot = Math.max(
-        0,
-        this.opsSinceSnapshot - flushedCount,
-      );
+      this.opsSinceSnapshot = Math.max(0, this.opsSinceSnapshot - flushedCount);
       this.onCompacted?.(snapshot);
       return snapshot;
     })();
@@ -549,14 +651,22 @@ export class SnapshotManager {
   }
 
   /**
+   * Loads the stored baseline snapshot for this room, transparently decompressed.
+   */
+  public async loadSnapshot(): Promise<StoredSnapshot | null> {
+    const raw = await this.storage.loadSnapshot(this.roomId);
+    return raw ? decompressSnapshot(raw) : null;
+  }
+
+  /**
    * Loads the compacted baseline plus any newer deltas for a joining or
    * lagging peer, verifies integrity, and merges them into the local document.
    */
   public async recover(): Promise<SnapshotRecoveryResult> {
-    const baseline = await this.storage.loadSnapshot(this.roomId);
+    const rawBaseline = await this.storage.loadSnapshot(this.roomId);
     const localBefore = this.getDocumentChecksum();
 
-    if (!baseline) {
+    if (!rawBaseline) {
       return {
         recovered: false,
         behindCompactedBaseline: false,
@@ -567,7 +677,15 @@ export class SnapshotManager {
       };
     }
 
-    if (computeSnapshotChecksum(baseline.update) !== baseline.checksum) {
+    const baseline = decompressSnapshot(rawBaseline);
+
+    const uncompressedChecksum = computeSnapshotChecksum(baseline.update);
+    const rawChecksum = computeSnapshotChecksum(rawBaseline.update);
+
+    if (
+      baseline.checksum !== uncompressedChecksum &&
+      baseline.checksum !== rawChecksum
+    ) {
       throw new SnapshotIntegrityError(
         `Snapshot for room ${this.roomId} failed checksum verification`,
       );
@@ -585,13 +703,23 @@ export class SnapshotManager {
       const deltas = await this.storage.listDeltas(this.roomId);
       let appliedDeltas = 0;
       for (const delta of deltas.sort((a, b) => a.seq - b.seq)) {
-        if (computeSnapshotChecksum(delta.update) !== delta.checksum) {
+        const deltaUpdate = isCompressedPayload(delta.update)
+          ? decompressYjsUpdate(delta.update)
+          : delta.update;
+
+        const deltaUncompressedChecksum = computeSnapshotChecksum(deltaUpdate);
+        const deltaRawChecksum = computeSnapshotChecksum(delta.update);
+
+        if (
+          delta.checksum !== deltaUncompressedChecksum &&
+          delta.checksum !== deltaRawChecksum
+        ) {
           console.warn(
             `[SnapshotManager] Dropping corrupt delta #${delta.seq} for room ${this.roomId}`,
           );
           continue;
         }
-        Y.applyUpdate(this.doc, delta.update, "snapshot-recovery");
+        Y.applyUpdate(this.doc, deltaUpdate, "snapshot-recovery");
         appliedDeltas += 1;
       }
 

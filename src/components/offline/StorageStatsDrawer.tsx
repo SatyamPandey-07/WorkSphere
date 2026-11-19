@@ -42,6 +42,8 @@ export interface StorageStatsDrawerProps {
   initialUnsyncedCheckIns?: number;
   /** How long success announcements remain available to assistive technology. */
   successAnnouncementTimeoutMs?: number;
+  /** Optional initial section to focus/scroll to upon opening */
+  initialFocusSection?: "cleanup" | "stale" | "reset" | "overview";
 }
 
 export function StorageStatsDrawer({
@@ -53,9 +55,12 @@ export function StorageStatsDrawer({
   onClearCache,
   initialUnsyncedCheckIns,
   successAnnouncementTimeoutMs = 4000,
+  initialFocusSection,
 }: StorageStatsDrawerProps) {
   const isMountedRef = useRef(true);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cleanupSectionRef = useRef<HTMLDivElement | null>(null);
+  const clearCacheButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const [stats, setStats] = useState<OfflineStorageStats | null>(initialStats);
   const [loading, setLoading] = useState(!initialStats);
@@ -164,6 +169,28 @@ export function StorageStatsDrawer({
     fetchUnsyncedCheckIns,
     refreshTrigger,
   ]);
+
+  // Handle focusing or scrolling to initialFocusSection
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (initialFocusSection === "cleanup" || initialFocusSection === "stale") {
+      const timer = setTimeout(() => {
+        if (!isMountedRef.current) return;
+        if (cleanupSectionRef.current) {
+          cleanupSectionRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
+        if (clearCacheButtonRef.current) {
+          clearCacheButtonRef.current.focus();
+        }
+      }, 50);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, initialFocusSection]);
 
   // Handle ESC key to close modals or drawer
   useEffect(() => {
@@ -677,7 +704,12 @@ export function StorageStatsDrawer({
               </div>
 
               {/* Clear Offline Cache Section */}
-              <div className="p-4 rounded-2xl bg-red-50/70 dark:bg-red-950/20 border border-red-200/80 dark:border-red-900/50 space-y-3">
+              <div
+                ref={cleanupSectionRef}
+                tabIndex={-1}
+                data-testid="storage-stats-cleanup-section"
+                className="p-4 rounded-2xl bg-red-50/70 dark:bg-red-950/20 border border-red-200/80 dark:border-red-900/50 space-y-3 focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
@@ -690,11 +722,12 @@ export function StorageStatsDrawer({
                     </p>
                   </div>
                   <button
+                    ref={clearCacheButtonRef}
                     type="button"
                     onClick={() => setShowClearCacheConfirmation(true)}
                     disabled={isClearingCache || loading}
                     data-testid="storage-stats-clear-cache-btn"
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:ring-2 focus:ring-red-500 focus:outline-none"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Clear Offline Cache

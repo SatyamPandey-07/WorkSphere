@@ -6,6 +6,7 @@ import {
   searchVenuesWithRrf,
   type RankedVenueList,
 } from "@/lib/search/hybridVenueSearch";
+import { clearMemorySWRCache } from "@/lib/cache/swrCache";
 import { prisma } from "@/lib/prisma";
 
 jest.mock("@/lib/prisma", () => ({
@@ -96,6 +97,7 @@ describe("interleaveFuzzyAndSemantic", () => {
 describe("searchVenuesWithRrf low-confidence fuzzy fallback (#7846)", () => {
   beforeEach(() => {
     queryRaw.mockReset();
+    clearMemorySWRCache();
   });
 
   it("uses 0.65 as the default confidence threshold", () => {

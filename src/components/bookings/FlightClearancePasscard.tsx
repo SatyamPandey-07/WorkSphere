@@ -61,6 +61,15 @@ export const FlightClearancePasscard: React.FC<FlightClearancePasscardProps> = (
     () => typeof navigator === "undefined" || navigator.onLine,
   );
 
+  // A renewed credential belongs to exactly one booking. Never let a token or
+  // error from the previous booking leak into a newly opened passcard.
+  useEffect(() => {
+    setRenewedToken(null);
+    setStoredToken(null);
+    setRefreshError(null);
+    setIsRefreshingPasscard(false);
+  }, [bookingId, offlineToken]);
+
   const mergedDetails = {
     callsign: bookingDetails?.callsign || DEFAULT_BOOKING_DETAILS.callsign,
     deskTailNumber: bookingDetails?.deskTailNumber || DEFAULT_BOOKING_DETAILS.deskTailNumber,

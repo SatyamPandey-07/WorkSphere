@@ -9,6 +9,7 @@
     "lint": "eslint",
     "format": "lint-staged",
     "test": "jest",
+    "test:integration": "jest src/__tests__/integration",
     "test:watch": "jest --watch",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -19,6 +20,7 @@
     "build:wasm:audio-filter": "bash wasm/audio-filter/build.sh",
     "build:wasm:sound-classifier": "bash src/wasm/acoustic/build.sh",
     "bench:audio-filter": "node scripts/bench-audio-filter-pool.mjs",
+    "bench:bloom-limiter": "node --experimental-strip-types scripts/bench-distributed-bloom-limiter.mjs",
     "postinstall": "prisma generate",
     "prepare": "husky"
   },
@@ -127,6 +129,7 @@
   "optionalDependencies": {
     "@next/swc-linux-x64-gnu": "16.3.8",
     "@next/swc-linux-x64-musl": "16.3.8",
+    "@next/swc-win32-x64-msvc": "^16.3.3",
     "@tailwindcss/oxide-linux-x64-gnu": "4.3.3",
     "@tailwindcss/oxide-linux-x64-musl": "4.3.3",
     "lightningcss-linux-x64-gnu": "1.33.0",

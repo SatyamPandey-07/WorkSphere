@@ -209,7 +209,7 @@ describe("AmbientSoundPlayer - Component UI & Soundscape Controls", () => {
     expect(screen.getByTestId("volume-label-rain")).toHaveTextContent("85%");
   });
 
-  it("controls master volume and master mute", async () => {
+  it("controls master volume and exposes the audio guide mute state", async () => {
     render(<AmbientSoundPlayer standalone />);
 
     const masterSlider = screen.getByTestId("master-volume-slider");
@@ -221,14 +221,20 @@ describe("AmbientSoundPlayer - Component UI & Soundscape Controls", () => {
 
     // Toggle master mute
     const muteBtn = screen.getByTestId("master-mute-btn");
+    expect(muteBtn).toHaveAccessibleName("Mute audio guide");
+    expect(muteBtn).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(muteBtn);
     expect(screen.getByTestId("master-volume-label")).toHaveTextContent(
       "Muted",
     );
+    expect(muteBtn).toHaveAccessibleName("Unmute audio guide");
+    expect(muteBtn).toHaveAttribute("aria-pressed", "false");
 
     // Unmute
     fireEvent.click(muteBtn);
     expect(screen.getByTestId("master-volume-label")).toHaveTextContent("90%");
+    expect(muteBtn).toHaveAccessibleName("Mute audio guide");
+    expect(muteBtn).toHaveAttribute("aria-pressed", "true");
   });
 
   it("opens popover panel when trigger button is clicked in trigger mode", () => {

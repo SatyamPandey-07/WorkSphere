@@ -157,3 +157,17 @@ npm test -- --runInBand src/__tests__/core/spatial/acousticBvh.test.ts src/__tes
 - Preserve the linear CPU reference path when optimizing BVH traversal.
 - Treat benchmark claims as device-specific measurements, not universal
   guarantees.
+
+## Browser compatibility and fallback
+
+WebGPU availability is a runtime capability, not a browser-name guarantee. The simulator should be treated as GPU-backed only after both `navigator.gpu` and adapter/device initialization succeed. Browser policy, driver support, hardware limits, and secure-context requirements can still prevent adapter creation on a browser that exposes the API.
+
+| Runtime condition | Expected simulator behavior | Verification |
+| --- | --- | --- |
+| Chromium-based Chrome with WebGPU and a usable adapter | Run the WGSL compute pipeline | Confirm `navigator.gpu` exists, request an adapter, and inspect the reported backend |
+| Chromium-based Edge with WebGPU and a usable adapter | Run the WGSL compute pipeline | Perform the same adapter/device smoke test on the target device and driver |
+| Browser without `navigator.gpu` | Use the CPU fallback | Force the CPU path and verify the simulation still returns an acoustic result |
+| API exposed but adapter/device unavailable | Use the CPU fallback and report the fallback reason | Deny adapter access or run on a device without a compatible adapter |
+| Shader compilation or pipeline initialization fails | Do not dispatch partial GPU work; fall back to CPU | Exercise the initialization-failure test and assert the fallback callback |
+
+Do not infer support solely from a user-agent string. Record browser version, operating system, GPU model, driver version, and whether adapter creation succeeded when collecting compatibility results. The CPU implementation remains the correctness fallback; performance comparisons should be reported only for devices on which the GPU backend actually ran.

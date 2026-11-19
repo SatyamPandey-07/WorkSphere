@@ -64,10 +64,11 @@ function applyTheme(theme: Theme, animate = false) {
   const root = document.documentElement;
   const resolved = resolveTheme(theme);
 
-  if (
-    animate &&
-    !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-  ) {
+  const prefersReducedMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (animate && !prefersReducedMotion) {
     root.classList.add("theme-transitioning");
     if (themeTransitionTimeout !== undefined) {
       window.clearTimeout(themeTransitionTimeout);

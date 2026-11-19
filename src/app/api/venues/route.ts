@@ -11,10 +11,16 @@ import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { ensureUserExists } from "@/lib/auth";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
-import { sanitizeSearchQuery, splitSearchList } from "@/lib/searchSanitizer";
+import {
+  normalizeSearchQuery,
+  sanitizeSearchQuery,
+  splitSearchList,
+} from "@/lib/searchSanitizer";
+import { trackEvent } from "@/lib/analytics";
 import { getFuzzyThreshold, isFuzzyMatch } from "@/lib/search/fuzzySearch";
 import {
   indexVenueSearchEmbedding,
+  scheduleTrendingVenueSearchPrefetch,
   searchVenuesWithRrf,
   labelFuzzySuggestions,
 } from "@/lib/search/hybridVenueSearch";
@@ -51,6 +57,47 @@ function suggestVenueQuery(
   }
 
   return suggestion;
+}
+
+function makeSearchResponse(
+  req: NextRequest,
+  userId: string | null,
+  query: string,
+  body: unknown,
+): NextResponse {
+  const searchParams = req.nextUrl.searchParams;
+  const hasLocationFilter = [
+    "lat",
+    "lng",
+    "radius",
+    "minLat",
+    "maxLat",
+    "minLng",
+    "maxLng",
+  ].some((key) => searchParams.has(key));
+  const isPublicSearch =
+    Boolean(normalizeSearchQuery(query)) &&
+    !userId &&
+    !req.headers.has("authorization") &&
+    !hasLocationFilter &&
+    !req.headers.has("cookie");
+
+  const response = NextResponse.json(body);
+  response.headers.set(
+    "Cache-Control",
+    isPublicSearch
+      ? "public, s-maxage=300"
+      : "private, no-store, max-age=0, must-revalidate",
+  );
+  return response;
+}
+
+function recordVenueSearch(query: string): void {
+  const normalizedQuery = normalizeSearchQuery(query).slice(0, 256);
+  if (!normalizedQuery) return;
+
+  trackEvent("search_performed", { query: normalizedQuery });
+  scheduleTrendingVenueSearchPrefetch();
 }
 
 interface VenueSearchData {
@@ -128,7 +175,14 @@ export async function GET(req: NextRequest) {
     // Fallback: If no coordinates are provided, return all venues (or filtered by cities/query)
     if (!searchParams.get("lat") || !searchParams.get("lng")) {
       const citiesParam = searchParams.get("cities");
-      const queryParam = searchParams.get("query") || searchParams.get("q");
+      // Trim before the value is used for filtering, ranking or suggestions. A
+      // blank `query` must not shadow a real `q`, and a whitespace-only value
+      // means "no text query" rather than a search for nothing (#7727).
+      const queryParam =
+        [searchParams.get("query"), searchParams.get("q")]
+          .map((value) => value?.trim() ?? "")
+          .find((value) => value !== "") || null;
+      if (queryParam) recordVenueSearch(queryParam);
       const minLatParam = searchParams.get("minLat");
       const maxLatParam = searchParams.get("maxLat");
       const minLngParam = searchParams.get("minLng");
@@ -269,7 +323,7 @@ export async function GET(req: NextRequest) {
         );
         const total = orderedVenues.length;
 
-        return NextResponse.json({
+        return makeSearchResponse(req, userId, queryParam, {
           venues,
           pagination: {
             page,
@@ -318,7 +372,7 @@ export async function GET(req: NextRequest) {
               ).map((venue) => venue.name),
             )
           : undefined;
-      return NextResponse.json({
+      const responseBody = {
         venues,
         ...(suggestedQuery && { suggestedQuery }),
         pagination: {
@@ -328,7 +382,10 @@ export async function GET(req: NextRequest) {
           totalPages: Math.ceil(total / limit),
           hasNextPage: skip + venues.length < total,
         },
-      });
+      };
+      return queryParam
+        ? makeSearchResponse(req, userId, queryParam, responseBody)
+        : NextResponse.json(responseBody);
     }
 
     // Validate search params with Zod
@@ -361,6 +418,7 @@ export async function GET(req: NextRequest) {
       "musicStyle",
       "cities",
       "query",
+      "q",
       "minLat",
       "maxLat",
       "minLng",
@@ -547,6 +605,7 @@ export async function GET(req: NextRequest) {
     }
 
     const querySearch = rawData.query || rawData.q;
+    if (querySearch) recordVenueSearch(querySearch);
     let total: number;
     let venues: any[];
     let fuzzyMatched = false;
@@ -687,7 +746,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const body = {
       venues,
       ...(suggestedQuery && { suggestedQuery }),
       pagination: {
@@ -705,7 +764,10 @@ export async function GET(req: NextRequest) {
             notice: `Showing results for ${suggestedQuery}`,
           }
         : {}),
-    });
+    };
+    return querySearch
+      ? makeSearchResponse(req, userId, querySearch, body)
+      : NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/venues error:", error);
     return NextResponse.json(

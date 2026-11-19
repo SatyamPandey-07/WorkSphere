@@ -151,16 +151,31 @@ export function KeyboardShortcutModal({
               </div>
 
               <div className="relative mb-5">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                <Search
+                  data-testid="keyboard-shortcut-search-icon"
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+                />
                 <input
                   ref={searchRef}
                   type="search"
+                  data-testid="keyboard-shortcut-search-input"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search shortcuts by name or key..."
                   aria-label="Search keyboard shortcuts"
-                  className="w-full rounded-xl border border-zinc-200 bg-transparent py-3 pl-10 pr-4 text-sm outline-none focus:border-blue-500 dark:border-zinc-700"
+                  className="w-full rounded-xl border border-zinc-200 bg-transparent py-3 pl-10 pr-9 text-sm outline-none focus:border-blue-500 dark:border-zinc-700"
                 />
+                {search && (
+                  <button
+                    type="button"
+                    data-testid="keyboard-shortcut-search-clear"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear shortcut search"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
 
               <div className="max-h-[55vh] space-y-5 overflow-y-auto pr-1">
@@ -172,7 +187,7 @@ export function KeyboardShortcutModal({
                   if (items.length === 0) return null;
 
                   return (
-                    <section key={category}>
+                    <section key={category} data-testid={`shortcut-category-${category}`}>
                       <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-zinc-400">
                         {category}
                       </h3>
@@ -181,6 +196,7 @@ export function KeyboardShortcutModal({
                         {items.map((shortcut) => (
                           <div
                             key={`${shortcut.category}-${shortcut.description}`}
+                            data-testid="shortcut-item"
                             className="flex items-center justify-between gap-3 border-b border-zinc-100 pb-2 dark:border-zinc-800"
                           >
                             <span className="text-sm text-zinc-700 dark:text-zinc-300">
@@ -205,8 +221,11 @@ export function KeyboardShortcutModal({
                 })}
 
                 {filteredShortcuts.length === 0 && (
-                  <p className="py-6 text-center text-sm text-zinc-500">
-                    No keyboard shortcuts found.
+                  <p
+                    data-testid="keyboard-shortcut-empty"
+                    className="py-6 text-center text-sm text-zinc-500"
+                  >
+                    No shortcuts found
                   </p>
                 )}
               </div>

@@ -55,19 +55,27 @@ export function VenueShareModal({
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [origin, setOrigin] = useState("");
+  const copyInProgressRef = useRef(false);
+  const copyRequestIdRef = useRef(0);
+  const isMountedRef = useRef(false);
   const timerRef = useRef<number | null>(null);
   const shareTimerRef = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      copyRequestIdRef.current += 1;
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = null;
       if (shareTimerRef.current !== null)
         window.clearTimeout(shareTimerRef.current);
-    },
-    [],
-  );
+      shareTimerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -98,6 +106,9 @@ export function VenueShareModal({
   useFocusTrap(dialogRef, { isActive: isOpen, returnFocus: false });
 
   const handleClose = useCallback(() => {
+    copyRequestIdRef.current += 1;
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
     setIsOpen(false);
     setCopied(false);
     setIsSharing(false);
@@ -167,7 +178,11 @@ export function VenueShareModal({
   };
 
   const handleCopyLink = async () => {
-    if (copied) return;
+    if (copied || copyInProgressRef.current) return;
+    copyInProgressRef.current = true;
+    setIsCopying(true);
+    const requestId = ++copyRequestIdRef.current;
+
     try {
       let didCopy = false;
 
@@ -180,12 +195,15 @@ export function VenueShareModal({
           await navigator.clipboard.writeText(shortUrl);
           didCopy = true;
         } catch {
+          if (requestId !== copyRequestIdRef.current) return;
           // Fallback for insecure contexts (e.g. non-HTTPS) or denied permissions
           didCopy = copyTextFallback(shortUrl);
         }
       } else {
         didCopy = copyTextFallback(shortUrl);
       }
+
+      if (requestId !== copyRequestIdRef.current) return;
 
       if (!didCopy) {
         throw new Error("Clipboard copy unavailable");
@@ -194,10 +212,17 @@ export function VenueShareModal({
       setCopied(true);
       toast("Link copied to clipboard!", "success");
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      timerRef.current = window.setTimeout(() => setCopied(false), 2000);
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        if (isMountedRef.current) setCopied(false);
+      }, 2000);
     } catch (err) {
+      if (requestId !== copyRequestIdRef.current) return;
       console.error("Failed to copy shortlink:", err);
       toast("Unable to copy to clipboard", "error");
+    } finally {
+      copyInProgressRef.current = false;
+      if (isMountedRef.current) setIsCopying(false);
     }
   };
 
@@ -368,6 +393,7 @@ export function VenueShareModal({
                     <button
                       type="button"
                       onClick={handleCopyLink}
+                      disabled={isCopying}
                       className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
                         copied
                           ? "bg-green-600 text-white"

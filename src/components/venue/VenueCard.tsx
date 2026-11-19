@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Bookmark, CalendarCheck, Heart, Share2 } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
 
@@ -11,7 +11,7 @@ export interface VenueCardProps {
     description?: string;
     imageUrl?: string;
   };
-  onBookmark?: (id: string) => void;
+  onBookmark?: (id: string) => void | Promise<void>;
   onFavorite?: (id: string) => void;
   onShare?: (id: string) => void;
   /**
@@ -27,7 +27,7 @@ export interface VenueCardProps {
 }
 
 const focusRingClasses =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
 
 export const VenueCard: React.FC<VenueCardProps> = ({
   venue,
@@ -39,10 +39,29 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 }) => {
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [isBookmarkPending, setIsBookmarkPending] = useState(false);
+  const isBookmarkPendingRef = useRef(false);
 
-  const handleBookmark = () => {
+  const handleBookmark = async () => {
+    if (isBookmarkPendingRef.current) {
+      return;
+    }
+
+    isBookmarkPendingRef.current = true;
+    setIsBookmarkPending(true);
     setIsBookmarked((prev) => !prev);
-    if (onBookmark) onBookmark(venue.id);
+
+    try {
+      if (onBookmark) {
+        await onBookmark(venue.id);
+      }
+    } catch {
+      // Rollback optimistic update on mutation failure
+      setIsBookmarked((prev) => !prev);
+    } finally {
+      isBookmarkPendingRef.current = false;
+      setIsBookmarkPending(false);
+    }
   };
 
   const handleFavorite = () => {
@@ -75,9 +94,10 @@ export const VenueCard: React.FC<VenueCardProps> = ({
           <button
             type="button"
             onClick={handleBookmark}
+            disabled={isBookmarkPending}
             aria-label={`Bookmark ${venue.name}`}
             aria-pressed={isBookmarked}
-            className={`rounded-lg p-2 transition-colors hover:bg-zinc-800 ${
+            className={`rounded-lg p-2 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 ${
               isBookmarked ? "text-emerald-400" : "text-zinc-400"
             } ${focusRingClasses}`}
           >

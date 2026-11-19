@@ -226,7 +226,7 @@ describe('FlightClearancePasscard Component', () => {
       json: async () => ({ success: true, offlinePasscard: renewedToken }),
     }) as jest.Mock;
 
-    render(
+    const { rerender } = render(
       <FlightClearancePasscard
         isOpen={true}
         onClose={jest.fn()}
@@ -248,6 +248,22 @@ describe('FlightClearancePasscard Component', () => {
         }),
       );
       expect(mockSaveOfflinePasscard).toHaveBeenCalledWith(renewedToken);
+    });
+
+    // Switching bookings must discard the refreshed token from the old booking.
+    mockGetOfflinePasscardRecord.mockResolvedValueOnce(null);
+    rerender(
+      <FlightClearancePasscard
+        isOpen={true}
+        onClose={jest.fn()}
+        bookingId="booking-next"
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-qrcode")).toHaveAttribute(
+        "data-value",
+        "https://workspace.sector.command/verify?code=GL-8940-SEC4",
+      );
     });
   });
 

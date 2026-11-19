@@ -29,6 +29,9 @@ describe("AudioContext tab visibility change handling", () => {
         resume: jest.fn(async () => {
           state = "running";
         }),
+        suspend: jest.fn(async () => {
+          state = "suspended";
+        }),
         close: jest.fn(async () => {
           state = "closed";
         }),
@@ -65,8 +68,12 @@ describe("AudioContext tab visibility change handling", () => {
         expect.any(Function),
       );
 
-      // Trigger context creation by preparing or playing
+      // Trigger context creation by preparing or playing. prepare() resumes
+      // the suspended context itself, so suspend it again (as the browser does
+      // for a background tab) before testing the visibility handler.
       await synth.prepare();
+      await (mockContext as unknown as { suspend: () => Promise<void> }).suspend();
+      (mockContext.resume as jest.Mock).mockClear();
 
       // Find the listener
       const listenerCall = addEventListenerSpy.mock.calls.find(

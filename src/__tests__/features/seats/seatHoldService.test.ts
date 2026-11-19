@@ -28,8 +28,8 @@ describe("seat hold duration across daylight-saving transitions (#8904)", () => 
   });
 
   it("calculates a fall-back midnight reservation by absolute elapsed time", () => {
-    const start = "2026-11-01T23:00:00-04:00";
-    const end = "2026-11-02T02:00:00-05:00";
+    const start = "2026-10-31T23:00:00-04:00";
+    const end = "2026-11-01T02:00:00-05:00";
 
     expect(calculateSeatHoldDurationMs(start, end)).toBe(4 * 60 * 60 * 1000);
   });

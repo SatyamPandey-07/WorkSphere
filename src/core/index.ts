@@ -46,6 +46,7 @@ export * from './trust/P2PLuggageEscrow';
 export * from './spatial/LiDARDeskScanner';
 export * from './spatial/GaussianVoxelEngine';
 export * from './spatial/PlaneMeshExtractor';
+export * from './gpu/MeshDecimatorCompute';
 export * from './agents/ActionItemSynthesizer';
 export * from './agents/AgentTaskPlanner';
 export * from './sustainability/EmbodiedCarbonEstimator';

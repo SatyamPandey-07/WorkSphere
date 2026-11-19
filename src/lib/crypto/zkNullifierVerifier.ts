@@ -1,12 +1,17 @@
- docs/wsl2-development-guide
- docs/local-docker-troubleshooting
+import { groth16 } from "snarkjs";
+import fs from "fs";
+import path from "path";
 
- feat/network-health-ai-diagnostic
+const BN254_MODULUS =
+  2188824287183927522246405745257275088548364400416034343698204186575808495617n;
+const MAX_BATCH_SIZE = 32;
 
- feat/cross-chain-escrow-zkp
- main
- main
- main
+export interface ZkpVerificationResult {
+  verified: boolean;
+  batchCount: number;
+  processedNullifiers: number;
+}
+
 export class ZkNullifierVerifier {
   private static MAX_BATCH_SIZE = 32;
 
@@ -14,8 +19,6 @@ export class ZkNullifierVerifier {
    * Chunks BN254 nullifier batch requests exceeding 32 nullifiers to prevent scalar field modulus overflow.
    */
   public static verifyBatchNullifiers(nullifiers: string[]): boolean {
-    console.log(`?? [ZKP Engine] Verifying batch of ${nullifiers.length} nullifiers...`);
-
     if (nullifiers.length > this.MAX_BATCH_SIZE) {
       const chunks = this.chunkArray(nullifiers, this.MAX_BATCH_SIZE);
       for (const chunk of chunks) {
@@ -29,7 +32,6 @@ export class ZkNullifierVerifier {
   }
 
   private static processChunk(chunk: string[]): boolean {
-    // Perform BN254 scalar field validation per chunk
     return chunk.every((n) => n.startsWith("0x") && n.length === 66);
   }
 
@@ -40,26 +42,7 @@ export class ZkNullifierVerifier {
     }
     return result;
   }
- docs/wsl2-development-guide
 
- docs/local-docker-troubleshooting
-
- feat/network-health-ai-diagnostic
-
-
-import { groth16 } from "snarkjs";
-
-const BN254_MODULUS =
-  2188824287183927522246405745257275088548364400416034343698204186575808495617n;
-const MAX_BATCH_SIZE = 32;
-
-export interface ZkpVerificationResult {
-  verified: boolean;
-  batchCount: number;
-  processedNullifiers: number;
-}
-
-export class ZkNullifierVerifier {
   /**
    * Safely chunks and verifies nullifiers within BN254 scalar field constraints
    */
@@ -108,9 +91,6 @@ export class ZkNullifierVerifier {
     return await groth16.verify(publicSignals, proof, proof);
   }
 }
-
-import fs from "fs";
-import path from "path";
 
 export interface ZkNullifierProof {
   proof: unknown;
@@ -272,8 +252,4 @@ export async function verifyZkNullifierProofs(
       }
     }),
   );
- main
- main
- main
- main
 }

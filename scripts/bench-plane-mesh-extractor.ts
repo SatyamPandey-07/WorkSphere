@@ -8,8 +8,8 @@
  * and isotropic Poisson-like outlier noise generated via pseudo-random LCG.
  */
 
-import { PlaneMeshExtractor } from '../src/core/spatial/PlaneMeshExtractor.ts';
-import type { Vec3 } from '../src/core/spatial/PlaneMeshExtractor.ts';
+import { PlaneMeshExtractor } from '../src/core/spatial/PlaneMeshExtractor';
+import type { Vec3 } from '../src/core/spatial/PlaneMeshExtractor';
 
 export interface BenchmarkMetrics {
     vertices: number;

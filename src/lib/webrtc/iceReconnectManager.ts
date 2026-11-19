@@ -261,7 +261,7 @@ export class ICEReconnectManager {
       return false;
     } finally {
       this.reconnectInFlight = false;
-      if (this.reconnectRequested && this.state !== 'closed') {
+      if (this.reconnectRequested && (this.state as ReconnectState) !== 'closed') {
         this.reconnectRequested = false;
         this.scheduleReconnect();
       }

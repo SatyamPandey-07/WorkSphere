@@ -1,110 +1,129 @@
-export interface Point3D {
+/**
+ * @file PlaneMeshExtractor.ts
+ * @description Extracts and classifies 3D planar surfaces (desks, floors, walls, ceilings)
+ * from LiDAR point clouds using iterative RANSAC, 2D convex hull projections, and indexed
+ * triangle mesh reconstruction for spatial digital twins.
+ */
+
+export interface Vec3 {
     x: number;
     y: number;
     z: number;
 }
 
+export type Point3D = Vec3;
+
+export interface Vec2 {
+    x: number;
+    y: number;
+}
+
 export interface PlaneEquation {
-    /** Unit normal vector [nx, ny, nz] */
-    normal: [number, number, number];
-    /** Signed distance scalar d in plane equation: nx*x + ny*y + nz*z + d = 0 */
+    a: number;
+    b: number;
+    c: number;
     d: number;
+    normal?: [number, number, number];
 }
 
-export interface ExtractedPlaneMesh {
-    id: string;
+export type SurfaceType = 'DESK' | 'FLOOR' | 'WALL' | 'CEILING' | 'UNKNOWN';
+
+export interface TriangleMesh {
+    vertices: number[]; // flat [x, y, z, x, y, z, ...]
+    normals: number[];  // flat [nx, ny, nz, ...]
+    indices: number[];  // triangle vertex index triplets [i0, i1, i2, ...]
+}
+
+export interface ExtractedPlane {
+    planeId: string;
+    surfaceType: SurfaceType;
     equation: PlaneEquation;
-    centroid: Point3D;
-    inliers: Point3D[];
-    inlierIndices: number[];
-    /** Flat Float32Array [x0, y0, z0, ...] suitable for Three.js BufferGeometry */
-    positions: Float32Array;
-    /** Flat Float32Array [nx, ny, nz, ...] guaranteed free of NaN/Infinity */
-    normals: Float32Array;
-    areaEstimateSqMeters: number;
+    center: Vec3;
+    normal: Vec3;
+    inliersCount: number;
+    areaSqMeters: number;
+    boundary2D: Vec2[];
+    boundary3D: Vec3[];
+    mesh: TriangleMesh;
+    dimensions: {
+        width: number;
+        depth: number;
+        height: number;
+    };
+    isErgonomicDesk?: boolean;
 }
 
-export interface RansacPlaneOptions {
-    /** Maximum RANSAC iterations per plane extraction pass (default: 250) */
-    maxIterations?: number;
-    /** Distance threshold in meters for a point to count as an inlier (default: 0.025m = 2.5cm) */
-    distanceThreshold?: number;
-    /** Minimum inlier count required to accept a plane (default: 12) */
-    minInliers?: number;
-    /** Maximum number of distinct planes to extract sequentially (default: 6) */
-    maxPlanes?: number;
-    /** Minimum squared edge length in m^2 to reject duplicate/coincident points (default: 1e-8) */
-    minEdgeLengthSq?: number;
-    /** Relative sine threshold for collinearity: sin(theta) <= collinearitySinEpsilon (default: 1e-4) */
-    collinearitySinEpsilon?: number;
-    /** Optional deterministic RNG returning [0, 1) for reproducible tests */
-    randomFn?: () => number;
+export type ExtractedPlaneMesh = ExtractedPlane;
+
+export interface RansacOptions {
+    distanceThreshold: number; // in meters (e.g. 0.03 m = 3 cm)
+    maxIterations: number;     // RANSAC trial iterations
+    minInliers: number;        // Minimum inliers to accept a plane
+    maxPlanes: number;         // Maximum number of planes to extract
 }
 
-const DEFAULT_MIN_EDGE_LENGTH_SQ = 1e-8;      // (0.1 mm)^2
-const DEFAULT_COLLINEARITY_SIN_EPS = 1e-4;    // ~0.0057 degrees
+export class PlaneMeshExtractor {
+    private options: RansacOptions;
 
-function isFinitePoint(p: Point3D): boolean {
-    return (
-        Number.isFinite(p.x) &&
-        Number.isFinite(p.y) &&
-        Number.isFinite(p.z)
-    );
-}
-
-/**
- * Computes a unit plane equation from three 3D points.
- * Returns `null` immediately if any point is non-finite, coincident/identical,
- * or collinear within scale-invariant tolerance—preventing zero-vector division
- * and `[NaN, NaN, NaN]` normal corruption.
- */
-export function fitPlaneFromTriplet(
-    p1: Point3D,
-    p2: Point3D,
-    p3: Point3D,
-    minEdgeLengthSq: number = DEFAULT_MIN_EDGE_LENGTH_SQ,
-    collinearitySinEpsilon: number = DEFAULT_COLLINEARITY_SIN_EPS
-): PlaneEquation | null {
-    if (!isFinitePoint(p1) || !isFinitePoint(p2) || !isFinitePoint(p3)) {
-        return null;
+    constructor(customOptions?: Partial<RansacOptions>) {
+        this.options = {
+            distanceThreshold: 0.03,
+            maxIterations: 200,
+            minInliers: 20,
+            maxPlanes: 6,
+            ...customOptions
+        };
     }
 
-    // Edge vectors u = p2 - p1, v = p3 - p1
-    const ux = p2.x - p1.x;
-    const uy = p2.y - p1.y;
-    const uz = p2.z - p1.z;
+    // --- Vector Math Utilities ---
 
-    const vx = p3.x - p1.x;
-    const vy = p3.y - p1.y;
-    const vz = p3.z - p1.z;
-
-    const uLenSq = ux * ux + uy * uy + uz * uz;
-    const vLenSq = vx * vx + vy * vy + vz * vz;
-
-    // Reject identical or near-coincident points
-    if (uLenSq <= minEdgeLengthSq || vLenSq <= minEdgeLengthSq) {
-        return null;
+    public static dot(a: Vec3, b: Vec3): number {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
-    // Cross product n = u x v
-    const nx = uy * vz - uz * vy;
-    const ny = uz * vx - ux * vz;
-    const nz = ux * vy - uy * vx;
-
-    const crossLenSq = nx * nx + ny * ny + nz * nz;
-
-    // Scale-invariant collinearity test:
-    // ||u x v||^2 = ||u||^2 * ||v||^2 * sin^2(theta)
-    // Rejects triplets lying on a single straight line regardless of scale.
-    const sinThresholdSq = collinearitySinEpsilon * collinearitySinEpsilon;
-    if (crossLenSq <= sinThresholdSq * uLenSq * vLenSq) {
-        return null;
+    public static cross(a: Vec3, b: Vec3): Vec3 {
+        return {
+            x: a.y * b.z - a.z * b.y,
+            y: a.z * b.x - a.x * b.z,
+            z: a.x * b.y - a.y * b.x
+        };
     }
+
+    public static norm(v: Vec3): number {
+        return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    }
+
+    public static normalize(v: Vec3): Vec3 {
+        const len = PlaneMeshExtractor.norm(v);
+        if (len === 0) return { x: 0, y: 1, z: 0 };
+        return { x: v.x / len, y: v.y / len, z: v.z / len };
+    }
+
+    public static subtract(a: Vec3, b: Vec3): Vec3 {
+        return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+    }
+
+    public static add(a: Vec3, b: Vec3): Vec3 {
+        return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+    }
+
+    public static scale(v: Vec3, s: number): Vec3 {
+        return { x: v.x * s, y: v.y * s, z: v.z * s };
+    }
+
+    // --- Plane Fitting & Distance ---
 
     /**
      * Fits a plane equation ax + by + cz + d = 0 from 3 points.
      */
     public static fitPlaneFrom3Points(p1: Vec3, p2: Vec3, p3: Vec3): PlaneEquation | null {
+        if (!p1 || !p2 || !p3) return null;
+        if (!Number.isFinite(p1.x) || !Number.isFinite(p1.y) || !Number.isFinite(p1.z) ||
+            !Number.isFinite(p2.x) || !Number.isFinite(p2.y) || !Number.isFinite(p2.z) ||
+            !Number.isFinite(p3.x) || !Number.isFinite(p3.y) || !Number.isFinite(p3.z)) {
+            return null;
+        }
+
         const v1 = PlaneMeshExtractor.subtract(p2, p1);
         const v2 = PlaneMeshExtractor.subtract(p3, p1);
         const normal = PlaneMeshExtractor.cross(v1, v2);
@@ -118,295 +137,286 @@ export function fitPlaneFromTriplet(
         const c = normal.z / len;
         const d = -(a * p1.x + b * p1.y + c * p1.z);
 
-        return { a, b, c, d };
+        return { a, b, c, d, normal: [a, b, c] };
     }
 
-    const invLen = 1 / crossLen;
-    let unitNx = nx * invLen;
-    let unitNy = ny * invLen;
-    let unitNz = nz * invLen;
-
-    // Canonicalize normal orientation (+Y upward preference for floors/desks, else +Z/+X)
-    if (
-        unitNy < -1e-6 ||
-        (Math.abs(unitNy) <= 1e-6 && unitNz < -1e-6) ||
-        (Math.abs(unitNy) <= 1e-6 && Math.abs(unitNz) <= 1e-6 && unitNx < 0)
-    ) {
-        unitNx = -unitNx;
-        unitNy = -unitNy;
-        unitNz = -unitNz;
-    }
-
-    const d = -(unitNx * p1.x + unitNy * p1.y + unitNz * p1.z);
-
-    if (!Number.isFinite(unitNx) || !Number.isFinite(unitNy) || !Number.isFinite(unitNz) || !Number.isFinite(d)) {
-        return null;
-    }
-
-    return {
-        normal: [unitNx, unitNy, unitNz],
-        d,
-    };
-}
-
-/**
- * Samples 3 distinct random indices in [0, count - 1].
- */
-function sampleDistinctTripletIndices(
-    count: number,
-    randomFn: () => number
-): [number, number, number] {
-    const i1 = Math.floor(randomFn() * count);
-
-    let i2 = Math.floor(randomFn() * (count - 1));
-    if (i2 >= i1) i2 += 1;
-
-    let i3 = Math.floor(randomFn() * (count - 2));
-    const first = Math.min(i1, i2);
-    const second = Math.max(i1, i2);
-    if (i3 >= first) i3 += 1;
-    if (i3 >= second) i3 += 1;
-
-    return [i1, i2, i3];
-}
-
-/**
- * Refines a plane equation over its consensus inliers via covariance / Newell normal averaging,
- * falling back to the RANSAC hypothesis plane if refined points are degenerate.
- */
-function refinePlaneFromInliers(
-    inliers: Point3D[],
-    fallbackEquation: PlaneEquation
-): { equation: PlaneEquation; centroid: Point3D } {
-    let cx = 0;
-    let cy = 0;
-    let cz = 0;
-
-    for (const p of inliers) {
-        cx += p.x;
-        cy += p.y;
-        cz += p.z;
-    }
-
-    const invCount = 1 / inliers.length;
-    const centroid: Point3D = {
-        x: cx * invCount,
-        y: cy * invCount,
-        z: cz * invCount,
-    };
-
-    // Re-anchor d to the inlier centroid using the validated unit normal
-    const [nx, ny, nz] = fallbackEquation.normal;
-    const refinedD = -(nx * centroid.x + ny * centroid.y + nz * centroid.z);
-
-    if (!Number.isFinite(refinedD)) {
-        return { equation: fallbackEquation, centroid };
-    }
-
-    return {
-        equation: {
-            normal: [nx, ny, nz],
-            d: refinedD,
-        },
-        centroid,
-    };
-}
-
-/**
- * Builds Three.js-compatible flat position and normal Float32Arrays from validated inliers.
- */
-function buildMeshBuffers(
-    inliers: Point3D[],
-    normal: [number, number, number]
-): { positions: Float32Array; normals: Float32Array } {
-    const positions = new Float32Array(inliers.length * 3);
-    const normals = new Float32Array(inliers.length * 3);
-    const [nx, ny, nz] = normal;
-
-    for (let i = 0; i < inliers.length; i++) {
-        const offset = i * 3;
-        positions[offset] = inliers[i].x;
-        positions[offset + 1] = inliers[i].y;
-        positions[offset + 2] = inliers[i].z;
-
-        normals[offset] = nx;
-        normals[offset + 1] = ny;
-        normals[offset + 2] = nz;
-    }
-
-    return { positions, normals };
-}
-
-/**
- * Estimates bounding planar surface area (in m^2) by projecting inliers onto the plane's local 2D basis.
- */
-function estimatePlanarArea(
-    inliers: Point3D[],
-    centroid: Point3D,
-    normal: [number, number, number]
-): number {
-    if (inliers.length < 3) return 0;
-
-    const [nx, ny, nz] = normal;
-    // Construct orthonormal basis (tangent, bitangent) perpendicular to normal
-    const refX = Math.abs(nx) < 0.9 ? 1 : 0;
-    const refY = Math.abs(nx) < 0.9 ? 0 : 1;
-    const refZ = 0;
-
-    let tx = ny * refZ - nz * refY;
-    let ty = nz * refX - nx * refZ;
-    let tz = nx * refY - ny * refX;
-    const tLen = Math.hypot(tx, ty, tz);
-    if (tLen === 0) return 0;
-    tx /= tLen;
-    ty /= tLen;
-    tz /= tLen;
-
-    const bx = ny * tz - nz * ty;
-    const by = nz * tx - nx * tz;
-    const bz = nx * ty - ny * tx;
-
-    let minU = Infinity;
-    let maxU = -Infinity;
-    let minV = Infinity;
-    let maxV = -Infinity;
-
-    for (const p of inliers) {
-        const dx = p.x - centroid.x;
-        const dy = p.y - centroid.y;
-        const dz = p.z - centroid.z;
-
-        const u = dx * tx + dy * ty + dz * tz;
-        const v = dx * bx + dy * by + dz * bz;
-
-        if (u < minU) minU = u;
-        if (u > maxU) maxU = u;
-        if (v < minV) minV = v;
-        if (v > maxV) maxV = v;
-    }
-
-    return Math.max(0, (maxU - minU) * (maxV - minV));
-}
-
-export class PlaneMeshExtractor {
     /**
-     * Extracts one or more planar surfaces (desks, floors, walls) from an indoor SLAM point cloud
-     * using degenerate-guarded RANSAC sampling. Never emits NaN normals even on 100% collinear input.
+     * Calculates perpendicular Euclidean distance from point to plane.
      */
-    public extractPlanes(
-        rawPoints: readonly Point3D[],
-        options: RansacPlaneOptions = {}
-    ): ExtractedPlaneMesh[] {
-        const {
-            maxIterations = 250,
-            distanceThreshold = 0.025,
-            minInliers = 12,
-            maxPlanes = 6,
-            minEdgeLengthSq = DEFAULT_MIN_EDGE_LENGTH_SQ,
-            collinearitySinEpsilon = DEFAULT_COLLINEARITY_SIN_EPS,
-            randomFn = Math.random,
-        } = options;
+    public static distanceToPlane(p: Vec3, plane: PlaneEquation): number {
+        return Math.abs(plane.a * p.x + plane.b * p.y + plane.c * p.z + plane.d);
+    }
 
-        // Filter out any non-finite sensor readings upfront
-        const cleanPoints: Array<{ point: Point3D; originalIndex: number }> = [];
-        for (let i = 0; i < rawPoints.length; i++) {
-            const p = rawPoints[i];
-            if (p && isFinitePoint(p)) {
-                cleanPoints.push({ point: p, originalIndex: i });
-            }
-        }
+    // --- RANSAC Multi-Plane Extraction ---
 
-        const effectiveMinInliers = Math.max(3, minInliers);
-        if (cleanPoints.length < effectiveMinInliers) {
-            return [];
-        }
+    /**
+     * Extracts multiple planar surfaces from raw point cloud.
+     */
+    public extractPlanes(points: Vec3[]): ExtractedPlane[] {
+        if (points.length < this.options.minInliers) return [];
 
-        const remaining = [...cleanPoints];
-        const extractedPlanes: ExtractedPlaneMesh[] = [];
+        const extractedPlanes: ExtractedPlane[] = [];
+        let remainingPoints = [...points];
 
-        for (let planeIdx = 0; planeIdx < maxPlanes; planeIdx++) {
-            if (remaining.length < effectiveMinInliers) {
-                break;
-            }
+        for (let planeIdx = 0; planeIdx < this.options.maxPlanes; planeIdx++) {
+            if (remainingPoints.length < this.options.minInliers) break;
 
-            let bestEquation: PlaneEquation | null = null;
-            let bestRemainingIndices: number[] = [];
+            const bestResult = this.ransacSinglePlane(remainingPoints);
+            if (!bestResult || bestResult.inliers.length < this.options.minInliers) break;
 
-            for (let iter = 0; iter < maxIterations; iter++) {
-                const [i1, i2, i3] = sampleDistinctTripletIndices(remaining.length, randomFn);
-
-                const candidatePlane = fitPlaneFromTriplet(
-                    remaining[i1].point,
-                    remaining[i2].point,
-                    remaining[i3].point,
-                    minEdgeLengthSq,
-                    collinearitySinEpsilon
-                );
-
-                // Immediately discard collinear or identical triplets before consensus scoring
-                if (!candidatePlane) {
-                    continue;
-                }
-
-                const [nx, ny, nz] = candidatePlane.normal;
-                const { d } = candidatePlane;
-                const inlierIdxList: number[] = [];
-
-                for (let idx = 0; idx < remaining.length; idx++) {
-                    const pt = remaining[idx].point;
-                    const dist = Math.abs(nx * pt.x + ny * pt.y + nz * pt.z + d);
-                    if (dist <= distanceThreshold) {
-                        inlierIdxList.push(idx);
-                    }
-                }
-
-                if (inlierIdxList.length > bestRemainingIndices.length) {
-                    bestRemainingIndices = inlierIdxList;
-                    bestEquation = candidatePlane;
-                }
-            }
-
-            if (!bestEquation || bestRemainingIndices.length < effectiveMinInliers) {
-                break;
-            }
-
-            const inlierSet = new Set(bestRemainingIndices);
-            const inliers: Point3D[] = [];
-            const originalIndices: number[] = [];
-            const nextRemaining: Array<{ point: Point3D; originalIndex: number }> = [];
-
-            for (let idx = 0; idx < remaining.length; idx++) {
-                if (inlierSet.has(idx)) {
-                    inliers.push(remaining[idx].point);
-                    originalIndices.push(remaining[idx].originalIndex);
-                } else {
-                    nextRemaining.push(remaining[idx]);
-                }
-            }
-
-            const { equation, centroid } = refinePlaneFromInliers(inliers, bestEquation);
-            const { positions, normals } = buildMeshBuffers(inliers, equation.normal);
-            const areaEstimateSqMeters = estimatePlanarArea(
-                inliers,
-                centroid,
-                equation.normal
+            // Formulate ExtractedPlane
+            const plane = this.constructPlaneData(
+                `plane-${planeIdx + 1}`,
+                bestResult.equation,
+                bestResult.inliers
             );
+            extractedPlanes.push(plane);
 
-            extractedPlanes.push({
-                id: `plane-${planeIdx + 1}`,
-                equation,
-                centroid,
-                inliers,
-                inlierIndices: originalIndices,
-                positions,
-                normals,
-                areaEstimateSqMeters,
-            });
-
-            remaining.length = 0;
-            remaining.push(...nextRemaining);
+            // Filter out inliers from remaining set
+            const inlierSet = new Set(bestResult.inliers);
+            remainingPoints = remainingPoints.filter(p => !inlierSet.has(p));
         }
 
         return extractedPlanes;
+    }
+
+    /**
+     * Executes single plane RANSAC pass over input point set.
+     */
+    private ransacSinglePlane(points: Vec3[]): { equation: PlaneEquation; inliers: Vec3[] } | null {
+        let maxInliers: Vec3[] = [];
+        let bestEquation: PlaneEquation | null = null;
+        const n = points.length;
+
+        for (let iter = 0; iter < this.options.maxIterations; iter++) {
+            // Select 3 random points
+            const i1 = Math.floor(Math.random() * n);
+            let i2 = Math.floor(Math.random() * n);
+            while (i2 === i1) i2 = Math.floor(Math.random() * n);
+            let i3 = Math.floor(Math.random() * n);
+            while (i3 === i1 || i3 === i2) i3 = Math.floor(Math.random() * n);
+
+            const eq = PlaneMeshExtractor.fitPlaneFrom3Points(points[i1], points[i2], points[i3]);
+            if (!eq) continue;
+
+            // Find inliers
+            const inliers: Vec3[] = [];
+            for (let i = 0; i < n; i++) {
+                if (PlaneMeshExtractor.distanceToPlane(points[i], eq) <= this.options.distanceThreshold) {
+                    inliers.push(points[i]);
+                }
+            }
+
+            if (inliers.length > maxInliers.length) {
+                maxInliers = inliers;
+                bestEquation = eq;
+            }
+        }
+
+        if (!bestEquation || maxInliers.length < this.options.minInliers) return null;
+        return { equation: bestEquation, inliers: maxInliers };
+    }
+
+    /**
+     * Constructs rich spatial plane metadata, 2D boundary, and triangle mesh.
+     */
+    private constructPlaneData(
+        planeId: string,
+        eq: PlaneEquation,
+        inliers: Vec3[]
+    ): ExtractedPlane {
+        // Compute Centroid
+        let sumX = 0, sumY = 0, sumZ = 0;
+        for (const p of inliers) {
+            sumX += p.x;
+            sumY += p.y;
+            sumZ += p.z;
+        }
+        const center: Vec3 = {
+            x: sumX / inliers.length,
+            y: sumY / inliers.length,
+            z: sumZ / inliers.length
+        };
+
+        const normal: Vec3 = { x: eq.a, y: eq.b, z: eq.c };
+
+        // Construct Orthonormal Basis on the Plane (u, v, normal)
+        let arbitrary: Vec3 = { x: 0, y: 1, z: 0 };
+        if (Math.abs(normal.y) > 0.9) arbitrary = { x: 1, y: 0, z: 0 };
+
+        const u = PlaneMeshExtractor.normalize(PlaneMeshExtractor.cross(normal, arbitrary));
+        const v = PlaneMeshExtractor.cross(normal, u);
+
+        // Project Inliers onto 2D Plane Coordinate Frame
+        const projected2D: Vec2[] = inliers.map(p => {
+            const rel = PlaneMeshExtractor.subtract(p, center);
+            return {
+                x: PlaneMeshExtractor.dot(rel, u),
+                y: PlaneMeshExtractor.dot(rel, v)
+            };
+        });
+
+        // Compute 2D Convex Hull (Boundary)
+        const hull2D = this.compute2DConvexHull(projected2D);
+        const areaSqMeters = this.computePolygonArea(hull2D);
+
+        // Compute Dimensions (bounding box along u and v axes)
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const p of projected2D) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
+        const width = Math.round((maxX - minX) * 100) / 100;
+        const depth = Math.round((maxY - minY) * 100) / 100;
+
+        // Unproject 2D Hull to 3D Boundary
+        const boundary3D: Vec3[] = hull2D.map(p2 => {
+            const worldP = PlaneMeshExtractor.add(
+                center,
+                PlaneMeshExtractor.add(
+                    PlaneMeshExtractor.scale(u, p2.x),
+                    PlaneMeshExtractor.scale(v, p2.y)
+                )
+            );
+            return worldP;
+        });
+
+        // Triangulate into 3D Mesh
+        const mesh = this.triangulateConvexHull(center, normal, boundary3D);
+
+        // Surface Semantic Classification
+        const surfaceType = this.classifySurface(normal, center.y);
+
+        // Ergonomic validation for desks
+        let isErgonomicDesk: boolean | undefined = undefined;
+        if (surfaceType === 'DESK') {
+            const validHeight = center.y >= 0.65 && center.y <= 0.85;
+            const maxDim = Math.max(width, depth);
+            const minDim = Math.min(width, depth);
+            const validWidth = maxDim >= 0.70;
+            const validDepth = minDim >= 0.45;
+            isErgonomicDesk = validHeight && validWidth && validDepth;
+        }
+
+        return {
+            planeId,
+            surfaceType,
+            equation: eq,
+            center,
+            normal,
+            inliersCount: inliers.length,
+            areaSqMeters: Math.round(areaSqMeters * 100) / 100,
+            boundary2D: hull2D,
+            boundary3D,
+            mesh,
+            dimensions: {
+                width,
+                depth,
+                height: Math.round(center.y * 100) / 100
+            },
+            isErgonomicDesk
+        };
+    }
+
+    /**
+     * Classifies surface type based on surface normal orientation and elevation.
+     */
+    public classifySurface(normal: Vec3, elevationY: number): SurfaceType {
+        const upDot = PlaneMeshExtractor.dot(normal, { x: 0, y: 1, z: 0 });
+
+        if (Math.abs(upDot) > 0.8) {
+            // Horizontal Surface
+            if (elevationY < 0.35) return 'FLOOR';
+            if (elevationY >= 0.60 && elevationY <= 1.05) return 'DESK';
+            if (elevationY > 2.0) return 'CEILING';
+            return 'UNKNOWN';
+        } else if (Math.abs(upDot) < 0.3) {
+            // Vertical Surface
+            return 'WALL';
+        }
+
+        return 'UNKNOWN';
+    }
+
+    /**
+     * 2D Convex Hull via Monotone Chain (Andrew's algorithm).
+     */
+    private compute2DConvexHull(points: Vec2[]): Vec2[] {
+        if (points.length <= 3) return [...points];
+
+        const sorted = [...points].sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+
+        const cross2D = (o: Vec2, a: Vec2, b: Vec2) =>
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+        // Lower hull
+        const lower: Vec2[] = [];
+        for (const p of sorted) {
+            while (lower.length >= 2 && cross2D(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+                lower.pop();
+            }
+            lower.push(p);
+        }
+
+        // Upper hull
+        const upper: Vec2[] = [];
+        for (let i = sorted.length - 1; i >= 0; i--) {
+            const p = sorted[i];
+            while (upper.length >= 2 && cross2D(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+                upper.pop();
+            }
+            upper.push(p);
+        }
+
+        lower.pop();
+        upper.pop();
+        return lower.concat(upper);
+    }
+
+    /**
+     * Computes polygon area using the 2D Shoelace formula.
+     */
+    private computePolygonArea(polygon: Vec2[]): number {
+        const n = polygon.length;
+        if (n < 3) return 0;
+
+        let area = 0;
+        for (let i = 0; i < n; i++) {
+            const j = (i + 1) % n;
+            area += polygon[i].x * polygon[j].y;
+            area -= polygon[j].x * polygon[i].y;
+        }
+        return Math.abs(area) / 2;
+    }
+
+    /**
+     * Triangulates a 3D convex boundary polygon into indexed triangle vertex arrays.
+     */
+    private triangulateConvexHull(center: Vec3, normal: Vec3, boundary3D: Vec3[]): TriangleMesh {
+        const vertices: number[] = [];
+        const normals: number[] = [];
+        const indices: number[] = [];
+
+        // Center vertex is index 0
+        vertices.push(center.x, center.y, center.z);
+        normals.push(normal.x, normal.y, normal.z);
+
+        // Boundary vertices start at index 1
+        for (let i = 0; i < boundary3D.length; i++) {
+            const b = boundary3D[i];
+            vertices.push(b.x, b.y, b.z);
+            normals.push(normal.x, normal.y, normal.z);
+        }
+
+        // Triangle fan from center
+        const m = boundary3D.length;
+        for (let i = 0; i < m; i++) {
+            const nextIdx = (i + 1) % m;
+            indices.push(0, i + 1, nextIdx + 1);
+        }
+
+        return { vertices, normals, indices };
     }
 }

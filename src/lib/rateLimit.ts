@@ -1,30 +1,20 @@
- feat/redis-rate-limiter
-export interface RateLimitOptions {
-  windowMs: number;
-  maxRequests: number;
-}
-
-const requestStore = new Map<string, { count: number; resetTime: number }>();
-
-export function checkRateLimit(ip: string, options: RateLimitOptions = { windowMs: 60000, maxRequests: 60 }): { allowed: boolean; remaining: number; reset: number } {
-
-/**
+﻿/**
  * Rate limiting utilities imported via `@/lib/rateLimit`.
  *
  * This file is what `@/lib/rateLimit` resolves to (a file takes precedence over
  * the `./rateLimit/` directory). It provides:
  *
- * - **Legacy sliding window** — {@link rateLimit}, {@link getRateLimitInfo}:
+ * - **Legacy sliding window** â€” {@link rateLimit}, {@link getRateLimitInfo}:
  *   boolean allow/deny per identifier.
- * - **Tiered sliding window** — {@link checkTieredRateLimit} and helpers:
+ * - **Tiered sliding window** â€” {@link checkTieredRateLimit} and helpers:
  *   anonymous (by IP) vs authenticated (by Clerk user ID) quotas from
  *   {@link TIER_CONFIGS}, plus HTTP header/429 helpers.
- * - **Token bucket** — re-exported from `./tokenBucketRateLimit`
+ * - **Token bucket** â€” re-exported from `./tokenBucketRateLimit`
  *   (`checkTokenBucketRateLimit`, `RATE_TIERS`, ...).
  *
  * **Storage.** When both `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
  * are set, limits are enforced in Upstash Redis and shared across instances.
- * Otherwise — or if a Redis call throws — an in-process memory store is used.
+ * Otherwise â€” or if a Redis call throws â€” an in-process memory store is used.
  * The memory store is per server instance (not shared between serverless
  * invocations or replicas), holds at most 10,000 keys with LRU eviction, and
  * drops expired keys every 60 s.
@@ -63,15 +53,15 @@ function getRedisClient() {
  *
  * Runs as a single script on the Redis server, so prune, count and write
  * cannot interleave between concurrent requests:
- * 1. `ZREMRANGEBYSCORE` — drop entries older than `now - windowMs`
- * 2. `ZCARD` — count entries left in the window
- * 3. `ZADD` — record `cost` entries if `count + cost <= limit`
- * 4. `PEXPIRE` — expire the key after `windowMs`
+ * 1. `ZREMRANGEBYSCORE` â€” drop entries older than `now - windowMs`
+ * 2. `ZCARD` â€” count entries left in the window
+ * 3. `ZADD` â€” record `cost` entries if `count + cost <= limit`
+ * 4. `PEXPIRE` â€” expire the key after `windowMs`
  *
- * - `KEYS[1]` — sorted-set key
- * - `ARGV[1]` limit (min 1) · `ARGV[2]` windowMs (min 1, default 60000) ·
- *   `ARGV[3]` now in epoch ms (`<= 0` uses Redis `TIME`) ·
- *   `ARGV[4]` unique member prefix (see {@link microTimestampMember}) ·
+ * - `KEYS[1]` â€” sorted-set key
+ * - `ARGV[1]` limit (min 1) Â· `ARGV[2]` windowMs (min 1, default 60000) Â·
+ *   `ARGV[3]` now in epoch ms (`<= 0` uses Redis `TIME`) Â·
+ *   `ARGV[4]` unique member prefix (see {@link microTimestampMember}) Â·
  *   `ARGV[5]` cost (default 1; `0` only inspects without recording)
  *
  * Returns `[allowed (1|0), remaining, resetEpochSeconds, retryAfterSeconds, count]`.
@@ -160,7 +150,7 @@ async function upstashRateLimit(
   }
 }
 
-// ─── In-memory fallback (development / no Redis) ─────────────────────────────
+// â”€â”€â”€ In-memory fallback (development / no Redis) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface MemEntry {
   timestamps: number[];
   resetTime: number;
@@ -288,7 +278,7 @@ function memGetInfo(
   };
 }
 
-// ─── Public API (Legacy) ─────────────────────────────────────────────────────
+// â”€â”€â”€ Public API (Legacy) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Sliding-window rate limit check that records the request when allowed.
@@ -402,7 +392,7 @@ export function resetRedisScripts(): void {
  * members unique when several requests share the same microsecond.
  *
  * @param sec - Whole seconds since the epoch.
- * @param usec - Microseconds within the second (0–999999).
+ * @param usec - Microseconds within the second (0â€“999999).
  * @param nonce - Random suffix.
  * @returns The member string.
  *
@@ -420,7 +410,7 @@ export function microTimestampMember(
   return `${sec}${padUsec}:${nonce}`;
 }
 
-// ─── Token Bucket Rate Limiting Exports (#3529) ──────────────────────────────
+// â”€â”€â”€ Token Bucket Rate Limiting Exports (#3529) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export {
   MemoryRateLimitStore,
   defaultMemoryStore,
@@ -449,7 +439,7 @@ export {
   type RateLimitResult,
 } from "./tokenBucketRateLimit";
 
-// ─── Tier-Based Sliding Window Rate Limiter (#3475) ──────────────────────────
+// â”€â”€â”€ Tier-Based Sliding Window Rate Limiter (#3475) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Quota tier for {@link checkTieredRateLimit}: by client IP or by Clerk user ID. */
 export type RateLimitTier = "anonymous" | "authenticated";
@@ -505,7 +495,7 @@ export interface TieredRateLimitResult {
 export interface CheckTieredRateLimitOptions {
   /**
    * Explicit user ID (e.g. tests or already-authenticated handlers). When the
-   * `userId` key is present — even as `undefined` or `null` — Clerk's `auth()`
+   * `userId` key is present â€” even as `undefined` or `null` â€” Clerk's `auth()`
    * is not called and an empty value means the anonymous tier. When the key is
    * absent, `auth()` from `@clerk/nextjs/server` is called.
    */
@@ -636,24 +626,67 @@ export function memTieredRateLimit(
   config: TierConfig = TIER_CONFIGS[tier] || TIER_CONFIGS.anonymous,
 ): TieredRateLimitResult {
   const safeConfig = config || TIER_CONFIGS[tier] || TIER_CONFIGS.anonymous;
- main
   const now = Date.now();
-  const record = requestStore.get(ip);
+  const windowMs =
+    typeof safeConfig.windowMs === "number" &&
+    Number.isFinite(safeConfig.windowMs) &&
+    safeConfig.windowMs > 0
+      ? safeConfig.windowMs
+      : 900_000;
+  const limit =
+    typeof safeConfig.limit === "number" &&
+    Number.isFinite(safeConfig.limit) &&
+    safeConfig.limit > 0
+      ? safeConfig.limit
+      : 10;
+  const key = `worksphere:ratelimit:${namespace}:${tier}:${identity}`;
 
-  if (!record || now > record.resetTime) {
-    const resetTime = now + options.windowMs;
-    requestStore.set(ip, { count: 1, resetTime });
-    return { allowed: true, remaining: options.maxRequests - 1, reset: resetTime };
+  let entry = memStore.get(key);
+  if (!entry) {
+    if (memStore.size >= MAX_MEM_ENTRIES) {
+      cleanupExpiredEntries();
+      while (memStore.size >= MAX_MEM_ENTRIES) {
+        const oldestKey = memStore.keys().next().value;
+        if (oldestKey === undefined) {
+          break;
+        }
+        memStore.delete(oldestKey);
+      }
+    }
+    entry = { timestamps: [], resetTime: now + windowMs };
+    memStore.set(key, entry);
+  } else {
+    // Refresh LRU order
+    memStore.delete(key);
+    memStore.set(key, entry);
   }
 
-  if (record.count >= options.maxRequests) {
-    return { allowed: false, remaining: 0, reset: record.resetTime };
+  // Prune timestamps older than sliding window
+  const windowStart = now - windowMs;
+  let firstValid = 0;
+  while (
+    firstValid < entry.timestamps.length &&
+    entry.timestamps[firstValid] <= windowStart
+  ) {
+    firstValid++;
+  }
+  if (firstValid > 0) {
+    entry.timestamps = entry.timestamps.slice(firstValid);
   }
 
- feat/redis-rate-limiter
-  record.count += 1;
-  return { allowed: true, remaining: options.maxRequests - record.count, reset: record.resetTime };
-}
+  if (entry.timestamps.length >= limit) {
+    const reset = entry.timestamps[0] + windowMs;
+    const retryAfter = Math.max(1, Math.ceil((reset - now) / 1000));
+    return {
+      allowed: false,
+      limit,
+      remaining: 0,
+      retryAfter,
+      reset,
+      tier,
+      identity,
+    };
+  }
 
   entry.timestamps.push(now);
   entry.resetTime = now + windowMs;
@@ -979,4 +1012,31 @@ export function resetTieredRateLimit(identifier?: string): void {
   resetRateLimit(identifier);
   upstashLimiters.clear();
 }
- main
+
+export interface RateLimitOptions {
+  windowMs: number;
+  maxRequests: number;
+}
+
+const simpleRequestStore = new Map<string, { count: number; resetTime: number }>();
+
+export function checkRateLimit(
+  ip: string,
+  options: RateLimitOptions = { windowMs: 60000, maxRequests: 60 },
+): { allowed: boolean; remaining: number; reset: number } {
+  const now = Date.now();
+  const record = simpleRequestStore.get(ip);
+
+  if (!record || now > record.resetTime) {
+    const resetTime = now + options.windowMs;
+    simpleRequestStore.set(ip, { count: 1, resetTime });
+    return { allowed: true, remaining: options.maxRequests - 1, reset: resetTime };
+  }
+
+  if (record.count >= options.maxRequests) {
+    return { allowed: false, remaining: 0, reset: record.resetTime };
+  }
+
+  record.count += 1;
+  return { allowed: true, remaining: options.maxRequests - record.count, reset: record.resetTime };
+}

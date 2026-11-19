@@ -48,6 +48,10 @@ export interface BFTCoordinatorConfig<T = unknown> {
   viewChangeTimeoutMs?: number;
   /** Ceiling for the exponentially backed-off view timeout (default: 30000) */
   maxViewChangeTimeoutMs?: number;
+  /** Maximum future-view distance accepted into the buffer (default: 10) */
+  maxFutureViewWindow?: number;
+  /** Maximum messages stored per future view (default: validators.length) */
+  maxBufferedMessagesPerView?: number;
   /** Called with the signed ViewChangeMessage to broadcast to peers when the view timer expires */
   onViewChangeBroadcast?: (msg: ViewChangeMessage) => void;
   onCommit?: (block: BlockProposal<T>, qc: QuorumCertificate) => void;
@@ -87,6 +91,12 @@ export class BFTConsensusCoordinator<T = unknown> {
   // View change votes: viewNumber -> Map<nodeId, ViewChangeMessage>
   private viewChangePool: Map<number, Map<string, ViewChangeMessage>> =
     new Map();
+  // Bounded buffer for valid future-view change messages: viewNumber -> Map<nodeId, ViewChangeMessage>
+  private futureViewChangeBuffer: Map<number, Map<string, ViewChangeMessage>> =
+    new Map();
+  public readonly maxFutureViewWindow: number;
+  public readonly maxBufferedMessagesPerView: number;
+  private isDrainingFutureViewBuffer = false;
 
   private committedBlocks: BlockProposal<T>[] = [];
   private lastCommitQC: QuorumCertificate | null = null;
@@ -116,6 +126,11 @@ export class BFTConsensusCoordinator<T = unknown> {
       config.maxViewChangeTimeoutMs ?? 30000,
     );
     this.currentViewTimeoutMs = this.viewChangeTimeoutMs;
+    this.maxFutureViewWindow = Math.max(1, config.maxFutureViewWindow ?? 10);
+    this.maxBufferedMessagesPerView = Math.max(
+      1,
+      config.maxBufferedMessagesPerView ?? this.validators.length,
+    );
     this.onViewChangeBroadcastCallback = config.onViewChangeBroadcast;
   }
 
@@ -469,7 +484,7 @@ export class BFTConsensusCoordinator<T = unknown> {
   }
 
   /**
-   * Ingests a View Change message and transitions views upon reaching 2f+1 quorum
+   * Ingests a View Change message, buffers future-view messages, and transitions views upon reaching 2f+1 quorum
    */
   public handleViewChange(
     msg: ViewChangeMessage,
@@ -478,6 +493,49 @@ export class BFTConsensusCoordinator<T = unknown> {
       return null;
     }
 
+    // Reject stale messages targeting views at or below currentView
+    if (msg.newView <= this.currentView) {
+      return null;
+    }
+
+    // Check if message is for a future view beyond the immediately eligible next view (currentView + 1)
+    if (msg.newView > this.currentView + 1) {
+      this.bufferFutureViewChangeMessage(msg);
+      return null;
+    }
+
+    // Message is for the immediately eligible next view (currentView + 1)
+    return this.applyEligibleViewChange(msg);
+  }
+
+  /**
+   * Bounded storage for future-view messages within allowed window
+   */
+  private bufferFutureViewChangeMessage(msg: ViewChangeMessage): void {
+    // Check distance limit: do not buffer views beyond maxFutureViewWindow
+    if (msg.newView > this.currentView + this.maxFutureViewWindow) {
+      return;
+    }
+
+    if (!this.futureViewChangeBuffer.has(msg.newView)) {
+      this.futureViewChangeBuffer.set(msg.newView, new Map());
+    }
+
+    const viewBuffer = this.futureViewChangeBuffer.get(msg.newView)!;
+    if (viewBuffer.size >= this.maxBufferedMessagesPerView && !viewBuffer.has(msg.fromNodeId)) {
+      return;
+    }
+
+    // Deduplicate by validator identity and target view
+    viewBuffer.set(msg.fromNodeId, msg);
+  }
+
+  /**
+   * Processes a view-change message for an active/eligible view and checks for quorum
+   */
+  private applyEligibleViewChange(
+    msg: ViewChangeMessage,
+  ): { newLeader: string; view: number } | null {
     if (!this.viewChangePool.has(msg.newView)) {
       this.viewChangePool.set(msg.newView, new Map());
     }
@@ -490,10 +548,76 @@ export class BFTConsensusCoordinator<T = unknown> {
       this.currentProposal = null;
       const newLeader = this.getLeaderForView(this.currentView);
       if (this.viewTimerActive) this.startViewTimer();
-      return { newLeader, view: this.currentView };
+
+      // Clean up stale entries from viewChangePool and futureViewChangeBuffer
+      this.cleanupStaleViewChangeEntries();
+
+      // Drain any buffered future-view messages that have now become eligible
+      const chainedTransition = this.drainFutureViewBuffer();
+      return chainedTransition ?? { newLeader, view: this.currentView };
     }
 
     return null;
+  }
+
+  /**
+   * Iteratively drains buffered messages for successively eligible views
+   */
+  private drainFutureViewBuffer(): { newLeader: string; view: number } | null {
+    if (this.isDrainingFutureViewBuffer) {
+      return null;
+    }
+
+    this.isDrainingFutureViewBuffer = true;
+    let latestTransition: { newLeader: string; view: number } | null = null;
+
+    try {
+      while (true) {
+        const nextEligibleView = this.currentView + 1;
+        const bufferedForNext = this.futureViewChangeBuffer.get(nextEligibleView);
+        if (!bufferedForNext || bufferedForNext.size === 0) {
+          break;
+        }
+
+        // Remove from buffer to prevent reprocessing
+        this.futureViewChangeBuffer.delete(nextEligibleView);
+
+        // Process all buffered messages for this now-eligible view
+        let transitioned = false;
+        for (const msg of bufferedForNext.values()) {
+          const res = this.applyEligibleViewChange(msg);
+          if (res) {
+            latestTransition = res;
+            transitioned = true;
+            break; // Transitioned to nextEligibleView, loop will continue for nextEligibleView + 1
+          }
+        }
+
+        if (!transitioned) {
+          break;
+        }
+      }
+    } finally {
+      this.isDrainingFutureViewBuffer = false;
+    }
+
+    return latestTransition;
+  }
+
+  /**
+   * Removes stale views from active pool and future buffer
+   */
+  private cleanupStaleViewChangeEntries(): void {
+    for (const view of Array.from(this.viewChangePool.keys())) {
+      if (view <= this.currentView) {
+        this.viewChangePool.delete(view);
+      }
+    }
+    for (const view of Array.from(this.futureViewChangeBuffer.keys())) {
+      if (view <= this.currentView) {
+        this.futureViewChangeBuffer.delete(view);
+      }
+    }
   }
 
   public getCurrentViewTimeoutMs(): number {

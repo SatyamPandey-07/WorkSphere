@@ -33,3 +33,7 @@ export {
   type CircadianOverride,
   type CircadianOverrideReason,
 } from "./CircadianLightingCard";
+export {
+  default as CircadianSliderControl,
+  type CircadianSliderControlProps,
+} from "./CircadianSliderControl";

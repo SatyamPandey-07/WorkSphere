@@ -22,10 +22,15 @@ jobs:
   auto-merge-linked-pr:
     name: Check Issue Link & Auto-Merge
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Auto-merge if linked to an issue
         uses: actions/github-script@v9
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             try {
               const owner = context.repo.owner;

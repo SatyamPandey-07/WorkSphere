@@ -74,10 +74,97 @@ export const MAX_CLOCK_SKEW_SECONDS = 300;
 export const MAX_VERIFICATION_KEYS = 10;
 /** Longest accepted text field, which keeps the token (and the QR) small. */
 export const MAX_FIELD_LENGTH = 128;
+/** Default maximum number of verified passcards retained in the LRU signature cache. */
+export const DEFAULT_VERIFICATION_CACHE_CAPACITY = 1000;
 
 const ECDSA_KEY_PARAMS = { name: "ECDSA", namedCurve: "P-256" } as const;
 const ECDSA_SIGN_PARAMS = { name: "ECDSA", hash: "SHA-256" } as const;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
+
+// -- LRU Signature Verification Cache (#8907) ----------------------------------------------------
+
+/**
+ * WeakMap assigning an opaque monotonic numeric ID to each CryptoKey reference.
+ * Used to securely isolate cache entries across different public verification keys
+ * without retaining key references in cache entry strings or leaking key structures.
+ */
+const keyIdMap = new WeakMap<CryptoKey, number>();
+let nextKeyId = 1;
+
+function getVerificationKeyId(key: CryptoKey): number {
+  let id = keyIdMap.get(key);
+  if (!id) {
+    id = nextKeyId++;
+    keyIdMap.set(key, id);
+  }
+  return id;
+}
+
+/**
+ * Computes a deterministic SHA-256 hash of the exact token string bytes and combines
+ * it with the verification key identifier to form a secure, collision-resistant cache key.
+ */
+async function computeVerificationCacheKey(
+  token: string,
+  key: CryptoKey,
+): Promise<string> {
+  const tokenBytes = stringToUint8Array(token);
+  const digestBuffer = await subtle().digest("SHA-256", bytesOf(tokenBytes));
+  const digestBytes = new Uint8Array(digestBuffer);
+  let hexDigest = "";
+  for (let i = 0; i < digestBytes.length; i++) {
+    hexDigest += digestBytes[i].toString(16).padStart(2, "0");
+  }
+  const keyId = getVerificationKeyId(key);
+  return `${keyId}:${hexDigest}`;
+}
+
+let verificationCacheCapacity = DEFAULT_VERIFICATION_CACHE_CAPACITY;
+/** Bounded LRU cache of cryptographically verified passcard payloads. */
+const verificationCache = new Map<string, OfflinePasscardPayload>();
+/** In-flight single-flight map to deduplicate concurrent verification calls for the same key. */
+const inFlightVerifications = new Map<string, Promise<boolean>>();
+
+/**
+ * Adjusts the LRU signature verification cache capacity.
+ * Trims existing entries if the new capacity is smaller than current cache size.
+ */
+export function setVerificationCacheCapacity(capacity: number): void {
+  const normalized = Math.floor(capacity);
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    throw new RangeError(
+      "Verification cache capacity must be a positive integer",
+    );
+  }
+  verificationCacheCapacity = normalized;
+  while (verificationCache.size > verificationCacheCapacity) {
+    const oldestKey = verificationCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      verificationCache.delete(oldestKey);
+    } else {
+      break;
+    }
+  }
+}
+
+/** Returns the current capacity limit of the verification cache. */
+export function getVerificationCacheCapacity(): number {
+  return verificationCacheCapacity;
+}
+
+/** Returns the current number of cached verified passcard signatures. */
+export function getVerificationCacheSize(): number {
+  return verificationCache.size;
+}
+
+/**
+ * Clears the verification LRU cache and aborts/clears in-flight single-flight promises.
+ * Primarily used for cache invalidation, key rotation, and isolated testing.
+ */
+export function clearVerificationCache(): void {
+  verificationCache.clear();
+  inFlightVerifications.clear();
+}
 
 function subtle(): SubtleCrypto {
   const api = globalThis.crypto?.subtle;
@@ -239,22 +326,63 @@ export async function verifyOfflinePasscard(
   const parts = splitToken(token);
   if (!parts) return { valid: false, reason: "malformed" };
 
-  let genuine = false;
-  try {
-    genuine = await subtle().verify(
-      ECDSA_SIGN_PARAMS,
-      verificationKey,
-      bytesOf(parts.signature),
-      bytesOf(parts.payloadBytes),
-    );
-  } catch {
-    genuine = false;
+  const cacheKey = await computeVerificationCacheKey(token, verificationKey);
+
+  // 1. Check LRU Verification Cache (fast path)
+  const cachedPayload = verificationCache.get(cacheKey);
+  let payload: OfflinePasscardPayload;
+
+  if (cachedPayload !== undefined) {
+    // Refresh LRU recency
+    verificationCache.delete(cacheKey);
+    verificationCache.set(cacheKey, cachedPayload);
+    payload = cachedPayload;
+  } else {
+    // 2. Single-flight deduplication for concurrent verifications
+    let inFlight = inFlightVerifications.get(cacheKey);
+    if (!inFlight) {
+      inFlight = (async () => {
+        try {
+          return await subtle().verify(
+            ECDSA_SIGN_PARAMS,
+            verificationKey,
+            bytesOf(parts.signature),
+            bytesOf(parts.payloadBytes),
+          );
+        } catch {
+          return false;
+        }
+      })();
+      inFlightVerifications.set(cacheKey, inFlight);
+    }
+
+    let genuine = false;
+    try {
+      genuine = await inFlight;
+    } finally {
+      // Ensure in-flight map is always cleared upon promise settlement
+      inFlightVerifications.delete(cacheKey);
+    }
+
+    if (!genuine) return { valid: false, reason: "bad-signature" };
+
+    const parsed = parsePayload(uint8ArrayToString(parts.payloadBytes));
+    if (!parsed) return { valid: false, reason: "malformed" };
+    payload = parsed;
+
+    // Insert into LRU verification cache only on success
+    if (verificationCache.has(cacheKey)) {
+      verificationCache.delete(cacheKey);
+    } else if (verificationCache.size >= verificationCacheCapacity) {
+      const oldestKey = verificationCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        verificationCache.delete(oldestKey);
+      }
+    }
+    verificationCache.set(cacheKey, payload);
   }
-  if (!genuine) return { valid: false, reason: "bad-signature" };
 
-  const payload = parsePayload(uint8ArrayToString(parts.payloadBytes));
-  if (!payload) return { valid: false, reason: "malformed" };
-
+  // 3. Temporal Validity Window Evaluation
   if (options.enforceWindow !== false) {
     const nowMs =
       options.now instanceof Date

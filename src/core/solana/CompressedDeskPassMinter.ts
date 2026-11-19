@@ -6,6 +6,8 @@
  */
 
 import { createHash } from "crypto";
+import sha3 from "js-sha3";
+const { keccak_256 } = sha3;
 
 export interface MerkleTreeConfig {
   maxDepth: number; // Tree depth (e.g., 14 => 16,384 leaves, 20 => 1,048,576 leaves)
@@ -44,6 +46,34 @@ export interface MerkleProof {
   proof: string[];
 }
 
+export interface CanopyNode {
+  level: number;
+  index: number;
+  hash: string;
+}
+
+export interface CanopySnapshot {
+  treeAddress: string;
+  root: string;
+  maxDepth: number;
+  canopyDepth: number;
+  nodes: CanopyNode[];
+}
+
+export interface CanopyProvider {
+  fetchCanopy(request: {
+    treeAddress: string;
+    root: string;
+    maxDepth: number;
+    canopyDepth: number;
+  }): Promise<CanopySnapshot>;
+}
+
+export interface CheckInResult {
+  asset: CompressedPassAsset;
+  root: string;
+}
+
 export interface BubblegumInstructionPayload {
   programId: string;
   action: "mintV1" | "transfer" | "burn";
@@ -64,6 +94,12 @@ export class CompressedDeskPassMinter {
   private leafToAssetId: Map<number, string> = new Map();
   private nextLeafIndex: number = 0;
   private currentRoot: Buffer;
+  private readonly canopyCache = new Map<
+    string,
+    { snapshot: CanopySnapshot; expiresAt: number }
+  >();
+  private readonly canopyRequests = new Map<string, Promise<CanopySnapshot>>();
+  private readonly canopyTtlMs = 30_000;
 
   constructor(config: MerkleTreeConfig) {
     if (config.maxDepth < 3 || config.maxDepth > 30) {
@@ -332,6 +368,29 @@ export class CompressedDeskPassMinter {
   }
 
   /**
+   * Verifies an asset proof and authorizes check-in. A proof is always checked
+   * against the current root; cached canopy data only supplies omitted siblings.
+   */
+  public async checkInPass(
+    assetId: string,
+    proof: MerkleProof,
+    provider?: CanopyProvider,
+  ): Promise<CheckInResult> {
+    const asset = this.assets.get(assetId);
+    if (!asset) throw new Error(`Asset ${assetId} not found.`);
+    if (asset.status !== "ACTIVE") {
+      throw new Error(`Cannot check in asset in status ${asset.status}.`);
+    }
+    if (proof.leaf !== asset.leafHash || proof.index !== asset.leafIndex) {
+      throw new Error("Proof does not match the requested asset.");
+    }
+    if (!(await this.verifyProofWithCanopy(proof, provider))) {
+      throw new Error("Invalid Merkle proof for check-in.");
+    }
+    return { asset, root: this.getRoot() };
+  }
+
+  /**
    * Generates the sibling proof path for a specific leaf index.
    */
   public getProofForLeaf(leafIndex: number): MerkleProof {
@@ -388,6 +447,13 @@ export class CompressedDeskPassMinter {
     leafIndex: number,
     rootHex: string,
   ): boolean {
+    if (!this.isHashHex(leafHex) || !this.isHashHex(rootHex) ||
+        !Number.isSafeInteger(leafIndex) || leafIndex < 0 || leafIndex >= this.getCapacity() ||
+        !Array.isArray(proofHex) || proofHex.length !== this.config.maxDepth ||
+        proofHex.some(hash => !this.isHashHex(hash))) {
+      return false;
+    }
+
     let current = Buffer.from(leafHex, "hex");
     let index = leafIndex;
 
@@ -401,6 +467,100 @@ export class CompressedDeskPassMinter {
     }
 
     return current.toString("hex") === rootHex;
+  }
+
+  /** Verifies either a full proof or a proof completed from a validated canopy snapshot. */
+  public verifyProofWithCanopy(
+    proof: MerkleProof,
+    canopy?: CanopySnapshot,
+  ): boolean {
+    if (!proof || !Array.isArray(proof.proof) || !this.isHashHex(proof.leaf) || !this.isHashHex(proof.root) ||
+        !Number.isSafeInteger(proof.index) || proof.index < 0 || proof.index >= this.getCapacity()) {
+      return false;
+    }
+    if (proof.proof.length === this.config.maxDepth) {
+      return this.verifyProof(proof.leaf, proof.proof, proof.index, proof.root) &&
+        proof.root === this.getRoot();
+    }
+
+    const truncatedLength = this.config.maxDepth - this.config.canopyDepth;
+    if (proof.proof.length !== truncatedLength || !canopy || !Array.isArray(canopy.nodes) ||
+        canopy.treeAddress !== this.config.treeAddress ||
+        canopy.root !== proof.root || canopy.root !== this.getRoot() ||
+        canopy.maxDepth !== this.config.maxDepth ||
+        canopy.canopyDepth !== this.config.canopyDepth ||
+        canopy.nodes.some(node => !this.isHashHex(node.hash) ||
+          !Number.isSafeInteger(node.level) || !Number.isSafeInteger(node.index))) {
+      return false;
+    }
+
+    const nodes = new Map(canopy.nodes.map(node => [`${node.level}:${node.index}`, node.hash]));
+    let current = Buffer.from(proof.leaf, "hex");
+    let index = proof.index;
+    for (let level = 0; level < truncatedLength; level++) {
+      const sibling = Buffer.from(proof.proof[level], "hex");
+      current = index % 2 === 1
+        ? this.hashNodes(sibling, current)
+        : this.hashNodes(current, sibling);
+      index = Math.floor(index / 2);
+    }
+    for (let level = truncatedLength; level < this.config.maxDepth; level++) {
+      const siblingIndex = index % 2 === 1 ? index - 1 : index + 1;
+      const siblingHex = nodes.get(`${level}:${siblingIndex}`);
+      if (!siblingHex) return false;
+      const sibling = Buffer.from(siblingHex, "hex");
+      current = index % 2 === 1
+        ? this.hashNodes(sibling, current)
+        : this.hashNodes(current, sibling);
+      index = Math.floor(index / 2);
+    }
+    return current.toString("hex") === proof.root;
+  }
+
+  /** Fetches and caches canopy data by tree identity and root, coalescing concurrent misses. */
+  public async getCanopySnapshot(
+    root: string = this.getRoot(),
+    provider?: CanopyProvider,
+  ): Promise<CanopySnapshot | undefined> {
+    if (!provider || !this.isHashHex(root)) return undefined;
+    const key = this.canopyCacheKey(root);
+    const cached = this.canopyCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.snapshot;
+    this.canopyCache.delete(key);
+    const existing = this.canopyRequests.get(key);
+    if (existing) return existing;
+
+    const request = provider.fetchCanopy({
+      treeAddress: this.config.treeAddress!,
+      root,
+      maxDepth: this.config.maxDepth,
+      canopyDepth: this.config.canopyDepth,
+    }).then(snapshot => {
+      if (!this.isValidCanopySnapshot(snapshot, root)) {
+        throw new Error("Incomplete or malformed canopy response.");
+      }
+      this.canopyCache.set(key, { snapshot, expiresAt: Date.now() + this.canopyTtlMs });
+      return snapshot;
+    }).finally(() => {
+      this.canopyRequests.delete(key);
+    });
+    this.canopyRequests.set(key, request);
+    return request;
+  }
+
+  /** Verifies a truncated proof after obtaining the current-root canopy on demand. */
+  public async verifyProofWithCachedCanopy(
+    proof: MerkleProof,
+    provider?: CanopyProvider,
+  ): Promise<boolean> {
+    if (!proof || !Array.isArray(proof.proof)) return false;
+    if (proof.proof.length === this.config.maxDepth) return this.verifyProofWithCanopy(proof);
+    try {
+      const snapshot = await this.getCanopySnapshot(proof.root, provider);
+      return snapshot ? this.verifyProofWithCanopy(proof, snapshot) : false;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -461,7 +621,32 @@ export class CompressedDeskPassMinter {
   // --- Private Helper Methods ---
 
   private hashNodes(left: Buffer, right: Buffer): Buffer {
-    return createHash("sha256").update(left).update(right).digest();
+    return Buffer.from(keccak_256.arrayBuffer(Buffer.concat([left, right])));
+  }
+
+  private isHashHex(value: unknown): value is string {
+    return typeof value === "string" && /^[0-9a-f]{64}$/i.test(value);
+  }
+
+  private canopyCacheKey(root: string): string {
+    return `${this.config.treeAddress}:${this.config.maxDepth}:${this.config.canopyDepth}:${root}`;
+  }
+
+  private isValidCanopySnapshot(snapshot: CanopySnapshot, root: string): boolean {
+    if (!snapshot || snapshot.treeAddress !== this.config.treeAddress || snapshot.root !== root ||
+        snapshot.maxDepth !== this.config.maxDepth || snapshot.canopyDepth !== this.config.canopyDepth ||
+        !Array.isArray(snapshot.nodes) ||
+        (this.config.canopyDepth > 0 && snapshot.nodes.length === 0)) return false;
+    const maxCanopyLevel = this.config.maxDepth - this.config.canopyDepth;
+    const seen = new Set<string>();
+    for (const node of snapshot.nodes) {
+      if (!Number.isSafeInteger(node.level) || node.level < maxCanopyLevel || node.level >= this.config.maxDepth ||
+          !Number.isSafeInteger(node.index) || node.index < 0 || !this.isHashHex(node.hash)) return false;
+      const key = `${node.level}:${node.index}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+    }
+    return true;
   }
 
   private computeEmptySubtree(depth: number): Buffer {

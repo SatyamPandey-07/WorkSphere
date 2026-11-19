@@ -1,6 +1,6 @@
-import { createHash } from 'crypto';
+import { createHash } from "crypto";
 
-export type BFTPhase = 'PREPARE' | 'PRE_COMMIT' | 'COMMIT' | 'DECIDED';
+export type BFTPhase = "PREPARE" | "PRE_COMMIT" | "COMMIT" | "DECIDED";
 
 export interface BFTVote {
   nodeId: string;
@@ -44,6 +44,12 @@ export interface BFTCoordinatorConfig<T = unknown> {
   nodeId: string;
   validators: string[];
   timeoutMs?: number;
+  /** Base wait before a view times out and a view change is requested (default: 5000) */
+  viewChangeTimeoutMs?: number;
+  /** Ceiling for the exponentially backed-off view timeout (default: 30000) */
+  maxViewChangeTimeoutMs?: number;
+  /** Called with the signed ViewChangeMessage to broadcast to peers when the view timer expires */
+  onViewChangeBroadcast?: (msg: ViewChangeMessage) => void;
   onCommit?: (block: BlockProposal<T>, qc: QuorumCertificate) => void;
   onSlash?: (nodeId: string, reason: string) => void;
 }
@@ -59,22 +65,35 @@ export class BFTConsensusCoordinator<T = unknown> {
   public readonly f: number; // Max Byzantine faults tolerated: floor((N - 1) / 3)
   public readonly quorumSize: number; // 2F + 1
   public readonly timeoutMs: number;
+  public readonly viewChangeTimeoutMs: number;
+  public readonly maxViewChangeTimeoutMs: number;
 
   private currentView: number = 0;
+  private viewTimer: ReturnType<typeof setTimeout> | null = null;
+  private viewTimerActive = false;
+  private disposed = false;
+  private currentViewTimeoutMs: number = 0;
+  private consecutiveFailedViews = 0;
+  private highestRequestedView = 0;
+  private onViewChangeBroadcastCallback?: (msg: ViewChangeMessage) => void;
   private currentSequence: number = 0;
   private currentProposal: BlockProposal<T> | null = null;
-  private currentPhase: BFTPhase = 'PREPARE';
+  private currentPhase: BFTPhase = "PREPARE";
 
   // State tracking: Phase -> Map<blockHash, Map<nodeId, BFTVote>>
   private votePool: Map<string, Map<string, BFTVote>> = new Map();
   // Equivocation tracking: "view:seq:phase:nodeId" -> vote
   private castVotes: Map<string, BFTVote> = new Map();
   // View change votes: viewNumber -> Map<nodeId, ViewChangeMessage>
-  private viewChangePool: Map<number, Map<string, ViewChangeMessage>> = new Map();
+  private viewChangePool: Map<number, Map<string, ViewChangeMessage>> =
+    new Map();
 
   private committedBlocks: BlockProposal<T>[] = [];
   private lastCommitQC: QuorumCertificate | null = null;
-  private onCommitCallback?: (block: BlockProposal<T>, qc: QuorumCertificate) => void;
+  private onCommitCallback?: (
+    block: BlockProposal<T>,
+    qc: QuorumCertificate,
+  ) => void;
   private onSlashCallback?: (nodeId: string, reason: string) => void;
 
   constructor(config: BFTCoordinatorConfig<T>) {
@@ -86,10 +105,18 @@ export class BFTConsensusCoordinator<T = unknown> {
     this.validators = [...config.validators].sort();
     const n = this.validators.length;
     this.f = Math.floor((n - 1) / 3);
-    this.quorumSize = 2 * this.f + 1 > 0 ? 2 * this.f + 1 : Math.floor((n * 2) / 3) + 1;
+    this.quorumSize =
+      2 * this.f + 1 > 0 ? 2 * this.f + 1 : Math.floor((n * 2) / 3) + 1;
     this.timeoutMs = config.timeoutMs ?? 5000;
     this.onCommitCallback = config.onCommit;
     this.onSlashCallback = config.onSlash;
+    this.viewChangeTimeoutMs = Math.max(1, config.viewChangeTimeoutMs ?? 5000);
+    this.maxViewChangeTimeoutMs = Math.max(
+      this.viewChangeTimeoutMs,
+      config.maxViewChangeTimeoutMs ?? 30000,
+    );
+    this.currentViewTimeoutMs = this.viewChangeTimeoutMs;
+    this.onViewChangeBroadcastCallback = config.onViewChangeBroadcast;
   }
 
   /**
@@ -124,17 +151,25 @@ export class BFTConsensusCoordinator<T = unknown> {
    * Computes deterministic SHA-256 hash of a block proposal payload
    */
   public static hashPayload(payload: unknown): string {
-    const canonicalJson = JSON.stringify(payload, Object.keys(payload as object || {}).sort());
-    return createHash('sha256').update(canonicalJson).digest('hex');
+    const canonicalJson = JSON.stringify(
+      payload,
+      Object.keys((payload as object) || {}).sort(),
+    );
+    return createHash("sha256").update(canonicalJson).digest("hex");
   }
 
   /**
    * Generates a block proposal (invoked by leader)
    */
-  public propose(payload: T, parentHash: string = '0000000000000000000000000000000000000000000000000000000000000000'): BlockProposal<T> {
+  public propose(
+    payload: T,
+    parentHash: string = "0000000000000000000000000000000000000000000000000000000000000000",
+  ): BlockProposal<T> {
     const leader = this.getCurrentLeader();
     if (this.nodeId !== leader) {
-      throw new Error(`Node ${this.nodeId} is not the designated leader for view ${this.currentView} (Leader: ${leader})`);
+      throw new Error(
+        `Node ${this.nodeId} is not the designated leader for view ${this.currentView} (Leader: ${leader})`,
+      );
     }
 
     const nextSeq = this.currentSequence + 1;
@@ -156,7 +191,7 @@ export class BFTConsensusCoordinator<T = unknown> {
 
     this.currentSequence = nextSeq;
     this.currentProposal = proposal;
-    this.currentPhase = 'PREPARE';
+    this.currentPhase = "PREPARE";
     return proposal;
   }
 
@@ -166,12 +201,16 @@ export class BFTConsensusCoordinator<T = unknown> {
   public handleProposal(proposal: BlockProposal<T>): BFTVote | null {
     const expectedLeader = this.getLeaderForView(proposal.view);
     if (proposal.proposerId !== expectedLeader) {
-      console.warn(`Proposal rejected: proposer ${proposal.proposerId} is not leader for view ${proposal.view}`);
+      console.warn(
+        `Proposal rejected: proposer ${proposal.proposerId} is not leader for view ${proposal.view}`,
+      );
       return null;
     }
 
     if (proposal.view < this.currentView) {
-      console.warn(`Proposal rejected: stale view ${proposal.view} < current ${this.currentView}`);
+      console.warn(
+        `Proposal rejected: stale view ${proposal.view} < current ${this.currentView}`,
+      );
       return null;
     }
 
@@ -186,17 +225,19 @@ export class BFTConsensusCoordinator<T = unknown> {
     });
 
     if (computedHash !== proposal.blockHash) {
-      console.warn(`Proposal rejected: hash mismatch (${computedHash} !== ${proposal.blockHash})`);
+      console.warn(
+        `Proposal rejected: hash mismatch (${computedHash} !== ${proposal.blockHash})`,
+      );
       return null;
     }
 
     this.currentProposal = proposal;
     this.currentView = proposal.view;
     this.currentSequence = proposal.sequence;
-    this.currentPhase = 'PREPARE';
+    this.currentPhase = "PREPARE";
 
     // Sign and return PREPARE vote
-    return this.createVote('PREPARE', proposal.blockHash);
+    return this.createVote("PREPARE", proposal.blockHash);
   }
 
   /**
@@ -204,13 +245,15 @@ export class BFTConsensusCoordinator<T = unknown> {
    */
   public handleVote(vote: BFTVote): QuorumCertificate | null {
     try {
-      if (!vote || typeof vote !== 'object') {
-        console.warn('Vote rejected: malformed vote payload');
+      if (!vote || typeof vote !== "object") {
+        console.warn("Vote rejected: malformed vote payload");
         return null;
       }
 
       if (!this.validators.includes(vote.nodeId)) {
-        console.warn(`Vote rejected: node ${vote.nodeId} is not an authorized validator`);
+        console.warn(
+          `Vote rejected: node ${vote.nodeId} is not an authorized validator`,
+        );
         return null;
       }
 
@@ -220,7 +263,7 @@ export class BFTConsensusCoordinator<T = unknown> {
       if (priorVote && priorVote.blockHash !== vote.blockHash) {
         this.slashValidator(
           vote.nodeId,
-          `Equivocation detected: signed conflicting hashes for view ${vote.view}, seq ${vote.sequence}, phase ${vote.phase}`
+          `Equivocation detected: signed conflicting hashes for view ${vote.view}, seq ${vote.sequence}, phase ${vote.phase}`,
         );
         return null;
       }
@@ -232,13 +275,15 @@ export class BFTConsensusCoordinator<T = unknown> {
       } catch (err: unknown) {
         console.warn(
           `Vote rejected: cryptographic signature verification threw exception for ${vote.nodeId}:`,
-          err instanceof Error ? err.message : String(err)
+          err instanceof Error ? err.message : String(err),
         );
         return null;
       }
 
       if (!isValidSignature) {
-        console.warn(`Vote rejected: invalid cryptographic signature from ${vote.nodeId}`);
+        console.warn(
+          `Vote rejected: invalid cryptographic signature from ${vote.nodeId}`,
+        );
         return null;
       }
 
@@ -275,7 +320,7 @@ export class BFTConsensusCoordinator<T = unknown> {
     } catch (err: unknown) {
       console.warn(
         `Vote processing failed unexpectedly for node ${vote?.nodeId}:`,
-        err instanceof Error ? err.message : String(err)
+        err instanceof Error ? err.message : String(err),
       );
       return null;
     }
@@ -284,15 +329,20 @@ export class BFTConsensusCoordinator<T = unknown> {
   /**
    * Ingests a vote with asynchronous worker verification and timeout guarding
    */
-  public async handleVoteAsync(vote: BFTVote, timeoutMs?: number): Promise<QuorumCertificate | null> {
+  public async handleVoteAsync(
+    vote: BFTVote,
+    timeoutMs?: number,
+  ): Promise<QuorumCertificate | null> {
     try {
-      if (!vote || typeof vote !== 'object') {
-        console.warn('Vote rejected: malformed vote payload');
+      if (!vote || typeof vote !== "object") {
+        console.warn("Vote rejected: malformed vote payload");
         return null;
       }
 
       if (!this.validators.includes(vote.nodeId)) {
-        console.warn(`Vote rejected: node ${vote.nodeId} is not an authorized validator`);
+        console.warn(
+          `Vote rejected: node ${vote.nodeId} is not an authorized validator`,
+        );
         return null;
       }
 
@@ -303,17 +353,19 @@ export class BFTConsensusCoordinator<T = unknown> {
         vote.sequence,
         vote.blockHash,
         vote.signature,
-        timeoutMs ?? this.timeoutMs
+        timeoutMs ?? this.timeoutMs,
       ).catch((err: unknown) => {
         console.warn(
           `Vote verification rejected due to unhandled promise:`,
-          err instanceof Error ? err.message : String(err)
+          err instanceof Error ? err.message : String(err),
         );
         return false;
       });
 
       if (!isValid) {
-        console.warn(`Vote rejected: invalid or timed-out cryptographic signature from ${vote.nodeId}`);
+        console.warn(
+          `Vote rejected: invalid or timed-out cryptographic signature from ${vote.nodeId}`,
+        );
         return null;
       }
 
@@ -321,7 +373,7 @@ export class BFTConsensusCoordinator<T = unknown> {
     } catch (err: unknown) {
       console.warn(
         `Async vote ingestion failed for node ${vote?.nodeId}:`,
-        err instanceof Error ? err.message : String(err)
+        err instanceof Error ? err.message : String(err),
       );
       return null;
     }
@@ -332,24 +384,33 @@ export class BFTConsensusCoordinator<T = unknown> {
    */
   public verifyQuorumCertificate(qc: QuorumCertificate): boolean {
     try {
-      if (!qc || !qc.signatures || typeof qc.signatures !== 'object') {
+      if (!qc || !qc.signatures || typeof qc.signatures !== "object") {
         return false;
       }
 
-      const validSignatures = Object.entries(qc.signatures).filter(([nodeId, sig]) => {
-        try {
-          if (!this.validators.includes(nodeId)) return false;
-          return this.verifyNodeSignature(nodeId, qc.phase, qc.view, qc.sequence, qc.blockHash, sig);
-        } catch {
-          return false;
-        }
-      });
+      const validSignatures = Object.entries(qc.signatures).filter(
+        ([nodeId, sig]) => {
+          try {
+            if (!this.validators.includes(nodeId)) return false;
+            return this.verifyNodeSignature(
+              nodeId,
+              qc.phase,
+              qc.view,
+              qc.sequence,
+              qc.blockHash,
+              sig,
+            );
+          } catch {
+            return false;
+          }
+        },
+      );
 
       return validSignatures.length >= this.quorumSize;
     } catch (err: unknown) {
       console.warn(
         `Quorum certificate verification failed:`,
-        err instanceof Error ? err.message : String(err)
+        err instanceof Error ? err.message : String(err),
       );
       return false;
     }
@@ -363,14 +424,18 @@ export class BFTConsensusCoordinator<T = unknown> {
       return;
     }
 
-    if (qc.phase === 'PREPARE') {
-      this.currentPhase = 'PRE_COMMIT';
-    } else if (qc.phase === 'PRE_COMMIT') {
-      this.currentPhase = 'COMMIT';
-    } else if (qc.phase === 'COMMIT') {
-      this.currentPhase = 'DECIDED';
+    if (qc.phase === "PREPARE") {
+      this.currentPhase = "PRE_COMMIT";
+    } else if (qc.phase === "PRE_COMMIT") {
+      this.currentPhase = "COMMIT";
+    } else if (qc.phase === "COMMIT") {
+      this.currentPhase = "DECIDED";
       this.lastCommitQC = qc;
-      if (this.currentProposal && this.currentProposal.blockHash === qc.blockHash) {
+      this.resetViewBackoff();
+      if (
+        this.currentProposal &&
+        this.currentProposal.blockHash === qc.blockHash
+      ) {
         this.committedBlocks.push(this.currentProposal);
         if (this.onCommitCallback) {
           this.onCommitCallback(this.currentProposal, qc);
@@ -382,11 +447,14 @@ export class BFTConsensusCoordinator<T = unknown> {
   /**
    * Generates a View Change message when pacemaker detects leader timeout
    */
-  public triggerViewChange(reason: string): ViewChangeMessage {
-    const targetView = this.currentView + 1;
-    const sig = createHash('sha256')
+  public triggerViewChange(
+    reason: string,
+    requestedView?: number,
+  ): ViewChangeMessage {
+    const targetView = requestedView ?? this.currentView + 1;
+    const sig = createHash("sha256")
       .update(`${this.nodeId}:NEW_VIEW:${targetView}:${reason}`)
-      .digest('hex');
+      .digest("hex");
 
     const msg: ViewChangeMessage = {
       fromNodeId: this.nodeId,
@@ -403,7 +471,9 @@ export class BFTConsensusCoordinator<T = unknown> {
   /**
    * Ingests a View Change message and transitions views upon reaching 2f+1 quorum
    */
-  public handleViewChange(msg: ViewChangeMessage): { newLeader: string; view: number } | null {
+  public handleViewChange(
+    msg: ViewChangeMessage,
+  ): { newLeader: string; view: number } | null {
     if (!this.validators.includes(msg.fromNodeId)) {
       return null;
     }
@@ -416,13 +486,84 @@ export class BFTConsensusCoordinator<T = unknown> {
 
     if (pool.size >= this.quorumSize && msg.newView > this.currentView) {
       this.currentView = msg.newView;
-      this.currentPhase = 'PREPARE';
+      this.currentPhase = "PREPARE";
       this.currentProposal = null;
       const newLeader = this.getLeaderForView(this.currentView);
+      if (this.viewTimerActive) this.startViewTimer();
       return { newLeader, view: this.currentView };
     }
 
     return null;
+  }
+
+  public getCurrentViewTimeoutMs(): number {
+    return this.currentViewTimeoutMs;
+  }
+
+  public getConsecutiveFailedViews(): number {
+    return this.consecutiveFailedViews;
+  }
+
+  /**
+   * Starts (or restarts) the view timer. If no valid commit QC arrives before it
+   * expires, a signed ViewChangeMessage is broadcast and the next timeout doubles
+   * (capped at maxViewChangeTimeoutMs).
+   */
+  public startViewTimer(): void {
+    if (this.disposed) return;
+    this.viewTimerActive = true;
+    this.clearViewTimerHandle();
+    const handle = setTimeout(
+      () => this.onViewTimeout(),
+      this.currentViewTimeoutMs,
+    );
+    (handle as unknown as { unref?: () => void }).unref?.();
+    this.viewTimer = handle;
+  }
+
+  public stopViewTimer(): void {
+    this.viewTimerActive = false;
+    this.clearViewTimerHandle();
+  }
+
+  /** Stops timers; call when the coordinator is no longer needed. */
+  public dispose(): void {
+    this.disposed = true;
+    this.stopViewTimer();
+  }
+
+  private clearViewTimerHandle(): void {
+    if (this.viewTimer !== null) {
+      clearTimeout(this.viewTimer);
+      this.viewTimer = null;
+    }
+  }
+
+  private resetViewBackoff(): void {
+    this.consecutiveFailedViews = 0;
+    this.currentViewTimeoutMs = this.viewChangeTimeoutMs;
+    if (this.viewTimerActive) this.startViewTimer();
+  }
+
+  private onViewTimeout(): void {
+    this.viewTimer = null;
+    if (this.disposed || !this.viewTimerActive) return;
+
+    const targetView =
+      Math.max(this.currentView, this.highestRequestedView) + 1;
+    this.highestRequestedView = targetView;
+
+    // Back off before signalling so any timer restart uses the longer interval.
+    const failed = this.consecutiveFailedViews;
+    this.consecutiveFailedViews++;
+    this.currentViewTimeoutMs = Math.min(
+      this.maxViewChangeTimeoutMs,
+      this.currentViewTimeoutMs * 2,
+    );
+
+    const msg = this.triggerViewChange(`view-timeout:${failed}`, targetView);
+    this.onViewChangeBroadcastCallback?.(msg);
+    this.startViewTimer();
   }
 
   /**
@@ -436,7 +577,10 @@ export class BFTConsensusCoordinator<T = unknown> {
       v1.phase === v2.phase &&
       v1.blockHash !== v2.blockHash
     ) {
-      this.slashValidator(v1.nodeId, 'Double-signing conflicting block hashes in same view/sequence');
+      this.slashValidator(
+        v1.nodeId,
+        "Double-signing conflicting block hashes in same view/sequence",
+      );
       return true;
     }
     return false;
@@ -454,7 +598,7 @@ export class BFTConsensusCoordinator<T = unknown> {
       phase,
       this.currentView,
       this.currentSequence,
-      blockHash
+      blockHash,
     );
 
     return {
@@ -473,11 +617,11 @@ export class BFTConsensusCoordinator<T = unknown> {
     phase: BFTPhase,
     view: number,
     sequence: number,
-    blockHash: string
+    blockHash: string,
   ): string {
-    return createHash('sha256')
+    return createHash("sha256")
       .update(`BFT_SIG:${nodeId}:${phase}:${view}:${sequence}:${blockHash}`)
-      .digest('hex');
+      .digest("hex");
   }
 
   /**
@@ -490,21 +634,34 @@ export class BFTConsensusCoordinator<T = unknown> {
     view: number,
     sequence: number,
     blockHash: string,
-    signature: string
+    signature: string,
   ): boolean {
     try {
-      if (!nodeId || !phase || view === undefined || sequence === undefined || !blockHash || !signature) {
+      if (
+        !nodeId ||
+        !phase ||
+        view === undefined ||
+        sequence === undefined ||
+        !blockHash ||
+        !signature
+      ) {
         return false;
       }
-      if (typeof signature !== 'string') {
+      if (typeof signature !== "string") {
         return false;
       }
-      const expected = this.generateSignature(nodeId, phase, view, sequence, blockHash);
+      const expected = this.generateSignature(
+        nodeId,
+        phase,
+        view,
+        sequence,
+        blockHash,
+      );
       return signature === expected;
     } catch (err: unknown) {
       console.warn(
         `Cryptographic signature verification failed for node ${nodeId}:`,
-        err instanceof Error ? err.message : String(err)
+        err instanceof Error ? err.message : String(err),
       );
       return false;
     }
@@ -520,17 +677,28 @@ export class BFTConsensusCoordinator<T = unknown> {
     sequence: number,
     blockHash: string,
     signature: string,
-    timeoutMs: number = 1000
+    timeoutMs: number = 1000,
   ): Promise<boolean> {
     try {
       let timer: ReturnType<typeof setTimeout> | null = null;
       const verifyPromise = new Promise<boolean>((resolve) => {
-        resolve(this.verifyNodeSignature(nodeId, phase, view, sequence, blockHash, signature));
+        resolve(
+          this.verifyNodeSignature(
+            nodeId,
+            phase,
+            view,
+            sequence,
+            blockHash,
+            signature,
+          ),
+        );
       });
 
       const timeoutPromise = new Promise<boolean>((_, reject) => {
         timer = setTimeout(() => {
-          reject(new Error(`Signature verification timed out after ${timeoutMs}ms`));
+          reject(
+            new Error(`Signature verification timed out after ${timeoutMs}ms`),
+          );
         }, timeoutMs);
       });
 
@@ -540,7 +708,7 @@ export class BFTConsensusCoordinator<T = unknown> {
     } catch (err: unknown) {
       console.warn(
         `Cryptographic signature verification failed or timed out for node ${nodeId}:`,
-        err instanceof Error ? err.message : String(err)
+        err instanceof Error ? err.message : String(err),
       );
       return false;
     }
@@ -548,7 +716,7 @@ export class BFTConsensusCoordinator<T = unknown> {
 
   public verifyVoteSignature(vote: BFTVote): boolean {
     try {
-      if (!vote || typeof vote !== 'object') {
+      if (!vote || typeof vote !== "object") {
         return false;
       }
       return this.verifyNodeSignature(
@@ -557,12 +725,12 @@ export class BFTConsensusCoordinator<T = unknown> {
         vote.view,
         vote.sequence,
         vote.blockHash,
-        vote.signature
+        vote.signature,
       );
     } catch (err: unknown) {
       console.warn(
         `Cryptographic signature verification error for vote from ${vote?.nodeId}:`,
-        err instanceof Error ? err.message : String(err)
+        err instanceof Error ? err.message : String(err),
       );
       return false;
     }

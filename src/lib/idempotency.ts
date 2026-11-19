@@ -1,7 +1,3 @@
- test/redlock-fencing-integration
-
- feat/idempotency-key-guard
- main
 import { createHash } from 'crypto';
 
 export interface IdempotencyRecord {
@@ -48,73 +44,98 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   async complete(key: string, status: number, body: unknown, expiresAt: number): Promise<void> {
     const current = this.records.get(key);
     if (!current) return;
-    this.records.set(key, { ...current, status, body, expiresAt });
+    this.records.set(key, {
+      ...current,
+      status,
+      body,
+      expiresAt,
+    });
   }
 
   async delete(key: string): Promise<void> {
     this.records.delete(key);
   }
+
+  clear(): void {
+    this.records.clear();
+  }
 }
 
-export function hashPayload(payload: unknown): string {
-  return createHash('sha256').update(JSON.stringify(payload ?? null)).digest('hex');
+export function hashIdempotencyPayload(payload: unknown): string {
+  const serialized = typeof payload === 'string' ? payload : JSON.stringify(payload ?? {});
+  return createHash('sha256').update(serialized).digest('hex');
 }
 
-export interface IdempotencyExecutionResult<T = unknown> {
+export interface RunWithIdempotencyOptions<T> {
+  key: string;
+  payload: unknown;
+  store: IdempotencyStore;
+  ttlMs?: number;
+  handler: () => Promise<{ status: number; body: T }>;
+}
+
+export interface RunWithIdempotencyResult<T> {
   status: number;
-  body: T;
+  body: T | { error: string };
   replayed: boolean;
 }
 
-export async function runWithIdempotency<T>(options: {
-  key: string | null | undefined;
-  payload: unknown;
-  store?: IdempotencyStore;
-  ttlMs?: number;
-  handler: () => Promise<{ status: number; body: T }>;
-}): Promise<IdempotencyExecutionResult<T>> {
-  const {
-    key,
-    payload,
-    store = defaultStore,
-    ttlMs = 24 * 60 * 60 * 1000,
-    handler,
-  } = options;
-
-  if (!key || !key.trim()) {
-    const res = await handler();
-    return { status: res.status, body: res.body, replayed: false };
+export async function runWithIdempotency<T>(
+  options: RunWithIdempotencyOptions<T>
+): Promise<RunWithIdempotencyResult<T>> {
+  const { key, payload, store, ttlMs = 24 * 60 * 60 * 1000, handler } = options;
+  const normalizedKey = key.trim();
+  if (!normalizedKey) {
+    return {
+      status: 400,
+      body: { error: 'Idempotency-Key header is required' },
+      replayed: false,
+    };
   }
 
-  const normalizedKey = key.trim();
-  const requestHash = hashPayload(payload);
-  const now = Date.now();
-  const expiresAt = now + ttlMs;
+  const currentPayloadHash = hashIdempotencyPayload(payload);
+  const existing = await store.get(normalizedKey);
 
-  const acquired = await store.setIfAbsent({
-    key: normalizedKey,
-    requestHash,
-    status: 202,
-    body: { status: 'IN_PROGRESS' },
-    expiresAt,
-  });
+  if (existing) {
+    if (existing.requestHash !== currentPayloadHash) {
+      return {
+        status: 409,
+        body: { error: 'Idempotency key reused with different request payload' },
+        replayed: false,
+      };
+    }
 
-  if (!acquired) {
-    const existing = await store.get(normalizedKey);
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        return {
-          status: 409,
-          body: { error: 'Idempotency-Key reused with a different request payload' } as unknown as T,
-          replayed: false,
-        };
-      }
+    if (existing.status !== 0) {
       return {
         status: existing.status,
         body: existing.body as T,
         replayed: true,
       };
     }
+  }
+
+  const locked = await store.setIfAbsent({
+    key: normalizedKey,
+    requestHash: currentPayloadHash,
+    status: 0,
+    body: null,
+    expiresAt: Date.now() + ttlMs,
+  });
+
+  if (!locked) {
+    const latest = await store.get(normalizedKey);
+    if (latest && latest.requestHash === currentPayloadHash && latest.status !== 0) {
+      return {
+        status: latest.status,
+        body: latest.body as T,
+        replayed: true,
+      };
+    }
+    return {
+      status: 409,
+      body: { error: 'Concurrent request in progress for this idempotency key' },
+      replayed: false,
+    };
   }
 
   try {
@@ -127,12 +148,7 @@ export async function runWithIdempotency<T>(options: {
   }
 }
 
- test/redlock-fencing-integration
-const defaultStore = new MemoryIdempotencyStore();
-
-const defaultStore = new MemoryIdempotencyStore();
-
-import crypto from "crypto";
+export const defaultStore = new MemoryIdempotencyStore();
 
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -152,7 +168,7 @@ const idempotencyStore = new Map<string, IdempotencyEntry>();
 
 export function computePayloadHash(payload: unknown): string {
   const serialized = JSON.stringify(payload ?? {});
-  return crypto.createHash("sha256").update(serialized).digest("hex");
+  return createHash("sha256").update(serialized).digest("hex");
 }
 
 export class IdempotencyConflictError extends Error {
@@ -214,5 +230,3 @@ export async function executeIdempotent(
 export function clearIdempotencyStore(): void {
   idempotencyStore.clear();
 }
- main
- main

@@ -140,33 +140,29 @@ export class StateVectorChecksumVerifier {
   }
 
   /**
-   * Generates a cache key based on length + sample bytes to identify identical payloads.
+   * Builds an exact cache key for small state vectors. Large CRDT snapshots are
+   * deliberately not cached: sampling only their head/middle/tail can collide
+   * when a peer reconnects with a different payload of the same length.
    */
-  private generatePayloadKey(bytes: Uint8Array): string {
-    const len = bytes.length;
-    if (len <= 64) {
-      return `${len}_${Array.from(bytes).join(',')}`;
-    }
-    // Sample head, middle, tail
-    const head = Array.from(bytes.subarray(0, 16)).join(',');
-    const mid = Array.from(bytes.subarray(Math.floor(len / 2), Math.floor(len / 2) + 16)).join(',');
-    const tail = Array.from(bytes.subarray(len - 16, len)).join(',');
-    return `${len}_${head}_${mid}_${tail}`;
+  private generatePayloadKey(bytes: Uint8Array): string | null {
+    if (bytes.length > 64) return null;
+    return `${bytes.length}_${Array.from(bytes).join(",")}`;
   }
 
   /**
-   * Retrieves or computes a SHA-256 digest with LRU cache memoization.
+   * Retrieves or computes a SHA-256 digest. Only small state vectors use the
+   * memoization cache; full snapshots are always hashed from their exact bytes.
    */
   public async getOrComputeDigest(bytes: Uint8Array): Promise<string> {
     const key = this.generatePayloadKey(bytes);
-    if (this.cache.has(key)) {
+    if (key !== null && this.cache.has(key)) {
       this.hits++;
       return this.cache.get(key)!;
     }
 
     this.misses++;
     const digest = await computeSha256Digest(bytes);
-    this.cacheSet(key, digest);
+    if (key !== null) this.cacheSet(key, digest);
     return digest;
   }
 
@@ -242,4 +238,17 @@ export class StateVectorChecksumVerifier {
     this.hits = 0;
     this.misses = 0;
   }
+}
+
+
+/**
+ * Shared verifier used by active CRDT synchronization surfaces. Peer disconnects
+ * invalidate this cache so a reconnected channel cannot reuse a digest retained
+ * from a previous session.
+ */
+export const sharedStateVectorChecksumVerifier =
+  new StateVectorChecksumVerifier();
+
+export function resetStateVectorChecksumCache(): void {
+  sharedStateVectorChecksumVerifier.clearCache();
 }

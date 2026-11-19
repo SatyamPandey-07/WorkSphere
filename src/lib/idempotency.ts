@@ -44,17 +44,78 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   async complete(key: string, status: number, body: unknown, expiresAt: number): Promise<void> {
     const current = this.records.get(key);
     if (!current) return;
+ feat/hybrid-logical-clock-sync
+    this.records.set(key, { ...current, status, body, expiresAt });
+
     this.records.set(key, {
       ...current,
       status,
       body,
       expiresAt,
     });
+ main
   }
 
   async delete(key: string): Promise<void> {
     this.records.delete(key);
   }
+ feat/hybrid-logical-clock-sync
+}
+
+export function hashPayload(payload: unknown): string {
+  return createHash('sha256').update(JSON.stringify(payload ?? null)).digest('hex');
+}
+
+export interface IdempotencyExecutionResult<T = unknown> {
+  status: number;
+  body: T;
+  replayed: boolean;
+}
+
+export async function runWithIdempotency<T>(options: {
+  key: string | null | undefined;
+  payload: unknown;
+  store?: IdempotencyStore;
+  ttlMs?: number;
+  handler: () => Promise<{ status: number; body: T }>;
+}): Promise<IdempotencyExecutionResult<T>> {
+  const {
+    key,
+    payload,
+    store = defaultStore,
+    ttlMs = 24 * 60 * 60 * 1000,
+    handler,
+  } = options;
+
+  if (!key || !key.trim()) {
+    const res = await handler();
+    return { status: res.status, body: res.body, replayed: false };
+  }
+
+  const normalizedKey = key.trim();
+  const requestHash = hashPayload(payload);
+  const now = Date.now();
+  const expiresAt = now + ttlMs;
+
+  const acquired = await store.setIfAbsent({
+    key: normalizedKey,
+    requestHash,
+    status: 202,
+    body: { status: 'IN_PROGRESS' },
+    expiresAt,
+  });
+
+  if (!acquired) {
+    const existing = await store.get(normalizedKey);
+    if (existing) {
+      if (existing.requestHash !== requestHash) {
+        return {
+          status: 409,
+          body: { error: 'Idempotency-Key reused with a different request payload' } as unknown as T,
+          replayed: false,
+        };
+      }
+
 
   clear(): void {
     this.records.clear();
@@ -106,6 +167,7 @@ export async function runWithIdempotency<T>(
     }
 
     if (existing.status !== 0) {
+ main
       return {
         status: existing.status,
         body: existing.body as T,
@@ -113,6 +175,8 @@ export async function runWithIdempotency<T>(
       };
     }
   }
+
+ feat/hybrid-logical-clock-sync
 
   const locked = await store.setIfAbsent({
     key: normalizedKey,
@@ -138,6 +202,7 @@ export async function runWithIdempotency<T>(
     };
   }
 
+ main
   try {
     const result = await handler();
     await store.complete(normalizedKey, result.status, result.body, Date.now() + ttlMs);
@@ -147,6 +212,9 @@ export async function runWithIdempotency<T>(
     throw err;
   }
 }
+
+ feat/hybrid-logical-clock-sync
+const defaultStore = new MemoryIdempotencyStore();
 
 export const defaultStore = new MemoryIdempotencyStore();
 
@@ -230,3 +298,4 @@ export async function executeIdempotent(
 export function clearIdempotencyStore(): void {
   idempotencyStore.clear();
 }
+ main

@@ -1,10 +1,13 @@
 "use client";
 
+ test/redlock-fencing-integration
+
  feat/idempotency-key-guard
 
  feat/cron-backup-db
 
  feat/realtime-sync-backoff-heartbeat
+ main
  main
  main
 import React from "react";
@@ -88,6 +91,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ test/redlock-fencing-integration
+}
+
  feat/idempotency-key-guard
 }
 
@@ -253,6 +259,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

@@ -1,4 +1,7 @@
+ test/redlock-fencing-integration
+
  feat/idempotency-key-guard
+ main
 import { createHash } from 'crypto';
 
 export interface IdempotencyRecord {
@@ -124,6 +127,9 @@ export async function runWithIdempotency<T>(options: {
   }
 }
 
+ test/redlock-fencing-integration
+const defaultStore = new MemoryIdempotencyStore();
+
 const defaultStore = new MemoryIdempotencyStore();
 
 import crypto from "crypto";
@@ -208,4 +214,5 @@ export async function executeIdempotent(
 export function clearIdempotencyStore(): void {
   idempotencyStore.clear();
 }
+ main
  main

@@ -60,10 +60,12 @@ export interface RansacOptions {
     maxIterations: number;     // RANSAC trial iterations
     minInliers: number;        // Minimum inliers to accept a plane
     maxPlanes: number;         // Maximum number of planes to extract
+    /** Voxel edge length in metres. Defaults to 0.05 m. */
+    voxelLeafSize?: number;
 }
 
 export class PlaneMeshExtractor {
-    private options: RansacOptions;
+    private options: Required<RansacOptions>;
 
     constructor(customOptions?: Partial<RansacOptions>) {
         this.options = {
@@ -71,8 +73,12 @@ export class PlaneMeshExtractor {
             maxIterations: 200,
             minInliers: 20,
             maxPlanes: 6,
-            ...customOptions
+            ...customOptions,
+            voxelLeafSize: customOptions?.voxelLeafSize === undefined ? 0.05 : customOptions.voxelLeafSize
         };
+        if (!Number.isFinite(this.options.voxelLeafSize) || this.options.voxelLeafSize <= 0) {
+            throw new RangeError('voxelLeafSize must be a finite number greater than zero');
+        }
     }
 
     // --- Vector Math Utilities ---
@@ -109,6 +115,54 @@ export class PlaneMeshExtractor {
 
     public static scale(v: Vec3, s: number): Vec3 {
         return { x: v.x * s, y: v.y * s, z: v.z * s };
+    }
+
+    /**
+     * Replaces each occupied cubic voxel with the arithmetic centroid of its points.
+     * Math.floor gives stable integer coordinates for negative values and boundaries.
+     */
+    public static downsamplePointCloud(points: Vec3[], leafSize: number): Vec3[] {
+        if (!Number.isFinite(leafSize) || leafSize <= 0) {
+            throw new RangeError('leafSize must be a finite number greater than zero');
+        }
+        if (points.length === 0) return [];
+
+        interface VoxelAccumulator { x: number; y: number; z: number; count: number; }
+        const voxels = new Map<string, VoxelAccumulator>();
+        for (const point of points) {
+            if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(point.z)) continue;
+            const voxelX = Math.floor(point.x / leafSize);
+            const voxelY = Math.floor(point.y / leafSize);
+            const voxelZ = Math.floor(point.z / leafSize);
+            const key = `${voxelX},${voxelY},${voxelZ}`;
+            const voxel = voxels.get(key);
+            if (voxel) {
+                voxel.x += point.x;
+                voxel.y += point.y;
+                voxel.z += point.z;
+                voxel.count++;
+            } else {
+                voxels.set(key, { x: point.x, y: point.y, z: point.z, count: 1 });
+            }
+        }
+
+        const downsampled: Vec3[] = new Array(voxels.size);
+        let index = 0;
+        for (const voxel of voxels.values()) {
+            downsampled[index++] = {
+                x: voxel.x / voxel.count,
+                y: voxel.y / voxel.count,
+                z: voxel.z / voxel.count
+            };
+        }
+        return downsampled;
+    }
+
+    private static planeSignature(plane: PlaneEquation): string {
+        const coefficients = [plane.a, plane.b, plane.c, plane.d];
+        const firstSignificant = coefficients.find(value => Math.abs(value) > 1e-12) ?? 1;
+        const orientation = firstSignificant < 0 ? -1 : 1;
+        return coefficients.map(value => Math.round(value * orientation * 1e6)).join(',');
     }
 
     // --- Plane Fitting & Distance ---
@@ -153,37 +207,88 @@ export class PlaneMeshExtractor {
      * Extracts multiple planar surfaces from raw point cloud.
      */
     public extractPlanes(points: Vec3[]): ExtractedPlane[] {
-        if (points.length < this.options.minInliers) return [];
+        return this.extractPlanesInternal(points, true);
+    }
+
+    /** Internal baseline hook used by the benchmark without expanding the public API. */
+    protected extractPlanesInternal(points: Vec3[], downsample: boolean): ExtractedPlane[] {
+        const originalPoints = points.filter(point =>
+            Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)
+        );
+        let remainingOriginalPoints = [...originalPoints];
+        let processedPoints = downsample
+            ? PlaneMeshExtractor.downsamplePointCloud(remainingOriginalPoints, this.options.voxelLeafSize)
+            : [...remainingOriginalPoints];
+        if (processedPoints.length < this.options.minInliers) return [];
 
         const extractedPlanes: ExtractedPlane[] = [];
-        let remainingPoints = [...points];
+        let remainingPoints = processedPoints;
+        const rejectedPlaneSignatures = new Set<string>();
+        let candidateAttempts = 0;
+        const maxCandidateAttempts = this.options.maxIterations + this.options.maxPlanes;
 
-        for (let planeIdx = 0; planeIdx < this.options.maxPlanes; planeIdx++) {
+        let planeIdx = 0;
+        while (planeIdx < this.options.maxPlanes && candidateAttempts < maxCandidateAttempts) {
             if (remainingPoints.length < this.options.minInliers) break;
 
-            const bestResult = this.ransacSinglePlane(remainingPoints);
+            const bestResult = this.ransacSinglePlane(remainingPoints, rejectedPlaneSignatures);
+            candidateAttempts++;
             if (!bestResult || bestResult.inliers.length < this.options.minInliers) break;
+
+            // RANSAC works on voxel centroids, but geometry must retain original detail.
+            const { inliers: originalInliers, nonInliers: originalNonInliers } =
+                this.recoverOriginalInliers(remainingOriginalPoints, bestResult.equation);
+            if (originalInliers.length < this.options.minInliers) {
+                // Keep the cloud intact: candidate voxels may also contain valid points.
+                // The signature prevents RANSAC from retrying the same invalid plane.
+                rejectedPlaneSignatures.add(PlaneMeshExtractor.planeSignature(bestResult.equation));
+                continue;
+            }
 
             // Formulate ExtractedPlane
             const plane = this.constructPlaneData(
                 `plane-${planeIdx + 1}`,
                 bestResult.equation,
-                bestResult.inliers
+                originalInliers
             );
             extractedPlanes.push(plane);
 
             // Filter out inliers from remaining set
-            const inlierSet = new Set(bestResult.inliers);
-            remainingPoints = remainingPoints.filter(p => !inlierSet.has(p));
+            remainingOriginalPoints = originalNonInliers;
+            processedPoints = downsample
+                ? PlaneMeshExtractor.downsamplePointCloud(remainingOriginalPoints, this.options.voxelLeafSize)
+                : [...remainingOriginalPoints];
+            remainingPoints = processedPoints;
+            planeIdx++;
         }
 
         return extractedPlanes;
     }
 
+    /** Recovers full-resolution geometry while partitioning points for the next plane. */
+    protected recoverOriginalInliers(
+        points: Vec3[],
+        equation: PlaneEquation
+    ): { inliers: Vec3[]; nonInliers: Vec3[] } {
+        const inliers: Vec3[] = [];
+        const nonInliers: Vec3[] = [];
+        for (const point of points) {
+            if (PlaneMeshExtractor.distanceToPlane(point, equation) <= this.options.distanceThreshold) {
+                inliers.push(point);
+            } else {
+                nonInliers.push(point);
+            }
+        }
+        return { inliers, nonInliers };
+    }
+
     /**
      * Executes single plane RANSAC pass over input point set.
      */
-    private ransacSinglePlane(points: Vec3[]): { equation: PlaneEquation; inliers: Vec3[] } | null {
+    protected ransacSinglePlane(
+        points: Vec3[],
+        rejectedPlaneSignatures: ReadonlySet<string> = new Set()
+    ): { equation: PlaneEquation; inliers: Vec3[] } | null {
         let maxInliers: Vec3[] = [];
         let bestEquation: PlaneEquation | null = null;
         const n = points.length;
@@ -198,6 +303,7 @@ export class PlaneMeshExtractor {
 
             const eq = PlaneMeshExtractor.fitPlaneFrom3Points(points[i1], points[i2], points[i3]);
             if (!eq) continue;
+            if (rejectedPlaneSignatures.has(PlaneMeshExtractor.planeSignature(eq))) continue;
 
             // Find inliers
             const inliers: Vec3[] = [];

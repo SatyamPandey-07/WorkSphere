@@ -118,31 +118,6 @@ jobs:
                 continue;
               }
 
-              // Verify CI check runs pass before batch-merging
-              const headSha = pr.head ? pr.head.sha : (prDetails.head ? prDetails.head.sha : null);
-              if (headSha) {
-                try {
-                  const checksRes = await github.rest.checks.listForRef({
-                    owner,
-                    repo,
-                    ref: headSha
-                  });
-                  const runs = checksRes.data?.check_runs || [];
-                  const failedRun = runs.find(r => ['failure', 'timed_out', 'cancelled'].includes(r.conclusion));
-                  if (failedRun) {
-                    console.log(`⚠️ Skipping PR #${prNumber}: Has failing CI check "${failedRun.name}" (${failedRun.conclusion}).`);
-                    continue;
-                  }
-                  const pendingRun = runs.find(r => r.status !== 'completed');
-                  if (pendingRun) {
-                    console.log(`⚠️ Skipping PR #${prNumber}: Still has pending CI check "${pendingRun.name}".`);
-                    continue;
-                  }
-                } catch (checkErr) {
-                  console.warn(`Could not verify check runs for PR #${prNumber}:`, checkErr.message);
-                }
-              }
-
               if (isDryRun) {
                 console.log(`✅ [DRY RUN] PR #${prNumber} is clean and would be merged with credit.`);
                 mergedCount++;

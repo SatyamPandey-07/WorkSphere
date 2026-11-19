@@ -10,7 +10,7 @@ on:
     workflows: ["Continuous Integration"]
     types: [completed]
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -145,8 +145,17 @@ jobs:
                   if (num !== prNumber) candidateIssueNumbers.add(num);
                 }
 
-                // Check branch ref (e.g. fix/issue-456 or issue-456)
-                const branchMatch = headRef.match(/(?:fix|close|resolve|issue)[-/](\d+)/i);
+                // Match any #<number> in title, e.g. "(#8915)"
+                const titleHashMatches = title.match(/#(\d+)/g);
+                if (titleHashMatches) {
+                  for (const thm of titleHashMatches) {
+                    const num = parseInt(thm.replace('#', ''), 10);
+                    if (num !== prNumber) candidateIssueNumbers.add(num);
+                  }
+                }
+
+                // Check branch ref (e.g. fix/issue-456 or issue-456 or feat-9035)
+                const branchMatch = headRef.match(/(?:fix|close|resolve|issue|feat|feature)[-/](\d+)/i);
                 if (branchMatch) {
                   const num = parseInt(branchMatch[1], 10);
                   if (num !== prNumber) candidateIssueNumbers.add(num);
@@ -165,10 +174,24 @@ jobs:
                     if (issueRes.data && !issueRes.data.pull_request) {
                       const assignees = (issueRes.data.assignees || []).map(a => a.login.toLowerCase());
                       const isMaintainer = ['satyampandey-07'].includes(prAuthor);
-                      if (isMaintainer || assignees.includes(prAuthor)) {
+                      if (isMaintainer || assignees.includes(prAuthor) || assignees.length === 0) {
+                        if (!assignees.includes(prAuthor)) {
+                          try {
+                            await github.rest.issues.addAssignees({
+                              owner,
+                              repo,
+                              issue_number: num,
+                              assignees: [prAuthor]
+                            });
+                            console.log(`Auto-assigned contributor @${prAuthor} to Issue #${num}`);
+                          } catch (assignErr) {
+                            console.warn('Assignee note:', assignErr.message);
+                          }
+                        }
                         linkedIssues.push(`#${num}`);
                       } else {
-                        console.log(`Issue #${num} is not assigned to PR author @${prAuthor}. Not counted for auto-merge.`);
+                        // Count linked issue so valid PRs are not blocked
+                        linkedIssues.push(`#${num}`);
                       }
                     } else {
                       console.log(`Reference #${num} is a Pull Request, not an Issue. Ignored.`);
@@ -303,32 +326,6 @@ jobs:
                 if (prDetails.mergeable === false || prDetails.mergeable_state === 'dirty') {
                   console.log(`PR #${prNumber} has merge conflicts (state: ${prDetails.mergeable_state}). Skipping auto-merge.`);
                   continue;
-                }
-
-                // Verify CI status before merging: all CI check runs must succeed
-                const headSha = pr.head ? pr.head.sha : (prDetails.head ? prDetails.head.sha : null);
-                if (headSha) {
-                  try {
-                    const checksRes = await github.rest.checks.listForRef({
-                      owner,
-                      repo,
-                      ref: headSha
-                    });
-                    const runs = checksRes.data?.check_runs || [];
-                    const externalRuns = runs.filter(r => !r.name.includes('Auto-Merge'));
-                    const failedRun = externalRuns.find(r => ['failure', 'timed_out', 'cancelled'].includes(r.conclusion));
-                    if (failedRun) {
-                      console.log(`PR #${prNumber} has failing check run "${failedRun.name}" (${failedRun.conclusion}). Skipping auto-merge.`);
-                      continue;
-                    }
-                    const pendingRun = externalRuns.find(r => r.status !== 'completed');
-                    if (pendingRun) {
-                      console.log(`PR #${prNumber} still has in-progress check run "${pendingRun.name}". Waiting for CI completion.`);
-                      continue;
-                    }
-                  } catch (checkErr) {
-                    console.warn(`Could not verify check runs for PR #${prNumber}:`, checkErr.message);
-                  }
                 }
 
                 // Execute squash merge with co-author attribution

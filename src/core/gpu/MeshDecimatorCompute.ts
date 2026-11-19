@@ -9,12 +9,8 @@
  */
 
 // WebGPU Buffer Usage bit flags as constants to safely load in environments without global GPUBufferUsage
-const BUFFER_USAGE_MAP_READ = 0x0001;
-const BUFFER_USAGE_MAP_WRITE = 0x0002;
 const BUFFER_USAGE_COPY_SRC = 0x0004;
 const BUFFER_USAGE_COPY_DST = 0x0008;
-const BUFFER_USAGE_INDEX = 0x0010;
-const BUFFER_USAGE_VERTEX = 0x0020;
 const BUFFER_USAGE_UNIFORM = 0x0040;
 const BUFFER_USAGE_STORAGE = 0x0080;
 
@@ -63,16 +59,104 @@ export interface DecimationResult {
   isManifold: boolean;
   /** Number of degenerate or zero-area triangles pruned */
   degenerateTrianglesPruned: number;
+  /** Adaptive workgroup size selected for WebGPU dispatch (null or undefined if CPU fallback) */
+  workgroupSize?: number;
+  /** Number of workgroup dispatches executed (null or undefined if CPU fallback) */
+  dispatchCount?: number;
+}
+
+export const SUPPORTED_WORKGROUP_SIZES = [64, 128, 256] as const;
+export type SupportedWorkgroupSize = (typeof SUPPORTED_WORKGROUP_SIZES)[number];
+export const DEFAULT_WORKGROUP_SIZE: SupportedWorkgroupSize = 64;
+
+export const SMALL_WORKLOAD_TRIANGLE_THRESHOLD = 2_048;
+export const MEDIUM_WORKLOAD_TRIANGLE_THRESHOLD = 32_768;
+
+export interface DeviceLimitsLike {
+  maxComputeWorkgroupSizeX?: number;
+  maxComputeInvocationsPerWorkgroup?: number;
+  maxComputeWorkgroupsPerDimension?: number;
 }
 
 /**
- * WGSL compute shader for computing per-triangle planes and accumulating Quadric Error Matrices.
- * A quadric for a plane [a, b, c, d] (ax + by + cz + d = 0) is represented as a symmetric 4x4 matrix:
- * Q = p * p^T
- * Stored compactly as 10 floats:
- * [q00, q01, q02, q03, q11, q12, q13, q22, q23, q33]
+ * Deterministically selects the optimal WebGPU workgroup size based on device limits and workload.
+ *
+ * Sizing strategy:
+ * - Triangle count < 2,048: Small workload -> 64 (reduces workgroup dispatch overhead and tail latency on underfilled wavefronts).
+ * - 2,048 <= Triangle count < 32,768: Medium workload -> 128 (balances occupancy and wavefront scheduling across standard GPU workgroups).
+ * - Triangle count >= 32,768: Large workload -> 256 (maximizes hardware occupancy and hides memory latency on high-throughput GPUs).
+ *
+ * Device limits constraints:
+ * - The chosen size must be <= device.limits.maxComputeWorkgroupSizeX (WebGPU default minimum: 256).
+ * - The chosen size must be <= device.limits.maxComputeInvocationsPerWorkgroup (WebGPU default minimum: 256).
+ * - If preferred size exceeds device limits, falls back to highest valid size in [256, 128, 64] or device maximum.
+ * - If device limits cannot even support 64 invocations, returns null (indicating safe fallback to CPU).
  */
-export const QEM_WGSL = /* wgsl */ `
+export function selectAdaptiveWorkgroupSize(
+  triangleCount: number,
+  limits?: DeviceLimitsLike,
+): SupportedWorkgroupSize | null {
+  const maxWorkgroupSizeX = limits?.maxComputeWorkgroupSizeX ?? 256;
+  const maxInvocations = limits?.maxComputeInvocationsPerWorkgroup ?? 256;
+  const maxSupportedLimit = Math.min(maxWorkgroupSizeX, maxInvocations);
+
+  if (maxSupportedLimit < 64) {
+    return null;
+  }
+
+  // Workload-informed target selection
+  let targetSize: SupportedWorkgroupSize;
+  if (triangleCount < SMALL_WORKLOAD_TRIANGLE_THRESHOLD) {
+    targetSize = 64;
+  } else if (triangleCount < MEDIUM_WORKLOAD_TRIANGLE_THRESHOLD) {
+    targetSize = 128;
+  } else {
+    targetSize = 256;
+  }
+
+  // Ensure targetSize does not exceed device limit; downgrade if necessary
+  if (targetSize > maxSupportedLimit) {
+    const validSizes = SUPPORTED_WORKGROUP_SIZES.filter(
+      (s) => s <= maxSupportedLimit,
+    );
+    if (validSizes.length === 0) {
+      return null;
+    }
+    return validSizes[validSizes.length - 1];
+  }
+
+  return targetSize;
+}
+
+/**
+ * Calculates safe dispatch workgroups for a 1D compute dispatch.
+ * Uses ceiling division and validates against maxComputeWorkgroupsPerDimension.
+ */
+export function calculateDispatchWorkgroups(
+  invocationCount: number,
+  workgroupSize: number,
+  maxWorkgroupsPerDim: number = 65535,
+): number {
+  if (
+    !Number.isFinite(invocationCount) ||
+    invocationCount <= 0 ||
+    workgroupSize <= 0
+  ) {
+    return 0;
+  }
+  const workgroups = Math.ceil(invocationCount / workgroupSize);
+  if (!Number.isFinite(workgroups) || workgroups < 0) {
+    return 0;
+  }
+  return Math.min(workgroups, maxWorkgroupsPerDim);
+}
+
+/**
+ * Generates the WGSL compute shader code for computing per-triangle planes
+ * and Quadric Error Matrices with the specified workgroup size.
+ */
+export function getQEMComputeWgsl(workgroupSize: number = 64): string {
+  return /* wgsl */ `
 struct TrianglePlane {
   a: f32,
   b: f32,
@@ -99,7 +183,7 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read> indices: array<u32>;
 @group(0) @binding(3) var<storage, read_write> quadrics: array<VertexQuadric>;
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(${workgroupSize})
 fn computeTriangleQuadrics(@builtin(global_invocation_id) global_id: vec3<u32>) {
   let triIdx = global_id.x;
   if (triIdx >= uniforms.triangleCount) {
@@ -142,6 +226,12 @@ fn computeTriangleQuadrics(@builtin(global_invocation_id) global_id: vec3<u32>) 
   // In workgroup or post-pass, quadric components are summed
 }
 `;
+}
+
+/**
+ * Backward compatibility: default WGSL compute shader with @workgroup_size(64).
+ */
+export const QEM_WGSL = getQEMComputeWgsl(64);
 
 /**
  * 10-element symmetric 4x4 matrix representation:
@@ -156,7 +246,12 @@ export function createQuadric(): Quadric {
   return new Float64Array(10);
 }
 
-export function quadricFromPlane(a: number, b: number, c: number, d: number): Quadric {
+export function quadricFromPlane(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+): Quadric {
   const q = new Float64Array(10);
   q[0] = a * a;
   q[1] = a * b;
@@ -182,7 +277,12 @@ export function addQuadrics(a: Quadric, b: Quadric, out?: Quadric): Quadric {
 /**
  * Evaluates the quadric error v^T * Q * v for a position [x, y, z, 1].
  */
-export function evaluateQuadricError(q: Quadric, x: number, y: number, z: number): number {
+export function evaluateQuadricError(
+  q: Quadric,
+  x: number,
+  y: number,
+  z: number,
+): number {
   return (
     x * x * q[0] +
     2 * x * y * q[1] +
@@ -210,8 +310,11 @@ export function solveOptimalVertexPosition(
   p1: [number, number, number],
   p2: [number, number, number],
 ): { position: [number, number, number]; error: number } {
-  const m00 = q[0], m01 = q[1], m02 = q[2];
-  const m11 = q[4], m12 = q[5];
+  const m00 = q[0],
+    m01 = q[1],
+    m02 = q[2];
+  const m11 = q[4],
+    m12 = q[5];
   const m22 = q[7];
 
   const det =
@@ -278,12 +381,23 @@ export function isWebGPUSupported(): boolean {
  */
 export class MeshDecimatorCompute {
   private device: GPUDevice | null = null;
-  private pipeline: GPUComputePipeline | null = null;
+  private pipelineCache: Map<SupportedWorkgroupSize, GPUComputePipeline> =
+    new Map();
+  private defaultPipeline: GPUComputePipeline | null = null;
   private isDestroyed = false;
 
-  private constructor(device: GPUDevice | null, pipeline: GPUComputePipeline | null) {
+  private constructor(
+    device: GPUDevice | null,
+    defaultPipeline: GPUComputePipeline | null,
+    initialPipelines?: Map<SupportedWorkgroupSize, GPUComputePipeline>,
+  ) {
     this.device = device;
-    this.pipeline = pipeline;
+    this.defaultPipeline = defaultPipeline;
+    if (initialPipelines) {
+      this.pipelineCache = new Map(initialPipelines);
+    } else if (defaultPipeline) {
+      this.pipelineCache.set(DEFAULT_WORKGROUP_SIZE, defaultPipeline);
+    }
   }
 
   /**
@@ -300,7 +414,9 @@ export class MeshDecimatorCompute {
     }
 
     if (!isWebGPUSupported()) {
-      options?.onFallback?.("WebGPU (navigator.gpu) is not supported in this environment");
+      options?.onFallback?.(
+        "WebGPU (navigator.gpu) is not supported in this environment",
+      );
       return new MeshDecimatorCompute(null, null);
     }
 
@@ -318,14 +434,34 @@ export class MeshDecimatorCompute {
       }
 
       const device = await adapter.requestDevice();
+
+      // Check device limits
+      const maxWorkgroupSizeX = device.limits?.maxComputeWorkgroupSizeX ?? 256;
+      const maxInvocations =
+        device.limits?.maxComputeInvocationsPerWorkgroup ?? 256;
+      if (Math.min(maxWorkgroupSizeX, maxInvocations) < 64) {
+        device.destroy?.();
+        options?.onFallback?.(
+          "GPU device compute limits below minimum workgroup size 64",
+        );
+        return new MeshDecimatorCompute(null, null);
+      }
+
       const shaderModule = device.createShaderModule({
         code: QEM_WGSL,
       });
 
       const info = await shaderModule.getCompilationInfo?.();
-      const errors = info?.messages?.filter((m) => m.type === "error") ?? [];
+      const errors =
+        info?.messages?.filter((m: { type: string }) => m.type === "error") ??
+        [];
       if (errors.length > 0) {
-        const errorMsg = errors.map((e) => `${e.lineNum}: ${e.message}`).join("; ");
+        const errorMsg = errors
+          .map(
+            (e: { lineNum?: number; message: string }) =>
+              `${e.lineNum ?? 0}: ${e.message}`,
+          )
+          .join("; ");
         device.destroy?.();
         options?.onFallback?.(`WGSL shader compilation error: ${errorMsg}`);
         return new MeshDecimatorCompute(null, null);
@@ -339,7 +475,10 @@ export class MeshDecimatorCompute {
         },
       });
 
-      return new MeshDecimatorCompute(device, pipeline);
+      const initialMap = new Map<SupportedWorkgroupSize, GPUComputePipeline>();
+      initialMap.set(DEFAULT_WORKGROUP_SIZE, pipeline);
+
+      return new MeshDecimatorCompute(device, pipeline, initialMap);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       options?.onFallback?.(`WebGPU initialization failed: ${reason}`);
@@ -352,6 +491,61 @@ export class MeshDecimatorCompute {
   }
 
   /**
+   * Returns device limits if device is available.
+   */
+  public get deviceLimits(): DeviceLimitsLike | null {
+    if (!this.device || this.isDestroyed) return null;
+    return this.device.limits;
+  }
+
+  /**
+   * Lazily gets or compiles a compute pipeline variant specialized for the given workgroup size.
+   */
+  public async getPipelineForWorkgroupSize(
+    workgroupSize: SupportedWorkgroupSize,
+  ): Promise<GPUComputePipeline> {
+    if (!this.device || this.isDestroyed) {
+      throw new Error("Cannot get pipeline: WebGPU device is not active");
+    }
+
+    const cached = this.pipelineCache.get(workgroupSize);
+    if (cached) {
+      return cached;
+    }
+
+    const wgsl = getQEMComputeWgsl(workgroupSize);
+    const shaderModule = this.device.createShaderModule({
+      code: wgsl,
+    });
+
+    const info = await shaderModule.getCompilationInfo?.();
+    const errors =
+      info?.messages?.filter((m: { type: string }) => m.type === "error") ?? [];
+    if (errors.length > 0) {
+      const errorMsg = errors
+        .map(
+          (e: { lineNum?: number; message: string }) =>
+            `${e.lineNum ?? 0}: ${e.message}`,
+        )
+        .join("; ");
+      throw new Error(
+        `WGSL shader compilation error for workgroup size ${workgroupSize}: ${errorMsg}`,
+      );
+    }
+
+    const pipeline = await this.device.createComputePipelineAsync({
+      layout: "auto",
+      compute: {
+        module: shaderModule,
+        entryPoint: "computeTriangleQuadrics",
+      },
+    });
+
+    this.pipelineCache.set(workgroupSize, pipeline);
+    return pipeline;
+  }
+
+  /**
    * Frees all GPU buffers and releases pipeline resources.
    */
   public destroy(): void {
@@ -361,7 +555,8 @@ export class MeshDecimatorCompute {
       this.device.destroy?.();
       this.device = null;
     }
-    this.pipeline = null;
+    this.pipelineCache.clear();
+    this.defaultPipeline = null;
   }
 
   /**
@@ -373,8 +568,14 @@ export class MeshDecimatorCompute {
   ): Promise<DecimationResult> {
     const startTime = performance.now();
 
-    const verts = mesh.vertices instanceof Float32Array ? mesh.vertices : new Float32Array(mesh.vertices);
-    const inds = mesh.indices instanceof Uint32Array ? mesh.indices : new Uint32Array(mesh.indices);
+    const verts =
+      mesh.vertices instanceof Float32Array
+        ? mesh.vertices
+        : new Float32Array(mesh.vertices);
+    const inds =
+      mesh.indices instanceof Uint32Array
+        ? mesh.indices
+        : new Uint32Array(mesh.indices);
 
     const initialVertexCount = Math.floor(verts.length / 3);
     const initialTriangleCount = Math.floor(inds.length / 3);
@@ -382,7 +583,10 @@ export class MeshDecimatorCompute {
     // Validation: empty or invalid mesh
     if (initialVertexCount < 3 || initialTriangleCount === 0) {
       return {
-        mesh: { vertices: new Float32Array(verts), indices: new Uint32Array(inds) },
+        mesh: {
+          vertices: new Float32Array(verts),
+          indices: new Uint32Array(inds),
+        },
         backend: this.backend,
         initialVertexCount,
         finalVertexCount: initialVertexCount,
@@ -395,22 +599,33 @@ export class MeshDecimatorCompute {
       };
     }
 
-    const targetRatio = Math.max(0.01, Math.min(1.0, options?.targetRatio ?? 0.25));
-    const targetVertexCount = options?.targetVertexCount !== undefined
-      ? Math.max(3, Math.min(initialVertexCount, options.targetVertexCount))
-      : Math.max(3, Math.floor(initialVertexCount * targetRatio));
+    const targetRatio = Math.max(
+      0.01,
+      Math.min(1.0, options?.targetRatio ?? 0.25),
+    );
+    const targetVertexCount =
+      options?.targetVertexCount !== undefined
+        ? Math.max(3, Math.min(initialVertexCount, options.targetVertexCount))
+        : Math.max(3, Math.floor(initialVertexCount * targetRatio));
 
     // Determine backend
     if (this.backend === "webgpu" && !options?.forceCpu) {
       try {
-        const gpuResult = await this.decimateWebGPU(verts, inds, targetVertexCount, options);
+        const gpuResult = await this.decimateWebGPU(
+          verts,
+          inds,
+          targetVertexCount,
+          options,
+        );
         const durationMs = performance.now() - startTime;
         return {
           ...gpuResult,
           durationMs,
         };
       } catch (err) {
-        options?.onFallback?.(`WebGPU execution failure, falling back to CPU: ${err}`);
+        options?.onFallback?.(
+          `WebGPU execution failure, falling back to CPU: ${err}`,
+        );
       }
     }
 
@@ -433,13 +648,28 @@ export class MeshDecimatorCompute {
     targetVertexCount: number,
     options?: DecimationOptions,
   ): Promise<Omit<DecimationResult, "durationMs">> {
-    if (!this.device || !this.pipeline) {
-      throw new Error("WebGPU device or pipeline not initialized");
+    if (!this.device) {
+      throw new Error("WebGPU device not initialized");
     }
 
     const device = this.device;
     const vertexCount = Math.floor(verts.length / 3);
     const triangleCount = Math.floor(inds.length / 3);
+
+    // Adaptive workgroup selection based on device limits and workload
+    const selectedWorkgroupSize = selectAdaptiveWorkgroupSize(
+      triangleCount,
+      device.limits,
+    );
+    if (!selectedWorkgroupSize) {
+      throw new Error(
+        "GPU device limits do not support compute workgroup size requirements",
+      );
+    }
+
+    const pipeline = await this.getPipelineForWorkgroupSize(
+      selectedWorkgroupSize,
+    );
 
     // Uniform buffer: [vertexCount, triangleCount, maxError, flags]
     const uniformData = new ArrayBuffer(16);
@@ -472,44 +702,61 @@ export class MeshDecimatorCompute {
     const quadricByteSize = Math.max(16, vertexCount * 10 * 4);
     const quadricBuffer = device.createBuffer({
       size: quadricByteSize,
-      usage: BUFFER_USAGE_STORAGE | BUFFER_USAGE_COPY_SRC | BUFFER_USAGE_COPY_DST,
+      usage:
+        BUFFER_USAGE_STORAGE | BUFFER_USAGE_COPY_SRC | BUFFER_USAGE_COPY_DST,
     });
 
-    const bindGroup = device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: uniformBuffer } },
-        { binding: 1, resource: { buffer: vertexBuffer } },
-        { binding: 2, resource: { buffer: indexBuffer } },
-        { binding: 3, resource: { buffer: quadricBuffer } },
-      ],
-    });
+    try {
+      const bindGroup = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: uniformBuffer } },
+          { binding: 1, resource: { buffer: vertexBuffer } },
+          { binding: 2, resource: { buffer: indexBuffer } },
+          { binding: 3, resource: { buffer: quadricBuffer } },
+        ],
+      });
 
-    const commandEncoder = device.createCommandEncoder();
-    const passEncoder = commandEncoder.beginComputePass();
-    passEncoder.setPipeline(this.pipeline);
-    passEncoder.setBindGroup(0, bindGroup);
-    const workgroups = Math.ceil(triangleCount / 64);
-    if (workgroups > 0) {
-      passEncoder.dispatchWorkgroups(workgroups);
+      const maxWorkgroupsPerDim =
+        device.limits?.maxComputeWorkgroupsPerDimension ?? 65535;
+      const workgroups = calculateDispatchWorkgroups(
+        triangleCount,
+        selectedWorkgroupSize,
+        maxWorkgroupsPerDim,
+      );
+
+      const commandEncoder = device.createCommandEncoder();
+      const passEncoder = commandEncoder.beginComputePass();
+      passEncoder.setPipeline(pipeline);
+      passEncoder.setBindGroup(0, bindGroup);
+      if (workgroups > 0) {
+        passEncoder.dispatchWorkgroups(workgroups);
+      }
+      passEncoder.end();
+
+      device.queue.submit([commandEncoder.finish()]);
+      await device.queue.onSubmittedWorkDone?.();
+
+      // Fast and robust edge-collapse topological reduction
+      const cpuResult = this.decimateCPU(
+        verts,
+        inds,
+        targetVertexCount,
+        options,
+      );
+      return {
+        ...cpuResult,
+        backend: "webgpu",
+        workgroupSize: selectedWorkgroupSize,
+        dispatchCount: workgroups,
+      };
+    } finally {
+      // Destroy transient buffers to prevent memory leaks even on error
+      uniformBuffer.destroy?.();
+      vertexBuffer.destroy?.();
+      indexBuffer.destroy?.();
+      quadricBuffer.destroy?.();
     }
-    passEncoder.end();
-
-    device.queue.submit([commandEncoder.finish()]);
-    await device.queue.onSubmittedWorkDone?.();
-
-    // Destroy transient buffers to prevent memory leaks
-    uniformBuffer.destroy?.();
-    vertexBuffer.destroy?.();
-    indexBuffer.destroy?.();
-    quadricBuffer.destroy?.();
-
-    // Fast and robust edge-collapse topological reduction
-    const cpuResult = this.decimateCPU(verts, inds, targetVertexCount, options);
-    return {
-      ...cpuResult,
-      backend: "webgpu",
-    };
   }
 
   /**
@@ -545,8 +792,12 @@ export class MeshDecimatorCompute {
       const p1 = pos[i1];
       const p2 = pos[i2];
 
-      const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
-      const bx = p2[0] - p0[0], by = p2[1] - p0[1], bz = p2[2] - p0[2];
+      const ax = p1[0] - p0[0],
+        ay = p1[1] - p0[1],
+        az = p1[2] - p0[2];
+      const bx = p2[0] - p0[0],
+        by = p2[1] - p0[1],
+        bz = p2[2] - p0[2];
 
       const nx = ay * bz - az * by;
       const ny = az * bx - ax * bz;
@@ -578,7 +829,10 @@ export class MeshDecimatorCompute {
     }
 
     const edgeMap = new Map<string, { u: number; v: number; count: number }>();
-    const vertexTriangles: number[][] = Array.from({ length: initialVertexCount }, () => []);
+    const vertexTriangles: number[][] = Array.from(
+      { length: initialVertexCount },
+      () => [],
+    );
 
     for (let t = 0; t < initialTriangleCount; t++) {
       const i0 = indices[t * 3];
@@ -627,12 +881,19 @@ export class MeshDecimatorCompute {
       const v = edge.v;
 
       // If preserving boundaries, both vertices must be boundary or both non-boundary
-      if (options?.preserveBoundaries && isBoundaryVertex[u] !== isBoundaryVertex[v]) {
+      if (
+        options?.preserveBoundaries &&
+        isBoundaryVertex[u] !== isBoundaryVertex[v]
+      ) {
         continue;
       }
 
       addQuadrics(quadrics[u], quadrics[v], combinedQ);
-      const { position, error } = solveOptimalVertexPosition(combinedQ, pos[u], pos[v]);
+      const { position, error } = solveOptimalVertexPosition(
+        combinedQ,
+        pos[u],
+        pos[v],
+      );
 
       if (error <= maxError) {
         candidates.push({
@@ -684,19 +945,11 @@ export class MeshDecimatorCompute {
 
       // Link condition / topology check: collapsing an isolated single triangle collapses the entire face
       // If collapsing this edge would eliminate all triangles of an isolated component, prevent it unless activeVertices must reduce
-      let remainingFaces = 0;
-      for (const t of triSet) {
-        const i0 = find(indices[t * 3]);
-        const i1 = find(indices[t * 3 + 1]);
-        const i2 = find(indices[t * 3 + 2]);
-        if (i0 !== i1 && i1 !== i2 && i2 !== i0) {
-          remainingFaces++;
-        }
-      }
-      // Collapsing an edge of a triangle reduces 1 face. If all incident faces collapse, it wipes the face completely.
-      // An edge collapse on a triangle with 3 vertices reduces it to a degenerate line segment.
-      // In QEM, isolated triangles are not collapsed into points unless requested.
-      if (triSet.size <= 1 && triSet.size === vertexTriangles[rU].length && triSet.size === vertexTriangles[rV].length) {
+      if (
+        triSet.size <= 1 &&
+        triSet.size === vertexTriangles[rU].length &&
+        triSet.size === vertexTriangles[rV].length
+      ) {
         continue;
       }
 
@@ -709,12 +962,16 @@ export class MeshDecimatorCompute {
         if (i0 === i1 || i1 === i2 || i2 === i0) continue;
 
         // Check if triangle would invert orientation
-        const p0 = (i0 === rU || i0 === rV) ? cand.targetPos : pos[i0];
-        const p1 = (i1 === rU || i1 === rV) ? cand.targetPos : pos[i1];
-        const p2 = (i2 === rU || i2 === rV) ? cand.targetPos : pos[i2];
+        const p0 = i0 === rU || i0 === rV ? cand.targetPos : pos[i0];
+        const p1 = i1 === rU || i1 === rV ? cand.targetPos : pos[i1];
+        const p2 = i2 === rU || i2 === rV ? cand.targetPos : pos[i2];
 
-        const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
-        const bx = p2[0] - p0[0], by = p2[1] - p0[1], bz = p2[2] - p0[2];
+        const ax = p1[0] - p0[0],
+          ay = p1[1] - p0[1],
+          az = p1[2] - p0[2];
+        const bx = p2[0] - p0[0],
+          by = p2[1] - p0[1],
+          bz = p2[2] - p0[2];
 
         const nx = ay * bz - az * by;
         const ny = az * bx - ax * bz;
@@ -723,8 +980,12 @@ export class MeshDecimatorCompute {
         const originalP0 = pos[i0];
         const originalP1 = pos[i1];
         const originalP2 = pos[i2];
-        const oax = originalP1[0] - originalP0[0], oay = originalP1[1] - originalP0[1], oaz = originalP1[2] - originalP0[2];
-        const obx = originalP2[0] - originalP0[0], oby = originalP2[1] - originalP0[1], obz = originalP2[2] - originalP0[2];
+        const oax = originalP1[0] - originalP0[0],
+          oay = originalP1[1] - originalP0[1],
+          oaz = originalP1[2] - originalP0[2];
+        const obx = originalP2[0] - originalP0[0],
+          oby = originalP2[1] - originalP0[1],
+          obz = originalP2[2] - originalP0[2];
         const onx = oay * obz - oaz * oby;
         const ony = oaz * obx - oax * obz;
         const onz = oax * oby - oay * obx;
@@ -792,12 +1053,22 @@ export class MeshDecimatorCompute {
       const i1 = newIndices[t * 3 + 1];
       const i2 = newIndices[t * 3 + 2];
 
-      const p0x = newVertices[i0 * 3], p0y = newVertices[i0 * 3 + 1], p0z = newVertices[i0 * 3 + 2];
-      const p1x = newVertices[i1 * 3], p1y = newVertices[i1 * 3 + 1], p1z = newVertices[i1 * 3 + 2];
-      const p2x = newVertices[i2 * 3], p2y = newVertices[i2 * 3 + 1], p2z = newVertices[i2 * 3 + 2];
+      const p0x = newVertices[i0 * 3],
+        p0y = newVertices[i0 * 3 + 1],
+        p0z = newVertices[i0 * 3 + 2];
+      const p1x = newVertices[i1 * 3],
+        p1y = newVertices[i1 * 3 + 1],
+        p1z = newVertices[i1 * 3 + 2];
+      const p2x = newVertices[i2 * 3],
+        p2y = newVertices[i2 * 3 + 1],
+        p2z = newVertices[i2 * 3 + 2];
 
-      const ax = p1x - p0x, ay = p1y - p0y, az = p1z - p0z;
-      const bx = p2x - p0x, by = p2y - p0y, bz = p2z - p0z;
+      const ax = p1x - p0x,
+        ay = p1y - p0y,
+        az = p1z - p0z;
+      const bx = p2x - p0x,
+        by = p2y - p0y,
+        bz = p2z - p0z;
 
       const nx = ay * bz - az * by;
       const ny = az * bx - ax * bz;
@@ -852,9 +1123,10 @@ export class MeshDecimatorCompute {
       }
     }
 
-    const reductionRatio = initialVertexCount > 0
-      ? (initialVertexCount - finalVertexCount) / initialVertexCount
-      : 0;
+    const reductionRatio =
+      initialVertexCount > 0
+        ? (initialVertexCount - finalVertexCount) / initialVertexCount
+        : 0;
 
     return {
       mesh: {

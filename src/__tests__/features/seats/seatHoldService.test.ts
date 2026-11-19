@@ -5,10 +5,12 @@ import {
 
 describe("seat hold duration across daylight-saving transitions (#8904)", () => {
   it("uses elapsed UTC time across the spring-forward midnight transition", () => {
-    const start = "2026-03-08T23:00:00-04:00";
-    const end = "2026-03-09T02:00:00-04:00";
+    const start = "2026-03-07T23:00:00-05:00";
+    const end = "2026-03-08T02:00:00-04:00";
 
-    expect(calculateSeatHoldDurationMs(start, end)).toBe(3 * 60 * 60 * 1000);
+    // 23:00 EST to 02:00 EDT spans only two elapsed hours because 02:00
+    // local time is skipped when clocks advance on this date.
+    expect(calculateSeatHoldDurationMs(start, end)).toBe(2 * 60 * 60 * 1000);
   });
 
   it("accounts for the skipped hour during the spring-forward transition", () => {

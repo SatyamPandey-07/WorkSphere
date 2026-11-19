@@ -305,6 +305,32 @@ jobs:
                   continue;
                 }
 
+                // Verify CI status before merging: all CI check runs must succeed
+                const headSha = pr.head ? pr.head.sha : (prDetails.head ? prDetails.head.sha : null);
+                if (headSha) {
+                  try {
+                    const checksRes = await github.rest.checks.listForRef({
+                      owner,
+                      repo,
+                      ref: headSha
+                    });
+                    const runs = checksRes.data?.check_runs || [];
+                    const externalRuns = runs.filter(r => !r.name.includes('Auto-Merge'));
+                    const failedRun = externalRuns.find(r => ['failure', 'timed_out', 'cancelled'].includes(r.conclusion));
+                    if (failedRun) {
+                      console.log(`PR #${prNumber} has failing check run "${failedRun.name}" (${failedRun.conclusion}). Skipping auto-merge.`);
+                      continue;
+                    }
+                    const pendingRun = externalRuns.find(r => r.status !== 'completed');
+                    if (pendingRun) {
+                      console.log(`PR #${prNumber} still has in-progress check run "${pendingRun.name}". Waiting for CI completion.`);
+                      continue;
+                    }
+                  } catch (checkErr) {
+                    console.warn(`Could not verify check runs for PR #${prNumber}:`, checkErr.message);
+                  }
+                }
+
                 // Execute squash merge with co-author attribution
                 const isMaintainer = prAuthor === 'satyampandey-07';
                 let coAuthorTrailers = [];

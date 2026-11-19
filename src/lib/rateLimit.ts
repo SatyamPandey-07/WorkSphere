@@ -1,13 +1,3 @@
- feat/hybrid-logical-clock-sync
-export interface RateLimitOptions {
-  windowMs: number;
-  maxRequests: number;
-}
-
-const requestStore = new Map<string, { count: number; resetTime: number }>();
-
-export function checkRateLimit(ip: string, options: RateLimitOptions = { windowMs: 60000, maxRequests: 60 }): { allowed: boolean; remaining: number; reset: number } {
-
 ﻿/**
  * Rate limiting utilities imported via `@/lib/rateLimit`.
  *
@@ -636,24 +626,67 @@ export function memTieredRateLimit(
   config: TierConfig = TIER_CONFIGS[tier] || TIER_CONFIGS.anonymous,
 ): TieredRateLimitResult {
   const safeConfig = config || TIER_CONFIGS[tier] || TIER_CONFIGS.anonymous;
- main
   const now = Date.now();
-  const record = requestStore.get(ip);
+  const windowMs =
+    typeof safeConfig.windowMs === "number" &&
+    Number.isFinite(safeConfig.windowMs) &&
+    safeConfig.windowMs > 0
+      ? safeConfig.windowMs
+      : 900_000;
+  const limit =
+    typeof safeConfig.limit === "number" &&
+    Number.isFinite(safeConfig.limit) &&
+    safeConfig.limit > 0
+      ? safeConfig.limit
+      : 10;
+  const key = `worksphere:ratelimit:${namespace}:${tier}:${identity}`;
 
-  if (!record || now > record.resetTime) {
-    const resetTime = now + options.windowMs;
-    requestStore.set(ip, { count: 1, resetTime });
-    return { allowed: true, remaining: options.maxRequests - 1, reset: resetTime };
+  let entry = memStore.get(key);
+  if (!entry) {
+    if (memStore.size >= MAX_MEM_ENTRIES) {
+      cleanupExpiredEntries();
+      while (memStore.size >= MAX_MEM_ENTRIES) {
+        const oldestKey = memStore.keys().next().value;
+        if (oldestKey === undefined) {
+          break;
+        }
+        memStore.delete(oldestKey);
+      }
+    }
+    entry = { timestamps: [], resetTime: now + windowMs };
+    memStore.set(key, entry);
+  } else {
+    // Refresh LRU order
+    memStore.delete(key);
+    memStore.set(key, entry);
   }
 
-  if (record.count >= options.maxRequests) {
-    return { allowed: false, remaining: 0, reset: record.resetTime };
+  // Prune timestamps older than sliding window
+  const windowStart = now - windowMs;
+  let firstValid = 0;
+  while (
+    firstValid < entry.timestamps.length &&
+    entry.timestamps[firstValid] <= windowStart
+  ) {
+    firstValid++;
+  }
+  if (firstValid > 0) {
+    entry.timestamps = entry.timestamps.slice(firstValid);
   }
 
- feat/hybrid-logical-clock-sync
-  record.count += 1;
-  return { allowed: true, remaining: options.maxRequests - record.count, reset: record.resetTime };
-}
+  if (entry.timestamps.length >= limit) {
+    const reset = entry.timestamps[0] + windowMs;
+    const retryAfter = Math.max(1, Math.ceil((reset - now) / 1000));
+    return {
+      allowed: false,
+      limit,
+      remaining: 0,
+      retryAfter,
+      reset,
+      tier,
+      identity,
+    };
+  }
 
   entry.timestamps.push(now);
   entry.resetTime = now + windowMs;
@@ -985,7 +1018,10 @@ export interface RateLimitOptions {
   maxRequests: number;
 }
 
-const simpleRequestStore = new Map<string, { count: number; resetTime: number }>();
+const simpleRequestStore = new Map<
+  string,
+  { count: number; resetTime: number }
+>();
 
 export function checkRateLimit(
   ip: string,
@@ -997,7 +1033,11 @@ export function checkRateLimit(
   if (!record || now > record.resetTime) {
     const resetTime = now + options.windowMs;
     simpleRequestStore.set(ip, { count: 1, resetTime });
-    return { allowed: true, remaining: options.maxRequests - 1, reset: resetTime };
+    return {
+      allowed: true,
+      remaining: options.maxRequests - 1,
+      reset: resetTime,
+    };
   }
 
   if (record.count >= options.maxRequests) {
@@ -1005,6 +1045,9 @@ export function checkRateLimit(
   }
 
   record.count += 1;
-  return { allowed: true, remaining: options.maxRequests - record.count, reset: record.resetTime };
+  return {
+    allowed: true,
+    remaining: options.maxRequests - record.count,
+    reset: record.resetTime,
+  };
 }
- main

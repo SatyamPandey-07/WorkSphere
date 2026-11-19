@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash } from "crypto";
 
 export interface IdempotencyRecord {
   key: string;
@@ -11,7 +11,12 @@ export interface IdempotencyRecord {
 export interface IdempotencyStore {
   get(key: string): Promise<IdempotencyRecord | null>;
   setIfAbsent(record: IdempotencyRecord): Promise<boolean>;
-  complete(key: string, status: number, body: unknown, expiresAt: number): Promise<void>;
+  complete(
+    key: string,
+    status: number,
+    body: unknown,
+    expiresAt: number,
+  ): Promise<void>;
   delete(key: string): Promise<void>;
 }
 
@@ -41,81 +46,25 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     return true;
   }
 
-  async complete(key: string, status: number, body: unknown, expiresAt: number): Promise<void> {
+  async complete(
+    key: string,
+    status: number,
+    body: unknown,
+    expiresAt: number,
+  ): Promise<void> {
     const current = this.records.get(key);
     if (!current) return;
- feat/hybrid-logical-clock-sync
-    this.records.set(key, { ...current, status, body, expiresAt });
-
     this.records.set(key, {
       ...current,
       status,
       body,
       expiresAt,
     });
- main
   }
 
   async delete(key: string): Promise<void> {
     this.records.delete(key);
   }
- feat/hybrid-logical-clock-sync
-}
-
-export function hashPayload(payload: unknown): string {
-  return createHash('sha256').update(JSON.stringify(payload ?? null)).digest('hex');
-}
-
-export interface IdempotencyExecutionResult<T = unknown> {
-  status: number;
-  body: T;
-  replayed: boolean;
-}
-
-export async function runWithIdempotency<T>(options: {
-  key: string | null | undefined;
-  payload: unknown;
-  store?: IdempotencyStore;
-  ttlMs?: number;
-  handler: () => Promise<{ status: number; body: T }>;
-}): Promise<IdempotencyExecutionResult<T>> {
-  const {
-    key,
-    payload,
-    store = defaultStore,
-    ttlMs = 24 * 60 * 60 * 1000,
-    handler,
-  } = options;
-
-  if (!key || !key.trim()) {
-    const res = await handler();
-    return { status: res.status, body: res.body, replayed: false };
-  }
-
-  const normalizedKey = key.trim();
-  const requestHash = hashPayload(payload);
-  const now = Date.now();
-  const expiresAt = now + ttlMs;
-
-  const acquired = await store.setIfAbsent({
-    key: normalizedKey,
-    requestHash,
-    status: 202,
-    body: { status: 'IN_PROGRESS' },
-    expiresAt,
-  });
-
-  if (!acquired) {
-    const existing = await store.get(normalizedKey);
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        return {
-          status: 409,
-          body: { error: 'Idempotency-Key reused with a different request payload' } as unknown as T,
-          replayed: false,
-        };
-      }
-
 
   clear(): void {
     this.records.clear();
@@ -123,8 +72,9 @@ export async function runWithIdempotency<T>(options: {
 }
 
 export function hashIdempotencyPayload(payload: unknown): string {
-  const serialized = typeof payload === 'string' ? payload : JSON.stringify(payload ?? {});
-  return createHash('sha256').update(serialized).digest('hex');
+  const serialized =
+    typeof payload === "string" ? payload : JSON.stringify(payload ?? {});
+  return createHash("sha256").update(serialized).digest("hex");
 }
 
 export interface RunWithIdempotencyOptions<T> {
@@ -142,14 +92,14 @@ export interface RunWithIdempotencyResult<T> {
 }
 
 export async function runWithIdempotency<T>(
-  options: RunWithIdempotencyOptions<T>
+  options: RunWithIdempotencyOptions<T>,
 ): Promise<RunWithIdempotencyResult<T>> {
   const { key, payload, store, ttlMs = 24 * 60 * 60 * 1000, handler } = options;
   const normalizedKey = key.trim();
   if (!normalizedKey) {
     return {
       status: 400,
-      body: { error: 'Idempotency-Key header is required' },
+      body: { error: "Idempotency-Key header is required" },
       replayed: false,
     };
   }
@@ -161,13 +111,14 @@ export async function runWithIdempotency<T>(
     if (existing.requestHash !== currentPayloadHash) {
       return {
         status: 409,
-        body: { error: 'Idempotency key reused with different request payload' },
+        body: {
+          error: "Idempotency key reused with different request payload",
+        },
         replayed: false,
       };
     }
 
     if (existing.status !== 0) {
- main
       return {
         status: existing.status,
         body: existing.body as T,
@@ -175,8 +126,6 @@ export async function runWithIdempotency<T>(
       };
     }
   }
-
- feat/hybrid-logical-clock-sync
 
   const locked = await store.setIfAbsent({
     key: normalizedKey,
@@ -188,7 +137,11 @@ export async function runWithIdempotency<T>(
 
   if (!locked) {
     const latest = await store.get(normalizedKey);
-    if (latest && latest.requestHash === currentPayloadHash && latest.status !== 0) {
+    if (
+      latest &&
+      latest.requestHash === currentPayloadHash &&
+      latest.status !== 0
+    ) {
       return {
         status: latest.status,
         body: latest.body as T,
@@ -197,24 +150,27 @@ export async function runWithIdempotency<T>(
     }
     return {
       status: 409,
-      body: { error: 'Concurrent request in progress for this idempotency key' },
+      body: {
+        error: "Concurrent request in progress for this idempotency key",
+      },
       replayed: false,
     };
   }
 
- main
   try {
     const result = await handler();
-    await store.complete(normalizedKey, result.status, result.body, Date.now() + ttlMs);
+    await store.complete(
+      normalizedKey,
+      result.status,
+      result.body,
+      Date.now() + ttlMs,
+    );
     return { status: result.status, body: result.body, replayed: false };
   } catch (err) {
     await store.delete(normalizedKey);
     throw err;
   }
 }
-
- feat/hybrid-logical-clock-sync
-const defaultStore = new MemoryIdempotencyStore();
 
 export const defaultStore = new MemoryIdempotencyStore();
 
@@ -298,4 +254,3 @@ export async function executeIdempotent(
 export function clearIdempotencyStore(): void {
   idempotencyStore.clear();
 }
- main

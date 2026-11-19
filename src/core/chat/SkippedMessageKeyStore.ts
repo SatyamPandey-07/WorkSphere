@@ -1,38 +1,3 @@
- feat/hybrid-logical-clock-sync
-export class SkippedMessageKeyStore {
-  private static SKIPPED_KEYS_MAX_PER_CHAIN = 100;
-  private cache = new Map<string, { key: string; timestamp: number; activeWindow: boolean }>();
-
-  public set(chainId: string, messageIndex: number, encryptionKey: string, activeWindow = false) {
-    const key = ${chainId}:;
-    if (this.cache.size >= SkippedMessageKeyStore.SKIPPED_KEYS_MAX_PER_CHAIN) {
-      this.evictOldest(chainId);
-    }
-    this.cache.set(key, { key: encryptionKey, timestamp: Date.now(), activeWindow });
-  }
-
-  public get(chainId: string, messageIndex: number): string | undefined {
-    const key = ${chainId}:;
-    return this.cache.get(key)?.key;
-  }
-
-  private evictOldest(currentChainId: string) {
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-
-    for (const [k, entry] of this.cache.entries()) {
-      if (!entry.activeWindow && entry.timestamp < oldestTime) {
-        oldestTime = entry.timestamp;
-        oldestKey = k;
-      }
-    }
-
-    if (oldestKey) {
-      this.cache.delete(oldestKey);
-    }
-  }
-}
-
 /**
  * SkippedMessageKeyStore.ts
  * Secure, bounded, encrypted storage and forward-secrecy lifecycle management
@@ -56,7 +21,7 @@ import {
   createDecipheriv,
   hkdfSync,
   randomBytes,
-} from 'crypto';
+} from "crypto";
 
 export interface SkippedKeyMetadata {
   sessionId: string;
@@ -68,8 +33,8 @@ export interface SkippedKeyMetadata {
 export interface EncryptedSkippedKeyRecord {
   metadata: SkippedKeyMetadata;
   ciphertext: string; // Hex-encoded AES-256-GCM ciphertext of 32-byte MK
-  iv: string;         // Hex-encoded 12-byte IV
-  authTag: string;    // Hex-encoded 16-byte GCM authentication tag
+  iv: string; // Hex-encoded 12-byte IV
+  authTag: string; // Hex-encoded 16-byte GCM authentication tag
 }
 
 export interface SkippedKeyReservation {
@@ -103,7 +68,7 @@ export const SKIPPED_KEYS_LEASE_TTL_MS = 30 * 1000; // 30 seconds reservation le
 export function buildSkippedKeyId(
   sessionId: string,
   ratchetPublicKeyHex: string,
-  sequenceCounter: number
+  sequenceCounter: number,
 ): string {
   const normKey = ratchetPublicKeyHex.toLowerCase();
   return `${sessionId}:${normKey}:${sequenceCounter}`;
@@ -124,7 +89,10 @@ export class SkippedMessageKeyStore {
   private readonly chainIndex: Map<string, Set<string>> = new Map();
 
   // Active reservations: reservationId -> { keyId, reservedAt }
-  private readonly reservations: Map<string, { keyId: string; reservedAt: number }> = new Map();
+  private readonly reservations: Map<
+    string,
+    { keyId: string; reservedAt: number }
+  > = new Map();
   // In-flight reserved keyIds -> reservationId
   private readonly reservedKeyIds: Map<string, string> = new Map();
 
@@ -140,9 +108,12 @@ export class SkippedMessageKeyStore {
       this.storageKey = Buffer.from(config.storageKey);
     } else if (config.rootKey) {
       // Derive independent storage key using HKDF-SHA256 from session initial root key
-      const salt = Buffer.from('WorkSphere-SkippedKeyStore-v1-Salt', 'utf8');
-      const info = Buffer.from(`WorkSphere-DoubleRatchet-StorageKey:${this.sessionId}`, 'utf8');
-      const derived = hkdfSync('sha256', config.rootKey, salt, info, 32);
+      const salt = Buffer.from("WorkSphere-SkippedKeyStore-v1-Salt", "utf8");
+      const info = Buffer.from(
+        `WorkSphere-DoubleRatchet-StorageKey:${this.sessionId}`,
+        "utf8",
+      );
+      const derived = hkdfSync("sha256", config.rootKey, salt, info, 32);
       this.storageKey = Buffer.from(derived);
     } else {
       // Generate a fresh random 256-bit storage key
@@ -158,16 +129,16 @@ export class SkippedMessageKeyStore {
     ratchetPublicKeyHex: string,
     sequenceCounter: number,
     messageKey: Buffer,
-    explicitCreatedAt?: number
+    explicitCreatedAt?: number,
   ): void {
-    if (!ratchetPublicKeyHex || typeof ratchetPublicKeyHex !== 'string') {
-      throw new Error('Invalid ratchet public key');
+    if (!ratchetPublicKeyHex || typeof ratchetPublicKeyHex !== "string") {
+      throw new Error("Invalid ratchet public key");
     }
     if (!Number.isSafeInteger(sequenceCounter) || sequenceCounter < 0) {
-      throw new Error('Invalid sequence counter');
+      throw new Error("Invalid sequence counter");
     }
     if (!Buffer.isBuffer(messageKey) || messageKey.length !== 32) {
-      throw new Error('Message key must be a 32-byte Buffer');
+      throw new Error("Message key must be a 32-byte Buffer");
     }
 
     const normKey = ratchetPublicKeyHex.toLowerCase();
@@ -212,17 +183,20 @@ export class SkippedMessageKeyStore {
 
     // Encrypt message key with AES-256-GCM using storage key
     const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.storageKey, iv);
-    const aad = Buffer.from(JSON.stringify(metadata), 'utf8');
+    const cipher = createCipheriv("aes-256-gcm", this.storageKey, iv);
+    const aad = Buffer.from(JSON.stringify(metadata), "utf8");
     cipher.setAAD(aad);
 
-    const ciphertext = Buffer.concat([cipher.update(messageKey), cipher.final()]).toString('hex');
-    const authTag = cipher.getAuthTag().toString('hex');
+    const ciphertext = Buffer.concat([
+      cipher.update(messageKey),
+      cipher.final(),
+    ]).toString("hex");
+    const authTag = cipher.getAuthTag().toString("hex");
 
     const record: EncryptedSkippedKeyRecord = {
       metadata,
       ciphertext,
-      iv: iv.toString('hex'),
+      iv: iv.toString("hex"),
       authTag,
     };
 
@@ -239,7 +213,10 @@ export class SkippedMessageKeyStore {
   /**
    * Checks whether an unreserved, unexpired skipped key exists.
    */
-  public hasSkippedKey(ratchetPublicKeyHex: string, sequenceCounter: number): boolean {
+  public hasSkippedKey(
+    ratchetPublicKeyHex: string,
+    sequenceCounter: number,
+  ): boolean {
     const normKey = ratchetPublicKeyHex.toLowerCase();
     const id = buildSkippedKeyId(this.sessionId, normKey, sequenceCounter);
     const record = this.records.get(id);
@@ -263,7 +240,7 @@ export class SkippedMessageKeyStore {
    */
   public reserveSkippedKey(
     ratchetPublicKeyHex: string,
-    sequenceCounter: number
+    sequenceCounter: number,
   ): SkippedKeyReservation | null {
     const normKey = ratchetPublicKeyHex.toLowerCase();
     const id = buildSkippedKeyId(this.sessionId, normKey, sequenceCounter);
@@ -292,17 +269,17 @@ export class SkippedMessageKeyStore {
       record.metadata.sequenceCounter !== sequenceCounter
     ) {
       this.deleteKeyInternal(id);
-      throw new Error('Skipped key metadata authentication failed');
+      throw new Error("Skipped key metadata authentication failed");
     }
 
     // Decrypt record
     let mk: Buffer;
     try {
-      const iv = Buffer.from(record.iv, 'hex');
-      const authTag = Buffer.from(record.authTag, 'hex');
-      const ciphertextBuf = Buffer.from(record.ciphertext, 'hex');
-      const decipher = createDecipheriv('aes-256-gcm', this.storageKey, iv);
-      const aad = Buffer.from(JSON.stringify(record.metadata), 'utf8');
+      const iv = Buffer.from(record.iv, "hex");
+      const authTag = Buffer.from(record.authTag, "hex");
+      const ciphertextBuf = Buffer.from(record.ciphertext, "hex");
+      const decipher = createDecipheriv("aes-256-gcm", this.storageKey, iv);
+      const aad = Buffer.from(JSON.stringify(record.metadata), "utf8");
       decipher.setAAD(aad);
       decipher.setAuthTag(authTag);
 
@@ -310,17 +287,19 @@ export class SkippedMessageKeyStore {
     } catch (err) {
       // Storage corruption or tampering: delete corrupted entry and throw
       this.deleteKeyInternal(id);
-      throw new Error(`Failed to decrypt skipped key: ${(err as Error).message}`);
+      throw new Error(
+        `Failed to decrypt skipped key: ${(err as Error).message}`,
+      );
     }
 
     if (mk.length !== 32) {
       mk.fill(0);
       this.deleteKeyInternal(id);
-      throw new Error('Decrypted message key corrupted (invalid length)');
+      throw new Error("Decrypted message key corrupted (invalid length)");
     }
 
     // Acquire reservation lease
-    const reservationId = randomBytes(16).toString('hex');
+    const reservationId = randomBytes(16).toString("hex");
     this.reservations.set(reservationId, { keyId: id, reservedAt: now });
     this.reservedKeyIds.set(id, reservationId);
 
@@ -367,9 +346,12 @@ export class SkippedMessageKeyStore {
    */
   public consumeSkippedKey(
     ratchetPublicKeyHex: string,
-    sequenceCounter: number
+    sequenceCounter: number,
   ): Buffer | null {
-    const reservation = this.reserveSkippedKey(ratchetPublicKeyHex, sequenceCounter);
+    const reservation = this.reserveSkippedKey(
+      ratchetPublicKeyHex,
+      sequenceCounter,
+    );
     if (!reservation) return null;
     this.commitSkippedKey(reservation.reservationId);
     return reservation.messageKey;
@@ -433,7 +415,13 @@ export class SkippedMessageKeyStore {
   public importEncryptedRecords(records: EncryptedSkippedKeyRecord[]): void {
     const now = this.timeProvider();
     for (const record of records) {
-      if (!record || !record.metadata || !record.ciphertext || !record.iv || !record.authTag) {
+      if (
+        !record ||
+        !record.metadata ||
+        !record.ciphertext ||
+        !record.iv ||
+        !record.authTag
+      ) {
         continue;
       }
       if (record.metadata.sessionId !== this.sessionId) {
@@ -447,7 +435,7 @@ export class SkippedMessageKeyStore {
       const id = buildSkippedKeyId(
         this.sessionId,
         record.metadata.ratchetPublicKeyHex,
-        record.metadata.sequenceCounter
+        record.metadata.sequenceCounter,
       );
 
       if (this.records.has(id)) {
@@ -511,7 +499,10 @@ export class SkippedMessageKeyStore {
     }
   }
 
-  private isRecordExpired(record: EncryptedSkippedKeyRecord, now: number): boolean {
+  private isRecordExpired(
+    record: EncryptedSkippedKeyRecord,
+    now: number,
+  ): boolean {
     if (!Number.isFinite(record.metadata.createdAt)) return true;
     // Clock rollback or future timestamp anomaly: conservative handling
     if (record.metadata.createdAt > now + 60000) {
@@ -590,4 +581,3 @@ export class SkippedMessageKeyStore {
     return oldestId;
   }
 }
- main

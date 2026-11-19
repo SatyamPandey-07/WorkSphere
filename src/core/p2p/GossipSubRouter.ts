@@ -193,11 +193,83 @@ export interface GossipMessage {
   receivedFrom: string | null;
 }
 
+export class QueueOverflowError extends Error {
+  readonly peerId: string;
+  readonly packetBytes: number;
+
+  constructor(peerId: string, packetBytes: number, message: string) {
+    super(message);
+    this.name = "QueueOverflowError";
+    this.peerId = peerId;
+    this.packetBytes = packetBytes;
+  }
+}
+
+export class PeerQueueBlockedError extends Error {
+  readonly peerId: string;
+
+  constructor(peerId: string, message: string) {
+    super(message);
+    this.name = "PeerQueueBlockedError";
+    this.peerId = peerId;
+  }
+}
+
+export interface BackpressureOptions {
+  /**
+   * High watermark in bytes (default: 256 KB = 262,144 bytes).
+   * When RTCDataChannel.bufferedAmount exceeds this threshold, outgoing sends
+   * to this peer are suspended and buffered in memory.
+   */
+  highWatermark?: number;
+  /**
+   * Low watermark in bytes (default: 64 KB = 65,536 bytes).
+   * When RTCDataChannel.bufferedAmount drops to or below this threshold (or on 'bufferedamountlow'),
+   * the queue resumes draining.
+   */
+  lowWatermark?: number;
+  /**
+   * Maximum queued bytes per peer before dropping or rejecting new unsent messages (default: 16 MB = 16,777,216 bytes).
+   * Prevents browser memory exhaustion during persistent network stalls.
+   */
+  maxQueueBytes?: number;
+  /**
+   * Maximum number of packets queued per peer (default: 10,000).
+   */
+  maxQueuePackets?: number;
+  /**
+   * Overflow policy when the per-peer outbound queue exceeds maxQueuePackets or maxQueueBytes.
+   * - "drop" (default): drops the new packet and increments packetsDroppedOverflow.
+   * - "throw": throws a QueueOverflowError to provide explicit producer failure so the caller can retry.
+   */
+  overflowPolicy?: "drop" | "throw";
+  /**
+   * Callback invoked whenever a peer enters or leaves a backpressured state.
+   */
+  onBackpressureChange?: (peerId: string, isBackpressured: boolean) => void;
+  /**
+   * Callback invoked when a packet is dropped due to queue overflow.
+   */
+  onPacketDropped?: (peerId: string, packetBytes: number, reason: string) => void;
+  /**
+   * Callback invoked when a peer's outbound queue becomes blocked due to retry exhaustion.
+   */
+  onQueueBlocked?: (peerId: string, error: Error) => void;
+  /**
+   * Optional timeout in ms to wait for bufferedAmount to drain before aborting (default: 30,000 ms).
+   */
+  drainTimeoutMs?: number;
+}
+
 export interface GossipSubOptions {
   localPeerId: string;
   identity: GossipIdentity;
-  /** Hands bytes to the transport (e.g. an RTCDataChannel) for one peer. */
-  send: (peerId: string, data: Uint8Array) => void;
+  /** Hands bytes to the transport (e.g. an RTCDataChannel) for one peer. Can be synchronous or async. */
+  send: (peerId: string, data: Uint8Array) => void | Promise<void>;
+  /** Optional lookup to obtain the underlying RTCDataChannel for a peer to inspect backpressure. */
+  getDataChannel?: (peerId: string) => RTCDataChannel | null | undefined;
+  /** Optional backpressure tuning configuration. */
+  backpressure?: BackpressureOptions;
   onMessage?: (message: GossipMessage) => void;
   /** Optional callback specifically for processed/recovered audio frames */
   onAudioFrame?: (frame: AudioFrame, fromPeer: string | null) => void;
@@ -219,7 +291,33 @@ export interface GossipStats {
   duplicatesDropped: number;
   invalidDropped: number;
   unsubscribedDropped: number;
+  packetsDroppedOverflow: number;
+  backpressureWaitEvents: number;
 }
+
+interface QueuedPacket {
+  data: Uint8Array;
+  operationRetries: number;
+}
+
+interface PeerOutboundState {
+  queue: QueuedPacket[];
+  queueBytes: number;
+  isDraining: boolean;
+  isBackpressured: boolean;
+  isBlocked: boolean;
+  blockReason: Error | null;
+  lowListener: (() => void) | null;
+  channel: RTCDataChannel | null;
+  drainWaiters: Array<{ resolve: () => void; reject: (err: Error) => void }>;
+}
+
+export const DEFAULT_HIGH_WATERMARK = 256 * 1024; // 256 KB
+export const DEFAULT_LOW_WATERMARK = 64 * 1024; // 64 KB
+export const DEFAULT_MAX_QUEUE_BYTES = 16 * 1024 * 1024; // 16 MB
+export const DEFAULT_MAX_QUEUE_PACKETS = 10_000;
+export const DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
+export const MAX_OPERATION_RETRIES = 5;
 
 export class GossipSubRouter {
   readonly D: number;
@@ -241,7 +339,19 @@ export class GossipSubRouter {
     duplicatesDropped: 0,
     invalidDropped: 0,
     unsubscribedDropped: 0,
+    packetsDroppedOverflow: 0,
+    backpressureWaitEvents: 0,
   };
+
+  // Backpressure configuration
+  private readonly highWatermark: number;
+  private readonly lowWatermark: number;
+  private readonly maxQueueBytes: number;
+  private readonly maxQueuePackets: number;
+  private readonly drainTimeoutMs: number;
+  private readonly overflowPolicy: "drop" | "throw";
+  private readonly peerOutbound = new Map<string, PeerOutboundState>();
+  private isDestroyed = false;
 
   // Adaptive FEC State
   private readonly peerLossMonitors = new Map<string, PeerLossMonitor>();
@@ -265,6 +375,17 @@ export class GossipSubRouter {
       opts.bloomCapacity,
       opts.bloomFalsePositiveRate,
     );
+
+    const bp = opts.backpressure ?? {};
+    this.highWatermark = bp.highWatermark ?? DEFAULT_HIGH_WATERMARK;
+    this.lowWatermark = bp.lowWatermark ?? DEFAULT_LOW_WATERMARK;
+    this.maxQueueBytes = bp.maxQueueBytes ?? DEFAULT_MAX_QUEUE_BYTES;
+    this.maxQueuePackets = bp.maxQueuePackets ?? DEFAULT_MAX_QUEUE_PACKETS;
+    this.drainTimeoutMs = bp.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS;
+    this.overflowPolicy = bp.overflowPolicy ?? "drop";
+    if (this.lowWatermark > this.highWatermark) {
+      throw new RangeError("lowWatermark must be <= highWatermark");
+    }
   }
 
   /* ----- peers & topics ----- */
@@ -288,6 +409,7 @@ export class GossipSubRouter {
       this.fecReceivers.delete(peerId);
     }
     for (const members of this.mesh.values()) members.delete(peerId);
+    this.cleanupPeerOutbound(peerId, new Error(`Peer ${peerId} removed from router`));
   }
 
   subscribe(topic: string): void {
@@ -329,6 +451,20 @@ export class GossipSubRouter {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.destroy();
+  }
+
+  destroy(): void {
+    if (this.isDestroyed) return;
+    this.isDestroyed = true;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    const abortErr = new Error("GossipSubRouter destroyed");
+    for (const peerId of [...this.peerOutbound.keys()]) {
+      this.cleanupPeerOutbound(peerId, abortErr);
+    }
   }
 
   /** Keeps every subscribed topic's mesh within [D_low, D_high]. */
@@ -390,8 +526,10 @@ export class GossipSubRouter {
     this.stats.published++;
 
     const bytes = encodePacket({ ...packet, hops: 1 });
-    for (const peerId of this.publishTargets(topic))
-      this.opts.send(peerId, bytes);
+    const targets = this.publishTargets(topic);
+    for (const peerId of targets) {
+      this.enqueueSend(peerId, bytes);
+    }
 
     if (this.subscriptions.has(topic)) {
       this.deliver({
@@ -570,7 +708,7 @@ export class GossipSubRouter {
     const forwarded = encodePacket({ ...packet, hops: packet.hops + 1 });
     for (const peerId of this.mesh.get(packet.topic) ?? []) {
       if (peerId === fromPeer) continue;
-      this.opts.send(peerId, forwarded);
+      this.enqueueSend(peerId, forwarded);
       this.stats.forwarded++;
     }
   }
@@ -624,7 +762,414 @@ export class GossipSubRouter {
       | MeshPacketType.Prune,
     topic: string,
   ): void {
-    this.opts.send(peerId, encodePacket({ type, topic }));
+    this.enqueueSend(peerId, encodePacket({ type, topic }));
+  }
+
+  /* ----- Backpressure & Outbound Queue Management ----- */
+
+  /**
+   * Returns current outbound queue information for a given peer.
+   */
+  public getPeerQueueInfo(peerId: string): {
+    queuedPackets: number;
+    queuedBytes: number;
+    isBackpressured: boolean;
+    isDraining: boolean;
+    isBlocked: boolean;
+    blockReason: Error | null;
+  } {
+    const state = this.peerOutbound.get(peerId);
+    if (!state) {
+      return {
+        queuedPackets: 0,
+        queuedBytes: 0,
+        isBackpressured: false,
+        isDraining: false,
+        isBlocked: false,
+        blockReason: null,
+      };
+    }
+    return {
+      queuedPackets: state.queue.length,
+      queuedBytes: state.queueBytes,
+      isBackpressured: state.isBackpressured,
+      isDraining: state.isDraining,
+      isBlocked: state.isBlocked,
+      blockReason: state.blockReason,
+    };
+  }
+
+  /**
+   * Resets a blocked peer's queue and clears backpressure/blocked state so traffic or snapshot reconciliation can resume.
+   */
+  public resetPeerQueue(peerId: string): void {
+    const state = this.peerOutbound.get(peerId);
+    if (!state) return;
+
+    if (state.channel && state.lowListener) {
+      try {
+        state.channel.removeEventListener("bufferedamountlow", state.lowListener);
+      } catch {
+        // Ignore
+      }
+      state.lowListener = null;
+    }
+
+    state.queue.length = 0;
+    state.queueBytes = 0;
+    state.isBlocked = false;
+    state.blockReason = null;
+    state.isBackpressured = false;
+    state.isDraining = false;
+
+    const waiters = [...state.drainWaiters];
+    state.drainWaiters.length = 0;
+    for (const w of waiters) {
+      w.resolve();
+    }
+  }
+
+  /**
+   * Waits for all pending queued packets for a specific peer to be transmitted.
+   * If peerId is omitted, waits for all peers to drain.
+   */
+  public async flush(peerId?: string): Promise<void> {
+    if (peerId) {
+      const state = this.peerOutbound.get(peerId);
+      if (!state) {
+        return;
+      }
+      if (state.isBlocked && state.blockReason) {
+        throw state.blockReason;
+      }
+      if (state.queue.length === 0 && !state.isDraining) {
+        return;
+      }
+      return new Promise<void>((resolve, reject) => {
+        state.drainWaiters.push({ resolve, reject });
+      });
+    }
+
+    const waitAll: Promise<void>[] = [];
+    for (const [id, state] of this.peerOutbound.entries()) {
+      if (state.isBlocked && state.blockReason) {
+        waitAll.push(Promise.reject(state.blockReason));
+      } else if (state.queue.length > 0 || state.isDraining) {
+        waitAll.push(
+          new Promise<void>((resolve, reject) => {
+            state.drainWaiters.push({ resolve, reject });
+          }),
+        );
+      }
+    }
+    await Promise.all(waitAll);
+  }
+
+  /**
+   * Enqueues data for transmission to a peer, respecting backpressure and buffer limits.
+   */
+  public enqueueSend(peerId: string, data: Uint8Array): boolean {
+    if (this.isDestroyed) return false;
+
+    let state = this.peerOutbound.get(peerId);
+    if (!state) {
+      state = {
+        queue: [],
+        queueBytes: 0,
+        isDraining: false,
+        isBackpressured: false,
+        isBlocked: false,
+        blockReason: null,
+        lowListener: null,
+        channel: null,
+        drainWaiters: [],
+      };
+      this.peerOutbound.set(peerId, state);
+    }
+
+    // If queue is blocked due to retry exhaustion, reject incoming packets
+    if (state.isBlocked) {
+      const err = state.blockReason ?? new PeerQueueBlockedError(peerId, `Peer queue ${peerId} is blocked due to retry exhaustion`);
+      if (this.overflowPolicy === "throw") {
+        throw err;
+      }
+      this.stats.packetsDroppedOverflow++;
+      this.opts.backpressure?.onPacketDropped?.(peerId, data.byteLength, err.message);
+      return false;
+    }
+
+    // Attempt to resolve channel reference if available
+    this.refreshChannelRef(peerId, state);
+
+    // Overflow protection: reject if queue capacity exceeded
+    if (
+      state.queue.length >= this.maxQueuePackets ||
+      state.queueBytes + data.byteLength > this.maxQueueBytes
+    ) {
+      this.stats.packetsDroppedOverflow++;
+      const reason = `Queue overflow: length=${state.queue.length}/${this.maxQueuePackets}, bytes=${state.queueBytes + data.byteLength}/${this.maxQueueBytes}`;
+      this.opts.backpressure?.onPacketDropped?.(peerId, data.byteLength, reason);
+      if (this.overflowPolicy === "throw") {
+        throw new QueueOverflowError(peerId, data.byteLength, reason);
+      }
+      return false;
+    }
+
+    state.queue.push({ data, operationRetries: 0 });
+    state.queueBytes += data.byteLength;
+
+    if (!state.isDraining) {
+      this.drainQueue(peerId, state);
+    }
+
+    return true;
+  }
+
+  private refreshChannelRef(peerId: string, state: PeerOutboundState): void {
+    if (this.opts.getDataChannel) {
+      try {
+        const ch = this.opts.getDataChannel(peerId);
+        if (ch && ch !== state.channel) {
+          if (state.channel && state.lowListener) {
+            try {
+              state.channel.removeEventListener("bufferedamountlow", state.lowListener);
+            } catch {
+              // Ignore cleanup error on old channel
+            }
+          }
+          state.channel = ch;
+          state.lowListener = null;
+        }
+      } catch {
+        // Safe fallback if getDataChannel throws
+      }
+    }
+  }
+
+  private setBackpressured(
+    peerId: string,
+    state: PeerOutboundState,
+    backpressured: boolean,
+  ): void {
+    if (state.isBackpressured !== backpressured) {
+      state.isBackpressured = backpressured;
+      try {
+        this.opts.backpressure?.onBackpressureChange?.(peerId, backpressured);
+      } catch {
+        // Ignore consumer callback error
+      }
+    }
+  }
+
+  private async drainQueue(peerId: string, state: PeerOutboundState): Promise<void> {
+    if (state.isDraining) return;
+    state.isDraining = true;
+
+    try {
+      while (state.queue.length > 0 && !this.isDestroyed) {
+        this.refreshChannelRef(peerId, state);
+        const channel = state.channel;
+
+        if (channel) {
+          // If channel is closed or closing, drop pending sends and abort
+          const readyState = channel.readyState;
+          if (readyState === "closing" || readyState === "closed") {
+            const err = new Error(`RTCDataChannel for peer ${peerId} is ${readyState}`);
+            this.cleanupPeerOutbound(peerId, err);
+            return;
+          }
+
+          // If channel is not yet open, wait briefly or yield
+          if (readyState === "connecting") {
+            await new Promise<void>((r) => setTimeout(r, 20));
+            continue;
+          }
+
+          // Check if bufferedAmount exceeds high watermark
+          if (channel.bufferedAmount >= this.highWatermark) {
+            this.setBackpressured(peerId, state, true);
+            this.stats.backpressureWaitEvents++;
+            const drained = await this.waitForChannelDrain(peerId, channel, state);
+            if (!drained) {
+              // Timeout or channel closed during wait
+              if (channel.readyState !== "open") {
+                this.cleanupPeerOutbound(
+                  peerId,
+                  new Error(`DataChannel closed while awaiting backpressure drain`),
+                );
+                return;
+              }
+            }
+            continue;
+          } else if (channel.bufferedAmount <= this.lowWatermark) {
+            this.setBackpressured(peerId, state, false);
+          }
+        }
+
+        const nextPacket = state.queue.shift();
+        if (!nextPacket) break;
+        const nextData = nextPacket.data;
+        state.queueBytes -= nextData.byteLength;
+
+        try {
+          const res = this.opts.send(peerId, nextData);
+          if (res && typeof (res as Promise<void>).then === "function") {
+            await res;
+          }
+        } catch (err: unknown) {
+          // Handle WebRTC OperationError or transmission fault
+          const isOpError =
+            err instanceof Error &&
+            (err.name === "OperationError" ||
+              err.message.toLowerCase().includes("operationerror") ||
+              err.message.toLowerCase().includes("bufferedamount"));
+
+          if (isOpError && channel && nextPacket.operationRetries < MAX_OPERATION_RETRIES) {
+            nextPacket.operationRetries++;
+            this.setBackpressured(peerId, state, true);
+            // Put item back at the head of queue to preserve strict CRDT ordering
+            state.queue.unshift(nextPacket);
+            state.queueBytes += nextData.byteLength;
+            this.stats.backpressureWaitEvents++;
+            await this.waitForChannelDrain(peerId, channel, state);
+            continue;
+          } else if (isOpError && channel) {
+            // Retry limit exceeded for OperationError.
+            // Never skip a previously accepted packet and send subsequent dependent operations,
+            // as this violates CRDT causal ordering. Mark the queue as blocked and reject waiters.
+            state.queue.unshift(nextPacket);
+            state.queueBytes += nextData.byteLength;
+            state.isBlocked = true;
+            const blockError = new PeerQueueBlockedError(
+              peerId,
+              `Outbound queue blocked for peer ${peerId}: OperationError retry limit (${MAX_OPERATION_RETRIES}) exceeded`,
+            );
+            state.blockReason = blockError;
+            this.setBackpressured(peerId, state, true);
+            this.opts.backpressure?.onQueueBlocked?.(peerId, blockError);
+            this.stats.packetsDroppedOverflow++;
+
+            // Reject pending flush waiters for this peer
+            const waiters = [...state.drainWaiters];
+            state.drainWaiters.length = 0;
+            for (const w of waiters) {
+              w.reject(blockError);
+            }
+            return;
+          } else {
+            // Unrecoverable send error or transport failure; log and drop this packet
+            this.stats.packetsDroppedOverflow++;
+            this.opts.backpressure?.onPacketDropped?.(
+              peerId,
+              nextData.byteLength,
+              `Send failed: ${err instanceof Error ? err.message : String(err)} (retries: ${nextPacket.operationRetries})`,
+            );
+          }
+        }
+      }
+
+      // Check final backpressure state
+      if (state.channel && state.channel.bufferedAmount <= this.lowWatermark) {
+        this.setBackpressured(peerId, state, false);
+      }
+    } finally {
+      state.isDraining = false;
+      if (state.queue.length === 0) {
+        const waiters = [...state.drainWaiters];
+        state.drainWaiters.length = 0;
+        for (const w of waiters) {
+          w.resolve();
+        }
+      }
+    }
+  }
+
+  private waitForChannelDrain(
+    peerId: string,
+    channel: RTCDataChannel,
+    state: PeerOutboundState,
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      try {
+        channel.bufferedAmountLowThreshold = this.lowWatermark;
+      } catch {
+        // Setting bufferedAmountLowThreshold might not be supported in some mocks
+      }
+
+      if (channel.bufferedAmount <= this.lowWatermark) {
+        resolve(true);
+        return;
+      }
+
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const cleanup = () => {
+        if (state.lowListener) {
+          try {
+            channel.removeEventListener("bufferedamountlow", state.lowListener);
+          } catch {
+            // Ignore
+          }
+          state.lowListener = null;
+        }
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      };
+
+      const onLow = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(true);
+      };
+
+      state.lowListener = onLow;
+      try {
+        channel.addEventListener("bufferedamountlow", onLow);
+      } catch {
+        // Fallback to polling if addEventListener fails
+      }
+
+      timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        // Resolve true if below high watermark, false if still stalled
+        resolve(channel.bufferedAmount < this.highWatermark);
+      }, this.drainTimeoutMs);
+      if (typeof (timer as unknown as { unref?: () => void }).unref === "function") {
+        (timer as unknown as { unref: () => void }).unref();
+      }
+    });
+  }
+
+  private cleanupPeerOutbound(peerId: string, error: Error): void {
+    const state = this.peerOutbound.get(peerId);
+    if (!state) return;
+
+    if (state.channel && state.lowListener) {
+      try {
+        state.channel.removeEventListener("bufferedamountlow", state.lowListener);
+      } catch {
+        // Ignore
+      }
+      state.lowListener = null;
+    }
+
+    state.queue.length = 0;
+    state.queueBytes = 0;
+    this.setBackpressured(peerId, state, false);
+
+    const waiters = [...state.drainWaiters];
+    state.drainWaiters.length = 0;
+    for (const w of waiters) {
+      w.reject(error);
+    }
+
+    this.peerOutbound.delete(peerId);
   }
 
   private shuffle<T>(items: T[]): T[] {

@@ -7,7 +7,15 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { Volume2, Mic, Square, Radio, Sliders, Sparkles, Zap } from "lucide-react";
+import {
+  Volume2,
+  Mic,
+  Square,
+  Radio,
+  Sliders,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 import {
   analyzeFrequencyBands,
   getFrequencyProfile,
@@ -15,6 +23,7 @@ import {
 } from "@/lib/noise/spectrumAnalyzer";
 import { normalizeFrequencyGain } from "@/lib/noise/calibration";
 import { useBatteryLowPowerThrottle } from "@/hooks/useBatteryLowPowerThrottle";
+import { useElementVisibility } from "@/hooks/useElementVisibility";
 
 export interface AmbientNoiseSpectrumVisualizerProps {
   venueId?: string;
@@ -139,10 +148,28 @@ function compileShader(
   return shader;
 }
 
+/**
+ * Sanitizes raw, out-of-range, or non-finite decibel readings.
+ * Prevents NaN, -Infinity, +Infinity, or non-physical acoustic values
+ * from corrupting WebGL textures, CSS percentages, and noise classifications.
+ */
+export function sanitizeDecibels(
+  db: unknown,
+  fallback = 56,
+  min = 0,
+  max = 140,
+): number {
+  if (typeof db !== "number" || !Number.isFinite(db)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, db));
+}
+
 function synthesizeSimulatedFftBins(baseDb: number): Uint8Array {
+  const safeDb = sanitizeDecibels(baseDb, 56);
   const bytes = new Uint8Array(FFT_BINS);
-  const isLoud = baseDb > 70;
-  const isQuiet = baseDb < 50;
+  const isLoud = safeDb > 70;
+  const isQuiet = safeDb < 50;
 
   for (let i = 0; i < FFT_BINS; i++) {
     let weight = 1.0;
@@ -154,7 +181,7 @@ function synthesizeSimulatedFftBins(baseDb: number): Uint8Array {
       weight = 0.5; // High hiss / clatter
     }
 
-    const baseVal = (baseDb / 100) * 190;
+    const baseVal = (safeDb / 100) * 190;
     const jitter = (Math.random() - 0.5) * 35;
     const val = Math.min(
       255,
@@ -175,7 +202,7 @@ export function AmbientNoiseSpectrumVisualizer({
 }: AmbientNoiseSpectrumVisualizerProps) {
   const {
     isLowPower,
-    mode: powerMode,
+    mode: _powerMode,
     webglPolicy,
     shouldRenderWebGLFrame,
     setManualOverride,
@@ -194,10 +221,12 @@ export function AmbientNoiseSpectrumVisualizer({
   const [bars, setBars] = useState<number[]>(() => new Array(24).fill(15));
   const [peaks, setPeaks] = useState<number[]>(() => new Array(24).fill(18));
   const [currentDb, setCurrentDb] = useState<number>(() => {
-    if (typeof decibelBaseline === "number") return decibelBaseline;
-    if (noiseLevel === "quiet") return 42;
-    if (noiseLevel === "loud") return 74;
-    return 56;
+    const defaultBaseline =
+      noiseLevel === "quiet" ? 42 : noiseLevel === "loud" ? 74 : 56;
+    if (decibelBaseline !== undefined) {
+      return sanitizeDecibels(decibelBaseline, defaultBaseline);
+    }
+    return defaultBaseline;
   });
 
   const [frequencySpectrum, setFrequencySpectrum] =
@@ -205,6 +234,11 @@ export function AmbientNoiseSpectrumVisualizer({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const { ref: containerRef, isVisible } =
+    useElementVisibility<HTMLDivElement>();
+  const isVisibleRef = useRef<boolean>(isVisible);
+  isVisibleRef.current = isVisible;
+  const lastDrawnDbRef = useRef<number | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const simIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const simWaterfallRafRef = useRef<number | null>(null);
@@ -225,11 +259,17 @@ export function AmbientNoiseSpectrumVisualizer({
 
   // Derive target average dB from venue noise level
   const targetAvgDb = useMemo(() => {
-    if (typeof decibelBaseline === "number") return decibelBaseline;
     const clean = (noiseLevel || "moderate").toLowerCase();
-    if (clean.includes("quiet") || clean.includes("silent")) return 42;
-    if (clean.includes("loud") || clean.includes("noisy")) return 76;
-    return 58;
+    const defaultTarget =
+      clean.includes("quiet") || clean.includes("silent")
+        ? 42
+        : clean.includes("loud") || clean.includes("noisy")
+          ? 76
+          : 58;
+    if (decibelBaseline !== undefined) {
+      return sanitizeDecibels(decibelBaseline, defaultTarget);
+    }
+    return defaultTarget;
   }, [noiseLevel, decibelBaseline]);
 
   // Clean up WebAudio on unmount or toggle
@@ -462,8 +502,26 @@ export function AmbientNoiseSpectrumVisualizer({
 
       const renderLiveFrame = (now: number) => {
         if (!analyserRef.current) return;
+        if (!isVisibleRef.current) {
+          animFrameRef.current = null;
+          return;
+        }
         if (shouldRenderWebGLFrame(now)) {
           analyserRef.current.getByteFrequencyData(dataArray);
+
+          let byteSum = 0;
+          for (let i = 0; i < bufferLength; i++) byteSum += dataArray[i];
+          const instantDb =
+            30 + (byteSum / Math.max(1, bufferLength) / 255) * 65;
+
+          if (
+            lastDrawnDbRef.current !== null &&
+            Math.abs(instantDb - lastDrawnDbRef.current) < 0.5
+          ) {
+            animFrameRef.current = requestAnimationFrame(renderLiveFrame);
+            return;
+          }
+          lastDrawnDbRef.current = instantDb;
 
           // Push FFT byte data to WebGL dynamic texture backing
           pushWaterfallRow(dataArray);
@@ -488,7 +546,10 @@ export function AmbientNoiseSpectrumVisualizer({
           }
 
           const avgByteAll = totalEnergy / 24;
-          const liveDbEst = Math.round(30 + (avgByteAll / 255) * 65);
+          const liveDbEst = sanitizeDecibels(
+            Math.round(30 + (avgByteAll / 255) * 65),
+            30,
+          );
           setCurrentDb(liveDbEst);
 
           setBars(newBars);
@@ -516,9 +577,94 @@ export function AmbientNoiseSpectrumVisualizer({
     }
   }, [pushWaterfallRow, shouldRenderWebGLFrame]);
 
+  // Resume live mic RAF loop cleanly when visibility returns
+  useEffect(() => {
+    if (
+      !isLiveMic ||
+      !isVisible ||
+      animFrameRef.current !== null ||
+      !analyserRef.current
+    ) {
+      return;
+    }
+    const analyser = analyserRef.current;
+    const audioCtx = audioContextRef.current;
+    if (!audioCtx) return;
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const resumeLiveFrame = (now: number) => {
+      if (!analyserRef.current || !isVisibleRef.current) {
+        animFrameRef.current = null;
+        return;
+      }
+      if (shouldRenderWebGLFrame(now)) {
+        analyserRef.current.getByteFrequencyData(dataArray);
+        let byteSum = 0;
+        for (let i = 0; i < bufferLength; i++) byteSum += dataArray[i];
+        const instantDb = 30 + (byteSum / Math.max(1, bufferLength) / 255) * 65;
+
+        if (
+          lastDrawnDbRef.current === null ||
+          Math.abs(instantDb - lastDrawnDbRef.current) >= 0.5
+        ) {
+          lastDrawnDbRef.current = instantDb;
+          pushWaterfallRow(dataArray);
+          const step = Math.max(1, Math.floor(bufferLength / 24));
+          const newBars: number[] = [];
+          let totalEnergy = 0;
+          for (let i = 0; i < 24; i++) {
+            const startIdx = i * step;
+            let sum = 0;
+            for (let j = 0; j < step && startIdx + j < bufferLength; j++) {
+              sum += dataArray[startIdx + j];
+            }
+            const avgByte = sum / step;
+            newBars.push(
+              normalizeFrequencyGain(Math.round((avgByte / 255) * 100)),
+            );
+            totalEnergy += avgByte;
+          }
+          setCurrentDb(Math.round(30 + (totalEnergy / 24 / 255) * 65));
+          setBars(newBars);
+          setPeaks((prev) =>
+            prev.map((p, idx) => Math.max(p * 0.95, newBars[idx] || 0)),
+          );
+          setFrequencySpectrum(
+            analyzeFrequencyBands(
+              dataArray,
+              audioCtx.sampleRate,
+              analyser.fftSize,
+            ),
+          );
+        }
+      }
+      animFrameRef.current = requestAnimationFrame(resumeLiveFrame);
+    };
+
+    animFrameRef.current = requestAnimationFrame(resumeLiveFrame);
+    return () => {
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    };
+  }, [isLiveMic, isVisible, pushWaterfallRow, shouldRenderWebGLFrame]);
+
   // Continuous simulated ambient acoustic telemetry & waterfall loop when microphone is inactive
   useEffect(() => {
-    if (isLiveMic) return;
+    if (isLiveMic || !isVisible) {
+      if (simWaterfallRafRef.current !== null) {
+        cancelAnimationFrame(simWaterfallRafRef.current);
+        simWaterfallRafRef.current = null;
+      }
+      if (simIntervalRef.current !== null) {
+        clearInterval(simIntervalRef.current);
+        simIntervalRef.current = null;
+      }
+      return;
+    }
 
     const baseDb = targetAvgDb;
     const isQuiet = baseDb < 50;
@@ -589,7 +735,10 @@ export function AmbientNoiseSpectrumVisualizer({
         badgeColor: profile.badgeColor,
       });
 
-      const subtleDbJitter = Math.round(baseDb + (Math.random() - 0.5) * 4);
+      const subtleDbJitter = sanitizeDecibels(
+        Math.round(baseDb + (Math.random() - 0.5) * 4),
+        baseDb,
+      );
       setCurrentDb(subtleDbJitter);
     };
 
@@ -604,7 +753,13 @@ export function AmbientNoiseSpectrumVisualizer({
         clearInterval(simIntervalRef.current);
       }
     };
-  }, [isLiveMic, targetAvgDb, pushWaterfallRow]);
+  }, [
+    isLiveMic,
+    isVisible,
+    targetAvgDb,
+    pushWaterfallRow,
+    shouldRenderWebGLFrame,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -621,17 +776,18 @@ export function AmbientNoiseSpectrumVisualizer({
   };
 
   const getNoiseStatusLabel = (db: number) => {
-    if (db < 45)
+    const safeDb = sanitizeDecibels(db, 56);
+    if (safeDb < 45)
       return {
         label: "Deep Focus (Quiet)",
         color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
       };
-    if (db <= 62)
+    if (safeDb <= 62)
       return {
         label: "Gentle Ambience (Moderate)",
         color: "text-teal-400 bg-teal-500/10 border-teal-500/30",
       };
-    if (db <= 74)
+    if (safeDb <= 74)
       return {
         label: "Lively Workspace (Active)",
         color: "text-amber-400 bg-amber-500/10 border-amber-500/30",
@@ -646,6 +802,7 @@ export function AmbientNoiseSpectrumVisualizer({
 
   return (
     <div
+      ref={containerRef}
       data-testid="ambient-noise-spectrum-visualizer"
       className={`p-5 bg-zinc-900/90 border border-zinc-800/80 rounded-2xl shadow-lg backdrop-blur-md transition-all ${className}`}
     >
@@ -728,8 +885,8 @@ export function AmbientNoiseSpectrumVisualizer({
                 manualOverride === "low_power"
                   ? null
                   : manualOverride === "critical"
-                  ? null
-                  : "low_power",
+                    ? null
+                    : "low_power",
               );
             }}
             title={
@@ -745,10 +902,14 @@ export function AmbientNoiseSpectrumVisualizer({
           >
             <Zap
               className={`w-3 h-3 ${
-                isLowPower ? "text-amber-400 fill-amber-400/30" : "text-zinc-500"
+                isLowPower
+                  ? "text-amber-400 fill-amber-400/30"
+                  : "text-zinc-500"
               }`}
             />
-            <span>{isLowPower ? `ECO ${webglPolicy.targetFps}FPS` : "60FPS"}</span>
+            <span>
+              {isLowPower ? `ECO ${webglPolicy.targetFps}FPS` : "60FPS"}
+            </span>
           </button>
 
           {/* Colormap Toggle (only when waterfall is visible) */}
@@ -802,7 +963,10 @@ export function AmbientNoiseSpectrumVisualizer({
       {/* Decibel & Classification Banner */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-black/40 border border-white/5 rounded-xl p-3 mb-4">
         <div className="flex items-center gap-3">
-          <div className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-none">
+          <div
+            data-testid="decibel-reading-value"
+            className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-none"
+          >
             {currentDb}{" "}
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
               dBA
@@ -898,7 +1062,8 @@ export function AmbientNoiseSpectrumVisualizer({
 
             {bars.map((height, i) => {
               const clampedHeight = normalizeFrequencyGain(height);
-              const peakHeight = normalizeFrequencyGain(peaks[i] || height);
+              const safePeak = Number.isFinite(peaks[i]) ? peaks[i] : height;
+              const peakHeight = normalizeFrequencyGain(safePeak);
               const bgGradient = getBarColor(i);
 
               return (
@@ -909,13 +1074,13 @@ export function AmbientNoiseSpectrumVisualizer({
                   {/* Peak indicator tick */}
                   <div
                     className="absolute w-full h-1 bg-white/90 rounded-xs shadow-xs transition-all duration-150 pointer-events-none"
-                    style={{ bottom: `${Math.min(98, peakHeight)}%` }}
+                    style={{ bottom: `${Math.min(98, Math.max(0, peakHeight))}%` }}
                   />
 
                   {/* Dynamic Frequency Bar */}
                   <div
                     className={`w-full max-w-[12px] bg-gradient-to-t ${bgGradient} rounded-t-sm transition-all duration-100 ease-out`}
-                    style={{ height: `${clampedHeight}%` }}
+                    style={{ height: `${Math.min(100, Math.max(0, clampedHeight))}%` }}
                   />
                 </div>
               );

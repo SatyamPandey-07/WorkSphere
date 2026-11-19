@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getAnalyticsSummaryAsync } from "@/lib/analytics";
 import { getDbLatencyStats } from "@/lib/dbTelemetry";
+import { getHybridVenueSearchCacheMetrics } from "@/lib/search/hybridVenueSearch";
 import {
   createDaySeries,
   isoDay,
@@ -143,6 +144,7 @@ export async function getAdminSystemMetrics(range: RangeKey) {
     agentLatencyTrend,
     agentBreakdown,
     dbLatency,
+    hybridSearchCache: getHybridVenueSearchCacheMetrics(),
   };
 }
 

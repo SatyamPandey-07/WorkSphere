@@ -5,6 +5,14 @@
  * automated ICE restart negotiation, and dynamic STUN/TURN fallback server cycling.
  */
 
+import {
+  waitForIceGathering,
+  startCheckingFallback,
+  DEFAULT_ICE_GATHERING_TIMEOUT_MS,
+  DEFAULT_CHECKING_FALLBACK_MS,
+} from '../../core/webrtc/IceReconnectManager';
+import type { IceGatheringTelemetry } from '../../core/webrtc/IceReconnectManager';
+
 export type ReconnectState =
   | 'idle'
   | 'connected'
@@ -32,6 +40,12 @@ export interface ICEReconnectConfig {
   fallbackAttemptThreshold?: number;
   /** Whether to execute peerConnection.restartIce() during reconnection (default: true) */
   enableIceRestart?: boolean;
+  /** Max ms to wait for ICE gathering before proceeding with harvested candidates (default: 2500, 0 disables) */
+  gatheringTimeoutMs?: number;
+  /** Ms stuck in 'checking' before STUN/TURN fallback + ICE restart (default: 5000, 0 disables) */
+  checkingFallbackMs?: number;
+  /** Receives gathering duration and host/srflx/relay candidate counts */
+  onGatheringTelemetry?: (t: IceGatheringTelemetry) => void;
 }
 
 export type StateChangeHandler = (state: ReconnectState) => void;
@@ -50,6 +64,7 @@ export class ICEReconnectManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private graceTimer: ReturnType<typeof setTimeout> | null = null;
   private fallbackApplied = false;
+  private stopCheckingFallback: (() => void) | null = null;
   /** True while one ICE restart/renegotiation cycle is awaiting completion. */
   private reconnectInFlight = false;
   /** Coalesces failure notifications received during an active reconnect cycle. */
@@ -75,6 +90,9 @@ export class ICEReconnectManager {
       ],
       fallbackAttemptThreshold: config?.fallbackAttemptThreshold ?? 2,
       enableIceRestart: config?.enableIceRestart ?? true,
+      gatheringTimeoutMs: config?.gatheringTimeoutMs ?? DEFAULT_ICE_GATHERING_TIMEOUT_MS,
+      checkingFallbackMs: config?.checkingFallbackMs ?? DEFAULT_CHECKING_FALLBACK_MS,
+      onGatheringTelemetry: config?.onGatheringTelemetry ?? (() => undefined),
     };
   }
 
@@ -87,6 +105,15 @@ export class ICEReconnectManager {
   ): void {
     this.peerConnection = pc;
     this.renegotiateOfferHandler = renegotiateOffer ?? null;
+
+    this.stopCheckingFallback?.();
+    this.stopCheckingFallback = null;
+    if (this.config.checkingFallbackMs > 0 && typeof pc.addEventListener === 'function') {
+      this.stopCheckingFallback = startCheckingFallback(pc, {
+        checkingFallbackMs: this.config.checkingFallbackMs,
+        fallbackIceServers: this.config.fallbackIceServers,
+      });
+    }
 
     // Track state initially
     this.syncPeerConnectionState();
@@ -250,6 +277,7 @@ export class ICEReconnectManager {
 
         if (this.renegotiateOfferHandler) {
           await this.renegotiateOfferHandler();
+          await this.awaitIceGathering();
         }
       }
 
@@ -266,6 +294,22 @@ export class ICEReconnectManager {
         this.scheduleReconnect();
       }
     }
+  }
+
+  /**
+   * Waits for ICE gathering to finish, or for gatheringTimeoutMs to elapse,
+   * so a slow STUN/TURN query cannot stall setup. Resolves with whatever
+   * candidates were harvested. Offer handlers may call this before sending.
+   */
+  public async awaitIceGathering(): Promise<IceGatheringTelemetry | null> {
+    const pc = this.peerConnection;
+    if (!pc || this.config.gatheringTimeoutMs <= 0 || typeof pc.addEventListener !== 'function') {
+      return null;
+    }
+    return waitForIceGathering(pc, {
+      gatheringTimeoutMs: this.config.gatheringTimeoutMs,
+      onTelemetry: this.config.onGatheringTelemetry,
+    });
   }
 
   /**
@@ -414,6 +458,8 @@ export class ICEReconnectManager {
     this.clearGraceTimer();
     this.clearReconnectTimer();
     this.reconnectRequested = false;
+    this.stopCheckingFallback?.();
+    this.stopCheckingFallback = null;
     this.state = 'closed';
     this.peerConnection = null;
     this.renegotiateOfferHandler = null;

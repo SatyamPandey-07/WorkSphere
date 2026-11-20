@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-139%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-140%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-139-active-rockstars"><b>👥 Contributors (139)</b></a> •
+  <a href="#-contributors-140-active-rockstars"><b>👥 Contributors (140)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (139 Active Rockstars)
+### 🚀 Contributors (140 Active Rockstars)
 
-A massive thank you to all **139 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **140 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -959,6 +959,14 @@ A massive thank you to all **139 brilliant contributors and bots** building Work
       </a>
     </td>
   </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Kartikey-17">
+        <img src="https://avatars.githubusercontent.com/u/205428835?v=4" width="55px;" height="55px;" alt="Kartikey-17" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Kartikey-17</b></sub>
+      </a>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -1000,6 +1008,7 @@ A massive thank you to all **139 brilliant contributors and bots** building Work
 - **Natural Language Queries**: "Find a quiet cafe with good WiFi near me"
 - **Smart Intent Understanding**: Extracts work type, amenities, location preferences
 - **Intelligent Scoring**: Ranks venues based on work-friendliness criteria
+- **Venue Search Query History & MRU Caching (NEW)**: Local storage search query history with instant dropdown recall, case-insensitive deduplication, individual deletion, and full arrow-key keyboard navigation (`src/components/search/VenueSearchInput.tsx`, `src/components/search/SearchBar.tsx`).
 
 ### 🎙️ Voice Input (Browser Support)
 
@@ -1191,6 +1200,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🌐 Decentralized Networking & Survival Mesh
 
+- **Multi-Agent Debate & Consensus Engine**: Distributed agent dialogue verification resolving spatial, noise, and booking ambiguities through peer argumentation and verifiable multi-agent consensus (`src/core/agents/DebateConsensusEngine.ts`).
+- **Peer Score Health Badge & Sybil Defense Indicator**: Live P2P gossip peer quality scoring and Sybil attack monitoring displaying connection tier, score breakdown, and health metrics (`src/components/p2p/PeerScoreBadge.tsx`).
 - **Hybrid Logical Clock (HLC) Distributed Synchronization**: Monotonic causality and vector ordering across offline nodes and P2P mesh peers, preventing clock drift and update ordering anomalies (`src/core/sync/HybridLogicalClock.ts`).
 - **BFT Consensus Coordinator with View-Change Timeout**: Byzantine fault tolerant leader election with exponential backoff and quorum verification for decentralized network coordination (`src/core/consensus/BFTConsensusCoordinator.ts`).
 - **GossipSub WebRTC Mesh Router for Offline Emergency Messaging**: Decentralized peer-to-peer pub/sub message dissemination across local WebRTC mesh networks without central servers (`src/core/p2p/GossipSubRouter.ts`, `src/core/p2p/MeshPacketSerializer.ts`).
@@ -1203,6 +1214,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### ✈️ Nomad Travel, Smart Housing & Collab War Rooms
 
+- **Integrated Calendar Reminder Selector**: Multi-provider calendar reminder scheduling (Google Calendar, iCal, Outlook) with custom alert offsets for nomad coworking bookings (`src/components/calendar/CalendarReminderSelector.tsx`).
 - **CRDT Differential Snapshot Compression Telemetry & Prometheus Vitals**: Real-time compression ratio telemetry, high-resolution duration tracking, and Prometheus export for collaborative state snapshots (`src/lib/crdt/compressionTelemetry.ts`, `/api/admin/vitals`).
 - **Yjs-Based CRDT Collaborative Notes Engine Over PartyKit**: Real-time multi-user document and scratchpad collaboration utilizing Yjs CRDTs, awareness presence cursor tracking, IndexedDB local persistence (`y-indexeddb`), and PartyKit edge WebSocket broadcasting (`src/components/notes/GroupNotesEditor.tsx`, `party/server.ts`). See the [Group Notes Collaboration Guide](docs/crdt/NOTES_COLLABORATION_GUIDE.md).
 - **CRDT State Vector Exchange & Differential Compaction Protocol**: Ultra-low-bandwidth collaborative whiteboard synchronization utilizing Yjs state vector exchanges, incremental update compaction, and differential snapshot pruning ([docs/crdt/CRDT_VECTOR_COMPACTION.md](./docs/crdt/CRDT_VECTOR_COMPACTION.md)).

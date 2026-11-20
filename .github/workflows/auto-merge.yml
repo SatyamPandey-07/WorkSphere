@@ -179,24 +179,10 @@ jobs:
                     if (issueRes.data && !issueRes.data.pull_request) {
                       const assignees = (issueRes.data.assignees || []).map(a => a.login.toLowerCase());
                       const isMaintainer = ['satyampandey-07'].includes(prAuthor);
-                      if (isMaintainer || assignees.includes(prAuthor) || assignees.length === 0) {
-                        if (!assignees.includes(prAuthor)) {
-                          try {
-                            await github.rest.issues.addAssignees({
-                              owner,
-                              repo,
-                              issue_number: num,
-                              assignees: [prAuthor]
-                            });
-                            console.log(`Auto-assigned contributor @${prAuthor} to Issue #${num}`);
-                          } catch (assignErr) {
-                            console.warn('Assignee note:', assignErr.message);
-                          }
-                        }
+                      if (isMaintainer || assignees.includes(prAuthor)) {
                         linkedIssues.push(`#${num}`);
                       } else {
-                        // Count linked issue so valid PRs are not blocked
-                        linkedIssues.push(`#${num}`);
+                        console.log(`Issue #${num} is not assigned to PR author @${prAuthor}. Only the contributor assigned to the issue can submit a PR for it.`);
                       }
                     } else {
                       console.log(`Reference #${num} is a Pull Request, not an Issue. Ignored.`);

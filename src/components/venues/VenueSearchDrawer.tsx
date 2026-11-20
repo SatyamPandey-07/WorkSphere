@@ -83,6 +83,7 @@ export const AMENITIES_LIST = [
   { id: "ergonomic", label: "Ergonomic Setup" },
   { id: "quiet", label: "Quiet Zone" },
   { id: "phonebooths", label: "Phone Booths" },
+  { id: "standing_desk", label: "Standing Desk" },
 ];
 
 export const CATEGORIES_LIST = [

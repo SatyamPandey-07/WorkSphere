@@ -104,6 +104,48 @@ export function SearchBar({
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const searchFilterParams = new URLSearchParams();
+  [
+    "lat",
+    "lng",
+    "radius",
+    "minLat",
+    "maxLat",
+    "minLng",
+    "maxLng",
+    "category",
+    "type",
+    "cities",
+    "wifi",
+    "outlets",
+    "quiet",
+    "ergonomic",
+    "standingDesk",
+    "outletDensity",
+    "wifiSpeedBand",
+    "hasPhoneBooths",
+    "hasNoMusic",
+    "hasQuietZone",
+    "hasAncHeadsetRental",
+    "lighting",
+    "petsAllowedIndoors",
+    "patioOnly",
+    "waterBowlsProvided",
+    "dogFriendly",
+    "catsAllowed",
+    "singleOriginBeans",
+    "specialtyEspresso",
+    "oatAlmondMilk",
+    "pourOverAvailable",
+    "musicStyle",
+    "amenities",
+    "filters",
+  ].forEach((key) => {
+    const value = searchParams?.get(key);
+    if (typeof value === "string" && value !== "") {
+      searchFilterParams.set(key, value);
+    }
+  });
 
   const {
     query,
@@ -114,7 +156,12 @@ export function SearchBar({
     isDebouncing,
     clear,
     search,
-  } = useVenueSearch({ initialQuery, debounceMs, minQueryLength });
+  } = useVenueSearch({
+    initialQuery,
+    debounceMs,
+    minQueryLength,
+    filterParams: searchFilterParams.toString(),
+  });
 
   // Preserve cursor selection range across debounced controlled re-renders
   useEffect(() => {
@@ -497,7 +544,10 @@ export function SearchBar({
                     onClick={() => handleSelectRecentSearch(term)}
                     className="flex min-w-0 flex-1 items-center gap-2 truncate px-3 py-2 text-left text-sm text-zinc-700 dark:text-zinc-200"
                   >
-                    <Clock className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+                    <Clock
+                      className="h-3.5 w-3.5 shrink-0 text-zinc-400"
+                      aria-hidden="true"
+                    />
                     {term}
                   </button>
                   <button

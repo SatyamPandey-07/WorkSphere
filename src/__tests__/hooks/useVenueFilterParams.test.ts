@@ -52,6 +52,17 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
       expect(parsed.view).toBe("list");
     });
 
+    test("restores standing desk alongside other amenity filters", () => {
+      const parsed = parseFiltersFromSearchParams(
+        new URLSearchParams("standingDesk=true&wifi=true&amenities=outlets"),
+      );
+
+      expect(parsed.standingDesk).toBe(true);
+      expect(parsed.amenities).toEqual(
+        expect.arrayContaining(["standing_desk", "wifi", "outlets"]),
+      );
+    });
+
     describe("whitespace normalization (#7727)", () => {
       test("trims leading and trailing whitespace from q", () => {
         const parsed = parseFiltersFromSearchParams(
@@ -113,8 +124,10 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
 
       const nextParams = new URLSearchParams(updatedQuery.replace(/^\?/, ""));
 
-      // View should be updated
-      expect(nextParams.get("view")).toBe("list");
+      // "list" is the default view, so buildQueryStringWithFilters canonicalizes it
+      // out of the URL; the parser resolves the absent param back to "list".
+      expect(nextParams.has("view")).toBe(false);
+      expect(parseFiltersFromSearchParams(nextParams).view).toBe("list");
 
       // All existing filters must remain completely intact
       expect(nextParams.get("q")).toBe("starbucks");
@@ -162,6 +175,29 @@ describe("useVenueFilterParams & URL Search Parameter Synchronization", () => {
       expect(nextParams.get("wifi")).toBe("true");
       expect(nextParams.get("price")).toBe("$$$");
       expect(nextParams.get("quietHours")).toBe("true");
+    });
+
+    test("serializes standing desk as its dedicated parameter and preserves other filters", () => {
+      const initialParams = new URLSearchParams(
+        "q=desk&session=abc&amenities=wifi",
+      );
+
+      const updatedQuery = buildQueryStringWithFilters(initialParams, {
+        amenities: ["wifi", "standing_desk"],
+      });
+      const nextParams = new URLSearchParams(updatedQuery.slice(1));
+
+      expect(nextParams.get("standingDesk")).toBe("true");
+      expect(nextParams.get("amenities")).toBe("wifi");
+      expect(nextParams.get("q")).toBe("desk");
+      expect(nextParams.get("session")).toBe("abc");
+
+      const clearedQuery = buildQueryStringWithFilters(nextParams, {
+        amenities: ["wifi"],
+      });
+      const clearedParams = new URLSearchParams(clearedQuery.slice(1));
+      expect(clearedParams.has("standingDesk")).toBe(false);
+      expect(clearedParams.get("amenities")).toBe("wifi");
     });
 
     test("removes default or cleared filters from query string", () => {

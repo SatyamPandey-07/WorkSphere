@@ -11,6 +11,7 @@ import {
   Sun,
   Coffee,
   Check,
+  Monitor,
   SlidersHorizontal,
   Volume2,
   X,
@@ -121,6 +122,12 @@ export const DEFAULT_VENUE_FILTERS: VenueFilterItem[] = [
     label: "Specialty Coffee",
     paramKey: "coffee",
     icon: Coffee,
+  },
+  {
+    id: "standing_desk",
+    label: "Standing Desk",
+    paramKey: "standingDesk",
+    icon: Monitor,
   },
 ];
 

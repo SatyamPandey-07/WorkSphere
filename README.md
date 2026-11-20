@@ -1557,14 +1557,24 @@ or authentication redirection loops with Clerk, or map tile loading failures.
   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/worksphere?schema=public"
   DIRECT_URL="postgresql://postgres:postgres@localhost:5432/worksphere?schema=public"
 
-  # Upstash Redis (Optional for rate limiting; mock fallback exists)
-  UPSTASH_REDIS_REST_URL="http://localhost:8079"
-  UPSTASH_REDIS_REST_TOKEN="example_token"
+  # Optional local Redis over TCP (for consumers that use ioredis)
+  REDIS_URL="redis://localhost:6379"
+
+  # Optional Upstash REST; set both only when using an actual REST endpoint
+  UPSTASH_REDIS_REST_URL=""
+  UPSTASH_REDIS_REST_TOKEN=""
 
   # App Base URL
   NEXT_PUBLIC_APP_URL="http://localhost:3000"
   ```
 - Restart `npm run dev` after updating `.env.local` to allow Next.js to reload environment variables.
+
+Some rate-limit and other code paths have process-local in-memory fallbacks, but
+they are not shared Redis storage and do not cover every Redis-backed feature.
+The Compose Redis service uses TCP and is not an Upstash REST proxy; the
+`localhost:8079` placeholder in `.env.example` requires a separately running
+REST-compatible proxy. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+for verified fallback behavior and local Redis troubleshooting.
 
 ### 5. Offline Storage Warnings (IndexedDB `VersionError`, Timeouts, Private Browsing)
 

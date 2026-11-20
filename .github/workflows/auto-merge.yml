@@ -30,7 +30,7 @@ jobs:
       - name: Auto-merge if linked to an issue
         uses: actions/github-script@v9
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.AUTO_MERGE_PAT || secrets.GITHUB_TOKEN }}
           script: |
             try {
               const owner = context.repo.owner;
@@ -236,18 +236,30 @@ jobs:
                   });
                 } catch (e) {}
 
-                // Auto-approve PR
+                // Auto-approve PR if not already approved
                 try {
-                  await github.rest.pulls.createReview({
+                  const existingReviews = await github.rest.pulls.listReviews({
                     owner,
                     repo,
-                    pull_number: prNumber,
-                    event: 'APPROVE',
-                    body: `✅ Auto-approved! This PR properly references assigned issue(s): ${linkedIssues.join(', ')}.`
+                    pull_number: prNumber
                   });
-                  console.log(`Auto-approved PR #${prNumber}`);
+                  const isAlreadyApproved = (existingReviews.data || []).some(
+                    r => r.state === 'APPROVED'
+                  );
+                  if (!isAlreadyApproved) {
+                    await github.rest.pulls.createReview({
+                      owner,
+                      repo,
+                      pull_number: prNumber,
+                      event: 'APPROVE',
+                      body: `✅ Auto-approved! This PR properly references assigned issue(s): ${linkedIssues.join(', ')}.`
+                    });
+                    console.log(`Auto-approved PR #${prNumber}`);
+                  } else {
+                    console.log(`PR #${prNumber} is already approved.`);
+                  }
                 } catch (approveErr) {
-                  console.warn('Auto-approve note (may already be approved):', approveErr.message);
+                  console.warn('Auto-approve note:', approveErr.message);
                 }
 
                 // Ensure PR author is assigned to the PR

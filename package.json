@@ -17,6 +17,7 @@
     "cdc:worker": "node --experimental-strip-types src/workers/reservationCdcWorker.ts",
     "zkp:compile": "bash scripts/compile-zkp.sh",
     "zkp:compile:membership": "bash scripts/compile-membership-zkp.sh",
+    "zkp:compile:nomad": "bash scripts/compile-nomad-zkp.sh",
     "build:wasm:audio-filter": "bash wasm/audio-filter/build.sh",
     "build:wasm:sound-classifier": "bash src/wasm/acoustic/build.sh",
     "bench:audio-filter": "node scripts/bench-audio-filter-pool.mjs",

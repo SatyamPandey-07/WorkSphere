@@ -113,6 +113,7 @@ interface VenueSearchData {
   outlets?: boolean;
   quiet?: boolean;
   ergonomic?: boolean;
+  standingDesk?: boolean;
   outletDensity?: string;
   wifiSpeedBand?: string;
   hasPhoneBooths?: boolean;
@@ -189,6 +190,14 @@ export async function GET(req: NextRequest) {
       const maxLngParam = searchParams.get("maxLng");
       const where: any = {};
       const andConditions: any[] = [];
+      const selectedAmenities = new Set(
+        (searchParams.get("amenities") ?? searchParams.get("filters") ?? "")
+          .split(",")
+          .map((amenity) => amenity.trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const isEnabled = (key: string) =>
+        searchParams.get(key) === "true" || searchParams.get(key) === "1";
 
       if (
         minLatParam !== null &&
@@ -241,6 +250,37 @@ export async function GET(req: NextRequest) {
             })),
           });
         }
+      }
+
+      const categoryParam =
+        searchParams.get("category") ?? searchParams.get("type");
+      if (categoryParam && categoryParam !== "all") {
+        andConditions.push({ category: categoryParam });
+      }
+      if (isEnabled("wifi") || selectedAmenities.has("wifi")) {
+        andConditions.push({ wifiQuality: { gte: 3 } });
+      }
+      if (isEnabled("outlets") || selectedAmenities.has("outlets")) {
+        andConditions.push({ hasOutlets: true });
+      }
+      if (isEnabled("quiet") || selectedAmenities.has("quiet")) {
+        andConditions.push({ noiseLevel: "quiet" });
+      }
+      if (isEnabled("ergonomic") || selectedAmenities.has("ergonomic")) {
+        andConditions.push({ hasErgonomic: true });
+      }
+      if (isEnabled("hasPhoneBooths") || selectedAmenities.has("phonebooths")) {
+        andConditions.push({ hasPhoneBooths: true });
+      }
+      if (isEnabled("standingDesk") || selectedAmenities.has("standing_desk")) {
+        andConditions.push({
+          validations: {
+            some: {
+              amenity: { equals: "standing_desk", mode: "insensitive" },
+              upvotes: { gt: 0 },
+            },
+          },
+        });
       }
 
       const suggestionWhere =
@@ -399,6 +439,7 @@ export async function GET(req: NextRequest) {
       "outlets",
       "quiet",
       "ergonomic",
+      "standingDesk",
       "outletDensity",
       "wifiSpeedBand",
       "hasPhoneBooths",
@@ -432,6 +473,34 @@ export async function GET(req: NextRequest) {
         rawData[key] = sanitizeSearchQuery(val);
       }
     }
+    if (
+      rawData.standingDesk === undefined &&
+      (searchParams.get("amenities") ?? searchParams.get("filters"))
+        ?.split(",")
+        .some((amenity) => amenity.trim().toLowerCase() === "standing_desk")
+    ) {
+      rawData.standingDesk = "true";
+    }
+    const selectedAmenities = new Set(
+      (searchParams.get("amenities") ?? searchParams.get("filters") ?? "")
+        .split(",")
+        .map((amenity) => amenity.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const amenityParameterAliases: Record<string, string> = {
+      wifi: "wifi",
+      outlets: "outlets",
+      quiet: "quiet",
+      ergonomic: "ergonomic",
+      phonebooths: "hasPhoneBooths",
+    };
+    for (const [amenity, parameter] of Object.entries(
+      amenityParameterAliases,
+    )) {
+      if (rawData[parameter] === undefined && selectedAmenities.has(amenity)) {
+        rawData[parameter] = "true";
+      }
+    }
     const validation = validateRequest<VenueSearch>(venueSearchSchema, rawData);
 
     if (!validation.success) {
@@ -451,6 +520,7 @@ export async function GET(req: NextRequest) {
       outlets,
       quiet,
       ergonomic,
+      standingDesk,
       outletDensity,
       wifiSpeedBand,
       hasPhoneBooths,
@@ -504,6 +574,15 @@ export async function GET(req: NextRequest) {
 
     if (ergonomic) {
       where.hasErgonomic = true;
+    }
+
+    if (standingDesk) {
+      where.validations = {
+        some: {
+          amenity: { equals: "standing_desk", mode: "insensitive" },
+          upvotes: { gt: 0 },
+        },
+      };
     }
 
     if (outletDensity && outletDensity !== "none") {

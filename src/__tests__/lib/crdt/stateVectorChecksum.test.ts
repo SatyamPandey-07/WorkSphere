@@ -119,4 +119,35 @@ describe('StateVectorChecksumVerifier', () => {
     expect(emptyResult.leafHashes).toEqual([]);
     expect(emptyResult.root.length).toBe(64);
   });
-});
+
+
+  it("does not reuse a sampled cache key for large payloads that differ in unsampled bytes", async () => {
+    const first = new Uint8Array(128);
+    const second = new Uint8Array(128);
+    first[64] = 10;
+    second[64] = 11;
+
+    const firstDigest = await verifier.getOrComputeDigest(first);
+    const secondDigest = await verifier.getOrComputeDigest(second);
+
+    expect(firstDigest).not.toBe(secondDigest);
+    expect(verifier.getCacheStats().size).toBe(0);
+  });
+
+  it("recomputes small vector digests after the cache is cleared", async () => {
+    const vector = new Uint8Array([1, 2, 3, 4]);
+    const first = await verifier.getOrComputeDigest(vector);
+    expect(verifier.getCacheStats().misses).toBe(1);
+
+    verifier.clearCache();
+    const second = await verifier.getOrComputeDigest(vector);
+
+    expect(second).toBe(first);
+    expect(verifier.getCacheStats()).toEqual({
+      size: 1,
+      maxSize: 3,
+      hits: 0,
+      misses: 1,
+    });
+  });
+\n});

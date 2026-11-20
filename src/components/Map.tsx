@@ -1138,6 +1138,7 @@ const Map = ({
           border-radius: 12px;
           position: relative;
           z-index: 20;
+          background: #0B0F17 !important;
         }
         
         /* UPDATED: Target map tiles specifically so they don't hide the heatmap canvas */

@@ -693,6 +693,11 @@ textarea:focus::placeholder {
   }
 }
 
+/* Leaflet map initial background - prevents flash of light background (#9161) */
+.leaflet-container {
+  background: #0B0F17 !important;
+}
+
 /* Leaflet map marker popup z-index stacking context for mobile viewports (<640px) */
 .leaflet-popup-pane {
   z-index: 1000 !important;

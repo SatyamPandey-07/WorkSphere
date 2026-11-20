@@ -84,19 +84,6 @@ export async function POST(req: Request) {
       "zkp",
       "student_access_pass_vkey.json",
     );
-    const membershipVKeyPath = path.join(
-      process.cwd(),
-      "public",
-      "zkp",
-      "student_membership_vkey.json",
-    );
-    const fallbackVKeyPath = path.join(
-      process.cwd(),
-      "public",
-      "zkp",
-      "verification_key.json",
-    );
-
     // The access-pass circuit publishes [root, epoch, nullifierHash]. Its
     // matching three-public-input key is mandatory; other membership keys
     // must never be used as a fallback for this circuit.

@@ -241,6 +241,7 @@ model VenueRating {
 
   @@unique([userId, venueId])
   @@index([venueId])
+  @@index([venueId, createdAt(sort: Desc)])
   @@index([createdAt])
 }
 

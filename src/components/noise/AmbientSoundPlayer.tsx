@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   Volume2,
   VolumeX,
@@ -324,6 +325,14 @@ export function AmbientSoundPlayer({
   const presetNodesRef = useRef<
     Map<PresetId, { source: AudioBufferSourceNode; gain: GainNode }>
   >(new Map());
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useFocusTrap(dialogRef, {
+    isActive: showPanel && !standalone,
+    returnFocus: true,
+    onEscape: () => setShowPanel(false),
+  });
 
   // Safe AudioContext getter
   const getOrCreateAudioContext = useCallback((): AudioContext | null => {
@@ -529,7 +538,7 @@ export function AmbientSoundPlayer({
   const soundscapePanelContent = (
     <div
       role="region"
-      aria-label="Preset Soundscapes Player"
+      aria-label="Ambient audio synthesizer controls"
       data-testid="soundscape-player-panel"
       className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-2xl p-4 space-y-4"
     >
@@ -592,6 +601,10 @@ export function AmbientSoundPlayer({
             max={100}
             value={masterVolume}
             aria-label="Master volume"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={masterVolume}
+            aria-valuetext={isMasterMuted ? "Muted" : `${masterVolume}%`}
             data-testid="master-volume-slider"
             onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
             className="flex-1 h-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 accent-blue-600 cursor-pointer"
@@ -650,6 +663,10 @@ export function AmbientSoundPlayer({
                     max={100}
                     value={state.volume}
                     aria-label={`${preset.name} volume`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={state.volume}
+                    aria-valuetext={`${state.volume}%`}
                     data-testid={`volume-slider-${preset.id}`}
                     onChange={(e) =>
                       handlePresetVolumeChange(
@@ -715,6 +732,7 @@ export function AmbientSoundPlayer({
     <div className={`relative inline-flex items-center ${className}`}>
       {/* Trigger button */}
       <button
+        ref={triggerRef}
         id={`ambient-player-trigger-${noiseLevel ?? "default"}`}
         type="button"
         onClick={() => setShowPanel((v) => !v)}
@@ -751,8 +769,10 @@ export function AmbientSoundPlayer({
             aria-hidden="true"
           />
           <div
+            ref={dialogRef}
             role="dialog"
-            aria-label="Ambient soundscapes player"
+            aria-modal="true"
+            aria-label="Ambient audio synthesizer controls"
             className="absolute bottom-full left-0 z-50 mb-2 w-80 sm:w-96 max-w-[95vw]"
           >
             {soundscapePanelContent}

@@ -40,6 +40,13 @@ export function trimSearchQuery(query: string): string {
 }
 
 /**
+ * Validates if query is non-empty and not purely whitespace.
+ */
+export function isValidSearchQuery(query: string): boolean {
+  return typeof query === "string" && query.trim().length > 0;
+}
+
+/**
  * Reusable SearchBar component with a 300ms input debounce, a 2 character minimum and AbortController
  * (#3513, #3773, #7673). Cancels stale in-flight requests and avoids race conditions on fast typing.
  * Shorter queries send no request, Enter searches at once, and a typing indicator shows while waiting.

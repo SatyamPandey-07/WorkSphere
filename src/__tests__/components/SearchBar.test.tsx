@@ -1,12 +1,13 @@
 ﻿import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { SearchBar, trimSearchQuery } from "@/components/venues/SearchBar";
+import { SearchBar, trimSearchQuery, isValidSearchQuery } from "@/components/venues/SearchBar";
 
 describe("SearchBar component (#4401, #4404)", () => {
   const originalFetch = global.fetch;
   let mockFetch: jest.Mock;
 
   beforeEach(() => {
+    localStorage.clear();
     jest.useFakeTimers();
     mockFetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -324,6 +325,108 @@ describe("SearchBar component (#4401, #4404)", () => {
       });
 
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    describe("Whitespace-only input submission prevention (#9162)", () => {
+      it("evaluates isValidSearchQuery helper correctly", () => {
+        expect(isValidSearchQuery("  Coworking Space  ")).toBe(true);
+        expect(isValidSearchQuery("quiet coworking spaces")).toBe(true);
+        expect(isValidSearchQuery(" ")).toBe(false);
+        expect(isValidSearchQuery("   ")).toBe(false);
+        expect(isValidSearchQuery("\t\n  ")).toBe(false);
+        expect(isValidSearchQuery("")).toBe(false);
+      });
+
+      it("does not trigger onSearch or API fetch when pressing Enter with one space", () => {
+        const onSearch = jest.fn();
+        render(<SearchBar onSearch={onSearch} />);
+
+        const input = screen.getByTestId("search-bar-input");
+        act(() => {
+          fireEvent.change(input, { target: { value: " " } });
+        });
+        act(() => {
+          fireEvent.keyDown(input, { key: "Enter" });
+        });
+
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it("does not trigger onSearch or API fetch when pressing Enter with tabs or newline whitespace", () => {
+        const onSearch = jest.fn();
+        render(<SearchBar onSearch={onSearch} />);
+
+        const input = screen.getByTestId("search-bar-input");
+        act(() => {
+          fireEvent.change(input, { target: { value: "\t  \n  " } });
+        });
+        act(() => {
+          fireEvent.keyDown(input, { key: "Enter" });
+        });
+
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it("preserves internal spaces in valid queries upon submission", () => {
+        const onSearch = jest.fn();
+        render(<SearchBar onSearch={onSearch} />);
+
+        const input = screen.getByTestId("search-bar-input");
+        act(() => {
+          fireEvent.change(input, { target: { value: "   quiet coworking spaces   " } });
+        });
+        act(() => {
+          fireEvent.keyDown(input, { key: "Enter" });
+        });
+
+        expect(onSearch).toHaveBeenCalledWith("quiet coworking spaces");
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining("query=quiet%20coworking%20spaces"),
+          expect.any(Object),
+        );
+      });
+
+      it("does not save whitespace-only searches into search history", () => {
+        render(<SearchBar />);
+        const input = screen.getByTestId("search-bar-input");
+
+        act(() => {
+          fireEvent.change(input, { target: { value: "    " } });
+        });
+        act(() => {
+          fireEvent.keyDown(input, { key: "Enter" });
+        });
+
+        // Clear input and focus to inspect recent searches
+        act(() => {
+          fireEvent.change(input, { target: { value: "" } });
+          fireEvent.focus(input);
+        });
+
+        expect(screen.getByTestId("search-history-empty")).toBeInTheDocument();
+      });
+
+      it("handles searchbar rendered inside a form without dispatching fetch on form submit with whitespace", () => {
+        const onSearch = jest.fn();
+        render(
+          <form data-testid="search-form">
+            <SearchBar onSearch={onSearch} />
+          </form>,
+        );
+
+        const input = screen.getByTestId("search-bar-input");
+        act(() => {
+          fireEvent.change(input, { target: { value: "     " } });
+        });
+
+        // Both Enter key and form submit
+        act(() => {
+          fireEvent.keyDown(input, { key: "Enter" });
+          fireEvent.submit(screen.getByTestId("search-form"));
+        });
+
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
     });
   });
 

@@ -377,6 +377,21 @@ export default function NomadPassportGallery({
     setQrCopyStatus("idle");
   }, [previewModalStamp?.stampId]);
 
+  useEffect(() => {
+    if (!previewModalStamp) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewModalStamp(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [previewModalStamp]);
+
   const getPassportVerificationUrl = (stamp: PassportStamp) => {
     if (typeof window === "undefined") return "";
     const params = new URLSearchParams({
@@ -774,11 +789,11 @@ export default function NomadPassportGallery({
           aria-modal="true"
           aria-labelledby="stamp-modal-title"
           data-testid="stamp-preview-modal"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 overflow-hidden"
           onClick={() => setPreviewModalStamp(null)}
         >
           <div
-            className="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-700/80 p-6 md:p-8 space-y-6 shadow-2xl"
+            className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-3xl bg-slate-900 border border-slate-700/80 p-6 md:p-8 space-y-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close Button */}

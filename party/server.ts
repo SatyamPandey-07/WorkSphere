@@ -1222,22 +1222,26 @@ export default class WorkspaceServer implements Party.Server {
   }
 
   private handleSeatCheckoutComplete(
-    _conn: Party.Connection,
+    conn: Party.Connection,
     seatId: string,
     venueId: string,
   ) {
     const holdKey = `${venueId}:${seatId}`;
     const existing = this.seatHolds.get(holdKey);
-    if (existing) {
-      this.seatHolds.delete(holdKey);
-      const connSet = this.connHolds.get(existing.connId);
-      if (connSet) {
-        connSet.delete(holdKey);
-        if (connSet.size === 0) {
-          this.connHolds.delete(existing.connId);
-        }
-      }
-    }
+
+    if (!existing) return;
+
+    const authenticatedUserId = (conn.state as { userId?: string } | null)
+      ?.userId;
+
+    const ownsHold =
+      existing.connId === conn.id ||
+      (typeof authenticatedUserId === "string" &&
+        authenticatedUserId === existing.userId);
+
+    if (!ownsHold) return;
+
+    this.dropSeatHold(holdKey);
 
     this.recordAndBroadcast(null, "seat_unlocked", {
       seatId,

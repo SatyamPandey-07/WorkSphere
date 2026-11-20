@@ -18,7 +18,11 @@ jest.mock("y-partykit", () => ({ onConnect: jest.fn() }));
 
 const VENUE = "venue-101";
 
-function makeConn(id: string, userId?: string, name?: string): Party.Connection {
+function makeConn(
+  id: string,
+  userId?: string,
+  name?: string,
+): Party.Connection {
   const conn: any = {
     id,
     state: userId ? { userId, name } : {},
@@ -38,12 +42,26 @@ describe("Seat-hold lock ownership integrity (#3522)", () => {
 
   const hold = (conn: Party.Connection, seatId: string, extra: object = {}) =>
     server.onMessage(
-      JSON.stringify({ type: "seat_hold_request", venueId: VENUE, seatId, ...extra }),
+      JSON.stringify({
+        type: "seat_hold_request",
+        venueId: VENUE,
+        seatId,
+        ...extra,
+      }),
       conn,
     );
-  const release = (conn: Party.Connection, seatId: string, extra: object = {}) =>
+  const release = (
+    conn: Party.Connection,
+    seatId: string,
+    extra: object = {},
+  ) =>
     server.onMessage(
-      JSON.stringify({ type: "seat_release_request", venueId: VENUE, seatId, ...extra }),
+      JSON.stringify({
+        type: "seat_release_request",
+        venueId: VENUE,
+        seatId,
+        ...extra,
+      }),
       conn,
     );
   const reasons = () =>
@@ -175,6 +193,86 @@ describe("Seat-hold lock ownership integrity (#3522)", () => {
       release(alice1, "s1"); // released through a non-owning connection
       expect(indexes().seatHolds.size).toBe(0);
       expect(indexes().connHolds.size).toBe(0);
+    });
+  });
+  describe("checkout completion ownership (#9128)", () => {
+    it("allows the connection that owns the hold to complete checkout", () => {
+      const alice = makeConn("alice", "user-alice");
+
+      hold(alice, "s1");
+      broadcast.mockClear();
+
+      server.onMessage(
+        JSON.stringify({
+          type: "seat_checkout_complete",
+          venueId: VENUE,
+          seatId: "s1",
+        }),
+        alice,
+      );
+
+      expect(server.getActiveSeatHolds(VENUE)).toHaveLength(0);
+      expect(reasons()).toEqual(["CHECKOUT_COMPLETE"]);
+    });
+
+    it("does not release another user's hold through unauthorized checkout", () => {
+      const alice = makeConn("alice", "user-alice");
+      const bob = makeConn("bob", "user-bob");
+
+      hold(alice, "s1");
+      broadcast.mockClear();
+
+      // Bob attempts to impersonate Alice through the message payload.
+      server.onMessage(
+        JSON.stringify({
+          type: "seat_checkout_complete",
+          venueId: VENUE,
+          seatId: "s1",
+          userId: "user-alice",
+        }),
+        bob,
+      );
+
+      expect(server.getActiveSeatHolds(VENUE)).toHaveLength(1);
+      expect(reasons()).toEqual([]);
+    });
+
+    it("allows another authenticated connection belonging to the same user to complete checkout", () => {
+      const alice1 = makeConn("alice-1", "user-alice");
+      const alice2 = makeConn("alice-2", "user-alice");
+
+      hold(alice1, "s1");
+      broadcast.mockClear();
+
+      server.onMessage(
+        JSON.stringify({
+          type: "seat_checkout_complete",
+          venueId: VENUE,
+          seatId: "s1",
+        }),
+        alice2,
+      );
+
+      expect(server.getActiveSeatHolds(VENUE)).toHaveLength(0);
+      expect(reasons()).toEqual(["CHECKOUT_COMPLETE"]);
+    });
+
+    it("does not broadcast checkout completion when no hold exists", () => {
+      const alice = makeConn("alice", "user-alice");
+
+      broadcast.mockClear();
+
+      server.onMessage(
+        JSON.stringify({
+          type: "seat_checkout_complete",
+          venueId: VENUE,
+          seatId: "s1",
+        }),
+        alice,
+      );
+
+      expect(server.getActiveSeatHolds(VENUE)).toHaveLength(0);
+      expect(reasons()).toEqual([]);
     });
   });
 });

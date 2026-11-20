@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Terminal, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -16,11 +16,15 @@ import {
   AmbientNoiseSparklineProps,
   HourlyDecibelPoint,
 } from "../analytics/AmbientNoiseSparkline";
+import { RadarSweepHUD } from "../ui/RadarSweepHUD";
 
 export interface VenueDetailModalProps extends VenueDetailDialogProps {
   hourlyForecastProps?: Partial<HourlyCrowdForecastProps>;
   hourlyDecibels?: HourlyDecibelPoint[];
   initialTab?: "overview" | "reviews" | "menu" | "developer";
+  currentDb?: number;
+  noiseHistory?: number[];
+  showRadarSweep?: boolean;
 }
 
 /**
@@ -198,20 +202,72 @@ export function VenueDeveloperTab({
  * VenueDetailModal
  *
  * Wrapper component providing modal compatibility for venue details with
- * integrated HourlyCrowdForecast and Developer tab terminal cURL snippet generator.
+ * integrated HourlyCrowdForecast, Developer tab terminal cURL snippet generator,
+ * and optional RadarSweepHUD audio decibel monitoring overlay.
  * Applies theme-aware overlay and backdrop styling to prevent white flash during theme transitions.
  */
 export function VenueDetailModal(props: VenueDetailModalProps) {
+  const {
+    currentDb,
+    noiseHistory = [],
+    showRadarSweep,
+    hourlyDecibels,
+    ...dialogProps
+  } = props;
+
+  // Derive live decibel / history from existing venue telemetry sources when not provided explicitly
+  const effectiveNoiseHistory = useMemo(() => {
+    if (Array.isArray(noiseHistory) && noiseHistory.length > 0) {
+      return noiseHistory;
+    }
+    if (Array.isArray(hourlyDecibels) && hourlyDecibels.length > 0) {
+      return hourlyDecibels.map((p) => p.dBA);
+    }
+    return [];
+  }, [noiseHistory, hourlyDecibels]);
+
+  const effectiveCurrentDb = useMemo(() => {
+    if (typeof currentDb === "number" && Number.isFinite(currentDb)) {
+      return currentDb;
+    }
+    if (effectiveNoiseHistory.length > 0) {
+      return effectiveNoiseHistory[effectiveNoiseHistory.length - 1];
+    }
+    if (typeof props.venue?.score === "number") {
+      // Map existing score if present
+      return Math.round(props.venue.score);
+    }
+    return 0;
+  }, [currentDb, effectiveNoiseHistory, props.venue?.score]);
+
+  // Display radar sweep overlay when venue modal is open and requested/available
+  const shouldRenderRadar =
+    showRadarSweep ??
+    (props.isOpen && (effectiveCurrentDb > 0 || effectiveNoiseHistory.length > 0));
+
   return (
     <div
       style={{ colorScheme: "dark light" }}
-      className="[color-scheme:dark_light] [&>div]:!bg-black/60 dark:[&>div]:!bg-black/80 [&_[role='dialog']]:!bg-white dark:[&_[role='dialog']]:!bg-zinc-950 [&_[role='dialog']]:!backdrop-blur-md"
+      className="[color-scheme:dark_light] [&>div]:!bg-black/60 dark:[&>div]:!bg-black/80 [&_[role='dialog']]:!bg-white dark:[&_[role='dialog']]:!bg-zinc-950 [&_[role='dialog']]:!backdrop-blur-md relative"
     >
-      <VenueDetailDialog {...props} />
+      <VenueDetailDialog {...dialogProps} />
+
+      {shouldRenderRadar && props.isOpen && (
+        <aside
+          aria-label="Acoustic Radar Overlay"
+          className="fixed bottom-6 right-6 z-50 pointer-events-auto max-w-[280px] w-full animate-in fade-in slide-in-from-bottom-4 duration-300 shadow-2xl"
+        >
+          <RadarSweepHUD
+            currentDb={effectiveCurrentDb}
+            noiseHistory={effectiveNoiseHistory}
+            data-testid="venue-modal-radar-sweep-hud"
+          />
+        </aside>
+      )}
     </div>
   );
 }
 
-export { HourlyCrowdForecast, AmbientNoiseSparkline };
+export { HourlyCrowdForecast, AmbientNoiseSparkline, RadarSweepHUD };
 export type { AmbientNoiseSparklineProps, HourlyDecibelPoint };
 export default VenueDetailModal;

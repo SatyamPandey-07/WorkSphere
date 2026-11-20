@@ -161,22 +161,59 @@ describe("Seat-hold lock ownership integrity (#3522)", () => {
       ]);
     });
 
-    it("works for unauthenticated sockets that identify through the payload userId (the shipped client)", () => {
-      // useSeatHoldLock opens its socket without a token, so the server has no
-      // verified state and identifies the user by the userId in the message.
-      const alice1 = makeConn("alice-1");
-      const alice2 = makeConn("alice-2");
-      const bob = makeConn("bob");
+    it("does not trust payload userId when an unauthenticated connection acquires a hold", () => {
+      const attacker = makeConn("attacker-connection");
+      const alice = makeConn("alice-connection", "user-alice");
 
-      hold(alice1, "s1", { userId: "user-alice" });
-      hold(alice2, "s1", { userId: "user-alice" });
-      server.onClose(alice1);
+      hold(attacker, "s1", { userId: "user-alice" });
 
       expect(server.getActiveSeatHolds(VENUE)).toEqual([
-        expect.objectContaining({ userId: "user-alice", connId: "alice-2" }),
+        expect.objectContaining({
+          userId: "attacker-connection",
+          connId: "attacker-connection",
+        }),
       ]);
-      hold(bob, "s1", { userId: "user-bob" });
-      expect(rejected(bob)).toHaveLength(1);
+
+      // Alice cannot be impersonated by the unauthenticated connection.
+      hold(alice, "s1");
+
+      expect(rejected(alice)).toHaveLength(1);
+    });
+
+    it("rejects a spoofed renewal of another user's hold", () => {
+      const alice = makeConn("alice-connection", "user-alice");
+      const attacker = makeConn("attacker-connection");
+
+      hold(alice, "s1");
+      const originalHold = server.getActiveSeatHolds(VENUE)[0];
+
+      hold(attacker, "s1", { userId: "user-alice" });
+
+      expect(rejected(attacker)).toHaveLength(1);
+      expect(server.getActiveSeatHolds(VENUE)).toEqual([
+        expect.objectContaining({
+          userId: "user-alice",
+          connId: "alice-connection",
+          expiresAt: originalHold.expiresAt,
+        }),
+      ]);
+    });
+
+    it("does not allow a spoofed payload userId to release another user's hold", () => {
+      const alice = makeConn("alice-connection", "user-alice");
+      const attacker = makeConn("attacker-connection");
+
+      hold(alice, "s1");
+
+      release(attacker, "s1", { userId: "user-alice" });
+
+      expect(server.getActiveSeatHolds(VENUE)).toEqual([
+        expect.objectContaining({
+          userId: "user-alice",
+          connId: "alice-connection",
+        }),
+      ]);
+      expect(reasons()).toEqual([]);
     });
 
     it("keeps the connection index consistent with the hold index", () => {

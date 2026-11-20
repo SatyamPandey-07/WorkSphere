@@ -138,6 +138,20 @@ describe("hybrid venue search cache and prefetch", () => {
     await expect(getTrendingVenueSearchQueries()).resolves.toEqual([]);
   });
 
+  it("uses separate cache entries for different amenity filters", async () => {
+    await searchVenuesWithRrf("quiet cafe", { amenities: ["quiet"] });
+    await searchVenuesWithRrf("quiet cafe", { amenities: ["standing desk"] });
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares a cache entry for the same amenities in a different order or case", async () => {
+    await searchVenuesWithRrf("quiet cafe", { amenities: ["Quiet", "wifi"] });
+    await searchVenuesWithRrf("quiet cafe", { amenities: [" wifi", "quiet "] });
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+
   it("normalizes equivalent queries to a single cache entry and reports user metrics", async () => {
     await searchVenuesWithRrf(" Quiet   Cafe ");
     await searchVenuesWithRrf("quiet cafe");

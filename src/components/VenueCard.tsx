@@ -5,7 +5,6 @@ import {
   Star,
   Wifi,
   Zap,
-  Volume2,
   Navigation,
   Heart,
   Headphones,
@@ -56,6 +55,7 @@ const AmbientSoundPlayer = dynamic(
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 import { MachSpeedBadge } from "@/components/ui/NoiseLevelBadge";
+import { VenueSoundBadge } from "@/components/venue/VenueSoundBadge";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
 import { getVenueHoursStatus } from "@/lib/venueHours";
@@ -1562,21 +1562,7 @@ export function VenueCard({
             {/* Noise profile badge — Issue #701: ambient audio preview */}
             {venue.noiseLevel && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
-                <Volume2
-                  className={`w-3.5 h-3.5 shrink-0 ${
-                    venue.noiseLevel === "quiet"
-                      ? "text-green-600"
-                      : venue.noiseLevel === "moderate"
-                        ? "text-orange-600"
-                        : "text-red-600"
-                  }`}
-                />
-                <span
-                  className="capitalize truncate max-w-[200px]"
-                  title={venue.noiseLevel}
-                >
-                  {venue.noiseLevel}
-                </span>
+                <VenueSoundBadge noiseLevel={venue.noiseLevel} />
                 <AmbientSoundPlayer
                   noiseLevel={venue.noiseLevel}
                   venueName={venue.name}
@@ -1814,21 +1800,7 @@ export function VenueCard({
           {/* Noise level row — Issue #701: ambient audio preview */}
           {venue.noiseLevel && (
             <div className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
-              <Volume2
-                className={`w-4 h-4 shrink-0 ${
-                  venue.noiseLevel === "quiet"
-                    ? "text-green-600"
-                    : venue.noiseLevel === "moderate"
-                      ? "text-orange-600"
-                      : "text-red-600"
-                }`}
-              />
-              <span
-                className="capitalize max-w-[140px] sm:max-w-[180px] truncate"
-                title={venue.noiseLevel}
-              >
-                {venue.noiseLevel}
-              </span>
+              <VenueSoundBadge noiseLevel={venue.noiseLevel} size="regular" />
               <AmbientSoundPlayer
                 noiseLevel={venue.noiseLevel}
                 venueName={venue.name}

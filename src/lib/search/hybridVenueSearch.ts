@@ -13,6 +13,8 @@ export interface HybridVenueSearchFilters {
   maxLng?: number;
   category?: string;
   cities?: string[];
+  /** Amenity filters (e.g. "quiet", "standing desk"); order and case do not matter. */
+  amenities?: string[];
   semanticWeight?: number;
   fullTextWeight?: number;
   rrfK?: number;
@@ -140,6 +142,11 @@ function normalizedSearchCacheKey(
     maxLng: filters.maxLng,
     category: filters.category ?? null,
     cities: [...(filters.cities ?? [])].sort(),
+    amenities: [
+      ...new Set(
+        (filters.amenities ?? []).map((a) => a.trim().toLowerCase()).filter(Boolean),
+      ),
+    ].sort(),
     semanticWeight: filters.semanticWeight ?? null,
     fullTextWeight: filters.fullTextWeight ?? null,
     rrfK: filters.rrfK ?? null,
@@ -152,7 +159,7 @@ function normalizedSearchCacheKey(
   const digest = createHash("sha256")
     .update(JSON.stringify(keyParts))
     .digest("hex");
-  return `venue:hybrid-search:v1:${digest}`;
+  return `venue:hybrid-search:v2:${digest}`;
 }
 
 function toCachedRankedVenueList(
@@ -750,6 +757,17 @@ async function searchVenuesWithRrfUncached(
         ),
         " OR ",
       )})`,
+    );
+  }
+
+  const amenityFilters = [
+    ...new Set(
+      (filters.amenities ?? []).map((a) => a.trim().toLowerCase()).filter(Boolean),
+    ),
+  ];
+  for (const amenity of amenityFilters) {
+    predicates.push(
+      Prisma.sql`EXISTS (SELECT 1 FROM "AmenityValidation" av WHERE av."venueId" = v."id" AND LOWER(av."amenity") = ${amenity})`,
     );
   }
 

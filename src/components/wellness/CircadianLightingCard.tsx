@@ -42,6 +42,18 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/** Convert a pointer position on the slider track into its bounded value. */
+export function getSliderValueFromClientX(
+  clientX: number,
+  rect: Pick<DOMRect, "left" | "width">,
+  min = 0,
+  max = MINUTES_PER_DAY - 1,
+): number {
+  const width = Number.isFinite(rect.width) && rect.width > 0 ? rect.width : 1;
+  const position = clamp((clientX - rect.left) / width, 0, 1);
+  return Math.round(min + position * (max - min));
+}
+
 function smoothstep(t: number): number {
   const x = clamp(t, 0, 1);
   return x * x * (3 - 2 * x);
@@ -197,6 +209,9 @@ export function CircadianLightingCard({
   const [nowMs, setNowMs] = useState<number | null>(null);
   const [previewMinutes, setPreviewMinutes] = useState<number | null>(null);
   const [override, setOverride] = useState<CircadianOverride | null>(null);
+  const ready = nowMs !== null && previewMinutes !== null;
+  const sliderRef = useRef<HTMLInputElement>(null);
+  const pointerDraggingRef = useRef(false);
 
   const overrideRef = useRef<CircadianOverride | null>(null);
   const onOverrideChangeRef = useRef(onOverrideChange);
@@ -292,6 +307,50 @@ export function CircadianLightingCard({
     [commitOverride],
   );
 
+  const updateSliderFromPointer = useCallback(
+    (clientX: number) => {
+      const slider = sliderRef.current;
+      if (!slider || !Number.isFinite(clientX)) return;
+      handleSliderChange({
+        target: {
+          value: String(
+            getSliderValueFromClientX(clientX, slider.getBoundingClientRect()),
+          ),
+        },
+      } as React.ChangeEvent<HTMLInputElement>);
+    },
+    [handleSliderChange],
+  );
+
+  const handleSliderPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLInputElement>) => {
+      if (!ready) return;
+      pointerDraggingRef.current = true;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      updateSliderFromPointer(event.clientX);
+    },
+    [ready, updateSliderFromPointer],
+  );
+
+  const handleSliderPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLInputElement>) => {
+      if (!pointerDraggingRef.current) return;
+      event.preventDefault();
+      updateSliderFromPointer(event.clientX);
+    },
+    [updateSliderFromPointer],
+  );
+
+  const handleSliderPointerEnd = useCallback(
+    (event: React.PointerEvent<HTMLInputElement>) => {
+      if (!pointerDraggingRef.current) return;
+      pointerDraggingRef.current = false;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    },
+    [],
+  );
+
   const handleToggle = useCallback(() => {
     if (overrideRef.current) {
       commitOverride(null, "cleared");
@@ -310,7 +369,6 @@ export function CircadianLightingCard({
     );
   }, [commitOverride, overrideDurationMs, previewMinutes]);
 
-  const ready = nowMs !== null && previewMinutes !== null;
   const systemKelvin = ready
     ? getScheduleKelvin(minutesOfDayFromMs(nowMs))
     : MAX_KELVIN;
@@ -397,6 +455,7 @@ export function CircadianLightingCard({
           />
           <input
             type="range"
+            ref={sliderRef}
             data-testid="circadian-preview-slider"
             aria-label="Preview time of day"
             aria-valuetext={
@@ -410,6 +469,11 @@ export function CircadianLightingCard({
             value={sliderValue}
             disabled={!ready}
             onChange={handleSliderChange}
+            onPointerDown={handleSliderPointerDown}
+            onPointerMove={handleSliderPointerMove}
+            onPointerUp={handleSliderPointerEnd}
+            onPointerCancel={handleSliderPointerEnd}
+            style={{ touchAction: "none" }}
             className="w-full cursor-pointer accent-amber-500 disabled:cursor-not-allowed"
           />
           <div

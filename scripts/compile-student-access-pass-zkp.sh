@@ -64,7 +64,7 @@ MANIFEST_OUT="$OUT_DIR/$CIRCUIT.manifest.json" \
 node -e '
 const fs = require("fs");
 const crypto = require("crypto");
-const src = fs.readFileSync(process.env.CIRCOM_SRC, "utf8").replace(/\\r\\n/g, "\\n");
+const src = fs.readFileSync(process.env.CIRCOM_SRC, "utf8").replace(/\r\n/g, "\n");
 const manifest = {
   circuit: "student_access_pass.circom",
   circuitSha256: crypto.createHash("sha256").update(src).digest("hex"),
@@ -72,7 +72,16 @@ const manifest = {
   commitmentScheme: "poseidon-bn254-merkle16",
   ceremonyPower: 14
 };
-fs.writeFileSync(process.env.MANIFEST_OUT, JSON.stringify(manifest, null, 2) + "\\n");
+fs.writeFileSync(process.env.MANIFEST_OUT, JSON.stringify(manifest, null, 2) + "\n");
+'
+
+VKEY_OUT="$OUT_DIR/${CIRCUIT}_vkey.json" \
+node -e '
+const fs = require("fs");
+const key = JSON.parse(fs.readFileSync(process.env.VKEY_OUT, "utf8"));
+if (Number(key.nPublic) !== 3) {
+  throw new Error("student_access_pass verification key must expose exactly three public signals");
+}
 '
 
 echo ">> generated student_access_pass.wasm, student_access_pass.zkey, and student_access_pass_vkey.json"

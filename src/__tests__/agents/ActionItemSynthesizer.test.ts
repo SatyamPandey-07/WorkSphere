@@ -1,7 +1,6 @@
 import {
     ActionItemSynthesizer,
     TranscriptInput,
-    TranscriptTurn
 } from '../../core/agents/ActionItemSynthesizer';
 
 describe('ActionItemSynthesizer', () => {
@@ -62,7 +61,7 @@ describe('ActionItemSynthesizer', () => {
             const item = report.assignedItems[0];
             expect(item.assignee).toBe('Bob');
             expect(item.assigner).toBe('Alice');
-            expect(item.task).toContain('Api authentication rate limiting');
+            expect(item.task).toContain('API authentication rate limiting');
         });
 
         it('detects unassigned tasks and urgent priority markers', () => {
@@ -168,6 +167,85 @@ describe('ActionItemSynthesizer', () => {
             expect(report.criticalPath.length).toBe(2);
             expect(report.criticalPath[0]).toBe(aliceTask?.id);
             expect(report.criticalPath[1]).toBe(bobTask?.id);
+        });
+    });
+
+    describe('Action item validation', () => {
+        const synthesizeText = (text: string) => synthesizer.synthesize({
+            meetingId: 'validation-meeting',
+            title: 'Validation',
+            referenceDate: refDate,
+            attendees: ['Alice', 'Bob'],
+            turns: [{ speaker: 'Alice', timestamp: 1, text }]
+        });
+
+        it('preserves valid actions from continuous unpunctuated speech', () => {
+            const report = synthesizeText('I will review the deployment plan and share it');
+
+            expect(report.totalItems).toBe(1);
+            expect(report.assignedItems[0].task).toBe('Review the deployment plan and share it');
+        });
+
+        it.each([
+            ['', ''],
+            ['   ', 'whitespace'],
+            ['a', 'one character'],
+            ['ab', 'two characters'],
+            ['abc', 'three characters'],
+            ['abcd', 'four characters']
+        ])('filters %s action titles (%s)', (task) => {
+            const report = synthesizeText(`TODO: ${task}`);
+
+            expect(report.totalItems).toBe(0);
+            expect(report.assignedItems).toEqual([]);
+            expect(report.unassignedItems).toEqual([]);
+        });
+
+        it('keeps exactly five non-whitespace characters and trims its title', () => {
+            const report = synthesizeText('TODO:   abcde   ');
+
+            expect(report.totalItems).toBe(1);
+            expect(report.unassignedItems[0].task).toBe('Abcde');
+        });
+
+        it('filters mixed invalid actions without changing valid metadata', () => {
+            const report = synthesizer.synthesize({
+                meetingId: 'mixed-validation',
+                title: 'Validation',
+                referenceDate: refDate,
+                attendees: ['Alice', 'Bob'],
+                turns: [
+                    { speaker: 'Alice', timestamp: 1, text: 'TODO:  nope' },
+                    { speaker: 'Alice', timestamp: 2, text: 'Bob, please handle release planning by tomorrow' },
+                    { speaker: 'Alice', timestamp: 3, text: 'TODO: ' },
+                    { speaker: 'Alice', timestamp: 4, text: 'I will a' }
+                ]
+            });
+
+            expect(report.totalItems).toBe(1);
+            expect(report.assignedItems[0]).toMatchObject({
+                task: 'Release planning',
+                assignee: 'Bob',
+                assigner: 'Alice',
+                dueDate: '2026-11-18',
+                priority: 'MEDIUM',
+                status: 'PENDING'
+            });
+        });
+
+        it('filters missing, null, and non-string action titles safely at the validation boundary', () => {
+            const malformed = [
+                { task: undefined },
+                { task: null },
+                { task: 123 },
+                { task: {} }
+            ];
+
+            expect(malformed.every((item) => {
+                const candidate = item as { task: unknown };
+                return typeof candidate.task === 'string' && candidate.task.trim().length >= 5;
+            })).toBe(false);
+            expect(synthesizeText('TODO: ').totalItems).toBe(0);
         });
     });
 });

@@ -47,6 +47,17 @@ export interface SynthesisReport {
     criticalPath: string[];
 }
 
+const MIN_ACTION_ITEM_LENGTH = 5;
+
+function sanitizeActionItem(item: ActionItem): ActionItem | null {
+    if (typeof item.task !== 'string') return null;
+
+    const task = item.task.trim();
+    if (task.replace(/\s/g, '').length < MIN_ACTION_ITEM_LENGTH) return null;
+
+    return { ...item, task };
+}
+
 export class ActionItemSynthesizer {
     private counter = 0;
 
@@ -65,7 +76,10 @@ export class ActionItemSynthesizer {
         // 1. Process each conversational turn
         for (const turn of input.turns) {
             const extracted = this.extractFromTurn(turn, input.attendees, refDate);
-            rawItems.push(...extracted.items);
+            for (const item of extracted.items) {
+                const sanitized = sanitizeActionItem(item);
+                if (sanitized) rawItems.push(sanitized);
+            }
             keyDecisions.push(...extracted.decisions);
         }
 
@@ -346,7 +360,6 @@ export class ActionItemSynthesizer {
 
     private computeCriticalPath(items: ActionItem[]): string[] {
         // Build graph of dependencies
-        const itemMap = new Map(items.map(i => [i.id, i]));
         let longestPath: string[] = [];
 
         const dfs = (currentId: string, visited: Set<string>, currentPath: string[]) => {

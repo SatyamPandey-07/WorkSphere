@@ -218,5 +218,59 @@ describe("VenueDetailModal Developer Tab & cURL Snippet Generator", () => {
         "curl -s https://work-sphere.vercel.app/api/venues/venue-sf-01 | jq .",
       );
     });
+
+    it("renders RadarSweepHUD overlay when currentDb and noiseHistory are provided", () => {
+      const mockVenue = {
+        id: "venue-sf-01",
+        name: "Mission Roasters",
+        lat: 37.76,
+        lng: -122.42,
+        category: "cafe",
+      } as any;
+
+      render(
+        <VenueDetailModal
+          venue={mockVenue}
+          isOpen={true}
+          isFavorited={false}
+          onClose={jest.fn()}
+          onGetDirections={jest.fn()}
+          onToggleFavorite={jest.fn()}
+          currentDb={54}
+          noiseHistory={[45, 50, 54]}
+        />,
+      );
+
+      const radarOverlay = screen.getByTestId("venue-modal-radar-sweep-hud");
+      expect(radarOverlay).toBeInTheDocument();
+      expect(screen.getByTestId("radar-current-db")).toHaveTextContent("54");
+      expect(screen.getByTestId("radar-status-badge")).toHaveTextContent("Moderate");
+    });
+
+    it("does not crash when noise data is missing", () => {
+      const mockVenue = {
+        id: "venue-sf-02",
+        name: "Quiet Library",
+        lat: 37.76,
+        lng: -122.42,
+        category: "library",
+      } as any;
+
+      render(
+        <VenueDetailModal
+          venue={mockVenue}
+          isOpen={true}
+          isFavorited={false}
+          onClose={jest.fn()}
+          onGetDirections={jest.fn()}
+          onToggleFavorite={jest.fn()}
+          showRadarSweep={false}
+        />,
+      );
+
+      expect(
+        screen.queryByTestId("venue-modal-radar-sweep-hud"),
+      ).not.toBeInTheDocument();
+    });
   });
 });

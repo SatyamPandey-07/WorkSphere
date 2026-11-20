@@ -12,7 +12,8 @@ export const GROUP_NOTES_ROOM_PREFIX = "notes-";
 
 /** Folder id for `folder-{id}` and `folder-notes-{id}` rooms (other rooms: the room id). */
 export function folderIdFromRoom(roomId: string): string {
-  if (roomId.startsWith(FOLDER_NOTES_ROOM_PREFIX)) return roomId.slice(FOLDER_NOTES_ROOM_PREFIX.length);
+  if (roomId.startsWith(FOLDER_NOTES_ROOM_PREFIX))
+    return roomId.slice(FOLDER_NOTES_ROOM_PREFIX.length);
   if (roomId.startsWith("folder-")) return roomId.slice("folder-".length);
   return roomId;
 }
@@ -245,12 +246,15 @@ export default class WorkspaceServer implements Party.Server {
           const NEXT_PUBLIC_APP_URL =
             process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000";
           const sharedSecret =
-            process.env.PARTYKIT_AUTH_SECRET || process.env.PARTYKIT_SHARED_SECRET;
+            process.env.PARTYKIT_AUTH_SECRET ||
+            process.env.PARTYKIT_SHARED_SECRET;
           const authRes = await fetch(
             `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${encodeURIComponent(userId)}&folderId=${encodeURIComponent(folderId)}`,
             // The auth route rejects calls without the shared secret; without
             // this header every lookup failed and all users became viewers.
-            sharedSecret ? { headers: { Authorization: `Bearer ${sharedSecret}` } } : undefined,
+            sharedSecret
+              ? { headers: { Authorization: `Bearer ${sharedSecret}` } }
+              : undefined,
           );
 
           if (authRes.ok) {
@@ -258,7 +262,8 @@ export default class WorkspaceServer implements Party.Server {
             if (authData.role === "MEMBER" || authData.role === "VIEWER") {
               isViewer = true;
             }
-            isFolderMember = authData.member === true || authData.role === "OWNER";
+            isFolderMember =
+              authData.member === true || authData.role === "OWNER";
           } else {
             isViewer = true;
           }
@@ -385,14 +390,19 @@ export default class WorkspaceServer implements Party.Server {
 
       // Room awareness presence updates (#3438)
       if (parsed.type === "presence_update") {
+        const authenticatedUserId = state?.userId;
+
+        if (
+          !authenticatedUserId ||
+          (parsed.userId !== undefined && parsed.userId !== authenticatedUserId)
+        ) {
+          return;
+        }
+
         const presence: PresenceUser = {
-          userId: String(
-            parsed.userId || (sender.state as any)?.userId || sender.id,
-          ),
+          userId: authenticatedUserId,
           userName: String(
-            parsed.userName ||
-              (sender.state as any)?.name ||
-              "Collaborator",
+            parsed.userName || (sender.state as any)?.name || "Collaborator",
           ),
           avatarUrl: parsed.avatarUrl ? String(parsed.avatarUrl) : undefined,
           cursorPosition:
@@ -400,10 +410,7 @@ export default class WorkspaceServer implements Party.Server {
               ? parsed.cursorPosition
               : null,
           isTyping: Boolean(parsed.isTyping),
-          lastActive:
-            typeof parsed.lastActive === "number"
-              ? parsed.lastActive
-              : Date.now(),
+          lastActive: Date.now(),
         };
 
         this.roomPresence.set(sender.id, presence);
@@ -421,19 +428,35 @@ export default class WorkspaceServer implements Party.Server {
 
       // Presence heartbeat (every 5s from client) (#3438)
       if (parsed.type === "presence_heartbeat") {
+        const authenticatedUserId = state?.userId;
+
+        if (
+          !authenticatedUserId ||
+          (parsed.userId !== undefined && parsed.userId !== authenticatedUserId)
+        ) {
+          return;
+        }
+
         const now = Date.now();
         const existing = this.roomPresence.get(sender.id);
+
         if (existing) {
+          if (existing.userId !== authenticatedUserId) {
+            return;
+          }
+
           existing.lastActive = now;
+
           if (typeof parsed.cursorPosition === "number") {
             existing.cursorPosition = parsed.cursorPosition;
           }
+
           if (typeof parsed.isTyping === "boolean") {
             existing.isTyping = parsed.isTyping;
           }
-        } else if (parsed.userId) {
+        } else {
           this.roomPresence.set(sender.id, {
-            userId: String(parsed.userId),
+            userId: authenticatedUserId,
             userName: String(parsed.userName || "Collaborator"),
             avatarUrl: parsed.avatarUrl ? String(parsed.avatarUrl) : undefined,
             cursorPosition:
@@ -444,9 +467,9 @@ export default class WorkspaceServer implements Party.Server {
             lastActive: now,
           });
         }
+
         return;
       }
-
       if (
         parsed.type === "request_presence" ||
         parsed.type === "presence_sync"
@@ -462,13 +485,15 @@ export default class WorkspaceServer implements Party.Server {
 
       if (parsed.type === "sync_request") {
         const lastSeq = typeof parsed.lastSeq === "number" ? parsed.lastSeq : 0;
-        const epoch = typeof parsed.epoch === "number" ? parsed.epoch : undefined;
+        const epoch =
+          typeof parsed.epoch === "number" ? parsed.epoch : undefined;
         this.handleSyncRequest(sender, lastSeq, epoch);
         return;
       }
 
       if (parsed.type === "ack_seq") {
-        const lastSeq = typeof parsed.lastSeq === "number" ? parsed.lastSeq : parsed.seq;
+        const lastSeq =
+          typeof parsed.lastSeq === "number" ? parsed.lastSeq : parsed.seq;
         sender.setState({
           ...((sender.state as Record<string, unknown>) ?? {}),
           lastAckSeq: lastSeq,
@@ -567,7 +592,9 @@ export default class WorkspaceServer implements Party.Server {
           parsed.seatId,
           parsed.venueId,
           String(parsed.userId || state.userId || sender.id),
-          parsed.userName ? String(parsed.userName) : (sender.state as any)?.name,
+          parsed.userName
+            ? String(parsed.userName)
+            : (sender.state as any)?.name,
           typeof parsed.ttlMs === "number" ? parsed.ttlMs : undefined,
         );
         return;
@@ -597,7 +624,8 @@ export default class WorkspaceServer implements Party.Server {
       }
 
       if (parsed.type === "request_seat_holds") {
-        const venueId = typeof parsed.venueId === "string" ? parsed.venueId : undefined;
+        const venueId =
+          typeof parsed.venueId === "string" ? parsed.venueId : undefined;
         this.sendSeatHoldsSnapshot(sender, venueId);
         return;
       }
@@ -660,7 +688,8 @@ export default class WorkspaceServer implements Party.Server {
     this.handleSeatCheckout(conn);
     this.handleConnectionSeatHoldsCleanup(conn.id);
     for (const [noteId, lease] of this.stickyNoteLeases) {
-      if (lease.connId === conn.id) this.releaseStickyNoteLease(noteId, conn.id);
+      if (lease.connId === conn.id)
+        this.releaseStickyNoteLease(noteId, conn.id);
     }
 
     if (this.roomPresence.has(conn.id)) {
@@ -719,7 +748,9 @@ export default class WorkspaceServer implements Party.Server {
     this.broadcastStickyNoteLease(noteId, lease);
   }
 
-  private getActiveStickyNoteLease(noteId: string): StickyNoteLease | undefined {
+  private getActiveStickyNoteLease(
+    noteId: string,
+  ): StickyNoteLease | undefined {
     const lease = this.stickyNoteLeases.get(noteId);
     if (!lease) return undefined;
     if (lease.expiresAt > Date.now()) return lease;
@@ -1000,7 +1031,9 @@ export default class WorkspaceServer implements Party.Server {
     }
 
     const oldestEvent = this.eventHistory[0];
-    const oldestSeq = oldestEvent ? oldestEvent.sequenceId : this.sequenceId + 1;
+    const oldestSeq = oldestEvent
+      ? oldestEvent.sequenceId
+      : this.sequenceId + 1;
 
     if (lastSeq + 1 < oldestSeq) {
       this.sendFullSyncFallback(conn, "history_unavailable");

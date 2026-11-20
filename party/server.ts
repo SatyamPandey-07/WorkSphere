@@ -580,7 +580,12 @@ export default class WorkspaceServer implements Party.Server {
         this.room.broadcast(message, [sender.id]);
         return;
       }
-
+      // Derive seat-hold ownership exclusively from verified connection state.
+      // Unauthenticated connections are scoped to their individual connection ID.
+      const seatHoldOwnerId =
+        typeof state.userId === "string" && state.userId.length > 0
+          ? state.userId
+          : sender.id;
       // Distributed seat-hold locking protocol (#3522)
       if (
         parsed.type === "seat_hold_request" &&
@@ -591,7 +596,7 @@ export default class WorkspaceServer implements Party.Server {
           sender,
           parsed.seatId,
           parsed.venueId,
-          String(parsed.userId || state.userId || sender.id),
+          seatHoldOwnerId,
           parsed.userName
             ? String(parsed.userName)
             : (sender.state as any)?.name,
@@ -609,7 +614,7 @@ export default class WorkspaceServer implements Party.Server {
           sender,
           parsed.seatId,
           parsed.venueId,
-          String(parsed.userId || state.userId || sender.id),
+          seatHoldOwnerId,
         );
         return;
       }

@@ -2,6 +2,10 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { VenueSearchDrawer } from "@/components/venues/VenueSearchDrawer";
+import {
+  AmenityFilterPills,
+  POPULAR_AMENITIES,
+} from "@/components/venues/AmenityFilterPills";
 
 describe("VenueSearchDrawer Component (#1429)", () => {
   it("resets all filter parameters and clears amenity chips on 'Clear Filters'", () => {
@@ -96,6 +100,68 @@ describe("VenueSearchDrawer Component (#1429)", () => {
 
     expect(wifiChip).toHaveAttribute("aria-pressed", "false");
     expect(outletsChip).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("uses the same standing_desk amenity ID as the quick filter", () => {
+    const handleAmenitiesChange = jest.fn();
+    render(
+      <VenueSearchDrawer
+        isOpen
+        onClose={jest.fn()}
+        selectedAmenities={[]}
+        onAmenitiesChange={handleAmenitiesChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("amenity-standing_desk"));
+
+    expect(handleAmenitiesChange).toHaveBeenCalledWith(["standing_desk"]);
+  });
+
+  it("keeps the drawer and quick pill synchronized through shared amenity state", () => {
+    function SharedAmenityFilters() {
+      const [selectedAmenities, setSelectedAmenities] = React.useState<
+        string[]
+      >([]);
+
+      const updateAmenity = (amenityId: string, active: boolean) => {
+        setSelectedAmenities((current) =>
+          active
+            ? [...current, amenityId]
+            : current.filter((item) => item !== amenityId),
+        );
+      };
+
+      return (
+        <>
+          <AmenityFilterPills
+            amenities={POPULAR_AMENITIES.filter(
+              (amenity) => amenity.id === "standing_desk",
+            )}
+            selectedAmenities={selectedAmenities}
+            onToggleAmenity={updateAmenity}
+            syncWithUrl={false}
+          />
+          <VenueSearchDrawer
+            isOpen
+            onClose={jest.fn()}
+            selectedAmenities={selectedAmenities}
+            onAmenitiesChange={setSelectedAmenities}
+          />
+        </>
+      );
+    }
+
+    render(<SharedAmenityFilters />);
+
+    const quickPill = screen.getByTestId("amenity-pill-standing_desk");
+    const drawerFilter = screen.getByTestId("amenity-standing_desk");
+
+    fireEvent.click(quickPill);
+    expect(drawerFilter).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(drawerFilter);
+    expect(quickPill).toHaveAttribute("aria-checked", "false");
   });
 
   describe("Clear Filters visibility & interactions (#3343)", () => {
@@ -514,7 +580,10 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       expect(parentClickHandler).not.toHaveBeenCalled();
 
       // Touch start on backdrop should not propagate
-      const touchEvent = new Event("touchstart", { bubbles: true, cancelable: true });
+      const touchEvent = new Event("touchstart", {
+        bubbles: true,
+        cancelable: true,
+      });
       const stopPropSpy = jest.spyOn(touchEvent, "stopPropagation");
       backdrop.dispatchEvent(touchEvent);
       expect(stopPropSpy).toHaveBeenCalled();

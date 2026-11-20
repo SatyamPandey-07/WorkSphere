@@ -23,7 +23,8 @@
     "bench:audio-filter": "node scripts/bench-audio-filter-pool.mjs",
     "bench:bloom-limiter": "node --experimental-strip-types scripts/bench-distributed-bloom-limiter.mjs",
     "postinstall": "prisma generate",
-    "prepare": "husky"
+    "prepare": "husky",
+    "zkp:compile:student-access-pass": "bash scripts/compile-student-access-pass-zkp.sh"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.3",

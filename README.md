@@ -1105,6 +1105,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - **JWT Refresh Token Invalidation on Password Change**: Tracks `passwordChangedAt` in the User model to immediately invalidate previously issued refresh tokens upon credential rotation (`src/lib/auth/emailService.ts`, `prisma/schema.prisma`).
 - **User Profiles**: Personalized experience
 - **Webhook Sync**: Real-time user data updates
+- **Local Clerk Webhook Setup**: Configure signed user lifecycle webhooks for development in [docs/auth/CLERK_WEBHOOK_SETUP.md](./docs/auth/CLERK_WEBHOOK_SETUP.md)
 
 ### 🧾 PDF Receipt System
 

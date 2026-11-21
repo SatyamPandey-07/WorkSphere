@@ -1,10 +1,13 @@
 "use client";
 
+ fix/canvas-whiteboard-yjs-cleanup
+
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
  main
 import React from "react";
@@ -14,6 +17,8 @@ import { PhotoAttribution } from "./VenueGallery";
 export interface VenueCardProps {
   id: string;
   name: string;
+ fix/canvas-whiteboard-yjs-cleanup
+
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
@@ -31,12 +36,14 @@ export interface VenueCardProps {
  main
  main
  main
+ main
   address?: string;
   imageUrl?: string;
   attribution?: PhotoAttribution;
   rating?: number;
   wifiSpeed?: number;
   noiseLevel?: string;
+ fix/canvas-whiteboard-yjs-cleanup
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
@@ -44,10 +51,13 @@ export interface VenueCardProps {
  feat/rating-dialog-a11y-arrow-nav
  main
  main
+ main
   onClick?: () => void;
 }
 
 export function VenueCard({
+ fix/canvas-whiteboard-yjs-cleanup
+
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
@@ -87,6 +97,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  main
  main
  main
+ main
   name,
   address,
   imageUrl,
@@ -94,11 +105,14 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   rating,
   wifiSpeed,
   noiseLevel,
+ fix/canvas-whiteboard-yjs-cleanup
+
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
  main
   onClick,
@@ -119,6 +133,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             alt={name}
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-105"
+ fix/canvas-whiteboard-yjs-cleanup
+
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
@@ -210,15 +226,19 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  main
  main
  main
+ main
           />
         </div>
       )}
+
+ fix/canvas-whiteboard-yjs-cleanup
 
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
  main
       {/* Venue Details */}
@@ -229,6 +249,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
         {address && <p className="text-xs text-slate-400">{address}</p>}
 
         <div className="mt-2 flex items-center gap-3 text-xs text-slate-300">
+ fix/canvas-whiteboard-yjs-cleanup
+
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
@@ -292,15 +314,19 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  main
  main
  main
+ main
           {rating !== undefined && <span>⭐ {rating.toFixed(1)}</span>}
           {wifiSpeed !== undefined && <span>⚡ {wifiSpeed} Mbps</span>}
           {noiseLevel && <span className="capitalize">🔊 {noiseLevel}</span>}
         </div>
+ fix/canvas-whiteboard-yjs-cleanup
+
  feat/webrtc-ice-restart-backoff
 
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
  main
 
@@ -326,6 +352,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       </div>
     </div>
   );
+ fix/canvas-whiteboard-yjs-cleanup
+}
+
  feat/webrtc-ice-restart-backoff
 }
 
@@ -402,6 +431,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

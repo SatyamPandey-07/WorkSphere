@@ -10,6 +10,7 @@ import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
 import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
+import { HourlyNoiseHeatGraph } from "@/components/venues/HourlyNoiseHeatGraph";
 import { SeatingForecastChart } from "@/components/venue/SeatingForecastChart";
 import { OccupancyTrendChart } from "@/components/analytics/OccupancyTrendChart";
 import { RecentlyViewedTracker } from "@/components/venues/RecentlyViewedTracker";
@@ -27,6 +28,7 @@ import { ColleaguePresenceIndicator } from "@/components/social/ColleaguePresenc
 import { VenueWifiCard } from "@/components/venue/VenueWifiCard";
 import { AmenityStatusIncidentTracker } from "@/components/venue/AmenityStatusIncidentTracker";
 import { FavoriteDesksDrawer } from "@/components/venue/FavoriteDesksDrawer";
+import { VenueFloorplanVisualizerSection } from "@/components/venue/VenueFloorplanVisualizerSection";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -72,9 +74,8 @@ export async function generateMetadata({
 
     const imageToUse = venue.imageUrl || fallbackImage;
     const title = `${venue.name} | WorkSphere`;
-    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${
-      venue.address ? ` ${venue.address}` : ""
-    }`;
+    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${venue.address ? ` ${venue.address}` : ""
+      }`;
 
     return {
       title,
@@ -307,11 +308,25 @@ export default async function VenuePage({ params }: PageProps) {
 
             <FavoriteDesksDrawer venueId={venue.id} venueName={venue.name} />
 
+            {/* Interactive 3D Isometric Desk Occupancy Visualizer */}
+            <div className="pt-2">
+              <VenueFloorplanVisualizerSection
+                venueId={venue.id}
+                venueName={venue.name}
+              />
+            </div>
+
             <div className="pt-2">
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
                 <span>Expected Noise Levels</span>
               </h3>
               <AmbientNoiseTrendGraph venueId={venue.id} />
+              <div className="mt-4">
+                <HourlyNoiseHeatGraph
+                  venueId={venue.id}
+                  venueName={venue.name}
+                />
+              </div>
               <div className="mt-4">
                 <NoiseForecastChart venueId={venue.id} />
               </div>

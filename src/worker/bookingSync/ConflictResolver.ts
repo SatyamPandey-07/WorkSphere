@@ -217,8 +217,8 @@ export class ConflictResolver {
     // Cancellation is a terminal status. If the booking was cancelled on the server,
     // a stale or concurrent offline draft cannot unilaterally revive it without user intervention.
     if (
-      currentServerState.payload.status === 'CANCELLED' &&
-      draft.payload.status !== 'CANCELLED'
+      ['CANCELLED', 'CANCELLED_BY_OPERATOR'].includes(String(currentServerState.payload.status)) &&
+      !['CANCELLED', 'CANCELLED_BY_OPERATOR'].includes(String(draft.payload.status))
     ) {
       const mergedClock = this.mergeVectorClocks(
         draftClock,
@@ -227,15 +227,15 @@ export class ConflictResolver {
       );
       fieldConflicts.push({
         field: 'status',
-        serverValue: 'CANCELLED',
+        serverValue: currentServerState.payload.status,
         draftValue: draft.payload.status,
-        resolvedValue: 'CANCELLED',
+        resolvedValue: currentServerState.payload.status,
         strategy: 'TOMBSTONE',
         reason:
           'Booking was cancelled on the server; offline draft cannot resurrect booking without explicit user intervention.',
       });
       resolutionLog.push(
-        'Terminal invariant: Server status is CANCELLED. Flagging user input requirement.',
+        'Terminal invariant: Server status is cancelled. Flagging user input requirement.',
       );
 
       return {
@@ -252,7 +252,7 @@ export class ConflictResolver {
     // If draft cancelled offline, cancellation tombstone takes precedence monotonically
     if (
       draft.payload.status === 'CANCELLED' &&
-      currentServerState.payload.status !== 'CANCELLED'
+      !['CANCELLED', 'CANCELLED_BY_OPERATOR'].includes(String(currentServerState.payload.status))
     ) {
       const mergedClock = this.mergeVectorClocks(
         draftClock,

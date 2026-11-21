@@ -37,7 +37,7 @@ As partitions age past active operational windows (typically 30–90 days), they
 ### 2.1 Endpoint Summary
 - **HTTP Method:** `GET`
 - **Route:** `/api/admin/system/partitions/export`
-- **Access Control:** Requires authenticated Admin session via [getAdminUser()](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/admin.ts). Unauthorized requests return `403 Forbidden`.
+- **Access Control:** Requires authenticated Admin session via [getAdminUser()](../../src/lib/admin.ts). Unauthorized requests return `403 Forbidden`.
 
 ### 2.2 Query Parameters
 
@@ -104,7 +104,7 @@ Filename: `push-logs-YYYY-MM.csv`
 | `createdAt` | `createdAt` | `ISO 8601 String` | Notification creation timestamp (UTC). |
 
 ### 3.3 CSV Escaping Standard
-All exported string fields pass through [escapeCsv](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/admin/system/partitions/dateHelper.ts):
+All exported string fields pass through [escapeCsv](../../src/app/api/admin/system/partitions/dateHelper.ts):
 - Fields containing commas (`,`), quotes (`"`), newlines (`\n`), or carriage returns (`\r`) are wrapped in double quotes.
 - Internal double quotes are escaped as `""`.
 - Dates are normalized to standard ISO 8601 strings.
@@ -134,7 +134,7 @@ For programmatic integration and machine-to-machine ETL workflows, partitions su
 Child partitions adhere to strict naming syntax:
 - Format: `<ParentTable>_YYYY_MM` (e.g. `TelemetryRecord_2026_10`, `PushNotificationLog_2026_10`)
 - Range Bounds: `FROM ('YYYY-MM-01 00:00:00') TO ('YYYY-NEXT_MONTH-01 00:00:00')`
-- Root Table Protection: [isSafePartitionName](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/adminPartitionService.ts) enforces that bare parent table names (e.g. `TelemetryRecord`) can never be targeted for detachment, deletion, or renaming.
+- Root Table Protection: [isSafePartitionName](../../src/lib/adminPartitionService.ts) enforces that bare parent table names (e.g. `TelemetryRecord`) can never be targeted for detachment, deletion, or renaming.
 
 ### 4.3 Bulk Archive API (`POST /api/admin/system/partitions/archive`)
 

@@ -340,7 +340,7 @@ export function restoreFocusSafely(
 
 When users click the dark overlay behind a modal, they expect it to close. However, naive `onClick={onClose}` handlers create a severe bug: when a user clicks inside the dialog, drags their mouse to select text, and releases the cursor outside on the backdrop, the modal abruptly closes, destroying unsaved user input.
 
-WorkSphere provides standard helpers in [`src/lib/modal-interactions.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/modal-interactions.ts):
+WorkSphere provides standard helpers in [`src/lib/modal-interactions.ts`](../../src/lib/modal-interactions.ts):
 
 ```typescript
 import {

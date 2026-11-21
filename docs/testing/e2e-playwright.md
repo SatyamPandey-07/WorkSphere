@@ -10,7 +10,7 @@ This document serves as the authoritative guide for installing browser binaries,
 
 ## 1. System Architecture Overview
 
-Playwright integrates directly with Next.js development and production servers via the configuration defined in [playwright.config.ts](file:///c:/Users/admin/Desktop/workfere/playwright.config.ts).
+Playwright integrates directly with Next.js development and production servers via the configuration defined in [playwright.config.ts](../../playwright.config.ts).
 
 ```mermaid
 flowchart TD

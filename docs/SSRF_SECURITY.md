@@ -2,7 +2,7 @@
 
 WorkSphere processes outbound server-side HTTP requests when fetching third-party workspace APIs, indexing external telemetry streams, fetching venue photo assets, and invoking user-defined webhook actions.
 
-To prevent Server-Side Request Forgery (SSRF) attacks, WorkSphere employs a rigorous validation layer in [ssrfValidation.ts](file:///c:/Users/shrut/OneDrive/Desktop/WorkSphere/src/lib/ssrfValidation.ts) to verify target hosts before initiating server network socket connections.
+To prevent Server-Side Request Forgery (SSRF) attacks, WorkSphere employs a rigorous validation layer in [ssrfValidation.ts](../src/lib/ssrfValidation.ts) to verify target hosts before initiating server network socket connections.
 
 ---
 
@@ -98,7 +98,7 @@ If the application must interface with trusted external APIs (e.g., Foursquare, 
 
 ### How to Add a Whitelisted Domain
 
-1. Create a `TRUSTED_DOMAINS` array in [ssrfValidation.ts](file:///c:/Users/shrut/OneDrive/Desktop/WorkSphere/src/lib/ssrfValidation.ts):
+1. Create a `TRUSTED_DOMAINS` array in [ssrfValidation.ts](../src/lib/ssrfValidation.ts):
    ```typescript
    const TRUSTED_DOMAINS = [
      "api.foursquare.com",

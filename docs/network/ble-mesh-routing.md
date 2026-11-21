@@ -1,6 +1,6 @@
 # BLEMeshRouter: Multi-Hop Routing Protocol & TTL Forwarding Rules
 
-This document specifies the technical architecture, Bluetooth Low Energy (BLE 5.0) advertisement payload structures, neighbor discovery procedures, multi-hop relaying, hop count (TTL) decrementing, and routing loop mitigation mechanisms implemented in [`src/core/network/BLEMeshRouter.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/BLEMeshRouter.ts) and [`src/core/network/DTNBundleProtocol.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/DTNBundleProtocol.ts).
+This document specifies the technical architecture, Bluetooth Low Energy (BLE 5.0) advertisement payload structures, neighbor discovery procedures, multi-hop relaying, hop count (TTL) decrementing, and routing loop mitigation mechanisms implemented in [`src/core/network/BLEMeshRouter.ts`](../../src/core/network/BLEMeshRouter.ts) and [`src/core/network/DTNBundleProtocol.ts`](../../src/core/network/DTNBundleProtocol.ts).
 
 WorkSphere operates in mobile coworking venues, subterranean conference facilities, and off-grid remote retreats where cellular and Wi-Fi networks are unavailable. By organizing nomad devices into an ad-hoc opportunistic Bluetooth mesh, workers can exchange desk reservations, attendance check-ins, collaborative text notes, and critical alerts peer-to-peer.
 
@@ -39,7 +39,7 @@ flowchart LR
 
 ## 2. Standardized GATT Services & Characteristic Architecture
 
-The BLE mesh router relies on standardized 128-bit UUIDs defined in [`BLEMeshRouter.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/BLEMeshRouter.ts#L10-L11):
+The BLE mesh router relies on standardized 128-bit UUIDs defined in [`BLEMeshRouter.ts`](../../src/core/network/BLEMeshRouter.ts#L10-L11):
 
 | Attribute | UUID | Type | Permissions / Properties | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -55,7 +55,7 @@ The BLE mesh router relies on standardized 128-bit UUIDs defined in [`BLEMeshRou
 
 ## 3. Packet Header Byte Structure & Wire Framing
 
-Bundles transmitted over the BLE characteristic are formatted into length-prefixed binary frames defined by [`DTNBundleProtocol.serializeBundle()`](file:///c:/Users/admin/Desktop/workfere/src/core/network/DTNBundleProtocol.ts#L112-L127):
+Bundles transmitted over the BLE characteristic are formatted into length-prefixed binary frames defined by [`DTNBundleProtocol.serializeBundle()`](../../src/core/network/DTNBundleProtocol.ts#L112-L127):
 
 ```
  0                   1                   2                   3

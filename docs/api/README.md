@@ -15,6 +15,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Seat Hold Lease Extension](./SEAT_HOLD_LEASE_EXTENSION.md) — authenticated seat-lock extension, lease constraints, fencing-token validation, and error responses.
 - [Bookings](./bookings.md)
 - [Cafe orders](./cafe-orders.md)
+- [Meet Halfway Routing](./MEET_HALFWAY_ROUTING.md) — request/response contract, optimization behavior, commute estimates, and capacity fallback semantics.
 - [Message translation](./message-translation.md)
 - [Partition export](./partition-export.md)
 - [Partition management](./partition-management.md) — scheduled maintenance, bulk archive and deletion, and administrative audit endpoints.

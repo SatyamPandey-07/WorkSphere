@@ -415,7 +415,7 @@ Recommended UI behavior:
 
 The public OSRM endpoint is suitable for development and low-volume testing. It does not provide guaranteed uptime, unlimited production capacity, or an SLA.
 
-For production, consider self-hosted OSRM, OpenRouteService, request throttling, and route-result caching. See the [OSRM Local Routing Guide](file:///c:/Users/ADMIN/OneDrive/Desktop/ECSoC/WorkSphere/docs/LOCAL_ROUTING.md) for details on running a local routing server inside a Docker container.
+For production, consider self-hosted OSRM, OpenRouteService, request throttling, and route-result caching. See the [OSRM Local Routing Guide](LOCAL_ROUTING.md) for details on running a local routing server inside a Docker container.
 
 ---
 

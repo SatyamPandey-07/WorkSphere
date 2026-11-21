@@ -19,6 +19,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Partition management](./partition-management.md) — scheduled maintenance, bulk archive and deletion, and administrative audit endpoints.
 - [Semantic search](./semantic-search.md)
 - [Solana Pay](./solana-pay.md)
+- [Solana Pay Escrow Settlement](./SOLANA_PAY_ESCROW.md) — end-to-end Solana Pay micro-transaction escrow settlement flow, optimistic reservations, WebSocket and polling confirmation lifecycles, and multi-rail ledger splits.
 - [Telemetry](./telemetry.md)
 - [WebGPU Capability Diagnostics](../telemetry/WEBGPU_CAPABILITY_DIAGNOSTICS.md) — WebGPU capability telemetry schema, diagnostics API, and operational guidance.
 - [Venue flagging](./VENUE_FLAGGING.md) — authenticated flag submission, reason validation, duplicate behavior, and hourly rate limit.

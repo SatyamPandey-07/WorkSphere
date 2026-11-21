@@ -77,6 +77,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [WebGPU Fallback Triage Runbook](./runbooks/WEBGPU_FALLBACK_TRIAGE.md) — diagnosing WebGPU device loss and fallback behavior.
 - [Reservation CDC Operations](./workers/RESERVATION_CDC_OPERATIONS.md) — PostgreSQL logical replication and Redis Stream operations.
 - [Troubleshooting](./TROUBLESHOOTING.md) — common development and operational troubleshooting guidance.
+- [WebGPU Capability Diagnostics](./telemetry/WEBGPU_CAPABILITY_DIAGNOSTICS.md) — capability report schema, privacy controls, API submission, and administrator troubleshooting.
 
 ## Export & Reporting
 

@@ -1,9 +1,15 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { CanvasTexture, DoubleSide, Group, SRGBColorSpace } from "three";
 import type { PassportStamp } from "@/lib/zkp/nomadProof";
 import styles from "./NomadPassportCoin.module.css";
+import { NomadPassportVerificationBadge } from "./NomadPassportVerificationBadge";
+
+export { NomadPassportVerificationBadge };
+export type {
+  NomadPassportVerificationBadgeProps,
+} from "./NomadPassportVerificationBadge";
 
 export interface NomadPassportCoinProps {
   stamp?: PassportStamp;
@@ -11,6 +17,11 @@ export interface NomadPassportCoinProps {
   isLoaded?: boolean;
   className?: string;
   onReady?: () => void;
+  passportId?: string;
+  nomadName?: string;
+  countryCode?: string;
+  stampsCount?: number;
+  isVerified?: boolean;
 }
 
 const DEFAULT_STAMP: PassportStamp = {
@@ -153,6 +164,82 @@ function createCoinTexture(stamp: PassportStamp, reverse: boolean) {
   texture.colorSpace = SRGBColorSpace;
   texture.anisotropy = 8;
   return texture;
+}
+
+
+type DisposablePassportResource = {
+  dispose?: () => void;
+  isTexture?: boolean;
+};
+
+type PassportCoinScene = {
+  traverse: (callback: (object: {
+    geometry?: DisposablePassportResource;
+    material?: DisposablePassportResource | DisposablePassportResource[];
+  }) => void) => void;
+};
+
+type PassportCoinRenderer = {
+  renderLists?: { dispose?: () => void };
+  dispose?: () => void;
+};
+
+/** Explicitly release GPU-backed resources when the passport Canvas unmounts. */
+export function disposePassportCoinResources(
+  scene: PassportCoinScene,
+  renderer: PassportCoinRenderer,
+): void {
+  const disposedGeometries = new Set<DisposablePassportResource>();
+  const disposedMaterials = new Set<DisposablePassportResource>();
+  const disposedTextures = new Set<DisposablePassportResource>();
+
+  scene.traverse((object) => {
+    const geometry = object.geometry;
+    if (geometry && !disposedGeometries.has(geometry)) {
+      disposedGeometries.add(geometry);
+      geometry.dispose?.();
+    }
+
+    const materials = Array.isArray(object.material)
+      ? object.material
+      : object.material
+        ? [object.material]
+        : [];
+
+    for (const material of materials) {
+      if (!material || disposedMaterials.has(material)) continue;
+      disposedMaterials.add(material);
+
+      for (const value of Object.values(material as Record<string, unknown>)) {
+        const texture = value as DisposablePassportResource | null;
+        if (
+          texture?.isTexture &&
+          !disposedTextures.has(texture) &&
+          typeof texture.dispose === "function"
+        ) {
+          disposedTextures.add(texture);
+          texture.dispose();
+        }
+      }
+
+      material.dispose?.();
+    }
+  });
+
+  renderer.renderLists?.dispose?.();
+  renderer.dispose?.();
+}
+
+export function PassportCoinResourceCleanup() {
+  const { scene, gl } = useThree();
+
+  useEffect(() => {
+    return () => {
+      disposePassportCoinResources(scene, gl);
+    };
+  }, [scene, gl]);
+
+  return null;
 }
 
 function CoinMesh({
@@ -300,6 +387,7 @@ export function NomadPassportCoin({
   isLoaded,
   className = "",
   onReady,
+  isVerified,
 }: NomadPassportCoinProps) {
   const [webglSupported, setWebglSupported] = useState(false);
   const [internalLoaded, setInternalLoaded] = useState(false);
@@ -348,6 +436,19 @@ export function NomadPassportCoin({
     onReady?.();
   };
 
+  const triggerHaptic = (pattern: number | number[]) => {
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.vibrate === "function"
+      ) {
+        navigator.vibrate(pattern);
+      }
+    } catch {
+      // Gracefully ignore environments where vibration is denied or unsupported
+    }
+  };
+
   const fallback = <CoinFallback stamp={stamp} flipped={flipped} />;
 
   return (
@@ -358,6 +459,11 @@ export function NomadPassportCoin({
       {/* Animated CSS shimmer pulse skeleton component */}
       {isCoinLoading && (
         <NomadPassportCoinSkeleton className="absolute inset-0 z-10" />
+      )}
+      {isVerified === true && (
+        <div className="absolute right-2 top-2 z-20">
+          <NomadPassportVerificationBadge verified={true} />
+        </div>
       )}
 
       {/* Interactive 3D Canvas / Fallback coin element */}
@@ -370,11 +476,20 @@ export function NomadPassportCoin({
             ? "opacity-0 pointer-events-none"
             : "opacity-100 transition-opacity duration-300"
         }`}
-        onMouseEnter={() => setFlipped(true)}
+        onMouseEnter={() => {
+          setFlipped(true);
+          triggerHaptic(15);
+        }}
         onMouseLeave={() => setFlipped(false)}
-        onFocus={() => setFlipped(true)}
+        onFocus={() => {
+          setFlipped(true);
+          triggerHaptic(15);
+        }}
         onBlur={() => setFlipped(false)}
-        onClick={() => setFlipped(true)}
+        onClick={() => {
+          setFlipped((prev) => !prev);
+          triggerHaptic([10, 30, 10]);
+        }}
       >
         {webglSupported ? (
           <CoinErrorBoundary fallback={fallback}>
@@ -385,6 +500,7 @@ export function NomadPassportCoin({
               fallback={fallback}
               onCreated={handleCanvasCreated}
             >
+              <PassportCoinResourceCleanup />
               <ambientLight intensity={1.5} />
               <directionalLight position={[3, 4, 5]} intensity={4} castShadow />
               <pointLight

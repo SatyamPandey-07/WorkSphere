@@ -148,3 +148,118 @@ export function exportVenueDataToCSV(
 
   return buildRFC4180CSV(headers, venues, options);
 }
+
+/* ------------------------------------------------------------------ */
+/* Venue noise / crowd / WiFi telemetry export (#7674)                  */
+/* ------------------------------------------------------------------ */
+
+export const NOISE_METRICS_CSV_HEADERS = [
+  "timestamp",
+  "venueId",
+  "avgDecibels",
+  "peakDecibels",
+  "crowdDensityScore",
+  "wifiLatencyMs",
+] as const;
+
+export interface NoiseMetricExportRow {
+  timestamp: Date | string;
+  venueId: string;
+  avgDecibels?: number | null;
+  peakDecibels?: number | null;
+  crowdDensityScore?: number | null;
+  wifiLatencyMs?: number | null;
+}
+
+/** Noise submissions stored with a venue rating (decibel readings). */
+export interface NoiseReadingInput {
+  createdAt: Date;
+  avgDecibels: number | null;
+  peakDecibels: number | null;
+}
+
+/** WiFi telemetry samples (latency plus a coarse crowd label). */
+export interface WifiSampleInput {
+  timestamp: Date;
+  latency: number | null;
+  crowdLevel: string | null;
+}
+
+const CROWD_LEVEL_SCORES: Record<string, number> = {
+  empty: 10,
+  low: 25,
+  quiet: 25,
+  moderate: 50,
+  busy: 75,
+  "very busy": 90,
+  packed: 100,
+};
+
+/**
+ * Maps a crowd label to the same 0-100 density score the venue occupancy chart uses.
+ * Unknown or missing labels return null so the export never invents a value.
+ */
+export function crowdLevelToDensityScore(level: string | null | undefined): number | null {
+  if (!level) return null;
+  return CROWD_LEVEL_SCORES[level.trim().toLowerCase()] ?? null;
+}
+
+/**
+ * Combines decibel readings and WiFi/crowd samples into one time-ordered row list.
+ * The two data sources are stored separately, so each row fills only the columns its
+ * source provides; the rest stay empty rather than being guessed.
+ */
+export function buildNoiseMetricRows(
+  venueId: string,
+  readings: NoiseReadingInput[],
+  wifiSamples: WifiSampleInput[]
+): NoiseMetricExportRow[] {
+  const rows: NoiseMetricExportRow[] = [
+    ...readings.map((r) => ({
+      timestamp: r.createdAt,
+      venueId,
+      avgDecibels: r.avgDecibels,
+      peakDecibels: r.peakDecibels,
+    })),
+    ...wifiSamples.map((s) => ({
+      timestamp: s.timestamp,
+      venueId,
+      crowdDensityScore: crowdLevelToDensityScore(s.crowdLevel),
+      wifiLatencyMs: s.latency,
+    })),
+  ];
+  const time = (row: NoiseMetricExportRow) => new Date(row.timestamp).getTime();
+  return rows.sort((a, b) => time(a) - time(b));
+}
+
+function noiseMetricCell(value: unknown): string {
+  // Numbers cannot carry spreadsheet formulas, so skip the leading "-" guard that
+  // would otherwise turn a negative reading into the text '-12.
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+  return escapeRFC4180Cell(value);
+}
+
+/**
+ * Yields the CSV one line at a time (header first), each terminated by the line
+ * delimiter, so callers can stream large exports without building one big string.
+ */
+export function* iterateNoiseMetricsCsv(
+  rows: Iterable<NoiseMetricExportRow>,
+  options: Pick<RFC4180Options, "lineDelimiter" | "includeBOM"> = {}
+): Generator<string, void, undefined> {
+  const eol = options.lineDelimiter ?? "\r\n";
+  yield (options.includeBOM ? "\uFEFF" : "") + NOISE_METRICS_CSV_HEADERS.join(",") + eol;
+  for (const row of rows) {
+    yield (
+      NOISE_METRICS_CSV_HEADERS.map((column) => noiseMetricCell(row[column])).join(",") + eol
+    );
+  }
+}
+
+/** Builds the whole noise-metrics CSV as a single RFC 4180 string. */
+export function exportNoiseMetricsToCSV(
+  rows: Iterable<NoiseMetricExportRow>,
+  options: Pick<RFC4180Options, "lineDelimiter" | "includeBOM"> = {}
+): string {
+  return Array.from(iterateNoiseMetricsCsv(rows, options)).join("");
+}

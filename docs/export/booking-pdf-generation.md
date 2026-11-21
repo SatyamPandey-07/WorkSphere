@@ -164,7 +164,7 @@ Because standard PostScript fonts in `pdf-lib` do not automatically wrap text wi
 
 ### 5.1 The `wrapText` Algorithmic Engine
 
-Located in [`src/lib/pdf/generateBookingPdf.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/pdf/generateBookingPdf.ts#L118-L191), the `wrapText` function inspects string character widths using standard font metrics and breaks strings into discrete lines fitting within a designated `maxWidth`.
+Located in [`src/lib/pdf/generateBookingPdf.ts`](../../src/lib/pdf/generateBookingPdf.ts#L118-L191), the `wrapText` function inspects string character widths using standard font metrics and breaks strings into discrete lines fitting within a designated `maxWidth`.
 
 ```typescript
 export function wrapText(
@@ -368,7 +368,7 @@ export function drawVectorQrMatrix(
 
 ## 7. Printable Invoice Table & Roster Specifications
 
-For event managers and workspace administrators, WorkSphere provides specialized table layouts for multi-seat bookings and guest list exports in [`src/lib/pdfGenerator.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/pdfGenerator.ts#L353-L418).
+For event managers and workspace administrators, WorkSphere provides specialized table layouts for multi-seat bookings and guest list exports in [`src/lib/pdfGenerator.ts`](../../src/lib/pdfGenerator.ts#L353-L418).
 
 ### 7.1 Guest List Roster Layout Structure
 
@@ -398,7 +398,7 @@ The `generateGuestListPdf` exporter builds an official guest check-in roster wit
 
 ## 8. Data Schema Interfaces & Data Flow
 
-To preserve type safety across server-side rendering pipelines, all booking PDF functions consume strictly typed data models defined in [`src/lib/pdf/generateBookingPdf.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/pdf/generateBookingPdf.ts#L12-L43).
+To preserve type safety across server-side rendering pipelines, all booking PDF functions consume strictly typed data models defined in [`src/lib/pdf/generateBookingPdf.ts`](../../src/lib/pdf/generateBookingPdf.ts#L12-L43).
 
 ### 8.1 TypeScript Interface Schema
 
@@ -446,7 +446,7 @@ The PDF generation engine is exposed to authenticated web clients and mobile app
 ### 9.1 API Route Specifications
 
 #### 1. Stable Receipt Verification Route (`GET /api/receipts/[bookingId]`)
-- **File Path:** [`src/app/api/receipts/[bookingId]/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/receipts/%5BbookingId%5D/route.ts)
+- **File Path:** [`src/app/api/receipts/[bookingId]/route.ts`](../../src/app/api/receipts/[bookingId]/route.ts)
 - **Access Control:** Requires valid Clerk authentication session (`auth()`).
 - **Behavior:** Accepts either internal booking UUID `id` or public `confirmationId`. Validates user ownership and performs an HTTP 307 temporary redirect to the binary download endpoint.
 
@@ -466,7 +466,7 @@ The PDF generation engine is exposed to authenticated web clients and mobile app
 
 When modifying or extending the PDF generation subsystem, engineers must adhere to the following strict principles:
 
-1. **Non-ASCII Text Safety:** Always sanitize text passed to standard PDF fonts using `.replace(/[^\x20-\x7E]/g, "?")` or [`drawSafeText`](file:///c:/Users/admin/Desktop/workfere/src/lib/pdf/generateBookingPdf.ts#L220-L234) guards to prevent PostScript character rendering crashes.
+1. **Non-ASCII Text Safety:** Always sanitize text passed to standard PDF fonts using `.replace(/[^\x20-\x7E]/g, "?")` or [`drawSafeText`](../../src/lib/pdf/generateBookingPdf.ts#L220-L234) guards to prevent PostScript character rendering crashes.
 2. **Deterministic Hash Signatures:** Preserving signature compatibility requires keeping key payload ordering unchanged in `computeReceiptHash`: `${booking.id}:${booking.confirmationId}:${booking.date}:${booking.time}:${booking.totalAmount}`.
 3. **Pure Vector Rendering:** Never substitute rasterized images for vector QR matrices unless explicitly requested for legacy printer driver support.
 4. **Unit Test Verification (`src/__tests__/lib/pdfAddressWrapping.test.ts`):** Verify multi-line line wrapping with 200+ character venue addresses to prevent visual layout regressions.

@@ -1,10 +1,13 @@
-﻿/**
+/**
  * Distributed Seat-Hold Lock (WebLocks / Redis / PartyKit Integration)
  *
  * Implements a distributed lock mechanism with a 5-minute TTL to prevent
  * double-booking race conditions during checkout (Issue #3522).
  */
 
+import crypto from "crypto";
+import type Redis from "ioredis";
+import type { Pool } from "pg";
 import { getRedis } from "@/lib/redis";
 import { getRedisKeyspaceManager } from "@/lib/redis/keyspaceNotifications";
 
@@ -47,7 +50,11 @@ export class StaleFencingTokenError extends Error {
   readonly submittedToken: bigint;
   readonly lastSeenToken: bigint;
 
-  constructor(message: string, submittedToken: bigint, lastSeenToken: bigint) {
+  constructor(
+    message: string,
+    submittedToken: bigint = BigInt(0),
+    lastSeenToken: bigint = BigInt(0),
+  ) {
     super(message);
     this.name = "StaleFencingTokenError";
     this.submittedToken = submittedToken;
@@ -65,6 +72,8 @@ export interface RedlockRedisNode {
     options?: { ex?: number; nx?: boolean },
   ) => Promise<unknown>;
   eval?: (script: string, keys: string[], args: string[]) => Promise<unknown>;
+  /** Optional client-specific reconnect hook (for Sentinel / cluster failover). */
+  reconnect?: () => Promise<void>;
 }
 
 /**
@@ -85,6 +94,91 @@ export function getMonotonicNowNs(): bigint {
 let monotonicFencingSeq: bigint = BigInt(0);
 const resourceLastSeenTokens = new Map<string, bigint>();
 let registeredRedlockNodes: RedlockRedisNode[] | null = null;
+
+export const REDLOCK_NODE_TIMEOUT_MS = 1_000;
+export const REDLOCK_NODE_BASE_BACKOFF_MS = 250;
+export const REDLOCK_NODE_MAX_BACKOFF_MS = 5_000;
+
+interface RedlockNodeHealthState {
+  failureCount: number;
+  retryAt: number;
+  lastError?: string;
+}
+
+export interface RedlockNodeHealth {
+  nodeId: string;
+  failureCount: number;
+  retryAt: number;
+  lastError?: string;
+  degraded: boolean;
+}
+
+const redlockNodeHealth = new Map<string, RedlockNodeHealthState>();
+
+export function getRedlockNodeHealth(now = Date.now()): RedlockNodeHealth[] {
+  return Array.from(redlockNodeHealth, ([nodeId, state]) => ({
+    nodeId,
+    failureCount: state.failureCount,
+    retryAt: state.retryAt,
+    lastError: state.lastError,
+    degraded: state.retryAt > now,
+  }));
+}
+
+export function resetRedlockNodeHealth(): void {
+  redlockNodeHealth.clear();
+}
+
+function markRedlockNodeHealthy(nodeId: string): void {
+  redlockNodeHealth.delete(nodeId);
+}
+
+function markRedlockNodeFailed(
+  nodeId: string,
+  error: unknown,
+  now: number,
+  baseBackoffMs: number,
+  maxBackoffMs: number,
+): void {
+  const failureCount = (redlockNodeHealth.get(nodeId)?.failureCount ?? 0) + 1;
+  const backoffMs = Math.min(
+    maxBackoffMs,
+    baseBackoffMs * 2 ** Math.min(failureCount - 1, 20),
+  );
+  const message = error instanceof Error ? error.message : String(error);
+  redlockNodeHealth.set(nodeId, {
+    failureCount,
+    retryAt: now + backoffMs,
+    lastError: message.slice(0, 240),
+  });
+}
+
+async function withRedlockNodeTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  nodeId: string,
+  operationName: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Redis node ${nodeId} ${operationName} timed out after ${timeoutMs}ms`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 /**
  * Configures independent Redis nodes for N/2+1 Redlock quorum consensus.
@@ -131,6 +225,12 @@ function getFencingSequenceKey(resourceKey: string): string {
 export async function acquireQuorumFencingToken(
   resourceKey: string,
   nodes?: RedlockRedisNode[],
+  options: {
+    timeoutMs?: number;
+    baseBackoffMs?: number;
+    maxBackoffMs?: number;
+    now?: () => number;
+  } = {},
 ): Promise<{
   token: bigint;
   quorumAchieved: number;
@@ -151,60 +251,109 @@ export async function acquireQuorumFencingToken(
     return { token: fallback, quorumAchieved: 1, quorumRequired: 1 };
   }
 
+  const timeoutMs = Math.max(
+    10,
+    Math.floor(options.timeoutMs ?? REDLOCK_NODE_TIMEOUT_MS),
+  );
+  const baseBackoffMs = Math.max(
+    1,
+    Math.floor(options.baseBackoffMs ?? REDLOCK_NODE_BASE_BACKOFF_MS),
+  );
+  const maxBackoffMs = Math.max(
+    baseBackoffMs,
+    Math.floor(options.maxBackoffMs ?? REDLOCK_NODE_MAX_BACKOFF_MS),
+  );
+  const now = options.now ?? Date.now;
   const totalNodes = activeNodes.length;
   const requiredQuorum = Math.floor(totalNodes / 2) + 1;
   const seqKey = getFencingSequenceKey(resourceKey);
+  const eligibleNodes = activeNodes.filter((node) => {
+    const health = redlockNodeHealth.get(node.id);
+    return !health || health.retryAt <= now();
+  });
 
   const results = await Promise.allSettled(
-    activeNodes.map(async (node) => {
-      const rawVal = await node.incr(seqKey);
-      return BigInt(rawVal);
+    eligibleNodes.map(async (node) => {
+      try {
+        const health = redlockNodeHealth.get(node.id);
+        if (health?.failureCount && node.reconnect) {
+          await withRedlockNodeTimeout(
+            node.reconnect(),
+            timeoutMs,
+            node.id,
+            "reconnect",
+          );
+        }
+        const rawVal = await withRedlockNodeTimeout(
+          node.incr(seqKey),
+          timeoutMs,
+          node.id,
+          "INCR",
+        );
+        const token = BigInt(rawVal);
+        markRedlockNodeHealthy(node.id);
+        return { node, token };
+      } catch (error) {
+        markRedlockNodeFailed(
+          node.id,
+          error,
+          now(),
+          baseBackoffMs,
+          maxBackoffMs,
+        );
+        throw error;
+      }
     }),
   );
 
-  const succeededTokens: bigint[] = [];
-  for (const res of results) {
-    if (res.status === "fulfilled") {
-      succeededTokens.push(res.value);
-    }
-  }
-
-  if (succeededTokens.length < requiredQuorum) {
+  const succeeded = results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  if (succeeded.length < requiredQuorum) {
     throw new QuorumFencingError(
-      `Failed to achieve Redlock fencing quorum (${succeededTokens.length}/${requiredQuorum} nodes responded)`,
-      succeededTokens.length,
+      `Failed to achieve Redlock fencing quorum (${succeeded.length}/${requiredQuorum} nodes responded)`,
+      succeeded.length,
       requiredQuorum,
     );
   }
 
-  // Take the maximum INCR value across the responding quorum and enforce strict monotonicity
-  // against any previously observed token for this resource so lagging replicas cannot regress.
-  let quorumMax = succeededTokens[0];
-  for (const val of succeededTokens) {
-    if (val > quorumMax) {
-      quorumMax = val;
-    }
+  let quorumMax = succeeded[0].token;
+  for (const result of succeeded) {
+    if (result.token > quorumMax) quorumMax = result.token;
   }
 
   const lastSeen = resourceLastSeenTokens.get(resourceKey) ?? BigInt(0);
   const candidate = quorumMax > lastSeen ? quorumMax : lastSeen + BigInt(1);
   const finalToken = nextMonotonicFencingToken(candidate - BigInt(1));
-
   resourceLastSeenTokens.set(resourceKey, finalToken);
 
-  // Best-effort bump on any lagging quorum nodes whose counter was behind finalToken
+  // A failed repair does not invalidate an already obtained majority. It is
+  // bounded and recorded so the next acquisition can retry that node later.
   await Promise.allSettled(
-    activeNodes.map(async (node, idx) => {
-      const res = results[idx];
-      if (res.status === "fulfilled" && res.value < finalToken && node.set) {
-        await node.set(seqKey, finalToken.toString());
+    succeeded.map(async ({ node, token }) => {
+      if (token >= finalToken || !node.set) return;
+      try {
+        await withRedlockNodeTimeout(
+          node.set(seqKey, finalToken.toString()),
+          timeoutMs,
+          node.id,
+          "counter repair",
+        );
+      } catch (error) {
+        markRedlockNodeFailed(
+          node.id,
+          error,
+          now(),
+          baseBackoffMs,
+          maxBackoffMs,
+        );
       }
     }),
   );
 
   return {
     token: finalToken,
-    quorumAchieved: succeededTokens.length,
+    quorumAchieved: succeeded.length,
     quorumRequired: requiredQuorum,
   };
 }
@@ -290,6 +439,8 @@ export interface SeatLockData {
   fencingToken?: string;
   driftAllowanceMs?: number;
   acquiredMonotonicNs?: string;
+  /** True after the one permitted checkout-time extension has been consumed. */
+  extensionUsed?: boolean;
 }
 
 export interface AcquireLockResult {
@@ -471,6 +622,7 @@ export async function acquireSeatWebLock(
         heldAt: now,
         expiresAt,
         version: 1,
+        extensionUsed: false,
         fencingToken: initialToken.toString(),
         acquiredMonotonicNs: acquireStartNs.toString(),
       };
@@ -572,6 +724,7 @@ export async function acquireSeatWebLock(
     heldAt: now,
     expiresAt,
     version: (existing?.version ?? 0) + 1,
+    extensionUsed: false,
     fencingToken: token.toString(),
     driftAllowanceMs,
     acquiredMonotonicNs: acquireEndNs.toString(),
@@ -588,6 +741,164 @@ export async function acquireSeatWebLock(
     lock: lockPayload,
     fencingToken: token,
     driftAllowanceMs,
+  };
+}
+
+
+export const SEAT_LOCK_EXTEND_LUA = `
+local current = redis.call('GET', KEYS[1])
+if not current then return { 0, 'NOT_FOUND' } end
+
+local ok, decoded = pcall(cjson.decode, current)
+if not (ok and type(decoded) == 'table') then
+  return { 0, 'INVALID_LOCK' }
+end
+
+if decoded.userId ~= ARGV[1] or decoded.fencingToken ~= ARGV[2] then
+  return { 0, 'UNAUTHORIZED' }
+end
+if decoded.extensionUsed == true then
+  return { 0, 'ALREADY_EXTENDED' }
+end
+
+local currentPttl = redis.call('PTTL', KEYS[1])
+if currentPttl <= 0 then
+  return { 0, 'NOT_FOUND' }
+end
+if currentPttl <= tonumber(ARGV[3]) then
+  return { 0, 'TOO_CLOSE_TO_EXPIRY' }
+end
+
+local extensionMs = tonumber(ARGV[4])
+local newPttl = currentPttl + extensionMs
+decoded.expiresAt = tonumber(ARGV[5]) + newPttl
+decoded.extensionUsed = true
+decoded.version = (tonumber(decoded.version) or 1) + 1
+
+local encoded = cjson.encode(decoded)
+redis.call('SET', KEYS[1], encoded, 'PX', newPttl)
+return { 1, encoded, newPttl }
+`;
+
+export type ExtendSeatHoldReason =
+  | "NOT_FOUND"
+  | "UNAUTHORIZED"
+  | "ALREADY_EXTENDED"
+  | "TOO_CLOSE_TO_EXPIRY"
+  | "INVALID_LOCK"
+  | "ERROR";
+
+export interface ExtendSeatHoldResult {
+  success: boolean;
+  lock?: SeatLockData;
+  remainingSeconds?: number;
+  reason?: ExtendSeatHoldReason;
+}
+
+/**
+ * Extends the current holder's checkout lease by exactly five minutes once.
+ * The holder must present the fencing token returned when the lock was acquired.
+ * Extension is rejected when 60 seconds or less remain.
+ */
+export async function extendSeatHold(
+  venueId: string,
+  seatId: string,
+  userId: string,
+  fencingToken: string,
+): Promise<ExtendSeatHoldResult> {
+  if (!userId || !fencingToken) {
+    return { success: false, reason: "UNAUTHORIZED" };
+  }
+
+  const key = getLockKey(venueId, seatId);
+  const now = Date.now();
+  const redis = getRedis();
+
+  if (redis) {
+    try {
+      const rawResult = await redis.eval(
+        SEAT_LOCK_EXTEND_LUA,
+        [key],
+        [
+          userId,
+          fencingToken,
+          "60000",
+          "300000",
+          String(now),
+        ],
+      );
+      const [flag, rawLock, rawRemaining] = Array.isArray(rawResult)
+        ? rawResult
+        : [0, "ERROR", 0];
+      if (Number(flag) !== 1) {
+        const reason = String(rawLock) as ExtendSeatHoldReason;
+        return {
+          success: false,
+          reason: [
+            "NOT_FOUND",
+            "UNAUTHORIZED",
+            "ALREADY_EXTENDED",
+            "TOO_CLOSE_TO_EXPIRY",
+            "INVALID_LOCK",
+          ].includes(reason) ? reason : "ERROR",
+          remainingSeconds:
+            Number.isFinite(Number(rawRemaining)) && Number(rawRemaining) > 0
+              ? Math.ceil(Number(rawRemaining) / 1000)
+              : undefined,
+        };
+      }
+
+      const lock = parseLockValue(rawLock);
+      if (!lock) return { success: false, reason: "INVALID_LOCK" };
+      getRedisKeyspaceManager().registerDeskTimer(venueId, seatId, lock.expiresAt);
+      return {
+        success: true,
+        lock,
+        remainingSeconds: Math.max(0, Math.ceil((lock.expiresAt - now) / 1000)),
+      };
+    } catch (error) {
+      console.error("[SeatLock] Redis lease extension failed:", error);
+      return { success: false, reason: "ERROR" };
+    }
+  }
+
+  pruneMemoryLocks(now);
+  const current = memoryLocks.get(key);
+  if (!current || now >= current.expiresAt) {
+    return { success: false, reason: "NOT_FOUND" };
+  }
+  if (
+    current.userId !== userId ||
+    !current.fencingToken ||
+    current.fencingToken !== fencingToken
+  ) {
+    return { success: false, reason: "UNAUTHORIZED" };
+  }
+  if (current.extensionUsed) {
+    return { success: false, reason: "ALREADY_EXTENDED" };
+  }
+
+  const remainingMs = current.expiresAt - now;
+  if (remainingMs <= 60_000) {
+    return {
+      success: false,
+      reason: "TOO_CLOSE_TO_EXPIRY",
+      remainingSeconds: Math.max(0, Math.ceil(remainingMs / 1000)),
+    };
+  }
+
+  const updated: SeatLockData = {
+    ...current,
+    expiresAt: current.expiresAt + 300_000,
+    extensionUsed: true,
+    version: current.version + 1,
+  };
+  memoryLocks.set(key, updated);
+  getRedisKeyspaceManager().registerDeskTimer(venueId, seatId, updated.expiresAt);
+  return {
+    success: true,
+    lock: { ...updated },
+    remainingSeconds: Math.ceil((updated.expiresAt - now) / 1000),
   };
 }
 
@@ -848,6 +1159,7 @@ export function resetMemorySeatLocks(): void {
   memoryLocks.clear();
   resetMonotonicFencingSequence();
   registeredRedlockNodes = null;
+  resetRedlockNodeHealth();
   getRedisKeyspaceManager().reset();
 }
 
@@ -955,4 +1267,162 @@ export async function withSeatWebLock<T>(
   }
 
   return callback(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Redlock Multi-Node Quorum & Monotonic Database Fencing Manager
+// ---------------------------------------------------------------------------
+
+export interface RedlockOptions {
+  redisClients: Redis[];
+  pgPool: Pool;
+  retryCount?: number;
+  retryDelayMin?: number;
+  retryDelayMax?: number;
+  driftFactor?: number;
+}
+
+export class SeatHoldLockManager {
+  private redisClients: Redis[];
+  private pgPool: Pool;
+  private retryCount: number;
+  private retryDelayMin: number;
+  private retryDelayMax: number;
+  private driftFactor: number;
+
+  constructor(options: RedlockOptions) {
+    if (!options.redisClients || options.redisClients.length === 0) {
+      throw new Error("Redlock requires at least one Redis client/node.");
+    }
+    this.redisClients = options.redisClients;
+    this.pgPool = options.pgPool;
+    this.retryCount = options.retryCount ?? 3;
+    this.retryDelayMin = options.retryDelayMin ?? 200;
+    this.retryDelayMax = options.retryDelayMax ?? 400;
+    this.driftFactor = options.driftFactor ?? 0.01;
+  }
+
+  getQuorum(): number {
+    return Math.floor(this.redisClients.length / 2) + 1;
+  }
+
+  async acquireLock(
+    resourceKey: string,
+    ttlMs: number,
+  ): Promise<{
+    lockValue: string;
+    validityTime: number;
+    fencingToken: number;
+  } | null> {
+    const lockValue = crypto.randomBytes(16).toString("hex");
+    const quorum = this.getQuorum();
+
+    for (let attempt = 0; attempt < this.retryCount; attempt++) {
+      const startTime = Date.now();
+
+      const acquisitionPromises = this.redisClients.map(async (client) => {
+        try {
+          const res = await (client as any).set(
+            resourceKey,
+            lockValue,
+            "PX",
+            ttlMs,
+            "NX",
+          );
+          return res === "OK";
+        } catch {
+          return false;
+        }
+      });
+
+      const results = await Promise.all(acquisitionPromises);
+      const successCount = results.filter(Boolean).length;
+
+      const elapsedTime = Date.now() - startTime;
+      const clockDrift = Math.floor(ttlMs * this.driftFactor) + 2;
+      const validityTime = ttlMs - elapsedTime - clockDrift;
+
+      if (successCount >= quorum && validityTime > 0) {
+        const fencingToken =
+          await this.incrementAndGetFencingToken(resourceKey);
+        return { lockValue, validityTime, fencingToken };
+      }
+
+      await this.releaseLock(resourceKey, lockValue);
+      const delay =
+        Math.random() * (this.retryDelayMax - this.retryDelayMin) +
+        this.retryDelayMin;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    return null;
+  }
+
+  private async incrementAndGetFencingToken(
+    resourceKey: string,
+  ): Promise<number> {
+    const client = await this.pgPool.connect();
+    try {
+      await client.query("BEGIN");
+      const updateRes = await client.query(
+        `INSERT INTO lock_fencing_counters (resource_key, fencing_token, updated_at)
+         VALUES ($1, 1, NOW())
+         ON CONFLICT (resource_key)
+         DO UPDATE SET fencing_token = lock_fencing_counters.fencing_token + 1, updated_at = NOW()
+         RETURNING fencing_token`,
+        [resourceKey],
+      );
+      const token = updateRes.rows[0].fencing_token;
+      await client.query("COMMIT");
+      return token;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async executeWithFencingToken(
+    seatId: string,
+    fencingToken: number,
+    seatData: any,
+  ): Promise<boolean> {
+    const client = await this.pgPool.connect();
+    try {
+      const res = await client.query(
+        `UPDATE seat_allocations
+         SET status = $1, fencing_token = $2, updated_at = NOW()
+         WHERE seat_id = $3 AND (fencing_token IS NULL OR $2 > fencing_token)`,
+        [seatData.status, fencingToken, seatId],
+      );
+      if ((res.rowCount ?? 0) === 0) {
+        throw new StaleFencingTokenError(
+          `Stale fencing token ${fencingToken} rejected for seat ${seatId}`,
+        );
+      }
+      return true;
+    } finally {
+      client.release();
+    }
+  }
+
+  async releaseLock(resourceKey: string, lockValue: string): Promise<void> {
+    const luaScript = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      else
+        return 0
+      end
+    `;
+    await Promise.all(
+      this.redisClients.map(async (client) => {
+        try {
+          await (client as any).eval(luaScript, 1, resourceKey, lockValue);
+        } catch {
+          // Ignore release errors on unreachable nodes
+        }
+      }),
+    );
+  }
 }

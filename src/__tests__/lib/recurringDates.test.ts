@@ -109,6 +109,15 @@ describe("generateRecurringDates", () => {
         "2027-03-22",
       ]);
     });
+
+    it("steps by exactly 7 calendar days across a November DST fall-back change", () => {
+      expect(generateRecurringDates("2027-10-25", "weekly", null, 4)).toEqual([
+        "2027-10-25",
+        "2027-11-01",
+        "2027-11-08",
+        "2027-11-15",
+      ]);
+    });
   });
 
   describe("limits", () => {

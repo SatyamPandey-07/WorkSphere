@@ -35,20 +35,23 @@ describe("SavedVenuesPage Empty State (#3429)", () => {
     // 2. Supportive Description
     expect(
       screen.getByText(
-        "Explore nearby cafes, coworking spaces, and quiet libraries and tap the heart icon to save them for quick access."
-      )
+        "Explore verified spaces, quiet study nooks, and cafes with dependable Wi-Fi, then save your favorites here for instant access.",
+      ),
     ).toBeInTheDocument();
 
-    // 3. Call to Action button linking to '/'
-    const ctaLink = screen.getByRole("link", { name: "Explore Workspaces" });
+    // 3. Call to Action button linking to '/venues' with search-focus parameter
+    const ctaLink = screen.getByRole("link", { name: "Discover Workspaces" });
     expect(ctaLink).toBeInTheDocument();
-    expect(ctaLink).toHaveAttribute("href", "/");
+    expect(ctaLink).toHaveAttribute("href", "/venues?search=true");
 
     // 4. Accessibility landmark & region
     const emptyStateRegion = screen.getByRole("region", {
       name: "Empty saved workspaces",
     });
     expect(emptyStateRegion).toBeInTheDocument();
+
+    // 5. Holographic Compass Illustration is rendered
+    expect(screen.getByTestId("holographic-compass-wrapper")).toBeInTheDocument();
   });
 
   it("does not render empty state when favorites are present", () => {

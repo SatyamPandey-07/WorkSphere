@@ -8,6 +8,13 @@ import type * as Party from "partykit/server";
 
 export const DEFAULT_SEAT_HOLD_TTL_MS = 5 * 60 * 1000; // 5 minutes default hold TTL
 
+/**
+ * How long (ms) the client keeps the "Extend Hold" recovery prompt on screen
+ * after a `lock_expired` notification (#7943). The seat is released on the
+ * server immediately; this window only bounds the UI prompt.
+ */
+export const LOCK_EXPIRED_GRACE_MS = 30 * 1000;
+
 export interface SeatCheckin {
   seatId: string;
   userId: string;
@@ -96,10 +103,38 @@ export default class VenueRoom implements Party.Server {
         };
         this.seats.set(seatId, seat);
         this.recordAndBroadcastEvent("seat_release", seat);
+        this.notifyLockExpired(hold, now);
         pruned++;
       }
     }
     return pruned;
+  }
+
+  /**
+   * Tells the connection that owned an expired hold, and only that connection,
+   * so its client can offer a one-click renewal instead of failing at checkout.
+   */
+  private notifyLockExpired(hold: SeatHoldLock, now: number): void {
+    const conn =
+      typeof this.room.getConnection === "function"
+        ? this.room.getConnection(hold.connId)
+        : undefined;
+    if (!conn) return;
+
+    try {
+      conn.send(
+        JSON.stringify({
+          type: "lock_expired",
+          epoch: this.serverEpoch,
+          seatId: hold.seatId,
+          userId: hold.userId,
+          expiredAt: now,
+          graceMs: LOCK_EXPIRED_GRACE_MS,
+        })
+      );
+    } catch {
+      // Connection closed between lookup and send; nothing to recover.
+    }
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
@@ -193,32 +228,53 @@ export default class VenueRoom implements Party.Server {
           return;
         }
 
-        const ttl =
-          typeof data.ttlMs === "number" && data.ttlMs > 0
-            ? data.ttlMs
-            : DEFAULT_SEAT_HOLD_TTL_MS;
-        const holdExpiresAt = Date.now() + ttl;
+        this.applySeatHold(data, sender);
+        return;
+      }
 
-        this.seatHolds.set(data.seatId, {
-          seatId: data.seatId,
-          userId: data.userId,
-          userName: data.userName,
-          connId: sender.id,
-          holdExpiresAt,
-        });
+      // Atomic renewal after a hold expired (#7943). The room is single
+      // threaded, so the availability check and the re-acquire below cannot
+      // interleave with another user's seat_hold or seat_checkin.
+      if (data.type === "lock_extend") {
+        const existing = this.seats.get(data.seatId);
+        const activeHold = this.seatHolds.get(data.seatId);
 
-        this.sequenceId++;
-        const seat: SeatCheckin = {
-          seatId: data.seatId,
-          userId: data.userId,
-          userName: data.userName,
-          status: "HELD",
-          timestamp: Date.now(),
-          sequenceId: this.sequenceId,
-        };
+        if (existing?.status === "OCCUPIED") {
+          sender.send(
+            JSON.stringify({
+              type: "seat_conflict",
+              seatId: data.seatId,
+              reason: "ALREADY_OCCUPIED",
+              message: "Seat was taken while your hold was expired",
+            })
+          );
+          return;
+        }
 
-        this.seats.set(data.seatId, seat);
-        this.recordAndBroadcastEvent("seat_hold", seat);
+        if (
+          activeHold &&
+          activeHold.userId !== data.userId &&
+          Date.now() < activeHold.holdExpiresAt
+        ) {
+          sender.send(
+            JSON.stringify({
+              type: "seat_conflict",
+              seatId: data.seatId,
+              reason: "ALREADY_HELD",
+              message: "Seat is currently held by another user",
+            })
+          );
+          return;
+        }
+
+        const holdExpiresAt = this.applySeatHold(data, sender);
+        sender.send(
+          JSON.stringify({
+            type: "lock_extended",
+            seatId: data.seatId,
+            holdExpiresAt,
+          })
+        );
         return;
       }
 
@@ -329,6 +385,44 @@ export default class VenueRoom implements Party.Server {
         })
       );
     }
+  }
+
+  /**
+   * Creates (or renews) a seat hold for the sender and broadcasts it.
+   * Callers must have already validated that the seat can be held.
+   * Returns the new hold expiry timestamp.
+   */
+  private applySeatHold(
+    data: { seatId: string; userId: string; userName?: string; ttlMs?: unknown },
+    sender: Party.Connection
+  ): number {
+    const ttl =
+      typeof data.ttlMs === "number" && data.ttlMs > 0
+        ? data.ttlMs
+        : DEFAULT_SEAT_HOLD_TTL_MS;
+    const holdExpiresAt = Date.now() + ttl;
+
+    this.seatHolds.set(data.seatId, {
+      seatId: data.seatId,
+      userId: data.userId,
+      userName: data.userName,
+      connId: sender.id,
+      holdExpiresAt,
+    });
+
+    this.sequenceId++;
+    const seat: SeatCheckin = {
+      seatId: data.seatId,
+      userId: data.userId,
+      userName: data.userName,
+      status: "HELD",
+      timestamp: Date.now(),
+      sequenceId: this.sequenceId,
+    };
+
+    this.seats.set(data.seatId, seat);
+    this.recordAndBroadcastEvent("seat_hold", seat);
+    return holdExpiresAt;
   }
 
   /**

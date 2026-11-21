@@ -103,6 +103,9 @@ export interface SeatHold {
 /** Default seat-hold lock TTL (5 minutes in milliseconds) (#3522) */
 export const DEFAULT_SEAT_HOLD_TTL_MS = 5 * 60 * 1000;
 
+/** How long the client keeps its "Extend Hold" prompt after expiry (#7943) */
+export const LOCK_EXPIRED_GRACE_MS = 30 * 1000;
+
 export default class WorkspaceServer implements Party.Server {
   // Real-time seat availability layer (#703): one check-in per connection,
   // keyed by connection id so we can always find & clear a user's previous
@@ -1112,10 +1115,40 @@ export default class WorkspaceServer implements Party.Server {
           reason: "EXPIRED",
           timestamp: now,
         });
+        this.notifyLockExpired(hold, now);
         expiredCount++;
       }
     }
     return expiredCount;
+  }
+
+  /**
+   * Sends a direct `lock_expired` frame to the connection that owned an
+   * expired hold, so its client can offer a one-click renewal (#7943).
+   * Renewal itself reuses `seat_hold_request`, which already re-acquires
+   * atomically and rejects with `seat_hold_rejected` if someone else won it.
+   */
+  private notifyLockExpired(hold: SeatHold, now: number) {
+    const conn =
+      typeof this.room.getConnection === "function"
+        ? this.room.getConnection(hold.connId)
+        : undefined;
+    if (!conn) return;
+
+    try {
+      conn.send(
+        JSON.stringify({
+          type: "lock_expired",
+          seatId: hold.seatId,
+          venueId: hold.venueId,
+          userId: hold.userId,
+          expiredAt: now,
+          graceMs: LOCK_EXPIRED_GRACE_MS,
+        }),
+      );
+    } catch {
+      // Connection closed between lookup and send; nothing to recover.
+    }
   }
 
   private handleSeatHoldRequest(

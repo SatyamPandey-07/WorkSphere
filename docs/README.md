@@ -2,6 +2,8 @@
 
 Welcome to the WorkSphere documentation hub. Use the topic-based sections below to find setup instructions, API contracts, architecture references, feature guides, and operational documentation.
 
+- [Clerk Webhook Integration Runbook](./auth/CLERK_WEBHOOK_INTEGRATION.md) — signature verification, event handling, secret rotation, local testing, and troubleshooting.
+
 ## Getting Started & Contributor Guides
 
 - [Repository contribution guide](../CONTRIBUTING.md) — contribution workflow, development expectations, and pull request guidelines.

@@ -19,6 +19,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Semantic search](./semantic-search.md)
 - [Solana Pay](./solana-pay.md)
 - [Telemetry](./telemetry.md)
+- [WebGPU Capability Diagnostics](../telemetry/WEBGPU_CAPABILITY_DIAGNOSTICS.md) — WebGPU capability telemetry schema, diagnostics API, and operational guidance.
 - [Venue flagging](./VENUE_FLAGGING.md) — authenticated flag submission, reason validation, duplicate behavior, and hourly rate limit.
 - [Venue reviews](./venue-reviews.md) — cursor-based review pagination, viewer-dependent reviewer details, and response behavior.
 

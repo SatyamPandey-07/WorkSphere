@@ -192,4 +192,18 @@ describe('SchnorrThresholdAggregator', () => {
             expect(isTamperedValid).toBe(false);
         });
     });
+    it('evicts incomplete signing sessions after the five-minute TTL', () => {
+        jest.useFakeTimers();
+        aggregator.dispose();
+        aggregator = new SchnorrThresholdAggregator(5 * 60_000, 30_000);
+
+        const sessionId = 'session-expiry';
+        aggregator.createSession(sessionId, participants, message);
+        expect(aggregator.getSession(sessionId)).toBeDefined();
+
+        jest.advanceTimersByTime(5 * 60_000);
+
+        expect(aggregator.getSession(sessionId)).toBeUndefined();
+    });
+
 });

@@ -5,6 +5,8 @@ import { Connection, Transaction } from "@solana/web3.js";
 import {
   simulateEscrowTransaction,
   reconcilePendingSignature,
+  injectOrUpdateComputeUnitPrice,
+  getPriorityFeeEstimator,
 } from "@/lib/solana/escrowClient";
 
 export type EscrowStatus = "idle" | "simulating" | "confirmed_optimistic" | "finalized" | "error";
@@ -21,6 +23,15 @@ export function useNomadEscrow(rpcUrl: string = "https://api.mainnet-beta.solana
     setStatus("simulating");
     setErrorMessage(null);
     const connection = new Connection(rpcUrl, "confirmed");
+
+    // Dynamic Priority Fee: ensure ComputeBudget instruction is present before simulation & signing
+    try {
+      const estimator = getPriorityFeeEstimator();
+      const estimate = await estimator.estimatePriorityFee(connection);
+      injectOrUpdateComputeUnitPrice(transaction, estimate.microLamports);
+    } catch {
+      // Non-blocking fallback
+    }
 
     // 1. Client-Side RPC Simulation (<50ms)
     const simResult = await simulateEscrowTransaction(connection, transaction);

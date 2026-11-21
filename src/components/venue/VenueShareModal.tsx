@@ -8,6 +8,7 @@ import React, {
   useRef,
 } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { Share2, Copy, Check, Download, X, QrCode, MapPin } from "lucide-react";
 import { generateQRCodeSVG, downloadSVG } from "@/lib/qr/svgQr";
 import { useToast } from "@/components/ui/Toast";
@@ -25,6 +26,27 @@ export interface VenueShareProps {
   variant?: "hero" | "button" | "icon" | "outline";
 }
 
+function copyTextFallback(text: string): boolean {
+  if (typeof document === "undefined") return false;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.select();
+  let success = false;
+  try {
+    success = document.execCommand("copy");
+  } catch {
+    success = false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+  return success;
+}
+
 export function VenueShareModal({
   venue,
   className = "",
@@ -33,19 +55,27 @@ export function VenueShareModal({
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [origin, setOrigin] = useState("");
+  const copyInProgressRef = useRef(false);
+  const copyRequestIdRef = useRef(0);
+  const isMountedRef = useRef(false);
   const timerRef = useRef<number | null>(null);
   const shareTimerRef = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      copyRequestIdRef.current += 1;
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = null;
       if (shareTimerRef.current !== null)
         window.clearTimeout(shareTimerRef.current);
-    },
-    [],
-  );
+      shareTimerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -76,6 +106,9 @@ export function VenueShareModal({
   useFocusTrap(dialogRef, { isActive: isOpen, returnFocus: false });
 
   const handleClose = useCallback(() => {
+    copyRequestIdRef.current += 1;
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
     setIsOpen(false);
     setCopied(false);
     setIsSharing(false);
@@ -201,6 +234,9 @@ export function VenueShareModal({
       }
       console.error("Failed to copy shortlink:", err);
       toast("Unable to copy to clipboard", "error");
+    } finally {
+      copyInProgressRef.current = false;
+      if (isMountedRef.current) setIsCopying(false);
     }
   };
 
@@ -216,7 +252,7 @@ export function VenueShareModal({
           type="button"
           onClick={handleShareClick}
           aria-label={`Share ${venue.name}`}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-md border border-white/20 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 shadow-lg ${className}`}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-md border border-white/20 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 ${className}`}
         >
           <Share2 className="w-4 h-4" />
           <span>Share</span>
@@ -243,7 +279,7 @@ export function VenueShareModal({
           type="button"
           onClick={handleShareClick}
           aria-label={`Share ${venue.name}`}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-medium transition-all active:scale-95 ${className}`}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-semibold transition-all active:scale-95 ${className}`}
         >
           <Share2 className="w-3.5 h-3.5" />
           <span>Share</span>
@@ -288,7 +324,7 @@ export function VenueShareModal({
             onClick={handleClose}
           >
             <div
-              className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-2xl transition-all scale-100 animate-in zoom-in-95 duration-150 space-y-5"
+              className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 shadow-2xl transition-all scale-100 animate-in zoom-in-95 duration-200 space-y-5"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -304,7 +340,7 @@ export function VenueShareModal({
                   data-testid="venue-share-modal-close"
                   onClick={handleClose}
                   aria-label="Close dialog"
-                  className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
+                  className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -347,7 +383,7 @@ export function VenueShareModal({
                     readOnly
                     value={shortUrl}
                     onFocus={(e) => e.target.select()}
-                    className="flex-1 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 select-all font-mono focus:outline-none focus:ring-2 focus:ring-zinc-400"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 select-all font-mono"
                   />
                   <button
                     type="button"

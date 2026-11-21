@@ -693,6 +693,11 @@ textarea:focus::placeholder {
   }
 }
 
+/* Leaflet map initial background - prevents flash of light background (#9161) */
+.leaflet-container {
+  background: #0B0F17 !important;
+}
+
 /* Leaflet map marker popup z-index stacking context for mobile viewports (<640px) */
 .leaflet-popup-pane {
   z-index: 1000 !important;
@@ -1456,4 +1461,23 @@ html.preload *,
 html.preload *::before,
 html.preload *::after {
   transition: none !important;
+}
+
+
+/* Animate only interactive theme changes. The theme-init script and the
+   provider's first effect do not add this class, preventing hydration flashes. */
+html.theme-transitioning,
+html.theme-transitioning body,
+html.theme-transitioning body * {
+  transition-property: color, background-color, border-color, fill, stroke;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transitioning,
+  html.theme-transitioning body,
+  html.theme-transitioning body * {
+    transition: none !important;
+  }
 }

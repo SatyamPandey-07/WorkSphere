@@ -48,14 +48,51 @@ export function useSeatHoldLock({
   onSeatUnlocked,
   onHoldRenewed,
 }: UseSeatHoldLockOptions) {
-  const { userId: authUserId } = useAuth();
+  const { userId: authUserId, getToken, isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
-  const effectiveUserId = propUserId || authUserId || "guest_viewer";
+  const effectiveUserId = authUserId || propUserId || "guest_viewer";
   const effectiveUserName =
     propUserName ||
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
     user?.username ||
     "User";
+  const [socketAuth, setSocketAuth] = useState<{
+    userId: string;
+    token: string;
+  } | null>(null);
+
+  const authToken = socketAuth?.userId === authUserId ? socketAuth.token : null;
+
+  const isAuthReady = isLoaded && (!isSignedIn || Boolean(authToken));
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isLoaded || !isSignedIn || !authUserId) {
+      setSocketAuth(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSocketAuth(null);
+
+    getToken()
+      .then((token) => {
+        if (!cancelled && token) {
+          setSocketAuth({ userId: authUserId, token });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSocketAuth(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken, isLoaded, isSignedIn, authUserId]);
 
   const [activeHolds, setActiveHolds] = useState<Record<string, SeatHoldInfo>>(
     {},
@@ -88,7 +125,8 @@ export function useSeatHoldLock({
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
     room: isMounted ? targetRoom : `floorplan-${venueId}`,
-    startClosed: !isMounted,
+    startClosed: !isMounted || !isAuthReady,
+    query: authToken ? { token: authToken } : undefined,
     onOpen() {
       setIsConnected(true);
       // Request active seat holds snapshot upon connection

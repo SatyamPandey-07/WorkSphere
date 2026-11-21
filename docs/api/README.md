@@ -15,8 +15,12 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Cafe orders](./cafe-orders.md)
 - [Message translation](./message-translation.md)
 - [Partition export](./partition-export.md)
+- [Partition management](./partition-management.md) — scheduled maintenance, bulk archive and deletion, and administrative audit endpoints.
 - [Semantic search](./semantic-search.md)
 - [Solana Pay](./solana-pay.md)
 - [Telemetry](./telemetry.md)
+- [WebGPU Capability Diagnostics](../telemetry/WEBGPU_CAPABILITY_DIAGNOSTICS.md) — WebGPU capability telemetry schema, diagnostics API, and operational guidance.
+- [Venue flagging](./VENUE_FLAGGING.md) — authenticated flag submission, reason validation, duplicate behavior, and hourly rate limit.
+- [Venue reviews](./venue-reviews.md) — cursor-based review pagination, viewer-dependent reviewer details, and response behavior.
 
 For project-wide endpoint and stream documentation, see [the REST API reference](../API.md).

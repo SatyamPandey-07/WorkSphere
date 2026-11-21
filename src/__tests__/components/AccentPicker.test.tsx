@@ -1,8 +1,20 @@
 /** @jest-environment jsdom */
 
-import { render, screen, fireEvent } from "@testing-library/react";
-import { ThemeProvider } from "@/components/ThemeProvider";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { ThemeProvider, useTheme } from "@/components/ThemeProvider";
 import { AccentPicker } from "@/components/AccentPicker";
+
+function ThemeControls() {
+  const { accent, setTheme } = useTheme();
+  return (
+    <div>
+      <span data-testid="current-accent">{accent}</span>
+      <button onClick={() => setTheme("light")}>Set Light</button>
+      <button onClick={() => setTheme("dark")}>Set Dark</button>
+      <button onClick={() => setTheme("cyberpunk")}>Set Cyberpunk</button>
+    </div>
+  );
+}
 
 describe("AccentPicker with Lantern Emerald (#6164)", () => {
   beforeEach(() => {
@@ -11,7 +23,7 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
     document.documentElement.removeAttribute("style");
   });
 
-  it("renders 5 accent color radio buttons including Lantern Emerald", () => {
+  it("renders the requested accents and preserves the existing accent options", () => {
     render(
       <ThemeProvider initialAccent="blue">
         <AccentPicker />
@@ -19,12 +31,105 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
     );
 
     const radioButtons = screen.getAllByRole("radio");
-    expect(radioButtons).toHaveLength(5);
+    expect(radioButtons).toHaveLength(9);
 
     const lanternButton = screen.getByRole("radio", {
       name: /select lantern emerald accent color/i,
     });
     expect(lanternButton).toBeInTheDocument();
+
+    for (const color of [
+      "Indigo",
+      "Emerald",
+      "Amber",
+      "Rose",
+      "Cyan",
+      "Violet",
+    ]) {
+      expect(
+        screen.getByRole("radio", { name: `Select ${color} accent color` }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ["Indigo", "indigo", "#4338ca", "#ffffff"],
+    ["Emerald", "emerald", "#10b981", "#111827"],
+    ["Amber", "amber", "#f59e0b", "#111827"],
+    ["Rose", "rose", "#be123c", "#ffffff"],
+    ["Cyan", "cyan", "#0e7490", "#ffffff"],
+    ["Violet", "violet", "#6d28d9", "#ffffff"],
+  ])(
+    "selects %s immediately and persists the preference",
+    (label, name, hex, foreground) => {
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const swatch = screen.getByRole("radio", {
+        name: `Select ${label} accent color`,
+      });
+      expect(swatch).toHaveAttribute("aria-checked", "false");
+
+      fireEvent.click(swatch);
+
+      expect(swatch).toHaveAttribute("aria-checked", "true");
+      expect(swatch.querySelector("svg")).toHaveStyle({ color: foreground });
+      expect(screen.getByText(`Selected: ${label}`)).toBeInTheDocument();
+      expect(
+        document.documentElement.style.getPropertyValue("--primary-accent"),
+      ).toBe(hex);
+      expect(window.localStorage.getItem("worksphere-accent")).toBe(name);
+      expect(document.cookie).toContain(`worksphere-accent=${name}`);
+    },
+  );
+
+  it("exposes selected state and visible focus treatment on each radio swatch", () => {
+    render(
+      <ThemeProvider initialAccent="blue">
+        <AccentPicker />
+      </ThemeProvider>,
+    );
+
+    const blueButton = screen.getByRole("radio", {
+      name: "Select Blue accent color",
+    });
+    const indigoButton = screen.getByRole("radio", {
+      name: "Select Indigo accent color",
+    });
+
+    expect(blueButton).toHaveAttribute("aria-checked", "true");
+    expect(blueButton).toHaveAttribute("tabindex", "0");
+    expect(indigoButton).toHaveAttribute("aria-checked", "false");
+    expect(indigoButton).toHaveAttribute("tabindex", "-1");
+    expect(indigoButton).toHaveAttribute("type", "button");
+    expect(indigoButton.className).toContain("focus-visible:ring-4");
+    expect(indigoButton.className).toContain(
+      "dark:focus-visible:ring-zinc-100",
+    );
+    expect(indigoButton.className).toContain(
+      "cyberpunk:focus-visible:ring-fuchsia-200",
+    );
+  });
+
+  it("restores a persisted accent when the picker initializes", () => {
+    window.localStorage.setItem("worksphere-accent", "cyan");
+
+    render(
+      <ThemeProvider initialAccent="blue">
+        <AccentPicker />
+      </ThemeProvider>,
+    );
+
+    const cyanButton = screen.getByRole("radio", {
+      name: /select cyan accent color/i,
+    });
+    expect(cyanButton).toHaveAttribute("aria-checked", "true");
+    expect(
+      document.documentElement.style.getPropertyValue("--primary-accent"),
+    ).toBe("#0e7490");
   });
 
   it("allows selecting Lantern Emerald and updates UI state and CSS variables", () => {
@@ -42,7 +147,9 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
     fireEvent.click(lanternButton);
 
     expect(lanternButton).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByText(/selected:\s*lantern emerald/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/selected:\s*lantern emerald/i),
+    ).toBeInTheDocument();
 
     const root = document.documentElement;
     expect(root.style.getPropertyValue("--primary-accent")).toBe("#00ff88");
@@ -68,7 +175,7 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
     expect(root.style.getPropertyValue("--accent-lantern")).toBe("");
   });
 
-  it("navigates through all 5 options via keyboard arrows", () => {
+  it("navigates through all options via keyboard arrows and wraps", () => {
     render(
       <ThemeProvider initialAccent="blue">
         <AccentPicker />
@@ -76,30 +183,18 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
     );
 
     const buttons = screen.getAllByRole("radio");
-    // Blue is index 0
     expect(buttons[0]).toHaveAttribute("aria-checked", "true");
 
-    // Press ArrowRight to move through the options
-    // 0: blue -> 1: purple
-    fireEvent.keyDown(buttons[0], { key: "ArrowRight" });
-    expect(buttons[1]).toHaveAttribute("aria-checked", "true");
+    for (let index = 0; index < buttons.length; index += 1) {
+      const nextIndex = (index + 1) % buttons.length;
+      fireEvent.keyDown(buttons[index], { key: "ArrowRight" });
+      expect(buttons[nextIndex]).toHaveAttribute("aria-checked", "true");
+    }
 
-    // 1: purple -> 2: emerald
-    fireEvent.keyDown(buttons[1], { key: "ArrowRight" });
-    expect(buttons[2]).toHaveAttribute("aria-checked", "true");
-
-    // 2: emerald -> 3: amber
-    fireEvent.keyDown(buttons[2], { key: "ArrowRight" });
-    expect(buttons[3]).toHaveAttribute("aria-checked", "true");
-
-    // 3: amber -> 4: lantern-emerald
-    fireEvent.keyDown(buttons[3], { key: "ArrowRight" });
-    expect(buttons[4]).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByText(/selected:\s*lantern emerald/i)).toBeInTheDocument();
-
-    // 4: lantern-emerald -> wraps to 0: blue
-    fireEvent.keyDown(buttons[4], { key: "ArrowRight" });
     expect(buttons[0]).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.keyDown(buttons[0], { key: "ArrowLeft" });
+    expect(buttons[buttons.length - 1]).toHaveAttribute("aria-checked", "true");
   });
 
   it("supports Home and End key navigation across all options", () => {
@@ -111,13 +206,46 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
 
     const buttons = screen.getAllByRole("radio");
 
-    // End should jump to lantern-emerald (last item)
+    // End should jump to the last option.
     fireEvent.keyDown(buttons[0], { key: "End" });
-    expect(buttons[4]).toHaveAttribute("aria-checked", "true");
+    expect(buttons[8]).toHaveAttribute("aria-checked", "true");
 
-    // Home should jump back to blue (first item)
-    fireEvent.keyDown(buttons[4], { key: "Home" });
+    // Home should jump back to blue (first item).
+    fireEvent.keyDown(buttons[8], { key: "Home" });
     expect(buttons[0]).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("keeps the active accent applied when switching theme modes", () => {
+    render(
+      <ThemeProvider initialTheme="light" initialAccent="blue">
+        <AccentPicker />
+        <ThemeControls />
+      </ThemeProvider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: /select rose accent color/i }),
+    );
+    expect(screen.getByTestId("current-accent")).toHaveTextContent("rose");
+
+    fireEvent.click(screen.getByRole("button", { name: "Set Dark" }));
+    expect(document.documentElement).toHaveClass("dark");
+    expect(
+      document.documentElement.style.getPropertyValue("--primary-accent"),
+    ).toBe("#be123c");
+
+    fireEvent.click(screen.getByRole("button", { name: "Set Cyberpunk" }));
+    expect(document.documentElement).toHaveClass("cyberpunk");
+    expect(
+      document.documentElement.style.getPropertyValue("--primary-accent"),
+    ).toBe("#be123c");
+
+    fireEvent.click(screen.getByRole("button", { name: "Set Light" }));
+    expect(document.documentElement).not.toHaveClass("dark");
+    expect(document.documentElement).not.toHaveClass("cyberpunk");
+    expect(
+      document.documentElement.style.getPropertyValue("--primary-accent"),
+    ).toBe("#be123c");
   });
 
   describe("Emerald swatch glowing power ring pulse effect (#6170)", () => {
@@ -192,7 +320,9 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
       expect(emeraldButton).toHaveAttribute("aria-checked", "true");
 
       // Finding the pulse ring inside this button
-      const pulseRing = emeraldButton.querySelector('[data-testid="emerald-pulse-ring"]');
+      const pulseRing = emeraldButton.querySelector(
+        '[data-testid="emerald-pulse-ring"]',
+      );
       expect(pulseRing).toHaveClass("opacity-0");
     });
 
@@ -284,8 +414,12 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
       expect(screen.getByText("#A855F7")).toBeInTheDocument();
 
       // Blur swatch
-      fireEvent.blur(purpleButton.parentElement!, { relatedTarget: document.body });
-      expect(screen.queryByTestId("swatch-tooltip-purple")).not.toBeInTheDocument();
+      fireEvent.blur(purpleButton.parentElement!, {
+        relatedTarget: document.body,
+      });
+      expect(
+        screen.queryByTestId("swatch-tooltip-purple"),
+      ).not.toBeInTheDocument();
     });
 
     it("copies exact HEX code to clipboard and displays Copied! badge", async () => {
@@ -304,8 +438,10 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
       const copyButton = screen.getByTestId("copy-hex-blue");
       fireEvent.click(copyButton);
 
+      await waitFor(() => {
+        expect(screen.getByTestId("copied-badge")).toBeInTheDocument();
+      });
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("#3b82f6");
-      expect(screen.getByTestId("copied-badge")).toBeInTheDocument();
       expect(screen.getByText(/copied!/i)).toBeInTheDocument();
     });
 
@@ -329,4 +465,3 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
     });
   });
 });
-

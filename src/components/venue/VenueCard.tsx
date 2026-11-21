@@ -1,96 +1,6 @@
 "use client";
 
- fix/telemetry-ws-backoff-jitter
-
- fix/canvas-provider-idb-memory-leak
- main
-import React from "react";
-import Image from "next/image";
-import { PhotoAttribution } from "./VenueGallery";
-
-export interface VenueCardProps {
-  id: string;
-  name: string;
-  address?: string;
-  imageUrl?: string;
-  attribution?: PhotoAttribution;
-  rating?: number;
-  wifiSpeed?: number;
-  noiseLevel?: string;
-  onClick?: () => void;
-}
-
-export function VenueCard({
-  name,
-  address,
-  imageUrl,
-  attribution,
-  rating,
-  wifiSpeed,
-  noiseLevel,
-  onClick,
-}: VenueCardProps) {
-  // Fallback check for photographer string
-  const photographerName = attribution?.photographer?.trim() || "Verified Contributor";
-
-  return (
-    <div
-      onClick={onClick}
-      className="group relative flex flex-col overflow-hidden rounded-xl bg-slate-900 border border-slate-800 p-4 shadow-md transition-all hover:border-slate-700 cursor-pointer"
-    >
-      {/* Venue Photo Container */}
-      {imageUrl && (
-        <div className="relative h-40 w-full overflow-hidden rounded-lg bg-slate-800">
-          <Image
-            src={imageUrl}
-            alt={name}
-            fill
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
-          />
-        </div>
-      )}
-
-      {/* Venue Details */}
-      <div className="mt-3 flex flex-col gap-1">
-        <h3 className="font-semibold text-lg text-slate-100 group-hover:text-indigo-400 transition-colors">
-          {name}
-        </h3>
-        {address && <p className="text-xs text-slate-400">{address}</p>}
-
-        <div className="mt-2 flex items-center gap-3 text-xs text-slate-300">
-          {rating !== undefined && <span>⭐ {rating.toFixed(1)}</span>}
-          {wifiSpeed !== undefined && <span>⚡ {wifiSpeed} Mbps</span>}
-          {noiseLevel && <span className="capitalize">🔊 {noiseLevel}</span>}
-        </div>
-
-        {/* Photo Attribution with secure link & fallback safeguard */}
-        {attribution && (
-          <div className="mt-2 text-[11px] text-slate-500">
-            Photo by{" "}
-            {attribution.photographerUrl ? (
-              <a
-                href={attribution.photographerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="underline hover:text-slate-300"
-              >
-                {photographerName}
-              </a>
-            ) : (
-              <span>{photographerName}</span>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
- fix/telemetry-ws-backoff-jitter
-}
-
-}
-
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Bookmark, CalendarCheck, Heart, Share2 } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
 
@@ -101,7 +11,7 @@ export interface VenueCardProps {
     description?: string;
     imageUrl?: string;
   };
-  onBookmark?: (id: string) => void;
+  onBookmark?: (id: string) => void | Promise<void>;
   onFavorite?: (id: string) => void;
   onShare?: (id: string) => void;
   /**
@@ -117,7 +27,7 @@ export interface VenueCardProps {
 }
 
 const focusRingClasses =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
 
 export const VenueCard: React.FC<VenueCardProps> = ({
   venue,
@@ -129,10 +39,29 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 }) => {
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [isBookmarkPending, setIsBookmarkPending] = useState(false);
+  const isBookmarkPendingRef = useRef(false);
 
-  const handleBookmark = () => {
+  const handleBookmark = async () => {
+    if (isBookmarkPendingRef.current) {
+      return;
+    }
+
+    isBookmarkPendingRef.current = true;
+    setIsBookmarkPending(true);
     setIsBookmarked((prev) => !prev);
-    if (onBookmark) onBookmark(venue.id);
+
+    try {
+      if (onBookmark) {
+        await onBookmark(venue.id);
+      }
+    } catch {
+      // Rollback optimistic update on mutation failure
+      setIsBookmarked((prev) => !prev);
+    } finally {
+      isBookmarkPendingRef.current = false;
+      setIsBookmarkPending(false);
+    }
   };
 
   const handleFavorite = () => {
@@ -165,9 +94,10 @@ export const VenueCard: React.FC<VenueCardProps> = ({
           <button
             type="button"
             onClick={handleBookmark}
+            disabled={isBookmarkPending}
             aria-label={`Bookmark ${venue.name}`}
             aria-pressed={isBookmarked}
-            className={`rounded-lg p-2 transition-colors hover:bg-zinc-800 ${
+            className={`rounded-lg p-2 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 ${
               isBookmarked ? "text-emerald-400" : "text-zinc-400"
             } ${focusRingClasses}`}
           >
@@ -227,5 +157,3 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
- main
- main

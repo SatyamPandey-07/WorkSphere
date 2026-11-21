@@ -1,6 +1,6 @@
 # WebXR Spatial Anchors Persistence & Three.js Matrix Transforms Specification
 
-This document provides a comprehensive technical guide for the Augmented Reality (AR) indoor desk navigation system in WorkSphere, focusing on WebXR Spatial Anchors persistence, Three.js 4x4 affine matrix transformations, persistent cloud anchor database models (`XRAnchor`), and 2D canvas radar projection trigonometry as implemented in [`src/components/ar/SeatARPointer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ar/SeatARPointer.tsx), [`src/lib/ar/radarCanvas.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/ar/radarCanvas.ts), and [`src/app/api/ar/anchors/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/ar/anchors/route.ts).
+This document provides a comprehensive technical guide for the Augmented Reality (AR) indoor desk navigation system in WorkSphere, focusing on WebXR Spatial Anchors persistence, Three.js 4x4 affine matrix transformations, persistent cloud anchor database models (`XRAnchor`), and 2D canvas radar projection trigonometry as implemented in [`src/components/ar/SeatARPointer.tsx`](../../src/components/ar/SeatARPointer.tsx), [`src/lib/ar/radarCanvas.ts`](../../src/lib/ar/radarCanvas.ts), and [`src/app/api/ar/anchors/route.ts`](../../src/app/api/ar/anchors/route.ts).
 
 ---
 
@@ -94,7 +94,7 @@ The WebXR Device API exposes low-level access to mobile Augmented Reality hardwa
 
 ### Reference Spaces (`local-floor`, `viewer`, `bounded-floor`)
 
-To construct a coherent coordinate system between virtual 3D assets and physical floors, [`SeatARPointer`](file:///c:/Users/admin/Desktop/workfere/src/components/ar/SeatARPointer.tsx#L76) initiates an `immersive-ar` session requesting the `local-floor` reference space:
+To construct a coherent coordinate system between virtual 3D assets and physical floors, [`SeatARPointer`](../../src/components/ar/SeatARPointer.tsx#L76) initiates an `immersive-ar` session requesting the `local-floor` reference space:
 
 ```typescript
 const session = await requestSession("immersive-ar", {
@@ -193,7 +193,7 @@ $$\mathbf{P}_{\text{screen}} = \mathbf{M}_{\text{viewport}} \cdot \mathbf{M}_{\t
 
 ### Camera-Relative Pointer Direction and LookAt Quaternions
 
-In [`SeatARPointer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ar/SeatARPointer.tsx#L198-L213), the directional arrow is rendered $1.2\text{ meters}$ directly in front of the camera view frustum while continually pointing its tip toward the desk target anchor $\mathbf{T}$:
+In [`SeatARPointer.tsx`](../../src/components/ar/SeatARPointer.tsx#L198-L213), the directional arrow is rendered $1.2\text{ meters}$ directly in front of the camera view frustum while continually pointing its tip toward the desk target anchor $\mathbf{T}$:
 
 ```typescript
 const dirToTarget = new THREE.Vector3().subVectors(
@@ -225,7 +225,7 @@ Local WebXR anchors exist only for the lifespan of an active browser session. To
 
 ### Prisma Schema Definition
 
-Located in [`prisma/schema.prisma`](file:///c:/Users/admin/Desktop/workfere/prisma/schema.prisma#L509-L532):
+Located in [`prisma/schema.prisma`](../../prisma/schema.prisma#L509-L532):
 
 ```prisma
 model XRAnchor {
@@ -285,7 +285,7 @@ targetMesh.applyMatrix4(hydratedMatrix);
 
 ### Anchor Synchronization & Persistence REST Endpoints
 
-Implemented in [`src/app/api/ar/anchors/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/ar/anchors/route.ts):
+Implemented in [`src/app/api/ar/anchors/route.ts`](../../src/app/api/ar/anchors/route.ts):
 
 1. **`GET /api/ar/anchors?venueId=<ID>`:** Retrieves all active cloud anchors registered for a venue. Returns desk numbers, seat associations, and 16-element matrices.
 2. **`POST /api/ar/anchors`:** Enforces authenticated Clerk admin/staff access and creates a new spatial anchor:
@@ -306,7 +306,7 @@ When a client enters a venue:
 
 ## 5. 2D Canvas Radar Projection Trigonometry
 
-In addition to 3D in-camera arrows, [`SeatARPointer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ar/SeatARPointer.tsx#L258-L272) renders an interactive top-down circular radar HUD overlay on an HTML5 `<canvas>` via [`drawRadarOverlay`](file:///c:/Users/admin/Desktop/workfere/src/lib/ar/radarCanvas.ts#L29).
+In addition to 3D in-camera arrows, [`SeatARPointer.tsx`](../../src/components/ar/SeatARPointer.tsx#L258-L272) renders an interactive top-down circular radar HUD overlay on an HTML5 `<canvas>` via [`drawRadarOverlay`](../../src/lib/ar/radarCanvas.ts#L29).
 
 ### Camera Heading vs. World Bearing Angles
 
@@ -369,7 +369,7 @@ Raw camera odometry and GPS readings contain high-frequency noise caused by hand
 
 ### 3D Euclidean Distance vs. Planar Distance
 
-The distance engine in [`src/types/ar.ts`](file:///c:/Users/admin/Desktop/workfere/src/types/ar.ts) computes both 3D Euclidean distance and planar horizontal distance:
+The distance engine in [`src/types/ar.ts`](../../src/types/ar.ts) computes both 3D Euclidean distance and planar horizontal distance:
 
 $$d_{\text{3D}} = \sqrt{(x_{\text{target}} - x_{\text{user}})^2 + (y_{\text{target}} - y_{\text{user}})^2 + (z_{\text{target}} - z_{\text{user}})^2}$$
 
@@ -381,7 +381,7 @@ $$\Delta y = y_{\text{target}} - y_{\text{user}}$$
 
 ### Low-Pass Infinite Impulse Response (IIR) Exponential Filter
 
-To eliminate display flickering on distance readouts, [`applyDistanceSmoothing`](file:///c:/Users/admin/Desktop/workfere/src/types/ar.ts) applies an exponential low-pass filter:
+To eliminate display flickering on distance readouts, [`applyDistanceSmoothing`](../../src/types/ar.ts) applies an exponential low-pass filter:
 
 $$d_{\text{smoothed}}[k] = \alpha \cdot d_{\text{raw}}[k] + (1 - \alpha) \cdot d_{\text{smoothed}}[k-1]$$
 
@@ -391,7 +391,7 @@ Where:
 
 ### Multi-Floor Elevation Classification
 
-The elevation delta is translated into clear user guidance via [`formatElevationIndicator`](file:///c:/Users/admin/Desktop/workfere/src/types/ar.ts):
+The elevation delta is translated into clear user guidance via [`formatElevationIndicator`](../../src/types/ar.ts):
 
 | Elevation Delta ($\Delta y$) | Display Classification | Guidance Message |
 | :--- | :--- | :--- |
@@ -427,18 +427,18 @@ Mobile web browsers exhibit diverse capabilities. WorkSphere implements a determ
 ### Hardware Capability Assessment
 
 1. `useWebXR()` checks `navigator.xr.isSessionSupported("immersive-ar")`.
-2. If unsupported (or if the user denies camera permissions), `SeatARPointer` transitions seamlessly to [`CompassFallback.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ar/CompassFallback.tsx).
+2. If unsupported (or if the user denies camera permissions), `SeatARPointer` transitions seamlessly to [`CompassFallback.tsx`](../../src/components/ar/CompassFallback.tsx).
 
 ### Sensor Compass Fallback Mode
 
-[`CompassFallback.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ar/CompassFallback.tsx) renders a full-screen high-contrast gyroscope dial with:
+[`CompassFallback.tsx`](../../src/components/ar/CompassFallback.tsx) renders a full-screen high-contrast gyroscope dial with:
 - Gyroscope-stabilized compass needle pointing to target GPS coordinates (`targetGps.latitude`, `targetGps.longitude`).
 - Large numeric distance display in meters or feet.
 - "Retry AR" button allowing users to re-prompt WebXR permissions.
 
 ### Interactive 2D Floor Plan Fallback
 
-When GPS signals are degraded indoors and WebXR is unavailable, users can toggle the interactive 2D SVG floor plan viewer ([`src/components/venue/floorplan/FloorPlanViewer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/floorplan/FloorPlanViewer.tsx)) with a highlighted desk polygon.
+When GPS signals are degraded indoors and WebXR is unavailable, users can toggle the interactive 2D SVG floor plan viewer ([`src/components/venue/FloorPlanCanvas.tsx`](../../src/components/venue/FloorPlanCanvas.tsx)) with a highlighted desk polygon.
 
 ---
 
@@ -446,7 +446,7 @@ When GPS signals are degraded indoors and WebXR is unavailable, users can toggle
 
 ### `SeatARPointerProps` Interface
 
-Defined in [`src/components/ar/SeatARPointer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ar/SeatARPointer.tsx#L18-L37):
+Defined in [`src/components/ar/SeatARPointer.tsx`](../../src/components/ar/SeatARPointer.tsx#L18-L37):
 
 ```typescript
 export interface SeatARPointerProps {

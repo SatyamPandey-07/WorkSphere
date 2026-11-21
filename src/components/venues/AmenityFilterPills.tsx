@@ -10,6 +10,7 @@ import {
   Sun,
   Coffee,
   Check,
+  Monitor,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +57,12 @@ export const POPULAR_AMENITIES: AmenityFilterItem[] = [
     label: "Specialty Coffee",
     paramKey: "coffee",
     icon: Coffee,
+  },
+  {
+    id: "standing_desk",
+    label: "Standing Desk",
+    paramKey: "standingDesk",
+    icon: Monitor,
   },
 ];
 
@@ -194,10 +201,7 @@ export function AmenityFilterPills({
   }
 
   return (
-    <div
-      data-testid={testId}
-      className={cn("relative w-full", className)}
-    >
+    <div data-testid={testId} className={cn("relative w-full", className)}>
       {/* Smooth gradient shadow indicator for scrollable content on left */}
       {canScrollLeft && (
         <div
@@ -239,7 +243,7 @@ export function AmenityFilterPills({
                 "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-all active:scale-95 border select-none",
                 isSelected
                   ? "bg-blue-600 text-white border-blue-600 shadow-sm hover:bg-blue-700 dark:bg-blue-600 dark:border-blue-500"
-                  : "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80"
+                  : "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
               )}
             >
               {isSelected ? (

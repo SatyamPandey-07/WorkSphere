@@ -316,26 +316,48 @@ export async function autoCreateUpcomingTelemetryPartitions(
 }
 
 /**
- * Detaches monthly TelemetryRecord partitions older than 12 months and moves
- * them to cold storage / telemetry_archive schema, avoiding query degradation.
+ * Detaches expired monthly TelemetryRecord partitions, writes per-venue noise
+ * summaries, and moves the original partitions into the archive schema.
+ *
+ * retentionDays archives only partitions whose upper boundary is at or before
+ * the cutoff. The month containing the cutoff remains attached so records
+ * younger than the requested age are never archived prematurely.
  */
 export async function archiveExpiredTelemetryPartitions(options?: {
   now?: Date;
   retentionMonths?: number;
+  retentionDays?: number;
 }): Promise<PartitionArchiveResult> {
   const now = options?.now ?? new Date();
-  const retentionMonths =
-    options?.retentionMonths ?? DEFAULT_TELEMETRY_RETENTION_MONTHS;
+  if (options?.retentionDays !== undefined && options.retentionMonths !== undefined) {
+    throw new RangeError("Specify either retentionDays or retentionMonths, not both.");
+  }
 
-  getTelemetryPartitionRetentionCutoff(now, retentionMonths);
+  const retentionDays = options?.retentionDays;
+  if (retentionDays !== undefined && (!Number.isInteger(retentionDays) || retentionDays < 1)) {
+    throw new RangeError("retentionDays must be a positive integer");
+  }
+
+  const retentionMonths = options?.retentionMonths ?? DEFAULT_TELEMETRY_RETENTION_MONTHS;
+  if (retentionDays === undefined) {
+    getTelemetryPartitionRetentionCutoff(now, retentionMonths);
+  }
+
+  const cutoff = retentionDays === undefined
+    ? null
+    : new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
+
+  const isExpired = (partitionName: string): boolean => {
+    if (!cutoff) return isTelemetryPartitionExpired(partitionName, now, retentionMonths);
+    const month = parseTelemetryPartitionMonth(partitionName);
+    if (!month) return false;
+    const partitionEnd = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
+    return partitionEnd <= cutoff;
+  };
 
   const partitions = await listTelemetryPartitions();
-  const expired = partitions.filter((name) =>
-    isTelemetryPartitionExpired(name, now, retentionMonths),
-  );
-  const retained = partitions.filter(
-    (name) => !isTelemetryPartitionExpired(name, now, retentionMonths),
-  );
+  const expired = partitions.filter(isExpired);
+  const retained = partitions.filter((name) => !isExpired(name));
 
   if (expired.length === 0) {
     return { archived: [], retained };
@@ -345,11 +367,45 @@ export async function archiveExpiredTelemetryPartitions(options?: {
     await transaction.$executeRawUnsafe(
       `CREATE SCHEMA IF NOT EXISTS "${TELEMETRY_ARCHIVE_SCHEMA}"`,
     );
+    await transaction.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "${TELEMETRY_ARCHIVE_SCHEMA}"."noise_monthly_summary" (
+        "venue_id" TEXT NOT NULL,
+        "month_start" DATE NOT NULL,
+        "reading_count" BIGINT NOT NULL,
+        "avg_decibels" DOUBLE PRECISION NOT NULL,
+        "min_decibels" DOUBLE PRECISION NOT NULL,
+        "max_decibels" DOUBLE PRECISION NOT NULL,
+        "archived_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY ("venue_id", "month_start")
+      )
+    `);
 
     const results: ArchivedPartition[] = [];
 
     for (const partitionName of expired) {
       assertSafeTelemetryPartitionName(partitionName);
+      const partitionMonth = parseTelemetryPartitionMonth(partitionName);
+      if (!partitionMonth) throw new Error(`Invalid telemetry partition: ${partitionName}`);
+      const monthStart = partitionMonth.toISOString().slice(0, 10);
+
+      // Compact the decibel readings before detaching the original partition.
+      // The transaction guarantees the summary and detach either both commit or both roll back.
+      await transaction.$executeRawUnsafe(
+        `INSERT INTO "${TELEMETRY_ARCHIVE_SCHEMA}"."noise_monthly_summary"
+          ("venue_id", "month_start", "reading_count", "avg_decibels", "min_decibels", "max_decibels")
+         SELECT "venueId", $1::date, COUNT(*)::bigint, AVG("noiseLevel")::double precision,
+                MIN("noiseLevel")::double precision, MAX("noiseLevel")::double precision
+         FROM "${partitionName}"
+         WHERE "noiseLevel" IS NOT NULL
+         GROUP BY "venueId"
+         ON CONFLICT ("venue_id", "month_start") DO UPDATE SET
+           "reading_count" = EXCLUDED."reading_count",
+           "avg_decibels" = EXCLUDED."avg_decibels",
+           "min_decibels" = EXCLUDED."min_decibels",
+           "max_decibels" = EXCLUDED."max_decibels",
+           "archived_at" = NOW()`,
+        monthStart,
+      );
 
       await transaction.$executeRawUnsafe(
         `ALTER TABLE "TelemetryRecord" DETACH PARTITION "${partitionName}"`,

@@ -1,273 +1,299 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Terminal, Copy, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
+import React, { useState, useEffect } from 'react';
 import {
-  VenueDetailDialog,
-  VenueDetailDialogProps,
-} from "../chat/VenueDetailDialog";
-import {
-  HourlyCrowdForecast,
-  HourlyCrowdForecastProps,
-} from "./HourlyCrowdForecast";
-import {
-  AmbientNoiseSparkline,
-  AmbientNoiseSparklineProps,
-  HourlyDecibelPoint,
-} from "../analytics/AmbientNoiseSparkline";
-import { RadarSweepHUD } from "../ui/RadarSweepHUD";
+  X,
+  MapPin,
+  Wifi,
+  Volume2,
+  Plug,
+  Star,
+  CalendarPlus,
+  ImageOff,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 
-export interface VenueDetailModalProps extends VenueDetailDialogProps {
-  hourlyForecastProps?: Partial<HourlyCrowdForecastProps>;
-  hourlyDecibels?: HourlyDecibelPoint[];
-  initialTab?: "overview" | "reviews" | "menu" | "developer";
-  currentDb?: number;
-  noiseHistory?: number[];
-  showRadarSweep?: boolean;
+export interface VenueDetail {
+  id: string;
+  name: string;
+  address?: string | null;
+  category?: string;
+  rating?: number;
+  reviewCount?: number;
+  wifiSpeedMbps?: number | null;
+  noiseDb?: number | null;
+  outletDensity?: number | null;
+  photos?: string[];
+  heroPhotoUrl?: string | null;
+  description?: string | null;
 }
 
-/**
- * Generates formatted cURL command for developers to query a venue via REST API.
- */
-export function generateVenueCurlSnippet(venueId: string): string {
-  const safeId = venueId || "{venueId}";
-  return `curl -s https://work-sphere.vercel.app/api/venues/${safeId} | jq .`;
+export interface VenueDetailModalProps {
+  venue: VenueDetail | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onBookClick?: (venue: VenueDetail) => void;
 }
 
-export interface VenueDeveloperTabProps {
-  venueId: string;
-  venueName?: string;
-  className?: string;
-}
+export function VenueDetailModal({
+  venue,
+  isOpen,
+  onClose,
+  onBookClick,
+}: VenueDetailModalProps) {
+  const galleryPhotos = React.useMemo(() => {
+    if (!venue) return [];
+    const list = [
+      ...(venue.heroPhotoUrl ? [venue.heroPhotoUrl] : []),
+      ...(Array.isArray(venue.photos) ? venue.photos : []),
+    ].filter((url, index, self) => Boolean(url) && self.indexOf(url) === index);
+    return list;
+  }, [venue]);
 
-/**
- * Developer Tab component displaying terminal cURL snippet with one-click copy feedback.
- */
-export function VenueDeveloperTab({
-  venueId,
-  venueName,
-  className,
-}: VenueDeveloperTabProps) {
-  const [isCopied, setIsCopied] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [loadedUrls, setLoadedUrls] = useState<Record<string, boolean>>({});
+  const [erroredUrls, setErroredUrls] = useState<Record<string, boolean>>({});
 
-  const curlCommand = generateVenueCurlSnippet(venueId);
-
+  // Reset gallery index when switching venues
   useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
+    setActivePhotoIndex(0);
+  }, [venue?.id]);
 
-  const handleCopy = async () => {
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(curlCommand);
-      } else {
-        const textarea = document.createElement("textarea");
-        textarea.value = curlCommand;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
+  // Close modal on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
       }
-    } catch {
-      // Graceful fallback
-    }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setIsCopied(true);
-    timerRef.current = setTimeout(() => {
-      setIsCopied(false);
-    }, 2000);
+  if (!isOpen || !venue) {
+    return null;
+  }
+
+  const currentPhotoUrl = galleryPhotos[activePhotoIndex] ?? null;
+  const isCurrentLoaded = currentPhotoUrl ? Boolean(loadedUrls[currentPhotoUrl]) : false;
+  const isCurrentErrored = currentPhotoUrl ? Boolean(erroredUrls[currentPhotoUrl]) : false;
+
+  const handleImageLoad = (url: string) => {
+    setLoadedUrls((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
+  };
+
+  const handleImageError = (url: string) => {
+    setErroredUrls((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
+  };
+
+  const handlePrevPhoto = () => {
+    if (galleryPhotos.length <= 1) return;
+    setActivePhotoIndex((prev) =>
+      prev === 0 ? galleryPhotos.length - 1 : prev - 1
+    );
+  };
+
+  const handleNextPhoto = () => {
+    if (galleryPhotos.length <= 1) return;
+    setActivePhotoIndex((prev) =>
+      prev === galleryPhotos.length - 1 ? 0 : prev + 1
+    );
   };
 
   return (
     <div
-      data-testid="venue-developer-tab-content"
-      className={cn("space-y-6 animate-in fade-in duration-200", className)}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="venue-detail-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      {/* Tab Header Info */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h4 className="text-base font-bold text-white flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-emerald-400" />
-            Developer API Access
-          </h4>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            Query real-time telemetry, noise metrics, and amenity stats for{" "}
-            <span className="text-zinc-200 font-semibold">
-              {venueName || "this venue"}
-            </span>
-            .
-          </p>
-        </div>
-        <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-          REST API
-        </span>
-      </div>
-
-      {/* Terminal cURL Snippet Container */}
-      <div
-        data-testid="curl-snippet-container"
-        className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl font-mono text-xs"
-      >
-        {/* Terminal Window Header Bar */}
-        <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900/80 border-b border-zinc-800 select-none">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block" />
-            <span className="ml-2 text-[11px] text-zinc-400 font-sans font-medium">
-              bash — cURL
-            </span>
-          </div>
-
-          {/* One-Click Copy Button with animated checkmark feedback */}
-          <button
-            type="button"
-            onClick={handleCopy}
-            data-testid="copy-curl-button"
-            aria-label={isCopied ? "Copied cURL command" : "Copy cURL command"}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-sans font-medium transition-all duration-200 cursor-pointer",
-              isCopied
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:text-white",
-            )}
-          >
-            {isCopied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400 animate-in zoom-in duration-200" />
-                <span className="text-emerald-400 font-semibold animate-in fade-in duration-200">
-                  Copied!
-                </span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                <span>Copy</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Terminal Code Body */}
-        <div className="p-4 bg-zinc-950 overflow-x-auto">
-          <div className="flex items-center gap-2">
-            <span className="text-emerald-400 select-none font-bold">$</span>
-            <code
-              data-testid="curl-command-text"
-              className="text-zinc-100 whitespace-pre font-mono text-xs sm:text-sm selection:bg-emerald-500/30"
-            >
-              {curlCommand}
-            </code>
-          </div>
-        </div>
-      </div>
-
-      {/* Endpoint Specs Meta */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-        <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-lg p-3">
-          <div className="text-zinc-400 text-[11px] font-medium mb-1">
-            HTTP Method
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono font-bold text-[10px]">
-              GET
-            </span>
-            <span className="font-mono text-zinc-300 truncate">
-              /api/venues/{venueId}
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-lg p-3">
-          <div className="text-zinc-400 text-[11px] font-medium mb-1">
-            Output Format
-          </div>
-          <div className="flex items-center gap-1.5 font-mono text-zinc-300">
-            <span>JSON (formatted via jq)</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * VenueDetailModal
- *
- * Wrapper component providing modal compatibility for venue details with
- * integrated HourlyCrowdForecast, Developer tab terminal cURL snippet generator,
- * and optional RadarSweepHUD audio decibel monitoring overlay.
- * Applies theme-aware overlay and backdrop styling to prevent white flash during theme transitions.
- */
-export function VenueDetailModal(props: VenueDetailModalProps) {
-  const {
-    currentDb,
-    noiseHistory = [],
-    showRadarSweep,
-    hourlyDecibels,
-    ...dialogProps
-  } = props;
-
-  // Derive live decibel / history from existing venue telemetry sources when not provided explicitly
-  const effectiveNoiseHistory = useMemo(() => {
-    if (Array.isArray(noiseHistory) && noiseHistory.length > 0) {
-      return noiseHistory;
-    }
-    if (Array.isArray(hourlyDecibels) && hourlyDecibels.length > 0) {
-      return hourlyDecibels.map((p) => p.dBA);
-    }
-    return [];
-  }, [noiseHistory, hourlyDecibels]);
-
-  const effectiveCurrentDb = useMemo(() => {
-    if (typeof currentDb === "number" && Number.isFinite(currentDb)) {
-      return currentDb;
-    }
-    if (effectiveNoiseHistory.length > 0) {
-      return effectiveNoiseHistory[effectiveNoiseHistory.length - 1];
-    }
-    if (typeof props.venue?.score === "number") {
-      // Map existing score if present
-      return Math.round(props.venue.score);
-    }
-    return 0;
-  }, [currentDb, effectiveNoiseHistory, props.venue?.score]);
-
-  // Display radar sweep overlay when venue modal is open and requested/available
-  const shouldRenderRadar =
-    showRadarSweep ??
-    (props.isOpen && (effectiveCurrentDb > 0 || effectiveNoiseHistory.length > 0));
-
-  return (
-    <div
-      style={{ colorScheme: "dark light" }}
-      className="[color-scheme:dark_light] [&>div]:!bg-black/60 dark:[&>div]:!bg-black/80 [&_[role='dialog']]:!bg-white dark:[&_[role='dialog']]:!bg-zinc-950 [&_[role='dialog']]:!backdrop-blur-md relative"
-    >
-      <VenueDetailDialog {...dialogProps} />
-
-      {shouldRenderRadar && props.isOpen && (
-        <aside
-          aria-label="Acoustic Radar Overlay"
-          className="fixed bottom-6 right-6 z-50 pointer-events-auto max-w-[280px] w-full animate-in fade-in slide-in-from-bottom-4 duration-300 shadow-2xl"
+      <div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl">
+        {/* Close Button */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close venue details"
+          className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-950/80 text-zinc-200 backdrop-blur-md transition-colors hover:bg-zinc-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-400"
         >
-          <RadarSweepHUD
-            currentDb={effectiveCurrentDb}
-            noiseHistory={effectiveNoiseHistory}
-            data-testid="venue-modal-radar-sweep-hud"
+          <X className="h-4 w-4" />
+        </button>
+
+        {/* Zero-CLS Reserved Aspect-Ratio Gallery Hero Container */}
+        <div
+          data-testid="venue-hero-gallery-container"
+          className="relative aspect-video w-full overflow-hidden bg-zinc-900"
+        >
+          {/* Animated Skeleton Shimmer Placeholder (visible until image finishes decoding) */}
+          {currentPhotoUrl && !isCurrentLoaded && !isCurrentErrored && (
+            <div
+              data-testid="venue-hero-skeleton"
+              aria-hidden="true"
+              className="absolute inset-0 animate-pulse bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900"
+            />
+          )}
+
+          {/* Hero Image (absolutely positioned inside aspect-video box so 0px layout shift occurs) */}
+          {currentPhotoUrl && !isCurrentErrored ? (
+            <img
+              key={currentPhotoUrl}
+              src={currentPhotoUrl}
+              alt={`${venue.name} workspace preview`}
+              width={1280}
+              height={720}
+              decoding="async"
+              onLoad={() => handleImageLoad(currentPhotoUrl)}
+              onError={() => handleImageError(currentPhotoUrl)}
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${isCurrentLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+            />
+          ) : (
+            <div
+              data-testid="venue-hero-fallback"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-900 text-zinc-500"
+            >
+              <ImageOff className="h-8 w-8 text-zinc-600" />
+              <span className="text-xs font-medium">Venue preview unavailable</span>
+            </div>
+          )}
+
+          {/* Subtle Bottom Gradient Scrim */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-zinc-950/90 to-transparent"
           />
-        </aside>
-      )}
+
+          {/* Multi-Photo Gallery Controls */}
+          {galleryPhotos.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={handlePrevPhoto}
+                aria-label="Previous venue photo"
+                className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full border border-zinc-700/80 bg-zinc-950/75 p-1.5 text-zinc-200 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-violet-400"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleNextPhoto}
+                aria-label="Next venue photo"
+                className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full border border-zinc-700/80 bg-zinc-950/75 p-1.5 text-zinc-200 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-violet-400"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <span className="absolute bottom-3 right-3 z-10 rounded-full border border-zinc-700/80 bg-zinc-950/80 px-2.5 py-0.5 font-mono text-[11px] text-zinc-300">
+                {activePhotoIndex + 1} / {galleryPhotos.length}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Venue Metadata & Booking Actions (stable vertical position before & after image load) */}
+        <div className="p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              {venue.category && (
+                <span className="inline-block rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider text-violet-300">
+                  {venue.category}
+                </span>
+              )}
+              <h2
+                id="venue-detail-modal-title"
+                className="mt-1.5 text-xl font-semibold text-white"
+              >
+                {venue.name}
+              </h2>
+              {venue.address && (
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                  <span>{venue.address}</span>
+                </p>
+              )}
+            </div>
+
+            {typeof venue.rating === 'number' && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/90 px-3 py-1.5 text-xs">
+                <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                <span className="font-semibold text-zinc-100">
+                  {venue.rating.toFixed(1)}
+                </span>
+                {typeof venue.reviewCount === 'number' && (
+                  <span className="text-zinc-500">({venue.reviewCount})</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {venue.description && (
+            <p className="mt-3 text-sm leading-relaxed text-zinc-300">
+              {venue.description}
+            </p>
+          )}
+
+          {/* Workspace Telemetry Metrics */}
+          <div className="mt-4 grid grid-cols-3 gap-2.5">
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Wi-Fi Speed</span>
+              </div>
+              <div className="mt-1 font-mono text-sm font-semibold text-zinc-100">
+                {typeof venue.wifiSpeedMbps === 'number'
+                  ? `${venue.wifiSpeedMbps} Mbps`
+                  : 'Verified'}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                <Volume2 className="h-3.5 w-3.5 text-sky-400" />
+                <span>Ambient Noise</span>
+              </div>
+              <div className="mt-1 font-mono text-sm font-semibold text-zinc-100">
+                {typeof venue.noiseDb === 'number' ? `${venue.noiseDb} dB` : 'Quiet'}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+              <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                <Plug className="h-3.5 w-3.5 text-amber-400" />
+                <span>Power Outlets</span>
+              </div>
+              <div className="mt-1 font-mono text-sm font-semibold text-zinc-100">
+                {typeof venue.outletDensity === 'number'
+                  ? `${venue.outletDensity}/5`
+                  : 'Available'}
+              </div>
+            </div>
+          </div>
+
+          {/* Primary Action Bar */}
+          <div className="mt-6 flex items-center justify-end gap-3 border-t border-zinc-800/80 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-violet-400"
+            >
+              Close
+            </button>
+            {onBookClick && (
+              <button
+                type="button"
+                onClick={() => onBookClick(venue)}
+                className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-400"
+              >
+                <CalendarPlus className="h-4 w-4" />
+                <span>Reserve Desk</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
-
-export { HourlyCrowdForecast, AmbientNoiseSparkline, RadarSweepHUD };
-export type { AmbientNoiseSparklineProps, HourlyDecibelPoint };
-export default VenueDetailModal;

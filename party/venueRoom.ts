@@ -1,4 +1,5 @@
 import type * as Party from "partykit/server";
+import { HydrationGate, SEAT_HOLDS_STORAGE_KEY } from "./holdHydration";
 
 /**
  * VenueRoom.ts
@@ -48,15 +49,28 @@ export default class VenueRoom implements Party.Server {
   private eventHistory: VenueRoomEvent[] = [];
   private readonly maxHistorySize: number = 500;
   private holdCleanupInterval?: ReturnType<typeof setInterval>;
+  // Hibernation wake safety (#7954)
+  private holdGate = new HydrationGate();
+  private persistScheduled = false;
 
   readonly room: Party.Room;
 
   constructor(room: Party.Room) {
     this.room = room;
+    // Closes the gate synchronously so no request is validated against an
+    // empty lease table while persisted holds are still loading.
+    if (room.storage) {
+      void this.holdGate.begin(() => this.hydrateHolds());
+    }
     // Periodic sweep for expired seat holds every 10 seconds
     this.holdCleanupInterval = setInterval(() => {
       this.pruneExpiredHolds();
     }, 10_000);
+  }
+
+  /** PartyKit waits for this before delivering traffic to a freshly woken room. */
+  async onStart(): Promise<void> {
+    await this.holdGate.whenReady();
   }
 
   public dispose(): void {
@@ -107,7 +121,65 @@ export default class VenueRoom implements Party.Server {
         pruned++;
       }
     }
+    if (pruned > 0) this.persistHolds();
     return pruned;
+  }
+
+  /**
+   * Restores unexpired hold leases from room storage after a cold start or
+   * hibernation wake (#7954). Restored seats are marked HELD so snapshots sent
+   * to clients agree with the lease table.
+   */
+  private async hydrateHolds(): Promise<void> {
+    const stored = await this.room.storage.get<SeatHoldLock[]>(
+      SEAT_HOLDS_STORAGE_KEY
+    );
+    if (!Array.isArray(stored)) return;
+
+    const now = Date.now();
+    for (const hold of stored) {
+      if (
+        !hold ||
+        typeof hold.seatId !== "string" ||
+        typeof hold.userId !== "string" ||
+        typeof hold.connId !== "string" ||
+        typeof hold.holdExpiresAt !== "number" ||
+        now >= hold.holdExpiresAt ||
+        this.seatHolds.has(hold.seatId)
+      ) {
+        continue;
+      }
+
+      this.seatHolds.set(hold.seatId, { ...hold });
+      this.seats.set(hold.seatId, {
+        seatId: hold.seatId,
+        userId: hold.userId,
+        userName: hold.userName,
+        status: "HELD",
+        timestamp: now,
+        sequenceId: this.sequenceId,
+      });
+    }
+  }
+
+  /**
+   * Writes the lease table to room storage, coalesced to one write per tick
+   * and skipped during hydration so an empty table never overwrites it.
+   */
+  private persistHolds(): void {
+    if (!this.room.storage || !this.holdGate.isReady || this.persistScheduled) {
+      return;
+    }
+    this.persistScheduled = true;
+    void Promise.resolve().then(() => {
+      this.persistScheduled = false;
+      const snapshot = Array.from(this.seatHolds.values());
+      return Promise.resolve(
+        this.room.storage.put(SEAT_HOLDS_STORAGE_KEY, snapshot)
+      ).catch((err: unknown) => {
+        console.error("[VenueRoom] failed to persist seat holds:", err);
+      });
+    });
   }
 
   /**
@@ -138,6 +210,7 @@ export default class VenueRoom implements Party.Server {
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
+    if (!this.holdGate.isReady) await this.holdGate.whenReady();
     this.pruneExpiredHolds();
 
     const url = new URL(ctx.request.url);
@@ -162,6 +235,7 @@ export default class VenueRoom implements Party.Server {
   }
 
   async onClose(conn: Party.Connection) {
+    if (!this.holdGate.isReady) await this.holdGate.whenReady();
     // Release unconfirmed holds owned by this closing connection
     const now = Date.now();
     for (const [seatId, hold] of this.seatHolds.entries()) {
@@ -177,11 +251,16 @@ export default class VenueRoom implements Party.Server {
         };
         this.seats.set(seatId, seat);
         this.recordAndBroadcastEvent("seat_release", seat);
+        this.persistHolds();
       }
     }
   }
 
   async onMessage(message: string | ArrayBuffer, sender: Party.Connection) {
+    // Queue behind hydration: every waiter resumes in arrival order, and the
+    // handler below has no awaits, so lock validation is strictly serialized
+    // against the restored lease table (#7954).
+    if (!this.holdGate.isReady) await this.holdGate.whenReady();
     if (typeof message !== "string") return;
 
     try {
@@ -297,6 +376,7 @@ export default class VenueRoom implements Party.Server {
         }
 
         this.seatHolds.delete(data.seatId);
+        this.persistHolds();
         this.sequenceId++;
         const seat: SeatCheckin = {
           seatId: data.seatId,
@@ -345,6 +425,7 @@ export default class VenueRoom implements Party.Server {
 
         // Consume hold on checkin
         this.seatHolds.delete(data.seatId);
+        this.persistHolds();
 
         this.sequenceId++;
         const seat: SeatCheckin = {
@@ -363,6 +444,7 @@ export default class VenueRoom implements Party.Server {
 
       if (data.type === "seat_checkout") {
         this.seatHolds.delete(data.seatId);
+        this.persistHolds();
 
         this.sequenceId++;
         const seat: SeatCheckin = {
@@ -409,6 +491,7 @@ export default class VenueRoom implements Party.Server {
       connId: sender.id,
       holdExpiresAt,
     });
+    this.persistHolds();
 
     this.sequenceId++;
     const seat: SeatCheckin = {

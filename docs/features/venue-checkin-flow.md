@@ -9,28 +9,31 @@ The venue check-in subsystem verifies physical attendance of remote workers, fre
 3. **Daily Habit Gamification & Streak Rewards:** Rewards users who work consistently from partner spaces with consecutive day activity streaks, milestone badges (5, 10, 30 days), and loyalty discounts.
 
 The check-in subsystem is implemented across:
+
 - **Interactive UI Modal:** [`src/components/CheckInModal.tsx`](../../src/components/CheckInModal.tsx)
 - **Geolocation Proximity Hooks:** [`src/hooks/useGeoProximityCheckIn.ts`](../../src/hooks/useGeoProximityCheckIn.ts) and [`src/hooks/useArrivalDetection.ts`](../../src/hooks/useArrivalDetection.ts)
 - **Domain & Streak Engine:** [`src/lib/checkIn.ts`](../../src/lib/checkIn.ts) and [`src/lib/streak.ts`](../../src/lib/streak.ts)
-- **HTTP Backend Endpoints:** [`src/app/api/venues/[venueId]/check-in/route.ts`](../../src/app/api/venues/[venueId]/check-in/route.ts)
+- **HTTP Backend Endpoints:**
+  - Individual self-check-in: [`src/app/api/venues/[venueId]/check-in/route.ts`](../../src/app/api/venues/[venueId]/check-in/route.ts)
+  - Manager bulk check-in: [`src/app/api/venues/[venueId]/check-in/bulk/route.ts`](../../src/app/api/venues/[venueId]/check-in/bulk/route.ts)
 
 ```mermaid
 flowchart TD
     User([User at Workspace]) --> CheckInChoice{Check-In Method}
-    
+
     CheckInChoice -->|Method A: Geofence| GPSWatch["watchPosition (High Accuracy GPS)"]
     GPSWatch --> DistanceCalc["Haversine getDistanceInMeters()"]
     DistanceCalc --> ProximityCheck{"Distance <= 50 meters?"}
     ProximityCheck -->|Yes| GeoPrompt["Show Proximity Banner / Auto Check-In"]
     ProximityCheck -->|No| DistanceNotice["Display distance to venue"]
-    
+
     CheckInChoice -->|Method B: QR / Passcode| ModalUI["CheckInModal.tsx"]
     ModalUI --> InputCode["Input Desk Code / Scan QR Code"]
     InputCode --> CodeSanitize["sanitizeCheckInCode() (Trim & Uppercase)"]
     CodeSanitize --> SubmitAPI["POST /api/venues/:venueId/check-in"]
-    
+
     GeoPrompt --> SubmitAPI
-    
+
     subgraph ServerProcessing ["Server Processing: checkIn.ts"]
         SubmitAPI --> DBTransaction["Prisma Transaction"]
         DBTransaction --> OccupancyLease["Create/Update CheckIn Record (4h TTL)"]
@@ -40,7 +43,7 @@ flowchart TD
         MilestoneCheck -->|No| SaveUserStreak["Increment User Streak"]
         DBTransaction --> WebhookDispatch["Emit MAP_GEOFENCE_BREACHED Event"]
     end
-    
+
     ServerProcessing --> ClientResponse["200 OK + Streak Data + Unlocked Badges"]
     ClientResponse --> ModalSuccess["CheckInModal Success Animation (Bounce & Toast)"]
 ```
@@ -209,10 +212,7 @@ export function calculateStreak(
   }
 
   // 2. Consecutive Day: Streak increases by 1
-  const newStreak =
-    lastCheckInDate === yesterday
-      ? currentStreak + 1
-      : 1; // 3. Gap > 1 day: Streak resets to 1
+  const newStreak = lastCheckInDate === yesterday ? currentStreak + 1 : 1; // 3. Gap > 1 day: Streak resets to 1
 
   const newLongest = Math.max(longestStreak, newStreak);
 
@@ -231,12 +231,12 @@ export function calculateStreak(
 }
 ```
 
-| Previous Check-In Date | Current Check-In Date | Outcome | Streak Value |
-| :--- | :--- | :--- | :--- |
-| `2026-10-08` | `2026-10-08` (Same day) | `incremented: false` | Unchanged (No duplicate reward) |
-| `2026-10-07` | `2026-10-08` (Consecutive day) | `incremented: true` | `currentStreak + 1` |
-| `2026-10-05` | `2026-10-08` (Gap $\ge 2$ days) | `incremented: true` | Reset to `1` |
-| `null` (First time) | `2026-10-08` | `incremented: true` | Initialized to `1` |
+| Previous Check-In Date | Current Check-In Date           | Outcome              | Streak Value                    |
+| :--------------------- | :------------------------------ | :------------------- | :------------------------------ |
+| `2026-10-08`           | `2026-10-08` (Same day)         | `incremented: false` | Unchanged (No duplicate reward) |
+| `2026-10-07`           | `2026-10-08` (Consecutive day)  | `incremented: true`  | `currentStreak + 1`             |
+| `2026-10-05`           | `2026-10-08` (Gap $\ge 2$ days) | `incremented: true`  | Reset to `1`                    |
+| `null` (First time)    | `2026-10-08`                    | `incremented: true`  | Initialized to `1`              |
 
 ### 4.3 Badge Milestone Unlocks (`STREAK_MILESTONES = [5, 10, 30]`)
 
@@ -276,6 +276,27 @@ To protect user anonymity when venue occupancy is low ($N < 10$), the GET endpoi
 
 Whenever a user checks into a venue, WorkSphere dispatches an outbound webhook event (`MAP_GEOFENCE_BREACHED`) with GPS coordinates, timestamps, and venue identification for corporate Slack/Teams presence updates.
 
+### 5.4 Venue Manager Bulk Check-In Workflow
+
+While individual attendees check into spaces through geolocation proximity or the interactive modal, workspace operations frequently require front-desk staff or venue managers to verify and check in groups, cohorts, or entire workshops simultaneously.
+
+To support this operational requirement, WorkSphere exposes a dedicated manager bulk check-in endpoint:
+
+`POST /api/venues/:venueId/check-in/bulk`
+
+#### Key Operational Characteristics
+
+1. **Manager Authorization:** Access is strictly restricted to the venue's registered owner (`ownerId`), creator (`creatorId`), or users holding an administrative Clerk role (`manager`, `venue_manager`, `admin`, `super_admin`). Unauthenticated calls are rejected with HTTP `401 Unauthorized` (or redirected by Clerk middleware for browser sessions), and unauthorized users receive HTTP `403 Forbidden`.
+2. **Batch Payload Validation:** Accepts a JSON body containing `bookingIds` (an array of 1 to 50 CUID strings), an optional `checkedInBy` string, which the current handler accepts but does not use or persist, and an optional ISO datetime string `checkInTimestamp`. Requests failing schema validation return HTTP `400 Bad Request`.
+3. **Transactional Execution:** Inside an atomic Prisma transaction (`prisma.$transaction`), matching bookings scoped to the resolved venue are segregated:
+   - Bookings with status `CANCELLED` or `CANCELLED_BY_OPERATOR`, or IDs not belonging to the venue, are routed to `failedIds`.
+   - All other matching bookings (including `CONFIRMED` and `PENDING`) are marked eligible and updated atomically to `CHECKED_IN`.
+4. **Partial Failures:** The endpoint employs a partial-success model. If some IDs are cancelled or invalid, eligible bookings are still processed and committed. The route returns HTTP `200 OK` with the count of processed bookings, an array of `failedIds`, and the refreshed `updatedBookings` records.
+5. **Occupancy Record Expiration (4-Hour TTL):** For each eligible booking, the route attempts to upsert a record into the `CheckIn` table with `expiresAt = checkInTime + 4 hours`, maintaining parity with individual occupancy leases. Individual check-in table upsert errors are caught and suppressed within the transaction to ensure booking updates succeed reliably.
+6. **Availability Cache Invalidation:** Upon transaction commit, if at least one booking was updated (`successfulCount > 0`), the route automatically invalidates the Redis/in-memory venue availability cache (`invalidateVenueAvailability`) using the canonical internal venue ID.
+
+For complete schema details, response envelopes, and integration examples, see the [Venue Manager Bulk Check-In API Guide](../api/BULK_CHECK_IN.md).
+
 ---
 
 ## 6. UI Component Specification: `CheckInModal.tsx`
@@ -288,7 +309,10 @@ export interface CheckInModalProps {
   onClose: () => void;
   venueName?: string;
   venueId?: string;
-  onCheckIn?: (data: { code: string; couponCode?: string }) => Promise<void> | void;
+  onCheckIn?: (data: {
+    code: string;
+    couponCode?: string;
+  }) => Promise<void> | void;
 }
 ```
 
@@ -304,6 +328,9 @@ export interface CheckInModalProps {
 ## 7. Testing & Verification Guide
 
 Automated unit tests are maintained in:
+
 - [`src/__tests__/components/CheckInModal.test.tsx`](../../src/__tests__/components/CheckInModal.test.tsx): Tests whitespace trimming, uppercase conversion, and error feedback.
 - [`src/__tests__/lib/venueBookingCheckinProcess.test.ts`](../../src/__tests__/lib/venueBookingCheckinProcess.test.ts): Tests proximity verification and API integration.
 - `src/__tests__/lib/streak.test.ts`: Tests consecutive day streak calculations, timezone boundaries, and milestone badge triggers.
+- [`src/__tests__/api/bulkCheckIn.test.ts`](../../src/__tests__/api/bulkCheckIn.test.ts): Tests manager authorization, CUID payload validation, atomic transactions, and partial success isolation.
+- [`src/__tests__/api/bulkCheckInAvailabilityCache.test.ts`](../../src/__tests__/api/bulkCheckInAvailabilityCache.test.ts): Tests post-transaction cache invalidation when check-ins succeed.

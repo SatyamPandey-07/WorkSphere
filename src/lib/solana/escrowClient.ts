@@ -845,6 +845,51 @@ export async function simulateEscrowTransaction(
   };
 }
 
+/** Hard ceiling for a single RPC status/balance poll request. */
+export const ESCROW_RPC_POLL_TIMEOUT_MS = 5_000;
+
+/**
+ * Runs one RPC poll request under an explicit abort deadline.
+ *
+ * `@solana/web3.js` does not abort in-flight requests on its own, so when a
+ * node blackholes packets (no TCP RST) the returned promise never settles and
+ * the caller's retry loop stalls forever. This helper hands the operation an
+ * `AbortSignal` and also races it against that signal, so the caller always
+ * gets a rejection (`EscrowRpcTimeoutError`) once `timeoutMs` elapses.
+ */
+export async function withRpcPollTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  options: { timeoutMs?: number; endpoint?: string } = {},
+): Promise<T> {
+  const timeoutMs =
+    typeof options.timeoutMs === "number" &&
+    Number.isFinite(options.timeoutMs) &&
+    options.timeoutMs > 0
+      ? options.timeoutMs
+      : ESCROW_RPC_POLL_TIMEOUT_MS;
+  const endpoint = options.endpoint ?? "rpc-poll";
+
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const timeoutError = new EscrowRpcTimeoutError(timeoutMs, endpoint);
+      controller.abort(timeoutError);
+      reject(timeoutError);
+    }, timeoutMs);
+    (timer as { unref?: () => void }).unref?.();
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    // A late rejection from the abandoned operation must not go unhandled.
+    deadline.catch(() => {});
+  }
+}
+
 /**
  * Background worker verifying on-chain transaction finalization.
  */

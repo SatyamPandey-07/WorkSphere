@@ -1,6 +1,7 @@
 # Contributing to WorkSphere
 
 Welcome to **WorkSphere**! Thank you for contributing to the project as part of Winter of Code Social (WOCS). This guide explains how to prepare your development environment, follow project standards, run tests, and submit pull requests.
+For the release workflow and draft publication procedure, see the [WorkSphere Release Process Guide](docs/contributing/RELEASE_PROCESS.md).
 
 ## 1. Prerequisites
 

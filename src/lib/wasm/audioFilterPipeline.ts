@@ -194,6 +194,7 @@ interface AudioFilterExports {
     a2: number,
   ): number;
   setOutputGain(gain: number): void;
+  setAGCEnabled(enabled: number): void;
   process(numChannels: number, numFrames: number): number;
 }
 
@@ -249,6 +250,11 @@ export class AudioFilterPipeline {
   setOutputGain(gain: number): void {
     if (!Number.isFinite(gain)) throw new RangeError("gain must be finite");
     this.wasm.setOutputGain(gain);
+  }
+
+  /** Enable or disable automatic gain control after the filter chain. */
+  setAgcEnabled(enabled: boolean): void {
+    this.wasm.setAGCEnabled(enabled ? 1 : 0);
   }
 
   /** Force the scalar path inside a SIMD build (no-op for the scalar build). */

@@ -230,7 +230,7 @@ WorkSphere implements a robust multi-layered clipboard copy fallback:
 
 ## 6. Component Architecture & UI Integration (`NomadPassportGallery.tsx`)
 
-The gallery interface is accessible at [`/user-profile/passport`](file:///c:/Users/admin/Desktop/workfere/src/app/user-profile/passport/page.tsx) and rendered by [`src/components/profile/NomadPassportGallery.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/profile/NomadPassportGallery.tsx).
+The gallery interface is accessible at [`/user-profile/passport`](../../src/app/user-profile/passport/page.tsx) and rendered by [`src/components/profile/NomadPassportGallery.tsx`](../../src/components/profile/NomadPassportGallery.tsx).
 
 ### 6.1 State Management
 

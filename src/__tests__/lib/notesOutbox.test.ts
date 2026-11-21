@@ -97,6 +97,25 @@ describe("notesOutbox", () => {
       expect(result.conflicts).toHaveLength(0);
     });
 
+    it("detects conflicts in a document that uses another text key", async () => {
+      const doc = new Y.Doc();
+      doc.getText("booking-notes").insert(0, "Hello");
+      await enqueueNotesUpdate("booking-room", Y.encodeStateAsUpdate(doc));
+
+      const receiver = new Y.Doc();
+      receiver.getText("booking-notes").insert(0, "World");
+
+      const result = await flushNotesOutbox(
+        "booking-room",
+        receiver,
+        "booking-notes",
+      );
+      expect(result.flushed).toBe(0);
+      expect(result.conflicts).toHaveLength(1);
+      expect(result.conflicts[0].textBefore).toBe("World");
+      expect(receiver.getText("booking-notes").toString()).toBe("World");
+    });
+
     it("detects conflict when local edit overlaps with remote change", async () => {
       const doc = new Y.Doc();
       doc.getText("group-notes").insert(0, "Hello");

@@ -20,7 +20,6 @@ import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import { Contrast } from "lucide-react";
-import { formatDistance } from "@/lib/geo/formatDistance";
 import {
   MapMarkerFactory,
   SEAT_RING_COLORS,
@@ -29,6 +28,7 @@ import {
 import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
 import RoutingOptimizer from "./map/RoutingOptimizer";
+import { MobileVenueDrawer } from "@/components/ui/MobileVenueDrawer";
 
 export { throttle } from "@/lib/utils";
 export {
@@ -65,12 +65,12 @@ function ResetMapViewControl({ center }: { center: [number, number] }) {
   const map = useMap();
 
   return (
-    <div className="absolute bottom-3 right-3 z-[1000]">
+    <div className="absolute bottom-8 right-4 z-[1000] sm:bottom-4">
       <button
         type="button"
         aria-label="Reset Map View"
         onClick={() => map.setView(center, 13)}
-        className="rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-md transition-colors hover:bg-zinc-800 hover:text-white"
+        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white"
       >
         Reset Map View
       </button>
@@ -582,8 +582,8 @@ export const ClusterMarkerComponent = memo(function ClusterMarkerComponent({
 export interface MapProps {
   location: { latitude: number; longitude: number };
   markers: MapMarker[];
-  routes: MapRoute[];
-  mapView: MapView | null;
+  routes?: MapRoute[];
+  mapView?: MapView | null;
   roomId?: string | null;
   initialHighContrast?: boolean;
   highContrast?: boolean;
@@ -592,13 +592,23 @@ export interface MapProps {
   enableClustering?: boolean;
   enableRadarSweep?: boolean;
   radarRadius?: number;
+  onSelectVenue?: (venue: MapMarker | null) => void;
+  selectedVenueId?: string | null;
+  onBookVenue?: (venue: MapMarker) => void;
+  onGetDirections?: (venue: MapMarker) => void;
+  initialRoutingQueue?: Array<{
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 const Map = ({
   location,
-  markers,
-  routes,
-  mapView,
+  markers = [],
+  routes = [],
+  mapView = null,
   roomId,
   initialHighContrast = false,
   highContrast: controlledHighContrast,
@@ -607,6 +617,11 @@ const Map = ({
   enableClustering = true,
   enableRadarSweep = true,
   radarRadius = 160,
+  onSelectVenue,
+  selectedVenueId,
+  onBookVenue,
+  onGetDirections,
+  initialRoutingQueue = [],
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -730,25 +745,56 @@ const Map = ({
   // =========================================================================
   // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
   // =========================================================================
-  const [routingQueue, setRoutingQueue] = useState<any[]>([]);
+  const [routingQueue, setRoutingQueue] = useState<any[]>(initialRoutingQueue);
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
+  const [isRoutingLoading, setIsRoutingLoading] = useState<boolean>(false);
+  const [routingError, setRoutingError] = useState<string | null>(null);
+  const routingRequestIdRef = useRef<number>(0);
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
-  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  const [internalSelectedMarkerId, setInternalSelectedMarkerId] = useState<
+    string | null
+  >(null);
+  const selectedMarkerId =
+    selectedVenueId !== undefined ? selectedVenueId : internalSelectedMarkerId;
+
+  const handleSelectMarker = useCallback(
+    (id: string | null) => {
+      setInternalSelectedMarkerId(id);
+      if (onSelectVenue) {
+        const found = id ? markers.find((m) => m.id === id) || null : null;
+        onSelectVenue(found);
+      }
+    },
+    [markers, onSelectVenue],
+  );
+
   useEffect(() => {
     if (
       selectedMarkerId !== null &&
       !markers.some((marker) => marker.id === selectedMarkerId)
     ) {
-      setSelectedMarkerId(null);
+      handleSelectMarker(null);
     }
+  }, [markers, selectedMarkerId, handleSelectMarker]);
+
+  const activeVenueForDrawer = useMemo(() => {
+    if (!selectedMarkerId) return null;
+    return markers.find((m) => m.id === selectedMarkerId) || null;
   }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
-  const calculateOptimizedRoute = async (venuesList = routingQueue) => {
+  const calculateOptimizedRoute = async (
+    venuesList = routingQueue,
+    profile = travelProfile,
+  ) => {
+    const requestId = ++routingRequestIdRef.current;
+
     if (venuesList.length < 2) {
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError(null);
       return;
     }
 
@@ -765,6 +811,8 @@ const Map = ({
 
     if (dedupedList.length < 2) {
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError(null);
       return;
     }
 
@@ -787,6 +835,8 @@ const Map = ({
     if (validList.length < 2) {
       console.warn("[OSRM] Not enough valid coordinates for routing");
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError("Not enough valid coordinates to calculate route");
       return;
     }
 
@@ -795,21 +845,30 @@ const Map = ({
       .join(";");
 
     const osrmProfile =
-      travelProfile === "walking"
+      profile === "walking"
         ? "foot"
-        : travelProfile === "cycling"
+        : profile === "cycling"
           ? "bicycle"
           : "driving";
     const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
+
+    setIsRoutingLoading(true);
+    setRoutingError(null);
 
     try {
       const response = await fetch(url);
       const data = await response.json();
 
-      if (data.code === "Ok") {
+      // Guard against stale overlapping asynchronous responses
+      if (requestId !== routingRequestIdRef.current) {
+        return;
+      }
+
+      if (data.code === "Ok" && data.routes && data.routes.length > 0) {
         const coords = data.routes[0].geometry.coordinates;
         const hasElevation = coords.some(
-          (c: any[]) => Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
+          (c: any[]) =>
+            Array.isArray(c) && c.length >= 3 && typeof c[2] === "number",
         );
         const elevationProfile =
           data.routes[0].elevation_profile ||
@@ -817,17 +876,30 @@ const Map = ({
           (hasElevation ? coords.map((c: any[]) => c[2]) : undefined);
 
         setOptimizedRoute({
-          coordinates: coords.map(
-            (coord: [number, number]) => [coord[1], coord[0]],
-          ),
+          coordinates: coords.map((coord: [number, number]) => [
+            coord[1],
+            coord[0],
+          ]),
           duration: data.routes[0].duration,
           distance: data.routes[0].distance,
           legs: data.routes[0].legs,
           elevationProfile,
         });
+        setRoutingError(null);
+      } else {
+        setOptimizedRoute(null);
+        setRoutingError(data.message || "Unable to find route between waypoints");
       }
     } catch (error) {
-      console.error("OSRM Multi-Stop routing resolution failed:", error);
+      if (requestId === routingRequestIdRef.current) {
+        console.error("OSRM Multi-Stop routing resolution failed:", error);
+        setOptimizedRoute(null);
+        setRoutingError("Failed to calculate route. Please try again.");
+      }
+    } finally {
+      if (requestId === routingRequestIdRef.current) {
+        setIsRoutingLoading(false);
+      }
     }
   };
 
@@ -1017,12 +1089,14 @@ const Map = ({
   }, [spiderfiedMarkers, getAvailability]);
 
   const center: [number, number] = [latitude, longitude];
-  const tileUrl =
-    theme === "light"
-      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
+  const tileUrl = cartoKey
+    ? theme === "light"
+      ? `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : theme === "cyberpunk"
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+        ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -1064,6 +1138,7 @@ const Map = ({
           border-radius: 12px;
           position: relative;
           z-index: 20;
+          background: #0B0F17 !important;
         }
         
         /* UPDATED: Target map tiles specifically so they don't hide the heatmap canvas */
@@ -1230,6 +1305,13 @@ const Map = ({
         }
         .leaflet-popup-content {
           margin: 12px 16px;
+        }
+
+        /* Hide desktop-style centered popup on mobile touch screens in favor of MobileVenueDrawer */
+        @media (max-width: 767px) {
+          .leaflet-popup {
+            display: none !important;
+          }
         }
         
         /* Focus-visible ring for keyboard-navigated markers (Issue #3446) */
@@ -1534,7 +1616,7 @@ const Map = ({
         <MapMarkerFactory
           markers={spiderfiedMarkers}
           selectedMarkerId={selectedMarkerId}
-          onSelectMarker={setSelectedMarkerId}
+          onSelectMarker={handleSelectMarker}
           isHighContrast={isHighContrast}
           getAvailability={getAvailability}
           checkIn={checkIn}
@@ -1561,18 +1643,41 @@ const Map = ({
           onClearQueue={() => {
             setRoutingQueue([]);
             setOptimizedRoute(null);
+            setIsRoutingLoading(false);
+            setRoutingError(null);
           }}
           onRemoveVenue={(idx) => {
             const updated = routingQueue.filter((_, i) => i !== idx);
             setRoutingQueue(updated);
             calculateOptimizedRoute(updated);
           }}
+          onReorderWaypoints={(newQueue) => {
+            setRoutingQueue(newQueue);
+            calculateOptimizedRoute(newQueue);
+          }}
           travelProfile={travelProfile}
-          onTravelProfileChange={(mode) => setTravelProfile(mode)}
+          onTravelProfileChange={(mode) => {
+            setTravelProfile(mode);
+            if (routingQueue.length >= 2) {
+              calculateOptimizedRoute(routingQueue, mode);
+            }
+          }}
           onCalculateRoute={() => calculateOptimizedRoute()}
           optimizedRoute={optimizedRoute}
+          isLoading={isRoutingLoading}
+          routingError={routingError}
         />
       </MapContainer>
+
+      {/* Mobile Draggable Venue Bottom Sheet Drawer */}
+      <MobileVenueDrawer
+        venue={activeVenueForDrawer}
+        isOpen={Boolean(activeVenueForDrawer)}
+        onClose={() => handleSelectMarker(null)}
+        onBook={onBookVenue}
+        onGetDirections={onGetDirections}
+        className="md:hidden"
+      />
     </>
   );
 };

@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
   createContext,
   useContext,
 } from "react";
@@ -58,12 +59,14 @@ export interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+const FALLBACK_TOAST_CONTEXT: ToastContextValue = {
+  toast: () => {},
+};
+
 export function useToast(): ToastContextValue {
   const ctx = useContext(ToastContext);
   if (!ctx) {
-    return {
-      toast: () => {},
-    };
+    return FALLBACK_TOAST_CONTEXT;
   }
   return ctx;
 }
@@ -315,8 +318,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     };
   }, [addToast]);
 
+  const contextValue = useMemo(() => ({ toast: addToast }), [addToast]);
+
   return (
-    <ToastContext.Provider value={{ toast: addToast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </ToastContext.Provider>

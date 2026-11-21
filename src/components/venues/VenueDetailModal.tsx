@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
   X,
   MapPin,
@@ -12,7 +12,9 @@ import {
   ImageOff,
   ChevronLeft,
   ChevronRight,
-} from 'lucide-react';
+  Copy,
+  Check,
+} from "lucide-react";
 
 export interface VenueDetail {
   id: string;
@@ -54,22 +56,49 @@ export function VenueDetailModal({
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [loadedUrls, setLoadedUrls] = useState<Record<string, boolean>>({});
   const [erroredUrls, setErroredUrls] = useState<Record<string, boolean>>({});
+  const [copyFeedback, setCopyFeedback] = useState<
+    "idle" | "success" | "error"
+  >("idle");
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyRequestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      copyRequestIdRef.current += 1;
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Reset gallery index when switching venues
   useEffect(() => {
     setActivePhotoIndex(0);
   }, [venue?.id]);
 
+  useEffect(() => {
+    copyRequestIdRef.current += 1;
+    if (copyTimerRef.current !== null) {
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
+    setCopyFeedback("idle");
+  }, [venue?.id, isOpen]);
+
   // Close modal on Escape key
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
   if (!isOpen || !venue) {
@@ -77,8 +106,12 @@ export function VenueDetailModal({
   }
 
   const currentPhotoUrl = galleryPhotos[activePhotoIndex] ?? null;
-  const isCurrentLoaded = currentPhotoUrl ? Boolean(loadedUrls[currentPhotoUrl]) : false;
-  const isCurrentErrored = currentPhotoUrl ? Boolean(erroredUrls[currentPhotoUrl]) : false;
+  const isCurrentLoaded = currentPhotoUrl
+    ? Boolean(loadedUrls[currentPhotoUrl])
+    : false;
+  const isCurrentErrored = currentPhotoUrl
+    ? Boolean(erroredUrls[currentPhotoUrl])
+    : false;
 
   const handleImageLoad = (url: string) => {
     setLoadedUrls((prev) => (prev[url] ? prev : { ...prev, [url]: true }));
@@ -91,15 +124,82 @@ export function VenueDetailModal({
   const handlePrevPhoto = () => {
     if (galleryPhotos.length <= 1) return;
     setActivePhotoIndex((prev) =>
-      prev === 0 ? galleryPhotos.length - 1 : prev - 1
+      prev === 0 ? galleryPhotos.length - 1 : prev - 1,
     );
   };
 
   const handleNextPhoto = () => {
     if (galleryPhotos.length <= 1) return;
     setActivePhotoIndex((prev) =>
-      prev === galleryPhotos.length - 1 ? 0 : prev + 1
+      prev === galleryPhotos.length - 1 ? 0 : prev + 1,
     );
+  };
+
+  const copyWithFallback = (text: string): boolean => {
+    if (typeof document === "undefined") return false;
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+    return copied;
+  };
+
+  const showCopyFeedback = (feedback: "success" | "error") => {
+    if (!mountedRef.current) return;
+    if (copyTimerRef.current !== null) {
+      clearTimeout(copyTimerRef.current);
+    }
+    setCopyFeedback(feedback);
+    copyTimerRef.current = setTimeout(() => {
+      copyTimerRef.current = null;
+      if (mountedRef.current) setCopyFeedback("idle");
+    }, 2000);
+  };
+
+  const handleCopyVenueLink = async () => {
+    if (!venue) return;
+    const requestId = ++copyRequestIdRef.current;
+    if (copyTimerRef.current !== null) {
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
+    setCopyFeedback("idle");
+
+    const url = `${window.location.origin}/venues/${venue.id}`;
+    let copied = false;
+
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(url);
+        copied = true;
+      } else {
+        copied = copyWithFallback(url);
+      }
+    } catch {
+      copied = copyWithFallback(url);
+    }
+
+    if (!mountedRef.current || requestId !== copyRequestIdRef.current) {
+      return;
+    }
+
+    showCopyFeedback(copied ? "success" : "error");
   };
 
   return (
@@ -113,6 +213,33 @@ export function VenueDetailModal({
       }}
     >
       <div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl">
+        <button
+          type="button"
+          onClick={handleCopyVenueLink}
+          aria-label="Copy venue link"
+          title={copyFeedback === "success" ? "Copied!" : "Copy venue link"}
+          className="absolute right-14 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-950/80 text-zinc-200 backdrop-blur-md transition-colors hover:bg-zinc-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-violet-400"
+        >
+          {copyFeedback === "success" ? (
+            <Check className="h-4 w-4 text-emerald-400" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </button>
+        {copyFeedback !== "idle" && (
+          <span
+            role="status"
+            aria-live="polite"
+            className={`absolute right-14 top-14 z-30 rounded-md border px-2.5 py-1 text-xs font-medium shadow-lg backdrop-blur-md ${
+              copyFeedback === "success"
+                ? "border-emerald-500/30 bg-emerald-950/90 text-emerald-300"
+                : "border-rose-500/30 bg-rose-950/90 text-rose-300"
+            }`}
+          >
+            {copyFeedback === "success" ? "Copied!" : "Copy failed"}
+          </span>
+        )}
+
         {/* Close Button */}
         <button
           type="button"
@@ -148,8 +275,9 @@ export function VenueDetailModal({
               decoding="async"
               onLoad={() => handleImageLoad(currentPhotoUrl)}
               onError={() => handleImageError(currentPhotoUrl)}
-              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${isCurrentLoaded ? 'opacity-100' : 'opacity-0'
-                }`}
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+                isCurrentLoaded ? "opacity-100" : "opacity-0"
+              }`}
             />
           ) : (
             <div
@@ -157,7 +285,9 @@ export function VenueDetailModal({
               className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-900 text-zinc-500"
             >
               <ImageOff className="h-8 w-8 text-zinc-600" />
-              <span className="text-xs font-medium">Venue preview unavailable</span>
+              <span className="text-xs font-medium">
+                Venue preview unavailable
+              </span>
             </div>
           )}
 
@@ -216,13 +346,13 @@ export function VenueDetailModal({
               )}
             </div>
 
-            {typeof venue.rating === 'number' && (
+            {typeof venue.rating === "number" && (
               <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/90 px-3 py-1.5 text-xs">
                 <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
                 <span className="font-semibold text-zinc-100">
                   {venue.rating.toFixed(1)}
                 </span>
-                {typeof venue.reviewCount === 'number' && (
+                {typeof venue.reviewCount === "number" && (
                   <span className="text-zinc-500">({venue.reviewCount})</span>
                 )}
               </div>
@@ -243,9 +373,9 @@ export function VenueDetailModal({
                 <span>Wi-Fi Speed</span>
               </div>
               <div className="mt-1 font-mono text-sm font-semibold text-zinc-100">
-                {typeof venue.wifiSpeedMbps === 'number'
+                {typeof venue.wifiSpeedMbps === "number"
                   ? `${venue.wifiSpeedMbps} Mbps`
-                  : 'Verified'}
+                  : "Verified"}
               </div>
             </div>
 
@@ -255,7 +385,9 @@ export function VenueDetailModal({
                 <span>Ambient Noise</span>
               </div>
               <div className="mt-1 font-mono text-sm font-semibold text-zinc-100">
-                {typeof venue.noiseDb === 'number' ? `${venue.noiseDb} dB` : 'Quiet'}
+                {typeof venue.noiseDb === "number"
+                  ? `${venue.noiseDb} dB`
+                  : "Quiet"}
               </div>
             </div>
 
@@ -265,9 +397,9 @@ export function VenueDetailModal({
                 <span>Power Outlets</span>
               </div>
               <div className="mt-1 font-mono text-sm font-semibold text-zinc-100">
-                {typeof venue.outletDensity === 'number'
+                {typeof venue.outletDensity === "number"
                   ? `${venue.outletDensity}/5`
-                  : 'Available'}
+                  : "Available"}
               </div>
             </div>
           </div>

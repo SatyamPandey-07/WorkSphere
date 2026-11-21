@@ -4,7 +4,7 @@
 
 WorkSphere uses [Clerk](https://clerk.com) for user identity, session management, and authentication across the platform.
 
-Authentication enforcement is centralized in Next.js middleware ([src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)). WorkSphere follows a **protect-by-default (deny-by-default)** security model:
+Authentication enforcement is centralized in Next.js middleware ([src/middleware.ts](../src/middleware.ts)). WorkSphere follows a **protect-by-default (deny-by-default)** security model:
 
 - Every route intercepted by the middleware requires an authenticated Clerk user session by default.
 - Only routes explicitly defined in the public routes allowlist bypass authentication.
@@ -18,7 +18,7 @@ Authentication enforcement is centralized in Next.js middleware ([src/middleware
 
 The authentication middleware is configured in:
 
-- **[src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)**
+- **[src/middleware.ts](../src/middleware.ts)**
 
 The middleware executes on every incoming request matching the `config.matcher` pattern, before the request reaches Next.js pages, layouts, or route handlers.
 
@@ -35,9 +35,11 @@ The middleware executes on every incoming request matching the `config.matcher` 
 4. **Admin Route Authorization (`isAdminRoute`)**: For routes starting with `/admin` or `/api/admin`, the middleware checks whether the authenticated user has an administrative role (`admin`, `super_admin`, `superadmin` in `sessionClaims.metadata.role`) or matches `ADMIN_EMAILS`. Unauthorized requests receive a `403 Forbidden` (for APIs) or are redirected to `/` (for pages).
 5. **Security & Context Headers**: Injects Content Security Policy (CSP) headers with a unique cryptographic nonce, tracks request pathnames via `x-pathname`, and validates CSRF tokens on mutating API calls.
 
+> **Security architecture:** Rate limiting, CSP nonces and CSRF validation run in the same middleware pipeline as authentication. See the [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) for the handler order, sequence diagrams and the exact rules for each layer.
+
 ### Middleware Implementation Example
 
-The core Clerk authentication logic in [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts) is structured as follows:
+The core Clerk authentication logic in [src/middleware.ts](../src/middleware.ts) is structured as follows:
 
 ```typescript
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
@@ -214,7 +216,7 @@ Create your new route under `src/app`:
 
 #### Step 2: Ensure Route is Omitted from `isPublicRoute`
 
-Leave [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts) unchanged. Because your route is not listed in `isPublicRoute`, the middleware automatically intercepts it and executes `await auth.protect()`.
+Leave [src/middleware.ts](../src/middleware.ts) unchanged. Because your route is not listed in `isPublicRoute`, the middleware automatically intercepts it and executes `await auth.protect()`.
 
 #### Step 3: Access Authenticated User Context in Your Code
 
@@ -307,7 +309,7 @@ When creating a route that should be publicly accessible without authentication 
 
 ### Step-by-Step Guide
 
-1. Open **[src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)**.
+1. Open **[src/middleware.ts](../src/middleware.ts)**.
 2. Locate the `isPublicRoute` array defined inside `createRouteMatcher([ ... ])`.
 3. Add your route pattern to the array:
    - For an exact page match: `"/about"`
@@ -340,7 +342,7 @@ const isPublicRoute = createRouteMatcher([
 ```
 
 4. **CSRF Exemption for Mutating Webhook Endpoints**:
-   If the new route is a mutating API endpoint (`POST`, `PUT`, `DELETE`, `PATCH`) called by external third-party services that do not hold a browser CSRF cookie (e.g., payment gateways or third-party webhooks), also add it to `isCsrfExemptMatcher` in [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts):
+   If the new route is a mutating API endpoint (`POST`, `PUT`, `DELETE`, `PATCH`) called by external third-party services that do not hold a browser CSRF cookie (e.g., payment gateways or third-party webhooks), also add it to `isCsrfExemptMatcher` in [src/middleware.ts](../src/middleware.ts):
 
 ```typescript
 const isCsrfExemptMatcher = createRouteMatcher([
@@ -391,7 +393,7 @@ To verify that protection is working:
 
 ### 4. Unit Testing with Mocks (Jest)
 
-When writing Jest tests for components or route handlers that interact with Clerk, mock `@clerk/nextjs` or `@clerk/nextjs/server` as documented in [CONTRIBUTING.md](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/CONTRIBUTING.md):
+When writing Jest tests for components or route handlers that interact with Clerk, mock `@clerk/nextjs` or `@clerk/nextjs/server` as documented in [CONTRIBUTING.md](../CONTRIBUTING.md):
 
 ```typescript
 // Mocking Clerk in API route tests
@@ -421,7 +423,7 @@ To test unauthenticated scenarios, configure the mock to return `null`:
 
 ### 1. Assuming New Routes Are Public by Default
 
-- **Mistake**: Creating a new route intended for public or guest use and expecting it to work without updating [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts).
+- **Mistake**: Creating a new route intended for public or guest use and expecting it to work without updating [src/middleware.ts](../src/middleware.ts).
 - **Result**: WorkSphere's protect-by-default architecture blocks unauthenticated visitors and redirects them to `/sign-in`.
 - **Solution**: Explicitly add the path pattern to `isPublicRoute`.
 

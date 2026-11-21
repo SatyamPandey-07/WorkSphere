@@ -2,7 +2,7 @@
 
 ## 1. Architectural & Algorithmic Executive Summary
 
-WorkSphere transforms raster floorplan imagery, LiDAR spatial captures, and occupancy density grids into clean, scalable vector graphics suitable for CAD manipulation, desk placement, and spatial navigation. The raster-to-vector pipeline bridges client-side WebAssembly computation in C (`src/wasm/floorplan/contour_tracer.c`) and high-performance TypeScript vector formatting in [`src/lib/floorplan/contourSvgExporter.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/floorplan/contourSvgExporter.ts).
+WorkSphere transforms raster floorplan imagery, LiDAR spatial captures, and occupancy density grids into clean, scalable vector graphics suitable for CAD manipulation, desk placement, and spatial navigation. The raster-to-vector pipeline bridges client-side WebAssembly computation in C (`src/wasm/floorplan/contour_tracer.c`) and high-performance TypeScript vector formatting in [`src/lib/floorplan/contourSvgExporter.ts`](../../src/lib/floorplan/contourSvgExporter.ts).
 
 ```mermaid
 flowchart TD
@@ -206,7 +206,7 @@ Applying 2 iterations produces smooth, organic SVG vector curves while preservin
 
 ## 6. Vector SVG Path Generation in `contourSvgExporter.ts`
 
-The module [`src/lib/floorplan/contourSvgExporter.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/floorplan/contourSvgExporter.ts) receives the assembled contour polygons and constructs standardized vector elements.
+The module [`src/lib/floorplan/contourSvgExporter.ts`](../../src/lib/floorplan/contourSvgExporter.ts) receives the assembled contour polygons and constructs standardized vector elements.
 
 ### 6.1 Path Data Assembly (`contourToSvgPathData`)
 

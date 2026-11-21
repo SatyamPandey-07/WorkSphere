@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiResponse";
+import { normalizeRequiredText } from "@/lib/amenityVoteInput";
 
 const MIN_VOTES_TO_HIDE = 5;
 const HIDE_THRESHOLD = 60;
@@ -110,7 +111,8 @@ export async function POST(
       return apiError("Invalid JSON body", 400, "VALIDATION_FAILED");
     }
 
-    const { amenity, isUpvote } = body;
+    const amenity = normalizeRequiredText(body?.amenity);
+    const isUpvote = body?.isUpvote;
     if (!amenity || typeof isUpvote !== "boolean") {
       return apiError("Missing required parameters", 400, "VALIDATION_FAILED");
     }

@@ -1,5 +1,14 @@
 "use client";
 
+ feat/rating-dialog-a11y-arrow-nav
+import React from "react";
+import Image from "next/image";
+import { PhotoAttribution } from "./VenueGallery";
+
+export interface VenueCardProps {
+  id: string;
+  name: string;
+
 import React, { useRef, useState } from "react";
 import Image from "next/image";
 import { Bookmark, CalendarCheck, Heart, Share2 } from "lucide-react";
@@ -9,12 +18,19 @@ import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
 export interface VenueCardProps {
   id?: string;
   name?: string;
+ main
   address?: string;
   imageUrl?: string;
   attribution?: PhotoAttribution;
   rating?: number;
   wifiSpeed?: number;
   noiseLevel?: string;
+ feat/rating-dialog-a11y-arrow-nav
+  onClick?: () => void;
+}
+
+export function VenueCard({
+
   amenities?: string[];
   tags?: string[];
   onClick?: () => void;
@@ -46,6 +62,7 @@ const focusRingClasses =
 
 export const VenueCard: React.FC<VenueCardProps> = ({
   id,
+ main
   name,
   address,
   imageUrl,
@@ -53,6 +70,26 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   rating,
   wifiSpeed,
   noiseLevel,
+ feat/rating-dialog-a11y-arrow-nav
+  onClick,
+}: VenueCardProps) {
+  // Fallback check for photographer string
+  const photographerName = attribution?.photographer?.trim() || "Verified Contributor";
+
+  return (
+    <div
+      onClick={onClick}
+      className="group relative flex flex-col overflow-hidden rounded-xl bg-slate-900 border border-slate-800 p-4 shadow-md transition-all hover:border-slate-700 cursor-pointer"
+    >
+      {/* Venue Photo Container */}
+      {imageUrl && (
+        <div className="relative h-40 w-full overflow-hidden rounded-lg bg-slate-800">
+          <Image
+            src={imageUrl}
+            alt={name}
+            fill
+            className="object-cover transition-transform duration-300 group-hover:scale-105"
+
   amenities,
   tags,
   onClick,
@@ -136,9 +173,20 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             alt={venueName}
             fill
             className="object-cover transition-transform duration-300 hover:scale-105"
+ main
           />
         </div>
       )}
+
+ feat/rating-dialog-a11y-arrow-nav
+      {/* Venue Details */}
+      <div className="mt-3 flex flex-col gap-1">
+        <h3 className="font-semibold text-lg text-slate-100 group-hover:text-indigo-400 transition-colors">
+          {name}
+        </h3>
+        {address && <p className="text-xs text-slate-400">{address}</p>}
+
+        <div className="mt-2 flex items-center gap-3 text-xs text-slate-300">
 
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="truncate text-lg font-bold">{venueName}</h3>
@@ -195,10 +243,37 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 
       {(rating !== undefined || wifiSpeed !== undefined || noiseLevel) && (
         <div className="mb-3 flex items-center gap-3 text-xs text-zinc-300">
+ main
           {rating !== undefined && <span>⭐ {rating.toFixed(1)}</span>}
           {wifiSpeed !== undefined && <span>⚡ {wifiSpeed} Mbps</span>}
           {noiseLevel && <span className="capitalize">🔊 {noiseLevel}</span>}
         </div>
+ feat/rating-dialog-a11y-arrow-nav
+
+        {/* Photo Attribution with secure link & fallback safeguard */}
+        {attribution && (
+          <div className="mt-2 text-[11px] text-slate-500">
+            Photo by{" "}
+            {attribution.photographerUrl ? (
+              <a
+                href={attribution.photographerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="underline hover:text-slate-300"
+              >
+                {photographerName}
+              </a>
+            ) : (
+              <span>{photographerName}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
       )}
 
       {venueDescription && (
@@ -267,3 +342,4 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main

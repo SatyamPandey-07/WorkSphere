@@ -1,8 +1,11 @@
 "use client";
 
+ fix/seat-hold-timer-cleanup
+
  fix/rolling-noise-window-normalization
 
  fix/vector-clock-atomic-tick
+ main
  main
 import React from "react";
 import Image from "next/image";
@@ -85,6 +88,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ fix/seat-hold-timer-cleanup
+}
+
  fix/rolling-noise-window-normalization
 }
 
@@ -247,5 +253,6 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main

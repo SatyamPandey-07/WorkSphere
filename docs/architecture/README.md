@@ -18,6 +18,7 @@ Architecture decisions, implementation notes, and system-level design references
 - [Distributed WebRTC mesh signaling and STUN/TURN fallback](./WEBRTC_MESH_SIGNALING.md)
 - [Middleware routing](./middleware-routing.md)
 - [Multi-region sync](./multi-region-sync.md)
+- [Causal vector-clock specification](./CAUSAL_VECTOR_CLOCK_SPEC.md)
 - [Offline sync flow](./offline-sync-flow.md)
 - [Reminder cron pipeline](./reminder-cron-pipeline.md)
 

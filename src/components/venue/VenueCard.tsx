@@ -1,6 +1,9 @@
 "use client";
 
+ feat/modal-escape-focus-restoration
+
  feat/webrtc-datachannel-chunker-backpressure
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -82,6 +85,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/modal-escape-focus-restoration
+}
+
 }
 
 import React, { useRef, useState } from "react";
@@ -241,4 +247,5 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main

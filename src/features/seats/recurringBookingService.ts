@@ -1,4 +1,4 @@
-export type WeekdayCode = 'SU' | 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA';
+export type WeekdayCode = "SU" | "MO" | "TU" | "WE" | "TH" | "FR" | "SA";
 
 export interface DateRangeInput {
   startDate: string;
@@ -7,7 +7,7 @@ export interface DateRangeInput {
 
 export interface ConflictDetail {
   date: string;
-  reason: 'BOOKED' | 'HELD';
+  reason: "BOOKED" | "HELD";
   referenceId?: string;
 }
 
@@ -30,15 +30,23 @@ export interface RecurringValidationResult {
 export interface SeatOccupancyStore {
   getOccupiedDates(
     seatId: string,
-    dates: string[]
-  ): Promise>;
+    dates: string[],
+  ): Promise<Map<string, ConflictDetail>>;
   listCandidateDesks?(
     seatId: string,
-    dates: string[]
+    dates: string[],
   ): Promise<Array<{ deskId: string; occupiedDates: Set<string> }>>;
 }
 
-const JS_DAY_TO_CODE: WeekdayCode[] = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+const JS_DAY_TO_CODE: WeekdayCode[] = [
+  "SU",
+  "MO",
+  "TU",
+  "WE",
+  "TH",
+  "FR",
+  "SA",
+];
 const CODE_TO_JS_DAY: Record<WeekdayCode, number> = {
   SU: 0,
   MO: 1,
@@ -70,12 +78,15 @@ function parseUtcDay(dateStr: string): Date {
 
 function formatUtcDay(dt: Date): string {
   const y = dt.getUTCFullYear();
-  const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(dt.getUTCDate()).padStart(2, '0');
+  const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(dt.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
-export function expandRecurringDates(rrulePattern: string, range: DateRangeInput): string[] {
+export function expandRecurringDates(
+  rrulePattern: string,
+  range: DateRangeInput,
+): string[] {
   const start = parseUtcDay(range.startDate);
   const end = parseUtcDay(range.endDate);
   if (end.getTime() < start.getTime()) {
@@ -84,34 +95,36 @@ export function expandRecurringDates(rrulePattern: string, range: DateRangeInput
 
   const normalized = rrulePattern.trim().toUpperCase();
   const parts = new Map<string, string>();
-  for (const segment of normalized.split(';')) {
-    const [k, v] = segment.split('=');
+  for (const segment of normalized.split(";")) {
+    const [k, v] = segment.split("=");
     if (k && v) {
       parts.set(k.trim(), v.trim());
     }
   }
 
-  const intervalRaw = Number(parts.get('INTERVAL') ?? '1');
-  const intervalWeeks = Number.isFinite(intervalRaw) && intervalRaw > 0 ? Math.floor(intervalRaw) : 1;
+  const intervalRaw = Number(parts.get("INTERVAL") ?? "1");
+  const intervalWeeks =
+    Number.isFinite(intervalRaw) && intervalRaw > 0
+      ? Math.floor(intervalRaw)
+      : 1;
 
-  const byDayRaw = parts.get('BYDAY');
+  const byDayRaw = parts.get("BYDAY");
   let allowedDays = new Set<number>();
 
   if (byDayRaw) {
-    for (const token of byDayRaw.split(',')) {
+    for (const token of byDayRaw.split(",")) {
       const code = token.trim() as WeekdayCode;
       if (code in CODE_TO_JS_DAY) {
         allowedDays.add(CODE_TO_JS_DAY[code]);
       }
     }
-  } else if (normalized.includes('WEEKDAYS')) {
+  } else if (normalized.includes("WEEKDAYS")) {
     allowedDays = new Set([1, 2, 3, 4, 5]);
   } else {
     allowedDays = new Set([1, 2, 3, 4, 5]);
   }
 
-  const startWeekStartMs =
-    start.getTime() - start.getUTCDay() * 86_400_000;
+  const startWeekStartMs = start.getTime() - start.getUTCDay() * 86_400_000;
 
   const matched: string[] = [];
   for (let ms = start.getTime(); ms <= end.getTime(); ms += 86_400_000) {
@@ -132,7 +145,7 @@ export async function validateRecurringBookingSlots(
   seatId: string,
   rrulePattern: string,
   dateRange: DateRangeInput,
-  store: SeatOccupancyStore
+  store: SeatOccupancyStore,
 ): Promise<RecurringValidationResult> {
   const requestedDates = expandRecurringDates(rrulePattern, dateRange);
   const occupiedMap = await store.getOccupiedDates(seatId, requestedDates);
@@ -158,8 +171,12 @@ export async function validateRecurringBookingSlots(
     const candidates = await store.listCandidateDesks(seatId, requestedDates);
     for (const candidate of candidates) {
       if (candidate.deskId === seatId) continue;
-      const freeDates = requestedDates.filter((d) => !candidate.occupiedDates.has(d));
-      const candidateConflicts = requestedDates.filter((d) => candidate.occupiedDates.has(d));
+      const freeDates = requestedDates.filter(
+        (d) => !candidate.occupiedDates.has(d),
+      );
+      const candidateConflicts = requestedDates.filter((d) =>
+        candidate.occupiedDates.has(d),
+      );
       alternativeDesks.push({
         deskId: candidate.deskId,
         availableForAllRequestedDates: candidateConflicts.length === 0,

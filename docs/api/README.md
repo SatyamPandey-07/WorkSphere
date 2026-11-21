@@ -10,6 +10,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 ## Guides
 
 - [Date filter formats](./DATE_FILTER_FORMATS.md) — supported calendar dates, RFC 3339 timestamps, relative windows, aliases, and 400 error responses.
+- [Recurring Booking Slot Validation](./RECURRING_BOOKING_SLOTS.md) — weekly RRULE subset, UTC date expansion, availability conflicts, and alternative desk suggestions.
 - [Rate limiting](./RATE_LIMITING.md) — active middleware quotas, the separate tiered configuration, 429 headers, and client retry examples.
 - [Seat Hold Lease Extension](./SEAT_HOLD_LEASE_EXTENSION.md) — authenticated seat-lock extension, lease constraints, fencing-token validation, and error responses.
 - [Bookings](./bookings.md)

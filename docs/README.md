@@ -52,6 +52,10 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Seating Occupancy Forecasting](./features/seating-occupancy-forecasting.md) — seating occupancy forecasting functionality.
 - [Nomad Passport](./features/nomad-passport.md) — Nomad Passport feature and product workflow.
 
+## Audio & Acoustics
+
+- [Ambient Noise Spectrogram Architecture](./audio/NOISE_SPECTROGRAM_ARCHITECTURE.md) — microphone capture, FFT processing, spectrum rendering, waterfall visualization, and audio lifecycle troubleshooting.
+
 ## UI Components & Frontend
 
 - [Design System Guide](./DESIGN_SYSTEM_GUIDE.md) — design tokens, themes, components, and frontend styling conventions.

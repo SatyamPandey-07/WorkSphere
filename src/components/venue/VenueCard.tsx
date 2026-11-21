@@ -1,5 +1,7 @@
 "use client";
 
+ fix/booking-modal-prevent-double-submit
+
  fix/canvas-whiteboard-yjs-cleanup
 
  feat/webrtc-ice-restart-backoff
@@ -10,6 +12,7 @@
  main
  main
  main
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -17,6 +20,8 @@ import { PhotoAttribution } from "./VenueGallery";
 export interface VenueCardProps {
   id: string;
   name: string;
+ fix/booking-modal-prevent-double-submit
+
  fix/canvas-whiteboard-yjs-cleanup
 
  feat/webrtc-ice-restart-backoff
@@ -37,12 +42,15 @@ export interface VenueCardProps {
  main
  main
  main
+ main
   address?: string;
   imageUrl?: string;
   attribution?: PhotoAttribution;
   rating?: number;
   wifiSpeed?: number;
   noiseLevel?: string;
+ fix/booking-modal-prevent-double-submit
+
  fix/canvas-whiteboard-yjs-cleanup
  feat/webrtc-ice-restart-backoff
 
@@ -52,10 +60,13 @@ export interface VenueCardProps {
  main
  main
  main
+ main
   onClick?: () => void;
 }
 
 export function VenueCard({
+ fix/booking-modal-prevent-double-submit
+
  fix/canvas-whiteboard-yjs-cleanup
 
  feat/webrtc-ice-restart-backoff
@@ -98,6 +109,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  main
  main
  main
+ main
   name,
   address,
   imageUrl,
@@ -105,6 +117,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   rating,
   wifiSpeed,
   noiseLevel,
+ fix/booking-modal-prevent-double-submit
+
  fix/canvas-whiteboard-yjs-cleanup
 
  feat/webrtc-ice-restart-backoff
@@ -112,6 +126,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
  main
  main
@@ -133,6 +148,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             alt={name}
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-105"
+ fix/booking-modal-prevent-double-submit
+
  fix/canvas-whiteboard-yjs-cleanup
 
  feat/webrtc-ice-restart-backoff
@@ -227,9 +244,12 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  main
  main
  main
+ main
           />
         </div>
       )}
+
+ fix/booking-modal-prevent-double-submit
 
  fix/canvas-whiteboard-yjs-cleanup
 
@@ -241,6 +261,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  main
  main
  main
+ main
       {/* Venue Details */}
       <div className="mt-3 flex flex-col gap-1">
         <h3 className="font-semibold text-lg text-slate-100 group-hover:text-indigo-400 transition-colors">
@@ -249,6 +270,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
         {address && <p className="text-xs text-slate-400">{address}</p>}
 
         <div className="mt-2 flex items-center gap-3 text-xs text-slate-300">
+ fix/booking-modal-prevent-double-submit
+
  fix/canvas-whiteboard-yjs-cleanup
 
  feat/webrtc-ice-restart-backoff
@@ -315,10 +338,13 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  main
  main
  main
+ main
           {rating !== undefined && <span>⭐ {rating.toFixed(1)}</span>}
           {wifiSpeed !== undefined && <span>⚡ {wifiSpeed} Mbps</span>}
           {noiseLevel && <span className="capitalize">🔊 {noiseLevel}</span>}
         </div>
+ fix/booking-modal-prevent-double-submit
+
  fix/canvas-whiteboard-yjs-cleanup
 
  feat/webrtc-ice-restart-backoff
@@ -326,6 +352,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
  main
  main
@@ -352,6 +379,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       </div>
     </div>
   );
+ fix/booking-modal-prevent-double-submit
+}
+
  fix/canvas-whiteboard-yjs-cleanup
 }
 
@@ -369,7 +399,6 @@ export const VenueCard: React.FC<VenueCardProps> = ({
         <p className="line-clamp-2 text-sm text-zinc-400">
           {venueDescription}
         </p>
-      )}
 
       {/* Amenity Tag Pills with responsive mobile wrapping */}
       {amenityList.length > 0 && (
@@ -431,6 +460,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

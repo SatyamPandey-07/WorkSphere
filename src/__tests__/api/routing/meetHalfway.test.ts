@@ -501,6 +501,40 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       expect(res.status).toBe(200);
       expect(mockFindMany).toHaveBeenCalledTimes(1);
     });
+
+    test("propagates transitPreference to venue recommendations and reflects in member estimates", async () => {
+      mockFindMany.mockResolvedValueOnce([
+        {
+          id: "venue-1",
+          name: "Test Venue",
+          latitude: 37.775,
+          longitude: -122.418,
+          category: "coworking",
+          address: "123 Main St",
+          rating: 4.5,
+          wifiSpeed: 100,
+          wifiQuality: 90,
+          hasOutlets: true,
+          maxCapacity: 10,
+          currentOccupancy: 2,
+          imageUrl: null,
+          seats: [{ id: "seat-1", seatNumber: "1", type: "desk" }],
+        },
+      ]);
+
+      const req = createRequest({
+        members: [{ ...validMember, transitMode: "driving" }],
+        transitPreference: "walking",
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.recommendations).toHaveLength(1);
+      expect(data.recommendations[0].memberEstimates[0].transitMode).toBe(
+        "walking",
+      );
+    });
   });
 
   describe("I. Other optional fields (category, hasOutlets)", () => {

@@ -144,4 +144,49 @@ describe("Nomad Groth16 integration", () => {
 
     expect(result.ok).toBe(false);
   });
+  it.each([
+    ["missing", undefined] as const,
+    ["short", "short-secret"] as const,
+  ])(
+    "fails closed with a %s passport signing key in production",
+    async (_case, signingKey) => {
+      const originalKey = process.env.ZKP_PASSPORT_KEY;
+      const originalNodeEnv = process.env.NODE_ENV;
+
+      try {
+        process.env.NODE_ENV = "production";
+
+        if (signingKey === undefined) {
+          delete process.env.ZKP_PASSPORT_KEY;
+        } else {
+          process.env.ZKP_PASSPORT_KEY = signingKey;
+        }
+
+        const result = await verifyAndMintNomadPassportStamp(
+          userId,
+          "NOMAD_100_HOURS",
+          { proof, publicSignals },
+          activity
+        );
+
+        expect(result).toMatchObject({
+          isValid: false,
+          code: "VERIFIER_UNAVAILABLE",
+          status: 503,
+        });
+      } finally {
+        if (originalKey === undefined) {
+          delete process.env.ZKP_PASSPORT_KEY;
+        } else {
+          process.env.ZKP_PASSPORT_KEY = originalKey;
+        }
+
+        if (originalNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = originalNodeEnv;
+        }
+      }
+    }
+  );
 });

@@ -9,6 +9,7 @@ Architecture decisions, implementation notes, and system-level design references
 - [Redlock lease fencing token protocol](./REDLOCK_FENCING_TOKENS.md)
 - [Seat hold lock architecture](./seat-hold-lock-architecture.md)
 - [Seat hold Redlock architecture](./seat-hold-lock-redlock-architecture.md)
+- [Token-bucket Redis TTL fallback and recovery](./TOKEN_BUCKET_REDIS_FALLBACK.md)
 - [Rate limiting strategies](./rate-limiting-strategies.md)
 - [Sliding-window rate limiting](./sliding-window-rate-limiting.md)
 

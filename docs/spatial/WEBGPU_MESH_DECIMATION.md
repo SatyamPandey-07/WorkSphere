@@ -1,8 +1,8 @@
 # WebGPU LiDAR Mesh Decimation & CPU Fallbacks Specification
 
 > **Document ID:** `SPEC-SPATIAL-8922`  
-> **Source Target:** [`src/core/gpu/MeshDecimatorCompute.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/src/core/gpu/MeshDecimatorCompute.ts)  
-> **Test Target:** [`src/__tests__/core/gpu/MeshDecimatorCompute.test.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/src/__tests__/core/gpu/MeshDecimatorCompute.test.ts)  
+> **Source Target:** [`src/core/gpu/MeshDecimatorCompute.ts`](../../src/core/gpu/MeshDecimatorCompute.ts)\
+> **Test Target:** [`src/__tests__/core/gpu/MeshDecimatorCompute.test.ts`](../../src/__tests__/core/gpu/MeshDecimatorCompute.test.ts)\
 > **Status:** Production Specification & Architecture Reference  
 > **Issue Reference:** [Issue #8922](https://github.com/SatyamPandey-07/WorkSphere/issues/8922)
 

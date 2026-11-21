@@ -1,9 +1,9 @@
 ﻿# Mathematical Model & Benchmark Specification for LiDAR QEM Mesh Decimation
 
 > **Document Target:** `docs/spatial/QEM_MATHEMATICAL_MODEL.md`
-> **Source Target:** [`src/core/gpu/MeshDecimatorCompute.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/src/core/gpu/MeshDecimatorCompute.ts)
-> **Test Target:** [`src/__tests__/core/gpu/MeshDecimatorCompute.test.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/src/__tests__/core/gpu/MeshDecimatorCompute.test.ts)
-> **Related Architecture Guide:** [`docs/spatial/WEBGPU_MESH_DECIMATION.md`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/docs/spatial/WEBGPU_MESH_DECIMATION.md)
+> **Source Target:** [`src/core/gpu/MeshDecimatorCompute.ts`](../../src/core/gpu/MeshDecimatorCompute.ts)
+> **Test Target:** [`src/__tests__/core/gpu/MeshDecimatorCompute.test.ts`](../../src/__tests__/core/gpu/MeshDecimatorCompute.test.ts)
+> **Related Architecture Guide:** [`docs/spatial/WEBGPU_MESH_DECIMATION.md`](WEBGPU_MESH_DECIMATION.md)
 > **Status:** Production Mathematical Specification & Empirical Benchmark Protocol
 > **Issue Reference:** WorkSphere Issue #9184 (closing #9184)
 

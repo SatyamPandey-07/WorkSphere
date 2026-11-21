@@ -1,9 +1,9 @@
 # Formal Security Specification: Schnorr Multi-Signature Aggregation & MuSig2 Co-Signing Protocol
 
 > **Document Target:** `docs/security/SCHNORR_THRESHOLD_SPEC.md`  
-> **Source Target:** [`src/core/crypto/SchnorrThresholdAggregator.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/src/core/crypto/SchnorrThresholdAggregator.ts)  
-> **Test Target:** [`src/__tests__/crypto/SchnorrThresholdAggregator.test.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/src/__tests__/crypto/SchnorrThresholdAggregator.test.ts)  
-> **Related Implementations:** [`src/core/crypto/ThresholdSchnorrMuSig.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/src/core/crypto/ThresholdSchnorrMuSig.ts), [`src/core/zkp/VerifiableThresholdSchnorrMuSig2.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere/src/core/zkp/VerifiableThresholdSchnorrMuSig2.ts)  
+> **Source Target:** [`src/core/crypto/SchnorrThresholdAggregator.ts`](../../src/core/crypto/SchnorrThresholdAggregator.ts)\
+> **Test Target:** [`src/__tests__/crypto/SchnorrThresholdAggregator.test.ts`](../../src/__tests__/crypto/SchnorrThresholdAggregator.test.ts)\
+> **Related Implementations:** [`src/core/crypto/ThresholdSchnorrMuSig.ts`](../../src/core/crypto/ThresholdSchnorrMuSig.ts), [`src/core/zkp/VerifiableThresholdSchnorrMuSig2.ts`](../../src/core/zkp/VerifiableThresholdSchnorrMuSig2.ts)\
 > **Status:** Production Cryptographic Security Specification  
 > **Issue Reference:** WorkSphere Issue #9183 (closing #9183)  
 

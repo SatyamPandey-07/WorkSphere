@@ -1,6 +1,53 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { calculateRMS, rmsToDecibels } from "@/lib/audio";
 import { useWebAudioAutoPause } from "./useWebAudioAutoPause";
+
+/**
+ * Safely computes the Root Mean Square (RMS) of audio samples.
+ * Validates empty buffers, silence, non-finite values (NaN, Infinity), and extreme amplitudes.
+ */
+export function calculateSafeRMS(samples: Float32Array): number {
+  if (!samples || samples.length === 0) {
+    return 0;
+  }
+
+  let sum = 0;
+  let validCount = 0;
+
+  for (let i = 0; i < samples.length; i++) {
+    const val = samples[i];
+    if (Number.isFinite(val)) {
+      sum += val * val;
+      validCount++;
+    }
+  }
+
+  if (validCount === 0 || !Number.isFinite(sum) || sum <= 0) {
+    return 0;
+  }
+
+  const meanSquare = sum / validCount;
+  const rms = Math.sqrt(meanSquare);
+
+  return Number.isFinite(rms) && rms > 0 ? rms : 0;
+}
+
+/**
+ * Converts RMS amplitude to decibels, clamped to the non-negative sensory range [0, 120] dB.
+ * Guards against silence (RMS <= 0), NaN, and non-finite values by returning 0 dB.
+ */
+export function computeSafeDecibels(rms: number): number {
+  if (!Number.isFinite(rms) || rms <= 0) {
+    return 0;
+  }
+
+  // Safe minimum epsilon to prevent Math.log10(0) evaluating to -Infinity
+  const safeRms = Math.max(1e-5, rms);
+  const computedDb = 20 * Math.log10(safeRms);
+
+  return Number.isFinite(computedDb)
+    ? Math.max(0, Math.min(120, computedDb))
+    : 0;
+}
 
 interface UseDecibelMeterResult {
   start: () => Promise<void>;
@@ -59,8 +106,12 @@ export function useDecibelMeter(): UseDecibelMeterResult {
       const dataArray = new Float32Array(analyserRef.current.fftSize);
       analyserRef.current.getFloatTimeDomainData(dataArray);
 
-      const rms = calculateRMS(dataArray);
-      const db = rmsToDecibels(rms);
+      const rms = calculateSafeRMS(dataArray);
+      const computedDb = computeSafeDecibels(rms);
+      const db = Number.isFinite(computedDb)
+        ? Math.max(0, Math.min(120, computedDb))
+        : 0;
+
       dbFramesRef.current.push(db);
 
       const now = Date.now();
@@ -69,9 +120,14 @@ export function useDecibelMeter(): UseDecibelMeterResult {
       if (elapsed >= 5000) {
         // Finished 5 seconds
         const avgDb =
-          dbFramesRef.current.reduce((a, b) => a + b, 0) /
-          dbFramesRef.current.length;
-        setDecibel(Math.round(avgDb * 10) / 10);
+          dbFramesRef.current.length > 0
+            ? dbFramesRef.current.reduce((a, b) => a + b, 0) /
+              dbFramesRef.current.length
+            : 0;
+        const clampedAvg = Number.isFinite(avgDb)
+          ? Math.max(0, Math.min(120, avgDb))
+          : 0;
+        setDecibel(Math.round(clampedAvg * 10) / 10);
         stop();
       } else {
         // Update UI with latest reading (live feedback)

@@ -18,7 +18,9 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Semantic search](./semantic-search.md)
 - [Solana Pay](./solana-pay.md)
 - [Telemetry](./telemetry.md)
-
-For project-wide endpoint and stream documentation, see [the REST API reference](../API.md).
+  - [Partition export](./partition-export.md)
+- [Partition management](./partition-management.md) — Scheduled maintenance, bulk archive and deletion, and administrative audit endpoints.
+- [Semantic search](./semantic-search.md)
+  For project-wide endpoint and stream documentation, see [the REST API reference](../API.md).
 
 - [Venue flagging](./VENUE_FLAGGING.md) — authenticated flag submission, reason validation, duplicate behavior and hourly rate limit.

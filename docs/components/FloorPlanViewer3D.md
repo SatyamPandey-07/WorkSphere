@@ -1,6 +1,6 @@
 # Component Reference: `FloorPlanViewer3D` & WebGL Floorplan Rendering Engine
 
-This document provides a comprehensive architectural guide, coordinate system specification, raycasting interaction model, camera navigation controls, and WebGL resource lifecycle documentation for the **`FloorPlanViewer3D`** component ([`src/components/floorplan/FloorPlanViewer3D.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/floorplan/FloorPlanViewer3D.tsx)) and its underlying renderer [`FloorplanRenderer`](file:///c:/Users/admin/Desktop/workfere/src/lib/floorplan/floorplanRenderer.ts).
+This document provides a comprehensive architectural guide, coordinate system specification, raycasting interaction model, camera navigation controls, and WebGL resource lifecycle documentation for the **`FloorPlanViewer3D`** component ([`src/components/floorplan/FloorPlanViewer3D.tsx`](../../src/components/floorplan/FloorPlanViewer3D.tsx)) and its underlying renderer [`FloorplanRenderer`](../../src/lib/floorplan/floorplanRenderer.ts).
 
 ---
 

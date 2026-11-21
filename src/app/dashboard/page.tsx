@@ -7,6 +7,7 @@ import { BarChart3, Search, Settings, Webhook } from "lucide-react";
 import { BookingList } from "@/components/bookings/BookingList";
 import { StreakCard } from "@/components/dashboard/StreakCard";
 import { StudentVerificationBadge } from "@/components/student/StudentVerificationBadge";
+import { NomadPassportVerificationBadge } from "@/components/profile/NomadPassportVerificationBadge";
 import { MonthlyBudgetTracker } from "@/components/billing/MonthlyBudgetTracker";
 import { CheckInHistory } from "./CheckInHistory";
 import { WorkStyleProfile } from "./WorkStyleProfile";
@@ -27,8 +28,9 @@ export default function DashboardPage() {
               ? `You have ${counts.upcoming} upcoming booking${counts.upcoming === 1 ? "" : "s"}.`
               : "Bookings, check-ins and streaks in one place."}
           </p>
-          <div className="mt-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <StudentVerificationBadge />
+            <NomadPassportVerificationBadge />
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

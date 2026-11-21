@@ -48,7 +48,7 @@ xyZ...[base64-string]...
 
 ### Programmatic Key Generation
 
-You can also generate keys programmatically in Node.js using our helper function in [pushNotifications.ts](file:///c:/Users/shrut/OneDrive/Desktop/WorkSphere/src/lib/pushNotifications.ts):
+You can also generate keys programmatically in Node.js using our helper function in [pushNotifications.ts](../src/lib/pushNotifications.ts):
 
 ```typescript
 import { generateVapidKeys } from "@/lib/pushNotifications";
@@ -64,7 +64,7 @@ When rotating VAPID keys, you must coordinate updating both client and server:
 1. Generate a new keypair.
 2. Update the environment variables in your server configuration hosting the environment.
 3. Deploy the updated server environment.
-4. **Important**: Since existing push subscriptions are signed with the _old_ public key, browser clients must unsubscribe and re-subscribe using the new public key. Our hook [usePushNotifications.ts](file:///c:/Users/shrut/OneDrive/Desktop/WorkSphere/src/hooks/usePushNotifications.ts) automatically detects key mismatches during registration and refreshes the user's browser push credentials.
+4. **Important**: Since existing push subscriptions are signed with the _old_ public key, browser clients must unsubscribe and re-subscribe using the new public key. Our hook [usePushNotifications.ts](../src/hooks/usePushNotifications.ts) automatically detects key mismatches during registration and refreshes the user's browser push credentials.
 
 ---
 
@@ -95,7 +95,7 @@ sequenceDiagram
 
 ### Service Worker Event Interception
 
-The background listener inside [sw.js](file:///c:/Users/shrut/OneDrive/Desktop/WorkSphere/public/sw.js) handles push delivery and interaction:
+The background listener inside [sw.js](../public/sw.js) handles push delivery and interaction:
 
 1. **`push` Listener**: Intercepts background push messages, decodes the payload, and calls `self.registration.showNotification()` with custom options (such as title, body, badge, vibrate pattern, and action buttons).
 2. **`notificationclick` Listener**: Closes the notification overlay and focuses/navigates the browser client to the action link provided in the payload data (e.g. `/venues/[venueId]`).
@@ -127,7 +127,7 @@ model PushSubscription {
 
 ### Payload Encryption & Dispatch
 
-Payload encryption is handled server-side in [pushNotifications.ts](file:///c:/Users/shrut/OneDrive/Desktop/WorkSphere/src/lib/pushNotifications.ts) using the standard `web-push` library. The payload is encrypted with the subscriber's public keys before sending:
+Payload encryption is handled server-side in [pushNotifications.ts](../src/lib/pushNotifications.ts) using the standard `web-push` library. The payload is encrypted with the subscriber's public keys before sending:
 
 ```typescript
 import webPush from "web-push";

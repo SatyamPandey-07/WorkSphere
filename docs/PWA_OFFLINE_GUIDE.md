@@ -323,3 +323,46 @@ These are observations from reading the code while writing this guide. They are 
 5. To start clean: **Application, then Storage, then Clear site data**, then reload.
 
 For deeper sync debugging see [PWA_SYNC_DEBUG.md](./PWA_SYNC_DEBUG.md); for push, [PWA_PUSH_DEBUG.md](./PWA_PUSH_DEBUG.md).
+
+
+## 11. Service Worker Lifecycle
+
+WorkSphere registers a custom service worker (`sw.js`) that controls the page lifecycle through three primary phases:
+
+1. **Installation (`install` event):**
+   - Pre-caches critical static shell assets (HTML, core CSS, icons, and primary JavaScript bundles) into the primary static cache bucket.
+   - Triggers `self.skipWaiting()` to immediately activate new service worker versions across open client tabs.
+
+2. **Activation (`activate` event):**
+   - Cleans up stale or deprecated cache buckets from older application versions to reclaim storage space.
+   - Claims existing clients immediately via `clients.claim()`.
+
+3. **Fetch Interception (`fetch` event):**
+   - Intercepts network requests and delegates them to specialized runtime caching handlers depending on the asset type (API responses, vector tiles, or venue images).
+
+
+## 12. Cache Buckets, Storage Limits & Policies
+
+WorkSphere segments cached assets into dedicated CacheStorage buckets to optimize performance and enforce granular eviction policies.
+
+| Cache Bucket Name | Target Asset Type | Storage Quota Limit | Eviction / Expiration Policy |
+| :--- | :--- | :--- | :--- |
+| `worksphere-static-v1` | App Shell (HTML, CSS, JS) | ~20 MB | Version-based cleanup on SW update |
+| `worksphere-images-v1` | Venue Thumbnails & Photos | ~50 - 100 MB | LRU (Least Recently Used), Max 30-day TTL |
+| `worksphere-tiles-v1` | Map Vector Tiles & Assets | ~100 MB | LRU eviction with max 500 cached tiles |
+| `worksphere-api-v1` | Geo-bounding box & Search | ~15 MB | Stale-While-Revalidate (60s max-age, 300s SWR) |
+
+## 13. Stale-While-Revalidate Flow for Venue Thumbnails
+
+When a remote worker views venue galleries or search results over cellular connections, images are served instantly via a **Stale-While-Revalidate** strategy:
+
+1. **Cache Inspection:** The service worker checks `worksphere-images-v1` for the requested thumbnail URL.
+2. **Immediate Return (Stale):** If found, the cached image is returned instantly to the UI, ensuring zero layout shift (CLS) and fast render times.
+3. **Background Revalidation:** Concurrently, a network request fetches the latest version of the image in the background. If the asset has updated, the cache is refreshed silently.
+4. **Network Fallback:** If the image is not in CacheStorage, the request falls back to the network. If the device is offline or the storage quota is exhausted, requests gracefully fallback to **IndexedDB metadata caching** or display shimmering skeleton placeholders.
+
+## 14. IndexedDB Fallback & Quota Exceeded Handling
+
+When browser storage quotas are reached or CacheStorage APIs fail due to restrictive storage policies:
+- **Fallback Store:** Unsynced drafts, critical venue search states, and user interaction histories are safely mirrored in IndexedDB (`worksphere_offline_db`).
+- **Quota Management:** Background garbage collection automatically prunes expired items from `worksphere-images-v1` and `worksphere-tiles-v1` when storage usage exceeds 85% of allocated origin quotas.

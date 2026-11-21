@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-In distributed mesh workspaces and nomad co-working sessions, direct WebRTC peer connections support live file synchronization, audio/video streaming, and decentralized diagnostics. The **`P2PBandwidthEstimator`** engine ([`src/core/network/P2PBandwidthEstimator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/P2PBandwidthEstimator.ts)), coupled with the background Web Worker ([`src/workers/webrtcWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/webrtcWorker.ts)), implements an off-thread peer-to-peer bandwidth testing protocol.
+In distributed mesh workspaces and nomad co-working sessions, direct WebRTC peer connections support live file synchronization, audio/video streaming, and decentralized diagnostics. The **`P2PBandwidthEstimator`** engine ([`src/core/network/P2PBandwidthEstimator.ts`](../../src/core/network/P2PBandwidthEstimator.ts)), coupled with the background Web Worker ([`src/workers/webrtcWorker.ts`](../../src/workers/webrtcWorker.ts)), implements an off-thread peer-to-peer bandwidth testing protocol.
 
 This technical specification details:
 - **Chunk Size Matrix (256 KB to 4 MB):** Staged payload sizes for ramp-up, sustained measurement, and high-throughput saturation.
@@ -111,7 +111,7 @@ private calculatePacketLoss(durations: number[]): number {
 
 ## 5. Diagnostic Reporting Schema
 
-The benchmarking protocol outputs a normalized [`SpeedTestResult`](file:///c:/Users/admin/Desktop/workfere/src/core/network/P2PBandwidthEstimator.ts#L7) structure:
+The benchmarking protocol outputs a normalized [`SpeedTestResult`](../../src/core/network/P2PBandwidthEstimator.ts#L7) structure:
 
 ### 5.1 TypeScript Interface
 

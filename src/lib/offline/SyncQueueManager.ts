@@ -6,9 +6,13 @@
  * reviews, collaborative notes, seat check-ins, and amenity votes.
  */
 
-import { initOfflineDB } from "./db";
+import { initOfflineDB, resetOfflineDBNonDestructive } from "./db";
 import type { OfflineQueueItem, OfflineQueueHandler } from "./types";
 import { withWebLock, OFFLINE_WRITE_LOCK } from "@/lib/webLock";
+import {
+  SeatSyncCoordinator,
+  seatSyncCoordinator,
+} from "./SeatSyncCoordinator";
 
 export const QUEUE_STORE_NAME = "pending_sync_queue";
 export const SYNC_QUEUE_CHANNEL = "worksphere:sync-queue-channel";
@@ -16,10 +20,13 @@ export const DEFAULT_MAX_RETRIES = 5;
 export const DEFAULT_BASE_DELAY_MS = 1000;
 export const DEFAULT_MAX_DELAY_MS = 30000;
 
+export type WarningToastDispatcher = (message: string) => void;
+
 export interface SyncQueueManagerOptions {
   maxRetries?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  onWarningToast?: WarningToastDispatcher;
 }
 
 export class SyncQueueManager {
@@ -28,6 +35,9 @@ export class SyncQueueManager {
   private inMemoryQueue: Map<string, OfflineQueueItem> = new Map();
   private channel: BroadcastChannel | null = null;
   private isSyncing = false;
+  private usingInMemoryFallback = false;
+  private warningToastShown = false;
+  private warningToastHandler?: WarningToastDispatcher;
   private maxRetries: number;
   private baseDelayMs: number;
   private maxDelayMs: number;
@@ -36,6 +46,7 @@ export class SyncQueueManager {
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.baseDelayMs = options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
     this.maxDelayMs = options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
+    this.warningToastHandler = options.onWarningToast;
 
     if (typeof window !== "undefined") {
       if (typeof BroadcastChannel !== "undefined") {
@@ -57,11 +68,43 @@ export class SyncQueueManager {
     }
   }
 
-  public static getInstance(options?: SyncQueueManagerOptions): SyncQueueManager {
+  public static getInstance(
+    options?: SyncQueueManagerOptions,
+  ): SyncQueueManager {
     if (!SyncQueueManager.instance) {
       SyncQueueManager.instance = new SyncQueueManager(options);
+    } else if (options?.onWarningToast) {
+      SyncQueueManager.instance.warningToastHandler = options.onWarningToast;
     }
     return SyncQueueManager.instance;
+  }
+
+  public setWarningToastHandler(handler: WarningToastDispatcher): void {
+    this.warningToastHandler = handler;
+  }
+
+  public isUsingInMemoryFallback(): boolean {
+    return this.usingInMemoryFallback;
+  }
+
+  private activateInMemoryFallback(err: unknown): void {
+    this.usingInMemoryFallback = true;
+    const message =
+      "Offline database upgrade failed; switched to temporary in-memory sync queue.";
+    console.warn(`[SyncQueueManager] ${message}`, err);
+
+    if (!this.warningToastShown) {
+      this.warningToastShown = true;
+      if (this.warningToastHandler) {
+        this.warningToastHandler(message);
+      } else if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("worksphere:toast", {
+            detail: { message, type: "warning" },
+          }),
+        );
+      }
+    }
   }
 
   /**
@@ -86,7 +129,7 @@ export class SyncQueueManager {
   }
 
   /**
-   * Enqueues an offline mutation item into the persistent store.
+   * Enqueues an offline mutation item into the persistent store (with in-memory fallback).
    */
   public async enqueue<T = unknown>(
     item: Omit<OfflineQueueItem<T>, "id" | "timestamp" | "retryCount"> & {
@@ -118,8 +161,9 @@ export class SyncQueueManager {
           req.onsuccess = () => resolve();
           req.onerror = () => reject(req.error);
         });
-      } catch {
-        // Fallback to in-memory queue if IndexedDB is unavailable
+        this.usingInMemoryFallback = false;
+      } catch (err) {
+        this.activateInMemoryFallback(err);
         this.inMemoryQueue.set(queueItem.id, queueItem as OfflineQueueItem);
       }
 
@@ -144,7 +188,7 @@ export class SyncQueueManager {
           req.onerror = () => reject(req.error);
         });
       } catch {
-        // Fallback
+        // Fallback already removed from inMemoryQueue
       }
     }, OFFLINE_WRITE_LOCK);
   }
@@ -159,19 +203,29 @@ export class SyncQueueManager {
 
     try {
       const db = await initOfflineDB();
-      items = await new Promise<OfflineQueueItem[]>((resolve, reject) => {
-        const tx = db.transaction([QUEUE_STORE_NAME], "readonly");
-        const store = tx.objectStore(QUEUE_STORE_NAME);
-        const req = store.getAll();
-        req.onsuccess = () => resolve((req.result as OfflineQueueItem[]) || []);
-        req.onerror = () => reject(req.error);
-      });
-    } catch {
+      const dbItems = await new Promise<OfflineQueueItem[]>(
+        (resolve, reject) => {
+          const tx = db.transaction([QUEUE_STORE_NAME], "readonly");
+          const store = tx.objectStore(QUEUE_STORE_NAME);
+          const req = store.getAll();
+          req.onsuccess = () =>
+            resolve((req.result as OfflineQueueItem[]) || []);
+          req.onerror = () => reject(req.error);
+        },
+      );
+      const merged = new Map<string, OfflineQueueItem>();
+      for (const item of dbItems) merged.set(item.id, item);
+      for (const item of this.inMemoryQueue.values()) merged.set(item.id, item);
+      items = Array.from(merged.values());
+    } catch (err) {
+      this.activateInMemoryFallback(err);
       items = Array.from(this.inMemoryQueue.values());
     }
 
     if (entity) {
-      return items.filter((item) => item.entity === entity);
+      return items
+        .filter((item) => item.entity === entity)
+        .sort((a, b) => a.timestamp - b.timestamp);
     }
     return items.sort((a, b) => a.timestamp - b.timestamp);
   }
@@ -180,6 +234,9 @@ export class SyncQueueManager {
    * Retrieves a single queue item by ID.
    */
   public async getItem(id: string): Promise<OfflineQueueItem | null> {
+    if (this.inMemoryQueue.has(id)) {
+      return this.inMemoryQueue.get(id) ?? null;
+    }
     try {
       const db = await initOfflineDB();
       return await new Promise<OfflineQueueItem | null>((resolve, reject) => {
@@ -233,36 +290,84 @@ export class SyncQueueManager {
   }
 
   /**
+   * Non-destructive database reset: preserves pending in-memory items while rebuilding
+   * the IndexedDB schema cleanly.
+   */
+  public async resetDatabaseNonDestructive(): Promise<{
+    restoredCount: number;
+  }> {
+    return withWebLock(async () => {
+      const pendingItems = Array.from(this.inMemoryQueue.values());
+      const result = await resetOfflineDBNonDestructive(
+        pendingItems,
+        QUEUE_STORE_NAME,
+      );
+      this.inMemoryQueue.clear();
+      this.usingInMemoryFallback = false;
+      this.warningToastShown = false;
+      return result;
+    }, OFFLINE_WRITE_LOCK);
+  }
+
+  /**
    * Executes sync for a single queue item using the registered handler.
    */
   public async syncItem(item: OfflineQueueItem): Promise<boolean> {
     const handler = this.handlers.get(item.entity);
     if (!handler) {
-      console.warn(`[SyncQueueManager] No handler registered for entity: ${item.entity}`);
+      console.warn(
+        `[SyncQueueManager] No handler registered for entity: ${item.entity}`,
+      );
       return false;
     }
 
-    try {
-      const result = await handler(item);
-      if (result !== false) {
-        await this.dequeue(item.id);
-        return true;
+    const isCheckIn = item.entity === "checkin";
+    const payload = isCheckIn
+      ? (item.payload as { venueId?: string; seatId?: string } | undefined)
+      : undefined;
+    const venueId = payload?.venueId;
+    const seatId = payload?.seatId;
+
+    const performSync = async (): Promise<boolean> => {
+      if (isCheckIn && venueId) {
+        seatSyncCoordinator.markReconciliationStart(venueId, seatId);
       }
-    } catch (error) {
-      console.error(`[SyncQueueManager] Handler error for item ${item.id}:`, error);
-    }
+      try {
+        const result = await handler(item);
+        if (result !== false) {
+          await this.dequeue(item.id);
+          return true;
+        }
+      } catch (error) {
+        console.error(
+          `[SyncQueueManager] Handler error for item ${item.id}:`,
+          error,
+        );
+      } finally {
+        if (isCheckIn && venueId) {
+          seatSyncCoordinator.markReconciliationEnd(venueId, seatId);
+        }
+      }
 
-    // Handle failure and retry scheduling
-    const nextRetry = item.retryCount + 1;
-    if (nextRetry >= this.maxRetries) {
-      console.warn(`[SyncQueueManager] Max retries (${this.maxRetries}) exceeded for item ${item.id}`);
-      await this.dequeue(item.id);
+      const nextRetry = item.retryCount + 1;
+      if (nextRetry >= this.maxRetries) {
+        console.warn(
+          `[SyncQueueManager] Max retries (${this.maxRetries}) exceeded for item ${item.id}`,
+        );
+        await this.dequeue(item.id);
+        return false;
+      }
+
+      item.retryCount = nextRetry;
+      await this.updateItem(item);
       return false;
+    };
+
+    if (isCheckIn && venueId) {
+      return seatSyncCoordinator.runWithSeatLock(venueId, seatId, performSync);
     }
 
-    item.retryCount = nextRetry;
-    await this.updateItem(item);
-    return false;
+    return performSync();
   }
 
   /**
@@ -343,8 +448,11 @@ export class SyncQueueManager {
     if (SyncQueueManager.instance) {
       SyncQueueManager.instance.inMemoryQueue.clear();
       SyncQueueManager.instance.handlers.clear();
+      SyncQueueManager.instance.usingInMemoryFallback = false;
+      SyncQueueManager.instance.warningToastShown = false;
       SyncQueueManager.instance = null;
     }
+    SeatSyncCoordinator.resetInstance();
   }
 }
 

@@ -4,6 +4,12 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { CanvasTexture, DoubleSide, Group, SRGBColorSpace } from "three";
 import type { PassportStamp } from "@/lib/zkp/nomadProof";
 import styles from "./NomadPassportCoin.module.css";
+import { NomadPassportVerificationBadge } from "./NomadPassportVerificationBadge";
+
+export { NomadPassportVerificationBadge };
+export type {
+  NomadPassportVerificationBadgeProps,
+} from "./NomadPassportVerificationBadge";
 
 export interface NomadPassportCoinProps {
   stamp?: PassportStamp;
@@ -381,6 +387,7 @@ export function NomadPassportCoin({
   isLoaded,
   className = "",
   onReady,
+  isVerified,
 }: NomadPassportCoinProps) {
   const [webglSupported, setWebglSupported] = useState(false);
   const [internalLoaded, setInternalLoaded] = useState(false);
@@ -452,6 +459,11 @@ export function NomadPassportCoin({
       {/* Animated CSS shimmer pulse skeleton component */}
       {isCoinLoading && (
         <NomadPassportCoinSkeleton className="absolute inset-0 z-10" />
+      )}
+      {isVerified === true && (
+        <div className="absolute right-2 top-2 z-20">
+          <NomadPassportVerificationBadge verified={true} />
+        </div>
       )}
 
       {/* Interactive 3D Canvas / Fallback coin element */}

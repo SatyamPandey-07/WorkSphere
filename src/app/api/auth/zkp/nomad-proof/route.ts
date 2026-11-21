@@ -6,10 +6,17 @@ import {
   verifyAndMintNomadPassportStamp,
   type NomadActivityCounters,
 } from "@/lib/zkp/nomadProofVerification";
+import {
+  NOMAD_BADGE_POLICIES,
+  type ClaimableNomadBadgeType,
+} from "@/lib/zkp/nomadProof";
 import { invalidateXpLeaderboard } from "@/lib/leaderboards/xpLeaderboard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const NOMAD_VERIFICATION_BADGE_TYPES: ClaimableNomadBadgeType[] =
+  Object.values(NOMAD_BADGE_POLICIES).map((policy) => policy.badgeType);
 
 type RequestBody = {
   action?: unknown;
@@ -17,6 +24,58 @@ type RequestBody = {
   proof?: unknown;
   publicSignals?: unknown;
 };
+
+export async function GET() {
+  try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, verified: false, error: "Unauthorized" },
+        {
+          status: 401,
+          headers: { "Cache-Control": "private, no-store, max-age=0" },
+        },
+      );
+    }
+
+    const badges = await prisma.userBadge.findMany({
+      where: {
+        userId,
+        badgeType: {
+          in: NOMAD_VERIFICATION_BADGE_TYPES,
+        },
+      },
+      select: {
+        badgeType: true,
+      },
+      take: 1,
+    });
+
+    return NextResponse.json(
+      {
+        success: true,
+        verified: badges.length > 0,
+      },
+      {
+        headers: { "Cache-Control": "private, no-store, max-age=0" },
+      },
+    );
+  } catch (error) {
+    console.error("[GET /api/auth/zkp/nomad-proof] Error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        verified: false,
+        error: "Unable to read verification status.",
+      },
+      {
+        status: 500,
+        headers: { "Cache-Control": "private, no-store, max-age=0" },
+      },
+    );
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {

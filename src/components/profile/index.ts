@@ -22,3 +22,7 @@ export {
   NomadPassportCoinSkeleton,
 } from "./NomadPassportCoin";
 export type { NomadPassportCoinProps } from "./NomadPassportCoin";
+export {
+  NomadPassportVerificationBadge,
+  type NomadPassportVerificationBadgeProps,
+} from "./NomadPassportVerificationBadge";

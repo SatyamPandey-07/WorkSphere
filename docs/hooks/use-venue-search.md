@@ -1,6 +1,6 @@
 # `useVenueSearch`: Query Debouncing, Cancellation Tokens & Cache Invalidation
 
-This document details the architecture, configuration parameters, asynchronous lifecycle, network cancellation mechanics, and error handling of the **`useVenueSearch`** React hook ([`src/hooks/useVenueSearch.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useVenueSearch.ts)).
+This document details the architecture, configuration parameters, asynchronous lifecycle, network cancellation mechanics, and error handling of the **`useVenueSearch`** React hook ([`src/hooks/useVenueSearch.ts`](../../src/hooks/useVenueSearch.ts)).
 
 ---
 
@@ -62,7 +62,7 @@ function useVenueSearch<T = VenueSearchResult>(
 
 ### 2.3 Query Filters & URL Query Parameters
 
-When building venue search bars and filter drawers (such as [`VenueSearchDrawer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venues/VenueSearchDrawer.tsx)), queries append query parameters to the endpoint:
+When building venue search bars and filter drawers (such as [`VenueSearchDrawer.tsx`](../../src/components/venues/VenueSearchDrawer.tsx)), queries append query parameters to the endpoint:
 
 | Parameter Key | Type | Example | Description |
 | :--- | :--- | :---: | :--- |

@@ -5,6 +5,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 ## OpenAPI specifications
 
 - [Anonymous ZKP check-in](./zkp-checkin.openapi.yaml) — Groth16 proof payloads, public signals, nullifier replay protection, and check-in responses.
+- [Student Discount ZKP Verification](../zkp/STUDENT_DISCOUNT_ZKP_VERIFICATION.md) — end-to-end zero-knowledge proof generation, verification API, circuit architecture, and double-claim prevention.
 - [Venue amenity voting](./amenity-votes.openapi.yaml) — amenity metrics and vote submission contracts.
 
 ## Guides

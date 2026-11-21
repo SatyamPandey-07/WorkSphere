@@ -1,5 +1,7 @@
 "use client";
 
+ feat/nomad-passport-svg-credential
+
  feat/accessible-acoustic-tiers
 
  feat/fuzzy-venue-category-suggestions
@@ -17,6 +19,7 @@
  fix/rolling-noise-window-normalization
 
  fix/vector-clock-atomic-tick
+ main
  main
  main
  main
@@ -106,6 +109,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/nomad-passport-svg-credential
+}
+
  feat/accessible-acoustic-tiers
 }
 
@@ -288,6 +294,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

@@ -338,4 +338,38 @@ describe("BookingList Component", () => {
     fireEvent.click(screen.getByTestId("close-reschedule-btn"));
     expect(screen.queryByTestId("mock-reschedule-modal")).not.toBeInTheDocument();
   });
+
+  it("uses loading-aware receipt buttons in the upcoming and history lists (#7611)", async () => {
+    const originalFetch = global.fetch;
+    let resolveFetch!: (value: unknown) => void;
+    global.fetch = jest.fn(
+      () => new Promise((resolve) => (resolveFetch = resolve)),
+    ) as unknown as typeof fetch;
+
+    render(
+      <BookingList initialBookings={[mockUpcomingBooking, mockPastBooking]} />,
+    );
+
+    const receiptButtons = screen.getAllByRole("button", {
+      name: "Download receipt",
+    });
+    expect(receiptButtons).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: "Download receipt" })).toBeNull();
+
+    const upcomingReceipt = screen.getByTestId("booking-receipt-link-booking-1");
+    await act(async () => {
+      fireEvent.click(upcomingReceipt);
+    });
+
+    expect(upcomingReceipt).toBeDisabled();
+    expect(upcomingReceipt).toHaveAttribute("aria-busy", "true");
+    expect(global.fetch).toHaveBeenCalledWith("/api/bookings/booking-1/download");
+
+    await act(async () => {
+      resolveFetch({ ok: false, status: 500 });
+    });
+    expect(upcomingReceipt).toBeEnabled();
+
+    global.fetch = originalFetch;
+  });
 });

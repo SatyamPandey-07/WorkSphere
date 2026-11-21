@@ -1,6 +1,6 @@
 # DeskCollisionGrid: 2D Spatial Hashing Grid & Broadphase AABB Bounding Boxes
 
-This document outlines the architectural design, algorithmic theory, and mathematical foundations of **DeskCollisionGrid** ([`src/core/webgl/DeskCollisionGrid.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/webgl/DeskCollisionGrid.ts)). The spatial hashing grid is responsible for real-time broadphase collision detection, fast range queries, and ray-cast selection across dynamic 2D and 3D floorplans containing upwards of 10,000+ interactive desks and avatars in WorkSphere.
+This document outlines the architectural design, algorithmic theory, and mathematical foundations of **DeskCollisionGrid** ([`src/core/webgl/DeskCollisionGrid.ts`](../../src/core/webgl/DeskCollisionGrid.ts)). The spatial hashing grid is responsible for real-time broadphase collision detection, fast range queries, and ray-cast selection across dynamic 2D and 3D floorplans containing upwards of 10,000+ interactive desks and avatars in WorkSphere.
 
 ---
 
@@ -44,7 +44,7 @@ Given continuous world coordinates $(x, y)$ and a grid cell dimension $s$ (defau
 
 $$c_x = \left\lfloor \frac{x}{s} \right\rfloor, \quad c_y = \left\lfloor \frac{y}{s} \right\rfloor$$
 
-In [`DeskCollisionGrid.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/webgl/DeskCollisionGrid.ts), the hash key is encoded as:
+In [`DeskCollisionGrid.ts`](../../src/core/webgl/DeskCollisionGrid.ts), the hash key is encoded as:
 
 ```typescript
 private getCellKey(x: number, y: number): string {

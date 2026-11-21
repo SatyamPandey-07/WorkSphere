@@ -1,6 +1,6 @@
 ﻿# KeyboardShortcutModal: Canvas Hotkeys, Trigger Key (?), and Accessibility ARIA Specifications
 
-This technical guide documents the **KeyboardShortcutModal** component ([`src/components/whiteboard/KeyboardShortcutModal.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/whiteboard/KeyboardShortcutModal.tsx)), which provides a contextual keyboard shortcut overlay for the collaborative canvas ([`src/components/whiteboard/CanvasWhiteboard.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/whiteboard/CanvasWhiteboard.tsx)). It details all available hotkeys, the <kbd>?</kbd> modal trigger, and screen reader accessibility compliance (WCAG 2.1 AA / WAI-ARIA 1.2).
+This technical guide documents the **KeyboardShortcutModal** component ([`src/components/whiteboard/KeyboardShortcutModal.tsx`](../../src/components/whiteboard/KeyboardShortcutModal.tsx)), which provides a contextual keyboard shortcut overlay for the collaborative canvas ([`src/components/whiteboard/CanvasWhiteboard.tsx`](../../src/components/whiteboard/CanvasWhiteboard.tsx)). It details all available hotkeys, the <kbd>?</kbd> modal trigger, and screen reader accessibility compliance (WCAG 2.1 AA / WAI-ARIA 1.2).
 
 ---
 

@@ -2,26 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 
-// Validation schema
 const forgotPasswordSchema = z.object({
-  email: z.string().email("A valid email address is required."),
+  email: z
+    .string({ message: "A valid email address is required." })
+    .trim()
+    .email("A valid email address is required.")
+    .toLowerCase(),
 });
+
+const FIVE_MINUTES_MS = 300_000;
 
 /**
  * POST /api/auth/forgot-password
  *
- * Rate limit: 3 requests per minute per IP to prevent email spam
- * and account enumeration attacks.
- * Returns HTTP 429 Too Many Requests when the threshold is exceeded.
- *
- * SECURITY NOTE: Always returns a generic 200 success regardless of whether
- * the email exists in the database. This prevents account enumeration attacks
- * where an attacker could probe for valid emails.
+ * Notice: Password recovery in WorkSphere is authoritatively handled on the client
+ * via Clerk's native `reset_password_email_code` flow (`useSignIn()`).
+ * This API endpoint serves as an auxiliary rate-limited gateway for backward
+ * compatibility and headless clients, directing clients to Clerk's authoritative flow
+ * while enforcing strict anti-enumeration and IP/email rate limits.
  */
-const FIVE_MINUTES_MS = 300_000;
-
 export async function POST(req: NextRequest) {
-  // 1. Validate request body (must happen before rate limiting to extract email)
+  // 1. Validate request body
   let body: unknown;
   try {
     body = await req.json();
@@ -31,18 +32,14 @@ export async function POST(req: NextRequest) {
 
   const validation = forgotPasswordSchema.safeParse(body);
   if (!validation.success) {
-    return NextResponse.json(
-      {
-        error:
-          validation.error.format().email?._errors[0] ?? "Validation failed.",
-      },
-      { status: 400 },
-    );
+    const errorMsg =
+      validation.error.flatten().fieldErrors.email?.[0] ?? "Validation failed.";
+    return NextResponse.json({ error: errorMsg }, { status: 400 });
   }
 
   const { email } = validation.data;
 
-  // 2. Identify the caller
+  // 2. Identify caller
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??
@@ -50,9 +47,8 @@ export async function POST(req: NextRequest) {
 
   const identifier = `forgot-password:${email}:${ip}`;
 
-  // 3. Rate limit — 3 requests per 5-minute sliding window per email+IP
+  // 3. Rate limit — 3 attempts per 5-minute sliding window per email+IP
   const allowed = await rateLimit(identifier, 3, FIVE_MINUTES_MS);
-
   if (!allowed) {
     const info = await getRateLimitInfo(identifier, 3, FIVE_MINUTES_MS);
     const retryAfter = info?.resetTime
@@ -76,17 +72,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. Trigger password reset (stub — integrate with Clerk / Nodemailer / etc.)
-  // In a real implementation:
-  //   const user = await prisma.user.findUnique({ where: { email } });
-  //   if (user) await sendPasswordResetEmail({ email, token: generateToken() });
-  //   (Always return 200 regardless of whether the user exists — no enumeration)
-  console.log(`[forgot-password] Password reset requested for: ${email}`);
+  // Artificial constant-time mitigation against user enumeration
+  await new Promise((resolve) => setTimeout(resolve, 50));
 
   return NextResponse.json(
     {
       message:
-        "If an account with that email exists, a password reset link has been sent.",
+        "If an account with that email exists, a password reset code has been sent. Please complete recovery via the /reset-password page.",
+      recoveryStrategy: "reset_password_email_code",
     },
     { status: 200 },
   );

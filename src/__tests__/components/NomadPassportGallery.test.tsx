@@ -7,6 +7,11 @@ jest.mock("canvas-confetti", () => ({
   default: jest.fn(),
 }));
 
+// Mock nomadProofClient for JSDOM test environment
+jest.mock("@/lib/zkp/nomadProofClient", () => ({
+  generateClientNomadProof: jest.fn(),
+}));
+
 // Mock Three.js / React Three Fiber coin subcomponent
 jest.mock("@/components/profile/NomadPassportCoin", () => ({
   __esModule: true,
@@ -122,6 +127,58 @@ describe("NomadPassportGallery Component & playPoapMintChime", () => {
 
       expect(screen.getByTestId("stamp-preview-modal")).toBeInTheDocument();
       expect(screen.getByText(/Passport Stamp Preview/i)).toBeInTheDocument();
+    });
+
+    describe("Stamp Preview Modal Scrolling & Accessibility (Issue #9160)", () => {
+      it("establishes a single scroll container with overflow-y-auto, overflow-x-hidden, and max-h-[90vh]", () => {
+        render(<NomadPassportGallery />);
+
+        const previewBtns = screen.getAllByRole("button", { name: /Preview/i });
+        fireEvent.click(previewBtns[0]);
+
+        const outerDialog = screen.getByTestId("stamp-preview-modal");
+        expect(outerDialog).toBeInTheDocument();
+        expect(outerDialog).toHaveClass("overflow-hidden");
+        expect(outerDialog).not.toHaveClass("overflow-y-auto");
+
+        const innerContent = outerDialog.firstElementChild as HTMLElement;
+        expect(innerContent).toBeInTheDocument();
+        expect(innerContent).toHaveClass("overflow-y-auto");
+        expect(innerContent).toHaveClass("overflow-x-hidden");
+        expect(innerContent).toHaveClass("max-h-[90vh]");
+      });
+
+      it("closes modal on Escape key press", () => {
+        render(<NomadPassportGallery />);
+
+        const previewBtns = screen.getAllByRole("button", { name: /Preview/i });
+        fireEvent.click(previewBtns[0]);
+
+        expect(screen.getByTestId("stamp-preview-modal")).toBeInTheDocument();
+
+        fireEvent.keyDown(window, { key: "Escape" });
+
+        expect(screen.queryByTestId("stamp-preview-modal")).not.toBeInTheDocument();
+      });
+
+      it("closes modal on backdrop click and close button click", () => {
+        render(<NomadPassportGallery />);
+
+        const previewBtns = screen.getAllByRole("button", { name: /Preview/i });
+        fireEvent.click(previewBtns[0]);
+
+        const closeBtn = screen.getByRole("button", { name: /close modal/i });
+        fireEvent.click(closeBtn);
+
+        expect(screen.queryByTestId("stamp-preview-modal")).not.toBeInTheDocument();
+
+        // Reopen and test backdrop click
+        fireEvent.click(previewBtns[0]);
+        const backdrop = screen.getByTestId("stamp-preview-modal");
+        fireEvent.click(backdrop);
+
+        expect(screen.queryByTestId("stamp-preview-modal")).not.toBeInTheDocument();
+      });
     });
   });
 });

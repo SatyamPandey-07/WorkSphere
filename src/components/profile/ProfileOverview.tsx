@@ -2,8 +2,16 @@
 
 import React from "react";
 import { WingmanBadge, calculateFlightRank } from "./WingmanBadge";
-import { MapPin, Calendar, Clock, Award, Users } from "lucide-react";
+import {
+  MapPin,
+  Calendar,
+  Clock,
+  Award,
+  Users,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { CommuteTrip } from "@/lib/sustainability/carbonCalculator";
+import { NomadStatsCard } from "./NomadStatsCard";
 
 export interface ProfileOverviewProps {
   user?: {
@@ -18,6 +26,8 @@ export interface ProfileOverviewProps {
     sharedSessionsCount?: number;
     visitedVenuesCount?: number;
     checkInStreakDays?: number;
+    commuteTrips?: CommuteTrip[];
+    carbonOffsetGoalKgCo2?: number;
   } | null;
   className?: string;
 }
@@ -35,6 +45,8 @@ const DEFAULT_STATS = {
   sharedSessionsCount: 14,
   visitedVenuesCount: 12,
   checkInStreakDays: 8,
+  commuteTrips: [] as CommuteTrip[],
+  carbonOffsetGoalKgCo2: 100,
 };
 
 export function ProfileOverview({
@@ -193,6 +205,11 @@ export function ProfileOverview({
           </p>
         </div>
       </div>
+
+      <NomadStatsCard
+        trips={safeStats.commuteTrips ?? []}
+        goalKgCo2={safeStats.carbonOffsetGoalKgCo2}
+      />
     </div>
   );
 }

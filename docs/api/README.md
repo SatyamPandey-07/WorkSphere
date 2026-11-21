@@ -16,6 +16,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Reservation Availability SSE](./RESERVATION_EVENTS_SSE.md) — reservation stream endpoint, event names and payloads, heartbeat, client reconnection, and cleanup.
 - [Seat Hold Lease Extension](./SEAT_HOLD_LEASE_EXTENSION.md) — authenticated seat-lock extension, lease constraints, fencing-token validation, and error responses.
 - [Bookings](./bookings.md)
+- [Booking calendar export](./BOOKING_CALENDAR_EXPORT.md) — RFC 5545 ICS download, Google and Outlook web links, alarm offsets, ownership verification, and error responses.
 - [Cafe orders](./cafe-orders.md)
 - [Meet Halfway Routing](./MEET_HALFWAY_ROUTING.md) — request/response contract, optimization behavior, commute estimates, and capacity fallback semantics.
 - [Message translation](./message-translation.md)

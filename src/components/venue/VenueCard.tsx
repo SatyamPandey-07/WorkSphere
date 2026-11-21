@@ -1,5 +1,7 @@
 "use client";
 
+ feat/search-shortcut-badge
+
  feat/recurring-booking-slot-validator
 
  feat/gossipsub-ip-colocation-scoring
@@ -9,6 +11,7 @@
  fix/rolling-noise-window-normalization
 
  fix/vector-clock-atomic-tick
+ main
  main
  main
  main
@@ -94,6 +97,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/search-shortcut-badge
+}
+
  feat/recurring-booking-slot-validator
 }
  feat/gossipsub-ip-colocation-scoring
@@ -264,6 +270,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

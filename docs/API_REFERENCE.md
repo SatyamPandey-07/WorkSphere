@@ -114,14 +114,15 @@ Accept: application/json
 
 # Bookings
 
-| Endpoint                                 | Description                                        |
-| ---------------------------------------- | -------------------------------------------------- |
-| `POST /api/bookings/confirm`             | Confirm a booking.                                 |
-| `GET /api/bookings/history`              | Retrieve the authenticated user's booking history. |
-| `GET /api/bookings/export`               | Export booking information.                        |
-| `GET /api/bookings/{bookingId}`          | Retrieve booking details.                          |
-| `GET /api/bookings/{bookingId}/download` | Download a booking receipt or confirmation.        |
-| `GET /api/bookings/{bookingId}/guests`   | Retrieve guest information for a booking.          |
+| Endpoint                                     | Description                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| `POST /api/bookings/confirm`                 | Confirm a booking.                                                            |
+| `GET /api/bookings/history`                  | Retrieve the authenticated user's booking history.                            |
+| `GET /api/bookings/export`                   | Export booking information.                                                   |
+| `GET /api/bookings/{bookingId}`              | Retrieve booking details.                                                     |
+| `GET /api/bookings/{bookingId}/download`     | Download a booking receipt or confirmation.                                   |
+| `GET /api/bookings/{bookingId}/guests`       | Retrieve guest information for a booking.                                     |
+| `GET /api/bookings/{bookingId}/calendar.ics` | Export an RFC 5545 iCalendar (.ics) file or calendar web links for a booking. |
 
 ---
 

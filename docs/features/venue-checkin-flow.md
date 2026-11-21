@@ -9,10 +9,10 @@ The venue check-in subsystem verifies physical attendance of remote workers, fre
 3. **Daily Habit Gamification & Streak Rewards:** Rewards users who work consistently from partner spaces with consecutive day activity streaks, milestone badges (5, 10, 30 days), and loyalty discounts.
 
 The check-in subsystem is implemented across:
-- **Interactive UI Modal:** [`src/components/CheckInModal.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/CheckInModal.tsx)
-- **Geolocation Proximity Hooks:** [`src/hooks/useGeoProximityCheckIn.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useGeoProximityCheckIn.ts) and [`src/hooks/useArrivalDetection.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useArrivalDetection.ts)
-- **Domain & Streak Engine:** [`src/lib/checkIn.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/checkIn.ts) and [`src/lib/streak.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/streak.ts)
-- **HTTP Backend Endpoints:** [`src/app/api/venues/[venueId]/check-in/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/venues/[venueId]/check-in/route.ts)
+- **Interactive UI Modal:** [`src/components/CheckInModal.tsx`](../../src/components/CheckInModal.tsx)
+- **Geolocation Proximity Hooks:** [`src/hooks/useGeoProximityCheckIn.ts`](../../src/hooks/useGeoProximityCheckIn.ts) and [`src/hooks/useArrivalDetection.ts`](../../src/hooks/useArrivalDetection.ts)
+- **Domain & Streak Engine:** [`src/lib/checkIn.ts`](../../src/lib/checkIn.ts) and [`src/lib/streak.ts`](../../src/lib/streak.ts)
+- **HTTP Backend Endpoints:** [`src/app/api/venues/[venueId]/check-in/route.ts`](../../src/app/api/venues/[venueId]/check-in/route.ts)
 
 ```mermaid
 flowchart TD
@@ -59,7 +59,7 @@ Users standing further than 50 meters cannot trigger automated or geofenced arri
 
 ### 2.2 Geodesic Distance Calculation: Haversine with Altitude
 
-In [`src/hooks/useArrivalDetection.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useArrivalDetection.ts), the distance between the device's WGS84 coordinates and the venue's registered coordinates is computed using the spherical Haversine formula, augmented by 3D vertical displacement when barometric altitude is available:
+In [`src/hooks/useArrivalDetection.ts`](../../src/hooks/useArrivalDetection.ts), the distance between the device's WGS84 coordinates and the venue's registered coordinates is computed using the spherical Haversine formula, augmented by 3D vertical displacement when barometric altitude is available:
 
 ```typescript
 export function getDistanceInMeters(
@@ -103,7 +103,7 @@ export function getDistanceInMeters(
 
 ### 2.3 Continuous Positioning & Low-Battery Optimization
 
-The geolocation watch in [`src/hooks/useGeoProximityCheckIn.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useGeoProximityCheckIn.ts) and [`src/hooks/useArrivalDetection.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useArrivalDetection.ts):
+The geolocation watch in [`src/hooks/useGeoProximityCheckIn.ts`](../../src/hooks/useGeoProximityCheckIn.ts) and [`src/hooks/useArrivalDetection.ts`](../../src/hooks/useArrivalDetection.ts):
 
 1. **High-Accuracy Sensor Activation:** Configures `enableHighAccuracy: true` to trigger GPS/GLONASS receivers rather than coarse IP/cellular triangulation.
 2. **Time Window Gating:** Geolocation polling only activates during the active reservation eligibility window (from 45 minutes prior to booking start time until the reservation ends), preventing unnecessary background battery drain.
@@ -114,7 +114,7 @@ The geolocation watch in [`src/hooks/useGeoProximityCheckIn.ts`](file:///c:/User
 
 ## 3. QR Code Scan Check-In & Access Pass Validation
 
-For venues located in underground basements, Faraday-shielded conference rooms, or multi-story towers where GPS signals degrade, WorkSphere provides physical QR code verification through [`src/components/CheckInModal.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/CheckInModal.tsx).
+For venues located in underground basements, Faraday-shielded conference rooms, or multi-story towers where GPS signals degrade, WorkSphere provides physical QR code verification through [`src/components/CheckInModal.tsx`](../../src/components/CheckInModal.tsx).
 
 ### 3.1 QR Code Scan Workflow
 
@@ -160,7 +160,7 @@ Users can simultaneously attach discount or promotional vouchers (e.g. `WORK50` 
 
 ## 4. User Streak Reward Calculation & Badge Triggers
 
-Consistency is rewarded through a daily activity streak engine isolated in [`src/lib/streak.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/streak.ts) and executed inside an atomic PostgreSQL transaction in [`src/lib/checkIn.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/checkIn.ts).
+Consistency is rewarded through a daily activity streak engine isolated in [`src/lib/streak.ts`](../../src/lib/streak.ts) and executed inside an atomic PostgreSQL transaction in [`src/lib/checkIn.ts`](../../src/lib/checkIn.ts).
 
 ### 4.1 Timezone-Aware Calendar Arithmetic
 
@@ -304,6 +304,6 @@ export interface CheckInModalProps {
 ## 7. Testing & Verification Guide
 
 Automated unit tests are maintained in:
-- [`src/__tests__/components/CheckInModal.test.tsx`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/components/CheckInModal.test.tsx): Tests whitespace trimming, uppercase conversion, and error feedback.
-- [`src/__tests__/lib/venueBookingCheckinProcess.test.ts`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/lib/venueBookingCheckinProcess.test.ts): Tests proximity verification and API integration.
+- [`src/__tests__/components/CheckInModal.test.tsx`](../../src/__tests__/components/CheckInModal.test.tsx): Tests whitespace trimming, uppercase conversion, and error feedback.
+- [`src/__tests__/lib/venueBookingCheckinProcess.test.ts`](../../src/__tests__/lib/venueBookingCheckinProcess.test.ts): Tests proximity verification and API integration.
 - `src/__tests__/lib/streak.test.ts`: Tests consecutive day streak calculations, timezone boundaries, and milestone badge triggers.

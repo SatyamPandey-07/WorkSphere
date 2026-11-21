@@ -235,10 +235,19 @@ describe("WebXRDeskFinderView Surface Hit-Testing & Tabletop Anchoring (#5814)",
         fireEvent.click(enterXRBtn);
       });
 
-      // Verify WebXR session requested with 'hit-test' in requiredFeatures
+      // Verify WebXR session requested with 'hit-test' and optional 'depth-sensing'
       expect(mockRequestSession).toHaveBeenCalledWith("immersive-ar", {
         requiredFeatures: ["hit-test"],
-        optionalFeatures: ["local-floor", "anchors", "dom-overlay"],
+        optionalFeatures: [
+          "local-floor",
+          "anchors",
+          "dom-overlay",
+          "depth-sensing",
+        ],
+        depthSensing: {
+          usagePreference: ["cpu-optimized"],
+          dataFormatPreference: ["float32", "luminance-alpha"],
+        },
       });
 
       // Verify hit-test source request

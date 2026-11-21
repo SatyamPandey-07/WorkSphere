@@ -48,10 +48,10 @@ To guarantee deterministic, coordination-free consistency across edge clients an
 
 The CRDT infrastructure is structured in `src/core/crdt/` and integrated into edge real-time workers in `src/party/`:
 
-1. **[`CrdtVectorClock`](file:///c:/Users/admin/Desktop/workfere/src/core/crdt/CrdtVectorClock.ts)**: Tracks logical causal history per node, compares event ordering (`before`, `after`, or `concurrent`), and merges causal frontiers.
-2. **[`CrdtDocument`](file:///c:/Users/admin/Desktop/workfere/src/core/crdt/CrdtDocument.ts)**: Encapsulates the state tree (`CrdtState`), applies local canvas operations, evaluates incoming remote operations, and merges elements deterministically.
-3. **[`WhiteboardRoom`](file:///c:/Users/admin/Desktop/workfere/src/party/whiteboard.room.ts)**: PartyKit WebSocket server handling client connection lifecycles, broadcasting delta operations, and serializing converged state.
-4. **[`api/whiteboard`](file:///c:/Users/admin/Desktop/workfere/src/app/api/whiteboard/route.ts)**: Next.js serverless route for persisting converged CRDT snapshots to the relational store.
+1. **[`CrdtVectorClock`](../../src/core/crdt/CrdtVectorClock.ts)**: Tracks logical causal history per node, compares event ordering (`before`, `after`, or `concurrent`), and merges causal frontiers.
+2. **[`CrdtDocument`](../../src/core/crdt/CrdtDocument.ts)**: Encapsulates the state tree (`CrdtState`), applies local canvas operations, evaluates incoming remote operations, and merges elements deterministically.
+3. **[`WhiteboardRoom`](../../src/party/whiteboard.room.ts)**: PartyKit WebSocket server handling client connection lifecycles, broadcasting delta operations, and serializing converged state.
+4. **[`api/whiteboard`](../../src/app/api/whiteboard/route.ts)**: Next.js serverless route for persisting converged CRDT snapshots to the relational store.
 
 ---
 
@@ -539,7 +539,7 @@ console.log(stateB.elements['note-101'].payload);
 
 | Subsystem File | Responsibility | Primary Methods | Concurrency Guarantees |
 | :--- | :--- | :--- | :--- |
-| [`src/core/crdt/CrdtVectorClock.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/crdt/CrdtVectorClock.ts) | Causal tracking & comparison | `increment`, `compare`, `merge`, `serialize`, `deserialize` | Monotonic progress; accurate causal precedence detection |
-| [`src/core/crdt/CrdtDocument.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/crdt/CrdtDocument.ts) | State tree & register resolution | `applyLocalOperation`, `mergeRemoteOperation`, `getState`, `getElements` | Join-semilattice convergence; deterministic node tie-breaking |
-| [`src/party/whiteboard.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/whiteboard.room.ts) | Edge WebSocket broker | `onConnect`, `onMessage`, `onSave` | Low-latency broadcast; resilient disconnections |
-| [`src/app/api/whiteboard/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/whiteboard/route.ts) | Snapshot persistence | `POST`, `GET` | Atomic storage sync; snapshot durability |
+| [`src/core/crdt/CrdtVectorClock.ts`](../../src/core/crdt/CrdtVectorClock.ts) | Causal tracking & comparison | `increment`, `compare`, `merge`, `serialize`, `deserialize` | Monotonic progress; accurate causal precedence detection |
+| [`src/core/crdt/CrdtDocument.ts`](../../src/core/crdt/CrdtDocument.ts) | State tree & register resolution | `applyLocalOperation`, `mergeRemoteOperation`, `getState`, `getElements` | Join-semilattice convergence; deterministic node tie-breaking |
+| [`src/party/whiteboard.room.ts`](../../src/party/whiteboard.room.ts) | Edge WebSocket broker | `onConnect`, `onMessage`, `onSave` | Low-latency broadcast; resilient disconnections |
+| [`src/app/api/whiteboard/route.ts`](../../src/app/api/whiteboard/route.ts) | Snapshot persistence | `POST`, `GET` | Atomic storage sync; snapshot durability |

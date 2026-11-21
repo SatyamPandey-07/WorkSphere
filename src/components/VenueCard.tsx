@@ -849,7 +849,7 @@ export function VenueCard({
                 ? `Remove ${venue.name} from favorites`
                 : `Add ${venue.name} to favorites`
             }
-            className={`p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${ACTION_FOCUS_RING} ${
+            className={`venue-action-glass-btn p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:backdrop-blur-md ${ACTION_FOCUS_RING} ${
               enableTransition ? "transition-colors duration-300" : ""
             } ${
               isFavorited
@@ -1838,7 +1838,7 @@ export function VenueCard({
           <button
             onClick={() => onGetDirections?.(venue)}
             aria-label={`Directions to ${venue.name}`}
-            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors ${ACTION_FOCUS_RING}`}
+            className={`venue-action-glass-btn flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors hover:backdrop-blur-md ${ACTION_FOCUS_RING}`}
           >
             <Navigation className="w-4 h-4 shrink-0" aria-hidden="true" />
             Directions
@@ -1846,7 +1846,7 @@ export function VenueCard({
           <button
             onClick={() => onRate?.(venue)}
             aria-label={`Rate ${venue.name}`}
-            className={`flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors ${ACTION_FOCUS_RING}`}
+            className={`venue-action-glass-btn flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors hover:backdrop-blur-md ${ACTION_FOCUS_RING}`}
           >
             <MessageSquare className="w-4 h-4 shrink-0" aria-hidden="true" />
             Rate
@@ -1855,7 +1855,7 @@ export function VenueCard({
             <button
               onClick={() => setShowFolderModal(true)}
               aria-label={`Add ${venue.name} to a collection`}
-              className={`flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors ${ACTION_FOCUS_RING}`}
+              className={`venue-action-glass-btn flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors hover:backdrop-blur-md ${ACTION_FOCUS_RING}`}
               title="Add to Collection"
             >
               <FolderPlus className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -1867,7 +1867,7 @@ export function VenueCard({
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Visit the website of ${venue.name} (opens in a new tab)`}
-              className={`flex items-center justify-center px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors ${ACTION_FOCUS_RING}`}
+              className={`venue-action-glass-btn flex items-center justify-center px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors hover:backdrop-blur-md ${ACTION_FOCUS_RING}`}
             >
               <ExternalLink className="w-4 h-4 shrink-0" aria-hidden="true" />
             </a>
@@ -1876,6 +1876,7 @@ export function VenueCard({
             <VenueShareButton
               venueId={enrichData.venueId}
               venueName={venue.name}
+              className="venue-action-glass-btn hover:backdrop-blur-md"
             />
           )}
 

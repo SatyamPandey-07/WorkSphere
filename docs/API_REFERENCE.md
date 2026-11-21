@@ -24,24 +24,25 @@ This document provides a high-level reference for the REST API endpoints availab
 
 # Venues
 
-| Endpoint                                           | Description                                                               |
-| -------------------------------------------------- | ------------------------------------------------------------------------- |
-| `GET /api/venues`                                  | Retrieve available venues.                                                |
-| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox).|
-| `POST /api/venues`                                 | Create or submit a venue.                                                 |
-| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                   |
-| `GET /api/venues/updates`                          | Subscribe to venue updates.                                               |
-| `POST /api/venues/updates`                         | Broadcast a venue update.                                                 |
-| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                    |
-| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                   |
-| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                          |
-| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                    |
-| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                             |
-| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                          |
-| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                           |
-| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                               |
-| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                 |
-| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                         |
+| Endpoint                                              | Description                                                                 |
+| ----------------------------------------------------- | --------------------------------------------------------------------------- |
+| `GET /api/venues`                                     | Retrieve available venues.                                                  |
+| `GET /api/venues/search`                              | Search venues with filters (noise level, amenities, speed, distance, bbox). |
+| `POST /api/venues`                                    | Create or submit a venue.                                                   |
+| `POST /api/venues/amenity-vote`                       | Submit an amenity vote.                                                     |
+| `GET /api/venues/{venueId}/amenity-votes/leaderboard` | Retrieve the venue's contributor leaderboard and amenity rankings.          |
+| `GET /api/venues/updates`                             | Subscribe to venue updates.                                                 |
+| `POST /api/venues/updates`                            | Broadcast a venue update.                                                   |
+| `POST /api/venues/{venueId}/rate`                     | Submit a venue rating.                                                      |
+| `GET /api/venues/{venueId}/reviews`                   | Retrieve venue reviews.                                                     |
+| `GET /api/venues/{venueId}/menu`                      | Retrieve venue menu information.                                            |
+| `GET /api/venues/{venueId}/photo`                     | Retrieve venue photos.                                                      |
+| `GET /api/venues/{venueId}/noise-metrics`             | Retrieve venue noise metrics.                                               |
+| `GET /api/venues/{venueId}/noise-metrics/forecast`    | Retrieve predicted noise levels.                                            |
+| `GET /api/venues/{venueId}/wifi-prediction`           | Retrieve Wi-Fi prediction data.                                             |
+| `GET /api/venues/{venueId}/seating-forecast`          | Retrieve seating forecasts.                                                 |
+| `GET /api/venues/{venueId}/telemetry`                 | Retrieve venue telemetry.                                                   |
+| `GET /api/venues/{venueId}/live-stream`               | Connect to the venue live stream.                                           |
 
 ### Endpoint Specification: `GET /api/venues/search`
 
@@ -49,19 +50,19 @@ Search and filter workspace venues based on location, acoustic noise metrics, Wi
 
 #### Query Parameters
 
-| Parameter | Type | Required | Default | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `query` / `q` | `string` | No | `""` | Text query string to search by venue name, address, or description. |
-| `lat` | `number` | No | `undefined` | Latitude coordinate for distance-based sorting and proximity searches. |
-| `lng` | `number` | No | `undefined` | Longitude coordinate for distance-based sorting and proximity searches. |
-| `distance` / `radius` | `number` | No | `5000` | Search radius in meters surrounding the `(lat, lng)` origin point. |
-| `bbox` | `string` | No | `undefined` | Bounding box coordinates formatted as `minLng,minLat,maxLng,maxLat`. |
-| `noiseLevel` | `string` | No | `undefined` | Filter by noise profile (`"quiet"`, `"moderate"`, `"lively"`). |
-| `wifiMinSpeed` | `number` | No | `0` | Minimum Wi-Fi download speed in Mbps requirement. |
-| `amenities` | `string` | No | `undefined` | Comma-separated list of required amenities (e.g. `wifi,outlets,ergonomic,phoneBooths`). |
-| `category` | `string` | No | `undefined` | Category filter (e.g. `COWORKING`, `CAFE`, `LIBRARY`). |
-| `page` | `number` | No | `1` | Pagination page index (minimum 1). |
-| `limit` | `number` | No | `50` | Maximum items per page (1 to 100). |
+| Parameter             | Type     | Required | Default     | Description                                                                             |
+| :-------------------- | :------- | :------- | :---------- | :-------------------------------------------------------------------------------------- |
+| `query` / `q`         | `string` | No       | `""`        | Text query string to search by venue name, address, or description.                     |
+| `lat`                 | `number` | No       | `undefined` | Latitude coordinate for distance-based sorting and proximity searches.                  |
+| `lng`                 | `number` | No       | `undefined` | Longitude coordinate for distance-based sorting and proximity searches.                 |
+| `distance` / `radius` | `number` | No       | `5000`      | Search radius in meters surrounding the `(lat, lng)` origin point.                      |
+| `bbox`                | `string` | No       | `undefined` | Bounding box coordinates formatted as `minLng,minLat,maxLng,maxLat`.                    |
+| `noiseLevel`          | `string` | No       | `undefined` | Filter by noise profile (`"quiet"`, `"moderate"`, `"lively"`).                          |
+| `wifiMinSpeed`        | `number` | No       | `0`         | Minimum Wi-Fi download speed in Mbps requirement.                                       |
+| `amenities`           | `string` | No       | `undefined` | Comma-separated list of required amenities (e.g. `wifi,outlets,ergonomic,phoneBooths`). |
+| `category`            | `string` | No       | `undefined` | Category filter (e.g. `COWORKING`, `CAFE`, `LIBRARY`).                                  |
+| `page`                | `number` | No       | `1`         | Pagination page index (minimum 1).                                                      |
+| `limit`               | `number` | No       | `50`        | Maximum items per page (1 to 100).                                                      |
 
 #### Example Request
 
@@ -103,12 +104,12 @@ Accept: application/json
 
 #### Standard HTTP Status Codes
 
-| Status Code | Reason | Description & Payload |
-| :--- | :--- | :--- |
-| `200 OK` | Success | Returns the list of matching venue records along with pagination details. |
-| `400 Bad Request` | Invalid Parameters | Returned when query parameters fail validation (e.g., malformed `bbox` or invalid coordinate range).<br/>`{ "error": "Invalid bounding box format. Expected minLng,minLat,maxLng,maxLat" }` |
-| `429 Too Many Requests` | Rate Limit Exceeded | Returned when client exceeds the 60 search requests/minute quota.<br/>`{ "error": "Too many search requests. Please slow down and try again.", "retryAfter": 60 }` |
-| `500 Internal Server Error` | Server Error | Internal server or database error processing the query.<br/>`{ "error": "An internal server error occurred while searching venues." }` |
+| Status Code                 | Reason              | Description & Payload                                                                                                                                                                       |
+| :-------------------------- | :------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `200 OK`                    | Success             | Returns the list of matching venue records along with pagination details.                                                                                                                   |
+| `400 Bad Request`           | Invalid Parameters  | Returned when query parameters fail validation (e.g., malformed `bbox` or invalid coordinate range).<br/>`{ "error": "Invalid bounding box format. Expected minLng,minLat,maxLng,maxLat" }` |
+| `429 Too Many Requests`     | Rate Limit Exceeded | Returned when client exceeds the 60 search requests/minute quota.<br/>`{ "error": "Too many search requests. Please slow down and try again.", "retryAfter": 60 }`                          |
+| `500 Internal Server Error` | Server Error        | Internal server or database error processing the query.<br/>`{ "error": "An internal server error occurred while searching venues." }`                                                      |
 
 ---
 
@@ -283,14 +284,14 @@ Rate limits are evaluated at the Next.js edge/middleware layer (`src/lib/middlew
 
 Limits vary depending on endpoint sensitivity, resource consumption, and client authentication status:
 
-| Tier / Category | Scope / Path Patterns | Target Identifier | Quota (Limit / Window) | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **Authentication** | `/api/auth/*`<br>`/api/partykit/auth`<br>`/api/user/verify-student` | Client IP (`X-Real-IP` / `CF-Connecting-IP`) | **5 requests / 1 minute** | High-security brute-force protection on password reset, OTP, WebAuthn, and SSO. |
-| **Search & Discovery** | `/api/venues/*`<br>`/api/map/*`<br>`/api/search/*`<br>`/api/location` | User ID (if authenticated) or Client IP | **60 requests / 1 minute** | Spatial geo-queries, full-text venue searches, and heatmap tile queries. |
-| **Bookings & Payments** | `/api/bookings/*`<br>`/api/reservations/*`<br>`/api/receipts/*` | Clerk User ID (`userId`) | **60 requests / 15 minutes** (Auth)<br>**10 requests / 15 minutes** (Anon) | Transactional reservation creation and seat allocation workflows. |
-| **Telemetry & Sensor Streams** | `/api/telemetry/*`<br>`/api/venues/{id}/noise-metrics`<br>`/api/venues/{id}/wifi-prediction` | Venue/Client Device Key or Client IP | **120 requests / 1 minute** | Acoustic sensor telemetry, live Wi-Fi latency updates, and crowd density samples. |
-| **Admin & Performance** | `/api/admin/*` | Clerk Admin User ID | **120 requests / 1 minute** | Partition management, administrative analytics, and audit logging. |
-| **Webhooks & Cron (Exempt)** | `/api/webhook/*`<br>`/api/cron/*`<br>`/api/webhooks/worker` | Cryptographic signature | **1,000 req/min** or **Exempt** | Verified incoming webhooks and automated Vercel Cron jobs bypass public rate limiters. |
+| Tier / Category                | Scope / Path Patterns                                                                        | Target Identifier                            | Quota (Limit / Window)                                                     | Description                                                                            |
+| :----------------------------- | :------------------------------------------------------------------------------------------- | :------------------------------------------- | :------------------------------------------------------------------------- | :------------------------------------------------------------------------------------- |
+| **Authentication**             | `/api/auth/*`<br>`/api/partykit/auth`<br>`/api/user/verify-student`                          | Client IP (`X-Real-IP` / `CF-Connecting-IP`) | **5 requests / 1 minute**                                                  | High-security brute-force protection on password reset, OTP, WebAuthn, and SSO.        |
+| **Search & Discovery**         | `/api/venues/*`<br>`/api/map/*`<br>`/api/search/*`<br>`/api/location`                        | User ID (if authenticated) or Client IP      | **60 requests / 1 minute**                                                 | Spatial geo-queries, full-text venue searches, and heatmap tile queries.               |
+| **Bookings & Payments**        | `/api/bookings/*`<br>`/api/reservations/*`<br>`/api/receipts/*`                              | Clerk User ID (`userId`)                     | **60 requests / 15 minutes** (Auth)<br>**10 requests / 15 minutes** (Anon) | Transactional reservation creation and seat allocation workflows.                      |
+| **Telemetry & Sensor Streams** | `/api/telemetry/*`<br>`/api/venues/{id}/noise-metrics`<br>`/api/venues/{id}/wifi-prediction` | Venue/Client Device Key or Client IP         | **120 requests / 1 minute**                                                | Acoustic sensor telemetry, live Wi-Fi latency updates, and crowd density samples.      |
+| **Admin & Performance**        | `/api/admin/*`                                                                               | Clerk Admin User ID                          | **120 requests / 1 minute**                                                | Partition management, administrative analytics, and audit logging.                     |
+| **Webhooks & Cron (Exempt)**   | `/api/webhook/*`<br>`/api/cron/*`<br>`/api/webhooks/worker`                                  | Cryptographic signature                      | **1,000 req/min** or **Exempt**                                            | Verified incoming webhooks and automated Vercel Cron jobs bypass public rate limiters. |
 
 #### Anonymous vs Authenticated User Quotas
 
@@ -307,14 +308,15 @@ Limits vary depending on endpoint sensitivity, resource consumption, and client 
 
 Every rate-limited API response includes standard `X-RateLimit-*` diagnostic headers:
 
-| Header Name | Type | Example | Description |
-| :--- | :--- | :--- | :--- |
-| **`X-RateLimit-Limit`** | `integer` | `60` | The maximum number of requests allowed within the current window. |
-| **`X-RateLimit-Remaining`** | `integer` | `14` | The number of remaining requests allowed before reaching the limit. |
-| **`X-RateLimit-Reset`** | `integer` | `1728000060` | Unix timestamp (in seconds or milliseconds) when the rate limit window resets. |
-| **`Retry-After`** | `integer` | `45` | **Present on HTTP 429**: The number of seconds the client MUST wait before making a new request. |
+| Header Name                 | Type      | Example      | Description                                                                                      |
+| :-------------------------- | :-------- | :----------- | :----------------------------------------------------------------------------------------------- |
+| **`X-RateLimit-Limit`**     | `integer` | `60`         | The maximum number of requests allowed within the current window.                                |
+| **`X-RateLimit-Remaining`** | `integer` | `14`         | The number of remaining requests allowed before reaching the limit.                              |
+| **`X-RateLimit-Reset`**     | `integer` | `1728000060` | Unix timestamp (in seconds or milliseconds) when the rate limit window resets.                   |
+| **`Retry-After`**           | `integer` | `45`         | **Present on HTTP 429**: The number of seconds the client MUST wait before making a new request. |
 
 ---
+
 ## Authentication & Security APIs
 
 ### GET `/api/auth/csrf-token`
@@ -322,12 +324,14 @@ Every rate-limited API response includes standard `X-RateLimit-*` diagnostic hea
 Retrieves a Cryptographically Secure Pseudo-Random (CSPRNG) anti-CSRF token required for state-mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`).
 
 #### Request Header Requirements
-| Header | Type | Required | Description |
-|---|---|---|---|
-| `Accept` | `string` | No | Recommended: `application/json` |
+
+| Header   | Type     | Required | Description                     |
+| -------- | -------- | -------- | ------------------------------- |
+| `Accept` | `string` | No       | Recommended: `application/json` |
 
 #### Response Schema (200 OK)
-```json
+
+````json
 {
   "csrfToken": "e8f7a1b9c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7",
   "expiresAt": "2026-11-08T10:23:00.000Z"
@@ -372,7 +376,7 @@ X-RateLimit-Reset: 1728000045
   "error": "Too many requests. Please slow down and try again.",
   "retryAfter": 45
 }
-```
+````
 
 ---
 
@@ -387,7 +391,7 @@ Clients consuming WorkSphere APIs should intercept HTTP 429 responses, inspect t
 export async function fetchWithRateLimitRetry<T>(
   url: string,
   options: RequestInit = {},
-  maxRetries: number = 3
+  maxRetries: number = 3,
 ): Promise<T> {
   let attempt = 0;
 
@@ -403,7 +407,9 @@ export async function fetchWithRateLimitRetry<T>(
     if (response.status === 429) {
       attempt++;
       if (attempt > maxRetries) {
-        throw new Error(`Rate limit exceeded: maximum retries (${maxRetries}) reached.`);
+        throw new Error(
+          `Rate limit exceeded: maximum retries (${maxRetries}) reached.`,
+        );
       }
 
       // 1. Read Retry-After header (seconds)
@@ -415,21 +421,27 @@ export async function fetchWithRateLimitRetry<T>(
         const baseDelayMs = Math.min(30000, 1000 * Math.pow(2, attempt));
         const jitterMs = Math.random() * 500;
         const totalDelayMs = baseDelayMs + jitterMs;
-        console.warn(`[HTTP 429] Rate limited. Backing off for ${Math.round(totalDelayMs)}ms (Attempt ${attempt}/${maxRetries})...`);
+        console.warn(
+          `[HTTP 429] Rate limited. Backing off for ${Math.round(totalDelayMs)}ms (Attempt ${attempt}/${maxRetries})...`,
+        );
         await new Promise((resolve) => setTimeout(resolve, totalDelayMs));
         continue;
       }
 
       // Add 250ms buffer to respect server reset boundary
       const waitMs = waitSeconds * 1000 + 250;
-      console.warn(`[HTTP 429] Rate limited. Waiting ${waitSeconds}s as specified by Retry-After header...`);
+      console.warn(
+        `[HTTP 429] Rate limited. Waiting ${waitSeconds}s as specified by Retry-After header...`,
+      );
       await new Promise((resolve) => setTimeout(resolve, waitMs));
       continue;
     }
 
     // For other error status codes (400, 401, 500), throw immediately
     const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.error || `HTTP ${response.status}: Request failed`);
+    throw new Error(
+      errorBody.error || `HTTP ${response.status}: Request failed`,
+    );
   }
 
   throw new Error("Unexpected request failure");
@@ -444,4 +456,3 @@ export async function fetchWithRateLimitRetry<T>(
 - Dynamic route segments are represented using `{parameter}` placeholders.
 - Authentication requirements and request validation are defined within each endpoint's implementation.
 - This document serves as a route reference and should be kept in sync with the project structure as new endpoints are added.
-

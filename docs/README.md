@@ -26,6 +26,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Architecture Documentation Index](./architecture/README.md) — system design references, distributed coordination, and architecture notes.
 - [Multi-Agent AI Architecture](./ARCHITECTURE.md) — agent orchestration, decision pipeline, and application-level AI architecture.
 - [GossipSub WebRTC Mesh](./architecture/GOSSIPSUB_WEBRTC_MESH.md) — peer discovery, GossipSub parameters, heartbeat intervals, and mesh behavior.
+- [GossipSub IP Colocation & Sybil Defense](./architecture/GOSSIPSUB_IP_COLOCATION.md) — subnet colocation scoring (/24 IPv4 and /48 IPv6), Sybil mitigation, exponential decay, and mesh pruning.
 - [Distributed Locks and Fencing](./architecture/distributed-locks-and-fencing.md) — distributed lock coordination and fencing mechanisms.
 - [Multi-Region Synchronization](./architecture/multi-region-sync.md) — synchronization across distributed application regions.
 
@@ -62,6 +63,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Design System Guide](./DESIGN_SYSTEM_GUIDE.md) — design tokens, themes, components, and frontend styling conventions.
 - [Accessibility Guide](./ACCESSIBILITY_GUIDE.md) — accessibility standards and implementation guidance.
+- [Venue Action Glassmorphic Pulse Guide](./ui/GLASSMORPHIC_PULSE_GUIDE.md) — theme-specific venue action button animations, rendering, accessibility, and contrast analysis.
 - [Breadcrumb Component](./components/Breadcrumb.md) — breadcrumb component behavior and usage.
 - [Floor Plan Viewer 3D](./components/FloorPlanViewer3D.md) — 3D floor-plan viewer documentation.
 - [Network Status Pill](./components/NetworkStatusPill.md) — network connectivity status component.
@@ -87,9 +89,9 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Export & Reporting
 
-- [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — typed CSV and Excel XML export, escaping, formula injection sanitization, and browser downloads.
-- [Booking Itinerary & PDF Verification System](./export/booking-pdf-generation.md) — booking receipts, QR generation, and cryptographic verification.
+- [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — Comprehensive developer reference for typed CSV and Excel XML export builders, RFC-4180 escaping, formula injection sanitization, and browser download handling.
+- [Booking Itinerary & PDF Verification System](./export/booking-pdf-generation.md) — Specification and architecture for booking receipts, vector QR matrix generation, and cryptographic verification seals.
 
----
+## UI Components & Frontend
 
-For detailed documentation within a topic, start with its category index where one is available, such as the API, Architecture, or CRDT documentation indexes.
+- [NotificationBell Component Guide](./NOTIFICATION_BELL_GUIDE.md) — Top navigation notification bell, live polling, optimistic mark-as-read, undo restoration, and backend API contract.

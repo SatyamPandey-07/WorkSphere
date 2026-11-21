@@ -1,5 +1,14 @@
 "use client";
 
+ fix/booking-modal-prevent-double-submit
+import React, { useRef, useState } from 'react';
+
+export interface LockSeatResponse {
+  ok?: boolean;
+  lockId?: string;
+  error?: string;
+}
+
 import React, { useState, useEffect } from "react";
 import { AlertCircle } from "lucide-react";
 import { AddToCalendarButton } from '@/components/bookings/AddToCalendarButton';
@@ -11,11 +20,45 @@ import { storeOfflinePasscardsFromBooking } from "@/lib/security/offlinePasscard
 import type { EscrowConfirmationStatus } from "@/lib/solana/escrowClient";
 
 export type { EscrowConfirmationStatus };
+ main
 
-interface BookingModalProps {
+export interface BookingModalProps {
+  isOpen: boolean;
   venueId: string;
-  venueName: string;
+  seatId: string;
+  seatLabel?: string;
+  onConfirmLock?: (payload: {
+    venueId: string;
+    seatId: string;
+  }) => Promise<LockSeatResponse | void>;
+  onSuccess?: (result: LockSeatResponse | void) => void;
+  onError?: (errorMessage: string) => void;
   onClose: () => void;
+ fix/booking-modal-prevent-double-submit
+}
+
+export const BookingModal: React.FC<BookingModalProps> = ({
+  isOpen,
+  venueId,
+  seatId,
+  seatLabel,
+  onConfirmLock,
+  onSuccess,
+  onError,
+  onClose,
+}) => {
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const inFlightRef = useRef<boolean>(false);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  const handleConfirm = async () => {
+    if (inFlightRef.current || isSubmitting) {
+      return;
+    }
+
   onSuccess: (confirmationId: string) => void;
   confirmationId?: string;
   bookingId?: string;
@@ -213,9 +256,37 @@ export function BookingModal({
     }
     if (!date || !time) return setError("Please select both a date and time");
     if (loading || isSubmitting || isSubmittingRef.current) return;
+ main
 
-    isSubmittingRef.current = true;
+    inFlightRef.current = true;
     setIsSubmitting(true);
+ fix/booking-modal-prevent-double-submit
+
+    try {
+      let result: LockSeatResponse | void;
+      if (onConfirmLock) {
+        result = await onConfirmLock({ venueId, seatId });
+      } else {
+        const res = await fetch(
+          `/api/venues/${encodeURIComponent(venueId)}/seats/${encodeURIComponent(seatId)}/lock`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+        const data = (await res.json().catch(() => ({}))) as LockSeatResponse;
+        if (!res.ok) {
+          throw new Error(data.error || `Failed to lock seat (${res.status})`);
+        }
+        result = data;
+      }
+
+      onSuccess?.(result);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unable to confirm reservation';
+      onError?.(message);
+
     setLoading(true);
     setError("");
 
@@ -239,12 +310,14 @@ export function BookingModal({
       onSuccess(json.data.confirmationId);
     } catch (err: any) {
       setError(err.message || "Failed to book");
+ main
     } finally {
-      setLoading(false);
+      inFlightRef.current = false;
       setIsSubmitting(false);
-      isSubmittingRef.current = false;
     }
   };
+
+ fix/booking-modal-prevent-double-submit
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;
@@ -263,12 +336,86 @@ export function BookingModal({
       currentEscrowStatus !== "timeout",
     );
 
+ main
   return (
     <div
-      onClick={handleBackdropClick}
-      data-testid="booking-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Confirm Reservation for ${seatLabel || seatId}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
     >
+ fix/booking-modal-prevent-double-submit
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">
+            Confirm Reservation
+          </h2>
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={onClose}
+            aria-label="Close booking modal"
+            className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p className="mt-2 text-sm text-slate-600">
+          Seat <span className="font-semibold text-slate-900">{seatLabel || seatId}</span> at{' '}
+          <span className="font-semibold text-slate-900">{venueId}</span>.
+        </p>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
+            onClick={handleConfirm}
+            data-testid="confirm-reservation-btn"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSubmitting ? (
+              <>
+                <svg
+                  data-testid="confirm-spinner"
+                  className="h-4 w-4 animate-spin text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeOpacity="0.25"
+                  />
+                  <path
+                    d="M22 12a10 10 0 0 1-10 10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span>Confirming...</span>
+              </>
+            ) : (
+              <span>Confirm Reservation</span>
+            )}
+          </button>
+        </div>
+
       <div
         role="dialog"
         aria-modal="true"
@@ -503,7 +650,8 @@ export function BookingModal({
             </div>
           </div>
         )}
+ main
       </div>
     </div>
   );
-}
+};

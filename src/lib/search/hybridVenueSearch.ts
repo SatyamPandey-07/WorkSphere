@@ -121,10 +121,10 @@ function runWithBackgroundSearchLimit<T>(work: () => Promise<T>): Promise<T> {
   });
 }
 
-function normalizedSearchCacheKey(
+export function normalizedSearchCacheKey(
   query: string,
-  filters: HybridVenueSearchFilters,
-  candidateLimit: number,
+  filters: HybridVenueSearchFilters = {},
+  candidateLimit: number = 20,
 ): string {
   const embedding =
     filters.queryEmbedding === undefined
@@ -134,19 +134,25 @@ function normalizedSearchCacheKey(
         : createHash("sha256")
             .update(JSON.stringify(filters.queryEmbedding))
             .digest("hex");
+
+  const normalizedCategory = filters.category
+    ? filters.category.trim().toLowerCase()
+    : null;
+
+  const normalizedAmenities = (filters.amenities || [])
+    .map((amenity) => amenity.trim().toLowerCase())
+    .filter(Boolean)
+    .sort();
+
   const keyParts = {
     query: normalizeSearchQuery(query).slice(0, 256),
     minLat: filters.minLat,
     maxLat: filters.maxLat,
     minLng: filters.minLng,
     maxLng: filters.maxLng,
-    category: filters.category ?? null,
+    category: normalizedCategory,
     cities: [...(filters.cities ?? [])].sort(),
-    amenities: [
-      ...new Set(
-        (filters.amenities ?? []).map((a) => a.trim().toLowerCase()).filter(Boolean),
-      ),
-    ].sort(),
+    amenities: [...new Set(normalizedAmenities)],
     semanticWeight: filters.semanticWeight ?? null,
     fullTextWeight: filters.fullTextWeight ?? null,
     rrfK: filters.rrfK ?? null,

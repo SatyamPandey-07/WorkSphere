@@ -1,8 +1,4 @@
- fix/vector-clock-atomic-tick
-import { createHash } from 'crypto';
-
 import { createHash } from "crypto";
- main
 
 export interface IdempotencyRecord {
   key: string;
@@ -15,16 +11,12 @@ export interface IdempotencyRecord {
 export interface IdempotencyStore {
   get(key: string): Promise<IdempotencyRecord | null>;
   setIfAbsent(record: IdempotencyRecord): Promise<boolean>;
- fix/vector-clock-atomic-tick
-  complete(key: string, status: number, body: unknown, expiresAt: number): Promise<void>;
-
   complete(
     key: string,
     status: number,
     body: unknown,
     expiresAt: number,
   ): Promise<void>;
- main
   delete(key: string): Promise<void>;
 }
 
@@ -54,12 +46,6 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     return true;
   }
 
- fix/vector-clock-atomic-tick
-  async complete(key: string, status: number, body: unknown, expiresAt: number): Promise<void> {
-    const current = this.records.get(key);
-    if (!current) return;
-    this.records.set(key, { ...current, status, body, expiresAt });
-
   async complete(
     key: string,
     status: number,
@@ -74,69 +60,11 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
       body,
       expiresAt,
     });
- main
   }
 
   async delete(key: string): Promise<void> {
     this.records.delete(key);
   }
- fix/vector-clock-atomic-tick
-}
-
-export function hashPayload(payload: unknown): string {
-  return createHash('sha256').update(JSON.stringify(payload ?? null)).digest('hex');
-}
-
-export interface IdempotencyExecutionResult<T = unknown> {
-  status: number;
-  body: T;
-  replayed: boolean;
-}
-
-export async function runWithIdempotency<T>(options: {
-  key: string | null | undefined;
-  payload: unknown;
-  store?: IdempotencyStore;
-  ttlMs?: number;
-  handler: () => Promise<{ status: number; body: T }>;
-}): Promise<IdempotencyExecutionResult<T>> {
-  const {
-    key,
-    payload,
-    store = defaultStore,
-    ttlMs = 24 * 60 * 60 * 1000,
-    handler,
-  } = options;
-
-  if (!key || !key.trim()) {
-    const res = await handler();
-    return { status: res.status, body: res.body, replayed: false };
-  }
-
-  const normalizedKey = key.trim();
-  const requestHash = hashPayload(payload);
-  const now = Date.now();
-  const expiresAt = now + ttlMs;
-
-  const acquired = await store.setIfAbsent({
-    key: normalizedKey,
-    requestHash,
-    status: 202,
-    body: { status: 'IN_PROGRESS' },
-    expiresAt,
-  });
-
-  if (!acquired) {
-    const existing = await store.get(normalizedKey);
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
-        return {
-          status: 409,
-          body: { error: 'Idempotency-Key reused with a different request payload' } as unknown as T,
-          replayed: false,
-        };
-      }
-
 
   clear(): void {
     this.records.clear();
@@ -191,7 +119,6 @@ export async function runWithIdempotency<T>(
     }
 
     if (existing.status !== 0) {
- main
       return {
         status: existing.status,
         body: existing.body as T,
@@ -199,11 +126,6 @@ export async function runWithIdempotency<T>(
       };
     }
   }
-
- fix/vector-clock-atomic-tick
-  try {
-    const result = await handler();
-    await store.complete(normalizedKey, result.status, result.body, Date.now() + ttlMs);
 
   const locked = await store.setIfAbsent({
     key: normalizedKey,
@@ -243,16 +165,12 @@ export async function runWithIdempotency<T>(
       result.body,
       Date.now() + ttlMs,
     );
- main
     return { status: result.status, body: result.body, replayed: false };
   } catch (err) {
     await store.delete(normalizedKey);
     throw err;
   }
 }
-
- fix/vector-clock-atomic-tick
-const defaultStore = new MemoryIdempotencyStore();
 
 export const defaultStore = new MemoryIdempotencyStore();
 
@@ -336,4 +254,3 @@ export async function executeIdempotent(
 export function clearIdempotencyStore(): void {
   idempotencyStore.clear();
 }
- main

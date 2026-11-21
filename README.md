@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-140%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-142%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-140-active-rockstars"><b>👥 Contributors (140)</b></a> •
+  <a href="#-contributors-142-active-rockstars"><b>👥 Contributors (142)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (140 Active Rockstars)
+### 🚀 Contributors (142 Active Rockstars)
 
-A massive thank you to all **140 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **142 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -966,6 +966,18 @@ A massive thank you to all **140 brilliant contributors and bots** building Work
         <sub><b>Kartikey-17</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/KartikeyG-world">
+        <img src="https://avatars.githubusercontent.com/u/221846684?v=4" width="55px;" height="55px;" alt="KartikeyG-world" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>KartikeyG-world</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Updesh413">
+        <img src="https://avatars.githubusercontent.com/u/77709529?v=4" width="55px;" height="55px;" alt="Updesh413" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Updesh413</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1002,6 +1014,17 @@ A massive thank you to all **140 brilliant contributors and bots** building Work
 ---
 
 ## ✨ Features
+
+### ⚡ Cutting-Edge Platform & Telemetry Innovations (NEW)
+
+- **WebGPU Adapter Capability Diagnostics**: Client-side hardware profiling engine auditing GPU adapter architectures, compute workgroup dimensions, texture bounds, and WGSL shader extensions in an interactive admin dashboard (`src/components/admin/WebGpuCapabilityPanel.tsx`, `src/lib/webgpu/capabilityReport.ts`).
+- **Ambient Noise Peak Frequency Spectrogram**: High-precision 60fps audio waterfall visualization leveraging the Web Audio API AnalyserNode and FFT frequency bins with dynamic color interpolation palettes (`Viridis`, `Inferno`, `Cyberpunk`) (`src/components/audio/NoiseSpectrogram.tsx`).
+- **Causal Vector Clock & Hybrid Logical Clock Synchronization**: Resilient distributed partial ordering with deterministic tie-breaking heuristics, supporting decentralized offline notes synchronization across multi-peer WebRTC meshes (`src/core/sync/VectorClock.ts`, `src/core/sync/LamportTimestampResolver.ts`).
+- **Automated Clerk Webhook Profile Synchronization**: Production-grade Svix cryptographic signature validation handling `user.created`, `user.updated`, and `user.deleted` events with Prisma UPSERT idempotency and null-safe primary email resolution (`src/app/api/webhooks/clerk/route.ts`, `src/lib/auth/clerkWebhook.ts`).
+- **Optimistic Redlock Seat Hold Lease Extension**: Distributed concurrency control endpoint allowing active seat reservations to extend locks safely with monotonically increasing fencing tokens (`src/app/api/venues/[venueId]/seats/[seatId]/lock/extend/route.ts`, `src/lib/locks/seatHoldLock.ts`).
+- **Tactical Radar Sweep HUD & Holographic Compass**: Interactive cyber-tactical HUD overlay and 3D sensory compass tracking nearby venues, ambient acoustics, and live colleague presence (`src/components/ui/RadarSweepHUD.tsx`, `src/components/saved-venues/HolographicCompass.tsx`).
+- **Carbon Footprint Date Range Quick-Select Presets**: One-click quick presets ("7 Days", "30 Days", "This Month", "Year to Date") for rapid commuter carbon savings calculations (`src/components/analytics/CarbonFootprintTracker.tsx`).
+- **Glassmorphic Hover Pulse Animation on Venue Actions**: Sleek neon glassmorphism pulse effects on bookmark, favorite, and share buttons with reduced-motion accessibility support (`src/components/venue/VenueCard.tsx`, `@keyframes neon-glass-pulse-*`).
 
 ### 🤖 AI-Powered Search
 

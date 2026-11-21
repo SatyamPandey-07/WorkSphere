@@ -2,6 +2,8 @@
 
 Comprehensive API documentation for the `/api/bookings/history` endpoint in WorkSphere. This endpoint retrieves paginated historical booking data for authenticated users, supporting cursor-based pagination, status filtering, custom sorting, and date range filtering.
 
+For the separate recurring desk availability validation flow, see the [Recurring Booking Slot Validation guide](./RECURRING_BOOKING_SLOTS.md). It documents `POST /api/seats/recurring-availability`; that endpoint reports date-level availability and is separate from booking creation and this booking-history API.
+
 ---
 
 ## Endpoint Overview

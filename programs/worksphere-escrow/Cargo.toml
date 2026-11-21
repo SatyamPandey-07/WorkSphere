@@ -1,0 +1,21 @@
+[package]
+name = "worksphere-escrow"
+version = "0.1.0"
+description = "Non-custodial escrow smart contract for WorkSphere desk bookings"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "worksphere_escrow"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = "0.30.1"
+anchor-spl = "0.30.1"
+

@@ -75,7 +75,7 @@ flowchart TD
 
 ## 3. Layer 1: Client-Side Web Locks API (`Navigator.locks`)
 
-The first line of defense is executed entirely inside the browser environment before any network packet is dispatched across the wire. This layer utilizes the W3C Web Locks API (`navigator.locks`) implemented in [`src/lib/locks/seatHoldLock.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/locks/seatHoldLock.ts) via `withSeatWebLock`.
+The first line of defense is executed entirely inside the browser environment before any network packet is dispatched across the wire. This layer utilizes the W3C Web Locks API (`navigator.locks`) implemented in [`src/lib/locks/seatHoldLock.ts`](../../src/lib/locks/seatHoldLock.ts) via `withSeatWebLock`.
 
 ### 3.1 Zero-Latency Multi-Tab Serialization
 In modern desktop and mobile operating systems, users frequently open duplicate tabs of the same coworking hub or navigate between multiple windows. When a user interacts with a seat layout:
@@ -470,7 +470,7 @@ Distributed lease systems are susceptible to Non-Monotonic System Clock Jumps ca
 
 ## 14. Comprehensive Integration Testing & Verification Patterns
 
-The test suite in [`src/__tests__/lib/locks/seatHoldLock.test.ts`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/lib/locks/seatHoldLock.test.ts) exercises the complete concurrency matrix:
+The test suite in [`src/__tests__/lib/seatHoldLock.test.ts`](../../src/__tests__/lib/seatHoldLock.test.ts) exercises the complete concurrency matrix:
 
 ```typescript
 describe("SeatHoldLock Distributed Concurrency Engine", () => {
@@ -730,12 +730,12 @@ export const lockDurationHistogram = meter.createHistogram("seat_lock_hold_durat
 
 ## 20. Code Reference & Source File Map
 
-- **Core Dual-Layer Lock Implementation:** [`src/lib/locks/seatHoldLock.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/locks/seatHoldLock.ts)
-- **Lock REST API Endpoint:** [`src/app/api/venues/[venueId]/seats/[seatId]/lock/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/venues/%5BvenueId%5D/seats/%5BseatId%5D/lock/route.ts)
-- **Redis Connection Manager:** [`src/lib/redis.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/redis.ts)
-- **Web Locks Storage Coordinator:** [`src/lib/webLock.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/webLock.ts)
-- **Unit Test Suite:** [`src/__tests__/lib/locks/seatHoldLock.test.ts`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/lib/locks/seatHoldLock.test.ts)
-- **Reservation API Handlers:** [`src/app/api/bookings/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/bookings/route.ts)
-- **Realtime WebSocket Mesh:** [`src/hooks/useMeshCanvasWhiteboard.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useMeshCanvasWhiteboard.ts)
+- **Core Dual-Layer Lock Implementation:** [`src/lib/locks/seatHoldLock.ts`](../../src/lib/locks/seatHoldLock.ts)
+- **Lock REST API Endpoint:** [`src/app/api/venues/[venueId]/seats/[seatId]/lock/route.ts`](../../src/app/api/venues/[venueId]/seats/[seatId]/lock/route.ts)
+- **Redis Connection Manager:** [`src/lib/redis.ts`](../../src/lib/redis.ts)
+- **Web Locks Storage Coordinator:** [`src/lib/webLock.ts`](../../src/lib/webLock.ts)
+- **Unit Test Suite:** [`src/__tests__/lib/seatHoldLock.test.ts`](../../src/__tests__/lib/seatHoldLock.test.ts)
+- **Reservation API Handlers:** [`src/app/api/bookings/route.ts`](../../src/app/api/bookings/route.ts)
+- **Realtime WebSocket Mesh:** [`src/hooks/useMeshCanvasWhiteboard.ts`](../../src/hooks/useMeshCanvasWhiteboard.ts)
 
 

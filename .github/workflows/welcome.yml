@@ -19,7 +19,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+            const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti'];
             const issueAuthor = (context.payload.issue?.user?.login || '').toLowerCase();
             if (BLOCKED_USERS.some(u => u.toLowerCase() === issueAuthor)) {
               console.log(`Closing issue #${context.issue.number} by blocked user: ${issueAuthor}`);
@@ -166,7 +166,7 @@ jobs:
               const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
               
               // Immediately reject and close PRs from blocked/banned contributors
-              const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti'];
               if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthor.toLowerCase())) {
                 console.log(`Auto-closing PR #${prNumber} from blocked contributor: ${prAuthor}`);
                 await github.rest.issues.createComment({
@@ -251,6 +251,27 @@ jobs:
                     console.log(`Failed to request review: ${error.message}`);
                   }
                 }
+              }
+
+              // Ensure PR author is assigned as an assignee (idempotent, works on opened & synchronize)
+              try {
+                const prRes = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber
+                });
+                const currentAssignees = (prRes.data.assignees || []).map(a => a.login.toLowerCase());
+                if (!currentAssignees.includes(prAuthor.toLowerCase())) {
+                  await github.rest.issues.addAssignees({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    assignees: [prAuthor]
+                  });
+                  console.log(`Auto-assigned author @${prAuthor} to PR #${prNumber}`);
+                }
+              } catch (assignErr) {
+                console.warn(`Could not ensure PR author assignee for #${prNumber}:`, assignErr.message);
               }
 
               // 2. Fetch list of modified files in the PR to assign labels dynamically

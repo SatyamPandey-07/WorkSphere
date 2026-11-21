@@ -1,6 +1,6 @@
 # Technical Specification: Social Waitlist Promotion Algorithm & Automatic RSVP Hand-Off Pipeline
 
-This technical specification details WorkSphere's venue seat waitlist promotion algorithm, First-In-First-Out (FIFO) queue mechanics, 15-minute claim expiration windows, serializable transaction isolation, and push notification hand-off pipeline ([src/lib/waitlist/waitlistService.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/waitlistService.ts) and [src/lib/waitlist/types.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/types.ts)).
+This technical specification details WorkSphere's venue seat waitlist promotion algorithm, First-In-First-Out (FIFO) queue mechanics, 15-minute claim expiration windows, serializable transaction isolation, and push notification hand-off pipeline ([src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts) and [src/lib/waitlist/types.ts](../../src/lib/waitlist/types.ts)).
 
 ---
 
@@ -29,7 +29,7 @@ This technical specification details WorkSphere's venue seat waitlist promotion 
 
 WorkSphere enables remote workers to book hot desks, quiet zones, and team islands at popular venues. When a venue's seating reaches maximum capacity, users can join a digital waitlist for specific time slots or seat types.
 
-When an existing reservation is cancelled or checked out early, WorkSphere's **Waitlist Promotion Pipeline** automatically identifies the next eligible waiter in line, locks the freed seat, grants an exclusive **15-minute claim offer window**, and dispatches critical WebPush alerts ([src/lib/waitlist/waitlistService.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/waitlistService.ts)).
+When an existing reservation is cancelled or checked out early, WorkSphere's **Waitlist Promotion Pipeline** automatically identifies the next eligible waiter in line, locks the freed seat, grants an exclusive **15-minute claim offer window**, and dispatches critical WebPush alerts ([src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts)).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -72,7 +72,7 @@ When an existing reservation is cancelled or checked out early, WorkSphere's **W
 
 ## 2. Waitlist FIFO Queue & Priority Escalation Algorithm
 
-File: [src/lib/waitlist/waitlistService.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/waitlistService.ts#L252-L389)
+File: [src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts#L252-L389)
 
 ### FIFO Ordering & Queue Position Calculation
 
@@ -126,7 +126,7 @@ When a seat becomes available, candidates are filtered in FIFO order against sta
 
 ## 3. 15-Minute Claim Expiration Window & State Machine
 
-File: [src/lib/waitlist/waitlistService.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/waitlistService.ts#L28-L478)
+File: [src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts#L28-L478)
 
 ### State Transition Lifecycle
 
@@ -160,7 +160,7 @@ Each waitlist entry transitions through a strict state machine:
 
 ### Serializable Claim Protocol (`claimWaitlistSeat`)
 
-File: [src/lib/waitlist/waitlistService.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/waitlistService.ts#L449-L605)
+File: [src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts#L449-L605)
 
 When a user clicks "Claim Seat", the claim runs inside a **Serializable Transaction** (`Prisma.TransactionIsolationLevel.Serializable`) to eliminate double-booking race conditions:
 
@@ -190,7 +190,7 @@ $$\text{BackoffMs} = \min(2^{\text{attempt} + 1} \times 100 + \text{random}(0, 5
 
 ## 4. Automated Hand-off & Sweeper Maintenance Routines
 
-File: [src/lib/waitlist/waitlistService.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/waitlistService.ts#L629-L699)
+File: [src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts#L629-L699)
 
 ### Immediate Hand-off (`expireEntryAndOfferToNext`)
 
@@ -239,11 +239,11 @@ export async function expireStaleWaitlistOffers(): Promise<number> {
 
 ## 5. Automated Push Alerts & Webhook Notifications
 
-File: [src/lib/waitlist/waitlistService.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/waitlistService.ts#L397-L415)
+File: [src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts#L397-L415)
 
 ### Notification Dispatcher Integration
 
-When a candidate is notified, the pipeline interacts with `NotificationDispatcher` ([src/lib/notifications/dispatcher.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/notifications/dispatcher.ts)) to send high-priority push notifications across registered WebPush subscriptions.
+When a candidate is notified, the pipeline interacts with `NotificationDispatcher` ([src/lib/notifications/dispatcher.ts](../../src/lib/notifications/dispatcher.ts)) to send high-priority push notifications across registered WebPush subscriptions.
 
 ### WebPush Critical Alert Payload (`WAITLIST_SEAT_AVAILABLE`)
 
@@ -269,7 +269,7 @@ await dispatcher.dispatch("webpush", {
 
 ## 6. Repository Code Reference Map
 
-- [src/lib/waitlist/waitlistService.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/waitlistService.ts) — Core waitlist service, FIFO queue math, notification dispatcher, 15-minute claim expiration logic, and serializable claim transactions.
-- [src/lib/waitlist/types.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/waitlist/types.ts) — TypeScript type definitions (`WaitlistEntry`, `JoinWaitlistInput`, `ClaimWaitlistSeatResult`).
-- [src/lib/booking.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/booking.ts) — Interval overlap checking (`bookingInterval`, `intervalsOverlap`) and timezone normalizers.
-- [src/lib/notifications/dispatcher.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/notifications/dispatcher.ts) — Multi-channel notification dispatcher (WebPush, SMS, Email).
+- [src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts) — Core waitlist service, FIFO queue math, notification dispatcher, 15-minute claim expiration logic, and serializable claim transactions.
+- [src/lib/waitlist/types.ts](../../src/lib/waitlist/types.ts) — TypeScript type definitions (`WaitlistEntry`, `JoinWaitlistInput`, `ClaimWaitlistSeatResult`).
+- [src/lib/booking/index.ts](../../src/lib/booking/index.ts) — Interval overlap checking (`bookingInterval`, `intervalsOverlap`) and timezone normalizers.
+- [src/lib/notifications/dispatcher.ts](../../src/lib/notifications/dispatcher.ts) — Multi-channel notification dispatcher (WebPush, SMS, Email).

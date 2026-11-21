@@ -1,7 +1,7 @@
 /** @jest-environment node */
 
 import { NextRequest } from "next/server";
-import { POST } from "@/app/api/auth/zkp/nomad-proof/route";
+import { GET, POST } from "@/app/api/auth/zkp/nomad-proof/route";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -21,6 +21,7 @@ jest.mock("@/lib/prisma", () => ({
     },
     userBadge: {
       upsert: jest.fn(),
+      findMany: jest.fn(),
     },
   },
 }));
@@ -73,6 +74,7 @@ describe("POST /api/auth/zkp/nomad-proof", () => {
     (prisma.userBadge.upsert as jest.Mock).mockResolvedValue({
       id: "badge-1",
     });
+    (prisma.userBadge.findMany as jest.Mock).mockResolvedValue([]);
 
     (invalidateXpLeaderboard as jest.Mock).mockResolvedValue(undefined);
 
@@ -93,6 +95,142 @@ describe("POST /api/auth/zkp/nomad-proof", () => {
     (verifyAndMintNomadPassportStamp as jest.Mock).mockResolvedValue({
       isValid: true,
       stamp: validStamp,
+    });
+  });
+
+  describe("GET /api/auth/zkp/nomad-proof", () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it.each(["NOMAD_100_HOURS", "STREAK_30_DAYS"])(
+      "returns verified for the persisted %s proof badge",
+      async (badgeType) => {
+        (auth as jest.Mock).mockResolvedValue({ userId: "user-a" });
+        (prisma.userBadge.findMany as jest.Mock).mockResolvedValue([
+          { badgeType },
+        ]);
+
+        const response = await GET();
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+          success: true,
+          verified: true,
+        });
+        expect(prisma.userBadge.findMany).toHaveBeenCalledWith({
+          where: {
+            userId: "user-a",
+            badgeType: { in: ["NOMAD_100_HOURS", "STREAK_30_DAYS"] },
+          },
+          select: { badgeType: true },
+          take: 1,
+        });
+      },
+    );
+
+    it("returns 401 for an unauthenticated user without querying badges", async () => {
+      (auth as jest.Mock).mockResolvedValue({ userId: null });
+
+      const unauthenticated = await GET();
+      expect(unauthenticated.status).toBe(401);
+      await expect(unauthenticated.json()).resolves.toMatchObject({
+        success: false,
+        verified: false,
+      });
+      expect(prisma.userBadge.findMany).not.toHaveBeenCalled();
+    });
+
+    it("returns false when the authenticated user has no Nomad proof badge", async () => {
+      (auth as jest.Mock).mockResolvedValue({ userId: "user-a" });
+      (prisma.userBadge.findMany as jest.Mock).mockResolvedValue([]);
+
+      const unverified = await GET();
+      expect(unverified.status).toBe(200);
+      await expect(unverified.json()).resolves.toMatchObject({
+        success: true,
+        verified: false,
+      });
+      expect(prisma.userBadge.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: "user-a" }),
+        }),
+      );
+    });
+
+    it.each([
+      "verified_explorer",
+      "accurate_venue-123",
+      "NOMAD_50_HOURS",
+      "MULTI_CITY_EXPLORER",
+    ])(
+      "does not qualify persisted non-claimable badge %s",
+      async (badgeType) => {
+        (auth as jest.Mock).mockResolvedValue({ userId: "user-a" });
+        (prisma.userBadge.findMany as jest.Mock).mockImplementation(
+          async (args) =>
+            args.where.badgeType.in.includes(badgeType)
+              ? [{ badgeType }]
+              : [],
+        );
+
+        const response = await GET();
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({
+          success: true,
+          verified: false,
+        });
+        expect(prisma.userBadge.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              userId: "user-a",
+              badgeType: {
+                in: ["NOMAD_100_HOURS", "STREAK_30_DAYS"],
+              },
+            },
+          }),
+        );
+      },
+    );
+
+    it("does not count a Nomad proof badge owned by another user", async () => {
+      (auth as jest.Mock).mockResolvedValue({ userId: "user-a" });
+      (prisma.userBadge.findMany as jest.Mock).mockImplementation(
+        async (args) =>
+          args.where.userId === "user-b"
+            ? [{ badgeType: "NOMAD_100_HOURS" }]
+            : [],
+      );
+
+      const response = await GET();
+      await expect(response.json()).resolves.toMatchObject({
+        success: true,
+        verified: false,
+      });
+      expect(prisma.userBadge.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ userId: "user-a" }),
+        }),
+      );
+    });
+
+    it("fails closed with a safe response when the database query fails", async () => {
+      (auth as jest.Mock).mockResolvedValue({ userId: "user-a" });
+      (prisma.userBadge.findMany as jest.Mock).mockRejectedValue(
+        new Error("sensitive database detail"),
+      );
+      const consoleError = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+
+      try {
+        const response = await GET();
+        expect(response.status).toBe(500);
+        const body = await response.json();
+        expect(body).toMatchObject({ success: false, verified: false });
+        expect(body.error).not.toContain("sensitive database detail");
+      } finally {
+        consoleError.mockRestore();
+      }
     });
   });
 

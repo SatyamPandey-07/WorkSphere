@@ -1,77 +1,71 @@
-/**
- * Implements the vector clock data structure to track causal relationships 
- * and partial ordering of distributed state mutations.
- */
+export type VectorClockMap = Record<string, number>;
 
-export type ClockMap = Record<string, number>;
+class AsyncMutex {
+  private chain: Promise<void> = Promise.resolve();
+
+  async runExclusive<T>(fn: () => T | Promise<T>): Promise<T> {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const prev = this.chain;
+    this.chain = prev.then(() => gate);
+
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+}
 
 export class VectorClock {
-    private clock: ClockMap;
-    private nodeId: string;
+  private readonly clock: Map<string, number>;
+  private readonly mutex = new AsyncMutex();
 
-    constructor(nodeId: string, initialClock: ClockMap = {}) {
-        this.nodeId = nodeId;
-        this.clock = { ...initialClock };
-        if (!this.clock[this.nodeId]) {
-            this.clock[this.nodeId] = 0;
+  constructor(
+    private readonly nodeId: string,
+    initialClock: VectorClockMap = {}
+  ) {
+    if (!nodeId.trim()) {
+      throw new Error('VectorClock requires a non-empty nodeId');
+    }
+    this.clock = new Map<string, number>(Object.entries(initialClock));
+    if (!this.clock.has(this.nodeId)) {
+      this.clock.set(this.nodeId, 0);
+    }
+  }
+
+  private snapshot(): VectorClockMap {
+    return Object.fromEntries(this.clock.entries());
+  }
+
+  getClock(): VectorClockMap {
+    return this.snapshot();
+  }
+
+  async tick(): Promise<VectorClockMap> {
+    return this.mutex.runExclusive(() => {
+      const current = this.clock.get(this.nodeId) ?? 0;
+      const next = current + 1;
+      this.clock.set(this.nodeId, next);
+      return this.snapshot();
+    });
+  }
+
+  async merge(remoteClock: VectorClockMap): Promise<VectorClockMap> {
+    return this.mutex.runExclusive(() => {
+      for (const [peerId, peerCount] of Object.entries(remoteClock)) {
+        const localCount = this.clock.get(peerId) ?? 0;
+        if (peerCount > localCount) {
+          this.clock.set(peerId, peerCount);
         }
-    }
-
-    /**
-     * Increments the local node's counter. Called before a local mutation.
-     */
-    public increment(): ClockMap {
-        this.clock[this.nodeId] = (this.clock[this.nodeId] || 0) + 1;
-        return this.getClock();
-    }
-
-    /**
-     * Merges an incoming vector clock from another node.
-     * Takes the maximum value for each known node ID.
-     */
-    public merge(incomingClock: ClockMap): void {
-        const allNodes = new Set([...Object.keys(this.clock), ...Object.keys(incomingClock)]);
-
-        for (const node of allNodes) {
-            const localVal = this.clock[node] || 0;
-            const incomingVal = incomingClock[node] || 0;
-            this.clock[node] = Math.max(localVal, incomingVal);
-        }
-
-        // After merging, increment local node to reflect the receipt event
-        this.clock[this.nodeId] = (this.clock[this.nodeId] || 0) + 1;
-    }
-
-    /**
-     * Determines the causal relationship between this clock and another.
-     * Returns: 'BEFORE', 'AFTER', 'CONCURRENT', or 'EQUAL'
-     */
-    public compareTo(otherClock: ClockMap): 'BEFORE' | 'AFTER' | 'CONCURRENT' | 'EQUAL' {
-        const allNodes = new Set([...Object.keys(this.clock), ...Object.keys(otherClock)]);
-
-        let isLess = false;
-        let isGreater = false;
-
-        for (const node of allNodes) {
-            const localVal = this.clock[node] || 0;
-            const otherVal = otherClock[node] || 0;
-
-            if (localVal < otherVal) isLess = true;
-            if (localVal > otherVal) isGreater = true;
-
-            if (isLess && isGreater) return 'CONCURRENT';
-        }
-
-        if (isLess) return 'BEFORE';
-        if (isGreater) return 'AFTER';
-        return 'EQUAL';
-    }
-
-    public getClock(): ClockMap {
-        return { ...this.clock };
-    }
-
-    public getNodeId(): string {
-        return this.nodeId;
-    }
+      }
+      const nextSelf = (this.clock.get(this.nodeId) ?? 0) + 1;
+      this.clock.set(this.nodeId, nextSelf);
+      return this.snapshot();
+    });
+  }
 }

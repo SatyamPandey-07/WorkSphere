@@ -18,6 +18,7 @@ export function folderIdFromRoom(roomId: string): string {
   return roomId;
 }
 import { verifyToken } from "@clerk/backend";
+import { HydrationGate, SEAT_HOLDS_STORAGE_KEY } from "./holdHydration";
 
 type SeatStatus = "green" | "yellow" | "red";
 
@@ -125,6 +126,10 @@ export default class WorkspaceServer implements Party.Server {
   private seatHolds = new Map<string, SeatHold>();
   private connHolds = new Map<string, Set<string>>(); // connId -> Set<holdKey>
   private seatHoldCleanupInterval?: ReturnType<typeof setInterval>;
+  // Hibernation wake safety (#7954): lock traffic waits for persisted leases
+  // to load, and every lease change is written back to room storage.
+  private holdGate = new HydrationGate();
+  private persistScheduled = false;
 
   // Music genre state per venue (#2077): tracks the current reported genre
   // for each venueId. Overwritten on each update — last reporter wins.
@@ -142,6 +147,12 @@ export default class WorkspaceServer implements Party.Server {
   >();
 
   constructor(readonly room: Party.Room) {
+    // Reload persisted hold leases before any lock request is validated. The
+    // gate closes synchronously here, so nothing can slip in ahead of the load.
+    if (room.storage) {
+      void this.holdGate.begin(() => this.hydrateSeatHolds());
+    }
+
     // 5-second sweep for active typing presence cleanup (>15s inactivity) (#3438)
     this.presenceCleanupInterval = setInterval(() => {
       this.pruneInactivePresence();
@@ -367,7 +378,21 @@ export default class WorkspaceServer implements Party.Server {
     });
   }
 
+  /** PartyKit waits for this before delivering traffic to a freshly woken room. */
+  async onStart() {
+    await this.holdGate.whenReady();
+  }
+
+  /**
+   * Queues every message that arrives while persisted seat holds are still
+   * loading, then replays them in order so lock validation is strictly
+   * serialized against the restored lease table (#7954).
+   */
   onMessage(message: string, sender: Party.Connection) {
+    this.holdGate.run(() => this.processMessage(message, sender));
+  }
+
+  private processMessage(message: string, sender: Party.Connection) {
     const state = sender.state as { role?: string; userId?: string };
 
     try {
@@ -694,7 +719,7 @@ export default class WorkspaceServer implements Party.Server {
   onClose(conn: Party.Connection) {
     this.connectionStates.delete(conn.id);
     this.handleSeatCheckout(conn);
-    this.handleConnectionSeatHoldsCleanup(conn.id);
+    this.holdGate.run(() => this.handleConnectionSeatHoldsCleanup(conn.id));
     for (const [noteId, lease] of this.stickyNoteLeases) {
       if (lease.connId === conn.id)
         this.releaseStickyNoteLease(noteId, conn.id);
@@ -1119,7 +1144,68 @@ export default class WorkspaceServer implements Party.Server {
         expiredCount++;
       }
     }
+    if (expiredCount > 0) this.persistSeatHolds();
     return expiredCount;
+  }
+
+  /**
+   * Restores unexpired hold leases from room storage after a cold start or
+   * hibernation wake (#7954). Expired leases are discarded rather than
+   * revived, and connection indexes are rebuilt so ownership checks and
+   * disconnect cleanup keep working.
+   */
+  private async hydrateSeatHolds(): Promise<void> {
+    const stored = await this.room.storage.get<SeatHold[]>(
+      SEAT_HOLDS_STORAGE_KEY,
+    );
+    if (!Array.isArray(stored)) return;
+
+    const now = Date.now();
+    for (const hold of stored) {
+      if (
+        !hold ||
+        typeof hold.seatId !== "string" ||
+        typeof hold.venueId !== "string" ||
+        typeof hold.userId !== "string" ||
+        typeof hold.connId !== "string" ||
+        typeof hold.expiresAt !== "number" ||
+        now >= hold.expiresAt
+      ) {
+        continue;
+      }
+
+      const holdKey = `${hold.venueId}:${hold.seatId}`;
+      if (this.seatHolds.has(holdKey)) continue;
+      this.seatHolds.set(holdKey, { ...hold });
+
+      let connSet = this.connHolds.get(hold.connId);
+      if (!connSet) {
+        connSet = new Set();
+        this.connHolds.set(hold.connId, connSet);
+      }
+      connSet.add(holdKey);
+    }
+  }
+
+  /**
+   * Writes the current lease table to room storage. Writes are coalesced into
+   * one per tick and skipped while hydration is running, so a half-loaded
+   * (empty) table can never overwrite the persisted leases.
+   */
+  private persistSeatHolds(): void {
+    if (!this.room.storage || !this.holdGate.isReady || this.persistScheduled) {
+      return;
+    }
+    this.persistScheduled = true;
+    void Promise.resolve().then(() => {
+      this.persistScheduled = false;
+      const snapshot = Array.from(this.seatHolds.values());
+      return Promise.resolve(
+        this.room.storage.put(SEAT_HOLDS_STORAGE_KEY, snapshot),
+      ).catch((err: unknown) => {
+        console.error("[WorkspaceServer] failed to persist seat holds:", err);
+      });
+    });
   }
 
   /**
@@ -1206,6 +1292,7 @@ export default class WorkspaceServer implements Party.Server {
       this.untrackConnHold(existing.connId, holdKey);
     }
     this.seatHolds.set(holdKey, newHold);
+    this.persistSeatHolds();
 
     let connSet = this.connHolds.get(conn.id);
     if (!connSet) {
@@ -1339,6 +1426,7 @@ export default class WorkspaceServer implements Party.Server {
     if (!hold) return undefined;
     this.seatHolds.delete(holdKey);
     this.untrackConnHold(hold.connId, holdKey);
+    this.persistSeatHolds();
     return hold;
   }
 

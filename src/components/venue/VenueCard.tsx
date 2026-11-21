@@ -1,8 +1,11 @@
 "use client";
 
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
 import React from "react";
 import Image from "next/image";
@@ -11,6 +14,8 @@ import { PhotoAttribution } from "./VenueGallery";
 export interface VenueCardProps {
   id: string;
   name: string;
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
 
@@ -25,20 +30,26 @@ export interface VenueCardProps {
   name?: string;
  main
  main
+ main
   address?: string;
   imageUrl?: string;
   attribution?: PhotoAttribution;
   rating?: number;
   wifiSpeed?: number;
   noiseLevel?: string;
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
   onClick?: () => void;
 }
 
 export function VenueCard({
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
 
@@ -75,6 +86,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   id,
  main
  main
+ main
   name,
   address,
   imageUrl,
@@ -82,9 +94,12 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   rating,
   wifiSpeed,
   noiseLevel,
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
   onClick,
 }: VenueCardProps) {
@@ -104,6 +119,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             alt={name}
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-105"
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
 
@@ -192,13 +209,17 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             className="object-cover transition-transform duration-300 hover:scale-105"
  main
  main
+ main
           />
         </div>
       )}
 
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
       {/* Venue Details */}
       <div className="mt-3 flex flex-col gap-1">
@@ -208,6 +229,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
         {address && <p className="text-xs text-slate-400">{address}</p>}
 
         <div className="mt-2 flex items-center gap-3 text-xs text-slate-300">
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
 
@@ -268,13 +291,17 @@ export const VenueCard: React.FC<VenueCardProps> = ({
         <div className="mb-3 flex items-center gap-3 text-xs text-zinc-300">
  main
  main
+ main
           {rating !== undefined && <span>⭐ {rating.toFixed(1)}</span>}
           {wifiSpeed !== undefined && <span>⚡ {wifiSpeed} Mbps</span>}
           {noiseLevel && <span className="capitalize">🔊 {noiseLevel}</span>}
         </div>
+ feat/webrtc-ice-restart-backoff
+
  fix/carbon-savings-zero-baseline
 
  feat/rating-dialog-a11y-arrow-nav
+ main
  main
 
         {/* Photo Attribution with secure link & fallback safeguard */}
@@ -299,6 +326,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       </div>
     </div>
   );
+ feat/webrtc-ice-restart-backoff
+}
+
  fix/carbon-savings-zero-baseline
 }
 
@@ -372,5 +402,6 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main

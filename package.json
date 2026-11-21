@@ -17,12 +17,14 @@
     "cdc:worker": "node --experimental-strip-types src/workers/reservationCdcWorker.ts",
     "zkp:compile": "bash scripts/compile-zkp.sh",
     "zkp:compile:membership": "bash scripts/compile-membership-zkp.sh",
+    "zkp:compile:nomad": "bash scripts/compile-nomad-zkp.sh",
     "build:wasm:audio-filter": "bash wasm/audio-filter/build.sh",
     "build:wasm:sound-classifier": "bash src/wasm/acoustic/build.sh",
     "bench:audio-filter": "node scripts/bench-audio-filter-pool.mjs",
     "bench:bloom-limiter": "node --experimental-strip-types scripts/bench-distributed-bloom-limiter.mjs",
     "postinstall": "prisma generate",
-    "prepare": "husky"
+    "prepare": "husky",
+    "zkp:compile:student-access-pass": "bash scripts/compile-student-access-pass-zkp.sh"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.3",
@@ -51,6 +53,7 @@
     "i18next-browser-languagedetector": "^8.2.1",
     "idb": "^8.0.3",
     "ioredis": "^6.0.0",
+    "js-sha3": "0.9.3",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",
     "lucide-react": "^1.61.0",

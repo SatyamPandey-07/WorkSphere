@@ -14,6 +14,7 @@ const isPublicRoute = createRouteMatcher([
   '/offline',
   '/api/health(.*)',
   '/api/webhooks/(.*)',
+  '/api/venues/check-in/iot',
   '/api/venues/search(.*)',
 ]);
 

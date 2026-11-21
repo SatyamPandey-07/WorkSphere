@@ -132,7 +132,7 @@ export function VenueShareButton({
       onClick={share}
       aria-label={computedAriaLabel}
       data-testid={testId}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 ${
+      className={`venue-action-glass-btn inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition hover:backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 ${
         disabled
           ? "opacity-50 cursor-not-allowed bg-zinc-600 text-zinc-300"
           : copied

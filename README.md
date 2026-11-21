@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-139%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-142%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-139-active-rockstars"><b>👥 Contributors (139)</b></a> •
+  <a href="#-contributors-142-active-rockstars"><b>👥 Contributors (142)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (139 Active Rockstars)
+### 🚀 Contributors (142 Active Rockstars)
 
-A massive thank you to all **139 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **142 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -959,6 +959,26 @@ A massive thank you to all **139 brilliant contributors and bots** building Work
       </a>
     </td>
   </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Kartikey-17">
+        <img src="https://avatars.githubusercontent.com/u/205428835?v=4" width="55px;" height="55px;" alt="Kartikey-17" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Kartikey-17</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/KartikeyG-world">
+        <img src="https://avatars.githubusercontent.com/u/221846684?v=4" width="55px;" height="55px;" alt="KartikeyG-world" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>KartikeyG-world</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Updesh413">
+        <img src="https://avatars.githubusercontent.com/u/77709529?v=4" width="55px;" height="55px;" alt="Updesh413" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Updesh413</b></sub>
+      </a>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -995,11 +1015,23 @@ A massive thank you to all **139 brilliant contributors and bots** building Work
 
 ## ✨ Features
 
+### ⚡ Cutting-Edge Platform & Telemetry Innovations (NEW)
+
+- **WebGPU Adapter Capability Diagnostics**: Client-side hardware profiling engine auditing GPU adapter architectures, compute workgroup dimensions, texture bounds, and WGSL shader extensions in an interactive admin dashboard (`src/components/admin/WebGpuCapabilityPanel.tsx`, `src/lib/webgpu/capabilityReport.ts`).
+- **Ambient Noise Peak Frequency Spectrogram**: High-precision 60fps audio waterfall visualization leveraging the Web Audio API AnalyserNode and FFT frequency bins with dynamic color interpolation palettes (`Viridis`, `Inferno`, `Cyberpunk`) (`src/components/audio/NoiseSpectrogram.tsx`).
+- **Causal Vector Clock & Hybrid Logical Clock Synchronization**: Resilient distributed partial ordering with deterministic tie-breaking heuristics, supporting decentralized offline notes synchronization across multi-peer WebRTC meshes (`src/core/sync/VectorClock.ts`, `src/core/sync/LamportTimestampResolver.ts`).
+- **Automated Clerk Webhook Profile Synchronization**: Production-grade Svix cryptographic signature validation handling `user.created`, `user.updated`, and `user.deleted` events with Prisma UPSERT idempotency and null-safe primary email resolution (`src/app/api/webhooks/clerk/route.ts`, `src/lib/auth/clerkWebhook.ts`).
+- **Optimistic Redlock Seat Hold Lease Extension**: Distributed concurrency control endpoint allowing active seat reservations to extend locks safely with monotonically increasing fencing tokens (`src/app/api/venues/[venueId]/seats/[seatId]/lock/extend/route.ts`, `src/lib/locks/seatHoldLock.ts`).
+- **Tactical Radar Sweep HUD & Holographic Compass**: Interactive cyber-tactical HUD overlay and 3D sensory compass tracking nearby venues, ambient acoustics, and live colleague presence (`src/components/ui/RadarSweepHUD.tsx`, `src/components/saved-venues/HolographicCompass.tsx`).
+- **Carbon Footprint Date Range Quick-Select Presets**: One-click quick presets ("7 Days", "30 Days", "This Month", "Year to Date") for rapid commuter carbon savings calculations (`src/components/analytics/CarbonFootprintTracker.tsx`).
+- **Glassmorphic Hover Pulse Animation on Venue Actions**: Sleek neon glassmorphism pulse effects on bookmark, favorite, and share buttons with reduced-motion accessibility support (`src/components/venue/VenueCard.tsx`, `@keyframes neon-glass-pulse-*`).
+
 ### 🤖 AI-Powered Search
 
 - **Natural Language Queries**: "Find a quiet cafe with good WiFi near me"
 - **Smart Intent Understanding**: Extracts work type, amenities, location preferences
 - **Intelligent Scoring**: Ranks venues based on work-friendliness criteria
+- **Venue Search Query History & MRU Caching (NEW)**: Local storage search query history with instant dropdown recall, case-insensitive deduplication, individual deletion, and full arrow-key keyboard navigation (`src/components/search/VenueSearchInput.tsx`, `src/components/search/SearchBar.tsx`).
 
 ### 🎙️ Voice Input (Browser Support)
 
@@ -1096,6 +1128,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - **JWT Refresh Token Invalidation on Password Change**: Tracks `passwordChangedAt` in the User model to immediately invalidate previously issued refresh tokens upon credential rotation (`src/lib/auth/emailService.ts`, `prisma/schema.prisma`).
 - **User Profiles**: Personalized experience
 - **Webhook Sync**: Real-time user data updates
+- **Local Clerk Webhook Setup**: Configure signed user lifecycle webhooks for development in [docs/auth/CLERK_WEBHOOK_SETUP.md](./docs/auth/CLERK_WEBHOOK_SETUP.md)
 
 ### 🧾 PDF Receipt System
 
@@ -1191,6 +1224,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### 🌐 Decentralized Networking & Survival Mesh
 
+- **Multi-Agent Debate & Consensus Engine**: Distributed agent dialogue verification resolving spatial, noise, and booking ambiguities through peer argumentation and verifiable multi-agent consensus (`src/core/agents/DebateConsensusEngine.ts`).
+- **Peer Score Health Badge & Sybil Defense Indicator**: Live P2P gossip peer quality scoring and Sybil attack monitoring displaying connection tier, score breakdown, and health metrics (`src/components/p2p/PeerScoreBadge.tsx`).
 - **Hybrid Logical Clock (HLC) Distributed Synchronization**: Monotonic causality and vector ordering across offline nodes and P2P mesh peers, preventing clock drift and update ordering anomalies (`src/core/sync/HybridLogicalClock.ts`).
 - **BFT Consensus Coordinator with View-Change Timeout**: Byzantine fault tolerant leader election with exponential backoff and quorum verification for decentralized network coordination (`src/core/consensus/BFTConsensusCoordinator.ts`).
 - **GossipSub WebRTC Mesh Router for Offline Emergency Messaging**: Decentralized peer-to-peer pub/sub message dissemination across local WebRTC mesh networks without central servers (`src/core/p2p/GossipSubRouter.ts`, `src/core/p2p/MeshPacketSerializer.ts`).
@@ -1203,6 +1238,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### ✈️ Nomad Travel, Smart Housing & Collab War Rooms
 
+- **Integrated Calendar Reminder Selector**: Multi-provider calendar reminder scheduling (Google Calendar, iCal, Outlook) with custom alert offsets for nomad coworking bookings (`src/components/calendar/CalendarReminderSelector.tsx`).
 - **CRDT Differential Snapshot Compression Telemetry & Prometheus Vitals**: Real-time compression ratio telemetry, high-resolution duration tracking, and Prometheus export for collaborative state snapshots (`src/lib/crdt/compressionTelemetry.ts`, `/api/admin/vitals`).
 - **Yjs-Based CRDT Collaborative Notes Engine Over PartyKit**: Real-time multi-user document and scratchpad collaboration utilizing Yjs CRDTs, awareness presence cursor tracking, IndexedDB local persistence (`y-indexeddb`), and PartyKit edge WebSocket broadcasting (`src/components/notes/GroupNotesEditor.tsx`, `party/server.ts`). See the [Group Notes Collaboration Guide](docs/crdt/NOTES_COLLABORATION_GUIDE.md).
 - **CRDT State Vector Exchange & Differential Compaction Protocol**: Ultra-low-bandwidth collaborative whiteboard synchronization utilizing Yjs state vector exchanges, incremental update compaction, and differential snapshot pruning ([docs/crdt/CRDT_VECTOR_COMPACTION.md](./docs/crdt/CRDT_VECTOR_COMPACTION.md)).
@@ -1545,14 +1581,24 @@ or authentication redirection loops with Clerk, or map tile loading failures.
   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/worksphere?schema=public"
   DIRECT_URL="postgresql://postgres:postgres@localhost:5432/worksphere?schema=public"
 
-  # Upstash Redis (Optional for rate limiting; mock fallback exists)
-  UPSTASH_REDIS_REST_URL="http://localhost:8079"
-  UPSTASH_REDIS_REST_TOKEN="example_token"
+  # Optional local Redis over TCP (for consumers that use ioredis)
+  REDIS_URL="redis://localhost:6379"
+
+  # Optional Upstash REST; set both only when using an actual REST endpoint
+  UPSTASH_REDIS_REST_URL=""
+  UPSTASH_REDIS_REST_TOKEN=""
 
   # App Base URL
   NEXT_PUBLIC_APP_URL="http://localhost:3000"
   ```
 - Restart `npm run dev` after updating `.env.local` to allow Next.js to reload environment variables.
+
+Some rate-limit and other code paths have process-local in-memory fallbacks, but
+they are not shared Redis storage and do not cover every Redis-backed feature.
+The Compose Redis service uses TCP and is not an Upstash REST proxy; the
+`localhost:8079` placeholder in `.env.example` requires a separately running
+REST-compatible proxy. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+for verified fallback behavior and local Redis troubleshooting.
 
 ### 5. Offline Storage Warnings (IndexedDB `VersionError`, Timeouts, Private Browsing)
 

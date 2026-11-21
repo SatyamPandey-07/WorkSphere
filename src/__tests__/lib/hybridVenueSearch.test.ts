@@ -7,6 +7,7 @@ import {
   normalizeVector,
   cosineSimilarity,
   searchVenuesWithRrf,
+  normalizedSearchCacheKey,
 } from "@/lib/search/hybridVenueSearch";
 import { prisma } from "@/lib/prisma";
 
@@ -216,6 +217,77 @@ describe("Reciprocal Rank Fusion (RRF) Formula & Boundary Guards (#5603)", () =>
         const expectedNormString = `[${[3 / 5, 4 / 5].join(",")}]`;
         expect(querySql.values).toContain(expectedNormString);
       });
+    });
+  });
+
+  describe("normalizedSearchCacheKey normalization (Issue #9362)", () => {
+    const defaultQuery = "coworking space";
+
+    it("generates identical cache keys for category casing variations", () => {
+      const keyLower = normalizedSearchCacheKey(defaultQuery, { category: "coworking" });
+      const keyUpper = normalizedSearchCacheKey(defaultQuery, { category: "Coworking" });
+      const keyAllUpper = normalizedSearchCacheKey(defaultQuery, { category: "COWORKING" });
+
+      expect(keyLower).toBe(keyUpper);
+      expect(keyLower).toBe(keyAllUpper);
+
+      const keyQuietLower = normalizedSearchCacheKey(defaultQuery, { category: "quiet" });
+      const keyQuietTitle = normalizedSearchCacheKey(defaultQuery, { category: "Quiet" });
+      expect(keyQuietLower).toBe(keyQuietTitle);
+    });
+
+    it("generates identical cache keys for category whitespace variations", () => {
+      const keyTrimmed = normalizedSearchCacheKey(defaultQuery, { category: "coworking" });
+      const keyWhitespace = normalizedSearchCacheKey(defaultQuery, { category: "  Coworking  " });
+
+      expect(keyTrimmed).toBe(keyWhitespace);
+    });
+
+    it("generates identical cache keys for amenity casing variations", () => {
+      const key1 = normalizedSearchCacheKey(defaultQuery, { amenities: ["WiFi", "Parking"] });
+      const key2 = normalizedSearchCacheKey(defaultQuery, { amenities: ["wifi", "parking"] });
+
+      expect(key1).toBe(key2);
+    });
+
+    it("generates identical cache keys for amenity ordering variations", () => {
+      const keyOrder1 = normalizedSearchCacheKey(defaultQuery, { amenities: ["WiFi", "Parking"] });
+      const keyOrder2 = normalizedSearchCacheKey(defaultQuery, { amenities: ["Parking", "WiFi"] });
+
+      expect(keyOrder1).toBe(keyOrder2);
+    });
+
+    it("generates identical cache keys for amenity whitespace variations", () => {
+      const keyWhitespace = normalizedSearchCacheKey(defaultQuery, { amenities: [" WiFi ", " Parking "] });
+      const keyTrimmed = normalizedSearchCacheKey(defaultQuery, { amenities: ["wifi", "parking"] });
+
+      expect(keyWhitespace).toBe(keyTrimmed);
+    });
+
+    it("generates identical cache keys for combined category, amenity casing, whitespace, and ordering variations", () => {
+      const keyA = normalizedSearchCacheKey("  Quiet Cafe  ", {
+        category: "  Coworking  ",
+        amenities: [" WiFi ", "PARKING", "Coffee "],
+      });
+      const keyB = normalizedSearchCacheKey("quiet cafe", {
+        category: "coworking",
+        amenities: ["coffee", "parking", "wifi"],
+      });
+
+      expect(keyA).toBe(keyB);
+    });
+
+    it("generates distinct cache keys for different logical filters", () => {
+      const keyCoworking = normalizedSearchCacheKey(defaultQuery, { category: "coworking" });
+      const keyCafe = normalizedSearchCacheKey(defaultQuery, { category: "cafe" });
+      expect(keyCoworking).not.toBe(keyCafe);
+
+      const keyAmenities1 = normalizedSearchCacheKey(defaultQuery, { amenities: ["wifi"] });
+      const keyAmenities2 = normalizedSearchCacheKey(defaultQuery, { amenities: ["parking"] });
+      expect(keyAmenities1).not.toBe(keyAmenities2);
+
+      const keyNoCat = normalizedSearchCacheKey(defaultQuery, {});
+      expect(keyCoworking).not.toBe(keyNoCat);
     });
   });
 });

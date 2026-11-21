@@ -2,8 +2,8 @@
 
 **Document ID:** `WS-SEC-DR-001`  
 **Owner:** Security & Cryptography Engineering  
-**Primary Target:** [`src/core/chat/DoubleRatchetSession.ts`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/chat/DoubleRatchetSession.ts)  
-**Supporting Target:** [`src/core/chat/SkippedMessageKeyStore.ts`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/chat/SkippedMessageKeyStore.ts)  
+**Primary Target:** [`src/core/chat/DoubleRatchetSession.ts`](../../src/core/chat/DoubleRatchetSession.ts)\
+**Supporting Target:** [`src/core/chat/SkippedMessageKeyStore.ts`](../../src/core/chat/SkippedMessageKeyStore.ts)\
 **Cryptographic Suite:** `ECDH (NIST P-256 / prime256v1)` + `HMAC-SHA256 (KDF)` + `AES-256-GCM (AEAD)` + `HKDF-SHA256 (Storage KDF)`  
 **Protocol Version:** WorkSphere Double Ratchet v1.0 (Signal Protocol-compatible)  
 
@@ -24,7 +24,7 @@ The WorkSphere Double Ratchet implementation provides end-to-end encrypted (E2EE
 
 ### Scope & Boundaries
 
-This document specifies the exact internal state model, root and chain KDF derivations, DH ratchet state transitions, skipped-message-key storage and lifecycle, session serialization/restoration contract, security properties, and implementation constraints of [`DoubleRatchetSession`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/chat/DoubleRatchetSession.ts) and [`SkippedMessageKeyStore`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/chat/SkippedMessageKeyStore.ts).
+This document specifies the exact internal state model, root and chain KDF derivations, DH ratchet state transitions, skipped-message-key storage and lifecycle, session serialization/restoration contract, security properties, and implementation constraints of [`DoubleRatchetSession`](../../src/core/chat/DoubleRatchetSession.ts) and [`SkippedMessageKeyStore`](../../src/core/chat/SkippedMessageKeyStore.ts).
 
 ---
 
@@ -269,7 +269,7 @@ Skipped message keys represent unconsumed cryptographic material. To prevent sta
 
 Deleting a skipped key immediately upon lookup—prior to AEAD decryption—creates a severe Denial-of-Service vulnerability: an attacker could replay or forge a corrupted packet with a matching sequence counter, triggering immediate deletion of the key and permanently denying the legitimate recipient the ability to decrypt the true delayed message.
 
-To eliminate this vulnerability, [`SkippedMessageKeyStore`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/chat/SkippedMessageKeyStore.ts) implements an **atomic two-phase reservation lease protocol**:
+To eliminate this vulnerability, [`SkippedMessageKeyStore`](../../src/core/chat/SkippedMessageKeyStore.ts) implements an **atomic two-phase reservation lease protocol**:
 
 ```mermaid
 stateDiagram-v2
@@ -348,7 +348,7 @@ export interface EncryptedSkippedKeyRecord {
 }
 ```
 
-* **Storage Key Derivation:** If an explicit 32-byte `storageKey` is not provided in `RatchetSessionConfig`, [`SkippedMessageKeyStore`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/chat/SkippedMessageKeyStore.ts) derives one from the session's initial root key via HKDF-SHA256:
+* **Storage Key Derivation:** If an explicit 32-byte `storageKey` is not provided in `RatchetSessionConfig`, [`SkippedMessageKeyStore`](../../src/core/chat/SkippedMessageKeyStore.ts) derives one from the session's initial root key via HKDF-SHA256:
   $$\text{StorageKey} = \text{HKDF-SHA256}(\text{ikm} = RK_{\text{initial}}, \text{salt} = \text{"WorkSphere-SkippedKeyStore-v1-Salt"}, \text{info} = \text{"WorkSphere-DoubleRatchet-StorageKey:"} \mathbin{\Vert} \text{sessionId}, L = 32)$$
 * **Restoration Contract:** When calling `DoubleRatchetSession.restore(...)`, the application **must** pass the external 32-byte `options.storageKey` alongside the local private key hex. If `options.storageKey` is missing or not a 32-byte Buffer, `restore()` throws an error immediately.
 
@@ -404,9 +404,9 @@ Post-compromise security (also known as backward secrecy or self-healing) ensure
 
 | Component | File Path | Key Responsibilities |
 | :--- | :--- | :--- |
-| `DoubleRatchetSession` | [`src/core/chat/DoubleRatchetSession.ts`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/chat/DoubleRatchetSession.ts) | Session lifecycle, DH ratchet transitions, sending/receiving chain KDF, header validation, encryption/decryption. |
-| `SkippedMessageKeyStore` | [`src/core/chat/SkippedMessageKeyStore.ts`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/chat/SkippedMessageKeyStore.ts) | AES-256-GCM encrypted skipped key cache, composite ID indexing, FIFO capacity enforcement, 7-day TTL eviction, two-phase reservation lease. |
-| Core Index Export | [`src/core/index.ts`](file:///C:/Users/Saransh%20Kashyap/WorkSphere/src/core/index.ts) | Public module exports for `DoubleRatchetSession`, `SkippedMessageKeyStore`, and associated interfaces. |
+| `DoubleRatchetSession` | [`src/core/chat/DoubleRatchetSession.ts`](../../src/core/chat/DoubleRatchetSession.ts) | Session lifecycle, DH ratchet transitions, sending/receiving chain KDF, header validation, encryption/decryption. |
+| `SkippedMessageKeyStore` | [`src/core/chat/SkippedMessageKeyStore.ts`](../../src/core/chat/SkippedMessageKeyStore.ts) | AES-256-GCM encrypted skipped key cache, composite ID indexing, FIFO capacity enforcement, 7-day TTL eviction, two-phase reservation lease. |
+| Core Index Export | [`src/core/index.ts`](../../src/core/index.ts) | Public module exports for `DoubleRatchetSession`, `SkippedMessageKeyStore`, and associated interfaces. |
 
 ### Method & Function Reference
 

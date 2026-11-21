@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, Square, Activity } from "lucide-react";
 import {
   FFT_SIZE,
-  FRAME_INTERVAL_MS,
   averageDbFromFrequencyBins,
   classifyNoise,
   normalizeBinDb,
@@ -14,18 +13,29 @@ import {
 } from "@/lib/noise/fftSpectrogram";
 import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
 import { useElementVisibility } from "@/hooks/useElementVisibility";
+import { useBatteryLowPowerThrottle } from "@/hooks/useBatteryLowPowerThrottle";
 
 type Status = "idle" | "requesting" | "running" | "error";
 
+export interface NoiseSpectrogramProps {
+  targetFps?: number;
+}
+
 /**
- * Real-time 60fps FFT spectrum bars + rolling waterfall spectrogram
+ * Real-time 60fps (or 15fps in low power mode) FFT spectrum bars + rolling waterfall spectrogram
  * via WebAudio AnalyserNode (fftSize 2048).
  */
-export function NoiseSpectrogram() {
+export function NoiseSpectrogram({ targetFps }: NoiseSpectrogramProps = {}) {
   const [status, setStatus] = useState<Status>("idle");
   const [liveDb, setLiveDb] = useState(0);
   const [peakDb, setPeakDb] = useState(0);
   const [noiseClass, setNoiseClass] = useState<NoiseClass>("Quiet");
+
+  const { renderFps } = useBatteryLowPowerThrottle();
+  const effectiveFps = targetFps ?? renderFps;
+  const frameIntervalMs = 1000 / effectiveFps;
+  const frameIntervalMsRef = useRef<number>(frameIntervalMs);
+  frameIntervalMsRef.current = frameIntervalMs;
 
   const {
     ref: containerRef,
@@ -128,13 +138,14 @@ export function NoiseSpectrogram() {
       setStatus("running");
 
       const tick = (timestamp: number) => {
+        const interval = frameIntervalMsRef.current;
         if (lastTick !== null) {
           const delta = timestamp - lastTick;
-          if (delta < FRAME_INTERVAL_MS) {
+          if (delta < interval) {
             raf = requestAnimationFrame(tick);
             return;
           }
-          lastTick = timestamp - (delta % FRAME_INTERVAL_MS);
+          lastTick = timestamp - (delta % interval);
         } else {
           lastTick = timestamp;
         }

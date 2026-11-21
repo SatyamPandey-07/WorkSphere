@@ -31,6 +31,8 @@ export interface UseVenueSearchOptions {
   minQueryLength?: number;
   /** Optional custom base API path (default: "/api/venues") */
   apiEndpoint?: string;
+  /** Additional URL search parameters representing active venue filters. */
+  filterParams?: string;
   /** Configurable semantic vector scoring weight (0.0 - 1.0 or 0 - 100) */
   semanticWeight?: number;
   /** Configurable full-text keyword scoring weight (0.0 - 1.0 or 0 - 100) */
@@ -74,6 +76,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     debounceMs = 250,
     minQueryLength = 1,
     apiEndpoint = "/api/venues",
+    filterParams = "",
     semanticWeight,
     fullTextWeight,
   } = options;
@@ -91,7 +94,7 @@ export function useVenueSearch<T = VenueSearchResult>(
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef<number>(0);
-  const lastRequestedQueryRef = useRef<string | null>(null);
+  const lastRequestedSearchRef = useRef<string | null>(null);
 
   const abort = useCallback(() => {
     requestIdRef.current += 1;
@@ -99,7 +102,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    lastRequestedQueryRef.current = null;
+    lastRequestedSearchRef.current = null;
     setIsLoading(false);
   }, []);
 
@@ -127,6 +130,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       const targetQuery =
         typeof searchQuery === "string" ? searchQuery : activeQuery;
       const trimmedQuery = targetQuery.trim();
+      const searchKey = `${trimmedQuery}\u0000${filterParams}`;
 
       if (!trimmedQuery || trimmedQuery.length < minQueryLength) {
         abort();
@@ -147,7 +151,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       const controller = externalController ?? new AbortController();
       abortControllerRef.current = controller;
       const requestId = ++requestIdRef.current;
-      lastRequestedQueryRef.current = trimmedQuery;
+      lastRequestedSearchRef.current = searchKey;
 
       setIsLoading(true);
       setError(null);
@@ -155,12 +159,18 @@ export function useVenueSearch<T = VenueSearchResult>(
 
       try {
         const delimiter = apiEndpoint.includes("?") ? "&" : "?";
-        let url = `${apiEndpoint}${delimiter}query=${encodeURIComponent(trimmedQuery)}`;
+        const params = new URLSearchParams(filterParams);
+        params.delete("query");
         if (semanticWeight !== undefined) {
-          url += `&semanticWeight=${encodeURIComponent(String(semanticWeight))}`;
+          params.set("semanticWeight", String(semanticWeight));
         }
         if (fullTextWeight !== undefined) {
-          url += `&fullTextWeight=${encodeURIComponent(String(fullTextWeight))}`;
+          params.set("fullTextWeight", String(fullTextWeight));
+        }
+        let url = `${apiEndpoint}${delimiter}query=${encodeURIComponent(trimmedQuery)}`;
+        const additionalParams = params.toString();
+        if (additionalParams) {
+          url += `&${additionalParams}`;
         }
 
         const response = await fetch(url, {
@@ -209,7 +219,7 @@ export function useVenueSearch<T = VenueSearchResult>(
         if (isAbort) {
           if (requestId === requestIdRef.current) {
             abortControllerRef.current = null;
-            lastRequestedQueryRef.current = null;
+            lastRequestedSearchRef.current = null;
             setIsLoading(false);
           }
           return;
@@ -219,7 +229,7 @@ export function useVenueSearch<T = VenueSearchResult>(
           requestId === requestIdRef.current &&
           abortControllerRef.current === controller
         ) {
-          lastRequestedQueryRef.current = null;
+          lastRequestedSearchRef.current = null;
           setError(
             err instanceof Error
               ? err.message
@@ -233,6 +243,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       abort,
       activeQuery,
       apiEndpoint,
+      filterParams,
       fullTextWeight,
       minQueryLength,
       semanticWeight,
@@ -320,13 +331,14 @@ export function useVenueSearch<T = VenueSearchResult>(
       const target =
         typeof queryOverride === "string" ? queryOverride : activeQuery;
       const trimmed = target.trim();
-      if (trimmed !== "" && trimmed === lastRequestedQueryRef.current) {
+      const searchKey = `${trimmed}\u0000${filterParams}`;
+      if (trimmed !== "" && searchKey === lastRequestedSearchRef.current) {
         return;
       }
 
       await performSearch(target);
     },
-    [activeQuery, performSearch],
+    [activeQuery, filterParams, performSearch],
   );
 
   return {

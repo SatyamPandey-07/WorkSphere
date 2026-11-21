@@ -135,12 +135,12 @@ Accept: application/json
 
 # Reservations
 
-| Endpoint                                | Description                        |
-| --------------------------------------- | ---------------------------------- |
-| `GET /api/reservations/availability`    | Retrieve reservation availability. |
-| `POST /api/reservations/book`           | Create a reservation.              |
-| `GET /api/reservations/events`          | Retrieve reservation events.       |
-| `POST /api/reservations/recurring-book` | Create recurring reservations.     |
+| Endpoint                                | Description                                                                                                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/reservations/availability`    | Retrieve reservation availability.                                                                                                                                                    |
+| `POST /api/reservations/book`           | Create a reservation.                                                                                                                                                                 |
+| `GET /api/reservations/events`          | Stream real-time reservation availability and desk expiration events via Server-Sent Events. See the [Reservation Availability SSE guide](api/RESERVATION_EVENTS_SSE.md) for details. |
+| `POST /api/reservations/recurring-book` | Create recurring reservations.                                                                                                                                                        |
 
 ---
 
@@ -220,26 +220,31 @@ Accept: application/json
 
 # Analytics & Administration
 
-| Endpoint                                  | Description                          |
-| ----------------------------------------- | ------------------------------------ |
-| `GET /api/analytics`                      | Retrieve analytics data.             |
-| `GET /api/admin/analytics`                | Retrieve administrative analytics.   |
-| `GET /api/admin/performance`              | Retrieve system performance metrics. |
-| `GET /api/admin/system`                   | Retrieve system status.              |
-| `GET /api/admin/system/partitions`        | Retrieve partition information.      |
-| `GET /api/admin/system/partitions/export` | Export partition data.               |
+| Endpoint                                    | Description                                                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `GET /api/analytics`                        | Retrieve analytics data.                                                           |
+| `GET /api/admin/analytics`                  | Retrieve administrative analytics.                                                 |
+| `GET /api/admin/performance`                | Retrieve system performance metrics.                                               |
+| `GET /api/admin/system`                     | Retrieve system status.                                                            |
+| `GET /api/admin/system/partitions`          | Retrieve partition information.                                                    |
+| `GET /api/admin/system/partitions/export`   | Export partition data.                                                             |
+| `POST /api/admin/system/partitions`         | Run CRON_SECRET-protected weekly partition provisioning and retention maintenance. |
+| `POST /api/admin/system/partitions/archive` | Archive eligible partitions through authenticated administration.                  |
+| `POST /api/admin/system/partitions/delete`  | Permanently delete eligible partitions through authenticated administration.       |
+| `GET /api/admin/system/partitions/audit`    | Retrieve partition administration audit records with filters and pagination.       |
 
 ---
 
 # Maps & Location
 
-| Endpoint                        | Description                               |
-| ------------------------------- | ----------------------------------------- |
-| `GET /api/location`             | Retrieve the user's location information. |
-| `GET /api/map/heatmap`          | Retrieve the workspace heatmap.           |
-| `POST /api/map/heatmap/seed`    | Seed heatmap data.                        |
-| `GET /api/map/noise-heatmap`    | Retrieve the noise heatmap.               |
-| `GET /api/map/forecast-heatmap` | Retrieve forecast heatmap data.           |
+| Endpoint                         | Description                                                                                                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/location`              | Retrieve the user's location information.                                                                                                                                        |
+| `GET /api/map/heatmap`           | Retrieve the workspace heatmap.                                                                                                                                                  |
+| `POST /api/map/heatmap/seed`     | Seed heatmap data.                                                                                                                                                               |
+| `GET /api/map/noise-heatmap`     | Retrieve the noise heatmap.                                                                                                                                                      |
+| `GET /api/map/forecast-heatmap`  | Retrieve forecast heatmap data.                                                                                                                                                  |
+| `POST /api/routing/meet-halfway` | Compute optimal team meeting centroid, evaluate candidate venues, and rank recommendations. See the [Meet Halfway Routing API guide](./api/MEET_HALFWAY_ROUTING.md) for details. |
 
 ---
 

@@ -582,8 +582,8 @@ export const ClusterMarkerComponent = memo(function ClusterMarkerComponent({
 export interface MapProps {
   location: { latitude: number; longitude: number };
   markers: MapMarker[];
-  routes: MapRoute[];
-  mapView: MapView | null;
+  routes?: MapRoute[];
+  mapView?: MapView | null;
   roomId?: string | null;
   initialHighContrast?: boolean;
   highContrast?: boolean;
@@ -596,13 +596,19 @@ export interface MapProps {
   selectedVenueId?: string | null;
   onBookVenue?: (venue: MapMarker) => void;
   onGetDirections?: (venue: MapMarker) => void;
+  initialRoutingQueue?: Array<{
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 const Map = ({
   location,
-  markers,
-  routes,
-  mapView,
+  markers = [],
+  routes = [],
+  mapView = null,
   roomId,
   initialHighContrast = false,
   highContrast: controlledHighContrast,
@@ -615,6 +621,7 @@ const Map = ({
   selectedVenueId,
   onBookVenue,
   onGetDirections,
+  initialRoutingQueue = [],
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -738,8 +745,11 @@ const Map = ({
   // =========================================================================
   // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
   // =========================================================================
-  const [routingQueue, setRoutingQueue] = useState<any[]>([]);
+  const [routingQueue, setRoutingQueue] = useState<any[]>(initialRoutingQueue);
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
+  const [isRoutingLoading, setIsRoutingLoading] = useState<boolean>(false);
+  const [routingError, setRoutingError] = useState<string | null>(null);
+  const routingRequestIdRef = useRef<number>(0);
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
@@ -775,9 +785,16 @@ const Map = ({
   }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
-  const calculateOptimizedRoute = async (venuesList = routingQueue) => {
+  const calculateOptimizedRoute = async (
+    venuesList = routingQueue,
+    profile = travelProfile,
+  ) => {
+    const requestId = ++routingRequestIdRef.current;
+
     if (venuesList.length < 2) {
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError(null);
       return;
     }
 
@@ -794,6 +811,8 @@ const Map = ({
 
     if (dedupedList.length < 2) {
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError(null);
       return;
     }
 
@@ -816,6 +835,8 @@ const Map = ({
     if (validList.length < 2) {
       console.warn("[OSRM] Not enough valid coordinates for routing");
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError("Not enough valid coordinates to calculate route");
       return;
     }
 
@@ -824,18 +845,26 @@ const Map = ({
       .join(";");
 
     const osrmProfile =
-      travelProfile === "walking"
+      profile === "walking"
         ? "foot"
-        : travelProfile === "cycling"
+        : profile === "cycling"
           ? "bicycle"
           : "driving";
     const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
+
+    setIsRoutingLoading(true);
+    setRoutingError(null);
 
     try {
       const response = await fetch(url);
       const data = await response.json();
 
-      if (data.code === "Ok") {
+      // Guard against stale overlapping asynchronous responses
+      if (requestId !== routingRequestIdRef.current) {
+        return;
+      }
+
+      if (data.code === "Ok" && data.routes && data.routes.length > 0) {
         const coords = data.routes[0].geometry.coordinates;
         const hasElevation = coords.some(
           (c: any[]) =>
@@ -856,9 +885,21 @@ const Map = ({
           legs: data.routes[0].legs,
           elevationProfile,
         });
+        setRoutingError(null);
+      } else {
+        setOptimizedRoute(null);
+        setRoutingError(data.message || "Unable to find route between waypoints");
       }
     } catch (error) {
-      console.error("OSRM Multi-Stop routing resolution failed:", error);
+      if (requestId === routingRequestIdRef.current) {
+        console.error("OSRM Multi-Stop routing resolution failed:", error);
+        setOptimizedRoute(null);
+        setRoutingError("Failed to calculate route. Please try again.");
+      }
+    } finally {
+      if (requestId === routingRequestIdRef.current) {
+        setIsRoutingLoading(false);
+      }
     }
   };
 
@@ -1097,6 +1138,7 @@ const Map = ({
           border-radius: 12px;
           position: relative;
           z-index: 20;
+          background: #0B0F17 !important;
         }
         
         /* UPDATED: Target map tiles specifically so they don't hide the heatmap canvas */
@@ -1601,16 +1643,29 @@ const Map = ({
           onClearQueue={() => {
             setRoutingQueue([]);
             setOptimizedRoute(null);
+            setIsRoutingLoading(false);
+            setRoutingError(null);
           }}
           onRemoveVenue={(idx) => {
             const updated = routingQueue.filter((_, i) => i !== idx);
             setRoutingQueue(updated);
             calculateOptimizedRoute(updated);
           }}
+          onReorderWaypoints={(newQueue) => {
+            setRoutingQueue(newQueue);
+            calculateOptimizedRoute(newQueue);
+          }}
           travelProfile={travelProfile}
-          onTravelProfileChange={(mode) => setTravelProfile(mode)}
+          onTravelProfileChange={(mode) => {
+            setTravelProfile(mode);
+            if (routingQueue.length >= 2) {
+              calculateOptimizedRoute(routingQueue, mode);
+            }
+          }}
           onCalculateRoute={() => calculateOptimizedRoute()}
           optimizedRoute={optimizedRoute}
+          isLoading={isRoutingLoading}
+          routingError={routingError}
         />
       </MapContainer>
 

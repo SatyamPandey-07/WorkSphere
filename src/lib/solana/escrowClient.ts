@@ -902,9 +902,14 @@ export async function reconcilePendingSignature({
   let attempts = 0;
   while (attempts < maxRetries) {
     try {
-      const status = await connection.getSignatureStatus(signature, {
-        searchTransactionHistory: true,
-      });
+      // A timeout rejects into the catch below, which counts it as a retry.
+      const status = await withRpcPollTimeout(
+        () =>
+          connection.getSignatureStatus(signature, {
+            searchTransactionHistory: true,
+          }),
+        { endpoint: "reconcilePendingSignature" },
+      );
 
       const confirmation = status.value;
       if (confirmation) {
@@ -3109,27 +3114,38 @@ export function subscribeToEscrowConfirmation(
     }
   };
 
+  // Single status fetch shared by every polling path. Each request is bounded
+  // by a 5s abort deadline so a blackholed RPC node can never hang the loop;
+  // a timeout rejects and is handled by the caller like any other poll error.
+  const fetchSignatureStatus = (): Promise<SignatureStatus | null> =>
+    withRpcPollTimeout(
+      async () => {
+        if (options.pollSignatureStatus) {
+          return options.pollSignatureStatus(cleanSignature);
+        }
+        if (connection) {
+          const res = await connection.getSignatureStatuses([cleanSignature], {
+            searchTransactionHistory: true,
+          });
+          return res.value?.[0] ?? null;
+        }
+        const res = await pool.execute((conn) =>
+          conn.getSignatureStatuses([cleanSignature], {
+            searchTransactionHistory: true,
+          }),
+        );
+        return res.value?.[0] ?? null;
+      },
+      { endpoint: "escrow-confirmation-poll" },
+    );
+
   // Helper to poll signature status once
   const pollOnce = async () => {
     if (stateMachine.isDone() || isUnsubscribed) return;
 
     let status: SignatureStatus | null = null;
     try {
-      if (options.pollSignatureStatus) {
-        status = await options.pollSignatureStatus(cleanSignature);
-      } else if (connection) {
-        const res = await connection.getSignatureStatuses([cleanSignature], {
-          searchTransactionHistory: true,
-        });
-        status = res.value?.[0] ?? null;
-      } else {
-        const res = await pool.execute((conn) =>
-          conn.getSignatureStatuses([cleanSignature], {
-            searchTransactionHistory: true,
-          }),
-        );
-        status = res.value?.[0] ?? null;
-      }
+      status = await fetchSignatureStatus();
     } catch (pollErr) {
       console.warn(
         `[EscrowStreaming] HTTP poll failed for ${cleanSignature}:`,
@@ -3195,25 +3211,9 @@ export function subscribeToEscrowConfirmation(
       if (isExpired && !stateMachine.isDone() && !isUnsubscribed) {
         let finalCheckSucceeded = false;
         try {
-          let finalRes: SignatureStatus | null = null;
-          if (options.pollSignatureStatus) {
-            finalRes = await options.pollSignatureStatus(cleanSignature);
-            finalCheckSucceeded = true;
-          } else if (connection) {
-            const res = await connection.getSignatureStatuses([cleanSignature], {
-              searchTransactionHistory: true,
-            });
-            finalRes = res.value?.[0] ?? null;
-            finalCheckSucceeded = true;
-          } else {
-            const res = await pool.execute((conn) =>
-              conn.getSignatureStatuses([cleanSignature], {
-                searchTransactionHistory: true,
-              }),
-            );
-            finalRes = res.value?.[0] ?? null;
-            finalCheckSucceeded = true;
-          }
+          const finalRes: SignatureStatus | null =
+            await fetchSignatureStatus();
+          finalCheckSucceeded = true;
 
           if (finalRes && !finalRes.err) {
             const finalCommitment = finalRes.confirmationStatus;

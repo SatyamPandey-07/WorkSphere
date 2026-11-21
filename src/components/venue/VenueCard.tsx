@@ -1,5 +1,7 @@
 "use client";
 
+ feat/noise-percentiles-quiet-hours
+
  feat/offline-mutation-queue-retry-cap
 
  feat/seat-hold-lifecycle-sweep
@@ -7,6 +9,7 @@
  feat/modal-escape-focus-restoration
 
  feat/webrtc-datachannel-chunker-backpressure
+ main
  main
  main
  main
@@ -91,6 +94,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/noise-percentiles-quiet-hours
+}
+
  feat/offline-mutation-queue-retry-cap
 }
 
@@ -259,6 +265,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

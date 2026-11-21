@@ -42,6 +42,10 @@ export class OSMAccessibilityParser {
         if (features.accessibleEntrance) score += 10;
         if (features.hasTactilePaving) score += 10;
 
+        const suitability = Number(features.rawTags['suitability']);
+        if (Number.isFinite(suitability)) {
+            score = Math.max(score, Math.round(Math.max(0, Math.min(10, suitability)) * 10));
+        }
         return Math.min(100, score);
     }
 }

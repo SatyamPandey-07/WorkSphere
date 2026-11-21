@@ -1,6 +1,6 @@
 # DebateOrchestrator: Game-Theoretic Multi-Agent Consensus Protocols
 
-This architecture document details the multi-agent consensus engine implemented in [`src/core/agents/debate/DebateOrchestrator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/DebateOrchestrator.ts), [`src/core/agents/debate/AgentPersona.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/AgentPersona.ts), and [`src/core/agents/debate/ConsensusResolver.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/ConsensusResolver.ts). It formalizes how autonomous AI agents evaluate contested workspace venues through structured debate rounds, Bayesian conviction updates, and game-theoretic consensus resolution.
+This architecture document details the multi-agent consensus engine implemented in [`src/core/agents/debate/DebateOrchestrator.ts`](../../src/core/agents/debate/DebateOrchestrator.ts), [`src/core/agents/debate/AgentPersona.ts`](../../src/core/agents/debate/AgentPersona.ts), and [`src/core/agents/debate/ConsensusResolver.ts`](../../src/core/agents/debate/ConsensusResolver.ts). It formalizes how autonomous AI agents evaluate contested workspace venues through structured debate rounds, Bayesian conviction updates, and game-theoretic consensus resolution.
 
 ---
 
@@ -120,7 +120,7 @@ sequenceDiagram
 
 ### 5.1 Weighted Preference Synthesis
 
-The final venue score $S^* \in [0, 100]$ is computed by [`ConsensusResolver`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/ConsensusResolver.ts) using normalized user preference weights:
+The final venue score $S^* \in [0, 100]$ is computed by [`ConsensusResolver`](../../src/core/agents/debate/ConsensusResolver.ts) using normalized user preference weights:
 
 $$S^* = \text{round}\left( \bar{S}_{\text{budget}} \cdot \tilde{w}_{\text{budget}} + \bar{S}_{\text{focus}} \cdot \tilde{w}_{\text{focus}} + \bar{S}_{\text{social}} \cdot \tilde{w}_{\text{social}} \right)$$
 

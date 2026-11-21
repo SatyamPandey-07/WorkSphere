@@ -5,9 +5,12 @@ let mockSocketCallbacks: {
   onOpen?: () => void;
   onClose?: () => void;
   onMessage?: (event: { data: string }) => void;
+  startClosed?: boolean;
+  query?: Record<string, string>;
 } = {};
 
 const mockSend = jest.fn();
+const mockGetToken = jest.fn();
 
 jest.mock("@/hooks/usePartySocketReconnect", () => ({
   __esModule: true,
@@ -22,15 +25,41 @@ jest.mock("@/hooks/usePartySocketReconnect", () => ({
 }));
 
 jest.mock("@clerk/nextjs", () => ({
-  useAuth: () => ({ userId: "user-alice" }),
+  useAuth: () => ({
+    userId: "user-alice",
+    getToken: mockGetToken,
+    isLoaded: true,
+    isSignedIn: true,
+  }),
   useUser: () => ({
     user: { firstName: "Alice", lastName: "Smith", username: "alice" },
   }),
 }));
 
+/**
+ * Render the hook and wait for Clerk token retrieval to finish.
+ * This keeps asynchronous React state updates inside act().
+ */
+async function renderSeatHoldHook(
+  options: Parameters<typeof useSeatHoldLock>[0],
+) {
+  const hook = renderHook(() => useSeatHoldLock(options));
+
+  const tokenResult = mockGetToken.mock.results[0];
+
+  await act(async () => {
+    if (tokenResult?.type === "return") {
+      await tokenResult.value;
+    }
+  });
+
+  return hook;
+}
+
 describe("useSeatHoldLock Hook (#3522)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetToken.mockReset().mockResolvedValue("clerk-token");
     jest.useFakeTimers();
     mockSocketCallbacks = {};
   });
@@ -40,12 +69,19 @@ describe("useSeatHoldLock Hook (#3522)", () => {
     jest.useRealTimers();
   });
 
-  it("initializes and requests seat holds snapshot on open", () => {
-    const { result } = renderHook(() =>
-      useSeatHoldLock({ venueId: "venue-101" }),
-    );
+  it("initializes and requests seat holds snapshot on open", async () => {
+    const { result } = await renderSeatHoldHook({
+      venueId: "venue-101",
+    });
 
     expect(result.current.isConnected).toBe(false);
+
+    // The initial socket must carry the verified Clerk token.
+    expect(mockGetToken).toHaveBeenCalledTimes(1);
+    expect(mockSocketCallbacks.startClosed).toBe(false);
+    expect(mockSocketCallbacks.query).toEqual({
+      token: "clerk-token",
+    });
 
     act(() => {
       mockSocketCallbacks.onOpen?.();
@@ -60,12 +96,13 @@ describe("useSeatHoldLock Hook (#3522)", () => {
     );
   });
 
-  it("populates activeHolds when receiving seat_holds_snapshot", () => {
-    const { result } = renderHook(() =>
-      useSeatHoldLock({ venueId: "venue-101" }),
-    );
+  it("populates activeHolds when receiving seat_holds_snapshot", async () => {
+    const { result } = await renderSeatHoldHook({
+      venueId: "venue-101",
+    });
 
     const now = Date.now();
+
     const snapshotMsg = {
       type: "seat_holds_snapshot",
       venueId: "venue-101",
@@ -88,7 +125,9 @@ describe("useSeatHoldLock Hook (#3522)", () => {
     };
 
     act(() => {
-      mockSocketCallbacks.onMessage?.({ data: JSON.stringify(snapshotMsg) });
+      mockSocketCallbacks.onMessage?.({
+        data: JSON.stringify(snapshotMsg),
+      });
     });
 
     expect(result.current.isSeatHeldByOther("seat-1")).toBe(true);
@@ -97,11 +136,13 @@ describe("useSeatHoldLock Hook (#3522)", () => {
     expect(result.current.remainingSeconds).toBeGreaterThan(0);
   });
 
-  it("updates state and fires callback when receiving seat_locked broadcast", () => {
+  it("updates state and fires callback when receiving seat_locked broadcast", async () => {
     const onSeatLocked = jest.fn();
-    const { result } = renderHook(() =>
-      useSeatHoldLock({ venueId: "venue-101", onSeatLocked }),
-    );
+
+    const { result } = await renderSeatHoldHook({
+      venueId: "venue-101",
+      onSeatLocked,
+    });
 
     const lockMsg = {
       type: "seat_locked",
@@ -113,7 +154,9 @@ describe("useSeatHoldLock Hook (#3522)", () => {
     };
 
     act(() => {
-      mockSocketCallbacks.onMessage?.({ data: JSON.stringify(lockMsg) });
+      mockSocketCallbacks.onMessage?.({
+        data: JSON.stringify(lockMsg),
+      });
     });
 
     expect(result.current.isSeatHeldByOther("seat-3")).toBe(true);
@@ -124,13 +167,15 @@ describe("useSeatHoldLock Hook (#3522)", () => {
     );
   });
 
-  it("clears held seat when receiving seat_unlocked broadcast", () => {
+  it("clears held seat when receiving seat_unlocked broadcast", async () => {
     const onSeatUnlocked = jest.fn();
-    const { result } = renderHook(() =>
-      useSeatHoldLock({ venueId: "venue-101", onSeatUnlocked }),
-    );
 
-    // Lock seat-3
+    const { result } = await renderSeatHoldHook({
+      venueId: "venue-101",
+      onSeatUnlocked,
+    });
+
+    // Lock seat-3.
     act(() => {
       mockSocketCallbacks.onMessage?.({
         data: JSON.stringify({
@@ -142,9 +187,10 @@ describe("useSeatHoldLock Hook (#3522)", () => {
         }),
       });
     });
+
     expect(result.current.isSeatHeldByOther("seat-3")).toBe(true);
 
-    // Unlock seat-3
+    // Unlock seat-3.
     act(() => {
       mockSocketCallbacks.onMessage?.({
         data: JSON.stringify({
@@ -160,14 +206,17 @@ describe("useSeatHoldLock Hook (#3522)", () => {
     expect(onSeatUnlocked).toHaveBeenCalledWith("seat-3", "RELEASED");
   });
 
-  it("automatically releases expired holds on client ticker without page reload", () => {
+  it("automatically releases expired holds on client ticker without page reload", async () => {
     const onHoldExpired = jest.fn();
-    const { result } = renderHook(() =>
-      useSeatHoldLock({ venueId: "venue-101", onHoldExpired }),
-    );
+
+    const { result } = await renderSeatHoldHook({
+      venueId: "venue-101",
+      onHoldExpired,
+    });
 
     const now = Date.now();
-    // Alice holds seat-4 with 3 seconds remaining
+
+    // Alice holds seat-4 with 3 seconds remaining.
     act(() => {
       mockSocketCallbacks.onMessage?.({
         data: JSON.stringify({
@@ -182,7 +231,7 @@ describe("useSeatHoldLock Hook (#3522)", () => {
     expect(result.current.myHeldSeatId).toBe("seat-4");
     expect(result.current.isSeatHeldByMe("seat-4")).toBe(true);
 
-    // Advance 4 seconds: ticker sweeps expired hold
+    // Advance 4 seconds: ticker sweeps expired hold.
     act(() => {
       jest.advanceTimersByTime(4000);
     });
@@ -193,15 +242,16 @@ describe("useSeatHoldLock Hook (#3522)", () => {
   });
 
   it("sends seat_hold_request when calling acquireHold", async () => {
-    const { result } = renderHook(() =>
-      useSeatHoldLock({ venueId: "venue-101" }),
-    );
+    const { result } = await renderSeatHoldHook({
+      venueId: "venue-101",
+    });
 
     act(() => {
       mockSocketCallbacks.onOpen?.();
     });
 
-    let holdPromise: Promise<boolean>;
+    let holdPromise!: Promise<boolean>;
+
     act(() => {
       holdPromise = result.current.acquireHold("seat-5");
     });
@@ -210,7 +260,14 @@ describe("useSeatHoldLock Hook (#3522)", () => {
       expect.stringContaining('"type":"seat_hold_request"'),
     );
 
-    // Server responds with seat_hold_acquired
+    // Verify that the client sends the authenticated identity.
+    const holdRequest = mockSend.mock.calls
+      .map(([message]) => JSON.parse(message as string))
+      .find((message) => message.type === "seat_hold_request");
+
+    expect(holdRequest.userId).toBe("user-alice");
+
+    // Server responds with seat_hold_acquired.
     act(() => {
       mockSocketCallbacks.onMessage?.({
         data: JSON.stringify({
@@ -222,7 +279,8 @@ describe("useSeatHoldLock Hook (#3522)", () => {
       });
     });
 
-    const acquired = await holdPromise!;
+    const acquired = await holdPromise;
+
     expect(acquired).toBe(true);
     expect(result.current.myHeldSeatId).toBe("seat-5");
   });

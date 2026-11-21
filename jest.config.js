@@ -43,7 +43,7 @@ module.exports = async () => {
     transform: {
       '^.+\\.(ts|tsx)$': [
         'ts-jest',
-        { tsconfig: { jsx: 'react-jsx', rootDir: '.' } },
+        { tsconfig: { jsx: 'react-jsx', rootDir: '.', module: 'Node16', moduleResolution: 'Node16' } },
       ],
     },
   };

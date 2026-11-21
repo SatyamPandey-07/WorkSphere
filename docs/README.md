@@ -21,6 +21,8 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Anonymous ZKP Check-In OpenAPI 3.1 Specification](./api/zkp-checkin.openapi.yaml) — anonymous check-in proof and response contract.
 - [Venue Amenity Voting OpenAPI 3.1 Specification](./api/amenity-votes.openapi.yaml) — amenity metrics and vote submission contract.
 
+- [Causal Vector Clock Specification](./architecture/CAUSAL_VECTOR_CLOCK_SPEC.md) — application-level vector clock semantics, conflict ordering, and safe pruning requirements.
+
 ## Architecture & Distributed Systems
 
 - [Architecture Documentation Index](./architecture/README.md) — system design references, distributed coordination, and architecture notes.

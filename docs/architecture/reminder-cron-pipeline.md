@@ -4,7 +4,7 @@
 
 WorkSphere relies on a background cron execution pipeline to deliver time-critical reminders to workspace occupants and coworking session attendees. Scheduled reminders significantly reduce reservation no-shows, improve desk utilization turnover, and provide attendees with transit directions and check-in credentials prior to session start times.
 
-The reminder pipeline is implemented in [`src/app/api/cron/reminders/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/cron/reminders/route.ts) with supporting business logic distributed across [`src/lib/reminderCron.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/reminderCron.ts), [`src/lib/cronAuth.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/cronAuth.ts), and the unified notification subsystem [`src/lib/notifications/dispatcher.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/notifications/dispatcher.ts).
+The reminder pipeline is implemented in [`src/app/api/cron/reminders/route.ts`](../../src/app/api/cron/reminders/route.ts) with supporting business logic distributed across [`src/lib/reminderCron.ts`](../../src/lib/reminderCron.ts), [`src/lib/cronAuth.ts`](../../src/lib/cronAuth.ts), and the unified notification subsystem [`src/lib/notifications/dispatcher.ts`](../../src/lib/notifications/dispatcher.ts).
 
 ### End-to-End Pipeline Workflow:
 1. **Periodic Invocation:** Triggered every 15 minutes by an external scheduler (e.g., Vercel Cron, Kubernetes CronJob, or GitHub Actions).
@@ -88,7 +88,7 @@ To register the recurring task on Vercel infrastructure, the repository root spe
 
 ### 2.3 API Authorization & Timing-Safe Validation
 
-To prevent unauthorized third parties from triggering notification floods or enumerating customer reservations, the cron endpoint enforces strict token authentication via [`src/lib/cronAuth.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/cronAuth.ts):
+To prevent unauthorized third parties from triggering notification floods or enumerating customer reservations, the cron endpoint enforces strict token authentication via [`src/lib/cronAuth.ts`](../../src/lib/cronAuth.ts):
 
 ```typescript
 import { timingSafeEqual } from "crypto";
@@ -124,7 +124,7 @@ export function isAuthorizedCronRequest(req: Request): boolean {
 
 Because WorkSphere supports remote professionals across global time zones, a reservation booked for "October 9th at 09:00 AM" in Tokyo (UTC+9) corresponds to "October 8th at 00:00 UTC". 
 
-To prevent querying errors caused by timezone date boundaries, the reservation loader in [`src/lib/reminderCron.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/reminderCron.ts) queries a 3-day sliding window:
+To prevent querying errors caused by timezone date boundaries, the reservation loader in [`src/lib/reminderCron.ts`](../../src/lib/reminderCron.ts) queries a 3-day sliding window:
 
 ```typescript
 const day = 24 * 60 * 60 * 1000;
@@ -167,7 +167,7 @@ if (startsAt.getTime() < targetMin || startsAt.getTime() > targetMax) {
 
 ## 4. User Notification Window & Quiet Hours Filtering
 
-Users can define personalized daily quiet hours in their settings (e.g., Do Not Disturb between 22:00 and 07:00). WorkSphere filters candidates through [`src/lib/notificationWindow.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/notificationWindow.ts):
+Users can define personalized daily quiet hours in their settings (e.g., Do Not Disturb between 22:00 and 07:00). WorkSphere filters candidates through [`src/lib/notificationWindow.ts`](../../src/lib/notificationWindow.ts):
 
 ```typescript
 export function isWithinNotificationWindow(
@@ -278,7 +278,7 @@ stateDiagram-v2
 
 ## 6. Multi-Channel Reminder Dispatch Architecture
 
-WorkSphere broadcasts alerts across three core channels, managed through direct handlers and the [`NotificationDispatcher`](file:///c:/Users/admin/Desktop/workfere/src/lib/notifications/dispatcher.ts) hub.
+WorkSphere broadcasts alerts across three core channels, managed through direct handlers and the [`NotificationDispatcher`](../../src/lib/notifications/dispatcher.ts) hub.
 
 ### 6.1 Channel 1: Email Dispatch (Nodemailer / SMTP)
 
@@ -307,7 +307,7 @@ function createMailer(): Transporter | null {
 
 Web Push alerts reach users on desktop and mobile browsers even when the WorkSphere browser tab is closed.
 
-*   **VAPID Configuration:** Configured in [`src/lib/notifications/channels/webPushChannel.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/notifications/channels/webPushChannel.ts) using `web-push`:
+*   **VAPID Configuration:** Configured in [`src/lib/notifications/channels/webPushChannel.ts`](../../src/lib/notifications/channels/webPushChannel.ts) using `web-push`:
     *   `NEXT_PUBLIC_VAPID_PUBLIC_KEY`
     *   `VAPID_PRIVATE_KEY`
     *   `VAPID_SUBJECT` (e.g., `mailto:admin@worksphere.app`)
@@ -340,7 +340,7 @@ function createSmsClient() {
 }
 ```
 
-Additionally, [`src/lib/notifications/channels/whatsAppChannel.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/notifications/channels/whatsAppChannel.ts) handles customer-configured webhook integration (`whatsappWebhookUrl`), delivering structured JSON payloads containing session start alerts and check-in QR codes.
+Additionally, [`src/lib/notifications/channels/whatsAppChannel.ts`](../../src/lib/notifications/channels/whatsAppChannel.ts) handles customer-configured webhook integration (`whatsappWebhookUrl`), delivering structured JSON payloads containing session start alerts and check-in QR codes.
 
 ---
 

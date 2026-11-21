@@ -82,7 +82,7 @@ export function ShortcutTooltip({
           id={tooltipId}
           role="tooltip"
           data-testid="shortcut-tooltip"
-          className={`absolute z-[100] pointer-events-none flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-zinc-900/95 dark:bg-zinc-800/95 border border-white/10 rounded-lg shadow-xl backdrop-blur-sm whitespace-nowrap animate-in fade-in zoom-in-95 duration-150 ${positionClasses}`}
+          className={`absolute z-[100] pointer-events-none flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-white bg-zinc-900/95 dark:bg-zinc-800/95 border border-white/10 rounded-lg shadow-xl backdrop-blur-sm whitespace-nowrap animate-in fade-in zoom-in-95 duration-150 motion-reduce:animate-none motion-reduce:transition-none ${positionClasses}`}
         >
           <span>{content}</span>
           <KeyboardShortcutBadge

@@ -219,7 +219,10 @@ export function useMeshCanvasWhiteboard(
     flushStrokeBuffer,
     broadcastStroke: bufferStroke,
     bufferStrokePoints,
-  } = useStrokeBuffer({ onApplyPoints: applyShapePoints });
+  } = useStrokeBuffer({
+    onApplyPoints: applyShapePoints,
+    throttleIntervalMs: options?.throttleIntervalMs,
+  });
 
   const broadcastStroke = useCallback(
     (id: string, points: number[]) => {

@@ -1,82 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminUser } from "@/lib/admin";
 import {
-  generateDefaultWebVitalsData,
-  aggregateWebVitals,
-  WebVitalEntry,
-} from "@/lib/webVitalsCollector";
+  buildSystemVitalsSnapshot,
+  formatSystemVitalsPrometheus,
+  sharedVitalsBuffer,
+} from "@/lib/export/domain/systemVitalExporter";
 
 export const dynamic = "force-dynamic";
 
-// In-memory telemetry buffer for server-side persistence during session
-const serverVitalsBuffer: WebVitalEntry[] = [];
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, max-age=0",
+};
+
+function forbiddenResponse() {
+  return NextResponse.json(
+    { error: "Admin access required" },
+    { status: 403, headers: NO_STORE_HEADERS },
+  );
+}
+
+function internalErrorResponse() {
+  return NextResponse.json(
+    { error: "Failed to generate system vitals" },
+    { status: 500, headers: NO_STORE_HEADERS },
+  );
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const admin = await getAdminUser();
-    if (!admin) {
-      return NextResponse.json(
-        { error: "Admin access required" },
-        { status: 403 }
-      );
+    const adminUser = await getAdminUser();
+
+    if (!adminUser) {
+      return forbiddenResponse();
     }
+  } catch (error: unknown) {
+    console.error("[AdminVitals] Authorization check failed:", error);
+    return internalErrorResponse();
+  }
 
-    const { searchParams } = new URL(request.url);
-    const range = searchParams.get("range") || "7d";
+  try {
+    const { searchParams } = request.nextUrl;
+    const formatParam = searchParams.get("format")?.toLowerCase();
+    const acceptHeader = request.headers.get("accept")?.toLowerCase() ?? "";
 
-    const defaultData = generateDefaultWebVitalsData(range);
+    const wantsPrometheus =
+      formatParam === "prometheus" ||
+      formatParam === "prom" ||
+      acceptHeader.includes("text/plain") ||
+      acceptHeader.includes("application/openmetrics-text");
 
-    if (serverVitalsBuffer.length > 0) {
-      const merged = aggregateWebVitals([...serverVitalsBuffer], range);
-      return NextResponse.json(merged, {
-        headers: { "Cache-Control": "private, no-store, max-age=0" },
+    const snapshot = buildSystemVitalsSnapshot(sharedVitalsBuffer);
+
+    if (wantsPrometheus) {
+      const prometheusBody = formatSystemVitalsPrometheus(snapshot);
+
+      return new NextResponse(prometheusBody, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+          ...NO_STORE_HEADERS,
+        },
       });
     }
 
-    return NextResponse.json(defaultData, {
-      headers: { "Cache-Control": "private, no-store, max-age=0" },
+    return NextResponse.json(snapshot, {
+      status: 200,
+      headers: NO_STORE_HEADERS,
     });
-  } catch (error) {
-    console.error("[Admin Web Vitals API]", error);
-    return NextResponse.json(
-      { error: "Failed to load Web Vitals telemetry" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const admin = await getAdminUser();
-    if (!admin) {
-      return NextResponse.json(
-        { error: "Admin access required" },
-        { status: 403 }
-      );
-    }
-
-    const body = await request.json();
-    const isValidEntry = (e: unknown): e is WebVitalEntry =>
-      !!e &&
-      typeof (e as WebVitalEntry).name === "string" &&
-      typeof (e as WebVitalEntry).value === "number";
-    if (Array.isArray(body)) {
-      serverVitalsBuffer.push(...body.filter(isValidEntry).slice(0, 100));
-    } else if (isValidEntry(body)) {
-      serverVitalsBuffer.push(body);
-    }
-
-    // Keep max 1000 items in buffer
-    if (serverVitalsBuffer.length > 1000) {
-      serverVitalsBuffer.splice(0, serverVitalsBuffer.length - 1000);
-    }
-
-    return NextResponse.json({ success: true, count: serverVitalsBuffer.length });
-  } catch (error) {
-    console.error("[Admin Web Vitals Ingest]", error);
-    return NextResponse.json(
-      { error: "Invalid Web Vitals payload" },
-      { status: 400 }
-    );
+  } catch (error: unknown) {
+    console.error("[AdminVitals] Export failed:", error);
+    return internalErrorResponse();
   }
 }

@@ -227,7 +227,10 @@ Accept: application/json
 | `GET /api/admin/system`                   | Retrieve system status.              |
 | `GET /api/admin/system/partitions`        | Retrieve partition information.      |
 | `GET /api/admin/system/partitions/export` | Export partition data.               |
-
+| `POST /api/admin/system/partitions` | Run CRON_SECRET-protected weekly partition provisioning and retention maintenance. |
+| `POST /api/admin/system/partitions/archive` | Archive eligible partitions through authenticated administration. |
+| `POST /api/admin/system/partitions/delete` | Permanently delete eligible partitions through authenticated administration. |
+| `GET /api/admin/system/partitions/audit` | Retrieve partition administration audit records with filters and pagination. |
 ---
 
 # Maps & Location

@@ -9,7 +9,7 @@ WorkSphere implements a defense-in-depth security model that combines:
 2. **Hardened Cookie Policy:** Enforces modern browser cookie protections (`SameSite`, `HttpOnly`, `Secure`, and `__Host-` prefix semantics) across production domains.
 3. **Sliding Session Token Families with Theft Detection:** Couples short-lived access JWTs with rotating refresh token families that detect replay attacks and automatically revoke compromised token trees.
 
-The security subsystem is implemented across [`src/lib/csrf.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/csrf.ts), [`src/lib/middleware/handlers/csrfHandler.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/middleware/handlers/csrfHandler.ts), [`src/lib/auth/sessionTokens.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/auth/sessionTokens.ts), [`src/hooks/useCsrfToken.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useCsrfToken.ts), and [`src/lib/apiClient.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/apiClient.ts).
+The security subsystem is implemented across [`src/lib/csrf.ts`](../../src/lib/csrf.ts), [`src/lib/middleware/handlers/csrfHandler.ts`](../../src/lib/middleware/handlers/csrfHandler.ts), [`src/lib/auth/sessionTokens.ts`](../../src/lib/auth/sessionTokens.ts), [`src/hooks/useCsrfToken.ts`](../../src/hooks/useCsrfToken.ts), and [`src/lib/apiClient.ts`](../../src/lib/apiClient.ts).
 
 ```mermaid
 flowchart TD
@@ -88,7 +88,7 @@ An attacker on a compromised subdomain can inject arbitrary text, but cannot for
 
 ### 3.1 Web Crypto API Architecture (Edge Runtime Safe)
 
-WorkSphere executes in both Node.js server environments and Next.js Edge Middleware runtimes (Cloudflare Workers / Vercel Edge). The signing implementation in [`src/lib/csrf.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/csrf.ts) strictly utilizes the standard W3C **Web Crypto API** (`crypto.subtle`) rather than Node.js `crypto`:
+WorkSphere executes in both Node.js server environments and Next.js Edge Middleware runtimes (Cloudflare Workers / Vercel Edge). The signing implementation in [`src/lib/csrf.ts`](../../src/lib/csrf.ts) strictly utilizes the standard W3C **Web Crypto API** (`crypto.subtle`) rather than Node.js `crypto`:
 
 ```typescript
 const ENCODER = new TextEncoder();
@@ -157,7 +157,7 @@ In production, missing secrets crash fast at startup rather than defaulting to w
 
 ### 4.1 Token Verification Algorithm
 
-On mutating requests, [`verifyCsrfToken`](file:///c:/Users/admin/Desktop/workfere/src/lib/csrf.ts) executes three sequential checks:
+On mutating requests, [`verifyCsrfToken`](../../src/lib/csrf.ts) executes three sequential checks:
 
 ```typescript
 export async function verifyCsrfToken(
@@ -219,7 +219,7 @@ The CSRF cookie and session cookies are configured with strict browser security 
 
 ## 6. Sliding Session Tokens & Replay Attack Mitigation
 
-Beyond CSRF, session tokens require protection against token theft and re-use. WorkSphere implements **Rotating Refresh Token Families** in [`src/lib/auth/sessionTokens.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/auth/sessionTokens.ts).
+Beyond CSRF, session tokens require protection against token theft and re-use. WorkSphere implements **Rotating Refresh Token Families** in [`src/lib/auth/sessionTokens.ts`](../../src/lib/auth/sessionTokens.ts).
 
 ### 6.1 Token Lifespan Matrix
 
@@ -338,7 +338,7 @@ export async function rotateRefreshToken(
 
 ### 7.1 React Hook: `useCsrfToken.ts`
 
-The [`useCsrfToken`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useCsrfToken.ts) hook provides a single source of truth for CSRF token availability:
+The [`useCsrfToken`](../../src/hooks/useCsrfToken.ts) hook provides a single source of truth for CSRF token availability:
 
 ```typescript
 export function useCsrfToken() {

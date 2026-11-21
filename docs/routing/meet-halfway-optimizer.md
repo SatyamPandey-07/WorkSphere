@@ -10,7 +10,7 @@ Naïve solutions—such as computing the arithmetic center of mass or picking th
 3. **Commute Inequality (Unfairness):** Minimizing aggregate travel time alone can lead to extreme inequality where one participant travels $3\text{ minutes}$ while another travels $90\text{ minutes}$.
 4. **Physical Venue Capacity & Amenities:** A mathematically optimal geographic point is useless if candidate workspaces lack sufficient contiguous seating, reliable power outlets, or high-bandwidth Wi-Fi.
 
-WorkSphere's **`MeetHalfwayOptimizer`** ([`src/core/routing/MeetHalfwayOptimizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/routing/MeetHalfwayOptimizer.ts)) solves these challenges through:
+WorkSphere's **`MeetHalfwayOptimizer`** ([`src/core/routing/MeetHalfwayOptimizer.ts`](../../src/core/routing/MeetHalfwayOptimizer.ts)) solves these challenges through:
 - **L1 Geometric Median (Fermat-Weber Problem):** Solved via Weiszfeld's algorithm to compute an outlier-resilient geographic centroid.
 - **Multimodal Speed & Non-Linear Routing Buffers:** Transforming Great-Circle Haversine distances into realistic door-to-door travel times.
 - **Commute Fairness Scoring:** Penalizing high travel-time variance (standard deviation $\sigma$) to balance participant burden.
@@ -279,7 +279,7 @@ Venues are ordered strictly in descending order of $\text{Score}_{\text{composit
 
 ## 5. Edge Cases & Resilience Engineering
 
-[`MeetHalfwayOptimizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/routing/MeetHalfwayOptimizer.ts) incorporates resilient fallbacks for distributed real-world anomalies:
+[`MeetHalfwayOptimizer.ts`](../../src/core/routing/MeetHalfwayOptimizer.ts) incorporates resilient fallbacks for distributed real-world anomalies:
 
 ### 5.1 Co-Located Team Detection (`isTeamCoLocated`)
 
@@ -398,7 +398,7 @@ Executes complete geo-clustering, venue evaluation, fairness scoring, and rankin
 
 ## 8. Integration with `TeamMeetHalfwayLobby` UI
 
-The engine directly powers the **Team Meet Halfway Lobby** component ([`src/components/social/TeamMeetHalfwayLobby.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/social/TeamMeetHalfwayLobby.tsx)):
+The engine directly powers the **Team Meet Halfway Lobby** component ([`src/components/social/TeamMeetHalfwayLobby.tsx`](../../src/components/social/TeamMeetHalfwayLobby.tsx)):
 1. **Interactive Member Map:** Renders participant pins with mode badges (car, transit, bicycle, walking).
 2. **Optimal Centroid Marker:** Displays a distinct pulsing target at the Weiszfeld geometric median.
 3. **Commute Breakdown Pills:** Displays each member's personal travel time, distance, and transit mode for selected venues.

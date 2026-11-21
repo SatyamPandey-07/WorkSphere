@@ -2,7 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import { Search } from "lucide-react";
-import { openCommandPalette, usePlatformModifier } from "@/hooks/usePlatformModifier";
+import {
+  openCommandPalette,
+  usePlatformModifier,
+} from "@/hooks/usePlatformModifier";
 import { KeyboardShortcutBadge } from "./KeyboardShortcutBadge";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 
@@ -68,7 +71,9 @@ export function CockpitTargetingReticles({
         className={`absolute -top-2.5 -left-2.5 w-5 h-5 text-emerald-400 pointer-events-none filter drop-shadow-[0_0_8px_rgba(52,211,153,0.75)] ${
           reducedMotion ? "transform-none" : "animate-reticle-snap-tl"
         }`}
-        style={reducedMotion ? { transform: "none", animation: "none" } : undefined}
+        style={
+          reducedMotion ? { transform: "none", animation: "none" } : undefined
+        }
         viewBox="0 0 20 20"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -80,7 +85,14 @@ export function CockpitTargetingReticles({
           strokeLinecap="round"
         />
         <circle cx="2" cy="2" r="1.5" fill="currentColor" />
-        <line x1="2" y1="2" x2="6" y2="6" stroke="currentColor" strokeWidth="1.5" />
+        <line
+          x1="2"
+          y1="2"
+          x2="6"
+          y2="6"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
       </svg>
 
       {/* Top Right Bracket */}
@@ -89,7 +101,9 @@ export function CockpitTargetingReticles({
         className={`absolute -top-2.5 -right-2.5 w-5 h-5 text-emerald-400 pointer-events-none filter drop-shadow-[0_0_8px_rgba(52,211,153,0.75)] ${
           reducedMotion ? "transform-none" : "animate-reticle-snap-tr"
         }`}
-        style={reducedMotion ? { transform: "none", animation: "none" } : undefined}
+        style={
+          reducedMotion ? { transform: "none", animation: "none" } : undefined
+        }
         viewBox="0 0 20 20"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -101,7 +115,14 @@ export function CockpitTargetingReticles({
           strokeLinecap="round"
         />
         <circle cx="18" cy="2" r="1.5" fill="currentColor" />
-        <line x1="18" y1="2" x2="14" y2="6" stroke="currentColor" strokeWidth="1.5" />
+        <line
+          x1="18"
+          y1="2"
+          x2="14"
+          y2="6"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
       </svg>
 
       {/* Bottom Left Bracket */}
@@ -110,7 +131,9 @@ export function CockpitTargetingReticles({
         className={`absolute -bottom-2.5 -left-2.5 w-5 h-5 text-emerald-400 pointer-events-none filter drop-shadow-[0_0_8px_rgba(52,211,153,0.75)] ${
           reducedMotion ? "transform-none" : "animate-reticle-snap-bl"
         }`}
-        style={reducedMotion ? { transform: "none", animation: "none" } : undefined}
+        style={
+          reducedMotion ? { transform: "none", animation: "none" } : undefined
+        }
         viewBox="0 0 20 20"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -122,7 +145,14 @@ export function CockpitTargetingReticles({
           strokeLinecap="round"
         />
         <circle cx="2" cy="18" r="1.5" fill="currentColor" />
-        <line x1="2" y1="18" x2="6" y2="14" stroke="currentColor" strokeWidth="1.5" />
+        <line
+          x1="2"
+          y1="18"
+          x2="6"
+          y2="14"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
       </svg>
 
       {/* Bottom Right Bracket */}
@@ -131,7 +161,9 @@ export function CockpitTargetingReticles({
         className={`absolute -bottom-2.5 -right-2.5 w-5 h-5 text-emerald-400 pointer-events-none filter drop-shadow-[0_0_8px_rgba(52,211,153,0.75)] ${
           reducedMotion ? "transform-none" : "animate-reticle-snap-br"
         }`}
-        style={reducedMotion ? { transform: "none", animation: "none" } : undefined}
+        style={
+          reducedMotion ? { transform: "none", animation: "none" } : undefined
+        }
         viewBox="0 0 20 20"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -143,7 +175,14 @@ export function CockpitTargetingReticles({
           strokeLinecap="round"
         />
         <circle cx="18" cy="18" r="1.5" fill="currentColor" />
-        <line x1="18" y1="18" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" />
+        <line
+          x1="18"
+          y1="18"
+          x2="14"
+          y2="14"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
       </svg>
     </div>
   );
@@ -200,7 +239,11 @@ export function QuickSearchTrigger({
   }
 
   return (
-    <ShortcutTooltip content="Search venues, bookings, settings" shortcut="K" position="bottom">
+    <ShortcutTooltip
+      content="Search venues, bookings, settings"
+      shortcut="K"
+      position="bottom"
+    >
       <button
         type="button"
         onClick={handleClick}
@@ -229,10 +272,9 @@ export function QuickSearchTrigger({
           shortcut="K"
           size="xs"
           variant="subtle"
-          className="group-hover:border-zinc-300 dark:group-hover:border-zinc-600 transition-colors"
+          className="hidden md:inline-flex group-hover:border-zinc-300 dark:group-hover:border-zinc-600 transition-colors"
         />
       </button>
     </ShortcutTooltip>
   );
 }
-

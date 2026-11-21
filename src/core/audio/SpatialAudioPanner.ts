@@ -2,11 +2,15 @@
  * SpatialAudioPanner.ts
  * Manages the Web Audio API PannerNodes and GainNodes, calculating 3D coordinates and distance attenuation 
  * based on desk layouts. Sanitizes and clamps gain coefficients to [0.0, 1.0] to prevent audio clipping (#5597).
+ *
+ * Distance attenuation is configurable per room. Creators can pick the Web Audio
+ * `distanceModel` (`inverse`, `linear`, or `exponential`) and tune `refDistance`,
+ * `maxDistance`, and `rolloffFactor` to make remote voices fade sharply (open
+ * library) or remain audible across long distances (linear hall) (#6478).
  */
 
 import {
     ProximityBoundaryZoneConfig,
-    DEFAULT_PROXIMITY_ZONE_CONFIG,
     PROXIMITY_ZONE_PRESETS,
     ProximityZonePresetId,
     calculateProximityFadeGain,
@@ -15,8 +19,96 @@ import {
 
 export * from './ProximityBoundaryZone';
 
-export type DistanceAttenuationCurve = 'linear' | 'inverse';
+export type DistanceAttenuationCurve = 'linear' | 'inverse' | 'exponential';
 export type DistanceAttenuationModel = DistanceAttenuationCurve;
+
+export interface SpatialPannerDistanceConfig {
+    /** Web Audio distance attenuation model applied to every peer PannerNode. */
+    distanceModel?: DistanceAttenuationCurve;
+    /** Reference distance (metres) at which no attenuation is applied. */
+    refDistance?: number;
+    /** Distance (metres) at which the attenuation curve is clamped. */
+    maxDistance?: number;
+    /** Steepness of the attenuation curve. Higher values fade out faster. */
+    rolloffFactor?: number;
+}
+
+export type ResolvedSpatialPannerDistanceConfig = Required<SpatialPannerDistanceConfig>;
+
+export const DEFAULT_SPATIAL_PANNER_DISTANCE_CONFIG: ResolvedSpatialPannerDistanceConfig = {
+    distanceModel: 'inverse',
+    refDistance: 1,
+    maxDistance: 100,
+    rolloffFactor: 1,
+};
+
+/**
+ * Physically safe bounds accepted by the Web Audio API. Values outside these
+ * ranges can produce silence, deafening gain spikes, or NaN coefficients.
+ */
+export const SPATIAL_PANNER_DISTANCE_LIMITS = {
+    minRefDistance: 1e-3,
+    maxRefDistance: 10000,
+    minMaxDistance: 1e-3,
+    maxMaxDistance: 1000000,
+    minRolloffFactor: 0,
+    maxRolloffFactor: 10,
+} as const;
+
+const DISTANCE_MODELS: readonly DistanceAttenuationCurve[] = ['linear', 'inverse', 'exponential'];
+
+export function isDistanceAttenuationCurve(value: unknown): value is DistanceAttenuationCurve {
+    return typeof value === 'string' && (DISTANCE_MODELS as readonly string[]).includes(value);
+}
+
+function clampFinite(value: number | undefined, fallback: number, min: number, max: number): number {
+    const candidate = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+    return Math.min(max, Math.max(min, candidate));
+}
+
+/**
+ * Sanitizes a partial distance configuration into physically safe Web Audio
+ * bounds. Invalid/NaN values fall back to the supplied base configuration and
+ * `maxDistance` is always kept strictly greater than `refDistance`.
+ */
+export function sanitizeDistanceConfig(
+    partial: Partial<SpatialPannerDistanceConfig> = {},
+    base: ResolvedSpatialPannerDistanceConfig = DEFAULT_SPATIAL_PANNER_DISTANCE_CONFIG
+): ResolvedSpatialPannerDistanceConfig {
+    const {
+        minRefDistance,
+        maxRefDistance,
+        minMaxDistance,
+        maxMaxDistance,
+        minRolloffFactor,
+        maxRolloffFactor,
+    } = SPATIAL_PANNER_DISTANCE_LIMITS;
+
+    const distanceModel = isDistanceAttenuationCurve(partial.distanceModel)
+        ? partial.distanceModel
+        : base.distanceModel;
+
+    const refDistance = clampFinite(partial.refDistance, base.refDistance, minRefDistance, maxRefDistance);
+
+    let maxDistance = clampFinite(partial.maxDistance, base.maxDistance, minMaxDistance, maxMaxDistance);
+    if (maxDistance <= refDistance) {
+        maxDistance = Math.min(maxMaxDistance, refDistance + Math.max(minMaxDistance, refDistance * 1e-3));
+    }
+
+    const rolloffFactor = clampFinite(
+        partial.rolloffFactor,
+        base.rolloffFactor,
+        minRolloffFactor,
+        maxRolloffFactor
+    );
+
+    return {
+        distanceModel,
+        refDistance: Number(refDistance.toFixed(4)),
+        maxDistance: Number(maxDistance.toFixed(4)),
+        rolloffFactor: Number(rolloffFactor.toFixed(4)),
+    };
+}
 
 export interface SpatialPeer {
     id: string;
@@ -37,20 +129,43 @@ export class SpatialAudioPanner {
     private masterGainNode: GainNode;
     private isMuted: boolean = false;
 
-    public readonly refDistance = 1;
-    public readonly maxDistance = 100;
-    public readonly rolloffFactor = 1;
+    private refDistanceValue: number;
+    private maxDistanceValue: number;
+    private rolloffFactorValue: number;
+
+    public get refDistance(): number {
+        return this.refDistanceValue;
+    }
+
+    public get maxDistance(): number {
+        return this.maxDistanceValue;
+    }
+
+    public get rolloffFactor(): number {
+        return this.rolloffFactorValue;
+    }
 
     constructor(
         audioContext: AudioContext,
         initialDistanceModel: DistanceAttenuationCurve = 'inverse',
-        proximityZoneConfig?: Partial<ProximityBoundaryZoneConfig>
+        proximityZoneConfig?: Partial<ProximityBoundaryZoneConfig>,
+        distanceConfig?: Partial<SpatialPannerDistanceConfig>
     ) {
         this.audioContext = audioContext;
         this.peers = new Map();
         this.listener = audioContext.listener;
         this.listenerPosition = { x: 0, y: 0, z: 0 };
-        this.distanceModel = initialDistanceModel;
+
+        const resolvedDistance = sanitizeDistanceConfig({
+            distanceModel: distanceConfig?.distanceModel ?? initialDistanceModel,
+            refDistance: distanceConfig?.refDistance,
+            maxDistance: distanceConfig?.maxDistance,
+            rolloffFactor: distanceConfig?.rolloffFactor,
+        });
+        this.distanceModel = resolvedDistance.distanceModel;
+        this.refDistanceValue = resolvedDistance.refDistance;
+        this.maxDistanceValue = resolvedDistance.maxDistance;
+        this.rolloffFactorValue = resolvedDistance.rolloffFactor;
         this.proximityZoneConfig = sanitizeProximityZoneConfig(proximityZoneConfig);
 
         // Initialize master listener GainNode routed to destination
@@ -91,6 +206,61 @@ export class SpatialAudioPanner {
         return this.isMuted;
     }
 
+    public getDistanceConfig(): ResolvedSpatialPannerDistanceConfig {
+        return {
+            distanceModel: this.distanceModel,
+            refDistance: this.refDistanceValue,
+            maxDistance: this.maxDistanceValue,
+            rolloffFactor: this.rolloffFactorValue,
+        };
+    }
+
+    public getDistanceModel(): DistanceAttenuationCurve {
+        return this.distanceModel;
+    }
+
+    /**
+     * Applies a partial distance configuration, clamping every value to
+     * physically safe Web Audio bounds, updating all live PannerNodes, and
+     * recalculating active peer gains.
+     */
+    public setDistanceConfig(config: Partial<SpatialPannerDistanceConfig>): ResolvedSpatialPannerDistanceConfig {
+        const resolved = sanitizeDistanceConfig(config, this.getDistanceConfig());
+
+        this.distanceModel = resolved.distanceModel;
+        this.refDistanceValue = resolved.refDistance;
+        this.maxDistanceValue = resolved.maxDistance;
+        this.rolloffFactorValue = resolved.rolloffFactor;
+
+        for (const peer of this.peers.values()) {
+            if (peer.pannerNode) {
+                peer.pannerNode.distanceModel = this.distanceModel;
+                peer.pannerNode.refDistance = this.refDistanceValue;
+                peer.pannerNode.maxDistance = this.maxDistanceValue;
+                peer.pannerNode.rolloffFactor = this.rolloffFactorValue;
+            }
+        }
+
+        this.recalculateAllPeerAttenuations();
+        return this.getDistanceConfig();
+    }
+
+    public setDistanceModel(model: DistanceAttenuationCurve): ResolvedSpatialPannerDistanceConfig {
+        return this.setDistanceConfig({ distanceModel: model });
+    }
+
+    public setRefDistance(refDistance: number): ResolvedSpatialPannerDistanceConfig {
+        return this.setDistanceConfig({ refDistance });
+    }
+
+    public setMaxDistance(maxDistance: number): ResolvedSpatialPannerDistanceConfig {
+        return this.setDistanceConfig({ maxDistance });
+    }
+
+    public setRolloffFactor(rolloffFactor: number): ResolvedSpatialPannerDistanceConfig {
+        return this.setDistanceConfig({ rolloffFactor });
+    }
+
     /**
      * Updates configurable proximity boundary zone parameters and recalculates active peer gains.
      */
@@ -126,9 +296,9 @@ export class SpatialAudioPanner {
 
     /**
      * Calculates distance attenuation gain clamped strictly between 0.0 and 1.0.
-     * Supports both 'linear' and 'inverse' attenuation curves combined with
-     * configurable audio proximity fade-out boundary zones.
-     * Guards against negative values when distance exceeds max range, and protects against NaN (#5597).
+     * Supports 'inverse', 'linear', and 'exponential' Web Audio attenuation
+     * curves combined with configurable audio proximity fade-out boundary zones.
+     * Guards against negative values and protects against NaN (#5597, #6478).
      */
     public calculateDistanceAttenuation(
         sourcePos: { x: number; y: number; z: number },
@@ -146,24 +316,34 @@ export class SpatialAudioPanner {
             return 1.0;
         }
 
-        if (distance > this.maxDistance) {
-            // Far distance attenuation dropoff
-            return 0.0;
-        }
-
+        // Web Audio clamps the computed distance to [refDistance, maxDistance]
+        // before evaluating the attenuation curve. This keeps inverse and
+        // exponential voices audible at the configured horizon instead of
+        // collapsing to silence, while linear still fades to zero.
+        const clampedDistance = Math.min(Math.max(distance, this.refDistance), this.maxDistance);
         let calculatedGain: number;
 
-        if (model === 'linear') {
-            // Linear distance attenuation model:
-            // gain = 1 - rolloffFactor * (max(distance, refDistance) - refDistance) / (maxDistance - refDistance)
-            const effectiveDistance = Math.min(Math.max(distance, this.refDistance), this.maxDistance);
-            const distanceRange = Math.max(1e-6, this.maxDistance - this.refDistance);
-            calculatedGain = 1 - this.rolloffFactor * ((effectiveDistance - this.refDistance) / distanceRange);
-        } else {
-            // Inverse distance attenuation model:
-            // gain = refDistance / (refDistance + rolloffFactor * (max(distance, refDistance) - refDistance))
-            const clampedDistance = Math.min(Math.max(distance, this.refDistance), this.maxDistance);
-            calculatedGain = this.refDistance / (this.refDistance + this.rolloffFactor * (clampedDistance - this.refDistance));
+        switch (model) {
+            case 'linear': {
+                // gain = 1 - rolloffFactor * (distance - refDistance) / (maxDistance - refDistance)
+                const distanceRange = Math.max(1e-6, this.maxDistance - this.refDistance);
+                calculatedGain =
+                    1 - this.rolloffFactor * ((clampedDistance - this.refDistance) / distanceRange);
+                break;
+            }
+            case 'exponential': {
+                // gain = (distance / refDistance) ^ (-rolloffFactor)
+                calculatedGain = Math.pow(clampedDistance / this.refDistance, -this.rolloffFactor);
+                break;
+            }
+            case 'inverse':
+            default: {
+                // gain = refDistance / (refDistance + rolloffFactor * (distance - refDistance))
+                calculatedGain =
+                    this.refDistance /
+                    (this.refDistance + this.rolloffFactor * (clampedDistance - this.refDistance));
+                break;
+            }
         }
 
         // Apply configurable audio proximity fade-out boundary zone

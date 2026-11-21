@@ -158,7 +158,8 @@ export async function generateBookingItineraryPdf(
     (safeBooking.id ? `WS-#${safeBooking.id}` : "WS-#CONF-UNKNOWN");
   const rawStatus = safeBooking.status ? String(safeBooking.status) : "CONFIRMED";
   const statusStr = rawStatus.toUpperCase();
-  const isCancelled = statusStr === "CANCELLED";
+  const isCancelled =
+    statusStr === "CANCELLED" || statusStr === "CANCELLED_BY_OPERATOR";
   const statusColor = isCancelled ? cancelRed : successGreen;
 
   // Draw Status Badge Box

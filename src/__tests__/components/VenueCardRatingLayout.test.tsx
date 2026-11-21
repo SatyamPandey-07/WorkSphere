@@ -6,6 +6,10 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ prefetch: jest.fn() }),
 }));
 
+jest.mock("@/context/CurrencyContext", () => ({
+  useCurrency: () => ({ currency: "USD", setCurrency: jest.fn() }),
+}));
+
 const mockVenue = {
   id: "test-venue-rating",
   name: "Star Lounge",
@@ -27,9 +31,11 @@ describe("VenueCard Rating Layout (#1745)", () => {
     expect(ratingContainer).toHaveClass("inline-flex");
     expect(ratingContainer).toHaveClass("items-center");
     expect(ratingContainer).toHaveClass("gap-1");
+    expect(ratingContainer).toHaveClass("leading-none");
 
     const starIcon = ratingContainer.querySelector("svg");
     expect(starIcon).toBeInTheDocument();
+    expect(starIcon).toHaveClass("shrink-0");
     expect(starIcon).toHaveClass("text-amber-500");
     expect(starIcon).toHaveClass("dark:text-amber-400");
   });

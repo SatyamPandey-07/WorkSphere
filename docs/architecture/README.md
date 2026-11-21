@@ -12,6 +12,8 @@ Architecture decisions, implementation notes, and system-level design references
 - [Rate limiting strategies](./rate-limiting-strategies.md)
 - [Sliding-window rate limiting](./sliding-window-rate-limiting.md)
 
+- [CRDT state-vector checksum reconnect protocol](../crdt/STATE_VECTOR_CHECKSUM_PROTOCOL.md)
+
 ## Application architecture
 
 - [ADR-004: Dual PostGIS spatial and trigram venue search](./ADR-004-spatial-phonetic-venue-search.md)

@@ -125,10 +125,14 @@ export async function listNotesOutbox(
  * Non-conflicting entries are applied immediately; entries that would
  * modify text that was also changed remotely are returned as
  * `conflicts` so the UI can prompt the user for resolution (#1555).
+ *
+ * `textKey` is the shared Y.Text the editor uses; conflicts are detected
+ * by comparing that text before and after each queued update.
  */
 export async function flushNotesOutbox(
   roomId: string,
   doc: Y.Doc,
+  textKey: string = "group-notes",
 ): Promise<FlushNotesOutboxResult> {
   const db = await getNotesCrdtDb();
   const pending = await db.getAllFromIndex(OUTBOX_STORE, "by-room", roomId);
@@ -138,14 +142,14 @@ export async function flushNotesOutbox(
   for (const entry of pending) {
     const entryDoc = new Y.Doc();
     Y.applyUpdate(entryDoc, new Uint8Array(entry.update));
-    const entryText = entryDoc.getText("group-notes").toString();
+    const entryText = entryDoc.getText(textKey).toString();
     entryDoc.destroy();
 
     const testDoc = new Y.Doc();
     Y.applyUpdate(testDoc, Y.encodeStateAsUpdate(doc));
-    const textBefore = testDoc.getText("group-notes").toString();
+    const textBefore = testDoc.getText(textKey).toString();
     Y.applyUpdate(testDoc, new Uint8Array(entry.update));
-    const textAfter = testDoc.getText("group-notes").toString();
+    const textAfter = testDoc.getText(textKey).toString();
     testDoc.destroy();
 
     const isConflicting =
@@ -205,4 +209,14 @@ export async function resolveConflictsUseRemote(
   for (const c of conflicts) {
     if (c.entry.id != null) await db.delete(OUTBOX_STORE, c.entry.id);
   }
+}
+
+/**
+ * Returns the exact count of pending unsynchronized updates in the outbox (#7843).
+ */
+export async function getPendingNotesUpdateCount(
+  roomId: string,
+): Promise<number> {
+  const pending = await listNotesOutbox(roomId);
+  return pending.length;
 }

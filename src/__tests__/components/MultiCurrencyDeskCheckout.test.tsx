@@ -1,5 +1,11 @@
 import React from "react";
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
 import {
   MultiCurrencyDeskCheckout,
@@ -9,6 +15,14 @@ import {
   createSolanaPayUrl,
   SOLANA_USDC_MINT_MAINNET,
 } from "@/lib/payments/solanaPay";
+import {
+  MultiCurrencyDeskCheckout as MicroCheckout,
+  initiateSatoshiPayment,
+} from "@/components/payments/MultiCurrencyDeskCheckout";
+import {
+  MicroPaymentEngine,
+  validateSatoshiAmount,
+} from "@/lib/payments/microPaymentEngine";
 
 describe("Solana Pay URI generation helper", () => {
   it("creates valid solana:<recipient>?amount=<amount>&spl-token=<usdc_mint> URI", () => {
@@ -27,6 +41,7 @@ describe("Solana Pay URI generation helper", () => {
 });
 
 describe("MultiCurrencyDeskCheckout Component", () => {
+  const originalClipboard = navigator.clipboard;
   const sampleItem: BookingCheckoutItem = {
     bookingId: "booking-999",
     deskName: "Desk 04 (North Silent Window)",
@@ -45,20 +60,25 @@ describe("MultiCurrencyDeskCheckout Component", () => {
             reference: "tx_ref_test",
             status: "PENDING",
           }),
-      })
+      }),
     );
   });
 
   afterEach(() => {
     jest.useRealTimers();
+    Object.assign(navigator, { clipboard: originalClipboard });
     jest.restoreAllMocks();
   });
 
   it("renders Solana Pay USDC QR code and deep link by default", () => {
     render(<MultiCurrencyDeskCheckout item={sampleItem} />);
 
-    expect(screen.getByTestId("multi-currency-desk-checkout")).toBeInTheDocument();
-    expect(screen.getByText("Desk 04 (North Silent Window)")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("multi-currency-desk-checkout"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Desk 04 (North Silent Window)"),
+    ).toBeInTheDocument();
 
     const qrCodeSvg = screen.getByTestId("solana-pay-qr-code-svg");
     expect(qrCodeSvg).toBeInTheDocument();
@@ -67,19 +87,29 @@ describe("MultiCurrencyDeskCheckout Component", () => {
     expect(deepLinkBtn).toBeInTheDocument();
     expect(deepLinkBtn.getAttribute("href")).toContain("solana:");
     expect(deepLinkBtn.getAttribute("href")).toContain("amount=45.00");
-    expect(deepLinkBtn.getAttribute("href")).toContain(`spl-token=${SOLANA_USDC_MINT_MAINNET}`);
+    expect(deepLinkBtn.getAttribute("href")).toContain(
+      `spl-token=${SOLANA_USDC_MINT_MAINNET}`,
+    );
   });
 
   it("polls status and triggers automatic booking confirmation upon transaction signature", async () => {
     const onBookingConfirmedMock = jest.fn();
+    const signature = "5K2xMockSolanaTxSignature123456789";
+    const mockWriteText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: mockWriteText,
+      },
+    });
 
     // Mock fetch return sequence: PENDING first, then CONFIRMED
     (global.fetch as jest.Mock)
       .mockImplementationOnce(() =>
         Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ reference: "tx_123", status: "PENDING" }),
-        })
+          json: () =>
+            Promise.resolve({ reference: "tx_123", status: "PENDING" }),
+        }),
       )
       .mockImplementationOnce(() =>
         Promise.resolve({
@@ -88,44 +118,59 @@ describe("MultiCurrencyDeskCheckout Component", () => {
             Promise.resolve({
               reference: "tx_123",
               status: "CONFIRMED",
-              signature: "5K2xMockSolanaTxSignature123456789",
+              signature,
             }),
-        })
+        }),
       );
 
     render(
       <MultiCurrencyDeskCheckout
         item={sampleItem}
         onBookingConfirmed={onBookingConfirmedMock}
-      />
+      />,
     );
 
-    // Fast-forward polling timer 2500ms
+    // Two polling intervals are needed to receive PENDING and then CONFIRMED.
     await act(async () => {
-      jest.advanceTimersByTime(2600);
+      jest.advanceTimersByTime(5100);
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId("solana-payment-confirmed-banner")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("solana-payment-confirmed-banner"),
+      ).toBeInTheDocument();
     });
 
     expect(screen.getByText("Solana Payment Confirmed!")).toBeInTheDocument();
 
-    const explorerLink = screen.getByRole("link", { name: /view on solana explorer/i });
+    const explorerLink = screen.getByRole("link", {
+      name: /view on solana explorer/i,
+    });
     expect(explorerLink).toBeInTheDocument();
     expect(explorerLink).toHaveAttribute(
       "href",
-      "https://explorer.solana.com/tx/5K2xMockSolanaTxSignature123456789"
+      "https://explorer.solana.com/tx/5K2xMockSolanaTxSignature123456789",
     );
     expect(explorerLink).toHaveAttribute("target", "_blank");
     expect(explorerLink).toHaveAttribute("rel", "noopener noreferrer");
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /copy transaction signature/i }),
+      );
+    });
+
+    expect(mockWriteText).toHaveBeenCalledWith(signature);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Transaction signature copied!",
+    );
 
     expect(onBookingConfirmedMock).toHaveBeenCalledWith(
       expect.objectContaining({
         bookingId: "booking-999",
         currency: "SOL_USDC",
         amount: 45.0,
-      })
+      }),
     );
   });
 
@@ -137,22 +182,12 @@ describe("MultiCurrencyDeskCheckout Component", () => {
 
     expect(screen.getByPlaceholderText("Cardholder Name")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Pay \$45.00 USD/i })
+      screen.getByRole("button", { name: /Pay \$45.00 USD/i }),
     ).toBeInTheDocument();
   });
 });
 
 describe("MultiCurrencyDeskCheckout - Satoshi Validation (#6156)", () => {
-  // Import the payment streaming checkout component and validator
-  const {
-    MultiCurrencyDeskCheckout: MicroCheckout,
-    initiateSatoshiPayment,
-  } = require("@/components/payments/MultiCurrencyDeskCheckout");
-  const {
-    validateSatoshiAmount,
-    MicroPaymentEngine,
-  } = require("@/lib/payments/microPaymentEngine");
-
   describe("initiateSatoshiPayment validator", () => {
     it("rejects negative satoshi amounts", () => {
       expect(initiateSatoshiPayment(-1)).toBe(false);
@@ -215,10 +250,10 @@ describe("MultiCurrencyDeskCheckout - Satoshi Validation (#6156)", () => {
 
     it("MicroPaymentEngine.createMicroInvoice throws for non-positive satoshi amounts", () => {
       expect(() =>
-        MicroPaymentEngine.createMicroInvoice("sess-1", -5.0, "lightning")
+        MicroPaymentEngine.createMicroInvoice("sess-1", -5.0, "lightning"),
       ).toThrow("Invalid satoshi amount");
       expect(() =>
-        MicroPaymentEngine.createMicroInvoice("sess-1", 0, "lightning")
+        MicroPaymentEngine.createMicroInvoice("sess-1", 0, "lightning"),
       ).toThrow("Invalid satoshi amount");
     });
   });
@@ -249,15 +284,18 @@ describe("MultiCurrencyDeskCheckout - Satoshi Validation (#6156)", () => {
 
       // Enter negative discount first
       fireEvent.change(discountInput, { target: { value: "-10.00" } });
-      expect(screen.getByTestId("satoshi-validation-error")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("satoshi-validation-error"),
+      ).toBeInTheDocument();
 
       // Fix with a positive gratuity
       fireEvent.change(discountInput, { target: { value: "2.50" } });
-      expect(screen.queryByTestId("satoshi-validation-error")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("satoshi-validation-error"),
+      ).not.toBeInTheDocument();
 
       const startBtn = screen.getByTestId("start-session-button");
       expect(startBtn).not.toBeDisabled();
     });
   });
 });
-

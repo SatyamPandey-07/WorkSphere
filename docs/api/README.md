@@ -14,6 +14,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Bookings](./bookings.md)
 - [Cafe orders](./cafe-orders.md)
 - [Message translation](./message-translation.md)
+- [NotificationBell & User Notifications](../NOTIFICATION_BELL_GUIDE.md) — notification retrieval, mark-as-read row-locking transaction, mark-as-unread restoration, retry behavior, and NotificationBell UI.
 - [Partition export](./partition-export.md)
 - [Semantic search](./semantic-search.md)
 - [Solana Pay](./solana-pay.md)

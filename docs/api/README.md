@@ -13,6 +13,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Admin Vitals API](./ADMIN_VITALS_SPEC.md) — administrator authorization, JSON and Prometheus response formats, and operational guidance.
 - [Date filter formats](./DATE_FILTER_FORMATS.md) — supported calendar dates, RFC 3339 timestamps, relative windows, aliases, and 400 error responses.
 - [Rate limiting](./RATE_LIMITING.md) — active middleware quotas, the separate tiered configuration, 429 headers, and client retry examples.
+- [Reservation Availability SSE](./RESERVATION_EVENTS_SSE.md) — reservation stream endpoint, event names and payloads, heartbeat, client reconnection, and cleanup.
 - [Seat Hold Lease Extension](./SEAT_HOLD_LEASE_EXTENSION.md) — authenticated seat-lock extension, lease constraints, fencing-token validation, and error responses.
 - [Bookings](./bookings.md)
 - [Cafe orders](./cafe-orders.md)

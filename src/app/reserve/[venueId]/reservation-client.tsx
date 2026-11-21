@@ -168,6 +168,11 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
         );
       }
     },
+    onHoldExtended: (seatId) => {
+      // One-click recovery from the expiry toast: restore the selection.
+      setSelectedSeat(seatId);
+      setMessage("");
+    },
     onHoldRejected: (_seatId, _reason, _heldBy, heldByName) => {
       setMessage(
         `This seat is temporarily on hold by ${heldByName || "another user"} during checkout.`,

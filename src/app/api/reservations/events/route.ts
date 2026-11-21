@@ -1,78 +1,44 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
+import { subscribeVenueAvailability } from "@/lib/reservations/event-bus";
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
-export interface ReservationAvailabilityEvent {
-  type: 'connected' | 'availability_update' | 'heartbeat';
-  venueId: string;
-  availableSeats?: number;
-  crowdLevel?: 'QUIET' | 'MODERATE' | 'BUSY';
-  timestamp: string;
-}
-
-type VenueEventListener = (event: ReservationAvailabilityEvent) => void;
-
-// In-process pub/sub registry for reservation availability broadcasts
-const globalForSse = globalThis as unknown as {
-  __worksphereReservationListeners?: Map<string, Set<VenueEventListener>>;
-};
-
-const venueListeners =
-  globalForSse.__worksphereReservationListeners ??
-  new Map<string, Set<VenueEventListener>>();
-
-if (!globalForSse.__worksphereReservationListeners) {
-  globalForSse.__worksphereReservationListeners = venueListeners;
-}
-
-export function subscribeToVenueReservations(
-  venueId: string,
-  listener: VenueEventListener
-): () => void {
-  let listeners = venueListeners.get(venueId);
-  if (!listeners) {
-    listeners = new Set<VenueEventListener>();
-    venueListeners.set(venueId, listeners);
-  }
-  listeners.add(listener);
-
-  return () => {
-    const current = venueListeners.get(venueId);
-    if (!current) return;
-    current.delete(listener);
-    if (current.size === 0) {
-      venueListeners.delete(venueId);
-    }
-  };
-}
-
-export function publishVenueReservationEvent(
-  event: ReservationAvailabilityEvent
-): void {
-  const listeners = venueListeners.get(event.venueId);
-  if (!listeners) return;
-  for (const listener of listeners) {
-    listener(event);
-  }
-}
-
-function encodeSseFrame(payload: ReservationAvailabilityEvent): Uint8Array {
+function encodeSseFrame(event: string, data: unknown): Uint8Array {
   const encoder = new TextEncoder();
-  return encoder.encode(
-    `event: ${payload.type}\ndata: ${JSON.stringify(payload)}\n\n`
-  );
+  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+function parsePayload(rawPayload: unknown): Record<string, unknown> | null {
+  let parsed: unknown;
+  if (typeof rawPayload === "string") {
+    try {
+      parsed = JSON.parse(rawPayload);
+    } catch {
+      return null;
+    }
+  } else if (typeof rawPayload === "object" && rawPayload !== null) {
+    parsed = rawPayload;
+  } else {
+    return null;
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  return parsed as Record<string, unknown>;
 }
 
 export async function GET(request: NextRequest) {
-  const venueId = request.nextUrl.searchParams.get('venueId')?.trim();
+  const venueId = request.nextUrl.searchParams.get("venueId")?.trim();
 
   if (!venueId) {
     return NextResponse.json(
-      { error: 'Missing required query parameter: venueId' },
-      { status: 400 }
+      { error: "Missing required query parameter: venueId" },
+      { status: 400 },
     );
   }
 
@@ -96,7 +62,7 @@ export async function GET(request: NextRequest) {
       unsubscribe = null;
     }
 
-    request.signal.removeEventListener('abort', onAbort);
+    request.signal.removeEventListener("abort", onAbort);
   };
 
   const onAbort = () => {
@@ -105,36 +71,67 @@ export async function GET(request: NextRequest) {
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const safeEnqueue = (event: ReservationAvailabilityEvent) => {
+      const safeEnqueue = (event: string, data: unknown) => {
         if (isClosed || request.signal.aborted) {
           cleanup();
           return;
         }
 
         try {
-          controller.enqueue(encodeSseFrame(event));
+          controller.enqueue(encodeSseFrame(event, data));
         } catch {
           // Controller was closed externally; clean up timer and subscription immediately
           cleanup();
         }
       };
 
-      // Subscribe to live venue seat availability updates
-      unsubscribe = subscribeToVenueReservations(venueId, (event) => {
-        safeEnqueue(event);
-      });
+      // Subscribe to shared venue availability event bus
+      unsubscribe = subscribeVenueAvailability(
+        venueId,
+        (rawPayload: string) => {
+          const payloadObj = parsePayload(rawPayload);
+          if (!payloadObj) {
+            return;
+          }
+
+          if (
+            typeof payloadObj.type !== "string" ||
+            payloadObj.type.trim() === ""
+          ) {
+            return;
+          }
+
+          const rawType = payloadObj.type;
+
+          const isExpiration =
+            rawType === "DESK_HOLD_EXPIRED" ||
+            rawType === "SEAT_HOLD_EXPIRED" ||
+            rawType === "desk_reservation_expired";
+
+          const eventName = isExpiration ? "desk_expired" : "availability";
+
+          const finalPayload: Record<string, unknown> = {
+            ...payloadObj,
+            ...(rawType === "desk_reservation_expired"
+              ? { type: "DESK_HOLD_EXPIRED" }
+              : {}),
+          };
+
+          safeEnqueue(eventName, finalPayload);
+        },
+      );
 
       // Emit initial handshake frame
-      safeEnqueue({
-        type: 'connected',
+      safeEnqueue("connected", {
+        type: "connected",
         venueId,
         timestamp: new Date().toISOString(),
       });
 
       // Periodic keep-alive heartbeat
       heartbeat = setInterval(() => {
-        safeEnqueue({
-          type: 'heartbeat',
+        safeEnqueue("heartbeat", {
+          type: "heartbeat",
           venueId,
           timestamp: new Date().toISOString(),
         });
@@ -143,7 +140,7 @@ export async function GET(request: NextRequest) {
       if (request.signal.aborted) {
         cleanup();
       } else {
-        request.signal.addEventListener('abort', onAbort, { once: true });
+        request.signal.addEventListener("abort", onAbort, { once: true });
       }
     },
 
@@ -156,10 +153,10 @@ export async function GET(request: NextRequest) {
   return new NextResponse(stream, {
     status: 200,
     headers: {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }

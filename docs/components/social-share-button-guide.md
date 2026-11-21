@@ -1,6 +1,6 @@
 # Component Reference Guide: SocialShareButton & Cross-Platform Sharing
 
-This reference guide documents WorkSphere's `SocialShareButton` component, prop specifications, Web Share API integration, dual-tier clipboard fallback mechanisms, and platform-specific social sharing helpers ([src/components/SocialShareButton.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/SocialShareButton.tsx) and [src/components/social/SocialShareButton.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/social/SocialShareButton.tsx)).
+This reference guide documents WorkSphere's `SocialShareButton` component, prop specifications, Web Share API integration, dual-tier clipboard fallback mechanisms, and platform-specific social sharing helpers ([src/components/SocialShareButton.tsx](../../src/components/SocialShareButton.tsx) and [src/components/social/SocialShareButton.tsx](../../src/components/social/SocialShareButton.tsx)).
 
 ---
 
@@ -44,7 +44,7 @@ WorkSphere adopts a **multi-tier progressive enhancement sharing strategy**:
 
 ## 2. Component Props Specification
 
-File: [src/components/social/SocialShareButton.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/social/SocialShareButton.tsx#L7-L14)
+File: [src/components/social/SocialShareButton.tsx](../../src/components/social/SocialShareButton.tsx#L7-L14)
 
 ### TypeScript Props Interface
 
@@ -89,7 +89,7 @@ export interface SocialShareButtonProps {
 
 ## 3. Web Share API Behavior & Clipboard Fallback Engine
 
-File: [src/components/social/SocialShareButton.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/social/SocialShareButton.tsx#L20-L50)
+File: [src/components/social/SocialShareButton.tsx](../../src/components/social/SocialShareButton.tsx#L20-L50)
 
 The sharing pipeline employs a three-tier execution hierarchy:
 
@@ -395,7 +395,7 @@ describe("SocialShareButton", () => {
 
 ## 7. Repository File Reference Map
 
-- [src/components/SocialShareButton.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/SocialShareButton.tsx) — Main entry point re-exporting `SocialShareButton`.
-- [src/components/social/SocialShareButton.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/social/SocialShareButton.tsx) — Core component implementation, `copyShareableLinkToClipboard` helper, and toast integrations.
-- [src/components/social/VenueShareButton.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/social/VenueShareButton.tsx) — Specialized venue sharing button with direct `navigator.share()` integration.
-- [src/components/venue/VenueShareModal.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/venue/VenueShareModal.tsx) — Full-featured venue sharing modal containing QR code generator and social platform links.
+- [src/components/SocialShareButton.tsx](../../src/components/SocialShareButton.tsx) — Main entry point re-exporting `SocialShareButton`.
+- [src/components/social/SocialShareButton.tsx](../../src/components/social/SocialShareButton.tsx) — Core component implementation, `copyShareableLinkToClipboard` helper, and toast integrations.
+- [src/components/social/VenueShareButton.tsx](../../src/components/social/VenueShareButton.tsx) — Specialized venue sharing button with direct `navigator.share()` integration.
+- [src/components/venue/VenueShareModal.tsx](../../src/components/venue/VenueShareModal.tsx) — Full-featured venue sharing modal containing QR code generator and social platform links.

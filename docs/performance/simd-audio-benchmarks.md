@@ -252,7 +252,7 @@ static void flush_denormals(int num_channels) {
 
 ## 7. TypeScript API Reference (`simdFilter.ts`)
 
-File: [src/lib/noise/simdFilter.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/noise/simdFilter.ts)
+File: [src/lib/noise/simdFilter.ts](../../src/lib/noise/simdFilter.ts)
 
 ```typescript
 import {

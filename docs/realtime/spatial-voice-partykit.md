@@ -1,6 +1,6 @@
 ﻿# Spatial Voice Audio Packet Interleaving & Opus Frame Synchronization in PartyKit
 
-This technical manual details the real-time audio transmission architecture implemented in [`src/party/spatialVoice.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/spatialVoice.room.ts), documenting binary Opus packet encapsulation, low-overhead spatial telemetry interleaving, adaptive jitter buffer compensation, sequence numbering, and timestamp synchronization across distributed PartyKit edge nodes.
+This technical manual details the real-time audio transmission architecture implemented in [`src/party/spatialVoice.room.ts`](../../src/party/spatialVoice.room.ts), documenting binary Opus packet encapsulation, low-overhead spatial telemetry interleaving, adaptive jitter buffer compensation, sequence numbering, and timestamp synchronization across distributed PartyKit edge nodes.
 
 ---
 

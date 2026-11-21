@@ -1,5 +1,7 @@
 "use client";
 
+ feat/fuzzy-venue-category-suggestions
+
  feat/webrtc-telemetry-prometheus
 
  feat/search-shortcut-badge
@@ -13,6 +15,7 @@
  fix/rolling-noise-window-normalization
 
  fix/vector-clock-atomic-tick
+ main
  main
  main
  main
@@ -100,6 +103,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/fuzzy-venue-category-suggestions
+}
+
  feat/webrtc-telemetry-prometheus
 }
 
@@ -276,6 +282,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

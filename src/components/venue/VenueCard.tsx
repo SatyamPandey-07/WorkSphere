@@ -1,10 +1,13 @@
 "use client";
 
+ feat/gossipsub-ip-colocation-scoring
+
  fix/seat-hold-timer-cleanup
 
  fix/rolling-noise-window-normalization
 
  fix/vector-clock-atomic-tick
+ main
  main
  main
 import React from "react";
@@ -88,6 +91,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/gossipsub-ip-colocation-scoring
+}
+
  fix/seat-hold-timer-cleanup
 }
 
@@ -253,6 +259,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

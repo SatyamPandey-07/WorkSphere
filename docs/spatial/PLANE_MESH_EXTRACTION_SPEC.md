@@ -1,7 +1,7 @@
 # RANSAC 3D Plane Extraction & Bounding Volume Hierarchy Specification
 
 > **Document ID:** `SPEC-SPATIAL-8146`  
-> **Source Target:** [`src/core/spatial/PlaneMeshExtractor.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts)  
+> **Source Target:** [`src/core/spatial/PlaneMeshExtractor.ts`](../../src/core/spatial/PlaneMeshExtractor.ts)\
 > **Status:** Production Specification & Architectural Blueprint  
 > **Issue Reference:** [Issue #8146](https://github.com/SatyamPandey-07/WorkSphere/issues/8146)  
 
@@ -11,7 +11,7 @@
 
 The WorkSphere spatial digital twin platform ingests spatial 3D point clouds captured from LiDAR-equipped consumer devices (such as iPad Pro, iPhone Pro) and depth-sensing cameras. These dense, unorganized point clouds represent physical coworking rooms containing structural architectural surfaces (floors, walls, ceilings) and interactive facilities (workstations, ergonomic desks).
 
-The primary purpose of [`PlaneMeshExtractor`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts) is to segment raw, noisy point clouds into mathematically bounded, semantically labeled planar geometries (`ExtractedPlane`) and reconstruct indexed 3D triangle meshes (`TriangleMesh`) suitable for WebGL/WebGPU rendering, AR raycasting, and workplace layout validation.
+The primary purpose of [`PlaneMeshExtractor`](../../src/core/spatial/PlaneMeshExtractor.ts) is to segment raw, noisy point clouds into mathematically bounded, semantically labeled planar geometries (`ExtractedPlane`) and reconstruct indexed 3D triangle meshes (`TriangleMesh`) suitable for WebGL/WebGPU rendering, AR raycasting, and workplace layout validation.
 
 This document formally specifies:
 1. The mathematical foundations of 3D plane parameterization and distance metrics.
@@ -41,7 +41,7 @@ where:
 
 ### 2.2 Normalization Constraint & Hessian Normal Form
 
-In [`PlaneMeshExtractor.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts), the normal vector $\mathbf{n}$ is strictly constrained to unit Euclidean length:
+In [`PlaneMeshExtractor.ts`](../../src/core/spatial/PlaneMeshExtractor.ts), the normal vector $\mathbf{n}$ is strictly constrained to unit Euclidean length:
 
 $$\|\mathbf{n}\|_2 = \sqrt{a^2 + b^2 + c^2} = 1$$
 
@@ -65,7 +65,7 @@ The absolute orthogonal Euclidean distance is:
 $$\text{distance}(\mathbf{p}, \mathcal{P}) = \frac{|ax + by + cz + d|}{\sqrt{a^2 + b^2 + c^2}}$$
 
 #### Normalized Implementation Formula
-Because [`PlaneMeshExtractor.fitPlaneFrom3Points`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L182-L198) explicitly divides $\mathbf{n}$ by its Euclidean norm $\|\mathbf{n}\|_2$, the denominator is identically $1$. Hence, [`PlaneMeshExtractor.distanceToPlane`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L200-L208) implements the computationally optimal orthogonal distance:
+Because [`PlaneMeshExtractor.fitPlaneFrom3Points`](../../src/core/spatial/PlaneMeshExtractor.ts#L182-L198) explicitly divides $\mathbf{n}$ by its Euclidean norm $\|\mathbf{n}\|_2$, the denominator is identically $1$. Hence, [`PlaneMeshExtractor.distanceToPlane`](../../src/core/spatial/PlaneMeshExtractor.ts#L200-L208) implements the computationally optimal orthogonal distance:
 
 $$\text{distance}(\mathbf{p}, \mathcal{P}) = |a \cdot p_x + b \cdot p_y + c \cdot p_z + d|$$
 
@@ -158,7 +158,7 @@ $$K_{\text{adaptive}} = \frac{\ln(1 - p)}{\ln(1 - w^M)}$$
 where $w = \frac{|\mathcal{I}|}{N}$ is the inlier ratio and $M = 3$.
 
 > [!IMPORTANT]
-> **Source Verification:** In [`PlaneMeshExtractor.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L248-L270), adaptive iteration updating is **NOT implemented**. The loop strictly executes for $K = \text{maxIterations}$ iterations.
+> **Source Verification:** In [`PlaneMeshExtractor.ts`](../../src/core/spatial/PlaneMeshExtractor.ts#L248-L270), adaptive iteration updating is **NOT implemented**. The loop strictly executes for $K = \text{maxIterations}$ iterations.
 
 ### 3.5 Consensus Acceptance & Sequential Multi-Plane Depletion
 A candidate plane $\mathcal{M}^*$ is accepted if and only if its inlier count satisfies:
@@ -180,7 +180,7 @@ In literature and advanced point cloud libraries (such as PCL or Open3D), surfac
 
 > [!NOTE]
 > **Source Implementation Distinction:**
-> In [`PlaneMeshExtractor.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L284-L290), the plane normal $\mathbf{n}$ is obtained directly from the minimal 3-point sample cross product that won the consensus tournament, with an upward vertical orientation flip.
+> In [`PlaneMeshExtractor.ts`](../../src/core/spatial/PlaneMeshExtractor.ts#L284-L290), the plane normal $\mathbf{n}$ is obtained directly from the minimal 3-point sample cross product that won the consensus tournament, with an upward vertical orientation flip.
 > Below is the formal mathematical specification of Covariance/PCA plane normal estimation, documented as the standard theoretical model for refinement.
 
 ### 4.2 Centroid Calculation
@@ -188,7 +188,7 @@ Given consensus inliers $\mathcal{I} = \{\mathbf{p}_1, \mathbf{p}_2, \dots, \mat
 
 $$\boldsymbol{\mu} = \frac{1}{|\mathcal{I}|} \sum_{i=1}^{|\mathcal{I}|} \mathbf{p}_i = \begin{pmatrix} \frac{1}{|\mathcal{I}|} \sum x_i \\ \frac{1}{|\mathcal{I}|} \sum y_i \\ \frac{1}{|\mathcal{I}|} \sum z_i \end{pmatrix}$$
 
-This is implemented in [`PlaneMeshExtractor.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L292-L303).
+This is implemented in [`PlaneMeshExtractor.ts`](../../src/core/spatial/PlaneMeshExtractor.ts#L292-L303).
 
 ### 4.3 3x3 Covariance Matrix Construction
 The sample covariance matrix $\mathbf{C} \in \mathbb{R}^{3 \times 3}$ describes the spatial dispersion of inlier points around centroid $\boldsymbol{\mu}$:
@@ -220,7 +220,7 @@ and corresponding orthonormal eigenvectors $\mathbf{v}_0, \mathbf{v}_1, \mathbf{
 * **Tangent Basis:** The eigenvectors $\mathbf{v}_2$ and $\mathbf{v}_1$ associated with $\lambda_2$ and $\lambda_1$ correspond to the directions of maximum and secondary variance within the plane, forming an intrinsic local coordinate frame $(\mathbf{u}, \mathbf{v})$.
 
 ### 4.5 Existing Implementation: Deterministic Orthonormal Frame
-In [`PlaneMeshExtractor.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L305-L312), tangent frame $(\mathbf{u}, \mathbf{v})$ is generated deterministically without full eigen-decomposition:
+In [`PlaneMeshExtractor.ts`](../../src/core/spatial/PlaneMeshExtractor.ts#L305-L312), tangent frame $(\mathbf{u}, \mathbf{v})$ is generated deterministically without full eigen-decomposition:
 1. Normal vertical orientation check: If $n_y < 0$ and $|n_y| > 0.5$, normal is inverted: $\mathbf{n} \leftarrow -\mathbf{n}$, $d \leftarrow -d$.
 2. Reference vector $\mathbf{a}_{\text{ref}} = (0, 1, 0)^T$.
 3. If $|\mathbf{n} \cdot \mathbf{a}_{\text{ref}}| > 0.9$ (normal is nearly parallel to Y axis), reference switches to $\mathbf{a}_{\text{ref}} = (1, 0, 0)^T$.
@@ -249,7 +249,7 @@ $$x_{2D} = (\mathbf{p} - \mathbf{c}) \cdot \mathbf{u}$$
 $$y_{2D} = (\mathbf{p} - \mathbf{c}) \cdot \mathbf{v}$$
 
 ### 5.2 2D Convex Hull via Andrew's Monotone Chain
-To define the boundary perimeter, [`PlaneMeshExtractor.compute2DConvexHull`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L407-L440) implements **Andrew's Monotone Chain algorithm**, an $\mathcal{O}(I \log I)$ variant of Graham Scan:
+To define the boundary perimeter, [`PlaneMeshExtractor.compute2DConvexHull`](../../src/core/spatial/PlaneMeshExtractor.ts#L407-L440) implements **Andrew's Monotone Chain algorithm**, an $\mathcal{O}(I \log I)$ variant of Graham Scan:
 
 1. **Lexicographical Sort:** Points are sorted primarily by $x$-coordinate, secondarily by $y$-coordinate.
 2. **2D Cross Product (Turn Test):**
@@ -304,10 +304,10 @@ $$\text{isErgonomicDesk} = (0.65 \le c_y \le 0.85) \land (\max(w, d) \ge 0.70\,\
 
 > [!WARNING]
 > **Implementation Status:**  
-> In [`PlaneMeshExtractor.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts), spatial acceleration indexing (such as BVH, Octree, or $k$-d tree) is **NOT currently implemented**.
+> In [`PlaneMeshExtractor.ts`](../../src/core/spatial/PlaneMeshExtractor.ts), spatial acceleration indexing (such as BVH, Octree, or $k$-d tree) is **NOT currently implemented**.
 > Point-to-plane consensus evaluation operates via an exhaustive linear array scan over all active points for every RANSAC iteration.
 
-While spatial indexing structures exist elsewhere in the WorkSphere repository (for instance, the acoustic raytracing BVH in [`src/core/spatial/acousticTypes.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/acousticTypes.ts)), `PlaneMeshExtractor` maintains self-contained, dependency-free linear evaluation.
+While spatial indexing structures exist elsewhere in the WorkSphere repository (for instance, the acoustic raytracing BVH in [`src/core/spatial/acousticTypes.ts`](../../src/core/spatial/acousticTypes.ts)), `PlaneMeshExtractor` maintains self-contained, dependency-free linear evaluation.
 
 ### 6.2 Linear Consensus Baseline vs. Proposed BVH Acceleration
 
@@ -362,8 +362,8 @@ $$D_{\text{center}} = |a \cdot c_{\text{box}, x} + b \cdot c_{\text{box}, y} + c
 ## 8. Numerical Stability & Edge Cases
 
 ### 8.1 Existing Safeguards in Source Code
-1. **Collinear 3-Point Samples:** In [`fitPlaneFrom3Points`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L182-L198), if $\|\mathbf{v}_1 \times \mathbf{v}_2\|_2 < 10^{-6}$, the hypothesis returns `null` and is skipped.
-2. **Zero-Length Vector Normalization:** In [`normalize`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/src/core/spatial/PlaneMeshExtractor.ts#L149-L157), if norm is 0, a safe unit vector $\{x: 0, y: 1, z: 0\}$ is returned, preventing division by zero.
+1. **Collinear 3-Point Samples:** In [`fitPlaneFrom3Points`](../../src/core/spatial/PlaneMeshExtractor.ts#L182-L198), if $\|\mathbf{v}_1 \times \mathbf{v}_2\|_2 < 10^{-6}$, the hypothesis returns `null` and is skipped.
+2. **Zero-Length Vector Normalization:** In [`normalize`](../../src/core/spatial/PlaneMeshExtractor.ts#L149-L157), if norm is 0, a safe unit vector $\{x: 0, y: 1, z: 0\}$ is returned, preventing division by zero.
 3. **Tangent Frame Parallel Singularities:** When constructing tangent frame $(\mathbf{u}, \mathbf{v})$, if $|\mathbf{n} \cdot (0, 1, 0)^T| > 0.9$, the code dynamically branches to reference $(1, 0, 0)^T$, preventing near-zero cross products.
 4. **Insufficient Inliers:** Point clouds with fewer points than `minInliers` immediately return `[]`, preventing index out-of-bounds errors.
 5. **Small Hull Size:** If projected inliers have $\le 3$ points, `compute2DConvexHull` returns them directly without executing monotone chain pruning.
@@ -379,7 +379,7 @@ $$D_{\text{center}} = |a \cdot c_{\text{box}, x} + b \cdot c_{\text{box}, y} + c
 ## 9. Performance Benchmarks across Point Cloud Densities
 
 ### 9.1 Benchmark Methodology & Configuration
-Benchmarks were executed using the dedicated reproducible suite [`scripts/bench-plane-mesh-extractor.ts`](file:///c:/Users/Saransh%20Kashyap/WorkSphere-8146/scripts/bench-plane-mesh-extractor.ts).
+Benchmarks were executed using the dedicated reproducible suite [`scripts/bench-plane-mesh-extractor.ts`](../../scripts/bench-plane-mesh-extractor.ts).
 
 * **Hardware Environment:** 13th Gen Intel(R) Core(TM) i5-13420H (8 cores / 12 threads), 16.0 GB RAM
 * **Operating System & Runtime:** Windows 11 (win32 x64), Node.js v24.15.0 (V8 13.4)

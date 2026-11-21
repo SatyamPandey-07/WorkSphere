@@ -8,6 +8,9 @@ This document provides a high-level reference for the REST API endpoints availab
 
 # Authentication
 
+| `POST /api/webhooks/clerk` | Verify Clerk/Svix-signed user lifecycle events and synchronize the WorkSphere user profile. See the [Clerk webhook integration runbook](./auth/CLERK_WEBHOOK_INTEGRATION.md). |
+
+
 | Endpoint                         | Description                                       |
 | -------------------------------- | ------------------------------------------------- |
 | `POST /api/auth/csrf-token`      | Generate a CSRF token for secure requests.        |

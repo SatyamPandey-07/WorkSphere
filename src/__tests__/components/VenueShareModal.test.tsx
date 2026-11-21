@@ -9,6 +9,7 @@ jest.mock("@/components/ui/Toast", () => ({
 }));
 
 describe("VenueShareModal Component (#4402)", () => {
+  const originalExecCommand = document.execCommand;
   const mockVenue = {
     id: "venue-123",
     name: "Cafe Artisan",
@@ -25,6 +26,11 @@ describe("VenueShareModal Component (#4402)", () => {
         writeText: jest.fn().mockResolvedValue(undefined),
       },
     });
+    document.execCommand = jest.fn().mockReturnValue(true);
+  });
+
+  afterAll(() => {
+    document.execCommand = originalExecCommand;
   });
 
   it("calls navigator.share when available", async () => {
@@ -108,8 +114,62 @@ describe("VenueShareModal Component (#4402)", () => {
       );
       expect(screen.getByText("Copied")).toBeInTheDocument();
       expect(mockToast).toHaveBeenCalledWith(
-        "Link copied to clipboard!",
+        "Copied to clipboard!",
         "success",
+      );
+    });
+  });
+
+  it("renders an accessible copy button and copies the exact displayed URL", async () => {
+    // @ts-expect-error - intentional test simulation
+    delete (navigator as any).share;
+
+    render(<VenueShareModal venue={mockVenue} />);
+    fireEvent.click(screen.getByRole("button", { name: /share cafe artisan/i }));
+
+    const urlInput = screen.getByDisplayValue(/\/venues\/venue-123/) as HTMLInputElement;
+    const copyBtn = screen.getByRole("button", { name: "Copy share link" });
+
+    expect(copyBtn).toHaveAttribute("title", "Copy share link");
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(urlInput.value);
+    });
+  });
+
+  it("falls back to execCommand when clipboard access is unavailable", async () => {
+    // @ts-expect-error - intentional test simulation
+    delete (navigator as any).share;
+    Object.assign(navigator, { clipboard: undefined });
+    const execCommand = document.execCommand as jest.Mock;
+
+    render(<VenueShareModal venue={mockVenue} />);
+    fireEvent.click(screen.getByRole("button", { name: /share cafe artisan/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy share link" }));
+
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith("copy");
+      expect(mockToast).toHaveBeenCalledWith("Copied to clipboard!", "success");
+    });
+  });
+
+  it("falls back after clipboard write failure and reports an error when copying fails", async () => {
+    // @ts-expect-error - intentional test simulation
+    delete (navigator as any).share;
+    Object.assign(navigator, {
+      clipboard: { writeText: jest.fn().mockRejectedValue(new Error("Denied")) },
+    });
+    document.execCommand = jest.fn().mockReturnValue(false);
+
+    render(<VenueShareModal venue={mockVenue} />);
+    fireEvent.click(screen.getByRole("button", { name: /share cafe artisan/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy share link" }));
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(
+        "Unable to copy to clipboard",
+        "error",
       );
     });
   });

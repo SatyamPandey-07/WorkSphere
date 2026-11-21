@@ -146,15 +146,59 @@ export function VenueShareModal({
 
   const handleCopyLink = async () => {
     if (copied) return;
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(shortUrl);
-        setCopied(true);
-        toast("Link copied to clipboard!", "success");
-        if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-        timerRef.current = window.setTimeout(() => setCopied(false), 2000);
+
+    const fallbackCopy = () => {
+      const textArea = document.createElement("textarea");
+      textArea.value = shortUrl;
+      textArea.setAttribute("readonly", "");
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+
+      try {
+        return document.execCommand("copy");
+      } finally {
+        document.body.removeChild(textArea);
       }
+    };
+
+    try {
+      let didCopy = false;
+
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.clipboard?.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(shortUrl);
+        didCopy = true;
+      } else if (typeof document !== "undefined") {
+        didCopy = fallbackCopy();
+      }
+
+      if (!didCopy) {
+        throw new Error("Clipboard copy was not successful");
+      }
+
+      setCopied(true);
+      toast("Copied to clipboard!", "success");
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => setCopied(false), 2000);
     } catch (err) {
+      if (typeof document !== "undefined") {
+        try {
+          if (fallbackCopy()) {
+            setCopied(true);
+            toast("Copied to clipboard!", "success");
+            if (timerRef.current !== null)
+              window.clearTimeout(timerRef.current);
+            timerRef.current = window.setTimeout(() => setCopied(false), 2000);
+            return;
+          }
+        } catch (fallbackError) {
+          console.error("Fallback copy failed:", fallbackError);
+        }
+      }
       console.error("Failed to copy shortlink:", err);
       toast("Unable to copy to clipboard", "error");
     }
@@ -308,6 +352,8 @@ export function VenueShareModal({
                   <button
                     type="button"
                     onClick={handleCopyLink}
+                    aria-label={copied ? "Share link copied" : "Copy share link"}
+                    title={copied ? "Share link copied" : "Copy share link"}
                     className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
                       copied
                         ? "bg-green-600 text-white"

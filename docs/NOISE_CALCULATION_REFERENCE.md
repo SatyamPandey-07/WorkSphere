@@ -138,12 +138,12 @@ Where $L_k$ is the instantaneous calibrated A-weighted sound level (dBA) for fra
 ## 6. WorkSphere Implementation Reference
 
 The formulas documented above are implemented in the following modules:
-- [src/lib/acousticMetrics.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/acousticMetrics.ts):
+- [src/lib/acousticMetrics.ts](../src/lib/acousticMetrics.ts):
   - `calculateDailyNoiseDose(decibelLevel, durationMinutes, standard)`
   - `calculateAWeightingGain(freqHz)`
   - `applyAWeightingToSpectrum(frequencies, magnitudes, isDbScale)`
   - `designAWeightingBiquads(sampleRate)`
   - `calculateLeq(decibels)`
   - `calculateAcousticPercentiles(decibels)`
-- [src/components/noise/NoiseReportingWidget.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/noise/NoiseReportingWidget.tsx): Live user decibel sampling and submission.
-- [src/components/noise/AmbientNoiseTrendGraph.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/noise/AmbientNoiseTrendGraph.tsx): Visual trend curve and threshold classification (<50 dB, 50-70 dB, >70 dB).
+- [src/components/noise/NoiseReportingWidget.tsx](../src/components/noise/NoiseReportingWidget.tsx): Live user decibel sampling and submission.
+- [src/components/noise/AmbientNoiseTrendGraph.tsx](../src/components/noise/AmbientNoiseTrendGraph.tsx): Visual trend curve and threshold classification (<50 dB, 50-70 dB, >70 dB).

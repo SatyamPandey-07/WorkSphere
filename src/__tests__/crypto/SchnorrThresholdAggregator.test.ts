@@ -26,6 +26,11 @@ describe('SchnorrThresholdAggregator', () => {
         ];
     });
 
+    afterEach(() => {
+        aggregator.dispose();
+        jest.useRealTimers();
+    });
+
     describe('Curve Arithmetic & Field Primitives', () => {
         it('verifies generator point doubling and addition', () => {
             const G = SchnorrThresholdAggregator.getGenerator();

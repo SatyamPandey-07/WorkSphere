@@ -868,7 +868,7 @@ export function VenueCard({
         {/* Rating & Category */}
         <div className="flex items-center gap-3 mb-3">
           <div
-            className="inline-flex items-center gap-1 font-medium text-amber-500 dark:text-amber-400"
+            className="inline-flex items-center gap-1 leading-none font-medium text-amber-500 dark:text-amber-400"
             data-testid="star-rating-container"
           >
             <Star

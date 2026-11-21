@@ -24,24 +24,25 @@ This document provides a high-level reference for the REST API endpoints availab
 
 # Venues
 
-| Endpoint                                           | Description                                                                 |
-| -------------------------------------------------- | --------------------------------------------------------------------------- |
-| `GET /api/venues`                                  | Retrieve available venues.                                                  |
-| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox). |
-| `POST /api/venues`                                 | Create or submit a venue.                                                   |
-| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                     |
-| `GET /api/venues/updates`                          | Subscribe to venue updates.                                                 |
-| `POST /api/venues/updates`                         | Broadcast a venue update.                                                   |
-| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                      |
-| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                     |
-| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                            |
-| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                      |
-| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                               |
-| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                            |
-| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                             |
-| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                                 |
-| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                   |
-| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                           |
+| Endpoint                                           | Description                                                                                                                    |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/venues`                                  | Retrieve available venues.                                                                                                     |
+| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox).                                                    |
+| `POST /api/venues`                                 | Create or submit a venue.                                                                                                      |
+| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                                                                        |
+| `GET /api/venues/updates`                          | Subscribe to venue updates.                                                                                                    |
+| `POST /api/venues/updates`                         | Broadcast a venue update.                                                                                                      |
+| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                                                                         |
+| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                                                                        |
+| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                                                                               |
+| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                                                                         |
+| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                                                                                  |
+| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                                                                               |
+| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                                                                                |
+| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                                                                                    |
+| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                                                                      |
+| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                                                                              |
+| `POST /api/venues/{venueId}/check-in/bulk`         | Perform manager bulk check-in for venue bookings. See the [Bulk venue check-in API guide](./api/BULK_CHECK_IN.md) for details. |
 
 ### Endpoint Specification: `GET /api/venues/search`
 

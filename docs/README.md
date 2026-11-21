@@ -20,3 +20,7 @@
 ## Database & Operations
 
 - [Partition Backup Verification and Restore Drills](./database/PARTITION_BACKUP_VERIFICATION.md) — Verify partition backup archives, coverage and freshness, and run guarded disposable-database restore checks.
+
+## Workers & Operations
+
+- [Reservation CDC Setup and Operations](./workers/RESERVATION_CDC_OPERATIONS.md) — Configure, run, monitor, and troubleshoot PostgreSQL logical replication and Redis Stream publishing.

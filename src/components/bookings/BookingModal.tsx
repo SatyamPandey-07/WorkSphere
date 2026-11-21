@@ -1,200 +1,160 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 
-import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
-
-interface BookingModalProps {
-  venueId: string;
-  venueName: string;
-  onClose: () => void;
-  onSuccess: (confirmationId: string) => void;
+export interface LockSeatResponse {
+  ok?: boolean;
+  lockId?: string;
+  error?: string;
 }
 
-export function BookingModal({ venueId, venueName, onClose, onSuccess }: BookingModalProps) {
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [showWaitlist, setShowWaitlist] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const isSubmittingRef = React.useRef(false);
+export interface BookingModalProps {
+  isOpen: boolean;
+  venueId: string;
+  seatId: string;
+  seatLabel?: string;
+  onConfirmLock?: (payload: {
+    venueId: string;
+    seatId: string;
+  }) => Promise<LockSeatResponse | void>;
+  onSuccess?: (result: LockSeatResponse | void) => void;
+  onError?: (errorMessage: string) => void;
+  onClose: () => void;
+}
 
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (!isSubmittingRef.current && !loading && !isSubmitting) {
-          onClose();
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [loading, isSubmitting, onClose]);
+export const BookingModal: React.FC<BookingModalProps> = ({
+  isOpen,
+  venueId,
+  seatId,
+  seatLabel,
+  onConfirmLock,
+  onSuccess,
+  onError,
+  onClose,
+}) => {
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const inFlightRef = useRef<boolean>(false);
 
-  if (showWaitlist) {
-    return (
-      <VenueSeatWaitlistModal
-        venueId={venueId}
-        venueName={venueName}
-        initialDate={date}
-        initialTime={time}
-        onClose={onClose}
-        onBookingConfirmed={onSuccess}
-      />
-    );
+  if (!isOpen) {
+    return null;
   }
 
-  const handleReserve = async () => {
-    if (!date || !time) return setError('Please select both a date and time');
-    if (loading || isSubmitting || isSubmittingRef.current) return;
+  const handleConfirm = async () => {
+    if (inFlightRef.current || isSubmitting) {
+      return;
+    }
 
-    isSubmittingRef.current = true;
+    inFlightRef.current = true;
     setIsSubmitting(true);
-    setLoading(true);
-    setError('');
 
     try {
-      const res = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ venueId, date, time }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || 'Failed to book');
+      let result: LockSeatResponse | void;
+      if (onConfirmLock) {
+        result = await onConfirmLock({ venueId, seatId });
+      } else {
+        const res = await fetch(
+          `/api/venues/${encodeURIComponent(venueId)}/seats/${encodeURIComponent(seatId)}/lock`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+        const data = (await res.json().catch(() => ({}))) as LockSeatResponse;
+        if (!res.ok) {
+          throw new Error(data.error || `Failed to lock seat (${res.status})`);
+        }
+        result = data;
       }
-      
-      onSuccess(json.data.confirmationId);
-    } catch (err: any) {
-      setError(err.message || 'Failed to book');
+
+      onSuccess?.(result);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unable to confirm reservation';
+      onError?.(message);
     } finally {
-      setLoading(false);
+      inFlightRef.current = false;
       setIsSubmitting(false);
-      isSubmittingRef.current = false;
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return;
-    if (isSubmitting || loading || isSubmittingRef.current) return;
-    onClose();
-  };
-
-  const isPending = loading || isSubmitting;
-
   return (
     <div
-      onClick={handleBackdropClick}
-      data-testid="booking-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Confirm Reservation for ${seatLabel || seatId}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="booking-modal-title"
-        className="relative w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 p-6 text-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {isPending && (
-          <div
-            data-testid="booking-loading-overlay"
-            role="status"
-            aria-live="polite"
-            className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-zinc-900/90 backdrop-blur-sm p-6 text-center"
-          >
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-violet-500 border-t-transparent" />
-            <p className="mt-4 text-sm font-semibold text-white">Confirming reservation...</p>
-          </div>
-        )}
-
-        <h2 id="booking-modal-title" className="mb-2 text-xl font-bold">Reserve Workspace</h2>
-        <p className="mb-6 text-sm text-zinc-400">Book a desk at {venueName}</p>
-
-        {error && (
-          <div
-            role="alert"
-            data-testid="booking-error-alert"
-            className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400"
-          >
-            <p className="font-medium">{error}</p>
-            <div className="mt-2 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleReserve}
-                data-testid="booking-retry-btn"
-                className="rounded-lg bg-red-500/20 px-3 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/30 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
-              >
-                Retry
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowWaitlist(true)}
-                className="text-xs font-semibold text-violet-400 hover:text-violet-300 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
-              >
-                Join waitlist instead →
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="mb-4 space-y-4">
-          <div>
-            <label htmlFor="booking-date-input" className="mb-1 block text-sm text-zinc-400">Date</label>
-            <input 
-              id="booking-date-input"
-              type="date" 
-              value={date}
-              disabled={isPending}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50"
-            />
-          </div>
-          <div>
-            <label htmlFor="booking-time-input" className="mb-1 block text-sm text-zinc-400">Time</label>
-            <input 
-              id="booking-time-input"
-              type="time" 
-              value={time}
-              disabled={isPending}
-              onChange={(e) => setTime(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-white/5 pt-4 pb-1">
-          <span className="text-xs text-zinc-400">Busy hours or full?</span>
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">
+            Confirm Reservation
+          </h2>
           <button
             type="button"
-            disabled={isPending}
-            onClick={() => setShowWaitlist(true)}
-            className="text-xs font-medium text-violet-400 hover:text-violet-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50"
+            disabled={isSubmitting}
+            onClick={onClose}
+            aria-label="Close booking modal"
+            className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
           >
-            Join Seat Waitlist
+            ✕
           </button>
         </div>
 
-        <div className="mt-6 flex gap-3">
-          <button 
+        <p className="mt-2 text-sm text-slate-600">
+          Seat <span className="font-semibold text-slate-900">{seatLabel || seatId}</span> at{' '}
+          <span className="font-semibold text-slate-900">{venueId}</span>.
+        </p>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
             type="button"
+            disabled={isSubmitting}
             onClick={onClose}
-            disabled={isPending}
-            className="flex-1 rounded-xl border border-white/10 p-3 text-zinc-300 hover:bg-white/5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             Cancel
           </button>
-          <button 
+
+          <button
             type="button"
-            onClick={handleReserve}
-            disabled={isPending}
-            className="flex-1 rounded-xl bg-violet-600 p-3 font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed"
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
+            onClick={handleConfirm}
+            data-testid="confirm-reservation-btn"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isPending ? 'Confirming...' : 'Confirm Booking'}
+            {isSubmitting ? (
+              <>
+                <svg
+                  data-testid="confirm-spinner"
+                  className="h-4 w-4 animate-spin text-white"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeOpacity="0.25"
+                  />
+                  <path
+                    d="M22 12a10 10 0 0 1-10 10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span>Confirming...</span>
+              </>
+            ) : (
+              <span>Confirm Reservation</span>
+            )}
           </button>
         </div>
       </div>
     </div>
   );
-}
+};

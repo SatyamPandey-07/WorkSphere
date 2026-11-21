@@ -180,12 +180,12 @@ Accept: application/json
 
 # Reservations
 
-| Endpoint                                | Description                        |
-| --------------------------------------- | ---------------------------------- |
-| `GET /api/reservations/availability`    | Retrieve reservation availability. |
-| `POST /api/reservations/book`           | Create a reservation.              |
-| `GET /api/reservations/events`          | Retrieve reservation events.       |
-| `POST /api/reservations/recurring-book` | Create recurring reservations.     |
+| Endpoint                                | Description                                                                                                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/reservations/availability`    | Retrieve reservation availability.                                                                                                                                                    |
+| `POST /api/reservations/book`           | Create a reservation.                                                                                                                                                                 |
+| `GET /api/reservations/events`          | Stream real-time reservation availability and desk expiration events via Server-Sent Events. See the [Reservation Availability SSE guide](api/RESERVATION_EVENTS_SSE.md) for details. |
+| `POST /api/reservations/recurring-book` | Create recurring reservations.                                                                                                                                                        |
 
 ---
 

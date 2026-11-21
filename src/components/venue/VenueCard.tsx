@@ -1,5 +1,7 @@
 "use client";
 
+ feat/accessible-acoustic-tiers
+
  feat/fuzzy-venue-category-suggestions
 
  feat/webrtc-telemetry-prometheus
@@ -15,6 +17,7 @@
  fix/rolling-noise-window-normalization
 
  fix/vector-clock-atomic-tick
+ main
  main
  main
  main
@@ -103,6 +106,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/accessible-acoustic-tiers
+}
+
  feat/fuzzy-venue-category-suggestions
 }
 
@@ -282,6 +288,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

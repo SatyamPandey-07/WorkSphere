@@ -9,6 +9,7 @@ import {
   generateWitness,
 } from "@/lib/zkp/revocation";
 import { isUniversityMerkleRootActive } from "@/lib/zkp/studentMembership";
+import { resolveStudentVerificationKeyPath } from "@/lib/zkp/studentVerificationKey";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const snarkjs = require("snarkjs");
@@ -152,25 +153,40 @@ export async function POST(req: Request) {
       "student_membership_vkey.json",
     );
 
-    let keyToLoad = vKeyPath;
-    if (publicSignals.length === 3 && fs.existsSync(studentPassVKeyPath)) {
-      keyToLoad = studentPassVKeyPath;
-    } else if (publicSignals.length === 2 && fs.existsSync(studentMembershipVKeyPath)) {
-      keyToLoad = studentMembershipVKeyPath;
-    } else if (fs.existsSync(vKeyPath)) {
-      keyToLoad = vKeyPath;
-    } else if (fs.existsSync(studentMembershipVKeyPath)) {
-      keyToLoad = studentMembershipVKeyPath;
+    if (![1, 2, 3].includes(publicSignals.length)) {
+      return NextResponse.json(
+        { error: "Unsupported student proof public signal count" },
+        { status: 400 },
+      );
     }
 
-    if (!fs.existsSync(keyToLoad)) {
+    // Never verify a 3-signal access-pass proof with a 1- or 2-signal key.
+    // Missing matching artifacts are a server configuration failure, not an
+    // invitation to fall back to an unrelated circuit's verification key.
+    const keyToLoad = resolveStudentVerificationKeyPath(
+      publicSignals.length,
+      {
+        legacy: vKeyPath,
+        membership: studentMembershipVKeyPath,
+        accessPass: studentPassVKeyPath,
+      },
+      fs.existsSync,
+    );
+
+    if (!keyToLoad) {
       return NextResponse.json(
-        { error: "Verification key not found" },
+        { error: `Matching verification key for ${publicSignals.length} public signals not found` },
         { status: 500 },
       );
     }
 
     const vKey = JSON.parse(fs.readFileSync(keyToLoad, "utf-8"));
+    if (Number(vKey.nPublic) !== publicSignals.length) {
+      return NextResponse.json(
+        { error: "Verification key public-signal count does not match the proof" },
+        { status: 500 },
+      );
+    }
 
     // ── 4. Verify Proof using snarkjs Groth16 ──────────────────────────────
     let isValid = false;

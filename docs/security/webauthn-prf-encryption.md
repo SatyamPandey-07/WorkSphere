@@ -69,7 +69,7 @@ $$\text{PRFOutput} = \text{HMAC-SHA-256}(\mathbf{K}_{\text{auth\_secret}}, \text
 
 ## 3. End-to-End Cryptographic Key Derivation Pipeline
 
-File: [src/lib/crypto/prfVault.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/crypto/prfVault.ts)
+File: [src/lib/crypto/prfVault.ts](../../src/lib/crypto/prfVault.ts)
 
 ```
 ┌────────────────────────┐    Biometric Gesture     ┌────────────────────────┐

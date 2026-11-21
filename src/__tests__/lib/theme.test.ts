@@ -4,7 +4,6 @@ import {
   ACCENT_OPTIONS,
   DEFAULT_ACCENT,
   parseAccentColor,
-  type AccentColor,
 } from "@/lib/constants/theme";
 
 describe("Theme Constants (#6164)", () => {
@@ -18,6 +17,10 @@ describe("Theme Constants (#6164)", () => {
       expect(parseAccentColor("purple")).toBe("purple");
       expect(parseAccentColor("emerald")).toBe("emerald");
       expect(parseAccentColor("amber")).toBe("amber");
+      expect(parseAccentColor("indigo")).toBe("indigo");
+      expect(parseAccentColor("rose")).toBe("rose");
+      expect(parseAccentColor("cyan")).toBe("cyan");
+      expect(parseAccentColor("violet")).toBe("violet");
     });
 
     it("falls back to DEFAULT_ACCENT for null, empty string, or undefined-like inputs", () => {
@@ -70,14 +73,36 @@ describe("Theme Constants (#6164)", () => {
     });
 
     it("includes 'lantern-emerald' in ACCENT_OPTIONS list", () => {
-      const option = ACCENT_OPTIONS.find((opt) => opt.name === "lantern-emerald");
+      const option = ACCENT_OPTIONS.find(
+        (opt) => opt.name === "lantern-emerald",
+      );
       expect(option).toBeDefined();
       expect(option?.label).toBe("Lantern Emerald");
       expect(option?.hex).toBe("#00ff88");
     });
 
-    it("contains 5 accent options total", () => {
-      expect(ACCENT_OPTIONS).toHaveLength(5);
+    it("includes the six requested colors alongside existing options", () => {
+      expect(ACCENT_OPTIONS).toHaveLength(9);
+      expect(ACCENT_OPTIONS.map((option) => option.name)).toEqual(
+        expect.arrayContaining([
+          "indigo",
+          "emerald",
+          "amber",
+          "rose",
+          "cyan",
+          "violet",
+        ]),
+      );
+    });
+
+    it.each([
+      ["indigo", "#4338ca"],
+      ["rose", "#be123c"],
+      ["cyan", "#0e7490"],
+      ["violet", "#6d28d9"],
+    ] as const)("maps %s to %s", (accent, hex) => {
+      expect(ACCENT_COLORS[accent].hex).toBe(hex);
+      expect(ACCENT_HEX_MAP[accent]).toBe(hex);
     });
   });
 });

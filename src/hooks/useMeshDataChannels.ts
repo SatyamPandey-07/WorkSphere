@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
+import { resetStateVectorChecksumCache } from "@/lib/crdt/stateVectorChecksum";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -72,8 +73,16 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
 
   const cleanupPeer = useCallback(
     (peerId: string) => {
+      // Drop cached digests even when the peer's RTCPeerConnection was
+      // already removed; reconnect must begin with a fresh checksum exchange.
+      resetStateVectorChecksumCache();
       const pc = peersRef.current.get(peerId);
-      if (!pc) return;
+      dataChannelsRef.current.delete(peerId);
+      if (!pc) {
+        updatePeerCount();
+        if (dataChannelsRef.current.size === 0) setIsConnected(false);
+        return;
+      }
 
       pc.onicecandidate = null;
       pc.ondatachannel = null;
@@ -95,6 +104,7 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
       };
 
       dc.onclose = () => {
+        resetStateVectorChecksumCache();
         dataChannelsRef.current.delete(peerId);
         updatePeerCount();
         if (dataChannelsRef.current.size === 0) {

@@ -1,4 +1,4 @@
-import WorkspaceServer, { type PresenceUser } from "../server";
+import WorkspaceServer from "../server";
 import type * as Party from "partykit/server";
 
 // Mock verifyToken
@@ -148,6 +148,127 @@ describe("WorkspaceServer Active Typing Presence Protocol (#3438)", () => {
     expect(updated.lastActive).toBeGreaterThan(initialActive);
   });
 
+  it("rejects presence_update messages claiming another user's identity", () => {
+    server.onMessage(
+      JSON.stringify({
+        type: "presence_update",
+        userId: "user-2",
+        userName: "Bob",
+        isTyping: true,
+      }),
+      mockConn1,
+    );
+
+    expect(server.getRoomPresence()).toHaveLength(0);
+    expect(mockRoom.broadcast).not.toHaveBeenCalled();
+  });
+
+  it("does not register presence_update for an unauthenticated connection", () => {
+    (mockConn1 as any).state = { name: "Alice" };
+
+    server.onMessage(
+      JSON.stringify({
+        type: "presence_update",
+        userId: "user-1",
+        userName: "Alice",
+      }),
+      mockConn1,
+    );
+
+    expect(server.getRoomPresence()).toHaveLength(0);
+    expect(mockRoom.broadcast).not.toHaveBeenCalled();
+  });
+
+  it("uses server-controlled timestamps for presence_update", () => {
+    const serverTimestamp = Date.now();
+
+    server.onMessage(
+      JSON.stringify({
+        type: "presence_update",
+        userId: "user-1",
+        lastActive: serverTimestamp - 60_000,
+      }),
+      mockConn1,
+    );
+
+    expect(server.getRoomPresence()[0].lastActive).toBe(serverTimestamp);
+  });
+
+  it("rejects a conflicting identity in presence_heartbeat", () => {
+    server.onMessage(
+      JSON.stringify({
+        type: "presence_update",
+        userId: "user-1",
+        cursorPosition: 5,
+        isTyping: false,
+      }),
+      mockConn1,
+    );
+
+    const originalPresence = { ...server.getRoomPresence()[0] };
+
+    jest.advanceTimersByTime(5000);
+
+    server.onMessage(
+      JSON.stringify({
+        type: "presence_heartbeat",
+        userId: "user-2",
+        cursorPosition: 999,
+        isTyping: true,
+      }),
+      mockConn1,
+    );
+
+    expect(server.getRoomPresence()[0]).toEqual(originalPresence);
+  });
+
+  it("rejects a spoofed identity on an initial presence_heartbeat", () => {
+    server.onMessage(
+      JSON.stringify({
+        type: "presence_heartbeat",
+        userId: "user-2",
+        userName: "Bob",
+      }),
+      mockConn1,
+    );
+
+    expect(server.getRoomPresence()).toHaveLength(0);
+  });
+  it("registers an initial heartbeat using the verified connection identity", () => {
+    server.onMessage(
+      JSON.stringify({
+        type: "presence_heartbeat",
+        userName: "Alice",
+        cursorPosition: 25,
+        isTyping: true,
+      }),
+      mockConn1,
+    );
+
+    expect(server.getRoomPresence()).toHaveLength(1);
+    expect(server.getRoomPresence()[0]).toMatchObject({
+      userId: "user-1",
+      userName: "Alice",
+      cursorPosition: 25,
+      isTyping: true,
+      lastActive: Date.now(),
+    });
+  });
+
+  it("does not register presence_heartbeat for an unauthenticated connection", () => {
+    (mockConn1 as any).state = {};
+
+    server.onMessage(
+      JSON.stringify({
+        type: "presence_heartbeat",
+        userId: "user-1",
+        userName: "Alice",
+      }),
+      mockConn1,
+    );
+
+    expect(server.getRoomPresence()).toHaveLength(0);
+  });
   it("responds to request_presence with current room presence list", () => {
     // Register Alice
     server.onMessage(

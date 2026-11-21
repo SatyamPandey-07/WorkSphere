@@ -10,6 +10,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { SPSCRingBuffer } from "@/lib/spatial/SPSCRingBuffer";
+import { AudioFecManager, FECRedundancyTier } from "@/core/p2p/AudioFecManager";
 
 // 50ms pre-buffer at 48kHz = 2400 samples
 const TARGET_PRE_BUFFER_MS = 50;
@@ -58,6 +59,25 @@ const SpatialAudioTest = () => {
   const compressorRef = useRef<DynamicsCompressorNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const peakMeterIntervalRef = useRef<number | null>(null);
+
+  // Dynamic FEC Redundancy & Packet Loss Simulation (Issue #8019)
+  const fecManagerRef = useRef<AudioFecManager | null>(null);
+  if (!fecManagerRef.current) {
+    fecManagerRef.current = new AudioFecManager();
+  }
+  const [fecLossRate, setFecLossRate] = useState(0);
+  const [fecTier, setFecTier] = useState<FECRedundancyTier>(FECRedundancyTier.None);
+  const [fecRedundancy, setFecRedundancy] = useState(0);
+
+  const handleFecLossChange = useCallback((rate: number) => {
+    const clamped = Math.max(0, Math.min(1, rate));
+    setFecLossRate(clamped);
+    if (fecManagerRef.current) {
+      fecManagerRef.current.setSimulatedLossRate(clamped);
+      setFecTier(fecManagerRef.current.getCurrentTier());
+      setFecRedundancy(fecManagerRef.current.getRedundancyRatio());
+    }
+  }, []);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
@@ -828,6 +848,51 @@ const SpatialAudioTest = () => {
                     </span>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Dynamic FEC & Network Loss Simulation Debug Panel (#8019) */}
+            <div className="p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                  Adaptive FEC & Loss Simulation
+                </h3>
+                <span
+                  data-testid="fec-tier-badge"
+                  className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-teal-300 font-mono font-bold"
+                >
+                  Tier: {fecTier} ({(fecRedundancy * 100).toFixed(0)}%)
+                </span>
+              </div>
+
+              {/* Simulated Packet Loss Rate Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-zinc-400">
+                  <span>Simulated Packet Loss Rate</span>
+                  <span className="text-teal-400 font-mono font-bold">
+                    {Math.round(fecLossRate * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="0.5"
+                  step="0.01"
+                  value={fecLossRate}
+                  aria-label="Packet Loss Rate"
+                  data-testid="fec-loss-slider"
+                  onChange={(e) =>
+                    handleFecLossChange(parseFloat(e.target.value))
+                  }
+                  className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                />
+                <div className="flex justify-between text-[10px] text-zinc-500 font-mono">
+                  <span>0% (None)</span>
+                  <span>10% (Low)</span>
+                  <span>20% (Med)</span>
+                  <span>33% (High)</span>
+                  <span>50% (Extreme)</span>
+                </div>
               </div>
             </div>
           </div>

@@ -16,6 +16,12 @@ jest.mock("@/lib/auth", () => ({
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
+    $transaction: jest.fn(async (cb: any) => {
+      if (typeof cb === "function") {
+        return cb(prisma);
+      }
+      return Promise.all(cb);
+    }),
     venue: {
       findFirst: jest.fn(),
       findUnique: jest.fn(),
@@ -71,14 +77,22 @@ describe("POST /api/venues/[venueId]/reviews", () => {
 
   it("returns 401 Unauthorized when user is not authenticated", async () => {
     (auth as jest.Mock).mockResolvedValue({ userId: null });
-    const req = createRequest({ wifiQuality: 5, hasOutlets: true, noiseLevel: "quiet" });
-    const res = await POST(req, { params: Promise.resolve({ venueId: mockVenueId }) });
+    const req = createRequest({
+      wifiQuality: 5,
+      hasOutlets: true,
+      noiseLevel: "quiet",
+    });
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: mockVenueId }),
+    });
     expect(res.status).toBe(401);
   });
 
   it("returns 400 when validation fails", async () => {
     const req = createRequest({ wifiQuality: 10, hasOutlets: "not-a-bool" });
-    const res = await POST(req, { params: Promise.resolve({ venueId: mockVenueId }) });
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: mockVenueId }),
+    });
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toBeDefined();
@@ -91,7 +105,9 @@ describe("POST /api/venues/[venueId]/reviews", () => {
       hasOutlets: true,
       noiseLevel: "quiet",
     });
-    const res = await POST(req, { params: Promise.resolve({ venueId: "nonexistent" }) });
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: "nonexistent" }),
+    });
     expect(res.status).toBe(404);
   });
 
@@ -127,7 +143,9 @@ describe("POST /api/venues/[venueId]/reviews", () => {
       noiseLevel: "quiet",
       comment: "Super quiet workspace!",
     });
-    const res = await POST(req, { params: Promise.resolve({ venueId: mockVenueId }) });
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: mockVenueId }),
+    });
     expect(res.status).toBe(201);
     const json = await res.json();
     expect(json.rating).toBeDefined();
@@ -157,7 +175,9 @@ describe("POST /api/venues/[venueId]/reviews", () => {
       noiseLevel: "quiet",
       baseReviewUpdatedAt: clientBaseTime,
     });
-    const res = await POST(req, { params: Promise.resolve({ venueId: mockVenueId }) });
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: mockVenueId }),
+    });
     expect(res.status).toBe(409);
     const json = await res.json();
     expect(json.error).toBe("Conflict");
@@ -199,7 +219,9 @@ describe("POST /api/venues/[venueId]/reviews", () => {
       baseReviewUpdatedAt: clientBaseTime,
       forceOverwrite: true,
     });
-    const res = await POST(req, { params: Promise.resolve({ venueId: mockVenueId }) });
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: mockVenueId }),
+    });
     expect(res.status).toBe(201);
   });
 
@@ -210,19 +232,21 @@ describe("POST /api/venues/[venueId]/reviews", () => {
       name: "Cozy Cafe",
       updatedAt: new Date("2026-01-01T00:00:00Z"),
     });
-    (prisma.venueRating.findUnique as jest.Mock).mockImplementation(({ where }: any) => {
-      if (where.id === "rating-first") {
-        return Promise.resolve({
-          id: "rating-first",
-          userId: mockUserId,
-          venueId: mockVenueId,
-          wifiQuality: 5,
-          hasOutlets: true,
-          noiseLevel: "quiet",
-        });
-      }
-      return Promise.resolve(null);
-    });
+    (prisma.venueRating.findUnique as jest.Mock).mockImplementation(
+      ({ where }: any) => {
+        if (where.id === "rating-first") {
+          return Promise.resolve({
+            id: "rating-first",
+            userId: mockUserId,
+            venueId: mockVenueId,
+            wifiQuality: 5,
+            hasOutlets: true,
+            noiseLevel: "quiet",
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
     (prisma.venueRating.upsert as jest.Mock).mockResolvedValue({
       id: "rating-first",
       userId: mockUserId,
@@ -238,7 +262,9 @@ describe("POST /api/venues/[venueId]/reviews", () => {
       { wifiQuality: 5, hasOutlets: true, noiseLevel: "quiet", idempotencyKey },
       { "X-Idempotency-Key": idempotencyKey },
     );
-    const res1 = await POST(req1, { params: Promise.resolve({ venueId: mockVenueId }) });
+    const res1 = await POST(req1, {
+      params: Promise.resolve({ venueId: mockVenueId }),
+    });
     expect(res1.status).toBe(201);
 
     // Replay of same idempotency key
@@ -246,7 +272,9 @@ describe("POST /api/venues/[venueId]/reviews", () => {
       { wifiQuality: 5, hasOutlets: true, noiseLevel: "quiet", idempotencyKey },
       { "X-Idempotency-Key": idempotencyKey },
     );
-    const res2 = await POST(req2, { params: Promise.resolve({ venueId: mockVenueId }) });
+    const res2 = await POST(req2, {
+      params: Promise.resolve({ venueId: mockVenueId }),
+    });
     expect(res2.status).toBe(200);
     const json2 = await res2.json();
     expect(json2.idempotent).toBe(true);

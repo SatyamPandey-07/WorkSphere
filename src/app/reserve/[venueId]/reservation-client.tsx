@@ -1,10 +1,18 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   CalendarDays,
   Check,
   Clock3,
+  Loader2,
   Monitor,
   RefreshCw,
   Sparkles,
@@ -28,6 +36,7 @@ import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
 import { useSeatHoldLock } from "@/hooks/useSeatHoldLock";
 import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
 import { RescheduleModal } from "@/components/bookings/RescheduleModal";
+import { DeskReservationCountdownTimer } from "@/components/reservations/DeskReservationCountdownTimer";
 
 type Seat = {
   id: string;
@@ -56,7 +65,11 @@ const amenityOptions = [
 ];
 
 function todayString() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export const QUICK_DURATION_PILLS = [
@@ -121,6 +134,10 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const [amenities, setAmenities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
+  // Synchronous re-entry guard. `booking` is React state and only becomes
+  // visible after a re-render, so two submit events dispatched in the same tick
+  // both observe `false`; the ref closes that window.
+  const submittingRef = useRef(false);
   const [message, setMessage] = useState("");
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
@@ -274,8 +291,18 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     );
   }, [recurringEnabled, date, frequency, endDate, occurrences]);
 
+  const isDurationValid =
+    Number.isInteger(duration) && duration >= 1 && duration <= 1440;
+
   async function reserve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (submittingRef.current) return;
+
+    if (!isDurationValid) {
+      setMessage("Duration must be between 1 and 1440 minutes.");
+      return;
+    }
 
     if (availableCapacity === 0) {
       setMessage("No seats available for this date and time.");
@@ -287,6 +314,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       return;
     }
 
+    submittingRef.current = true;
     setBooking(true);
     setMessage("");
     setConfirmationId(null);
@@ -315,48 +343,54 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       body.occurrences = occurrences || null;
     }
 
-    const response = await apiFetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    try {
+      const response = await apiFetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    const payload = await response.json();
+      const payload = await response.json();
 
-    if (!response.ok) {
-      setMessage(payload.error ?? "Reservation failed");
-      setBooking(false);
+      if (!response.ok) {
+        setMessage(payload.error ?? "Reservation failed");
+        await loadAvailability();
+        return;
+      }
+
+      if (recurringEnabled && payload.booked) {
+        const guestMsg =
+          guests.length > 0
+            ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
+            : "";
+        setMessage(
+          `${payload.booked} recurring booking(s) confirmed for ${selected.seatNumber}.${payload.skipped > 0 ? ` ${payload.skipped} date(s) skipped (unavailable).` : ""}${guestMsg}`,
+        );
+      } else {
+        const guestMsg =
+          guests.length > 0
+            ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
+            : "";
+        setMessage(
+          `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}${guestMsg}`,
+        );
+        setConfirmationId(payload.confirmationId);
+      }
+
+      if (selectedSeat) {
+        await confirmCheckout(selectedSeat);
+      }
+      setSelectedSeat(null);
+      setGuests([]);
+      setRecurringEnabled(false);
       await loadAvailability();
-      return;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Reservation failed");
+      await loadAvailability();
+    } finally {
+      submittingRef.current = false;
+      setBooking(false);
     }
-
-    if (recurringEnabled && payload.booked) {
-      const guestMsg =
-        guests.length > 0
-          ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
-          : "";
-      setMessage(
-        `${payload.booked} recurring booking(s) confirmed for ${selected.seatNumber}.${payload.skipped > 0 ? ` ${payload.skipped} date(s) skipped (unavailable).` : ""}${guestMsg}`,
-      );
-    } else {
-      const guestMsg =
-        guests.length > 0
-          ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
-          : "";
-      setMessage(
-        `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}${guestMsg}`,
-      );
-      setConfirmationId(payload.confirmationId);
-    }
-
-    if (selectedSeat) {
-      await confirmCheckout(selectedSeat);
-    }
-    setSelectedSeat(null);
-    setBooking(false);
-    setGuests([]);
-    setRecurringEnabled(false);
-    await loadAvailability();
   }
 
   return (
@@ -557,44 +591,33 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             >
               <h2 className="text-xl font-semibold">Reservation details</h2>
 
-              {/* 5-minute Seat Hold Active Countdown Indicator (#3522) */}
+              {/* Atomic Desk Reservation Countdown Timer with Redis Keyspace Notifications */}
               {selectedSeat && myHeldSeatId === selectedSeat && (
-                <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
-                  <span className="flex items-center gap-2">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                    </span>
-                    <span>
-                      Seat{" "}
-                      <strong>
-                        {seats.find((s) => s.id === selectedSeat)?.seatNumber}
-                      </strong>{" "}
-                      locked for checkout
-                    </span>
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-semibold text-amber-300">
-                      {Math.floor(remainingSeconds / 60)}:
-                      {(remainingSeconds % 60).toString().padStart(2, "0")}{" "}
-                      remaining
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (selectedSeat) {
-                          await releaseHold(selectedSeat);
-                          setSelectedSeat(null);
-                          setMessage("Seat hold released.");
-                        }
-                      }}
-                      className="rounded-md border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/30 transition-colors"
-                      title="Release seat hold lock"
-                    >
-                      Release
-                    </button>
-                  </div>
-                </div>
+                <DeskReservationCountdownTimer
+                  className="mt-4"
+                  venueId={venue.id}
+                  deskId={selectedSeat}
+                  deskName={
+                    seats.find((s) => s.id === selectedSeat)?.seatNumber
+                  }
+                  initialExpiresAt={activeHolds[selectedSeat]?.expiresAt}
+                  totalDurationSeconds={300}
+                  onExpire={(seatId) => {
+                    if (selectedSeat === seatId) {
+                      setSelectedSeat(null);
+                      setMessage(
+                        "Your 5-minute checkout hold expired. The seat has been released.",
+                      );
+                    }
+                  }}
+                  onRelease={async () => {
+                    if (selectedSeat) {
+                      await releaseHold(selectedSeat);
+                      setSelectedSeat(null);
+                      setMessage("Seat hold released.");
+                    }
+                  }}
+                />
               )}
 
               <div className="mt-6 space-y-4">
@@ -610,7 +633,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                       }
                       setDate(event.target.value);
                     }}
-                    className="reserve-input"
+                    className="reserve-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                   />
                 </Field>
 
@@ -625,7 +648,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                       }
                       setTime(event.target.value);
                     }}
-                    className="reserve-input"
+                    className="reserve-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                   />
                 </Field>
 
@@ -672,8 +695,15 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                     })}
                   </div>
 
-                  <Field label="End time" icon={<Clock3 className="h-4 w-4" />}>
-                    <select
+                  <Field
+                    label="Duration (minutes)"
+                    icon={<Clock3 className="h-4 w-4" />}
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      step={1}
                       value={duration}
                       onChange={(event) => {
                         const newDur = Number(event.target.value);
@@ -684,28 +714,20 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                         setDuration(newDur);
                       }}
                       className="reserve-input"
-                      aria-label="End time"
-                      data-testid="end-time-select"
-                    >
-                      <option value={30}>
-                        {formatReservationEndTime(time, 30)} (30 minutes)
-                      </option>
-                      <option value={60}>
-                        {formatReservationEndTime(time, 60)} (1 hour)
-                      </option>
-                      <option value={90}>
-                        {formatReservationEndTime(time, 90)} (1.5 hours)
-                      </option>
-                      <option value={120}>
-                        {formatReservationEndTime(time, 120)} (2 hours)
-                      </option>
-                      <option value={240}>
-                        {formatReservationEndTime(time, 240)} (4 hours)
-                      </option>
-                      <option value={480}>
-                        {formatReservationEndTime(time, 480)} (Full day)
-                      </option>
-                    </select>
+                      aria-label="Duration in minutes"
+                      aria-invalid={!isDurationValid}
+                      aria-describedby="duration-validation-error"
+                      data-testid="duration-input"
+                    />
+                    {!isDurationValid && (
+                      <p
+                        id="duration-validation-error"
+                        role="alert"
+                        className="mt-1 text-xs text-red-400"
+                      >
+                        Duration must be between 1 and 1440 minutes.
+                      </p>
+                    )}
                   </Field>
                 </div>
 
@@ -969,15 +991,25 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
               )}
 
               <button
+                type="submit"
                 disabled={
                   !selected ||
                   booking ||
                   retryAfter > 0 ||
-                  availableCapacity === 0
+                  availableCapacity === 0 ||
+                  !isDurationValid
                 }
+                aria-busy={booking}
                 className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
                 data-testid="confirm-booking-btn"
               >
+                {booking && (
+                  <Loader2
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                    data-testid="confirm-booking-spinner"
+                  />
+                )}
                 {availableCapacity === 0
                   ? "No seats available"
                   : booking
@@ -1006,9 +1038,12 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
         .reserve-input option {
           background: #111114;
         }
-        .reserve-input:focus {
+        .reserve-input:focus:not(:focus-visible) {
           border-color: rgba(167, 139, 250, 0.6);
-          box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+        }
+        .reserve-input:focus-visible {
+          border-color: #22d3ee;
+          outline: none;
         }
       `}</style>
 

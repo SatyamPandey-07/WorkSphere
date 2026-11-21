@@ -228,7 +228,7 @@ Crowd level labels submitted via `POST` are normalized into numeric percentage o
 
 ## 5. Differential Privacy & Noise Filtering
 
-To protect user privacy in venues with few active reporters ($N < 10$ active sample submissions in a given hourly window), the API automatically invokes `applyPrivacyFilter()` from [src/lib/privacy/differentialPrivacy.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/privacy/differentialPrivacy.ts).
+To protect user privacy in venues with few active reporters ($N < 10$ active sample submissions in a given hourly window), the API automatically invokes `applyPrivacyFilter()` from [src/lib/privacy/differentialPrivacy.ts](../../src/lib/privacy/differentialPrivacy.ts).
 
 ### 5.1 Privacy Filter Formula
 

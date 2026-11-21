@@ -64,3 +64,9 @@ describe("BookingStatusBadge", () => {
     expect(container.querySelector("span")!.className).toContain("my-custom-class");
   });
 });
+
+
+  it("renders the venue-specific cancellation label", () => {
+    render(<BookingStatusBadge status="CANCELLED_BY_OPERATOR" />);
+    expect(screen.getByText("Cancelled by venue")).toBeInTheDocument();
+  });

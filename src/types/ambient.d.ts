@@ -101,6 +101,8 @@ interface AudioWorkletGlobalScope {
 
 interface XRSession {
   lightEstimation?: any;
+  depthUsage?: "cpu-optimized" | "gpu-optimized";
+  depthDataFormat?: "float32" | "luminance-alpha";
 }
 
 // WebXR Depth & Light Estimation
@@ -120,6 +122,10 @@ interface XRCPUDepthInformation extends XRDepthInformation {
 
 interface XRWebGLDepthInformation extends XRDepthInformation {
   readonly texture: WebGLTexture;
+}
+
+interface XRFrame {
+  getDepthInformation?(view: XRView): XRCPUDepthInformation | null;
 }
 
 interface XRLightEstimate {

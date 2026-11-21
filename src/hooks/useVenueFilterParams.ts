@@ -13,16 +13,13 @@ export interface VenueFilterState {
   noiseLevel: "quiet" | "moderate" | "loud" | "all";
   quietHours: boolean;
   outlets: boolean;
+  standingDesk: boolean;
   priceRange: "$" | "$$" | "$$$" | "all";
   amenities: string[];
   maxDistance: number;
   view: ViewMode;
   sortBy?:
-    | "default"
-    | "capacity_asc"
-    | "capacity_desc"
-    | "rating_desc"
-    | "rating_asc";
+    "default" | "capacity_asc" | "capacity_desc" | "rating_desc" | "rating_asc";
 }
 
 export const DEFAULT_FILTER_STATE: VenueFilterState = {
@@ -33,6 +30,7 @@ export const DEFAULT_FILTER_STATE: VenueFilterState = {
   noiseLevel: "all",
   quietHours: false,
   outlets: false,
+  standingDesk: false,
   priceRange: "all",
   amenities: [],
   maxDistance: 0,
@@ -48,7 +46,12 @@ export function parseFiltersFromSearchParams(
 ): VenueFilterState {
   if (!params) return { ...DEFAULT_FILTER_STATE };
 
-  const query = params.get("q") ?? params.get("query") ?? "";
+  // Trim so "?q=%20cafe%20" and "?q=cafe" are the same search state, and a
+  // blank "q" falls back to the "query" alias instead of hiding it (#7727).
+  const query =
+    [params.get("q"), params.get("query")]
+      .map((value) => value?.trim() ?? "")
+      .find((value) => value !== "") ?? "";
   const category = params.get("category") ?? params.get("type") ?? "all";
   const wifi =
     params.get("wifi") === "true" || params.get("hasWifi") === "true";
@@ -73,8 +76,9 @@ export function parseFiltersFromSearchParams(
     params.get("outlets") === "true" ||
     params.get("hasOutlets") === "true" ||
     params.get("power") === "true";
-  const rawPrice =
-    params.get("price") ?? params.get("priceRange") ?? "all";
+  const standingDeskParam =
+    params.get("standingDesk") === "true" || params.get("standingDesk") === "1";
+  const rawPrice = params.get("price") ?? params.get("priceRange") ?? "all";
   const priceRange = (["$", "$$", "$$$", "all"] as const).includes(
     rawPrice as "$",
   )
@@ -94,13 +98,20 @@ export function parseFiltersFromSearchParams(
       .map((a) => a.trim().toLowerCase())
       .filter(Boolean);
   }
+  const standingDesk = standingDeskParam || amenities.includes("standing_desk");
   if (wifi && !amenities.includes("wifi")) amenities.push("wifi");
   if (outlets && !amenities.includes("outlets")) amenities.push("outlets");
-  if (noiseLevel === "quiet" && !amenities.includes("quiet")) amenities.push("quiet");
+  if (noiseLevel === "quiet" && !amenities.includes("quiet"))
+    amenities.push("quiet");
+  if (standingDesk && !amenities.includes("standing_desk"))
+    amenities.push("standing_desk");
 
   const rawView = params.get("view")?.toLowerCase();
   const view: ViewMode =
-    rawView === "map" || rawView === "list" || rawView === "card" || rawView === "chat"
+    rawView === "map" ||
+    rawView === "list" ||
+    rawView === "card" ||
+    rawView === "chat"
       ? rawView
       : "list";
 
@@ -121,6 +132,7 @@ export function parseFiltersFromSearchParams(
     noiseLevel,
     quietHours,
     outlets,
+    standingDesk,
     priceRange,
     amenities: Array.from(new Set(amenities)),
     maxDistance,
@@ -222,12 +234,42 @@ export function buildQueryStringWithFilters(
 
   // Update or delete amenities
   if (updates.amenities !== undefined) {
-    const valid = updates.amenities.filter(Boolean);
-    if (valid.length > 0) {
-      params.set("amenities", valid.join(","));
+    const valid = Array.from(new Set(updates.amenities.filter(Boolean)));
+    const standingDesk = valid.includes("standing_desk");
+    const generalAmenities = valid.filter(
+      (amenity) => amenity !== "standing_desk",
+    );
+    if (generalAmenities.length > 0) {
+      params.set("amenities", generalAmenities.join(","));
+      params.delete("filters");
     } else {
       params.delete("amenities");
       params.delete("filters");
+    }
+    if (standingDesk) {
+      params.set("standingDesk", "true");
+    } else {
+      params.delete("standingDesk");
+    }
+  }
+
+  if (updates.standingDesk !== undefined) {
+    const amenities = (params.get("amenities") ?? params.get("filters") ?? "")
+      .split(",")
+      .map((amenity) => amenity.trim())
+      .filter((amenity) => amenity && amenity !== "standing_desk");
+    if (amenities.length > 0) {
+      params.set("amenities", amenities.join(","));
+      params.delete("filters");
+    } else {
+      params.delete("amenities");
+      params.delete("filters");
+    }
+
+    if (updates.standingDesk) {
+      params.set("standingDesk", "true");
+    } else {
+      params.delete("standingDesk");
     }
   }
 
@@ -328,6 +370,7 @@ export function useVenueFilterParams() {
         noiseLevel: "all",
         quietHours: false,
         outlets: false,
+        standingDesk: false,
         priceRange: "all",
         amenities: [],
         maxDistance: 0,
@@ -353,6 +396,7 @@ export function useVenueFilterParams() {
       filters.noiseLevel !== "all" ||
       filters.quietHours ||
       filters.outlets ||
+      filters.standingDesk ||
       filters.priceRange !== "all" ||
       filters.amenities.length > 0 ||
       filters.maxDistance > 0 ||

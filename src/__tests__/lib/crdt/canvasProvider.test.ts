@@ -1,141 +1,132 @@
-﻿import * as Y from "yjs";
-import { CanvasJournalProvider } from "@/lib/crdt/canvasProvider";
+﻿import * as Y from 'yjs';
+import {
+  CompactingCrdtJournal,
+  OfflineCanvasProvider,
+  encodeBinaryFrameChunks,
+  BinaryFrameReassembler,
+} from '@/lib/crdt/canvasProvider';
 
-function createMockIndexedDb(options: { abortRate?: number } = {}) {
-  const abortRate = options.abortRate ?? 0;
-  let callIndex = 0;
-  const transactions: Array<{
-    oncomplete: (() => void) | null;
-    onabort: (() => void) | null;
-    onerror: (() => void) | null;
-    error: DOMException | null;
-    lastPutRecord: unknown;
-  }> = [];
+describe('CompactingCrdtJournal & OfflineCanvasProvider', () => {
+  test('compacts queued updates via Y.mergeUpdates when entry count exceeds 50', async () => {
+    const doc = new Y.Doc();
+    const yText = doc.getText('notes');
+    const mergeSpy = jest.spyOn(Y, 'mergeUpdates');
 
-  const db = {
-    close: jest.fn(),
-    transaction: jest.fn(() => {
-      callIndex++;
-      const shouldAbort =
-        abortRate >= 1 ||
-        (abortRate > 0 && callIndex % Math.round(1 / abortRate) === 0);
-
-      const tx = {
-        oncomplete: null as (() => void) | null,
-        onabort: null as (() => void) | null,
-        onerror: null as (() => void) | null,
-        error: null as DOMException | null,
-        lastPutRecord: null as unknown,
-        objectStore: () => ({
-          put: (record: unknown) => {
-            tx.lastPutRecord = record;
-            const req = {
-              onsuccess: null as (() => void) | null,
-              onerror: null as (() => void) | null,
-            };
-            queueMicrotask(() => {
-              tx.lastPutRecord = null;
-              if (shouldAbort) {
-                tx.error = new DOMException(
-                  "Simulated packet-loss transaction abort",
-                  "AbortError",
-                );
-                tx.onabort?.();
-              } else {
-                req.onsuccess?.();
-                tx.oncomplete?.();
-              }
-            });
-            return req;
-          },
-        }),
-      };
-
-      transactions.push(tx);
-      return tx as unknown as IDBTransaction;
-    }),
-  } as unknown as IDBDatabase;
-
-  return { db, transactions };
-}
-
-function makeYjsStrokeUpdate(strokeIndex: number, pointCount = 64): Uint8Array {
-  const doc = new Y.Doc();
-  const arr = doc.getArray<number>(`stroke-${strokeIndex}`);
-  const points = new Array<number>(pointCount);
-  for (let i = 0; i < pointCount; i++) {
-    points[i] = strokeIndex * 100 + i;
-  }
-  arr.insert(0, points);
-  const update = Y.encodeStateAsUpdate(doc);
-  doc.destroy();
-  return update;
-}
-
-describe("CanvasJournalProvider IndexedDB Abort & Memory Cleanup", () => {
-  it("explicitly clears buffer and handler references in finally blocks when a transaction aborts", async () => {
-    const { db, transactions } = createMockIndexedDb({ abortRate: 1 });
-    const provider = new CanvasJournalProvider("room-abort-test", {
-      openDatabase: async () => db,
+    const journal = new CompactingCrdtJournal({
+      roomId: 'room-compaction-50',
+      doc,
+      entryThreshold: 50,
+      byteThreshold: 64 * 1024,
     });
 
-    const largePayload = new Uint8Array(256 * 1024);
-    largePayload.fill(0xab);
-    const weakPayloadRef = new WeakRef(largePayload);
+    // Simulate 51 offline keystrokes
+    for (let i = 0; i < 51; i++) {
+      const prevState = Y.encodeStateVector(doc);
+      yText.insert(yText.length, 'a');
+      const incrementalUpdate = Y.encodeStateAsUpdate(doc, prevState);
+      await journal.appendUpdate(incrementalUpdate);
+    }
 
-    provider.enqueueUpdate(largePayload);
-    expect(provider.pendingUpdateCount).toBe(1);
+    expect(mergeSpy).toHaveBeenCalledTimes(1);
 
-    await expect(provider.flushJournal()).rejects.toThrow(/abort/i);
+    const remainingEntries = await journal.getAllEntries();
+    expect(remainingEntries).toHaveLength(1);
 
-    expect(provider.pendingUpdateCount).toBe(0);
-    expect(provider.pendingBytes).toBe(0);
-    expect(provider.activeTransactionCount).toBe(0);
+    // Verify merged update reconstructs full 51-character document state losslessly
+    const targetDoc = new Y.Doc();
+    Y.applyUpdate(targetDoc, remainingEntries[0].update);
+    expect(targetDoc.getText('notes').toString()).toBe('a'.repeat(51));
 
-    expect(transactions).toHaveLength(1);
-    expect(transactions[0].onabort).toBeNull();
-    expect(transactions[0].onerror).toBeNull();
-    expect(transactions[0].oncomplete).toBeNull();
-    expect(transactions[0].lastPutRecord).toBeNull();
+    mergeSpy.mockRestore();
+  });
 
-    expect(weakPayloadRef.deref()).toBeDefined();
+  test('compacts queued updates when buffered bytes exceed 64 KB threshold', async () => {
+    const doc = new Y.Doc();
+    const mergeSpy = jest.spyOn(Y, 'mergeUpdates');
+
+    const journal = new CompactingCrdtJournal({
+      roomId: 'room-compaction-64kb',
+      doc,
+      entryThreshold: 50,
+      byteThreshold: 64 * 1024,
+    });
+
+    // Two 40 KB updates = 80 KB > 64 KB threshold (even though count is only 2 <= 50)
+    await journal.appendUpdate(new Uint8Array(40 * 1024).fill(1));
+    const result = await journal.appendUpdate(new Uint8Array(40 * 1024).fill(2));
+
+    expect(result.compacted).toBe(true);
+    expect(mergeSpy).toHaveBeenCalledTimes(1);
+    expect(await journal.getAllEntries()).toHaveLength(1);
+
+    mergeSpy.mockRestore();
+  });
+
+  test('chunks large merged updates into <= 32 KB binary frames and reassembles cleanly over PartyKit', async () => {
+    const sourceDoc = new Y.Doc();
+    const provider = new OfflineCanvasProvider({
+      roomId: 'room-replay-chunked',
+      doc: sourceDoc,
+      maxChunkBytes: 32 * 1024,
+    });
+
+    provider.setOnlineStatus(false);
+
+    // Generate 120 offline paragraph edits
+    const yText = sourceDoc.getText('shared-note');
+    for (let i = 0; i < 120; i++) {
+      yText.insert(yText.length, `Line ${i}: Collaborative nomad note payload.\n`);
+    }
+
+    const sentPayloads: Uint8Array[] = [];
+    const mockSocket = {
+      readyState: 1,
+      send: jest.fn((data: string | ArrayBuffer | Uint8Array) => {
+        if (data instanceof Uint8Array) {
+          sentPayloads.push(data);
+        }
+      }),
+    };
+
+    const replayStats = await provider.attachSocketAndReplay(mockSocket);
+
+    expect(replayStats.sentFrames).toBeGreaterThanOrEqual(1);
+    expect(sentPayloads.length).toBe(replayStats.sentFrames);
+
+    // Every single WebSocket frame stays strictly bounded below 32 KB + 16-byte header
+    for (const frame of sentPayloads) {
+      expect(frame.byteLength).toBeLessThanOrEqual(32 * 1024 + 16);
+    }
+
+    // Reassemble frames on receiver side and apply to fresh Y.Doc
+    const reassembler = new BinaryFrameReassembler();
+    let reassembledUpdate: Uint8Array | null = null;
+    for (const frame of sentPayloads) {
+      reassembledUpdate = reassembler.pushFrame(frame);
+    }
+
+    expect(reassembledUpdate).not.toBeNull();
+    const replicaDoc = new Y.Doc();
+    Y.applyUpdate(replicaDoc, reassembledUpdate!);
+    expect(replicaDoc.getText('shared-note').toString()).toBe(yText.toString());
+
     provider.destroy();
   });
 
-  it("maintains a stable memory footprint (<50MB) during high-packet-loss rapid stroke stress tests", async () => {
-    const { db } = createMockIndexedDb({ abortRate: 0.5 });
-    const provider = new CanvasJournalProvider("room-stress-test", {
-      openDatabase: async () => db,
-      compactionThreshold: 16,
-    });
-
-    if (typeof globalThis.gc === "function") {
-      globalThis.gc();
-    }
-    const baselineHeapBytes = process.memoryUsage().heapUsed;
-
-    for (let stroke = 0; stroke < 480; stroke++) {
-      const update = makeYjsStrokeUpdate(stroke, 128);
-      provider.enqueueUpdate(update);
-
-      if (stroke % 4 === 0) {
-        await provider.flushJournal().catch(() => {});
-      }
+  test('encodeBinaryFrameChunks splits a 90 KB update into 3 frames of <= 32 KB', () => {
+    const largePayload = new Uint8Array(90 * 1024);
+    for (let i = 0; i < largePayload.length; i++) {
+      largePayload[i] = i & 0xff;
     }
 
-    await provider.flushJournal().catch(() => {});
+    const frames = encodeBinaryFrameChunks(largePayload, 32 * 1024, 42);
+    expect(frames).toHaveLength(3);
 
-    if (typeof globalThis.gc === "function") {
-      globalThis.gc();
-    }
-    const finalHeapBytes = process.memoryUsage().heapUsed;
-    const heapDeltaMb = (finalHeapBytes - baselineHeapBytes) / (1024 * 1024);
+    const reassembler = new BinaryFrameReassembler();
+    expect(reassembler.pushFrame(frames[0].wireBuffer)).toBeNull();
+    expect(reassembler.pushFrame(frames[1].wireBuffer)).toBeNull();
+    const output = reassembler.pushFrame(frames[2].wireBuffer);
 
-    expect(provider.pendingUpdateCount).toBe(0);
-    expect(provider.pendingBytes).toBe(0);
-    expect(provider.activeTransactionCount).toBe(0);
-    expect(heapDeltaMb).toBeLessThan(50);
-
-    provider.destroy();
+    expect(output).toEqual(largePayload);
   });
 });

@@ -187,7 +187,7 @@ export default function SettingsPage() {
             description="Theme, accent colour, and contrast preferences."
           >
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+              <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 cyberpunk:border-fuchsia-500/40 bg-white dark:bg-zinc-900 cyberpunk:bg-[#10051f]">
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium">Theme</span>
                   <ThemeToggle />

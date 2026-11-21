@@ -1,0 +1,23 @@
+[package]
+name = "sound_classifier"
+version = "0.1.0"
+edition = "2021"
+description = "128-bit SIMD MFCC / spectral-centroid acoustic classifier for in-browser, on-device noise analysis (#7277)"
+
+[lib]
+path = "sound_classifier.rs"
+crate-type = ["cdylib", "rlib"]
+
+# No dependencies on purpose: the module exports a plain C ABI (like
+# src/wasm/spatial-audio) and imports nothing, so it cannot reach the network.
+#
+#   cargo build --target wasm32-unknown-unknown --release
+#
+# `.cargo/config.toml` turns on `+simd128`; see build.sh for the scalar twin.
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

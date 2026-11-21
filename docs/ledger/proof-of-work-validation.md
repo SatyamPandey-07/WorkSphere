@@ -3,10 +3,10 @@
 This document specifies the cryptographic architecture, mathematical formalisms, Hashcash header framing, dynamic difficulty retargeting algorithms, and 51% attack threat models implemented in WorkSphere's proof-of-work ledger subsystem.
 
 Implemented in:
-- **Core Proof-of-Work Engine:** [`src/core/ledger/ProofOfWorkValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/ProofOfWorkValidator.ts)
-- **Merkle Tree Accumulator:** [`src/core/ledger/MerkleTree.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/MerkleTree.ts)
-- **Cryptographic Threat Model:** [`docs/crypto/ecdsa-secp256k1-threat-model.md`](file:///c:/Users/admin/Desktop/workfere/docs/crypto/ecdsa-secp256k1-threat-model.md)
-- **Proof-of-Attendance Protocol:** [`docs/features/poap-attestation.md`](file:///c:/Users/admin/Desktop/workfere/docs/features/poap-attestation.md)
+- **Core Proof-of-Work Engine:** [`src/core/ledger/ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts)
+- **Merkle Tree Accumulator:** [`src/core/ledger/MerkleTree.ts`](../../src/core/ledger/MerkleTree.ts)
+- **Cryptographic Threat Model:** [`docs/crypto/ecdsa-secp256k1-threat-model.md`](../crypto/ecdsa-secp256k1-threat-model.md)
+- **Proof-of-Attendance Protocol:** [`docs/features/poap-attestation.md`](../features/poap-attestation.md)
 
 ---
 
@@ -129,7 +129,7 @@ This asymmetry ($9.2\text{ seconds}$ of CPU effort vs. $1.5\mu\text{s}$ of valid
 ### Target Representation: Compact Bits vs. Leading Zeros
 
 In WorkSphere, difficulty is expressed in two formats depending on context:
-1. **Hexadecimal Prefix String Matching:** In [`ProofOfWorkValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/ProofOfWorkValidator.ts#L42), difficulty $D \in [1, 8]$ specifies the number of leading hexadecimal zeros (`'0'`) required in the digest string:
+1. **Hexadecimal Prefix String Matching:** In [`ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts#L42), difficulty $D \in [1, 8]$ specifies the number of leading hexadecimal zeros (`'0'`) required in the digest string:
    $$\text{regex} = \text{new RegExp}(`\hat{\ }0\{D\}`)$$
 2. **Compact IEEE-Style Bits Notation:** For precision retargeting across the distributed ledger, difficulty is encoded as a 32-bit unsigned integer `bits = (exponent << 24) | mantissa`, mapping to 256-bit integer $T$:
    $$T = \text{mantissa} \times 2^{8 \times (\text{exponent} - 3)}$$
@@ -179,7 +179,7 @@ Every submission sent to the ledger engine is serialized into a deterministic bi
 
 ### Payload Canonicalization
 
-In [`ProofOfWorkValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/ProofOfWorkValidator.ts#L38), the string payload is canonicalized prior to evaluation:
+In [`ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts#L38), the string payload is canonicalized prior to evaluation:
 
 $$\text{payload} = \text{merkleRoot} \parallel \text{nonce} \parallel \text{timestamp.toString}()$$
 
@@ -199,7 +199,7 @@ $$\text{SHA-256d}(M) = \text{SHA-256}\Big(\text{SHA-256}(M)\Big)$$
 
 ### Verification Logic in `ProofOfWorkValidator.ts`
 
-The verification engine in [`src/core/ledger/ProofOfWorkValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/ProofOfWorkValidator.ts#L30-L49) implements strict multi-stage validation:
+The verification engine in [`src/core/ledger/ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts#L30-L49) implements strict multi-stage validation:
 
 ```typescript
 public validate(submission: PoWSubmission): boolean {
@@ -234,7 +234,7 @@ public validate(submission: PoWSubmission): boolean {
 
 The `merkleRoot` component links proof-of-work directly to crowdsourced data batches.
 
-As defined in [`src/core/ledger/MerkleTree.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/MerkleTree.ts#L9-L45):
+As defined in [`src/core/ledger/MerkleTree.ts`](../../src/core/ledger/MerkleTree.ts#L9-L45):
 - Crowdsourced telemetry items $d_0, d_1, \dots, d_{k-1}$ are converted into leaf hashes $L_i = \text{SHA-256}(d_i)$.
 - Neighboring pairs are recursively hashed up to the apex root:
   $$N_{\text{parent}} = \text{SHA-256}(N_{\text{left}} \parallel N_{\text{right}})$$
@@ -280,7 +280,7 @@ $$0.25 \cdot T_{\text{old}} \le T_{\text{new}} \le 4.0 \cdot T_{\text{old}}$$
 
 ### Spam Multiplier Heuristics (`calculateDifficulty`)
 
-For lightweight real-time endpoints, [`ProofOfWorkValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/ProofOfWorkValidator.ts#L54) provides a reactive dynamic difficulty scaler:
+For lightweight real-time endpoints, [`ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts#L54) provides a reactive dynamic difficulty scaler:
 
 ```typescript
 public static calculateDifficulty(baseDifficulty: number, spamMultiplier: number): number {
@@ -332,7 +332,7 @@ sequenceDiagram
 
 ### Merkle Path Verification Algorithm
 
-To verify that a specific log entry $d_k$ was included in the batch without transmitting the entire dataset, the server evaluates the compact logarithmic Merkle proof using [`MerkleTree.verify`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/MerkleTree.ts#L79-L92):
+To verify that a specific log entry $d_k$ was included in the batch without transmitting the entire dataset, the server evaluates the compact logarithmic Merkle proof using [`MerkleTree.verify`](../../src/core/ledger/MerkleTree.ts#L79-L92):
 
 ```typescript
 public static verify(
@@ -401,7 +401,7 @@ Attackers might attempt to pre-compute nonces offline in advance:
 
 ### Replay Attack Neutralization via Timestamp Expiry
 
-In [`ProofOfWorkValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/ProofOfWorkValidator.ts#L33):
+In [`ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts#L33):
 ```typescript
 const now = Date.now();
 if (now - submission.timestamp > this.maxAgeMs) {
@@ -467,7 +467,7 @@ sequenceDiagram
 
 ## 9. TypeScript Implementation & Developer Contracts
 
-Defined in [`src/core/ledger/ProofOfWorkValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ledger/ProofOfWorkValidator.ts):
+Defined in [`src/core/ledger/ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts):
 
 ```typescript
 export interface PoWSubmission {

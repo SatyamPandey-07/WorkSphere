@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `EmptyState` component ([`src/components/ui/EmptyState.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ui/EmptyState.tsx)) provides visual placeholder views when lists, collections, search queries, or chat histories contain zero items. Designed for responsive layouts and accessible user experiences, it features animated SVG illustrations with `useReducedMotion` support, concise titles, contextual descriptions, and flexible action buttons.
+The `EmptyState` component ([`src/components/ui/EmptyState.tsx`](../../src/components/ui/EmptyState.tsx)) provides visual placeholder views when lists, collections, search queries, or chat histories contain zero items. Designed for responsive layouts and accessible user experiences, it features animated SVG illustrations with `useReducedMotion` support, concise titles, contextual descriptions, and flexible action buttons.
 
 ```mermaid
 flowchart TD

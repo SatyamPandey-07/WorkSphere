@@ -2,11 +2,11 @@
 
 ## 1. Executive Summary & Component Overview
 
-The venue reservation client ([`src/app/reserve/[venueId]/reservation-client.tsx`](file:///c:/Users/admin/Desktop/workfere/src/app/reserve/[venueId]/reservation-client.tsx)) is the primary interactive booking terminal in WorkSphere. It orchestrates the end-to-end journey for remote workers, hybrid teams, and enterprise clients reserving hot desks, dedicated workstations, private phone booths, and conference rooms.
+The venue reservation client ([`src/app/reserve/[venueId]/reservation-client.tsx`](../../src/app/reserve/[venueId]/reservation-client.tsx)) is the primary interactive booking terminal in WorkSphere. It orchestrates the end-to-end journey for remote workers, hybrid teams, and enterprise clients reserving hot desks, dedicated workstations, private phone booths, and conference rooms.
 
 The client combines:
-- **Spatial 3D & 2D Floorplan Visualizers**: [`FloorPlanViewer3D`](file:///c:/Users/admin/Desktop/workfere/src/components/floorplan/FloorPlanViewer3D.tsx) and [`SeatOccupancyHeatmap`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SeatOccupancyHeatmap.tsx).
-- **Distributed Real-Time Seat Hold Locks**: 5-minute temporary checkout leases managed by [`useSeatHoldLock`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useSeatHoldLock.ts) (Issue #3522).
+- **Spatial 3D & 2D Floorplan Visualizers**: [`FloorPlanViewer3D`](../../src/components/floorplan/FloorPlanViewer3D.tsx) and [`SeatOccupancyHeatmap`](../../src/components/venue/SeatOccupancyHeatmap.tsx).
+- **Distributed Real-Time Seat Hold Locks**: 5-minute temporary checkout leases managed by [`useSeatHoldLock`](../../src/hooks/useSeatHoldLock.ts) (Issue #3522).
 - **Server-Sent Events (SSE)**: Live availability streaming over `/api/reservations/events` reflecting actions taken by concurrent viewers.
 - **Multi-Guest & Recurring Scheduling**: Batch invite dispatches and recurring booking series generation.
 - **Post-Booking CalDAV & ICS Exports**: Instant sync with Google Calendar, Microsoft Outlook, and Apple Calendar.
@@ -249,7 +249,7 @@ const previewDates = useMemo(() => {
 
 ### 5.2 Guest Invitation Dispatch
 
-The `GuestsInput` component ([`src/components/GuestsInput.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/GuestsInput.tsx)) allows users to add up to 10 colleagues:
+The `GuestsInput` component ([`src/components/GuestsInput.tsx`](../../src/components/GuestsInput.tsx)) allows users to add up to 10 colleagues:
 - Validates RFC 5322 email syntax.
 - Passes array `{ email: string, name?: string }` to the booking endpoint.
 - Queues calendar invites and QR entrance passes for all named attendees.
@@ -431,7 +431,7 @@ describe("ReservationClient Component Workflow", () => {
 
 ## 10. `RescheduleModal` & Booking Modification Workflows
 
-In addition to fresh bookings, `ReservationClient` embeds the [`RescheduleModal`](file:///c:/Users/admin/Desktop/workfere/src/components/bookings/RescheduleModal.tsx) component, allowing users to modify existing reservations without canceling and restarting:
+In addition to fresh bookings, `ReservationClient` embeds the [`RescheduleModal`](../../src/components/bookings/RescheduleModal.tsx) component, allowing users to modify existing reservations without canceling and restarting:
 
 ### 10.1 Reschedule / Extension Capabilities
 

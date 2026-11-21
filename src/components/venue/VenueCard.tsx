@@ -1,10 +1,13 @@
 "use client";
 
+ feat/offline-mutation-queue-retry-cap
+
  feat/seat-hold-lifecycle-sweep
 
  feat/modal-escape-focus-restoration
 
  feat/webrtc-datachannel-chunker-backpressure
+ main
  main
  main
 import React from "react";
@@ -88,6 +91,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/offline-mutation-queue-retry-cap
+}
+
  feat/seat-hold-lifecycle-sweep
 }
 
@@ -253,6 +259,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main
  main

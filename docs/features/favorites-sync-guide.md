@@ -7,12 +7,12 @@ In WorkSphere, favoriting or bookmarking a workspace is one of the highest-frequ
 Because remote workers frequently traverse areas with spotty cellular coverage (e.g., subway commutes, elevators, rural transit), the bookmarking pipeline is engineered with an **offline-first, zero-latency optimistic synchronization architecture**:
 
 ### Core Pillars:
-1. **Instant Optimistic UI Updates**: The visual heart icon state flips within a single animation frame ($< 16\text{ ms}$) without blocking on backend HTTP network roundtrips ([`src/hooks/useFavorites.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useFavorites.ts)).
+1. **Instant Optimistic UI Updates**: The visual heart icon state flips within a single animation frame ($< 16\text{ ms}$) without blocking on backend HTTP network roundtrips ([`src/hooks/useFavorites.ts`](../../src/hooks/useFavorites.ts)).
 2. **Dual-Tier Local Persistence**:
    - **Fast-Path Memory/LocalStorage** (`worksphere:favorite_venues`): Provides instant $O(1)$ set lookups for list and card rendering.
    - **Full-Payload IndexedDB Cache** (`venuesRepository`): Caches complete venue metadata (`OfflineVenue`) for offline browsing without network.
 3. **Cross-Tab Real-Time Broadcasting**: Uses `BroadcastChannel("worksphere:favorite-changes")` and window `CustomEvent` to synchronize heart toggle states instantly across all open browser tabs and windows.
-4. **Resilient Background Outbox Queueing**: When disconnected or when `/api/favorites` fails, mutations are enqueued in IndexedDB's `favorites-outbox` via `queueOfflineFavorite` ([`src/lib/offlineStore.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/offlineStore.ts)).
+4. **Resilient Background Outbox Queueing**: When disconnected or when `/api/favorites` fails, mutations are enqueued in IndexedDB's `favorites-outbox` via `queueOfflineFavorite` ([`src/lib/offlineStore.ts`](../../src/lib/offlineStore.ts)).
 5. **Multi-Tab Web Locks Serialization**: Prevents IndexedDB transaction collisions across tabs using the Web Locks API (`withWebLock`).
 6. **Automatic Reconnection Replay**: Flushes queued mutations via Service Worker Background Sync (`public/sw.js`) or window `online` event handlers once connectivity restores.
 
@@ -149,7 +149,7 @@ export function useFavorites(venueId: string, initialIsFavorited: boolean) {
 
 When a user opens WorkSphere in two side-by-side tabs (e.g., exploring search results in Tab 1 and viewing a venue detail modal in Tab 2), clicking the heart button in Tab 1 must update Tab 2 immediately.
 
-In [`src/lib/venues/favoriteStorage.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/venues/favoriteStorage.ts):
+In [`src/lib/venues/favoriteStorage.ts`](../../src/lib/venues/favoriteStorage.ts):
 
 ```typescript
 const BROADCAST_CHANNEL_NAME = "worksphere:favorite-changes";
@@ -232,7 +232,7 @@ export interface OfflineAction {
 
 Users frequently toggle hearts rapidly (e.g., clicking favorite, unfavorite, and favorite again within seconds). Inserting multiple opposing actions into the outbox creates network bloat.
 
-In `queueOfflineFavorite` ([`src/lib/offlineStore.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/offlineStore.ts)), the engine inspects existing queued actions before adding new ones:
+In `queueOfflineFavorite` ([`src/lib/offlineStore.ts`](../../src/lib/offlineStore.ts)), the engine inspects existing queued actions before adding new ones:
 
 ```typescript
 export async function queueOfflineFavorite(
@@ -321,7 +321,7 @@ export interface OfflineVenue {
 
 ## 6. Service Worker Background Sync Replay
 
-WorkSphere registers a Service Worker Background Sync tag (`sync-favorites-outbox`) in [`public/sw.js`](file:///c:/Users/admin/Desktop/workfere/public/sw.js) to replay queued mutations as soon as the network restores.
+WorkSphere registers a Service Worker Background Sync tag (`sync-favorites-outbox`) in [`public/sw.js`](../../public/sw.js) to replay queued mutations as soon as the network restores.
 
 ### 6.1 Sync Handler in `public/sw.js`
 

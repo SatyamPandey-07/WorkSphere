@@ -1,6 +1,6 @@
 # WebRTC MeshPathBalancer: Dynamic Multi-Hop Path Selection & Congestion Routing
 
-This document details the multi-hop path selection, telemetry-driven cost weighting, dynamic Dijkstra shortest-path calculations, and congestion mitigation algorithms implemented in [`src/lib/realtime/webrtc/meshPathBalancer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/realtime/webrtc/meshPathBalancer.ts) for local P2P coworking sessions.
+This document details the multi-hop path selection, telemetry-driven cost weighting, dynamic Dijkstra shortest-path calculations, and congestion mitigation algorithms implemented in [`src/lib/realtime/webrtc/meshPathBalancer.ts`](../../src/lib/realtime/webrtc/meshPathBalancer.ts) for local P2P coworking sessions.
 
 ---
 
@@ -86,7 +86,7 @@ export interface MeshRoute {
 
 ## 4. Telemetry Telemetry Thresholds & Congestion Mitigation
 
-In [`meshPathBalancer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/realtime/webrtc/meshPathBalancer.ts#L20-L25), operational thresholds define network congestion:
+In [`meshPathBalancer.ts`](../../src/lib/realtime/webrtc/meshPathBalancer.ts#L20-L25), operational thresholds define network congestion:
 
 | Metric | Property | Default Threshold | Congestion Trigger Behavior |
 | :--- | :--- | :---: | :--- |

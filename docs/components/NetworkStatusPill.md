@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The `NetworkStatusPill` component ([`src/components/NetworkStatusPill.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/NetworkStatusPill.tsx)) provides a compact, accessible, real-time connectivity badge designed for WorkSphere's offline-first navigation bars and headers. It automatically reflects network connectivity state (**Online/Live**, **Offline/Local Mode**, **Back online** confirmation, and **Slow network/2G** conditions) alongside queued offline mutation counts and an interactive manual retry button.
+The `NetworkStatusPill` component ([`src/components/NetworkStatusPill.tsx`](../../src/components/NetworkStatusPill.tsx)) provides a compact, accessible, real-time connectivity badge designed for WorkSphere's offline-first navigation bars and headers. It automatically reflects network connectivity state (**Online/Live**, **Offline/Local Mode**, **Back online** confirmation, and **Slow network/2G** conditions) alongside queued offline mutation counts and an interactive manual retry button.
 
 ---
 

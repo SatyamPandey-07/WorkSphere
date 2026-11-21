@@ -1,6 +1,6 @@
 # MicCalibrationWizard: Microphone Permission, Gain Offset & Acoustic Calibration Architecture
 
-This document details the user workflow, audio permission handling, Web Audio API constraints, hardware presets, gain sensitivity adjustments, and ambient noise floor sampling implemented in [`src/components/noise/MicCalibrationWizard.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/noise/MicCalibrationWizard.tsx) and [`src/lib/noise/calibration.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/noise/calibration.ts).
+This document details the user workflow, audio permission handling, Web Audio API constraints, hardware presets, gain sensitivity adjustments, and ambient noise floor sampling implemented in [`src/components/noise/MicCalibrationWizard.tsx`](../../src/components/noise/MicCalibrationWizard.tsx) and [`src/lib/noise/calibration.ts`](../../src/lib/noise/calibration.ts).
 
 ---
 
@@ -72,7 +72,7 @@ Accurate acoustic measurements require raw, uncompressed, un-attenuated PCM audi
 
 ### Clean Microphone Stream Constraints
 
-In [`MicCalibrationWizard.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/noise/MicCalibrationWizard.tsx#L116-L122):
+In [`MicCalibrationWizard.tsx`](../../src/components/noise/MicCalibrationWizard.tsx#L116-L122):
 
 ```typescript
 const stream = await navigator.mediaDevices.getUserMedia({
@@ -89,13 +89,13 @@ const stream = await navigator.mediaDevices.getUserMedia({
 - **Permission Denied / Insecure Context:** Caught in the `try/catch` block:
   - Surfaces a user-friendly error toast (`VolumeX` icon).
   - Handles `NotAllowedError` (user blocked access) and `NotFoundError` (no hardware microphone connected).
-- **Web Audio Auto-Pause:** Integrates [`useWebAudioAutoPause`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useWebAudioAutoPause.ts) to automatically suspend the audio stream when the user minimizes the tab, preserving battery and privacy.
+- **Web Audio Auto-Pause:** Integrates [`useWebAudioAutoPause`](../../src/hooks/useWebAudioAutoPause.ts) to automatically suspend the audio stream when the user minimizes the tab, preserving battery and privacy.
 
 ---
 
 ## 4. Acoustic Conversion & Gain Formulas
 
-The acoustic conversion pipeline in [`calibration.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/noise/calibration.ts#L110-L130) transforms raw PCM samples into calibrated decibels:
+The acoustic conversion pipeline in [`calibration.ts`](../../src/lib/noise/calibration.ts#L110-L130) transforms raw PCM samples into calibrated decibels:
 
 ### 1. Root Mean Square (RMS) Amplitude
 For discrete frame samples $x[i]$ across buffer size $N$:

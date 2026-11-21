@@ -1,8 +1,11 @@
 "use client";
 
+ feat/seat-hold-lifecycle-sweep
+
  feat/modal-escape-focus-restoration
 
  feat/webrtc-datachannel-chunker-backpressure
+ main
  main
 import React from "react";
 import Image from "next/image";
@@ -85,6 +88,9 @@ export function VenueCard({
       </div>
     </div>
   );
+ feat/seat-hold-lifecycle-sweep
+}
+
  feat/modal-escape-focus-restoration
 }
 
@@ -247,5 +253,6 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main
  main

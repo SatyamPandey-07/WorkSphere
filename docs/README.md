@@ -89,9 +89,9 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Export & Reporting
 
-- [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — typed CSV and Excel XML export, escaping, formula injection sanitization, and browser downloads.
-- [Booking Itinerary & PDF Verification System](./export/booking-pdf-generation.md) — booking receipts, QR generation, and cryptographic verification.
+- [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — Comprehensive developer reference for typed CSV and Excel XML export builders, RFC-4180 escaping, formula injection sanitization, and browser download handling.
+- [Booking Itinerary & PDF Verification System](./export/booking-pdf-generation.md) — Specification and architecture for booking receipts, vector QR matrix generation, and cryptographic verification seals.
 
----
+## UI Components & Frontend
 
-For detailed documentation within a topic, start with its category index where one is available, such as the API, Architecture, or CRDT documentation indexes.
+- [NotificationBell Component Guide](./NOTIFICATION_BELL_GUIDE.md) — Top navigation notification bell, live polling, optimistic mark-as-read, undo restoration, and backend API contract.

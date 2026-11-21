@@ -24,69 +24,24 @@ This document provides a high-level reference for the REST API endpoints availab
 
 # Venues
 
-| Endpoint                                           | Description                                                                                                                                                                                                            |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/venues`                                  | Retrieve available venues.                                                                                                                                                                                             |
-| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox).                                                                                                                                            |
-| `POST /api/venues`                                 | Create or submit a venue.                                                                                                                                                                                              |
-| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                                                                                                                                                                |
-| `GET /api/venues/updates`                          | Subscribe to venue updates.                                                                                                                                                                                            |
-| `POST /api/venues/updates`                         | Broadcast a venue update.                                                                                                                                                                                              |
-| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                                                                                                                                                                 |
-| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews using cursor-based pagination. Defaults to 20 reviews per page (maximum 100), ordered by `createdAt DESC` and `id DESC`. See the [Venue Reviews API guide](./api/venue-reviews.md) for details. |
-| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                                                                                                                                                                       |
-| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                                                                                                                                                                 |
-| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                                                                                                                                                                          |
-| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                                                                                                                                                                       |
-| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                                                                                                                                                                        |
-| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                                                                                                                                                                            |
-| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                                                                                                                                                              |
-| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                                                                                                                                                                      |
-
-### Endpoint Specification: `GET /api/venues/{venueId}/reviews`
-
-Retrieve reviews for a venue using cursor-based pagination. The `venueId` parameter accepts either the venue's database ID or its external `placeId`.
-
-#### Query Parameters
-
-| Parameter | Type    | Required | Default | Description                                                                                                                             |
-| --------- | ------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `limit`   | Integer | No       | `20`    | Number of reviews to return. Positive safe integers are accepted and capped at `100`. Invalid or non-positive values fall back to `20`. |
-| `cursor`  | String  | No       | None    | Review ID from the previous response's `nextCursor`. Used to retrieve the next page.                                                    |
-
-#### Pagination and Ordering
-
-- Reviews are ordered by `createdAt DESC`, followed by `id DESC` to ensure deterministic ordering.
-- The default page size is `20`; the maximum is `100`.
-- The endpoint fetches one additional record to determine whether more reviews are available.
-- When another page exists, `nextCursor` contains the ID of the last review returned in the current page.
-- When no further page exists, `nextCursor` is `null`.
-- The cursor record itself is excluded from the next page.
-
-#### Response Fields
-
-| Field        | Type             | Description                                                                 |
-| ------------ | ---------------- | --------------------------------------------------------------------------- |
-| `reviews`    | Array            | Reviews returned for the requested page.                                    |
-| `nextCursor` | String or `null` | Cursor for retrieving the next page, or `null` when no further page exists. |
-| `hasMore`    | Boolean          | Indicates whether additional reviews are available.                         |
-
-Reviewer information depends on authentication:
-
-- Authenticated requests include the reviewer's `firstName` and `lastName` in the `user` property.
-- Guest requests return `user: null`.
-
-If the venue does not exist, the endpoint returns HTTP `200` with an empty `reviews` array, `nextCursor: null`, and `hasMore: false`.
-
-#### Error Responses
-
-| HTTP Status | Error Code       | Description                                                                          |
-| ----------- | ---------------- | ------------------------------------------------------------------------------------ |
-| `400`       | `INVALID_CURSOR` | The supplied cursor does not identify an available review record.                    |
-| `429`       | `RATE_LIMITED`   | The route-specific limit of 60 requests per minute per IP address has been exceeded. |
-| `500`       | `INTERNAL_ERROR` | An unexpected error occurred while retrieving reviews.                               |
-
-For complete request and response examples, see the [Venue Reviews API guide](./api/venue-reviews.md).
+| Endpoint                                           | Description                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------------- |
+| `GET /api/venues`                                  | Retrieve available venues.                                                  |
+| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox). |
+| `POST /api/venues`                                 | Create or submit a venue.                                                   |
+| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                     |
+| `GET /api/venues/updates`                          | Subscribe to venue updates.                                                 |
+| `POST /api/venues/updates`                         | Broadcast a venue update.                                                   |
+| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                      |
+| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                     |
+| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                            |
+| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                      |
+| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                               |
+| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                            |
+| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                             |
+| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                                 |
+| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                   |
+| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                           |
 
 ### Endpoint Specification: `GET /api/venues/search`
 
@@ -208,13 +163,14 @@ Accept: application/json
 
 # User
 
-| Endpoint                        | Description                          |
-| ------------------------------- | ------------------------------------ |
-| `GET /api/user/badges`          | Retrieve user badges.                |
-| `GET /api/user/notifications`   | Retrieve user notifications.         |
-| `GET /api/user/settings`        | Retrieve or update user settings.    |
-| `GET /api/user/streak`          | Retrieve the user's activity streak. |
-| `POST /api/user/verify-student` | Verify student status.               |
+| Endpoint                        | Description                                                             |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `GET /api/user/badges`          | Retrieve user badges.                                                   |
+| `GET /api/user/notifications`   | Retrieve the latest user notifications and unread count.                |
+| `POST /api/user/notifications`  | Mark notifications as read or restore selected notifications as unread. |
+| `GET /api/user/settings`        | Retrieve or update user settings.                                       |
+| `GET /api/user/streak`          | Retrieve the user's activity streak.                                    |
+| `POST /api/user/verify-student` | Verify student status.                                                  |
 
 ---
 

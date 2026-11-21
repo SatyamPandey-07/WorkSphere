@@ -16,3 +16,7 @@
 ## Contributing & Release
 
 - [Release Process](./contributing/RELEASE_PROCESS.md) — Tag-triggered GitHub draft releases, review, and publication.
+
+## Database & Operations
+
+- [Partition Backup Verification and Restore Drills](./database/PARTITION_BACKUP_VERIFICATION.md) — Verify partition backup archives, coverage and freshness, and run guarded disposable-database restore checks.

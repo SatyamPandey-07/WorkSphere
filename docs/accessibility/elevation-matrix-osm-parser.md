@@ -5,10 +5,10 @@
 Urban pedestrian navigation typically relies on shortest-path or minimal-time graph solvers (such as Dijkstra or Contraction Hierarchies) calibrated exclusively for motorized vehicles or able-bodied pedestrians. However, for wheelchair users, individuals pushing strollers, older adults with limited mobility, or visually impaired pedestrians, an optimal route cannot be selected based purely on distance.
 
 A flight of stairs, an un-lowered curb, or a steep $12\%$ slope turns a standard 200-meter sidewalk into an impassable barrier. WorkSphere addresses this challenge through a multi-layered accessibility routing subsystem:
-1. **[`OSMAccessibilityParser`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/OSMAccessibilityParser.ts):** Ingests rich micro-mapping tags from the OpenStreetMap (OSM) Overpass API, identifying curb ramps, elevators, tactile paving, surface smoothness, and accessible entrances.
-2. **[`ElevationMatrix`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/ElevationMatrix.ts):** Interpolates Digital Elevation Model (DEM) data to calculate precise continuous path inclines (grade percentages), enforcing Americans with Disabilities Act (ADA) maximum running slope thresholds ($8.33\%$) with numerical overflow guards.
-3. **[`AccessibleRouter`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/AccessibleRouter.ts):** Dynamically penalizes graph edge traversal weights, applies non-linear gradient cost functions, and synthesizes audible speech and haptic vibration guidance.
-4. **[`/api/accessibility/matrix`](file:///c:/Users/admin/Desktop/workfere/src/app/api/accessibility/matrix/route.ts):** Exposes an accessibility-weighted distance matrix API for multi-venue pedestrian routing.
+1. **[`OSMAccessibilityParser`](../../src/core/accessibility/OSMAccessibilityParser.ts):** Ingests rich micro-mapping tags from the OpenStreetMap (OSM) Overpass API, identifying curb ramps, elevators, tactile paving, surface smoothness, and accessible entrances.
+2. **[`ElevationMatrix`](../../src/core/accessibility/ElevationMatrix.ts):** Interpolates Digital Elevation Model (DEM) data to calculate precise continuous path inclines (grade percentages), enforcing Americans with Disabilities Act (ADA) maximum running slope thresholds ($8.33\%$) with numerical overflow guards.
+3. **[`AccessibleRouter`](../../src/core/accessibility/AccessibleRouter.ts):** Dynamically penalizes graph edge traversal weights, applies non-linear gradient cost functions, and synthesizes audible speech and haptic vibration guidance.
+4. **[`/api/accessibility/matrix`](../../src/app/api/accessibility/matrix/route.ts):** Exposes an accessibility-weighted distance matrix API for multi-venue pedestrian routing.
 
 ```mermaid
 flowchart TD
@@ -49,7 +49,7 @@ flowchart TD
 
 ## 2. OpenStreetMap Sidewalk Accessibility Tag Ingestion
 
-The OpenStreetMap ecosystem contains rich tagging schemas for pedestrian infrastructure. The [`OSMAccessibilityParser`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/OSMAccessibilityParser.ts) systematically extracts, normalizes, and classifies these tags into structured physical accessibility features.
+The OpenStreetMap ecosystem contains rich tagging schemas for pedestrian infrastructure. The [`OSMAccessibilityParser`](../../src/core/accessibility/OSMAccessibilityParser.ts) systematically extracts, normalizes, and classifies these tags into structured physical accessibility features.
 
 ### 2.1 Supported OSM Tagging Matrix
 
@@ -177,7 +177,7 @@ public isWheelchairAccessible(profile: ElevationProfile, maxAllowedGrade: number
 
 ## 4. Gradient Cost Functions & Graph Weight Penalization
 
-Standard pedestrian routing engines (e.g. OSRM or Valhalla) compute route duration based on flat walking speed ($v \approx 1.25\text{ m/s}$). [`AccessibleRouter.evaluateRoute`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/AccessibleRouter.ts) modifies the effective edge weights by applying dynamic penalty multipliers.
+Standard pedestrian routing engines (e.g. OSRM or Valhalla) compute route duration based on flat walking speed ($v \approx 1.25\text{ m/s}$). [`AccessibleRouter.evaluateRoute`](../../src/core/accessibility/AccessibleRouter.ts) modifies the effective edge weights by applying dynamic penalty multipliers.
 
 ### 4.1 Segment Multiplier Formulation
 

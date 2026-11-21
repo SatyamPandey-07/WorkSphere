@@ -1,6 +1,6 @@
 # Pose Estimation Kinematics: Joint Angle Formulas, Keypoint Heatmaps & RULA Ergonomics
 
-This technical whitepaper details the computer vision, mathematical kinematics, 2D/3D skeletal landmark geometry, spatial keypoint heatmaps, and biomechanical assessment standards implemented in [`src/wasm/vision/pose_estimator.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/vision/pose_estimator.c) and integrated into WorkSphere's real-time wellness engine ([`src/lib/wellness/ergonomicCoachEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wellness/ergonomicCoachEngine.ts) and [`src/components/wellness/DynamicErgonomicCoach.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/wellness/DynamicErgonomicCoach.tsx)).
+This technical whitepaper details the computer vision, mathematical kinematics, 2D/3D skeletal landmark geometry, spatial keypoint heatmaps, and biomechanical assessment standards implemented in [`src/wasm/vision/pose_estimator.c`](../../src/wasm/vision/pose_estimator.c) and integrated into WorkSphere's real-time wellness engine ([`src/lib/wellness/ergonomicCoachEngine.ts`](../../src/lib/wellness/ergonomicCoachEngine.ts) and [`src/components/wellness/DynamicErgonomicCoach.tsx`](../../src/components/wellness/DynamicErgonomicCoach.tsx)).
 
 ---
 
@@ -43,7 +43,7 @@ flowchart TD
 
 ## 2. 17-Keypoint Skeletal Topology & Coordinate Geometry
 
-The skeletal tracker in [`pose_estimator.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/vision/pose_estimator.c) complies with the standardized **COCO 17-Keypoint Human Skeleton Topology**. Each keypoint represents a discrete anatomical landmark identified by an integer index $k \in [0, 16]$:
+The skeletal tracker in [`pose_estimator.c`](../../src/wasm/vision/pose_estimator.c) complies with the standardized **COCO 17-Keypoint Human Skeleton Topology**. Each keypoint represents a discrete anatomical landmark identified by an integer index $k \in [0, 16]$:
 
 ```
                       (0) Nose
@@ -95,7 +95,7 @@ The skeletal tracker in [`pose_estimator.c`](file:///c:/Users/admin/Desktop/work
 
 ### 2.2 Data Structure Definitions in C
 
-In [`src/wasm/vision/pose_estimator.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/vision/pose_estimator.c#L11-L24):
+In [`src/wasm/vision/pose_estimator.c`](../../src/wasm/vision/pose_estimator.c#L11-L24):
 
 ```c
 #define MAX_LANDMARKS 17
@@ -161,7 +161,7 @@ $$\mathbf{p}_k = S \cdot \left( \mathbf{x}_0 + \Delta \mathbf{x}^* \right)$$
 
 ### 3.3 Spatial Edge Gradient Approximation
 
-For ultra-low-power devices lacking WebGL or WebGPU acceleration, [`pose_estimator.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/vision/pose_estimator.c#L32-L38) computes spatial intensity gradients directly on 8-bit grayscale frame buffers:
+For ultra-low-power devices lacking WebGL or WebGPU acceleration, [`pose_estimator.c`](../../src/wasm/vision/pose_estimator.c#L32-L38) computes spatial intensity gradients directly on 8-bit grayscale frame buffers:
 
 ```c
 static float calculate_gradient(const uint8_t* image, int width, int height, int x, int y) {
@@ -412,7 +412,7 @@ float compute_cervical_flexion(const PoseResult* pose) {
 
 ### 6.2 TypeScript Consumer Integration
 
-In [`src/lib/wellness/ergonomicCoachEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wellness/ergonomicCoachEngine.ts):
+In [`src/lib/wellness/ergonomicCoachEngine.ts`](../../src/lib/wellness/ergonomicCoachEngine.ts):
 
 ```typescript
 export interface PoseKinematics {

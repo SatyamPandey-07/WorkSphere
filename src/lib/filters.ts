@@ -5,6 +5,7 @@ export const VENUE_FILTERS = {
   outlets: { type: "boolean" as const, default: false },
   quiet: { type: "boolean" as const, default: false },
   ergonomic: { type: "boolean" as const, default: false },
+  standingDesk: { type: "boolean" as const, default: false },
   outletDensity: {
     type: "enum" as const,
     values: ["every_table", "some_tables", "wall_seats", "none"] as const,
@@ -96,6 +97,8 @@ interface VenueLike {
   dogFriendly?: boolean;
   catsAllowed?: boolean;
   musicStyle?: string;
+  amenities?: string[];
+  validations?: Array<{ amenity?: string; upvotes?: number }>;
   [key: string]: unknown;
 }
 
@@ -138,7 +141,9 @@ export function applyFilters<T extends object>(
 ): T[] {
   if (!Array.isArray(venues)) return [];
   if (!filters || typeof filters !== "object") {
-    return venues.filter((item): item is T => Boolean(item && typeof item === "object"));
+    return venues.filter((item): item is T =>
+      Boolean(item && typeof item === "object"),
+    );
   }
 
   const active = Object.entries(filters).filter(
@@ -148,7 +153,9 @@ export function applyFilters<T extends object>(
       value !== VENUE_FILTERS[key as VenueFilterKey]?.default,
   );
   if (active.length === 0) {
-    return venues.filter((item): item is T => Boolean(item && typeof item === "object"));
+    return venues.filter((item): item is T =>
+      Boolean(item && typeof item === "object"),
+    );
   }
 
   return venues.filter((item): item is T => {
@@ -164,6 +171,18 @@ export function applyFilters<T extends object>(
           return venue.noiseLevel === "quiet";
         case "ergonomic":
           return venue.hasErgonomic === true;
+        case "standingDesk":
+          return (
+            venue.amenities?.includes("standing_desk") === true ||
+            (Array.isArray(venue.validations) &&
+              venue.validations.some(
+                (validation) =>
+                  typeof validation?.amenity === "string" &&
+                  validation.amenity.toLowerCase() === "standing_desk" &&
+                  typeof validation.upvotes === "number" &&
+                  validation.upvotes > 0,
+              ))
+          );
         case "outletDensity":
           return matchesOutletDensity(venue, value as string);
         case "wifiSpeedBand":
@@ -210,7 +229,8 @@ export function applyFilters<T extends object>(
           if (Array.isArray(venue.categories)) {
             return venue.categories.some((c: any) => {
               if (typeof c === "string") return c.toLowerCase() === target;
-              if (typeof c?.name === "string") return c.name.toLowerCase() === target;
+              if (typeof c?.name === "string")
+                return c.name.toLowerCase() === target;
               return false;
             });
           }
@@ -251,7 +271,10 @@ export function buildVenueSearchSchema() {
     query: z.string().optional(),
     minCapacity: z
       .preprocess(
-        (v) => (v === "" || v === null || v === undefined ? undefined : sanitizeCapacityInput(v)),
+        (v) =>
+          v === "" || v === null || v === undefined
+            ? undefined
+            : sanitizeCapacityInput(v),
         z.number().int().min(1).optional(),
       )
       .optional(),

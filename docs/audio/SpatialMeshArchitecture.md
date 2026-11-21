@@ -1,6 +1,6 @@
 # WebRTC Mesh Audio Mixer & Spatial Panner Architecture Guide
 
-This guide details the architectural implementation of WorkSphere's peer-to-peer WebRTC mesh audio mixing, Web Audio API DSP pipeline, spatial HRTF panning, gain level decay algorithms, and bandwidth management strategies implemented across [`src/lib/spatial/SpatialAudioRouter.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/spatial/SpatialAudioRouter.ts), [`src/core/audio/SpatialAudioPanner.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/audio/SpatialAudioPanner.ts), and WebRTC collaborative room audio components.
+This guide details the architectural implementation of WorkSphere's peer-to-peer WebRTC mesh audio mixing, Web Audio API DSP pipeline, spatial HRTF panning, gain level decay algorithms, and bandwidth management strategies implemented across [`src/lib/spatial/SpatialAudioRouter.ts`](../../src/lib/spatial/SpatialAudioRouter.ts), [`src/core/audio/SpatialAudioPanner.ts`](../../src/core/audio/SpatialAudioPanner.ts), and WebRTC collaborative room audio components.
 
 ---
 

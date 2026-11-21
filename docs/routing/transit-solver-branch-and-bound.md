@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Engine Architecture
 
-The WorkSphere Itinerary Optimization Subsystem ([`src/core/itinerary/TransitSolver.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/itinerary/TransitSolver.ts), [`src/core/itinerary/TimeWindowConstraint.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/itinerary/TimeWindowConstraint.ts), [`src/core/itinerary/ItineraryGraph.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/itinerary/ItineraryGraph.ts)) provides exact and heuristic multi-venue itinerary generation for mobile professionals, digital nomads, and team offsite schedules.
+The WorkSphere Itinerary Optimization Subsystem ([`src/core/itinerary/TransitSolver.ts`](../../src/core/itinerary/TransitSolver.ts), [`src/core/itinerary/TimeWindowConstraint.ts`](../../src/core/itinerary/TimeWindowConstraint.ts), [`src/core/itinerary/ItineraryGraph.ts`](../../src/core/itinerary/ItineraryGraph.ts)) provides exact and heuristic multi-venue itinerary generation for mobile professionals, digital nomads, and team offsite schedules.
 
 Given a starting venue, a set of target coworking hubs, and a starting time, the subsystem models itinerary planning as a **Time-Window Constrained Traveling Salesperson Problem (TSPTW)**. By combining graph-based transit edge weights, venue dwell durations, opening window constraints, and Branch-and-Bound search space pruning, the solver yields optimal visitation sequences that minimize total trip duration while guaranteeing zero arrival violations at closed venues.
 
@@ -103,7 +103,7 @@ $$\min_{\pi} \; C(\pi) = \sum_{k=0}^{n-1} \left( t_{\pi(k), \pi(k+1)} + D_{\pi(k
 
 ## 3. TimeWindowConstraint Operational Mechanics
 
-The `TimeWindowConstraint` class ([`src/core/itinerary/TimeWindowConstraint.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/itinerary/TimeWindowConstraint.ts)) parses string-formatted opening hours into structured time window data structures:
+The `TimeWindowConstraint` class ([`src/core/itinerary/TimeWindowConstraint.ts`](../../src/core/itinerary/TimeWindowConstraint.ts)) parses string-formatted opening hours into structured time window data structures:
 
 ```typescript
 export interface TimeWindow {
@@ -148,7 +148,7 @@ If a venue is closed upon arrival, `getNextOpeningTime(venueId, fromDate)` scans
 
 ## 4. Branch-and-Bound Traversal & Lower-Bound Pruning
 
-The solver ([`src/core/itinerary/TransitSolver.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/itinerary/TransitSolver.ts)) uses recursive Branch-and-Bound depth-first search to traverse the solution space.
+The solver ([`src/core/itinerary/TransitSolver.ts`](../../src/core/itinerary/TransitSolver.ts)) uses recursive Branch-and-Bound depth-first search to traverse the solution space.
 
 ### 4.1 Admissible Lower Bound Function ($\text{LB}$)
 

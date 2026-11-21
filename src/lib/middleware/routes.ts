@@ -33,6 +33,7 @@ export const ROUTE_PERMISSIONS: RoutePermissionRule[] = [
   { pattern: "/api/collections/public(.*)", isPublic: true, description: "Public collection data API" },
 
   // Webhooks & Scheduled Workers (Signed/Secret authenticated, CSRF exempt)
+  { pattern: "/api/venues/check-in/iot", isPublic: true, isCsrfExempt: true, description: "IoT smart lock check-in webhook" },
   { pattern: "/api/webhook(.*)", isPublic: true, isCsrfExempt: true, description: "Clerk Svix webhook & payment webhooks" },
   { pattern: "/api/webhooks/worker", isPublic: true, isCsrfExempt: true, description: "Queue worker endpoint" },
   { pattern: "/api/cron/(.*)", isPublic: true, isCsrfExempt: true, description: "Scheduled cron jobs" },

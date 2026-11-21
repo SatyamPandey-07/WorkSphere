@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Architectural Overview
 
-The `CollaborativeNotes` component ([`src/components/collections/CollaborativeNotes.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/collections/CollaborativeNotes.tsx)) provides real-time, conflict-free collaborative text editing for shared venue collections and workspace bookmark folders in WorkSphere. It enables distributed teams and remote coworkers to collaboratively annotate shared venue lists, compile meeting location agendas, and track venue logistical details (e.g., parking codes, WiFi credentials, noise levels) simultaneously without merge conflicts or lost updates.
+The `CollaborativeNotes` component ([`src/components/collections/CollaborativeNotes.tsx`](../../src/components/collections/CollaborativeNotes.tsx)) provides real-time, conflict-free collaborative text editing for shared venue collections and workspace bookmark folders in WorkSphere. It enables distributed teams and remote coworkers to collaboratively annotate shared venue lists, compile meeting location agendas, and track venue logistical details (e.g., parking codes, WiFi credentials, noise levels) simultaneously without merge conflicts or lost updates.
 
 ### Core Architectural Pillars
 
@@ -415,7 +415,7 @@ const handleDeleteNotes = useCallback(() => {
 
 ### Example 1: Embedding in Venue Collection Page
 
-Embed inside [`src/app/collections/[id]/page.tsx`](file:///c:/Users/admin/Desktop/workfere/src/app/collections/[id]/page.tsx):
+Embed inside [`src/app/collections/[id]/page.tsx`](../../src/app/collections/[id]/page.tsx):
 
 ```tsx
 import React from "react";

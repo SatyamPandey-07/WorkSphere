@@ -2,11 +2,12 @@
 
 ## 1. Executive Summary & Component Overview
 
-The venue reservation client ([`src/app/reserve/[venueId]/reservation-client.tsx`](file:///c:/Users/admin/Desktop/workfere/src/app/reserve/[venueId]/reservation-client.tsx)) is the primary interactive booking terminal in WorkSphere. It orchestrates the end-to-end journey for remote workers, hybrid teams, and enterprise clients reserving hot desks, dedicated workstations, private phone booths, and conference rooms.
+The venue reservation client ([`src/app/reserve/[venueId]/reservation-client.tsx`](../../src/app/reserve/[venueId]/reservation-client.tsx)) is the primary interactive booking terminal in WorkSphere. It orchestrates the end-to-end journey for remote workers, hybrid teams, and enterprise clients reserving hot desks, dedicated workstations, private phone booths, and conference rooms.
 
 The client combines:
-- **Spatial 3D & 2D Floorplan Visualizers**: [`FloorPlanViewer3D`](file:///c:/Users/admin/Desktop/workfere/src/components/floorplan/FloorPlanViewer3D.tsx) and [`SeatOccupancyHeatmap`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SeatOccupancyHeatmap.tsx).
-- **Distributed Real-Time Seat Hold Locks**: 5-minute temporary checkout leases managed by [`useSeatHoldLock`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useSeatHoldLock.ts) (Issue #3522).
+
+- **Spatial 3D & 2D Floorplan Visualizers**: [`FloorPlanViewer3D`](../../src/components/floorplan/FloorPlanViewer3D.tsx) and [`SeatOccupancyHeatmap`](../../src/components/venue/SeatOccupancyHeatmap.tsx).
+- **Distributed Real-Time Seat Hold Locks**: 5-minute temporary checkout leases managed by [`useSeatHoldLock`](../../src/hooks/useSeatHoldLock.ts) (Issue #3522).
 - **Server-Sent Events (SSE)**: Live availability streaming over `/api/reservations/events` reflecting actions taken by concurrent viewers.
 - **Multi-Guest & Recurring Scheduling**: Batch invite dispatches and recurring booking series generation.
 - **Post-Booking CalDAV & ICS Exports**: Instant sync with Google Calendar, Microsoft Outlook, and Apple Calendar.
@@ -20,7 +21,7 @@ The reservation client transitions through four distinct workflow phases:
 ```mermaid
 stateDiagram-v2
     [*] --> DateAndTimeSelection : Mount & Load
-    
+
     state DateAndTimeSelection {
         [*] --> SelectDate
         SelectDate --> SelectTime
@@ -64,12 +65,12 @@ stateDiagram-v2
 
 ### Phase Transition Matrix
 
-| Current Step | Trigger Action | Guard Condition | Next Step | State Mutations |
-| :--- | :--- | :--- | :--- | :--- |
-| **1. Date Selection** | User changes `date`, `time`, or `duration` | `date >= todayString()` | Availability Re-query | Calls `loadAvailability()`; clears previous `selectedSeat`. |
-| **2. Seat Selection** | User clicks desk on 3D floorplan | `seat.available && !isSeatHeldByOther(id)` | Seat Hold Acquired | Calls `acquireHold(id)`; sets `selectedSeat = id`; starts countdown. |
-| **3. Guest Details** | User fills guest emails / recurring schedule | Valid email syntax; `occurrences <= 52` | Ready to Submit | Appends to `guests` array; computes `previewDates`. |
-| **4. Confirmation** | User clicks "Confirm reservation" | `selectedSeat !== null && !booking && retryAfter === 0` | Booking Confirmed | Calls `confirmCheckout()`; renders reference ID and calendar links. |
+| Current Step          | Trigger Action                               | Guard Condition                                         | Next Step             | State Mutations                                                      |
+| :-------------------- | :------------------------------------------- | :------------------------------------------------------ | :-------------------- | :------------------------------------------------------------------- |
+| **1. Date Selection** | User changes `date`, `time`, or `duration`   | `date >= todayString()`                                 | Availability Re-query | Calls `loadAvailability()`; clears previous `selectedSeat`.          |
+| **2. Seat Selection** | User clicks desk on 3D floorplan             | `seat.available && !isSeatHeldByOther(id)`              | Seat Hold Acquired    | Calls `acquireHold(id)`; sets `selectedSeat = id`; starts countdown. |
+| **3. Guest Details**  | User fills guest emails / recurring schedule | Valid email syntax; `occurrences <= 52`                 | Ready to Submit       | Appends to `guests` array; computes `previewDates`.                  |
+| **4. Confirmation**   | User clicks "Confirm reservation"            | `selectedSeat !== null && !booking && retryAfter === 0` | Booking Confirmed     | Calls `confirmCheckout()`; renders reference ID and calendar links.  |
 
 ---
 
@@ -90,13 +91,14 @@ stateDiagram-v2
 2. **Timezone Normalization**:
    All availability checks and reservation submissions pass the user's localized IANA timezone string:
    ```typescript
-   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone // e.g. "America/New_York"
+   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone; // e.g. "America/New_York"
    ```
    This prevents UTC midnight boundary skew when users book across time zones.
 
 ### 3.2 Duration Validation
 
 Duration options are restricted to discrete, standard coworking intervals:
+
 - **`30 minutes`**: Quick calls / drop-ins.
 - **`60 minutes` (Default)**: Standard meeting slot.
 - **`90 minutes`**: Extended session.
@@ -106,7 +108,14 @@ Duration options are restricted to discrete, standard coworking intervals:
 
 ### 3.3 Real-Time Server-Sent Events (SSE) Synchronization
 
-To ensure that two users viewing the same floorplan never see stale availability data, `ReservationClient` maintains an open EventSource pipe:
+To help clients keep their floorplan and seat availability views current as concurrent activity occurs, WorkSphere provides live streaming updates over Server-Sent Events via `GET /api/reservations/events?venueId=<venueId>`. The SSE stream acts as an informational notification mechanism to trigger client-side re-fetching; it is not a guarantee of synchronized state across clients, nor does it replace transactional server-side reservation validation and conflict checks. For the complete protocol specification, event payloads, and operational guidance, see the [Reservation Availability SSE API guide](../api/RESERVATION_EVENTS_SSE.md).
+
+#### Client Subscription Patterns
+
+The application employs two complementary client subscription patterns targeting the reservation events stream:
+
+1. **`ReservationClient` (Floorplan Availability)**:
+   In [`src/app/reserve/[venueId]/reservation-client.tsx`](../../src/app/reserve/[venueId]/reservation-client.tsx), the component subscribes exclusively to the `availability` SSE event. When an availability frame arrives (e.g., when another user books, reschedules, or releases a seat), it triggers `loadAvailability()` to refresh the venue layout in the background. It relies on standard browser-native `EventSource` reconnection for transient network drops, registers a `visibilitychange` listener to close the existing `EventSource` and create a fresh connection when the document becomes visible, and closes the stream on unmount:
 
 ```typescript
 useEffect(() => {
@@ -115,13 +124,17 @@ useEffect(() => {
   const connect = () => {
     if (events) events.close();
     events = new EventSource(
-      `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`
+      `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
     );
 
     events.addEventListener("availability", () => {
-      // Background re-fetch when any desk is booked or released
+      // Background re-fetch when any desk is booked, held, or released
       loadAvailability();
     });
+
+    events.onerror = () => {
+      // EventSource reconnects automatically on transient drops
+    };
   };
 
   // Visibility listener: Reconnect immediately when tab resumes foreground
@@ -141,6 +154,14 @@ useEffect(() => {
 }, [venue.id, loadAvailability]);
 ```
 
+2. **`useDeskReservationCountdown` (Hold Expiration)**:
+   In [`src/hooks/useDeskReservationCountdown.ts`](../../src/hooks/useDeskReservationCountdown.ts), the checkout countdown hook separately subscribes to **both** `desk_expired` and `availability` events. When an expiration payload matches the user's active `deskId` or `seatId` (with normalized `DESK_HOLD_EXPIRED` or `SEAT_HOLD_EXPIRED` types), the hook immediately flags the reservation as expired, invokes its expiration callback, and synchronizes state across browser tabs via `BroadcastChannel`.
+
+#### Connection Keep-Alive and Reconnection
+
+- **15-Second Heartbeat:** The reservation stream emits a periodic `heartbeat` frame every 15 seconds (`15_000` ms) to help keep an otherwise idle HTTP streaming connection active through intermediaries. Actual idle-timeout and streaming behavior depend on network and deployment configuration.
+- **Error & Reconnection Semantics:** Native `EventSource` transitions between `CONNECTING` (establishing or retrying), `OPEN` (active stream), and `CLOSED` (terminated). While transient network interruptions trigger automatic browser reconnection in the `CONNECTING` state, fatal errors (such as non-200 HTTP responses) or an explicit `events.close()` call transition the connection to `CLOSED`, halting automatic retry attempts.
+
 ---
 
 ## 4. Distributed Seat Lock Hold & Countdown Timer Mechanics
@@ -148,6 +169,7 @@ useEffect(() => {
 ### 4.1 The 5-Minute Checkout Hold Contract
 
 When a user selects a desk, WorkSphere issues an atomic lock request via the `useSeatHoldLock` hook:
+
 - **Lock Lifetime**: 300 seconds ($5\text{ minutes}$).
 - **Concurrency Guarantee**: While User A holds the seat, User B sees the desk marked as amber/unavailable with holder attribution (`"Seat 14 is on hold by Alex"`).
 - **Automatic Fallback**: If the user leaves the checkout form or closes their browser, the hold expires passively without leaving orphaned database locks.
@@ -190,22 +212,25 @@ sequenceDiagram
 When a seat hold is active, the reservation form renders an amber warning pill with an animated radar ping:
 
 ```tsx
-{selectedSeat && myHeldSeatId === selectedSeat && (
-  <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
-    <span className="flex items-center gap-2">
-      <span className="relative flex h-2 w-2">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+{
+  selectedSeat && myHeldSeatId === selectedSeat && (
+    <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+      <span className="flex items-center gap-2">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+        </span>
+        <span>
+          Seat <strong>{selected.seatNumber}</strong> locked for checkout
+        </span>
       </span>
-      <span>
-        Seat <strong>{selected.seatNumber}</strong> locked for checkout
+      <span className="font-mono font-semibold text-amber-300">
+        {Math.floor(remainingSeconds / 60)}:
+        {(remainingSeconds % 60).toString().padStart(2, "0")} remaining
       </span>
-    </span>
-    <span className="font-mono font-semibold text-amber-300">
-      {Math.floor(remainingSeconds / 60)}:{(remainingSeconds % 60).toString().padStart(2, "0")} remaining
-    </span>
-  </div>
-)}
+    </div>
+  );
+}
 ```
 
 ---
@@ -238,9 +263,15 @@ const previewDates = useMemo(() => {
     dates.push(current.toISOString().slice(0, 10));
     count++;
     switch (frequency) {
-      case "daily": current.setDate(current.getDate() + 1); break;
-      case "weekly": current.setDate(current.getDate() + 7); break;
-      case "monthly": current.setMonth(current.getMonth() + 1); break;
+      case "daily":
+        current.setDate(current.getDate() + 1);
+        break;
+      case "weekly":
+        current.setDate(current.getDate() + 7);
+        break;
+      case "monthly":
+        current.setMonth(current.getMonth() + 1);
+        break;
     }
   }
   return dates;
@@ -249,7 +280,8 @@ const previewDates = useMemo(() => {
 
 ### 5.2 Guest Invitation Dispatch
 
-The `GuestsInput` component ([`src/components/GuestsInput.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/GuestsInput.tsx)) allows users to add up to 10 colleagues:
+The `GuestsInput` component ([`src/components/GuestsInput.tsx`](../../src/components/GuestsInput.tsx)) allows users to add up to 10 colleagues:
+
 - Validates RFC 5322 email syntax.
 - Passes array `{ email: string, name?: string }` to the booking endpoint.
 - Queues calendar invites and QR entrance passes for all named attendees.
@@ -321,6 +353,7 @@ GET /api/reservations/availability?venueId=v101&date=2026-10-15&time=09:00&durat
 ```
 
 #### Response Schema:
+
 ```json
 {
   "seats": [
@@ -360,6 +393,7 @@ Content-Type: application/json
 ```
 
 #### Response Schema:
+
 ```json
 {
   "confirmationId": "WS-2026-98124",
@@ -404,7 +438,7 @@ describe("ReservationClient Component Workflow", () => {
   it("renders venue header and disables submit when no seat is selected", () => {
     render(<ReservationClient venue={mockVenue} />);
     expect(screen.getByText("Downtown Tech Hub")).toBeInTheDocument();
-    
+
     const submitBtn = screen.getByRole("button", { name: /confirm reservation/i });
     expect(submitBtn).toBeDisabled();
   });
@@ -431,7 +465,7 @@ describe("ReservationClient Component Workflow", () => {
 
 ## 10. `RescheduleModal` & Booking Modification Workflows
 
-In addition to fresh bookings, `ReservationClient` embeds the [`RescheduleModal`](file:///c:/Users/admin/Desktop/workfere/src/components/bookings/RescheduleModal.tsx) component, allowing users to modify existing reservations without canceling and restarting:
+In addition to fresh bookings, `ReservationClient` embeds the [`RescheduleModal`](../../src/components/bookings/RescheduleModal.tsx) component, allowing users to modify existing reservations without canceling and restarting:
 
 ### 10.1 Reschedule / Extension Capabilities
 
@@ -455,6 +489,7 @@ sequenceDiagram
 ### 10.2 Conflict Avoidance on Reschedule
 
 When a user reschedules a booking:
+
 1. The backend verifies whether the currently held desk is available for the requested new time interval.
 2. If the current desk is occupied during the new time, the modal presents available alternative desks in the same category.
 3. If extending duration on the fly, the system performs a localized forward check to ensure no subsequent user holds a reservation starting immediately after.
@@ -470,6 +505,7 @@ The reservation interface mounts `VenueLiveVibeWidget` above the floorplan layou
 ```
 
 ### 11.1 Telemetry Indicators Displayed:
+
 - **Noise Level Decibels ($\text{dB}$)**: Live acoustic telemetry streams showing whether the space is currently `Quiet (<45 dB)`, `Moderate (45-65 dB)`, or `Lively (>65 dB)`.
 - **Live Crowd Density**: Percentage of checked-in desks vs. total capacity.
 - **Wi-Fi Quality Index**: Average download/upload speeds recorded by connected devices in the past hour.
@@ -501,6 +537,7 @@ Content-Type: application/json
 ```
 
 #### Response Structure:
+
 ```json
 {
   "booked": 7,
@@ -511,7 +548,7 @@ Content-Type: application/json
 }
 ```
 
-*Note on Skipped Dates*: If a specific recurring date is already booked by another user (e.g. on Thanksgiving Day `2026-11-26`), the system skips that single date, books the remaining 7 occurrences, and returns a detailed status report.
+_Note on Skipped Dates_: If a specific recurring date is already booked by another user (e.g. on Thanksgiving Day `2026-11-26`), the system skips that single date, books the remaining 7 occurrences, and returns a detailed status report.
 
 ---
 
@@ -530,11 +567,13 @@ Content-Type: application/json
 The `ReservationClient` is built to conform to WCAG 2.1 AA requirements across mobile, tablet, and desktop viewports:
 
 ### 14.1 Keyboard Navigation & Focus Rings
+
 - All interactive controls (date pickers, time selectors, duration options, amenity toggles, recurring checkboxes) support standard Tab and Shift+Tab traversal.
 - Clear visual focus rings (`focus:ring-2 focus:ring-violet-500/40`) indicate the active keyboard element.
 - The 3D floorplan viewer provides keyboard-accessible fallback list controls for selecting desks without requiring mouse pointer interaction.
 
 ### 14.2 Screen Reader Announcements
+
 - The live availability badge uses `role="status"` and `aria-live="polite"` to notify screen readers of availability updates.
 - The 5-minute lock countdown banner provides descriptive contextual text (`Seat Desk 01 locked for checkout, 4 minutes 15 seconds remaining`).
 - Error messages and validation alerts are dynamically announced via `role="alert"`.

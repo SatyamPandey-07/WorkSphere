@@ -1,6 +1,6 @@
 ﻿# Head-Related Transfer Function (HRTF): Impulse Response Dataset & Convolution Model
 
-This document outlines the Head-Related Transfer Function (HRTF) acoustic simulation model used across WorkSphere's virtual coworking audio rooms, spatialized WebRTC channels, and WebAssembly DSP engine ([`src/wasm/hrtf_engine.cpp`](file:///c:/Users/admin/Desktop/workfere/src/wasm/hrtf_engine.cpp)).
+This document outlines the Head-Related Transfer Function (HRTF) acoustic simulation model used across WorkSphere's virtual coworking audio rooms, spatialized WebRTC channels, and WebAssembly DSP engine ([`src/wasm/hrtf_engine.cpp`](../../src/wasm/hrtf_engine.cpp)).
 
 ---
 
@@ -209,7 +209,7 @@ export class BinauralHrtfConvolver {
 
 ## 6. Real-Time WebAssembly SIMD Convolution Engine
 
-In high-density coworking sessions with 20+ simultaneous audio streams, running multiple browser convolver nodes can saturate CPU budgets. WorkSphere compiles [`src/wasm/hrtf_engine.cpp`](file:///c:/Users/admin/Desktop/workfere/src/wasm/hrtf_engine.cpp) to WebAssembly with 128-bit SIMD vectorization.
+In high-density coworking sessions with 20+ simultaneous audio streams, running multiple browser convolver nodes can saturate CPU budgets. WorkSphere compiles [`src/wasm/hrtf_engine.cpp`](../../src/wasm/hrtf_engine.cpp) to WebAssembly with 128-bit SIMD vectorization.
 
 ### 6.1 Vectorized Overlap-Add FIR Convolution
 

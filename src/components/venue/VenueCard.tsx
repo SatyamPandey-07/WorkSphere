@@ -97,7 +97,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             disabled={isBookmarkPending}
             aria-label={`Bookmark ${venue.name}`}
             aria-pressed={isBookmarked}
-            className={`rounded-lg p-2 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`venue-action-glass-btn rounded-lg p-2 transition-colors hover:backdrop-blur-md hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 ${
               isBookmarked ? "text-emerald-400" : "text-zinc-400"
             } ${focusRingClasses}`}
           >
@@ -110,7 +110,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             onClick={handleFavorite}
             aria-label={`Favorite ${venue.name}`}
             aria-pressed={isFavorited}
-            className={`rounded-lg p-2 transition-colors hover:bg-zinc-800 ${
+            className={`venue-action-glass-btn rounded-lg p-2 transition-colors hover:backdrop-blur-md hover:bg-zinc-800 ${
               isFavorited ? "text-rose-500" : "text-zinc-400"
             } ${focusRingClasses}`}
           >
@@ -122,7 +122,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             type="button"
             onClick={handleShare}
             aria-label={`Share ${venue.name}`}
-            className={`rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-800 ${focusRingClasses}`}
+            className={`venue-action-glass-btn rounded-lg p-2 text-zinc-400 transition-colors hover:backdrop-blur-md hover:bg-zinc-800 ${focusRingClasses}`}
           >
             <Share2 className="h-5 w-5" aria-hidden="true" />
           </button>

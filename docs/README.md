@@ -44,7 +44,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Content Security Policy Nonce Architecture](./security/csp-nonce-architecture.md) — nonce-based CSP implementation and request security.
 - [CSRF Protection Architecture](./security/csrf-protection-architecture.md) — CSRF protection and request validation design.
 - [Double Ratchet Protocol](./security/DOUBLE_RATCHET_PROTOCOL.md) — encrypted messaging key evolution and protocol design.
-- [Student Discount ZKP Verification](./zkp/STUDENT_DISCOUNT_ZKP_VERIFICATION.md) — zero-knowledge proof generation, verification pipeline, Circom circuits, and nullifier management.
+- [Skipped Message Key Store Runbook](./chat/SKIPPED_MESSAGE_KEY_STORE.md) — skipped-key retention, out-of-order recovery, storage limits, pruning, and source-verified security limitations.
 - [ZKP Verification Runbook](./security/ZKP_VERIFICATION_RUNBOOK.md) — Groth16 verification architecture and key rotation procedures.
 
 ## Features & Product Documentation

@@ -1,6 +1,9 @@
 "use client";
 
+ fix/carbon-savings-zero-baseline
+
  feat/rating-dialog-a11y-arrow-nav
+ main
 import React from "react";
 import Image from "next/image";
 import { PhotoAttribution } from "./VenueGallery";
@@ -8,6 +11,8 @@ import { PhotoAttribution } from "./VenueGallery";
 export interface VenueCardProps {
   id: string;
   name: string;
+ fix/carbon-savings-zero-baseline
+
 
 import React, { useRef, useState } from "react";
 import Image from "next/image";
@@ -19,17 +24,23 @@ export interface VenueCardProps {
   id?: string;
   name?: string;
  main
+ main
   address?: string;
   imageUrl?: string;
   attribution?: PhotoAttribution;
   rating?: number;
   wifiSpeed?: number;
   noiseLevel?: string;
+ fix/carbon-savings-zero-baseline
+
  feat/rating-dialog-a11y-arrow-nav
+ main
   onClick?: () => void;
 }
 
 export function VenueCard({
+ fix/carbon-savings-zero-baseline
+
 
   amenities?: string[];
   tags?: string[];
@@ -63,6 +74,7 @@ const focusRingClasses =
 export const VenueCard: React.FC<VenueCardProps> = ({
   id,
  main
+ main
   name,
   address,
   imageUrl,
@@ -70,7 +82,10 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   rating,
   wifiSpeed,
   noiseLevel,
+ fix/carbon-savings-zero-baseline
+
  feat/rating-dialog-a11y-arrow-nav
+ main
   onClick,
 }: VenueCardProps) {
   // Fallback check for photographer string
@@ -89,6 +104,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             alt={name}
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-105"
+ fix/carbon-savings-zero-baseline
+
 
   amenities,
   tags,
@@ -174,11 +191,15 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             fill
             className="object-cover transition-transform duration-300 hover:scale-105"
  main
+ main
           />
         </div>
       )}
 
+ fix/carbon-savings-zero-baseline
+
  feat/rating-dialog-a11y-arrow-nav
+ main
       {/* Venue Details */}
       <div className="mt-3 flex flex-col gap-1">
         <h3 className="font-semibold text-lg text-slate-100 group-hover:text-indigo-400 transition-colors">
@@ -187,6 +208,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
         {address && <p className="text-xs text-slate-400">{address}</p>}
 
         <div className="mt-2 flex items-center gap-3 text-xs text-slate-300">
+ fix/carbon-savings-zero-baseline
+
 
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="truncate text-lg font-bold">{venueName}</h3>
@@ -244,11 +267,15 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       {(rating !== undefined || wifiSpeed !== undefined || noiseLevel) && (
         <div className="mb-3 flex items-center gap-3 text-xs text-zinc-300">
  main
+ main
           {rating !== undefined && <span>⭐ {rating.toFixed(1)}</span>}
           {wifiSpeed !== undefined && <span>⚡ {wifiSpeed} Mbps</span>}
           {noiseLevel && <span className="capitalize">🔊 {noiseLevel}</span>}
         </div>
+ fix/carbon-savings-zero-baseline
+
  feat/rating-dialog-a11y-arrow-nav
+ main
 
         {/* Photo Attribution with secure link & fallback safeguard */}
         {attribution && (
@@ -272,6 +299,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       </div>
     </div>
   );
+ fix/carbon-savings-zero-baseline
+}
+
 }
 
       )}
@@ -342,4 +372,5 @@ export const VenueCard: React.FC<VenueCardProps> = ({
 };
 
 export default VenueCard;
+ main
  main

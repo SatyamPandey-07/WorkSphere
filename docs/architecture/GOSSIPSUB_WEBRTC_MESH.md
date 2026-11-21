@@ -1,6 +1,7 @@
 # GossipSub WebRTC Mesh
 
 **See also:** [`WEBRTC_MESH.md`](./WEBRTC_MESH.md) — WebRTC connection lifecycle, ICE/TURN config
+**See also:** [`GOSSIPSUB_IP_COLOCATION.md`](./GOSSIPSUB_IP_COLOCATION.md) — GossipSub IP colocation scoring and Sybil attack mitigation
 **See also:** [`P2P_MESH_SPECIFICATION.md`](../P2P_MESH_SPECIFICATION.md) — Wire protocol & packet schemas
 **See also:** [`WEBRTC_MESH_CRDT_SYNC_SPECIFICATION.md`](../WEBRTC_MESH_CRDT_SYNC_SPECIFICATION.md) — CRDT state sync over data channels
 
@@ -167,6 +168,16 @@ sequenceDiagram
         in rotating Bloom filter\n
     note right of Peer1: Duplicate suppression:\n-- false positive rate 1e-6\n-- Memory bounded via generation switch
 ```
+
+---
+
+## IP Colocation Scoring & Sybil Defense
+
+To protect the mesh topology from eclipse attacks and message floods, WorkSphere integrates IP colocation scoring with the GossipSub mesh router. When multiple peers connect from the same network subnet (IPv4 `/24` or IPv6 `/48`), quadratic colocation penalties are applied:
+- **Deprioritization:** Peers exceeding subnet grace caps are shifted to low-priority message queues, starving flood attacks while preserving connectivity for honest users.
+- **Mesh Pruning:** Peers accumulating heavy penalties ($\text{score} \le -30$) or crossing graylist thresholds are dropped from the active forwarding mesh.
+
+For complete mathematical models, subnet grouping logic, and decay specifications, see [GossipSub IP Colocation Scoring & Sybil Attack Mitigation](./GOSSIPSUB_IP_COLOCATION.md).
 
 ---
 

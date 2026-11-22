@@ -1273,3 +1273,33 @@ enum MicroBillingSessionStatus {
   SETTLED
   FAILED
 }
+
+/// Persistent hardware peripheral rental record for smart locker bays (#9582).
+model PeripheralRental {
+  id              String                 @id @default(cuid())
+  rentalId        String                 @unique
+  itemId          String
+  userId          String
+  venueId         String
+  lockerBayNumber Int
+  unlockPin       String
+  depositAmount   Float
+  hourlyRate      Float
+  startTime       DateTime               @default(now())
+  endTime         DateTime?
+  totalCostUsd    Float?
+  status          PeripheralRentalStatus @default(ACTIVE)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([userId])
+  @@index([itemId])
+  @@index([venueId])
+  @@index([status])
+}
+
+enum PeripheralRentalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}

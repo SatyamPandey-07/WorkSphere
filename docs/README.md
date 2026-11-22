@@ -52,6 +52,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Reservation Flow Guide](./features/reservation-flow-guide.md) — reservation client workflow, validation, and lock management.
 - [Venue Check-In Flow](./features/venue-checkin-flow.md) — QR verification, geofence proximity, and check-in behavior.
+- [Venue WiFi Quality Scoring](./venues/WIFI_QUALITY_SCORING.md) — speed tiers, jitter and packet loss penalties, measurement telemetry, and badge display rules.
 - [Voice Search](./features/VOICE_SEARCH.md) — voice search feature documentation.
 - [Seating Occupancy Forecasting](./features/seating-occupancy-forecasting.md) — seating occupancy forecasting functionality.
 - [Nomad Passport](./features/nomad-passport.md) — Nomad Passport feature and product workflow.

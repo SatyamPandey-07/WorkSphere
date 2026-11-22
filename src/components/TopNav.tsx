@@ -21,6 +21,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 import { NotificationBell } from "@/components/NotificationBell";
 import { StreakBadge } from "@/components/Header/StreakBadge";
+import { ChatUnreadBadge } from "@/components/chat/ChatUnreadBadge";
+import { useUnreadMessageTracking } from "@/lib/chat/unreadTracker";
 import { OfflineSyncProgressBar } from "@/components/OfflineSyncProgressBar";
 import { NetworkStatusPill } from "@/components/NetworkStatusPill";
 import { OfflineConflictBadge } from "@/components/offline/OfflineConflictBadge";
@@ -65,10 +67,18 @@ function useIsAdmin(isSignedIn: boolean | undefined): boolean {
 }
 
 export function TopNav({ hideAuth = false }: TopNavProps) {
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
   const isAdmin = useIsAdmin(isSignedIn);
   const pathname = usePathname() ?? "";
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const isAiActive = pathname === "/ai" || pathname.startsWith("/ai/");
+  const { unreadCount } = useUnreadMessageTracking({
+    roomId: "default",
+    currentUserId: user?.id || null,
+    currentUserName: user?.firstName || null,
+    isChatOpen: isAiActive,
+  });
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
@@ -133,17 +143,32 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
 
         {!hideAuth && isSignedIn && (
           <div className="hidden lg:flex items-center gap-1 min-w-0">
-            {signedInLinks.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className={navLinkClass(href)}
-                aria-current={isActive(href) ? "page" : undefined}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </Link>
-            ))}
+            {signedInLinks.map(({ href, label, icon: Icon }) => {
+              const isDiscoverLink = href === "/ai";
+              const showBadge = isDiscoverLink && unreadCount > 0;
+              const linkAriaLabel = showBadge
+                ? `${label} (${unreadCount > 99 ? "99+" : unreadCount} unread chat messages)`
+                : undefined;
+
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`relative ${navLinkClass(href)}`}
+                  aria-current={isActive(href) ? "page" : undefined}
+                  aria-label={linkAriaLabel}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                  {showBadge && (
+                    <ChatUnreadBadge
+                      count={unreadCount}
+                      className="ml-1"
+                    />
+                  )}
+                </Link>
+              );
+            })}
           </div>
         )}
 
@@ -233,12 +258,31 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                 </>
               ) : (
                 <>
-                  {signedInLinks.map(({ href, label, icon: Icon }) => (
-                    <Link key={href} href={href} className={navLinkClass(href)}>
-                      <Icon className="w-4 h-4" />
-                      {label}
-                    </Link>
-                  ))}
+                  {signedInLinks.map(({ href, label, icon: Icon }) => {
+                    const isDiscoverLink = href === "/ai";
+                    const showBadge = isDiscoverLink && unreadCount > 0;
+                    const linkAriaLabel = showBadge
+                      ? `${label} (${unreadCount > 99 ? "99+" : unreadCount} unread chat messages)`
+                      : undefined;
+
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={`relative ${navLinkClass(href)}`}
+                        aria-label={linkAriaLabel}
+                      >
+                        <Icon className="w-4 h-4" />
+                        {label}
+                        {showBadge && (
+                          <ChatUnreadBadge
+                            count={unreadCount}
+                            className="ml-1"
+                          />
+                        )}
+                      </Link>
+                    );
+                  })}
                   <Link href="/settings" className={navLinkClass("/settings")}>
                     <Settings className="w-4 h-4" />
                     Settings

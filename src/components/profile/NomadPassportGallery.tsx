@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   ShieldCheck,
   Award,
@@ -22,11 +23,11 @@ import {
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import {
-  generateClientNomadProof,
   generateBadgeSvgMarkup,
   type NomadProductivityStatement,
   type PassportStamp,
 } from "@/lib/zkp/nomadProof";
+import { generateClientNomadProof } from "@/lib/zkp/nomadProofClient";
 import { downloadSVG, generateQRCodeSVG } from "@/lib/qr/svgQr";
 import NomadPassportCoin from "./NomadPassportCoin";
 
@@ -47,18 +48,55 @@ export function playPoapMintChime(volume = 0.5): boolean {
   try {
     const AudioCtx =
       window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
     if (!AudioCtx) return false;
     const ctx = new AudioCtx();
 
     // Notes for celebratory harmonic arpeggio
     const notes = [
-      { freq: 523.25, timeOffset: 0.0, duration: 0.5, type: "triangle" as OscillatorType, gainMul: 0.25 },
-      { freq: 659.25, timeOffset: 0.08, duration: 0.5, type: "triangle" as OscillatorType, gainMul: 0.25 },
-      { freq: 783.99, timeOffset: 0.16, duration: 0.6, type: "triangle" as OscillatorType, gainMul: 0.28 },
-      { freq: 1046.50, timeOffset: 0.24, duration: 0.8, type: "sine" as OscillatorType, gainMul: 0.3 },
-      { freq: 1318.51, timeOffset: 0.32, duration: 1.0, type: "sine" as OscillatorType, gainMul: 0.3 },
-      { freq: 2093.00, timeOffset: 0.36, duration: 1.1, type: "sine" as OscillatorType, gainMul: 0.15 },
+      {
+        freq: 523.25,
+        timeOffset: 0.0,
+        duration: 0.5,
+        type: "triangle" as OscillatorType,
+        gainMul: 0.25,
+      },
+      {
+        freq: 659.25,
+        timeOffset: 0.08,
+        duration: 0.5,
+        type: "triangle" as OscillatorType,
+        gainMul: 0.25,
+      },
+      {
+        freq: 783.99,
+        timeOffset: 0.16,
+        duration: 0.6,
+        type: "triangle" as OscillatorType,
+        gainMul: 0.28,
+      },
+      {
+        freq: 1046.5,
+        timeOffset: 0.24,
+        duration: 0.8,
+        type: "sine" as OscillatorType,
+        gainMul: 0.3,
+      },
+      {
+        freq: 1318.51,
+        timeOffset: 0.32,
+        duration: 1.0,
+        type: "sine" as OscillatorType,
+        gainMul: 0.3,
+      },
+      {
+        freq: 2093.0,
+        timeOffset: 0.36,
+        duration: 1.1,
+        type: "sine" as OscillatorType,
+        gainMul: 0.15,
+      },
     ];
 
     notes.forEach(({ freq, timeOffset, duration, type, gainMul }) => {
@@ -86,7 +124,10 @@ export function playPoapMintChime(volume = 0.5): boolean {
         ctx.close().catch(() => {});
       }
     }, 1800);
-    if (typeof timer === "object" && typeof (timer as any).unref === "function") {
+    if (
+      typeof timer === "object" &&
+      typeof (timer as any).unref === "function"
+    ) {
       (timer as any).unref();
     }
 
@@ -102,21 +143,14 @@ const AVAILABLE_STATEMENTS: NomadProductivityStatement[] = [
     tierTitle: "100-Hour Deep Work Focus Master",
     minThresholdStreak: 14,
     minThresholdHours: 100,
-    epoch: 2026,
+    epoch: new Date().getUTCFullYear(),
   },
   {
     badgeType: "STREAK_30_DAYS",
     tierTitle: "30-Day Workspace Streak Champion",
     minThresholdStreak: 30,
     minThresholdHours: 60,
-    epoch: 2026,
-  },
-  {
-    badgeType: "MULTI_CITY_EXPLORER",
-    tierTitle: "Multi-City Global Nomad Explorer",
-    minThresholdStreak: 10,
-    minThresholdHours: 40,
-    epoch: 2026,
+    epoch: new Date().getUTCFullYear(),
   },
 ];
 
@@ -131,8 +165,10 @@ const INITIAL_EARNED_STAMPS: PassportStamp[] = [
     visitDate: "2026-09-28",
     epoch: 2026,
     issuedAt: new Date(Date.now() - 11 * 86400000).toISOString(),
-    nullifierHash: "e4d909c290d0fb1ca068ffaddf22cbd0ffd823ef45a2789123456789abcdef01",
-    verificationSignature: "8f7e2a9b3c4d5e6f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
+    nullifierHash:
+      "e4d909c290d0fb1ca068ffaddf22cbd0ffd823ef45a2789123456789abcdef01",
+    verificationSignature:
+      "8f7e2a9b3c4d5e6f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
     svgMarkup: "",
   },
   {
@@ -145,8 +181,10 @@ const INITIAL_EARNED_STAMPS: PassportStamp[] = [
     visitDate: "2026-10-02",
     epoch: 2026,
     issuedAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-    nullifierHash: "a7b3c9d1234ef9876543210fedcba9876543210fedcba9876543210fedcba987",
-    verificationSignature: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f8f7e2a9b3c4d5e6f",
+    nullifierHash:
+      "a7b3c9d1234ef9876543210fedcba9876543210fedcba9876543210fedcba987",
+    verificationSignature:
+      "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f8f7e2a9b3c4d5e6f",
     svgMarkup: "",
   },
   {
@@ -157,8 +195,10 @@ const INITIAL_EARNED_STAMPS: PassportStamp[] = [
     visitDate: "2026-10-04",
     epoch: 2026,
     issuedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-    nullifierHash: "e4d909c290d0fb1ca068ffaddf22cbd0ffd823ef45a2789123456789abcdef01",
-    verificationSignature: "8f7e2a9b3c4d5e6f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
+    nullifierHash:
+      "e4d909c290d0fb1ca068ffaddf22cbd0ffd823ef45a2789123456789abcdef01",
+    verificationSignature:
+      "8f7e2a9b3c4d5e6f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f",
     svgMarkup: "",
   },
 ];
@@ -170,18 +210,20 @@ export interface NomadPassportGalleryProps {
 export default function NomadPassportGallery({
   initialStamps,
 }: NomadPassportGalleryProps = {}) {
-  const [selectedStatement, setSelectedStatement] = useState<NomadProductivityStatement>(
-    AVAILABLE_STATEMENTS[0]
-  );
+  const [selectedStatement, setSelectedStatement] =
+    useState<NomadProductivityStatement>(AVAILABLE_STATEMENTS[0]);
   const [generatingProof, setGeneratingProof] = useState(false);
   const [mintedStamps, setMintedStamps] = useState<PassportStamp[]>(
-    initialStamps ?? INITIAL_EARNED_STAMPS
+    initialStamps ?? INITIAL_EARNED_STAMPS,
   );
   const [activeStamp, setActiveStamp] = useState<PassportStamp | null>(
-    (initialStamps ?? INITIAL_EARNED_STAMPS)[0] ?? null
+    (initialStamps ?? INITIAL_EARNED_STAMPS)[0] ?? null,
   );
-  const [previewModalStamp, setPreviewModalStamp] = useState<PassportStamp | null>(null);
-  const [qrCopyStatus, setQrCopyStatus] = useState<"idle" | "success" | "error">("idle");
+  const [previewModalStamp, setPreviewModalStamp] =
+    useState<PassportStamp | null>(null);
+  const [qrCopyStatus, setQrCopyStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
   const qrCopyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
@@ -210,24 +252,45 @@ export default function NomadPassportGallery({
     setGeneratingProof(true);
     setSuccessMsg(null);
     try {
-      const identitySecret = "user_nomad_secret_seed_99812";
-      const actualStreak = 32;
-      const actualHours = 124;
+      const challengeResponse = await fetch("/api/auth/zkp/nomad-proof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "challenge",
+          badgeType: selectedStatement.badgeType,
+        }),
+      });
 
-      const payload = await generateClientNomadProof(
-        identitySecret,
-        actualStreak,
-        actualHours,
-        selectedStatement
+      const challengeData = await challengeResponse.json();
+
+      if (!challengeResponse.ok || !challengeData.challenge) {
+        throw new Error(
+          challengeData.error || "Unable to prepare Nomad proof.",
+        );
+      }
+
+      const proofBundle = await generateClientNomadProof(
+        challengeData.challenge,
       );
 
       const res = await fetch("/api/auth/zkp/nomad-proof", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          action: "verify",
+          badgeType: selectedStatement.badgeType,
+          proof: proofBundle.proof,
+          publicSignals: proofBundle.publicSignals,
+        }),
       });
 
       const data = await res.json();
+
+      if (!res.ok || !data.success || !data.stamp) {
+        throw new Error(
+          data.error || "Nomad Passport proof verification failed.",
+        );
+      }
       if (data.success && data.stamp) {
         const enrichedStamp: PassportStamp = {
           ...data.stamp,
@@ -236,7 +299,9 @@ export default function NomadPassportGallery({
         };
         setMintedStamps((prev) => [enrichedStamp, ...prev]);
         setActiveStamp(enrichedStamp);
-        setSuccessMsg(`Minted Zero-Knowledge Passport Stamp: ${data.stamp.tierTitle}!`);
+        setSuccessMsg(
+          `Minted Zero-Knowledge Passport Stamp: ${data.stamp.tierTitle}!`,
+        );
 
         // Play celebratory sound chime on successful mint
         if (soundEnabled) {
@@ -273,7 +338,8 @@ export default function NomadPassportGallery({
 
   // Download high-res PNG badge for personal portfolios
   const handleDownloadBadgePng = (stamp: PassportStamp) => {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (typeof window === "undefined" || typeof document === "undefined")
+      return;
     const svgMarkup = generateBadgeSvgMarkup(stamp);
     const canvas = document.createElement("canvas");
     const size = 800;
@@ -310,6 +376,21 @@ export default function NomadPassportGallery({
   useEffect(() => {
     setQrCopyStatus("idle");
   }, [previewModalStamp?.stampId]);
+
+  useEffect(() => {
+    if (!previewModalStamp) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewModalStamp(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [previewModalStamp]);
 
   const getPassportVerificationUrl = (stamp: PassportStamp) => {
     if (typeof window === "undefined") return "";
@@ -378,13 +459,16 @@ export default function NomadPassportGallery({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold uppercase tracking-wider">
-              <ShieldCheck className="w-3.5 h-3.5" /> Zero-Knowledge Identity Credentials
+              <ShieldCheck className="w-3.5 h-3.5" /> Zero-Knowledge Identity
+              Credentials
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
               Proof-of-Productivity & Digital Nomad Passport
             </h1>
             <p className="text-xs md:text-sm text-slate-300 max-w-2xl">
-              Export earned country stamps and verified focus badges as crisp vector SVG or high-res PNG badges with venue names and visit dates for personal portfolios.
+              Export earned country stamps and verified focus badges as crisp
+              vector SVG or high-res PNG badges with venue names and visit dates
+              for personal portfolios.
             </p>
           </div>
 
@@ -394,8 +478,16 @@ export default function NomadPassportGallery({
               type="button"
               onClick={toggleSound}
               data-testid="poap-sound-toggle-btn"
-              title={soundEnabled ? "Mute celebratory chime" : "Enable celebratory chime"}
-              aria-label={soundEnabled ? "Mute celebratory chime" : "Enable celebratory chime"}
+              title={
+                soundEnabled
+                  ? "Mute celebratory chime"
+                  : "Enable celebratory chime"
+              }
+              aria-label={
+                soundEnabled
+                  ? "Mute celebratory chime"
+                  : "Enable celebratory chime"
+              }
               className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-cyan-300 hover:border-slate-700 transition flex items-center justify-center"
             >
               {soundEnabled ? (
@@ -406,15 +498,22 @@ export default function NomadPassportGallery({
             </button>
 
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs space-y-1 font-mono">
-              <span className="text-slate-400 block text-[10px]">Earned Country Badges</span>
-              <strong className="text-cyan-400 text-base">{mintedStamps.length} Stamps Minted</strong>
+              <span className="text-slate-400 block text-[10px]">
+                Earned Country Badges
+              </span>
+              <strong className="text-cyan-400 text-base">
+                {mintedStamps.length} Stamps Minted
+              </strong>
             </div>
           </div>
         </div>
 
         <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-center gap-2 text-xs text-slate-400">
           <Lock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-          <span>Privacy Guaranteed: Merkle leaf commitments prevent timeline & venue doxxing.</span>
+          <span>
+            Privacy Guaranteed: Merkle leaf commitments prevent timeline & venue
+            doxxing.
+          </span>
         </div>
       </div>
 
@@ -422,9 +521,12 @@ export default function NomadPassportGallery({
       <div className="rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-4 backdrop-blur-md shadow-lg">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-white flex items-center gap-2">
-            <Globe className="w-4 h-4 text-cyan-400" /> Earned Passport Stamps & Country Badges
+            <Globe className="w-4 h-4 text-cyan-400" /> Earned Passport Stamps &
+            Country Badges
           </h2>
-          <span className="text-xs text-slate-400">Click any badge to preview or download</span>
+          <span className="text-xs text-slate-400">
+            Click any badge to preview or download
+          </span>
         </div>
 
         {mintedStamps.length === 0 ? (
@@ -440,16 +542,18 @@ export default function NomadPassportGallery({
                 Your Nomad Passport is Brand New!
               </h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Check in to coworking spaces, cafes, and verified focus hubs around the world to collect verifiable cryptographic country badges and streak credentials.
+                Check in to coworking spaces, cafes, and verified focus hubs
+                around the world to collect verifiable cryptographic country
+                badges and streak credentials.
               </p>
             </div>
-            <a
+            <Link
               href="/venues"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 transition-all hover:scale-[1.02]"
             >
               <Compass className="w-4 h-4" />
               <span>Explore Venues to Earn Your First Stamp</span>
-            </a>
+            </Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -477,15 +581,20 @@ export default function NomadPassportGallery({
                     />
                     <div className="space-y-1 min-w-0">
                       <h3 className="text-xs font-bold text-white truncate">
-                        {stamp.countryName ? `${stamp.countryName} Country Stamp` : stamp.tierTitle}
+                        {stamp.countryName
+                          ? `${stamp.countryName} Country Stamp`
+                          : stamp.tierTitle}
                       </h3>
                       {stamp.venueName && (
                         <p className="text-[11px] text-cyan-300 flex items-center gap-1 truncate">
-                          <MapPin className="w-3 h-3 shrink-0" /> {stamp.venueName}
+                          <MapPin className="w-3 h-3 shrink-0" />{" "}
+                          {stamp.venueName}
                         </p>
                       )}
                       <span className="text-[10px] text-slate-400 font-mono block">
-                        Visited: {stamp.visitDate || new Date(stamp.issuedAt).toISOString().split("T")[0]}
+                        Visited:{" "}
+                        {stamp.visitDate ||
+                          new Date(stamp.issuedAt).toISOString().split("T")[0]}
                       </span>
                     </div>
                   </div>
@@ -519,7 +628,8 @@ export default function NomadPassportGallery({
         <div className="lg:col-span-7 rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-5 backdrop-blur-md shadow-lg">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-cyan-400" /> Unlock Zero-Knowledge Credentials
+              <Cpu className="w-4 h-4 text-cyan-400" /> Unlock Zero-Knowledge
+              Credentials
             </h2>
             <span className="text-[11px] text-slate-400">Epoch 2026</span>
           </div>
@@ -540,7 +650,9 @@ export default function NomadPassportGallery({
                 >
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
-                      <h3 className="text-xs font-bold text-white">{stmt.tierTitle}</h3>
+                      <h3 className="text-xs font-bold text-white">
+                        {stmt.tierTitle}
+                      </h3>
                       <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
                         <span>Min Streak: {stmt.minThresholdStreak} Days</span>
                         <span>•</span>
@@ -615,16 +727,23 @@ export default function NomadPassportGallery({
                 <div className="flex justify-between text-slate-400">
                   <span>Visit Date:</span>
                   <span className="text-slate-200">
-                    {activeStamp.visitDate || new Date(activeStamp.issuedAt).toISOString().split("T")[0]}
+                    {activeStamp.visitDate ||
+                      new Date(activeStamp.issuedAt)
+                        .toISOString()
+                        .split("T")[0]}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>Stamp ID:</span>
-                  <span className="text-cyan-300 font-bold">{activeStamp.stampId.slice(0, 20)}...</span>
+                  <span className="text-cyan-300 font-bold">
+                    {activeStamp.stampId.slice(0, 20)}...
+                  </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>Nullifier:</span>
-                  <span className="text-slate-400">{activeStamp.nullifierHash.slice(0, 14)}...</span>
+                  <span className="text-slate-400">
+                    {activeStamp.nullifierHash.slice(0, 14)}...
+                  </span>
                 </div>
               </div>
 
@@ -670,11 +789,11 @@ export default function NomadPassportGallery({
           aria-modal="true"
           aria-labelledby="stamp-modal-title"
           data-testid="stamp-preview-modal"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 overflow-hidden"
           onClick={() => setPreviewModalStamp(null)}
         >
           <div
-            className="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-700/80 p-6 md:p-8 space-y-6 shadow-2xl"
+            className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-3xl bg-slate-900 border border-slate-700/80 p-6 md:p-8 space-y-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close Button */}
@@ -692,13 +811,17 @@ export default function NomadPassportGallery({
               <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
                 Passport Stamp Preview
               </span>
-              <h3 id="stamp-modal-title" className="text-xl font-bold text-white">
+              <h3
+                id="stamp-modal-title"
+                className="text-xl font-bold text-white"
+              >
                 {previewModalStamp.countryName
                   ? `${previewModalStamp.countryName} Country Stamp`
                   : previewModalStamp.tierTitle}
               </h3>
               <p className="text-xs text-slate-400">
-                Venue insignia on the obverse, cryptographic attestation on the reverse.
+                Venue insignia on the obverse, cryptographic attestation on the
+                reverse.
               </p>
             </div>
 
@@ -708,11 +831,14 @@ export default function NomadPassportGallery({
               <div
                 data-testid="nomad-passport-qr-code"
                 dangerouslySetInnerHTML={{
-                  __html: generateQRCodeSVG(getPassportVerificationUrl(previewModalStamp), {
-                    size: 176,
-                    padding: 4,
-                    title: "Nomad Passport verification QR code",
-                  }),
+                  __html: generateQRCodeSVG(
+                    getPassportVerificationUrl(previewModalStamp),
+                    {
+                      size: 176,
+                      padding: 4,
+                      title: "Nomad Passport verification QR code",
+                    },
+                  ),
                 }}
               />
               <button
@@ -730,7 +856,9 @@ export default function NomadPassportGallery({
                 ) : (
                   <Copy className="h-4 w-4 text-cyan-400" />
                 )}
-                {qrCopyStatus === "success" ? "Copied" : "Copy verification link"}
+                {qrCopyStatus === "success"
+                  ? "Copied"
+                  : "Copy verification link"}
               </button>
               <span aria-live="polite" className="sr-only">
                 {qrCopyStatus === "success"
@@ -757,17 +885,23 @@ export default function NomadPassportGallery({
                 </span>
                 <strong className="text-slate-200 block">
                   {previewModalStamp.visitDate ||
-                    new Date(previewModalStamp.issuedAt).toISOString().split("T")[0]}
+                    new Date(previewModalStamp.issuedAt)
+                      .toISOString()
+                      .split("T")[0]}
                 </strong>
               </div>
               <div className="space-y-0.5">
-                <span className="text-slate-400 block text-[10px]">Stamp ID</span>
+                <span className="text-slate-400 block text-[10px]">
+                  Stamp ID
+                </span>
                 <span className="text-cyan-400 block truncate">
                   {previewModalStamp.stampId.slice(0, 18)}...
                 </span>
               </div>
               <div className="space-y-0.5">
-                <span className="text-slate-400 block text-[10px]">Attestation</span>
+                <span className="text-slate-400 block text-[10px]">
+                  Attestation
+                </span>
                 <span className="text-emerald-400 block flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" /> ZK Verified
                 </span>
@@ -790,7 +924,8 @@ export default function NomadPassportGallery({
                 data-testid="download-badge-png-btn"
                 className="w-full sm:flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 transition"
               >
-                <Download className="w-4 h-4 text-emerald-400" /> Download Badge (PNG)
+                <Download className="w-4 h-4 text-emerald-400" /> Download Badge
+                (PNG)
               </button>
             </div>
           </div>

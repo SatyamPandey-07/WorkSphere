@@ -120,7 +120,7 @@ export async function acquireDeskHold(
         const holdIds: string[] = [];
 
         for (const seatId of sortedSeatIds) {
-          const hold = await tx.deskHold.create({
+          const hold = await (tx as any).deskHold.create({
             data: {
               venueId,
               seatId,

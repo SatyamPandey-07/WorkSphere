@@ -41,10 +41,13 @@ const timestampFieldSchema = z.preprocess(
   },
   z
     .date({
-      invalid_type_error: "Invalid timestamp format",
-    })
-    .refine((d) => !Number.isNaN(d.getTime()), {
-      message: "Invalid timestamp value",
+      // zod 4 takes `error` (it ignores the zod 3 `invalid_type_error`). It
+      // rejects an Invalid Date itself, before any refine, so both messages
+      // are given here.
+      error: (issue) =>
+        issue.input instanceof Date
+          ? "Invalid timestamp value"
+          : "Invalid timestamp format",
     })
     .optional(),
 );

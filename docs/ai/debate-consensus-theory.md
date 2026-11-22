@@ -1,6 +1,6 @@
 # Multi-Agent Debate Persona Game Theory & Consensus Termination Proofs
 
-This document establishes the theoretical foundations, game-theoretic formulation, Bayesian epistemic conviction dynamics, adversarial cross-examination protocols, and mathematical convergence proofs implemented in WorkSphere's multi-agent deliberation framework ([`src/core/agents/debate/DebateOrchestrator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/DebateOrchestrator.ts), [`src/core/agents/debate/AgentPersona.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/AgentPersona.ts), and [`src/core/agents/debate/ConsensusResolver.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/ConsensusResolver.ts)).
+This document establishes the theoretical foundations, game-theoretic formulation, Bayesian epistemic conviction dynamics, adversarial cross-examination protocols, and mathematical convergence proofs implemented in WorkSphere's multi-agent deliberation framework ([`src/core/agents/debate/DebateOrchestrator.ts`](../../src/core/agents/debate/DebateOrchestrator.ts), [`src/core/agents/debate/AgentPersona.ts`](../../src/core/agents/debate/AgentPersona.ts), and [`src/core/agents/debate/ConsensusResolver.ts`](../../src/core/agents/debate/ConsensusResolver.ts)).
 
 ---
 
@@ -94,7 +94,7 @@ Where:
 
 Not all personas view peer arguments with equal weight. For example, a Focus Advocate evaluating acoustic distractions considers the Budget Conscious agent moderately relevant ($\kappa = 0.75$), but heavily discounts the Social Networker's praise of loud chatter ($\kappa = 0.60$).
 
-In [`DebateOrchestrator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/DebateOrchestrator.ts#L44-L58), the asymmetric credibility matrix $K = [\kappa_{ij}]$ is configured as:
+In [`DebateOrchestrator.ts`](../../src/core/agents/debate/DebateOrchestrator.ts#L44-L58), the asymmetric credibility matrix $K = [\kappa_{ij}]$ is configured as:
 
 $$K = \begin{bmatrix}
 - & \kappa_{\text{BC} \to \text{FA}} & \kappa_{\text{BC} \to \text{SN}} \\
@@ -140,7 +140,7 @@ Where:
 
 ## 5. Epistemic Confidence Metric Formulation
 
-In [`DebateOrchestrator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/DebateOrchestrator.ts#L122-L124), an agent's reported epistemic confidence $C_i^{(r)} \in [0.1, 1.0]$ scales inversely with its belief volatility:
+In [`DebateOrchestrator.ts`](../../src/core/agents/debate/DebateOrchestrator.ts#L122-L124), an agent's reported epistemic confidence $C_i^{(r)} \in [0.1, 1.0]$ scales inversely with its belief volatility:
 
 $$C_i^{(r)} = \operatorname{clamp}\left( 1.0 - \frac{|\Delta S_i^{(r)}|}{40.0}, \; 0.1, \; 1.0 \right)$$
 
@@ -225,7 +225,7 @@ In practice, with default parameters $R_{\max} = 2\text{ to }3$, the debate eith
 
 ## 7. Deterministic Tie-Breaking & Consensus Resolution
 
-When debates reach termination, [`ConsensusResolver.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/agents/debate/ConsensusResolver.ts) resolves final persona scores into an aggregate ranking incorporating user preference weights:
+When debates reach termination, [`ConsensusResolver.ts`](../../src/core/agents/debate/ConsensusResolver.ts) resolves final persona scores into an aggregate ranking incorporating user preference weights:
 
 ```
 Scores:

@@ -12,6 +12,8 @@ import {
   RotateCcw,
   BatteryLow,
   Battery,
+  Shield,
+  ShieldOff,
 } from "lucide-react";
 // Assuming these exist based on the prompt's new snippet requirements
 import { ParametricEQGraph } from "@/lib/audio/ParametricEQGraph";
@@ -44,6 +46,23 @@ export const EQ_BAND_LABELS: string[] = [
   "4kHz",
   "12kHz",
 ];
+
+/**
+ * Ambient Chatter Shield: a live peaking cut centred on the speech band that
+ * cafe noise occupies. 1600 Hz is the geometric centre of the 1-2.5 kHz range;
+ * at the requested Q = 1.5 the -3 dB points land near 1.15 kHz and 2.2 kHz, and
+ * -12 dB keeps voices intelligible while removing the chatter bed.
+ *
+ * The filter type is `peaking` rather than `notch` on purpose: `BiquadFilterNode`
+ * ignores its `gain` AudioParam for `notch`/`bandpass` types, so a notch cannot
+ * be faded in and out. A peaking cut has the same band-stop shape and is
+ * ramped by `setTargetAtTime`, which is what makes the toggle click-free.
+ */
+export const CHATTER_SHIELD_FREQUENCY_HZ = 1600;
+export const CHATTER_SHIELD_Q = 1.5;
+export const CHATTER_SHIELD_GAIN_DB = -12;
+export const CHATTER_SHIELD_RAMP_TIME_CONSTANT = 0.08;
+export const CHATTER_SHIELD_STORAGE_KEY = "webrtc_eq_chatter_shield";
 
 export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
   flat: {
@@ -187,6 +206,7 @@ export function AudioEqualizer({
   const [bandGains, setBandGains] = useState<number[]>(
     initialGains || [0, 0, 0, 0, 0],
   );
+  const [chatterShield, setChatterShield] = useState(false);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [batteryCharging, setBatteryCharging] = useState<boolean | null>(null);
   const batteryAutoPausedRef = useRef<boolean>(false);
@@ -196,6 +216,10 @@ export function AudioEqualizer({
   const masterGainRef = useRef<GainNode | null>(null);
   const compressorRef = useRef<DynamicsCompressorNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
+  const chatterShieldFilterRef = useRef<BiquadFilterNode | null>(null);
+  // Mirrors `chatterShield` so initAudio can seed a filter created after the
+  // toggle was flipped, without reading stale state from a closure.
+  const chatterShieldEnabledRef = useRef(false);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const jazzCleanupRef = useRef<(() => void) | null>(null);
@@ -276,6 +300,17 @@ export function AudioEqualizer({
         } catch { }
       } else if (savedPreset && savedPreset !== "custom") {
         setBandGains(EQ_PRESETS[savedPreset].gains);
+      }
+
+      // Restore the chatter shield preference before any audio node exists;
+      // initAudio seeds the filter gain from the ref.
+      try {
+        if (window.localStorage.getItem(CHATTER_SHIELD_STORAGE_KEY) === "1") {
+          chatterShieldEnabledRef.current = true;
+          setChatterShield(true);
+        }
+      } catch {
+        // Storage can be unavailable in private browsing; default to off.
       }
     }
   }, []);
@@ -364,13 +399,44 @@ export function AudioEqualizer({
     for (let i = 0; i < filters.length - 1; i++) {
       filters[i].connect(filters[i + 1]);
     }
-    if (filters.length > 0) {
-      filters[filters.length - 1].connect(masterGain);
+
+    // Ambient Chatter Shield sits between the EQ cascade and the master gain so
+    // it attenuates the source before volume, mute, and the compressor.
+    const chatterShieldFilter = ctx.createBiquadFilter();
+    chatterShieldFilter.type = "peaking";
+    if (
+      chatterShieldFilter.frequency &&
+      typeof chatterShieldFilter.frequency.setValueAtTime === "function"
+    ) {
+      chatterShieldFilter.frequency.setValueAtTime(
+        CHATTER_SHIELD_FREQUENCY_HZ,
+        ctx.currentTime,
+      );
     }
+    if (
+      chatterShieldFilter.Q &&
+      typeof chatterShieldFilter.Q.setValueAtTime === "function"
+    ) {
+      chatterShieldFilter.Q.setValueAtTime(CHATTER_SHIELD_Q, ctx.currentTime);
+    }
+    if (
+      chatterShieldFilter.gain &&
+      typeof chatterShieldFilter.gain.setValueAtTime === "function"
+    ) {
+      chatterShieldFilter.gain.setValueAtTime(
+        chatterShieldEnabledRef.current ? CHATTER_SHIELD_GAIN_DB : 0,
+        ctx.currentTime,
+      );
+    }
+    if (filters.length > 0) {
+      filters[filters.length - 1].connect(chatterShieldFilter);
+    }
+    chatterShieldFilter.connect(masterGain);
 
     audioContextRef.current = ctx;
     masterGainRef.current = masterGain;
     eqFiltersRef.current = filters;
+    chatterShieldFilterRef.current = chatterShieldFilter;
     analyserRef.current = analyser;
 
     // Safari iOS only allows resuming a suspended context from a user gesture.
@@ -713,6 +779,31 @@ export function AudioEqualizer({
     // but if we had a gain node wrapper for external, we'd apply it here.
   }, [volume, muted]);
 
+  // Ambient Chatter Shield: persist the preference and ramp the live filter.
+  const toggleChatterShield = useCallback(() => {
+    const next = !chatterShieldEnabledRef.current;
+    chatterShieldEnabledRef.current = next;
+    setChatterShield(next);
+    try {
+      window.localStorage.setItem(CHATTER_SHIELD_STORAGE_KEY, next ? "1" : "0");
+    } catch {
+      // Persistence is best effort; the toggle still applies for this session.
+    }
+  }, []);
+
+  useEffect(() => {
+    const filter = chatterShieldFilterRef.current;
+    const ctx = audioContextRef.current;
+    // No context yet: initAudio seeds the gain from chatterShieldEnabledRef.
+    if (!filter || !ctx) return;
+    smoothSetAudioParam(
+      filter.gain,
+      chatterShield ? CHATTER_SHIELD_GAIN_DB : 0,
+      ctx.currentTime,
+      CHATTER_SHIELD_RAMP_TIME_CONSTANT,
+    );
+  }, [chatterShield]);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (
@@ -747,6 +838,8 @@ export function AudioEqualizer({
         }
         audioContextRef.current = null;
       }
+      // The filter belonged to the context that was just closed.
+      chatterShieldFilterRef.current = null;
     };
   }, [stopPlayingNodes]);
 
@@ -950,6 +1043,31 @@ export function AudioEqualizer({
             ),
           )}
         </select>
+
+        {/* Ambient Chatter Shield: live -12 dB cut over the 1-2.5 kHz band */}
+        {!isExternalMode && (
+          <button
+            type="button"
+            onClick={toggleChatterShield}
+            aria-pressed={chatterShield}
+            aria-label="Ambient Chatter Shield"
+            title="Attenuate 1-2.5 kHz cafe chatter (-12 dB)"
+            data-testid="chatter-shield-toggle"
+            className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide border transition-colors ${chatterShield
+              ? "bg-indigo-500/20 border-indigo-400/50 text-indigo-200"
+              : isDarkMode
+                ? "bg-white/5 border-white/10 text-zinc-400 hover:text-zinc-200"
+                : "bg-white border-gray-300 text-gray-600 hover:text-gray-900"
+              }`}
+          >
+            {chatterShield ? (
+              <Shield className="w-3.5 h-3.5" />
+            ) : (
+              <ShieldOff className="w-3.5 h-3.5" />
+            )}
+            <span>Chatter Shield</span>
+          </button>
+        )}
 
         {/* Visualizer Area */}
         <div className="flex-1 flex items-end justify-center h-12 rounded-lg overflow-hidden border relative bg-black/5">

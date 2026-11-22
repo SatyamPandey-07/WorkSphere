@@ -1,339 +1,263 @@
-import { createHash } from "crypto";
-import { getGeminiClient, isGeminiConfigured } from "@/lib/ai/gemini";
-import { getRedis } from "@/lib/redis";
+import { isAbortError } from '@/lib/search/semanticSearchClient';
 
-const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
+export const DEFAULT_XFETCH_BETA = 1.0;
+export const DEFAULT_BASELINE_DELTA_MS = 250;
+export const DEFAULT_EMBEDDING_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-/**
- * XFetch tuning. `eta` trades additional background refreshes for a lower
- * probability of a stampede. `DEFAULT_COMPUTE_MS` is used when a cache entry
- * predates the delta recording (legacy payloads stored a bare array).
- */
-const XFETCH_ETA = 3;
-const DEFAULT_COMPUTE_MS = 250;
-const REFRESH_LOCK_TTL_MS = 30_000;
-
-export interface HybridSearchResult {
-  id: string;
-  name: string;
-  description: string;
-  score: number;
-}
-
-export interface QueryCacheContext {
-  userId?: string | null;
-  authorizationTier?: string | null;
-}
-
-interface CachedEmbedding {
-  embedding: number[];
+export interface XFetchCacheEntry<T> {
+  value: T;
+  /** Time taken (ms) to compute the embedding; seeded with DEFAULT_BASELINE_DELTA_MS when cold */
   deltaMs: number;
+  /** Absolute epoch timestamp (ms) when the cached entry hard-expires */
+  expiryMs: number;
+  createdAtMs: number;
 }
 
-interface ComputedEmbedding {
-  embedding: number[];
-  deltaMs: number;
+export interface XFetchEvaluationOptions {
+  nowMs?: number;
+  beta?: number;
+  baselineDeltaMs?: number;
+  randomFn?: () => number;
 }
 
-/** Per-query single-flight guards for background embedding refreshes. */
-const inFlightRefreshes = new Map<string, Promise<void>>();
-
-function hashCacheContext(value: string): string {
-  return createHash("sha256").update(value).digest("hex").slice(0, 32);
-}
-
-/**
- * Builds an embedding cache key without exposing authenticated identifiers in
- * Redis. Public queries retain the shared cache, while personalized queries
- * are isolated by user identity or authorization tier.
- */
-export function buildQueryEmbeddingCacheKey(
-  query: string,
-  context: QueryCacheContext = {},
-): string {
-  const normalizedQuery = query.toLowerCase().trim();
-  const userId =
-    typeof context.userId === "string" ? context.userId.trim() : "";
-  const authorizationTier =
-    typeof context.authorizationTier === "string"
-      ? context.authorizationTier.trim()
-      : "";
-  const scope = userId
-    ? `user:${hashCacheContext(userId)}`
-    : authorizationTier
-      ? `tier:${hashCacheContext(authorizationTier)}`
-      : "public";
-
-  const encodedQuery = Buffer.from(normalizedQuery).toString("base64");
-  return scope === "public"
-    ? `embedding:${encodedQuery}`
-    : `embedding:${scope}:${encodedQuery}`;
+export interface HybridEmbeddingSearchOptions {
+  ttlMs?: number;
+  beta?: number;
+  baselineDeltaMs?: number;
+  signal?: AbortSignal;
+  nowFn?: () => number;
+  randomFn?: () => number;
 }
 
 /**
- * Normalizes both the current `{ embedding, deltaMs }` payload and the legacy
- * bare-array payload into a single shape.
+ * Normalizes query text so minor casing/whitespace differences share the same cache bucket
+ * ("Quiet Cafe Near Me " -> "quiet cafe near me").
  */
-function parseCachedEmbedding(raw: unknown): CachedEmbedding | null {
-  if (raw === null || raw === undefined) return null;
-
-  let parsed: unknown = raw;
-  if (typeof raw === "string") {
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-
-  // Legacy entries stored the embedding array directly.
-  if (Array.isArray(parsed)) {
-    return { embedding: parsed as number[], deltaMs: DEFAULT_COMPUTE_MS };
-  }
-
-  if (
-    parsed &&
-    typeof parsed === "object" &&
-    Array.isArray((parsed as { embedding?: unknown }).embedding)
-  ) {
-    const candidate = parsed as { embedding: number[]; deltaMs?: unknown };
-    const deltaMs =
-      typeof candidate.deltaMs === "number" && candidate.deltaMs > 0
-        ? candidate.deltaMs
-        : DEFAULT_COMPUTE_MS;
-    return { embedding: candidate.embedding, deltaMs };
-  }
-
-  return null;
+export function normalizeSemanticQueryKey(query: string): string {
+  return query.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /**
- * XFetch probabilistic early expiration.
+ * Evaluates the XFetch probabilistic early-expiration formula:
+ *   now - (effectiveDelta * beta * ln(rand)) >= expiry
  *
- * Returns `true` when the cached embedding should be refreshed in the
- * background, using the decision rule:
- *
- *   -eta * delta * ln(random()) > expiry - now
- *
- * `remainingMs` is `expiry - now`, while `deltaMs` is the observed cost of
- * recomputing the embedding. Refreshes therefore start earlier for expensive
- * embeddings and are spread out probabilistically so that concurrent callers
- * do not all recompute at once.
+ * Ensures `effectiveDelta` is never 0 on cold/uninitialized entries by falling back
+ * to `baselineDeltaMs` (default 250ms), guaranteeing probabilistic early refresh
+ * prior to hard expiration.
  */
-export function shouldRefreshEmbeddingEarly(
-  remainingMs: number,
-  deltaMs: number,
-  eta: number = XFETCH_ETA,
-  random: () => number = Math.random,
+export function shouldTriggerXFetchEarlyRefresh(
+  entry: Pick<XFetchCacheEntry<unknown>, 'deltaMs' | 'expiryMs'>,
+  options: XFetchEvaluationOptions = {}
 ): boolean {
-  if (remainingMs <= 0 || deltaMs <= 0) return false;
-  return -eta * deltaMs * Math.log(random()) > remainingMs;
-}
+  const {
+    nowMs = Date.now(),
+    beta = DEFAULT_XFETCH_BETA,
+    baselineDeltaMs = DEFAULT_BASELINE_DELTA_MS,
+    randomFn = Math.random,
+  } = options;
 
-async function computeEmbedding(query: string): Promise<ComputedEmbedding> {
-  const startedAt = Date.now();
-  const gemini = getGeminiClient();
-  const result = await gemini.models.embedContent({
-    model: "text-embedding-004",
-    contents: query,
-  });
-  const embedding =
-    result.embeddings?.[0]?.values || (result as any).embedding?.values || [];
+  // Hard expiration check
+  if (nowMs >= entry.expiryMs) {
+    return true;
+  }
 
-  return { embedding, deltaMs: Math.max(Date.now() - startedAt, 1) };
-}
+  // Seed cold/zero delta entries with a positive baseline latency estimate
+  const effectiveDeltaMs =
+    Number.isFinite(entry.deltaMs) && entry.deltaMs > 0
+      ? entry.deltaMs
+      : Math.max(1, baselineDeltaMs);
 
-async function writeEmbeddingCache(
-  redis: NonNullable<ReturnType<typeof getRedis>>,
-  cacheKey: string,
-  embedding: number[],
-  deltaMs: number,
-): Promise<void> {
-  await redis.set(cacheKey, JSON.stringify({ embedding, deltaMs }), {
-    ex: CACHE_TTL_SECONDS,
-  });
+  // Clamp random draw away from 0 to avoid -Infinity from Math.log(0)
+  const u = Math.min(1 - Number.EPSILON, Math.max(Number.EPSILON, randomFn()));
+  const earlyWindowMs = -effectiveDeltaMs * beta * Math.log(u);
+
+  return nowMs + earlyWindowMs >= entry.expiryMs;
 }
 
 /**
- * Recomputes the embedding off the request path. A per-query in-process
- * single-flight guard is combined with a Redis `SET NX` lock so that only one
- * backend instance refreshes a given query hash at a time.
+ * Stampede-resistant XFetch vector embedding cache with single-flight coalescing
+ * and cold-entry baseline delta seeding.
  */
-function scheduleEmbeddingRefresh(
-  cacheKey: string,
-  query: string,
-  refresh: () => Promise<void>,
-): void {
-  if (inFlightRefreshes.has(cacheKey)) return;
+export class XFetchVectorCache<T = number[]> {
+  private readonly store = new Map<string, XFetchCacheEntry<T>>();
+  private readonly inFlight = new Map<string, Promise<XFetchCacheEntry<T>>>();
 
-  const task = (async () => {
-    const redis = getRedis();
-    const lockKey = `${cacheKey}:refresh-lock`;
-    let holdsLock = false;
+  private readonly defaultTtlMs: number;
+  private readonly defaultBeta: number;
+  private readonly baselineDeltaMs: number;
+  private readonly nowFn: () => number;
+  private readonly randomFn: () => number;
 
-    if (redis) {
-      try {
-        const acquired = await redis.set(lockKey, "1", {
-          nx: true,
-          px: REFRESH_LOCK_TTL_MS,
+  constructor(options: {
+    ttlMs?: number;
+    beta?: number;
+    baselineDeltaMs?: number;
+    nowFn?: () => number;
+    randomFn?: () => number;
+  } = {}) {
+    this.defaultTtlMs = options.ttlMs ?? DEFAULT_EMBEDDING_TTL_MS;
+    this.defaultBeta = options.beta ?? DEFAULT_XFETCH_BETA;
+    this.baselineDeltaMs = options.baselineDeltaMs ?? DEFAULT_BASELINE_DELTA_MS;
+    this.nowFn = options.nowFn ?? Date.now;
+    this.randomFn = options.randomFn ?? Math.random;
+  }
+
+  public getEntry(rawKey: string): XFetchCacheEntry<T> | undefined {
+    return this.store.get(normalizeSemanticQueryKey(rawKey));
+  }
+
+  /**
+   * Seeds or updates a cache entry directly, ensuring `deltaMs` is always initialized
+   * to at least `baselineDeltaMs` when caller supplies 0 or omits compute duration.
+   */
+  public setEntry(
+    rawKey: string,
+    value: T,
+    options: { ttlMs?: number; deltaMs?: number } = {}
+  ): XFetchCacheEntry<T> {
+    const key = normalizeSemanticQueryKey(rawKey);
+    const nowMs = this.nowFn();
+    const ttlMs = options.ttlMs ?? this.defaultTtlMs;
+
+    const seededDeltaMs =
+      typeof options.deltaMs === 'number' &&
+        Number.isFinite(options.deltaMs) &&
+        options.deltaMs > 0
+        ? options.deltaMs
+        : this.baselineDeltaMs;
+
+    const entry: XFetchCacheEntry<T> = {
+      value,
+      deltaMs: seededDeltaMs,
+      expiryMs: nowMs + ttlMs,
+      createdAtMs: nowMs,
+    };
+
+    this.store.set(key, entry);
+    return entry;
+  }
+
+  /**
+   * Retrieves a cached embedding using XFetch early expiration and single-flight coalescing:
+   * - Cold miss: coalesces all concurrent callers into a single upstream compute call.
+   * - Warm hit within XFetch early window: triggers a single non-blocking background refresh
+   *   while immediately returning the still-valid cached embedding to callers.
+   * - Hard expired entry: coalesces refresh so only one upstream call executes.
+   */
+  public async getOrCompute(
+    rawKey: string,
+    computeFn: (signal?: AbortSignal) => Promise<T>,
+    options: HybridEmbeddingSearchOptions = {}
+  ): Promise<{ value: T; cacheStatus: 'HIT' | 'EARLY_REFRESH' | 'MISS' }> {
+    const key = normalizeSemanticQueryKey(rawKey);
+    const nowFn = options.nowFn ?? this.nowFn;
+    const randomFn = options.randomFn ?? this.randomFn;
+    const beta = options.beta ?? this.defaultBeta;
+    const ttlMs = options.ttlMs ?? this.defaultTtlMs;
+    const baselineDeltaMs = options.baselineDeltaMs ?? this.baselineDeltaMs;
+
+    const nowMs = nowFn();
+    const cached = this.store.get(key);
+
+    if (cached && nowMs < cached.expiryMs) {
+      const needsEarlyRefresh = shouldTriggerXFetchEarlyRefresh(cached, {
+        nowMs,
+        beta,
+        baselineDeltaMs,
+        randomFn,
+      });
+
+      if (needsEarlyRefresh && !this.inFlight.has(key)) {
+        // Launch single-flight background recomputation without blocking the current reader
+        void this.coalescedRecompute(key, computeFn, {
+          ttlMs,
+          baselineDeltaMs,
+          nowFn,
+        }).catch((err) => {
+          if (!isAbortError(err)) {
+            console.warn(`[XFetchVectorCache] Background refresh failed for "${key}":`, err);
+          }
         });
-        holdsLock = acquired === "OK";
-      } catch {
-        // Fall back to the in-process single-flight guard.
-        holdsLock = true;
+
+        return { value: cached.value, cacheStatus: 'EARLY_REFRESH' };
       }
 
-      // Another worker already owns the refresh.
-      if (!holdsLock) return;
+      return { value: cached.value, cacheStatus: 'HIT' };
     }
 
-    try {
-      await refresh();
-    } finally {
-      if (redis && holdsLock) {
-        try {
-          await redis.del(lockKey);
-        } catch {
-          // Lock will expire on its own.
-        }
-      }
-    }
-  })()
-    .catch((err) => {
-      console.warn("[Embedding Background Refresh Error]:", err);
-    })
-    .finally(() => {
-      inFlightRefreshes.delete(cacheKey);
+    // Hard miss or hard-expired entry -> coalesce concurrent requests into one upstream call
+    const entry = await this.coalescedRecompute(key, computeFn, {
+      ttlMs,
+      baselineDeltaMs,
+      nowFn,
+      signal: options.signal,
     });
 
-  inFlightRefreshes.set(cacheKey, task);
-}
+    return { value: entry.value, cacheStatus: 'MISS' };
+  }
 
-/**
- * Generates a 768-dimensional text embedding using Gemini Embeddings API, cached in Redis.
- *
- * Cache hits are evaluated with XFetch probabilistic early expiration: when an
- * entry is close enough to expiry, a background refresh is scheduled while the
- * cached embedding is returned immediately.
- */
-export async function getQueryEmbedding(
-  query: string,
-  context: QueryCacheContext = {},
-): Promise<number[]> {
-  const cacheKey = buildQueryEmbeddingCacheKey(query, context);
-  const redis = getRedis();
+  private async coalescedRecompute(
+    normalizedKey: string,
+    computeFn: (signal?: AbortSignal) => Promise<T>,
+    opts: {
+      ttlMs: number;
+      baselineDeltaMs: number;
+      nowFn: () => number;
+      signal?: AbortSignal;
+    }
+  ): Promise<XFetchCacheEntry<T>> {
+    const existingFlight = this.inFlight.get(normalizedKey);
+    if (existingFlight) {
+      return existingFlight;
+    }
 
-  if (redis) {
-    try {
-      const cached = parseCachedEmbedding(
-        await redis.get<string | number[]>(cacheKey),
+    const flightPromise = (async () => {
+      const startedAt = opts.nowFn();
+      const value = await computeFn(opts.signal);
+      const finishedAt = opts.nowFn();
+
+      const measuredDeltaMs = Math.max(
+        opts.baselineDeltaMs,
+        finishedAt - startedAt
       );
 
-      if (cached && cached.embedding.length > 0) {
-        try {
-          const ttl = await redis.ttl(cacheKey);
-          const remainingMs = ttl > 0 ? ttl * 1000 : -1;
+      const entry: XFetchCacheEntry<T> = {
+        value,
+        deltaMs: measuredDeltaMs,
+        expiryMs: finishedAt + opts.ttlMs,
+        createdAtMs: finishedAt,
+      };
 
-          if (
-            remainingMs > 0 &&
-            shouldRefreshEmbeddingEarly(remainingMs, cached.deltaMs)
-          ) {
-            scheduleEmbeddingRefresh(cacheKey, query, async () => {
-              if (!isGeminiConfigured()) return;
-              const { embedding, deltaMs } = await computeEmbedding(query);
-              if (embedding.length > 0) {
-                await writeEmbeddingCache(redis, cacheKey, embedding, deltaMs);
-              }
-            });
-          }
-        } catch (err) {
-          console.warn("[Redis TTL Error]:", err);
-        }
+      this.store.set(normalizedKey, entry);
+      return entry;
+    })();
 
-        return cached.embedding;
+    this.inFlight.set(normalizedKey, flightPromise);
+
+    try {
+      return await flightPromise;
+    } finally {
+      if (this.inFlight.get(normalizedKey) === flightPromise) {
+        this.inFlight.delete(normalizedKey);
       }
-    } catch (err) {
-      console.warn("[Redis Cache Miss/Error]:", err);
     }
   }
 
-  if (!isGeminiConfigured()) {
-    return new Array(768).fill(0);
-  }
-
-  try {
-    const { embedding, deltaMs } = await computeEmbedding(query);
-
-    if (redis && embedding.length > 0) {
-      try {
-        await writeEmbeddingCache(redis, cacheKey, embedding, deltaMs);
-      } catch (err) {
-        console.warn("[Redis Set Error]:", err);
-      }
-    }
-
-    return embedding;
-  } catch (err) {
-    console.warn("[Gemini Embedding Error]:", err);
-    return new Array(768).fill(0);
+  public clear(): void {
+    this.store.clear();
+    this.inFlight.clear();
   }
 }
 
-/** Reset module-level single-flight state. Exported for tests only. @internal */
-export function _resetEmbeddingRefreshStateForTesting(): void {
-  inFlightRefreshes.clear();
-}
+// Shared singleton vector cache across hybrid semantic venue search invocations
+const globalForVectorCache = globalThis as unknown as {
+  __worksphereXFetchVectorCache?: XFetchVectorCache<number[]>;
+};
 
-/**
- * Executes Reciprocal Rank Fusion (RRF) combining vector cosine distance (<->) and FTS ts_rank_cd.
- */
-export async function executeHybridSearch(
-  query: string,
-  prismaClient: any,
-  limit: number = 10,
-  rrfK: number = 60,
-  cacheContext: QueryCacheContext = {},
-): Promise<HybridSearchResult[]> {
-  const embedding = await getQueryEmbedding(query, cacheContext);
-  const vectorStr = `[${embedding.join(",")}]`;
+export const sharedEmbeddingVectorCache =
+  globalForVectorCache.__worksphereXFetchVectorCache ??
+  new XFetchVectorCache<number[]>();
 
-  // Reciprocal Rank Fusion (RRF) raw SQL execution
-  const results = await prismaClient.$queryRawUnsafe(
-    `
-    WITH vector_matches AS (
-      SELECT 
-        id, 
-        name, 
-        description,
-        ROW_NUMBER() OVER (ORDER BY embedding <-> '${vectorStr}'::vector) AS vec_rank
-      FROM "Venue"
-      WHERE embedding IS NOT NULL
-      LIMIT 50
-    ),
-    fts_matches AS (
-      SELECT 
-        id, 
-        name, 
-        description,
-        ROW_NUMBER() OVER (ORDER BY ts_rank_cd(search_vector, websearch_to_tsquery('english', $1)) DESC) AS fts_rank
-      FROM "Venue"
-      WHERE search_vector @@ websearch_to_tsquery('english', $1)
-      LIMIT 50
-    )
-    SELECT 
-      COALESCE(v.id, f.id) AS id,
-      COALESCE(v.name, f.name) AS name,
-      COALESCE(v.description, f.description) AS description,
-      (COALESCE(1.0 / ($2 + v.vec_rank), 0.0) + COALESCE(1.0 / ($2 + f.fts_rank), 0.0)) AS score
-    FROM vector_matches v
-    FULL OUTER JOIN fts_matches f ON v.id = f.id
-    ORDER BY score DESC
-    LIMIT $3;
-  `,
-    query,
-    rrfK,
-    limit,
-  );
-
-  return results;
+if (!globalForVectorCache.__worksphereXFetchVectorCache) {
+  globalForVectorCache.__worksphereXFetchVectorCache = sharedEmbeddingVectorCache;
 }

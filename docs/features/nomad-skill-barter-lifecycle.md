@@ -1,6 +1,6 @@
 # Technical Specification: NomadSkillBarterBoard Barter Session State Lifecycle
 
-This document provides a comprehensive technical architecture and lifecycle specification for WorkSphere's on-site peer knowledge barter system ([src/components/social/NomadSkillBarterBoard.tsx](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/components/social/NomadSkillBarterBoard.tsx), [src/lib/social/skillBarterEngine.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/social/skillBarterEngine.ts), [src/app/api/social/skill-exchange/route.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/social/skill-exchange/route.ts), and [src/app/api/social/skill-exchange/match/route.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/social/skill-exchange/match/route.ts)).
+This document provides a comprehensive technical architecture and lifecycle specification for WorkSphere's on-site peer knowledge barter system ([src/components/social/NomadSkillBarterBoard.tsx](../../src/components/social/NomadSkillBarterBoard.tsx), [src/lib/social/skillBarterEngine.ts](../../src/lib/social/skillBarterEngine.ts), [src/app/api/social/skill-exchange/route.ts](../../src/app/api/social/skill-exchange/route.ts), and [src/app/api/social/skill-exchange/match/route.ts](../../src/app/api/social/skill-exchange/match/route.ts)).
 
 ---
 
@@ -161,7 +161,7 @@ $$\text{Compatibility}(A, B) = \begin{cases}
 
 ### Non-Negative Hour Balance Invariant
 
-To guarantee sustainable, fair-exchange peer collaboration, WorkSphere enforces strict ledger constraints via [calculateBarterHourBalance](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/social/skillBarterEngine.ts#L106-L124):
+To guarantee sustainable, fair-exchange peer collaboration, WorkSphere enforces strict ledger constraints via [calculateBarterHourBalance](../../src/lib/social/skillBarterEngine.ts#L106-L124):
 
 ```typescript
 export function calculateBarterHourBalance(
@@ -328,8 +328,8 @@ Initiates or confirms an on-site meetup slot for an existing barter listing.
 
 ## 8. Repository Code Reference Map
 
-- Component UI & Client State: [src/components/social/NomadSkillBarterBoard.tsx](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/components/social/NomadSkillBarterBoard.tsx)
-- Domain Engine & Math Utilities: [src/lib/social/skillBarterEngine.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/lib/social/skillBarterEngine.ts)
-- Main Skill Exchange Page: [src/app/social/skill-exchange/page.tsx](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/social/skill-exchange/page.tsx)
-- Listings REST Endpoint: [src/app/api/social/skill-exchange/route.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/social/skill-exchange/route.ts)
-- Match Handshake REST Endpoint: [src/app/api/social/skill-exchange/match/route.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/social/skill-exchange/match/route.ts)
+- Component UI & Client State: [src/components/social/NomadSkillBarterBoard.tsx](../../src/components/social/NomadSkillBarterBoard.tsx)
+- Domain Engine & Math Utilities: [src/lib/social/skillBarterEngine.ts](../../src/lib/social/skillBarterEngine.ts)
+- Main Skill Exchange Page: [src/app/social/skill-exchange/page.tsx](../../src/app/social/skill-exchange/page.tsx)
+- Listings REST Endpoint: [src/app/api/social/skill-exchange/route.ts](../../src/app/api/social/skill-exchange/route.ts)
+- Match Handshake REST Endpoint: [src/app/api/social/skill-exchange/match/route.ts](../../src/app/api/social/skill-exchange/match/route.ts)

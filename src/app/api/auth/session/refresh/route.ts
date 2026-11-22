@@ -66,7 +66,11 @@ export async function POST(req: NextRequest) {
 
     // Check that refresh token was issued after password change
     let passwordCheckResult;
-    if (passwordChangedAt !== undefined && iat !== undefined && iat < passwordChangedAt) {
+    if (
+      passwordChangedAt !== undefined &&
+      typeof iat === "number" &&
+      iat < passwordChangedAt
+    ) {
       passwordCheckResult = { success: false, error: "STALE_REFTERM" };
     } else {
       passwordCheckResult = { success: true };

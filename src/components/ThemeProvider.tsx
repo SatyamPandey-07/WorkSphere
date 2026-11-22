@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AccentColor } from "@/lib/constants/theme";
+export type { AccentColor } from "@/lib/constants/theme";
 import {
   ACCENT_HEX_MAP,
   ACCENT_STORAGE_KEY,
@@ -18,7 +18,8 @@ import {
   parseAccentColor,
 } from "@/lib/constants/theme";
 
-export type Theme = "light" | "dark" | "cyberpunk";
+export type Theme = "light" | "dark" | "cyberpunk" | "system";
+export type ResolvedTheme = "light" | "dark" | "cyberpunk";
 
 export interface ThemeContextValue {
   theme: Theme;
@@ -35,59 +36,76 @@ export interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = "worksphere-theme";
+const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)";
 
-/**
- * Runs a DOM change with CSS transitions disabled via a temporary
- * `preload` class on <html>, so theme variables swap instantly instead
- * of animating through intermediate (white or half styled) frames.
- */
-function withoutTransitions(change: () => void) {
-  const root = document.documentElement;
-  root.classList.add("preload");
-  change();
-  // Force a reflow so the new styles apply while transitions are off.
-  void window.getComputedStyle(root).opacity;
-  const release = () => root.classList.remove("preload");
-  if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(() => window.requestAnimationFrame(release));
-  } else {
-    window.setTimeout(release, 50);
+function getSystemTheme(): "light" | "dark" {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
+    return "light";
   }
+  return window.matchMedia(COLOR_SCHEME_QUERY).matches ? "dark" : "light";
 }
 
-function applyTheme(theme: Theme) {
+function resolveTheme(theme: Theme): ResolvedTheme {
+  return theme === "system" ? getSystemTheme() : theme;
+}
+
+let themeTransitionTimeout: number | undefined;
+
+/**
+ * Applies a resolved theme. Only interactive theme changes opt into the
+ * short transition; the initial provider effect stays instant to avoid
+ * animating the server-rendered page during hydration.
+ */
+function applyTheme(theme: Theme, animate = false) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
+  const resolved = resolveTheme(theme);
 
-  withoutTransitions(() => {
-    root.setAttribute("data-theme", theme);
-    root.classList.remove("dark", "cyberpunk");
+  const prefersReducedMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else if (theme === "cyberpunk") {
-      root.classList.add("cyberpunk");
+  if (animate && !prefersReducedMotion) {
+    root.classList.add("theme-transitioning");
+    if (themeTransitionTimeout !== undefined) {
+      window.clearTimeout(themeTransitionTimeout);
     }
+    themeTransitionTimeout = window.setTimeout(() => {
+      root.classList.remove("theme-transitioning");
+      themeTransitionTimeout = undefined;
+    }, 240);
+  }
 
-    const bg =
-      theme === "dark"
-        ? "#0a0a0a"
-        : theme === "cyberpunk"
-          ? "#090014"
-          : "#ffffff";
-    const fg =
-      theme === "dark"
-        ? "#ededed"
-        : theme === "cyberpunk"
-          ? "#f4f4ff"
-          : "#171717";
+  root.setAttribute("data-theme", resolved);
+  root.classList.remove("dark", "cyberpunk");
 
-    root.style.colorScheme = theme === "light" ? "light" : "dark";
-    root.style.backgroundColor = bg;
-    root.style.color = fg;
-    root.style.setProperty("--background", bg);
-    root.style.setProperty("--foreground", fg);
-  });
+  if (resolved === "dark") {
+    root.classList.add("dark");
+  } else if (resolved === "cyberpunk") {
+    root.classList.add("cyberpunk");
+  }
+
+  const bg =
+    resolved === "dark"
+      ? "#0a0a0a"
+      : resolved === "cyberpunk"
+        ? "#090014"
+        : "#ffffff";
+  const fg =
+    resolved === "dark"
+      ? "#ededed"
+      : resolved === "cyberpunk"
+        ? "#f4f4ff"
+        : "#171717";
+
+  root.style.colorScheme = resolved === "light" ? "light" : "dark";
+  root.style.backgroundColor = bg;
+  root.style.color = fg;
+  root.style.setProperty("--background", bg);
+  root.style.setProperty("--foreground", fg);
 }
 
 function applyHighContrast(enabled: boolean) {
@@ -136,6 +154,15 @@ export function ThemeProvider({
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof document === "undefined") return initialTheme;
+    const saved = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
+    if (
+      saved === "dark" ||
+      saved === "cyberpunk" ||
+      saved === "light" ||
+      saved === "system"
+    ) {
+      return saved;
+    }
     const root = document.documentElement;
     // Keep hydration aligned with the theme already applied before first paint.
     const rootTheme = root.getAttribute("data-theme");
@@ -148,9 +175,6 @@ export function ThemeProvider({
     }
     if (root.classList.contains("cyberpunk")) return "cyberpunk";
     if (root.classList.contains("dark")) return "dark";
-    const saved = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
-    if (saved === "dark" || saved === "cyberpunk" || saved === "light")
-      return saved;
     return initialTheme;
   });
 
@@ -189,6 +213,35 @@ export function ThemeProvider({
   }, [theme]);
 
   useEffect(() => {
+    if (
+      theme !== "system" ||
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia(COLOR_SCHEME_QUERY);
+    const handleChange = () => {
+      applyTheme("system", true);
+    };
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => {
+        mediaQuery.removeEventListener("change", handleChange);
+      };
+    }
+
+    if (typeof mediaQuery.addListener === "function") {
+      mediaQuery.addListener(handleChange);
+      return () => {
+        mediaQuery.removeListener(handleChange);
+      };
+    }
+  }, [theme]);
+
+  useEffect(() => {
     applyAccent(accent);
   }, [accent]);
 
@@ -200,7 +253,7 @@ export function ThemeProvider({
     setThemeState(next);
     window.localStorage.setItem(STORAGE_KEY, next);
     document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
-    applyTheme(next);
+    applyTheme(next, true);
   }, []);
 
   const toggleTheme = useCallback(() => {
@@ -212,7 +265,7 @@ export function ThemeProvider({
 
       window.localStorage.setItem(STORAGE_KEY, next);
       document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
-      applyTheme(next);
+      applyTheme(next, true);
       return next;
     });
   }, []);
@@ -253,43 +306,27 @@ export function ThemeProvider({
         e.key === STORAGE_KEY &&
         (e.newValue === "light" ||
           e.newValue === "dark" ||
-          e.newValue === "cyberpunk")
+          e.newValue === "cyberpunk" ||
+          e.newValue === "system")
       ) {
         setThemeState(e.newValue as Theme);
-        applyTheme(e.newValue as Theme);
+        applyTheme(e.newValue as Theme, true);
       }
       if (e.key === ACCENT_STORAGE_KEY) {
         const parsedAccent = parseAccentColor(e.newValue);
         setAccentState(parsedAccent);
         applyAccent(parsedAccent);
       }
-      if (e.key === HIGH_CONTRAST_STORAGE_KEY) {
-        const next = e.newValue === "true";
-        setHighContrastState(next);
-        applyHighContrast(next);
+      if (e.key === HIGH_CONTRAST_STORAGE_KEY && e.newValue !== null) {
+        const enabled = e.newValue === "true";
+        setHighContrastState(enabled);
+        applyHighContrast(enabled);
       }
     };
+
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isHighContrastShortcut =
-        ((e.metaKey || e.ctrlKey) &&
-          e.shiftKey &&
-          (e.key === "H" || e.key === "h")) ||
-        (e.altKey && e.shiftKey && (e.key === "H" || e.key === "h"));
-
-      if (isHighContrastShortcut) {
-        e.preventDefault();
-        toggleHighContrast();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleHighContrast]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({

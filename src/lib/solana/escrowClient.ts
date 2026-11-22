@@ -199,11 +199,20 @@ export async function buildSolDepositTransaction(
 
   // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
-    transaction.add(
-      ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: Math.floor(priorityFee),
-      }),
+    const safeFee = Math.max(0, Math.floor(priorityFee));
+    const existingIndex = transaction.instructions.findIndex((ix) =>
+      ix.programId.equals(ComputeBudgetProgram.programId) &&
+      ix.data.length > 0 &&
+      ix.data[0] === 3,
     );
+    const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: safeFee,
+    });
+    if (existingIndex >= 0) {
+      transaction.instructions[existingIndex] = computeIx;
+    } else {
+      transaction.instructions.unshift(computeIx);
+    }
   }
 
   const memoData = Buffer.from(
@@ -289,11 +298,20 @@ export async function buildUsdcDepositTransaction(
 
   // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
-    transaction.add(
-      ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: Math.floor(priorityFee),
-      }),
+    const safeFee = Math.max(0, Math.floor(priorityFee));
+    const existingIndex = transaction.instructions.findIndex((ix) =>
+      ix.programId.equals(ComputeBudgetProgram.programId) &&
+      ix.data.length > 0 &&
+      ix.data[0] === 3,
     );
+    const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: safeFee,
+    });
+    if (existingIndex >= 0) {
+      transaction.instructions[existingIndex] = computeIx;
+    } else {
+      transaction.instructions.unshift(computeIx);
+    }
   }
 
   const memoData = Buffer.from(
@@ -1763,11 +1781,20 @@ export async function submitEscrowRefundTransaction(
 
     // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
     if (typeof priorityFee === "number" && priorityFee > 0) {
-      transaction.add(
-        ComputeBudgetProgram.setComputeUnitPrice({
-          microLamports: Math.floor(priorityFee),
-        }),
+      const safeFee = Math.max(0, Math.floor(priorityFee));
+      const existingIndex = transaction.instructions.findIndex((ix) =>
+        ix.programId.equals(ComputeBudgetProgram.programId) &&
+        ix.data.length > 0 &&
+        ix.data[0] === 3,
       );
+      const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: safeFee,
+      });
+      if (existingIndex >= 0) {
+        transaction.instructions[existingIndex] = computeIx;
+      } else {
+        transaction.instructions.unshift(computeIx);
+      }
     }
 
     transaction.add(instruction);

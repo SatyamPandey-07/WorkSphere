@@ -12,3 +12,6 @@ export { default as TacticalAirspaceMap } from "./TacticalAirspaceMap";
 
 export * from "./RadarSweepLayer";
 export { default as RadarSweepLayer } from "./RadarSweepLayer";
+
+export * from "./MapShortcutLegend";
+export { default as MapShortcutLegend } from "./MapShortcutLegend";

@@ -63,7 +63,7 @@
 
 | Role                                  | Leader            | GitHub                                                 | Badges                                                                                                                                                                                                                                                                                                 |
 | :------------------------------------ | :---------------- | :----------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🚀 **Founder & Lead Architect / CTO** | **Satyam Pandey** | [@SatyamPandey-07](https://github.com/SatyamPandey-07) | [![GitHub Profile](https://img.shields.io/badge/GitHub-Profile-181717?style=flat-square&logo=github)](https://github.com/SatyamPandey-07) [![Pair Extraordinaire](https://img.shields.io/badge/GitHub-Pair%20Extraordinaire-58A6FF?style=flat-square&logo=github)](https://github.com/SatyamPandey-07) |
+| 🚀 **Founder & Lead Architect / CTO** | **Satyam Pandey** | [@SatyamPandey-07](https://github.com/SatyamPandey-07) | [![GitHub Profile](https://img.shields.io/badge/GitHub-Profile-181717?style=flat-square&logo=github)](https://github.com/SatyamPandey-07)
 
 > [!TIP]
 > **Issue Claiming & Auto-Merge Workflow:**

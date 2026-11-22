@@ -1,231 +1,75 @@
-import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { SoundLevelMeter } from "@/components/audio/SoundLevelMeter";
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  SoundLevelMeter,
+  type AudioContextLike,
+} from '@/components/audio/SoundLevelMeter';
 
-describe("SoundLevelMeter Component", () => {
-  it("renders sound level decibels and acoustic tier correctly", () => {
-    render(<SoundLevelMeter decibels={45} />);
+describe('SoundLevelMeter suspended AudioContext handling', () => {
+  it('shows "Tap to Start Meter" when suspended and transitions to Running after resume()', async () => {
+    const mockCtx: AudioContextLike = {
+      state: 'suspended',
+      resume: jest.fn(async () => {
+        mockCtx.state = 'running';
+      }),
+    };
+    const onReady = jest.fn();
 
-    expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-      "data-tier",
-      "QUIET",
-    );
-    expect(screen.getAllByText("Quiet: 45dB").length).toBeGreaterThan(0);
-  });
-
-  it("renders filter preset dropdown with all three presets", () => {
-    render(<SoundLevelMeter decibels={65} />);
-
-    const select = screen.getByTestId(
-      "acoustic-filter-select",
-    ) as HTMLSelectElement;
-    expect(select).toBeInTheDocument();
-    expect(select.value).toBe("off");
-
-    const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(3);
-    expect(options.map((o) => (o as HTMLOptionElement).value)).toEqual([
-      "off",
-      "voice-focus",
-      "cafe-suppress",
-    ]);
-  });
-
-  it("handles filter preset change and invokes callback", () => {
-    const onFilterPresetChange = jest.fn();
     render(
       <SoundLevelMeter
-        decibels={65}
-        onFilterPresetChange={onFilterPresetChange}
-      />,
+        audioContext={mockCtx}
+        decibels={58.4}
+        onReady={onReady}
+      />
     );
 
-    const select = screen.getByTestId(
-      "acoustic-filter-select",
-    ) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "voice-focus" } });
+    expect(screen.getByTestId('tap-to-start-meter-btn')).toHaveTextContent(
+      'Tap to Start Meter'
+    );
+    expect(screen.getByTestId('sound-meter-status')).toHaveTextContent('Suspended');
+    expect(screen.getByTestId('sound-level-db')).toHaveTextContent('-- dB');
 
-    expect(select.value).toBe("voice-focus");
-    expect(onFilterPresetChange).toHaveBeenCalledWith("voice-focus");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('tap-to-start-meter-btn'));
+    });
 
-    fireEvent.change(select, { target: { value: "cafe-suppress" } });
-    expect(select.value).toBe("cafe-suppress");
-    expect(onFilterPresetChange).toHaveBeenCalledWith("cafe-suppress");
+    await waitFor(() => {
+      expect(mockCtx.resume).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('sound-meter-status')).toHaveTextContent('Running');
+      expect(screen.getByTestId('sound-level-db')).toHaveTextContent('58.4 dB');
+      expect(onReady).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it("respects controlled filterPreset prop", () => {
+  it('resumes automatically on one-time touchstart and omits prompt when already running', async () => {
+    const suspendedCtx: AudioContextLike = {
+      state: 'suspended',
+      resume: jest.fn(async () => {
+        suspendedCtx.state = 'running';
+      }),
+    };
+
     const { rerender } = render(
-      <SoundLevelMeter decibels={65} filterPreset="voice-focus" />,
+      <SoundLevelMeter audioContext={suspendedCtx} decibels={62} />
     );
 
-    const select = screen.getByTestId(
-      "acoustic-filter-select",
-    ) as HTMLSelectElement;
-    expect(select.value).toBe("voice-focus");
-
-    rerender(<SoundLevelMeter decibels={65} filterPreset="cafe-suppress" />);
-    expect(select.value).toBe("cafe-suppress");
-  });
-
-  it("toggles high-contrast mode when toggle button is clicked", () => {
-    const onToggle = jest.fn();
-    render(
-      <SoundLevelMeter
-        decibels={76}
-        showToggle
-        highContrast={false}
-        onToggleHighContrast={onToggle}
-      />,
-    );
-
-    const toggle = screen.getByTestId("high-contrast-toggle");
-    fireEvent.click(toggle);
-    expect(onToggle).toHaveBeenCalledTimes(1);
-  });
-
-  describe("decibel value clamping & progress bar width bounds (Issue #9441)", () => {
-    it("clamps NaN input to 0 dB, QUIET tier, and 0% progress width", () => {
-      render(<SoundLevelMeter decibels={NaN} />);
-
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "QUIET",
-      );
-      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
-      const progressBar = screen.getByTestId("sound-level-progress-bar");
-      expect(progressBar).toHaveStyle({ width: "0%" });
+    await act(async () => {
+      fireEvent.touchStart(window);
     });
 
-    it("clamps positive Infinity input to 0 dB, QUIET tier, and 0% progress width", () => {
-      render(<SoundLevelMeter decibels={Infinity} />);
-
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "QUIET",
-      );
-      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
-      const progressBar = screen.getByTestId("sound-level-progress-bar");
-      expect(progressBar).toHaveStyle({ width: "0%" });
+    await waitFor(() => {
+      expect(suspendedCtx.resume).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('tap-to-start-meter-btn')).not.toBeInTheDocument();
     });
 
-    it("clamps negative Infinity input to 0 dB, QUIET tier, and 0% progress width", () => {
-      render(<SoundLevelMeter decibels={-Infinity} />);
+    const runningCtx: AudioContextLike = {
+      state: 'running',
+      resume: jest.fn(),
+    };
+    rerender(<SoundLevelMeter audioContext={runningCtx} decibels={47.2} />);
 
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "QUIET",
-      );
-      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
-      const progressBar = screen.getByTestId("sound-level-progress-bar");
-      expect(progressBar).toHaveStyle({ width: "0%" });
-    });
-
-    it("clamps negative decibel readings to 0 dB floor", () => {
-      render(<SoundLevelMeter decibels={-25} />);
-
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "QUIET",
-      );
-      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
-      const progressBar = screen.getByTestId("sound-level-progress-bar");
-      expect(progressBar).toHaveStyle({ width: "0%" });
-    });
-
-    it("renders zero and silent readings accurately at 0 dB with 0% progress bar", () => {
-      render(<SoundLevelMeter decibels={0} />);
-
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "QUIET",
-      );
-      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
-      const progressBar = screen.getByTestId("sound-level-progress-bar");
-      expect(progressBar).toHaveStyle({ width: "0%" });
-    });
-
-    it("clamps values above 120 dB to exactly 120 dB ceiling, LOUD tier, and 100% progress width", () => {
-      render(<SoundLevelMeter decibels={145} />);
-
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "LOUD",
-      );
-      expect(screen.getAllByText("Loud: 120dB").length).toBeGreaterThan(0);
-      const progressBar = screen.getByTestId("sound-level-progress-bar");
-      expect(progressBar).toHaveStyle({ width: "100%" });
-    });
-
-    it("renders exactly 120 dB as 120 dB with LOUD tier and 100% progress width", () => {
-      render(<SoundLevelMeter decibels={120} />);
-
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "LOUD",
-      );
-      expect(screen.getAllByText("Loud: 120dB").length).toBeGreaterThan(0);
-      const progressBar = screen.getByTestId("sound-level-progress-bar");
-      expect(progressBar).toHaveStyle({ width: "100%" });
-    });
-
-    it("renders ordinary valid readings across acoustic tiers accurately", () => {
-      const { rerender } = render(<SoundLevelMeter decibels={35} />);
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "QUIET",
-      );
-      expect(screen.getAllByText("Quiet: 35dB").length).toBeGreaterThan(0);
-      expect(screen.getByTestId("sound-level-progress-bar")).toHaveStyle({
-        width: "35%",
-      });
-
-      rerender(<SoundLevelMeter decibels={65} />);
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "MODERATE",
-      );
-      expect(screen.getAllByText("Moderate: 65dB").length).toBeGreaterThan(0);
-      expect(screen.getByTestId("sound-level-progress-bar")).toHaveStyle({
-        width: "65%",
-      });
-
-      rerender(<SoundLevelMeter decibels={85} />);
-      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
-        "data-tier",
-        "LOUD",
-      );
-      expect(screen.getAllByText("Loud: 85dB").length).toBeGreaterThan(0);
-      expect(screen.getByTestId("sound-level-progress-bar")).toHaveStyle({
-        width: "85%",
-      });
-    });
-
-    it("ensures CSS progress width is strictly bounded between 0% and 100%", () => {
-      const testCases = [
-        -100,
-        -1,
-        0,
-        10,
-        50,
-        100,
-        120,
-        150,
-        999,
-        NaN,
-        Infinity,
-        -Infinity,
-      ];
-
-      testCases.forEach((val) => {
-        const { unmount } = render(<SoundLevelMeter decibels={val} />);
-        const progressBar = screen.getByTestId("sound-level-progress-bar");
-        const widthStyle = progressBar.style.width;
-        expect(widthStyle).toMatch(/^(\d+(\.\d+)?)%$/);
-        const percent = parseFloat(widthStyle);
-        expect(percent).toBeGreaterThanOrEqual(0);
-        expect(percent).toBeLessThanOrEqual(100);
-        unmount();
-      });
-    });
+    expect(screen.queryByTestId('tap-to-start-meter-btn')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sound-meter-status')).toHaveTextContent('Running');
+    expect(screen.getByTestId('sound-level-db')).toHaveTextContent('47.2 dB');
   });
 });

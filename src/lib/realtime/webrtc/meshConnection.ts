@@ -241,3 +241,105 @@ export class AdaptiveAudioBitrateController {
     return this.currentBitrateBps;
   }
 }
+
+/**
+ * DataChannel listener tracking registry to prevent memory leaks and duplicate listeners
+ * across peer reconnections, ICE renegotiations, and channel replacements.
+ */
+type ChannelListenerMap = Map<string, Set<EventListenerOrEventListenerObject>>;
+const channelListenerRegistry = new WeakMap<RTCDataChannel, ChannelListenerMap>();
+
+export function registerDataChannelListener(
+  channel: RTCDataChannel,
+  type: string,
+  listener: EventListenerOrEventListenerObject,
+  options?: boolean | AddEventListenerOptions
+): void {
+  if (!channel || typeof channel.addEventListener !== 'function') return;
+
+  let listenerMap = channelListenerRegistry.get(channel);
+  if (!listenerMap) {
+    listenerMap = new Map();
+    channelListenerRegistry.set(channel, listenerMap);
+  }
+
+  let listenersForType = listenerMap.get(type);
+  if (!listenersForType) {
+    listenersForType = new Set();
+    listenerMap.set(type, listenersForType);
+  }
+
+  // Idempotent registration: attach if not already tracked
+  if (!listenersForType.has(listener)) {
+    channel.addEventListener(type, listener, options);
+    listenersForType.add(listener);
+  }
+}
+
+export function unregisterDataChannelListener(
+  channel: RTCDataChannel,
+  type: string,
+  listener: EventListenerOrEventListenerObject,
+  options?: boolean | EventListenerOptions
+): void {
+  if (!channel || typeof channel.removeEventListener !== 'function') return;
+
+  const listenerMap = channelListenerRegistry.get(channel);
+  if (listenerMap) {
+    const listenersForType = listenerMap.get(type);
+    if (listenersForType && listenersForType.has(listener)) {
+      channel.removeEventListener(type, listener, options);
+      listenersForType.delete(listener);
+      if (listenersForType.size === 0) {
+        listenerMap.delete(type);
+      }
+    }
+  } else {
+    channel.removeEventListener(type, listener, options);
+  }
+}
+
+export function cleanupDataChannelListeners(channel: RTCDataChannel): void {
+  if (!channel) return;
+
+  const listenerMap = channelListenerRegistry.get(channel);
+  if (listenerMap && typeof channel.removeEventListener === 'function') {
+    for (const [type, listeners] of listenerMap.entries()) {
+      for (const listener of listeners) {
+        try {
+          channel.removeEventListener(type, listener);
+        } catch {
+          // Ignore removal errors on closed or mock channels
+        }
+      }
+    }
+    listenerMap.clear();
+    channelListenerRegistry.delete(channel);
+  }
+
+  // Clear property event handlers as well to prevent memory leaks from inline handlers
+  try {
+    channel.onmessage = null;
+    channel.onerror = null;
+    channel.onclose = null;
+    channel.onopen = null;
+  } catch {
+    // Ignore property assignment errors on strict mocks
+  }
+}
+
+export function getDataChannelListenerCount(
+  channel: RTCDataChannel,
+  type?: string
+): number {
+  const listenerMap = channelListenerRegistry.get(channel);
+  if (!listenerMap) return 0;
+  if (type) {
+    return listenerMap.get(type)?.size ?? 0;
+  }
+  let total = 0;
+  for (const listeners of listenerMap.values()) {
+    total += listeners.size;
+  }
+  return total;
+}

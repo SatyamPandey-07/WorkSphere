@@ -38,7 +38,7 @@
     "@simplewebauthn/server": "^13.3.2",
     "@solana/web3.js": "^1.99.0",
     "@upstash/ratelimit": "^2.2.0",
-    "@upstash/redis": "^1.39.0",
+    "@upstash/redis": "^1.41.0",
     "@xmldom/xmldom": "^0.9.12",
     "3d-force-graph": "^1.80.2",
     "canvas-confetti": "^1.9.4",

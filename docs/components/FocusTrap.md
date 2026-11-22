@@ -1,6 +1,6 @@
 # FocusTrap Component Documentation
 
-The `FocusTrap` component ([`src/components/ui/FocusTrap.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ui/FocusTrap.tsx)) and accompanying `useFocusTrap` hook ([`src/hooks/useFocusTrap.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useFocusTrap.ts)) provide comprehensive keyboard focus containment and accessible dialog semantics adhering to the **WAI-ARIA Authoring Practices Guide (APG) for Modal Dialogs**.
+The `FocusTrap` component ([`src/components/ui/FocusTrap.tsx`](../../src/components/ui/FocusTrap.tsx)) and accompanying `useFocusTrap` hook ([`src/hooks/useFocusTrap.ts`](../../src/hooks/useFocusTrap.ts)) provide comprehensive keyboard focus containment and accessible dialog semantics adhering to the **WAI-ARIA Authoring Practices Guide (APG) for Modal Dialogs**.
 
 ---
 

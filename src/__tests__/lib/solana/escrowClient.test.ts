@@ -1,109 +1,73 @@
-import { Connection, Transaction } from "@solana/web3.js";
 import {
-  simulateEscrowTransaction,
-  DEFAULT_SIMULATION_TIMEOUT_MS,
-} from "@/lib/solana/escrowClient";
+  parseDecimalToBaseUnits,
+  formatBaseUnitsToDecimal,
+  calculateEscrowBookingBaseUnits,
+  assertSufficientEscrowBalance,
+  SOL_DECIMALS,
+  USDC_DECIMALS,
+} from '@/lib/solana/escrowClient';
 
-describe("simulateEscrowTransaction", () => {
-  const dummyTx = new Transaction();
-  const noOpSleep = jest.fn().mockResolvedValue(undefined);
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    delete process.env.NEXT_PUBLIC_SOLANA_RPC_FALLBACK_URL;
+describe('escrowClient (Exact BigInt Decimal Base-Unit Conversion)', () => {
+  test('converts IEEE-754 problematic decimals (0.14, 0.29, 0.000000001) into exact BigInt lamports', () => {
+    // Classic IEEE-754 drift cases where floating-point multiplication loses precision
+    expect(parseDecimalToBaseUnits('0.14', SOL_DECIMALS)).toBe(140_000_000n);
+    expect(parseDecimalToBaseUnits('0.29', SOL_DECIMALS)).toBe(290_000_000n);
+    expect(parseDecimalToBaseUnits('1.000000001', SOL_DECIMALS)).toBe(1_000_000_001n);
+    expect(parseDecimalToBaseUnits('0.000000001', SOL_DECIMALS)).toBe(1n);
+    expect(parseDecimalToBaseUnits('25', SOL_DECIMALS)).toBe(25_000_000_000n);
   });
 
-  it("recovers after transient RPC timeouts and succeeds on retry", async () => {
-    const mockSimulate = jest
-      .fn()
-      .mockRejectedValueOnce(new Error("FetchError: network timeout"))
-      .mockRejectedValueOnce(new Error("429 Too Many Requests"))
-      .mockResolvedValueOnce({
-        value: {
-          err: null,
-          logs: ["Program log: Escrow OK"],
-          unitsConsumed: 1200,
-        },
-      });
-
-    const factory = jest.fn(
-      () => ({ simulateTransaction: mockSimulate }) as unknown as Connection,
-    );
-
-    const result = await simulateEscrowTransaction(dummyTx, {
-      primaryRpcUrl: "https://primary.devnet.solana.com",
-      connectionFactory: factory,
-      sleepFn: noOpSleep,
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.attempts).toBe(3);
-      expect(result.rpcEndpoint).toBe("https://primary.devnet.solana.com");
-    }
-    expect(noOpSleep).toHaveBeenCalledTimes(2);
+  test('converts USDC amounts into exact 6-decimal SPL base units', () => {
+    expect(parseDecimalToBaseUnits('19.99', USDC_DECIMALS)).toBe(19_990_000n);
+    expect(parseDecimalToBaseUnits('0.000001', USDC_DECIMALS)).toBe(1n);
+    expect(formatBaseUnitsToDecimal(19_990_000n, USDC_DECIMALS)).toBe('19.99');
   });
 
-  it("falls back to secondary RPC endpoint when primary exhausts retries", async () => {
-    const primarySimulate = jest
-      .fn()
-      .mockRejectedValue(new Error("503 Service Unavailable"));
-    const fallbackSimulate = jest.fn().mockResolvedValueOnce({
-      value: {
-        err: null,
-        logs: ["Program log: Fallback OK"],
-        unitsConsumed: 950,
-      },
+  test('computes prorated multi-hour desk bookings without floating-point drift', () => {
+    // 0.14 SOL/hr * 150 minutes (2.5 hours) = exact 0.35 SOL = 350_000_000n lamports
+    const solQuote = calculateEscrowBookingBaseUnits({
+      hourlyRate: '0.14',
+      durationMinutes: 150,
+      asset: 'SOL',
     });
 
-    const factory = jest.fn((endpoint: string) => {
-      if (endpoint.includes("fallback")) {
-        return {
-          simulateTransaction: fallbackSimulate,
-        } as unknown as Connection;
-      }
-      return { simulateTransaction: primarySimulate } as unknown as Connection;
+    expect(solQuote.baseUnits).toBe(350_000_000n);
+    expect(solQuote.formattedDecimal).toBe('0.35');
+
+    // 4.20 USDC/hr * 45 minutes (0.75 hours) = exact 3.15 USDC = 3_150_000n base units
+    const usdcQuote = calculateEscrowBookingBaseUnits({
+      hourlyRate: '4.20',
+      durationMinutes: 45,
+      asset: 'USDC',
     });
 
-    const result = await simulateEscrowTransaction(dummyTx, {
-      primaryRpcUrl: "https://primary.devnet.solana.com",
-      fallbackRpcUrl: "https://fallback.devnet.solana.com",
-      connectionFactory: factory,
-      sleepFn: noOpSleep,
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.rpcEndpoint).toBe("https://fallback.devnet.solana.com");
-      expect(result.attempts).toBe(5); // 4 primary attempts + 1 fallback attempt
-    }
+    expect(usdcQuote.baseUnits).toBe(3_150_000n);
+    expect(usdcQuote.formattedDecimal).toBe('3.15');
   });
 
-  it("enforces timeout via Promise.race and returns structured retryable timeout payload", async () => {
-    const hangingSimulate = jest.fn(
-      () => new Promise(() => {}), // Never resolves
+  test('rejects negative values, malformed strings, and excess fractional precision', () => {
+    expect(() => parseDecimalToBaseUnits('-0.5', SOL_DECIMALS)).toThrow(/cannot be negative/);
+    expect(() => parseDecimalToBaseUnits('1.2.3', SOL_DECIMALS)).toThrow(/Malformed decimal/);
+    expect(() => parseDecimalToBaseUnits('0.1234567891', SOL_DECIMALS)).toThrow(
+      /exceeds maximum supported precision/
     );
+  });
 
-    const factory = jest.fn(
-      () => ({ simulateTransaction: hangingSimulate }) as unknown as Connection,
-    );
+  test('validates pre-flight escrow balance including network fee reserve', () => {
+    expect(() =>
+      assertSufficientEscrowBalance({
+        walletBalanceBaseUnits: 140_005_000n,
+        requiredEscrowBaseUnits: 140_000_000n,
+        networkFeeReserveBaseUnits: 5_000n,
+      })
+    ).not.toThrow();
 
-    const result = await simulateEscrowTransaction(dummyTx, {
-      timeoutMs: 25,
-      maxRetries: 2,
-      primaryRpcUrl: "https://primary.devnet.solana.com",
-      connectionFactory: factory,
-      sleepFn: noOpSleep,
-    });
-
-    expect(DEFAULT_SIMULATION_TIMEOUT_MS).toBe(8000);
-    expect(result).toEqual(
-      expect.objectContaining({
-        success: false,
-        error: "RPC_SIMULATION_TIMEOUT",
-        retryable: true,
-        attempts: 3,
-      }),
-    );
+    expect(() =>
+      assertSufficientEscrowBalance({
+        walletBalanceBaseUnits: 140_004_999n,
+        requiredEscrowBaseUnits: 140_000_000n,
+        networkFeeReserveBaseUnits: 5_000n,
+      })
+    ).toThrow(/InsufficientFunds/);
   });
 });

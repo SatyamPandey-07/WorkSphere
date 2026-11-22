@@ -8,7 +8,7 @@ export type {
 } from "./BookmarkVenueButton";
 export { RecentlyViewedVenues } from "./RecentlyViewedVenues";
 export { RecentlyViewedTracker } from "./RecentlyViewedTracker";
-export { SearchBar } from "./SearchBar";
+export { SearchBar, trimSearchQuery, isValidSearchQuery } from "./SearchBar";
 export { VenueSearchDrawer } from "./VenueSearchDrawer";
 export { VenueSearchEmptyState } from "./VenueSearchEmptyState";
 export { VenueSeatWaitlistModal } from "./VenueSeatWaitlistModal";

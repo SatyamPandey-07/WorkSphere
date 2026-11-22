@@ -18,7 +18,9 @@ describe("AudioContext tab visibility change handling", () => {
   });
 
   describe("ErgonomicChimeSynthesizer", () => {
-    function createMockAudioContext(initialState: "running" | "suspended" = "suspended") {
+    function createMockAudioContext(
+      initialState: "running" | "suspended" = "suspended",
+    ) {
       let state = initialState;
       const context = {
         get state() {
@@ -28,6 +30,9 @@ describe("AudioContext tab visibility change handling", () => {
         destination: {},
         resume: jest.fn(async () => {
           state = "running";
+        }),
+        suspend: jest.fn(async () => {
+          state = "suspended";
         }),
         close: jest.fn(async () => {
           state = "closed";
@@ -65,8 +70,14 @@ describe("AudioContext tab visibility change handling", () => {
         expect.any(Function),
       );
 
-      // Trigger context creation by preparing or playing
+      // Trigger context creation by preparing or playing. prepare() resumes
+      // the suspended context itself, so suspend it again (as the browser does
+      // for a background tab) before testing the visibility handler.
       await synth.prepare();
+      await (
+        mockContext as unknown as { suspend: () => Promise<void> }
+      ).suspend();
+      (mockContext.resume as jest.Mock).mockClear();
 
       // Find the listener
       const listenerCall = addEventListenerSpy.mock.calls.find(
@@ -113,5 +124,112 @@ describe("AudioContext tab visibility change handling", () => {
         expect.any(Function),
       );
     });
+  });
+  it("queues a caution until a suspended AudioContext resumes after a user gesture", async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+      window,
+      "AudioContext",
+    );
+
+    let state: AudioContextState = "suspended";
+
+    const createAudioParam = () => ({
+      setValueAtTime: jest.fn(),
+      exponentialRampToValueAtTime: jest.fn(),
+      cancelScheduledValues: jest.fn(),
+    });
+
+    const oscillatorStart = jest.fn();
+    const resume = jest.fn(async () => {
+      state = "running";
+    });
+    const close = jest.fn(async () => {
+      state = "closed";
+    });
+
+    const mockContext = {
+      get state() {
+        return state;
+      },
+      currentTime: 0,
+      destination: {},
+      resume,
+      close,
+      createDynamicsCompressor: jest.fn(() => ({
+        threshold: createAudioParam(),
+        knee: createAudioParam(),
+        ratio: createAudioParam(),
+        attack: createAudioParam(),
+        release: createAudioParam(),
+        connect: jest.fn(),
+      })),
+      createGain: jest.fn(() => ({
+        gain: createAudioParam(),
+        connect: jest.fn(),
+        disconnect: jest.fn(),
+      })),
+      createBiquadFilter: jest.fn(() => ({
+        type: "lowpass",
+        frequency: createAudioParam(),
+        Q: createAudioParam(),
+        connect: jest.fn(),
+      })),
+      createOscillator: jest.fn(() => ({
+        type: "square",
+        frequency: createAudioParam(),
+        connect: jest.fn(),
+        start: oscillatorStart,
+        stop: jest.fn(),
+        disconnect: jest.fn(),
+      })),
+    } as unknown as AudioContext;
+
+    let unmount: (() => void) | undefined;
+
+    try {
+      Object.defineProperty(window, "AudioContext", {
+        configurable: true,
+        writable: true,
+        value: jest.fn(() => mockContext),
+      });
+
+      const rendered = renderHook(() => useAvionicsAudio());
+      unmount = rendered.unmount;
+
+      // Playback is queued while the context is suspended.
+      act(() => {
+        expect(rendered.result.current.playMasterCaution()).toBe(false);
+      });
+
+      expect(resume).not.toHaveBeenCalled();
+      expect(oscillatorStart).not.toHaveBeenCalled();
+
+      // A user gesture resumes the context and triggers queued playback.
+      await act(async () => {
+        window.dispatchEvent(new Event("pointerdown"));
+        await Promise.resolve();
+      });
+
+      expect(resume).toHaveBeenCalledTimes(1);
+      expect(rendered.result.current.isAudioUnlocked).toBe(true);
+      expect(oscillatorStart).toHaveBeenCalledTimes(4);
+
+      // Further gestures must not replay the consumed request.
+      await act(async () => {
+        window.dispatchEvent(new Event("pointerdown"));
+        await Promise.resolve();
+      });
+
+      expect(oscillatorStart).toHaveBeenCalledTimes(4);
+    } finally {
+      unmount?.();
+      await close();
+
+      if (originalDescriptor) {
+        Object.defineProperty(window, "AudioContext", originalDescriptor);
+      } else {
+        Reflect.deleteProperty(window, "AudioContext");
+      }
+    }
   });
 });

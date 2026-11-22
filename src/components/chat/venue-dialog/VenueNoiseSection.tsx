@@ -11,6 +11,7 @@ import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
 import type { HourlyForecast } from "@/components/noise/NoiseTimelineChart";
 import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
 import { HourlyCrowdForecast } from "@/components/venues/HourlyCrowdForecast";
+import { NoiseSpectrogram } from "@/components/audio/NoiseSpectrogram";
 
 const VenueNoiseChart = dynamic(
   () =>
@@ -211,6 +212,11 @@ export function VenueNoiseSection({
           venueName={safeVenue.name || "Workspace"}
           noiseLevel={safeVenue.noiseLevel}
         />
+      </div>
+
+      {/* Live three-band frequency breakdown */}
+      <div className="mb-6" data-testid="noise-spectrogram-container">
+        <NoiseSpectrogram />
       </div>
 
       {/* Noise Reporting Widget */}

@@ -89,6 +89,70 @@ jobs:
       - name: Build Next.js application
         run: npm run build
 
+  postgres-migration-and-integration:
+    name: PostgreSQL Migration & Database Integration Checks
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16-bookworm
+        env:
+          POSTGRES_USER: worksphere_ci
+          POSTGRES_PASSWORD: worksphere_ci_password
+          POSTGRES_DB: worksphere_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U worksphere_ci -d worksphere_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://worksphere_ci:worksphere_ci_password@localhost:5432/worksphere_ci_test?schema=public
+      INTEGRATION_DATABASE_URL: postgresql://worksphere_ci:worksphere_ci_password@localhost:5432/worksphere_ci_test?schema=public
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install PostGIS and required extensions in PostgreSQL container
+        shell: bash
+        run: |
+          # Keep extension modules ABI-compatible with the server image. This mirrors
+          # .github/test-postgres/Dockerfile: install PostGIS and contrib only;
+          # do not replace the image's PostgreSQL server/client packages.
+          docker exec -u root ${{ job.services.postgres.id }} bash -c "apt-get update && apt-get install -y --no-install-recommends postgresql-16-postgis-3 postgresql-16-postgis-3-scripts postgresql-contrib-16 && rm -rf /var/lib/apt/lists/*"
+
+      - name: Pre-enable required PostgreSQL extensions
+        shell: bash
+        env:
+          PGPASSWORD: worksphere_ci_password
+        run: |
+          docker exec -e PGPASSWORD ${{ job.services.postgres.id }} psql -U worksphere_ci -d worksphere_ci_test -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector;" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" -c "CREATE EXTENSION IF NOT EXISTS postgis;" -c "CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"
+          COUNT=$(docker exec -e PGPASSWORD ${{ job.services.postgres.id }} psql -U worksphere_ci -d worksphere_ci_test -Atc "SELECT count(*) FROM pg_extension WHERE extname IN ('vector', 'pg_trgm', 'postgis', 'fuzzystrmatch');")
+          echo "Installed extensions count: $COUNT"
+          test "$COUNT" = "4"
+
+      - name: Apply Prisma migrations
+        run: npx prisma migrate deploy
+
+      - name: Check Prisma migration status
+        run: npx prisma migrate status
+
+      - name: Run real PostgreSQL integration tests
+        run: npm run test:integration
+
   e2e-test:
     name: Run Playwright E2E Tests
     runs-on: ubuntu-latest

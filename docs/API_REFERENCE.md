@@ -211,12 +211,17 @@ Accept: application/json
 
 # Social
 
-| Endpoint                                | Description                         |
-| --------------------------------------- | ----------------------------------- |
-| `GET /api/social/status`                | Retrieve social status information. |
-| `GET /api/social/sessions`              | Retrieve social sessions.           |
-| `GET /api/social/sessions/{slug}`       | Retrieve a social session.          |
-| `POST /api/social/sessions/{slug}/rsvp` | RSVP for a social session.          |
+| Endpoint                                            | Description                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/social/status`                            | Retrieve social status information.                                                                                                                                                                                                                                                                                  |
+| `POST /api/social/sessions`                         | Create a new coworking session and automatically confirm the host's RSVP. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                                                                                                           |
+| `GET /api/social/sessions`                          | Retrieve all coworking sessions ordered by start time, including venue details, host profile, RSVP records, and total RSVP count. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                                                   |
+| `GET /api/social/sessions/{slug}`                   | Retrieve details for a single coworking session by slug, including venue, host, and RSVP attendee list. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                                                                             |
+| `POST /api/social/sessions/{slug}/rsvp`             | Submit or update an RSVP (`GOING`, `MAYBE`, `DECLINED`, `CANCELLED`; `CANCELLED` is normalized to `DECLINED`), with capacity checks, serializable concurrency control, and inline calendar payload. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details. |
+| `DELETE /api/social/sessions/{slug}/rsvp`           | Cancel and delete an existing RSVP record, triggering FIFO waitlist promotion for eligible `MAYBE` attendees only if the deleted RSVP previously had status `GOING`. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                |
+| `GET /api/social/sessions/{slug}/rsvp?download=ics` | Export an RFC 5545 iCalendar (`.ics`) file for a coworking session. Requires `?download=ics`. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                                                                                       |
+
+For detailed request and response contracts, concurrency guarantees, waitlist mechanics, and calendar generation specifications, see the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md).
 
 ---
 

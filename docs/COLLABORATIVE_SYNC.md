@@ -48,8 +48,9 @@ WorkSphere enables distributed teams to collaborate seamlessly on shared workspa
 1. **Zero-Lock Concurrency**: Multiple users can modify the exact same document, canvas, or seating layout concurrently without acquiring server-side locks or encountering edit collisions.
 2. **Local-First & Optimistic UI**: All user interactions mutate local CRDT structures immediately in memory ($0\text{ ms}$ user-perceived UI delay). Updates are streamed asynchronously across WebSockets.
 3. **Automatic Convergence**: Mathematical convergence guarantees that all clients receiving the same set of updates—regardless of network latency, packet reordering, or connection dropouts—resolve to identical state.
-4. **State-Based Ephemeral Awareness**: Presence data (cursor positions, selected seats, active typing indicators) is transmitted over lightweight binary frames and decays automatically upon disconnection.
-5. **Multi-Region Edge Routing**: PartyKit routes connections to the geographically closest edge server, minimizing WebSocket round-trip times (RTT) for international collaborators.
+4. **Causal Ordering & Deterministic Tie-Breaking**: When concurrent mutations conflict, causal precedence is evaluated using Vector Clocks and Hybrid Logical Clocks (HLC). For a detailed mathematical specification, see [Causal Ordering & Tie-Breaking](architecture/CAUSAL_ORDERING_AND_TIEBREAKING.md).
+5. **State-Based Ephemeral Awareness**: Presence data (cursor positions, selected seats, active typing indicators) is transmitted over lightweight binary frames and decays automatically upon disconnection.
+6. **Multi-Region Edge Routing**: PartyKit routes connections to the geographically closest edge server, minimizing WebSocket round-trip times (RTT) for international collaborators.
 
 ---
 

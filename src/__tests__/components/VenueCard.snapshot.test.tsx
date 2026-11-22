@@ -1,5 +1,5 @@
 import React from "react";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { VenueCard } from "@/components/VenueCard";
 import { MapMarker } from "@/types/map";
 
@@ -47,7 +47,7 @@ describe("VenueCard Visual Snapshot Tests", () => {
       <VenueCard
         venue={baseVenue}
         liveData={{ musicGenre: "lofi", count: 12, status: "Active" }}
-      />
+      />,
     );
     expect(container.firstChild).toMatchSnapshot();
   });
@@ -58,17 +58,14 @@ describe("VenueCard Visual Snapshot Tests", () => {
         venue={baseVenue}
         isSelected={true}
         onToggleCompare={jest.fn()}
-      />
+      />,
     );
     expect(container.firstChild).toMatchSnapshot();
   });
 
   it("matches snapshot for venue card with highlighted search query", () => {
     const { container } = render(
-      <VenueCard
-        venue={baseVenue}
-        searchQuery="Artisan"
-      />
+      <VenueCard venue={baseVenue} searchQuery="Artisan" />,
     );
     expect(container.firstChild).toMatchSnapshot();
   });
@@ -85,5 +82,24 @@ describe("VenueCard Visual Snapshot Tests", () => {
     };
     const { container } = render(<VenueCard venue={libraryVenue} />);
     expect(container.firstChild).toMatchSnapshot();
+  });
+
+  it("keeps the existing noise label on the spectrum-enabled venue badge", () => {
+    render(
+      <VenueCard
+        venue={{
+          ...baseVenue,
+          noiseLevel: "quiet",
+        }}
+      />,
+    );
+
+    const badges = screen.getAllByRole("img", {
+      name: "Ambient noise level: quiet",
+    });
+    expect(badges.length).toBeGreaterThan(0);
+    expect(badges[0]).toHaveTextContent("quiet");
+    expect(badges[0]).toHaveAttribute("tabindex", "0");
+    expect(badges[0]).not.toHaveAttribute("aria-describedby");
   });
 });

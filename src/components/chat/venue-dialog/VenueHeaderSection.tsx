@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useId, useState } from "react";
 import {
   AlertTriangle,
   Bookmark,
@@ -29,6 +29,7 @@ import type { VoteMetricState } from "./useVenueAmenityVotes";
 export interface VenueHeaderSectionProps {
   venue: Venue;
   currentScore?: number | null;
+  airQuality?: AirQualityReading | null;
   displayPhoto?: string;
   photoLoading?: boolean;
   setImageError?: (error: boolean) => void;
@@ -41,28 +42,162 @@ export interface VenueHeaderSectionProps {
   isLibrary?: boolean;
   quickSaveLoading?: boolean;
   onQuickSave: () => void;
-  selectedVenueLang?: string;
-  onSelectVenueLang?: (lang: string) => void;
-  isTranslatingDesc?: boolean;
-  descTranslationError?: string | null;
-  translatedDescription?: string;
-  onGetDirections?: (venue: Venue) => void;
-  onToggleFavorite?: (venue: Venue) => void;
-  isFavorited?: boolean;
   enableTransition?: boolean;
-  onRate?: (venue: Venue) => void;
-  showFlagMenu?: boolean;
-  setShowFlagMenu?: React.Dispatch<React.SetStateAction<boolean>>;
-  flagSubmitting?: boolean;
-  flagSubmitted?: boolean;
-  onSubmitFlag?: (reason: string) => void;
-  copied?: boolean;
-  onShare?: () => void;
+}
+
+export interface AirQualityReading {
+  co2: number;
+  pm25: number;
+  tvoc: number;
+  timestamp: string;
+}
+
+interface AirQualityScore {
+  overall: number;
+  co2: number;
+  pm25: number;
+  tvoc: number;
+  label: "Good" | "Moderate" | "Action Required";
+  colorClass: string;
+}
+
+function calculatePm25Index(value: number): number {
+  const breakpoints = [
+    { cLow: 0, cHigh: 12, iLow: 0, iHigh: 50 },
+    { cLow: 12.1, cHigh: 35.4, iLow: 51, iHigh: 100 },
+    { cLow: 35.5, cHigh: 55.4, iLow: 101, iHigh: 150 },
+    { cLow: 55.5, cHigh: 150.4, iLow: 151, iHigh: 200 },
+    { cLow: 150.5, cHigh: 250.4, iLow: 201, iHigh: 300 },
+    { cLow: 250.5, cHigh: 500.4, iLow: 301, iHigh: 500 },
+  ];
+  const concentration = Math.floor(value * 10) / 10;
+
+  for (const breakpoint of breakpoints) {
+    if (concentration >= breakpoint.cLow && concentration <= breakpoint.cHigh) {
+      return Math.round(
+        ((breakpoint.iHigh - breakpoint.iLow) /
+          (breakpoint.cHigh - breakpoint.cLow)) *
+          (concentration - breakpoint.cLow) +
+          breakpoint.iLow,
+      );
+    }
+  }
+
+  return concentration > 500.4 ? 500 : 0;
+}
+
+function calculateCo2Index(value: number): number {
+  if (value < 800) return Math.round((value / 800) * 50);
+  if (value < 1000) return Math.round(50 + ((value - 800) / 200) * 50);
+  if (value < 1400) return Math.round(100 + ((value - 1000) / 400) * 50);
+  return Math.round(150 + Math.min(150, ((value - 1400) / 600) * 150));
+}
+
+function calculateTvocIndex(value: number): number {
+  if (value <= 220) return Math.round((value / 220) * 50);
+  if (value <= 660) return Math.round(50 + ((value - 220) / 440) * 50);
+  if (value <= 1660) return Math.round(100 + ((value - 660) / 1000) * 50);
+  return Math.round(150 + Math.min(150, ((value - 1660) / 1000) * 150));
+}
+
+export function calculateIndoorAirQualityScore(
+  reading: AirQualityReading,
+): AirQualityScore {
+  const co2 = calculateCo2Index(reading.co2);
+  const pm25 = calculatePm25Index(reading.pm25);
+  const tvoc = calculateTvocIndex(reading.tvoc);
+  const overall = Math.max(co2, pm25, tvoc);
+
+  return {
+    overall,
+    co2,
+    pm25,
+    tvoc,
+    label:
+      overall <= 50 ? "Good" : overall <= 100 ? "Moderate" : "Action Required",
+    colorClass:
+      overall <= 50
+        ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-100"
+        : overall <= 100
+          ? "border-yellow-400/50 bg-yellow-500/20 text-yellow-100"
+          : overall <= 150
+            ? "border-orange-400/50 bg-orange-500/20 text-orange-100"
+            : "border-rose-400/50 bg-rose-500/20 text-rose-100",
+  };
+}
+
+/**
+ * Formats GPS coordinates as "DD.DDDD° N/S, DD.DDDD° E/W".
+ * - Exactly 4 decimal places.
+ * - Negative latitude is South ('S'), positive or zero is North ('N').
+ * - Negative longitude is West ('W'), positive or zero is East ('E').
+ * - Absolute numeric values to avoid negative-zero formatting.
+ */
+export function formatGpsCoordinates(lat: number, lng: number): string {
+  const normalizedLat = lat === 0 ? 0 : lat;
+  const normalizedLng = lng === 0 ? 0 : lng;
+  const latDirection = normalizedLat >= 0 ? "N" : "S";
+  const lngDirection = normalizedLng >= 0 ? "E" : "W";
+  const formattedLat = Math.abs(normalizedLat).toFixed(4);
+  const formattedLng = Math.abs(normalizedLng).toFixed(4);
+  return `${formattedLat}° ${latDirection}, ${formattedLng}° ${lngDirection}`;
+}
+
+function AirQualityBadge({ reading }: { reading: AirQualityReading }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipId = useId();
+  const score = calculateIndoorAirQualityScore(reading);
+
+  return (
+    <div
+      className="relative pointer-events-auto"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      <button
+        type="button"
+        data-testid="air-quality-badge"
+        aria-describedby={showTooltip ? tooltipId : undefined}
+        aria-label={`Indoor air quality index ${score.overall}, ${score.label}`}
+        onClick={() => setShowTooltip((visible) => !visible)}
+        onFocus={() => setShowTooltip(true)}
+        onBlur={() => setShowTooltip(false)}
+        className={`rounded border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-lg backdrop-blur-md ${score.colorClass}`}
+      >
+        AQI {score.overall} · {score.label}
+      </button>
+      {showTooltip && (
+        <div
+          id={tooltipId}
+          role="tooltip"
+          data-testid="air-quality-tooltip"
+          className="absolute bottom-full left-0 z-20 mb-2 w-64 max-w-[calc(100vw-3rem)] rounded-lg border border-zinc-700 bg-zinc-950/95 p-3 text-xs text-zinc-100 shadow-xl"
+        >
+          <div className="font-semibold">Pollutant sub-indices</div>
+          <ul className="mt-2 space-y-1 text-zinc-300">
+            <li>
+              CO₂: {score.co2} ({reading.co2} ppm)
+            </li>
+            <li>
+              PM2.5: {score.pm25} ({reading.pm25} µg/m³)
+            </li>
+            <li>
+              TVOC: {score.tvoc} ({reading.tvoc} ppb)
+            </li>
+          </ul>
+          <p className="mt-2 break-all border-t border-zinc-800 pt-2 text-zinc-400">
+            Sensor timestamp: {reading.timestamp}
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function VenueHeaderSection({
   venue,
   currentScore,
+  airQuality = null,
   displayPhoto,
   photoLoading = false,
   setImageError,
@@ -75,23 +210,7 @@ export function VenueHeaderSection({
   isLibrary = false,
   quickSaveLoading = false,
   onQuickSave,
-  selectedVenueLang = "EN",
-  onSelectVenueLang,
-  isTranslatingDesc = false,
-  descTranslationError = null,
-  translatedDescription = "",
-  onGetDirections,
-  onToggleFavorite,
-  isFavorited = false,
   enableTransition = false,
-  onRate,
-  showFlagMenu = false,
-  setShowFlagMenu,
-  flagSubmitting = false,
-  flagSubmitted = false,
-  onSubmitFlag,
-  copied = false,
-  onShare,
 }: VenueHeaderSectionProps) {
   const { t } = useTranslation();
 
@@ -106,13 +225,23 @@ export function VenueHeaderSection({
 
   const safeVoteMetrics = voteMetrics ?? {};
   const wifiLowConfidence = Boolean(safeVoteMetrics.wifi?.hidden);
-  const outletsLowConfidence = Boolean(venue?.hasOutlets && safeVoteMetrics.outlets?.hidden);
-  const silentRoomLowConfidence = Boolean(isLibrary && safeVoteMetrics.silentRoom?.hidden);
-  const studyTableLowConfidence = Boolean(isLibrary && safeVoteMetrics.studyTable?.hidden);
-  const scannerLowConfidence = Boolean(isLibrary && safeVoteMetrics.scanner?.hidden);
+  const outletsLowConfidence = Boolean(
+    venue?.hasOutlets && safeVoteMetrics.outlets?.hidden,
+  );
+  const silentRoomLowConfidence = Boolean(
+    isLibrary && safeVoteMetrics.silentRoom?.hidden,
+  );
+  const studyTableLowConfidence = Boolean(
+    isLibrary && safeVoteMetrics.studyTable?.hidden,
+  );
+  const scannerLowConfidence = Boolean(
+    isLibrary && safeVoteMetrics.scanner?.hidden,
+  );
 
   const transitionName =
-    enableTransition && venue?.id ? getVenueCoverTransitionName(venue.id) : undefined;
+    enableTransition && venue?.id
+      ? getVenueCoverTransitionName(venue.id)
+      : undefined;
 
   const rawReviewsLabel = t ? t("venue.reviews") : "Reviews";
   const reviewsLabel =
@@ -142,7 +271,8 @@ export function VenueHeaderSection({
         >
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
           <span>
-            ⚠️ Community Warning: Users report Power Outlets might be unavailable.
+            ⚠️ Community Warning: Users report Power Outlets might be
+            unavailable.
           </span>
         </div>
       )}
@@ -197,7 +327,11 @@ export function VenueHeaderSection({
             src={displayPhoto}
             alt={"Photo of " + venueName}
             className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all duration-500"
-            style={transitionName ? { viewTransitionName: transitionName } : undefined}
+            style={
+              transitionName
+                ? { viewTransitionName: transitionName }
+                : undefined
+            }
             onClick={() => onOpenLightbox?.(0)}
             onError={() => setImageError?.(true)}
           />
@@ -232,7 +366,7 @@ export function VenueHeaderSection({
         </div>
 
         <div className="absolute bottom-6 left-6 right-6 pointer-events-none">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
             <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black accent-bg-80 backdrop-blur-md accent-border-50 text-white px-2.5 py-1 rounded shadow-lg pointer-events-auto">
               <CategoryIcon className="w-3.5 h-3.5" />
               {venue?.category?.replace("_", " ") || "Workspace"}
@@ -240,6 +374,16 @@ export function VenueHeaderSection({
             {currentScore != null && (
               <span className="text-[10px] tracking-widest uppercase font-black bg-white/20 backdrop-blur-md text-white border border-white/30 px-2.5 py-1 rounded shadow-lg pointer-events-auto">
                 VIBE SCORE: {Math.round(currentScore * 10)}%
+              </span>
+            )}
+            {airQuality ? (
+              <AirQualityBadge reading={airQuality} />
+            ) : (
+              <span
+                data-testid="air-quality-calibrating"
+                className="rounded border border-zinc-300/30 bg-zinc-900/70 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-zinc-200 shadow-lg backdrop-blur-md pointer-events-auto"
+              >
+                Sensors Calibrating
               </span>
             )}
           </div>
@@ -268,14 +412,16 @@ export function VenueHeaderSection({
                 className="!py-0.5 !px-2 text-xs shrink-0 pointer-events-auto ml-1"
               />
             )}
-            {typeof venue?.lat === "number" && typeof venue?.lng === "number" && (
-              <CopyToClipboardButton
-                textToCopy={`${venue.lat}, ${venue.lng}`}
-                label="Copy Coordinates"
-                toastMessage="Coordinates copied to clipboard"
-                className="!py-0.5 !px-2 text-xs shrink-0 pointer-events-auto"
-              />
-            )}
+            {typeof venue?.lat === "number" &&
+              typeof venue?.lng === "number" && (
+                <CopyToClipboardButton
+                  textToCopy={formatGpsCoordinates(venue.lat, venue.lng)}
+                  label="Copy Coordinates"
+                  ariaLabel={`Copy GPS coordinates for ${venueName}`}
+                  toastMessage="Coordinates copied to clipboard"
+                  className="!py-0.5 !px-2 text-xs shrink-0 pointer-events-auto"
+                />
+              )}
           </div>
         </div>
       </div>
@@ -340,7 +486,9 @@ export function VenueDescriptionAndHostCard({
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-zinc-700">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-indigo-400" />
-            <h3 className="font-semibold text-lg text-white">Venue Description</h3>
+            <h3 className="font-semibold text-lg text-white">
+              Venue Description
+            </h3>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -382,7 +530,10 @@ export function VenueDescriptionAndHostCard({
               {descTranslationError}
             </p>
           )}
-          <p data-testid="venue-description-text" className="whitespace-pre-line">
+          <p
+            data-testid="venue-description-text"
+            className="whitespace-pre-line"
+          >
             {translatedDescription ||
               venue?.description ||
               `Analysis based on Multi-Agent telemetry suggests this ${venue?.category || "workspace"} is optimal for collaborative sessions.`}
@@ -421,7 +572,8 @@ export function VenueDescriptionAndHostCard({
                 Are you the owner or manager?
               </p>
               <p className="text-[11px] text-zinc-400">
-                Claim this listing to update hours, amenities, and verify details.
+                Claim this listing to update hours, amenities, and verify
+                details.
               </p>
             </div>
           </div>

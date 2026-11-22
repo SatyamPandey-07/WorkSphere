@@ -41,6 +41,57 @@
 import crypto from "crypto";
 import { Redis } from "@upstash/redis";
 
+/**
+ * Races `promise` against a timeout. Returns a tagged-union result.
+ * Errors from the promise resolve as { timedOut: true } to prevent
+ * unhandled promise rejections on the original promise.
+ */
+function withNodeTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<{ result: T; timedOut: false } | { timedOut: true }> {
+  return new Promise<{ result: T; timedOut: false } | { timedOut: true }>((resolve) => {
+    const timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+    promise.then(
+      (result) => { clearTimeout(timer); resolve({ result, timedOut: false }); },
+      () => { clearTimeout(timer); resolve({ timedOut: true }); },
+    );
+  });
+}
+
+/**
+ * Wraps a logical lock key with a Redis Cluster hash tag if it does not
+ * already contain one. Idempotent: a key already containing `{...}` is
+ * returned unchanged.
+ */
+export function toClusterKey(logicalKey: string): string {
+  if (
+    typeof logicalKey !== "string" ||
+    logicalKey.trim().length === 0
+  ) {
+    throw new Error(
+      `Invalid logical lock key: key must be a non-empty, non-whitespace string (received: ${JSON.stringify(
+        logicalKey
+      )})`
+    );
+  }
+  const open = logicalKey.indexOf("{");
+  const close = logicalKey.indexOf("}", open + 1);
+  if (open !== -1 && close > open + 1) {
+    return logicalKey;
+  }
+  return `{${logicalKey}}`;
+}
+
+/**
+ * Returns the fencing counter key for a logical lock key.
+ * Appends `:fencing` outside the hash tag so both keys share the same slot.
+ * Example: `toClusterFencingKey("seat:42")` → `"{seat:42}:fencing"`.
+ */
+export function toClusterFencingKey(logicalKey: string): string {
+  return `${toClusterKey(logicalKey)}:fencing`;
+}
+
 export interface IRedisClient {
   set(
     key: string,
@@ -64,6 +115,22 @@ export interface RedlockOptions {
   retryJitterMs?: number;
   /** Default lock time-to-live in ms (default: 5000) */
   defaultTtlMs?: number;
+  /**
+   * Per-node Redis operation timeout in milliseconds.
+   * A node that does not respond within this window is treated as failed for
+   * quorum purposes. Any lock acquired on a timed-out node is released
+   * asynchronously (compensating release).
+   * Default: Math.max(50, Math.floor(defaultTtlMs / 10)).
+   */
+  nodeTimeoutMs?: number;
+  /**
+   * When true, wraps lock and fencing keys with a Redis Cluster hash tag
+   * so both map to the same hash slot, preventing CROSSSLOT errors.
+   * This renames lock keys from `<key>` to `{<key>}` on Redis.
+   * Existing locks created without clusterMode will not be found.
+   * Default: false.
+   */
+  clusterMode?: boolean;
 }
 
 export interface AcquireOptions {
@@ -242,6 +309,9 @@ export class DistributedLock {
 
   /**
    * Throws LockLostError if the lock lease has been lost or already released.
+   * Also detects monotonic expiry: if performance.now() >= expiresAt the lease
+   * has expired on Redis (e.g. after a GC / event-loop pause) even though the
+   * renewal timer never fired.
    */
   public checkLost(): void {
     if (this._isLost) {
@@ -249,6 +319,11 @@ export class DistributedLock {
     }
     if (this._isReleased) {
       throw new LockLostError("Distributed lock was already released");
+    }
+    // SPEC-A: monotonic deadline check — catches pauses longer than the remaining lease.
+    if (performance.now() >= this.expiresAt) {
+      this.markLost("Distributed lock lease expired (monotonic deadline passed)");
+      throw new LockLostError("Distributed lock lease expired (monotonic deadline passed)");
     }
   }
 
@@ -305,6 +380,12 @@ export class DistributedLock {
             this.markLost(
               "Lease renewal failed: quorum not reached or validity exhausted"
             );
+            return;
+          }
+          // SPEC-A A2: guard against resurrecting an already-lost lock.
+          // If checkLost() or another concurrent path called markLost()
+          // between the extend() call and here, do not update expiresAt.
+          if (this._isLost) {
             return;
           }
           schedule();
@@ -366,6 +447,8 @@ export class RedlockManager {
   public readonly retryDelayMs: number;
   public readonly retryJitterMs: number;
   public readonly defaultTtlMs: number;
+  public readonly nodeTimeoutMs: number;
+  public readonly clusterMode: boolean;
 
   constructor(clients: IRedisClient[], options?: RedlockOptions) {
     if (!Array.isArray(clients) || clients.length < 3) {
@@ -383,10 +466,30 @@ export class RedlockManager {
     this.retryDelayMs = options?.retryDelayMs ?? 200;
     this.retryJitterMs = options?.retryJitterMs ?? 100;
     this.defaultTtlMs = options?.defaultTtlMs ?? 5000;
+    this.nodeTimeoutMs =
+      options?.nodeTimeoutMs ??
+      Math.max(50, Math.floor(this.defaultTtlMs / 10));
+    this.clusterMode = options?.clusterMode ?? false;
   }
 
   public get nodeCount(): number {
     return this.clients.length;
+  }
+
+  /**
+   * Translates a logical key to a physical key on Redis according to clusterMode.
+   */
+  public toPhysicalKey(logicalKey: string): string {
+    return this.clusterMode ? toClusterKey(logicalKey) : logicalKey;
+  }
+
+  /**
+   * Translates a logical key to a physical fencing key on Redis according to clusterMode.
+   */
+  public toPhysicalFencingKey(logicalKey: string): string {
+    return this.clusterMode
+      ? toClusterFencingKey(logicalKey)
+      : `${logicalKey}:fencing`;
   }
 
   /**
@@ -400,11 +503,19 @@ export class RedlockManager {
    * Releases nodes matching key and token. Node errors are handled safely.
    */
   private async releaseNodes(key: string, token: string): Promise<number> {
+    const physicalKey = this.toPhysicalKey(key);
     const results = await Promise.allSettled(
       this.clients.map(async (client) => {
         try {
-          const res = await evalLua(client, REDLOCK_RELEASE_LUA, [key], [token]);
-          return Number(res) === 1;
+          const timedRelease = withNodeTimeout(
+            evalLua(client, REDLOCK_RELEASE_LUA, [physicalKey], [token]),
+            this.nodeTimeoutMs
+          );
+          const res = await timedRelease;
+          if (res.timedOut) {
+            return false;
+          }
+          return Number(res.result) === 1;
         } catch {
           return false;
         }
@@ -414,6 +525,27 @@ export class RedlockManager {
     return results.filter(
       (r) => r.status === "fulfilled" && r.value === true
     ).length;
+  }
+
+  /**
+   * Helper to perform single-node release for compensating late acquisition.
+   */
+  private async releaseOnNode(
+    client: IRedisClient,
+    physicalKey: string,
+    token: string
+  ): Promise<boolean> {
+    try {
+      const res = await evalLua(
+        client,
+        REDLOCK_RELEASE_LUA,
+        [physicalKey],
+        [token]
+      );
+      return Number(res) === 1;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -434,6 +566,9 @@ export class RedlockManager {
     const retryDelayMs = options?.retryDelayMs ?? this.retryDelayMs;
     const retryJitterMs = options?.retryJitterMs ?? this.retryJitterMs;
 
+    const physicalKey = this.toPhysicalKey(key);
+    const fenceKey = this.toPhysicalFencingKey(key);
+
     for (let attempt = 0; attempt <= retryCount; attempt++) {
       const token = this.generateToken();
       const startTime = performance.now();
@@ -441,40 +576,128 @@ export class RedlockManager {
       let successCount = 0;
       const fencingTokens: number[] = [];
 
+      const driftMs = Math.round(ttl * this.driftFactor) + 2;
+      const initialRemainingValidityMs =
+        ttl - (performance.now() - startTime) - driftMs;
+
+      // If validity budget is already zero or negative, do not attempt node requests
+      if (initialRemainingValidityMs <= 0) {
+        continue;
+      }
+
+      // Per-node timeout is strictly bounded by the remaining validity budget
+      const getRemainingValidity = () =>
+        ttl - (performance.now() - startTime) - driftMs;
+
+      // We track which nodes timed out so we can release them if they complete late
       if (options?.withFencingToken) {
-        const fenceKey = `${key}:fencing`;
-        const results = await Promise.allSettled(
-          this.clients.map(async (client) => {
-            const res = await evalLua(
+        const nodePromises = this.clients.map((client) => {
+          const remainingValidity = getRemainingValidity();
+          if (remainingValidity <= 0) {
+            return {
               client,
-              REDLOCK_ACQUIRE_FENCING_LUA,
-              [key, fenceKey],
-              [token, ttl]
-            );
-            if (Array.isArray(res) && Number(res[0]) === 1) {
-              return Number(res[1]);
-            }
-            return null;
-          })
-        );
-        for (const r of results) {
-          if (r.status === "fulfilled" && typeof r.value === "number") {
-            successCount++;
-            fencingTokens.push(r.value);
+              rawPromise: Promise.resolve(null),
+              timedPromise: Promise.resolve<{ result: any; timedOut: false } | { timedOut: true }>({
+                timedOut: true,
+              }),
+            };
           }
-        }
-      } else {
-        // Attempt acquisition on all independent nodes in parallel
-        const results = await Promise.allSettled(
-          this.clients.map((client) => setNxPx(client, key, token, ttl))
+          const nodeTimeout = Math.min(this.nodeTimeoutMs, remainingValidity);
+          const rawPromise = evalLua(
+            client,
+            REDLOCK_ACQUIRE_FENCING_LUA,
+            [physicalKey, fenceKey],
+            [token, ttl]
+          );
+          return {
+            client,
+            rawPromise,
+            timedPromise: withNodeTimeout(rawPromise, nodeTimeout),
+          };
+        });
+
+        const settledResults = await Promise.allSettled(
+          nodePromises.map((p) => p.timedPromise)
         );
-        successCount = results.filter(
-          (r) => r.status === "fulfilled" && r.value === true
-        ).length;
+
+        settledResults.forEach((settled, idx) => {
+          const { client, rawPromise } = nodePromises[idx];
+
+          if (settled.status === "fulfilled") {
+            const timedRes = settled.value;
+            if (!timedRes.timedOut) {
+              const res = timedRes.result;
+              if (Array.isArray(res) && Number(res[0]) === 1) {
+                successCount++;
+                fencingTokens.push(Number(res[1]));
+                return;
+              }
+            } else {
+              // Node timed out: attach compensating release for late response
+              rawPromise
+                .then((lateRes) => {
+                  if (Array.isArray(lateRes) && Number(lateRes[0]) === 1) {
+                    this.releaseOnNode(client, physicalKey, token).catch(
+                      () => {}
+                    );
+                  }
+                })
+                .catch(() => {});
+            }
+          }
+        });
+      } else {
+        const nodePromises = this.clients.map((client) => {
+          const remainingValidity = getRemainingValidity();
+          if (remainingValidity <= 0) {
+            return {
+              client,
+              rawPromise: Promise.resolve(false),
+              timedPromise: Promise.resolve<{ result: any; timedOut: false } | { timedOut: true }>({
+                timedOut: true,
+              }),
+            };
+          }
+          const nodeTimeout = Math.min(this.nodeTimeoutMs, remainingValidity);
+          const rawPromise = setNxPx(client, physicalKey, token, ttl);
+          return {
+            client,
+            rawPromise,
+            timedPromise: withNodeTimeout(rawPromise, nodeTimeout),
+          };
+        });
+
+        const settledResults = await Promise.allSettled(
+          nodePromises.map((p) => p.timedPromise)
+        );
+
+        settledResults.forEach((settled, idx) => {
+          const { client, rawPromise } = nodePromises[idx];
+
+          if (settled.status === "fulfilled") {
+            const timedRes = settled.value;
+            if (!timedRes.timedOut) {
+              if (timedRes.result === true) {
+                successCount++;
+                return;
+              }
+            } else {
+              // Node timed out: attach compensating release for late response
+              rawPromise
+                .then((lateRes) => {
+                  if (lateRes === true) {
+                    this.releaseOnNode(client, physicalKey, token).catch(
+                      () => {}
+                    );
+                  }
+                })
+                .catch(() => {});
+            }
+          }
+        });
       }
 
       const elapsedMs = performance.now() - startTime;
-      const driftMs = Math.round(ttl * this.driftFactor) + 2;
       const remainingValidityMs = ttl - elapsedMs - driftMs;
 
       // Quorum check and validity budget check
@@ -516,33 +739,84 @@ export class RedlockManager {
     }
     const extensionTtl = ttlMs ?? this.defaultTtlMs;
     const { key, token } = lock;
+    const physicalKey = this.toPhysicalKey(key);
 
     const startTime = performance.now();
-    const results = await Promise.allSettled(
-      this.clients.map(async (client) => {
-        try {
-          const res = await evalLua(
-            client,
-            REDLOCK_EXTEND_LUA,
-            [key],
-            [token, extensionTtl]
-          );
-          return Number(res) === 1;
-        } catch {
-          return false;
-        }
-      })
+    const driftMs = Math.round(extensionTtl * this.driftFactor) + 2;
+    const initialRemainingValidityMs =
+      extensionTtl - (performance.now() - startTime) - driftMs;
+
+    if (initialRemainingValidityMs <= 0) {
+      await this.releaseNodes(key, token);
+      return false;
+    }
+
+    const getRemainingValidity = () =>
+      extensionTtl - (performance.now() - startTime) - driftMs;
+
+    const nodePromises = this.clients.map((client) => {
+      const remainingValidity = getRemainingValidity();
+      if (remainingValidity <= 0) {
+        return {
+          client,
+          rawPromise: Promise.resolve(0),
+          timedPromise: Promise.resolve<{ result: any; timedOut: false } | { timedOut: true }>({
+            timedOut: true,
+          }),
+        };
+      }
+      const nodeTimeout = Math.min(this.nodeTimeoutMs, remainingValidity);
+      const rawPromise = evalLua(
+        client,
+        REDLOCK_EXTEND_LUA,
+        [physicalKey],
+        [token, extensionTtl]
+      );
+      return {
+        client,
+        rawPromise,
+        timedPromise: withNodeTimeout(rawPromise, nodeTimeout),
+      };
+    });
+
+    const settledResults = await Promise.allSettled(
+      nodePromises.map((p) => p.timedPromise)
     );
 
-    const successCount = results.filter(
-      (r) => r.status === "fulfilled" && r.value === true
-    ).length;
+    let successCount = 0;
+    settledResults.forEach((settled, idx) => {
+      const { client, rawPromise } = nodePromises[idx];
+
+      if (settled.status === "fulfilled") {
+        const timedRes = settled.value;
+        if (!timedRes.timedOut) {
+          if (Number(timedRes.result) === 1) {
+            successCount++;
+          }
+        } else {
+          // Node timed out during extension: any late successful response must be compensated
+          // because it did not contribute to the quorum decision
+          rawPromise
+            .then((lateRes) => {
+              if (Number(lateRes) === 1) {
+                this.releaseOnNode(client, physicalKey, token).catch(() => {});
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    });
 
     const elapsedMs = performance.now() - startTime;
-    const driftMs = Math.round(extensionTtl * this.driftFactor) + 2;
     const remainingValidityMs = extensionTtl - elapsedMs - driftMs;
 
     if (successCount >= this.quorum && remainingValidityMs > 0) {
+      if (lock.isLost || lock.isReleased) {
+        // Quorum extended on Redis, but lock was lost/released locally in the interim.
+        // Roll back immediately to avoid an orphaned lease on Redis.
+        await this.releaseNodes(key, token);
+        return false;
+      }
       lock.validity = remainingValidityMs;
       lock.expiresAt = performance.now() + remainingValidityMs;
       return true;
@@ -659,7 +933,13 @@ export function getRedlockManager(): RedlockManager | null {
     return new Redis({ url, token });
   });
 
-  defaultRedlockManager = new RedlockManager(clients);
+  const isClusterMode =
+    process.env.REDLOCK_CLUSTER_MODE === "true" ||
+    process.env.REDIS_CLUSTER_MODE === "true";
+
+  defaultRedlockManager = new RedlockManager(clients, {
+    clusterMode: isClusterMode,
+  });
   return defaultRedlockManager;
 }
 

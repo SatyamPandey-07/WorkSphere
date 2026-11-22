@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-WorkSphere provides high-fidelity audio shaping and real-time noise masking through its 5-band parametric equalizer component ([`src/components/audio/AudioEqualizer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/audio/AudioEqualizer.tsx)), supported by the [`useAudioEqualizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useAudioEqualizer.ts) hook and WASM peaking coefficient processing.
+WorkSphere provides high-fidelity audio shaping and real-time noise masking through its 5-band parametric equalizer component ([`src/components/audio/AudioEqualizer.tsx`](../../src/components/audio/AudioEqualizer.tsx)), supported by the [`useAudioEqualizer.ts`](../../src/hooks/useAudioEqualizer.ts) hook and WASM peaking coefficient processing.
 
 This technical guide documents:
 - **5-Band Parametric Filter Architecture:** Band division (Low, Low-Mid, Mid, High-Mid, High) and cascading filter chain.

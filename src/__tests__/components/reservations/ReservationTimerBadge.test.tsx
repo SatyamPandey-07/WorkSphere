@@ -1,45 +1,43 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import {
-  getRemainingMs,
+  DEFAULT_SEAT_HOLD_DURATION_MS,
   ReservationTimerBadge,
 } from '@/components/reservations/ReservationTimerBadge';
 
-describe('ReservationTimerBadge wall-clock countdown accuracy', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
+describe('ReservationTimerBadge drift-free countdown & tab resync', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-11-22T14:00:00.000Z'));
   });
 
-  it('derives remaining time from Math.max(0, expiresAt - Date.now()) after background tab jump', () => {
-    let now = 1_700_000_000_000;
-    const fiveMinutesMs = 5 * 60 * 1000;
-    const expiresAt = now + fiveMinutesMs;
+  afterEach(() => {
+    jest.useRealTimers();
+  });
 
-    jest.spyOn(Date, 'now').mockImplementation(() => now);
+  it('computes remaining time directly from expiresAt and resyncs immediately on visibilitychange and focus', () => {
+    const expiresAt = Date.now() + DEFAULT_SEAT_HOLD_DURATION_MS;
     const onExpire = jest.fn();
 
     render(<ReservationTimerBadge expiresAt={expiresAt} onExpire={onExpire} />);
-    expect(screen.getByTestId('reservation-timer-value')).toHaveTextContent('05:00');
+    expect(screen.getByTestId('reservation-timer-value')).toHaveTextContent('05:00 hold');
 
-    now += 2 * 60 * 1000;
     act(() => {
+      jest.setSystemTime(new Date(expiresAt - 110_000));
       Object.defineProperty(document, 'visibilityState', {
         configurable: true,
         value: 'visible',
       });
       document.dispatchEvent(new Event('visibilitychange'));
-      fireEvent.focus(window);
     });
+    expect(screen.getByTestId('reservation-timer-value')).toHaveTextContent('01:50 hold');
 
-    expect(screen.getByTestId('reservation-timer-value')).toHaveTextContent('03:00');
-    expect(getRemainingMs(expiresAt, now)).toBe(3 * 60 * 1000);
-
-    now = expiresAt + 1_000;
     act(() => {
-      document.dispatchEvent(new Event('visibilitychange'));
+      jest.setSystemTime(new Date(expiresAt + 2_000));
+      fireEvent(window, new Event('focus'));
     });
 
-    expect(screen.getByTestId('reservation-timer-value')).toHaveTextContent('00:00');
+    expect(screen.getByTestId('reservation-timer-value')).toHaveTextContent('00:00 · Expired');
     expect(onExpire).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,129 +1,103 @@
-'use client';
-
 import { useEffect, useState } from 'react';
 
-export interface BatteryState {
+export interface BatteryManagerLike {
   level: number;
   charging: boolean;
-  isLowPower: boolean;
+  addEventListener: (type: 'levelchange' | 'chargingchange', listener: () => void) => void;
+  removeEventListener: (type: 'levelchange' | 'chargingchange', listener: () => void) => void;
 }
 
-export interface BatteryManagerLike extends EventTarget {
-  level: number;
-  charging: boolean;
-  addEventListener(
-    type: 'levelchange' | 'chargingchange',
-    listener: EventListenerOrEventListenerObject | null
-  ): void;
-  removeEventListener(
-    type: 'levelchange' | 'chargingchange',
-    listener: EventListenerOrEventListenerObject | null
-  ): void;
+export interface BatteryOptimizationState {
+  isLowPowerMode: boolean;
+  batteryLevel: number | null;
+  isCharging: boolean | null;
+  crdtBatchIntervalMs: number;
+  pauseDecorativeAnimations: boolean;
+  fftSize: 256 | 2048;
 }
 
 export const LOW_BATTERY_THRESHOLD = 0.2;
-export const DEFAULT_CRDT_BATCH_INTERVAL_MS = 50;
-export const LOW_POWER_CRDT_BATCH_INTERVAL_MS = 500;
-export const DEFAULT_FFT_SIZE = 2048;
-export const LOW_POWER_FFT_SIZE = 256;
+export const NORMAL_CRDT_BATCH_MS = 50;
+export const LOW_POWER_CRDT_BATCH_MS = 500;
+export const NORMAL_FFT_SIZE: 2048 = 2048;
+export const LOW_POWER_FFT_SIZE: 256 = 256;
 
-export interface PowerOptimizationProfile {
-  isLowPower: boolean;
-  crdtBatchIntervalMs: number;
-  fftSize: number;
-  pauseDecorativeAnimations: boolean;
-}
-
-function normalizeLevel(rawLevel: unknown): number {
-  if (typeof rawLevel !== 'number' || !Number.isFinite(rawLevel)) {
-    return 1;
-  }
-  const scaled = rawLevel > 1 ? rawLevel / 100 : rawLevel;
-  return Math.max(0, Math.min(1, scaled));
-}
-
-export function computeBatteryState(
-  rawLevel: unknown,
-  charging: unknown,
-  threshold = LOW_BATTERY_THRESHOLD
-): BatteryState {
-  const level = normalizeLevel(rawLevel);
-  const isCharging = Boolean(charging);
-  const isLowPower = !isCharging && level < threshold;
+export function computeBatteryOptimizationState(
+  level: number | null,
+  charging: boolean | null
+): BatteryOptimizationState {
+  const isLowPowerMode =
+    typeof level === 'number' &&
+    Number.isFinite(level) &&
+    charging === false &&
+    level < LOW_BATTERY_THRESHOLD;
 
   return {
-    level,
-    charging: isCharging,
-    isLowPower,
-  };
-}
-
-export function getPowerOptimizationProfile(
-  isLowPower: boolean
-): PowerOptimizationProfile {
-  if (isLowPower) {
-    return {
-      isLowPower: true,
-      crdtBatchIntervalMs: LOW_POWER_CRDT_BATCH_INTERVAL_MS,
-      fftSize: LOW_POWER_FFT_SIZE,
-      pauseDecorativeAnimations: true,
-    };
-  }
-
-  return {
-    isLowPower: false,
-    crdtBatchIntervalMs: DEFAULT_CRDT_BATCH_INTERVAL_MS,
-    fftSize: DEFAULT_FFT_SIZE,
-    pauseDecorativeAnimations: false,
+    isLowPowerMode,
+    batteryLevel: level,
+    isCharging: charging,
+    crdtBatchIntervalMs: isLowPowerMode
+      ? LOW_POWER_CRDT_BATCH_MS
+      : NORMAL_CRDT_BATCH_MS,
+    pauseDecorativeAnimations: isLowPowerMode,
+    fftSize: isLowPowerMode ? LOW_POWER_FFT_SIZE : NORMAL_FFT_SIZE,
   };
 }
 
 export function useBatteryOptimization(
-  threshold = LOW_BATTERY_THRESHOLD
-): BatteryState {
-  const [batteryState, setBatteryState] = useState<BatteryState>(() => ({
-    level: 1,
-    charging: true,
-    isLowPower: false,
-  }));
+  getBatteryFn?: () => Promise<BatteryManagerLike>
+): BatteryOptimizationState {
+  const [state, setState] = useState<BatteryOptimizationState>(() =>
+    computeBatteryOptimizationState(null, null)
+  );
 
   useEffect(() => {
-    let active = true;
-    let manager: BatteryManagerLike | null = null;
+    let cancelled = false;
+    let batteryRef: BatteryManagerLike | null = null;
 
-    const handleChange = () => {
-      if (!active || !manager) return;
-      setBatteryState(computeBatteryState(manager.level, manager.charging, threshold));
+    const syncFromBattery = (mgr: BatteryManagerLike) => {
+      if (cancelled) return;
+      setState(computeBatteryOptimizationState(mgr.level, mgr.charging));
     };
 
-    const nav = typeof navigator !== 'undefined'
-      ? (navigator as Navigator & { getBattery?: () => Promise<BatteryManagerLike> })
-      : undefined;
+    const resolveBattery =
+      getBatteryFn ??
+      (typeof navigator !== 'undefined' &&
+      typeof (navigator as Navigator & { getBattery?: () => Promise<BatteryManagerLike> }).getBattery === 'function'
+        ? () =>
+            (
+              navigator as Navigator & {
+                getBattery: () => Promise<BatteryManagerLike>;
+              }
+            ).getBattery()
+        : null);
 
-    if (typeof nav?.getBattery === 'function') {
-      Promise.resolve()
-        .then(() => nav.getBattery!())
-        .then((bm) => {
-          if (!active || !bm) return;
-          manager = bm;
-          handleChange();
-          manager.addEventListener('levelchange', handleChange);
-          manager.addEventListener('chargingchange', handleChange);
-        })
-        .catch(() => {
-          if (!active) return;
-          setBatteryState({ level: 1, charging: true, isLowPower: false });
-        });
-    }
+    if (!resolveBattery) return;
+
+    resolveBattery()
+      .then((mgr) => {
+        if (cancelled || !mgr) return;
+        batteryRef = mgr;
+        syncFromBattery(mgr);
+        mgr.addEventListener('levelchange', () => syncFromBattery(mgr));
+        mgr.addEventListener('chargingchange', () => syncFromBattery(mgr));
+      })
+      .catch(() => {});
 
     return () => {
-      active = false;
-      if (manager) {
-        manager.removeEventListener('levelchange', handleChange);
-        manager.removeEventListener('chargingchange', handleChange);
+      cancelled = true;
+      if (batteryRef) {
+        try {
+          batteryRef.removeEventListener('levelchange', () =>
+            syncFromBattery(batteryRef!)
+          );
+          batteryRef.removeEventListener('chargingchange', () =>
+            syncFromBattery(batteryRef!)
+          );
+        } catch {}
       }
     };
-  }, [threshold]);
+  }, [getBatteryFn]);
 
-  return batteryState;
+  return state;
 }

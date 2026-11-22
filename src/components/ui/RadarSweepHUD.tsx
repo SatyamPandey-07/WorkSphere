@@ -1,15 +1,44 @@
-"use client";
+﻿"use client";
 
-import React, { useRef, useEffect, useState, useMemo, memo } from "react";
+import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { cn } from "@/lib/utils";
 
+export const RADAR_RANGES = [500, 1000, 2000, 5000] as const;
+export type RadarRange = (typeof RADAR_RANGES)[number];
+
+export function formatRadarRange(meters: RadarRange): string {
+  return meters >= 1000 ? `${meters / 1000}km` : `${meters}m`;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+
+  const tagName = target.tagName;
+  if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") {
+    return true;
+  }
+
+  const editableAttr = target.getAttribute("contenteditable");
+  return (
+    target.isContentEditable || editableAttr === "true" || editableAttr === ""
+  );
+}
+
 export interface RadarSweepHUDProps {
-  currentDb: number;
-  noiseHistory: number[];
+  currentDb?: number;
+  noiseHistory?: number[];
   className?: string;
   size?: number;
   "data-testid"?: string;
   reducedMotion?: boolean;
+  isOpen?: boolean;
+  initialRange?: RadarRange;
+  initialTrackingEnabled?: boolean;
+  initialHudOverlayVisible?: boolean;
+  onRangeChange?: (range: RadarRange) => void;
+  onToggleTracking?: (enabled: boolean) => void;
+  onToggleHudOverlay?: (visible: boolean) => void;
+  onClose?: () => void;
 }
 
 export type DecibelStatusTier = "green" | "amber" | "red";
@@ -24,12 +53,6 @@ export interface DecibelTierConfig {
   bgClass: string;
 }
 
-/**
- * Returns color tier configuration according to strict specifications:
- * - Green: below 50 dB
- * - Amber: 50–70 dB, inclusive
- * - Red: above 70 dB
- */
 export function getDecibelStatusTier(db: number): DecibelTierConfig {
   const safeDb = typeof db === "number" && Number.isFinite(db) ? db : 0;
 
@@ -37,7 +60,7 @@ export function getDecibelStatusTier(db: number): DecibelTierConfig {
     return {
       tier: "green",
       label: "Quiet",
-      colorHex: "#10b981", // emerald-500
+      colorHex: "#10b981",
       rgb: "16, 185, 129",
       textClass: "text-emerald-400",
       borderClass: "border-emerald-500/30",
@@ -49,7 +72,7 @@ export function getDecibelStatusTier(db: number): DecibelTierConfig {
     return {
       tier: "amber",
       label: "Moderate",
-      colorHex: "#f59e0b", // amber-500
+      colorHex: "#f59e0b",
       rgb: "245, 158, 11",
       textClass: "text-amber-400",
       borderClass: "border-amber-500/30",
@@ -60,7 +83,7 @@ export function getDecibelStatusTier(db: number): DecibelTierConfig {
   return {
     tier: "red",
     label: "Loud",
-    colorHex: "#ef4444", // red-500
+    colorHex: "#ef4444",
     rgb: "239, 68, 68",
     textClass: "text-rose-400",
     borderClass: "border-rose-500/30",
@@ -68,39 +91,28 @@ export function getDecibelStatusTier(db: number): DecibelTierConfig {
   };
 }
 
-/**
- * Maps noise history values to deterministic polar positions on the radar.
- * Avoids recalculation or random re-positioning across renders.
- */
 interface ClusterPoint {
   id: number;
   db: number;
   angleRad: number;
-  distanceRatio: number; // 0.18 to 0.88
-  radiusPixels: number; // 2 to 7
+  distanceRatio: number;
+  radiusPixels: number;
   opacity: number;
 }
 
 function computeClusterPoints(history: number[]): ClusterPoint[] {
   if (!Array.isArray(history) || history.length === 0) return [];
 
-  // Use up to the latest 24 samples
   const safeHistory = history.slice(-24);
   const count = safeHistory.length;
 
   return safeHistory.map((val, idx) => {
     const safeVal = typeof val === "number" && Number.isFinite(val) ? Math.max(0, val) : 0;
-    // Golden angle distribution for natural radar blip spacing without clumping
-    const goldenAngle = 2.39996323; // radians (~137.5 degrees)
+    const goldenAngle = 2.39996323;
     const angleRad = (idx * goldenAngle) % (Math.PI * 2);
-
-    // Distance normalized across 30dB (inner) to 90dB (outer edge)
     const normalizedDb = Math.min(1, Math.max(0, (safeVal - 30) / 60));
-    const distanceRatio = 0.22 + normalizedDb * 0.65; // keep inside radar ring bounds
-
-    // Dot size scales with decibel intensity
+    const distanceRatio = 0.22 + normalizedDb * 0.65;
     const radiusPixels = Math.max(2, Math.min(6, 2 + normalizedDb * 4));
-    // Recent samples have higher base opacity
     const recencyRatio = (idx + 1) / count;
     const opacity = 0.35 + recencyRatio * 0.55;
 
@@ -116,12 +128,20 @@ function computeClusterPoints(history: number[]): ClusterPoint[] {
 }
 
 export const RadarSweepHUD: React.FC<RadarSweepHUDProps> = memo(function RadarSweepHUD({
-  currentDb,
-  noiseHistory,
+  currentDb = 42,
+  noiseHistory = [],
   className = "",
   size = 280,
   "data-testid": testId = "radar-sweep-hud",
   reducedMotion: reducedMotionProp,
+  isOpen = true,
+  initialRange = 1000,
+  initialTrackingEnabled = true,
+  initialHudOverlayVisible = true,
+  onRangeChange,
+  onToggleTracking,
+  onToggleHudOverlay,
+  onClose,
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -130,357 +150,269 @@ export const RadarSweepHUD: React.FC<RadarSweepHUDProps> = memo(function RadarSw
   const lastTimestampRef = useRef<number>(0);
   const isVisibleRef = useRef<boolean>(true);
 
-  // System reduced-motion preference
   const [systemReducedMotion, setSystemReducedMotion] = useState(false);
   const [isIntersecting, setIsIntersecting] = useState(true);
+  const [range, setRange] = useState<RadarRange>(initialRange);
+  const [trackingEnabled, setTrackingEnabled] = useState<boolean>(initialTrackingEnabled);
+  const [hudOverlayVisible, setHudOverlayVisible] = useState<boolean>(initialHudOverlayVisible);
 
-  // Sanitized display values
+  const cycleRange = useCallback(() => {
+    setRange((prev) => {
+      const currentIndex = RADAR_RANGES.indexOf(prev);
+      const nextRange = RADAR_RANGES[(currentIndex + 1) % RADAR_RANGES.length];
+      onRangeChange?.(nextRange);
+      return nextRange;
+    });
+  }, [onRangeChange]);
+
+  const toggleTracking = useCallback(() => {
+    setTrackingEnabled((prev) => {
+      const next = !prev;
+      onToggleTracking?.(next);
+      return next;
+    });
+  }, [onToggleTracking]);
+
+  const toggleHudOverlay = useCallback(() => {
+    setHudOverlayVisible((prev) => {
+      const next = !prev;
+      onToggleHudOverlay?.(next);
+      return next;
+    });
+  }, [onToggleHudOverlay]);
+
+  const handleCloseOrCollapse = useCallback(() => {
+    setHudOverlayVisible(false);
+    onToggleHudOverlay?.(false);
+    onClose?.();
+  }, [onClose, onToggleHudOverlay]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isEditableTarget(event.target)) return;
+
+      switch (event.key) {
+        case "r":
+        case "R":
+          event.preventDefault();
+          cycleRange();
+          break;
+        case "t":
+        case "T":
+          event.preventDefault();
+          toggleTracking();
+          break;
+        case "h":
+        case "H":
+          event.preventDefault();
+          toggleHudOverlay();
+          break;
+        case "Escape":
+          event.preventDefault();
+          handleCloseOrCollapse();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isOpen,
+    cycleRange,
+    toggleTracking,
+    toggleHudOverlay,
+    handleCloseOrCollapse,
+  ]);
+
   const safeCurrentDb =
     typeof currentDb === "number" && Number.isFinite(currentDb)
       ? Math.max(0, Math.round(currentDb * 10) / 10)
       : 0;
 
-  const statusConfig = useMemo(() => getDecibelStatusTier(safeCurrentDb), [safeCurrentDb]);
+  const statusConfig = useMemo(
+    () => getDecibelStatusTier(safeCurrentDb),
+    [safeCurrentDb],
+  );
 
-  // Compute stable cluster points from noise history
-  const clusterPoints = useMemo(() => computeClusterPoints(noiseHistory), [noiseHistory]);
-
-  // Handle system prefers-reduced-motion
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setSystemReducedMotion(mql.matches);
-
-    const handler = (e: MediaQueryListEvent) => {
-      setSystemReducedMotion(e.matches);
-    };
-
-    if (typeof mql.addEventListener === "function") {
-      mql.addEventListener("change", handler);
-      return () => mql.removeEventListener("change", handler);
-    } else if (typeof (mql as any).addListener === "function") {
-      (mql as any).addListener(handler);
-      return () => (mql as any).removeListener(handler);
-    }
-  }, []);
+  const clusterPoints = useMemo(
+    () => computeClusterPoints(noiseHistory),
+    [noiseHistory],
+  );
 
   const prefersReducedMotion =
-    reducedMotionProp !== undefined ? reducedMotionProp : systemReducedMotion;
+    typeof reducedMotionProp === "boolean" ? reducedMotionProp : systemReducedMotion;
 
-  // Offscreen pause via IntersectionObserver
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setSystemReducedMotion(mq.matches);
+
+    const handleChange = (e: MediaQueryListEvent) => setSystemReducedMotion(e.matches);
+    if (mq.addEventListener) {
+      mq.addEventListener("change", handleChange);
+      return () => mq.removeEventListener("change", handleChange);
+    }
+    mq.addListener(handleChange);
+    return () => mq.removeListener(handleChange);
+  }, []);
+
+  useEffect(() => {
+    if (!containerRef.current || typeof IntersectionObserver === "undefined") {
+      setIsIntersecting(true);
+      isVisibleRef.current = true;
+      return;
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
         if (entry) {
-          const visible = entry.isIntersecting;
-          isVisibleRef.current = visible;
+          const visible = entry.isIntersecting && entry.intersectionRatio > 0;
           setIsIntersecting(visible);
+          isVisibleRef.current = visible;
         }
       },
-      { threshold: 0.05 },
+      { threshold: 0.01 },
     );
 
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [isOpen]);
 
-  // Canvas drawing loop
   useEffect(() => {
+    if (!isOpen) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let isDisposed = false;
+    const renderFrame = (timestamp: number) => {
+      if (!canvasRef.current) return;
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      const rect = canvas.getBoundingClientRect();
+      const targetWidth = Math.max(120, Math.round((rect.width || size * 0.85) * dpr));
+      const targetHeight = Math.max(120, Math.round((rect.height || size * 0.85) * dpr));
 
-    // Canvas size and DPR management
-    const updateCanvasDimensions = () => {
-      if (!canvas || !containerRef.current) return;
-      const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
-      const rect = containerRef.current.getBoundingClientRect();
-      const canvasWidth = rect.width || size;
-      const canvasHeight = rect.height || size;
-
-      if (canvas.width !== canvasWidth * dpr || canvas.height !== canvasHeight * dpr) {
-        canvas.width = Math.round(canvasWidth * dpr);
-        canvas.height = Math.round(canvasHeight * dpr);
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
       }
-    };
 
-    updateCanvasDimensions();
+      const w = canvas.width;
+      const h = canvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+      const maxRadius = Math.min(cx, cy) - 8 * dpr;
 
-    let resizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
-      resizeObserver = new ResizeObserver(() => {
-        updateCanvasDimensions();
-      });
-      resizeObserver.observe(containerRef.current);
-    }
+      ctx.clearRect(0, 0, w, h);
 
-    const cancelLoop = () => {
-      if (animFrameIdRef.current !== null) {
-        cancelAnimationFrame(animFrameIdRef.current);
-        animFrameIdRef.current = null;
-      }
-      lastTimestampRef.current = 0;
-    };
+      if (hudOverlayVisible) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(161, 161, 170, 0.14)";
+        ctx.lineWidth = 1 * dpr;
+        [0.33, 0.66, 1].forEach((ratio) => {
+          ctx.beginPath();
+          ctx.arc(cx, cy, Math.max(0, maxRadius * ratio), 0, Math.PI * 2);
+          ctx.stroke();
+        });
 
-    const renderStaticFrame = () => {
-      if (isDisposed || !canvas) return;
-      const width = canvas.width;
-      const height = canvas.height;
-      if (width === 0 || height === 0) return;
-
-      const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
-      const cx = width / 2;
-      const cy = height / 2;
-      const outerRadius = Math.min(cx, cy) - 10 * dpr;
-
-      ctx.clearRect(0, 0, width, height);
-
-      // Background vignette
-      const bgGrad = ctx.createRadialGradient(cx, cy, outerRadius * 0.1, cx, cy, outerRadius);
-      bgGrad.addColorStop(0, "rgba(5, 10, 15, 0.4)");
-      bgGrad.addColorStop(1, "rgba(0, 0, 0, 0.85)");
-      ctx.fillStyle = bgGrad;
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerRadius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Static Concentric rings
-      const rings = [0.25, 0.5, 0.75, 1.0];
-      rings.forEach((ratio, idx) => {
         ctx.beginPath();
-        ctx.arc(cx, cy, outerRadius * ratio, 0, Math.PI * 2);
-        ctx.strokeStyle =
-          idx === rings.length - 1
-            ? `rgba(${statusConfig.rgb}, 0.5)`
-            : "rgba(255, 255, 255, 0.08)";
-        ctx.lineWidth = (idx === rings.length - 1 ? 1.5 : 1) * dpr;
+        ctx.moveTo(cx - maxRadius, cy);
+        ctx.lineTo(cx + maxRadius, cy);
+        ctx.moveTo(cx, cy - maxRadius);
+        ctx.lineTo(cx, cy + maxRadius);
         ctx.stroke();
-      });
+        ctx.restore();
+      }
 
-      // Crosshairs & degree ticks
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-      ctx.lineWidth = 1 * dpr;
-      ctx.beginPath();
-      ctx.moveTo(cx - outerRadius, cy);
-      ctx.lineTo(cx + outerRadius, cy);
-      ctx.moveTo(cx, cy - outerRadius);
-      ctx.lineTo(cx, cy + outerRadius);
-      ctx.stroke();
+      if (trackingEnabled) {
+        clusterPoints.forEach((pt) => {
+          const dist = pt.distanceRatio * maxRadius;
+          const px = cx + Math.cos(pt.angleRad) * dist;
+          const py = cy + Math.sin(pt.angleRad) * dist;
+          const dotRadius = Math.max(1.5 * dpr, pt.radiusPixels * dpr);
 
-      // Static sweep beam (fixed at top/north)
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx, cy - outerRadius);
-      ctx.strokeStyle = `rgba(${statusConfig.rgb}, 0.8)`;
-      ctx.lineWidth = 1.5 * dpr;
-      ctx.stroke();
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(px, py, dotRadius, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${statusConfig.rgb}, ${pt.opacity})`;
+          ctx.fill();
+          ctx.restore();
+        });
+      }
 
-      // Cluster indicators
-      clusterPoints.forEach((pt) => {
-        const ptX = cx + Math.cos(pt.angleRad) * (outerRadius * pt.distanceRatio);
-        const ptY = cy + Math.sin(pt.angleRad) * (outerRadius * pt.distanceRatio);
+      if (!prefersReducedMotion && isIntersecting && isVisibleRef.current) {
+        const dt = lastTimestampRef.current ? (timestamp - lastTimestampRef.current) / 1000 : 0.016;
+        lastTimestampRef.current = timestamp;
+        sweepAngleRef.current = (sweepAngleRef.current + dt * 1.4) % (Math.PI * 2);
 
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(ptX, ptY, pt.radiusPixels * dpr, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${statusConfig.rgb}, ${pt.opacity})`;
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, maxRadius, sweepAngleRef.current - 0.55, sweepAngleRef.current);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(${statusConfig.rgb}, 0.16)`;
         ctx.fill();
-        ctx.strokeStyle = `rgba(${statusConfig.rgb}, 0.8)`;
-        ctx.lineWidth = 1 * dpr;
-        ctx.stroke();
-      });
-    };
-
-    const render = (now: number) => {
-      if (isDisposed) return;
-
-      // If offscreen or not visible, stop loop without scheduling next frame
-      if (!isVisibleRef.current) {
-        cancelLoop();
-        return;
-      }
-
-      if (!lastTimestampRef.current) {
-        lastTimestampRef.current = now;
-      }
-      const deltaMs = Math.min(100, now - lastTimestampRef.current);
-      lastTimestampRef.current = now;
-
-      // Rotate: 1 revolution per 4 seconds (approx 1.57 radians/sec)
-      const angularSpeed = (Math.PI * 2) / 4000;
-      sweepAngleRef.current = (sweepAngleRef.current + angularSpeed * deltaMs) % (Math.PI * 2);
-
-      const width = canvas.width;
-      const height = canvas.height;
-      if (width === 0 || height === 0) {
-        animFrameIdRef.current = requestAnimationFrame(render);
-        return;
-      }
-
-      const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
-      const cx = width / 2;
-      const cy = height / 2;
-      const outerRadius = Math.min(cx, cy) - 10 * dpr;
-
-      ctx.clearRect(0, 0, width, height);
-
-      // Outer Glow & Background
-      const bgGrad = ctx.createRadialGradient(cx, cy, outerRadius * 0.1, cx, cy, outerRadius);
-      bgGrad.addColorStop(0, "rgba(5, 10, 15, 0.5)");
-      bgGrad.addColorStop(1, "rgba(0, 0, 0, 0.9)");
-      ctx.fillStyle = bgGrad;
-      ctx.beginPath();
-      ctx.arc(cx, cy, outerRadius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Static Concentric rings
-      const rings = [0.25, 0.5, 0.75, 1.0];
-      rings.forEach((ratio, idx) => {
-        ctx.beginPath();
-        ctx.arc(cx, cy, outerRadius * ratio, 0, Math.PI * 2);
-        ctx.strokeStyle =
-          idx === rings.length - 1
-            ? `rgba(${statusConfig.rgb}, 0.6)`
-            : "rgba(255, 255, 255, 0.08)";
-        ctx.lineWidth = (idx === rings.length - 1 ? 1.5 : 1) * dpr;
-        ctx.stroke();
-      });
-
-      // Diagonal 45° dashed guide lines
-      ctx.save();
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
-      ctx.lineWidth = 1 * dpr;
-      ctx.setLineDash([3 * dpr, 6 * dpr]);
-      ctx.beginPath();
-      const diagLen = outerRadius * 0.7071; // cos(45)
-      ctx.moveTo(cx - diagLen, cy - diagLen);
-      ctx.lineTo(cx + diagLen, cy + diagLen);
-      ctx.moveTo(cx - diagLen, cy + diagLen);
-      ctx.lineTo(cx + diagLen, cy - diagLen);
-      ctx.stroke();
-      ctx.restore();
-
-      // Crosshairs & degree ticks
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-      ctx.lineWidth = 1 * dpr;
-      ctx.beginPath();
-      ctx.moveTo(cx - outerRadius, cy);
-      ctx.lineTo(cx + outerRadius, cy);
-      ctx.moveTo(cx, cy - outerRadius);
-      ctx.lineTo(cx, cy + outerRadius);
-      ctx.stroke();
-
-      // Radar degree markings on perimeter
-      const tickCount = 12; // every 30 degrees
-      for (let i = 0; i < tickCount; i++) {
-        const tickAngle = (i * Math.PI * 2) / tickCount;
-        const tickLen = (i % 3 === 0 ? 8 : 4) * dpr;
-        const x1 = cx + Math.cos(tickAngle) * (outerRadius - tickLen);
-        const y1 = cy + Math.sin(tickAngle) * (outerRadius - tickLen);
-        const x2 = cx + Math.cos(tickAngle) * outerRadius;
-        const y2 = cy + Math.sin(tickAngle) * outerRadius;
-
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
-        ctx.lineWidth = 1 * dpr;
-        ctx.stroke();
-      }
-
-      // Sweep Beam Trail / Fading Arc (60 degrees phosphor decay)
-      const currentAngle = sweepAngleRef.current;
-      const trailAngle = (Math.PI / 3); // 60 degrees
-
-      // Draw fading trail in small sector slices
-      const trailSlices = 15;
-      for (let i = 0; i < trailSlices; i++) {
-        const sliceProgress = i / trailSlices;
-        const sliceAlpha = (1 - sliceProgress) * 0.25;
-        const startA = currentAngle - (sliceProgress * trailAngle);
-        const endA = currentAngle - (((i + 1) / trailSlices) * trailAngle);
 
         ctx.beginPath();
         ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, outerRadius, endA, startA);
-        ctx.closePath();
-        ctx.fillStyle = `rgba(${statusConfig.rgb}, ${sliceAlpha})`;
-        ctx.fill();
+        ctx.lineTo(
+          cx + Math.cos(sweepAngleRef.current) * maxRadius,
+          cy + Math.sin(sweepAngleRef.current) * maxRadius,
+        );
+        ctx.strokeStyle = `rgba(${statusConfig.rgb}, 0.85)`;
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.stroke();
+        ctx.restore();
+
+        animFrameIdRef.current = window.requestAnimationFrame(renderFrame);
       }
-
-      // Leading Sweep Beam
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(
-        cx + Math.cos(currentAngle) * outerRadius,
-        cy + Math.sin(currentAngle) * outerRadius,
-      );
-      ctx.strokeStyle = `rgba(${statusConfig.rgb}, 0.9)`;
-      ctx.lineWidth = 1.5 * dpr;
-      ctx.stroke();
-
-      // Nearby Noise Cluster Indicators (noiseHistory)
-      clusterPoints.forEach((pt) => {
-        const ptX = cx + Math.cos(pt.angleRad) * (outerRadius * pt.distanceRatio);
-        const ptY = cy + Math.sin(pt.angleRad) * (outerRadius * pt.distanceRatio);
-
-        // Calculate angular difference to sweep beam for phosphor hit ping
-        let diff = (currentAngle - pt.angleRad) % (Math.PI * 2);
-        if (diff < 0) diff += Math.PI * 2;
-
-        const isPinged = diff < 0.2; // just swept past
-        const pingGlow = isPinged ? 1.5 : 1;
-        const pingAlpha = isPinged ? 0.95 : pt.opacity;
-
-        ctx.beginPath();
-        ctx.arc(ptX, ptY, pt.radiusPixels * dpr * pingGlow, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${statusConfig.rgb}, ${pingAlpha})`;
-        ctx.fill();
-
-        if (isPinged) {
-          ctx.beginPath();
-          ctx.arc(ptX, ptY, (pt.radiusPixels + 4) * dpr, 0, Math.PI * 2);
-          ctx.strokeStyle = `rgba(${statusConfig.rgb}, 0.6)`;
-          ctx.lineWidth = 1.5 * dpr;
-          ctx.stroke();
-        }
-      });
-
-      // Request next frame
-      animFrameIdRef.current = requestAnimationFrame(render);
     };
 
-    if (prefersReducedMotion) {
-      cancelLoop();
-      renderStaticFrame();
-    } else if (isIntersecting) {
-      cancelLoop();
-      animFrameIdRef.current = requestAnimationFrame(render);
-    } else {
-      cancelLoop();
+    if (prefersReducedMotion || !isIntersecting) {
+      renderFrame(performance.now());
+      return () => {
+        if (animFrameIdRef.current !== null) {
+          window.cancelAnimationFrame(animFrameIdRef.current);
+          animFrameIdRef.current = null;
+        }
+      };
     }
 
+    lastTimestampRef.current = performance.now();
+    animFrameIdRef.current = window.requestAnimationFrame(renderFrame);
+
     return () => {
-      isDisposed = true;
-      cancelLoop();
-      if (resizeObserver) {
-        resizeObserver.disconnect();
+      if (animFrameIdRef.current !== null) {
+        window.cancelAnimationFrame(animFrameIdRef.current);
+        animFrameIdRef.current = null;
       }
     };
-  }, [prefersReducedMotion, isIntersecting, statusConfig, clusterPoints, size]);
+  }, [
+    isOpen,
+    prefersReducedMotion,
+    isIntersecting,
+    statusConfig,
+    clusterPoints,
+    size,
+    hudOverlayVisible,
+    trackingEnabled,
+  ]);
+
+  if (!isOpen) return null;
 
   return (
     <div
       ref={containerRef}
       data-testid={testId}
+      data-range={range}
+      data-tracking={trackingEnabled ? "on" : "off"}
+      data-hud-overlay={hudOverlayVisible ? "visible" : "hidden"}
       aria-label="Acoustic Radar Sweep HUD"
       className={cn(
         "relative rounded-2xl p-4 bg-zinc-950/80 border border-zinc-800/80 backdrop-blur-md overflow-hidden flex flex-col items-center select-none shadow-xl",
@@ -488,7 +420,6 @@ export const RadarSweepHUD: React.FC<RadarSweepHUDProps> = memo(function RadarSw
       )}
       style={{ minHeight: `${size}px` }}
     >
-      {/* Sci-fi Cockpit HUD Header Status Bar */}
       <div className="w-full flex items-center justify-between z-10 text-[10px] tracking-wider uppercase font-mono mb-2 px-1">
         <div className="flex items-center gap-1.5">
           <span
@@ -515,7 +446,86 @@ export const RadarSweepHUD: React.FC<RadarSweepHUDProps> = memo(function RadarSw
         </div>
       </div>
 
-      {/* Decorative HTML5 Canvas (hidden from screen readers) */}
+      <div role="toolbar" aria-label="Radar controls" className="flex flex-wrap items-center justify-center gap-1.5 z-10 mb-2">
+        <div className="relative group inline-block">
+          <button
+            type="button"
+            onClick={cycleRange}
+            aria-label={`Cycle radar range (current: ${formatRadarRange(range)})`}
+            aria-keyshortcuts="R"
+            className="px-2 py-0.5 text-[10px] font-mono rounded border border-zinc-700 bg-zinc-900/80 text-zinc-200"
+          >
+            Range: {formatRadarRange(range)}
+          </button>
+          <span
+            role="tooltip"
+            className="pointer-events-none hidden group-hover:flex group-focus-within:flex items-center gap-1.5"
+          >
+            <span>Cycle radar range</span>
+            <kbd>R</kbd>
+          </span>
+        </div>
+
+        <div className="relative group inline-block">
+          <button
+            type="button"
+            onClick={toggleTracking}
+            aria-pressed={trackingEnabled}
+            aria-label="Toggle colleague tracking"
+            aria-keyshortcuts="T"
+            className="px-2 py-0.5 text-[10px] font-mono rounded border border-zinc-700 bg-zinc-900/80 text-zinc-200"
+          >
+            Tracking: {trackingEnabled ? "On" : "Off"}
+          </button>
+          <span
+            role="tooltip"
+            className="pointer-events-none hidden group-hover:flex group-focus-within:flex items-center gap-1.5"
+          >
+            <span>Toggle colleague tracking</span>
+            <kbd>T</kbd>
+          </span>
+        </div>
+
+        <div className="relative group inline-block">
+          <button
+            type="button"
+            onClick={toggleHudOverlay}
+            aria-pressed={hudOverlayVisible}
+            aria-label="Toggle HUD grid and telemetry"
+            aria-keyshortcuts="H"
+            className="px-2 py-0.5 text-[10px] font-mono rounded border border-zinc-700 bg-zinc-900/80 text-zinc-200"
+          >
+            HUD Overlay: {hudOverlayVisible ? "Shown" : "Hidden"}
+          </button>
+          <span
+            role="tooltip"
+            className="pointer-events-none hidden group-hover:flex group-focus-within:flex items-center gap-1.5"
+          >
+            <span>Toggle HUD grid &amp; telemetry</span>
+            <kbd>H</kbd>
+          </span>
+        </div>
+
+        <div className="relative group inline-block">
+          <button
+            type="button"
+            onClick={handleCloseOrCollapse}
+            aria-label="Close or collapse radar HUD"
+            aria-keyshortcuts="Escape"
+            className="px-2 py-0.5 text-[10px] font-mono rounded border border-zinc-700 bg-zinc-900/80 text-zinc-200"
+          >
+            Close / Collapse
+          </button>
+          <span
+            role="tooltip"
+            className="pointer-events-none hidden group-hover:flex group-focus-within:flex items-center gap-1.5"
+          >
+            <span>Close radar or collapse HUD</span>
+            <kbd>Esc</kbd>
+          </span>
+        </div>
+      </div>
+
       <div className="relative flex items-center justify-center w-full aspect-square max-w-[260px] my-auto">
         <canvas
           ref={canvasRef}
@@ -524,7 +534,6 @@ export const RadarSweepHUD: React.FC<RadarSweepHUDProps> = memo(function RadarSw
           className="absolute inset-0 w-full h-full"
         />
 
-        {/* Central HUD Decibel Reticle & Accessible Numerical Reading */}
         <div
           data-testid="radar-center-reticle"
           className="relative z-10 flex flex-col items-center justify-center p-3 rounded-full bg-zinc-950/70 border border-white/10 backdrop-blur-sm pointer-events-none"
@@ -541,7 +550,12 @@ export const RadarSweepHUD: React.FC<RadarSweepHUDProps> = memo(function RadarSw
         </div>
       </div>
 
-      {/* Cockpit Sub-panel Telemetry Footer */}
+      {hudOverlayVisible && (
+        <div data-testid="radar-hud-overlay" className="text-[10px] font-mono text-zinc-400 z-10 mt-1">
+          Grid &amp; Telemetry Active - Range {formatRadarRange(range)}
+        </div>
+      )}
+
       <div className="w-full flex items-center justify-between z-10 text-[9px] font-mono text-zinc-400 mt-2 pt-2 border-t border-zinc-800/60 px-1">
         <div className="flex items-center gap-1">
           <span>SAMPLES:</span>
@@ -557,7 +571,6 @@ export const RadarSweepHUD: React.FC<RadarSweepHUDProps> = memo(function RadarSw
         </div>
       </div>
 
-      {/* Screen Reader Accessible Status Announcement (polite to avoid flooding) */}
       <div className="sr-only" role="status" aria-live="polite">
         Current ambient noise level is {safeCurrentDb} decibels, classified as {statusConfig.label}.
       </div>

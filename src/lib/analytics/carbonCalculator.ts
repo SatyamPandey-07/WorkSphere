@@ -1,48 +1,62 @@
-export type TransitMode = 'foot' | 'bike' | 'bus' | 'rail' | 'metro' | 'car_ice';
+export type TransitMode = 'foot' | 'bike' | 'transit';
 
-export interface CarbonCalculationInput {
+export interface CarbonSavingsInput {
   distanceKm: number;
   mode: TransitMode;
-  iceBaselineGramsPerKm?: number;
+  iceEmissionGramsPerKm?: number;
+  modeEmissionGramsPerKm?: number;
 }
 
-export interface CarbonCalculationResult {
+export interface CarbonSavingsBreakdown {
   mode: TransitMode;
   distanceKm: number;
-  iceBaselineGrams: number;
-  modeEmissionGrams: number;
-  carbonSavedGrams: number;
+  iceEmissionsKg: number;
+  modeEmissionsKg: number;
+  savedKg: number;
+  savingsPercent: number;
 }
 
-export const EMISSION_GRAMS_PER_PKM: Record<TransitMode, number> = {
-  foot: 0,
-  bike: 0,
-  rail: 35,
-  metro: 28,
-  bus: 68,
-  car_ice: 192,
-};
+export const EPA_ICE_GRAMS_PER_KM = 251;
+export const DEFAULT_TRANSIT_GRAMS_PER_KM = 68;
 
-export const DEFAULT_ICE_BASELINE_GRAMS_PER_KM = EMISSION_GRAMS_PER_PKM.car_ice;
+export function getDefaultModeEmissionGramsPerKm(mode: TransitMode): number {
+  if (mode === 'foot' || mode === 'bike') return 0;
+  return DEFAULT_TRANSIT_GRAMS_PER_KM;
+}
 
 export function calculateCarbonSavings(
-  input: CarbonCalculationInput
-): CarbonCalculationResult {
-  const safeKm = Math.max(0, Number.isFinite(input.distanceKm) ? input.distanceKm : 0);
-  const baselineRate =
-    input.iceBaselineGramsPerKm ?? DEFAULT_ICE_BASELINE_GRAMS_PER_KM;
-  const modeRate = EMISSION_GRAMS_PER_PKM[input.mode] ?? 0;
+  input: CarbonSavingsInput
+): CarbonSavingsBreakdown {
+  const safeDistanceKm =
+    typeof input.distanceKm === 'number' &&
+    Number.isFinite(input.distanceKm) &&
+    input.distanceKm > 0
+      ? input.distanceKm
+      : 0;
 
-  const iceBaselineGrams = Math.round(safeKm * baselineRate * 100) / 100;
-  const modeEmissionGrams = Math.round(safeKm * modeRate * 100) / 100;
-  const carbonSavedGrams =
-    Math.round(Math.max(0, iceBaselineGrams - modeEmissionGrams) * 100) / 100;
+  const iceRate = input.iceEmissionGramsPerKm ?? EPA_ICE_GRAMS_PER_KM;
+  const modeRate =
+    input.modeEmissionGramsPerKm ??
+    getDefaultModeEmissionGramsPerKm(input.mode);
+
+  const iceEmissionsKg = Number(((safeDistanceKm * iceRate) / 1000).toFixed(4));
+  const modeEmissionsKg = Number(
+    ((safeDistanceKm * modeRate) / 1000).toFixed(4)
+  );
+  const savedKg = Number(
+    Math.max(0, iceEmissionsKg - modeEmissionsKg).toFixed(4)
+  );
+  const savingsPercent =
+    iceEmissionsKg > 0
+      ? Number(((savedKg / iceEmissionsKg) * 100).toFixed(1))
+      : 0;
 
   return {
     mode: input.mode,
-    distanceKm: Math.round(safeKm * 1000) / 1000,
-    iceBaselineGrams,
-    modeEmissionGrams,
-    carbonSavedGrams,
+    distanceKm: Number(safeDistanceKm.toFixed(3)),
+    iceEmissionsKg,
+    modeEmissionsKg,
+    savedKg,
+    savingsPercent,
   };
 }

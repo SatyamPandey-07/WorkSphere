@@ -19,6 +19,7 @@
     "zkp:compile:membership": "bash scripts/compile-membership-zkp.sh",
     "zkp:compile:nomad": "bash scripts/compile-nomad-zkp.sh",
     "build:wasm:audio-filter": "bash wasm/audio-filter/build.sh",
+    "build:wasm:power-anomaly": "bash src/wasm/sensors/build.sh",
     "build:wasm:sound-classifier": "bash src/wasm/acoustic/build.sh",
     "bench:audio-filter": "node scripts/bench-audio-filter-pool.mjs",
     "bench:bloom-limiter": "node --experimental-strip-types scripts/bench-distributed-bloom-limiter.mjs",

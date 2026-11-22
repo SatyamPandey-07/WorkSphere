@@ -6,14 +6,19 @@ describe("SoundLevelMeter Component", () => {
   it("renders sound level decibels and acoustic tier correctly", () => {
     render(<SoundLevelMeter decibels={45} />);
 
-    expect(screen.getByTestId("sound-level-meter")).toHaveAttribute("data-tier", "QUIET");
+    expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+      "data-tier",
+      "QUIET",
+    );
     expect(screen.getAllByText("Quiet: 45dB").length).toBeGreaterThan(0);
   });
 
   it("renders filter preset dropdown with all three presets", () => {
     render(<SoundLevelMeter decibels={65} />);
 
-    const select = screen.getByTestId("acoustic-filter-select") as HTMLSelectElement;
+    const select = screen.getByTestId(
+      "acoustic-filter-select",
+    ) as HTMLSelectElement;
     expect(select).toBeInTheDocument();
     expect(select.value).toBe("off");
 
@@ -32,10 +37,12 @@ describe("SoundLevelMeter Component", () => {
       <SoundLevelMeter
         decibels={65}
         onFilterPresetChange={onFilterPresetChange}
-      />
+      />,
     );
 
-    const select = screen.getByTestId("acoustic-filter-select") as HTMLSelectElement;
+    const select = screen.getByTestId(
+      "acoustic-filter-select",
+    ) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "voice-focus" } });
 
     expect(select.value).toBe("voice-focus");
@@ -48,10 +55,12 @@ describe("SoundLevelMeter Component", () => {
 
   it("respects controlled filterPreset prop", () => {
     const { rerender } = render(
-      <SoundLevelMeter decibels={65} filterPreset="voice-focus" />
+      <SoundLevelMeter decibels={65} filterPreset="voice-focus" />,
     );
 
-    const select = screen.getByTestId("acoustic-filter-select") as HTMLSelectElement;
+    const select = screen.getByTestId(
+      "acoustic-filter-select",
+    ) as HTMLSelectElement;
     expect(select.value).toBe("voice-focus");
 
     rerender(<SoundLevelMeter decibels={65} filterPreset="cafe-suppress" />);
@@ -66,11 +75,157 @@ describe("SoundLevelMeter Component", () => {
         showToggle
         highContrast={false}
         onToggleHighContrast={onToggle}
-      />
+      />,
     );
 
     const toggle = screen.getByTestId("high-contrast-toggle");
     fireEvent.click(toggle);
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  describe("decibel value clamping & progress bar width bounds (Issue #9441)", () => {
+    it("clamps NaN input to 0 dB, QUIET tier, and 0% progress width", () => {
+      render(<SoundLevelMeter decibels={NaN} />);
+
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "QUIET",
+      );
+      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
+      const progressBar = screen.getByTestId("sound-level-progress-bar");
+      expect(progressBar).toHaveStyle({ width: "0%" });
+    });
+
+    it("clamps positive Infinity input to 0 dB, QUIET tier, and 0% progress width", () => {
+      render(<SoundLevelMeter decibels={Infinity} />);
+
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "QUIET",
+      );
+      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
+      const progressBar = screen.getByTestId("sound-level-progress-bar");
+      expect(progressBar).toHaveStyle({ width: "0%" });
+    });
+
+    it("clamps negative Infinity input to 0 dB, QUIET tier, and 0% progress width", () => {
+      render(<SoundLevelMeter decibels={-Infinity} />);
+
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "QUIET",
+      );
+      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
+      const progressBar = screen.getByTestId("sound-level-progress-bar");
+      expect(progressBar).toHaveStyle({ width: "0%" });
+    });
+
+    it("clamps negative decibel readings to 0 dB floor", () => {
+      render(<SoundLevelMeter decibels={-25} />);
+
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "QUIET",
+      );
+      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
+      const progressBar = screen.getByTestId("sound-level-progress-bar");
+      expect(progressBar).toHaveStyle({ width: "0%" });
+    });
+
+    it("renders zero and silent readings accurately at 0 dB with 0% progress bar", () => {
+      render(<SoundLevelMeter decibels={0} />);
+
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "QUIET",
+      );
+      expect(screen.getAllByText("Quiet: 0dB").length).toBeGreaterThan(0);
+      const progressBar = screen.getByTestId("sound-level-progress-bar");
+      expect(progressBar).toHaveStyle({ width: "0%" });
+    });
+
+    it("clamps values above 120 dB to exactly 120 dB ceiling, LOUD tier, and 100% progress width", () => {
+      render(<SoundLevelMeter decibels={145} />);
+
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "LOUD",
+      );
+      expect(screen.getAllByText("Loud: 120dB").length).toBeGreaterThan(0);
+      const progressBar = screen.getByTestId("sound-level-progress-bar");
+      expect(progressBar).toHaveStyle({ width: "100%" });
+    });
+
+    it("renders exactly 120 dB as 120 dB with LOUD tier and 100% progress width", () => {
+      render(<SoundLevelMeter decibels={120} />);
+
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "LOUD",
+      );
+      expect(screen.getAllByText("Loud: 120dB").length).toBeGreaterThan(0);
+      const progressBar = screen.getByTestId("sound-level-progress-bar");
+      expect(progressBar).toHaveStyle({ width: "100%" });
+    });
+
+    it("renders ordinary valid readings across acoustic tiers accurately", () => {
+      const { rerender } = render(<SoundLevelMeter decibels={35} />);
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "QUIET",
+      );
+      expect(screen.getAllByText("Quiet: 35dB").length).toBeGreaterThan(0);
+      expect(screen.getByTestId("sound-level-progress-bar")).toHaveStyle({
+        width: "35%",
+      });
+
+      rerender(<SoundLevelMeter decibels={65} />);
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "MODERATE",
+      );
+      expect(screen.getAllByText("Moderate: 65dB").length).toBeGreaterThan(0);
+      expect(screen.getByTestId("sound-level-progress-bar")).toHaveStyle({
+        width: "65%",
+      });
+
+      rerender(<SoundLevelMeter decibels={85} />);
+      expect(screen.getByTestId("sound-level-meter")).toHaveAttribute(
+        "data-tier",
+        "LOUD",
+      );
+      expect(screen.getAllByText("Loud: 85dB").length).toBeGreaterThan(0);
+      expect(screen.getByTestId("sound-level-progress-bar")).toHaveStyle({
+        width: "85%",
+      });
+    });
+
+    it("ensures CSS progress width is strictly bounded between 0% and 100%", () => {
+      const testCases = [
+        -100,
+        -1,
+        0,
+        10,
+        50,
+        100,
+        120,
+        150,
+        999,
+        NaN,
+        Infinity,
+        -Infinity,
+      ];
+
+      testCases.forEach((val) => {
+        const { unmount } = render(<SoundLevelMeter decibels={val} />);
+        const progressBar = screen.getByTestId("sound-level-progress-bar");
+        const widthStyle = progressBar.style.width;
+        expect(widthStyle).toMatch(/^(\d+(\.\d+)?)%$/);
+        const percent = parseFloat(widthStyle);
+        expect(percent).toBeGreaterThanOrEqual(0);
+        expect(percent).toBeLessThanOrEqual(100);
+        unmount();
+      });
+    });
   });
 });

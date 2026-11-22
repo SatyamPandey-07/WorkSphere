@@ -1,15 +1,4 @@
-'use client';
-
- fix/carbon-savings-zero-baseline
-import React from 'react';
-import { calculateCarbonSavingsPercent } from '@/lib/analytics';
-
-export interface CarbonFootprintTrackerProps {
-  baselineKg: number;
-  actualKg: number;
-  tripCount?: number;
-  className?: string;
-}
+"use client";
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -294,39 +283,12 @@ export default function CarbonFootprintTracker() {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
- main
 
-export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
-  baselineKg,
-  actualKg,
-  tripCount = 0,
-  className = '',
-}) => {
-  const safeBaseline = Number.isFinite(baselineKg) && baselineKg > 0 ? baselineKg : 0;
-  const safeActual = Number.isFinite(actualKg) && actualKg >= 0 ? actualKg : 0;
-  const savingsPercent = calculateCarbonSavingsPercent(safeBaseline, safeActual);
-  const formattedSavings = `${Number.isInteger(savingsPercent) ? savingsPercent : savingsPercent.toFixed(1)}%`;
+    setBadgeExported(true);
+    setTimeout(() => setBadgeExported(false), 3000);
+  };
 
   return (
- fix/carbon-savings-zero-baseline
-    <section
-      aria-label="Carbon Footprint Summary"
-      className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${className}`.trim()}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-slate-900">
-          Commute Carbon Reduction
-        </h2>
-        <span className="text-xs text-slate-500">{tripCount} trips logged</span>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-          <p className="text-xs text-slate-500">Baseline</p>
-          <p className="mt-1 text-lg font-bold text-slate-900">
-            {safeBaseline.toFixed(1)} kg
-          </p>
-
     <div className="w-full max-w-5xl mx-auto space-y-6">
       {/* Top Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-emerald-950/40 to-slate-900 border border-emerald-500/30 p-6 md:p-8 backdrop-blur-xl shadow-2xl">
@@ -461,15 +423,9 @@ export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
           >
             Retry
           </button>
- main
         </div>
+      )}
 
- fix/carbon-savings-zero-baseline
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-          <p className="text-xs text-slate-500">Actual</p>
-          <p className="mt-1 text-lg font-bold text-slate-900">
-            {safeActual.toFixed(1)} kg
-          </p>
       {/* Partial Missing Commute Distance Notice */}
       {hasPartialMissingDistance && !loading && !error && (
         <div
@@ -500,25 +456,15 @@ export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
           >
             Update Location
           </a>
- main
         </div>
+      )}
 
+      {/* All Missing Commute Distance Gentle Prompt */}
+      {isMissingCommuteDistance && !loading && !error && (
         <div
-          data-testid="carbon-savings-stat"
-          className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"
+          data-testid="missing-commute-distance-prompt"
+          className="p-4 sm:p-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-md"
         >
- fix/carbon-savings-zero-baseline
-          <p className="text-xs font-medium text-emerald-800">Savings</p>
-          <p
-            data-testid="carbon-savings-value"
-            className="mt-1 text-lg font-bold text-emerald-950"
-          >
-            {formattedSavings}
-          </p>
-        </div>
-      </div>
-    </section>
-
           <div className="flex items-start sm:items-center gap-3">
             <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
               <MapPin className="w-5 h-5" />
@@ -1099,6 +1045,5 @@ export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
         </div>
       ) : null}
     </div>
- main
   );
-};
+}

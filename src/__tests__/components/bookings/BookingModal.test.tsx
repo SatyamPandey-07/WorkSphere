@@ -1,92 +1,28 @@
-import React from 'react';
- fix/booking-modal-prevent-double-submit
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { BookingModal } from '@/components/bookings/BookingModal';
-
-describe('BookingModal double-submit protection', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  it('disables button immediately, shows spinner, and dispatches only 1 POST request on rapid clicks', async () => {
-    let resolveFetch!: (value: Response) => void;
-    const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveFetch = resolve;
-        })
-    );
-
-    const onSuccess = jest.fn();
-    const onError = jest.fn();
-
-    render(
-      <BookingModal
-        isOpen
-        venueId="venue-mum-1"
-        seatId="seat-12"
-        onSuccess={onSuccess}
-        onError={onError}
-        onClose={() => {}}
-      />
-    );
-
-    const button = screen.getByTestId('confirm-reservation-btn') as HTMLButtonElement;
-
-    fireEvent.click(button);
-    fireEvent.click(button);
-    fireEvent.click(button);
-
-    expect(button).toBeDisabled();
-    expect(screen.getByTestId('confirm-spinner')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/venues/venue-mum-1/seats/seat-12/lock',
-      expect.objectContaining({ method: 'POST' })
-    );
-
-    await act(async () => {
-      resolveFetch(
-        new Response(JSON.stringify({ ok: true, lockId: 'lock-99' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
-    });
-
-    await waitFor(() => {
-      expect(onSuccess).toHaveBeenCalledWith({ ok: true, lockId: 'lock-99' });
-    });
-
-    expect(onError).not.toHaveBeenCalled();
-    expect(button).not.toBeDisabled();
-  });
-});
-
+import React from "react";
 import {
   render,
   screen,
   fireEvent,
   waitFor,
   act,
-} from '@testing-library/react';
-import '@testing-library/jest-dom';
+} from "@testing-library/react";
+import "@testing-library/jest-dom";
 
-jest.mock('@/components/venues/VenueSeatWaitlistModal', () => ({
+jest.mock("@/components/venues/VenueSeatWaitlistModal", () => ({
   VenueSeatWaitlistModal: () => <div data-testid="mock-waitlist" />,
 }));
 
-jest.mock('@/lib/security/offlinePasscardStore', () => ({
+jest.mock("@/lib/security/offlinePasscardStore", () => ({
   storeOfflinePasscardsFromBooking: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { BookingModal } from '@/components/bookings/BookingModal';
-import { storeOfflinePasscardsFromBooking } from '@/lib/security/offlinePasscardStore';
+import { BookingModal } from "@/components/bookings/BookingModal";
+import { storeOfflinePasscardsFromBooking } from "@/lib/security/offlinePasscardStore";
 
-describe('BookingModal Component (#7725)', () => {
+describe("BookingModal Component (#7725)", () => {
   const originalClipboard = navigator.clipboard;
   const originalExecCommand = document.execCommand;
-  const mockConfirmationId = 'WS-BKG-84920';
+  const mockConfirmationId = "WS-BKG-84920";
 
   beforeEach(() => {
     jest.useFakeTimers();
@@ -96,7 +32,7 @@ describe('BookingModal Component (#7725)', () => {
       },
     });
     document.execCommand = jest.fn().mockReturnValue(true);
-    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -112,7 +48,7 @@ describe('BookingModal Component (#7725)', () => {
     document.execCommand = originalExecCommand;
   });
 
-  it('preserves existing reservation form behavior when not confirmed', () => {
+  it("preserves existing reservation form behavior when not confirmed", () => {
     render(
       <BookingModal
         venueId="venue-1"
@@ -123,19 +59,19 @@ describe('BookingModal Component (#7725)', () => {
     );
 
     expect(
-      screen.getByRole('heading', { name: /reserve workspace/i }),
+      screen.getByRole("heading", { name: /reserve workspace/i }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/date/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/time/i)).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /confirm booking/i }),
+      screen.getByRole("button", { name: /confirm booking/i }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByTestId('booking-confirmation-card'),
+      screen.queryByTestId("booking-confirmation-card"),
     ).not.toBeInTheDocument();
   });
 
-  it('renders confirmation card with correct confirmation ID and CopyBookingReferenceButton', () => {
+  it("renders confirmation card with correct confirmation ID and CopyBookingReferenceButton", () => {
     render(
       <BookingModal
         venueId="venue-1"
@@ -147,27 +83,27 @@ describe('BookingModal Component (#7725)', () => {
     );
 
     expect(
-      screen.getByRole('heading', { name: /booking confirmed!/i }),
+      screen.getByRole("heading", { name: /booking confirmed!/i }),
     ).toBeInTheDocument();
-    expect(screen.getByTestId('booking-confirmation-card')).toBeInTheDocument();
-    expect(screen.getByTestId('booking-confirmation-id')).toHaveTextContent(
+    expect(screen.getByTestId("booking-confirmation-card")).toBeInTheDocument();
+    expect(screen.getByTestId("booking-confirmation-id")).toHaveTextContent(
       mockConfirmationId,
     );
 
-    const copyBtn = screen.getByTestId('copy-confirmation-btn');
+    const copyBtn = screen.getByTestId("copy-confirmation-btn");
     expect(copyBtn).toBeInTheDocument();
     expect(copyBtn).toHaveAttribute(
-      'aria-label',
+      "aria-label",
       `Copy booking confirmation reference ID ${mockConfirmationId}`,
     );
   });
 
-  it('transitions to confirmation card and invokes onSuccess and offline passcard store upon successful submission', async () => {
+  it("transitions to confirmation card and invokes onSuccess and offline passcard store upon successful submission", async () => {
     (global as any).fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         success: true,
-        data: { confirmationId: 'WS-BKG-99123', offlinePasscard: 'token-abc' },
+        data: { confirmationId: "WS-BKG-99123", offlinePasscard: "token-abc" },
       }),
     });
 
@@ -182,33 +118,33 @@ describe('BookingModal Component (#7725)', () => {
     );
 
     fireEvent.change(screen.getByLabelText(/date/i), {
-      target: { value: '2026-12-01' },
+      target: { value: "2026-12-01" },
     });
     fireEvent.change(screen.getByLabelText(/time/i), {
-      target: { value: '14:00' },
+      target: { value: "14:00" },
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }));
+      fireEvent.click(screen.getByRole("button", { name: /confirm booking/i }));
     });
 
     await waitFor(() => {
-      expect(mockOnSuccess).toHaveBeenCalledWith('WS-BKG-99123');
+      expect(mockOnSuccess).toHaveBeenCalledWith("WS-BKG-99123");
     });
 
     expect(storeOfflinePasscardsFromBooking).toHaveBeenCalledWith({
-      confirmationId: 'WS-BKG-99123',
-      offlinePasscard: 'token-abc',
+      confirmationId: "WS-BKG-99123",
+      offlinePasscard: "token-abc",
     });
 
-    expect(screen.getByTestId('booking-confirmation-card')).toBeInTheDocument();
-    expect(screen.getByTestId('booking-confirmation-id')).toHaveTextContent(
-      'WS-BKG-99123',
+    expect(screen.getByTestId("booking-confirmation-card")).toBeInTheDocument();
+    expect(screen.getByTestId("booking-confirmation-id")).toHaveTextContent(
+      "WS-BKG-99123",
     );
-    expect(screen.getByTestId('copy-confirmation-btn')).toBeInTheDocument();
+    expect(screen.getByTestId("copy-confirmation-btn")).toBeInTheDocument();
   });
 
-  it('handles successful copying using the integrated CopyBookingReferenceButton', async () => {
+  it("handles successful copying using the integrated CopyBookingReferenceButton", async () => {
     render(
       <BookingModal
         venueId="venue-1"
@@ -219,7 +155,7 @@ describe('BookingModal Component (#7725)', () => {
       />,
     );
 
-    const copyBtn = screen.getByTestId('copy-confirmation-btn');
+    const copyBtn = screen.getByTestId("copy-confirmation-btn");
 
     await act(async () => {
       fireEvent.click(copyBtn);
@@ -229,22 +165,22 @@ describe('BookingModal Component (#7725)', () => {
       mockConfirmationId,
     );
     expect(copyBtn).toHaveAttribute(
-      'aria-label',
+      "aria-label",
       `Booking reference ID ${mockConfirmationId} copied to clipboard`,
     );
-    expect(screen.getByTestId('copy-sr-announcement')).toHaveTextContent(
-      'Booking reference copied to clipboard',
+    expect(screen.getByTestId("copy-sr-announcement")).toHaveTextContent(
+      "Booking reference copied to clipboard",
     );
   });
 
-  it('displays manual fallback with selectable input when copying fails', async () => {
+  it("displays manual fallback with selectable input when copying fails", async () => {
     Object.assign(navigator, {
       clipboard: {
-        writeText: jest.fn().mockRejectedValue(new Error('Permission denied')),
+        writeText: jest.fn().mockRejectedValue(new Error("Permission denied")),
       },
     });
     document.execCommand = jest.fn().mockImplementation(() => {
-      throw new Error('execCommand failed');
+      throw new Error("execCommand failed");
     });
 
     render(
@@ -257,28 +193,28 @@ describe('BookingModal Component (#7725)', () => {
       />,
     );
 
-    const copyBtn = screen.getByTestId('copy-confirmation-btn');
+    const copyBtn = screen.getByTestId("copy-confirmation-btn");
 
     await act(async () => {
       fireEvent.click(copyBtn);
     });
 
     expect(
-      screen.getByTestId('clipboard-fallback-container'),
+      screen.getByTestId("clipboard-fallback-container"),
     ).toBeInTheDocument();
     const fallbackInput = screen.getByTestId(
-      'fallback-confirmation-input',
+      "fallback-confirmation-input",
     ) as HTMLInputElement;
     expect(fallbackInput).toBeInTheDocument();
     expect(fallbackInput.value).toBe(mockConfirmationId);
-    expect(fallbackInput).toHaveAttribute('readonly');
+    expect(fallbackInput).toHaveAttribute("readonly");
 
-    const selectSpy = jest.spyOn(fallbackInput, 'select');
+    const selectSpy = jest.spyOn(fallbackInput, "select");
     fireEvent.focus(fallbackInput);
     expect(selectSpy).toHaveBeenCalled();
   });
 
-  it('handles existing modal close behavior in both form and confirmation states', () => {
+  it("handles existing modal close behavior in both form and confirmation states", () => {
     const mockOnClose = jest.fn();
     const { rerender } = render(
       <BookingModal
@@ -289,13 +225,13 @@ describe('BookingModal Component (#7725)', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(mockOnClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByTestId('booking-modal-backdrop'));
+    fireEvent.click(screen.getByTestId("booking-modal-backdrop"));
     expect(mockOnClose).toHaveBeenCalledTimes(2);
 
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: "Escape" });
     expect(mockOnClose).toHaveBeenCalledTimes(3);
 
     // Confirmation state close
@@ -309,11 +245,11 @@ describe('BookingModal Component (#7725)', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('booking-done-btn'));
+    fireEvent.click(screen.getByTestId("booking-done-btn"));
     expect(mockOnClose).toHaveBeenCalledTimes(4);
   });
 
-  it('displays validation error if date or time is missing when submitting', async () => {
+  it("displays validation error if date or time is missing when submitting", async () => {
     render(
       <BookingModal
         venueId="venue-1"
@@ -324,16 +260,16 @@ describe('BookingModal Component (#7725)', () => {
     );
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }));
+      fireEvent.click(screen.getByRole("button", { name: /confirm booking/i }));
     });
 
-    expect(screen.getByTestId('booking-error-alert')).toHaveTextContent(
-      'Please select both a date and time',
+    expect(screen.getByTestId("booking-error-alert")).toHaveTextContent(
+      "Please select both a date and time",
     );
   });
 
-  describe('Seat Reservation Hold Timer Ring Integration (#7756)', () => {
-    it('renders ReservationTimerBadge in form view with circular progress ring', () => {
+  describe("Seat Reservation Hold Timer Ring Integration (#7756)", () => {
+    it("renders ReservationTimerBadge in form view with circular progress ring", () => {
       render(
         <BookingModal
           venueId="venue-1"
@@ -344,18 +280,14 @@ describe('BookingModal Component (#7725)', () => {
         />,
       );
 
-      expect(
-        screen.getByTestId('reservation-timer-badge'),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByTestId('reservation-timer-ring'),
-      ).toBeInTheDocument();
-      expect(screen.getByTestId('reservation-timer-text')).toHaveTextContent(
-        'Hold: 10:00',
+      expect(screen.getByTestId("reservation-timer-badge")).toBeInTheDocument();
+      expect(screen.getByTestId("reservation-timer-ring")).toBeInTheDocument();
+      expect(screen.getByTestId("reservation-timer-text")).toHaveTextContent(
+        "Hold: 10:00",
       );
     });
 
-    it('updates badge color and pulsing state below 120 seconds', () => {
+    it("updates badge color and pulsing state below 120 seconds", () => {
       render(
         <BookingModal
           venueId="venue-1"
@@ -366,15 +298,15 @@ describe('BookingModal Component (#7725)', () => {
         />,
       );
 
-      const badge = screen.getByTestId('reservation-timer-badge');
-      expect(badge).toHaveAttribute('data-color', 'red');
-      expect(badge).toHaveClass('animate-pulse');
-      expect(screen.getByTestId('reservation-timer-text')).toHaveTextContent(
-        'Hold: 01:30',
+      const badge = screen.getByTestId("reservation-timer-badge");
+      expect(badge).toHaveAttribute("data-color", "red");
+      expect(badge).toHaveClass("animate-pulse");
+      expect(screen.getByTestId("reservation-timer-text")).toHaveTextContent(
+        "Hold: 01:30",
       );
     });
 
-    it('triggers hold expiration and displays alert when hold time expires', async () => {
+    it("triggers hold expiration and displays alert when hold time expires", async () => {
       const onHoldExpire = jest.fn();
 
       render(
@@ -390,24 +322,21 @@ describe('BookingModal Component (#7725)', () => {
 
       // Try to confirm when hold has expired
       fireEvent.change(screen.getByLabelText(/date/i), {
-        target: { value: '2026-12-01' },
+        target: { value: "2026-12-01" },
       });
       fireEvent.change(screen.getByLabelText(/time/i), {
-        target: { value: '10:00' },
+        target: { value: "10:00" },
       });
 
       await act(async () => {
         fireEvent.click(
-          screen.getByRole('button', { name: /confirm booking/i }),
+          screen.getByRole("button", { name: /confirm booking/i }),
         );
       });
 
-      expect(
-        screen.getByTestId('booking-error-alert'),
-      ).toHaveTextContent(
+      expect(screen.getByTestId("booking-error-alert")).toHaveTextContent(
         /reservation hold has expired/i,
       );
     });
   });
 });
- main

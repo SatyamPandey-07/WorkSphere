@@ -1,9 +1,8 @@
- feat/gossipsub-ip-colocation-scoring
 import {
   GossipSubPeerScore,
   type PeerDisposition,
   type PeerScoreConfig,
-} from './GossipSubPeerScore';
+} from "./GossipSubPeerScore";
 
 export interface GossipMessage {
   id: string;
@@ -17,7 +16,7 @@ export interface RoutedMessageResult {
   accepted: boolean;
   disposition: PeerDisposition;
   score: number;
-  priority: 'HIGH' | 'LOW' | 'DROPPED';
+  priority: "HIGH" | "LOW" | "DROPPED";
 }
 
 export class GossipSubRouter {
@@ -46,22 +45,22 @@ export class GossipSubRouter {
 
     const snapshot = this.peerScore.getScore(msg.fromPeerId);
 
-    if (snapshot.disposition === 'PRUNED') {
+    if (snapshot.disposition === "PRUNED") {
       return {
         accepted: false,
         disposition: snapshot.disposition,
         score: snapshot.totalScore,
-        priority: 'DROPPED',
+        priority: "DROPPED",
       };
     }
 
-    if (snapshot.disposition === 'DEPRIORITIZED') {
+    if (snapshot.disposition === "DEPRIORITIZED") {
       this.lowPriorityQueue.push(msg);
       return {
         accepted: true,
         disposition: snapshot.disposition,
         score: snapshot.totalScore,
-        priority: 'LOW',
+        priority: "LOW",
       };
     }
 
@@ -70,7 +69,7 @@ export class GossipSubRouter {
       accepted: true,
       disposition: snapshot.disposition,
       score: snapshot.totalScore,
-      priority: 'HIGH',
+      priority: "HIGH",
     };
   }
 
@@ -334,7 +333,11 @@ export interface BackpressureOptions {
   /**
    * Callback invoked when a packet is dropped due to queue overflow.
    */
-  onPacketDropped?: (peerId: string, packetBytes: number, reason: string) => void;
+  onPacketDropped?: (
+    peerId: string,
+    packetBytes: number,
+    reason: string,
+  ) => void;
   /**
    * Callback invoked when a peer's outbound queue becomes blocked due to retry exhaustion.
    */
@@ -493,7 +496,10 @@ export class GossipSubRouter {
       this.fecReceivers.delete(peerId);
     }
     for (const members of this.mesh.values()) members.delete(peerId);
-    this.cleanupPeerOutbound(peerId, new Error(`Peer ${peerId} removed from router`));
+    this.cleanupPeerOutbound(
+      peerId,
+      new Error(`Peer ${peerId} removed from router`),
+    );
   }
 
   subscribe(topic: string): void {
@@ -892,7 +898,10 @@ export class GossipSubRouter {
 
     if (state.channel && state.lowListener) {
       try {
-        state.channel.removeEventListener("bufferedamountlow", state.lowListener);
+        state.channel.removeEventListener(
+          "bufferedamountlow",
+          state.lowListener,
+        );
       } catch {
         // Ignore
       }
@@ -935,7 +944,7 @@ export class GossipSubRouter {
     }
 
     const waitAll: Promise<void>[] = [];
-    for (const [id, state] of this.peerOutbound.entries()) {
+    for (const [, state] of this.peerOutbound.entries()) {
       if (state.isBlocked && state.blockReason) {
         waitAll.push(Promise.reject(state.blockReason));
       } else if (state.queue.length > 0 || state.isDraining) {
@@ -973,12 +982,21 @@ export class GossipSubRouter {
 
     // If queue is blocked due to retry exhaustion, reject incoming packets
     if (state.isBlocked) {
-      const err = state.blockReason ?? new PeerQueueBlockedError(peerId, `Peer queue ${peerId} is blocked due to retry exhaustion`);
+      const err =
+        state.blockReason ??
+        new PeerQueueBlockedError(
+          peerId,
+          `Peer queue ${peerId} is blocked due to retry exhaustion`,
+        );
       if (this.overflowPolicy === "throw") {
         throw err;
       }
       this.stats.packetsDroppedOverflow++;
-      this.opts.backpressure?.onPacketDropped?.(peerId, data.byteLength, err.message);
+      this.opts.backpressure?.onPacketDropped?.(
+        peerId,
+        data.byteLength,
+        err.message,
+      );
       return false;
     }
 
@@ -992,7 +1010,11 @@ export class GossipSubRouter {
     ) {
       this.stats.packetsDroppedOverflow++;
       const reason = `Queue overflow: length=${state.queue.length}/${this.maxQueuePackets}, bytes=${state.queueBytes + data.byteLength}/${this.maxQueueBytes}`;
-      this.opts.backpressure?.onPacketDropped?.(peerId, data.byteLength, reason);
+      this.opts.backpressure?.onPacketDropped?.(
+        peerId,
+        data.byteLength,
+        reason,
+      );
       if (this.overflowPolicy === "throw") {
         throw new QueueOverflowError(peerId, data.byteLength, reason);
       }
@@ -1016,7 +1038,10 @@ export class GossipSubRouter {
         if (ch && ch !== state.channel) {
           if (state.channel && state.lowListener) {
             try {
-              state.channel.removeEventListener("bufferedamountlow", state.lowListener);
+              state.channel.removeEventListener(
+                "bufferedamountlow",
+                state.lowListener,
+              );
             } catch {
               // Ignore cleanup error on old channel
             }
@@ -1045,7 +1070,10 @@ export class GossipSubRouter {
     }
   }
 
-  private async drainQueue(peerId: string, state: PeerOutboundState): Promise<void> {
+  private async drainQueue(
+    peerId: string,
+    state: PeerOutboundState,
+  ): Promise<void> {
     if (state.isDraining) return;
     state.isDraining = true;
 
@@ -1058,7 +1086,9 @@ export class GossipSubRouter {
           // If channel is closed or closing, drop pending sends and abort
           const readyState = channel.readyState;
           if (readyState === "closing" || readyState === "closed") {
-            const err = new Error(`RTCDataChannel for peer ${peerId} is ${readyState}`);
+            const err = new Error(
+              `RTCDataChannel for peer ${peerId} is ${readyState}`,
+            );
             this.cleanupPeerOutbound(peerId, err);
             return;
           }
@@ -1073,13 +1103,19 @@ export class GossipSubRouter {
           if (channel.bufferedAmount >= this.highWatermark) {
             this.setBackpressured(peerId, state, true);
             this.stats.backpressureWaitEvents++;
-            const drained = await this.waitForChannelDrain(peerId, channel, state);
+            const drained = await this.waitForChannelDrain(
+              peerId,
+              channel,
+              state,
+            );
             if (!drained) {
               // Timeout or channel closed during wait
               if (channel.readyState !== "open") {
                 this.cleanupPeerOutbound(
                   peerId,
-                  new Error(`DataChannel closed while awaiting backpressure drain`),
+                  new Error(
+                    `DataChannel closed while awaiting backpressure drain`,
+                  ),
                 );
                 return;
               }
@@ -1108,7 +1144,11 @@ export class GossipSubRouter {
               err.message.toLowerCase().includes("operationerror") ||
               err.message.toLowerCase().includes("bufferedamount"));
 
-          if (isOpError && channel && nextPacket.operationRetries < MAX_OPERATION_RETRIES) {
+          if (
+            isOpError &&
+            channel &&
+            nextPacket.operationRetries < MAX_OPERATION_RETRIES
+          ) {
             nextPacket.operationRetries++;
             this.setBackpressured(peerId, state, true);
             // Put item back at the head of queue to preserve strict CRDT ordering
@@ -1224,7 +1264,9 @@ export class GossipSubRouter {
         // Resolve true if below high watermark, false if still stalled
         resolve(channel.bufferedAmount < this.highWatermark);
       }, this.drainTimeoutMs);
-      if (typeof (timer as unknown as { unref?: () => void }).unref === "function") {
+      if (
+        typeof (timer as unknown as { unref?: () => void }).unref === "function"
+      ) {
         (timer as unknown as { unref: () => void }).unref();
       }
     });
@@ -1236,7 +1278,10 @@ export class GossipSubRouter {
 
     if (state.channel && state.lowListener) {
       try {
-        state.channel.removeEventListener("bufferedamountlow", state.lowListener);
+        state.channel.removeEventListener(
+          "bufferedamountlow",
+          state.lowListener,
+        );
       } catch {
         // Ignore
       }
@@ -1264,4 +1309,3 @@ export class GossipSubRouter {
     return items;
   }
 }
- main

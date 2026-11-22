@@ -1,19 +1,3 @@
- feat/webrtc-ice-restart-backoff
-import { useCallback, useEffect, useRef, useState } from 'react';
-
-export interface PeerConnectionLike {
-  iceConnectionState: RTCIceConnectionState | string;
-  oniceconnectionstatechange: ((this: PeerConnectionLike, ev: Event) => unknown) | null;
-  restartIce?: () => void;
-  createOffer(options?: RTCOfferOptions): Promise<RTCSessionDescriptionInit>;
-  setLocalDescription(description: RTCSessionDescriptionInit): Promise<void>;
-  close?(): void;
-}
-
-export interface SignalingChannelLike {
-  send(data: string | Record<string, unknown>): void;
-}
-
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -130,26 +114,12 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
   const [peerTelemetry, setPeerTelemetry] = useState<
     Record<string, PeerTelemetry>
   >({});
- main
 
-export interface UseMeshDataChannelsOptions {
-  peerId: string;
-  peerConnection: PeerConnectionLike | null | undefined;
-  signaling?: SignalingChannelLike | null;
-  maxRestarts?: number;
-  baseBackoffMs?: number;
-  onSignalOffer?: (peerId: string, offer: RTCSessionDescriptionInit) => void;
-  onConnectionTerminated?: (peerId: string, attempts: number) => void;
-}
+  const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
+  const socketRef = useRef<{ send: (data: string) => void } | null>(null);
+  const onDataRef = useRef<DataHandler | undefined>(onData);
 
- feat/webrtc-ice-restart-backoff
-export interface MeshDataChannelState {
-  iceState: string;
-  restartAttempts: number;
-  isTerminated: boolean;
-  triggerIceRestart: () => Promise<boolean>;
-  resetRestartCount: () => void;
-}
   const prevBitrateBaselineRef = useRef<Map<string, PeerBitrateBaseline>>(
     new Map(),
   );
@@ -158,53 +128,31 @@ export interface MeshDataChannelState {
   useEffect(() => {
     onDataRef.current = onData;
   }, [onData]);
- main
 
-export function computeIceBackoffMs(attempt: number, baseBackoffMs = 250): number {
-  const safeAttempt = Math.max(1, attempt);
-  return baseBackoffMs * Math.pow(2, safeAttempt - 1);
-}
+  useEffect(() => {
+    if (typeof getToken === "function") {
+      getToken()
+        .then(setToken)
+        .catch(() => setToken(null));
+    }
+  }, [getToken]);
 
-export function useMeshDataChannels({
-  peerId,
-  peerConnection,
-  signaling,
-  maxRestarts = 3,
-  baseBackoffMs = 250,
-  onSignalOffer,
-  onConnectionTerminated,
-}: UseMeshDataChannelsOptions): MeshDataChannelState {
-  const [iceState, setIceState] = useState<string>(
-    peerConnection?.iceConnectionState ?? 'new'
+  const sendSignal = useCallback(
+    (msg: Omit<SignalMessage, "type" | "from">) => {
+      if (!userId || !socketRef.current) return;
+      const payload: SignalMessage = {
+        type: "webrtc-signal",
+        from: userId,
+        ...msg,
+      };
+      socketRef.current.send(JSON.stringify(payload));
+    },
+    [userId],
   );
-  const [restartAttempts, setRestartAttempts] = useState<number>(0);
-  const [isTerminated, setIsTerminated] = useState<boolean>(false);
 
-  const attemptsRef = useRef<number>(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isMountedRef = useRef<boolean>(true);
-
-  const onSignalOfferRef = useRef(onSignalOffer);
-  onSignalOfferRef.current = onSignalOffer;
-  const onTerminatedRef = useRef(onConnectionTerminated);
-  onTerminatedRef.current = onConnectionTerminated;
-
-  const clearPendingTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+  const updatePeerCount = useCallback(() => {
+    setPeerCount(dataChannelsRef.current.size);
   }, []);
-
- feat/webrtc-ice-restart-backoff
-  const resetRestartCount = useCallback(() => {
-    clearPendingTimer();
-    attemptsRef.current = 0;
-    if (isMountedRef.current) {
-      setRestartAttempts(0);
-      setIsTerminated(false);
-    }
-  }, [clearPendingTimer]);
 
   const cleanupPeer = useCallback(
     (peerId: string) => {
@@ -227,27 +175,25 @@ export function useMeshDataChannels({
         if (dataChannelsRef.current.size === 0) setIsConnected(false);
         return;
       }
- main
 
-  const executeIceRestartOffer = useCallback(async (): Promise<boolean> => {
-    if (!peerConnection || !isMountedRef.current) {
-      return false;
-    }
+      pc.onicecandidate = null;
+      pc.ondatachannel = null;
+      pc.close();
+      peersRef.current.delete(peerId);
+      dataChannelsRef.current.delete(peerId);
+      updatePeerCount();
+    },
+    [updatePeerCount],
+  );
 
-    if (typeof peerConnection.restartIce === 'function') {
-      peerConnection.restartIce();
-    }
+  const setupDataChannel = useCallback(
+    (dc: RTCDataChannel, peerId: string) => {
+      dataChannelsRef.current.set(peerId, dc);
 
-    const offer = await peerConnection.createOffer({ iceRestart: true });
-    if (!isMountedRef.current) {
-      return false;
-    }
-
- feat/webrtc-ice-restart-backoff
-    await peerConnection.setLocalDescription(offer);
-    if (!isMountedRef.current) {
-      return false;
-    }
+      dc.onopen = () => {
+        updatePeerCount();
+        setIsConnected(true);
+      };
 
       dc.onclose = () => {
         resetStateVectorChecksumCache();
@@ -265,117 +211,165 @@ export function useMeshDataChannels({
           setIsConnected(false);
         }
       };
- main
 
-    if (signaling) {
-      signaling.send(
-        JSON.stringify({
-          type: 'ICE_RESTART_OFFER',
-          targetPeerId: peerId,
-          sdp: offer,
-        })
-      );
-    }
-
-    onSignalOfferRef.current?.(peerId, offer);
-    return true;
-  }, [peerConnection, peerId, signaling]);
-
-  const triggerIceRestart = useCallback(async (): Promise<boolean> => {
-    if (!peerConnection || !isMountedRef.current) {
-      return false;
-    }
-
-    if (attemptsRef.current >= maxRestarts) {
-      setIsTerminated(true);
-      onTerminatedRef.current?.(peerId, attemptsRef.current);
-      return false;
-    }
-
-    const nextAttempt = attemptsRef.current + 1;
-    attemptsRef.current = nextAttempt;
-    setRestartAttempts(nextAttempt);
-
-    const delayMs = computeIceBackoffMs(nextAttempt, baseBackoffMs);
-
-    return new Promise<boolean>((resolve) => {
-      clearPendingTimer();
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null;
-        if (!isMountedRef.current) {
-          resolve(false);
-          return;
+      dc.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) {
+          onDataRef.current?.(peerId, event.data);
         }
-        try {
-          const sent = await executeIceRestartOffer();
-          resolve(sent);
-        } catch {
-          if (attemptsRef.current >= maxRestarts && isMountedRef.current) {
-            setIsTerminated(true);
-            onTerminatedRef.current?.(peerId, attemptsRef.current);
-          }
-          resolve(false);
+      };
+    },
+    [updatePeerCount],
+  );
+
+  const ensurePeer = useCallback(
+    (peerId: string, isInitiator: boolean) => {
+      if (peersRef.current.has(peerId)) return peersRef.current.get(peerId);
+
+      if (peersRef.current.size >= 5) {
+        console.warn("Max mesh peers reached, cannot connect to", peerId);
+        return null;
+      }
+
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      peersRef.current.set(peerId, pc);
+
+      pc.onicecandidate = (ev) => {
+        sendSignal({
+          kind: "ice",
+          to: peerId,
+          candidate: ev.candidate ? ev.candidate.toJSON() : null,
+        });
+      };
+
+      pc.ondatachannel = (ev) => {
+        setupDataChannel(ev.channel, peerId);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        if (
+          pc?.iceConnectionState === "disconnected" ||
+          pc?.iceConnectionState === "failed"
+        ) {
+          cleanupPeer(peerId);
         }
-      }, delayMs);
-    });
-  }, [
-    baseBackoffMs,
-    clearPendingTimer,
-    executeIceRestartOffer,
-    maxRestarts,
-    peerConnection,
-    peerId,
-  ]);
+      };
 
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      clearPendingTimer();
-    };
-  }, [clearPendingTimer]);
+      if (isInitiator) {
+        const dc = pc.createDataChannel("yjs-sync", { ordered: true });
+        setupDataChannel(dc, peerId);
 
-  useEffect(() => {
-    if (!peerConnection) {
-      setIceState('closed');
-      return;
-    }
+        pc.createOffer()
+          .then((offer) => pc?.setLocalDescription(offer).then(() => offer))
+          .then((offer) => {
+            sendSignal({
+              kind: "offer",
+              to: peerId,
+              sdp: pc!.localDescription ?? offer,
+            });
+          })
+          .catch((err) => {
+            console.error("Error creating offer:", err);
+            cleanupPeer(peerId);
+          });
+      }
 
-    setIceState(peerConnection.iceConnectionState);
+      return pc;
+    },
+    [sendSignal, cleanupPeer, setupDataChannel],
+  );
 
-    const handleStateChange = () => {
-      if (!isMountedRef.current) return;
-      const currentState = peerConnection.iceConnectionState;
-      setIceState(currentState);
+  const handleSignal = useCallback(
+    async (msg: SignalMessage) => {
+      if (!userId || msg.from === userId) return;
 
-      if (currentState === 'connected' || currentState === 'completed') {
-        resetRestartCount();
+      if (msg.kind === "peer-join") {
+        cleanupPeer(msg.from);
+        ensurePeer(msg.from, true);
         return;
       }
 
-      if (currentState === 'failed') {
-        void triggerIceRestart();
+      if (msg.kind === "peer-leave") {
+        cleanupPeer(msg.from);
+        return;
       }
-    };
 
-    peerConnection.oniceconnectionstatechange = handleStateChange;
+      if (msg.kind === "offer" && msg.to === userId) {
+        const pc = ensurePeer(msg.from, false);
+        if (!pc) return;
+        try {
+          await pc.setRemoteDescription(msg.sdp!);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          sendSignal({
+            kind: "answer",
+            to: msg.from,
+            sdp: pc.localDescription ?? answer,
+          });
+        } catch {
+          cleanupPeer(msg.from);
+        }
+        return;
+      }
 
+      if (msg.kind === "answer" && msg.to === userId) {
+        const pc = peersRef.current.get(msg.from);
+        if (!pc) return;
+        try {
+          await pc.setRemoteDescription(msg.sdp!);
+        } catch {
+          cleanupPeer(msg.from);
+        }
+        return;
+      }
+
+      if (msg.kind === "ice" && msg.to === userId && msg.candidate) {
+        const pc = peersRef.current.get(msg.from);
+        if (!pc) return;
+        try {
+          await pc.addIceCandidate(msg.candidate);
+        } catch {
+          // Ignore stale candidates
+        }
+      }
+    },
+    [userId, ensurePeer, cleanupPeer, sendSignal],
+  );
+
+  const socket = usePartySocket({
+    host: partyHost(),
+    room: roomId,
+    query: token ? { token } : undefined,
+    onOpen() {
+      if (userId) {
+        const peerIds = [...peersRef.current.keys()];
+        for (const id of peerIds) {
+          cleanupPeer(id);
+        }
+        sendSignal({ kind: "peer-join" });
+      }
+    },
+    onMessage(event) {
+      try {
+        const data = JSON.parse(event.data) as SignalMessage;
+        if (data.type !== "webrtc-signal") return;
+        void handleSignal(data);
+      } catch {
+        // Ignore non-JSON messages (Yjs binary)
+      }
+    },
+  });
+
+  useEffect(() => {
+    socketRef.current = socket;
+  }, [socket]);
+
+  useEffect(() => {
+    const peerIds = [...peersRef.current.keys()];
     return () => {
-      if (peerConnection.oniceconnectionstatechange === handleStateChange) {
-        peerConnection.oniceconnectionstatechange = null;
+      for (const id of peerIds) {
+        cleanupPeer(id);
       }
-      clearPendingTimer();
     };
- feat/webrtc-ice-restart-backoff
-  }, [peerConnection, resetRestartCount, triggerIceRestart, clearPendingTimer]);
-
-  return {
-    iceState,
-    restartAttempts,
-    isTerminated,
-    triggerIceRestart,
-    resetRestartCount,
-
   }, [cleanupPeer]);
 
   // Telemetry Polling Loop (~3000ms)
@@ -389,7 +383,11 @@ export function useMeshDataChannels({
       const updates: Record<string, PeerTelemetry> = {};
 
       for (const [peerId, pc] of peersRef.current.entries()) {
-        if (!pc || pc.signalingState === "closed" || pc.connectionState === "closed") {
+        if (
+          !pc ||
+          pc.signalingState === "closed" ||
+          pc.connectionState === "closed"
+        ) {
           continue;
         }
 
@@ -477,7 +475,8 @@ export function useMeshDataChannels({
                 Number.isFinite(stat.packetsReceived) &&
                 stat.packetsReceived >= 0
               ) {
-                rtpPacketsReceived = (rtpPacketsReceived ?? 0) + stat.packetsReceived;
+                rtpPacketsReceived =
+                  (rtpPacketsReceived ?? 0) + stat.packetsReceived;
               }
             }
           });
@@ -626,6 +625,5 @@ export function useMeshDataChannels({
     peerCount,
     isConnected,
     peerTelemetry,
- main
   };
 }

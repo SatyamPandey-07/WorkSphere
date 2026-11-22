@@ -49,6 +49,15 @@ WorkSphere employs a hybrid peer-to-peer (P2P) mesh topology for collaborative w
 
 ---
 
+## 1.1 ICE Traversal & STUN/TURN Topology
+
+For an in-depth reference on ICE candidate gathering, candidate types (`host`, `srflx`, `prflx`, `relay`), Google STUN server discovery, TURN relay topology, timeout bounds, and enterprise firewall troubleshooting, consult the companion guide:
+- [`WEBRTC_ICE_TRAVERSAL.md`](./WEBRTC_ICE_TRAVERSAL.md) — WebRTC ICE candidate gathering and STUN/TURN fallback topology.
+
+While this runbook details the signaling exchange and SDP offer/answer protocol, the ICE traversal guide documents how candidate pairs are tested, why WorkSphere currently relies on STUN without TURN relay fallback, and how to diagnose symmetric NAT and firewall blocks.
+
+---
+
 ## 2. Signaling Protocol & Message Schemas
 
 WorkSphere implements two primary signaling formats depending on the functional room:

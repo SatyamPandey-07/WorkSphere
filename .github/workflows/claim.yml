@@ -33,7 +33,7 @@ jobs:
               if (context.payload.comment.user.type === 'Bot') return;
 
               // Check for blocked/banned contributors
-              const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti'];
               if (BLOCKED_USERS.some(u => u.toLowerCase() === commenter.toLowerCase())) {
                 console.log(`Blocked contributor @${commenter} attempted to interact with issue/PR #${issueNumber}`);
                 if (isClaim) {
@@ -172,19 +172,19 @@ jobs:
                 return;
               }
 
-              // 2. Check active assigned issues for this contributor (max 10 limit with rate limit fallback)
+              // 2. Check active assigned issues for this contributor (max 10 limit with full pagination)
               let activeIssuesCount = 0;
               try {
-                const userAssignedIssues = await github.rest.issues.listForRepo({
+                const userAssignedIssues = await github.paginate(github.rest.issues.listForRepo, {
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   assignee: commenter,
                   state: 'open',
                   per_page: 100
                 });
-                activeIssuesCount = userAssignedIssues.data.filter(item => !item.pull_request).length;
+                activeIssuesCount = userAssignedIssues.filter(item => !item.pull_request).length;
               } catch (rateLimitErr) {
-                console.warn('API rate limit or query error encountered, proceeding with auto-assignment fallback:', rateLimitErr.message);
+                console.warn('API query error encountered:', rateLimitErr.message);
               }
 
               if (activeIssuesCount >= 10) {

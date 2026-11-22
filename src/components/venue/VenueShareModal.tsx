@@ -178,46 +178,60 @@ export function VenueShareModal({
   };
 
   const handleCopyLink = async () => {
-    if (copied || copyInProgressRef.current) return;
-    copyInProgressRef.current = true;
-    setIsCopying(true);
-    const requestId = ++copyRequestIdRef.current;
+    if (copied) return;
+
+    const fallbackCopy = () => {
+      const textArea = document.createElement("textarea");
+      textArea.value = shortUrl;
+      textArea.setAttribute("readonly", "");
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+
+      try {
+        return document.execCommand("copy");
+      } finally {
+        document.body.removeChild(textArea);
+      }
+    };
 
     try {
       let didCopy = false;
 
       if (
         typeof navigator !== "undefined" &&
-        navigator.clipboard &&
-        typeof navigator.clipboard.writeText === "function"
+        typeof navigator.clipboard?.writeText === "function"
       ) {
-        try {
-          await navigator.clipboard.writeText(shortUrl);
-          didCopy = true;
-        } catch {
-          if (requestId !== copyRequestIdRef.current) return;
-          // Fallback for insecure contexts (e.g. non-HTTPS) or denied permissions
-          didCopy = copyTextFallback(shortUrl);
-        }
-      } else {
-        didCopy = copyTextFallback(shortUrl);
+        await navigator.clipboard.writeText(shortUrl);
+        didCopy = true;
+      } else if (typeof document !== "undefined") {
+        didCopy = fallbackCopy();
       }
 
-      if (requestId !== copyRequestIdRef.current) return;
-
       if (!didCopy) {
-        throw new Error("Clipboard copy unavailable");
+        throw new Error("Clipboard copy was not successful");
       }
 
       setCopied(true);
-      toast("Link copied to clipboard!", "success");
+      toast("Copied to clipboard!", "success");
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      timerRef.current = window.setTimeout(() => {
-        timerRef.current = null;
-        if (isMountedRef.current) setCopied(false);
-      }, 2000);
+      timerRef.current = window.setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      if (requestId !== copyRequestIdRef.current) return;
+      if (typeof document !== "undefined") {
+        try {
+          if (fallbackCopy()) {
+            setCopied(true);
+            toast("Copied to clipboard!", "success");
+            if (timerRef.current !== null)
+              window.clearTimeout(timerRef.current);
+            timerRef.current = window.setTimeout(() => setCopied(false), 2000);
+            return;
+          }
+        } catch (fallbackError) {
+          console.error("Fallback copy failed:", fallbackError);
+        }
+      }
       console.error("Failed to copy shortlink:", err);
       toast("Unable to copy to clipboard", "error");
     } finally {
@@ -371,73 +385,29 @@ export function VenueShareModal({
                     onFocus={(e) => e.target.select()}
                     className="flex-1 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 select-all font-mono"
                   />
-                  <div className="relative shrink-0">
-                    <AnimatePresence>
-                      {copied && (
-                        <motion.div
-                          key="copy-tooltip"
-                          role="tooltip"
-                          data-testid="copy-clipboard-tooltip"
-                          initial={{ opacity: 0, y: 6, scale: 0.92 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 4, scale: 0.94 }}
-                          transition={{ duration: 0.18, ease: "easeOut" }}
-                          className="pointer-events-none absolute -top-11 right-0 z-10 whitespace-nowrap rounded-xl bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-white dark:text-zinc-900 shadow-lg border border-zinc-700/50 dark:border-zinc-300/60"
-                        >
-                          Link copied to clipboard! 🚀
-                          <span className="absolute -bottom-1 right-5 h-2 w-2 rotate-45 bg-zinc-900 dark:bg-zinc-100" />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    <button
-                      type="button"
-                      onClick={handleCopyLink}
-                      disabled={isCopying}
-                      className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                        copied
-                          ? "bg-green-600 text-white"
-                          : "bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900"
-                      }`}
-                    >
-                      {copied ? (
-                        <>
-                          <motion.span
-                            key="check-icon"
-                            initial={{ scale: 0.5, rotate: -20 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 400,
-                              damping: 20,
-                            }}
-                            className="inline-flex"
-                          >
-                            <Check
-                              className="w-3.5 h-3.5"
-                              data-testid="copy-check-icon"
-                            />
-                          </motion.span>
-                          <span>Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Accessible polite live announcement */}
-                <div
-                  aria-live="polite"
-                  aria-atomic="true"
-                  className="sr-only"
-                  data-testid="copy-live-region"
-                >
-                  {copied ? "Link copied to clipboard! 🚀" : ""}
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    aria-label={copied ? "Share link copied" : "Copy share link"}
+                    title={copied ? "Share link copied" : "Copy share link"}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                      copied
+                        ? "bg-green-600 text-white"
+                        : "bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900"
+                    }`}
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 

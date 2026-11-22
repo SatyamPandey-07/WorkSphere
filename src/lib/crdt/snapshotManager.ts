@@ -18,7 +18,99 @@ import {
  * snapshot supersedes. Snapshots carry a deterministic checksum plus the encoded
  * state vector so a peer whose local clock has fallen behind the compacted
  * baseline can be detected and recovered.
+ *
+ * Concurrency safety (#9166): snapshot compaction (compact) and peer recovery
+ * (recover) can interleave at async yield points. If compact evicts delta
+ * buffers while recover is mid-replay the Yjs decoder can see a premature end
+ * of update error. An AsyncRWLock serialises the GC phase of compact against
+ * all in-flight recover operations: recover holds a shared read lock while
+ * applying updates; compact acquires an exclusive write lock before it deletes
+ * any deltas, ensuring no GC occurs while a reader still holds references to
+ * those buffers.
  */
+
+/**
+ * Minimal async read/write lock — no external dependencies required.
+ *
+ * Multiple concurrent readers are allowed; a writer waits until all readers
+ * have released before proceeding, and no new readers are admitted while a
+ * writer is queued.  Lock acquisition is exception-safe: the returned release
+ * function must be called in a finally block.
+ *
+ * JavaScript is single-threaded but async functions yield at every `await`.
+ * This is therefore an *async* mutual-exclusion primitive built on Promises,
+ * not OS threads or shared memory.
+ *
+ * @internal
+ */
+class AsyncRWLock {
+  private readers = 0;
+  private writerActive = false;
+  private readonly writeQueue: Array<() => void> = [];
+  private readonly readQueue: Array<() => void> = [];
+
+  /**
+   * Acquires a shared read lock.  Returns a release function; call it in a
+   * finally block to prevent lock starvation if the reader throws.
+   */
+  acquireRead(): Promise<() => void> {
+    // Readers are blocked while a writer is active or queued.
+    if (!this.writerActive && this.writeQueue.length === 0) {
+      this.readers += 1;
+      return Promise.resolve(this.releaseRead.bind(this));
+    }
+    return new Promise<() => void>((resolve) => {
+      this.readQueue.push(() => {
+        this.readers += 1;
+        resolve(this.releaseRead.bind(this));
+      });
+    });
+  }
+
+  private releaseRead(): void {
+    this.readers -= 1;
+    this.drainQueues();
+  }
+
+  /**
+   * Acquires an exclusive write lock.  Returns a release function; call it in
+   * a finally block.
+   */
+  acquireWrite(): Promise<() => void> {
+    if (!this.writerActive && this.readers === 0) {
+      this.writerActive = true;
+      return Promise.resolve(this.releaseWrite.bind(this));
+    }
+    return new Promise<() => void>((resolve) => {
+      this.writeQueue.push(() => {
+        this.writerActive = true;
+        resolve(this.releaseWrite.bind(this));
+      });
+    });
+  }
+
+  private releaseWrite(): void {
+    this.writerActive = false;
+    this.drainQueues();
+  }
+
+  private drainQueues(): void {
+    // A pending writer takes priority so long-running read floods cannot
+    // starve it indefinitely.
+    if (this.writeQueue.length > 0 && this.readers === 0 && !this.writerActive) {
+      const next = this.writeQueue.shift()!;
+      next();
+      return;
+    }
+    // No pending or active writer — flush all waiting readers.
+    if (!this.writerActive && this.writeQueue.length === 0) {
+      while (this.readQueue.length > 0) {
+        const next = this.readQueue.shift()!;
+        next();
+      }
+    }
+  }
+}
 
 import * as Y from "yjs";
 import {
@@ -481,6 +573,14 @@ export class SnapshotManager {
   private applyingBaseline = false;
   private destroyed = false;
 
+  /**
+   * Guards snapshot GC (delta buffer eviction) against concurrent in-flight
+   * recover() calls (#9166).  recover() holds a shared read lock while it
+   * replays deltas so compact() must wait for all readers to drain before it
+   * evicts the delta log.
+   */
+  private readonly gcLock = new AsyncRWLock();
+
   private readonly handleUpdate = (update: Uint8Array) => {
     if (this.destroyed || this.applyingBaseline) return;
 
@@ -632,7 +732,16 @@ export class SnapshotManager {
       await this.storage.saveSnapshot(snapshot);
 
       if (flushedThroughSeq > 0) {
-        await this.storage.deleteDeltasThrough(this.roomId, flushedThroughSeq);
+        // Acquire an exclusive write lock before evicting delta buffers.
+        // Any concurrent recover() calls hold a read lock over their replay
+        // window; this ensures GC cannot remove deltas that are still being
+        // decoded by an in-flight peer recovery (#9166).
+        const releaseWrite = await this.gcLock.acquireWrite();
+        try {
+          await this.storage.deleteDeltasThrough(this.roomId, flushedThroughSeq);
+        } finally {
+          releaseWrite();
+        }
       }
 
       // Only retire the operations folded into this snapshot; keep counting
@@ -700,27 +809,35 @@ export class SnapshotManager {
     try {
       Y.applyUpdate(this.doc, baseline.update, "snapshot-recovery");
 
-      const deltas = await this.storage.listDeltas(this.roomId);
+      // Hold a shared read lock while listing and replaying deltas.  This
+      // prevents compact()'s GC phase from evicting delta buffers that this
+      // recovery operation is still decoding (#9166).
+      const releaseRead = await this.gcLock.acquireRead();
       let appliedDeltas = 0;
-      for (const delta of deltas.sort((a, b) => a.seq - b.seq)) {
-        const deltaUpdate = isCompressedPayload(delta.update)
-          ? decompressYjsUpdate(delta.update)
-          : delta.update;
+      try {
+        const deltas = await this.storage.listDeltas(this.roomId);
+        for (const delta of deltas.sort((a, b) => a.seq - b.seq)) {
+          const deltaUpdate = isCompressedPayload(delta.update)
+            ? decompressYjsUpdate(delta.update)
+            : delta.update;
 
-        const deltaUncompressedChecksum = computeSnapshotChecksum(deltaUpdate);
-        const deltaRawChecksum = computeSnapshotChecksum(delta.update);
+          const deltaUncompressedChecksum = computeSnapshotChecksum(deltaUpdate);
+          const deltaRawChecksum = computeSnapshotChecksum(delta.update);
 
-        if (
-          delta.checksum !== deltaUncompressedChecksum &&
-          delta.checksum !== deltaRawChecksum
-        ) {
-          console.warn(
-            `[SnapshotManager] Dropping corrupt delta #${delta.seq} for room ${this.roomId}`,
-          );
-          continue;
+          if (
+            delta.checksum !== deltaUncompressedChecksum &&
+            delta.checksum !== deltaRawChecksum
+          ) {
+            console.warn(
+              `[SnapshotManager] Dropping corrupt delta #${delta.seq} for room ${this.roomId}`,
+            );
+            continue;
+          }
+          Y.applyUpdate(this.doc, deltaUpdate, "snapshot-recovery");
+          appliedDeltas += 1;
         }
-        Y.applyUpdate(this.doc, deltaUpdate, "snapshot-recovery");
-        appliedDeltas += 1;
+      } finally {
+        releaseRead();
       }
 
       const checksum = this.getDocumentChecksum();

@@ -1,6 +1,6 @@
 # IAQ Ventilation Control Feedback Loop & ASHRAE 62.1 Reference Guide
 
-This document provides technical documentation for the Indoor Air Quality (IAQ) and Heating, Ventilation, and Air Conditioning (HVAC) feedback controller implemented in [`IAQVentilationController.ts`](file:///src/core/iot/IAQVentilationController.ts).
+This document provides technical documentation for the Indoor Air Quality (IAQ) and Heating, Ventilation, and Air Conditioning (HVAC) feedback controller implemented in [`IAQVentilationController.ts`](../../src/core/iot/IAQVentilationController.ts).
 
 It covers multi-pollutant sensor telemetry processing, composite IAQ grading, closed-loop PID control dynamics, motorized damper and Variable Air Volume (VAV) modulation, emergency wildfire/smog override protections, and alignment with the ASHRAE Standard 62.1 commercial ventilation framework.
 
@@ -9,7 +9,7 @@ It covers multi-pollutant sensor telemetry processing, composite IAQ grading, cl
 ## 1. Overview
 
 ### 1.1 Purpose
-The `IAQVentilationController` class in [`src/core/iot/IAQVentilationController.ts`](file:///src/core/iot/IAQVentilationController.ts) automates indoor air quality management and mechanical ventilation in commercial and coworking spaces. It maintains occupant safety, cognitive comfort, and energy efficiency by continuously modulating outdoor air intake dampers and supply fan speeds in response to real-time indoor contaminant accumulation and outdoor environmental conditions.
+The `IAQVentilationController` class in [`src/core/iot/IAQVentilationController.ts`](../../src/core/iot/IAQVentilationController.ts) automates indoor air quality management and mechanical ventilation in commercial and coworking spaces. It maintains occupant safety, cognitive comfort, and energy efficiency by continuously modulating outdoor air intake dampers and supply fan speeds in response to real-time indoor contaminant accumulation and outdoor environmental conditions.
 
 ### 1.2 Scope & Responsibilities
 - **Zone Registration & Architectural Profiling**: Tracks per-zone geometric volume, floor area, design occupancy, target contaminant limits, diffuser distribution effectiveness ($E_z$), and mechanical damper/fan flow bounds.
@@ -92,7 +92,7 @@ flowchart TD
 ```
 
 ### 2.2 Core Interfaces & Data Contracts
-The controller defines five primary TypeScript interfaces in [`src/core/iot/IAQVentilationController.ts`](file:///src/core/iot/IAQVentilationController.ts#L9-L95):
+The controller defines five primary TypeScript interfaces in [`src/core/iot/IAQVentilationController.ts`](../../src/core/iot/IAQVentilationController.ts#L9-L95):
 
 1. **`IAQSensorReading`**: Telemetry packet emitted by indoor environmental multi-sensor nodes.
 2. **`AmbientOutdoorReading`**: External telemetry from outdoor weather stations or municipal AQI feeds.
@@ -244,7 +244,7 @@ sequenceDiagram
 ## 5. PID Tuning and Mathematical Model
 
 ### 5.1 Gain Parameters & Configuration
-Default PID gains defined in [`src/core/iot/IAQVentilationController.ts`](file:///src/core/iot/IAQVentilationController.ts#L115-L122):
+Default PID gains defined in [`src/core/iot/IAQVentilationController.ts`](../../src/core/iot/IAQVentilationController.ts#L115-L122):
 
 | Parameter | Identifier | Default Value | Implemented Units | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -386,7 +386,7 @@ Where:
 - $A_z$: Net occupiable zone floor area ($\text{ft}^2$).
 
 #### 2. Implemented Space Categories and Default Rates
-Defined in [`IAQVentilationController.ASHRAE_RATES`](file:///src/core/iot/IAQVentilationController.ts#L106-L112) matching ASHRAE 62.1-2022 Table 6-1:
+Defined in [`IAQVentilationController.ASHRAE_RATES`](../../src/core/iot/IAQVentilationController.ts#L106-L112) matching ASHRAE 62.1-2022 Table 6-1:
 
 | Space Category | $R_p$ ($\text{CFM/person}$) | $R_a$ ($\text{CFM/ft}^2$) | Typical Application |
 | :--- | :--- | :--- | :--- |
@@ -510,7 +510,7 @@ Adjusting production PID gains must only be conducted during commissioning by qu
 
 ## 11. Limitations and Future Improvements
 
-Based on inspection of [`src/core/iot/IAQVentilationController.ts`](file:///src/core/iot/IAQVentilationController.ts), the following technical limitations are identified:
+Based on inspection of [`src/core/iot/IAQVentilationController.ts`](../../src/core/iot/IAQVentilationController.ts), the following technical limitations are identified:
 
 1. **One-Way Error Modulation**:
    $e_{\text{CO}_2}$ and $e_{\text{TVOC}}$ clamp negative errors to zero ($\max(0, \dots)$). While this prevents contaminants from dropping ventilation below baseline, it prevents the PID controller from using negative proportional or derivative terms to smoothly recover dampers back to minimum position when contamination drops.
@@ -519,7 +519,7 @@ Based on inspection of [`src/core/iot/IAQVentilationController.ts`](file:///src/
 3. **Absence of Rate-of-Change Damper Slew Limiting**:
    Output commands calculate instantaneous `damperOpenPercent`. Mechanical actuators benefit from slew-rate limiters (e.g., maximum $5\%$ travel per minute) to prevent mechanical stress and air turbulence noise.
 4. **Calendar Synchronized Pre-Purging Integration**:
-   A separate calendar-based purge controller exists in [`src/core/ventilation/IAQVentilationController.ts`](file:///src/core/ventilation/IAQVentilationController.ts). Merging calendar reservation pre-purging with real-time IoT feedback PID control into a single unified orchestrator will provide complete end-to-end ventilation control.
+   A separate calendar-based purge controller exists in [`src/core/ventilation/IAQVentilationController.ts`](../../src/core/ventilation/IAQVentilationController.ts). Merging calendar reservation pre-purging with real-time IoT feedback PID control into a single unified orchestrator will provide complete end-to-end ventilation control.
 
 ---
 
@@ -536,7 +536,7 @@ Based on inspection of [`src/core/iot/IAQVentilationController.ts`](file:///src/
 
 ## 13. Source Code References
 
-- Primary Controller Implementation: [`src/core/iot/IAQVentilationController.ts`](file:///src/core/iot/IAQVentilationController.ts)
-- Comprehensive Unit Test Suite: [`src/__tests__/iot/IAQVentilationController.test.ts`](file:///src/__tests__/iot/IAQVentilationController.test.ts)
-- Calendar Reservation Pre-Purge Module: [`src/core/ventilation/IAQVentilationController.ts`](file:///src/core/ventilation/IAQVentilationController.ts)
-- Core IoT Export Index: [`src/core/iot/index.ts`](file:///src/core/iot/index.ts)
+- Primary Controller Implementation: [`src/core/iot/IAQVentilationController.ts`](../../src/core/iot/IAQVentilationController.ts)
+- Comprehensive Unit Test Suite: [`src/__tests__/iot/IAQVentilationController.test.ts`](../../src/__tests__/iot/IAQVentilationController.test.ts)
+- Calendar Reservation Pre-Purge Module: [`src/core/ventilation/IAQVentilationController.ts`](../../src/core/ventilation/IAQVentilationController.ts)
+- Core IoT Export Index: [`src/core/iot/index.ts`](../../src/core/iot/index.ts)

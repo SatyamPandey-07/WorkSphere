@@ -69,7 +69,7 @@ WorkSphere categorizes real-user performance metrics into three distinct rating 
 
 ## 3. Client-Side Telemetry Collection Pipeline
 
-File: [src/lib/webVitalsCollector.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/webVitalsCollector.ts)
+File: [src/lib/webVitalsCollector.ts](../../src/lib/webVitalsCollector.ts)
 
 ### Metric Life-Cycle & Event Attribution
 
@@ -237,7 +237,7 @@ export function sanitizeRoute(path: string): string {
 
 ## 6. Admin System Dashboard Integration
 
-File: [src/components/admin/WebVitalsWidget.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/admin/WebVitalsWidget.tsx)
+File: [src/components/admin/WebVitalsWidget.tsx](../../src/components/admin/WebVitalsWidget.tsx)
 
 The Admin System Dashboard renders real-world Web Vitals performance distributions across routes.
 

@@ -24,25 +24,25 @@ This document provides a high-level reference for the REST API endpoints availab
 
 # Venues
 
-| Endpoint                                              | Description                                                                 |
-| ----------------------------------------------------- | --------------------------------------------------------------------------- |
-| `GET /api/venues`                                     | Retrieve available venues.                                                  |
-| `GET /api/venues/search`                              | Search venues with filters (noise level, amenities, speed, distance, bbox). |
-| `POST /api/venues`                                    | Create or submit a venue.                                                   |
-| `POST /api/venues/amenity-vote`                       | Submit an amenity vote.                                                     |
-| `GET /api/venues/{venueId}/amenity-votes/leaderboard` | Retrieve the venue's contributor leaderboard and amenity rankings.          |
-| `GET /api/venues/updates`                             | Subscribe to venue updates.                                                 |
-| `POST /api/venues/updates`                            | Broadcast a venue update.                                                   |
-| `POST /api/venues/{venueId}/rate`                     | Submit a venue rating.                                                      |
-| `GET /api/venues/{venueId}/reviews`                   | Retrieve venue reviews.                                                     |
-| `GET /api/venues/{venueId}/menu`                      | Retrieve venue menu information.                                            |
-| `GET /api/venues/{venueId}/photo`                     | Retrieve venue photos.                                                      |
-| `GET /api/venues/{venueId}/noise-metrics`             | Retrieve venue noise metrics.                                               |
-| `GET /api/venues/{venueId}/noise-metrics/forecast`    | Retrieve predicted noise levels.                                            |
-| `GET /api/venues/{venueId}/wifi-prediction`           | Retrieve Wi-Fi prediction data.                                             |
-| `GET /api/venues/{venueId}/seating-forecast`          | Retrieve seating forecasts.                                                 |
-| `GET /api/venues/{venueId}/telemetry`                 | Retrieve venue telemetry.                                                   |
-| `GET /api/venues/{venueId}/live-stream`               | Connect to the venue live stream.                                           |
+| Endpoint                                           | Description                                                                                                                    |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/venues`                                  | Retrieve available venues.                                                                                                     |
+| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox).                                                    |
+| `POST /api/venues`                                 | Create or submit a venue.                                                                                                      |
+| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                                                                        |
+| `GET /api/venues/updates`                          | Subscribe to venue updates.                                                                                                    |
+| `POST /api/venues/updates`                         | Broadcast a venue update.                                                                                                      |
+| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                                                                         |
+| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                                                                        |
+| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                                                                               |
+| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                                                                         |
+| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                                                                                  |
+| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                                                                               |
+| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                                                                                |
+| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                                                                                    |
+| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                                                                      |
+| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                                                                              |
+| `POST /api/venues/{venueId}/check-in/bulk`         | Perform manager bulk check-in for venue bookings. See the [Bulk venue check-in API guide](./api/BULK_CHECK_IN.md) for details. |
 
 ### Endpoint Specification: `GET /api/venues/search`
 
@@ -115,14 +115,17 @@ Accept: application/json
 
 # Bookings
 
-| Endpoint                                 | Description                                        |
-| ---------------------------------------- | -------------------------------------------------- |
-| `POST /api/bookings/confirm`             | Confirm a booking.                                 |
-| `GET /api/bookings/history`              | Retrieve the authenticated user's booking history. |
-| `GET /api/bookings/export`               | Export booking information.                        |
-| `GET /api/bookings/{bookingId}`          | Retrieve booking details.                          |
-| `GET /api/bookings/{bookingId}/download` | Download a booking receipt or confirmation.        |
-| `GET /api/bookings/{bookingId}/guests`   | Retrieve guest information for a booking.          |
+| Endpoint                                     | Description                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| `POST /api/bookings/confirm`                 | Confirm a booking.                                                            |
+| `GET /api/bookings/history`                  | Retrieve the authenticated user's booking history.                            |
+| `GET /api/bookings/export`                   | Export booking information.                                                   |
+| `GET /api/bookings/{bookingId}`              | Retrieve booking details.                                                     |
+| `GET /api/bookings/{bookingId}/download`     | Download a booking receipt or confirmation.                                   |
+| `GET /api/bookings/{bookingId}/guests`       | Retrieve guest information for a booking.                                     |
+| `GET /api/bookings/{bookingId}/calendar.ics` | Export an RFC 5545 iCalendar (.ics) file or calendar web links for a booking. |
+| `GET /api/payments/split/{token}`            | Verify guest split-payment token and retrieve checkout details. See the [Guest Split Payment API guide](./api/GUEST_SPLIT_PAYMENT.md) for details. |
+| `POST /api/payments/split/{token}`           | Record payment state in WorkSphere's database using the verified token claims and issue a digital guest pass. See the [Guest Split Payment API guide](./api/GUEST_SPLIT_PAYMENT.md) for details. |
 
 ---
 
@@ -136,12 +139,12 @@ Accept: application/json
 
 # Reservations
 
-| Endpoint                                | Description                        |
-| --------------------------------------- | ---------------------------------- |
-| `GET /api/reservations/availability`    | Retrieve reservation availability. |
-| `POST /api/reservations/book`           | Create a reservation.              |
-| `GET /api/reservations/events`          | Retrieve reservation events.       |
-| `POST /api/reservations/recurring-book` | Create recurring reservations.     |
+| Endpoint                                | Description                                                                                                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/reservations/availability`    | Retrieve reservation availability.                                                                                                                                                    |
+| `POST /api/reservations/book`           | Create a reservation.                                                                                                                                                                 |
+| `GET /api/reservations/events`          | Stream real-time reservation availability and desk expiration events via Server-Sent Events. See the [Reservation Availability SSE guide](api/RESERVATION_EVENTS_SSE.md) for details. |
+| `POST /api/reservations/recurring-book` | Create recurring reservations.                                                                                                                                                        |
 
 ---
 
@@ -164,13 +167,14 @@ Accept: application/json
 
 # User
 
-| Endpoint                        | Description                          |
-| ------------------------------- | ------------------------------------ |
-| `GET /api/user/badges`          | Retrieve user badges.                |
-| `GET /api/user/notifications`   | Retrieve user notifications.         |
-| `GET /api/user/settings`        | Retrieve or update user settings.    |
-| `GET /api/user/streak`          | Retrieve the user's activity streak. |
-| `POST /api/user/verify-student` | Verify student status.               |
+| Endpoint                        | Description                                                             |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `GET /api/user/badges`          | Retrieve user badges.                                                   |
+| `GET /api/user/notifications`   | Retrieve the latest user notifications and unread count.                |
+| `POST /api/user/notifications`  | Mark notifications as read or restore selected notifications as unread. |
+| `GET /api/user/settings`        | Retrieve or update user settings.                                       |
+| `GET /api/user/streak`          | Retrieve the user's activity streak.                                    |
+| `POST /api/user/verify-student` | Verify student status.                                                  |
 
 ---
 
@@ -209,37 +213,47 @@ Accept: application/json
 
 # Social
 
-| Endpoint                                | Description                         |
-| --------------------------------------- | ----------------------------------- |
-| `GET /api/social/status`                | Retrieve social status information. |
-| `GET /api/social/sessions`              | Retrieve social sessions.           |
-| `GET /api/social/sessions/{slug}`       | Retrieve a social session.          |
-| `POST /api/social/sessions/{slug}/rsvp` | RSVP for a social session.          |
+| Endpoint                                            | Description                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/social/status`                            | Retrieve social status information.                                                                                                                                                                                                                                                                                  |
+| `POST /api/social/sessions`                         | Create a new coworking session and automatically confirm the host's RSVP. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                                                                                                           |
+| `GET /api/social/sessions`                          | Retrieve all coworking sessions ordered by start time, including venue details, host profile, RSVP records, and total RSVP count. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                                                   |
+| `GET /api/social/sessions/{slug}`                   | Retrieve details for a single coworking session by slug, including venue, host, and RSVP attendee list. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                                                                             |
+| `POST /api/social/sessions/{slug}/rsvp`             | Submit or update an RSVP (`GOING`, `MAYBE`, `DECLINED`, `CANCELLED`; `CANCELLED` is normalized to `DECLINED`), with capacity checks, serializable concurrency control, and inline calendar payload. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details. |
+| `DELETE /api/social/sessions/{slug}/rsvp`           | Cancel and delete an existing RSVP record, triggering FIFO waitlist promotion for eligible `MAYBE` attendees only if the deleted RSVP previously had status `GOING`. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                |
+| `GET /api/social/sessions/{slug}/rsvp?download=ics` | Export an RFC 5545 iCalendar (`.ics`) file for a coworking session. Requires `?download=ics`. See the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md) for details.                                                                                                       |
+
+For detailed request and response contracts, concurrency guarantees, waitlist mechanics, and calendar generation specifications, see the [Social Coworking Sessions architecture guide](./architecture/social-coworking-sessions.md).
 
 ---
 
 # Analytics & Administration
 
-| Endpoint                                  | Description                          |
-| ----------------------------------------- | ------------------------------------ |
-| `GET /api/analytics`                      | Retrieve analytics data.             |
-| `GET /api/admin/analytics`                | Retrieve administrative analytics.   |
-| `GET /api/admin/performance`              | Retrieve system performance metrics. |
-| `GET /api/admin/system`                   | Retrieve system status.              |
-| `GET /api/admin/system/partitions`        | Retrieve partition information.      |
-| `GET /api/admin/system/partitions/export` | Export partition data.               |
+| Endpoint                                    | Description                                                                        |
+| ------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `GET /api/analytics`                        | Retrieve analytics data.                                                           |
+| `GET /api/admin/analytics`                  | Retrieve administrative analytics.                                                 |
+| `GET /api/admin/performance`                | Retrieve system performance metrics.                                               |
+| `GET /api/admin/system`                     | Retrieve system status.                                                            |
+| `GET /api/admin/system/partitions`          | Retrieve partition information.                                                    |
+| `GET /api/admin/system/partitions/export`   | Export partition data.                                                             |
+| `POST /api/admin/system/partitions`         | Run CRON_SECRET-protected weekly partition provisioning and retention maintenance. |
+| `POST /api/admin/system/partitions/archive` | Archive eligible partitions through authenticated administration.                  |
+| `POST /api/admin/system/partitions/delete`  | Permanently delete eligible partitions through authenticated administration.       |
+| `GET /api/admin/system/partitions/audit`    | Retrieve partition administration audit records with filters and pagination.       |
 
 ---
 
 # Maps & Location
 
-| Endpoint                        | Description                               |
-| ------------------------------- | ----------------------------------------- |
-| `GET /api/location`             | Retrieve the user's location information. |
-| `GET /api/map/heatmap`          | Retrieve the workspace heatmap.           |
-| `POST /api/map/heatmap/seed`    | Seed heatmap data.                        |
-| `GET /api/map/noise-heatmap`    | Retrieve the noise heatmap.               |
-| `GET /api/map/forecast-heatmap` | Retrieve forecast heatmap data.           |
+| Endpoint                         | Description                                                                                                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/location`              | Retrieve the user's location information.                                                                                                                                        |
+| `GET /api/map/heatmap`           | Retrieve the workspace heatmap.                                                                                                                                                  |
+| `POST /api/map/heatmap/seed`     | Seed heatmap data.                                                                                                                                                               |
+| `GET /api/map/noise-heatmap`     | Retrieve the noise heatmap.                                                                                                                                                      |
+| `GET /api/map/forecast-heatmap`  | Retrieve forecast heatmap data.                                                                                                                                                  |
+| `POST /api/routing/meet-halfway` | Compute optimal team meeting centroid, evaluate candidate venues, and rank recommendations. See the [Meet Halfway Routing API guide](./api/MEET_HALFWAY_ROUTING.md) for details. |
 
 ---
 

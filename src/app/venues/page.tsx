@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { VenueFilterBar } from "@/components/venues/VenueFilterBar";
 import { SplitPaneWorkspace } from "@/components/venues/SplitPaneWorkspace";
+import { useVenueFilterParams } from "@/hooks/useVenueFilterParams";
 
 const demoVenues = [
   {
@@ -60,8 +61,9 @@ const demoVenues = [
 ];
 
 export default function VenuesDiscoveryPage() {
-  const [selectedCategory, setSelectedCategory] = useState("all");
-  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
+  const { filters, updateFilters } = useVenueFilterParams();
+  const selectedCategory = filters.category;
+  const selectedFilters = filters.amenities;
 
   const filteredVenues = demoVenues.filter((venue) => {
     const categoryMatches =
@@ -86,14 +88,13 @@ export default function VenuesDiscoveryPage() {
 
       <VenueFilterBar
         selectedCategory={selectedCategory}
-        onSelectCategory={setSelectedCategory}
+        onSelectCategory={(category) => updateFilters({ category })}
         selectedFilters={selectedFilters}
         onToggleFilter={(filterId, active) => {
-          setSelectedFilters((current) =>
-            active
-              ? [...current, filterId]
-              : current.filter((filter) => filter !== filterId),
-          );
+          const nextFilters = active
+            ? [...selectedFilters, filterId]
+            : selectedFilters.filter((filter) => filter !== filterId);
+          updateFilters({ amenities: Array.from(new Set(nextFilters)) });
         }}
         resultCount={filteredVenues.length}
         announcementDebounceMs={250}

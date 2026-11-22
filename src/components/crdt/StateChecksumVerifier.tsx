@@ -12,7 +12,7 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import * as Y from "yjs";
 import {
-  StateVectorChecksumVerifier,
+  sharedStateVectorChecksumVerifier,
   computeSha256Digest,
 } from "@/lib/crdt/stateVectorChecksum";
 import {
@@ -106,7 +106,7 @@ export const StateChecksumVerifier: React.FC<StateChecksumVerifierProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState<ChecksumMismatchDiagnostics | null>(null);
 
-  const verifierRef = useRef<StateVectorChecksumVerifier>(new StateVectorChecksumVerifier());
+  const verifierRef = useRef(sharedStateVectorChecksumVerifier);
   const activeStorageRef = useRef<SnapshotStorage>(storage || createHttpSnapshotStorage());
   const inFlightOperationRef = useRef<boolean>(false);
   const lastLoggedMismatchRef = useRef<string | null>(null);

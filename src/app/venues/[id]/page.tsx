@@ -28,6 +28,7 @@ import { ColleaguePresenceIndicator } from "@/components/social/ColleaguePresenc
 import { VenueWifiCard } from "@/components/venue/VenueWifiCard";
 import { AmenityStatusIncidentTracker } from "@/components/venue/AmenityStatusIncidentTracker";
 import { FavoriteDesksDrawer } from "@/components/venue/FavoriteDesksDrawer";
+import { VenueFloorplanVisualizerSection } from "@/components/venue/VenueFloorplanVisualizerSection";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -306,6 +307,14 @@ export default async function VenuePage({ params }: PageProps) {
             />
 
             <FavoriteDesksDrawer venueId={venue.id} venueName={venue.name} />
+
+            {/* Interactive 3D Isometric Desk Occupancy Visualizer */}
+            <div className="pt-2">
+              <VenueFloorplanVisualizerSection
+                venueId={venue.id}
+                venueName={venue.name}
+              />
+            </div>
 
             <div className="pt-2">
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">

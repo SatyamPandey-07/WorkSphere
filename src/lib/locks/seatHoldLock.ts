@@ -439,6 +439,8 @@ export interface SeatLockData {
   fencingToken?: string;
   driftAllowanceMs?: number;
   acquiredMonotonicNs?: string;
+  /** True after the one permitted checkout-time extension has been consumed. */
+  extensionUsed?: boolean;
 }
 
 export interface AcquireLockResult {
@@ -620,6 +622,7 @@ export async function acquireSeatWebLock(
         heldAt: now,
         expiresAt,
         version: 1,
+        extensionUsed: false,
         fencingToken: initialToken.toString(),
         acquiredMonotonicNs: acquireStartNs.toString(),
       };
@@ -721,6 +724,7 @@ export async function acquireSeatWebLock(
     heldAt: now,
     expiresAt,
     version: (existing?.version ?? 0) + 1,
+    extensionUsed: false,
     fencingToken: token.toString(),
     driftAllowanceMs,
     acquiredMonotonicNs: acquireEndNs.toString(),
@@ -737,6 +741,164 @@ export async function acquireSeatWebLock(
     lock: lockPayload,
     fencingToken: token,
     driftAllowanceMs,
+  };
+}
+
+
+export const SEAT_LOCK_EXTEND_LUA = `
+local current = redis.call('GET', KEYS[1])
+if not current then return { 0, 'NOT_FOUND' } end
+
+local ok, decoded = pcall(cjson.decode, current)
+if not (ok and type(decoded) == 'table') then
+  return { 0, 'INVALID_LOCK' }
+end
+
+if decoded.userId ~= ARGV[1] or decoded.fencingToken ~= ARGV[2] then
+  return { 0, 'UNAUTHORIZED' }
+end
+if decoded.extensionUsed == true then
+  return { 0, 'ALREADY_EXTENDED' }
+end
+
+local currentPttl = redis.call('PTTL', KEYS[1])
+if currentPttl <= 0 then
+  return { 0, 'NOT_FOUND' }
+end
+if currentPttl <= tonumber(ARGV[3]) then
+  return { 0, 'TOO_CLOSE_TO_EXPIRY' }
+end
+
+local extensionMs = tonumber(ARGV[4])
+local newPttl = currentPttl + extensionMs
+decoded.expiresAt = tonumber(ARGV[5]) + newPttl
+decoded.extensionUsed = true
+decoded.version = (tonumber(decoded.version) or 1) + 1
+
+local encoded = cjson.encode(decoded)
+redis.call('SET', KEYS[1], encoded, 'PX', newPttl)
+return { 1, encoded, newPttl }
+`;
+
+export type ExtendSeatHoldReason =
+  | "NOT_FOUND"
+  | "UNAUTHORIZED"
+  | "ALREADY_EXTENDED"
+  | "TOO_CLOSE_TO_EXPIRY"
+  | "INVALID_LOCK"
+  | "ERROR";
+
+export interface ExtendSeatHoldResult {
+  success: boolean;
+  lock?: SeatLockData;
+  remainingSeconds?: number;
+  reason?: ExtendSeatHoldReason;
+}
+
+/**
+ * Extends the current holder's checkout lease by exactly five minutes once.
+ * The holder must present the fencing token returned when the lock was acquired.
+ * Extension is rejected when 60 seconds or less remain.
+ */
+export async function extendSeatHold(
+  venueId: string,
+  seatId: string,
+  userId: string,
+  fencingToken: string,
+): Promise<ExtendSeatHoldResult> {
+  if (!userId || !fencingToken) {
+    return { success: false, reason: "UNAUTHORIZED" };
+  }
+
+  const key = getLockKey(venueId, seatId);
+  const now = Date.now();
+  const redis = getRedis();
+
+  if (redis) {
+    try {
+      const rawResult = await redis.eval(
+        SEAT_LOCK_EXTEND_LUA,
+        [key],
+        [
+          userId,
+          fencingToken,
+          "60000",
+          "300000",
+          String(now),
+        ],
+      );
+      const [flag, rawLock, rawRemaining] = Array.isArray(rawResult)
+        ? rawResult
+        : [0, "ERROR", 0];
+      if (Number(flag) !== 1) {
+        const reason = String(rawLock) as ExtendSeatHoldReason;
+        return {
+          success: false,
+          reason: [
+            "NOT_FOUND",
+            "UNAUTHORIZED",
+            "ALREADY_EXTENDED",
+            "TOO_CLOSE_TO_EXPIRY",
+            "INVALID_LOCK",
+          ].includes(reason) ? reason : "ERROR",
+          remainingSeconds:
+            Number.isFinite(Number(rawRemaining)) && Number(rawRemaining) > 0
+              ? Math.ceil(Number(rawRemaining) / 1000)
+              : undefined,
+        };
+      }
+
+      const lock = parseLockValue(rawLock);
+      if (!lock) return { success: false, reason: "INVALID_LOCK" };
+      getRedisKeyspaceManager().registerDeskTimer(venueId, seatId, lock.expiresAt);
+      return {
+        success: true,
+        lock,
+        remainingSeconds: Math.max(0, Math.ceil((lock.expiresAt - now) / 1000)),
+      };
+    } catch (error) {
+      console.error("[SeatLock] Redis lease extension failed:", error);
+      return { success: false, reason: "ERROR" };
+    }
+  }
+
+  pruneMemoryLocks(now);
+  const current = memoryLocks.get(key);
+  if (!current || now >= current.expiresAt) {
+    return { success: false, reason: "NOT_FOUND" };
+  }
+  if (
+    current.userId !== userId ||
+    !current.fencingToken ||
+    current.fencingToken !== fencingToken
+  ) {
+    return { success: false, reason: "UNAUTHORIZED" };
+  }
+  if (current.extensionUsed) {
+    return { success: false, reason: "ALREADY_EXTENDED" };
+  }
+
+  const remainingMs = current.expiresAt - now;
+  if (remainingMs <= 60_000) {
+    return {
+      success: false,
+      reason: "TOO_CLOSE_TO_EXPIRY",
+      remainingSeconds: Math.max(0, Math.ceil(remainingMs / 1000)),
+    };
+  }
+
+  const updated: SeatLockData = {
+    ...current,
+    expiresAt: current.expiresAt + 300_000,
+    extensionUsed: true,
+    version: current.version + 1,
+  };
+  memoryLocks.set(key, updated);
+  getRedisKeyspaceManager().registerDeskTimer(venueId, seatId, updated.expiresAt);
+  return {
+    success: true,
+    lock: { ...updated },
+    remainingSeconds: Math.ceil((updated.expiresAt - now) / 1000),
   };
 }
 

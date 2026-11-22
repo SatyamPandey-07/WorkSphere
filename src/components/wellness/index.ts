@@ -37,3 +37,9 @@ export {
   default as CircadianSliderControl,
   type CircadianSliderControlProps,
 } from "./CircadianSliderControl";
+export {
+  default as AmbientSoundscapeGenerator,
+  type AmbientSoundscapeGeneratorProps,
+  type AmbientPreferences,
+  AMBIENT_STORAGE_KEY,
+} from "./AmbientSoundscapeGenerator";

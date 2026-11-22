@@ -426,10 +426,16 @@ export function buildOutlookWebLink(
 /**
  * Triggers a browser download of the generated .ics file for Apple Calendar, Outlook, and desktop clients.
  */
-export function downloadBookingIcs(event: BookingCalendarEvent): void {
+export function downloadBookingIcs(
+  event: BookingCalendarEvent,
+  alarmMinutes?: number,
+): void {
   if (typeof window === "undefined") return;
 
-  const icsContent = generateBookingIcs(event);
+  const icsContent = generateBookingIcs(
+    event,
+    alarmMinutes ? { alarmMinutes: [alarmMinutes] } : {},
+  );
   if (!icsContent) return;
 
   const blob = new Blob([icsContent], {

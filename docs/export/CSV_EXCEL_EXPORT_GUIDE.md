@@ -719,5 +719,5 @@ When adding support for a new entity or output format:
 
 ## 16. Related Documentation
 
-- [Booking Itinerary & PDF Verification System](file:///docs/export/booking-pdf-generation.md)
-- [API Documentation Index](file:///docs/api/README.md)
+- [Booking Itinerary & PDF Verification System](booking-pdf-generation.md)
+- [API Documentation Index](../api/README.md)

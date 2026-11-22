@@ -1,74 +1,31 @@
 # Contributing to WorkSphere
 
-Welcome to **WorkSphere**! We are thrilled to have you contribute as part of Winter of Code Social (WOCS). To ensure a smooth collaboration and maintain high repository standards, please follow this guide for setting up your environment, running migrations, and submitting your pull requests.
- docs/wsl2-development-guide
-
-
- docs/local-docker-troubleshooting
-
- feat/network-health-ai-diagnostic
- main
-
- main
-## 1. Prerequisites
-Before you begin, ensure you have the following installed on your local development workstation:
-* Node.js (v18.x or higher)
-* pnpm or npm (Package manager)
-* Git (Configured with your GitHub account)
-* PostgreSQL / Supabase (Local instance or cloud connection string)
- docs/wsl2-development-guide
-
-## 2. Local Environment Setup
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
-   cd WorkSphere
-
- docs/local-docker-troubleshooting
-
-## 2. Local Environment Setup
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
-   cd WorkSphere
-
-
-## 2. Local Environment Setup
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
-   cd WorkSphere
-
+Welcome to **WorkSphere**! Thank you for contributing to the project as part of Winter of Code Social (WOCS). This guide explains how to prepare your development environment, follow project standards, run tests, and submit pull requests.
+For the release workflow and draft publication procedure, see the [WorkSphere Release Process Guide](docs/contributing/RELEASE_PROCESS.md).
+For workflow triggers, blocking and advisory checks, and pull request validation behavior, see the [GitHub Actions CI Workflow Guide](docs/contributing/CI_WORKFLOW.md).
 
 ## 1. Prerequisites
-Before you begin, ensure you have the following installed on your local development workstation:
-* Node.js (v18.x or higher)
-* pnpm or npm (Package manager)
-* Git (Configured with your GitHub account)
-* PostgreSQL / Supabase (Local instance or cloud connection string)
- feat/cross-chain-escrow-zkp
+
+Before getting started, ensure you have the following:
+
+- **Node.js v20 or higher** — the required version is specified in the repository's `.nvmrc` file.
+- **npm v10 or higher** — recommended package manager for this project.
+- **Git** — installed and configured with your GitHub account.
+- **GitHub account** — required to fork the repository and submit pull requests.
+- **Docker with Docker Compose** — needed only when running the full local PostgreSQL and Redis development stack.
 
 ## 2. Local Environment Setup
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
-   cd WorkSphere
 
- feat/ai-triage-sla-watchdog
+Follow the [5-Minute Quickstart for WOCS 2026 Contributors](#5-minute-quickstart-for-wocs-2026-contributors) for the complete setup procedure, including:
 
-## 2. Local Environment Setup
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
-   cd WorkSphere
+- Forking and cloning the repository.
+- Configuring your `origin` and `upstream` Git remotes.
+- Installing project dependencies.
+- Configuring environment variables.
+- Starting the development server.
+- Running tests and quality checks.
 
-
- feat/wocs-contributions-final
-## 2. Local Environment Setup
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/CoderSoham345/WorkSphere.git](https://github.com/CoderSoham345/WorkSphere.git)
-   cd WorkSphere
+For full local PostgreSQL (pgvector) and Redis setup using Docker Compose, Prisma migrations, and port troubleshooting, refer to the [Local Development Setup Guide](docs/guides/LOCAL_DEVELOPMENT_SETUP.md).
 
 ## Community Standards
 
@@ -194,7 +151,7 @@ Ensure all pre-commit quality checks pass:
    ```text
    /claim
    ```
-   The `@github-actions` bot will verify eligibility (up to 10 active assigned issues) and assign it to you. You have **6 days** to submit your PR.
+   The GitHub Actions workflow checks that the issue is unassigned and that you have fewer than 10 active assigned issues. After assignment, it recommends opening a PR within six days. This is not an automatic expiration timer. See the [Issue Claiming & Automation Guide](docs/contributing/claiming-issues.md) for details.
 2. **Create a feature branch**:
    Always branch from the latest `upstream/main`:
    ```bash
@@ -264,7 +221,7 @@ Browse open issues on GitHub. On any unassigned issue, comment:
 /claim
 ```
 
-The automated bot verifies your active assignment limit (< 10 issues) and assigns the issue to you. You have 6 days to submit a PR before the assignment expires.
+The automated workflow verifies that the issue is unassigned and that you have fewer than 10 active assigned issues. It then assigns the issue and recommends opening a PR within six days. The six-day period is a recommendation, not automatic expiration.
 
 #### How do I link a PR to an issue?
 
@@ -326,26 +283,10 @@ Before starting work, claim an available issue by commenting `/claim` on GitHub 
 git remote add upstream https://github.com/SatyamPandey-07/WorkSphere.git
 ```
 
-### 1.1 Program Participation & Issue Claiming Policy (/claim)
-
-WorkSphere is an official selected project for **OSCI'26** (Open Source Contribution India), **ECSoC 2026**, and **Winter of Code Social 2026 (WOCS'26)** by **Code Social**. Contributor issue tracking and assignment are automated via GitHub Actions to ensure a transparent, fair, and high-velocity workflow.
-
-- **Claiming an Issue**: Find any unassigned, open issue and post a comment containing exactly:
-  ```text
-  /claim
-  ```
-  The automated `@github-actions` bot will immediately evaluate your request:
-  1. Verifies that the issue is not already assigned to another contributor.
-  2. Confirms you have fewer than 10 active assigned issues.
-  3. Assigns you to the issue, attaches the `OSCI'26` and `in-progress` labels, and posts a confirmation greeting.
-- **Unclaiming an Issue**: If you can no longer work on an assigned issue, release it promptly so other contributors can proceed:
-  ```text
-  /unclaim
-  ```
-- **6-Day Resolution Window (SLA)**: Once assigned, you have exactly **6 days** to implement your solution and open a corresponding Pull Request.
-  - **Automated Expiration**: If the 6-day threshold expires without a linked pull request or a recorded progress update, the automated triage workflow unassigns the issue and returns it to the open pool for other participants.
-  - **Requesting an Extension**: If you need additional time due to technical complexity, post a progress comment on the issue describing your current status, blockers, and expected timeline before the 6th day.
-- **Maximum Assigned Issue Cap (10 Issues)**: To prevent issue hoarding and ensure fair opportunity across all participants, each contributor may hold at most **10 active assigned issues** simultaneously. Additional `/claim` attempts will be automatically rejected until existing assignments are resolved or unclaimed.
+- **Claiming an Issue**: Comment `/claim` on an open, unassigned issue. The workflow checks that the issue has no assignees and that the contributor has fewer than 10 active assigned issues before assigning it.
+- **Unclaiming an Issue**: Comment `/unclaim` to release your own assignment. Maintainers can also unassign other contributors using `/unclaim @username`.
+- **Six-Day Recommendation**: The assignment confirmation recommends opening a PR within six days. If additional time is required, post a progress update on the issue. The current claim workflow does not automatically expire assignments after six days.
+- **Maximum Assigned Issue Limit**: Contributors may have at most 10 active assigned issues. Pull requests are excluded from this count.
 
 ### 1.2 Winter of Code Social (WOCS 2026) Guidelines & Points System
 
@@ -955,9 +896,9 @@ For details on multi-agent scoring and consensus workflows, see [docs/architectu
 ## Concurrent Development & Worktrees
 
 For guidelines on working on multiple issues concurrently using Git worktrees, see [docs/contributing/WORKTREE_GUIDE.md](docs/contributing/WORKTREE_GUIDE.md).
- main
- main
- main
- main
- main
- main
+main
+main
+main
+main
+main
+main

@@ -11,6 +11,7 @@ import CircadianLightingCardDefault, {
   kelvinToRgb,
   formatTimeOfDay,
   formatRemaining,
+  getSliderValueFromClientX,
 } from "@/components/wellness/CircadianLightingCard";
 
 // 13:30 local time on a fixed day
@@ -110,6 +111,22 @@ describe("CircadianLightingCard", () => {
   });
 
   describe("preview slider", () => {
+    it("normalizes and clamps pointer coordinates to the slider range", () => {
+      const rect = { left: 100, width: 400 };
+      expect(getSliderValueFromClientX(100, rect)).toBe(0);
+      expect(getSliderValueFromClientX(300, rect)).toBe(720);
+      expect(getSliderValueFromClientX(500, rect)).toBe(1439);
+      expect(getSliderValueFromClientX(0, rect)).toBe(0);
+      expect(getSliderValueFromClientX(800, rect)).toBe(1439);
+      expect(getSliderValueFromClientX(300, { left: 100, width: 0 })).toBe(1439);
+    });
+
+    it("keeps mouse change events functional", () => {
+      setup();
+      moveSlider(450);
+      expect(screen.getByTestId("circadian-preview-slider")).toHaveValue("450");
+    });
+
     it("starts at the current time with the system schedule applied", () => {
       setup();
       expect(screen.getByTestId("circadian-preview-slider")).toHaveValue("810");

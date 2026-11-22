@@ -1273,3 +1273,35 @@ enum MicroBillingSessionStatus {
   SETTLED
   FAILED
 }
+
+/// Persistent cafe and barista order record (#9583).
+model CafeOrder {
+  id                 String          @id @default(cuid())
+  venueId            String
+  venueName          String
+  userId             String
+  customerName       String
+  deskNumber         String?
+  items              Json
+  subtotal           Float
+  tax                Float
+  total              Float
+  status             CafeOrderStatus @default(received)
+  pickupCode         String
+  pickupToken        String
+  estimatedReadyTime DateTime
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([venueId])
+  @@index([status])
+}
+
+enum CafeOrderStatus {
+  received
+  brewing
+  ready_for_pickup
+  completed
+  cancelled
+}

@@ -27,6 +27,10 @@ export interface MeshPeer {
     iceRestartCount: number;
     /** Active timeout handle for scheduled ICE restart backoff, if any. */
     iceRestartTimer: any;
+    /** Active timeout handle for delayed ICE recovery check (e.g. 3000ms failed / disconnected threshold). */
+    recoveryTimer: any;
+    /** Flag indicating an automated ICE restart is currently in progress. */
+    isRestartingIce: boolean;
 }
 
 export interface WebRTCMeshOptions {
@@ -34,6 +38,10 @@ export interface WebRTCMeshOptions {
     maxIceRestarts?: number;
     /** Base backoff duration in milliseconds for ICE restarts. Defaults to 1000ms. */
     iceRestartBackoffMs?: number;
+    /** Maximum backoff duration in milliseconds for ICE restarts. Defaults to 8000ms. */
+    maxIceRestartBackoffMs?: number;
+    /** Milliseconds to wait before initiating ICE restart on connection failure. Defaults to 3000ms. */
+    iceFailureThresholdMs?: number;
 }
 
 /** Signaling channel used to shuttle SDP/ICE between peers (e.g. PartyKit). */
@@ -84,6 +92,8 @@ export class WebRTCMesh {
 
     private maxIceRestarts: number;
     private iceRestartBackoffMs: number;
+    private maxIceRestartBackoffMs: number;
+    private iceFailureThresholdMs: number;
 
     constructor(
         localPeerId: string,
@@ -94,6 +104,8 @@ export class WebRTCMesh {
         this.signaling = signaling;
         this.maxIceRestarts = options.maxIceRestarts ?? 3;
         this.iceRestartBackoffMs = options.iceRestartBackoffMs ?? 1000;
+        this.maxIceRestartBackoffMs = options.maxIceRestartBackoffMs ?? 8000;
+        this.iceFailureThresholdMs = options.iceFailureThresholdMs ?? 3000;
         this.peers = new Map();
         this.onMessageCallback = null;
         this.onPeerConnectedCallback = null;
@@ -133,6 +145,8 @@ export class WebRTCMesh {
             pendingCandidates: [],
             iceRestartCount: 0,
             iceRestartTimer: null,
+            recoveryTimer: null,
+            isRestartingIce: false,
         };
 
         if (isInitiator) {
@@ -172,39 +186,20 @@ export class WebRTCMesh {
             void this.flushPendingCandidates(targetPeerId);
         };
 
+        pc.oniceconnectionstatechange = () => {
+            this.handleIceConnectionStateChange(targetPeerId);
+        };
+
         pc.onconnectionstatechange = () => {
             const current = this.peers.get(targetPeerId);
             if (current) {
                 if (pc.connectionState === 'connected') {
-                    current.status = 'connected';
-                    current.iceRestartCount = 0;
-                    if (current.iceRestartTimer) {
-                        clearTimeout(current.iceRestartTimer);
-                        current.iceRestartTimer = null;
-                    }
-                    if (this.onPeerConnectedCallback) {
-                        this.onPeerConnectedCallback(targetPeerId);
-                    }
+                    this.handleConnectionSuccess(targetPeerId);
                 } else if (
                     pc.connectionState === 'disconnected' ||
                     pc.connectionState === 'failed'
                 ) {
-                    if (current.iceRestartCount < this.maxIceRestarts) {
-                        current.iceRestartCount++;
-                        current.status = 'reconnecting';
-                        const backoff = Math.min(
-                            this.iceRestartBackoffMs * Math.pow(2, current.iceRestartCount - 1),
-                            8000
-                        );
-                        if (current.iceRestartTimer) {
-                            clearTimeout(current.iceRestartTimer);
-                        }
-                        current.iceRestartTimer = setTimeout(() => {
-                            void this.restartIce(targetPeerId);
-                        }, backoff);
-                    } else {
-                        this.onPeerDisconnect(targetPeerId);
-                    }
+                    this.scheduleIceRecovery(targetPeerId, pc.connectionState === 'failed' ? this.iceFailureThresholdMs : undefined);
                 } else if (pc.connectionState === 'closed') {
                     this.onPeerDisconnect(targetPeerId);
                 }
@@ -218,6 +213,128 @@ export class WebRTCMesh {
         }
     }
 
+    private handleIceConnectionStateChange(peerId: string): void {
+        const peer = this.peers.get(peerId);
+        if (!peer) return;
+
+        const iceState = peer.connection.iceConnectionState;
+        switch (iceState) {
+            case 'connected':
+            case 'completed':
+                this.handleConnectionSuccess(peerId);
+                break;
+            case 'disconnected':
+                this.scheduleIceRecovery(peerId);
+                break;
+            case 'failed':
+                this.scheduleIceRecovery(peerId, this.iceFailureThresholdMs);
+                break;
+            case 'closed':
+                this.onPeerDisconnect(peerId);
+                break;
+            case 'checking':
+            case 'new':
+            default:
+                break;
+        }
+    }
+
+    private handleConnectionSuccess(peerId: string): void {
+        const peer = this.peers.get(peerId);
+        if (!peer) return;
+
+        peer.status = 'connected';
+        peer.iceRestartCount = 0;
+        peer.isRestartingIce = false;
+
+        if (peer.recoveryTimer) {
+            clearTimeout(peer.recoveryTimer);
+            peer.recoveryTimer = null;
+        }
+        if (peer.iceRestartTimer) {
+            clearTimeout(peer.iceRestartTimer);
+            peer.iceRestartTimer = null;
+        }
+
+        if (this.onPeerConnectedCallback) {
+            this.onPeerConnectedCallback(peerId);
+        }
+    }
+
+    private scheduleIceRecovery(peerId: string, delayMs?: number): void {
+        const peer = this.peers.get(peerId);
+        if (!peer || peer.status === 'disconnected') return;
+
+        // If a recovery timer or backoff timer is already running, avoid duplicate triggers
+        if (peer.recoveryTimer || peer.iceRestartTimer) {
+            return;
+        }
+
+        // If a restart offer is already in flight, do not overlap
+        if (peer.isRestartingIce || peer.makingOffer) {
+            return;
+        }
+
+        if (peer.iceRestartCount >= this.maxIceRestarts) {
+            this.onPeerDisconnect(peerId);
+            return;
+        }
+
+        const executeRecovery = () => {
+            const currentPeer = this.peers.get(peerId);
+            if (!currentPeer || currentPeer.status === 'disconnected') return;
+            currentPeer.recoveryTimer = null;
+            const pc = currentPeer.connection;
+            if (pc.connectionState === 'closed' || pc.iceConnectionState === 'closed') return;
+
+            // Check if connection already recovered
+            if (
+                pc.iceConnectionState === 'connected' ||
+                pc.iceConnectionState === 'completed' ||
+                pc.connectionState === 'connected'
+            ) {
+                this.handleConnectionSuccess(peerId);
+                return;
+            }
+
+            // Still in disconnected or failed state; initiate restart with exponential backoff
+            if (currentPeer.iceRestartCount >= this.maxIceRestarts) {
+                this.onPeerDisconnect(peerId);
+                return;
+            }
+
+            if (currentPeer.isRestartingIce) {
+                return;
+            }
+
+            currentPeer.iceRestartCount++;
+            currentPeer.status = 'reconnecting';
+
+            const backoff = Math.min(
+                this.iceRestartBackoffMs * Math.pow(2, currentPeer.iceRestartCount - 1),
+                this.maxIceRestartBackoffMs
+            );
+
+            if (currentPeer.iceRestartTimer) {
+                clearTimeout(currentPeer.iceRestartTimer);
+            }
+
+            currentPeer.iceRestartTimer = setTimeout(() => {
+                const p = this.peers.get(peerId);
+                if (p) {
+                    p.iceRestartTimer = null;
+                }
+                void this.restartIce(peerId);
+            }, backoff);
+        };
+
+        if (typeof delayMs === 'number' && delayMs > 0) {
+            peer.recoveryTimer = setTimeout(executeRecovery, delayMs);
+        } else {
+            executeRecovery();
+        }
+    }
+
     /**
      * Initiates an ICE restart on an active peer connection to re-establish
      * connectivity across changed network paths or failed sessions.
@@ -227,12 +344,28 @@ export class WebRTCMesh {
         if (!peer || peer.status === 'disconnected') {
             return;
         }
+        if (peer.connection.connectionState === 'closed' || peer.connection.iceConnectionState === 'closed') {
+            return;
+        }
         if (peer.iceRestartTimer) {
             clearTimeout(peer.iceRestartTimer);
             peer.iceRestartTimer = null;
         }
+        if (peer.recoveryTimer) {
+            clearTimeout(peer.recoveryTimer);
+            peer.recoveryTimer = null;
+        }
+        if (peer.isRestartingIce) {
+            return;
+        }
+
+        peer.isRestartingIce = true;
         peer.status = 'reconnecting';
-        await this.negotiate(peerId, { iceRestart: true });
+        try {
+            await this.negotiate(peerId, { iceRestart: true });
+        } finally {
+            peer.isRestartingIce = false;
+        }
     }
 
     /**
@@ -345,6 +478,11 @@ export class WebRTCMesh {
                 clearTimeout(peer.iceRestartTimer);
                 peer.iceRestartTimer = null;
             }
+            if (peer.recoveryTimer) {
+                clearTimeout(peer.recoveryTimer);
+                peer.recoveryTimer = null;
+            }
+            peer.isRestartingIce = false;
 
             // Cleanly unregister data channel event listeners to prevent memory leaks
             if (peer.dataChannel) {
@@ -364,6 +502,7 @@ export class WebRTCMesh {
 
             // Cleanly unregister RTCPeerConnection event listeners to prevent closure retention
             peer.connection.onicecandidate = null;
+            peer.connection.oniceconnectionstatechange = null;
             peer.connection.onconnectionstatechange = null;
             peer.connection.ondatachannel = null;
             peer.connection.onnegotiationneeded = null;
@@ -650,6 +789,9 @@ export class WebRTCMesh {
 
         // This remote description supersedes any local offer still in flight.
         peer.negotiationId++;
+        if (peer.isRestartingIce) {
+            peer.isRestartingIce = false;
+        }
 
         try {
             if (offerCollision && peer.polite) {
@@ -729,6 +871,14 @@ export class WebRTCMesh {
 
     public getIceRestartCount(peerId: string): number {
         return this.peers.get(peerId)?.iceRestartCount ?? 0;
+    }
+
+    public getRecoveryTimer(peerId: string): any {
+        return this.peers.get(peerId)?.recoveryTimer ?? null;
+    }
+
+    public getIceRestartTimer(peerId: string): any {
+        return this.peers.get(peerId)?.iceRestartTimer ?? null;
     }
 
     public setMaxIceRestarts(count: number): void {

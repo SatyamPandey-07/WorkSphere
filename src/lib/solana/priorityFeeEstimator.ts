@@ -13,6 +13,7 @@ export const DEFAULT_MIN_PRIORITY_FEE_MICRO_LAMPORTS = 1_000;
 export const DEFAULT_MAX_PRIORITY_FEE_MICRO_LAMPORTS = 1_000_000;
 export const DEFAULT_FALLBACK_PRIORITY_FEE_MICRO_LAMPORTS = 5_000;
 export const DEFAULT_PRIORITY_FEE_CACHE_TTL_MS = 10_000;
+export const DEFAULT_PRIORITY_FEE_SLOT_WINDOW = 150;
 
 export interface PriorityFeeConfig {
   /** Target percentile to extract from sorted fee samples (default: 75). */
@@ -25,6 +26,8 @@ export interface PriorityFeeConfig {
   fallbackMicroLamports?: number;
   /** In-memory cache duration in milliseconds (default: 10,000ms). 0 disables caching. */
   cacheDurationMs?: number;
+  /** Maximum recent slot samples to consider for estimation (default: 150). */
+  slotWindow?: number;
 }
 
 export type PriorityFeeSource = "rpc" | "cache" | "fallback";
@@ -73,12 +76,18 @@ export class PriorityFeeEstimator {
         ? Math.max(0, config.cacheDurationMs)
         : DEFAULT_PRIORITY_FEE_CACHE_TTL_MS;
 
+    const slotWindow =
+      typeof config.slotWindow === "number" && !isNaN(config.slotWindow)
+        ? Math.max(1, Math.floor(config.slotWindow))
+        : DEFAULT_PRIORITY_FEE_SLOT_WINDOW;
+
     this.config = {
       percentile,
       minMicroLamports: min,
       maxMicroLamports: max,
       fallbackMicroLamports: fallback,
       cacheDurationMs,
+      slotWindow,
     };
   }
 
@@ -163,6 +172,7 @@ export class PriorityFeeEstimator {
     const fallback = options?.fallbackMicroLamports ?? this.config.fallbackMicroLamports;
     const percentile = options?.percentile ?? this.config.percentile;
     const ttlMs = options?.cacheDurationMs ?? this.config.cacheDurationMs;
+    const slotWindow = options?.slotWindow ?? this.config.slotWindow;
 
     const cacheKey = this.getCacheKey(connection, accounts);
     const now = Date.now();
@@ -199,7 +209,20 @@ export class PriorityFeeEstimator {
             : undefined,
         );
 
-        const { value, sampleCount } = this.calculatePercentile(rawSamples, percentile);
+        // Filter and limit to the most recent slot window (default: 150 slots)
+        let sampledFees = rawSamples;
+        if (Array.isArray(rawSamples) && rawSamples.length > 0) {
+          // If samples carry slot numbers, sort descending by slot to get the latest slots
+          const hasSlotInfo = rawSamples.some((s) => typeof s === "object" && s !== null && typeof (s as any).slot === "number");
+          if (hasSlotInfo) {
+            const sortedBySlot = [...rawSamples].sort((a: any, b: any) => (b.slot ?? 0) - (a.slot ?? 0));
+            sampledFees = sortedBySlot.slice(0, slotWindow);
+          } else {
+            sampledFees = rawSamples.slice(-slotWindow);
+          }
+        }
+
+        const { value, sampleCount } = this.calculatePercentile(sampledFees, percentile);
 
         if (sampleCount === 0 || value === 0) {
           // Use safe fallback when RPC returns empty or all-zero

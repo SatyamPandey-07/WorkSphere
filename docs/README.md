@@ -44,6 +44,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Security & Cryptography
 
+- [OAuth Refresh Token Rotation & Session Hijacking Mitigation Guide](./auth/REFRESH_TOKEN_ROTATION_GUIDE.md) — JWT access/refresh token rotation lifecycle, token family reuse detection, passwordChangedAt revocation, and cookie security.
 - [Markdown Syntax Rendering & Collaborative Chat Formatting Specification](./chat/MARKDOWN_RENDERING_SPEC.md) — Collaborative chat input sanitization, generative UI regex tokenization, Zod schema validation, XSS prevention, and DOMPurify specification.
 - [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) — overview of application security defenses and their interaction.
 - [Content Security Policy Nonce Architecture](./security/csp-nonce-architecture.md) — nonce-based CSP implementation and request security.

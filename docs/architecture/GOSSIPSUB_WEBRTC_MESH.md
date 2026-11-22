@@ -4,6 +4,7 @@
 **See also:** [`GOSSIPSUB_IP_COLOCATION.md`](./GOSSIPSUB_IP_COLOCATION.md) — GossipSub IP colocation scoring and Sybil attack mitigation
 **See also:** [`P2P_MESH_SPECIFICATION.md`](../P2P_MESH_SPECIFICATION.md) — Wire protocol & packet schemas
 **See also:** [`WEBRTC_MESH_CRDT_SYNC_SPECIFICATION.md`](../WEBRTC_MESH_CRDT_SYNC_SPECIFICATION.md) — CRDT state sync over data channels
+**See also:** [`DATACHANNEL_CHUNKING_RUNBOOK.md`](../p2p/DATACHANNEL_CHUNKING_RUNBOOK.md) — DataChannel frame format, chunking, backpressure, and reassembly
 
 ---
 
@@ -212,3 +213,4 @@ entry, line ~52):
 - [`src/core/p2p/MeshPacketSerializer.ts`](src/core/p2p/MeshPacketSerializer.ts) — Wire format
 - [`docs/WEBRTC_MESH.md`](./WEBRTC_MESH.md) — WebRTC connection lifecycle
 - [`docs/P2P_MESH_SPECIFICATION.md`](../P2P_MESH_SPECIFICATION.md) — Packet schemas
+- [`docs/p2p/DATACHANNEL_CHUNKING_RUNBOOK.md`](../p2p/DATACHANNEL_CHUNKING_RUNBOOK.md) — DataChannel chunking and reassembly

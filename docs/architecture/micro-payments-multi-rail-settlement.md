@@ -1,6 +1,6 @@
 # Unified Multi-Rail Micro-Payments: State Machine, Idempotency Keys, and Multi-Rail Settlement Architecture
 
-This architectural manual documents WorkSphere's unified multi-rail micro-payment engine ([`src/lib/payments/microPaymentEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/payments/microPaymentEngine.ts), [`src/lib/payments/solanaPay.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/payments/solanaPay.ts), [`src/app/api/payments/micropay/session/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/payments/micropay/session/route.ts), and [`src/components/billing/MultiCurrencyDeskCheckout.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/billing/MultiCurrencyDeskCheckout.tsx)). It details the real-time metering state machine, cryptographic idempotency keys, multi-rail settlement across Bitcoin Lightning Network, Solana Pay, and Stripe, failure recovery cascades, and double-entry accounting ledgers.
+This architectural manual documents WorkSphere's unified multi-rail micro-payment engine ([`src/lib/payments/microPaymentEngine.ts`](../../src/lib/payments/microPaymentEngine.ts), [`src/lib/payments/solanaPay.ts`](../../src/lib/payments/solanaPay.ts), [`src/app/api/payments/micropay/session/route.ts`](../../src/app/api/payments/micropay/session/route.ts), and [`src/components/billing/MultiCurrencyDeskCheckout.tsx`](../../src/components/billing/MultiCurrencyDeskCheckout.tsx)). It details the real-time metering state machine, cryptographic idempotency keys, multi-rail settlement across Bitcoin Lightning Network, Solana Pay, and Stripe, failure recovery cascades, and double-entry accounting ledgers.
 
 ---
 
@@ -272,6 +272,20 @@ flowchart TD
     E1 -- Succeeded (Charge captured) --> Z
     E1 -- Failed: Card Declined --> F1[Claim Upfront Escrow Collateral & Flag Account]
 ```
+
+### 5.3 Solana Pay Escrow Settlement Integration
+
+Within the multi-rail framework, Solana Pay operates as an instant, sub-cent settlement rail for seat holds and desk reservations. The detailed mechanics of the Solana Pay escrow lifecycle—including optimistic state progression, commitment monitoring, and ledger disbursements—are specified in [Solana Pay Micro-Transaction Escrow Settlement Flow](../api/SOLANA_PAY_ESCROW.md).
+
+Key architectural integration aspects:
+- **Optimistic State Progression:** In [`src/lib/solana/solanaPayEscrow.ts`](../../src/lib/solana/solanaPayEscrow.ts), submitting a transaction signature transitions the seat reservation immediately to `provisionally_reserved` (zero-latency UI feedback), which is subsequently promoted to `confirmed` and `finalized` via cluster events.
+- **Commitment Thresholds:** Initial UI feedback triggers on `confirmed` commitment (cluster supermajority vote), while physical resource unlocking and final ledger posting require `finalized` commitment ($\ge 31$ blocks) to guard against chain forks and block re-organizations.
+- **Failover-Aware Connection Pooling:** RPC interactions utilize [`src/lib/payments/solanaPay.ts`](../../src/lib/payments/solanaPay.ts) with `SolanaRpcConnectionPool`, which transparently falls back from WebSocket subscriptions to HTTP status polling and retries across redundant RPC nodes with jittered exponential backoff.
+- **Settlement Distribution Split:** When an escrow deposit transitions to final settlement:
+  - **Venue Host Payout ($85\%$):** Credited to Partner Venue Accounts Payable (Account `2020`).
+  - **WorkSphere Platform Take-Rate ($15\%$):** Credited to Platform Micro-Billing Revenue (Account `4010`).
+  - **Unused Deposit Balance:** Returned to User Escrow Liability (Account `2010`) or refunded.
+- **Mempool Expiration Sweeps:** If a transaction drops from the mempool or fails to confirm within 60 seconds, `rollback()` releases the hold back to `available`. Unused payment references expire after a 5-minute blockhash TTL.
 
 ---
 

@@ -139,12 +139,20 @@ export async function deliverWebhookEvent(
     ignoreNotificationWindow?: boolean;
     eventId?: string;
     onlyEndpointId?: string;
+    excludeEndpointIds?: string[];
   } = {},
 ): Promise<DeliveryResult[]> {
   const endpoints = await prisma.webhookEndpoint.findMany({
     where: options.onlyEndpointId
       ? { id: options.onlyEndpointId, userId }
-      : { userId, isActive: true, eventTypes: { has: type } },
+      : {
+          userId,
+          isActive: true,
+          eventTypes: { has: type },
+          ...(options.excludeEndpointIds?.length
+            ? { id: { notIn: options.excludeEndpointIds } }
+            : {}),
+        },
   });
   if (endpoints.length === 0) return [];
 

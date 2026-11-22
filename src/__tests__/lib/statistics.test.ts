@@ -19,8 +19,9 @@ describe("statistics utility (#3965)", () => {
   it("computes accurate mean, variance, standard deviation, and median for valid numbers", () => {
     const data = [2, 4, 4, 4, 5, 5, 7, 9];
     expect(mean(data)).toBe(5);
-    expect(variance(data)).toBe(4);
-    expect(standardDeviation(data)).toBe(2);
+    // Sample variance (divides by n - 1): 32 / 7.
+    expect(variance(data)).toBeCloseTo(32 / 7, 12);
+    expect(standardDeviation(data)).toBeCloseTo(Math.sqrt(32 / 7), 12);
     expect(median(data)).toBe(4.5);
   });
 });

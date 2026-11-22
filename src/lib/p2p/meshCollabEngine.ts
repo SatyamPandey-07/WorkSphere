@@ -7,14 +7,14 @@
 export interface MeshPeerNode {
   peerId: string;
   displayName: string;
-  deskLocation: string;
-  ipSubnet: string;
+  deskLocation?: string | null;
+  ipSubnet?: string | null;
   hopCount: number; // 0 = direct LAN peer, 1+ = relayed via mesh node
-  signalStrengthRssi: number; // e.g. -45 dBm
-  latencyMs: number;
+  signalStrengthRssi?: number | null; // e.g. -45 dBm
+  latencyMs?: number | null;
   lastSeenTimestamp: number;
   status: "connected" | "connecting" | "mesh_relay" | "disconnected";
-  sharedFilesCount: number;
+  sharedFilesCount?: number;
   dataChannel?: RTCDataChannel | null;
 }
 
@@ -31,9 +31,14 @@ export interface CRDTDocumentDelta {
 export interface LocalMeshTopology {
   venueId: string;
   venueName: string;
-  localSubnet: string;
+  localSubnet: string | null;
   wanStatus:
-    "healthy_online" | "isp_blackout_offline" | "degraded_high_packet_loss";
+    | "healthy_online"
+    | "isp_blackout_offline"
+    | "degraded_high_packet_loss"
+    | "CONNECTED"
+    | "DISCONNECTED"
+    | "DEGRADED";
   activeMeshPeers: MeshPeerNode[];
   totalBandwidthKbps: number;
   meshResilienceRating: "optimal" | "robust" | "limited";
@@ -74,7 +79,10 @@ export class MeshCollabEngine {
       (p) => p.status === "connected" || p.status === "mesh_relay",
     ).length;
 
-    if (connectedCount >= 4 && wanStatus !== "isp_blackout_offline") {
+    const isOffline =
+      wanStatus === "isp_blackout_offline" || wanStatus === "DISCONNECTED";
+
+    if (connectedCount >= 4 && !isOffline) {
       return "optimal";
     }
     if (connectedCount >= 2) {

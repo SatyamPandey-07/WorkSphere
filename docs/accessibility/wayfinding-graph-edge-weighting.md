@@ -5,8 +5,8 @@
 Modern indoor transit in dense coworking hubs, multi-level venues, and campuses presents severe navigation barriers for wheelchair users, people with mobility impairments, and visually impaired visitors. Unlike conventional Euclidean pathfinding algorithms that minimize raw distance or travel time alone, WorkSphere's indoor navigation subsystem evaluates routing candidates based on physical accessibility constraints and Americans with Disabilities Act (ADA) architectural standards.
 
 The core architecture consists of two tightly integrated engines:
-1. **[`WayfindingGraph`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/WayfindingGraph.ts):** Constructs a directed spatial graph tagged with accessibility attributes (stairs, maximum gradient percentages, corridor clearance widths, surface smoothness, automated elevators, ramps, tactile paving, and sharp corner detection).
-2. **[`AccessibilityRouter`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/AccessibilityRouter.ts):** Executes a constrained Dijkstra shortest-path traversal across `WayfindingGraph`. Inaccessible edges (such as stairs or slopes exceeding user tolerance) are strictly pruned via infinite penalties, while tactile paving, corridor clearances, and surface types modulate edge weights.
+1. **[`WayfindingGraph`](../../src/core/accessibility/WayfindingGraph.ts):** Constructs a directed spatial graph tagged with accessibility attributes (stairs, maximum gradient percentages, corridor clearance widths, surface smoothness, automated elevators, ramps, tactile paving, and sharp corner detection).
+2. **[`AccessibilityRouter`](../../src/core/accessibility/AccessibilityRouter.ts):** Executes a constrained Dijkstra shortest-path traversal across `WayfindingGraph`. Inaccessible edges (such as stairs or slopes exceeding user tolerance) are strictly pruned via infinite penalties, while tactile paving, corridor clearances, and surface types modulate edge weights.
 
 ```mermaid
 flowchart TD
@@ -142,7 +142,7 @@ For users with visual impairments (`profile.hasVisualImpairment === true`):
 
 ## 6. Verification & Implementation Reference
 
-- Graph construction: [`src/core/accessibility/WayfindingGraph.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/WayfindingGraph.ts)
-- Constrained router: [`src/core/accessibility/AccessibilityRouter.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/AccessibilityRouter.ts)
-- Navigation cues & haptics: [`src/core/accessibility/AccessibleRouter.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/accessibility/AccessibleRouter.ts)
-- Unit tests: [`src/__tests__/core/AccessibleRouter.test.ts`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/core/AccessibleRouter.test.ts)
+- Graph construction: [`src/core/accessibility/WayfindingGraph.ts`](../../src/core/accessibility/WayfindingGraph.ts)
+- Constrained router: [`src/core/accessibility/AccessibilityRouter.ts`](../../src/core/accessibility/AccessibilityRouter.ts)
+- Navigation cues & haptics: [`src/core/accessibility/AccessibleRouter.ts`](../../src/core/accessibility/AccessibleRouter.ts)
+- Unit tests: [`src/__tests__/core/AccessibleRouter.test.ts`](../../src/__tests__/core/AccessibleRouter.test.ts)

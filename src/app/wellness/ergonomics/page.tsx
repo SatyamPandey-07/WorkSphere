@@ -1,6 +1,7 @@
 import React from "react";
 import type { Metadata } from "next";
 import DynamicErgonomicCoach from "@/components/wellness/DynamicErgonomicCoach";
+import AmbientSoundscapeGenerator from "@/components/wellness/AmbientSoundscapeGenerator";
 
 export const metadata: Metadata = {
   title: "Dynamic Ergonomic Health & Biometric Break Coach | WorkSphere",
@@ -21,6 +22,8 @@ export default function ErgonomicsPage() {
             weekly summary analytics, automated 20-20-20 eye rest intervals, posture assessments, and guided micro-stretch sequences.
           </p>
         </div>
+
+        <AmbientSoundscapeGenerator />
 
         <DynamicErgonomicCoach />
       </div>

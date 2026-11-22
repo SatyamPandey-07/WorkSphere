@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Leaf,
   TreePine,
@@ -36,19 +36,78 @@ import {
 } from "@/lib/sustainability/carbonEngine";
 import { LanternPowerRing } from "./LanternPowerRing";
 
+export type CarbonDatePreset = "7-days" | "30-days" | "this-month" | "ytd";
+
+export function formatLocalIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function getCarbonDatePresetRange(
+  preset: CarbonDatePreset,
+  now: Date = new Date(),
+): { startDate: string; endDate: string } {
+  const endDate = formatLocalIsoDate(now);
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (preset === "7-days") {
+    start.setDate(start.getDate() - 7);
+    const yesterday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    yesterday.setDate(yesterday.getDate() - 1);
+    return {
+      startDate: formatLocalIsoDate(start),
+      endDate: formatLocalIsoDate(yesterday),
+    };
+  }
+
+  if (preset === "30-days") {
+    start.setDate(start.getDate() - 29);
+  } else if (preset === "this-month") {
+    start.setDate(1);
+  } else if (preset === "ytd") {
+    start.setMonth(0, 1);
+  }
+
+  return { startDate: formatLocalIsoDate(start), endDate };
+}
+
 export default function CarbonFootprintTracker() {
+  const initialToday = formatLocalIsoDate(new Date());
+  const initialMonth = new Date();
+  initialMonth.setDate(1);
+
   const [summary, setSummary] = useState<CarbonFootprintSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTeam, setSelectedTeam] = useState<TeamCarbonSavings | null>(null);
+  const [selectedTeam, setSelectedTeam] = useState<TeamCarbonSavings | null>(
+    null,
+  );
   const [badgeExported, setBadgeExported] = useState(false);
+  const [startDate, setStartDate] = useState(formatLocalIsoDate(initialMonth));
+  const [endDate, setEndDate] = useState(initialToday);
+  const [activePreset, setActivePreset] = useState<CarbonDatePreset | null>(
+    null,
+  );
 
-  const fetchCarbonAnalytics = async () => {
+  const fetchCarbonAnalytics = useCallback(async () => {
+    if (!startDate || !endDate) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/analytics/carbon-footprint");
+      const params = new URLSearchParams({
+        startDate,
+        endDate,
+      });
+      const res = await fetch(
+        `/api/analytics/carbon-footprint?${params.toString()}`,
+      );
       const data = await res.json();
       if (res.ok && data.success) {
         setSummary(data.summary);
@@ -61,11 +120,35 @@ export default function CarbonFootprintTracker() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [startDate, endDate]);
 
   useEffect(() => {
-    fetchCarbonAnalytics();
-  }, []);
+    void fetchCarbonAnalytics();
+  }, [fetchCarbonAnalytics]);
+
+  const handlePresetSelect = (preset: CarbonDatePreset) => {
+    const range = getCarbonDatePresetRange(preset);
+    setStartDate(range.startDate);
+    setEndDate(range.endDate);
+    setActivePreset(preset);
+  };
+
+  const handleStartDateChange = (value: string) => {
+    setActivePreset(null);
+    setStartDate(value);
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setActivePreset(null);
+    setEndDate(value);
+  };
+
+  const presetButtons: Array<{ id: CarbonDatePreset; label: string }> = [
+    { id: "7-days", label: "7 Days" },
+    { id: "30-days", label: "30 Days" },
+    { id: "this-month", label: "This Month" },
+    { id: "ytd", label: "Year to Date" },
+  ];
 
   const handleExportESG = async () => {
     if (!summary) return;
@@ -155,15 +238,18 @@ export default function CarbonFootprintTracker() {
     }
   };
 
-  const totalDistance = summary ? safeParseDistance(summary.totalDistanceKm) : 0;
+  const totalDistance = summary
+    ? safeParseDistance(summary.totalDistanceKm)
+    : 0;
   const missingDistanceRecordsCount = summary
-    ? summary.records.filter((r) => safeParseDistance(r.distanceKm) === 0).length
+    ? summary.records.filter((r) => safeParseDistance(r.distanceKm) === 0)
+        .length
     : 0;
   const isMissingCommuteDistance = Boolean(
-    summary && (totalDistance === 0 || summary.records.length === 0)
+    summary && (totalDistance === 0 || summary.records.length === 0),
   );
   const hasPartialMissingDistance = Boolean(
-    summary && totalDistance > 0 && missingDistanceRecordsCount > 0
+    summary && totalDistance > 0 && missingDistanceRecordsCount > 0,
   );
   const teams: TeamCarbonSavings[] = React.useMemo(() => {
     if (summary?.teamLeaderboard && summary.teamLeaderboard.length > 0) {
@@ -215,7 +301,9 @@ export default function CarbonFootprintTracker() {
               Remote Work Carbon Footprint & Eco-Tracker
             </h1>
             <p className="text-xs md:text-sm text-slate-300 max-w-2xl">
-              Track commuter CO₂ emissions across walking, cycling, and transit. Certify green workspace visits and export corporate Scope 3 ESG carbon audit reports.
+              Track commuter CO₂ emissions across walking, cycling, and transit.
+              Certify green workspace visits and export corporate Scope 3 ESG
+              carbon audit reports.
             </p>
           </div>
 
@@ -259,6 +347,63 @@ export default function CarbonFootprintTracker() {
         </div>
       </div>
 
+      <section
+        aria-label="Carbon report date range"
+        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 backdrop-blur-md"
+      >
+        <div className="flex flex-col gap-3">
+          <div
+            role="group"
+            aria-label="Date range presets"
+            className="flex flex-wrap gap-2"
+          >
+            {presetButtons.map((preset) => {
+              const isActive = activePreset === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  data-testid={`carbon-preset-${preset.id}`}
+                  onClick={() => handlePresetSelect(preset.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-slate-950 ${
+                    isActive
+                      ? "border-emerald-400 bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20"
+                      : "border-slate-700 bg-slate-950 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-semibold text-slate-300">
+              <span>Start date</span>
+              <input
+                type="date"
+                aria-label="Start date"
+                data-testid="carbon-start-date"
+                value={startDate}
+                onChange={(event) => handleStartDateChange(event.target.value)}
+                className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+            </label>
+            <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-semibold text-slate-300">
+              <span>End date</span>
+              <input
+                type="date"
+                aria-label="End date"
+                data-testid="carbon-end-date"
+                value={endDate}
+                onChange={(event) => handleEndDateChange(event.target.value)}
+                className="h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+            </label>
+          </div>
+        </div>
+      </section>
 
       {/* API / Connectivity Error Banner */}
       {error && !loading && (
@@ -293,10 +438,15 @@ export default function CarbonFootprintTracker() {
             </div>
             <div>
               <h4 className="text-xs font-bold text-sky-200">
-                {missingDistanceRecordsCount} commute {missingDistanceRecordsCount === 1 ? "record has" : "records have"} uncalculated distance
+                {missingDistanceRecordsCount} commute{" "}
+                {missingDistanceRecordsCount === 1
+                  ? "record has"
+                  : "records have"}{" "}
+                uncalculated distance
               </h4>
               <p className="text-xs text-sky-300/80 mt-0.5">
-                Some workspace check-ins are missing transit distance. Configure default commute origin in settings for full Scope 3 coverage.
+                Some workspace check-ins are missing transit distance. Configure
+                default commute origin in settings for full Scope 3 coverage.
               </p>
             </div>
           </div>
@@ -324,7 +474,8 @@ export default function CarbonFootprintTracker() {
                 No home location or commute distance recorded
               </h4>
               <p className="text-xs text-amber-300/80 mt-0.5">
-                Set your home location and primary transit mode to automatically calculate your carbon savings for workspace check-ins.
+                Set your home location and primary transit mode to automatically
+                calculate your carbon savings for workspace check-ins.
               </p>
             </div>
           </div>
@@ -341,7 +492,10 @@ export default function CarbonFootprintTracker() {
       {loading ? (
         <div className="p-12 rounded-3xl bg-slate-900/40 border border-slate-800 flex flex-col items-center justify-center gap-3 text-slate-400">
           <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" />
-          <p className="text-sm">Calculating multimodal transit emissions and tree offset equivalencies...</p>
+          <p className="text-sm">
+            Calculating multimodal transit emissions and tree offset
+            equivalencies...
+          </p>
         </div>
       ) : summary ? (
         <div className="space-y-6">
@@ -361,7 +515,9 @@ export default function CarbonFootprintTracker() {
                 {safeParseDistance(summary.totalAvoidedKgCo2).toFixed(2)}{" "}
                 <span className="text-sm text-slate-300">kg CO₂</span>
               </div>
-              <p className="text-[11px] text-slate-400">Saved by choosing low-carbon transit & walking</p>
+              <p className="text-[11px] text-slate-400">
+                Saved by choosing low-carbon transit & walking
+              </p>
             </div>
 
             {/* Trees Offset Equivalency */}
@@ -378,7 +534,9 @@ export default function CarbonFootprintTracker() {
                 🌲 {safeParseDistance(summary.treesEquivalentOffset).toFixed(1)}{" "}
                 <span className="text-sm text-slate-300">Trees</span>
               </div>
-              <p className="text-[11px] text-slate-400">Monthly carbon absorption equivalent</p>
+              <p className="text-[11px] text-slate-400">
+                Monthly carbon absorption equivalent
+              </p>
             </div>
 
             {/* Eco Workspace Visits */}
@@ -395,7 +553,9 @@ export default function CarbonFootprintTracker() {
                 {summary.greenVenuesVisitedCount}{" "}
                 <span className="text-sm text-slate-300">Visits</span>
               </div>
-              <p className="text-[11px] text-slate-400">Workspaces powered by verified green grids</p>
+              <p className="text-[11px] text-slate-400">
+                Workspaces powered by verified green grids
+              </p>
             </div>
           </div>
 
@@ -404,7 +564,8 @@ export default function CarbonFootprintTracker() {
             {/* Left: Mode Breakdown Bars (7 cols) */}
             <div className="lg:col-span-7 rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-4 backdrop-blur-md shadow-lg">
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <Globe className="w-4 h-4 text-emerald-400" /> Commute Distance & Emissions by Mode
+                <Globe className="w-4 h-4 text-emerald-400" /> Commute Distance
+                & Emissions by Mode
               </h2>
 
               <div className="space-y-3 pt-2">
@@ -435,7 +596,9 @@ export default function CarbonFootprintTracker() {
                       </div>
 
                       <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                        <span>Emissions: {safeEmissions.toFixed(2)} kg CO₂</span>
+                        <span>
+                          Emissions: {safeEmissions.toFixed(2)} kg CO₂
+                        </span>
                         <span>
                           {item.mode === "WALKING" || item.mode === "BICYCLING"
                             ? "✨ 100% Zero Emissions"
@@ -451,7 +614,8 @@ export default function CarbonFootprintTracker() {
             {/* Right: Eco-Badges Roster (5 cols) */}
             <div className="lg:col-span-5 rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-4 backdrop-blur-md shadow-lg">
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <Award className="w-4 h-4 text-teal-400" /> Verified Sustainability Badges
+                <Award className="w-4 h-4 text-teal-400" /> Verified
+                Sustainability Badges
               </h2>
 
               <div className="space-y-3">
@@ -468,7 +632,9 @@ export default function CarbonFootprintTracker() {
                       <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                         <CheckCircle2
                           className={`w-3.5 h-3.5 ${
-                            badge.verified ? "text-emerald-400" : "text-slate-600"
+                            badge.verified
+                              ? "text-emerald-400"
+                              : "text-slate-600"
                           }`}
                         />
                         {badge.name}
@@ -495,13 +661,16 @@ export default function CarbonFootprintTracker() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold uppercase tracking-wider">
-                  <Trophy className="w-3.5 h-3.5 text-amber-400" /> Regional Hub Sustainability Champions
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" /> Regional Hub
+                  Sustainability Champions
                 </div>
                 <h2 className="text-xl md:text-2xl font-black text-white tracking-tight flex items-center gap-2">
                   Team & Organization Carbon Savings Leaderboard
                 </h2>
                 <p className="text-xs md:text-sm text-slate-400 max-w-2xl">
-                  Celebrating distributed teams that slash Scope 3 flight and transit emissions by collaborating from regional eco-hubs instead of cross-country flights to HQ.
+                  Celebrating distributed teams that slash Scope 3 flight and
+                  transit emissions by collaborating from regional eco-hubs
+                  instead of cross-country flights to HQ.
                 </p>
               </div>
 
@@ -512,7 +681,9 @@ export default function CarbonFootprintTracker() {
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition shrink-0"
                 >
                   <Download className="w-4 h-4" />
-                  {badgeExported ? "Badge Exported! ✓" : "Export Team Sustainability Badge"}
+                  {badgeExported
+                    ? "Badge Exported! ✓"
+                    : "Export Team Sustainability Badge"}
                 </button>
               )}
             </div>
@@ -546,7 +717,8 @@ export default function CarbonFootprintTracker() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-400/10 border border-slate-400/30 text-slate-300 font-mono text-[11px] font-bold">
-                          <Medal className="w-3.5 h-3.5 text-slate-300" /> 2nd Place
+                          <Medal className="w-3.5 h-3.5 text-slate-300" /> 2nd
+                          Place
                         </span>
                         <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-400">
                           Silver Tier
@@ -569,7 +741,9 @@ export default function CarbonFootprintTracker() {
                         </div>
                         <div className="text-2xl font-black text-white font-mono">
                           {teams[1].monthlyAvoidedKgCo2}{" "}
-                          <span className="text-xs text-slate-400 font-normal">kg CO₂e</span>
+                          <span className="text-xs text-slate-400 font-normal">
+                            kg CO₂e
+                          </span>
                         </div>
                         <div className="flex justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
                           <span className="flex items-center gap-1">
@@ -586,7 +760,8 @@ export default function CarbonFootprintTracker() {
 
                     <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400">
                       <span className="flex items-center gap-1">
-                        <Users className="w-3 h-3" /> {teams[1].membersCount} members
+                        <Users className="w-3 h-3" /> {teams[1].membersCount}{" "}
+                        members
                       </span>
                       <span className="font-semibold text-slate-300 group-hover:underline">
                         Select Badge →
@@ -609,7 +784,8 @@ export default function CarbonFootprintTracker() {
                     <div className="space-y-3.5">
                       <div className="flex items-center justify-between">
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono text-xs font-bold shadow-sm">
-                          <Trophy className="w-4 h-4 text-amber-400" /> 1st Place Champion
+                          <Trophy className="w-4 h-4 text-amber-400" /> 1st
+                          Place Champion
                         </span>
                         <span className="text-[10px] font-mono uppercase px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                           Emerald Tier
@@ -632,7 +808,9 @@ export default function CarbonFootprintTracker() {
                         </div>
                         <div className="text-3xl font-black text-emerald-400 font-mono">
                           {teams[0].monthlyAvoidedKgCo2}{" "}
-                          <span className="text-sm text-slate-300 font-normal">kg</span>
+                          <span className="text-sm text-slate-300 font-normal">
+                            kg
+                          </span>
                         </div>
                         <div className="flex justify-between text-[11px] font-mono text-slate-300 pt-1.5 border-t border-slate-800">
                           <span className="flex items-center gap-1 text-emerald-300">
@@ -649,7 +827,8 @@ export default function CarbonFootprintTracker() {
 
                     <div className="mt-5 pt-3.5 border-t border-emerald-500/20 flex items-center justify-between text-xs text-emerald-300/90 font-medium">
                       <span className="flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5" /> {teams[0].membersCount} active members
+                        <Users className="w-3.5 h-3.5" />{" "}
+                        {teams[0].membersCount} active members
                       </span>
                       <span className="font-bold text-white group-hover:underline flex items-center gap-1">
                         Select Badge →
@@ -672,7 +851,8 @@ export default function CarbonFootprintTracker() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-600/10 border border-amber-600/30 text-amber-300 font-mono text-[11px] font-bold">
-                          <Medal className="w-3.5 h-3.5 text-amber-500" /> 3rd Place
+                          <Medal className="w-3.5 h-3.5 text-amber-500" /> 3rd
+                          Place
                         </span>
                         <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-400">
                           Bronze Tier
@@ -695,7 +875,9 @@ export default function CarbonFootprintTracker() {
                         </div>
                         <div className="text-2xl font-black text-white font-mono">
                           {teams[2].monthlyAvoidedKgCo2}{" "}
-                          <span className="text-xs text-slate-400 font-normal">kg CO₂e</span>
+                          <span className="text-xs text-slate-400 font-normal">
+                            kg CO₂e
+                          </span>
                         </div>
                         <div className="flex justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800">
                           <span className="flex items-center gap-1">
@@ -712,7 +894,8 @@ export default function CarbonFootprintTracker() {
 
                     <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400">
                       <span className="flex items-center gap-1">
-                        <Users className="w-3 h-3" /> {teams[2].membersCount} members
+                        <Users className="w-3 h-3" /> {teams[2].membersCount}{" "}
+                        members
                       </span>
                       <span className="font-semibold text-amber-300 group-hover:underline">
                         Select Badge →
@@ -736,18 +919,27 @@ export default function CarbonFootprintTracker() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold uppercase">
-                        Rank #{activeSelectedTeam.rank} • {activeSelectedTeam.badgeTier} Badge
+                        Rank #{activeSelectedTeam.rank} •{" "}
+                        {activeSelectedTeam.badgeTier} Badge
                       </span>
                       <span className="flex items-center gap-1 text-[11px] text-slate-400">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Scope 3 Certified
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />{" "}
+                        Scope 3 Certified
                       </span>
                     </div>
                     <h3 className="text-base font-bold text-white">
                       {activeSelectedTeam.teamName}
                     </h3>
                     <p className="text-xs text-slate-300">
-                      Regional Hub: <span className="text-emerald-300 font-semibold">{activeSelectedTeam.regionalHub}</span> • Saved{" "}
-                      <span className="font-mono text-emerald-400 font-bold">{activeSelectedTeam.monthlyAvoidedKgCo2} kg CO₂e</span> ({activeSelectedTeam.treesEquivalent} trees)
+                      Regional Hub:{" "}
+                      <span className="text-emerald-300 font-semibold">
+                        {activeSelectedTeam.regionalHub}
+                      </span>{" "}
+                      • Saved{" "}
+                      <span className="font-mono text-emerald-400 font-bold">
+                        {activeSelectedTeam.monthlyAvoidedKgCo2} kg CO₂e
+                      </span>{" "}
+                      ({activeSelectedTeam.treesEquivalent} trees)
                     </p>
                   </div>
                 </div>
@@ -807,8 +999,12 @@ export default function CarbonFootprintTracker() {
                           )}
                         </td>
                         <td className="py-3.5 px-4">
-                          <div className="font-bold text-white">{t.teamName}</div>
-                          <div className="text-[10px] text-slate-400">{t.department}</div>
+                          <div className="font-bold text-white">
+                            {t.teamName}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {t.department}
+                          </div>
                         </td>
                         <td className="py-3.5 px-4 text-slate-300">
                           <span className="flex items-center gap-1.5">

@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import {
   generateNomadComplianceReport,
@@ -21,8 +22,20 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    const { userId: authenticatedUserId } = await auth();
+
+    if (!authenticatedUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("userId") || "user_nomad_demo";
+    const requestedUserId = searchParams.get("userId");
+
+    if (requestedUserId !== null && requestedUserId !== authenticatedUserId) {
+      return NextResponse.json({ error: "Not Found" }, { status: 404 });
+    }
+
+    const userId = authenticatedUserId;
     const year = Number(searchParams.get("year")) || new Date().getFullYear();
 
     // Fetch user's bookings and check-ins
@@ -53,8 +66,6 @@ export async function GET(req: NextRequest) {
         address.includes("Portugal") ||
         address.includes("Lisbon") ||
         address.includes("Porto");
-      const isGermany =
-        address.includes("Germany") || address.includes("Berlin");
       const isJapan = address.includes("Japan") || address.includes("Tokyo");
       const isUK = address.includes("UK") || address.includes("London");
 
@@ -192,7 +203,7 @@ export async function GET(req: NextRequest) {
     console.error("[GET /api/tax/nomad-compliance] Error:", error);
     return NextResponse.json(
       { error: "Failed to generate compliance report", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -217,7 +228,7 @@ export async function POST(req: NextRequest) {
           {
             error: "Invalid request payload. Expected an array of 'entries'.",
           },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
@@ -234,7 +245,7 @@ export async function POST(req: NextRequest) {
     if (!report) {
       return NextResponse.json(
         { error: "Missing report or entries data" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -276,7 +287,7 @@ export async function POST(req: NextRequest) {
     console.error("[POST /api/tax/nomad-compliance] Error:", error);
     return NextResponse.json(
       { error: "Failed to process compliance report", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

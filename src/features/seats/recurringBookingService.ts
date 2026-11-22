@@ -1,3 +1,5 @@
+import { generateRecurringDates, MAX_RECURRING_OCCURRENCES } from "@/lib/booking/recurrence";
+
 export type WeekdayCode = "SU" | "MO" | "TU" | "WE" | "TH" | "FR" | "SA";
 
 export interface DateRangeInput {
@@ -102,12 +104,36 @@ export function expandRecurringDates(
     }
   }
 
+  const freq = parts.get("FREQ") ?? "";
   const intervalRaw = Number(parts.get("INTERVAL") ?? "1");
-  const intervalWeeks =
+  const interval =
     Number.isFinite(intervalRaw) && intervalRaw > 0
       ? Math.floor(intervalRaw)
       : 1;
 
+  // Handle RFC 5545 monthly recurrence (FREQ=MONTHLY)
+  if (freq === "MONTHLY") {
+    // Reuse battle-tested shared monthly recurrence engine with leap-year & month-end clamping
+    const allMonthly = generateRecurringDates(
+      range.startDate,
+      "monthly",
+      range.endDate,
+      MAX_RECURRING_OCCURRENCES,
+    );
+
+    if (interval === 1) {
+      return allMonthly;
+    }
+
+    // Step by interval (e.g. INTERVAL=2 for bi-monthly)
+    const filtered: string[] = [];
+    for (let i = 0; i < allMonthly.length; i += interval) {
+      filtered.push(allMonthly[i]);
+    }
+    return filtered;
+  }
+
+  const intervalWeeks = interval;
   const byDayRaw = parts.get("BYDAY");
   let allowedDays = new Set<number>();
 
@@ -171,12 +197,13 @@ export async function validateRecurringBookingSlots(
     const candidates = await store.listCandidateDesks(seatId, requestedDates);
     for (const candidate of candidates) {
       if (candidate.deskId === seatId) continue;
-      const freeDates = requestedDates.filter(
-        (d) => !candidate.occupiedDates.has(d),
-      );
-      const candidateConflicts = requestedDates.filter((d) =>
-        candidate.occupiedDates.has(d),
-      );
+      // Only check conflicts against the dates where the requested seat was actually conflicted
+      const freeDates = conflictedDates
+        .map((c) => c.date)
+        .filter((d) => !candidate.occupiedDates.has(d));
+      const candidateConflicts = conflictedDates
+        .map((c) => c.date)
+        .filter((d) => candidate.occupiedDates.has(d));
       alternativeDesks.push({
         deskId: candidate.deskId,
         availableForAllRequestedDates: candidateConflicts.length === 0,

@@ -1,60 +1,95 @@
-import { NextResponse } from 'next/server';
-import {
-  buildEcoRouteOptions,
-  type EcoRoutingHooks,
-  type GeoPoint,
-} from '@/lib/routing/ecoRoutingEngine';
+/**
+ * route.ts
+ * API endpoint exposing the multi-modal routing matrix to the frontend map components.
+ */
 
-export const ROUTING_SLA_BUDGET_MS = 450;
-export const INTERNAL_DEADLINE_MS = 400;
+import { NextRequest, NextResponse } from 'next/server';
+import { MicroMobilityAggregator } from '@/core/routing/MicroMobilityAggregator';
+import { TransitGraphBuilder } from '@/core/routing/TransitGraphBuilder';
+import { MultiModalDijkstra } from '@/core/routing/MultiModalDijkstra';
+import { calculateEcoRoute, areValidCoordinates } from '@/lib/routing/ecoRoutingEngine';
 
-export interface MultimodalRoutingRequest {
-  origin: GeoPoint;
-  destination: GeoPoint;
-  hooks?: EcoRoutingHooks;
-}
+export async function POST(request: NextRequest) {
+    try {
+        const body = await request.json();
+        const { startLat, startLng, endLat, endLng, radiusMeters = 1000 } = body;
 
-function isValidPoint(pt: unknown): pt is GeoPoint {
-  if (!pt || typeof pt !== 'object') return false;
-  const candidate = pt as { lat?: unknown; lng?: unknown };
-  return (
-    typeof candidate.lat === 'number' &&
-    Number.isFinite(candidate.lat) &&
-    candidate.lat >= -90 &&
-    candidate.lat <= 90 &&
-    typeof candidate.lng === 'number' &&
-    Number.isFinite(candidate.lng) &&
-    candidate.lng >= -180 &&
-    candidate.lng <= 180
-  );
-}
+        if (
+            startLat === undefined ||
+            startLng === undefined ||
+            endLat === undefined ||
+            endLng === undefined ||
+            !areValidCoordinates({ lat: startLat, lng: startLng }) ||
+            !areValidCoordinates({ lat: endLat, lng: endLng })
+        ) {
+            return NextResponse.json({ error: 'Missing coordinates' }, { status: 400 });
+        }
 
-export async function handleMultimodalEcoPost(
-  body: unknown,
-  options: { deadlineMs?: number; hooks?: EcoRoutingHooks } = {}
-) {
-  const startedAt = Date.now();
-  const deadlineMs = options.deadlineMs ?? INTERNAL_DEADLINE_MS;
+        // 1. Fetch micro-mobility options (gracefully handle if aggregator fails)
+        let vehicles: any[] = [];
+        try {
+            const aggregator = new MicroMobilityAggregator();
+            vehicles = await aggregator.fetchVehiclesInRadius(startLat, startLng, radiusMeters);
+        } catch (aggError) {
+            console.warn('[multimodal/route] MicroMobilityAggregator error:', aggError);
+        }
 
-  if (!body || typeof body !== 'object') {
-    return {
-      status: 400,
-      payload: { error: 'Invalid JSON request body.' },
-    };
-  }
+        // 2. Build graph (with robust routing engine fallback)
+        const graph = new TransitGraphBuilder();
+        graph.addNode({ id: 'start', type: 'road_intersection', latitude: startLat, longitude: startLng });
+        graph.addNode({ id: 'end', type: 'venue', latitude: endLat, longitude: endLng });
 
-  const reqBody = body as MultimodalRoutingRequest;
-  if (!isValidPoint(reqBody.origin) || !isValidPoint(reqBody.destination)) {
-    return {
-      status: 400,
-      payload: {
-        error: 'Valid origin and destination { lat, lng } coordinates are required.',
-      },
-    };
-  }
+        if (vehicles.length > 0) {
+            graph.mergeMicroMobilityData(vehicles, 'end');
+        }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), deadlineMs);
+        // Calculate walking edge via eco routing engine (handles 503/504/timeout with Haversine fallback)
+        const ecoRoute = await calculateEcoRoute(
+            { lat: startLat, lng: startLng },
+            { lat: endLat, lng: endLng },
+            { profile: 'walking' }
+        );
+
+        graph.addEdge({
+            fromId: 'start',
+            toId: 'end',
+            mode: 'walking',
+            distanceMeters: ecoRoute.distanceMeters,
+            durationSeconds: ecoRoute.durationSeconds,
+            cost: 0,
+        });
+
+        // 3. Calculate route via Dijkstra
+        const dijkstra = new MultiModalDijkstra(graph, 1.0, 0.5);
+        const route = dijkstra.findOptimalRoute('start', 'end');
+
+        if (!route) {
+            // Even if graph traversal yielded no path, fall back to direct eco route estimate
+            return NextResponse.json({
+                success: true,
+                route: {
+                    path: ['start', 'end'],
+                    totalDurationSeconds: ecoRoute.durationSeconds,
+                    totalCost: 0,
+                    modes: ['walking'],
+                    isEstimated: true,
+                    fallbackReason: 'NO_GRAPH_PATH',
+                },
+                isEstimated: true,
+                availableVehicles: vehicles,
+            }, { status: 200 });
+        }
+
+        return NextResponse.json({
+            success: true,
+            route: {
+                ...route,
+                isEstimated: ecoRoute.isEstimated,
+                fallbackReason: ecoRoute.fallbackReason,
+            },
+            isEstimated: ecoRoute.isEstimated,
+            availableVehicles: vehicles,
+        }, { status: 200 });
 
   try {
     const mergedHooks: EcoRoutingHooks = {

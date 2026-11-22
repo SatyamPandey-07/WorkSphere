@@ -16,6 +16,7 @@ The check-in subsystem is implemented across:
 - **HTTP Backend Endpoints:**
   - Individual self-check-in: [`src/app/api/venues/[venueId]/check-in/route.ts`](../../src/app/api/venues/[venueId]/check-in/route.ts)
   - Manager bulk check-in: [`src/app/api/venues/[venueId]/check-in/bulk/route.ts`](../../src/app/api/venues/[venueId]/check-in/bulk/route.ts)
+  - IoT smart-lock check-in: [`src/app/api/venues/check-in/iot/route.ts`](../../src/app/api/venues/check-in/iot/route.ts)
 
 ```mermaid
 flowchart TD
@@ -297,6 +298,20 @@ To support this operational requirement, WorkSphere exposes a dedicated manager 
 
 For complete schema details, response envelopes, and integration examples, see the [Venue Manager Bulk Check-In API Guide](../api/BULK_CHECK_IN.md).
 
+### 5.5 IoT Smart-Lock Automated Check-In (Inbound Webhook)
+
+In contrast to the outbound notification webhooks described above (`MAP_GEOFENCE_BREACHED` in Section 5.3), WorkSphere also supports an **inbound** webhook endpoint specifically designed for connected physical access hardware:
+
+`POST /api/venues/check-in/iot`
+
+When an authorized member unlocks an on-site IoT smart door lock, scans an RFID keycard, or passes through an access turnstile, the hardware gateway dispatches an inbound HTTP `POST` request directly to WorkSphere:
+
+1. **Inbound vs. Outbound Separation:** Outbound webhooks notify external systems (such as Slack or corporate attendance feeds) after a check-in occurs. Inbound IoT webhooks trigger the check-in itself, eliminating manual mobile UI interactions (QR code scanning or GPS prompts).
+2. **Signature Authentication Boundary:** Because hardware devices operate autonomously without user sessions, the endpoint is explicitly public at the Clerk middleware boundary (`isPublicRoute`). Authentication is enforced using HMAC-SHA256 request signatures (`X-WorkSphere-Signature: t={timestamp},v1={signature}`) with a 300-second freshness window.
+3. **Core Check-In Integration:** Upon signature verification and venue resolution (by internal ID or Google Place ID), the route delegates to `recordCheckIn(userId, venue)`, renewing the 4-hour occupancy lease, advancing daily streaks, and triggering downstream outbound webhooks.
+
+For complete signature header specifications, signing examples, and error handling, see the [IoT Smart-Lock Check-In Webhook API Guide](../api/IOT_SMART_LOCK_CHECKIN.md).
+
 ---
 
 ## 6. UI Component Specification: `CheckInModal.tsx`
@@ -334,3 +349,4 @@ Automated unit tests are maintained in:
 - `src/__tests__/lib/streak.test.ts`: Tests consecutive day streak calculations, timezone boundaries, and milestone badge triggers.
 - [`src/__tests__/api/bulkCheckIn.test.ts`](../../src/__tests__/api/bulkCheckIn.test.ts): Tests manager authorization, CUID payload validation, atomic transactions, and partial success isolation.
 - [`src/__tests__/api/bulkCheckInAvailabilityCache.test.ts`](../../src/__tests__/api/bulkCheckInAvailabilityCache.test.ts): Tests post-transaction cache invalidation when check-ins succeed.
+- [`src/__tests__/api/iotSignature.test.ts`](../../src/__tests__/api/iotSignature.test.ts): Tests IoT HMAC-SHA256 signature verification, timestamp freshness tolerance, raw-body tampering rejection, and check-in route error responses.

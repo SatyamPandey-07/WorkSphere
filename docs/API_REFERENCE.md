@@ -45,6 +45,7 @@ This document provides a high-level reference for the REST API endpoints availab
 | `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                                                                                                                           |
 | `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                                                                                                                                   |
 | `POST /api/venues/{venueId}/check-in/bulk`         | Perform manager bulk check-in for venue bookings. See the [Bulk venue check-in API guide](./api/BULK_CHECK_IN.md) for details.                                                      |
+| `POST /api/venues/check-in/iot`                    | Record IoT smart-lock check-in using HMAC-SHA256 webhook authentication. See the [IoT smart-lock check-in guide](./api/IOT_SMART_LOCK_CHECKIN.md) for details.                      |
 
 ### Endpoint Specification: `GET /api/venues/search`
 

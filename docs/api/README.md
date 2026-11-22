@@ -22,6 +22,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Cafe orders](./cafe-orders.md)
 - [Folder exports](./FOLDER_EXPORTS.md) — geographic (GeoJSON and KML), PDF catalog, and billing CSV exports for workspace folders.
 - [Guest Split Payment API](./GUEST_SPLIT_PAYMENT.md) — signed split-payment token verification, guest checkout, idempotent payment recording, and digital guest pass generation.
+- [IoT Smart-Lock Check-In Webhook](./IOT_SMART_LOCK_CHECKIN.md) — HMAC-SHA256 authenticated webhook, timestamp freshness, raw-body signing, secret configuration, and check-in persistence.
 - [Meet Halfway Routing](./MEET_HALFWAY_ROUTING.md) — request/response contract, optimization behavior, commute estimates, and capacity fallback semantics.
 - [Message translation](./message-translation.md)
 - [NotificationBell & User Notifications](../NOTIFICATION_BELL_GUIDE.md) — notification retrieval, mark-as-read row-locking transaction, mark-as-unread restoration, retry behavior, and NotificationBell UI.

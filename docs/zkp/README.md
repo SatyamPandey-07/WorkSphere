@@ -3,6 +3,7 @@
 ## Architecture & Reference
 
 * [Groth16 Circuit Architecture for Student Discounts](./GROTH16_CIRCUIT_ARCHITECTURE.md) — Circom R1CS constraints, BN254 (`alt_bn128`) pairing & trusted setup phases, Web Worker SnarkJS proof generation, public signal validation (`merkleRoot`, `domainHash`, `expirationTimestamp`), performance benchmarks, and threat analysis.
+* [Groth16 Circuit Proving Key Verification Benchmark Runbook](./GROTH16_BENCHMARK_RUNBOOK.md) — Comprehensive technical runbook covering Circom compilation, Groth16 trusted setup and ceremony artifacts, `.zkey`/`.vkey` management, SnarkJS proof lifecycle, browser WASM vs Node.js performance benchmarks, mobile memory limits, and IndexedDB proof verification caching.
 
 ## Circuit Verification Test Cases
 

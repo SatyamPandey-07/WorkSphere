@@ -1273,3 +1273,58 @@ enum MicroBillingSessionStatus {
   SETTLED
   FAILED
 }
+
+/// Persistent skill exchange listing for co-working barter exchanges (#9584).
+model SkillListing {
+  id               String             @id @default(cuid())
+  venueId          String
+  venueName        String
+  userId           String
+  userName         String
+  userTitle        String
+  offeringSkill    String
+  offeringCategory String
+  seekingSkill     String
+  seekingCategory  String
+  durationMinutes  Int                @default(30)
+  meetupSpot       String
+  status           SkillListingStatus @default(OPEN)
+  reputationScore  Int                @default(100)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  matches          SkillMatch[]
+
+  @@index([venueId])
+  @@index([userId])
+  @@index([status])
+  @@index([offeringCategory])
+  @@index([seekingCategory])
+}
+
+enum SkillListingStatus {
+  OPEN
+  MATCHED
+  CANCELLED
+}
+
+/// Confirmed skill exchange match between nomads (#9584).
+model SkillMatch {
+  id           String           @id @default(cuid())
+  listingId    String
+  listing      SkillListing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  proposerId   String
+  proposerName String
+  meetupSpot   String
+  meetupTime   String
+  status       SkillMatchStatus @default(CONFIRMED)
+  createdAt    DateTime         @default(now())
+
+  @@index([listingId])
+  @@index([proposerId])
+  @@index([status])
+}
+
+enum SkillMatchStatus {
+  CONFIRMED
+  CANCELLED
+}

@@ -4,6 +4,7 @@
   <img src="public/icons/icon-512.png" alt="WorkSphere Logo" width="84" height="84" style="border-radius: 20px;" />
 </a>
 
+
 # WorkSphere
 
 ### _The Intelligent Multi-Agent Workspace Discovery & Real-Time Booking Engine_
@@ -33,7 +34,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-142%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-143%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +52,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-142-active-rockstars"><b>👥 Contributors (142)</b></a> •
+  <a href="#-contributors-143-active-rockstars"><b>👥 Contributors (143)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -63,7 +64,7 @@
 
 | Role                                  | Leader            | GitHub                                                 | Badges                                                                                                                                                                                                                                                                                                 |
 | :------------------------------------ | :---------------- | :----------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🚀 **Founder & Lead Architect / CTO** | **Satyam Pandey** | [@SatyamPandey-07](https://github.com/SatyamPandey-07) | [![GitHub Profile](https://img.shields.io/badge/GitHub-Profile-181717?style=flat-square&logo=github)](https://github.com/SatyamPandey-07) [![Pair Extraordinaire](https://img.shields.io/badge/GitHub-Pair%20Extraordinaire-58A6FF?style=flat-square&logo=github)](https://github.com/SatyamPandey-07) |
+| 🚀 **Founder & Lead Architect / CTO** | **Satyam Pandey** | [@SatyamPandey-07](https://github.com/SatyamPandey-07) | [![GitHub Profile](https://img.shields.io/badge/GitHub-Profile-181717?style=flat-square&logo=github)](https://github.com/SatyamPandey-07)
 
 > [!TIP]
 > **Issue Claiming & Auto-Merge Workflow:**
@@ -74,9 +75,9 @@
 
 ---
 
-### 🚀 Contributors (142 Active Rockstars)
+### 🚀 Contributors (143 Active Rockstars)
 
-A massive thank you to all **142 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **143 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -978,6 +979,12 @@ A massive thank you to all **142 brilliant contributors and bots** building Work
         <sub><b>Updesh413</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/gavalidivya0-arch">
+        <img src="https://avatars.githubusercontent.com/u/228240021?v=4" width="55px;" height="55px;" alt="gavalidivya0-arch" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>gavalidivya0-arch</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1017,6 +1024,12 @@ A massive thank you to all **142 brilliant contributors and bots** building Work
 
 ### ⚡ Cutting-Edge Platform & Telemetry Innovations (NEW)
 
+- **Client-Side Web Worker ZKP Student Verification**: Offloads zero-knowledge SnarkJS / Groth16 proof synthesis to a dedicated background Web Worker, ensuring zero main-thread UI jank during verification (`src/workers/zkpProofWorker.ts`, `src/features/zkp/studentDiscountVerifier.ts`).
+- **P2P Battery-Aware Dynamic Bandwidth Throttling**: Monitors Battery Status API to intelligently throttle WebRTC mesh data rates and CRDT delta synchronization frequency during low-battery and unplugged states (`src/hooks/useBatteryOptimization.ts`, `src/core/p2p/MeshBandwidthThrottler.ts`).
+- **WebRTC Network Quality & Jitter Telemetry**: Real-time round-trip latency, jitter variance, and packet loss telemetry across multi-peer WebRTC DataChannels (`src/hooks/useMeshDataChannels.ts`, `src/lib/realtime/webrtc/telemetry.ts`).
+- **Audio AnalyserNode SIMD Fallback Engine**: Seamless dual-engine fallback that gracefully transitions from WebAssembly SIMD vector processing to native Web Audio AnalyserNode when client browsers lack SIMD instructions (`src/lib/audio/acousticFilterEngine.ts`).
+- **Multi-Modal Meet Halfway Geometric & Transit Optimization**: Validates geographical coordinates, applies transit mode preferences, and computes race-condition free midpoint recommendations between remote colleagues (`/api/venues/meet-halfway`, `src/lib/geo/meetHalfwayOptimizer.ts`).
+- **Real-Time Reservation Availability SSE Stream**: Server-Sent Events endpoint streaming instant desk lock, hold expiration, and seat availability changes directly to client viewports (`/api/reservations/events/route.ts`).
 - **WebGPU Adapter Capability Diagnostics**: Client-side hardware profiling engine auditing GPU adapter architectures, compute workgroup dimensions, texture bounds, and WGSL shader extensions in an interactive admin dashboard (`src/components/admin/WebGpuCapabilityPanel.tsx`, `src/lib/webgpu/capabilityReport.ts`).
 - **Ambient Noise Peak Frequency Spectrogram**: High-precision 60fps audio waterfall visualization leveraging the Web Audio API AnalyserNode and FFT frequency bins with dynamic color interpolation palettes (`Viridis`, `Inferno`, `Cyberpunk`) (`src/components/audio/NoiseSpectrogram.tsx`).
 - **Causal Vector Clock & Hybrid Logical Clock Synchronization**: Resilient distributed partial ordering with deterministic tie-breaking heuristics, supporting decentralized offline notes synchronization across multi-peer WebRTC meshes (`src/core/sync/VectorClock.ts`, `src/core/sync/LamportTimestampResolver.ts`).

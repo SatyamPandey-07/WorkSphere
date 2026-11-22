@@ -126,6 +126,23 @@ export function calculateIndoorAirQualityScore(
   };
 }
 
+/**
+ * Formats GPS coordinates as "DD.DDDD° N/S, DD.DDDD° E/W".
+ * - Exactly 4 decimal places.
+ * - Negative latitude is South ('S'), positive or zero is North ('N').
+ * - Negative longitude is West ('W'), positive or zero is East ('E').
+ * - Absolute numeric values to avoid negative-zero formatting.
+ */
+export function formatGpsCoordinates(lat: number, lng: number): string {
+  const normalizedLat = lat === 0 ? 0 : lat;
+  const normalizedLng = lng === 0 ? 0 : lng;
+  const latDirection = normalizedLat >= 0 ? "N" : "S";
+  const lngDirection = normalizedLng >= 0 ? "E" : "W";
+  const formattedLat = Math.abs(normalizedLat).toFixed(4);
+  const formattedLng = Math.abs(normalizedLng).toFixed(4);
+  return `${formattedLat}° ${latDirection}, ${formattedLng}° ${lngDirection}`;
+}
+
 function AirQualityBadge({ reading }: { reading: AirQualityReading }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const tooltipId = useId();
@@ -398,8 +415,9 @@ export function VenueHeaderSection({
             {typeof venue?.lat === "number" &&
               typeof venue?.lng === "number" && (
                 <CopyToClipboardButton
-                  textToCopy={`${venue.lat}, ${venue.lng}`}
+                  textToCopy={formatGpsCoordinates(venue.lat, venue.lng)}
                   label="Copy Coordinates"
+                  ariaLabel={`Copy GPS coordinates for ${venueName}`}
                   toastMessage="Coordinates copied to clipboard"
                   className="!py-0.5 !px-2 text-xs shrink-0 pointer-events-auto"
                 />

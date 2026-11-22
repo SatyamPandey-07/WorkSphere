@@ -29,6 +29,8 @@ export interface VenueDetail {
   photos?: string[];
   heroPhotoUrl?: string | null;
   description?: string | null;
+  amenities?: string[] | null;
+  tags?: string[] | null;
 }
 
 export interface VenueDetailModalProps {
@@ -363,6 +365,27 @@ export function VenueDetailModal({
             <p className="mt-3 text-sm leading-relaxed text-zinc-300">
               {venue.description}
             </p>
+          )}
+
+          {/* Venue Amenity Tags with responsive mobile wrapping */}
+          {((venue.amenities && venue.amenities.length > 0) ||
+            (venue.tags && venue.tags.length > 0)) && (
+            <div
+              data-testid="venue-modal-amenities"
+              className="mt-3 flex flex-wrap items-center gap-1.5 overflow-hidden"
+            >
+              {[...(venue.amenities || []), ...(venue.tags || [])]
+                .filter((item, index, arr) => arr.indexOf(item) === index)
+                .map((amenity, idx) => (
+                  <span
+                    key={`${amenity}-${idx}`}
+                    data-testid="modal-amenity-tag-pill"
+                    className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-200 border border-zinc-700 break-words"
+                  >
+                    {amenity}
+                  </span>
+                ))}
+            </div>
           )}
 
           {/* Workspace Telemetry Metrics */}

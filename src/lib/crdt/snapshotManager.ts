@@ -113,11 +113,179 @@ class AsyncRWLock {
 }
 
 import * as Y from "yjs";
+import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import {
   COMPRESSION_MAGIC_HEADER,
   compressYjsUpdate,
   decompressYjsUpdate,
 } from "./yjsCompression";
+
+/** Magic header for gzip-compressed snapshot payloads: 'Y' 'Z' 'G' 0x01 */
+export const GZIP_MAGIC_HEADER = new Uint8Array([0x59, 0x5a, 0x47, 0x01]);
+
+/**
+ * Compresses an input Uint8Array payload using gzip with fallback to Node.js zlib when available.
+ * Prepends GZIP_MAGIC_HEADER and 4-byte BigEndian uncompressed size.
+ */
+export async function compressYjsGzip(input: Uint8Array): Promise<Uint8Array> {
+  if (!input || input.length === 0) {
+    return new Uint8Array(0);
+  }
+  if (isGzipCompressedPayload(input)) {
+    return input; // Prevent double-compression
+  }
+
+  let compressedBody: Uint8Array;
+  if (typeof CompressionStream === "function") {
+    try {
+      const cs = new CompressionStream("gzip");
+      const writer = cs.writable.getWriter();
+      const writing = writer.write(input as BufferSource).then(() => writer.close());
+      writing.catch(() => {});
+
+      const reader = cs.readable.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        total += value.length;
+      }
+      await writing;
+
+      compressedBody = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        compressedBody.set(chunk, offset);
+        offset += chunk.length;
+      }
+    } catch {
+      // Fallback below
+      compressedBody = compressGzipFallback(input);
+    }
+  } else {
+    compressedBody = compressGzipFallback(input);
+  }
+
+  if (compressedBody.length === 0 && input.length > 0) {
+    return input;
+  }
+
+  const headerLen = GZIP_MAGIC_HEADER.length;
+  const output = new Uint8Array(headerLen + 4 + compressedBody.length);
+  output.set(GZIP_MAGIC_HEADER, 0);
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  view.setUint32(headerLen, input.length, false);
+  output.set(compressedBody, headerLen + 4);
+  return output;
+}
+
+function compressGzipFallback(input: Uint8Array): Uint8Array {
+  try {
+    if (typeof require !== "undefined") {
+      const zlib = require("zlib");
+      if (typeof zlib.gzipSync === "function") {
+        return new Uint8Array(zlib.gzipSync(Buffer.from(input)));
+      }
+    }
+  } catch {
+    // Environment without zlib fallback
+  }
+  return new Uint8Array(0);
+}
+
+/**
+ * Decompresses a gzip-compressed Yjs payload, transparently returning original bytes
+ * if uncompressed or header does not match.
+ */
+export async function decompressYjsGzip(input: Uint8Array): Promise<Uint8Array> {
+  if (!input || input.length < GZIP_MAGIC_HEADER.length + 4) {
+    return input ?? new Uint8Array(0);
+  }
+  if (!isGzipCompressedPayload(input)) {
+    return input;
+  }
+
+  const headerLen = GZIP_MAGIC_HEADER.length;
+  const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
+  const uncompressedSize = view.getUint32(headerLen, false);
+  const compressedBody = input.subarray(headerLen + 4);
+
+  if (typeof DecompressionStream === "function") {
+    try {
+      const ds = new DecompressionStream("gzip");
+      const writer = ds.writable.getWriter();
+      const writing = writer.write(compressedBody as BufferSource).then(() => writer.close());
+      writing.catch(() => {});
+
+      const reader = ds.readable.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        total += value.length;
+      }
+      await writing;
+
+      const output = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        output.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return output;
+    } catch {
+      return decompressGzipFallback(compressedBody, uncompressedSize);
+    }
+  } else {
+    return decompressGzipFallback(compressedBody, uncompressedSize);
+  }
+}
+
+function decompressGzipFallback(compressedBody: Uint8Array, uncompressedSize: number): Uint8Array {
+  try {
+    if (typeof require !== "undefined") {
+      const zlib = require("zlib");
+      if (typeof zlib.gunzipSync === "function") {
+        return new Uint8Array(zlib.gunzipSync(Buffer.from(compressedBody)));
+      }
+    }
+  } catch {
+    // Environment without zlib fallback
+  }
+  return compressedBody;
+}
+
+/**
+ * Synchronous decompression fallback for environments/callsites needing synchronous decompression.
+ */
+export function decompressYjsGzipSync(input: Uint8Array): Uint8Array {
+  if (!input || input.length < GZIP_MAGIC_HEADER.length + 4) {
+    return input ?? new Uint8Array(0);
+  }
+  if (!isGzipCompressedPayload(input)) {
+    return input;
+  }
+  const headerLen = GZIP_MAGIC_HEADER.length;
+  const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
+  const uncompressedSize = view.getUint32(headerLen, false);
+  const compressedBody = input.subarray(headerLen + 4);
+  return decompressGzipFallback(compressedBody, uncompressedSize);
+}
+
+/** Check if two state vectors represent equivalent clock states. */
+export function stateVectorsEqual(left: Uint8Array, right: Uint8Array): boolean {
+  const leftClock = Y.decodeStateVector(left);
+  const rightClock = Y.decodeStateVector(right);
+  if (leftClock.size !== rightClock.size) return false;
+  for (const [clientId, clock] of leftClock) {
+    if ((rightClock.get(clientId) ?? 0) !== clock) return false;
+  }
+  return true;
+}
 
 /** Compact after this many local/remote transactions by default. */
 export const DEFAULT_SNAPSHOT_OP_THRESHOLD = 500;
@@ -288,9 +456,22 @@ export function deserializeSnapshot(
  * Detects whether a binary payload has the Yjs compression magic header.
  */
 export function isCompressedPayload(bytes: Uint8Array): boolean {
-  if (!bytes || bytes.length < COMPRESSION_MAGIC_HEADER.length) return false;
+  if (!bytes) return false;
+  if (isGzipCompressedPayload(bytes)) return true;
+  if (bytes.length < COMPRESSION_MAGIC_HEADER.length) return false;
   for (let i = 0; i < COMPRESSION_MAGIC_HEADER.length; i++) {
     if (bytes[i] !== COMPRESSION_MAGIC_HEADER[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Detects whether a binary payload has the gzip magic header.
+ */
+export function isGzipCompressedPayload(bytes: Uint8Array): boolean {
+  if (!bytes || bytes.length < GZIP_MAGIC_HEADER.length + 4) return false;
+  for (let i = 0; i < GZIP_MAGIC_HEADER.length; i++) {
+    if (bytes[i] !== GZIP_MAGIC_HEADER[i]) return false;
   }
   return true;
 }
@@ -302,12 +483,19 @@ export function isCompressedPayload(bytes: Uint8Array): boolean {
 export function decompressSnapshot(snapshot: StoredSnapshot): StoredSnapshot {
   const decompressStartedAt = nowMs();
   const updateWasCompressed = isCompressedPayload(snapshot.update);
-  const decompressedUpdate = isCompressedPayload(snapshot.update)
-    ? decompressYjsUpdate(snapshot.update)
-    : snapshot.update;
-  const decompressedStateVector = isCompressedPayload(snapshot.stateVector)
-    ? decompressYjsUpdate(snapshot.stateVector)
-    : snapshot.stateVector;
+  let decompressedUpdate = snapshot.update;
+  if (isGzipCompressedPayload(snapshot.update)) {
+    decompressedUpdate = decompressYjsGzipSync(snapshot.update);
+  } else if (isCompressedPayload(snapshot.update)) {
+    decompressedUpdate = decompressYjsUpdate(snapshot.update);
+  }
+
+  let decompressedStateVector = snapshot.stateVector;
+  if (isGzipCompressedPayload(snapshot.stateVector)) {
+    decompressedStateVector = decompressYjsGzipSync(snapshot.stateVector);
+  } else if (isCompressedPayload(snapshot.stateVector)) {
+    decompressedStateVector = decompressYjsUpdate(snapshot.stateVector);
+  }
 
   if (updateWasCompressed) {
     recordDecompression(
@@ -528,6 +716,120 @@ export function createHttpSnapshotStorage(
   };
 }
 
+interface SnapshotDB extends DBSchema {
+  snapshots: {
+    key: string;
+    value: StoredSnapshot;
+  };
+  deltas: {
+    key: number;
+    value: StoredDelta;
+    indexes: { by_room_seq: [string, number] };
+  };
+}
+
+const DEFAULT_IDB_NAME = "worksphere-whiteboard-crdt-snapshots";
+const IDB_VERSION = 1;
+
+/**
+ * IndexedDB-backed durable storage contract for snapshots + intermediate deltas.
+ */
+export class IndexedDBSnapshotStorage implements SnapshotStorage {
+  private dbPromise: Promise<IDBPDatabase<SnapshotDB>> | null = null;
+
+  constructor(private readonly dbName: string = DEFAULT_IDB_NAME) {}
+
+  private getDb(): Promise<IDBPDatabase<SnapshotDB>> {
+    if (!this.dbPromise) {
+      this.dbPromise = openDB<SnapshotDB>(this.dbName, IDB_VERSION, {
+        upgrade(db) {
+          if (!db.objectStoreNames.contains("snapshots")) {
+            db.createObjectStore("snapshots", { keyPath: "roomId" });
+          }
+          if (!db.objectStoreNames.contains("deltas")) {
+            const deltaStore = db.createObjectStore("deltas", {
+              keyPath: "id",
+              autoIncrement: true,
+            });
+            deltaStore.createIndex("by_room_seq", ["roomId", "seq"]);
+          }
+        },
+      });
+    }
+    return this.dbPromise;
+  }
+
+  async saveSnapshot(snapshot: StoredSnapshot): Promise<void> {
+    const db = await this.getDb();
+    await db.put("snapshots", snapshot);
+  }
+
+  async loadSnapshot(roomId: string): Promise<StoredSnapshot | null> {
+    const db = await this.getDb();
+    const result = await db.get("snapshots", roomId);
+    return result ?? null;
+  }
+
+  async deleteSnapshot(roomId: string): Promise<void> {
+    const db = await this.getDb();
+    await db.delete("snapshots", roomId);
+  }
+
+  async appendDelta(delta: StoredDelta): Promise<void> {
+    const db = await this.getDb();
+    await db.add("deltas", delta as StoredDelta & { id?: number });
+  }
+
+  async listDeltas(roomId: string): Promise<StoredDelta[]> {
+    const db = await this.getDb();
+    const range = IDBKeyRange.bound([roomId, -Infinity], [roomId, Infinity]);
+    const deltas = await db.getAllFromIndex("deltas", "by_room_seq", range);
+    return deltas.sort((a, b) => a.seq - b.seq);
+  }
+
+  async deleteDeltasThrough(roomId: string, throughSeq: number): Promise<void> {
+    const db = await this.getDb();
+    const tx = db.transaction("deltas", "readwrite");
+    const index = tx.store.index("by_room_seq");
+    const range = IDBKeyRange.bound([roomId, -Infinity], [roomId, throughSeq]);
+    let cursor = await index.openCursor(range);
+    while (cursor) {
+      await cursor.delete();
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  }
+
+  async clearRoom(roomId: string): Promise<void> {
+    const db = await this.getDb();
+    const tx = db.transaction(["snapshots", "deltas"], "readwrite");
+    await tx.objectStore("snapshots").delete(roomId);
+    const index = tx.objectStore("deltas").index("by_room_seq");
+    const range = IDBKeyRange.bound([roomId, -Infinity], [roomId, Infinity]);
+    let cursor = await index.openCursor(range);
+    while (cursor) {
+      await cursor.delete();
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  }
+
+  async close(): Promise<void> {
+    if (this.dbPromise) {
+      const db = await this.dbPromise;
+      db.close();
+      this.dbPromise = null;
+    }
+  }
+}
+
+/** Create an IndexedDB-backed snapshot store. */
+export function createIndexedDBSnapshotStorage(
+  dbName: string = DEFAULT_IDB_NAME,
+): SnapshotStorage {
+  return new IndexedDBSnapshotStorage(dbName);
+}
+
 export interface SnapshotManagerOptions {
   doc: Y.Doc;
   roomId: string;
@@ -536,8 +838,10 @@ export interface SnapshotManagerOptions {
   opThreshold?: number;
   /** Background checkpoint interval while edits are pending. Default 10 min. */
   intervalMs?: number;
-  /** Whether to compress snapshots with LZ77 wire codec. Default true. */
+  /** Whether to compress snapshots. Default true. */
   compressSnapshots?: boolean;
+  /** Compression format to use: 'gzip' (CompressionStream) or 'lz77'. Default 'lz77'. */
+  compressionAlgorithm?: "gzip" | "lz77";
   /** Minimum byte threshold before applying compression. Default 256 bytes. */
   compressionThresholdBytes?: number;
   /** Clock injection for deterministic tests. */
@@ -560,11 +864,13 @@ export class SnapshotManager {
   private readonly opThreshold: number;
   private readonly intervalMs: number;
   private readonly compressSnapshots: boolean;
+  private readonly compressionAlgorithm: "gzip" | "lz77";
   private readonly compressionThresholdBytes: number;
   private readonly now: () => number;
   private readonly onCompacted?: (snapshot: StoredSnapshot) => void;
   private readonly onError?: (error: unknown) => void;
 
+  private lastStateVector: Uint8Array | null = null;
   private opsSinceSnapshot = 0;
   private nextDeltaSeq = 1;
   private pendingDeltas: StoredDelta[] = [];
@@ -611,6 +917,7 @@ export class SnapshotManager {
       Math.floor(options.intervalMs ?? DEFAULT_SNAPSHOT_INTERVAL_MS),
     );
     this.compressSnapshots = options.compressSnapshots ?? true;
+    this.compressionAlgorithm = options.compressionAlgorithm ?? "lz77";
     this.compressionThresholdBytes = Math.max(
       0,
       Math.floor(options.compressionThresholdBytes ?? 256),
@@ -682,8 +989,41 @@ export class SnapshotManager {
       const flushedThroughSeq = this.nextDeltaSeq - 1;
       const flushedCount = await this.flushDeltas();
 
-      const uncompressedUpdate = Y.encodeStateAsUpdate(this.doc);
-      const uncompressedStateVector = Y.encodeStateVector(this.doc);
+      // Check previous checkpoint's state vector if available
+      const currentStateVector = Y.encodeStateVector(this.doc);
+      if (this.lastStateVector && stateVectorsEqual(this.lastStateVector, currentStateVector)) {
+        // No missing changes relative to the checkpoint; load existing snapshot if present
+        const existing = await this.storage.loadSnapshot(this.roomId);
+        if (existing) {
+          if (flushedThroughSeq > 0) {
+            const releaseWrite = await this.gcLock.acquireWrite();
+            try {
+              await this.storage.deleteDeltasThrough(this.roomId, flushedThroughSeq);
+            } finally {
+              releaseWrite();
+            }
+          }
+          this.opsSinceSnapshot = Math.max(0, this.opsSinceSnapshot - flushedCount);
+          return existing;
+        }
+      }
+
+      // Generate differential update relative to previous checkpoint if available
+      let uncompressedUpdate: Uint8Array;
+      if (this.lastStateVector) {
+        // Differential update containing only missing changes relative to checkpoint
+        const diffUpdate = Y.encodeStateAsUpdate(this.doc, this.lastStateVector);
+        const existing = await this.storage.loadSnapshot(this.roomId);
+        if (existing) {
+          const prevDecompressed = decompressSnapshot(existing);
+          uncompressedUpdate = Y.mergeUpdates([prevDecompressed.update, diffUpdate]);
+        } else {
+          uncompressedUpdate = Y.encodeStateAsUpdate(this.doc);
+        }
+      } else {
+        uncompressedUpdate = Y.encodeStateAsUpdate(this.doc);
+      }
+      const uncompressedStateVector = currentStateVector;
       const checksum = computeSnapshotChecksum(uncompressedUpdate);
 
       let update = uncompressedUpdate;
@@ -695,9 +1035,14 @@ export class SnapshotManager {
         uncompressedUpdate.length >= this.compressionThresholdBytes
       ) {
         const compressStartedAt = nowMs();
-        const compressed = compressYjsUpdate(uncompressedUpdate);
+        let compressed: Uint8Array;
+        if (this.compressionAlgorithm === "gzip") {
+          compressed = await compressYjsGzip(uncompressedUpdate);
+        } else {
+          compressed = compressYjsUpdate(uncompressedUpdate);
+        }
         const compressDurationMs = nowMs() - compressStartedAt;
-        if (isCompressedPayload(compressed)) {
+        if (isCompressedPayload(compressed) && compressed.length < uncompressedUpdate.length) {
           recordCompression(
             uncompressedUpdate.length,
             compressed.length,
@@ -712,8 +1057,13 @@ export class SnapshotManager {
         this.compressSnapshots &&
         uncompressedStateVector.length >= this.compressionThresholdBytes
       ) {
-        const compressed = compressYjsUpdate(uncompressedStateVector);
-        if (isCompressedPayload(compressed)) {
+        let compressed: Uint8Array;
+        if (this.compressionAlgorithm === "gzip") {
+          compressed = await compressYjsGzip(uncompressedStateVector);
+        } else {
+          compressed = compressYjsUpdate(uncompressedStateVector);
+        }
+        if (isCompressedPayload(compressed) && compressed.length < uncompressedStateVector.length) {
           stateVector = compressed;
         }
       }
@@ -730,6 +1080,7 @@ export class SnapshotManager {
       };
 
       await this.storage.saveSnapshot(snapshot);
+      this.lastStateVector = currentStateVector;
 
       if (flushedThroughSeq > 0) {
         // Acquire an exclusive write lock before evicting delta buffers.

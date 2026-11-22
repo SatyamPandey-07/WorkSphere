@@ -57,6 +57,11 @@ Do not apply `will-change` to many elements or leave it enabled permanently, as 
 - Avoid animating layout-related properties such as `width`, `height`, `top`, and `left` whenever possible.
 - Maintain consistent timing across similar UI components.
 - Test animations on both desktop and mobile devices to ensure smooth performance.
+- Respect `prefers-reduced-motion` and preserve functional hover and focus states when motion is disabled.
+
+## Related UI Animation Guides
+
+- [Venue Action Glassmorphic Pulse Guide](./ui/GLASSMORPHIC_PULSE_GUIDE.md) — implementation details, theme behavior, reduced-motion handling, and contrast analysis for venue action buttons.
 
 ---
 

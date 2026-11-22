@@ -24,25 +24,27 @@ This document provides a high-level reference for the REST API endpoints availab
 
 # Venues
 
-| Endpoint                                           | Description                                                                                                                    |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/venues`                                  | Retrieve available venues.                                                                                                     |
-| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox).                                                    |
-| `POST /api/venues`                                 | Create or submit a venue.                                                                                                      |
-| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                                                                        |
-| `GET /api/venues/updates`                          | Subscribe to venue updates.                                                                                                    |
-| `POST /api/venues/updates`                         | Broadcast a venue update.                                                                                                      |
-| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                                                                         |
-| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                                                                        |
-| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                                                                               |
-| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                                                                         |
-| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                                                                                  |
-| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                                                                               |
-| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                                                                                |
-| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                                                                                    |
-| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                                                                      |
-| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                                                                              |
-| `POST /api/venues/{venueId}/check-in/bulk`         | Perform manager bulk check-in for venue bookings. See the [Bulk venue check-in API guide](./api/BULK_CHECK_IN.md) for details. |
+| Endpoint                                           | Description                                                                                                                                                                         |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/venues`                                  | Retrieve available venues.                                                                                                                                                          |
+| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox).                                                                                                         |
+| `GET /api/search`                                  | Spatial venue bounding-box search supporting anti-meridian crossover. See the [Spatial venue bounding-box search guide](./api/SPATIAL_VENUE_SEARCH.md) for details.                 |
+| `POST /api/search`                                 | Spatial venue bounding-box search via JSON request body with explicit offset support. See the [Spatial venue bounding-box search guide](./api/SPATIAL_VENUE_SEARCH.md) for details. |
+| `POST /api/venues`                                 | Create or submit a venue.                                                                                                                                                           |
+| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                                                                                                                             |
+| `GET /api/venues/updates`                          | Subscribe to venue updates.                                                                                                                                                         |
+| `POST /api/venues/updates`                         | Broadcast a venue update.                                                                                                                                                           |
+| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                                                                                                                              |
+| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                                                                                                                             |
+| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                                                                                                                                    |
+| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                                                                                                                              |
+| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                                                                                                                                       |
+| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                                                                                                                                    |
+| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                                                                                                                                     |
+| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                                                                                                                                         |
+| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                                                                                                                           |
+| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                                                                                                                                   |
+| `POST /api/venues/{venueId}/check-in/bulk`         | Perform manager bulk check-in for venue bookings. See the [Bulk venue check-in API guide](./api/BULK_CHECK_IN.md) for details.                                                      |
 
 ### Endpoint Specification: `GET /api/venues/search`
 
@@ -111,20 +113,26 @@ Accept: application/json
 | `429 Too Many Requests`     | Rate Limit Exceeded | Returned when client exceeds the 60 search requests/minute quota.<br/>`{ "error": "Too many search requests. Please slow down and try again.", "retryAfter": 60 }`                          |
 | `500 Internal Server Error` | Server Error        | Internal server or database error processing the query.<br/>`{ "error": "An internal server error occurred while searching venues." }`                                                      |
 
+### Endpoint Specification: `GET /api/search` and `POST /api/search`
+
+Query venues situated within geographic bounding-box coordinates, with support for anti-meridian (180°/-180°) Date Line crossover, exact category matching, sanitized text search, and pagination.
+
+For the complete parameter reference, anti-meridian SQL logic, request examples, and response schemas, see the [Spatial Venue Bounding-Box Search API Guide](./api/SPATIAL_VENUE_SEARCH.md).
+
 ---
 
 # Bookings
 
-| Endpoint                                     | Description                                                                   |
-| -------------------------------------------- | ----------------------------------------------------------------------------- |
-| `POST /api/bookings/confirm`                 | Confirm a booking.                                                            |
-| `GET /api/bookings/history`                  | Retrieve the authenticated user's booking history.                            |
-| `GET /api/bookings/export`                   | Export booking information.                                                   |
-| `GET /api/bookings/{bookingId}`              | Retrieve booking details.                                                     |
-| `GET /api/bookings/{bookingId}/download`     | Download a booking receipt or confirmation.                                   |
-| `GET /api/bookings/{bookingId}/guests`       | Retrieve guest information for a booking.                                     |
-| `GET /api/bookings/{bookingId}/calendar.ics` | Export an RFC 5545 iCalendar (.ics) file or calendar web links for a booking. |
-| `GET /api/payments/split/{token}`            | Verify guest split-payment token and retrieve checkout details. See the [Guest Split Payment API guide](./api/GUEST_SPLIT_PAYMENT.md) for details. |
+| Endpoint                                     | Description                                                                                                                                                                                      |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /api/bookings/confirm`                 | Confirm a booking.                                                                                                                                                                               |
+| `GET /api/bookings/history`                  | Retrieve the authenticated user's booking history.                                                                                                                                               |
+| `GET /api/bookings/export`                   | Export booking information.                                                                                                                                                                      |
+| `GET /api/bookings/{bookingId}`              | Retrieve booking details.                                                                                                                                                                        |
+| `GET /api/bookings/{bookingId}/download`     | Download a booking receipt or confirmation.                                                                                                                                                      |
+| `GET /api/bookings/{bookingId}/guests`       | Retrieve guest information for a booking.                                                                                                                                                        |
+| `GET /api/bookings/{bookingId}/calendar.ics` | Export an RFC 5545 iCalendar (.ics) file or calendar web links for a booking.                                                                                                                    |
+| `GET /api/payments/split/{token}`            | Verify guest split-payment token and retrieve checkout details. See the [Guest Split Payment API guide](./api/GUEST_SPLIT_PAYMENT.md) for details.                                               |
 | `POST /api/payments/split/{token}`           | Record payment state in WorkSphere's database using the verified token claims and issue a digital guest pass. See the [Guest Split Payment API guide](./api/GUEST_SPLIT_PAYMENT.md) for details. |
 
 ---
@@ -150,19 +158,19 @@ Accept: application/json
 
 # Folders
 
-| Endpoint                                 | Description                            |
-| ---------------------------------------- | -------------------------------------- |
-| `GET /api/folders`                       | Retrieve folders.                      |
-| `POST /api/folders`                      | Create a folder.                       |
-| `POST /api/folders/join`                 | Join a shared folder.                  |
-| `GET /api/folders/{id}`                  | Retrieve folder details.               |
-| `GET /api/folders/{id}/export?format=geojson\|kml` | Export folder venues as GeoJSON or KML spatial data. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details. |
-| `GET /api/folders/{id}/export-pdf`       | Export folder venues and personal notes as a PDF summary report. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details. |
-| `GET /api/folders/{id}/export-billing`   | Export confirmed venue booking history as a billing CSV report. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details. |
-| `GET /api/folders/{id}/invites`          | Retrieve folder invitations.           |
-| `POST /api/folders/{id}/refresh`         | Refresh folder data.                   |
-| `GET /api/folders/{id}/venues`           | Retrieve venues within a folder.       |
-| `GET /api/folders/{id}/venues/{venueId}` | Retrieve a specific venue in a folder. |
+| Endpoint                                           | Description                                                                                                                           |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/folders`                                 | Retrieve folders.                                                                                                                     |
+| `POST /api/folders`                                | Create a folder.                                                                                                                      |
+| `POST /api/folders/join`                           | Join a shared folder.                                                                                                                 |
+| `GET /api/folders/{id}`                            | Retrieve folder details.                                                                                                              |
+| `GET /api/folders/{id}/export?format=geojson\|kml` | Export folder venues as GeoJSON or KML spatial data. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details.             |
+| `GET /api/folders/{id}/export-pdf`                 | Export folder venues and personal notes as a PDF summary report. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details. |
+| `GET /api/folders/{id}/export-billing`             | Export confirmed venue booking history as a billing CSV report. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details.  |
+| `GET /api/folders/{id}/invites`                    | Retrieve folder invitations.                                                                                                          |
+| `POST /api/folders/{id}/refresh`                   | Refresh folder data.                                                                                                                  |
+| `GET /api/folders/{id}/venues`                     | Retrieve venues within a folder.                                                                                                      |
+| `GET /api/folders/{id}/venues/{venueId}`           | Retrieve a specific venue in a folder.                                                                                                |
 
 ---
 

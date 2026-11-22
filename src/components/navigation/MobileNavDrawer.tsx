@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 
 export interface MobileNavItem {
   id: string;
@@ -25,6 +25,25 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
   onClose,
   title = 'Navigation',
 }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) {
     return null;
   }
@@ -74,7 +93,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
                     }
                   }}
                   data-testid={`mobile-nav-link-${item.id}`}
-                  className={`relative flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium leading-5 transition-colors ${
+                  className={`relative flex min-h-[44px] w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium leading-5 transition-colors ${
                     isActive
                       ? 'bg-indigo-50/90 text-indigo-700'
                       : 'text-slate-700 hover:bg-slate-100'

@@ -64,16 +64,15 @@ export const SORT_OPTIONS = [
   { id: "capacity_desc", label: "Capacity: High to Low" },
 ];
 
-export function sortVenuesByCapacity<T extends { totalDesks?: number | null; capacity?: number | null }>(
-  venues: T[],
-  sortBy: string,
-): T[] {
+export function sortVenuesByCapacity<
+  T extends { totalDesks?: number | null; capacity?: number | null },
+>(venues: T[], sortBy: string): T[] {
   if (sortBy !== "capacity_asc" && sortBy !== "capacity_desc") {
     return [...venues];
   }
   return [...venues].sort((a, b) => {
-    const capA = (a.totalDesks ?? a.capacity) ?? 0;
-    const capB = (b.totalDesks ?? b.capacity) ?? 0;
+    const capA = a.totalDesks ?? a.capacity ?? 0;
+    const capB = b.totalDesks ?? b.capacity ?? 0;
     return sortBy === "capacity_asc" ? capA - capB : capB - capA;
   });
 }
@@ -84,6 +83,7 @@ export const AMENITIES_LIST = [
   { id: "ergonomic", label: "Ergonomic Setup" },
   { id: "quiet", label: "Quiet Zone" },
   { id: "phonebooths", label: "Phone Booths" },
+  { id: "standing_desk", label: "Standing Desk" },
 ];
 
 export const CATEGORIES_LIST = [
@@ -100,7 +100,6 @@ export const DISTANCE_OPTIONS = [
   { id: 3, label: "3km" },
   { id: 5, label: "5km" },
 ];
-
 
 export const NOISE_LEVELS = [
   { id: "all", label: "Any Noise" },
@@ -119,18 +118,18 @@ export const PRICE_RANGES = [
 /** Table/desk size filter — matches the tableSize field on Venue */
 export const TABLE_SIZES = [
   { id: "all", label: "Any Table Size" },
-  { id: "small",  label: "Small (cafe table, 1–2 people)" },
+  { id: "small", label: "Small (cafe table, 1–2 people)" },
   { id: "medium", label: "Medium (4-person table)" },
-  { id: "large",  label: "Large (6-8 person desk)" },
-  { id: "xl",     label: "XL (standing desk / monitor setup)" },
+  { id: "large", label: "Large (6-8 person desk)" },
+  { id: "xl", label: "XL (standing desk / monitor setup)" },
 ];
 
 /** Equipment loadout preset — matches the equipmentLoadout field on Venue */
 export const EQUIPMENT_LOADOUTS = [
-  { id: "all",      label: "Any Loadout" },
-  { id: "minimal",  label: "Minimal (laptop only)" },
+  { id: "all", label: "Any Loadout" },
+  { id: "minimal", label: "Minimal (laptop only)" },
   { id: "standard", label: "Standard (laptop + mouse)" },
-  { id: "heavy",    label: "Heavy (dual monitor, dock)" },
+  { id: "heavy", label: "Heavy (dual monitor, dock)" },
 ];
 
 export function VenueSearchDrawer({
@@ -207,10 +206,7 @@ export function VenueSearchDrawer({
   const price = externalPriceRange ?? internalPrice;
   const cat = externalCategory ?? internalCategory;
   const distance = externalMaxDistance ?? internalDistance;
-  const capacity =
-    externalMinCapacity ??
-    externalCapacity ??
-    internalCapacity;
+  const capacity = externalMinCapacity ?? externalCapacity ?? internalCapacity;
   const currentSortBy = externalSortBy ?? internalSortBy;
   const semanticWeight = externalSemanticWeight ?? internalSemanticWeight;
   const fullTextWeight = externalFullTextWeight ?? internalFullTextWeight;
@@ -357,7 +353,9 @@ export function VenueSearchDrawer({
   const handleSavePreset = () => {
     const trimmedName = newPresetName.trim();
     if (!trimmedName) return;
-    if (presets.some((p) => p.name.toLowerCase() === trimmedName.toLowerCase())) {
+    if (
+      presets.some((p) => p.name.toLowerCase() === trimmedName.toLowerCase())
+    ) {
       alert("A preset with this name already exists.");
       return;
     }
@@ -368,7 +366,8 @@ export function VenueSearchDrawer({
       priceRange: price,
       category: cat,
       maxDistance: distance,
-      minCapacity: capacity !== undefined ? sanitizeCapacityInput(capacity, 1) : undefined,
+      minCapacity:
+        capacity !== undefined ? sanitizeCapacityInput(capacity, 1) : undefined,
     });
     setPresets(updated);
     const created = updated[updated.length - 1];
@@ -427,20 +426,86 @@ export function VenueSearchDrawer({
     if (onClearFilters) onClearFilters();
   };
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  // Focus the search box on open; restore focus to the trigger on close
+  useEffect(() => {
+    if (!isOpen) return;
+    triggerRef.current = document.activeElement as HTMLElement | null;
+    panelRef.current
+      ?.querySelector<HTMLElement>('[data-testid="search-input"]')
+      ?.focus();
+    return () => {
+      triggerRef.current?.focus?.();
+      triggerRef.current = null;
+    };
+  }, [isOpen]);
+
+  const handleDrawerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape" && !e.defaultPrevented) {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const items = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || !panel.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !panel.contains(active))) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm transition-opacity"
+      data-testid="filter-drawer-overlay"
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm transition-opacity pointer-events-auto"
       aria-modal="true"
       role="dialog"
       aria-label="Venue Search Filters"
+      onKeyDown={handleDrawerKeyDown}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
-      {/* Backdrop click to close */}
-      <div className="flex-1" onClick={onClose} />
+      {/* Backdrop click to close - prevents event bubbling to underlying elements (#8021) */}
+      <div
+        data-testid="filter-drawer-backdrop"
+        className="flex-1 cursor-pointer pointer-events-auto touch-none"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+        }}
+        onTouchStart={(e) => {
+          e.stopPropagation();
+        }}
+        aria-label="Close filters backdrop"
+      />
 
       {/* Mobile Bottom Drawer Panel */}
-      <div className="w-full max-h-[85vh] bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 rounded-t-[2rem] p-5 flex flex-col gap-5 overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-200">
+      <div
+        ref={panelRef}
+        className="w-full max-h-[85vh] bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 rounded-t-[2rem] p-5 flex flex-col gap-5 overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-200 pointer-events-auto"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         {/* Drawer Header */}
         <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center gap-2">
@@ -517,6 +582,7 @@ export function VenueSearchDrawer({
                     e.preventDefault();
                     handleSavePreset();
                   } else if (e.key === "Escape") {
+                    e.preventDefault();
                     setIsSavingPreset(false);
                   }
                 }}
@@ -629,7 +695,9 @@ export function VenueSearchDrawer({
             )}
             {distance > 0 && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150">
-                Within {DISTANCE_OPTIONS.find((d) => d.id === distance)?.label ?? `${distance} km`}
+                Within{" "}
+                {DISTANCE_OPTIONS.find((d) => d.id === distance)?.label ??
+                  `${distance} km`}
                 <button
                   type="button"
                   data-testid="clear-distance-chip"
@@ -663,7 +731,8 @@ export function VenueSearchDrawer({
             })}
             {noise !== "all" && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150">
-                Noise: {NOISE_LEVELS.find((n) => n.id === noise)?.label ?? noise}
+                Noise:{" "}
+                {NOISE_LEVELS.find((n) => n.id === noise)?.label ?? noise}
                 <button
                   type="button"
                   data-testid="clear-noise-chip"
@@ -705,7 +774,9 @@ export function VenueSearchDrawer({
             )}
             {currentSortBy !== "default" && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150">
-                Sort: {SORT_OPTIONS.find((s) => s.id === currentSortBy)?.label ?? currentSortBy}
+                Sort:{" "}
+                {SORT_OPTIONS.find((s) => s.id === currentSortBy)?.label ??
+                  currentSortBy}
                 <button
                   type="button"
                   data-testid="clear-sort-chip"
@@ -768,7 +839,11 @@ export function VenueSearchDrawer({
               )}
               {search.trim().length === 0 && (
                 <div className="pointer-events-none hidden sm:flex items-center">
-                  <KeyboardShortcutBadge shortcut="K" size="xs" variant="subtle" />
+                  <KeyboardShortcutBadge
+                    shortcut="K"
+                    size="xs"
+                    variant="subtle"
+                  />
                 </div>
               )}
             </div>
@@ -787,7 +862,7 @@ export function VenueSearchDrawer({
                 type="button"
                 data-testid={`category-${item.id}`}
                 onClick={() => handleCategoryChange(item.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                className={`max-w-full text-left px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-normal break-words [overflow-wrap:anywhere] ${
                   cat === item.id
                     ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
                     : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"

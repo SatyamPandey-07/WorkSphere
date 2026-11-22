@@ -19,6 +19,20 @@ jobs:
             try {
               const issue = context.payload.issue;
               const issueNumber = issue.number;
+              const issueAuthor = (issue.user?.login || '').toLowerCase();
+              const isMaintainer = ['satyampandey-07'].includes(issueAuthor);
+
+              if (!isMaintainer) {
+                console.log(`Issue #${issueNumber} created by non-maintainer @${issueAuthor}. Adding community-issue and needs-triage without automated points labels.`);
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  labels: ['community-issue', 'needs-triage']
+                });
+                return;
+              }
+
               const existingLabels = (issue.labels || []).map(l => (typeof l === 'string' ? l : l.name).toLowerCase());
 
               const labelsToAdd = [];

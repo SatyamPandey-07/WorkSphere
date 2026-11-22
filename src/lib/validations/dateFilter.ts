@@ -41,10 +41,13 @@ const timestampFieldSchema = z.preprocess(
   },
   z
     .date({
-      invalid_type_error: "Invalid timestamp format",
-    })
-    .refine((d) => !Number.isNaN(d.getTime()), {
-      message: "Invalid timestamp value",
+      // zod 4 takes `error` (it ignores the zod 3 `invalid_type_error`). It
+      // rejects an Invalid Date itself, before any refine, so both messages
+      // are given here.
+      error: (issue) =>
+        issue.input instanceof Date
+          ? "Invalid timestamp value"
+          : "Invalid timestamp format",
     })
     .optional(),
 );
@@ -456,4 +459,84 @@ export function parseBookingDateFilter(
       dateUtc: normalizedDate,
     },
   };
+}
+
+// ─── Booking Date Presets (#9608) ─────────────────────────────────────────
+
+export type DatePresetKey = "today" | "tomorrow" | "weekend";
+
+export interface DatePresetResult {
+  startDate: string;
+  endDate: string;
+}
+
+/**
+ * Formats a Date instance as local `YYYY-MM-DD` using local calendar components.
+ * Avoids UTC shifts and millisecond duration calculations.
+ */
+export function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Calculates calendar date presets ("today", "tomorrow", "weekend") using local calendar logic.
+ *
+ * Rules:
+ * - "today": start date = current local calendar date, end date = same date.
+ * - "tomorrow": start date = next local calendar date, end date = same date.
+ * - "weekend": start date = upcoming Saturday, end date = upcoming Sunday.
+ *   If today is Saturday or Sunday, uses the current weekend (Sat & Sun).
+ *   Otherwise, calculates the upcoming Saturday and Sunday.
+ *
+ * All boundary transitions (month, year, leap years) are safely handled via `Date(year, month, day)`.
+ */
+export function getDatePreset(
+  preset: DatePresetKey,
+  referenceDate: Date = new Date(),
+): DatePresetResult {
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth();
+  const date = referenceDate.getDate();
+
+  switch (preset) {
+    case "today": {
+      const today = new Date(year, month, date);
+      const formatted = formatLocalDate(today);
+      return { startDate: formatted, endDate: formatted };
+    }
+
+    case "tomorrow": {
+      const tomorrow = new Date(year, month, date + 1);
+      const formatted = formatLocalDate(tomorrow);
+      return { startDate: formatted, endDate: formatted };
+    }
+
+    case "weekend": {
+      // Day of week: 0 = Sunday, 1 = Monday, ..., 5 = Friday, 6 = Saturday
+      const dayOfWeek = referenceDate.getDay();
+      let saturdayOffset: number;
+
+      if (dayOfWeek === 6) {
+        // Today is Saturday
+        saturdayOffset = 0;
+      } else if (dayOfWeek === 0) {
+        // Today is Sunday -> current weekend started yesterday (-1)
+        saturdayOffset = -1;
+      } else {
+        // Weekday (Mon=1..Fri=5) -> upcoming Saturday is (6 - dayOfWeek)
+        saturdayOffset = 6 - dayOfWeek;
+      }
+
+      const saturday = new Date(year, month, date + saturdayOffset);
+      const sunday = new Date(year, month, date + saturdayOffset + 1);
+
+      return {
+        startDate: formatLocalDate(saturday),
+        endDate: formatLocalDate(sunday),
+      };
+    }
+  }
 }

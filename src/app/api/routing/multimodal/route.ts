@@ -91,8 +91,71 @@ export async function POST(request: NextRequest) {
             availableVehicles: vehicles,
         }, { status: 200 });
 
-    } catch (error) {
-        console.error('Multi-modal routing error:', error);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-    }
+  try {
+    const mergedHooks: EcoRoutingHooks = {
+      ...reqBody.hooks,
+      ...options.hooks,
+    };
+
+    const routes = await Promise.race([
+      buildEcoRouteOptions(
+        reqBody.origin,
+        reqBody.destination,
+        mergedHooks,
+        controller.signal
+      ),
+      new Promise<never>((_, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          reject(new Error('ROUTING_DEADLINE_EXCEEDED'));
+        });
+      }),
+    ]);
+
+    const elapsedMs = Date.now() - startedAt;
+    return {
+      status: 200,
+      payload: {
+        routes,
+        paretoRoutes: routes.filter((r) => r.paretoOptimal),
+        slaBudgetMs: ROUTING_SLA_BUDGET_MS,
+        latencyMs: elapsedMs,
+        degradedFallback: false,
+      },
+    };
+  } catch {
+    const fallbackRoutes = await buildEcoRouteOptions(
+      reqBody.origin,
+      reqBody.destination,
+      {}
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    return {
+      status: 200,
+      payload: {
+        routes: fallbackRoutes,
+        paretoRoutes: fallbackRoutes.filter((r) => r.paretoOptimal),
+        slaBudgetMs: ROUTING_SLA_BUDGET_MS,
+        latencyMs: elapsedMs,
+        degradedFallback: true,
+      },
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function POST(request: Request) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: 'Malformed JSON payload.' },
+      { status: 400 }
+    );
+  }
+
+  const result = await handleMultimodalEcoPost(body);
+  return NextResponse.json(result.payload, { status: result.status });
 }

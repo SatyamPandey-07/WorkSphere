@@ -6,10 +6,10 @@ This document provides a comprehensive technical, mathematical, and economic spe
 
 ### Implementation Bindings
 
-- **Core Proof-of-Work Validator:** [`src/core/ledger/ProofOfWorkValidator.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/core/ledger/ProofOfWorkValidator.ts)
-- **Merkle Tree Accumulator:** [`src/core/ledger/MerkleTree.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/core/ledger/MerkleTree.ts)
-- **Loyalty Token Minting Endpoint:** [`src/app/api/loyalty/mint/route.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/loyalty/mint/route.ts)
-- **Difficulty Retargeting & Security Model:** [`docs/ledger/proof-of-work-validation.md`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/docs/ledger/proof-of-work-validation.md)
+- **Core Proof-of-Work Validator:** [`src/core/ledger/ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts)
+- **Merkle Tree Accumulator:** [`src/core/ledger/MerkleTree.ts`](../../src/core/ledger/MerkleTree.ts)
+- **Loyalty Token Minting Endpoint:** [`src/app/api/loyalty/mint/route.ts`](../../src/app/api/loyalty/mint/route.ts)
+- **Difficulty Retargeting & Security Model:** [`docs/ledger/proof-of-work-validation.md`](proof-of-work-validation.md)
 
 ---
 
@@ -81,7 +81,7 @@ WorkSphere adapts Adam Back's Hashcash protocol for decentralized web clients. E
 
 ### 2.2 Wire Framing & Canonicalization
 
-Before evaluating the cryptographic digest, [`ProofOfWorkValidator.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/core/ledger/ProofOfWorkValidator.ts) canonicalizes the payload as a contiguous string:
+Before evaluating the cryptographic digest, [`ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts) canonicalizes the payload as a contiguous string:
 
 $$\text{Payload} = \text{merkleRoot} \parallel \text{nonce} \parallel \text{timestamp.toString()}$$
 
@@ -106,7 +106,7 @@ const hashResult = createHash('sha256').update(payload).digest('hex');
 
 ## 3. Cryptographic Verification Pipeline
 
-Verification in [`ProofOfWorkValidator`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/core/ledger/ProofOfWorkValidator.ts) executes three strictly ordered checks:
+Verification in [`ProofOfWorkValidator`](../../src/core/ledger/ProofOfWorkValidator.ts) executes three strictly ordered checks:
 
 ```mermaid
 sequenceDiagram
@@ -210,7 +210,7 @@ $$S_{\text{max}} = \sum_{k=0}^{\infty} E \cdot \frac{R_0}{2^k} = E \cdot R_0 \su
 
 ### 5.1 Epoch Retargeting Algorithm
 
-Implemented in [`ProofOfWorkValidator.recalculateAdaptiveDifficulty`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/core/ledger/ProofOfWorkValidator.ts#L98), the system dynamically recalibrates difficulty every $N = 10$ blocks to maintain an average block interval of $10,000\text{ ms}$:
+Implemented in [`ProofOfWorkValidator.recalculateAdaptiveDifficulty`](../../src/core/ledger/ProofOfWorkValidator.ts#L98), the system dynamically recalibrates difficulty every $N = 10$ blocks to maintain an average block interval of $10,000\text{ ms}$:
 
 1. **Expected Epoch Duration:**
    $$T_{\text{expected}} = (n - 1) \cdot T_{\text{targetBlockTimeMs}} = 9 \times 10,000 = 90,000\text{ ms}$$
@@ -434,7 +434,7 @@ sequenceDiagram
 
 ### 11.1 Validator Class Interfaces
 
-Defined in [`src/core/ledger/ProofOfWorkValidator.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/core/ledger/ProofOfWorkValidator.ts):
+Defined in [`src/core/ledger/ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts):
 
 ```typescript
 export interface PoWSubmission {
@@ -490,7 +490,7 @@ const updatedDifficulty = validator.recordBlock(Date.now());
 
 ### References & Cross-Links
 
-- [`ProofOfWorkValidator.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/core/ledger/ProofOfWorkValidator.ts)
-- [`MerkleTree.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/core/ledger/MerkleTree.ts)
-- [`/api/loyalty/mint/route.ts`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/app/api/loyalty/mint/route.ts)
-- [`proof-of-work-validation.md`](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/docs/ledger/proof-of-work-validation.md)
+- [`ProofOfWorkValidator.ts`](../../src/core/ledger/ProofOfWorkValidator.ts)
+- [`MerkleTree.ts`](../../src/core/ledger/MerkleTree.ts)
+- [`/api/loyalty/mint/route.ts`](../../src/app/api/loyalty/mint/route.ts)
+- [`proof-of-work-validation.md`](proof-of-work-validation.md)

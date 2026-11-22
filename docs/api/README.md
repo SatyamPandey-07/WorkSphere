@@ -1,43 +1,131 @@
-# API Documentation
+# WorkSphere API Documentation
 
-This directory contains endpoint-specific API contracts and operational guidance.
+## Rate Limiting & Quotas
 
-## OpenAPI specifications
+WorkSphere enforces per-client / per-key rate limits using Redis token buckets (`src/lib/rateLimit.ts`). When a bucket is exhausted, API endpoints respond with HTTP `429 Too Many Requests` and include standard rate-limit headers so clients can back off cleanly without hammering the server.
 
-- [Anonymous ZKP check-in](./zkp-checkin.openapi.yaml) — Groth16 proof payloads, public signals, nullifier replay protection, and check-in responses.
-- [Meet Halfway Optimization](../openapi.yaml) — geometric median centroid, multimodal commute calculation, capacity filtering, and composite ranking.
-- [Student Discount ZKP Verification](../zkp/STUDENT_DISCOUNT_ZKP_VERIFICATION.md) — end-to-end zero-knowledge proof generation, verification API, circuit architecture, and double-claim prevention.
-- [Venue amenity voting](./amenity-votes.openapi.yaml) — amenity metrics and vote submission contracts.
+### HTTP Headers Returned on `429 Too Many Requests`
 
-## Guides
+| Header | Type | Description |
+| :--- | :--- | :--- |
+| `X-RateLimit-Limit` | Integer | Maximum number of requests permitted in the active rate-limit window / bucket capacity. |
+| `X-RateLimit-Remaining` | Integer | Remaining requests available in the current window (`0` when throttled with `429`). |
+| `X-RateLimit-Reset` | Integer / Epoch Seconds | Unix timestamp (in seconds) when the rate-limit window or bucket refill resets. |
+| `Retry-After` | Integer (seconds) or HTTP-date | Recommended wait time before retrying a `429` request—either seconds until retry or an HTTP date string (`IMF-fixdate`). |
 
-- [Admin Vitals API](./ADMIN_VITALS_SPEC.md) — administrator authorization, JSON and Prometheus response formats, and operational guidance.
-- [Date filter formats](./DATE_FILTER_FORMATS.md) — supported calendar dates, RFC 3339 timestamps, relative windows, aliases, and 400 error responses.
-- [Recurring Booking Slot Validation](./RECURRING_BOOKING_SLOTS.md) — weekly RRULE subset, UTC date expansion, availability conflicts, and alternative desk suggestions.
-- [Rate limiting](./RATE_LIMITING.md) — active middleware quotas, the separate tiered configuration, 429 headers, and client retry examples.
-- [Reservation Availability SSE](./RESERVATION_EVENTS_SSE.md) — reservation stream endpoint, event names and payloads, heartbeat, client reconnection, and cleanup.
-- [Seat Hold Lease Extension](./SEAT_HOLD_LEASE_EXTENSION.md) — authenticated seat-lock extension, lease constraints, fencing-token validation, and error responses.
-- [Bookings](./bookings.md)
-- [Booking calendar export](./BOOKING_CALENDAR_EXPORT.md) — RFC 5545 ICS download, Google and Outlook web links, alarm offsets, ownership verification, and error responses.
-- [Bulk venue check-in API](./BULK_CHECK_IN.md) — manager authorization, batch validation, partial results, and availability cache invalidation.
-- [Cafe orders](./cafe-orders.md)
-- [Folder exports](./FOLDER_EXPORTS.md) — geographic (GeoJSON and KML), PDF catalog, and billing CSV exports for workspace folders.
-- [Guest Split Payment API](./GUEST_SPLIT_PAYMENT.md) — signed split-payment token verification, guest checkout, idempotent payment recording, and digital guest pass generation.
-- [IoT Smart-Lock Check-In Webhook](./IOT_SMART_LOCK_CHECKIN.md) — HMAC-SHA256 authenticated webhook, timestamp freshness, raw-body signing, secret configuration, and check-in persistence.
-- [Meet Halfway Optimization API](./MEET_HALFWAY_API.md) — endpoint specification, request schema, multimodal transport modes, composite ranking, and OpenAPI contract.
-- [Meet Halfway Routing](./MEET_HALFWAY_ROUTING.md) — request/response contract, optimization behavior, commute estimates, and capacity fallback semantics.
-- [Message translation](./message-translation.md)
-- [NotificationBell & User Notifications](../NOTIFICATION_BELL_GUIDE.md) — notification retrieval, mark-as-read row-locking transaction, mark-as-unread restoration, retry behavior, and NotificationBell UI.
-- [Partition export](./partition-export.md)
-- [Partition management](./partition-management.md) — scheduled maintenance, bulk archive and deletion, and administrative audit endpoints.
-- [Semantic search](./semantic-search.md)
-- [Spatial venue bounding-box search](./SPATIAL_VENUE_SEARCH.md) — query parameters, JSON body contract, anti-meridian date line crossover, text sanitization, and response schema.
-- [Solana Pay](./solana-pay.md)
-- [Solana Pay Escrow Settlement](./SOLANA_PAY_ESCROW.md) — end-to-end Solana Pay micro-transaction escrow settlement flow, optimistic reservations, WebSocket and polling confirmation lifecycles, and multi-rail ledger splits.
-- [Telemetry](./telemetry.md)
-- [WebGPU Capability Diagnostics](../telemetry/WEBGPU_CAPABILITY_DIAGNOSTICS.md) — WebGPU capability telemetry schema, diagnostics API, and operational guidance.
-- [Venue flagging](./VENUE_FLAGGING.md) — authenticated flag submission, reason validation, duplicate behavior, and hourly rate limit.
-- [Venue reviews](./venue-reviews.md) — cursor-based review pagination, viewer-dependent reviewer details, and response behavior.
-- [Waitlist API](./WAITLIST_API.md) — authenticated queue management, status lifecycle, seat preference matching, 15-minute offer windows, and atomic seat claim.
+### TypeScript / JavaScript Example: Parsing `Retry-After` & Exponential Backoff
 
-For project-wide endpoint and stream documentation, see [the REST API reference](../API.md).
+```typescript
+export interface RetryAfterOptions {
+  maxRetries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  nowMs?: () => number;
+}
+
+export function parseRetryAfterMs(
+  retryAfterHeader: string | null,
+  resetHeader?: string | null,
+  nowMs: () => number = () => Date.now()
+): number | null {
+  if (retryAfterHeader) {
+    const trimmed = retryAfterHeader.trim();
+    if (/^\d+$/.test(trimmed)) {
+      return Math.max(0, Number(trimmed) * 1000);
+    }
+    const parsedDateMs = Date.parse(trimmed);
+    if (!Number.isNaN(parsedDateMs)) {
+      return Math.max(0, parsedDateMs - nowMs());
+    }
+  }
+
+  if (resetHeader && /^\d+$/.test(resetHeader.trim())) {
+    const resetEpochMs = Number(resetHeader.trim()) * 1000;
+    return Math.max(0, resetEpochMs - nowMs());
+  }
+
+  return null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function fetchWithRateLimitBackoff(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options: RetryAfterOptions = {}
+): Promise<Response> {
+  const maxRetries = options.maxRetries ?? 4;
+  const baseDelayMs = options.baseDelayMs ?? 500;
+  const maxDelayMs = options.maxDelayMs ?? 15_000;
+  const nowMs = options.nowMs ?? (() => Date.now());
+
+  let attempt = 0;
+
+  while (true) {
+    const response = await fetch(input, init);
+    if (response.status !== 429 || attempt >= maxRetries) {
+      return response;
+    }
+
+    const headerDelayMs = parseRetryAfterMs(
+      response.headers.get('Retry-After'),
+      response.headers.get('X-RateLimit-Reset'),
+      nowMs
+    );
+
+    const expBackoffMs = Math.min(maxDelayMs, baseDelayMs * 2 ** attempt);
+    const jitterMs = Math.floor(Math.random() * 250);
+    const delayMs = Math.min(
+      maxDelayMs,
+      (headerDelayMs !== null ? Math.max(headerDelayMs, expBackoffMs) : expBackoffMs) +
+        jitterMs
+    );
+
+    attempt += 1;
+    await sleep(delayMs);
+  }
+}
+#!/usr/bin/env bash
+set -euo pipefail
+
+URL="[https://api.worksphere.example/v1/venues](https://api.worksphere.example/v1/venues)"
+MAX_ATTEMPTS=4
+attempt=1
+
+while true; do
+  hdr_file="$(mktemp)"
+  body_file="$(mktemp)"
+
+  status=$(curl -sS -D "$hdr_file" -o "$body_file" -w "\%{http_code}" "$URL")
+
+  if [[ "$status" != "429" ]]; then
+    echo "HTTP $status"
+    cat "$body_file"
+    rm -f "$hdr_file" "$body_file"
+    break
+  fi
+
+  limit=$(grep -i '^X-RateLimit-Limit:' "$hdr_file" | awk '{print $2}' | tr -d '\r')
+  remaining=$(grep -i '^X-RateLimit-Remaining:' "$hdr_file" | awk '{print $2}' | tr -d '\r')
+  reset=$(grep -i '^X-RateLimit-Reset:' "$hdr_file" | awk '{print $2}' | tr -d '\r')
+  retry_after=$(grep -i '^Retry-After:' "$hdr_file" | cut -d':' -f2- | xargs | tr -d '\r')
+
+  rm -f "$hdr_file" "$body_file"
+
+  if (( attempt >= MAX_ATTEMPTS )); then
+    echo "Rate limited (429) after $attempt attempts (limit=$limit, remaining=$remaining, reset=$reset)" >&2
+    exit 1
+  fi
+
+  if [[ "$retry_after" =~ ^[0-9]+$ ]]; then
+    wait_sec="$retry_after"
+  else
+    wait_sec=$(( 2 ** (attempt - 1) ))
+  fi
+
+  echo "429 received (limit=$limit, remaining=$remaining, reset=$reset). Sleeping ${wait_sec}s before retry #$attempt..."
+  sleep "$wait_sec"
+  attempt=$((attempt + 1))
+done

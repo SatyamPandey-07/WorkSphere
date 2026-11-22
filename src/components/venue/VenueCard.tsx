@@ -126,7 +126,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-zinc-100 shadow-md ${
+      className={`rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-zinc-100 shadow-md min-w-0 max-w-full ${
         onClick ? "cursor-pointer transition-all hover:border-zinc-700" : ""
       }`}
     >
@@ -211,13 +211,13 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       {amenityList.length > 0 && (
         <div
           data-testid="venue-amenity-tags"
-          className="mt-3 flex flex-wrap items-center gap-1.5 overflow-hidden"
+          className="mt-3 flex flex-wrap items-center gap-1.5 overflow-hidden min-w-0 max-w-full"
         >
           {amenityList.map((amenity, idx) => (
             <span
               key={`${amenity}-${idx}`}
               data-testid="amenity-tag-pill"
-              className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-200 border border-zinc-700 break-words"
+              className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-200 border border-zinc-700 break-words whitespace-normal min-w-0 max-w-full [overflow-wrap:anywhere]"
             >
               {amenity}
             </span>

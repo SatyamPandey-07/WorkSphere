@@ -81,7 +81,96 @@ describe("Venue Amenity Tag Mobile Overflow & Responsive Wrapping (Issue #9357)"
         />,
       );
 
-      expect(screen.queryByTestId("venue-amenity-tags")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("venue-amenity-tags"),
+      ).not.toBeInTheDocument();
+    });
+
+    test("renders long amenity labels with wrapping, break-words, and max-w-full without line clamping", () => {
+      const longAmenities = [
+        "Dedicated Quiet Workspaces & Ergonomic Standing Desks With Dual 4K Monitor Arm Support",
+        "Ultra-High-Speed Dedicated Symmetrical Gigabit Fiber Internet Connection",
+      ];
+
+      render(
+        <VenueCard
+          id="venue-long-amenities"
+          name="Tech Haven"
+          amenities={longAmenities}
+        />,
+      );
+
+      const container = screen.getByTestId("venue-amenity-tags");
+      expect(container).toHaveClass("min-w-0");
+      expect(container).toHaveClass("max-w-full");
+
+      const pills = screen.getAllByTestId("amenity-tag-pill");
+      expect(pills).toHaveLength(2);
+
+      pills.forEach((pill, idx) => {
+        expect(pill).toHaveTextContent(longAmenities[idx]);
+        expect(pill).toHaveClass("break-words");
+        expect(pill).toHaveClass("whitespace-normal");
+        expect(pill).toHaveClass("min-w-0");
+        expect(pill).toHaveClass("max-w-full");
+        expect(pill).toHaveClass("[overflow-wrap:anywhere]");
+        expect(pill).not.toHaveClass("truncate");
+        expect(pill).not.toHaveClass("line-clamp-1");
+        expect(pill).not.toHaveClass("line-clamp-2");
+      });
+    });
+
+    test("handles uninterrupted tokens without breaking card layout boundaries", () => {
+      const unbrokenAmenity = [
+        "SupercalifragilisticexpialidociousLongUnbrokenStringWithoutSpaces",
+      ];
+
+      const { container } = render(
+        <VenueCard
+          id="venue-unbroken"
+          name="Edge Case Studio"
+          amenities={unbrokenAmenity}
+        />,
+      );
+
+      const cardRoot = container.firstElementChild;
+      expect(cardRoot).toHaveClass("min-w-0");
+      expect(cardRoot).toHaveClass("max-w-full");
+
+      const pill = screen.getByTestId("amenity-tag-pill");
+      expect(pill).toHaveTextContent(unbrokenAmenity[0]);
+      expect(pill).toHaveClass("break-words");
+      expect(pill).toHaveClass("[overflow-wrap:anywhere]");
+      expect(pill).toHaveClass("max-w-full");
+    });
+
+    test("renders multiple amenity badges in a compact wrapping flex layout", () => {
+      const manyAmenities = [
+        "WiFi",
+        "Coffee",
+        "Power Outlets",
+        "Quiet Zone",
+        "Monitors",
+        "Whiteboard",
+        "Phone Booth",
+        "Parking",
+      ];
+
+      render(
+        <VenueCard
+          id="venue-many-amenities"
+          name="Metropolitan Workspace"
+          amenities={manyAmenities}
+        />,
+      );
+
+      const container = screen.getByTestId("venue-amenity-tags");
+      expect(container).toHaveClass("flex");
+      expect(container).toHaveClass("flex-wrap");
+      expect(container).toHaveClass("gap-1.5");
+
+      const pills = screen.getAllByTestId("amenity-tag-pill");
+      expect(pills).toHaveLength(8);
     });
   });
 

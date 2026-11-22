@@ -8,6 +8,7 @@ import {
   cosineSimilarity,
   searchVenuesWithRrf,
   normalizedSearchCacheKey,
+  normalizeAmenityFilters,
 } from "@/lib/search/hybridVenueSearch";
 import { prisma } from "@/lib/prisma";
 
@@ -220,8 +221,80 @@ describe("Reciprocal Rank Fusion (RRF) Formula & Boundary Guards (#5603)", () =>
     });
   });
 
-  describe("normalizedSearchCacheKey normalization (Issue #9362)", () => {
+  describe("normalizedSearchCacheKey and normalizeAmenityFilters normalization (Issue #9442)", () => {
     const defaultQuery = "coworking space";
+
+    describe("normalizeAmenityFilters helper", () => {
+      it("normalizes ['WiFi', 'Outlets'] and ['outlets', 'wifi'] to identical sorted arrays", () => {
+        const norm1 = normalizeAmenityFilters(["WiFi", "Outlets"]);
+        const norm2 = normalizeAmenityFilters(["outlets", "wifi"]);
+        expect(norm1).toEqual(["outlets", "wifi"]);
+        expect(norm2).toEqual(["outlets", "wifi"]);
+        expect(norm1).toEqual(norm2);
+      });
+
+      it("deduplicates casing and whitespace variants like ['WiFi', 'wifi', ' WIFI ']", () => {
+        const norm = normalizeAmenityFilters(["WiFi", "wifi", " WIFI "]);
+        expect(norm).toEqual(["wifi"]);
+      });
+
+      it("filters out empty, whitespace-only, and non-string amenity values", () => {
+        const norm = normalizeAmenityFilters([
+          "WiFi",
+          "",
+          "   ",
+          null as any,
+          undefined as any,
+          123 as any,
+          "Quiet",
+        ]);
+        expect(norm).toEqual(["quiet", "wifi"]);
+      });
+
+      it("handles null, undefined, and empty arrays safely", () => {
+        expect(normalizeAmenityFilters(null)).toEqual([]);
+        expect(normalizeAmenityFilters(undefined)).toEqual([]);
+        expect(normalizeAmenityFilters([])).toEqual([]);
+      });
+
+      it("preserves immutability of the original input array", () => {
+        const original = Object.freeze(["WiFi", "Outlets", "Quiet"]);
+        const result = normalizeAmenityFilters(original);
+        expect(result).toEqual(["outlets", "quiet", "wifi"]);
+        expect(original).toEqual(["WiFi", "Outlets", "Quiet"]);
+      });
+    });
+
+    it("generates identical cache keys for ['WiFi', 'Outlets'] versus ['outlets', 'wifi']", () => {
+      const key1 = normalizedSearchCacheKey(defaultQuery, { amenities: ["WiFi", "Outlets"] });
+      const key2 = normalizedSearchCacheKey(defaultQuery, { amenities: ["outlets", "wifi"] });
+      const key3 = normalizedSearchCacheKey(defaultQuery, { amenities: [" WIFI ", " outlets "] });
+
+      expect(key1).toBe(key2);
+      expect(key2).toBe(key3);
+    });
+
+    it("generates identical cache keys when duplicate casing variants are provided", () => {
+      const keyDedup = normalizedSearchCacheKey(defaultQuery, {
+        amenities: ["WiFi", "wifi", " WIFI ", "Outlets", "outlets"],
+      });
+      const keyClean = normalizedSearchCacheKey(defaultQuery, {
+        amenities: ["wifi", "outlets"],
+      });
+
+      expect(keyDedup).toBe(keyClean);
+    });
+
+    it("ignores empty and whitespace-only amenity values in cache keys", () => {
+      const keyWithEmpty = normalizedSearchCacheKey(defaultQuery, {
+        amenities: ["WiFi", "", "   ", "Outlets"],
+      });
+      const keyClean = normalizedSearchCacheKey(defaultQuery, {
+        amenities: ["wifi", "outlets"],
+      });
+
+      expect(keyWithEmpty).toBe(keyClean);
+    });
 
     it("generates identical cache keys for category casing variations", () => {
       const keyLower = normalizedSearchCacheKey(defaultQuery, { category: "coworking" });
@@ -243,25 +316,13 @@ describe("Reciprocal Rank Fusion (RRF) Formula & Boundary Guards (#5603)", () =>
       expect(keyTrimmed).toBe(keyWhitespace);
     });
 
-    it("generates identical cache keys for amenity casing variations", () => {
-      const key1 = normalizedSearchCacheKey(defaultQuery, { amenities: ["WiFi", "Parking"] });
-      const key2 = normalizedSearchCacheKey(defaultQuery, { amenities: ["wifi", "parking"] });
+    it("generates identical cache keys for search query tokens with casing and whitespace differences", () => {
+      const keyA = normalizedSearchCacheKey("  Quiet   Cafe  ", { category: "coworking" });
+      const keyB = normalizedSearchCacheKey("quiet cafe", { category: "coworking" });
+      const keyC = normalizedSearchCacheKey("QUIET CAFE", { category: "coworking" });
 
-      expect(key1).toBe(key2);
-    });
-
-    it("generates identical cache keys for amenity ordering variations", () => {
-      const keyOrder1 = normalizedSearchCacheKey(defaultQuery, { amenities: ["WiFi", "Parking"] });
-      const keyOrder2 = normalizedSearchCacheKey(defaultQuery, { amenities: ["Parking", "WiFi"] });
-
-      expect(keyOrder1).toBe(keyOrder2);
-    });
-
-    it("generates identical cache keys for amenity whitespace variations", () => {
-      const keyWhitespace = normalizedSearchCacheKey(defaultQuery, { amenities: [" WiFi ", " Parking "] });
-      const keyTrimmed = normalizedSearchCacheKey(defaultQuery, { amenities: ["wifi", "parking"] });
-
-      expect(keyWhitespace).toBe(keyTrimmed);
+      expect(keyA).toBe(keyB);
+      expect(keyB).toBe(keyC);
     });
 
     it("generates identical cache keys for combined category, amenity casing, whitespace, and ordering variations", () => {
@@ -275,6 +336,37 @@ describe("Reciprocal Rank Fusion (RRF) Formula & Boundary Guards (#5603)", () =>
       });
 
       expect(keyA).toBe(keyB);
+    });
+
+    it("is strictly deterministic across repeated calls", () => {
+      const filters = {
+        category: "Library",
+        amenities: ["Whiteboard", "Quiet", "Air Conditioning"],
+        cities: ["San Francisco", "Austin"],
+      };
+      const key1 = normalizedSearchCacheKey("Downtown Study", filters);
+      const key2 = normalizedSearchCacheKey("Downtown Study", filters);
+      const key3 = normalizedSearchCacheKey("Downtown Study", filters);
+
+      expect(key1).toBe(key2);
+      expect(key2).toBe(key3);
+    });
+
+    it("preserves immutability of the original filter objects and arrays", () => {
+      const amenitiesInput = Object.freeze(["WiFi", "Outlets"]);
+      const citiesInput = Object.freeze(["San Francisco", "Oakland"]);
+      const filtersInput = Object.freeze({
+        category: "Coworking",
+        amenities: amenitiesInput as unknown as string[],
+        cities: citiesInput as unknown as string[],
+      });
+
+      expect(() => {
+        normalizedSearchCacheKey("test query", filtersInput);
+      }).not.toThrow();
+
+      expect(amenitiesInput).toEqual(["WiFi", "Outlets"]);
+      expect(citiesInput).toEqual(["San Francisco", "Oakland"]);
     });
 
     it("generates distinct cache keys for different logical filters", () => {

@@ -121,6 +121,34 @@ function runWithBackgroundSearchLimit<T>(work: () => Promise<T>): Promise<T> {
   });
 }
 
+/**
+ * Normalizes an array of amenity filter tokens deterministically:
+ * - Trims surrounding whitespace and collapses interior multi-space runs
+ * - Converts each token to lowercase (locale-agnostic)
+ * - Drops empty/whitespace-only tokens and non-string values
+ * - Deduplicates normalized values
+ * - Sorts remaining tokens alphabetically
+ * - Guarantees immutability of the input array
+ */
+export function normalizeAmenityFilters(
+  amenities?: readonly (string | unknown)[] | null,
+): string[] {
+  if (!Array.isArray(amenities) || amenities.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  for (const item of amenities) {
+    if (typeof item !== "string") continue;
+    const normalized = item.trim().toLowerCase();
+    if (normalized.length > 0) {
+      seen.add(normalized);
+    }
+  }
+
+  return Array.from(seen).sort();
+}
+
 export function normalizedSearchCacheKey(
   query: string,
   filters: HybridVenueSearchFilters = {},
@@ -135,14 +163,12 @@ export function normalizedSearchCacheKey(
             .update(JSON.stringify(filters.queryEmbedding))
             .digest("hex");
 
-  const normalizedCategory = filters.category
-    ? filters.category.trim().toLowerCase()
-    : null;
+  const normalizedCategory =
+    typeof filters.category === "string" && filters.category.trim() !== ""
+      ? filters.category.trim().toLowerCase()
+      : null;
 
-  const normalizedAmenities = (filters.amenities || [])
-    .map((amenity) => amenity.trim().toLowerCase())
-    .filter(Boolean)
-    .sort();
+  const normalizedAmenities = normalizeAmenityFilters(filters.amenities);
 
   const keyParts = {
     query: normalizeSearchQuery(query).slice(0, 256),
@@ -152,7 +178,7 @@ export function normalizedSearchCacheKey(
     maxLng: filters.maxLng,
     category: normalizedCategory,
     cities: [...(filters.cities ?? [])].sort(),
-    amenities: [...new Set(normalizedAmenities)],
+    amenities: normalizedAmenities,
     semanticWeight: filters.semanticWeight ?? null,
     fullTextWeight: filters.fullTextWeight ?? null,
     rrfK: filters.rrfK ?? null,
@@ -766,11 +792,7 @@ async function searchVenuesWithRrfUncached(
     );
   }
 
-  const amenityFilters = [
-    ...new Set(
-      (filters.amenities ?? []).map((a) => a.trim().toLowerCase()).filter(Boolean),
-    ),
-  ];
+  const amenityFilters = normalizeAmenityFilters(filters.amenities);
   for (const amenity of amenityFilters) {
     predicates.push(
       Prisma.sql`EXISTS (SELECT 1 FROM "AmenityValidation" av WHERE av."venueId" = v."id" AND LOWER(av."amenity") = ${amenity})`,

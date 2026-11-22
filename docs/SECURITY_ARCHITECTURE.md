@@ -67,6 +67,19 @@ For the complete technical specification, event catalog, payload schemas, and lo
 
 ---
 
+## 1.3 Refresh Token Rotation & Session Hijacking Mitigation
+
+WorkSphere mitigates credential replay, stolen cookies, and long-lived session hijacking through rotating refresh tokens and token family reuse detection (`src/lib/auth/sessionTokens.ts`):
+
+- **Short-Lived Access Tokens:** Signed using HMAC-SHA256 (`HS256`) with a 15-minute expiration (`ACCESS_TOKEN_EXPIRY_SECONDS = 900`).
+- **Rotating Refresh Tokens:** Valid for 7 days (`REFRESH_TOKEN_EXPIRY_SECONDS = 604,800`) stored in `HttpOnly`, `SameSite=Lax`, `Secure` cookies.
+- **Token Family Reuse Detection:** Refresh tokens are bound to a `familyId` with sequential version numbers and single-use `jti` identifiers. Replaying an already-consumed token immediately invalidates the entire token family (`REUSE_DETECTED`), forcing re-authentication and neutralizing stolen credentials.
+- **Password-Reset Session Revocation:** Token rotation checks the user's `passwordChangedAt` timestamp in PostgreSQL (`prisma.user.findUnique`). Any token issued prior to a password change (`iat < passwordChangedAt`) is rejected (`STALE_REFTERM`), immediately revoking sessions across all other devices.
+
+For the comprehensive architectural runbook, attack matrix, and cookie configuration, see the [OAuth Refresh Token Rotation and Session Hijacking Mitigation Guide](auth/REFRESH_TOKEN_ROTATION_GUIDE.md).
+
+---
+
 ## 2. Content Security Policy (CSP) & Nonce Generation Pipeline
 
 Cross-Site Scripting (XSS) represents the single most dangerous vector for single-page applications. WorkSphere eliminates inline script execution vulnerabilities by mandating strict, dynamic cryptographic nonces for all inline scripts and enforcing modern Content Security Policies (CSP Level 3).
@@ -751,3 +764,13 @@ WorkSphere streams security telemetry events in Common Event Format (CEF) / JSON
   }
 }
 ```
+
+---
+
+## 20. Zero-Knowledge Proof (ZKP) Cryptographic Security & Prover Verification
+
+WorkSphere incorporates privacy-preserving Groth16 zero-knowledge proofs over the BN254 (`alt_bn128`) pairing-friendly elliptic curve for anonymous membership verification, student discount eligibility, and nomad activity statements without exposing user identities or PII.
+
+For complete technical specifications on circuit compilation, trusted setup ceremonies, proving and verification key lifecycle, browser WebAssembly vs Node.js execution, and client-side IndexedDB verification caching, refer to:
+- [`zkp/GROTH16_BENCHMARK_RUNBOOK.md`](zkp/GROTH16_BENCHMARK_RUNBOOK.md) — Groth16 circuit proving key verification benchmark runbook, covering Circom compilation, trusted setup artifacts, SnarkJS proof lifecycle, mobile memory constraints, and IndexedDB proof verification caching.
+- [`zkp/GROTH16_CIRCUIT_ARCHITECTURE.md`](zkp/GROTH16_CIRCUIT_ARCHITECTURE.md) — Circuit constraint architecture, Poseidon hash commitment schemes, and Web Worker proof generation.

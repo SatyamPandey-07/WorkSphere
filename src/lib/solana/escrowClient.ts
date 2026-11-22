@@ -45,7 +45,7 @@ export function getAssociatedTokenAddressSync(
 export const SOL_DECIMALS = 9;
 export const USDC_DECIMALS = 6;
 
-export type SupportedSettlementAsset = 'SOL' | 'USDC';
+export type SupportedSettlementAsset = "SOL" | "USDC";
 
 export interface EscrowBookingQuoteInput {
   /** Hourly rate as a decimal string (e.g., "0.14" SOL or "4.50" USDC) */
@@ -72,43 +72,48 @@ export interface EscrowBaseUnitQuote {
  */
 export function parseDecimalToBaseUnits(
   amount: string | number,
-  decimals: number = SOL_DECIMALS
+  decimals: number = SOL_DECIMALS,
 ): bigint {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
     throw new RangeError(`Invalid token decimal precision: ${decimals}`);
   }
 
   const raw =
-    typeof amount === 'number'
+    typeof amount === "number"
       ? Number.isFinite(amount)
         ? amount.toString()
-        : ''
-      : typeof amount === 'string'
+        : ""
+      : typeof amount === "string"
         ? amount.trim()
-        : '';
+        : "";
 
   if (!raw) {
-    throw new Error('Token amount must be a non-empty finite decimal string');
+    throw new Error("Token amount must be a non-empty finite decimal string");
   }
 
   // Handle scientific notation strings (e.g. "1e-7") safely into fixed decimal representation
   const normalized = expandScientificNotation(raw);
 
-  if (normalized.startsWith('-')) {
+  if (normalized.startsWith("-")) {
     throw new Error(`Token amount cannot be negative: "${raw}"`);
   }
 
-  const unsigned = normalized.startsWith('+') ? normalized.slice(1) : normalized;
-  const parts = unsigned.split('.');
+  const unsigned = normalized.startsWith("+")
+    ? normalized.slice(1)
+    : normalized;
+  const parts = unsigned.split(".");
 
   if (parts.length > 2) {
     throw new Error(`Malformed decimal amount: "${raw}"`);
   }
 
-  const wholePartRaw = parts[0] === '' ? '0' : parts[0];
-  const fractionPartRaw = parts[1] ?? '';
+  const wholePartRaw = parts[0] === "" ? "0" : parts[0];
+  const fractionPartRaw = parts[1] ?? "";
 
-  if (!/^\d+$/.test(wholePartRaw) || (fractionPartRaw !== '' && !/^\d+$/.test(fractionPartRaw))) {
+  if (
+    !/^\d+$/.test(wholePartRaw) ||
+    (fractionPartRaw !== "" && !/^\d+$/.test(fractionPartRaw))
+  ) {
     throw new Error(`Invalid numeric characters in decimal amount: "${raw}"`);
   }
 
@@ -116,13 +121,15 @@ export function parseDecimalToBaseUnits(
     const excessDigits = fractionPartRaw.slice(decimals);
     if (!/^0+$/.test(excessDigits)) {
       throw new Error(
-        `Amount "${raw}" exceeds maximum supported precision of ${decimals} decimal places`
+        `Amount "${raw}" exceeds maximum supported precision of ${decimals} decimal places`,
       );
     }
   }
 
   const paddedFraction =
-    decimals === 0 ? '' : fractionPartRaw.slice(0, decimals).padEnd(decimals, '0');
+    decimals === 0
+      ? ""
+      : fractionPartRaw.slice(0, decimals).padEnd(decimals, "0");
 
   return BigInt(`${wholePartRaw}${paddedFraction}`);
 }
@@ -132,19 +139,19 @@ export function parseDecimalToBaseUnits(
  */
 export function formatBaseUnitsToDecimal(
   baseUnits: bigint,
-  decimals: number = SOL_DECIMALS
+  decimals: number = SOL_DECIMALS,
 ): string {
   if (baseUnits < 0n) {
-    throw new Error('Base units cannot be negative');
+    throw new Error("Base units cannot be negative");
   }
 
   if (decimals === 0) {
     return baseUnits.toString();
   }
 
-  const digits = baseUnits.toString().padStart(decimals + 1, '0');
+  const digits = baseUnits.toString().padStart(decimals + 1, "0");
   const whole = digits.slice(0, -decimals);
-  const fraction = digits.slice(-decimals).replace(/0+$/, '');
+  const fraction = digits.slice(-decimals).replace(/0+$/, "");
 
   return fraction.length > 0 ? `${whole}.${fraction}` : whole;
 }
@@ -158,17 +165,17 @@ function expandScientificNotation(value: string): string {
     return value;
   }
 
-  const [, sign, intDigits, fracDigits = '', expStr] = match;
+  const [, sign, intDigits, fracDigits = "", expStr] = match;
   const exponent = parseInt(expStr, 10);
   const combinedDigits = `${intDigits}${fracDigits}`;
   const decimalPosition = intDigits.length + exponent;
 
   if (decimalPosition <= 0) {
-    return `${sign}0.${'0'.repeat(Math.abs(decimalPosition))}${combinedDigits}`;
+    return `${sign}0.${"0".repeat(Math.abs(decimalPosition))}${combinedDigits}`;
   }
 
   if (decimalPosition >= combinedDigits.length) {
-    return `${sign}${combinedDigits}${'0'.repeat(decimalPosition - combinedDigits.length)}`;
+    return `${sign}${combinedDigits}${"0".repeat(decimalPosition - combinedDigits.length)}`;
   }
 
   return `${sign}${combinedDigits.slice(0, decimalPosition)}.${combinedDigits.slice(decimalPosition)}`;
@@ -179,14 +186,14 @@ function expandScientificNotation(value: string): string {
  * prorated multi-minute desk reservation using pure `BigInt` integer arithmetic.
  */
 export function calculateEscrowBookingBaseUnits(
-  input: EscrowBookingQuoteInput
+  input: EscrowBookingQuoteInput,
 ): EscrowBaseUnitQuote {
-  const asset: SupportedSettlementAsset = input.asset ?? 'SOL';
+  const asset: SupportedSettlementAsset = input.asset ?? "SOL";
   const decimals =
-    input.decimals ?? (asset === 'USDC' ? USDC_DECIMALS : SOL_DECIMALS);
+    input.decimals ?? (asset === "USDC" ? USDC_DECIMALS : SOL_DECIMALS);
 
   if (!Number.isInteger(input.durationMinutes) || input.durationMinutes <= 0) {
-    throw new Error('Booking durationMinutes must be a positive integer');
+    throw new Error("Booking durationMinutes must be a positive integer");
   }
 
   const hourlyBaseUnits = parseDecimalToBaseUnits(input.hourlyRate, decimals);
@@ -215,7 +222,7 @@ export function assertSufficientEscrowBalance(params: {
 
   if (params.walletBalanceBaseUnits < totalRequired) {
     throw new Error(
-      `InsufficientFunds: wallet balance ${params.walletBalanceBaseUnits.toString()} is less than required ${totalRequired.toString()} base units`
+      `InsufficientFunds: wallet balance ${params.walletBalanceBaseUnits.toString()} is less than required ${totalRequired.toString()} base units`,
     );
   }
 }
@@ -247,9 +254,8 @@ export function createTransferInstruction(
 
 export const USDC_MINT = new PublicKey(
   process.env.NEXT_PUBLIC_USDC_MINT ??
-  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 );
-export const USDC_DECIMALS = 6;
 
 export type EscrowCurrency = "SOL" | "USDC";
 
@@ -377,10 +383,11 @@ export async function buildSolDepositTransaction(
   // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
     const safeFee = Math.max(0, Math.floor(priorityFee));
-    const existingIndex = transaction.instructions.findIndex((ix) =>
-      ix.programId.equals(ComputeBudgetProgram.programId) &&
-      ix.data.length > 0 &&
-      ix.data[0] === 3,
+    const existingIndex = transaction.instructions.findIndex(
+      (ix) =>
+        ix.programId.equals(ComputeBudgetProgram.programId) &&
+        ix.data.length > 0 &&
+        ix.data[0] === 3,
     );
     const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
       microLamports: safeFee,
@@ -476,10 +483,11 @@ export async function buildUsdcDepositTransaction(
   // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
     const safeFee = Math.max(0, Math.floor(priorityFee));
-    const existingIndex = transaction.instructions.findIndex((ix) =>
-      ix.programId.equals(ComputeBudgetProgram.programId) &&
-      ix.data.length > 0 &&
-      ix.data[0] === 3,
+    const existingIndex = transaction.instructions.findIndex(
+      (ix) =>
+        ix.programId.equals(ComputeBudgetProgram.programId) &&
+        ix.data.length > 0 &&
+        ix.data[0] === 3,
     );
     const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
       microLamports: safeFee,
@@ -690,7 +698,7 @@ export async function verifyDeposit(
 // Program ID configuration
 export const ESCROW_PROGRAM_ID = new PublicKey(
   process.env.NEXT_PUBLIC_ESCROW_PROGRAM_ID ||
-  "11111111111111111111111111111111",
+    "11111111111111111111111111111111",
 );
 
 export interface SimulationResult {
@@ -1058,8 +1066,8 @@ export async function withRpcPollTimeout<T>(
 ): Promise<T> {
   const timeoutMs =
     typeof options.timeoutMs === "number" &&
-      Number.isFinite(options.timeoutMs) &&
-      options.timeoutMs > 0
+    Number.isFinite(options.timeoutMs) &&
+    options.timeoutMs > 0
       ? options.timeoutMs
       : ESCROW_RPC_POLL_TIMEOUT_MS;
   const endpoint = options.endpoint ?? "rpc-poll";
@@ -1081,7 +1089,7 @@ export async function withRpcPollTimeout<T>(
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     // A late rejection from the abandoned operation must not go unhandled.
-    deadline.catch(() => { });
+    deadline.catch(() => {});
   }
 }
 
@@ -1551,8 +1559,8 @@ export async function releaseEscrow(
   if (isPlaceholderProgramId(programId)) {
     throw new Error(
       "releaseEscrow requires a deployed on-chain escrow program. " +
-      "Set NEXT_PUBLIC_ESCROW_PROGRAM_ID to a valid program address. " +
-      "Client-side transfers would be custodial and insecure.",
+        "Set NEXT_PUBLIC_ESCROW_PROGRAM_ID to a valid program address. " +
+        "Client-side transfers would be custodial and insecure.",
     );
   }
 
@@ -1600,8 +1608,8 @@ export async function refundEscrow(
   if (isPlaceholderProgramId(programId)) {
     throw new Error(
       "refundEscrow requires a deployed on-chain escrow program. " +
-      "Set NEXT_PUBLIC_ESCROW_PROGRAM_ID to a valid program address. " +
-      "Client-side transfers would be custodial and insecure.",
+        "Set NEXT_PUBLIC_ESCROW_PROGRAM_ID to a valid program address. " +
+        "Client-side transfers would be custodial and insecure.",
     );
   }
 
@@ -1959,10 +1967,11 @@ export async function submitEscrowRefundTransaction(
     // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
     if (typeof priorityFee === "number" && priorityFee > 0) {
       const safeFee = Math.max(0, Math.floor(priorityFee));
-      const existingIndex = transaction.instructions.findIndex((ix) =>
-        ix.programId.equals(ComputeBudgetProgram.programId) &&
-        ix.data.length > 0 &&
-        ix.data[0] === 3,
+      const existingIndex = transaction.instructions.findIndex(
+        (ix) =>
+          ix.programId.equals(ComputeBudgetProgram.programId) &&
+          ix.data.length > 0 &&
+          ix.data[0] === 3,
       );
       const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
         microLamports: safeFee,
@@ -2023,7 +2032,7 @@ export async function submitEscrowRefundTransaction(
       : ESCROW_POLL_INTERVAL_MS;
   const confirmationTimeoutMs =
     typeof params.confirmationTimeoutMs === "number" &&
-      params.confirmationTimeoutMs >= 0
+    params.confirmationTimeoutMs >= 0
       ? params.confirmationTimeoutMs
       : ESCROW_CONFIRMATION_TIMEOUT_MS;
   const sleep =
@@ -2073,7 +2082,7 @@ export async function submitEscrowRefundTransaction(
   throw new EscrowRefundSubmissionError(
     "confirmation",
     `Escrow refund transaction ${signature} was not confirmed within ${confirmationTimeoutMs}ms` +
-    (lastRpcError ? ` (last RPC error: ${lastRpcError})` : ""),
+      (lastRpcError ? ` (last RPC error: ${lastRpcError})` : ""),
     { signature },
   );
 }
@@ -2521,13 +2530,13 @@ export class EscrowRpcConnectionPool {
       return record
         ? { ...record }
         : {
-          endpoint,
-          healthy: true,
-          latencyMs: null,
-          lastCheckedAt: null,
-          consecutiveFailures: 0,
-          lastError: null,
-        };
+            endpoint,
+            healthy: true,
+            latencyMs: null,
+            lastCheckedAt: null,
+            consecutiveFailures: 0,
+            lastError: null,
+          };
     });
   }
 
@@ -2657,7 +2666,7 @@ export class EscrowRpcConnectionPool {
   ): void {
     if (this.healthTimer !== undefined) return;
     this.healthTimer = setInterval(() => {
-      void this.checkAllEndpointsHealth().catch(() => { });
+      void this.checkAllEndpointsHealth().catch(() => {});
     }, intervalMs);
     this.healthTimer.unref?.();
   }
@@ -3004,7 +3013,7 @@ export class EscrowConfirmationStateMachine {
     if (this._isTerminal) return;
     this._isTerminal = true;
     const err = new Error(reason);
-    this.promise.catch(() => { });
+    this.promise.catch(() => {});
     this.rejectPromise(err);
   }
 
@@ -3028,7 +3037,9 @@ export class EscrowConfirmationStateMachine {
     return this._isTerminal;
   }
 
-  public subscribe(listener: (event: EscrowConfirmationEvent) => void): () => void {
+  public subscribe(
+    listener: (event: EscrowConfirmationEvent) => void,
+  ): () => void {
     this.listeners.push(listener);
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener);
@@ -3040,20 +3051,30 @@ export class EscrowConfirmationStateMachine {
     sourceOrOptions?:
       | EscrowConfirmationSource
       | { slot?: number | null; error?: string | null; reason?: string },
-    optionsParam?: { slot?: number | null; error?: string | null; reason?: string },
+    optionsParam?: {
+      slot?: number | null;
+      error?: string | null;
+      reason?: string;
+    },
   ): EscrowConfirmationEvent | null {
     if (this._isTerminal) {
       return null;
     }
 
     let source: EscrowConfirmationSource = "websocket";
-    let options: { slot?: number | null; error?: string | null; reason?: string } =
-      {};
+    let options: {
+      slot?: number | null;
+      error?: string | null;
+      reason?: string;
+    } = {};
 
     if (typeof sourceOrOptions === "string") {
       source = sourceOrOptions;
       if (optionsParam) options = optionsParam;
-    } else if (typeof sourceOrOptions === "object" && sourceOrOptions !== null) {
+    } else if (
+      typeof sourceOrOptions === "object" &&
+      sourceOrOptions !== null
+    ) {
       options = sourceOrOptions;
     }
 
@@ -3110,9 +3131,11 @@ export class EscrowConfirmationStateMachine {
       if (newStatus === "finalized") {
         this.resolvePromise(event);
       } else {
-        const err = new Error(options.error || `Escrow confirmation ended in state: ${newStatus}`);
+        const err = new Error(
+          options.error || `Escrow confirmation ended in state: ${newStatus}`,
+        );
         // Avoid unhandled rejection crash if caller doesn't attach .catch to promise
-        this.promise.catch(() => { });
+        this.promise.catch(() => {});
         this.rejectPromise(err);
       }
     }
@@ -3216,7 +3239,7 @@ export function subscribeToEscrowConfirmation(
     for (const remover of subStateRemovers) {
       try {
         remover();
-      } catch { }
+      } catch {}
     }
     subStateRemovers = [];
 
@@ -3227,21 +3250,21 @@ export function subscribeToEscrowConfirmation(
         processedSubId = undefined;
         try {
           void activeConn.removeSignatureListener(id);
-        } catch { }
+        } catch {}
       }
       if (confirmedSubId !== undefined) {
         const id = confirmedSubId;
         confirmedSubId = undefined;
         try {
           void activeConn.removeSignatureListener(id);
-        } catch { }
+        } catch {}
       }
       if (finalizedSubId !== undefined) {
         const id = finalizedSubId;
         finalizedSubId = undefined;
         try {
           void activeConn.removeSignatureListener(id);
-        } catch { }
+        } catch {}
       }
     }
   };
@@ -3415,8 +3438,7 @@ export function subscribeToEscrowConfirmation(
       if (isExpired && !stateMachine.isDone() && !isUnsubscribed) {
         let finalCheckSucceeded = false;
         try {
-          const finalRes: SignatureStatus | null =
-            await fetchSignatureStatus();
+          const finalRes: SignatureStatus | null = await fetchSignatureStatus();
           finalCheckSucceeded = true;
 
           if (finalRes && !finalRes.err) {
@@ -3505,7 +3527,7 @@ export function subscribeToEscrowConfirmation(
         if (typeof remove === "function") {
           subStateRemovers.push(remove);
         }
-      } catch { }
+      } catch {}
     }
   };
 
@@ -3530,7 +3552,7 @@ export function subscribeToEscrowConfirmation(
           connAny.off?.("error", onWsError);
           connAny.off?.("close", onWsClose);
           connAny.off?.("disconnect", onWsClose);
-        } catch { }
+        } catch {}
       });
     }
 
@@ -3541,8 +3563,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,
@@ -3577,8 +3598,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,
@@ -3638,8 +3658,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,

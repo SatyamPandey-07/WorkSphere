@@ -264,19 +264,34 @@ To prevent lockout when a user loses a registered passkey hardware device:
 |             | (Device Lost / Damaged / Unvailable)                                               |
 |             v                                                                                     |
 |   +-------------------+       Secondary Auth      +----------------------------------------+  |
-|   | Recovery Protocol | ========================> |  BIP-39 24-Word Emergency Recovery Seed|  |
+|   | Recovery Protocol | ========================> |  Shamir Secret Sharing (2-of-3) Kit    |  |
 |   +-------------------+                           +----------------------------------------+  |
 |             |                                                                                     |
 |             | (Fallback to Out-of-Band Auth)                                                      |
 |             v                                                                                     |
-|   +-------------------+       Admin Verification  +----------------------------------------+  |
-|   | Time-based TOTP   | ========================> |   Encrypted Backup Codes & Admin Re-Auth   |  |
+|   +-------------------+       Email OTP / Admin   +----------------------------------------+  |
+|   | Step-up OTP Auth  | ========================> |   Transaction-guarded Key Rotation     |  |
 |   +-------------------+                           +----------------------------------------+  |
 +---------------------------------------------------------------------------------------------------+
 ```
 
-1. **Cryptographic Backup Recovery Codes**: Enrolling a passkey generates 10 single-use 128-bit entropy recovery codes hashed with Argon2id before database storage.
-2. **Out-of-Band Admin Verification**: Organization admins can initiate a 24-hour delayed passkey reset window requiring dual-admin sign-off.
+1. **Cryptographic Backup & Emergency Kit**: WorkSphere implements Shamir's Secret Sharing (2-of-3 threshold) over $GF(2^8)$ to split and encrypt recovery shares via AES-GCM, exportable as an encrypted recovery QR code or PDF emergency kit.
+2. **Email OTP Step-up & Atomic Rotation**: Passkey rotation and credential revocation require email OTP verification within an atomic database transaction to prevent lockout or credential orphaning.
+
+---
+
+### 4.5 WebAuthn Passkey Hardware Assertion and Credential Registration Specification
+
+For an exhaustive, production-grade security runbook covering the end-to-end WebAuthn registration and assertion lifecycle, challenge entropy, RP ID validation, and troubleshooting, refer to the dedicated runbook:
+- [WebAuthn Passkey Hardware Assertion and Credential Registration Runbook](./security/WEBAUTHN_PASSKEY_INTEGRATION.md)
+
+#### Summary of Passkey Controls
+- **Passkey Authentication Architecture**: Asymmetric cryptography with resident (discoverable) credentials (`residentKey: "preferred"`) and direct attestation verification backed by `@simplewebauthn/server` and `@simplewebauthn/browser`.
+- **Registration & Assertion Ceremonies**: Authenticated registration via `/api/auth/passkey/register/options` and `/verify`; assertion authentication via `/api/auth/passkey/authenticate/options` and `/verify` with short-lived Clerk sign-in ticket handoff.
+- **Challenge Security**: Single-use, high-entropy 256-bit cryptographic nonces stored with 2-minute TTL in PostgreSQL (`PasskeyChallenge` table) and immediately purged on completion or cancellation.
+- **User Presence (UP) & User Verification (UV)**: Enforces `UP = 1` for all assertion signatures to prevent background forgery, and `UV` (`preferred`) to verify local biometric or PIN confirmation.
+- **Hardware Security Key Support**: Supports FIDO2/CTAP2 external tokens (e.g. YubiKey 5 Series) with monotonic signature counter clone detection alongside platform biometric authenticators (Touch ID, Windows Hello, Android Biometrics).
+- **Account Recovery Considerations**: Multi-passkey enrollment, Shamir's 2-of-3 secret sharing Emergency Recovery Kits (`src/lib/auth/passkeys/server/recovery.ts`), and step-up email OTP validation. (Note: BIP-39 seed phrases are not implemented for WebAuthn in WorkSphere).
 
 ---
 

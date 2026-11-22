@@ -1,269 +1,161 @@
-"use client";
+'use client';
 
-import React, { useRef, useState } from "react";
-import Image from "next/image";
-import { Bookmark, CalendarCheck, Heart, Share2 } from "lucide-react";
-import { PhotoAttribution } from "./VenueGallery";
-import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
+import React from 'react';
 
-export interface VenueCardProps {
-  id?: string;
-  name?: string;
-  address?: string;
-  imageUrl?: string;
-  attribution?: PhotoAttribution;
-  rating?: number;
-  wifiSpeed?: number;
-  noiseLevel?: string;
-  amenities?: string[];
-  tags?: string[];
-  onClick?: () => void;
-  venue?: {
-    id: string;
-    name: string;
-    description?: string;
-    imageUrl?: string;
-    amenities?: string[];
-    tags?: string[];
-  };
-  onBookmark?: (id: string) => void | Promise<void>;
-  onFavorite?: (id: string) => void;
-  onShare?: (id: string) => void;
-  /**
-   * Instant booking action for the card's primary button.
-   * When provided, the button renders a keyboard shortcut tooltip hint.
-   */
-  onBook?: (id: string) => void;
-  /**
-   * Shortcut hint shown for the booking action.
-   * Pass `null` to render the booking button without a tooltip hint.
-   */
-  bookingHotkey?: string | null;
+export interface Coordinates {
+  lat: number;
+  lng: number;
 }
 
-const focusRingClasses =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900";
+export interface VenueCardData {
+  id: string;
+  name: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+  latitude?: number;
+  longitude?: number;
+  neighborhood?: string;
+}
+
+export interface VenueCardProps {
+  venue: VenueCardData;
+  userLocation?: Coordinates | null;
+  onSelect?: (venue: VenueCardData) => void;
+  className?: string;
+}
+
+export const WALKING_SPEED_KMH = 4.8;
+export const TRANSIT_SPEED_KMH = 20;
+
+export function hasValidCoordinates(
+  coord: { lat?: unknown; lng?: unknown } | null | undefined
+): coord is Coordinates {
+  if (!coord) return false;
+  return (
+    typeof coord.lat === 'number' &&
+    Number.isFinite(coord.lat) &&
+    coord.lat >= -90 &&
+    coord.lat <= 90 &&
+    typeof coord.lng === 'number' &&
+    Number.isFinite(coord.lng) &&
+    coord.lng >= -180 &&
+    coord.lng <= 180
+  );
+}
+
+export function extractVenueCoordinates(venue: VenueCardData): Coordinates | null {
+  const candidate: Coordinates = {
+    lat: venue.lat ?? venue.latitude ?? Number.NaN,
+    lng: venue.lng ?? venue.longitude ?? Number.NaN,
+  };
+  return hasValidCoordinates(candidate) ? candidate : null;
+}
+
+export function haversineDistanceKm(a: Coordinates, b: Coordinates): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h =
+    sinLat * sinLat +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLng * sinLng;
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+export function estimateMinutesForSpeed(
+  distanceKm: number,
+  speedKmh: number
+): number {
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0;
+  if (!Number.isFinite(speedKmh) || speedKmh <= 0) return 0;
+  return Math.max(1, Math.round((distanceKm / speedKmh) * 60));
+}
+
+export function formatTravelDuration(totalMinutes: number): string {
+  const safeMinutes = Math.max(0, Math.round(totalMinutes));
+  if (safeMinutes < 60) {
+    return `${safeMinutes} min`;
+  }
+  const hours = Math.floor(safeMinutes / 60);
+  const mins = safeMinutes % 60;
+  return mins === 0 ? `${hours}h` : `${hours}h ${mins}m`;
+}
+
+export function getVenueTravelEstimates(
+  userLocation: Coordinates | null | undefined,
+  venue: VenueCardData
+): {
+  distanceKm: number;
+  walkMinutes: number;
+  transitMinutes: number;
+  walkLabel: string;
+  transitLabel: string;
+} | null {
+  if (!hasValidCoordinates(userLocation)) return null;
+  const venueCoords = extractVenueCoordinates(venue);
+  if (!venueCoords) return null;
+
+  const distanceKm = haversineDistanceKm(userLocation, venueCoords);
+  const walkMinutes = estimateMinutesForSpeed(distanceKm, WALKING_SPEED_KMH);
+  const transitMinutes = estimateMinutesForSpeed(distanceKm, TRANSIT_SPEED_KMH);
+
+  return {
+    distanceKm,
+    walkMinutes,
+    transitMinutes,
+    walkLabel: `${formatTravelDuration(walkMinutes)} walk`,
+    transitLabel: `${formatTravelDuration(transitMinutes)} transit`,
+  };
+}
 
 export const VenueCard: React.FC<VenueCardProps> = ({
-  id,
-  name,
-  address,
-  imageUrl,
-  attribution,
-  rating,
-  wifiSpeed,
-  noiseLevel,
-  amenities,
-  tags,
-  onClick,
   venue,
-  onBookmark,
-  onFavorite,
-  onShare,
-  onBook,
-  bookingHotkey = "B",
+  userLocation,
+  onSelect,
+  className = '',
 }) => {
-  const [isBookmarked, setIsBookmarked] = useState(false);
-  const [isFavorited, setIsFavorited] = useState(false);
-  const [isBookmarkPending, setIsBookmarkPending] = useState(false);
-  const isBookmarkPendingRef = useRef(false);
-
-  // Resolved venue fields supporting both flat props and nested venue object
-  const venueId = venue?.id || id || "";
-  const venueName = venue?.name || name || "";
-  const venueDescription = venue?.description;
-  const venueImage = venue?.imageUrl || imageUrl;
-  const rawAmenities =
-    amenities || venue?.amenities || tags || venue?.tags || [];
-  const amenityList = Array.isArray(rawAmenities) ? rawAmenities : [];
-
-  const photographerName =
-    attribution?.photographer?.trim() || "Verified Contributor";
-
-  const handleBookmark = async () => {
-    if (isBookmarkPendingRef.current) {
-      return;
-    }
-
-    isBookmarkPendingRef.current = true;
-    setIsBookmarkPending(true);
-    setIsBookmarked((prev) => !prev);
-
-    try {
-      if (onBookmark && venueId) {
-        await onBookmark(venueId);
-      }
-    } catch {
-      // Rollback optimistic update on mutation failure
-      setIsBookmarked((prev) => !prev);
-    } finally {
-      isBookmarkPendingRef.current = false;
-      setIsBookmarkPending(false);
-    }
-  };
-
-  const handleFavorite = () => {
-    setIsFavorited((prev) => !prev);
-    if (onFavorite && venueId) onFavorite(venueId);
-  };
-
-  const handleShare = () => {
-    if (onShare && venueId) onShare(venueId);
-  };
-
-  const bookingButton = (
-    <button
-      type="button"
-      onClick={() => onBook?.(venueId)}
-      aria-label={`Instant booking for ${venueName}`}
-      className={`flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 ${focusRingClasses}`}
-    >
-      <CalendarCheck className="h-4 w-4" aria-hidden="true" />
-      <span>Book now</span>
-    </button>
-  );
+  const estimates = getVenueTravelEstimates(userLocation, venue);
 
   return (
-    <div
-      onClick={onClick}
-      className={`rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-zinc-100 shadow-md min-w-0 max-w-full ${
-        onClick ? "cursor-pointer transition-all hover:border-zinc-700" : ""
-      }`}
+    <article
+      data-testid={`venue-card-${venue.id}`}
+      onClick={onSelect ? () => onSelect(venue) : undefined}
+      className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${
+        onSelect ? 'cursor-pointer' : ''
+      } ${className}`.trim()}
     >
-      {/* Venue Photo Container if provided */}
-      {venueImage && (
-        <div className="relative mb-3 h-40 w-full overflow-hidden rounded-lg bg-zinc-800">
-          <Image
-            src={venueImage}
-            alt={venueName}
-            fill
-            className="object-cover transition-transform duration-300 hover:scale-105"
-          />
-        </div>
-      )}
-
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="truncate text-lg font-bold">{venueName}</h3>
-        <div className="flex items-center gap-2">
-          {/* Bookmark Button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleBookmark();
-            }}
-            disabled={isBookmarkPending}
-            aria-label={`Bookmark ${venueName}`}
-            aria-pressed={isBookmarked}
-            className={`venue-action-glass-btn rounded-lg p-2 transition-colors hover:backdrop-blur-md hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 ${
-              isBookmarked ? "text-emerald-400" : "text-zinc-400"
-            } ${focusRingClasses}`}
-          >
-            <Bookmark className="h-5 w-5" aria-hidden="true" />
-          </button>
-
-          {/* Favorite Button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleFavorite();
-            }}
-            aria-label={`Favorite ${venueName}`}
-            aria-pressed={isFavorited}
-            className={`venue-action-glass-btn rounded-lg p-2 transition-colors hover:backdrop-blur-md hover:bg-zinc-800 ${
-              isFavorited ? "text-rose-500" : "text-zinc-400"
-            } ${focusRingClasses}`}
-          >
-            <Heart className="h-5 w-5" aria-hidden="true" />
-          </button>
-
-          {/* Quick Share Button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleShare();
-            }}
-            aria-label={`Share ${venueName}`}
-            className={`venue-action-glass-btn rounded-lg p-2 text-zinc-400 transition-colors hover:backdrop-blur-md hover:bg-zinc-800 ${focusRingClasses}`}
-          >
-            <Share2 className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-base font-semibold text-slate-900">{venue.name}</h3>
       </div>
 
-      {address && <p className="mb-2 text-xs text-zinc-400">{address}</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+        <span data-testid="venue-address">{venue.address}</span>
 
-      {(rating !== undefined || wifiSpeed !== undefined || noiseLevel) && (
-        <div className="mb-3 flex items-center gap-3 text-xs text-zinc-300">
-          {rating !== undefined && <span>⭐ {rating.toFixed(1)}</span>}
-          {wifiSpeed !== undefined && <span>⚡ {wifiSpeed} Mbps</span>}
-          {noiseLevel && <span className="capitalize">🔊 {noiseLevel}</span>}
-        </div>
-      )}
-
-      {venueDescription && (
-        <p className="line-clamp-2 text-sm text-zinc-400">{venueDescription}</p>
-      )}
-
-      {/* Amenity Tag Pills with responsive mobile wrapping */}
-      {amenityList.length > 0 && (
-        <div
-          data-testid="venue-amenity-tags"
-          className="mt-3 flex flex-wrap items-center gap-1.5 overflow-hidden min-w-0 max-w-full"
-        >
-          {amenityList.map((amenity, idx) => (
+        {estimates && (
+          <div
+            data-testid="venue-travel-chips"
+            className="inline-flex flex-wrap items-center gap-1.5"
+          >
             <span
-              key={`${amenity}-${idx}`}
-              data-testid="amenity-tag-pill"
-              className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-200 border border-zinc-700 break-words whitespace-normal min-w-0 max-w-full [overflow-wrap:anywhere]"
+              data-testid="venue-walk-chip"
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700"
             >
-              {amenity}
+              <span aria-hidden="true">🚶</span>
+              <span>{estimates.walkLabel}</span>
             </span>
-          ))}
-        </div>
-      )}
-
-      {/* Photo Attribution with secure link & fallback safeguard */}
-      {attribution && (
-        <div className="mt-2 text-[11px] text-zinc-500">
-          Photo by{" "}
-          {attribution.photographerUrl ? (
-            <a
-              href={attribution.photographerUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="underline hover:text-zinc-300"
+            <span
+              data-testid="venue-transit-chip"
+              className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700"
             >
-              {photographerName}
-            </a>
-          ) : (
-            <span>{photographerName}</span>
-          )}
-        </div>
-      )}
-
-      {onBook && (
-        <div className="mt-3">
-          {bookingHotkey === null ? (
-            bookingButton
-          ) : (
-            <ShortcutTooltip
-              content="Instant booking"
-              shortcut={bookingHotkey}
-              withModifier={false}
-              position="top"
-              className="w-full"
-            >
-              {bookingButton}
-            </ShortcutTooltip>
-          )}
-        </div>
-      )}
-    </div>
+              <span aria-hidden="true">🚇</span>
+              <span>{estimates.transitLabel}</span>
+            </span>
+          </div>
+        )}
+      </div>
+    </article>
   );
 };
-
-export default VenueCard;

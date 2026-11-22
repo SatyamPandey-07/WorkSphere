@@ -4,6 +4,9 @@
  * Resilient eco-routing engine with fallback to direct Haversine distance
  * and walking time estimation when external routing services (OSRM, Valhalla, etc.)
  * return 503, 504, network timeouts, or errors.
+ *
+ * Also provides dynamic walking-distance isochrone polygon generation for
+ * 5, 10, and 15-minute presets.
  */
 
 import { haversineKm, isValidCoordinate } from '@/lib/distance';
@@ -32,9 +35,45 @@ export interface EcoRouteResult {
 }
 
 /**
- * Standard walking speed in km/h (4.8 km/h = ~1.333 m/s = 80 m/min).
+ * Standard walking speed in km/h for routing engine fallback (4.8 km/h = ~1.333 m/s = 80 m/min).
  */
 export const DEFAULT_WALKING_SPEED_KMH = 4.8;
+
+/**
+ * Pedestrian walking speed for isochrone calculations: 5 km/h.
+ */
+export const ISOCHRONE_WALKING_SPEED_KMH = 5.0;
+
+/**
+ * Travel-time presets supported by the isochrone generator (in minutes).
+ */
+export type IsochronePresetMinutes = 5 | 10 | 15;
+export const ISOCHRONE_PRESETS: readonly IsochronePresetMinutes[] = [5, 10, 15] as const;
+
+export interface IsochroneOptions {
+  walkingSpeedKmH?: number; // Defaults to 5.0 km/h
+  steps?: number; // Number of points defining the polygon boundary (default 36 for smooth circle)
+}
+
+export interface IsochronePolygon {
+  minutes: number;
+  walkingSpeedKmH: number;
+  radiusMeters: number;
+  coordinates: Array<{ lat: number; lng: number }>;
+  geoJson: {
+    type: 'Feature';
+    geometry: {
+      type: 'Polygon';
+      coordinates: number[][][]; // GeoJSON format: [[[lng, lat], ...]]
+    };
+    properties: {
+      minutes: number;
+      radiusMeters: number;
+      walkingSpeedKmH: number;
+    };
+  };
+  svgPath?: string;
+}
 
 /**
  * Validates coordinate pair.
@@ -199,4 +238,102 @@ export async function calculateEcoRoute(
       fallbackReason
     );
   }
+}
+
+/**
+ * Generates an isochrone polygon representing the reachable area for a given walking time.
+ *
+ * Uses:
+ * distance = walkingSpeed * (minutes / 60)
+ *
+ * Radius calculation converts spherical distance into lat/lng polygon vertices around the origin.
+ *
+ * @param origin Center point { lat, lng }
+ * @param minutes Travel-time preset in minutes (e.g. 5, 10, 15)
+ * @param options Walking speed and steps configuration
+ * @returns IsochronePolygon or null if coordinates/minutes are invalid
+ */
+export function generateWalkingIsochrone(
+  origin: RouteCoordinates | null | undefined,
+  minutes: number,
+  options: IsochroneOptions = {}
+): IsochronePolygon | null {
+  if (!areValidCoordinates(origin)) {
+    return null;
+  }
+
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) {
+    return null;
+  }
+
+  const {
+    walkingSpeedKmH = ISOCHRONE_WALKING_SPEED_KMH,
+    steps = 36,
+  } = options;
+
+  if (typeof walkingSpeedKmH !== 'number' || !Number.isFinite(walkingSpeedKmH) || walkingSpeedKmH <= 0) {
+    return null;
+  }
+
+  // Reachable radius: distance = speed * time
+  const radiusKm = walkingSpeedKmH * (minutes / 60);
+  const radiusMeters = Math.round(radiusKm * 1000);
+
+  const numSteps = Math.max(12, steps);
+  const coordinates: Array<{ lat: number; lng: number }> = [];
+  const earthRadiusKm = 6371;
+
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const toDeg = (rad: number) => (rad * 180) / Math.PI;
+
+  const latRad = toRad(origin.lat);
+  const lngRad = toRad(origin.lng);
+  const angularDistance = radiusKm / earthRadiusKm;
+
+  // Generate smooth polygon vertices along bearing angles from 0 to 360
+  for (let i = 0; i <= numSteps; i++) {
+    const bearing = (2 * Math.PI * i) / numSteps;
+
+    const pointLatRad = Math.asin(
+      Math.sin(latRad) * Math.cos(angularDistance) +
+        Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearing)
+    );
+
+    const pointLngRad =
+      lngRad +
+      Math.atan2(
+        Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latRad),
+        Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(pointLatRad)
+      );
+
+    const pointLat = Number(toDeg(pointLatRad).toFixed(6));
+    // Normalize longitude between -180 and 180
+    let pointLng = toDeg(pointLngRad);
+    pointLng = ((pointLng + 180) % 360 + 360) % 360 - 180;
+    pointLng = Number(pointLng.toFixed(6));
+
+    coordinates.push({ lat: pointLat, lng: pointLng });
+  }
+
+  // GeoJSON polygon coordinates ring: [lng, lat] with closed loop
+  const geoJsonCoordinates = coordinates.map((pt) => [pt.lng, pt.lat]);
+
+  return {
+    minutes,
+    walkingSpeedKmH,
+    radiusMeters,
+    coordinates,
+    geoJson: {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [geoJsonCoordinates],
+      },
+      properties: {
+        minutes,
+        radiusMeters,
+        walkingSpeedKmH,
+      },
+    },
+  };
 }

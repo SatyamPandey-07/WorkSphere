@@ -46,6 +46,10 @@ This document provides a high-level reference for the REST API endpoints availab
 | `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                                                                                                                                   |
 | `POST /api/venues/{venueId}/check-in/bulk`         | Perform manager bulk check-in for venue bookings. See the [Bulk venue check-in API guide](./api/BULK_CHECK_IN.md) for details.                                                      |
 | `POST /api/venues/check-in/iot`                    | Record IoT smart-lock check-in using HMAC-SHA256 webhook authentication. See the [IoT smart-lock check-in guide](./api/IOT_SMART_LOCK_CHECKIN.md) for details.                      |
+| `GET /api/venues/{venueId}/waitlist`               | Retrieve the authenticated user's active waitlist entries for a venue. See the [Waitlist API guide](./api/WAITLIST_API.md) for details.                                             |
+| `POST /api/venues/{venueId}/waitlist`              | Join a venue's seat waitlist for a specific date, time slot, and seat preferences. See the [Waitlist API guide](./api/WAITLIST_API.md) for details.                                 |
+| `DELETE /api/venues/{venueId}/waitlist`            | Cancel an active waitlist entry via `waitlistId` query parameter. See the [Waitlist API guide](./api/WAITLIST_API.md) for details.                                                  |
+| `POST /api/waitlist/{waitlistId}/claim`            | Atomically claim a notified seat offer and convert it into a confirmed booking. See the [Waitlist API guide](./api/WAITLIST_API.md) for details.                                    |
 
 ### Endpoint Specification: `GET /api/venues/search`
 

@@ -1,22 +1,39 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface ReservationTimerBadgeProps {
-  expiresAt: number;
+  expiresAt: number | string | Date;
   onExpire?: () => void;
-  label?: string;
+  urgentThresholdMs?: number;
   className?: string;
 }
 
-export function getRemainingMs(expiresAt: number, now = Date.now()): number {
-  if (!Number.isFinite(expiresAt)) return 0;
-  return Math.max(0, expiresAt - now);
+export const DEFAULT_SEAT_HOLD_DURATION_MS = 5 * 60 * 1000;
+export const DEFAULT_URGENT_THRESHOLD_MS = 60 * 1000;
+
+export function parseExpiresAtMs(expiresAt: number | string | Date): number {
+  if (typeof expiresAt === 'number') {
+    return Number.isFinite(expiresAt) ? expiresAt : 0;
+  }
+  if (expiresAt instanceof Date) {
+    const ms = expiresAt.getTime();
+    return Number.isNaN(ms) ? 0 : ms;
+  }
+  const parsed = Date.parse(expiresAt);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+export function computeRemainingMs(
+  expiresAt: number | string | Date,
+  nowMs: number = Date.now()
+): number {
+  const targetMs = parseExpiresAtMs(expiresAt);
+  return Math.max(0, targetMs - nowMs);
 }
 
 export function formatCountdownMmSs(remainingMs: number): string {
-  const clamped = Math.max(0, remainingMs);
-  const totalSeconds = Math.ceil(clamped / 1000);
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
@@ -25,72 +42,78 @@ export function formatCountdownMmSs(remainingMs: number): string {
 export const ReservationTimerBadge: React.FC<ReservationTimerBadgeProps> = ({
   expiresAt,
   onExpire,
-  label = 'Hold expires in',
+  urgentThresholdMs = DEFAULT_URGENT_THRESHOLD_MS,
   className = '',
 }) => {
   const [remainingMs, setRemainingMs] = useState<number>(() =>
-    getRemainingMs(expiresAt)
+    computeRemainingMs(expiresAt, Date.now())
   );
+  const expiredNotifiedRef = useRef(false);
+
+  const syncRemaining = useCallback(() => {
+    const nextRemaining = computeRemainingMs(expiresAt, Date.now());
+    setRemainingMs(nextRemaining);
+
+    if (nextRemaining <= 0 && !expiredNotifiedRef.current) {
+      expiredNotifiedRef.current = true;
+      onExpire?.();
+    }
+    return nextRemaining;
+  }, [expiresAt, onExpire]);
 
   useEffect(() => {
-    let expiredFired = false;
-
-    const syncNow = () => {
-      const nextRemaining = getRemainingMs(expiresAt, Date.now());
-      setRemainingMs(nextRemaining);
-
-      if (nextRemaining <= 0 && !expiredFired) {
-        expiredFired = true;
-        onExpire?.();
-      }
-      return nextRemaining;
-    };
-
-    const initial = syncNow();
-    if (initial <= 0) {
-      return;
-    }
+    expiredNotifiedRef.current = false;
+    const initial = syncRemaining();
+    if (initial <= 0) return;
 
     const intervalId = window.setInterval(() => {
-      const current = syncNow();
-      if (current <= 0) {
+      const next = syncRemaining();
+      if (next <= 0) {
         window.clearInterval(intervalId);
       }
-    }, 250);
+    }, 500);
 
-    const handleVisibilityOrFocus = () => {
-      syncNow();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncRemaining();
+      }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    window.addEventListener('focus', handleVisibilityOrFocus);
+    const handleWindowFocus = () => {
+      syncRemaining();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
 
     return () => {
       window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
     };
-  }, [expiresAt, onExpire]);
+  }, [expiresAt, syncRemaining]);
 
   const isExpired = remainingMs <= 0;
-  const isUrgent = !isExpired && remainingMs <= 60_000;
+  const isUrgent = !isExpired && remainingMs <= urgentThresholdMs;
+  const formatted = formatCountdownMmSs(remainingMs);
 
   return (
     <span
       role="timer"
-      aria-live="polite"
+      aria-live="off"
       data-testid="reservation-timer-badge"
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold tabular-nums ${
+      data-expired={isExpired ? 'true' : 'false'}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold tabular-nums ${
         isExpired
-          ? 'border-rose-200 bg-rose-50 text-rose-700'
+          ? 'border-rose-500/40 bg-rose-950/60 text-rose-300'
           : isUrgent
-            ? 'border-amber-200 bg-amber-50 text-amber-800'
-            : 'border-indigo-200 bg-indigo-50 text-indigo-800'
+            ? 'border-amber-500/40 bg-amber-950/60 text-amber-300'
+            : 'border-emerald-500/30 bg-emerald-950/50 text-emerald-300'
       } ${className}`.trim()}
     >
-      <span>{isExpired ? 'Hold expired' : `${label}:`}</span>
+      <span aria-hidden="true">{isExpired ? '⏱️' : '⏳'}</span>
       <span data-testid="reservation-timer-value">
-        {formatCountdownMmSs(remainingMs)}
+        {isExpired ? '00:00 · Expired' : `${formatted} hold`}
       </span>
     </span>
   );

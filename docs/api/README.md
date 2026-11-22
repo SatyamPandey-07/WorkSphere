@@ -36,5 +36,6 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [WebGPU Capability Diagnostics](../telemetry/WEBGPU_CAPABILITY_DIAGNOSTICS.md) — WebGPU capability telemetry schema, diagnostics API, and operational guidance.
 - [Venue flagging](./VENUE_FLAGGING.md) — authenticated flag submission, reason validation, duplicate behavior, and hourly rate limit.
 - [Venue reviews](./venue-reviews.md) — cursor-based review pagination, viewer-dependent reviewer details, and response behavior.
+- [Waitlist API](./WAITLIST_API.md) — authenticated queue management, status lifecycle, seat preference matching, 15-minute offer windows, and atomic seat claim.
 
 For project-wide endpoint and stream documentation, see [the REST API reference](../API.md).

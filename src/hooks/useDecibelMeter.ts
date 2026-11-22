@@ -53,22 +53,29 @@ interface UseDecibelMeterResult {
   start: () => Promise<void>;
   stop: () => void;
   decibel: number | null;
+  frequencyBins?: Float32Array | null;
   isMeasuring: boolean;
   error: string | null;
+  isSimdAccelerated?: boolean;
 }
 
 export function useDecibelMeter(): UseDecibelMeterResult {
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [decibel, setDecibel] = useState<number | null>(null);
+  const [frequencyBins, setFrequencyBins] = useState<Float32Array | null>(null);
+  const [isSimdAccelerated, setIsSimdAccelerated] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const requestRef = useRef<number | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const dbFramesRef = useRef<number[]>([]);
+  const sharedBufferRef = useRef<SharedArrayBuffer | null>(null);
+  const sharedViewRef = useRef<Float32Array | null>(null);
 
   const stop = useCallback(() => {
     if (requestRef.current) {
@@ -81,6 +88,14 @@ export function useDecibelMeter(): UseDecibelMeterResult {
       streamRef.current = null;
     }
 
+    if (workletNodeRef.current) {
+      workletNodeRef.current.port.onmessage = null;
+      try {
+        workletNodeRef.current.disconnect();
+      } catch {}
+      workletNodeRef.current = null;
+    }
+
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
@@ -88,6 +103,8 @@ export function useDecibelMeter(): UseDecibelMeterResult {
 
     sourceRef.current = null;
     analyserRef.current = null;
+    sharedBufferRef.current = null;
+    sharedViewRef.current = null;
 
     setIsMeasuring(false);
   }, []);
@@ -176,6 +193,61 @@ export function useDecibelMeter(): UseDecibelMeterResult {
 
       setIsMeasuring(true);
       startTimeRef.current = Date.now();
+
+      // Attempt to load and connect the dedicated AudioWorklet for SIMD FFT processing
+      let workletAttached = false;
+      if (audioContext.audioWorklet && typeof audioContext.audioWorklet.addModule === "function") {
+        try {
+          await audioContext.audioWorklet.addModule("/worklets/acoustic-privacy-fft-processor.js");
+          const workletNode = new AudioWorkletNode(audioContext, "acoustic-privacy-fft-processor", {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            processorOptions: { fftSize: 2048, sampleRate: audioContext.sampleRate },
+          });
+
+          // Check for SharedArrayBuffer availability
+          let sharedBuffer: SharedArrayBuffer | null = null;
+          if (typeof SharedArrayBuffer !== "undefined") {
+            try {
+              sharedBuffer = new SharedArrayBuffer(1024 * Float32Array.BYTES_PER_ELEMENT);
+              sharedBufferRef.current = sharedBuffer;
+              sharedViewRef.current = new Float32Array(sharedBuffer);
+              workletNode.port.postMessage({ type: "SET_SHARED_BUFFER", sharedBuffer });
+            } catch {
+              sharedBuffer = null;
+            }
+          }
+
+          // Fetch and send SIMD WASM binary
+          try {
+            const wasmRes = await fetch("/wasm/radix4_fft_simd.wasm");
+            if (wasmRes.ok) {
+              const wasmBytes = await wasmRes.arrayBuffer();
+              workletNode.port.postMessage({ type: "INIT_WASM", wasmBytes });
+            }
+          } catch {}
+
+          workletNode.port.onmessage = (event) => {
+            const data = event.data || {};
+            if (data.type === "WASM_READY") {
+              setIsSimdAccelerated(true);
+            } else if (data.type === "FFT_FRAME") {
+              if (data.shared && sharedViewRef.current) {
+                setFrequencyBins(new Float32Array(sharedViewRef.current));
+              } else if (data.decibels) {
+                setFrequencyBins(data.decibels);
+              }
+            }
+          };
+
+          source.connect(workletNode);
+          workletNodeRef.current = workletNode;
+          workletAttached = true;
+        } catch {
+          workletAttached = false;
+        }
+      }
+
       requestRef.current = requestAnimationFrame(tick);
     } catch (err) {
       setError(
@@ -187,5 +259,5 @@ export function useDecibelMeter(): UseDecibelMeterResult {
     }
   }, [stop, tick]);
 
-  return { start, stop, decibel, isMeasuring, error };
+  return { start, stop, decibel, frequencyBins, isMeasuring, error, isSimdAccelerated };
 }

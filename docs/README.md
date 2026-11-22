@@ -47,11 +47,13 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Skipped Message Key Store Runbook](./chat/SKIPPED_MESSAGE_KEY_STORE.md) — skipped-key retention, out-of-order recovery, storage limits, pruning, and source-verified security limitations.
 - [Zero-Knowledge Groth16 Proof Verification](./crypto/ZK_GROTH16_VERIFICATION.md) — zero-knowledge anonymous venue check-in architecture, Groth16 zk-SNARK pipeline, Poseidon nullifiers, and verification.
 - [ZKP Verification Runbook](./security/ZKP_VERIFICATION_RUNBOOK.md) — Groth16 verification architecture and key rotation procedures.
+- [Solana Escrow Settlement and Refund Runbook](./solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow PDA derivation, confirmation levels, release and timeout refunds, and RPC failover.
 
 ## Features & Product Documentation
 
 - [Reservation Flow Guide](./features/reservation-flow-guide.md) — reservation client workflow, validation, and lock management.
 - [Venue Check-In Flow](./features/venue-checkin-flow.md) — QR verification, geofence proximity, and check-in behavior.
+- [Venue WiFi Quality Scoring](./venues/WIFI_QUALITY_SCORING.md) — speed tiers, jitter and packet loss penalties, measurement telemetry, and badge display rules.
 - [Voice Search](./features/VOICE_SEARCH.md) — voice search feature documentation.
 - [Seating Occupancy Forecasting](./features/seating-occupancy-forecasting.md) — seating occupancy forecasting functionality.
 - [Nomad Passport](./features/nomad-passport.md) — Nomad Passport feature and product workflow.

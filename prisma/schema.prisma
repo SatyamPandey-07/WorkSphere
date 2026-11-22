@@ -335,7 +335,7 @@ model Booking {
   recurringGroupId   String?
   frequency          String?
   guestCount         Int?
-  geofenceExitAt     DateTime?
+  version            Int            @default(1)
 
   // A partial unique index, `Booking_active_seat_slot_key`, protects against
   // concurrent reservations of the same active (venueId, seat, date, time)

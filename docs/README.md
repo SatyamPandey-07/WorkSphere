@@ -88,6 +88,11 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Troubleshooting](./TROUBLESHOOTING.md) — common development and operational troubleshooting guidance.
 - [WebGPU Capability Diagnostics](./telemetry/WEBGPU_CAPABILITY_DIAGNOSTICS.md) — capability report schema, privacy controls, API submission, and administrator troubleshooting.
 
+## Analytics & Sustainability
+
+- [Commuter Carbon Savings Guide](./analytics/CARBON_SAVINGS_GUIDE.md) — emission factor baselines, avoided-emissions formulas, transit mode differentials, date range presets, and CSV and team badge SVG exports.
+- [GHG Scope 3 Methodology](./sustainability/ghg-scope-3-methodology.md) — GHG Protocol Scope 3 framing, carbon engine implementation, and ESG audit CSV contract.
+
 ## Export & Reporting
 
 - [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — Comprehensive developer reference for typed CSV and Excel XML export builders, RFC-4180 escaping, formula injection sanitization, and browser download handling.

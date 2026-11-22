@@ -53,6 +53,20 @@ WorkSphere's security posture is grounded in the formal STRIDE threat modeling f
 
 ---
 
+## 1.2 Clerk Webhook Synchronization & Identity Architecture
+
+WorkSphere uses Clerk as its external identity provider. To maintain relational integrity across bookings, reviews, and collaborative spaces without synchronous identity API calls, WorkSphere synchronizes user profiles into local PostgreSQL records via webhook events (`user.created`, `user.updated`, `user.deleted`).
+
+Key security controls governing this synchronization pipeline:
+- **Cryptographic Svix Verification:** All incoming requests to `/api/webhooks/clerk` must provide valid `svix-id`, `svix-timestamp`, and `svix-signature` headers. Requests are verified using HMAC-SHA256 (`standardwebhooks` engine) against `CLERK_WEBHOOK_SIGNING_SECRET` before parsing or reading payload content.
+- **Replay Protection:** A strict 5-minute timestamp tolerance window defends against message replay attacks.
+- **Idempotent Persistence:** Database synchronization utilizes atomic PostgreSQL `INSERT ... ON CONFLICT (id) DO UPDATE` (`prisma.user.upsert`) and safe `deleteMany`, ensuring safe retries during network failures.
+- **Metadata Trust Boundaries:** Client-controlled `unsafeMetadata` is never trusted for authorization. Roles and permissions are strictly enforced server-side using trusted Clerk `publicMetadata.role` and `privateMetadata.role`.
+
+For the complete technical specification, event catalog, payload schemas, and local testing instructions, see the [Clerk Webhook Synchronization Guide](auth/CLERK_WEBHOOK_SYNCHRONIZATION.md).
+
+---
+
 ## 2. Content Security Policy (CSP) & Nonce Generation Pipeline
 
 Cross-Site Scripting (XSS) represents the single most dangerous vector for single-page applications. WorkSphere eliminates inline script execution vulnerabilities by mandating strict, dynamic cryptographic nonces for all inline scripts and enforcing modern Content Security Policies (CSP Level 3).

@@ -5,6 +5,7 @@
 **See also:** [`P2P_MESH_SPECIFICATION.md`](../P2P_MESH_SPECIFICATION.md) — Wire protocol & packet schemas
 **See also:** [`WEBRTC_MESH_CRDT_SYNC_SPECIFICATION.md`](../WEBRTC_MESH_CRDT_SYNC_SPECIFICATION.md) — CRDT state sync over data channels
 **See also:** [`DATACHANNEL_CHUNKING_RUNBOOK.md`](../p2p/DATACHANNEL_CHUNKING_RUNBOOK.md) — DataChannel frame format, chunking, backpressure, and reassembly
+**See also:** [`WEBRTC_SIGNALING_HANDSHAKE.md`](../p2p/WEBRTC_SIGNALING_HANDSHAKE.md) — PartyKit signaling, offer/answer exchange, trickle ICE, STUN/TURN traversal, Perfect Negotiation, and troubleshooting
 
 ---
 

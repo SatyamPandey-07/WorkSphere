@@ -16,6 +16,8 @@ export type {
 export { ProfileOverview } from "./ProfileOverview";
 export { NomadStatsCard } from "./NomadStatsCard";
 export type { NomadStatsCardProps } from "./NomadStatsCard";
+export { NomadPassportCertificate } from "./NomadPassportCertificate";
+export type { NomadPassportCertificateProps } from "./NomadPassportCertificate";
 export type { ProfileOverviewProps } from "./ProfileOverview";
 export {
   NomadPassportCoin,

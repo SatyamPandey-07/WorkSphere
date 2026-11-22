@@ -236,6 +236,18 @@ export function NomadPassportCertificate({
               <span className="text-[10px] uppercase tracking-wider text-slate-500">Country</span>
               <p className="font-medium text-slate-200">{stamp.countryName || stamp.countryCode || "Global"}</p>
             </div>
+            {/* Cryptographic Issuer Credential Stamp */}
+            {(stamp.nullifierHash || stamp.verificationSignature || stamp.stampId) && (
+              <div className="col-span-2 min-w-0 rounded-lg border border-slate-800/80 bg-slate-950/50 p-2.5">
+                <span className="text-[10px] uppercase tracking-wider text-slate-500">Issuer Credential Stamp</span>
+                <p
+                  title={stamp.nullifierHash || stamp.verificationSignature || stamp.stampId}
+                  className="font-mono text-[11px] text-slate-300 truncate sm:break-all select-all min-w-0"
+                >
+                  {stamp.nullifierHash || stamp.verificationSignature || stamp.stampId}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

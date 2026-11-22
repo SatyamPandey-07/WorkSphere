@@ -41,6 +41,25 @@ const APP_LINKS = [
   { href: "/social", label: "Community", icon: Users },
 ] as const;
 
+/**
+ * Space reserved for the right-hand auth cluster, sized for its widest
+ * signed-in state at each breakpoint (streak + bell + avatar + menu button
+ * below `lg`, streak + bell + settings + avatar from `lg`). Because the cluster
+ * is right-aligned, anything that appears inside it grows into this reserved
+ * space instead of pushing neighbours around. It is a min-width so a wider
+ * StreakBadge degrades to a small shift rather than an overlap; tune the two
+ * values if your trace shows one.
+ */
+const AUTH_CLUSTER_WIDTH = "min-w-[184px] sm:min-w-[220px]";
+
+/**
+ * Pins Clerk's avatar to the same 36x36 box as the skeleton so the swap cannot
+ * change size. If ReactiveUserButton accepts an `appearance` prop, prefer
+ * `elements.userButtonAvatarBox: "!w-9 !h-9"` there and drop these selectors.
+ */
+const AVATAR_SIZE_OVERRIDES =
+  "[&_.cl-avatarBox]:!h-9 [&_.cl-avatarBox]:!w-9 [&_.cl-userButtonAvatarBox]:!h-9 [&_.cl-userButtonAvatarBox]:!w-9";
+
 /** Whether the signed-in user can see admin tools (checked server-side). */
 function useIsAdmin(isSignedIn: boolean | undefined): boolean {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -50,13 +69,16 @@ function useIsAdmin(isSignedIn: boolean | undefined): boolean {
       setIsAdmin(false);
       return;
     }
+
     let cancelled = false;
+
     fetch("/api/user/me")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!cancelled) setIsAdmin(Boolean(data?.isAdmin));
       })
       .catch(() => {});
+
     return () => {
       cancelled = true;
     };
@@ -66,7 +88,7 @@ function useIsAdmin(isSignedIn: boolean | undefined): boolean {
 }
 
 export function TopNav({ hideAuth = false }: TopNavProps) {
-  const { isSignedIn } = useUser();
+  const { isLoaded, isSignedIn } = useUser();
   const isAdmin = useIsAdmin(isSignedIn);
   const pathname = usePathname() ?? "";
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -93,6 +115,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") setIsMenuOpen(false);
     };
+
     const handleResize = () => {
       if (window.innerWidth >= 1024) setIsMenuOpen(false);
     };
@@ -108,6 +131,10 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
       window.removeEventListener("resize", handleResize);
     };
   }, [isMenuOpen]);
+
+  /* Admin is deliberately the LAST entry: the desktop row is left-aligned, so
+  when the async admin check resolves the link is appended at the end and no
+  other link moves. */
 
   const signedInLinks = [
     ...APP_LINKS,
@@ -132,21 +159,25 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
           </span>
         </Link>
 
-        {!hideAuth && isSignedIn && (
-          <div className="hidden lg:flex items-center gap-1 min-w-0">
-            {signedInLinks.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className={navLinkClass(href)}
-                aria-current={isActive(href) ? "page" : undefined}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </Link>
-            ))}
-          </div>
-        )}
+        {/* Reserved desktop navigation area (left-aligned so a late-arriving
+            Admin link cannot shift the links before it) */}
+        <div className="hidden lg:flex flex-1 min-w-0 justify-start">
+          {!hideAuth && isLoaded && isSignedIn && (
+            <div className="flex items-center gap-1">
+              {signedInLinks.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={navLinkClass(href)}
+                  aria-current={isActive(href) ? "page" : undefined}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center gap-2 shrink-0">
           <QuickSearchTrigger />
@@ -158,49 +189,95 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
           <ThemeToggle />
 
           {!hideAuth && (
-            <>
-              {!isSignedIn ? (
-                <div className="hidden sm:flex items-center gap-2">
-                  <Link
-                    href="/sign-in"
-                    className="px-3 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium"
-                  >
-                    Sign in
-                  </Link>
-                  <Link
-                    href="/sign-up"
-                    className="px-4 py-2 text-sm rounded-xl accent-bg text-white font-semibold hover:opacity-90"
-                  >
-                    Get started
-                  </Link>
-                </div>
-              ) : (
-                <>
-                  <StreakBadge />
-                  <NotificationBell />
-                  <Link
-                    href="/settings"
-                    aria-label="Settings"
-                    className={`hidden lg:flex p-2 rounded-lg ${
-                      isActive("/settings")
-                        ? "text-blue-600 dark:text-blue-400"
-                        : "text-zinc-500 hover:text-zinc-900 dark:text-white/60 dark:hover:text-white"
+            <div
+              className={`${AUTH_CLUSTER_WIDTH} shrink-0 flex items-center justify-end gap-2`}
+            >
+              {/* Auth controls. Only the active state is mounted, so nothing
+                  invisible takes up space, receives focus or fires requests.
+                  The container itself stays mounted so it can fade in. */}
+              <div
+                className={`flex items-center gap-2 transition-opacity duration-200 motion-reduce:transition-none ${
+                  isLoaded ? "opacity-100" : "opacity-0"
+                }`}
+              >
+                {isLoaded && !isSignedIn && (
+                  <div className="hidden sm:flex items-center gap-2">
+                    <Link
+                      href="/sign-in"
+                      className="px-3 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium whitespace-nowrap"
+                    >
+                      Sign in
+                    </Link>
+
+                    <Link
+                      href="/sign-up"
+                      className="px-4 py-2 text-sm rounded-xl accent-bg text-white font-semibold hover:opacity-90 whitespace-nowrap"
+                    >
+                      Get started
+                    </Link>
+                  </div>
+                )}
+
+                {isLoaded && isSignedIn && (
+                  <>
+                    <StreakBadge />
+                    <NotificationBell />
+
+                    <Link
+                      href="/settings"
+                      aria-label="Settings"
+                      className={`hidden lg:flex p-2 rounded-lg ${
+                        isActive("/settings")
+                          ? "text-blue-600 dark:text-blue-400"
+                          : "text-zinc-500 hover:text-zinc-900 dark:text-white/60 dark:hover:text-white"
+                      }`}
+                    >
+                      <Settings className="w-5 h-5" />
+                    </Link>
+                  </>
+                )}
+              </div>
+
+              {/* Fixed 36x36 avatar slot. The skeleton and the Clerk button
+                  share this exact box, so swapping them never changes layout. */}
+              <div
+                className={`relative w-9 h-9 shrink-0 ${AVATAR_SIZE_OVERRIDES}`}
+              >
+                {/* Loading skeleton. The pulse lives on an inner element and
+                    only runs while loading: a running CSS animation would
+                    otherwise override the fade-out opacity. */}
+                <div
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute inset-0 transition-opacity duration-200 motion-reduce:transition-none ${
+                    isLoaded ? "opacity-0" : "opacity-100"
+                  }`}
+                >
+                  <div
+                    className={`w-full h-full rounded-full bg-zinc-200 dark:bg-zinc-700 ${
+                      isLoaded ? "" : "animate-pulse motion-reduce:animate-none"
                     }`}
-                  >
-                    <Settings className="w-5 h-5" />
-                  </Link>
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0">
+                  />
+                </div>
+
+                {/* User avatar */}
+                <div
+                  className={`absolute inset-0 flex items-center justify-center transition-opacity duration-200 motion-reduce:transition-none ${
+                    isLoaded && isSignedIn ? "opacity-100" : "opacity-0"
+                  }`}
+                >
+                  {isLoaded && isSignedIn && (
                     <ReactiveUserButton
                       userProfileMode="navigation"
                       userProfileUrl="/user-profile"
                     />
-                  </div>
-                </>
-              )}
+                  )}
+                </div>
+              </div>
 
+              {/* Mobile menu */}
               <button
                 onClick={() => setIsMenuOpen((prev) => !prev)}
-                className={`${isSignedIn ? "lg:hidden" : "sm:hidden"} p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800`}
+                className="lg:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 aria-label="Toggle navigation menu"
                 aria-expanded={isMenuOpen}
               >
@@ -210,11 +287,12 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                   <Menu className="w-5 h-5" />
                 )}
               </button>
-            </>
+            </div>
           )}
         </div>
       </div>
 
+      {/* Mobile navigation menu */}
       {isMenuOpen && (
         <>
           <div
@@ -222,9 +300,10 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
             onClick={() => setIsMenuOpen(false)}
             aria-hidden="true"
           />
+
           <div className="lg:hidden border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black absolute top-full left-0 w-full z-50 shadow-xl">
             <div className="flex flex-col p-3 gap-1">
-              {!isSignedIn ? (
+              {!isLoaded ? null : !isSignedIn ? (
                 <>
                   <Link href="/sign-in" className={navLinkClass("/sign-in")}>
                     Sign in
@@ -241,6 +320,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                       {label}
                     </Link>
                   ))}
+
                   <Link href="/settings" className={navLinkClass("/settings")}>
                     <Settings className="w-4 h-4" />
                     Settings
@@ -251,6 +331,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
           </div>
         </>
       )}
+
       <OfflineSyncProgressBar />
     </nav>
   );

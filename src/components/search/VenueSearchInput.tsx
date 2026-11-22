@@ -14,6 +14,41 @@ export interface VenueSearchInputProps {
   className?: string;
 }
 
+export function normalizeSearchQuery(rawQuery: string): string {
+  return rawQuery.trim().replace(/\s+/g, ' ');
+}
+
+export function deduplicateSearchHistory(
+  existingHistory: string[],
+  nextQuery: string,
+  maxItems = MAX_VENUE_SEARCH_HISTORY
+): string[] {
+  const cleanQuery = normalizeSearchQuery(nextQuery);
+  if (!cleanQuery) {
+    return existingHistory
+      .map((item) => normalizeSearchQuery(item))
+      .filter((item) => item.length > 0)
+      .slice(0, maxItems);
+  }
+
+  const normalizedKey = cleanQuery.toLowerCase();
+  const dedupedExisting: string[] = [];
+  const seenKeys = new Set<string>([normalizedKey]);
+
+  for (const rawItem of existingHistory) {
+    if (typeof rawItem !== 'string') continue;
+    const cleanedItem = normalizeSearchQuery(rawItem);
+    if (!cleanedItem) continue;
+    const itemKey = cleanedItem.toLowerCase();
+    if (!seenKeys.has(itemKey)) {
+      seenKeys.add(itemKey);
+      dedupedExisting.push(cleanedItem);
+    }
+  }
+
+  return [cleanQuery, ...dedupedExisting].slice(0, maxItems);
+}
+
 export function loadVenueSearchHistory(
   storageKey = VENUE_SEARCH_HISTORY_STORAGE_KEY
 ): string[] {
@@ -23,9 +58,7 @@ export function loadVenueSearchHistory(
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      .slice(0, MAX_VENUE_SEARCH_HISTORY);
+    return deduplicateSearchHistory(parsed, '');
   } catch {
     return [];
   }
@@ -37,14 +70,8 @@ export function saveVenueSearchHistory(
 ): void {
   if (typeof window === 'undefined') return;
   try {
-    if (items.length === 0) {
-      window.localStorage.setItem(storageKey, JSON.stringify([]));
-    } else {
-      window.localStorage.setItem(
-        storageKey,
-        JSON.stringify(items.slice(0, MAX_VENUE_SEARCH_HISTORY))
-      );
-    }
+    const sanitized = deduplicateSearchHistory(items, '');
+    window.localStorage.setItem(storageKey, JSON.stringify(sanitized));
   } catch {
     // Ignore storage quota or private-mode errors
   }
@@ -83,15 +110,13 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  const recordSearchQuery = (term: string) => {
-    const cleaned = term.trim();
-    if (!cleaned) return;
-    const next = [cleaned, ...history.filter((q) => q !== cleaned)].slice(
-      0,
-      MAX_VENUE_SEARCH_HISTORY
-    );
+  const recordSearchQuery = (term: string): string => {
+    const cleanQuery = normalizeSearchQuery(term);
+    if (!cleanQuery) return '';
+    const next = deduplicateSearchHistory(history, cleanQuery);
     setHistory(next);
     saveVenueSearchHistory(next, storageKey);
+    return cleanQuery;
   };
 
   const handleClearAllHistory = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -111,16 +136,19 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
   };
 
   const handleSelectItem = (term: string) => {
-    handleInputChange(term);
-    recordSearchQuery(term);
-    onSelectQuery?.(term);
+    const cleanQuery = recordSearchQuery(term);
+    if (!cleanQuery) return;
+    handleInputChange(cleanQuery);
+    onSelectQuery?.(cleanQuery);
     setIsDropdownOpen(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && query.trim()) {
-      recordSearchQuery(query);
-      onSelectQuery?.(query.trim());
+    if (e.key === 'Enter') {
+      const cleanQuery = normalizeSearchQuery(query);
+      if (!cleanQuery) return;
+      recordSearchQuery(cleanQuery);
+      onSelectQuery?.(cleanQuery);
       setIsDropdownOpen(false);
     } else if (e.key === 'Escape') {
       setIsDropdownOpen(false);

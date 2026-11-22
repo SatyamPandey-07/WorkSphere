@@ -83,7 +83,10 @@ export function usePrefersMoreContrast(): boolean {
   const [prefersMore, setPrefersMore] = useState<boolean>(false);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
       return;
     }
 
@@ -103,11 +106,12 @@ export function usePrefersMoreContrast(): boolean {
   return prefersMore;
 }
 
-export const FILTER_OPTIONS: { value: AcousticFilterPreset; label: string }[] = [
-  { value: "off", label: "Off" },
-  { value: "voice-focus", label: "Voice Focus" },
-  { value: "cafe-suppress", label: "Cafe Suppress" },
-];
+export const FILTER_OPTIONS: { value: AcousticFilterPreset; label: string }[] =
+  [
+    { value: "off", label: "Off" },
+    { value: "voice-focus", label: "Voice Focus" },
+    { value: "cafe-suppress", label: "Cafe Suppress" },
+  ];
 
 export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
   decibels,
@@ -128,11 +132,13 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
     filterPreset ?? "off",
   );
 
-  const safeDb = Number.isFinite(decibels) ? Math.max(0, Math.round(decibels)) : 0;
+  const safeDb = Number.isFinite(decibels)
+    ? Math.min(120, Math.max(0, Math.round(decibels)))
+    : 0;
   const tier = getAcousticTier(safeDb);
   const meta = getAcousticTierMeta(tier);
   const screenReaderSummary = `${meta.label}: ${safeDb}dB`;
-  const clampedPercent = Math.min(100, Math.max(4, safeDb));
+  const clampedPercent = Math.min(100, Math.max(0, safeDb));
 
   // Sync external filterPreset prop if provided
   useEffect(() => {
@@ -159,11 +165,16 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
         }
 
         if (ctx) {
-          engine = new AcousticFilterEngine(ctx, { initialPreset: selectedPreset });
+          engine = new AcousticFilterEngine(ctx, {
+            initialPreset: selectedPreset,
+          });
           engine.connectSourceStream(stream);
         }
       } catch (err) {
-        console.warn("[SoundLevelMeter] Could not initialize AcousticFilterEngine:", err);
+        console.warn(
+          "[SoundLevelMeter] Could not initialize AcousticFilterEngine:",
+          err,
+        );
       }
     }
 
@@ -216,7 +227,9 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
                 width="4"
                 height="4"
                 patternUnits="userSpaceOnUse"
-                patternTransform={tier === "LOUD" ? "rotate(45)" : "rotate(-45)"}
+                patternTransform={
+                  tier === "LOUD" ? "rotate(45)" : "rotate(-45)"
+                }
               >
                 <line
                   x1="0"
@@ -235,9 +248,7 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
               height="12"
               rx="2"
               fill={
-                tier === "QUIET"
-                  ? meta.accentColor
-                  : `url(#${meta.patternId})`
+                tier === "QUIET" ? meta.accentColor : `url(#${meta.patternId})`
               }
               stroke={meta.accentColor}
               strokeWidth="1.5"
@@ -287,6 +298,7 @@ export const SoundLevelMeter: React.FC<SoundLevelMeterProps> = ({
 
       <div className="mt-2 h-3 w-full overflow-hidden rounded border border-slate-400 bg-slate-100">
         <div
+          data-testid="sound-level-progress-bar"
           style={{
             width: `${clampedPercent}%`,
             backgroundColor: meta.accentColor,

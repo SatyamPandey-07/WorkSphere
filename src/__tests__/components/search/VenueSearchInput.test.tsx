@@ -5,7 +5,7 @@ import {
   VenueSearchInput,
 } from '@/components/search/VenueSearchInput';
 
-describe('VenueSearchInput Clear all history action', () => {
+describe('VenueSearchInput query normalization, deduplication, and Clear all', () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -17,6 +17,34 @@ describe('VenueSearchInput Clear all history action', () => {
 
     expect(screen.queryByTestId('clear-all-history-btn')).not.toBeInTheDocument();
     expect(screen.queryByTestId('search-history-dropdown')).not.toBeInTheDocument();
+  });
+
+  it('ignores whitespace-only queries and deduplicates case-insensitively with normalized spacing', () => {
+    render(<VenueSearchInput />);
+    const input = screen.getByTestId('venue-search-input');
+
+    fireEvent.change(input, { target: { value: '    ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    fireEvent.change(input, { target: { value: ' coffee' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    fireEvent.change(input, { target: { value: '  COFFEE   house ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    fireEvent.change(input, { target: { value: 'coffee ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    const stored = JSON.parse(
+      window.localStorage.getItem(VENUE_SEARCH_HISTORY_STORAGE_KEY) ?? '[]'
+    );
+    expect(stored).toEqual(['coffee', 'COFFEE house']);
+
+    fireEvent.focus(input);
+    const items = screen.getAllByRole('button').filter(
+      (btn) => btn.getAttribute('data-testid') !== 'clear-all-history-btn'
+    );
+    expect(items.map((el) => el.textContent)).toEqual(['coffee', 'COFFEE house']);
   });
 
   it('clears localStorage, closes/resets dropdown, and announces via aria-live when Clear all is clicked', () => {

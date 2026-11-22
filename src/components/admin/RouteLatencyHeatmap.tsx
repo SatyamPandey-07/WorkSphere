@@ -13,6 +13,7 @@ import {
   Search,
   Map as MapIcon,
   Grid3X3,
+  Download,
 } from "lucide-react";
 import type {
   RouteHeatmapCell,
@@ -388,6 +389,206 @@ type CategoryFilter =
   "all" | "ai" | "api" | "auth" | "db" | "telemetry" | "wallet" | "admin";
 type ViewMode = "grid" | "geo";
 
+/**
+ * Escapes a CSV cell value according to RFC 4180 rules with formula injection mitigation:
+ * - Empty string for null or undefined.
+ * - Mitigates formula injection by prefixing with a single quote if string starts with =, +, -, @, |, \t, \r.
+ * - Encloses in double quotes and doubles embedded double quotes if string contains comma, quote, LF, or CRLF.
+ */
+export function escapeCsvField(
+  val: string | number | boolean | null | undefined,
+  sanitizeFormulas = true,
+): string {
+  if (val === null || val === undefined) {
+    return "";
+  }
+  let str = String(val).replace(/\0/g, "");
+
+  if (
+    sanitizeFormulas &&
+    (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()))
+  ) {
+    str = "'" + str;
+  }
+
+  if (
+    str.includes('"') ||
+    str.includes(",") ||
+    str.includes("\n") ||
+    str.includes("\r")
+  ) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+
+  return str;
+}
+
+/**
+ * Extracts the HTTP method from a route string (e.g. "POST /api/venues" -> "POST")
+ * or returns "GET" as standard REST default if no method prefix exists.
+ */
+export function getRouteMethod(route: string): string {
+  if (!route) return "GET";
+  const trimmed = route.trim();
+  const match = trimmed.match(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/i);
+  if (match) {
+    return match[1].toUpperCase();
+  }
+  return "GET";
+}
+
+/**
+ * Strips method prefix from route string if present to get clean route path.
+ */
+export function getRoutePath(route: string): string {
+  if (!route) return "";
+  const trimmed = route.trim();
+  const match = trimmed.match(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(.+)$/i);
+  if (match) {
+    return match[2];
+  }
+  return trimmed;
+}
+
+/**
+ * Computes percentile from a sorted array of numbers (0-100).
+ */
+function calculatePercentile(sorted: number[], p: number): number {
+  if (!sorted || sorted.length === 0) return 0;
+  const idx = Math.min(
+    sorted.length - 1,
+    Math.floor((p / 100) * sorted.length),
+  );
+  return sorted[idx];
+}
+
+export interface RouteLatencyCsvRow {
+  route: string;
+  totalRequests: number;
+  overallP95Ms?: number;
+  overallAvgMs?: number;
+  cells?: Array<{
+    p50Ms?: number;
+    p95Ms?: number;
+    maxMs?: number;
+    count?: number;
+  }>;
+  method?: string;
+  httpMethod?: string;
+  p50Ms?: number;
+  p95Ms?: number;
+  p99Ms?: number;
+  errorRate?: number;
+  errorRatePercent?: number;
+}
+
+/**
+ * Formats route latency heatmap rows into an RFC 4180-compliant CSV string.
+ * Exact headers: Route Path,HTTP Method,Total Requests,p50 (ms),p95 (ms),p99 (ms),Error Rate (%)
+ */
+export function formatRouteLatencyHeatmapCSV(
+  rows: RouteLatencyCsvRow[],
+  sanitizeFormulas = true,
+): string {
+  const headers = [
+    "Route Path",
+    "HTTP Method",
+    "Total Requests",
+    "p50 (ms)",
+    "p95 (ms)",
+    "p99 (ms)",
+    "Error Rate (%)",
+  ];
+
+  const lines: string[] = [headers.join(",")];
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return lines.join("\r\n");
+  }
+
+  for (const row of rows) {
+    if (!row) continue;
+
+    const rawRoute = row.route ?? "";
+    const routePath = getRoutePath(rawRoute);
+    const method = row.httpMethod || row.method || getRouteMethod(rawRoute);
+    const totalRequests = Number.isFinite(row.totalRequests) ? row.totalRequests : 0;
+
+    // Determine latencies
+    let p50 = 0;
+    let p95 = 0;
+    let p99 = 0;
+
+    if (Number.isFinite(row.p50Ms)) {
+      p50 = row.p50Ms!;
+    } else if (Array.isArray(row.cells) && row.cells.length > 0) {
+      const p50s = row.cells
+        .map((c) => c.p50Ms)
+        .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+        .sort((a, b) => a - b);
+      if (p50s.length > 0) {
+        p50 = Math.round(calculatePercentile(p50s, 50));
+      } else if (Number.isFinite(row.overallAvgMs)) {
+        p50 = Math.round(row.overallAvgMs! * 0.92);
+      }
+    } else if (Number.isFinite(row.overallAvgMs)) {
+      p50 = Math.round(row.overallAvgMs! * 0.92);
+    }
+
+    if (Number.isFinite(row.p95Ms)) {
+      p95 = row.p95Ms!;
+    } else if (Number.isFinite(row.overallP95Ms)) {
+      p95 = row.overallP95Ms!;
+    } else if (Array.isArray(row.cells) && row.cells.length > 0) {
+      const p95s = row.cells
+        .map((c) => c.p95Ms)
+        .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+        .sort((a, b) => a - b);
+      if (p95s.length > 0) {
+        p95 = Math.round(calculatePercentile(p95s, 95));
+      }
+    }
+
+    if (Number.isFinite(row.p99Ms)) {
+      p99 = row.p99Ms!;
+    } else if (Array.isArray(row.cells) && row.cells.length > 0) {
+      const maxes = row.cells
+        .map((c) => c.maxMs ?? c.p95Ms)
+        .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+        .sort((a, b) => a - b);
+      if (maxes.length > 0) {
+        p99 = Math.round(calculatePercentile(maxes, 99));
+      } else {
+        p99 = Math.round(p95 * 1.25);
+      }
+    } else {
+      p99 = Math.round(p95 * 1.25);
+    }
+
+    // Determine error rate
+    let errorRate = 0;
+    if (Number.isFinite(row.errorRatePercent)) {
+      errorRate = row.errorRatePercent!;
+    } else if (Number.isFinite(row.errorRate)) {
+      errorRate = row.errorRate! <= 1 && row.errorRate! > 0 ? row.errorRate! * 100 : row.errorRate!;
+    }
+
+    const rowCells = [
+      escapeCsvField(routePath, sanitizeFormulas),
+      escapeCsvField(method, sanitizeFormulas),
+      escapeCsvField(totalRequests, sanitizeFormulas),
+      escapeCsvField(p50, sanitizeFormulas),
+      escapeCsvField(p95, sanitizeFormulas),
+      escapeCsvField(p99, sanitizeFormulas),
+      escapeCsvField(errorRate, sanitizeFormulas),
+    ];
+
+    lines.push(rowCells.join(","));
+  }
+
+  return lines.join("\r\n");
+}
+
 export interface LatencyDeltaMessage {
   type: "LATENCY_DELTA" | "telemetry_update";
   route?: string;
@@ -428,6 +629,7 @@ export function RouteLatencyHeatmap({
   const [data, setData] = useState<RouteLatencyHeatmapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Hovered cell state for tooltips
@@ -609,6 +811,48 @@ export function RouteLatencyHeatmap({
       return true;
     });
   }, [data, highlightSlowOnly, selectedCategory, searchQuery]);
+
+  const isExportingRef = useRef(false);
+
+  // Handle CSV export of currently displayed route latency matrix
+  async function handleExportCsv() {
+    if (isExporting || isExportingRef.current) return;
+    isExportingRef.current = true;
+    setIsExporting(true);
+
+    try {
+      // Yield to allow React to paint the loading state if needed
+      await Promise.resolve();
+
+      // Export all currently displayed (filtered) rows, or all rows if no filter
+      const rowsToExport = filteredRows.length > 0 ? filteredRows : (data?.routes ?? []);
+      const csvText = formatRouteLatencyHeatmapCSV(rowsToExport);
+
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")
+        .slice(0, 19);
+      const filename = `route-latency-heatmap-${timestamp}.csv`;
+
+      if (typeof window !== "undefined") {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        link.setAttribute("aria-hidden", "true");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+    } catch (err: any) {
+      console.error("[RouteLatencyHeatmap] CSV export failed:", err);
+    } finally {
+      isExportingRef.current = false;
+      setIsExporting(false);
+    }
+  }
 
   // Transform data for Geo/Scatter Mode
   const geoPoints = useMemo<LatencyPoint[]>(() => {
@@ -935,6 +1179,23 @@ export function RouteLatencyHeatmap({
                 <span>Paused</span>
               </>
             )}
+          </button>
+
+          {/* Export Heatmap Data (.csv) */}
+          <button
+            onClick={handleExportCsv}
+            disabled={isExporting || (!data && filteredRows.length === 0)}
+            className="flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-zinc-300 transition-all hover:bg-white/[0.08] hover:text-white disabled:opacity-50"
+            title="Export Heatmap Data (.csv)"
+            aria-label="Export Heatmap Data (.csv)"
+            aria-busy={isExporting}
+          >
+            {isExporting ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-400" />
+            ) : (
+              <Download className="h-3.5 w-3.5 text-zinc-400" />
+            )}
+            <span>Export Heatmap Data (.csv)</span>
           </button>
 
           {/* Manual Refresh */}

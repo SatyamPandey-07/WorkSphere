@@ -1536,6 +1536,187 @@ self.addEventListener("push", (event) => {
   }
 });
 
+/* eslint-disable no-restricted-globals */
+
+const CACHE_VERSION = 'v2';
+const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
+const RUNTIME_PUBLIC_CACHE_NAME = `worksphere-runtime-public-${CACHE_VERSION}`;
+
+const APP_SHELL_ASSETS = ['/', '/manifest.json'];
+
+// Strictly allowlist unauthenticated public endpoints safe for stale-while-revalidate
+const PUBLIC_CACHEABLE_API_PREFIXES = ['/api/venues/public', '/api/health'];
+
+/**
+ * Determines whether a request carries user-specific credentials or explicit
+ * non-cacheable directives and must bypass Service Worker runtime caches.
+ */
+function isAuthenticatedOrPrivateRequest(request, url) {
+  if (request.method !== 'GET') {
+    return true;
+  }
+
+  // Protected user-scoped API routes must never be cached in shared browser storage
+  if (url.pathname.startsWith('/api/')) {
+    const isAllowlistedPublic = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
+      url.pathname.startsWith(prefix)
+    );
+    if (!isAllowlistedPublic) {
+      return true;
+    }
+  }
+
+  // Check request headers for credentials or explicit no-store / no-cache directives
+  const authHeader = request.headers.get('Authorization');
+  const cookieHeader = request.headers.get('Cookie');
+  const cacheControl = (request.headers.get('Cache-Control') || '').toLowerCase();
+
+  if (authHeader || cookieHeader) {
+    return true;
+  }
+
+  if (cacheControl.includes('no-store') || cacheControl.includes('private')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks response headers to ensure personalized or no-store responses are never persisted.
+ */
+function isCacheablePublicResponse(response) {
+  if (!response || !response.ok || response.status !== 200) {
+    return false;
+  }
+
+  // Opaque responses (status 0) or credentialed Vary headers must not be cached
+  if (response.type === 'opaque' || response.type === 'opaqueredirect') {
+    return false;
+  }
+
+  const cacheControl = (response.headers.get('Cache-Control') || '').toLowerCase();
+  if (
+    cacheControl.includes('no-store') ||
+    cacheControl.includes('private') ||
+    cacheControl.includes('no-cache')
+  ) {
+    return false;
+  }
+
+  const vary = (response.headers.get('Vary') || '').toLowerCase();
+  if (vary.includes('cookie') || vary.includes('authorization')) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Purges all dynamic runtime caches (and optionally static caches) to guarantee
+ * zero cross-user data leakage on shared coworking terminals.
+ */
+async function purgeDynamicRuntimeCaches() {
+  const cacheKeys = await caches.keys();
+  const deletions = cacheKeys
+    .filter((key) => key !== STATIC_CACHE_NAME)
+    .map((key) => caches.delete(key));
+
+  await Promise.all(deletions);
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(STATIC_CACHE_NAME).then((cache) => cache.addAll(APP_SHELL_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      const cacheKeys = await caches.keys();
+      await Promise.all(
+        cacheKeys
+          .filter(
+            (key) => key !== STATIC_CACHE_NAME && key !== RUNTIME_PUBLIC_CACHE_NAME
+          )
+          .map((key) => caches.delete(key))
+      );
+      await self.clients.claim();
+    })()
+  );
+});
+
+self.addEventListener('message', (event) => {
+  const payload = event.data;
+  if (!payload || typeof payload !== 'object') {
+    return;
+  }
+
+  if (payload.type === 'SIGN_OUT' || payload.type === 'PURGE_RUNTIME_CACHES') {
+    event.waitUntil(
+      (async () => {
+        await purgeDynamicRuntimeCaches();
+        if (event.ports && event.ports[0]) {
+          event.ports[0].postMessage({ ok: true, purged: true });
+        }
+      })()
+    );
+  }
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // Only intercept same-origin HTTP(S) requests
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Bypass Service Worker cache entirely for authenticated, cookie-bearing,
+  // Cache-Control: no-store, or non-allowlisted /api/* routes
+  if (isAuthenticatedOrPrivateRequest(request, url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // Stale-while-revalidate for verified unauthenticated static & public endpoints only
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
+      const cachedResponse = await cache.match(request);
+
+      const networkFetchPromise = fetch(request)
+        .then((networkResponse) => {
+          if (isCacheablePublicResponse(networkResponse)) {
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        })
+        .catch((error) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          throw error;
+        });
+
+      return cachedResponse || networkFetchPromise;
+    })()
+  );
+});
+
+// Export helpers when imported in Node/Jest unit test environments
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    STATIC_CACHE_NAME,
+    RUNTIME_PUBLIC_CACHE_NAME,
+    isAuthenticatedOrPrivateRequest,
+    isCacheablePublicResponse,
+    purgeDynamicRuntimeCaches,
+  };
+}
 // Notification click handler — navigate to the target venue page
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

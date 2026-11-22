@@ -17,6 +17,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [API Documentation Index](./api/README.md) — endpoint-specific API contracts and operational guides.
 - [REST API & Real-Time Streams](./API.md) — REST endpoints, authentication, request and response schemas, and event streams.
 - [API Reference](./API_REFERENCE.md) — high-level endpoint reference organized by feature.
+- [Smart Desk Sensor Telemetry Payload Specification & Protobuf Definitions](./iot/TELEMETRY_PAYLOAD_SPEC.md) — JSON telemetry payload schemas, Protocol Buffers definitions, HMAC-SHA256 webhook authentication, timestamp replay protection, and electrical power anomaly thresholds.
 - [Seat Hold Lease Extension API](./api/SEAT_HOLD_LEASE_EXTENSION.md) — seat-lock lease extension, fencing-token validation, and API response behavior.
 - [Anonymous ZKP Check-In OpenAPI 3.1 Specification](./api/zkp-checkin.openapi.yaml) — anonymous check-in proof and response contract.
 - [Venue Amenity Voting OpenAPI 3.1 Specification](./api/amenity-votes.openapi.yaml) — amenity metrics and vote submission contract.
@@ -27,7 +28,11 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Architecture Documentation Index](./architecture/README.md) — system design references, distributed coordination, and architecture notes.
 - [Multi-Agent AI Architecture](./ARCHITECTURE.md) — agent orchestration, decision pipeline, and application-level AI architecture.
+- [Causal Ordering & Deterministic Tie-Breaking](./architecture/CAUSAL_ORDERING_AND_TIEBREAKING.md) — Vector Clock partial order mathematics, Hybrid Logical Clock tie-breaking heuristics, and distributed partition reconciliation.
 - [GossipSub WebRTC Mesh](./architecture/GOSSIPSUB_WEBRTC_MESH.md) — peer discovery, GossipSub parameters, heartbeat intervals, and mesh behavior.
+- [GossipSub IP Colocation & Sybil Defense](./architecture/GOSSIPSUB_IP_COLOCATION.md) — subnet colocation scoring (/24 IPv4 and /48 IPv6), Sybil mitigation, exponential decay, and mesh pruning.
+- [WebRTC Signaling Handshake Runbook](./p2p/WEBRTC_SIGNALING_HANDSHAKE.md) — PartyKit signaling, offer/answer exchange, trickle ICE, STUN/TURN traversal, Perfect Negotiation, and troubleshooting.
+- [WebRTC ICE Candidate Gathering & STUN/TURN Topology](./p2p/WEBRTC_ICE_TRAVERSAL.md) — ICE candidate gathering, STUN discovery, candidate types, timeout bounds, TURN relay topology, and firewall troubleshooting.
 - [Distributed Locks and Fencing](./architecture/distributed-locks-and-fencing.md) — distributed lock coordination and fencing mechanisms.
 - [Multi-Region Synchronization](./architecture/multi-region-sync.md) — synchronization across distributed application regions.
 
@@ -41,16 +46,22 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Security & Cryptography
 
+- [OAuth Refresh Token Rotation & Session Hijacking Mitigation Guide](./auth/REFRESH_TOKEN_ROTATION_GUIDE.md) — JWT access/refresh token rotation lifecycle, token family reuse detection, passwordChangedAt revocation, and cookie security.
+- [Markdown Syntax Rendering & Collaborative Chat Formatting Specification](./chat/MARKDOWN_RENDERING_SPEC.md) — Collaborative chat input sanitization, generative UI regex tokenization, Zod schema validation, XSS prevention, and DOMPurify specification.
 - [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) — overview of application security defenses and their interaction.
 - [Content Security Policy Nonce Architecture](./security/csp-nonce-architecture.md) — nonce-based CSP implementation and request security.
 - [CSRF Protection Architecture](./security/csrf-protection-architecture.md) — CSRF protection and request validation design.
 - [Double Ratchet Protocol](./security/DOUBLE_RATCHET_PROTOCOL.md) — encrypted messaging key evolution and protocol design.
+- [Skipped Message Key Store Runbook](./chat/SKIPPED_MESSAGE_KEY_STORE.md) — skipped-key retention, out-of-order recovery, storage limits, pruning, and source-verified security limitations.
+- [Zero-Knowledge Groth16 Proof Verification](./crypto/ZK_GROTH16_VERIFICATION.md) — zero-knowledge anonymous venue check-in architecture, Groth16 zk-SNARK pipeline, Poseidon nullifiers, and verification.
 - [ZKP Verification Runbook](./security/ZKP_VERIFICATION_RUNBOOK.md) — Groth16 verification architecture and key rotation procedures.
+- [Solana Escrow Settlement and Refund Runbook](./solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow PDA derivation, confirmation levels, release and timeout refunds, and RPC failover.
 
 ## Features & Product Documentation
 
 - [Reservation Flow Guide](./features/reservation-flow-guide.md) — reservation client workflow, validation, and lock management.
 - [Venue Check-In Flow](./features/venue-checkin-flow.md) — QR verification, geofence proximity, and check-in behavior.
+- [Venue WiFi Quality Scoring](./venues/WIFI_QUALITY_SCORING.md) — speed tiers, jitter and packet loss penalties, measurement telemetry, and badge display rules.
 - [Voice Search](./features/VOICE_SEARCH.md) — voice search feature documentation.
 - [Seating Occupancy Forecasting](./features/seating-occupancy-forecasting.md) — seating occupancy forecasting functionality.
 - [Nomad Passport](./features/nomad-passport.md) — Nomad Passport feature and product workflow.
@@ -62,18 +73,23 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 ## UI Components & Frontend
 
 - [Design System Guide](./DESIGN_SYSTEM_GUIDE.md) — design tokens, themes, components, and frontend styling conventions.
+- [Theme Token Architecture](./ui/THEME_TOKEN_ARCHITECTURE.md) — complete CSS variable dictionary, dark mode, Cyberpunk Neon, high-contrast theming, and semantic token migration guide.
 - [Accessibility Guide](./ACCESSIBILITY_GUIDE.md) — accessibility standards and implementation guidance.
+- [Venue Action Glassmorphic Pulse Guide](./ui/GLASSMORPHIC_PULSE_GUIDE.md) — theme-specific venue action button animations, rendering, accessibility, and contrast analysis.
 - [Breadcrumb Component](./components/Breadcrumb.md) — breadcrumb component behavior and usage.
 - [Floor Plan Viewer 3D](./components/FloorPlanViewer3D.md) — 3D floor-plan viewer documentation.
 - [Network Status Pill](./components/NetworkStatusPill.md) — network connectivity status component.
 
 ## Offline Support & Realtime Systems
 
+- [PWA Service Worker Caching Strategy & Invalidation Runbook](./pwa/SERVICE_WORKER_CACHING_STRATEGY.md) — Progressive Web App service worker caching tiers, Workbox strategies, deployment versioning, background sync queues, and storage quota management.
 - [IndexedDB Offline Sync Architecture](./offline/indexeddb-sync-architecture.md) — offline mutations, IndexedDB storage, and synchronization.
 - [Dead Letter Queue](./offline/dead-letter-queue.md) — handling and recovery of failed offline jobs.
 - [Offline Sync Flow](./architecture/offline-sync-flow.md) — application offline synchronization flow.
 - [Local Mesh CRDT Synchronization](./realtime/local-mesh-crdt-sync.md) — collaborative state replication over peer-to-peer mesh connections.
 - [CRDT Documentation Index](./crdt/README.md) — collaborative data protocols, specifications, and reading order.
+- [Yjs State Vector Exchange & Differential Compaction Architecture](./crdt/YJS_SYNC_PROTOCOL.md) — complete Yjs state vector exchange (`Y.encodeStateVector`), differential update computation (`Y.encodeStateAsUpdate`), wire codecs, and snapshot compaction engine.
+- [Ephemeral Awareness Vector Clock Compaction](./crdt/AWARENESS_VECTOR_COMPACTION.md) — ephemeral presence tracking, 30s TTL heartbeat eviction, and awareness vector compaction vs. document-level garbage collection.
 
 ## Testing, Monitoring & Operations
 
@@ -86,11 +102,16 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Troubleshooting](./TROUBLESHOOTING.md) — common development and operational troubleshooting guidance.
 - [WebGPU Capability Diagnostics](./telemetry/WEBGPU_CAPABILITY_DIAGNOSTICS.md) — capability report schema, privacy controls, API submission, and administrator troubleshooting.
 
+## Analytics & Sustainability
+
+- [Commuter Carbon Savings Guide](./analytics/CARBON_SAVINGS_GUIDE.md) — emission factor baselines, avoided-emissions formulas, transit mode differentials, date range presets, and CSV and team badge SVG exports.
+- [GHG Scope 3 Methodology](./sustainability/ghg-scope-3-methodology.md) — GHG Protocol Scope 3 framing, carbon engine implementation, and ESG audit CSV contract.
+
 ## Export & Reporting
 
-- [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — typed CSV and Excel XML export, escaping, formula injection sanitization, and browser downloads.
-- [Booking Itinerary & PDF Verification System](./export/booking-pdf-generation.md) — booking receipts, QR generation, and cryptographic verification.
+- [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — Comprehensive developer reference for typed CSV and Excel XML export builders, RFC-4180 escaping, formula injection sanitization, and browser download handling.
+- [Booking Itinerary & PDF Verification System](./export/booking-pdf-generation.md) — Specification and architecture for booking receipts, vector QR matrix generation, and cryptographic verification seals.
 
----
+## UI Components & Frontend
 
-For detailed documentation within a topic, start with its category index where one is available, such as the API, Architecture, or CRDT documentation indexes.
+- [NotificationBell Component Guide](./NOTIFICATION_BELL_GUIDE.md) — Top navigation notification bell, live polling, optimistic mark-as-read, undo restoration, and backend API contract.

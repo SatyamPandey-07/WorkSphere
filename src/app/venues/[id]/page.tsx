@@ -9,6 +9,7 @@ import PremiumZkpGate from "@/components/venues/PremiumZkpGate";
 import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
+import { VenueNoiseForecast } from "@/components/venue/VenueNoiseForecast";
 import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
 import { HourlyNoiseHeatGraph } from "@/components/venues/HourlyNoiseHeatGraph";
 import { SeatingForecastChart } from "@/components/venue/SeatingForecastChart";
@@ -320,7 +321,15 @@ export default async function VenuePage({ params }: PageProps) {
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
                 <span>Expected Noise Levels</span>
               </h3>
-              <AmbientNoiseTrendGraph venueId={venue.id} />
+              <VenueNoiseForecast
+                venueId={venue.id}
+                venueName={venue.name}
+                quietHoursStart={venue.quietHoursStart}
+                quietHoursEnd={venue.quietHoursEnd}
+              />
+              <div className="mt-4">
+                <AmbientNoiseTrendGraph venueId={venue.id} />
+              </div>
               <div className="mt-4">
                 <HourlyNoiseHeatGraph
                   venueId={venue.id}

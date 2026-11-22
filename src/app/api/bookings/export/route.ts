@@ -2,13 +2,68 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 
-function escapeCsvField(field: any): string {
-  if (field === null || field === undefined) return '""';
-  const stringified = String(field);
-  if (/[",\n\r]/.test(stringified)) {
-    return `"${stringified.replace(/"/g, '""')}"`;
+/**
+ * Escapes a CSV cell in accordance with RFC 4180 while mitigating
+ * spreadsheet formula injection (CWE-1236).
+ *
+ * Dangerous formula triggers:
+ * - Begins with =, +, -, @, |, %
+ * - Begins with control characters (tab, CR, LF, etc.) or whitespace followed by formula triggers
+ *
+ * Rules:
+ * - Legitimate numeric values (including negative numbers and numeric strings) are preserved without apostrophe prefixes.
+ * - Untrusted text values that match formula triggers are prefixed with a single quote (').
+ * - Double quotes, commas, CRLF, and newlines are safely quoted in accordance with RFC 4180.
+ */
+export function escapeCsvField(field: any, isNumeric = false): string {
+  if (field === null || field === undefined) {
+    return "";
   }
-  return `"${stringified}"`;
+
+  // Handle finite JavaScript numbers directly
+  if (typeof field === "number") {
+    if (!Number.isFinite(field)) return "";
+    return String(field);
+  }
+
+  // Handle boolean values
+  if (typeof field === "boolean") {
+    return String(field);
+  }
+
+  const rawStr = String(field).replace(/\0/g, "");
+
+  // If explicitly flagged as numeric or matches a pure signed decimal/integer number
+  if (isNumeric || /^-?\d+(\.\d+)?$/.test(rawStr.trim())) {
+    if (/^-?\d+(\.\d+)?$/.test(rawStr.trim())) {
+      return rawStr.trim();
+    }
+  }
+
+  let sanitized = rawStr;
+
+  // Check if string starts with dangerous formula prefixes,
+  // or leading whitespace / control characters followed by formula prefixes.
+  const startsWithDangerousChar = /^[=+\-@|%\t\r\n]/.test(sanitized);
+  const leadingWsFormula = /^[\s\x00-\x1f]+[=+\-@|%]/.test(sanitized);
+
+  if (startsWithDangerousChar || leadingWsFormula) {
+    if (!sanitized.startsWith("'")) {
+      sanitized = "'" + sanitized;
+    }
+  }
+
+  // RFC 4180 escaping: quote if field contains quote, comma, or newline
+  if (
+    sanitized.includes('"') ||
+    sanitized.includes(",") ||
+    sanitized.includes("\n") ||
+    sanitized.includes("\r")
+  ) {
+    return `"${sanitized.replace(/"/g, '""')}"`;
+  }
+
+  return sanitized;
 }
 
 export async function GET(req: Request) {
@@ -69,9 +124,9 @@ export async function GET(req: Request) {
           escapeCsvField(b.venue?.address || "N/A"),
           escapeCsvField(dateStr),
           escapeCsvField(timeStr),
-          escapeCsvField(b.durationMinutes || b.duration || 60),
+          escapeCsvField(b.durationMinutes ?? b.duration ?? 60, true),
           escapeCsvField(b.status),
-          escapeCsvField(b.price || b.totalAmount || 0),
+          escapeCsvField(b.price ?? b.totalAmount ?? 0, true),
           escapeCsvField(b.currency || "USD"),
         ].join(",");
       });

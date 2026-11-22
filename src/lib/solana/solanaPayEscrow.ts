@@ -24,6 +24,161 @@ import {
 export const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000; // 60 seconds
 export const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2 seconds
 
+// Exponential backoff with full jitter defaults for RPC HTTP 429 (#9510)
+export const DEFAULT_RPC_429_MAX_RETRIES = 5;
+export const DEFAULT_RPC_429_BASE_DELAY_MS = 500;
+export const DEFAULT_RPC_429_MAX_DELAY_MS = 8_000;
+
+export interface Rpc429RetryOptions {
+  /** Maximum consecutive 429 retry attempts before failing (default: 5). */
+  maxRetries?: number;
+  /** Base delay in ms for exponential backoff (default: 500). */
+  baseDelayMs?: number;
+  /** Maximum delay cap in ms for exponential backoff (default: 8,000). */
+  maxDelayMs?: number;
+  /** Custom random function for deterministic testing (returns in [0, 1)). */
+  randomFn?: () => number;
+}
+
+/**
+ * Detects whether an error represents an HTTP 429 (Too Many Requests) or rate limit.
+ * Supports standard HTTP status codes, Fetch/Axios error shapes, Solana RPC errors,
+ * and rate-limit error messages, without confusing unrelated failures as 429.
+ */
+export function isSolanaRpcRateLimitError(error: unknown): boolean {
+  if (!error) return false;
+
+  const candidate = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    code?: unknown;
+    name?: unknown;
+    message?: unknown;
+    response?: { status?: unknown; statusCode?: unknown };
+  };
+
+  for (const code of [
+    candidate.status,
+    candidate.statusCode,
+    candidate.code,
+    candidate.response?.status,
+    candidate.response?.statusCode,
+  ]) {
+    if (code === 429 || code === "429") {
+      return true;
+    }
+  }
+
+  const name = typeof candidate.name === "string" ? candidate.name : "";
+  if (name === "RateLimitError" || name === "TooManyRequestsError") {
+    return true;
+  }
+
+  const message =
+    typeof error === "string"
+      ? error
+      : typeof candidate.message === "string"
+        ? candidate.message
+        : "";
+
+  if (!message) return false;
+
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("429") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("ratelimit") ||
+    normalized.includes("resource exhausted") ||
+    normalized.includes("exceeded rate limit")
+  );
+}
+
+/**
+ * Reads a header from various header containers (Headers instance, plain Record, or nested in error.response).
+ */
+function readHeaderValue(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== "object") return undefined;
+
+  const getter = (headers as { get?: unknown }).get;
+  if (typeof getter === "function") {
+    const val = (getter as (header: string) => unknown).call(headers, name);
+    if (typeof val === "string") return val;
+  }
+
+  const record = headers as Record<string, unknown>;
+  const lowerName = name.toLowerCase();
+  for (const key of Object.keys(record)) {
+    if (key.toLowerCase() === lowerName) {
+      const val = record[key];
+      return typeof val === "string" ? val : typeof val === "number" ? String(val) : undefined;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extracts and parses a Retry-After header from an RPC error, returning delay in milliseconds.
+ * Supports integer delta-seconds, floating seconds, and HTTP-date formats.
+ * Returns undefined if header is absent, invalid, or negative.
+ */
+export function parseRetryAfterMs(error: unknown, now: number = Date.now()): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+
+  const candidate = error as {
+    headers?: unknown;
+    response?: { headers?: unknown };
+    retryAfter?: unknown;
+  };
+
+  // If error has a direct retryAfter property (numeric seconds or ms)
+  if (typeof candidate.retryAfter === "number" && Number.isFinite(candidate.retryAfter) && candidate.retryAfter > 0) {
+    // If > 1000, likely already in ms, otherwise seconds
+    return candidate.retryAfter > 1000 ? Math.round(candidate.retryAfter) : Math.round(candidate.retryAfter * 1000);
+  }
+
+  const rawHeader =
+    readHeaderValue(candidate.headers, "retry-after") ??
+    readHeaderValue(candidate.response?.headers, "retry-after");
+
+  if (!rawHeader) return undefined;
+  const trimmed = rawHeader.trim();
+  if (!trimmed) return undefined;
+
+  // 1. Delta-seconds format (e.g. "3", "2.5")
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const sec = parseFloat(trimmed);
+    return Number.isFinite(sec) && sec >= 0 ? Math.round(sec * 1000) : undefined;
+  }
+
+  // 2. HTTP-date format (e.g. "Wed, 21 Oct 2026 07:28:00 GMT")
+  const parsedDate = Date.parse(trimmed);
+  if (!Number.isNaN(parsedDate)) {
+    return Math.max(0, parsedDate - now);
+  }
+
+  return undefined;
+}
+
+/**
+ * Computes exponential backoff with full jitter for attempt number (0-indexed).
+ * Full jitter: delay = random * min(maxDelay, baseDelay * 2 ** attempt)
+ */
+export function computeRpc429Delay(
+  attempt: number,
+  options: Rpc429RetryOptions = {},
+): number {
+  const baseDelay = options.baseDelayMs ?? DEFAULT_RPC_429_BASE_DELAY_MS;
+  const maxDelay = options.maxDelayMs ?? DEFAULT_RPC_429_MAX_DELAY_MS;
+  const randomFn = options.randomFn ?? Math.random;
+
+  const expDelay = Math.min(maxDelay, baseDelay * Math.pow(2, Math.max(0, attempt)));
+  const rand = randomFn();
+  const validRand = typeof rand === "number" && Number.isFinite(rand) && rand >= 0 && rand <= 1 ? rand : 0.5;
+  return Math.round(validRand * expDelay);
+}
+
 export type SeatConfirmationMode = "websocket" | "polling";
 
 export type SeatState =
@@ -79,6 +234,8 @@ export interface ReserveSeatOptions {
   pollSignatureStatus?: (signature: string) => Promise<SignatureStatus | null>;
   /** Interval between background status polls (polling mode only). */
   pollIntervalMs?: number;
+  /** Optional RPC HTTP 429 retry options (polling mode). */
+  rpc429RetryOptions?: Rpc429RetryOptions;
 }
 
 interface ActiveSubscription {
@@ -92,6 +249,9 @@ interface ActiveSubscription {
   connection: Connection;
   callbacks?: SeatReservationCallbacks;
   stateRemovers?: Array<() => void>;
+  rpc429ConsecutiveCount?: number;
+  timeoutEndMs?: number;
+  rpc429RetryOptions?: Rpc429RetryOptions;
 }
 
 /**
@@ -169,6 +329,7 @@ export class SolanaPayEscrowManager {
       confirmationMode = "websocket",
       pollSignatureStatus,
       pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+      rpc429RetryOptions,
     } = options;
 
     if (!seatId || typeof seatId !== "string" || !seatId.trim()) {
@@ -250,6 +411,7 @@ export class SolanaPayEscrowManager {
         pollIntervalMs,
         pollSignatureStatus,
         callbacks,
+        rpc429RetryOptions,
       );
     } else {
       this.subscribeToSignatureUpdates(
@@ -260,6 +422,7 @@ export class SolanaPayEscrowManager {
         callbacks,
         pollIntervalMs,
         pollSignatureStatus,
+        rpc429RetryOptions,
       );
     }
 
@@ -281,12 +444,16 @@ export class SolanaPayEscrowManager {
     pollSignatureStatus?: (
       signature: string,
     ) => Promise<SignatureStatus | null>,
+    rpc429RetryOptions?: Rpc429RetryOptions,
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
       signature,
       connection,
       callbacks,
+      timeoutEndMs: Date.now() + timeoutMs,
+      rpc429ConsecutiveCount: 0,
+      rpc429RetryOptions,
     };
 
     // 3. 60-Second timeout: rollback to available if transaction drops from mempool
@@ -447,12 +614,16 @@ export class SolanaPayEscrowManager {
       signature: string,
     ) => Promise<SignatureStatus | null>,
     callbacks?: SeatReservationCallbacks,
+    rpc429RetryOptions?: Rpc429RetryOptions,
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
       signature,
       connection,
       callbacks,
+      timeoutEndMs: Date.now() + timeoutMs,
+      rpc429ConsecutiveCount: 0,
+      rpc429RetryOptions,
     };
 
     // Overall timeout: rollback to available if transaction drops from mempool
@@ -479,27 +650,28 @@ export class SolanaPayEscrowManager {
   private scheduleNextPoll(
     subRecord: ActiveSubscription,
     signature: string,
-    pollIntervalMs: number,
+    delayMs: number,
     pollSignatureStatus?: (
       signature: string,
     ) => Promise<SignatureStatus | null>,
+    normalPollIntervalMs?: number,
   ): void {
     if (subRecord.pollAborted) return;
+    const intervalToUse = normalPollIntervalMs ?? delayMs;
     subRecord.pollTimer = setTimeout(() => {
       void this.pollSignatureStatusOnce(
         subRecord,
         signature,
-        pollIntervalMs,
+        intervalToUse,
         pollSignatureStatus,
       );
-    }, pollIntervalMs);
+    }, delayMs);
     subRecord.pollTimer.unref?.();
   }
 
   /**
    * Performs one background status poll and advances the reservation state machine.
-   * Transient RPC failures are swallowed and retried on the next tick until the
-   * overall confirmation timeout rolls the reservation back.
+   * Handles HTTP 429 rate limit errors with exponential jitter backoff and Retry-After header.
    */
   private async pollSignatureStatusOnce(
     subRecord: ActiveSubscription,
@@ -518,6 +690,68 @@ export class SolanaPayEscrowManager {
         ? await pollSignatureStatus(signature)
         : await fetchSignatureStatusViaConnection(connection, signature);
     } catch (err) {
+      if (subRecord.pollAborted) return;
+
+      // Check if this error is an HTTP 429 / Rate Limit error (#9510)
+      if (isSolanaRpcRateLimitError(err)) {
+        const retryOpts = subRecord.rpc429RetryOptions || {};
+        const maxRetries = retryOpts.maxRetries ?? DEFAULT_RPC_429_MAX_RETRIES;
+        const currentAttempt = subRecord.rpc429ConsecutiveCount ?? 0;
+
+        if (currentAttempt >= maxRetries) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const reason = `Solana RPC rate limit exceeded (${maxRetries} retries exhausted): ${errMsg}. Seat reservation reverted to available.`;
+          this.rollback(seatId, reason, "failed");
+          return;
+        }
+
+        subRecord.rpc429ConsecutiveCount = currentAttempt + 1;
+
+        // Calculate backoff delay: check Retry-After first, then fallback to exponential jitter
+        const parsedRetryAfter = parseRetryAfterMs(err);
+        let waitMs = parsedRetryAfter !== undefined
+          ? parsedRetryAfter
+          : computeRpc429Delay(currentAttempt, retryOpts);
+
+        // Check if raw Retry-After exceeded the remaining confirmation timeout budget
+        if (subRecord.timeoutEndMs && parsedRetryAfter !== undefined) {
+          const remainingTimeout = subRecord.timeoutEndMs - Date.now();
+          if (remainingTimeout <= 0 || parsedRetryAfter > remainingTimeout) {
+            const timeoutReason = `Transaction confirmation timed out while waiting for rate-limit backoff. Seat reservation has been restored to available.`;
+            this.rollback(seatId, timeoutReason, "timeout");
+            return;
+          }
+        }
+
+        // Bounded by maxDelayMs if configured or default
+        const maxDelay = retryOpts.maxDelayMs ?? DEFAULT_RPC_429_MAX_DELAY_MS;
+        waitMs = Math.min(maxDelay, Math.max(0, waitMs));
+
+        // Ensure retry does not schedule past remaining confirmation timeout budget
+        if (subRecord.timeoutEndMs) {
+          const remainingTimeout = subRecord.timeoutEndMs - Date.now();
+          if (remainingTimeout <= 0 || waitMs > remainingTimeout) {
+            const timeoutReason = `Transaction confirmation timed out while waiting for rate-limit backoff. Seat reservation has been restored to available.`;
+            this.rollback(seatId, timeoutReason, "timeout");
+            return;
+          }
+        }
+
+        console.warn(
+          `[SolanaPayEscrow] Solana RPC 429 rate limit encountered (attempt ${subRecord.rpc429ConsecutiveCount}/${maxRetries}); retrying in ${waitMs}ms`,
+        );
+
+        this.scheduleNextPoll(
+          subRecord,
+          signature,
+          waitMs,
+          pollSignatureStatus,
+          pollIntervalMs,
+        );
+        return;
+      }
+
+      // Non-429 transient polling failure: maintain existing behavior
       console.warn(
         "[SolanaPayEscrow] Signature status poll failed; retrying next interval:",
         err,
@@ -532,6 +766,9 @@ export class SolanaPayEscrowManager {
     }
 
     if (subRecord.pollAborted) return;
+
+    // Successful RPC response resets consecutive 429 counter
+    subRecord.rpc429ConsecutiveCount = 0;
 
     // Status not visible on-chain yet — keep polling; the overall timeout
     // handles the dropped-from-mempool case.

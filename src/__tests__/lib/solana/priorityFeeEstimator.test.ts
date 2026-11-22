@@ -16,11 +16,12 @@ Object.defineProperty(Uint8Array, Symbol.hasInstance, {
   configurable: true,
 });
 
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, Keypair, Transaction, ComputeBudgetProgram } from "@solana/web3.js";
 import {
   PriorityFeeEstimator,
   resetPriorityFeeEstimator,
 } from "@/lib/solana/priorityFeeEstimator";
+import { buildSolDepositTransaction } from "@/lib/solana/escrowClient";
 
 describe("PriorityFeeEstimator (#7848)", () => {
   let mockConnection: Partial<Connection>;
@@ -212,5 +213,87 @@ describe("PriorityFeeEstimator (#7848)", () => {
     expect(mockConnection.getRecentPrioritizationFees).toHaveBeenCalledWith({
       lockedWritableAccounts: [pubkey],
     });
+  });
+
+  // Test 12: Limits sample window to the most recent slots (default 150)
+  it("Test 12: limits fee estimation to the last 150 available slots", async () => {
+    // Generate 300 slots from slot 1000 to 1299
+    // Older 150 slots (1000..1149) have 500_000 micro-lamports
+    // Newer 150 slots (1150..1299) have 10_000 micro-lamports
+    const samples = Array.from({ length: 300 }, (_, i) => ({
+      slot: 1000 + i,
+      prioritizationFee: i < 150 ? 500_000 : 10_000,
+    }));
+
+    (mockConnection.getRecentPrioritizationFees as jest.Mock).mockResolvedValue(samples);
+    const estimator = new PriorityFeeEstimator();
+
+    const estimate = await estimator.estimatePriorityFee(mockConnection as Connection);
+    // Across the last 150 slots (1150..1299), all fees are 10_000, so 75th percentile is 10_000
+    // If all 300 were used, 75th percentile would be 500_000
+    expect(estimate.sampleCount).toBe(150);
+    expect(estimate.microLamports).toBe(10_000);
+    expect(estimate.source).toBe("rpc");
+  });
+
+  // Test 13: Configurable slotWindow option
+  it("Test 13: respects custom slotWindow configuration", async () => {
+    const samples = [
+      { slot: 100, prioritizationFee: 100_000 },
+      { slot: 101, prioritizationFee: 50_000 },
+      { slot: 102, prioritizationFee: 20_000 },
+      { slot: 103, prioritizationFee: 10_000 },
+    ];
+    (mockConnection.getRecentPrioritizationFees as jest.Mock).mockResolvedValue(samples);
+    const estimator = new PriorityFeeEstimator({ slotWindow: 2 });
+
+    const estimate = await estimator.estimatePriorityFee(mockConnection as Connection);
+    // Last 2 slots are 102 (20_000) and 103 (10_000). Sorted: [10000, 20000]. 75th percentile -> 20000
+    expect(estimate.sampleCount).toBe(2);
+    expect(estimate.microLamports).toBe(20_000);
+  });
+
+  // Test 14: Escrow transaction duplicate compute-unit-price prevention and prepending
+  it("Test 14: prevents duplicate setComputeUnitPrice instructions and prepends to index 0", async () => {
+    // Mock blockhash
+    const mockGetLatestBlockhash = jest.fn().mockResolvedValue({
+      blockhash: "GHtXQBsoZHVnNFa9BpUCqW5WFiWbhb5xM1XvCMZZZZZZ",
+      lastValidBlockHeight: 123456,
+    });
+
+    // Mock Connection prototype methods
+    const blockhashSpy = jest.spyOn(Connection.prototype, "getLatestBlockhash").mockImplementation(mockGetLatestBlockhash);
+    const feeSpy = jest.spyOn(Connection.prototype, "getRecentPrioritizationFees").mockResolvedValue([
+      { slot: 1, prioritizationFee: 25_000 },
+    ]);
+
+    try {
+      const payer = Keypair.generate().publicKey.toBase58();
+      const result = await buildSolDepositTransaction({
+        payerWallet: payer,
+        bookingId: "test-booking-dedup-14",
+        amount: 0.5,
+        currency: "SOL",
+        rpcUrl: "https://api.devnet.solana.com",
+        priorityFeeMicroLamports: 15_000,
+      });
+
+      const tx = Transaction.from(Buffer.from(result.serializedTransaction, "base64"));
+
+      // Check that index 0 is ComputeBudgetProgram.setComputeUnitPrice
+      expect(tx.instructions.length).toBeGreaterThanOrEqual(2);
+      const firstIx = tx.instructions[0];
+      expect(firstIx.programId.equals(ComputeBudgetProgram.programId)).toBe(true);
+      expect(firstIx.data[0]).toBe(3); // SetComputeUnitPrice discriminator
+
+      // Verify there are no duplicate SetComputeUnitPrice instructions
+      const computeUnitPriceIxs = tx.instructions.filter(
+        (ix) => ix.programId.equals(ComputeBudgetProgram.programId) && ix.data[0] === 3,
+      );
+      expect(computeUnitPriceIxs.length).toBe(1);
+    } finally {
+      blockhashSpy.mockRestore();
+      feeSpy.mockRestore();
+    }
   });
 });

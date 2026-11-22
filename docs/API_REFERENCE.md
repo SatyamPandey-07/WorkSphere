@@ -124,6 +124,8 @@ Accept: application/json
 | `GET /api/bookings/{bookingId}/download`     | Download a booking receipt or confirmation.                                   |
 | `GET /api/bookings/{bookingId}/guests`       | Retrieve guest information for a booking.                                     |
 | `GET /api/bookings/{bookingId}/calendar.ics` | Export an RFC 5545 iCalendar (.ics) file or calendar web links for a booking. |
+| `GET /api/payments/split/{token}`            | Verify guest split-payment token and retrieve checkout details. See the [Guest Split Payment API guide](./api/GUEST_SPLIT_PAYMENT.md) for details. |
+| `POST /api/payments/split/{token}`           | Record payment state in WorkSphere's database using the verified token claims and issue a digital guest pass. See the [Guest Split Payment API guide](./api/GUEST_SPLIT_PAYMENT.md) for details. |
 
 ---
 

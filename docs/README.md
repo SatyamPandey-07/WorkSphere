@@ -17,6 +17,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [API Documentation Index](./api/README.md) — endpoint-specific API contracts and operational guides.
 - [REST API & Real-Time Streams](./API.md) — REST endpoints, authentication, request and response schemas, and event streams.
 - [API Reference](./API_REFERENCE.md) — high-level endpoint reference organized by feature.
+- [Smart Desk Sensor Telemetry Payload Specification & Protobuf Definitions](./iot/TELEMETRY_PAYLOAD_SPEC.md) — JSON telemetry payload schemas, Protocol Buffers definitions, HMAC-SHA256 webhook authentication, timestamp replay protection, and electrical power anomaly thresholds.
 - [Seat Hold Lease Extension API](./api/SEAT_HOLD_LEASE_EXTENSION.md) — seat-lock lease extension, fencing-token validation, and API response behavior.
 - [Anonymous ZKP Check-In OpenAPI 3.1 Specification](./api/zkp-checkin.openapi.yaml) — anonymous check-in proof and response contract.
 - [Venue Amenity Voting OpenAPI 3.1 Specification](./api/amenity-votes.openapi.yaml) — amenity metrics and vote submission contract.

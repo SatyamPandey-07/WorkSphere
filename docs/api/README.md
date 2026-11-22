@@ -20,6 +20,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Booking calendar export](./BOOKING_CALENDAR_EXPORT.md) — RFC 5545 ICS download, Google and Outlook web links, alarm offsets, ownership verification, and error responses.
 - [Bulk venue check-in API](./BULK_CHECK_IN.md) — manager authorization, batch validation, partial results, and availability cache invalidation.
 - [Cafe orders](./cafe-orders.md)
+- [Folder exports](./FOLDER_EXPORTS.md) — geographic (GeoJSON and KML), PDF catalog, and billing CSV exports for workspace folders.
 - [Guest Split Payment API](./GUEST_SPLIT_PAYMENT.md) — signed split-payment token verification, guest checkout, idempotent payment recording, and digital guest pass generation.
 - [Meet Halfway Routing](./MEET_HALFWAY_ROUTING.md) — request/response contract, optimization behavior, commute estimates, and capacity fallback semantics.
 - [Message translation](./message-translation.md)

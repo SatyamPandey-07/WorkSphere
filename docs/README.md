@@ -85,6 +85,8 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Offline Sync Flow](./architecture/offline-sync-flow.md) — application offline synchronization flow.
 - [Local Mesh CRDT Synchronization](./realtime/local-mesh-crdt-sync.md) — collaborative state replication over peer-to-peer mesh connections.
 - [CRDT Documentation Index](./crdt/README.md) — collaborative data protocols, specifications, and reading order.
+- [Yjs State Vector Exchange & Differential Compaction Architecture](./crdt/YJS_SYNC_PROTOCOL.md) — complete Yjs state vector exchange (`Y.encodeStateVector`), differential update computation (`Y.encodeStateAsUpdate`), wire codecs, and snapshot compaction engine.
+- [Ephemeral Awareness Vector Clock Compaction](./crdt/AWARENESS_VECTOR_COMPACTION.md) — ephemeral presence tracking, 30s TTL heartbeat eviction, and awareness vector compaction vs. document-level garbage collection.
 
 ## Testing, Monitoring & Operations
 

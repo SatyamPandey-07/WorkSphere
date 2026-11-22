@@ -28,6 +28,7 @@ This directory contains endpoint-specific API contracts and operational guidance
 - [Partition export](./partition-export.md)
 - [Partition management](./partition-management.md) — scheduled maintenance, bulk archive and deletion, and administrative audit endpoints.
 - [Semantic search](./semantic-search.md)
+- [Spatial venue bounding-box search](./SPATIAL_VENUE_SEARCH.md) — query parameters, JSON body contract, anti-meridian date line crossover, text sanitization, and response schema.
 - [Solana Pay](./solana-pay.md)
 - [Solana Pay Escrow Settlement](./SOLANA_PAY_ESCROW.md) — end-to-end Solana Pay micro-transaction escrow settlement flow, optimistic reservations, WebSocket and polling confirmation lifecycles, and multi-rail ledger splits.
 - [Telemetry](./telemetry.md)

@@ -4,6 +4,7 @@
   <img src="public/icons/icon-512.png" alt="WorkSphere Logo" width="84" height="84" style="border-radius: 20px;" />
 </a>
 
+
 # WorkSphere
 
 ### _The Intelligent Multi-Agent Workspace Discovery & Real-Time Booking Engine_

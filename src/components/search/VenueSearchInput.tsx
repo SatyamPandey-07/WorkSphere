@@ -1,105 +1,190 @@
-import React, { forwardRef, useEffect, useState } from 'react';
+'use client';
 
-export interface VenueSearchInputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> {
-  shortcutLabel?: string;
-  showShortcutBadge?: boolean;
+import React, { useEffect, useRef, useState } from 'react';
+
+export const VENUE_SEARCH_HISTORY_STORAGE_KEY = 'worksphere:venue_search_history:v1';
+export const MAX_VENUE_SEARCH_HISTORY = 8;
+
+export interface VenueSearchInputProps {
+  value?: string;
+  onChange?: (value: string) => void;
+  onSelectQuery?: (query: string) => void;
+  storageKey?: string;
+  placeholder?: string;
+  className?: string;
 }
 
-export function isMacPlatform(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const platform = navigator.platform ?? '';
-  const userAgent = navigator.userAgent ?? '';
-  return /mac|iphone|ipad|ipod/i.test(platform) || /mac os x|macintosh/i.test(userAgent);
+export function loadVenueSearchHistory(
+  storageKey = VENUE_SEARCH_HISTORY_STORAGE_KEY
+): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .slice(0, MAX_VENUE_SEARCH_HISTORY);
+  } catch {
+    return [];
+  }
 }
 
-export function useGlobalSearchShortcut(
-  inputRef: React.RefObject<HTMLInputElement | null>,
-  enabled = true
-): string {
-  const [shortcutLabel, setShortcutLabel] = useState<string>('Ctrl+K');
+export function saveVenueSearchHistory(
+  items: string[],
+  storageKey = VENUE_SEARCH_HISTORY_STORAGE_KEY
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (items.length === 0) {
+      window.localStorage.setItem(storageKey, JSON.stringify([]));
+    } else {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify(items.slice(0, MAX_VENUE_SEARCH_HISTORY))
+      );
+    }
+  } catch {
+    // Ignore storage quota or private-mode errors
+  }
+}
+
+export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
+  value: controlledValue,
+  onChange,
+  onSelectQuery,
+  storageKey = VENUE_SEARCH_HISTORY_STORAGE_KEY,
+  placeholder = 'Search cafes, coworking spaces, neighborhoods...',
+  className = '',
+}) => {
+  const [internalQuery, setInternalQuery] = useState(controlledValue ?? '');
+  const [history, setHistory] = useState<string[]>(() => loadVenueSearchHistory(storageKey));
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [statusAnnouncement, setStatusAnnouncement] = useState('');
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const query = controlledValue !== undefined ? controlledValue : internalQuery;
 
   useEffect(() => {
-    setShortcutLabel(isMacPlatform() ? '⌘K' : 'Ctrl+K');
+    setHistory(loadVenueSearchHistory(storageKey));
+  }, [storageKey]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  useEffect(() => {
-    if (!enabled || typeof window === 'undefined') return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const isShortcut =
-        event.key.toLowerCase() === 'k' &&
-        (event.metaKey || event.ctrlKey) &&
-        !event.altKey &&
-        !event.shiftKey;
-
-      if (!isShortcut) return;
-
-      const target = event.target as HTMLElement | null;
-      const inputEl = inputRef.current;
-      const isEditable =
-        target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLInputElement && target !== inputEl) ||
-        Boolean(target?.isContentEditable);
-
-      if (isEditable) return;
-
-      event.preventDefault();
-      inputEl?.focus();
-      inputEl?.select();
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [enabled, inputRef]);
-
-  return shortcutLabel;
-}
-
-export const VenueSearchInput = forwardRef<HTMLInputElement, VenueSearchInputProps>(
-  function VenueSearchInput(
-    {
-      className = '',
-      shortcutLabel,
-      showShortcutBadge = true,
-      value,
-      ...rest
-    },
-    ref
-  ) {
-    const [isFocused, setIsFocused] = useState(false);
-    const resolvedLabel = shortcutLabel ?? (isMacPlatform() ? '⌘K' : 'Ctrl+K');
-    const hasValue = typeof value === 'string' ? value.length > 0 : Boolean(rest.defaultValue);
-    const shouldDisplayBadge = showShortcutBadge && !isFocused && !hasValue;
-
-    return (
-      <div className="relative flex items-center w-full">
-        <input
-          ref={ref}
-          type="search"
-          value={value}
-          onFocus={(e) => {
-            setIsFocused(true);
-            rest.onFocus?.(e);
-          }}
-          onBlur={(e) => {
-            setIsFocused(false);
-            rest.onBlur?.(e);
-          }}
-          className={`w-full pr-16 ${className}`.trim()}
-          {...rest}
-        />
-
-        {shouldDisplayBadge && (
-          <kbd
-            aria-label={`Keyboard shortcut ${resolvedLabel}`}
-            data-testid="search-shortcut-badge"
-            className="pointer-events-none absolute right-2.5 inline-flex items-center rounded border border-slate-300/80 bg-slate-100/90 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 select-none"
-          >
-            {resolvedLabel}
-          </kbd>
-        )}
-      </div>
+  const recordSearchQuery = (term: string) => {
+    const cleaned = term.trim();
+    if (!cleaned) return;
+    const next = [cleaned, ...history.filter((q) => q !== cleaned)].slice(
+      0,
+      MAX_VENUE_SEARCH_HISTORY
     );
-  }
-);
+    setHistory(next);
+    saveVenueSearchHistory(next, storageKey);
+  };
+
+  const handleClearAllHistory = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setHistory([]);
+    saveVenueSearchHistory([], storageKey);
+    setIsDropdownOpen(false);
+    setStatusAnnouncement('Search history cleared.');
+  };
+
+  const handleInputChange = (nextVal: string) => {
+    if (controlledValue === undefined) {
+      setInternalQuery(nextVal);
+    }
+    onChange?.(nextVal);
+  };
+
+  const handleSelectItem = (term: string) => {
+    handleInputChange(term);
+    recordSearchQuery(term);
+    onSelectQuery?.(term);
+    setIsDropdownOpen(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && query.trim()) {
+      recordSearchQuery(query);
+      onSelectQuery?.(query.trim());
+      setIsDropdownOpen(false);
+    } else if (e.key === 'Escape') {
+      setIsDropdownOpen(false);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className={`relative w-full ${className}`.trim()}>
+      <input
+        type="search"
+        value={query}
+        placeholder={placeholder}
+        aria-label="Search venues"
+        data-testid="venue-search-input"
+        onFocus={() => setIsDropdownOpen(true)}
+        onChange={(e) => {
+          handleInputChange(e.target.value);
+          setIsDropdownOpen(true);
+        }}
+        onKeyDown={handleKeyDown}
+        className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+      />
+
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="search-history-live-region"
+        className="sr-only"
+      >
+        {statusAnnouncement}
+      </div>
+
+      {isDropdownOpen && history.length > 0 && (
+        <div
+          data-testid="search-history-dropdown"
+          className="absolute z-20 mt-1.5 w-full rounded-xl border border-slate-200 bg-white py-2 shadow-lg"
+        >
+          <div className="flex items-center justify-between px-3 pb-1.5 text-xs font-medium text-slate-500">
+            <span>Recent searches</span>
+            <button
+              type="button"
+              data-testid="clear-all-history-btn"
+              onClick={handleClearAllHistory}
+              className="rounded px-1.5 py-0.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            >
+              Clear all
+            </button>
+          </div>
+
+          <ul className="divide-y divide-slate-100">
+            {history.map((item) => (
+              <li key={item}>
+                <button
+                  type="button"
+                  onClick={() => handleSelectItem(item)}
+                  className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  {item}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};

@@ -156,8 +156,9 @@ Accept: application/json
 | `POST /api/folders`                      | Create a folder.                       |
 | `POST /api/folders/join`                 | Join a shared folder.                  |
 | `GET /api/folders/{id}`                  | Retrieve folder details.               |
-| `GET /api/folders/{id}/export-pdf`       | Export a folder as a PDF.              |
-| `GET /api/folders/{id}/export-billing`   | Export billing information.            |
+| `GET /api/folders/{id}/export?format=geojson\|kml` | Export folder venues as GeoJSON or KML spatial data. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details. |
+| `GET /api/folders/{id}/export-pdf`       | Export folder venues and personal notes as a PDF summary report. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details. |
+| `GET /api/folders/{id}/export-billing`   | Export confirmed venue booking history as a billing CSV report. See the [Folder Exports guide](./api/FOLDER_EXPORTS.md) for details. |
 | `GET /api/folders/{id}/invites`          | Retrieve folder invitations.           |
 | `POST /api/folders/{id}/refresh`         | Refresh folder data.                   |
 | `GET /api/folders/{id}/venues`           | Retrieve venues within a folder.       |

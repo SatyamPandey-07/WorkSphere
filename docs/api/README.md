@@ -129,3 +129,7 @@ while true; do
   sleep "$wait_sec"
   attempt=$((attempt + 1))
 done
+
+## Related Guides
+
+- [Solana Escrow Settlement and Refund Runbook](../solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow lifecycle, confirmation levels, refunds, and RPC failover for crypto seat deposits.

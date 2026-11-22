@@ -44,8 +44,8 @@ export class BadgeValidationError extends Error {
 }
 
 // XML 1.0 forbids most C0 control characters and U+FFFE / U+FFFF.
-// eslint-disable-next-line no-control-regex
-const INVALID_XML_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uFFFE\uFFFF]/g;
+const INVALID_XML_CHARS =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uFFFE\uFFFF]/g;
 
 /** Escapes text for safe use in XML text nodes and attribute values. */
 export function escapeSvgText(value: string): string {
@@ -141,7 +141,9 @@ export function generateNomadBadgeSvg(params: NomadBadgeParams): string {
   const clean = validateBadgeParams(params);
   const name = escapeSvgText(clean.displayName);
   const rank = escapeSvgText(clean.rank.toUpperCase());
-  const checkIns = escapeSvgText(clean.verifiedCheckIns.toLocaleString("en-US"));
+  const checkIns = escapeSvgText(
+    clean.verifiedCheckIns.toLocaleString("en-US"),
+  );
   const issued = escapeSvgText(formatIssueTimestamp(clean.issuedAt));
   const [accentA, accentB] =
     RANK_ACCENTS[clean.rank.toLowerCase()] ?? DEFAULT_ACCENT;

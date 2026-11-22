@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
 import { resetStateVectorChecksumCache } from "@/lib/crdt/stateVectorChecksum";
+import {
+  CRDT_FRAME_MAGIC,
+  CRDT_FRAME_VERSION,
+  CRDT_FRAME_HEADER_SIZE,
+  CrdtFrameMessageType,
+  CrdtFrameReassembler,
+} from "@/lib/crdt/dataChannelFraming";
+import { DataChannelChunker } from "@/core/p2p/DataChannelChunker";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -117,6 +125,8 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
 
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
+  const chunkersRef = useRef<Map<string, DataChannelChunker>>(new Map());
+  const reassemblersRef = useRef<Map<string, CrdtFrameReassembler>>(new Map());
   const socketRef = useRef<{ send: (data: string) => void } | null>(null);
   const onDataRef = useRef<DataHandler | undefined>(onData);
 
@@ -159,6 +169,13 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
       // Drop cached digests even when the peer's RTCPeerConnection was
       // already removed; reconnect must begin with a fresh checksum exchange.
       resetStateVectorChecksumCache();
+      const chunker = chunkersRef.current.get(peerId);
+      if (chunker) {
+        chunker.dispose();
+        chunkersRef.current.delete(peerId);
+      }
+      reassemblersRef.current.delete(peerId);
+
       const pc = peersRef.current.get(peerId);
       dataChannelsRef.current.delete(peerId);
       prevBitrateBaselineRef.current.delete(peerId);
@@ -186,17 +203,84 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
     [updatePeerCount],
   );
 
+  const handleIncomingData = useCallback(
+    (peerId: string, data: ArrayBuffer) => {
+      if (data.byteLength >= CRDT_FRAME_HEADER_SIZE) {
+        const view = new DataView(data);
+        const magic = view.getUint16(0, false);
+        const version = view.getUint8(2);
+
+        if (magic === CRDT_FRAME_MAGIC && version === CRDT_FRAME_VERSION) {
+          let reassembler = reassemblersRef.current.get(peerId);
+          if (!reassembler) {
+            reassembler = new CrdtFrameReassembler();
+            reassemblersRef.current.set(peerId, reassembler);
+          }
+
+          try {
+            const result = reassembler.pushFrame(data);
+            if (result) {
+              const reconstructed = (
+                result.payload.byteOffset === 0 &&
+                result.payload.byteLength === result.payload.buffer.byteLength
+                  ? result.payload.buffer
+                  : result.payload.buffer.slice(
+                      result.payload.byteOffset,
+                      result.payload.byteOffset + result.payload.byteLength,
+                    )
+              ) as ArrayBuffer;
+              onDataRef.current?.(peerId, reconstructed);
+            }
+          } catch (frameErr) {
+            console.warn(
+              "Failed to decode or reassemble CRDT frame from",
+              peerId,
+              frameErr,
+            );
+          }
+          return;
+        }
+      }
+
+      // Fallback for legacy unframed messages
+      onDataRef.current?.(peerId, data);
+    },
+    [],
+  );
+
   const setupDataChannel = useCallback(
     (dc: RTCDataChannel, peerId: string) => {
+      const existingChunker = chunkersRef.current.get(peerId);
+      if (existingChunker) {
+        existingChunker.dispose();
+        chunkersRef.current.delete(peerId);
+      }
+      reassemblersRef.current.set(peerId, new CrdtFrameReassembler());
+
+      try {
+        dc.binaryType = "arraybuffer";
+      } catch {
+        // Ignore in environments where binaryType cannot be modified
+      }
+
+      const chunker = new DataChannelChunker(dc);
+      chunkersRef.current.set(peerId, chunker);
       dataChannelsRef.current.set(peerId, dc);
 
       dc.onopen = () => {
         updatePeerCount();
         setIsConnected(true);
+        chunker.drainQueue();
       };
 
       dc.onclose = () => {
         resetStateVectorChecksumCache();
+        const ch = chunkersRef.current.get(peerId);
+        if (ch) {
+          ch.dispose();
+          chunkersRef.current.delete(peerId);
+        }
+        reassemblersRef.current.delete(peerId);
         dataChannelsRef.current.delete(peerId);
         prevBitrateBaselineRef.current.delete(peerId);
         prevRtpBaselineRef.current.delete(peerId);
@@ -214,11 +298,11 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
 
       dc.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
-          onDataRef.current?.(peerId, event.data);
+          handleIncomingData(peerId, event.data);
         }
       };
     },
-    [updatePeerCount],
+    [updatePeerCount, handleIncomingData],
   );
 
   const ensurePeer = useCallback(
@@ -365,10 +449,17 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
 
   useEffect(() => {
     const peerIds = [...peersRef.current.keys()];
+    const chunkers = chunkersRef.current;
+    const reassemblers = reassemblersRef.current;
     return () => {
       for (const id of peerIds) {
         cleanupPeer(id);
       }
+      for (const chunker of chunkers.values()) {
+        chunker.dispose();
+      }
+      chunkers.clear();
+      reassemblers.clear();
     };
   }, [cleanupPeer]);
 
@@ -597,12 +688,23 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
   }, []);
 
   const sendToAll = useCallback((data: ArrayBuffer) => {
-    for (const dc of dataChannelsRef.current.values()) {
-      if (dc.readyState === "open") {
+    for (const [peerId, dc] of dataChannelsRef.current.entries()) {
+      if (dc.readyState === "open" || dc.readyState === "connecting") {
+        let chunker = chunkersRef.current.get(peerId);
+        if (!chunker) {
+          chunker = new DataChannelChunker(dc);
+          chunkersRef.current.set(peerId, chunker);
+        }
         try {
-          dc.send(data);
-        } catch {
-          // Peer may have disconnected
+          chunker.enqueue(data, {
+            messageType: CrdtFrameMessageType.DELTA_UPDATE,
+            compressed: true,
+          });
+        } catch (err) {
+          console.warn(
+            `Failed to enqueue CRDT update for peer ${peerId}:`,
+            err,
+          );
         }
       }
     }
@@ -610,12 +712,21 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
 
   const sendToPeer = useCallback((peerId: string, data: ArrayBuffer) => {
     const dc = dataChannelsRef.current.get(peerId);
-    if (dc?.readyState === "open") {
-      try {
-        dc.send(data);
-      } catch {
-        // Peer may have disconnected
-      }
+    if (!dc || (dc.readyState !== "open" && dc.readyState !== "connecting")) {
+      return;
+    }
+    let chunker = chunkersRef.current.get(peerId);
+    if (!chunker) {
+      chunker = new DataChannelChunker(dc);
+      chunkersRef.current.set(peerId, chunker);
+    }
+    try {
+      chunker.enqueue(data, {
+        messageType: CrdtFrameMessageType.DELTA_UPDATE,
+        compressed: true,
+      });
+    } catch (err) {
+      console.warn(`Failed to enqueue CRDT update for peer ${peerId}:`, err);
     }
   }, []);
 

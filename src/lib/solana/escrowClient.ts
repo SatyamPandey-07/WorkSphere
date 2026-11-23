@@ -15,6 +15,8 @@ import {
   type SolanaPayEscrowManager,
   type ReserveSeatOptions,
   type SeatReservationState,
+  DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT,
+  fetchLatestBlockhashWithBackoff,
 } from "./solanaPayEscrow";
 import {
   getPriorityFeeEstimator,
@@ -83,6 +85,7 @@ export interface EscrowDepositParams {
   currency: EscrowCurrency;
   rpcUrl: string;
   priorityFeeMicroLamports?: number;
+  computeUnitLimit?: number;
 }
 
 export interface EscrowDepositResult {
@@ -91,6 +94,7 @@ export interface EscrowDepositResult {
   escrowBump: number;
   amountBaseUnits: bigint;
   recentBlockhash: string;
+  lastValidBlockHeight?: number;
 }
 
 export interface EscrowValidationResult {
@@ -175,12 +179,24 @@ export async function buildSolDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "SOL");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
 
   const transaction = new Transaction({
     recentBlockhash: blockhash,
     feePayer: payer,
   });
+
+  // Dynamic Compute Unit Budget: set dedicated compute unit limit
+  const computeUnitLimit =
+    params.computeUnitLimit ?? DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT;
+  if (typeof computeUnitLimit === "number" && computeUnitLimit > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: Math.floor(computeUnitLimit),
+      }),
+    );
+  }
 
   // Dynamic Priority Fee: estimate automatically if not explicitly provided
   let priorityFee = params.priorityFeeMicroLamports;
@@ -197,7 +213,7 @@ export async function buildSolDepositTransaction(
     }
   }
 
-  // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+  // SetComputeUnitPrice must be placed before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
     transaction.add(
       ComputeBudgetProgram.setComputeUnitPrice({
@@ -233,6 +249,7 @@ export async function buildSolDepositTransaction(
     escrowBump: bump,
     amountBaseUnits,
     recentBlockhash: blockhash,
+    lastValidBlockHeight,
   };
 }
 
@@ -249,7 +266,8 @@ export async function buildUsdcDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "USDC");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
 
   const payerAta = getAssociatedTokenAddressSync(
     USDC_MINT,
@@ -271,6 +289,17 @@ export async function buildUsdcDepositTransaction(
     feePayer: payer,
   });
 
+  // Dynamic Compute Unit Budget: set dedicated compute unit limit
+  const computeUnitLimit =
+    params.computeUnitLimit ?? DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT;
+  if (typeof computeUnitLimit === "number" && computeUnitLimit > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: Math.floor(computeUnitLimit),
+      }),
+    );
+  }
+
   // Dynamic Priority Fee: estimate automatically if not explicitly provided
   let priorityFee = params.priorityFeeMicroLamports;
   if (priorityFee === undefined || priorityFee === null) {
@@ -287,7 +316,7 @@ export async function buildUsdcDepositTransaction(
     }
   }
 
-  // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+  // SetComputeUnitPrice must be placed before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
     transaction.add(
       ComputeBudgetProgram.setComputeUnitPrice({
@@ -329,6 +358,7 @@ export async function buildUsdcDepositTransaction(
     escrowBump: bump,
     amountBaseUnits,
     recentBlockhash: blockhash,
+    lastValidBlockHeight,
   };
 }
 
@@ -2569,6 +2599,16 @@ export class EscrowClient {
     return this.pool.execute((connection) => connection.getLatestBlockhash());
   }
 
+  /** Fetches the latest blockhash with exponential backoff on transient RPC errors. */
+  public async getLatestBlockhashWithRetry(
+    maxRetries = 3,
+    baseBackoffMs = 500,
+  ): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+    return this.pool.execute((connection) =>
+      fetchLatestBlockhashWithBackoff(connection, maxRetries, baseBackoffMs),
+    );
+  }
+
   /** Fetches a transaction's signature status through the failover pool. */
   public async getSignatureStatus(
     signature: string,
@@ -2774,7 +2814,9 @@ export class EscrowConfirmationStateMachine {
     return this._isTerminal;
   }
 
-  public subscribe(listener: (event: EscrowConfirmationEvent) => void): () => void {
+  public subscribe(
+    listener: (event: EscrowConfirmationEvent) => void,
+  ): () => void {
     this.listeners.push(listener);
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener);
@@ -2786,20 +2828,30 @@ export class EscrowConfirmationStateMachine {
     sourceOrOptions?:
       | EscrowConfirmationSource
       | { slot?: number | null; error?: string | null; reason?: string },
-    optionsParam?: { slot?: number | null; error?: string | null; reason?: string },
+    optionsParam?: {
+      slot?: number | null;
+      error?: string | null;
+      reason?: string;
+    },
   ): EscrowConfirmationEvent | null {
     if (this._isTerminal) {
       return null;
     }
 
     let source: EscrowConfirmationSource = "websocket";
-    let options: { slot?: number | null; error?: string | null; reason?: string } =
-      {};
+    let options: {
+      slot?: number | null;
+      error?: string | null;
+      reason?: string;
+    } = {};
 
     if (typeof sourceOrOptions === "string") {
       source = sourceOrOptions;
       if (optionsParam) options = optionsParam;
-    } else if (typeof sourceOrOptions === "object" && sourceOrOptions !== null) {
+    } else if (
+      typeof sourceOrOptions === "object" &&
+      sourceOrOptions !== null
+    ) {
       options = sourceOrOptions;
     }
 
@@ -2856,7 +2908,9 @@ export class EscrowConfirmationStateMachine {
       if (newStatus === "finalized") {
         this.resolvePromise(event);
       } else {
-        const err = new Error(options.error || `Escrow confirmation ended in state: ${newStatus}`);
+        const err = new Error(
+          options.error || `Escrow confirmation ended in state: ${newStatus}`,
+        );
         // Avoid unhandled rejection crash if caller doesn't attach .catch to promise
         this.promise.catch(() => {});
         this.rejectPromise(err);
@@ -3155,9 +3209,12 @@ export function subscribeToEscrowConfirmation(
             finalRes = await options.pollSignatureStatus(cleanSignature);
             finalCheckSucceeded = true;
           } else if (connection) {
-            const res = await connection.getSignatureStatuses([cleanSignature], {
-              searchTransactionHistory: true,
-            });
+            const res = await connection.getSignatureStatuses(
+              [cleanSignature],
+              {
+                searchTransactionHistory: true,
+              },
+            );
             finalRes = res.value?.[0] ?? null;
             finalCheckSucceeded = true;
           } else {
@@ -3292,8 +3349,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,
@@ -3328,8 +3384,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,
@@ -3389,8 +3444,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,

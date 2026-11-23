@@ -73,42 +73,51 @@ export async function GET() {
 
     const u = user as any;
 
-    // 1.5. Calculate Gamification Data
-    // A. Fetch all ratings to determine night reviews and speedtests
-    const allRatings = await prisma.venueRating.findMany({
-      where: { userId },
-      select: {
-        createdAt: true,
-        wifiSpeed: true,
-      },
-    });
-
-    // B. Fetch all unique cafe bookings
-    const cafeBookings = await prisma.booking.findMany({
-      where: {
-        userId,
-        status: "CONFIRMED",
-        venue: {
-          category: "cafe",
+    // 1.5. Calculate Gamification Data via Database Aggregates
+    // Execute database-level aggregations in parallel instead of unbounded in-memory table scans
+    const [
+      reviewsCount,
+      speedtestsCount,
+      uniqueCafeGroups,
+      venuesAddedCount,
+      nightOwlRatings,
+    ] = await Promise.all([
+      // A. Database count of all user ratings
+      prisma.venueRating.count({
+        where: { userId },
+      }),
+      // B. Database count of verified speedtests (wifiSpeed > 0)
+      prisma.venueRating.count({
+        where: {
+          userId,
+          wifiSpeed: { gt: 0 },
         },
-      },
-      select: {
-        venueId: true,
-      },
-    });
-    const uniqueCafesBooked = new Set(cafeBookings.map((b) => b.venueId)).size;
+      }),
+      // C. Database grouping of distinct cafe venues booked
+      prisma.booking.groupBy({
+        by: ["venueId"],
+        where: {
+          userId,
+          status: "CONFIRMED",
+          venue: {
+            category: "cafe",
+          },
+        },
+      }),
+      // D. Database count of venues created by user
+      prisma.venue.count({
+        where: { creatorId: userId },
+      }),
+      // E. Bounded query for night reviews (only selecting createdAt for timestamps)
+      prisma.venueRating.findMany({
+        where: { userId },
+        select: { createdAt: true },
+      }),
+    ]);
 
-    // C. Fetch count of venues added
-    const venuesAddedCount = await prisma.venue.count({
-      where: { creatorId: userId },
-    });
+    const uniqueCafesBooked = uniqueCafeGroups.length;
 
-    const reviewsCount = allRatings.length;
-    const speedtestsCount = allRatings.filter(
-      (r) => r.wifiSpeed !== null && r.wifiSpeed > 0,
-    ).length;
-
-    const nightOwlReviewsCount = allRatings.filter((r) => {
+    const nightOwlReviewsCount = nightOwlRatings.filter((r) => {
       const hours = new Date(r.createdAt).getHours();
       return hours >= 21 || hours < 5;
     }).length;

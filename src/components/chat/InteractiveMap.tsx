@@ -7,9 +7,21 @@ import React, {
   useRef,
   useCallback,
 } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  Circle,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import {
+  calculateDistanceMeters,
+  GEOFENCE_RADIUS_METERS,
+  isOutsideGeofence,
+  type Coordinates,
+} from "@/lib/geo/geofence";
 import {
   Map as MapIcon,
   Sun,
@@ -65,6 +77,15 @@ export interface InteractiveMapProps {
   center?: { lat: number; lng: number };
   zoom?: number;
   className?: string;
+  activeBooking?: {
+    id?: string;
+    status?: string;
+    venue?: {
+      latitude?: number | string | null;
+      longitude?: number | string | null;
+      name?: string | null;
+    } | null;
+  } | null;
 }
 
 export function InteractiveMap({
@@ -72,12 +93,133 @@ export function InteractiveMap({
   center: propCenter,
   zoom = 13,
   className = "",
+  activeBooking: activeBookingProp,
 }: InteractiveMapProps) {
   const [isHighContrast, setIsHighContrast] = useState(false);
   const [timeWindowHour, setTimeWindowHour] = useState(12);
   const [currentZoom, setCurrentZoom] = useState(zoom);
   const [isTouchOnly, setIsTouchOnly] = useState(false);
+  const [activeBooking, setActiveBooking] = useState<
+    InteractiveMapProps["activeBooking"]
+  >(activeBookingProp ?? null);
+  const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const mapRef = useRef<any>(null);
+
+  useEffect(() => {
+    setActiveBooking(activeBookingProp ?? null);
+  }, [activeBookingProp]);
+
+  useEffect(() => {
+    if (activeBookingProp) return;
+    if (typeof window === "undefined" || typeof fetch !== "function") return;
+
+    let cancelled = false;
+    void fetch("/api/bookings/history?status=CHECKED_IN&limit=1&sort=desc")
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const data = await response.json();
+        const booking = Array.isArray(data?.bookings) ? data.bookings[0] : null;
+        return booking?.status === "CHECKED_IN" ? booking : null;
+      })
+      .then((booking) => {
+        if (!cancelled) setActiveBooking(booking);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveBooking(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBookingProp]);
+
+  useEffect(() => {
+    if (!activeBooking || typeof window === "undefined") return;
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported by this browser.");
+      return;
+    }
+
+    setLocationError(null);
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        if (
+          Number.isFinite(latitude) &&
+          Number.isFinite(longitude) &&
+          latitude >= -90 &&
+          latitude <= 90 &&
+          longitude >= -180 &&
+          longitude <= 180
+        ) {
+          setUserLocation({ latitude, longitude });
+          setLocationError(null);
+        }
+      },
+      (error) => {
+        if (error.code === 1) {
+          setLocationError("Location permission denied.");
+        } else if (error.code === 2) {
+          setLocationError("Current location is unavailable.");
+        } else {
+          setLocationError("Location tracking timed out.");
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 5000,
+      },
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [activeBooking]);
+
+  const venueCoordinates = useMemo(() => {
+    if (activeBooking?.status && activeBooking.status !== "CHECKED_IN") return null;
+    const rawLatitude = activeBooking?.venue?.latitude;
+    const rawLongitude = activeBooking?.venue?.longitude;
+    if (rawLatitude == null || rawLongitude == null) return null;
+
+    const latitude = Number(rawLatitude);
+    const longitude = Number(rawLongitude);
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return null;
+    }
+    return { latitude, longitude };
+  }, [activeBooking]);
+
+  const distanceMeters = useMemo(() => {
+    if (!venueCoordinates || !userLocation) return null;
+    return calculateDistanceMeters(userLocation, venueCoordinates);
+  }, [userLocation, venueCoordinates]);
+
+  const isOutside = useMemo(() => {
+    if (!venueCoordinates || !userLocation) return false;
+    return isOutsideGeofence(userLocation, venueCoordinates, GEOFENCE_RADIUS_METERS);
+  }, [userLocation, venueCoordinates]);
+
+  const userLocationIcon = useMemo(() => {
+    if (typeof window === "undefined") return undefined;
+    const outside = isOutside;
+    const color = outside ? "#fb7185" : "#10b981";
+    if (typeof (L as any).divIcon !== "function") return undefined;
+    return (L as any).divIcon({
+      className: "worksphere-user-location-marker",
+      html: `<div class="worksphere-location-pulse worksphere-location-pulse--${outside ? "outside" : "inside"}" style="--location-color:${color}"><div></div></div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    });
+  }, [isOutside]);
 
   // Detect touch-only mobile device on mount to conditionally hide shortcut badges
   useEffect(() => {
@@ -302,6 +444,34 @@ export function InteractiveMap({
       data-testid="interactive-map"
       className={`w-full h-80 mt-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden relative z-0 ${className}`}
     >
+      <style>{`
+        .worksphere-location-pulse {
+          --location-color: #10b981;
+          width: 18px;
+          height: 18px;
+          border: 3px solid #fff;
+          border-radius: 9999px;
+          background: var(--location-color);
+          box-shadow: 0 0 12px var(--location-color), 0 0 24px color-mix(in srgb, var(--location-color) 55%, transparent);
+          position: relative;
+        }
+        .worksphere-location-pulse::after {
+          content: "";
+          position: absolute;
+          inset: -8px;
+          border-radius: 9999px;
+          border: 2px solid var(--location-color);
+          animation: worksphere-location-pulse 1.8s ease-out infinite;
+        }
+        @keyframes worksphere-location-pulse {
+          0% { transform: scale(.45); opacity: .85; }
+          100% { transform: scale(1.35); opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .worksphere-location-pulse::after { animation: none; }
+        }
+      `}</style>
+
       {/* Map Overlay Controls - Non-overlapping Responsive Stack */}
       <div className="absolute top-2 left-2 z-[400] flex flex-col sm:flex-row items-start sm:items-center gap-2 max-w-[calc(100%-1rem)]">
         {/* Map Header Badge */}
@@ -363,6 +533,40 @@ export function InteractiveMap({
           </span>
         </div>
       </div>
+
+      {venueCoordinates && (
+        <div
+          data-testid="geofence-status"
+          className={`absolute bottom-20 right-4 z-[400] max-w-[calc(100%-2rem)] rounded-xl border px-3 py-2 text-xs shadow-lg backdrop-blur-md ${
+            isOutside
+              ? "border-rose-400/40 bg-rose-950/90 text-rose-100"
+              : "border-emerald-400/40 bg-emerald-950/90 text-emerald-100"
+          }`}
+        >
+          <div className="font-bold">
+            {!userLocation
+              ? "Locating checkout position"
+              : isOutside
+                ? "Outside checkout boundary"
+                : "Inside checkout boundary"}
+          </div>
+          <div className="mt-0.5 font-mono text-[11px]">
+            {distanceMeters == null
+              ? "Locating..."
+              : `${distanceMeters >= 1000 ? `${(distanceMeters / 1000).toFixed(2)} km` : `${Math.round(distanceMeters)} m`} away`}
+            {" · "}
+            {GEOFENCE_RADIUS_METERS >= 1000
+              ? `${GEOFENCE_RADIUS_METERS / 1000} km`
+              : `${GEOFENCE_RADIUS_METERS} m`}{" "}
+            radius
+          </div>
+          {locationError && (
+            <div className="mt-1 max-w-64 text-[10px] text-amber-200">
+              {locationError}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quick Map Action Navigation Controls with Keyboard Badges */}
       <div
@@ -440,6 +644,53 @@ export function InteractiveMap({
           url={tileLayerUrl}
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
+        {venueCoordinates && (
+          <Circle
+            center={[venueCoordinates.latitude, venueCoordinates.longitude]}
+            radius={GEOFENCE_RADIUS_METERS}
+            pathOptions={
+              isOutside
+                ? {
+                    stroke: true,
+                    color: "#fb7185",
+                    weight: 2,
+                    dashArray: "6, 8",
+                    fillColor: "#fb7185",
+                    fillOpacity: 0.14,
+                  }
+                : {
+                    stroke: true,
+                    color: "#10b981",
+                    weight: 2,
+                    dashArray: "6, 8",
+                    fillColor: "#10b981",
+                    fillOpacity: 0.12,
+                  }
+            }
+          />
+        )}
+        {venueCoordinates && userLocation && (
+          <Marker
+            position={[userLocation.latitude, userLocation.longitude]}
+            icon={userLocationIcon}
+            title={isOutside ? "Outside checkout boundary" : "Inside checkout boundary"}
+            alt={isOutside ? "Outside checkout boundary" : "Inside checkout boundary"}
+            keyboard={true}
+          >
+            <Popup>
+              <div data-testid="user-location-popup" className="text-xs font-semibold">
+                {isOutside ? "Outside checkout boundary" : "Inside checkout boundary"}
+              </div>
+              {distanceMeters != null && (
+                <div className="text-xs">
+                  {distanceMeters >= 1000
+                    ? `${(distanceMeters / 1000).toFixed(2)} km`
+                    : `${Math.round(distanceMeters)} m`} from venue
+                </div>
+              )}
+            </Popup>
+          </Marker>
+        )}
         {spiderfiedMarkers.map((marker, idx) => {
           const venueName = marker.name || marker.title || "Location";
           const ratingVal = marker.score ?? marker.rating;

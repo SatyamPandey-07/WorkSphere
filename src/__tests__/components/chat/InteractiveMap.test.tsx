@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import {
   InteractiveMap,
   InteractiveMapMarker,
@@ -71,6 +71,23 @@ jest.mock("react-leaflet", () => ({
   Popup: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="mock-popup">{children}</div>
   ),
+  Circle: ({
+    center,
+    radius,
+    pathOptions,
+  }: {
+    center: [number, number];
+    radius: number;
+    pathOptions?: Record<string, unknown>;
+  }) => (
+    <div
+      data-testid="mock-geofence-circle"
+      data-lat={center[0]}
+      data-lng={center[1]}
+      data-radius={radius}
+      data-color={String(pathOptions?.color ?? "")}
+    />
+  ),
 }));
 
 // Mock leaflet icon fix
@@ -81,6 +98,7 @@ jest.mock("leaflet", () => {
   (DefaultIcon as any).mergeOptions = mockMerge;
   return {
     Icon: { Default: DefaultIcon },
+    divIcon: jest.fn((options: unknown) => options),
   };
 });
 
@@ -241,6 +259,154 @@ describe("InteractiveMap Component", () => {
 
       expect(screen.getByText("Coworking Space Berlin")).toBeInTheDocument();
       expect(screen.getByText("Location")).toBeInTheDocument();
+    });
+  });
+
+  describe("Checked-in Geofence Indicator", () => {
+    let watchSuccess: ((position: GeolocationPosition) => void) | null = null;
+    let watchError: ((error: GeolocationPositionError) => void) | null = null;
+
+    beforeEach(() => {
+      watchSuccess = null;
+      watchError = null;
+      Object.defineProperty(global.navigator, "geolocation", {
+        configurable: true,
+        value: {
+          watchPosition: jest.fn((success, error) => {
+            watchSuccess = success;
+            watchError = error;
+            return 42;
+          }),
+          clearWatch: jest.fn(),
+        },
+      });
+    });
+
+    it("renders a 250 meter circle for an active checked-in booking", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194, name: "Test Venue" }]}
+          activeBooking={{
+            id: "booking-1",
+            status: "CHECKED_IN",
+            venue: {
+              name: "Test Venue",
+              latitude: 37.7749,
+              longitude: -122.4194,
+            },
+          }}
+        />,
+      );
+
+      const circle = screen.getByTestId("mock-geofence-circle");
+      expect(circle).toHaveAttribute("data-lat", "37.7749");
+      expect(circle).toHaveAttribute("data-lng", "-122.4194");
+      expect(circle).toHaveAttribute("data-radius", "250");
+    });
+
+    it("does not render a geofence without an active checked-in booking", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194 }]}
+          activeBooking={null}
+        />,
+      );
+      expect(screen.queryByTestId("mock-geofence-circle")).not.toBeInTheDocument();
+    });
+
+    it("does not render a geofence for invalid venue coordinates", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194 }]}
+          activeBooking={{
+            status: "CHECKED_IN",
+            venue: { latitude: 95, longitude: -122.4194 },
+          }}
+        />,
+      );
+      expect(screen.queryByTestId("mock-geofence-circle")).not.toBeInTheDocument();
+    });
+
+    it("updates inside and outside visual state as location changes", () => {
+      render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194 }]}
+          activeBooking={{
+            status: "CHECKED_IN",
+            venue: { latitude: 37.7749, longitude: -122.4194 },
+          }}
+        />,
+      );
+
+      act(() => {
+        watchSuccess?.({
+          coords: {
+            latitude: 37.7752,
+            longitude: -122.4194,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      expect(screen.getByTestId("geofence-status")).toHaveTextContent(
+        "Inside checkout boundary",
+      );
+
+      act(() => {
+        watchSuccess?.({
+          coords: {
+            latitude: 37.7794,
+            longitude: -122.4194,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+      });
+
+      expect(screen.getByTestId("geofence-status")).toHaveTextContent(
+        "Outside checkout boundary",
+      );
+      expect(screen.getByTestId("mock-geofence-circle")).toHaveAttribute(
+        "data-color",
+        "#fb7185",
+      );
+    });
+
+    it("handles geolocation errors and cleans up the watcher", () => {
+      const { unmount } = render(
+        <InteractiveMap
+          markers={[{ lat: 37.7749, lng: -122.4194 }]}
+          activeBooking={{
+            status: "CHECKED_IN",
+            venue: { latitude: 37.7749, longitude: -122.4194 },
+          }}
+        />,
+      );
+
+      act(() => {
+        watchError?.({
+          code: 1,
+          message: "Permission denied",
+          PERMISSION_DENIED: 1,
+          POSITION_UNAVAILABLE: 2,
+          TIMEOUT: 3,
+        } as GeolocationPositionError);
+      });
+
+      expect(screen.getByTestId("geofence-status")).toHaveTextContent(
+        "Location permission denied.",
+      );
+      unmount();
+      expect(navigator.geolocation.clearWatch).toHaveBeenCalledWith(42);
     });
   });
 

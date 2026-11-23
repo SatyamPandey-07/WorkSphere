@@ -1,4 +1,8 @@
-import { calculateDistanceMeters, Coordinates } from "../geo/geofence";
+import {
+  calculateDistanceMeters,
+  Coordinates,
+  GEOFENCE_RADIUS_METERS,
+} from "../geo/geofence";
 import { prisma } from "@/lib/prisma";
 
 // SSE clients broadcaster registry
@@ -51,7 +55,6 @@ export async function processGeofenceExitCheck({
   venueCoords,
 }: ProcessGeofenceExitParams): Promise<{ status: string; message: string }> {
   const distance = calculateDistanceMeters(userCoords, venueCoords);
-  const GEOFENCE_THRESHOLD_METERS = 250;
   const DURATION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
   // Retrieve authoritative booking from database to check durable tracking state
@@ -80,7 +83,7 @@ export async function processGeofenceExitCheck({
   }
 
   // Case 1: User is inside the geofence boundary
-  if (distance <= GEOFENCE_THRESHOLD_METERS) {
+  if (distance <= GEOFENCE_RADIUS_METERS) {
     // If exit tracking was previously recorded, reset it in database
     if (booking.geofenceExitAt) {
       await prisma.booking.updateMany({

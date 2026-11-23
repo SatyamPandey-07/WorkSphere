@@ -20,11 +20,11 @@
   <b>🌟 Official Selected Project for <a href="https://github.com/SatyamPandey-07/WorkSphere">ECSoC 2026</a> (Elite Coders Summer of Code), <a href="https://github.com/SatyamPandey-07/WorkSphere">OSCI 2026</a> (Open Source Contribution India) &amp; <a href="https://woc.codesocial.tech">WOCS 2026</a> (Winter of Code Social by Code Social) 🌟</b>
 </p>
 
-[![Next.js](https://img.shields.io/badge/Next.js-15.5-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.4.3-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.3.1-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Prisma ORM](https://img.shields.io/badge/Prisma-7.2-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![Prisma ORM](https://img.shields.io/badge/Prisma-7.10.1-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![PartyKit](https://img.shields.io/badge/PartyKit-WebSockets-FF5722?style=for-the-badge&logo=partykit&logoColor=white)](https://partykit.io/)
 [![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
@@ -1329,25 +1329,25 @@ WorkSphere brings together geospatial data, ambient intelligence, and real-time 
 
 ## 🛠️ Tech Stack
 
-| Category               | Technology                                                              |
-| ---------------------- | ----------------------------------------------------------------------- |
-| **Framework**          | Next.js 15.5 (App Router with Server Components & Server Actions)       |
-| **Language**           | TypeScript 5.0                                                          |
-| **Styling**            | Tailwind CSS 4.0, Radix UI Primitives, Lucide Icons                     |
-| **AI / Multi-Agent**   | Groq SDK (Llama 3.3 70B Versatile), In-Browser Intent Orchestrator      |
-| **Database**           | Neon Serverless PostgreSQL + Prisma 7.2 ORM (with `@prisma/adapter-pg`) |
-| **Authentication**     | Clerk (JWTs, Webhook Sync, Passkeys & WebAuthn)                         |
-| **Web3 & FinTech**     | Solana Web3.js, Solana Pay Protocol, Smart Contract Escrows             |
-| **Edge Audio / DSP**   | WebAssembly (WASM C DSP), AudioWorklet API, Web Audio Oscillators       |
-| **Spatial & AR**       | WebXR Device API, Three.js / WebGL, Voxel Octrees                       |
-| **Maps & Routing**     | React Leaflet, OpenStreetMap, OSRM Road Machine, CartoDB Dark Matter    |
-| **Real-time & P2P**    | PartyKit WebSockets, Server-Sent Events (SSE), WebRTC DataChannels      |
-| **Digital Twin / IoT** | Matter / HomeKit Bridge, MQTT Telemetry, Web Bluetooth Low Energy (BLE) |
-| **Cryptography / ZKP** | Web Crypto API (SubtleCrypto HMAC-SHA256), WASM ZK-SNARKs (SnarkJS)     |
-| **PDF Generation**     | pdf-lib 2.x (Zero-filesystem serverless execution)                      |
-| **Testing**            | Jest 29, React Testing Library, Playwright E2E (838+ test suites)       |
-| **PWA & Offline**      | Service Workers, IndexedDB, Background Sync API, Web Locks API          |
-| **Deployment**         | Vercel (Edge & Serverless Functions)                                    |
+| Category               | Technology                                                                 |
+| ---------------------- | -------------------------------------------------------------------------- |
+| **Framework**          | Next.js 16.4.3 (App Router with Server Components & Server Actions)        |
+| **Language**           | TypeScript 6.0.3                                                           |
+| **Styling**            | Tailwind CSS 4.0, Radix UI Primitives, Lucide Icons                        |
+| **AI / Multi-Agent**   | Groq SDK (Llama 3.3 70B Versatile), In-Browser Intent Orchestrator         |
+| **Database**           | Neon Serverless PostgreSQL + Prisma 7.10.1 ORM (with `@prisma/adapter-pg`) |
+| **Authentication**     | Clerk (JWTs, Webhook Sync, Passkeys & WebAuthn)                            |
+| **Web3 & FinTech**     | Solana Web3.js, Solana Pay Protocol, Smart Contract Escrows                |
+| **Edge Audio / DSP**   | WebAssembly (WASM C DSP), AudioWorklet API, Web Audio Oscillators          |
+| **Spatial & AR**       | WebXR Device API, Three.js / WebGL, Voxel Octrees                          |
+| **Maps & Routing**     | React Leaflet, OpenStreetMap, OSRM Road Machine, CartoDB Dark Matter       |
+| **Real-time & P2P**    | PartyKit WebSockets, Server-Sent Events (SSE), WebRTC DataChannels         |
+| **Digital Twin / IoT** | Matter / HomeKit Bridge, MQTT Telemetry, Web Bluetooth Low Energy (BLE)    |
+| **Cryptography / ZKP** | Web Crypto API (SubtleCrypto HMAC-SHA256), WASM ZK-SNARKs (SnarkJS)        |
+| **PDF Generation**     | pdf-lib 2.x (Zero-filesystem serverless execution)                         |
+| **Testing**            | Jest 29, React Testing Library, Playwright E2E (838+ test suites)          |
+| **PWA & Offline**      | Service Workers, IndexedDB, Background Sync API, Web Locks API             |
+| **Deployment**         | Vercel (Edge & Serverless Functions)                                       |
 
 ---
 
@@ -1917,7 +1917,7 @@ worksphere/
 | `e2e/`            | Playwright end-to-end test suites for full browser flows                                                                          |
 | `public/`         | Static files served directly: service worker (`sw.js`), PWA manifest, and app icons                                               |
 | `scripts/`        | One-off and CI utility scripts (database seeding, asset generation, etc.)                                                         |
-| `src/app/`        | Next.js 15 App Router — every page, layout, and API route handler lives here                                                      |
+| `src/app/`        | Next.js 16 App Router — every page, layout, and API route handler lives here                                                      |
 | `src/components/` | Reusable React components: map, chatbot, venue cards, rating dialog, error boundary, and design-system primitives                 |
 | `src/context/`    | React context providers that share global state (currency, events, etc.) across the component tree                                |
 | `src/core/`       | Framework-agnostic business logic and domain services, kept separate from Next.js specifics                                       |

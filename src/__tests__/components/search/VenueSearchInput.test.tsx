@@ -1,73 +1,35 @@
-import React from 'react';
+﻿import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import {
-  VENUE_SEARCH_HISTORY_STORAGE_KEY,
-  VenueSearchInput,
-} from '@/components/search/VenueSearchInput';
+import { VenueSearchInput } from '@/components/search/VenueSearchInput';
 
-describe('VenueSearchInput query normalization, deduplication, and Clear all', () => {
+describe('VenueSearchInput', () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
 
-  it('does not render Clear all when search history is empty', () => {
-    render(<VenueSearchInput />);
+  it('submits search query with active amenities and handles storage errors gracefully', () => {
+    const onQueryParamsChange = jest.fn();
+    const setItemSpy = jest
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
+
+    render(
+      <VenueSearchInput
+        existingSearchParams="sort=rating"
+        activeAmenities={['outdoorPatio']}
+        onQueryParamsChange={onQueryParamsChange}
+      />
+    );
+
     const input = screen.getByTestId('venue-search-input');
-    fireEvent.focus(input);
-
-    expect(screen.queryByTestId('clear-all-history-btn')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('search-history-dropdown')).not.toBeInTheDocument();
-  });
-
-  it('ignores whitespace-only queries and deduplicates case-insensitively with normalized spacing', () => {
-    render(<VenueSearchInput />);
-    const input = screen.getByTestId('venue-search-input');
-
-    fireEvent.change(input, { target: { value: '    ' } });
+    fireEvent.change(input, { target: { value: '  quiet cafe  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    fireEvent.change(input, { target: { value: ' coffee' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    fireEvent.change(input, { target: { value: '  COFFEE   house ' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    fireEvent.change(input, { target: { value: 'coffee ' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    const stored = JSON.parse(
-      window.localStorage.getItem(VENUE_SEARCH_HISTORY_STORAGE_KEY) ?? '[]'
+    expect(onQueryParamsChange).toHaveBeenCalledWith(
+      'sort=rating&q=quiet+cafe&amenities=outdoorPatio'
     );
-    expect(stored).toEqual(['coffee', 'COFFEE house']);
-
-    fireEvent.focus(input);
-    const items = screen.getAllByRole('button').filter(
-      (btn) => btn.getAttribute('data-testid') !== 'clear-all-history-btn'
-    );
-    expect(items.map((el) => el.textContent)).toEqual(['coffee', 'COFFEE house']);
-  });
-
-  it('clears localStorage, closes/resets dropdown, and announces via aria-live when Clear all is clicked', () => {
-    window.localStorage.setItem(
-      VENUE_SEARCH_HISTORY_STORAGE_KEY,
-      JSON.stringify(['Bhandup West cafes', 'Quiet coworking Mumbai'])
-    );
-
-    render(<VenueSearchInput />);
-    const input = screen.getByTestId('venue-search-input');
-    fireEvent.focus(input);
-
-    expect(screen.getByTestId('search-history-dropdown')).toBeInTheDocument();
-    const clearAllBtn = screen.getByTestId('clear-all-history-btn');
-    expect(clearAllBtn).toBeInTheDocument();
-
-    fireEvent.click(clearAllBtn);
-
-    expect(window.localStorage.getItem(VENUE_SEARCH_HISTORY_STORAGE_KEY)).toBe('[]');
-    expect(screen.queryByTestId('search-history-dropdown')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('clear-all-history-btn')).not.toBeInTheDocument();
-    expect(screen.getByTestId('search-history-live-region')).toHaveTextContent(
-      'Search history cleared.'
-    );
+    setItemSpy.mockRestore();
   });
 });

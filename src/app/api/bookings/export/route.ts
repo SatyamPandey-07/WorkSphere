@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { parseBookingDateTime } from "@/lib/booking/dateTimeAdapter";
 
 /**
  * Escapes a CSV cell in accordance with RFC 4180 while mitigating
@@ -15,6 +16,51 @@ import { prisma } from "@/lib/prisma";
  * - Untrusted text values that match formula triggers are prefixed with a single quote (').
  * - Double quotes, commas, CRLF, and newlines are safely quoted in accordance with RFC 4180.
  */
+function resolveBookingSchedule(b: any): {
+  date: string;
+  time: string;
+  timeZone: string;
+  bookingDate: string;
+} {
+  const timeZone = b.timeZone || "UTC";
+
+  // Use the authoritative reservation schedule stored in Prisma (date, time, timeZone)
+  if (b.date && b.time) {
+    const scheduledInstant = parseBookingDateTime(b.date, b.time, timeZone);
+    const dateStr = b.date;
+    const timeStr = b.time;
+    const isoDate = scheduledInstant
+      ? scheduledInstant.toISOString()
+      : new Date(`${b.date}T${b.time}Z`).toISOString();
+
+    return {
+      date: dateStr,
+      time: timeStr,
+      timeZone,
+      bookingDate: isoDate,
+    };
+  }
+
+  // Fallback for legacy or incomplete records
+  const fallbackDate = new Date(b.bookingDate || b.createdAt || Date.now());
+  const dateStr = !isNaN(fallbackDate.getTime())
+    ? fallbackDate.toISOString().split("T")[0]
+    : "";
+  const timeStr = !isNaN(fallbackDate.getTime())
+    ? fallbackDate.toISOString().split("T")[1]?.slice(0, 5) || "00:00"
+    : "00:00";
+  const isoDate = !isNaN(fallbackDate.getTime())
+    ? fallbackDate.toISOString()
+    : new Date().toISOString();
+
+  return {
+    date: dateStr,
+    time: timeStr,
+    timeZone,
+    bookingDate: isoDate,
+  };
+}
+
 export function escapeCsvField(field: any, isNumeric = false): string {
   if (field === null || field === undefined) {
     return "";
@@ -111,19 +157,14 @@ export async function GET(req: Request) {
       ];
 
       const rows = bookings.map((b: any) => {
-        const bookingDate = new Date(
-          b.bookingDate || b.createdAt || Date.now(),
-        );
-        const dateStr = bookingDate.toISOString().split("T")[0];
-        const timeStr =
-          bookingDate.toISOString().split("T")[1]?.slice(0, 5) || "00:00";
+        const schedule = resolveBookingSchedule(b);
 
         return [
           escapeCsvField(b.id),
           escapeCsvField(b.venue?.name || "N/A"),
           escapeCsvField(b.venue?.address || "N/A"),
-          escapeCsvField(dateStr),
-          escapeCsvField(timeStr),
+          escapeCsvField(schedule.date),
+          escapeCsvField(schedule.time),
           escapeCsvField(b.durationMinutes ?? b.duration ?? 60, true),
           escapeCsvField(b.status),
           escapeCsvField(b.price ?? b.totalAmount ?? 0, true),
@@ -143,17 +184,24 @@ export async function GET(req: Request) {
     }
 
     // Default: JSON response
-    const formattedBookings = bookings.map((b: any) => ({
-      id: b.id,
-      venueName: b.venue?.name || "N/A",
-      address: b.venue?.address || "N/A",
-      bookingDate: new Date(b.bookingDate || b.createdAt).toISOString(),
-      durationMinutes: b.durationMinutes || b.duration || 60,
-      status: b.status,
-      price: b.price || b.totalAmount || 0,
-      currency: b.currency || "USD",
-      createdAt: new Date(b.createdAt).toISOString(),
-    }));
+    const formattedBookings = bookings.map((b: any) => {
+      const schedule = resolveBookingSchedule(b);
+
+      return {
+        id: b.id,
+        venueName: b.venue?.name || "N/A",
+        address: b.venue?.address || "N/A",
+        date: schedule.date,
+        time: schedule.time,
+        timeZone: schedule.timeZone,
+        bookingDate: schedule.bookingDate,
+        durationMinutes: b.durationMinutes || b.duration || 60,
+        status: b.status,
+        price: b.price || b.totalAmount || 0,
+        currency: b.currency || "USD",
+        createdAt: new Date(b.createdAt).toISOString(),
+      };
+    });
 
     return new NextResponse(JSON.stringify({ bookings: formattedBookings }), {
       status: 200,

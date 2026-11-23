@@ -31,10 +31,7 @@ const CLAIM_MAX_RETRIES = 3; // Serializable transactions can abort; retry a few
 const dispatcher = new NotificationDispatcher();
 
 type ClaimFailureCode =
-  | "NOT_FOUND"
-  | "NOT_CLAIMABLE"
-  | "EXPIRED"
-  | "SEAT_UNAVAILABLE";
+  "NOT_FOUND" | "NOT_CLAIMABLE" | "EXPIRED" | "SEAT_UNAVAILABLE";
 
 /**
  * Domain error thrown inside the claim transaction. Throwing (rather than
@@ -88,7 +85,9 @@ export async function joinVenueWaitlist(
     throw new Error("Invalid date, time, or duration parameters.");
   }
 
-  const timeZone = isValidTimeZone(rawTimeZone) ? (rawTimeZone as string) : "UTC";
+  const timeZone = isValidTimeZone(rawTimeZone)
+    ? (rawTimeZone as string)
+    : "UTC";
 
   const venue = await prisma.venue.findUnique({
     where: { id: venueId },
@@ -97,6 +96,22 @@ export async function joinVenueWaitlist(
 
   if (!venue) {
     throw new Error("Venue not found.");
+  }
+
+  // Validate that the specified seat belongs to the requested venue
+  if (seatId) {
+    const seat = await prisma.venueSeat.findUnique({
+      where: { id: seatId },
+      select: { id: true, venueId: true },
+    });
+
+    if (!seat) {
+      throw new Error("Seat not found.");
+    }
+
+    if (seat.venueId !== venueId) {
+      throw new Error("The specified seat does not belong to this venue.");
+    }
   }
 
   // Check if user already has an active waitlist entry for this venue and time slot
@@ -134,26 +149,79 @@ export async function joinVenueWaitlist(
     };
   }
 
-  // Create new waitlist entry
-  const created = await prisma.venueSeatWaitlist.create({
-    data: {
-      userId,
-      venueId,
-      seatId: seatId || null,
-      seatType: (seatType as any) || null,
-      date,
-      time,
-      duration,
-      timeZone,
-      requiresQuiet,
-      requiresOutlets,
-      status: "ACTIVE",
-    },
-    include: {
-      venue: { select: { name: true } },
-      seat: { select: { seatNumber: true } },
-    },
-  });
+  // Create new waitlist entry with atomic duplicate collision handling
+  let created;
+  try {
+    created = await prisma.venueSeatWaitlist.create({
+      data: {
+        userId,
+        venueId,
+        seatId: seatId || null,
+        seatType: (seatType as any) || null,
+        date,
+        time,
+        duration,
+        timeZone,
+        requiresQuiet,
+        requiresOutlets,
+        status: "ACTIVE",
+      },
+      include: {
+        venue: { select: { name: true } },
+        seat: { select: { seatNumber: true } },
+      },
+    });
+  } catch (err: any) {
+    // If a concurrent insert occurred and collided on the partial unique index,
+    // fetch and return the active entry idempotently.
+    const isUniqueViolation =
+      err?.code === "P2002" ||
+      err?.code === "23505" ||
+      err?.meta?.target?.includes?.("VenueSeatWaitlist_active_uniqueness") ||
+      err?.message?.includes?.("VenueSeatWaitlist_active_uniqueness") ||
+      err?.message?.includes?.("Unique constraint failed");
+
+    if (isUniqueViolation) {
+      const existingAfterRace = await prisma.venueSeatWaitlist.findFirst({
+        where: {
+          userId,
+          venueId,
+          date,
+          time,
+          status: { in: ["ACTIVE", "NOTIFIED"] },
+        },
+        include: {
+          venue: { select: { name: true } },
+          seat: { select: { seatNumber: true } },
+        },
+      });
+
+      if (existingAfterRace) {
+        const queuePosition = await calculateQueuePosition(
+          existingAfterRace.venueId,
+          existingAfterRace.date,
+          existingAfterRace.time,
+          existingAfterRace.createdAt,
+        );
+        const totalInQueue = await countActiveInQueue(
+          existingAfterRace.venueId,
+          existingAfterRace.date,
+          existingAfterRace.time,
+        );
+
+        return {
+          success: true,
+          entry: formatWaitlistRecord(
+            existingAfterRace,
+            queuePosition,
+            totalInQueue,
+          ),
+          message: "You are already on the waitlist for this time slot.",
+        };
+      }
+    }
+    throw err;
+  }
 
   const queuePosition = await calculateQueuePosition(
     created.venueId,
@@ -322,7 +390,7 @@ export async function notifyNextInWaitlist(
           }
 
           // Filter candidates matching seat preferences if freedSeatId is provided
-          let candidate: typeof overlapping[0] | undefined = overlapping[0];
+          let candidate: (typeof overlapping)[0] | undefined = overlapping[0];
           if (freedSeatId) {
             const seat = await tx.venueSeat.findUnique({
               where: { id: freedSeatId },
@@ -339,14 +407,20 @@ export async function notifyNextInWaitlist(
                 date: { in: dates },
                 status: { in: ["CONFIRMED", "PENDING"] },
               },
-              select: { date: true, time: true, duration: true, timeZone: true },
+              select: {
+                date: true,
+                time: true,
+                duration: true,
+                timeZone: true,
+              },
             });
 
             candidate = overlapping.find((c) => {
               if (c.seatId && c.seatId !== freedSeatId) return false;
               if (c.seatType && c.seatType !== seat.type) return false;
               if (c.requiresQuiet && !seat.isQuietZone) return false;
-              if (c.requiresOutlets && !seat.amenities.includes("outlets")) return false;
+              if (c.requiresOutlets && !seat.amenities.includes("outlets"))
+                return false;
               const taken = findConflictingBookings(
                 {
                   date: c.date,
@@ -363,7 +437,9 @@ export async function notifyNextInWaitlist(
             }
           }
 
-          const claimExpiresAt = new Date(Date.now() + CLAIM_WINDOW_MINUTES * 60 * 1000);
+          const claimExpiresAt = new Date(
+            Date.now() + CLAIM_WINDOW_MINUTES * 60 * 1000,
+          );
 
           // Transition candidate to NOTIFIED status with expiration window
           const transitioned = await tx.venueSeatWaitlist.updateMany({
@@ -422,7 +498,10 @@ export async function notifyNextInWaitlist(
       };
     } catch (err: any) {
       if (isTransientTransactionError(err) && attempt < CLAIM_MAX_RETRIES) {
-        const backoff = Math.min(2 ** (attempt + 1) * 100 + Math.random() * 50, 2000);
+        const backoff = Math.min(
+          2 ** (attempt + 1) * 100 + Math.random() * 50,
+          2000,
+        );
         await new Promise((resolve) => setTimeout(resolve, backoff));
         continue;
       }
@@ -463,7 +542,10 @@ export async function claimWaitlistSeat(
           });
 
           if (!entry) {
-            throw new WaitlistClaimError("NOT_FOUND", "Waitlist entry not found.");
+            throw new WaitlistClaimError(
+              "NOT_FOUND",
+              "Waitlist entry not found.",
+            );
           }
 
           if (entry.status !== "NOTIFIED") {
@@ -474,7 +556,10 @@ export async function claimWaitlistSeat(
           }
 
           if (entry.claimExpiresAt && entry.claimExpiresAt < new Date()) {
-            throw new WaitlistClaimError("EXPIRED", "Your claim window has expired.");
+            throw new WaitlistClaimError(
+              "EXPIRED",
+              "Your claim window has expired.",
+            );
           }
 
           const timeZone = entry.timeZone || "UTC";
@@ -488,7 +573,9 @@ export async function claimWaitlistSeat(
                 isEnabled: true,
                 ...(entry.seatType ? { type: entry.seatType } : {}),
                 ...(entry.requiresQuiet ? { isQuietZone: true } : {}),
-                ...(entry.requiresOutlets ? { amenities: { has: "outlets" } } : {}),
+                ...(entry.requiresOutlets
+                  ? { amenities: { has: "outlets" } }
+                  : {}),
               };
 
           const candidateIds = (
@@ -541,7 +628,8 @@ export async function claimWaitlistSeat(
                 .filter((seatId): seatId is string => Boolean(seatId)),
             );
 
-            targetSeat = seats.find((seat) => !takenSeatIds.has(seat.id)) ?? null;
+            targetSeat =
+              seats.find((seat) => !takenSeatIds.has(seat.id)) ?? null;
           } else if (!entry.seatId) {
             // Legacy venues without a seat map can still be booked seatless.
             // If the venue *has* seats but none match, that is a real conflict.
@@ -612,7 +700,10 @@ export async function claimWaitlistSeat(
       }
 
       if (isTransientTransactionError(err) && attempt < CLAIM_MAX_RETRIES) {
-        const backoff = Math.min(2 ** (attempt + 1) * 100 + Math.random() * 50, 2000);
+        const backoff = Math.min(
+          2 ** (attempt + 1) * 100 + Math.random() * 50,
+          2000,
+        );
         await new Promise((resolve) => setTimeout(resolve, backoff));
         continue;
       }
@@ -650,7 +741,10 @@ async function expireEntryAndOfferToNext(waitlistId: string): Promise<void> {
       entry.timeZone,
     );
   } catch (err) {
-    console.error("Failed to offer expired waitlist seat to next in line:", err);
+    console.error(
+      "Failed to offer expired waitlist seat to next in line:",
+      err,
+    );
   }
 }
 
@@ -691,7 +785,10 @@ export async function expireStaleWaitlistOffers(): Promise<number> {
         entry.timeZone,
       );
     } catch (err) {
-      console.error("Failed to offer expired waitlist seat to next in line:", err);
+      console.error(
+        "Failed to offer expired waitlist seat to next in line:",
+        err,
+      );
     }
   }
 
@@ -756,7 +853,9 @@ function formatWaitlistRecord(
     queuePosition,
     totalInQueue,
     notifiedAt: raw.notifiedAt ? raw.notifiedAt.toISOString() : null,
-    claimExpiresAt: raw.claimExpiresAt ? raw.claimExpiresAt.toISOString() : null,
+    claimExpiresAt: raw.claimExpiresAt
+      ? raw.claimExpiresAt.toISOString()
+      : null,
     claimedAt: raw.claimedAt ? raw.claimedAt.toISOString() : null,
     createdAt: raw.createdAt.toISOString(),
     updatedAt: raw.updatedAt.toISOString(),

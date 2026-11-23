@@ -33,6 +33,9 @@ import {
   type ZkpProofWorkerResponse,
   type ZkpProofWorkerRequest,
 } from "@/workers/zkpProofWorker";
+import {
+  ZkpWitnessWorkerPool,
+} from "@/workers/zkpWorker";
 import { computeStudentLeaf } from "@/lib/zkp/studentMembership";
 
 export { STUDENT_DISCOUNT_SCOPE };
@@ -71,6 +74,8 @@ export interface StudentDiscountVerifierOptions {
   createWorker?: () => Worker;
   onProgress?: StudentDiscountProgressCallback;
   signal?: AbortSignal;
+  useWorkerPool?: boolean;
+  poolSize?: number;
 }
 
 export interface StudentDiscountProofResult {
@@ -494,6 +499,29 @@ export async function generateStudentDiscountProof(
  * Verifies a Groth16 student discount proof against the verification key.
  */
 export async function verifyStudentDiscountProof(
+  proofOrParams: unknown,
+  publicSignalsOrVerifier?: any,
+  vKeyOrUrl: unknown = DEFAULT_STUDENT_VKEY_PATH,
+): Promise<any> {
+  if (
+    proofOrParams &&
+    typeof proofOrParams === "object" &&
+    "proof" in (proofOrParams as any) &&
+    "publicSignals" in (proofOrParams as any)
+  ) {
+    return verifyStudentDiscountProofWithCache(
+      proofOrParams as StudentDiscountVerificationParams,
+      typeof publicSignalsOrVerifier === "function" ? publicSignalsOrVerifier : undefined,
+    );
+  }
+  return verifyStudentDiscountProofDirect(
+    proofOrParams,
+    publicSignalsOrVerifier,
+    vKeyOrUrl,
+  );
+}
+
+async function verifyStudentDiscountProofDirect(
   proof: unknown,
   publicSignals: string[],
   vKeyOrUrl: unknown = DEFAULT_STUDENT_VKEY_PATH,
@@ -571,6 +599,7 @@ export async function verifyStudentDiscountProof(
  */
 export class StudentDiscountVerifier {
   private worker: Worker | null = null;
+  private workerPool: ZkpWitnessWorkerPool | null = null;
   private options: StudentDiscountVerifierOptions;
 
   constructor(options: StudentDiscountVerifierOptions = {}) {
@@ -582,6 +611,17 @@ export class StudentDiscountVerifier {
       !this.options.forceFallback &&
       (this.options.createWorker !== undefined || isWebWorkerSupported())
     );
+  }
+
+  public getWorkerPool(): ZkpWitnessWorkerPool {
+    if (!this.workerPool) {
+      this.workerPool = new ZkpWitnessWorkerPool({
+        poolSize: this.options.poolSize,
+        workerFactory: this.options.createWorker,
+        timeoutMs: this.options.timeoutMs,
+      });
+    }
+    return this.workerPool;
   }
 
   private getOrSpawnWorker(): Worker {
@@ -611,6 +651,27 @@ export class StudentDiscountVerifier {
         ...mergedOptions,
         forceFallback: true,
       });
+    }
+
+    if (mergedOptions.useWorkerPool) {
+      const pool = this.getWorkerPool();
+      const jobId = `student-proof-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const normalized = normalizeInputs(inputs);
+      const res = await pool.executeTask({
+        id: jobId,
+        circuitInputs: normalized,
+        wasmUrl: mergedOptions.wasmPath || DEFAULT_WASM_PATH,
+        zkeyUrl: mergedOptions.zkeyPath || DEFAULT_ZKEY_PATH,
+        timeoutMs: mergedOptions.timeoutMs,
+        signal: mergedOptions.signal,
+      });
+
+      return {
+        proof: res.proof,
+        publicSignals: res.publicSignals,
+        durationMs: res.durationMs,
+        proofSource: "worker",
+      };
     }
 
     const worker = this.getOrSpawnWorker();
@@ -645,9 +706,19 @@ export class StudentDiscountVerifier {
       }
       this.worker = null;
     }
+    if (this.workerPool) {
+      try {
+        await this.workerPool.terminate();
+      } catch {
+        // ignore
+      }
+      this.workerPool = null;
+    }
     await terminateCurveBn128();
   }
+}
 
+/**
  * studentDiscountVerifier.ts
  *
  * Client-side and server-side verification orchestrator for Student Discount ZKP.
@@ -775,7 +846,7 @@ export function probeWorkerCapability(workerFactory?: () => Worker): WorkerCapab
     if (workerFactory) {
       testWorker = workerFactory();
     } else if (typeof Worker !== "undefined") {
-      testWorker = new Worker(new URL("../../workers/zkpWorker.ts", import.meta.url));
+      testWorker = new Worker("/workers/zkpWorker.js");
     } else {
       return { allowed: false, reason: "WORKER_API_UNAVAILABLE" };
     }
@@ -960,7 +1031,7 @@ export async function generateStudentProofWithFallback(
     if (workerFactory) {
       worker = workerFactory();
     } else if (typeof Worker !== "undefined") {
-      worker = new Worker(new URL("../../workers/zkpWorker.ts", import.meta.url));
+      worker = new Worker("/workers/zkpWorker.js");
     } else {
       throw new Error("Worker API is undefined in current environment");
     }
@@ -1090,8 +1161,10 @@ export async function loadDefaultStudentVerificationKey(): Promise<unknown | nul
 
   // If in Node / Server environment
   try {
-    const fs = await import("fs");
-    const path = await import("path");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require("fs");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path");
     const vkeyPath = path.join(
       process.cwd(),
       "public",
@@ -1112,7 +1185,7 @@ export async function loadDefaultStudentVerificationKey(): Promise<unknown | nul
  * Verifies a student discount Groth16 zero-knowledge proof, querying client IndexedDB cache
  * first to avoid expensive pairing operations on previously verified proofs.
  */
-export async function verifyStudentDiscountProof(
+export async function verifyStudentDiscountProofWithCache(
   params: StudentDiscountVerificationParams,
   snarkjsVerifier?: (
     vKey: unknown,
@@ -1176,7 +1249,8 @@ export async function verifyStudentDiscountProof(
   // Step 2: Handle concurrency deduplication for in-flight verifications of the same proof
   let cacheKey: string | null = null;
   try {
-    const { computeVerificationCacheKey } = await import("../../lib/zkp/proofCache");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { computeVerificationCacheKey } = require("@/lib/zkp/proofCache");
     const res = await computeVerificationCacheKey(verificationInput);
     cacheKey = res.cacheKey;
   } catch {

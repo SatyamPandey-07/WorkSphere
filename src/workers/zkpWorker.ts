@@ -70,7 +70,9 @@ export type WorkerRequest =
   | CancelMessage
   | TerminateMessage
   | AbortMessage
-  | CleanupMessage;
+  | CleanupMessage
+  | CalculateWitnessRequest
+  | CancelJobRequest;
 
 export type WorkerProgressStep =
   | "INITIALIZING"
@@ -116,12 +118,64 @@ export interface WorkerCycledResponse {
   proofsCompleted: number;
 }
 
+// ── Multi-threaded Circom Witness Calculator & Worker Pool Protocol (#9726) ──
+
+export interface WitnessCalculationJobPayload {
+  circuitInputs: Record<string, unknown>;
+  wasmUrl?: string;
+  zkeyUrl?: string;
+  timeoutMs?: number;
+  circuit?: "student_pass" | "student_membership" | "student_access_pass";
+  [key: string]: unknown;
+}
+
+export interface CalculateWitnessRequest {
+  type: "CALCULATE_WITNESS";
+  jobId: string;
+  payload: WitnessCalculationJobPayload;
+}
+
+export interface CancelJobRequest {
+  type: "CANCEL_JOB";
+  jobId: string;
+}
+
+export interface WitnessCalculationSuccessResponse {
+  type: "WITNESS_SUCCESS";
+  jobId: string;
+  proof: unknown;
+  publicSignals: string[];
+  durationMs: number;
+  simdAccelerated?: boolean;
+}
+
+export interface WitnessCalculationProgressResponse {
+  type: "WITNESS_PROGRESS";
+  jobId: string;
+  step: WorkerProgressStep;
+  progress: number;
+  percent?: number;
+  stage?: string;
+}
+
+export interface WitnessCalculationErrorResponse {
+  type: "WITNESS_ERROR";
+  jobId: string;
+  error: string;
+  code?: string;
+  isOom?: boolean;
+  isTimeout?: boolean;
+}
+
 export type WorkerResponse =
   | WorkerProgressResponse
   | WorkerSuccessResponse
   | WorkerErrorResponse
   | WorkerVerifyResponse
-  | WorkerCycledResponse;
+  | WorkerCycledResponse
+  | WitnessCalculationSuccessResponse
+  | WitnessCalculationProgressResponse
+  | WitnessCalculationErrorResponse;
 
 interface WitnessMemoryBuffer {
   type: "mem";
@@ -490,7 +544,7 @@ export async function handleZkpWorkerMessage(
     return;
   }
 
-  if (data.type === "cancel") {
+  if (data.type === "cancel" || data.type === "CANCEL_JOB") {
     generation++;
     await terminateCurveBn128();
     return;
@@ -647,6 +701,105 @@ export async function handleZkpWorkerMessage(
         type: "ERROR",
         error: sanitizeError(error),
         code: errorType === "timeout" ? "PROVING_TIMEOUT" : undefined,
+        isOom: errorType === "oom",
+        isTimeout: errorType === "timeout",
+      });
+    } finally {
+      await terminateCurveBn128();
+    }
+    return;
+  }
+
+  // ── Protocol: CALCULATE_WITNESS & POOL JOB (Issue #9726) ───────────────────
+  if (data.type === "CALCULATE_WITNESS") {
+    const myGeneration = ++generation;
+    const { jobId, payload } = data;
+    const {
+      circuitInputs,
+      wasmUrl: customWasm,
+      zkeyUrl: customZkey,
+      timeoutMs: customTimeout,
+    } = payload || {};
+
+    const timeoutMs =
+      typeof customTimeout === "number"
+        ? customTimeout
+        : DEFAULT_PROVING_TIMEOUT_MS;
+
+    if (!circuitInputs || typeof circuitInputs !== "object") {
+      postFn({
+        type: "WITNESS_ERROR",
+        jobId,
+        error: "Missing or malformed circuit inputs for witness calculation.",
+        code: "INVALID_INPUTS",
+      });
+      return;
+    }
+
+    const { wasmUrl, zkeyUrl } = resolveArtifactUrls(customWasm, customZkey);
+    const startTime = Date.now();
+
+    try {
+      postFn({
+        type: "WITNESS_PROGRESS",
+        jobId,
+        step: "INITIALIZING",
+        progress: 0.1,
+        percent: 10,
+        stage: "INITIALIZING",
+      });
+
+      postFn({
+        type: "WITNESS_PROGRESS",
+        jobId,
+        step: "LOADING_ARTIFACTS",
+        progress: 0.25,
+        percent: 25,
+        stage: "LOADING_ARTIFACTS",
+      });
+
+      const { proof, publicSignals, simdAccelerated } = await withTimeout(
+        () =>
+          executeBoundedGroth16Proof(
+            circuitInputs,
+            wasmUrl,
+            zkeyUrl,
+            (step, progress) => {
+              if (myGeneration !== generation) return;
+              postFn({
+                type: "WITNESS_PROGRESS",
+                jobId,
+                step,
+                progress,
+                percent: Math.round(progress * 100),
+                stage: step,
+              });
+            },
+          ),
+        timeoutMs,
+        "Witness generation timed out after 30 seconds",
+      );
+
+      if (myGeneration !== generation) return;
+
+      postFn({
+        type: "WITNESS_SUCCESS",
+        jobId,
+        proof,
+        publicSignals: (publicSignals as string[]) || [],
+        durationMs: Date.now() - startTime,
+        simdAccelerated,
+      });
+
+      await cycleWorkerIfNeeded();
+    } catch (error) {
+      if (myGeneration !== generation) return;
+      const errorType = classifyError(error);
+      postFn({
+        type: "WITNESS_ERROR",
+        jobId,
+        error: sanitizeError(error),
+        code: errorType === "timeout" ? "PROVING_TIMEOUT" : errorType === "oom" ? "OOM" : "WITNESS_CALCULATION_FAILED",
         isOom: errorType === "oom",
         isTimeout: errorType === "timeout",
       });
@@ -884,4 +1037,352 @@ if (isWorkerGlobalScope()) {
   self.addEventListener("message", async (e: MessageEvent<WorkerRequest>) => {
     await handleZkpWorkerMessage(e.data, postWorkerMessage);
   });
+}
+
+// ── Multi-threaded Circom Witness Calculator & Web Worker Pool (#9726) ───────
+
+export interface ZkpWorkerPoolOptions {
+  poolSize?: number;
+  maxQueueSize?: number;
+  workerFactory?: () => Worker;
+  timeoutMs?: number;
+}
+
+export interface ZkpWitnessTask {
+  id: string;
+  circuitInputs: Record<string, unknown>;
+  wasmUrl?: string;
+  zkeyUrl?: string;
+  timeoutMs?: number;
+  onProgress?: (step: WorkerProgressStep, progress: number) => void;
+  signal?: AbortSignal;
+}
+
+export interface ZkpWitnessTaskResult {
+  jobId: string;
+  proof: unknown;
+  publicSignals: string[];
+  durationMs: number;
+  workerIndex: number;
+  simdAccelerated?: boolean;
+}
+
+interface InternalPoolWorker {
+  id: number;
+  worker: Worker;
+  activeJobId: string | null;
+  busy: boolean;
+}
+
+interface QueuedTask {
+  task: ZkpWitnessTask;
+  resolve: (result: ZkpWitnessTaskResult) => void;
+  reject: (err: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * Resolves the bounded pool concurrency:
+ * Reserves main-thread headroom: Math.max(1, Math.min(hardwareConcurrency - 1, 4))
+ * Falls back to 1 for single-core or worker-restricted environments.
+ */
+export function resolvePoolConcurrency(customSize?: number): number {
+  if (typeof customSize === "number" && customSize > 0) {
+    return Math.max(1, Math.floor(customSize));
+  }
+  if (typeof navigator !== "undefined" && typeof navigator.hardwareConcurrency === "number") {
+    const cores = navigator.hardwareConcurrency;
+    if (cores <= 1) return 1;
+    // Bounded pool reserving 1 thread for main browser UI responsiveness
+    return Math.max(1, Math.min(cores - 1, 4));
+  }
+  return 2;
+}
+
+/**
+ * Bounded Web Worker pool for distributed Circom witness calculation
+ * and Groth16 zero-knowledge proof synthesis across multi-core laptops.
+ */
+export class ZkpWitnessWorkerPool {
+  private poolSize: number;
+  private workerFactory: () => Worker;
+  private workers: InternalPoolWorker[] = [];
+  private taskQueue: QueuedTask[] = [];
+  private inFlightTasks = new Map<string, { workerIndex: number; resolve: (res: any) => void; reject: (err: any) => void; timer?: any }>();
+  private maxQueueSize: number;
+  private defaultTimeoutMs: number;
+  private isTerminated = false;
+  private totalJobsProcessed = 0;
+  private totalDurationMs = 0;
+
+  constructor(options: ZkpWorkerPoolOptions = {}) {
+    this.poolSize = resolvePoolConcurrency(options.poolSize);
+    this.maxQueueSize = options.maxQueueSize ?? 64;
+    this.defaultTimeoutMs = options.timeoutMs ?? DEFAULT_PROVING_TIMEOUT_MS;
+    this.workerFactory = options.workerFactory ?? (() => {
+      if (typeof Worker !== "undefined") {
+        return new Worker("/workers/zkpWorker.js");
+      }
+      throw new Error("Web Worker constructor is not available in the current environment.");
+    });
+
+    this.initPool();
+  }
+
+  private initPool(): void {
+    for (let i = 0; i < this.poolSize; i++) {
+      try {
+        const worker = this.workerFactory();
+        const poolWorker: InternalPoolWorker = {
+          id: i,
+          worker,
+          activeJobId: null,
+          busy: false,
+        };
+
+        worker.addEventListener("message", (event: MessageEvent) => {
+          this.handleWorkerMessage(poolWorker, event.data);
+        });
+
+        worker.addEventListener("error", (event: ErrorEvent) => {
+          this.handleWorkerError(poolWorker, event);
+        });
+
+        this.workers.push(poolWorker);
+      } catch {
+        // Fallback for sandboxed or worker-restricted contexts
+        break;
+      }
+    }
+  }
+
+  public getPoolSize(): number {
+    return this.workers.length;
+  }
+
+  public getActiveWorkerCount(): number {
+    return this.workers.filter((w) => w.busy).length;
+  }
+
+  public getQueueLength(): number {
+    return this.taskQueue.length;
+  }
+
+  public getMetrics() {
+    return {
+      poolSize: this.workers.length,
+      activeWorkers: this.getActiveWorkerCount(),
+      queueLength: this.taskQueue.length,
+      totalJobsProcessed: this.totalJobsProcessed,
+      avgDurationMs: this.totalJobsProcessed > 0 ? this.totalDurationMs / this.totalJobsProcessed : 0,
+      isTerminated: this.isTerminated,
+    };
+  }
+
+  private handleWorkerMessage(poolWorker: InternalPoolWorker, data: any): void {
+    if (!data || typeof data !== "object") return;
+    const jobId = data.jobId || poolWorker.activeJobId;
+    if (!jobId) return;
+
+    const inFlight = this.inFlightTasks.get(jobId);
+
+    if (data.type === "WITNESS_PROGRESS" || data.type === "PROGRESS") {
+      // Progress forwarded to task listener if available
+      return;
+    }
+
+    if (data.type === "WITNESS_SUCCESS" || data.type === "SUCCESS") {
+      poolWorker.busy = false;
+      poolWorker.activeJobId = null;
+      if (inFlight) {
+        if (inFlight.timer) clearTimeout(inFlight.timer);
+        this.inFlightTasks.delete(jobId);
+        this.totalJobsProcessed++;
+        this.totalDurationMs += data.durationMs || 0;
+        inFlight.resolve({
+          jobId,
+          proof: data.proof,
+          publicSignals: data.publicSignals,
+          durationMs: data.durationMs || 0,
+          workerIndex: poolWorker.id,
+          simdAccelerated: data.simdAccelerated,
+        });
+      }
+      this.pumpQueue();
+      return;
+    }
+
+    if (data.type === "WITNESS_ERROR" || data.type === "ERROR") {
+      poolWorker.busy = false;
+      poolWorker.activeJobId = null;
+      if (inFlight) {
+        if (inFlight.timer) clearTimeout(inFlight.timer);
+        this.inFlightTasks.delete(jobId);
+        const err = new Error(data.error || "Witness calculation failed in worker.");
+        (err as any).code = data.code;
+        (err as any).isOom = data.isOom;
+        (err as any).isTimeout = data.isTimeout;
+        inFlight.reject(err);
+      }
+      this.pumpQueue();
+      return;
+    }
+  }
+
+  private handleWorkerError(poolWorker: InternalPoolWorker, event: ErrorEvent): void {
+    const jobId = poolWorker.activeJobId;
+    poolWorker.busy = false;
+    poolWorker.activeJobId = null;
+
+    if (jobId) {
+      const inFlight = this.inFlightTasks.get(jobId);
+      if (inFlight) {
+        if (inFlight.timer) clearTimeout(inFlight.timer);
+        this.inFlightTasks.delete(jobId);
+        inFlight.reject(new Error(event.message || "Zkp Worker encountered an unexpected error."));
+      }
+    }
+    this.pumpQueue();
+  }
+
+  public async executeTask(task: ZkpWitnessTask): Promise<ZkpWitnessTaskResult> {
+    if (this.isTerminated) {
+      throw new Error("ZkpWitnessWorkerPool has been terminated.");
+    }
+
+    if (this.taskQueue.length >= this.maxQueueSize) {
+      throw new Error(`Worker pool task queue is full (max: ${this.maxQueueSize}).`);
+    }
+
+    return new Promise<ZkpWitnessTaskResult>((resolve, reject) => {
+      const queued: QueuedTask = {
+        task,
+        resolve,
+        reject,
+      };
+
+      if (task.signal) {
+        if (task.signal.aborted) {
+          reject(new Error("Witness calculation task was aborted before execution."));
+          return;
+        }
+        task.signal.addEventListener("abort", () => {
+          this.cancelTask(task.id);
+          reject(new Error("Witness calculation task aborted."));
+        }, { once: true });
+      }
+
+      this.taskQueue.push(queued);
+      this.pumpQueue();
+    });
+  }
+
+  private pumpQueue(): void {
+    if (this.isTerminated || this.taskQueue.length === 0) return;
+
+    const availableWorker = this.workers.find((w) => !w.busy);
+    if (!availableWorker) return;
+
+    const queuedItem = this.taskQueue.shift();
+    if (!queuedItem) return;
+
+    const { task, resolve, reject } = queuedItem;
+    availableWorker.busy = true;
+    availableWorker.activeJobId = task.id;
+
+    const timeoutMs = task.timeoutMs || this.defaultTimeoutMs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        if (this.inFlightTasks.has(task.id)) {
+          this.cancelTask(task.id);
+          reject(new Error(`ZKP witness calculation timed out after ${timeoutMs}ms.`));
+        }
+      }, timeoutMs);
+    }
+
+    this.inFlightTasks.set(task.id, {
+      workerIndex: availableWorker.id,
+      resolve,
+      reject,
+      timer,
+    });
+
+    const request: CalculateWitnessRequest = {
+      type: "CALCULATE_WITNESS",
+      jobId: task.id,
+      payload: {
+        circuitInputs: task.circuitInputs,
+        wasmUrl: task.wasmUrl,
+        zkeyUrl: task.zkeyUrl,
+        timeoutMs,
+      },
+    };
+
+    try {
+      availableWorker.worker.postMessage(request);
+    } catch (err: any) {
+      this.inFlightTasks.delete(task.id);
+      if (timer) clearTimeout(timer);
+      availableWorker.busy = false;
+      availableWorker.activeJobId = null;
+      reject(err instanceof Error ? err : new Error(String(err)));
+      this.pumpQueue();
+    }
+  }
+
+  public cancelTask(jobId: string): boolean {
+    const inFlight = this.inFlightTasks.get(jobId);
+    if (inFlight) {
+      if (inFlight.timer) clearTimeout(inFlight.timer);
+      const worker = this.workers[inFlight.workerIndex];
+      if (worker && worker.activeJobId === jobId) {
+        try {
+          const cancelReq: CancelJobRequest = { type: "CANCEL_JOB", jobId };
+          worker.worker.postMessage(cancelReq);
+        } catch {}
+        worker.busy = false;
+        worker.activeJobId = null;
+      }
+      this.inFlightTasks.delete(jobId);
+      this.pumpQueue();
+      return true;
+    }
+
+    const queueIndex = this.taskQueue.findIndex((q) => q.task.id === jobId);
+    if (queueIndex !== -1) {
+      this.taskQueue.splice(queueIndex, 1);
+      return true;
+    }
+
+    return false;
+  }
+
+  public async terminate(): Promise<void> {
+    this.isTerminated = true;
+
+    for (const [, inFlight] of this.inFlightTasks) {
+      if (inFlight.timer) clearTimeout(inFlight.timer);
+      inFlight.reject(new Error("ZkpWitnessWorkerPool was terminated."));
+    }
+    this.inFlightTasks.clear();
+
+    for (const q of this.taskQueue) {
+      q.reject(new Error("ZkpWitnessWorkerPool was terminated."));
+    }
+    this.taskQueue = [];
+
+    for (const w of this.workers) {
+      try {
+        w.worker.postMessage({ type: "terminate" });
+      } catch {}
+      try {
+        w.worker.terminate();
+      } catch {}
+    }
+    this.workers = [];
+
+    await terminateCurveBn128();
+  }
 }

@@ -65,6 +65,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Reservation Flow Guide](./features/reservation-flow-guide.md) — reservation client workflow, validation, and lock management.
 - [Venue Check-In Flow](./features/venue-checkin-flow.md) — QR verification, geofence proximity, and check-in behavior.
 - [Venue WiFi Quality Scoring](./venues/WIFI_QUALITY_SCORING.md) — speed tiers, jitter and packet loss penalties, measurement telemetry, and badge display rules.
+- [Venue WiFi Spectrum & RF Diagnostics](./venues/WIFI_SPECTRUM_DIAGNOSTICS.md) — frequency band classification (2.4 GHz, 5 GHz, 6 GHz), channel width trade-offs (20/40/80/160 MHz), RSSI/SNR thresholds, co-channel interference detection, and prediction API schema.
 - [Venue Power Outlet Standards](./venues/POWER_OUTLET_STANDARDS.md) — outlet density and power type taxonomy, rating aggregation rules, amenity vote verification, and socket telemetry scoring.
 - [Voice Search](./features/VOICE_SEARCH.md) — voice search feature documentation.
 - [Seating Occupancy Forecasting](./features/seating-occupancy-forecasting.md) — seating occupancy forecasting functionality.

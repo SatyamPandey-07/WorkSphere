@@ -1365,7 +1365,16 @@ async function syncAvailability() {
         credentials: "include",
       });
 
-      if (!response.ok) return;
+      if (response.status === 401) {
+        console.warn("[SW] Availability sync skipped: unauthenticated session");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `[SW] Availability sync failed with status ${response.status}`,
+        );
+      }
 
       const { venues } = await response.json();
       if (!Array.isArray(venues) || venues.length === 0) return;
@@ -1451,7 +1460,16 @@ async function syncFavoriteVenuesOccupancy() {
         credentials: "include",
       });
 
-      if (!response.ok) return;
+      if (response.status === 401) {
+        console.warn("[SW] Availability sync skipped: unauthenticated session");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `[SW] Availability sync failed with status ${response.status}`,
+        );
+      }
 
       const { venues } = await response.json();
       if (!Array.isArray(venues) || venues.length === 0) return;

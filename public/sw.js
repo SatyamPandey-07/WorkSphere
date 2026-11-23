@@ -395,6 +395,9 @@ self.addEventListener("sync", (event) => {
   if (event.tag === AVAILABILITY_SYNC_TAG) {
     event.waitUntil(syncAvailability());
   }
+  if (event.tag === "nomad-checkin-sync") {
+    event.waitUntil(syncNomadCheckins());
+  }
 });
 
 // Periodic Background Sync for workspace availability (Issue #1126) and favorite venues occupancy (Issue #3957)
@@ -1063,6 +1066,85 @@ async function syncReceiptExports() {
   }
 }
 
+// Background Sync for offline desk check-ins (Issue #7427)
+let isSyncingCheckins = false;
+async function syncNomadCheckins() {
+  if (isSyncingCheckins) return;
+  isSyncingCheckins = true;
+  try {
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      if (!db.objectStoreNames.contains("pendingCheckins")) return;
+      const tx = db.transaction("pendingCheckins", "readonly");
+      const store = tx.objectStore("pendingCheckins");
+      const checkins = await new Promise((resolve, reject) => {
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+
+      const synced = [];
+      const failed = [];
+
+      for (const item of checkins) {
+        try {
+          const response = await fetch("/api/checkin", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": item.idempotencyKey,
+              "X-Client-Nonce": item.clientNonce,
+              "X-Signed-Timestamp": item.signedTimestamp,
+            },
+            body: JSON.stringify({
+              seatId: item.seatId,
+              venueId: item.venueId,
+              userId: item.userId,
+              timestamp: item.timestamp,
+              clientNonce: item.clientNonce,
+              signedTimestamp: item.signedTimestamp,
+              idempotencyKey: item.idempotencyKey,
+            }),
+          });
+
+          if (response.ok || response.status === 409) {
+            const delTx = db.transaction("pendingCheckins", "readwrite");
+            delTx.objectStore("pendingCheckins").delete(item.id);
+            synced.push(item);
+          } else if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+            const delTx = db.transaction("pendingCheckins", "readwrite");
+            delTx.objectStore("pendingCheckins").delete(item.id);
+            failed.push(item);
+          } else {
+            failed.push(item);
+          }
+        } catch {
+          failed.push(item);
+        }
+      }
+
+      if (typeof BroadcastChannel !== "undefined") {
+        try {
+          const channel = new BroadcastChannel("nomad-checkin-sync-channel");
+          channel.postMessage({
+            type: "NOMAD_CHECKIN_SYNC_COMPLETE",
+            tag: "nomad-checkin-sync",
+            syncedCount: synced.length,
+            failedCount: failed.length,
+            totalProcessed: checkins.length,
+            timestamp: Date.now(),
+          });
+          channel.close();
+        } catch {}
+      }
+    });
+  } catch (err) {
+    console.error("[SW] syncNomadCheckins error:", err);
+  } finally {
+    isSyncingCheckins = false;
+  }
+}
+
 // Periodic Background Sync: fetch seat availability for saved venues,
 // diff against last-known state, and show a notification when seats open up.
 let isSyncingAvailability = false;
@@ -1414,6 +1496,17 @@ function openIndexedDB() {
           draftsStore.createIndex("quarantinedAt", "quarantinedAt", {
             unique: false,
           });
+        }
+
+        // Pending check-ins for offline background sync (Issue #7427)
+        if (!db.objectStoreNames.contains("pendingCheckins")) {
+          const checkinStore = db.createObjectStore("pendingCheckins", {
+            keyPath: "id",
+          });
+          checkinStore.createIndex("seatId", "seatId", { unique: false });
+          checkinStore.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
+          checkinStore.createIndex("status", "status", { unique: false });
+          checkinStore.createIndex("timestamp", "timestamp", { unique: false });
         }
       };
     } catch (err) {

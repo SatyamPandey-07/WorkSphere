@@ -1,12 +1,14 @@
 ﻿'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpDown, Monitor } from 'lucide-react';
 import { buildVenueSearchParams } from '@/lib/venues/searchQuery';
 
 export interface VenueFilterOption {
   id: string;
   label: string;
   paramKey: string;
+  icon?: React.ComponentType<{ className?: string }>;
 }
 
 export interface VenueFilterBarProps {
@@ -24,6 +26,18 @@ export interface VenueFilterBarProps {
 export const DEFAULT_VENUE_AMENITY_FILTERS: VenueFilterOption[] = [
   { id: 'dogFriendly', label: 'Pet Friendly', paramKey: 'dogFriendly' },
   { id: 'outdoorPatio', label: 'Outdoor Seating', paramKey: 'outdoorPatio' },
+  {
+    id: 'standing_desks',
+    label: 'Standing Desk',
+    paramKey: 'standing_desks',
+    icon: ArrowUpDown,
+  },
+  {
+    id: 'external_monitors',
+    label: 'External Monitor (4K/USB-C)',
+    paramKey: 'external_monitors',
+    icon: Monitor,
+  },
 ];
 
 export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
@@ -112,11 +126,13 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
         existingSearchParams
       );
 
-      if (nextActive) {
-        params.set(item.paramKey, 'true');
-      } else {
-        params.delete(item.paramKey);
-      }
+      filters.forEach((f) => {
+        if (nextSet.has(f.id)) {
+          params.set(f.paramKey, 'true');
+        } else {
+          params.delete(f.paramKey);
+        }
+      });
 
       onQueryParamsChange?.(params.toString());
     },
@@ -126,6 +142,7 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
       onToggleFilter,
       searchQuery,
       existingSearchParams,
+      filters,
       onQueryParamsChange,
     ]
   );
@@ -148,6 +165,7 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
 
       {filters.map((item) => {
         const isActive = activeSet.has(item.id);
+        const Icon = item.icon;
         return (
           <button
             key={item.id}
@@ -161,6 +179,7 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
             }`}
           >
+            {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
             <span>{item.label}</span>
           </button>
         );

@@ -6,10 +6,7 @@ import { notifyNextInWaitlist } from "@/lib/waitlist";
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
 import { releaseDeskReservation } from "@/lib/reservations/deskReservationCountdown";
 import { dispatchVenueCancellationDiscordNotification } from "@/lib/notifications/discordNotifier";
-import {
-  invalidateVenueAvailability,
-  venueAvailabilityCacheKey,
-} from "@/lib/cache/venueAvailabilityCache";
+import { safeCompareSignatures } from "@/lib/security/hmac";
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_BOOKING_STATUSES = ["CONFIRMED", "PENDING", "CHECKED_IN"] as const;
@@ -37,9 +34,7 @@ function verifySignature(
     .update(rawBody, "utf8")
     .digest("hex");
 
-  return (
-    received.length === expected.length && timingSafeEqual(received, expected)
-  );
+  return safeCompareSignatures(signature, expected);
 }
 
 function payloadDigest(rawBody: string): string {

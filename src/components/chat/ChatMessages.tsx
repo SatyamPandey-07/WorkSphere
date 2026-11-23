@@ -30,6 +30,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import {
+  markRoomAsRead,
+} from "@/lib/chat/unreadTracker";
 import { usePreferenceReranking } from "@/hooks/usePreferenceReranking";
 import { useKMeansClustering } from "@/hooks/useKMeansClustering";
 import { useSavedVenues } from "@/hooks/useSavedVenues";
@@ -1415,13 +1418,16 @@ function CopyMessageButton({ text }: { text: string }) {
 
 // ─── ChatInput ────────────────────────────────────────────────────────────────
 
-interface ChatInputProps {
+export interface ChatInputProps {
   input: string;
   isLoading: boolean;
   onInputChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   distanceRadius?: number;
   onDistanceChange?: (radius: number) => void;
+  roomId?: string | null;
+  userId?: string | null;
+  onFocus?: () => void;
 }
 
 export function ChatInput({
@@ -1431,6 +1437,9 @@ export function ChatInput({
   onSubmit,
   distanceRadius = 0,
   onDistanceChange,
+  roomId = "default",
+  userId = null,
+  onFocus,
 }: ChatInputProps) {
   const safeInput = input || "";
   const MAX_CHARS = 2000;
@@ -1728,7 +1737,11 @@ export function ChatInput({
             type="text"
             value={safeInput}
             onChange={(e) => onInputChange(e.target.value ?? "")}
-            onFocus={() => setIsFocused(true)}
+            onFocus={() => {
+              setIsFocused(true);
+              markRoomAsRead(roomId || "default", userId);
+              onFocus?.();
+            }}
             onBlur={() => setIsFocused(false)}
             placeholder={
               isListening ? "Listening…" : "Where's the focus mode hotspot?"

@@ -2,8 +2,12 @@
 
 import React, { useEffect } from 'react';
 
-export interface BookingModalProps {
-  isOpen: boolean;
+import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
+import { getDatePreset, type DatePresetKey } from '@/lib/validations/dateFilter';
+
+interface BookingModalProps {
+  venueId: string;
+  venueName: string;
   onClose: () => void;
   onConfirm?: () => void | Promise<void>;
   isSubmitting?: boolean;
@@ -13,26 +17,38 @@ export interface BookingModalProps {
   children?: React.ReactNode;
 }
 
-export const BookingModal: React.FC<BookingModalProps> = ({
-  isOpen,
-  onClose,
-  onConfirm,
-  isSubmitting = false,
-  loading = false,
-  seatLabel = 'Desk A-12',
-  venueName = 'WorkSphere Hub',
-  children,
-}) => {
-  const isBusy = Boolean(isSubmitting || loading);
+export function BookingModal({ venueId, venueName, onClose, onSuccess }: BookingModalProps) {
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [activePreset, setActivePreset] = useState<DatePresetKey | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showWaitlist, setShowWaitlist] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = React.useRef(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const handlePresetSelect = (preset: DatePresetKey) => {
+    const { startDate } = getDatePreset(preset);
+    setDate(startDate);
+    setActivePreset(preset);
+    if (error) setError('');
+  };
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (isSubmitting || loading) {
-          event.preventDefault();
-          return;
+  const handleDateChange = (newDate: string) => {
+    setDate(newDate);
+    if (activePreset) {
+      const presetValues = getDatePreset(activePreset);
+      if (presetValues.startDate !== newDate) {
+        setActivePreset(null);
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (!isSubmittingRef.current && !loading && !isSubmitting) {
+          onClose();
         }
         onClose();
       }
@@ -68,15 +84,58 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2
-              id="booking-modal-title"
-              className="text-lg font-semibold text-slate-900"
-            >
-              Confirm Seat Reservation
-            </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              {venueName} &middot; {seatLabel}
-            </p>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label htmlFor="booking-date-input" className="block text-sm text-zinc-400">Date</label>
+              <div className="flex items-center gap-1.5" role="group" aria-label="Date quick presets">
+                <button
+                  type="button"
+                  data-testid="date-preset-today"
+                  disabled={isPending}
+                  onClick={() => handlePresetSelect('today')}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
+                    activePreset === 'today'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  data-testid="date-preset-tomorrow"
+                  disabled={isPending}
+                  onClick={() => handlePresetSelect('tomorrow')}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
+                    activePreset === 'tomorrow'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  Tomorrow
+                </button>
+                <button
+                  type="button"
+                  data-testid="date-preset-weekend"
+                  disabled={isPending}
+                  onClick={() => handlePresetSelect('weekend')}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
+                    activePreset === 'weekend'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  This Weekend
+                </button>
+              </div>
+            </div>
+            <input 
+              id="booking-date-input"
+              type="date" 
+              value={date}
+              disabled={isPending}
+              onChange={(e) => handleDateChange(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50"
+            />
           </div>
 
           <button

@@ -32,6 +32,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Multi-Agent AI Architecture](./ARCHITECTURE.md) — agent orchestration, decision pipeline, and application-level AI architecture.
 - [Causal Ordering & Deterministic Tie-Breaking](./architecture/CAUSAL_ORDERING_AND_TIEBREAKING.md) — Vector Clock partial order mathematics, Hybrid Logical Clock tie-breaking heuristics, and distributed partition reconciliation.
 - [GossipSub WebRTC Mesh](./architecture/GOSSIPSUB_WEBRTC_MESH.md) — peer discovery, GossipSub parameters, heartbeat intervals, and mesh behavior.
+- [WebRTC Peer Connection Lifecycle & ICE Candidate Negotiation](./p2p/mesh-lifecycle.md) — complete peer connection lifecycles, 4-state browser state machine, SDP offer/answer exchange, Trickle ICE, STUN/TURN fallback, DataChannel lifecycle, diagnostic runbook, and multi-device development.
 - [GossipSub IP Colocation & Sybil Defense](./architecture/GOSSIPSUB_IP_COLOCATION.md) — subnet colocation scoring (/24 IPv4 and /48 IPv6), Sybil mitigation, exponential decay, and mesh pruning.
 - [WebRTC Signaling Handshake Runbook](./p2p/WEBRTC_SIGNALING_HANDSHAKE.md) — PartyKit signaling, offer/answer exchange, trickle ICE, STUN/TURN traversal, Perfect Negotiation, and troubleshooting.
 - [WebRTC ICE Candidate Gathering & STUN/TURN Topology](./p2p/WEBRTC_ICE_TRAVERSAL.md) — ICE candidate gathering, STUN discovery, candidate types, timeout bounds, TURN relay topology, and firewall troubleshooting.

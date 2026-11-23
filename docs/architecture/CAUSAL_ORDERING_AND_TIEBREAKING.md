@@ -464,5 +464,6 @@ WorkSphere achieves **Strong Eventual Consistency (SEC)** under the following fo
 - [Causal Vector Clock Engine (`src/core/sync/CausalVectorClockEngine.ts`)](../../src/core/sync/CausalVectorClockEngine.ts)
 - [Resolver Test Suite (`src/core/sync/__tests__/LamportTimestampResolver.test.ts`)](../../src/core/sync/__tests__/LamportTimestampResolver.test.ts)
 - [Offline Mutation Queue (`src/core/sync/OfflineMutationQueue.ts`)](../../src/core/sync/OfflineMutationQueue.ts)
+- [Sequence CRDT Mathematics: Logoot, LATA, and Distributed String Editing (`docs/crdt/SEQUENCE_CRDT_MATHEMATICS.md`)](../crdt/SEQUENCE_CRDT_MATHEMATICS.md) — Mathematical reference detailing fractional position identifiers, Logoot, LATA, deterministic tie-breaking, interleaving anomalies, and tombstone compaction for concurrent text and sequence editing.
 - [Collaborative Sync Guide (`docs/COLLABORATIVE_SYNC.md`)](../COLLABORATIVE_SYNC.md)
 - [Vector Clock Specification (`docs/architecture/VECTOR_CLOCK_SPEC.md`)](VECTOR_CLOCK_SPEC.md)

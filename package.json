@@ -85,6 +85,7 @@
     "three": "^0.187.0",
     "twilio": "^6.1.0",
     "web-push": "^3.6.7",
+    "web-vitals": "^6.2.3",
     "xml-crypto": "^6.1.2",
     "y-indexeddb": "^9.0.12",
     "y-partykit": "^0.0.33",

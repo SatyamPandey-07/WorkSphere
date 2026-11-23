@@ -12,6 +12,7 @@ import { SkipToContent } from "../components/ui/SkipToContent";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { ScrollToTopButton } from "../components/ui/ScrollToTopButton";
 import { CookieBanner } from "../components/CookieBanner";
+import { WebVitalsReporter } from "../components/analytics/WebVitalsReporter";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { SyncManager } from "../hooks/usePWA";
 import { ToastProvider } from "../components/ui/Toast";
@@ -115,6 +116,8 @@ export default async function RootLayout({
       <SoundProvider>
         <ToastProvider>
           <CurrencyProvider>
+            <CookieBanner />
+            <WebVitalsReporter />
             <OfflineBanner />
             <RateLimitBanner />
             <PWAUpdateListener />
@@ -149,7 +152,7 @@ export default async function RootLayout({
     </ClerkProvider>
   );
 
- return (
+  return (
     <html
       lang="en"
       data-theme={theme}
@@ -173,5 +176,5 @@ export default async function RootLayout({
         {bodyContent}
       </body>
     </html>
-  )
+  );
 }

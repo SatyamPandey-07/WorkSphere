@@ -16,6 +16,7 @@ refunds happen, and how RPC failover and retries behave.
 
 - [`SOLANA_ESCROW_REFUND_CRON.md`](./SOLANA_ESCROW_REFUND_CRON.md): cron status lifecycle, idempotency, configuration
 - [`OPTIMISTIC_ESCROW_STREAMING.md`](./OPTIMISTIC_ESCROW_STREAMING.md): WebSocket subscription and hook integration details
+- [`DURABLE_NONCE_SPECIFICATION.md`](./DURABLE_NONCE_SPECIFICATION.md): Durable nonce account lifecycle, transaction serialization, offline hardware-wallet signing, and delayed broadcast guidelines for disconnected nomads
 
 Note on scope: `solanaPayEscrow.ts` tracks seat state and confirmation in the
 client. PDA derivation, settlement, and refund transactions live in `escrowClient.ts`

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Bookmark, Heart, Star, Check } from "lucide-react";
+import { Bookmark, Heart, Star, Check, Loader2 } from "lucide-react";
 import {
   isVenueFavoritedLocally,
   toggleVenueFavorite,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/venues/favoriteStorage";
 import type { OfflineVenue } from "@/lib/offlineStorage";
 import { useToast } from "@/components/ui/Toast";
+import { useSound } from "@/components/SoundProvider";
 import { cn } from "@/lib/utils";
 
 export interface BookmarkVenueButtonProps {
@@ -21,6 +22,8 @@ export interface BookmarkVenueButtonProps {
   size?: "sm" | "md" | "lg";
   showLabel?: boolean;
   showTooltip?: boolean;
+  isLoading?: boolean;
+  showLoadingOnToggle?: boolean;
   onToggle?: (isFavorited: boolean) => void;
   onPersist?: (
     venueId: string,
@@ -28,6 +31,8 @@ export interface BookmarkVenueButtonProps {
   ) => Promise<boolean | void>;
   className?: string;
   disabled?: boolean;
+  /** Optional toggle to suppress tactile audio feedback for this specific instance */
+  disableSound?: boolean;
   "data-testid"?: string;
 }
 
@@ -41,17 +46,23 @@ export function BookmarkVenueButton({
   size = "md",
   showLabel = false,
   showTooltip = true,
+  isLoading: controlledLoading,
+  showLoadingOnToggle = false,
   onToggle,
   onPersist,
   className = "",
   disabled = false,
+  disableSound = false,
   "data-testid": dataTestId,
 }: BookmarkVenueButtonProps) {
   const { toast } = useToast();
+  const { playBookmarkSound } = useSound({ suppressError: true });
   const [isFavorited, setIsFavorited] = useState<boolean>(() => {
     if (typeof initialIsFavorited === "boolean") return initialIsFavorited;
     return isVenueFavoritedLocally(venueId);
   });
+  const [internalLoading, setInternalLoading] = useState(false);
+  const isLoading = controlledLoading ?? internalLoading;
   const [isAnimating, setIsAnimating] = useState(false);
   const [justToggled, setJustToggled] = useState(false);
 
@@ -104,6 +115,7 @@ export function BookmarkVenueButton({
       const now = Date.now();
       if (
         disabled ||
+        isLoading ||
         isTogglingRef.current ||
         now - lastToggleTimeRef.current < 400
       ) {
@@ -122,6 +134,19 @@ export function BookmarkVenueButton({
 
       setIsAnimating(true);
       setJustToggled(true);
+
+      // Play tactile micro-acoustic sound non-blockingly respecting user's global mute setting
+      if (!disableSound) {
+        try {
+          playBookmarkSound?.(nextState);
+        } catch {
+          // Audio playback failure must never interrupt the optimistic bookmark update
+        }
+      }
+
+      if (showLoadingOnToggle) {
+        setInternalLoading(true);
+      }
 
       // 2. Dispatch background API call to persist bookmark
       try {
@@ -155,6 +180,9 @@ export function BookmarkVenueButton({
             : `Failed to update bookmark for ${venueName}. Please try again.`;
         toast(errorMessage, "error");
       } finally {
+        if (showLoadingOnToggle && isMountedRef.current) {
+          setInternalLoading(false);
+        }
         isTogglingRef.current = false;
         animTimerRef.current = setTimeout(() => {
           if (isMountedRef.current) setIsAnimating(false);
@@ -164,7 +192,19 @@ export function BookmarkVenueButton({
         }, 2000);
       }
     },
-    [venueId, venueName, venueData, disabled, onToggle, onPersist, toast],
+    [
+      venueId,
+      venueName,
+      venueData,
+      disabled,
+      isLoading,
+      showLoadingOnToggle,
+      onToggle,
+      onPersist,
+      toast,
+      disableSound,
+      playBookmarkSound,
+    ],
   );
 
   // Icon sizing
@@ -182,6 +222,18 @@ export function BookmarkVenueButton({
   }[size];
 
   const renderIcon = () => {
+    if (isLoading) {
+      return (
+        <Loader2
+          data-testid="bookmark-loading-spinner"
+          className={cn(
+            iconSizeClasses,
+            "animate-spin text-zinc-500 dark:text-zinc-400 shrink-0",
+          )}
+        />
+      );
+    }
+
     const isFilled = isFavorited;
     const commonProps = {
       className: cn(
@@ -218,12 +270,13 @@ export function BookmarkVenueButton({
       <button
         type="button"
         onClick={handleToggle}
-        disabled={disabled}
+        disabled={disabled || isLoading}
         aria-pressed={isFavorited}
+        aria-busy={isLoading}
         aria-label={actionLabel}
         data-testid={rootTestId}
         className={cn(
-          "group inline-flex items-center gap-2 rounded-xl font-medium border transition-all duration-150 select-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+          "group inline-flex items-center justify-center min-w-[100px] gap-2 rounded-xl font-medium border transition-all duration-150 select-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
           buttonSizeClasses,
           variant === "pill" ? "rounded-full px-3.5 py-1.5" : "px-3 py-2",
           isFavorited
@@ -233,10 +286,19 @@ export function BookmarkVenueButton({
         )}
         title={showTooltip ? actionLabel : undefined}
       >
-        {renderIcon()}
+        <span
+          className={cn(
+            "inline-flex items-center justify-center shrink-0",
+            iconSizeClasses,
+          )}
+        >
+          {renderIcon()}
+        </span>
         {(showLabel || variant === "button" || variant === "pill") && (
           <span className="font-semibold text-xs leading-none">
-            {justToggled ? (
+            {isLoading ? (
+              "Saving..."
+            ) : justToggled ? (
               <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                 <Check className="w-3 h-3" />
                 {isFavorited ? "Saved" : "Removed"}
@@ -257,8 +319,9 @@ export function BookmarkVenueButton({
     <button
       type="button"
       onClick={handleToggle}
-      disabled={disabled}
+      disabled={disabled || isLoading}
       aria-pressed={isFavorited}
+      aria-busy={isLoading}
       aria-label={actionLabel}
       data-testid={rootTestId}
       title={showTooltip ? actionLabel : undefined}
@@ -271,9 +334,18 @@ export function BookmarkVenueButton({
         className,
       )}
     >
-      {renderIcon()}
+      <span
+        className={cn(
+          "inline-flex items-center justify-center shrink-0",
+          iconSizeClasses,
+        )}
+      >
+        {renderIcon()}
+      </span>
     </button>
   );
 }
 
+export { BookmarkVenueButton as VenueBookmarkButton };
+export type { BookmarkVenueButtonProps as VenueBookmarkButtonProps };
 export default BookmarkVenueButton;

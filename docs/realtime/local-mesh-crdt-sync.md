@@ -1,6 +1,6 @@
 # Local Mesh CRDT Collaborative State Replication Architecture
 
-This technical specification details the Conflict-Free Replicated Data Type (CRDT) collaborative state replication protocol used across WorkSphere's peer-to-peer and edge network layers. It documents signaling and peer discovery in [`src/party/localMesh.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/localMesh.room.ts), state vector synchronization via the Yjs 2-step protocol, binary update propagation, delta compression, memory compaction, and tombstone garbage collection for collaborative whiteboards and shared workspace notes across unstable mesh topologies.
+This technical specification details the Conflict-Free Replicated Data Type (CRDT) collaborative state replication protocol used across WorkSphere's peer-to-peer and edge network layers. It documents signaling and peer discovery in [`src/party/localMesh.room.ts`](../../src/party/localMesh.room.ts), state vector synchronization via the Yjs 2-step protocol, binary update propagation, delta compression, memory compaction, and tombstone garbage collection for collaborative whiteboards and shared workspace notes across unstable mesh topologies.
 
 ---
 
@@ -47,7 +47,7 @@ sequenceDiagram
 
 ## 2. PartyKit Signaling Server Architecture (`localMesh.room.ts`)
 
-Direct WebRTC DataChannels require an initial out-of-band communication channel to exchange network session descriptions (SDP) and interactive connectivity establishment (ICE) candidates. [`src/party/localMesh.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/localMesh.room.ts) acts as an ultra-lightweight, zero-state signaling broker.
+Direct WebRTC DataChannels require an initial out-of-band communication channel to exchange network session descriptions (SDP) and interactive connectivity establishment (ICE) candidates. [`src/party/localMesh.room.ts`](../../src/party/localMesh.room.ts) acts as an ultra-lightweight, zero-state signaling broker.
 
 ### 2.1 Signaling Protocol Message Schema
 
@@ -277,7 +277,7 @@ Mesh peer-to-peer networks frequently experience transient disconnects due to Wi
 
 ### 7.1 Monotonic Sequence Reconciliation
 
-To protect against packet loss or out-of-order delivery over raw WebRTC SCTP data channels, local operations carry monotonic sequence numbers (as seen in [`src/party/whiteboard.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/whiteboard.room.ts)):
+To protect against packet loss or out-of-order delivery over raw WebRTC SCTP data channels, local operations carry monotonic sequence numbers (as seen in [`src/party/whiteboard.room.ts`](../../src/party/whiteboard.room.ts)):
 
 ```typescript
 export interface SequencedOperation extends CrdtOperation {

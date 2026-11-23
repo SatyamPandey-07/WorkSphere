@@ -211,7 +211,9 @@ self.addEventListener("fetch", (event) => {
 
 async function handleFetch(request, event) {
   const isVenuesApi = request.url.includes("/api/venues");
-  const isReservationsApi = request.url.includes("/api/reservations/availability");
+  const isReservationsApi = request.url.includes(
+    "/api/reservations/availability",
+  );
   const isMapTile =
     request.url.includes("tile.openstreetmap.org") ||
     request.url.includes("basemaps.cartocdn.com");
@@ -257,11 +259,29 @@ async function handleFetch(request, event) {
     if (cached) return cached;
     try {
       const networkResponse = await fetch(request);
+      // Guard: skip cache write for aborted/opaque error responses that can
+      // arise when the client-side AbortController cancels a prefetch after a
+      // rapid zoom change.  status === 0 on its own is acceptable (opaque
+      // cross-origin success), but we also reject any response whose body has
+      // already been consumed or whose signal was aborted.
       if (networkResponse.status === 200 || networkResponse.status === 0) {
-        cache.put(request, networkResponse.clone());
+        // cache.put is fire-and-forget; absorb any storage errors silently so
+        // an aborted or quota-exceeded write never surfaces as an unhandled
+        // rejection in the SW's global scope.
+        cache.put(request, networkResponse.clone()).catch((err) => {
+          if (err && err.name !== "AbortError") {
+            console.warn("[SW] Map tile cache.put failed:", err);
+          }
+        });
       }
       return networkResponse;
-    } catch {
+    } catch (err) {
+      // AbortError = tile prefetch was intentionally cancelled (zoom changed).
+      // Return a 204 No Content so the caller gets a clean response without
+      // triggering the offline fallback path or logging a spurious error.
+      if (err && err.name === "AbortError") {
+        return new Response(null, { status: 204 });
+      }
       return new Response("Map Tile Offline", { status: 503 });
     }
   } else if (isVenuePhoto) {
@@ -269,7 +289,10 @@ async function handleFetch(request, event) {
     const cached = await cache.match(request);
     const revalidatePromise = fetch(request)
       .then(async (networkResponse) => {
-        if (networkResponse && (networkResponse.status === 200 || networkResponse.status === 0)) {
+        if (
+          networkResponse &&
+          (networkResponse.status === 200 || networkResponse.status === 0)
+        ) {
           await cache.put(request, networkResponse.clone());
         }
         return networkResponse;
@@ -371,6 +394,17 @@ self.addEventListener("sync", (event) => {
   }
   if (event.tag === AVAILABILITY_SYNC_TAG) {
     event.waitUntil(syncAvailability());
+  }
+
+  if (
+    event.tag === "sync-offline-mutations" ||
+    event.tag === "offline-mutation-sync"
+  ) {
+    event.waitUntil(syncOfflineMutations());
+
+  if (event.tag === "nomad-checkin-sync") {
+    event.waitUntil(syncNomadCheckins());
+
   }
 });
 
@@ -645,7 +679,9 @@ async function syncPendingReviews() {
         // Acquire CSRF token from safe GET endpoint
         let csrfToken = "";
         try {
-          const csrfRes = await fetch("/api/auth/csrf-token", { credentials: "same-origin" });
+          const csrfRes = await fetch("/api/auth/csrf-token", {
+            credentials: "same-origin",
+          });
           if (csrfRes.ok) {
             const csrfData = await csrfRes.json();
             csrfToken = csrfData.csrfToken || "";
@@ -793,7 +829,9 @@ async function syncPendingReviews() {
           }
         } catch (error) {
           if (isNetworkError(error)) {
-            console.warn(`[SW] syncPendingReviews: Network error for ${item.id} — preserving in queue.`);
+            console.warn(
+              `[SW] syncPendingReviews: Network error for ${item.id} — preserving in queue.`,
+            );
             item.status = "PENDING";
             const putTx = db.transaction("pendingReviews", "readwrite");
             putTx.objectStore("pendingReviews").put(item);
@@ -1036,6 +1074,284 @@ async function syncReceiptExports() {
   }
 }
 
+
+// Background Sync: process queued offline mutations with Decorrelated Jitter backoff (Issue #9618)
+let isSyncingOfflineMutations = false;
+let sw5xxDecorrelatedDelay = 1000;
+
+function calculateSWDecorrelatedJitter(prevDelay) {
+  const baseDelay = 1000;
+  const maxDelay = 30000;
+  const factor = 3;
+  const effectiveBase = Math.min(baseDelay, maxDelay);
+  const effectivePrev =
+    typeof prevDelay === "number" && prevDelay >= effectiveBase
+      ? prevDelay
+      : effectiveBase;
+  const ceiling = Math.min(maxDelay, effectivePrev * factor);
+  if (ceiling <= effectiveBase) return effectiveBase;
+  return Math.round(effectiveBase + (ceiling - effectiveBase) * Math.random());
+}
+
+async function getOfflineMutationsFromDB() {
+  if (typeof indexedDB === "undefined") return [];
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 1);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains("offline_mutations")) {
+          db.createObjectStore("offline_mutations", { keyPath: "id" });
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("offline_mutations")) {
+          resolve([]);
+          return;
+        }
+        const tx = db.transaction("offline_mutations", "readonly");
+        const store = tx.objectStore("offline_mutations");
+        const getReq = store.getAll();
+        getReq.onsuccess = () => resolve(getReq.result || []);
+        getReq.onerror = () => resolve([]);
+      };
+      req.onerror = () => resolve([]);
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+async function removeOfflineMutationFromDB(id) {
+  if (typeof indexedDB === "undefined") return;
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 1);
+      req.onsuccess = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("offline_mutations")) {
+          resolve();
+          return;
+        }
+        const tx = db.transaction("offline_mutations", "readwrite");
+        tx.objectStore("offline_mutations").delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      };
+      req.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+async function syncOfflineMutations() {
+  if (isSyncingOfflineMutations) return;
+  isSyncingOfflineMutations = true;
+
+  try {
+    await withIdbLock(async () => {
+      // 1. Process mutations from dedicated persistent offline_mutations store
+      try {
+        const persistentMutations = await getOfflineMutationsFromDB();
+        for (const mutation of persistentMutations) {
+          try {
+            const endpoint = mutation.endpoint || "/api/bookings";
+            const method = mutation.method || "POST";
+            const headers = {
+              "Content-Type": "application/json",
+              "X-Idempotency-Key": mutation.idempotencyKey || mutation.id,
+              ...(mutation.headers || {}),
+            };
+            const body =
+              method !== "DELETE" && mutation.payload !== undefined
+                ? typeof mutation.payload === "string"
+                  ? mutation.payload
+                  : JSON.stringify(mutation.payload)
+                : undefined;
+
+            const response = await fetch(endpoint, {
+              method,
+              headers,
+              body,
+            });
+
+            if (response.ok) {
+              await removeOfflineMutationFromDB(mutation.id);
+              sw5xxDecorrelatedDelay = 1000;
+            } else if (response.status >= 500 && response.status < 600) {
+              sw5xxDecorrelatedDelay = calculateSWDecorrelatedJitter(
+                sw5xxDecorrelatedDelay,
+              );
+              if (sw5xxDecorrelatedDelay > 0) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, sw5xxDecorrelatedDelay),
+                );
+              }
+            } else if (response.status >= 400 && response.status < 500) {
+              await removeOfflineMutationFromDB(mutation.id);
+            }
+          } catch (err) {
+            if (isNetworkError(err)) break;
+            console.error(
+              "[SW] Error syncing WorkSphereOfflineMutationsDB item:",
+              err,
+            );
+            break;
+          }
+        }
+      } catch {
+        // Continue to pendingActions
+      }
+
+      // 2. Process legacy pendingActions mutations
+      const db = await openIndexedDB();
+      const actions = await getPendingActions(db, [
+        "mutation",
+        "booking",
+        "booking-mutation",
+        "offline-mutation",
+      ]);
+
+      if (!actions || actions.length === 0) return;
+
+      for (const action of actions) {
+        try {
+          const endpoint = action.endpoint || action.url || "/api/bookings";
+          const method = action.method || "POST";
+          const headers = {
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": action.idempotencyKey || String(action.id),
+            ...(action.headers || {}),
+          };
+
+          const body =
+            method !== "DELETE" && action.payload !== undefined
+              ? typeof action.payload === "string"
+                ? action.payload
+                : JSON.stringify(action.payload)
+              : undefined;
+
+          const response = await fetch(endpoint, {
+            method,
+            headers,
+            body,
+          });
+
+          if (response.ok) {
+            await removePendingAction(db, action.id);
+            sw5xxDecorrelatedDelay = 1000;
+          } else if (response.status >= 500 && response.status < 600) {
+            sw5xxDecorrelatedDelay = calculateSWDecorrelatedJitter(
+              sw5xxDecorrelatedDelay,
+            );
+            if (sw5xxDecorrelatedDelay > 0) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, sw5xxDecorrelatedDelay),
+              );
+            }
+          } else if (response.status >= 400 && response.status < 500) {
+            // Permanent client error: remove bad action to prevent toxic queue poison
+            await removePendingAction(db, action.id);
+          }
+        } catch (err) {
+          if (isNetworkError(err)) {
+            console.warn(
+              "[SW] syncOfflineMutations: Network error — preserving mutations for next sync.",
+            );
+            break;
+          }
+          console.error("[SW] Failed to sync offline mutation:", err);
+          break;
+        }
+      }
+    });
+  } catch (error) {
+    console.error("[SW] Offline mutations sync encountered error:", error);
+  } finally {
+    isSyncingOfflineMutations = false;
+
+// Background Sync for offline desk check-ins (Issue #7427)
+let isSyncingCheckins = false;
+async function syncNomadCheckins() {
+  if (isSyncingCheckins) return;
+  isSyncingCheckins = true;
+  try {
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      if (!db.objectStoreNames.contains("pendingCheckins")) return;
+      const tx = db.transaction("pendingCheckins", "readonly");
+      const store = tx.objectStore("pendingCheckins");
+      const checkins = await new Promise((resolve, reject) => {
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+
+      const synced = [];
+      const failed = [];
+
+      for (const item of checkins) {
+        try {
+          const response = await fetch("/api/checkin", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": item.idempotencyKey,
+              "X-Client-Nonce": item.clientNonce,
+              "X-Signed-Timestamp": item.signedTimestamp,
+            },
+            body: JSON.stringify({
+              seatId: item.seatId,
+              venueId: item.venueId,
+              userId: item.userId,
+              timestamp: item.timestamp,
+              clientNonce: item.clientNonce,
+              signedTimestamp: item.signedTimestamp,
+              idempotencyKey: item.idempotencyKey,
+            }),
+          });
+
+          if (response.ok || response.status === 409) {
+            const delTx = db.transaction("pendingCheckins", "readwrite");
+            delTx.objectStore("pendingCheckins").delete(item.id);
+            synced.push(item);
+          } else if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+            const delTx = db.transaction("pendingCheckins", "readwrite");
+            delTx.objectStore("pendingCheckins").delete(item.id);
+            failed.push(item);
+          } else {
+            failed.push(item);
+          }
+        } catch {
+          failed.push(item);
+        }
+      }
+
+      if (typeof BroadcastChannel !== "undefined") {
+        try {
+          const channel = new BroadcastChannel("nomad-checkin-sync-channel");
+          channel.postMessage({
+            type: "NOMAD_CHECKIN_SYNC_COMPLETE",
+            tag: "nomad-checkin-sync",
+            syncedCount: synced.length,
+            failedCount: failed.length,
+            totalProcessed: checkins.length,
+            timestamp: Date.now(),
+          });
+          channel.close();
+        } catch {}
+      }
+    });
+  } catch (err) {
+    console.error("[SW] syncNomadCheckins error:", err);
+  } finally {
+    isSyncingCheckins = false;
+
+  }
+}
+
 // Periodic Background Sync: fetch seat availability for saved venues,
 // diff against last-known state, and show a notification when seats open up.
 let isSyncingAvailability = false;
@@ -1049,7 +1365,16 @@ async function syncAvailability() {
         credentials: "include",
       });
 
-      if (!response.ok) return;
+      if (response.status === 401) {
+        console.warn("[SW] Availability sync skipped: unauthenticated session");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `[SW] Availability sync failed with status ${response.status}`,
+        );
+      }
 
       const { venues } = await response.json();
       if (!Array.isArray(venues) || venues.length === 0) return;
@@ -1135,7 +1460,16 @@ async function syncFavoriteVenuesOccupancy() {
         credentials: "include",
       });
 
-      if (!response.ok) return;
+      if (response.status === 401) {
+        console.warn("[SW] Availability sync skipped: unauthenticated session");
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `[SW] Availability sync failed with status ${response.status}`,
+        );
+      }
 
       const { venues } = await response.json();
       if (!Array.isArray(venues) || venues.length === 0) return;
@@ -1202,8 +1536,8 @@ async function syncFavoriteVenuesOccupancy() {
       const targetStore = storeNames.contains("favorites")
         ? "favorites"
         : storeNames.contains("venues")
-        ? "venues"
-        : null;
+          ? "venues"
+          : null;
 
       if (targetStore) {
         const tx = db.transaction(targetStore, "readwrite");
@@ -1227,7 +1561,9 @@ async function syncFavoriteVenuesOccupancy() {
         });
       }
 
-      console.log(`[SW] Successfully synced occupancy cache for ${venues.length} favorite venues`);
+      console.log(
+        `[SW] Successfully synced occupancy cache for ${venues.length} favorite venues`,
+      );
     });
   } catch (error) {
     console.error("[SW] Favorite venues occupancy sync failed:", error);
@@ -1242,10 +1578,16 @@ function openIndexedDB() {
   if (swDb) return Promise.resolve(swDb);
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 7);
+      const request = indexedDB.open("worksphere-offline", 9);
 
       request.onblocked = () => {
         console.warn("[SW] IndexedDB upgrade blocked");
+        if (swDb) {
+          try {
+            swDb.close();
+          } catch {}
+          swDb = null;
+        }
       };
 
       request.onerror = () => reject(request.error);
@@ -1335,7 +1677,7 @@ function openIndexedDB() {
           deltaStore.createIndex("timestamp", "timestamp", { unique: false });
         }
 
-// Recently viewed venues store (Issue #3512)
+        // Recently viewed venues store (Issue #3512)
         if (!db.objectStoreNames.contains("recentlyViewedVenues")) {
           const recentStore = db.createObjectStore("recentlyViewedVenues", {
             keyPath: "id",
@@ -1351,6 +1693,45 @@ function openIndexedDB() {
           reviewStore.createIndex("venueId", "venueId", { unique: false });
           reviewStore.createIndex("status", "status", { unique: false });
           reviewStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
+        // Preference rankings store (Issue #4102)
+        if (!db.objectStoreNames.contains("preference_rankings")) {
+          db.createObjectStore("preference_rankings", { keyPath: "id" });
+        }
+
+        // Queued reviews store (Issue #3469)
+        if (!db.objectStoreNames.contains("queued_reviews")) {
+          const queuedStore = db.createObjectStore("queued_reviews", {
+            keyPath: "id",
+          });
+          queuedStore.createIndex("venueId", "venueId", { unique: false });
+          queuedStore.createIndex("status", "status", { unique: false });
+          queuedStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
+        // Unsynced review drafts store (Issue #3469)
+        if (!db.objectStoreNames.contains("unsyncedReviewDrafts")) {
+          const draftsStore = db.createObjectStore("unsyncedReviewDrafts", {
+            keyPath: "id",
+          });
+          draftsStore.createIndex("venueId", "review.venueId", {
+            unique: false,
+          });
+          draftsStore.createIndex("quarantinedAt", "quarantinedAt", {
+            unique: false,
+          });
+        }
+
+        // Pending check-ins for offline background sync (Issue #7427)
+        if (!db.objectStoreNames.contains("pendingCheckins")) {
+          const checkinStore = db.createObjectStore("pendingCheckins", {
+            keyPath: "id",
+          });
+          checkinStore.createIndex("seatId", "seatId", { unique: false });
+          checkinStore.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
+          checkinStore.createIndex("status", "status", { unique: false });
+          checkinStore.createIndex("timestamp", "timestamp", { unique: false });
         }
       };
     } catch (err) {
@@ -1518,6 +1899,192 @@ self.addEventListener("push", (event) => {
   }
 });
 
+const CACHE_VERSION = "v2";
+const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
+const RUNTIME_PUBLIC_CACHE_NAME = `worksphere-runtime-public-${CACHE_VERSION}`;
+
+const APP_SHELL_ASSETS = ["/", "/manifest.json"];
+
+// Strictly allowlist unauthenticated public endpoints safe for stale-while-revalidate
+const PUBLIC_CACHEABLE_API_PREFIXES = ["/api/venues/public", "/api/health"];
+
+/**
+ * Determines whether a request carries user-specific credentials or explicit
+ * non-cacheable directives and must bypass Service Worker runtime caches.
+ */
+function isAuthenticatedOrPrivateRequest(request, url) {
+  if (request.method !== "GET") {
+    return true;
+  }
+
+  // Protected user-scoped API routes must never be cached in shared browser storage
+  if (url.pathname.startsWith("/api/")) {
+    const isAllowlistedPublic = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
+      url.pathname.startsWith(prefix),
+    );
+    if (!isAllowlistedPublic) {
+      return true;
+    }
+  }
+
+  // Check request headers for credentials or explicit no-store / no-cache directives
+  const authHeader = request.headers.get("Authorization");
+  const cookieHeader = request.headers.get("Cookie");
+  const cacheControl = (
+    request.headers.get("Cache-Control") || ""
+  ).toLowerCase();
+
+  if (authHeader || cookieHeader) {
+    return true;
+  }
+
+  if (cacheControl.includes("no-store") || cacheControl.includes("private")) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks response headers to ensure personalized or no-store responses are never persisted.
+ */
+function isCacheablePublicResponse(response) {
+  if (!response || !response.ok || response.status !== 200) {
+    return false;
+  }
+
+  // Opaque responses (status 0) or credentialed Vary headers must not be cached
+  if (response.type === "opaque" || response.type === "opaqueredirect") {
+    return false;
+  }
+
+  const cacheControl = (
+    response.headers.get("Cache-Control") || ""
+  ).toLowerCase();
+  if (
+    cacheControl.includes("no-store") ||
+    cacheControl.includes("private") ||
+    cacheControl.includes("no-cache")
+  ) {
+    return false;
+  }
+
+  const vary = (response.headers.get("Vary") || "").toLowerCase();
+  if (vary.includes("cookie") || vary.includes("authorization")) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Purges all dynamic runtime caches (and optionally static caches) to guarantee
+ * zero cross-user data leakage on shared coworking terminals.
+ */
+async function purgeDynamicRuntimeCaches() {
+  const cacheKeys = await caches.keys();
+  const deletions = cacheKeys
+    .filter((key) => key !== STATIC_CACHE_NAME)
+    .map((key) => caches.delete(key));
+
+  await Promise.all(deletions);
+}
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(STATIC_CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL_ASSETS)),
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      const cacheKeys = await caches.keys();
+      await Promise.all(
+        cacheKeys
+          .filter(
+            (key) =>
+              key !== STATIC_CACHE_NAME && key !== RUNTIME_PUBLIC_CACHE_NAME,
+          )
+          .map((key) => caches.delete(key)),
+      );
+      await self.clients.claim();
+    })(),
+  );
+});
+
+self.addEventListener("message", (event) => {
+  const payload = event.data;
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  if (payload.type === "SIGN_OUT" || payload.type === "PURGE_RUNTIME_CACHES") {
+    event.waitUntil(
+      (async () => {
+        await purgeDynamicRuntimeCaches();
+        if (event.ports && event.ports[0]) {
+          event.ports[0].postMessage({ ok: true, purged: true });
+        }
+      })(),
+    );
+  }
+});
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // Only intercept same-origin HTTP(S) requests
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Bypass Service Worker cache entirely for authenticated, cookie-bearing,
+  // Cache-Control: no-store, or non-allowlisted /api/* routes
+  if (isAuthenticatedOrPrivateRequest(request, url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // Stale-while-revalidate for verified unauthenticated static & public endpoints only
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
+      const cachedResponse = await cache.match(request);
+
+      const networkFetchPromise = fetch(request)
+        .then((networkResponse) => {
+          if (isCacheablePublicResponse(networkResponse)) {
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        })
+        .catch((error) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          throw error;
+        });
+
+      return cachedResponse || networkFetchPromise;
+    })(),
+  );
+});
+
+// Export helpers when imported in Node/Jest unit test environments
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    STATIC_CACHE_NAME,
+    RUNTIME_PUBLIC_CACHE_NAME,
+    isAuthenticatedOrPrivateRequest,
+    isCacheablePublicResponse,
+    purgeDynamicRuntimeCaches,
+  };
+}
 // Notification click handler — navigate to the target venue page
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
@@ -1652,7 +2219,7 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
         for (const record of toEvict) {
           await cache.delete(record.url);
         }
-        
+
         console.log(
           `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
         );

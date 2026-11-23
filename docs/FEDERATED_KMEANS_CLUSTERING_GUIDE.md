@@ -2,7 +2,7 @@
 
 ## Overview
 
-WorkSphere employs client-side **Federated K-Means Clustering** to provide personalized workspace and venue recommendations while upholding strict user data privacy. Rather than transmitting raw user preferences, interaction history, or bookmarks to central servers, WorkSphere executes clustering and vector ranking directly within the user's browser via a dedicated Web Worker ([src/workers/kmeans-clustering.worker.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/workers/kmeans-clustering.worker.ts)).
+WorkSphere employs client-side **Federated K-Means Clustering** to provide personalized workspace and venue recommendations while upholding strict user data privacy. Rather than transmitting raw user preferences, interaction history, or bookmarks to central servers, WorkSphere executes clustering and vector ranking directly within the user's browser via a dedicated Web Worker ([src/workers/kmeans-clustering.worker.ts](../src/workers/kmeans-clustering.worker.ts)).
 
 The core idea is **on-device personalization**:
 
@@ -30,7 +30,7 @@ graph TD
 
 ## Vector Representation
 
-Venues and user preferences are projected into a normalized, 12-dimensional Euclidean feature space ($D = 12$) defined in [src/lib/kmeans/types.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/lib/kmeans/types.ts). Every dimension represents a specific workspace amenity or operational attribute, mapped into a continuous interval $[0, 1]$.
+Venues and user preferences are projected into a normalized, 12-dimensional Euclidean feature space ($D = 12$) defined in [src/lib/kmeans/types.ts](../src/lib/kmeans/types.ts). Every dimension represents a specific workspace amenity or operational attribute, mapped into a continuous interval $[0, 1]$.
 
 ### Amenity Vector Dimensions ($D = 12$)
 
@@ -152,7 +152,7 @@ WorkSphere implements **Lloyd's Algorithm** with **K-Means++ initialization** to
 
 ### 1. Initialization (K-Means++)
 
-Standard random initialization is prone to suboptimal local minima. WorkSphere employs the **K-Means++** seeding procedure ([src/lib/kmeans/mathUtils.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/lib/kmeans/mathUtils.ts)):
+Standard random initialization is prone to suboptimal local minima. WorkSphere employs the **K-Means++** seeding procedure ([src/lib/kmeans/mathUtils.ts](../src/lib/kmeans/mathUtils.ts)):
 
 1. **First Seed**: Select the first centroid $\mathbf{c}_0$ uniformly at random from the input set $X = \{\mathbf{x}_1, \dots, \mathbf{x}_N\}$.
 2. **Subsequent Seeds ($c = 1 \dots K - 1$)**:
@@ -248,7 +248,7 @@ $$\text{clientScore} = 1 - \tilde{d} \quad \in [0, 1]$$
 
 ### Hybrid Score Blending
 
-The local `clientScore` is blended with the global `serverScore` (which reflects textual relevance, popularity, and global rating) using configured weights defined in [src/lib/kmeans/types.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/lib/kmeans/types.ts):
+The local `clientScore` is blended with the global `serverScore` (which reflects textual relevance, popularity, and global rating) using configured weights defined in [src/lib/kmeans/types.ts](../src/lib/kmeans/types.ts):
 
 - `SERVER_SCORE_WEIGHT` ($w_{\text{server}}$) = $0.6$
 - `CLIENT_SCORE_WEIGHT` ($w_{\text{client}}$) = $0.4$
@@ -263,7 +263,7 @@ Candidates are sorted in descending order of $\text{finalScore}$.
 
 ## WebWorker Vector Serialization
 
-All compute-intensive operations (K-Means++ seeding, distance matrices, centroid iterations, and ranking loops) run inside a dedicated background worker ([src/workers/kmeans-clustering.worker.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/workers/kmeans-clustering.worker.ts)) to prevent main-thread UI stutter.
+All compute-intensive operations (K-Means++ seeding, distance matrices, centroid iterations, and ranking loops) run inside a dedicated background worker ([src/workers/kmeans-clustering.worker.ts](../src/workers/kmeans-clustering.worker.ts)) to prevent main-thread UI stutter.
 
 ### Serialization Strategy: Structured Clone
 
@@ -352,7 +352,7 @@ WorkSphere enforces strict local vector isolation:
 
 ### HMAC Integrity for Local Storage
 
-While centroids are stored client-side, WorkSphere protects against tampering or corruption using an **HMAC-SHA256 signature** via the Web Crypto API ([src/lib/kmeans/storage.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/lib/kmeans/storage.ts)):
+While centroids are stored client-side, WorkSphere protects against tampering or corruption using an **HMAC-SHA256 signature** via the Web Crypto API ([src/lib/kmeans/storage.ts](../src/lib/kmeans/storage.ts)):
 
 ```typescript
 // Computes HMAC signature over centroids payload using a client-side salt

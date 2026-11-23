@@ -18,7 +18,14 @@ jest.mock("recharts", () => ({
   Bar: () => <div data-testid="mock-bar" />,
   XAxis: () => <div data-testid="mock-xaxis" />,
   YAxis: () => <div data-testid="mock-yaxis" />,
-  Tooltip: ({ content }: { content?: React.ComponentType<any> | React.ReactElement | ((props: any) => React.ReactNode) }) => {
+  Tooltip: ({
+    content,
+  }: {
+    content?:
+      | React.ComponentType<any>
+      | React.ReactElement
+      | ((props: any) => React.ReactNode);
+  }) => {
     if (typeof content === "function") {
       const SampleContent = content as (props: any) => React.ReactNode;
       return (
@@ -83,7 +90,7 @@ describe("VenueNoiseChart Component", () => {
 
   it("renders null when all datasets are empty", () => {
     const { container } = render(
-      <VenueNoiseChart wifiPredictions={[]} occupancyData={[]} forecast={[]} />
+      <VenueNoiseChart wifiPredictions={[]} occupancyData={[]} forecast={[]} />,
     );
     expect(container).toBeEmptyDOMElement();
   });
@@ -94,7 +101,7 @@ describe("VenueNoiseChart Component", () => {
         wifiPredictions={null}
         occupancyData={null}
         forecast={null}
-      />
+      />,
     );
     expect(container).toBeEmptyDOMElement();
   });
@@ -103,15 +110,15 @@ describe("VenueNoiseChart Component", () => {
     render(<VenueNoiseChart wifiPredictions={mockWifi} />);
 
     expect(screen.getByTestId("wifi-prediction-section")).toBeInTheDocument();
-    expect(screen.getByText("AI Wifi Prediction")).toBeInTheDocument();
+    expect(screen.getByText("Observed Wi-Fi Speeds")).toBeInTheDocument();
     expect(
-      screen.getByText("Expected speeds based on crowd telemetry")
+      screen.getByText("Hourly measurements based on crowd telemetry"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("wifi-tooltip")).toBeInTheDocument();
 
     expect(screen.queryByTestId("occupancy-section")).not.toBeInTheDocument();
     expect(
-      screen.queryByTestId("noise-timeline-section")
+      screen.queryByTestId("noise-timeline-section"),
     ).not.toBeInTheDocument();
   });
 
@@ -121,15 +128,15 @@ describe("VenueNoiseChart Component", () => {
     expect(screen.getByTestId("occupancy-section")).toBeInTheDocument();
     expect(screen.getByText("Live Crowd Occupancy")).toBeInTheDocument();
     expect(
-      screen.getByText("Historical crowd levels by hour")
+      screen.getByText("Historical crowd levels by hour"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("occupancy-tooltip")).toBeInTheDocument();
 
     expect(
-      screen.queryByTestId("wifi-prediction-section")
+      screen.queryByTestId("wifi-prediction-section"),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByTestId("noise-timeline-section")
+      screen.queryByTestId("noise-timeline-section"),
     ).not.toBeInTheDocument();
   });
 
@@ -139,12 +146,12 @@ describe("VenueNoiseChart Component", () => {
     expect(screen.getByTestId("noise-timeline-section")).toBeInTheDocument();
     expect(screen.getByText("Noise Level Timeline")).toBeInTheDocument();
     expect(
-      screen.getByText("Predicted ambient noise (dB) throughout the day")
+      screen.getByText("Predicted ambient noise (dB) throughout the day"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("noise-tooltip")).toBeInTheDocument();
 
     expect(
-      screen.queryByTestId("wifi-prediction-section")
+      screen.queryByTestId("wifi-prediction-section"),
     ).not.toBeInTheDocument();
     expect(screen.queryByTestId("occupancy-section")).not.toBeInTheDocument();
   });
@@ -157,7 +164,7 @@ describe("VenueNoiseChart Component", () => {
         forecast={mockForecast}
         className="custom-chart-container"
         testId="custom-venue-noise-chart"
-      />
+      />,
     );
 
     const root = screen.getByTestId("custom-venue-noise-chart");
@@ -171,7 +178,11 @@ describe("VenueNoiseChart Component", () => {
 
   it("safely handles malformed forecast items with non-numeric hours and missing confidence", () => {
     const malformedForecast = [
-      { hour: "8" as unknown as number, predictedDb: 48, confidence: undefined as unknown as number },
+      {
+        hour: "8" as unknown as number,
+        predictedDb: 48,
+        confidence: undefined as unknown as number,
+      },
       { hour: 25, predictedDb: 75, confidence: 0.95 },
       null as unknown as HourlyForecast,
     ];

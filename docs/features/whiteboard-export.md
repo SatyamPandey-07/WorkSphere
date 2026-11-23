@@ -1,6 +1,6 @@
 ﻿# Whiteboard Canvas Export: Transparent PNG and Vector SVG Specifications
 
-This developer guide details the canvas export pipeline in [`src/lib/whiteboard/canvasExport.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/whiteboard/canvasExport.ts), explaining how WorkSphere converts real-time collaborative whiteboard drawings into **raster PNG** (with alpha channel transparency) and **vector SVG** (with coordinate scaling and font embedding), along with browser download trigger implementations.
+This developer guide details the canvas export pipeline in [`src/lib/whiteboard/canvasExport.ts`](../../src/lib/whiteboard/canvasExport.ts), explaining how WorkSphere converts real-time collaborative whiteboard drawings into **raster PNG** (with alpha channel transparency) and **vector SVG** (with coordinate scaling and font embedding), along with browser download trigger implementations.
 
 ---
 

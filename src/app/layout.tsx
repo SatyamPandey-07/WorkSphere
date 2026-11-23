@@ -1,8 +1,8 @@
-import type { Metadata, Viewport } from "next";
+﻿import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { cookies, headers } from "next/headers";
-
+import Script from "next/script";
 import "./globals.css";
 
 import I18nProvider from "../components/I18nProvider";
@@ -16,7 +16,8 @@ import { CurrencyProvider } from "@/context/CurrencyContext";
 import { SyncManager } from "../hooks/usePWA";
 import { ToastProvider } from "../components/ui/Toast";
 import { PWAUpdateListener } from "../components/PWAUpdateListener";
-import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
+import { KeyboardShortcutsModal } from "../components/ui/KeyboardShortcutsModal";
+import { KeyboardShortcutModal } from "../components/ui/KeyboardShortcutModal";
 import { CommandPalette } from "../components/CommandPalette";
 import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";
 import { StorageQuotaWarningBanner } from "../components/ui/StorageQuotaWarningBanner";
@@ -35,10 +36,28 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+function getSafeMetadataBase(): URL {
+  const fallback = "https://work-sphere-one.vercel.app";
+  const raw = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    fallback
+  ).trim();
+
+  const withProtocol =
+    raw.startsWith("http://") || raw.startsWith("https://")
+      ? raw
+      : `https://${raw}`;
+
+  try {
+    return new URL(withProtocol);
+  } catch {
+    return new URL(fallback);
+  }
+}
+
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL ?? "https://work-sphere-one.vercel.app",
-  ),
+  metadataBase: getSafeMetadataBase(),
   title: "WorkSphere - AI-Powered Remote Workspace Finder",
   description:
     "Discover cafes, coworking spaces, and libraries with great WiFi, power outlets, and the perfect atmosphere for your work style.",
@@ -100,6 +119,7 @@ export default async function RootLayout({
             <RateLimitBanner />
             <PWAUpdateListener />
             <KeyboardShortcutsModal />
+            <KeyboardShortcutModal />
             <CommandPalette />
             <IdleSessionDialog />
             <StorageQuotaWarningBanner />
@@ -129,7 +149,7 @@ export default async function RootLayout({
     </ClerkProvider>
   );
 
-  return (
+ return (
     <html
       lang="en"
       data-theme={theme}
@@ -139,27 +159,19 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head suppressHydrationWarning>
-        <script
-          id="theme-init"
-          suppressHydrationWarning
-          nonce={nonce}
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
-        <SkipToContent />
-        <ScrollProgress />
-        <ScrollToTopButton />
+      <body suppressHydrationWarning>
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
         {bodyContent}
-        <CookieBanner />
       </body>
     </html>
-  );
+  )
 }

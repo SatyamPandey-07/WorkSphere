@@ -150,9 +150,7 @@ export function trackAgentPerformance(
   });
 }
 
-export function trackFilterApplied(
-  filters: Record<string, unknown>,
-): void {
+export function trackFilterApplied(filters: Record<string, unknown>): void {
   trackEvent("filter_applied", {
     filters: Object.keys(filters),
     activeCount: Object.keys(filters).length,
@@ -241,14 +239,17 @@ export function getAgentMetrics(): Array<{
   successRate: number;
   totalCalls: number;
 }> {
-  const agents: Record<string, { totalDuration: number; successes: number; count: number }> = {};
-  
+  const agents: Record<
+    string,
+    { totalDuration: number; successes: number; count: number }
+  > = {};
+
   for (const event of memQueue) {
     if (event.name === "agent_completed" && event.properties) {
       const agent = String(event.properties.agent);
       const duration = Number(event.properties.durationMs ?? 0);
       const success = Boolean(event.properties.success);
-      
+
       if (!agents[agent]) {
         agents[agent] = { totalDuration: 0, successes: 0, count: 0 };
       }
@@ -257,7 +258,7 @@ export function getAgentMetrics(): Array<{
       agents[agent].count += 1;
     }
   }
-  
+
   return Object.entries(agents).map(([agent, data]) => ({
     agent,
     avgDuration: data.count > 0 ? data.totalDuration / data.count : 0,
@@ -272,20 +273,23 @@ export function getPopularSearches(limit: number = 10): {
   lastUsed: number;
 }[] {
   const searches: Record<string, { count: number; lastUsed: number }> = {};
-  
+
   for (const event of memQueue) {
     if (event.name === "search_performed" && event.properties) {
       const query = String(event.properties.query ?? "");
       if (!query) continue;
-      
+
       if (!searches[query]) {
         searches[query] = { count: 0, lastUsed: 0 };
       }
       searches[query].count += 1;
-      searches[query].lastUsed = Math.max(searches[query].lastUsed, event.timestamp);
+      searches[query].lastUsed = Math.max(
+        searches[query].lastUsed,
+        event.timestamp,
+      );
     }
   }
-  
+
   return Object.entries(searches)
     .map(([query, data]) => ({
       query,

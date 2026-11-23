@@ -1,8 +1,14 @@
+
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
+import { resetStateVectorChecksumCache } from "@/lib/crdt/stateVectorChecksum";
+import {
+  MeshBloomFilter,
+  type MeshBloomFilterConfig,
+} from "@/lib/p2p/meshBloomFilter";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -23,6 +29,8 @@ type Options = {
   roomId: string;
   userId: string | null | undefined;
   onData?: DataHandler;
+  enableDeduplication?: boolean;
+  bloomConfig?: Partial<MeshBloomFilterConfig>;
 };
 
 function partyHost() {
@@ -30,11 +38,34 @@ function partyHost() {
   return process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
 }
 
-export function useMeshDataChannels({ roomId, userId, onData }: Options) {
+export function useMeshDataChannels({
+  roomId,
+  userId,
+  onData,
+  enableDeduplication = true,
+  bloomConfig,
+}: Options) {
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [peerCount, setPeerCount] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
+  const [droppedDuplicates, setDroppedDuplicates] = useState(0);
+
+  const enableDeduplicationRef = useRef(enableDeduplication);
+  useEffect(() => {
+    enableDeduplicationRef.current = enableDeduplication;
+  }, [enableDeduplication]);
+
+  const bloomFilterRef = useRef<MeshBloomFilter | null>(null);
+  if (!bloomFilterRef.current && enableDeduplication) {
+    bloomFilterRef.current = new MeshBloomFilter({
+      capacity: 5000,
+      targetFpr: 0.001,
+      rotationIntervalMs: 60_000,
+      autoRotate: true,
+      ...bloomConfig,
+    });
+  }
 
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
@@ -64,7 +95,43 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
       socketRef.current.send(JSON.stringify(payload));
     },
     [userId],
+
+import { useEffect, useRef, useState } from 'react';
+import {
+  useBatteryOptimization,
+  type BatteryManagerLike,
+} from '@/hooks/useBatteryOptimization';
+import {
+  AdaptiveAudioBitrateController,
+  MAX_AUDIO_BITRATE_BPS,
+  type AdaptiveAudioTelemetryEvent,
+} from '@/lib/realtime/webrtc/meshConnection';
+
+export interface UseMeshDataChannelsOptions {
+  peerId: string;
+  peerConnection: (Pick<RTCPeerConnection, 'getStats' | 'getSenders'> & {
+    addEventListener?: RTCPeerConnection['addEventListener'];
+  }) | null;
+  sampleIntervalMs?: number;
+  onTelemetry?: (event: AdaptiveAudioTelemetryEvent) => void;
+  getBatteryFn?: () => Promise<BatteryManagerLike>;
+}
+
+export function useMeshDataChannels({
+  peerId,
+  peerConnection,
+  sampleIntervalMs = 1_000,
+  onTelemetry,
+  getBatteryFn,
+}: UseMeshDataChannelsOptions) {
+  const [audioBitrateBps, setAudioBitrateBps] = useState<number>(
+    MAX_AUDIO_BITRATE_BPS
+
   );
+  const [lastTelemetry, setLastTelemetry] =
+    useState<AdaptiveAudioTelemetryEvent | null>(null);
+  const controllerRef = useRef<AdaptiveAudioBitrateController | null>(null);
+
 
   const updatePeerCount = useCallback(() => {
     setPeerCount(dataChannelsRef.current.size);
@@ -72,8 +139,16 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
 
   const cleanupPeer = useCallback(
     (peerId: string) => {
+      // Drop cached digests even when the peer's RTCPeerConnection was
+      // already removed; reconnect must begin with a fresh checksum exchange.
+      resetStateVectorChecksumCache();
       const pc = peersRef.current.get(peerId);
-      if (!pc) return;
+      dataChannelsRef.current.delete(peerId);
+      if (!pc) {
+        updatePeerCount();
+        if (dataChannelsRef.current.size === 0) setIsConnected(false);
+        return;
+      }
 
       pc.onicecandidate = null;
       pc.ondatachannel = null;
@@ -95,6 +170,7 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
       };
 
       dc.onclose = () => {
+        resetStateVectorChecksumCache();
         dataChannelsRef.current.delete(peerId);
         updatePeerCount();
         if (dataChannelsRef.current.size === 0) {
@@ -104,6 +180,13 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
 
       dc.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
+          if (enableDeduplicationRef.current && bloomFilterRef.current) {
+            const msgId = bloomFilterRef.current.extractMessageId(event.data);
+            if (bloomFilterRef.current.testAndAdd(msgId)) {
+              setDroppedDuplicates((c) => c + 1);
+              return;
+            }
+          }
           onDataRef.current?.(peerId, event.data);
         }
       };
@@ -253,16 +336,40 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
     socketRef.current = socket;
   }, [socket]);
 
+  const batteryOptimization = useBatteryOptimization(getBatteryFn);
+
+
   useEffect(() => {
-    const peerIds = [...peersRef.current.keys()];
-    return () => {
-      for (const id of peerIds) {
-        cleanupPeer(id);
+    const controller = new AdaptiveAudioBitrateController(peerId, {
+      onTelemetry: (evt) => {
+        setLastTelemetry(evt);
+        setAudioBitrateBps(evt.nextBitrateBps);
+        onTelemetry?.(evt);
+      },
+    });
+    controllerRef.current = controller;
+
+    if (!peerConnection) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled || !controllerRef.current) return;
+      const next = await controllerRef.current.sampleAndAdapt(
+        peerConnection,
+        Date.now()
+      );
+      if (!cancelled) {
+        setAudioBitrateBps(next);
       }
+      bloomFilterRef.current?.destroy();
     };
-  }, [cleanupPeer]);
+
 
   const sendToAll = useCallback((data: ArrayBuffer) => {
+    if (enableDeduplicationRef.current && bloomFilterRef.current) {
+      const msgId = bloomFilterRef.current.extractMessageId(data);
+      bloomFilterRef.current.add(msgId);
+    }
     for (const dc of dataChannelsRef.current.values()) {
       if (dc.readyState === "open") {
         try {
@@ -275,6 +382,10 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
   }, []);
 
   const sendToPeer = useCallback((peerId: string, data: ArrayBuffer) => {
+    if (enableDeduplicationRef.current && bloomFilterRef.current) {
+      const msgId = bloomFilterRef.current.extractMessageId(data);
+      bloomFilterRef.current.add(msgId);
+    }
     const dc = dataChannelsRef.current.get(peerId);
     if (dc?.readyState === "open") {
       try {
@@ -290,5 +401,26 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
     sendToPeer,
     peerCount,
     isConnected,
+    droppedDuplicates,
+    bloomFilter: bloomFilterRef.current,
+
+    const timerId = setInterval(() => {
+      void poll();
+    }, sampleIntervalMs);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timerId);
+    };
+  }, [peerId, peerConnection, sampleIntervalMs, onTelemetry]);
+
+  return {
+    audioBitrateBps,
+    lastTelemetry,
+    isLowPowerMode: batteryOptimization.isLowPowerMode,
+    crdtBatchIntervalMs: batteryOptimization.crdtBatchIntervalMs,
+    pauseDecorativeAnimations: batteryOptimization.pauseDecorativeAnimations,
+    fftSize: batteryOptimization.fftSize,
+
   };
 }

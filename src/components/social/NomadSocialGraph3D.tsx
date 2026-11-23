@@ -19,6 +19,116 @@ export interface GraphLink {
   relationship: string;
 }
 
+/**
+ * Recursively traverses the Three.js scene graph and disposes all geometries,
+ * materials, and textures attached to scene objects.
+ */
+export function disposeThreeScene(scene: THREE.Scene | any) {
+  if (!scene || typeof scene.traverse !== "function") return;
+
+  scene.traverse((object: any) => {
+    if (!object) return;
+
+    // Dispose geometry
+    if (object.geometry && typeof object.geometry.dispose === "function") {
+      object.geometry.dispose();
+    }
+
+    // Dispose material(s) and any attached texture maps
+    if (object.material) {
+      const materials = Array.isArray(object.material)
+        ? object.material
+        : [object.material];
+
+      materials.forEach((mat: any) => {
+        if (!mat) return;
+
+        // Traverse material properties to dispose textures
+        for (const key of Object.keys(mat)) {
+          const val = mat[key];
+          if (
+            val &&
+            typeof val === "object" &&
+            (val.isTexture || typeof val.dispose === "function") &&
+            key !== "material"
+          ) {
+            val.dispose();
+          }
+        }
+
+        if (typeof mat.dispose === "function") {
+          mat.dispose();
+        }
+      });
+    }
+  });
+}
+
+/**
+ * Disposes the WebGL renderer and forces WebGL context loss to release GPU buffers.
+ */
+export function disposeWebGLRenderer(renderer: THREE.WebGLRenderer | any) {
+  if (!renderer) return;
+
+  if (typeof renderer.dispose === "function") {
+    renderer.dispose();
+  }
+
+  if (typeof renderer.forceContextLoss === "function") {
+    renderer.forceContextLoss();
+  }
+
+  if (renderer.domElement && typeof renderer.domElement.remove === "function") {
+    renderer.domElement.remove();
+  } else if (renderer.domElement?.parentNode) {
+    renderer.domElement.parentNode.removeChild(renderer.domElement);
+  }
+}
+
+/**
+ * Clears all child nodes from the container DOM element to prevent detached DOM leaks.
+ */
+export function clearContainerChildren(container: HTMLElement | null) {
+  if (!container) return;
+  while (container.firstChild) {
+    container.removeChild(container.firstChild);
+  }
+}
+
+/**
+ * Comprehensive teardown helper:
+ * 1. Stops force graph animation frame loop (graph._destructor() and pauseAnimation).
+ * 2. Recursively traverses Three.js scene graph calling .dispose() on all geometries, materials, and textures.
+ * 3. Disposes WebGL renderer and forces WebGL context loss (renderer.dispose(); renderer.forceContextLoss()).
+ * 4. Clears DOM container child nodes.
+ */
+export function cleanupForceGraph(graphInstance: any, container: HTMLElement | null) {
+  if (graphInstance) {
+    // 1. Stop force graph animation frame loop
+    if (typeof graphInstance.pauseAnimation === "function") {
+      graphInstance.pauseAnimation();
+    }
+    if (typeof graphInstance._destructor === "function") {
+      graphInstance._destructor();
+    }
+
+    // 2. Recursively traverse Three.js scene graph: call .dispose() on all geometries, materials, and textures
+    const scene = typeof graphInstance.scene === "function" ? graphInstance.scene() : null;
+    if (scene) {
+      disposeThreeScene(scene);
+    }
+
+    // 3. Dispose WebGL renderer and force context loss
+    const renderer = typeof graphInstance.renderer === "function" ? graphInstance.renderer() : null;
+    if (renderer) {
+      disposeWebGLRenderer(renderer);
+    }
+  }
+
+  // 4. Clear DOM container child nodes
+  clearContainerChildren(container);
+}
+
 export function NomadSocialGraph3D() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -27,11 +137,14 @@ export function NomadSocialGraph3D() {
   useEffect(() => {
     if (!containerRef.current) return;
 
+    let isMounted = true;
     let Graph: any = null;
 
     // Dynamically import to avoid SSR issues
     // @ts-ignore
     import("3d-force-graph").then((ForceGraph3DModule) => {
+      if (!isMounted || !containerRef.current) return;
+
       const ForceGraph3D = ForceGraph3DModule.default || ForceGraph3DModule;
 
       const nodes: GraphNode[] = [];
@@ -79,7 +192,7 @@ export function NomadSocialGraph3D() {
         }
       }
 
-      if (!containerRef.current) return;
+      if (!containerRef.current || !isMounted) return;
 
       // Fix for TS2348: cast as any to invoke factory cleanly
       Graph = (ForceGraph3D as any)()(containerRef.current)
@@ -106,12 +219,14 @@ export function NomadSocialGraph3D() {
         .linkDirectionalParticleWidth(2)
         .linkDirectionalParticleColor(() => "#00f0ff")
         .onNodeHover((node: any) => {
+          if (!isMounted) return;
           setHoverNode(node || null);
           if (containerRef.current) {
             containerRef.current.style.cursor = node ? "pointer" : "default";
           }
         })
         .onNodeClick((node: any) => {
+          if (!isMounted) return;
           setSelectedNode(node);
           const distance = 40;
           const distRatio = 1 + distance / Math.hypot(node.x, node.y, node.z);
@@ -122,12 +237,16 @@ export function NomadSocialGraph3D() {
             2000
           );
         });
+
+      // If unmounted while building graph, clean up immediately
+      if (!isMounted) {
+        cleanupForceGraph(Graph, containerRef.current);
+      }
     });
 
     return () => {
-      if (Graph && typeof Graph._destructor === "function") {
-        Graph._destructor();
-      }
+      isMounted = false;
+      cleanupForceGraph(Graph, containerRef.current);
     };
   }, []);
 
@@ -195,3 +314,5 @@ export function NomadSocialGraph3D() {
     </div>
   );
 }
+
+export default NomadSocialGraph3D;

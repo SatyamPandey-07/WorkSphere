@@ -1,13 +1,18 @@
-'use client';
+"use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { Copy, Check } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
 import {
   generateWalkingIsochrone,
   IsochronePolygon,
   IsochronePresetMinutes,
   ISOCHRONE_PRESETS,
-} from '@/lib/routing/ecoRoutingEngine';
-import { useBleProximity, type BleProximityResult } from '@/hooks/useBleProximity';
+} from "@/lib/routing/ecoRoutingEngine";
+import {
+  useBleProximity,
+  type BleProximityResult,
+} from "@/hooks/useBleProximity";
 
 export interface Coordinates {
   lat: number;
@@ -38,22 +43,24 @@ export const WALKING_SPEED_KMH = 4.8;
 export const TRANSIT_SPEED_KMH = 20;
 
 export function hasValidCoordinates(
-  coord: { lat?: unknown; lng?: unknown } | null | undefined
+  coord: { lat?: unknown; lng?: unknown } | null | undefined,
 ): coord is Coordinates {
   if (!coord) return false;
   return (
-    typeof coord.lat === 'number' &&
+    typeof coord.lat === "number" &&
     Number.isFinite(coord.lat) &&
     coord.lat >= -90 &&
     coord.lat <= 90 &&
-    typeof coord.lng === 'number' &&
+    typeof coord.lng === "number" &&
     Number.isFinite(coord.lng) &&
     coord.lng >= -180 &&
     coord.lng <= 180
   );
 }
 
-export function extractVenueCoordinates(venue: VenueCardData): Coordinates | null {
+export function extractVenueCoordinates(
+  venue: VenueCardData,
+): Coordinates | null {
   const candidate: Coordinates = {
     lat: venue.lat ?? venue.latitude ?? Number.NaN,
     lng: venue.lng ?? venue.longitude ?? Number.NaN,
@@ -76,7 +83,7 @@ export function haversineDistanceKm(a: Coordinates, b: Coordinates): number {
 
 export function estimateMinutesForSpeed(
   distanceKm: number,
-  speedKmh: number
+  speedKmh: number,
 ): number {
   if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0;
   if (!Number.isFinite(speedKmh) || speedKmh <= 0) return 0;
@@ -95,7 +102,7 @@ export function formatTravelDuration(totalMinutes: number): string {
 
 export function getVenueTravelEstimates(
   userLocation: Coordinates | null | undefined,
-  venue: VenueCardData
+  venue: VenueCardData,
 ): {
   distanceKm: number;
   walkMinutes: number;
@@ -124,13 +131,82 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   venue,
   userLocation,
   onSelect,
-  className = '',
+  className = "",
   showIsochroneMap = true,
   enableBleProximity = false,
 }) => {
   const estimates = getVenueTravelEstimates(userLocation, venue);
   const venueCoords = extractVenueCoordinates(venue);
-  const [selectedMinutes, setSelectedMinutes] = useState<IsochronePresetMinutes>(5);
+  const [selectedMinutes, setSelectedMinutes] =
+    useState<IsochronePresetMinutes>(5);
+  const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyAddress = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!venue.address) return;
+
+    let success = false;
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        navigator.clipboard.writeText
+      ) {
+        await navigator.clipboard.writeText(venue.address);
+        success = true;
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = venue.address;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.select();
+        success = document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+    } catch {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = venue.address;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.select();
+        success = document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } catch {
+        success = false;
+      }
+    }
+
+    if (success) {
+      setCopied(true);
+      toast("Venue address copied to clipboard!", "success");
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopied(false);
+        copyTimeoutRef.current = null;
+      }, 2000);
+    } else {
+      toast("Failed to copy address to clipboard", "error");
+    }
+  };
 
   const bleProximity: BleProximityResult = useBleProximity();
 
@@ -170,7 +246,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
         const svgPt = toSvgCoords(pt);
         return `${svgPt.x},${svgPt.y}`;
       })
-      .join(' ');
+      .join(" ");
 
     return {
       width,
@@ -186,15 +262,18 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       data-testid={`venue-card-${venue.id}`}
       onClick={onSelect ? () => onSelect(venue) : undefined}
       className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 ${
-        onSelect ? 'cursor-pointer' : ''
+        onSelect ? "cursor-pointer" : ""
       } ${className}`.trim()}
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-base font-semibold text-slate-900">{venue.name}</h3>
 
         {enableBleProximity && (
-          <div data-testid="venue-ble-proximity-indicator" className="inline-flex items-center gap-1.5">
-            {bleProximity.status === 'nearby' && (
+          <div
+            data-testid="venue-ble-proximity-indicator"
+            className="inline-flex items-center gap-1.5"
+          >
+            {bleProximity.status === "nearby" && (
               <span
                 data-testid="ble-proximity-nearby-badge"
                 className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 animate-pulse"
@@ -204,17 +283,18 @@ export const VenueCard: React.FC<VenueCardProps> = ({
                 <span>Nearby ({bleProximity.distance}m)</span>
               </span>
             )}
-            {bleProximity.status === 'connected' && bleProximity.distance !== null && (
-              <span
-                data-testid="ble-proximity-connected-badge"
-                className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
-                title={`Beacon detected (~${bleProximity.distance}m)`}
-              >
-                <span aria-hidden="true">📶</span>
-                <span>{bleProximity.distance}m away</span>
-              </span>
-            )}
-            {bleProximity.status === 'searching' && (
+            {bleProximity.status === "connected" &&
+              bleProximity.distance !== null && (
+                <span
+                  data-testid="ble-proximity-connected-badge"
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                  title={`Beacon detected (~${bleProximity.distance}m)`}
+                >
+                  <span aria-hidden="true">📶</span>
+                  <span>{bleProximity.distance}m away</span>
+                </span>
+              )}
+            {bleProximity.status === "searching" && (
               <span
                 data-testid="ble-proximity-searching-badge"
                 className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
@@ -223,7 +303,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
                 <span>Searching beacons...</span>
               </span>
             )}
-            {bleProximity.status === 'idle' && bleProximity.isSupported && (
+            {bleProximity.status === "idle" && bleProximity.isSupported && (
               <button
                 type="button"
                 data-testid="ble-proximity-scan-btn"
@@ -254,6 +334,41 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
         <span data-testid="venue-address">{venue.address}</span>
 
+        {venue.address && (
+          <button
+            type="button"
+            data-testid="copy-venue-address-btn"
+            onClick={handleCopyAddress}
+            aria-label={
+              copied
+                ? "Address copied to clipboard"
+                : `Copy address for ${venue.name}`
+            }
+            title={copied ? "Copied!" : "Copy address"}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+          >
+            {copied ? (
+              <>
+                <Check
+                  className="h-3.5 w-3.5 text-emerald-600 animate-in zoom-in-75 duration-200"
+                  aria-hidden="true"
+                />
+                <span
+                  data-testid="copy-address-success-label"
+                  className="text-emerald-600 font-medium text-[11px]"
+                >
+                  Copied!
+                </span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only">Copy address</span>
+              </>
+            )}
+          </button>
+        )}
+
         {estimates && (
           <div
             data-testid="venue-travel-chips"
@@ -278,7 +393,10 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       </div>
 
       {showIsochroneMap && (
-        <div data-testid="venue-isochrone-section" className="mt-3 border-t border-slate-100 pt-3">
+        <div
+          data-testid="venue-isochrone-section"
+          className="mt-3 border-t border-slate-100 pt-3"
+        >
           <div className="flex items-center justify-between gap-2 mb-2">
             <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
               <span>Walking Reach</span>
@@ -310,8 +428,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
                     }}
                     className={`rounded-md px-2 py-0.5 text-xs font-medium transition ${
                       isSelected
-                        ? 'bg-white text-emerald-700 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? "bg-white text-emerald-700 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     {preset} min
@@ -374,7 +492,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
               className="rounded-lg bg-amber-50/80 border border-amber-200/60 p-2 text-xs text-amber-800 flex items-center gap-1.5"
             >
               <span aria-hidden="true">📍</span>
-              <span>Location access is required for walking radius overlay.</span>
+              <span>
+                Location access is required for walking radius overlay.
+              </span>
             </div>
           )}
         </div>

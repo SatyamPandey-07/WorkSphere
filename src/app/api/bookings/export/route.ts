@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import {
+  generateBookingsCSV,
+  generateBookingsExcel,
+} from "@/lib/export/domain/bookingHistoryExporter";
+import {
+  resolveDateRange,
+  filterBookingsByRange,
+  generateTaxExportPdf,
+} from "@/lib/export/domain/taxExporter";
+import { pushJob } from "@/lib/queue";
 
 /**
  * Escapes a CSV cell in accordance with RFC 4180 while mitigating
@@ -165,5 +175,177 @@ export async function GET(req: Request) {
   } catch (error: any) {
     console.error("Booking export error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const format = (body.format || "json").toLowerCase();
+    const validFormats = ["csv", "xlsx", "pdf", "json"];
+    if (!validFormats.includes(format)) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid export format. Supported formats: csv, xlsx, pdf, json.",
+        },
+        { status: 400 },
+      );
+    }
+
+    let bookings: any[] = [];
+    const hasBookingIds = Array.isArray(body.bookingIds);
+    const hasDateRange = Boolean(
+      body.taxYear || (body.startDate && body.endDate),
+    );
+
+    if (hasBookingIds) {
+      if (body.bookingIds.length === 0) {
+        return NextResponse.json(
+          { error: "No bookings selected" },
+          { status: 400 },
+        );
+      }
+      bookings = await prisma.booking.findMany({
+        where: {
+          id: { in: body.bookingIds },
+          userId,
+        },
+        include: {
+          venue: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+              address: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (bookings.length === 0) {
+        return NextResponse.json(
+          { error: "No matching bookings found" },
+          { status: 404 },
+        );
+      }
+    } else if (hasDateRange) {
+      let range;
+      try {
+        range = resolveDateRange({
+          taxYear: body.taxYear,
+          startDate: body.startDate,
+          endDate: body.endDate,
+        });
+      } catch (err: any) {
+        return NextResponse.json(
+          { error: err.message || "Invalid date range parameters" },
+          { status: 400 },
+        );
+      }
+
+      if (format === "pdf") {
+        const timestamp = Date.now();
+        const jobId = `job-pdf-${timestamp}`;
+        try {
+          await pushJob(jobId, {
+            userId,
+            type: "TAX_EXPORT",
+            data: {
+              taxYear: body.taxYear,
+              startDate: body.startDate,
+              endDate: body.endDate,
+            },
+          });
+        } catch (queueErr) {
+          console.warn("Could not push job to Redis:", queueErr);
+        }
+        return NextResponse.json({ jobId }, { status: 200 });
+      }
+
+      const allUserBookings = await prisma.booking.findMany({
+        where: { userId },
+        include: {
+          venue: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+              address: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      bookings = filterBookingsByRange(allUserBookings, range);
+      if (bookings.length === 0) {
+        return NextResponse.json(
+          { error: "No bookings found for the requested period" },
+          { status: 404 },
+        );
+      }
+    } else {
+      return NextResponse.json(
+        { error: "No bookings selected" },
+        { status: 400 },
+      );
+    }
+
+    const timestamp = Date.now();
+
+    if (format === "csv") {
+      const csvContent = generateBookingsCSV(bookings);
+      return new NextResponse(csvContent, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="WorkSphere_Bookings_${timestamp}.csv"`,
+        },
+      });
+    }
+
+    if (format === "xlsx") {
+      const excelContent = generateBookingsExcel(bookings);
+      return new NextResponse(excelContent, {
+        status: 200,
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${timestamp}.xlsx"`,
+        },
+      });
+    }
+
+    if (format === "pdf") {
+      const pdfBytes = await generateTaxExportPdf(bookings);
+      return new NextResponse(Buffer.from(pdfBytes), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="WorkSphere_Bookings_${timestamp}.pdf"`,
+        },
+      });
+    }
+
+    return NextResponse.json({ bookings }, { status: 200 });
+  } catch (error: any) {
+    console.error("Booking export POST error:", error);
+    return NextResponse.json(
+      { error: error.message || "Export failed" },
+      { status: 500 },
+    );
   }
 }

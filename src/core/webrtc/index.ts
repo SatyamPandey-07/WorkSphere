@@ -5,3 +5,4 @@
 
 export * from './WebRTCJitterBuffer';
 export * from './FECReedSolomon';
+export * from './IceReconnectManager';

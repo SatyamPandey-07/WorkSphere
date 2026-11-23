@@ -1594,7 +1594,7 @@ export function VenueCard({
         </div>
 
         {/* Amenities */}
-        <div className="flex flex-wrap gap-1.5 overflow-hidden mb-4">
+        <div className="flex flex-wrap items-center gap-1.5 overflow-hidden mb-4">
           {venue.wifiQuality && venue.wifiQuality >= 3 && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Wifi className="w-4 h-4 text-blue-600 shrink-0" />

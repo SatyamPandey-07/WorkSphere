@@ -75,6 +75,7 @@ export class BFTConsensusCoordinator<T = unknown> {
   private currentView: number = 0;
   private viewTimer: ReturnType<typeof setTimeout> | null = null;
   private viewTimerActive = false;
+  private viewTimerGeneration = 0;
   private disposed = false;
   private currentViewTimeoutMs: number = 0;
   private consecutiveFailedViews = 0;
@@ -637,8 +638,9 @@ export class BFTConsensusCoordinator<T = unknown> {
     if (this.disposed) return;
     this.viewTimerActive = true;
     this.clearViewTimerHandle();
+    const generation = ++this.viewTimerGeneration;
     const handle = setTimeout(
-      () => this.onViewTimeout(),
+      () => this.onViewTimeout(generation),
       this.currentViewTimeoutMs,
     );
     (handle as unknown as { unref?: () => void }).unref?.();
@@ -647,6 +649,8 @@ export class BFTConsensusCoordinator<T = unknown> {
 
   public stopViewTimer(): void {
     this.viewTimerActive = false;
+    // Invalidate callbacks that may already have been queued by the runtime.
+    this.viewTimerGeneration++;
     this.clearViewTimerHandle();
   }
 
@@ -669,9 +673,15 @@ export class BFTConsensusCoordinator<T = unknown> {
     if (this.viewTimerActive) this.startViewTimer();
   }
 
-  private onViewTimeout(): void {
+  private onViewTimeout(generation: number): void {
+    // clearTimeout cannot cancel a callback that the event loop has already
+    // queued. A generation token makes callbacks from superseded timers inert.
+    if (
+      this.disposed ||
+      !this.viewTimerActive ||
+      generation !== this.viewTimerGeneration
+    ) return;
     this.viewTimer = null;
-    if (this.disposed || !this.viewTimerActive) return;
 
     const targetView =
       Math.max(this.currentView, this.highestRequestedView) + 1;
@@ -687,6 +697,14 @@ export class BFTConsensusCoordinator<T = unknown> {
 
     const msg = this.triggerViewChange(`view-timeout:${failed}`, targetView);
     this.onViewChangeBroadcastCallback?.(msg);
+
+    // The callback may synchronously stop or dispose the coordinator. Do not
+    // resurrect a timer after that lifecycle transition.
+    if (
+      this.disposed ||
+      !this.viewTimerActive ||
+      generation !== this.viewTimerGeneration
+    ) return;
     this.startViewTimer();
   }
 

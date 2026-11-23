@@ -90,25 +90,39 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       ["members is boolean", { members: true }],
       ["members is null", { members: null }],
       ["members is object", { members: { id: "1" } }],
-      ["member entry is null", { members: [null] }],
-      ["member entry is primitive string", { members: ["invalid"] }],
-      ["member entry is primitive number", { members: [123] }],
-      ["member entry is primitive boolean", { members: [true] }],
-      ["member entry is array", { members: [[]] }],
-      ["member entry is empty object", { members: [{}] }],
+      ["member entry is null", { members: [null, validMember2] }],
+      [
+        "member entry is primitive string",
+        { members: ["invalid", validMember2] },
+      ],
+      ["member entry is primitive number", { members: [123, validMember2] }],
+      ["member entry is primitive boolean", { members: [true, validMember2] }],
+      ["member entry is array", { members: [[], validMember2] }],
+      ["member entry is empty object", { members: [{}, validMember2] }],
       [
         "member missing id",
-        { members: [{ name: "Alex", latitude: 37.77, longitude: -122.41 }] },
+        {
+          members: [
+            { name: "Alex", latitude: 37.77, longitude: -122.41 },
+            validMember2,
+          ],
+        },
       ],
       [
         "member missing name",
-        { members: [{ id: "1", latitude: 37.77, longitude: -122.41 }] },
+        {
+          members: [
+            { id: "1", latitude: 37.77, longitude: -122.41 },
+            validMember2,
+          ],
+        },
       ],
       [
         "member empty id",
         {
           members: [
             { id: "", name: "Alex", latitude: 37.77, longitude: -122.41 },
+            validMember2,
           ],
         },
       ],
@@ -117,13 +131,17 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
         {
           members: [
             { id: "   ", name: "Alex", latitude: 37.77, longitude: -122.41 },
+            validMember2,
           ],
         },
       ],
       [
         "member empty name",
         {
-          members: [{ id: "1", name: "", latitude: 37.77, longitude: -122.41 }],
+          members: [
+            { id: "1", name: "", latitude: 37.77, longitude: -122.41 },
+            validMember2,
+          ],
         },
       ],
       [
@@ -131,6 +149,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
         {
           members: [
             { id: "1", name: "   ", latitude: 37.77, longitude: -122.41 },
+            validMember2,
           ],
         },
       ],
@@ -146,6 +165,70 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
         expect(mockFindMany).not.toHaveBeenCalled();
       },
     );
+
+    test("rejects request with only one valid member with HTTP 400 and descriptive details", async () => {
+      const req = createRequest({ members: [validMember] });
+      const res = await POST(req);
+      const data = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(data.error).toBe("Invalid request parameters");
+      expect(data.details.fieldErrors.members).toContain(
+        "At least two team member coordinates are required",
+      );
+      expect(mockFindMany).not.toHaveBeenCalled();
+    });
+
+    test("rejects request with two members having identical coordinates with HTTP 400", async () => {
+      const duplicateLocationMember = {
+        id: "mem-duplicate-id",
+        name: "Jordan Duplicate",
+        latitude: validMember.latitude,
+        longitude: validMember.longitude,
+      };
+      const req = createRequest({
+        members: [validMember, duplicateLocationMember],
+      });
+      const res = await POST(req);
+      const data = await res.json();
+
+      expect(res.status).toBe(400);
+      expect(data.error).toBe("Invalid request parameters");
+      expect(data.details.fieldErrors.members).toContain(
+        "At least two distinct member locations are required",
+      );
+      expect(mockFindMany).not.toHaveBeenCalled();
+    });
+
+    test("accepts request with two members having distinct coordinates with HTTP 200", async () => {
+      const req = createRequest({
+        members: [validMember, validMember2],
+      });
+      const res = await POST(req);
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(mockFindMany).toHaveBeenCalledTimes(1);
+    });
+
+    test("accepts request with duplicate coordinates as long as at least two distinct locations exist", async () => {
+      const duplicateLocationMember = {
+        id: "mem-3",
+        name: "Alex Clone",
+        latitude: validMember.latitude,
+        longitude: validMember.longitude,
+      };
+      const req = createRequest({
+        members: [validMember, duplicateLocationMember, validMember2],
+      });
+      const res = await POST(req);
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(mockFindMany).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("C. Coordinate validation", () => {
@@ -177,7 +260,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
     ])(
       "rejects out-of-range or non-numeric coordinate (%s) with HTTP 400",
       async (_, member) => {
-        const req = createRequest({ members: [member] });
+        const req = createRequest({ members: [member, validMember2] });
         const res = await POST(req);
         const data = await res.json();
 
@@ -201,6 +284,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
         jest.spyOn(req, "json").mockResolvedValue({
           members: [
             { id: "mem-1", name: "Alex", latitude: lat, longitude: lng },
+            validMember2,
           ],
         });
 
@@ -228,6 +312,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
             latitude: lat,
             longitude: lng,
           },
+          validMember2,
         ],
       });
 
@@ -242,7 +327,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       "accepts supported member transit mode: %s",
       async (mode) => {
         const req = createRequest({
-          members: [{ ...validMember, transitMode: mode }],
+          members: [{ ...validMember, transitMode: mode }, validMember2],
         });
 
         const res = await POST(req);
@@ -255,7 +340,10 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       "rejects unsupported member transit mode (%s)",
       async (unsupportedMode) => {
         const req = createRequest({
-          members: [{ ...validMember, transitMode: unsupportedMode }],
+          members: [
+            { ...validMember, transitMode: unsupportedMode },
+            validMember2,
+          ],
         });
 
         const res = await POST(req);
@@ -267,7 +355,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
     test("accepts omitted transitMode property", async () => {
       const { transitMode: _transitMode, ...memberWithoutMode } = validMember;
       const req = createRequest({
-        members: [memberWithoutMode],
+        members: [memberWithoutMode, validMember2],
       });
 
       const res = await POST(req);
@@ -288,7 +376,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       "rejects invalid searchRadiusKm (%s) with HTTP 400",
       async (_, radius) => {
         const req = createRequest({
-          members: [validMember],
+          members: [validMember, validMember2],
           searchRadiusKm: radius,
         });
 
@@ -307,7 +395,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       async (_, radius) => {
         const req = createRequest({});
         jest.spyOn(req, "json").mockResolvedValue({
-          members: [validMember],
+          members: [validMember, validMember2],
           searchRadiusKm: radius,
         });
 
@@ -319,7 +407,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("accepts boundary value exactly equal to MAX_SEARCH_RADIUS_KM (100 km)", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
         searchRadiusKm: MAX_SEARCH_RADIUS_KM,
       });
 
@@ -332,7 +420,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("uses existing 25 km default when searchRadiusKm is omitted", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
       });
 
       const res = await POST(req);
@@ -396,7 +484,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       "rejects invalid minWifiSpeed (%s) with HTTP 400",
       async (_, minWifiSpeed) => {
         const req = createRequest({
-          members: [validMember],
+          members: [validMember, validMember2],
           minWifiSpeed,
         });
 
@@ -414,7 +502,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       async (_, minWifiSpeed) => {
         const req = createRequest({});
         jest.spyOn(req, "json").mockResolvedValue({
-          members: [validMember],
+          members: [validMember, validMember2],
           minWifiSpeed,
         });
 
@@ -426,7 +514,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("accepts zero as a valid non-negative wifi speed", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
         minWifiSpeed: 0,
       });
 
@@ -439,7 +527,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("accepts positive finite wifi speed and applies where filter", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
         minWifiSpeed: 75,
       });
 
@@ -452,7 +540,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("defaults minWifiSpeed to 0 when omitted", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
       });
 
       const res = await POST(req);
@@ -468,7 +556,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       "accepts valid transitPreference: %s",
       async (pref) => {
         const req = createRequest({
-          members: [validMember],
+          members: [validMember, validMember2],
           transitPreference: pref,
         });
 
@@ -482,7 +570,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
       "rejects unsupported transitPreference (%s)",
       async (unsupportedPref) => {
         const req = createRequest({
-          members: [validMember],
+          members: [validMember, validMember2],
           transitPreference: unsupportedPref,
         });
 
@@ -494,19 +582,53 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("omitted transitPreference defaults to 'transit' and succeeds", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
       });
 
       const res = await POST(req);
       expect(res.status).toBe(200);
       expect(mockFindMany).toHaveBeenCalledTimes(1);
     });
+
+    test("propagates transitPreference to venue recommendations and reflects in member estimates", async () => {
+      mockFindMany.mockResolvedValueOnce([
+        {
+          id: "venue-1",
+          name: "Test Venue",
+          latitude: 37.775,
+          longitude: -122.418,
+          category: "coworking",
+          address: "123 Main St",
+          rating: 4.5,
+          wifiSpeed: 100,
+          wifiQuality: 90,
+          hasOutlets: true,
+          maxCapacity: 10,
+          currentOccupancy: 2,
+          imageUrl: null,
+          seats: [{ id: "seat-1", seatNumber: "1", type: "desk" }],
+        },
+      ]);
+
+      const req = createRequest({
+        members: [{ ...validMember, transitMode: "driving" }, validMember2],
+        transitPreference: "walking",
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.recommendations).toHaveLength(1);
+      expect(data.recommendations[0].memberEstimates[0].transitMode).toBe(
+        "walking",
+      );
+    });
   });
 
   describe("I. Other optional fields (category, hasOutlets)", () => {
     test("rejects non-string category", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
         category: 12345,
       });
 
@@ -517,7 +639,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("rejects non-boolean hasOutlets", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
         hasOutlets: "true",
       });
 
@@ -528,7 +650,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("accepts valid category and hasOutlets and propagates them to Prisma query", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
         category: "coworking",
         hasOutlets: true,
       });
@@ -543,7 +665,7 @@ describe("POST /api/routing/meet-halfway - Request Validation", () => {
 
     test("category 'all' does not add category filter to Prisma query", async () => {
       const req = createRequest({
-        members: [validMember],
+        members: [validMember, validMember2],
         category: "all",
       });
 

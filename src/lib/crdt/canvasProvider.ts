@@ -1,4 +1,4 @@
-import * as Y from 'yjs';
+import * as Y from "yjs";
 
 export const COMPACTION_ENTRY_THRESHOLD = 50;
 export const COMPACTION_BYTE_THRESHOLD = 64 * 1024; // 64 KB
@@ -48,7 +48,8 @@ export interface CanvasProviderOptions {
 export function encodeBinaryFrameChunks(
   mergedUpdate: Uint8Array,
   maxChunkPayloadBytes: number = MAX_WS_FRAME_PAYLOAD_BYTES,
-  transferId: number = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0
+  transferId: number = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>>
+    0,
 ): ChunkedBinaryFrame[] {
   const safeMax = Math.max(256, maxChunkPayloadBytes);
   const totalChunks = Math.max(1, Math.ceil(mergedUpdate.byteLength / safeMax));
@@ -89,7 +90,11 @@ export function encodeBinaryFrameChunks(
 export class BinaryFrameReassembler {
   private readonly transfers = new Map<
     number,
-    { totalChunks: number; received: Map<number, Uint8Array>; updatedAt: number }
+    {
+      totalChunks: number;
+      received: Map<number, Uint8Array>;
+      updatedAt: number;
+    }
   >();
 
   public pushFrame(wireBuffer: Uint8Array): Uint8Array | null {
@@ -104,7 +109,7 @@ export class BinaryFrameReassembler {
     const view = new DataView(
       wireBuffer.buffer,
       wireBuffer.byteOffset,
-      wireBuffer.byteLength
+      wireBuffer.byteLength,
     );
     const transferId = view.getUint32(4, false);
     const chunkIndex = view.getUint32(8, false);
@@ -174,7 +179,7 @@ export class CompactingCrdtJournal {
 
   constructor(options: CanvasProviderOptions) {
     this.roomId = options.roomId;
-    this.dbName = options.dbName ?? 'worksphere-crdt-journal';
+    this.dbName = options.dbName ?? "worksphere-crdt-journal";
     this.entryThreshold = options.entryThreshold ?? COMPACTION_ENTRY_THRESHOLD;
     this.byteThreshold = options.byteThreshold ?? COMPACTION_BYTE_THRESHOLD;
     this.maxChunkBytes = options.maxChunkBytes ?? MAX_WS_FRAME_PAYLOAD_BYTES;
@@ -182,7 +187,7 @@ export class CompactingCrdtJournal {
   }
 
   private openDatabase(): Promise<IDBDatabase | null> {
-    if (typeof indexedDB === 'undefined') {
+    if (typeof indexedDB === "undefined") {
       return Promise.resolve(null);
     }
 
@@ -192,12 +197,12 @@ export class CompactingCrdtJournal {
 
         request.onupgradeneeded = () => {
           const db = request.result;
-          if (!db.objectStoreNames.contains('journal')) {
-            const store = db.createObjectStore('journal', {
-              keyPath: 'id',
+          if (!db.objectStoreNames.contains("journal")) {
+            const store = db.createObjectStore("journal", {
+              keyPath: "id",
               autoIncrement: true,
             });
-            store.createIndex('by_room', 'roomId', { unique: false });
+            store.createIndex("by_room", "roomId", { unique: false });
           }
         };
 
@@ -222,7 +227,11 @@ export class CompactingCrdtJournal {
     if (update.byteLength === 0) {
       const current = await this.getAllEntries();
       const bytes = current.reduce((acc, item) => acc + item.byteLength, 0);
-      return { compacted: false, entryCount: current.length, totalBytes: bytes };
+      return {
+        compacted: false,
+        entryCount: current.length,
+        totalBytes: bytes,
+      };
     }
 
     const entry: JournalEntry = {
@@ -237,8 +246,8 @@ export class CompactingCrdtJournal {
       this.memoryFallback.push(entry);
     } else {
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction('journal', 'readwrite');
-        tx.objectStore('journal').add(entry);
+        const tx = db.transaction("journal", "readwrite");
+        tx.objectStore("journal").add(entry);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
@@ -254,7 +263,10 @@ export class CompactingCrdtJournal {
     ) {
       await this.compact();
       const postEntries = await this.getAllEntries();
-      const postBytes = postEntries.reduce((sum, item) => sum + item.byteLength, 0);
+      const postBytes = postEntries.reduce(
+        (sum, item) => sum + item.byteLength,
+        0,
+      );
       return {
         compacted: true,
         entryCount: postEntries.length,
@@ -276,8 +288,8 @@ export class CompactingCrdtJournal {
     }
 
     return new Promise<JournalEntry[]>((resolve) => {
-      const tx = db.transaction('journal', 'readonly');
-      const index = tx.objectStore('journal').index('by_room');
+      const tx = db.transaction("journal", "readonly");
+      const index = tx.objectStore("journal").index("by_room");
       const req = index.getAll(IDBKeyRange.only(this.roomId));
 
       req.onsuccess = () => {
@@ -331,11 +343,11 @@ export class CompactingCrdtJournal {
       }
 
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction('journal', 'readwrite');
-        const store = tx.objectStore('journal');
+        const tx = db.transaction("journal", "readwrite");
+        const store = tx.objectStore("journal");
 
         for (const existing of entries) {
-          if (typeof existing.id === 'number') {
+          if (typeof existing.id === "number") {
             store.delete(existing.id);
           }
         }
@@ -386,17 +398,17 @@ export class CompactingCrdtJournal {
     const db = await this.openDatabase();
     if (!db) {
       this.memoryFallback = this.memoryFallback.filter(
-        (e) => e.roomId !== this.roomId
+        (e) => e.roomId !== this.roomId,
       );
       return;
     }
 
     const entries = await this.getAllEntries();
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('journal', 'readwrite');
-      const store = tx.objectStore('journal');
+      const tx = db.transaction("journal", "readwrite");
+      const store = tx.objectStore("journal");
       for (const entry of entries) {
-        if (typeof entry.id === 'number') {
+        if (typeof entry.id === "number") {
           store.delete(entry.id);
         }
       }
@@ -416,11 +428,11 @@ export class OfflineCanvasProvider {
   constructor(options: CanvasProviderOptions) {
     this.doc = options.doc;
     this.journal = new CompactingCrdtJournal(options);
-    this.doc.on('update', this.handleDocUpdate);
+    this.doc.on("update", this.handleDocUpdate);
   }
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
-    if (origin === 'remote-sync') {
+    if (origin === "remote-sync") {
       return;
     }
 
@@ -449,7 +461,7 @@ export class OfflineCanvasProvider {
   }
 
   public destroy(): void {
-    this.doc.off('update', this.handleDocUpdate);
+    this.doc.off("update", this.handleDocUpdate);
     this.socket = null;
   }
 }

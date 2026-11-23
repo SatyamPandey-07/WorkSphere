@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
 import { resetStateVectorChecksumCache } from "@/lib/crdt/stateVectorChecksum";
+import {
+  MeshBloomFilter,
+  type MeshBloomFilterConfig,
+} from "@/lib/p2p/meshBloomFilter";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -24,6 +28,8 @@ type Options = {
   roomId: string;
   userId: string | null | undefined;
   onData?: DataHandler;
+  enableDeduplication?: boolean;
+  bloomConfig?: Partial<MeshBloomFilterConfig>;
 };
 
 function partyHost() {
@@ -31,11 +37,34 @@ function partyHost() {
   return process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
 }
 
-export function useMeshDataChannels({ roomId, userId, onData }: Options) {
+export function useMeshDataChannels({
+  roomId,
+  userId,
+  onData,
+  enableDeduplication = true,
+  bloomConfig,
+}: Options) {
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [peerCount, setPeerCount] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
+  const [droppedDuplicates, setDroppedDuplicates] = useState(0);
+
+  const enableDeduplicationRef = useRef(enableDeduplication);
+  useEffect(() => {
+    enableDeduplicationRef.current = enableDeduplication;
+  }, [enableDeduplication]);
+
+  const bloomFilterRef = useRef<MeshBloomFilter | null>(null);
+  if (!bloomFilterRef.current && enableDeduplication) {
+    bloomFilterRef.current = new MeshBloomFilter({
+      capacity: 5000,
+      targetFpr: 0.001,
+      rotationIntervalMs: 60_000,
+      autoRotate: true,
+      ...bloomConfig,
+    });
+  }
 
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const dataChannelsRef = useRef<Map<string, RTCDataChannel>>(new Map());
@@ -114,6 +143,13 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
 
       dc.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
+          if (enableDeduplicationRef.current && bloomFilterRef.current) {
+            const msgId = bloomFilterRef.current.extractMessageId(event.data);
+            if (bloomFilterRef.current.testAndAdd(msgId)) {
+              setDroppedDuplicates((c) => c + 1);
+              return;
+            }
+          }
           onDataRef.current?.(peerId, event.data);
         }
       };
@@ -269,10 +305,15 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
       for (const id of peerIds) {
         cleanupPeer(id);
       }
+      bloomFilterRef.current?.destroy();
     };
   }, [cleanupPeer]);
 
   const sendToAll = useCallback((data: ArrayBuffer) => {
+    if (enableDeduplicationRef.current && bloomFilterRef.current) {
+      const msgId = bloomFilterRef.current.extractMessageId(data);
+      bloomFilterRef.current.add(msgId);
+    }
     for (const dc of dataChannelsRef.current.values()) {
       if (dc.readyState === "open") {
         try {
@@ -285,6 +326,10 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
   }, []);
 
   const sendToPeer = useCallback((peerId: string, data: ArrayBuffer) => {
+    if (enableDeduplicationRef.current && bloomFilterRef.current) {
+      const msgId = bloomFilterRef.current.extractMessageId(data);
+      bloomFilterRef.current.add(msgId);
+    }
     const dc = dataChannelsRef.current.get(peerId);
     if (dc?.readyState === "open") {
       try {
@@ -300,5 +345,7 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
     sendToPeer,
     peerCount,
     isConnected,
+    droppedDuplicates,
+    bloomFilter: bloomFilterRef.current,
   };
 }

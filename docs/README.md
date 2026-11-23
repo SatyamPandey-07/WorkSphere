@@ -41,6 +41,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [WebRTC Signaling Handshake Runbook](./p2p/WEBRTC_SIGNALING_HANDSHAKE.md) — PartyKit signaling, offer/answer exchange, trickle ICE, STUN/TURN traversal, Perfect Negotiation, and troubleshooting.
 - [WebRTC ICE Candidate Gathering & STUN/TURN Topology](./p2p/WEBRTC_ICE_TRAVERSAL.md) — ICE candidate gathering, STUN discovery, candidate types, timeout bounds, TURN relay topology, and firewall troubleshooting.
 - [Distributed Locks and Fencing](./architecture/distributed-locks-and-fencing.md) — distributed lock coordination and fencing mechanisms.
+- [Unified Distributed Locking and Fencing Token State Machine](./architecture/DISTRIBUTED_LOCKS_STATE_MACHINE.md) — current seat-hold authorities, formal lease states, recovery behavior, and proposed resource-side fencing requirements.
 - [Multi-Region Synchronization](./architecture/multi-region-sync.md) — synchronization across distributed application regions.
 
 ## Database & Infrastructure

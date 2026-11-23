@@ -1,37 +1,43 @@
 'use client';
 
-import React, { useEffect } from 'react';
-
-import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
+import React, { useState, useEffect } from 'react';
 import { getDatePreset, type DatePresetKey } from '@/lib/validations/dateFilter';
 
-interface BookingModalProps {
-  venueId: string;
-  venueName: string;
+export interface BookingModalProps {
+  venueId?: string;
+  venueName?: string;
+  isOpen?: boolean;
   onClose: () => void;
   onConfirm?: () => void | Promise<void>;
+  onSuccess?: () => void;
   isSubmitting?: boolean;
   loading?: boolean;
   seatLabel?: string;
-  venueName?: string;
   children?: React.ReactNode;
 }
 
-export function BookingModal({ venueId, venueName, onClose, onSuccess }: BookingModalProps) {
+export function BookingModal({
+  venueId = '',
+  venueName = 'WorkSphere Hub',
+  isOpen = true,
+  onClose,
+  onConfirm,
+  onSuccess,
+  isSubmitting = false,
+  loading = false,
+  seatLabel = 'Desk A-12',
+  children,
+}: BookingModalProps) {
   const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
   const [activePreset, setActivePreset] = useState<DatePresetKey | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [showWaitlist, setShowWaitlist] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const isSubmittingRef = React.useRef(false);
+
+  const isBusy = Boolean(isSubmitting || loading);
+  const isPending = isBusy;
 
   const handlePresetSelect = (preset: DatePresetKey) => {
     const { startDate } = getDatePreset(preset);
     setDate(startDate);
     setActivePreset(preset);
-    if (error) setError('');
   };
 
   const handleDateChange = (newDate: string) => {
@@ -41,22 +47,29 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
       if (presetValues.startDate !== newDate) {
         setActivePreset(null);
       }
+    } else {
+      const presets: DatePresetKey[] = ['today', 'tomorrow', 'weekend'];
+      const matched = presets.find((p) => getDatePreset(p).startDate === newDate);
+      if (matched) {
+        setActivePreset(matched);
+      }
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
+    if (!isOpen) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (!isSubmittingRef.current && !loading && !isSubmitting) {
+        if (!isBusy) {
           onClose();
         }
-        onClose();
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isSubmitting, loading, onClose]);
+  }, [isOpen, isBusy, onClose]);
 
   if (!isOpen) {
     return null;
@@ -66,6 +79,13 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
     if (e.target !== e.currentTarget) return;
     if (isSubmitting || loading) return;
     onClose();
+  };
+
+  const handleConfirmAction = async () => {
+    if (onConfirm) {
+      await onConfirm();
+    }
+    onSuccess?.();
   };
 
   return (
@@ -84,8 +104,12 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
       >
         <div className="flex items-start justify-between gap-4">
           <div>
+            <h2 id="booking-modal-title" className="text-base font-semibold text-slate-900 mb-1">
+              {venueName || 'Confirm Reservation'} {seatLabel ? `· ${seatLabel}` : ''}
+            </h2>
+            {venueId && <span className="sr-only">Venue ID: {venueId}</span>}
             <div className="mb-1.5 flex items-center justify-between">
-              <label htmlFor="booking-date-input" className="block text-sm text-zinc-400">Date</label>
+              <label htmlFor="booking-date-input" className="block text-sm text-zinc-500">Date</label>
               <div className="flex items-center gap-1.5" role="group" aria-label="Date quick presets">
                 <button
                   type="button"
@@ -95,7 +119,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
                   className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
                     activePreset === 'today'
                       ? 'bg-violet-600 text-white shadow-sm'
-                      : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                      : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900'
                   }`}
                 >
                   Today
@@ -108,7 +132,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
                   className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
                     activePreset === 'tomorrow'
                       ? 'bg-violet-600 text-white shadow-sm'
-                      : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                      : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900'
                   }`}
                 >
                   Tomorrow
@@ -121,7 +145,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
                   className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
                     activePreset === 'weekend'
                       ? 'bg-violet-600 text-white shadow-sm'
-                      : 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white'
+                      : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900'
                   }`}
                 >
                   This Weekend
@@ -134,7 +158,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
               value={date}
               disabled={isPending}
               onChange={(e) => handleDateChange(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50"
+              className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-zinc-900 focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 disabled:opacity-50"
             />
           </div>
 
@@ -165,11 +189,11 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
             Cancel
           </button>
 
-          {onConfirm && (
+          {(onConfirm || onSuccess) && (
             <button
               type="button"
               disabled={isBusy}
-              onClick={() => void onConfirm()}
+              onClick={() => void handleConfirmAction()}
               data-testid="booking-modal-confirm"
               className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >

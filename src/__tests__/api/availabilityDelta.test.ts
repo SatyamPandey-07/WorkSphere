@@ -60,18 +60,18 @@ describe("GET /api/availability/delta", () => {
   });
 
   describe("Route handler", () => {
-    it("returns empty venues array when user is not authenticated", async () => {
+    it("returns HTTP 401 UNAUTHORIZED when user is not authenticated", async () => {
       mockAuth.mockResolvedValue({ userId: null });
 
       const response = await GET();
       const data = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(data).toEqual({ venues: [] });
+      expect(response.status).toBe(401);
+      expect(data.code).toBe("UNAUTHORIZED");
       expect(mockFavoriteFindMany).not.toHaveBeenCalled();
     });
 
-    it("returns empty venues array when user has no favorites", async () => {
+    it("returns empty venues array when authenticated user has no favorites", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" });
       mockFavoriteFindMany.mockResolvedValue([]);
 
@@ -154,7 +154,7 @@ describe("GET /api/availability/delta", () => {
       ]);
     });
 
-    it("handles unexpected errors gracefully by returning empty venues array", async () => {
+    it("returns HTTP 500 INTERNAL_ERROR on database query failure", async () => {
       const consoleErrorSpy = jest
         .spyOn(console, "error")
         .mockImplementation(() => {});
@@ -163,8 +163,8 @@ describe("GET /api/availability/delta", () => {
       const response = await GET();
       const data = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(data).toEqual({ venues: [] });
+      expect(response.status).toBe(500);
+      expect(data.code).toBe("INTERNAL_ERROR");
       expect(consoleErrorSpy).toHaveBeenCalled();
       consoleErrorSpy.mockRestore();
     });

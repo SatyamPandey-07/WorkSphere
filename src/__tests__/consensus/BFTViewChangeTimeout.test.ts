@@ -156,4 +156,40 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
     jest.advanceTimersByTime(60000);
     expect(onViewChangeBroadcast).not.toHaveBeenCalled();
   });
+
+  it("does not restart a timer when the timeout callback stops it", () => {
+    let coordinator: BFTConsensusCoordinator;
+    const onViewChangeBroadcast = jest.fn(() => coordinator.stopViewTimer());
+    coordinator = new BFTConsensusCoordinator({
+      nodeId: "node-1",
+      validators,
+      viewChangeTimeoutMs: 1000,
+      onViewChangeBroadcast,
+    });
+
+    coordinator.startViewTimer();
+    jest.advanceTimersByTime(1000);
+    jest.advanceTimersByTime(10000);
+
+    expect(onViewChangeBroadcast).toHaveBeenCalledTimes(1);
+    coordinator.dispose();
+  });
+
+  it("does not resurrect a timer when the timeout callback disposes the coordinator", () => {
+    let coordinator: BFTConsensusCoordinator;
+    const onViewChangeBroadcast = jest.fn(() => coordinator.dispose());
+    coordinator = new BFTConsensusCoordinator({
+      nodeId: "node-1",
+      validators,
+      viewChangeTimeoutMs: 1000,
+      onViewChangeBroadcast,
+    });
+
+    coordinator.startViewTimer();
+    jest.advanceTimersByTime(1000);
+    jest.advanceTimersByTime(10000);
+
+    expect(onViewChangeBroadcast).toHaveBeenCalledTimes(1);
+  });
+
 });

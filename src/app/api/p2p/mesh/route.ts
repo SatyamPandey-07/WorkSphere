@@ -10,73 +10,106 @@ import {
   MeshPeerNode,
   LocalMeshTopology,
 } from "@/lib/p2p/meshCollabEngine";
+import { db } from "@/lib/db";
 
-const MOCK_PEERS: MeshPeerNode[] = [
-  {
-    peerId: "node-alpha-101",
-    displayName: "Maya Lin (iOS / MacBook)",
-    deskLocation: "Desk #04A - Quiet Library",
-    ipSubnet: "192.168.1.104",
-    hopCount: 0,
-    signalStrengthRssi: -42,
-    latencyMs: 3.2,
-    lastSeenTimestamp: Date.now(),
-    status: "connected",
-    sharedFilesCount: 4,
-  },
-  {
-    peerId: "node-bravo-102",
-    displayName: "Liam Vance (ThinkPad X1)",
-    deskLocation: "Desk #12B - Sunlit Atrium",
-    ipSubnet: "192.168.1.118",
-    hopCount: 0,
-    signalStrengthRssi: -56,
-    latencyMs: 5.8,
-    lastSeenTimestamp: Date.now(),
-    status: "connected",
-    sharedFilesCount: 2,
-  },
-  {
-    peerId: "node-charlie-103",
-    displayName: "Chloe Dubois (iPad Pro)",
-    deskLocation: "Rooftop Terrace #02",
-    ipSubnet: "192.168.1.145",
-    hopCount: 1, // Relayed through Maya's node
-    signalStrengthRssi: -71,
-    latencyMs: 14.4,
-    lastSeenTimestamp: Date.now(),
-    status: "mesh_relay",
-    sharedFilesCount: 1,
-  },
-  {
-    peerId: "node-delta-104",
-    displayName: "Kenji Sato (Dell XPS)",
-    deskLocation: "Standing Desk #18",
-    ipSubnet: "192.168.1.190",
-    hopCount: 0,
-    signalStrengthRssi: -48,
-    latencyMs: 4.1,
-    lastSeenTimestamp: Date.now(),
-    status: "connected",
-    sharedFilesCount: 6,
-  },
-];
+const ALLOWED_WAN_STATUSES = ["CONNECTED", "DISCONNECTED", "DEGRADED"] as const;
+type WanStatus = (typeof ALLOWED_WAN_STATUSES)[number];
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const venueId = searchParams.get("venueId") || "venue-sf-01";
-    const wanStatus = (searchParams.get("wanStatus") as LocalMeshTopology["wanStatus"]) || "healthy_online";
+    const venueId = searchParams.get("venueId");
 
-    const resilience = MeshCollabEngine.calculateMeshResilience(MOCK_PEERS, wanStatus);
+    if (!venueId || !venueId.trim()) {
+      return NextResponse.json(
+        { error: "Missing required venueId query parameter" },
+        { status: 400 },
+      );
+    }
+
+    const rawWanStatus = searchParams.get("wanStatus");
+    let wanStatus: WanStatus = "CONNECTED";
+
+    if (rawWanStatus !== null) {
+      const normalizedWan = rawWanStatus.toUpperCase();
+      if (!ALLOWED_WAN_STATUSES.includes(normalizedWan as WanStatus)) {
+        return NextResponse.json(
+          {
+            error: `Invalid wanStatus parameter. Must be one of: ${ALLOWED_WAN_STATUSES.join(", ")}`,
+          },
+          { status: 400 },
+        );
+      }
+      wanStatus = normalizedWan as WanStatus;
+    }
+
+    const venue = await db.venue.findUnique({
+      where: { id: venueId.trim() },
+      select: { id: true, name: true },
+    });
+
+    if (!venue) {
+      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+    }
+
+    const now = new Date();
+    const activeSessions = await db.meshSession.findMany({
+      where: {
+        venueId: venue.id,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const userIds = Array.from(new Set(activeSessions.map((s) => s.userId)));
+    const users =
+      userIds.length > 0
+        ? await db.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const activeMeshPeers: MeshPeerNode[] = activeSessions.map((session) => {
+      const user = userMap.get(session.userId);
+      const nameParts = [user?.firstName, user?.lastName].filter(Boolean);
+      const displayName =
+        nameParts.length > 0
+          ? nameParts.join(" ")
+          : `User ${session.userId.slice(0, 8)}`;
+
+      return {
+        peerId: session.id,
+        displayName,
+        deskLocation: null,
+        ipSubnet: null,
+        hopCount: 0,
+        signalStrengthRssi: null,
+        latencyMs: null,
+        lastSeenTimestamp: session.createdAt.getTime(),
+        status: "connected",
+        sharedFilesCount: 0,
+      };
+    });
+
+    const totalBandwidthKbps = activeSessions.reduce(
+      (sum, s) => sum + Math.round((s.contributionMb || 0) * 1024),
+      0,
+    );
+
+    const resilience = MeshCollabEngine.calculateMeshResilience(
+      activeMeshPeers,
+      wanStatus,
+    );
 
     const topology: LocalMeshTopology = {
-      venueId,
-      venueName: "SoMa Focus Hub & Roastery",
-      localSubnet: "192.168.1.0/24",
+      venueId: venue.id,
+      venueName: venue.name,
+      localSubnet: null,
       wanStatus,
-      activeMeshPeers: MOCK_PEERS,
-      totalBandwidthKbps: 48000,
+      activeMeshPeers,
+      totalBandwidthKbps,
       meshResilienceRating: resilience,
     };
 
@@ -88,8 +121,11 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error("[GET /api/p2p/mesh] Error:", error);
     return NextResponse.json(
-      { error: "Failed to retrieve local mesh topology", details: error.message },
-      { status: 500 }
+      {
+        error: "Failed to retrieve local mesh topology",
+        details: error.message,
+      },
+      { status: 500 },
     );
   }
 }
@@ -100,7 +136,10 @@ export async function POST(req: NextRequest) {
     const peerId = body.peerId || `peer-${Date.now()}`;
     const subnet = body.subnet || "192.168.1.100";
 
-    const signalingOffer = MeshCollabEngine.generateSignalingOffer(peerId, subnet);
+    const signalingOffer = MeshCollabEngine.generateSignalingOffer(
+      peerId,
+      subnet,
+    );
 
     return NextResponse.json({
       success: true,
@@ -115,8 +154,11 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("[POST /api/p2p/mesh] Error:", error);
     return NextResponse.json(
-      { error: "Failed to create mesh signaling session", details: error.message },
-      { status: 500 }
+      {
+        error: "Failed to create mesh signaling session",
+        details: error.message,
+      },
+      { status: 500 },
     );
   }
 }

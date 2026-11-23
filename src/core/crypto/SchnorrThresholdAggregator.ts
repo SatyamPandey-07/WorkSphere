@@ -72,6 +72,45 @@ export interface BatchVerificationResult {
 
 export class SchnorrThresholdAggregator {
   private sessions: Map<string, AggregationSession> = new Map();
+  private readonly sessionTtlMs: number;
+  private readonly cleanupTimer: ReturnType<typeof setInterval>;
+
+  constructor(sessionTtlMs = 5 * 60_000, cleanupIntervalMs = 30_000) {
+    this.sessionTtlMs =
+      Number.isFinite(sessionTtlMs) && sessionTtlMs > 0
+        ? sessionTtlMs
+        : 5 * 60_000;
+    const interval =
+      Number.isFinite(cleanupIntervalMs) && cleanupIntervalMs > 0
+        ? cleanupIntervalMs
+        : Math.min(30_000, this.sessionTtlMs);
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupExpiredSessions();
+    }, interval);
+    (this.cleanupTimer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * Evicts sessions older than the configured lifetime. The sweep removes
+   * aborted, incomplete, and completed sessions alike so abandoned session
+   * buffers (messages, nonce maps, and partial signatures) cannot accumulate.
+   */
+  public cleanupExpiredSessions(now = Date.now()): number {
+    let removed = 0;
+    for (const [sessionId, session] of this.sessions) {
+      if (now - session.createdAt >= this.sessionTtlMs) {
+        this.sessions.delete(sessionId);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
+  /** Stops the background expiry sweep when the aggregator is no longer used. */
+  public dispose(): void {
+    clearInterval(this.cleanupTimer);
+    this.sessions.clear();
+  }
 
   // --- SECP256K1 Finite Field & Curve Arithmetic ---
 
@@ -280,6 +319,7 @@ export class SchnorrThresholdAggregator {
     participants: ParticipantInfo[],
     message: Buffer,
   ): AggregationSession {
+    this.cleanupExpiredSessions();
     const { aggregatedPublicKey, coefficients } =
       SchnorrThresholdAggregator.aggregatePublicKeys(participants);
 
@@ -300,10 +340,12 @@ export class SchnorrThresholdAggregator {
   }
 
   public getSession(sessionId: string): AggregationSession | undefined {
+    this.cleanupExpiredSessions();
     return this.sessions.get(sessionId);
   }
 
   public submitNonces(sessionId: string, noncePair: PublicNoncePair): void {
+    this.cleanupExpiredSessions();
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found.`);
     if (session.state !== "INIT")
@@ -565,6 +607,7 @@ export class SchnorrThresholdAggregator {
     participantId: string,
     partialSig: bigint,
   ): void {
+    this.cleanupExpiredSessions();
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found.`);
     if (session.state !== "NONCES_EXCHANGED") {
@@ -609,6 +652,7 @@ export class SchnorrThresholdAggregator {
     rX: string;
     s: string;
   } {
+    this.cleanupExpiredSessions();
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found.`);
     if (session.state !== "PARTIALS_COLLECTED") {

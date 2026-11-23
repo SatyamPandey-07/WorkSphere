@@ -101,28 +101,33 @@ The app uses several separate databases, opened by different modules. Version nu
 
 | Database                          | Version | Opened by                                         | Purpose                                                                |
 | --------------------------------- | ------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
-| `worksphere-offline`              | 7       | `public/sw.js` and `src/lib/offlineReviewSync.ts` | Main offline store: cached data, review queue, generic pending actions |
+| `worksphere-offline`              | 9       | `public/sw.js` and `src/lib/offlineReviewSync.ts` | Main offline store: cached data, review queue, generic pending actions |
 | `WorkSphereOfflineDB`             | 3       | `src/lib/offlineStore.ts`                         | Outboxes for favourites, check-ins and favourite tags                  |
 | `worksphere-collaborative-notes`  | 1       | `src/lib/offlineNotesSync.ts` (via `idb`)         | Offline collaborative notes                                            |
 | `worksphere-offline-amenity-sync` | 1       | `src/lib/offlineSync.ts` (via `idb`)              | Queued amenity votes                                                   |
 | `WorkSphereBookingDB`             | 1       | `src/worker/bookingSync/DraftStore.ts`            | Offline booking drafts                                                 |
 
-### `worksphere-offline` (version 7)
+### `worksphere-offline` (version 9)
 
-| Store                  | Key path              | Indexes                          | Used for                                                                          |
-| ---------------------- | --------------------- | -------------------------------- | --------------------------------------------------------------------------------- |
-| `venues`               | `id`                  | `type`, `savedAt`                | Saved venue records                                                               |
-| `favorites`            | `id`                  | `savedAt`                        | Favourite venues (also updated by the occupancy sync)                             |
-| `searches`             | `query`               | `timestamp`                      | Search history                                                                    |
-| `pendingActions`       | `id` (auto-increment) | none                             | Generic queued actions: `crdt-sync`, `conversation-rename`, `conversation-delete` |
-| `imageCacheLRU`        | `url`                 | `lastAccessed`                   | LRU bookkeeping for the image cache                                               |
-| `receiptExports`       | `bookingId`           | `status`, `createdAt`            | Receipt PDF export jobs                                                           |
-| `pendingFavorites`     | `id` (auto-increment) | none                             | Queued favourite changes                                                          |
-| `availabilityDeltas`   | `venueId`             | `timestamp`                      | Last-known seat availability, used to detect "a seat opened up"                   |
-| `recentlyViewedVenues` | `id`                  | `viewedAt`                       | Recently viewed venues                                                            |
-| `pendingReviews`       | `id`                  | `venueId`, `status`, `createdAt` | Offline review queue                                                              |
+Both `public/sw.js` and `src/lib/offlineReviewSync.ts` target version 9. Opening a database with a version lower than the version on disk triggers an unrecoverable IndexedDB `VersionError`. To prevent this, the service worker and page-side code share the synchronized version 9 schema with identical store configurations:
 
-The page-side module `offlineReviewSync.ts` additionally defines `preference_rankings` and `queued_reviews`. The upgrade handler also deletes the legacy `pending-actions` store (renamed to `pendingActions`). See [Known gaps](#9-known-gaps-and-things-to-verify) for why two upgrade handlers matter.
+| Store                  | Key path              | Indexes                           | Used for                                                                          |
+| ---------------------- | --------------------- | --------------------------------- | --------------------------------------------------------------------------------- |
+| `venues`               | `id`                  | `type`, `savedAt`                 | Saved venue records                                                               |
+| `favorites`            | `id`                  | `savedAt`                         | Favourite venues (also updated by the occupancy sync)                             |
+| `searches`             | `query`               | `timestamp`                       | Search history                                                                    |
+| `pendingActions`       | `id` (auto-increment) | none                              | Generic queued actions: `crdt-sync`, `conversation-rename`, `conversation-delete` |
+| `imageCacheLRU`        | `url`                 | `lastAccessed`                    | LRU bookkeeping for the image cache                                               |
+| `receiptExports`       | `bookingId`           | `status`, `createdAt`             | Receipt PDF export jobs                                                           |
+| `pendingFavorites`     | `id` (auto-increment) | none                              | Queued favourite changes                                                          |
+| `availabilityDeltas`   | `venueId`             | `timestamp`                       | Last-known seat availability, used to detect "a seat opened up"                   |
+| `recentlyViewedVenues` | `id`                  | `viewedAt`                        | Recently viewed venues                                                            |
+| `pendingReviews`       | `id`                  | `venueId`, `status`, `createdAt`  | Offline review queue                                                              |
+| `preference_rankings`  | `id`                  | none                              | Ranked venue preferences                                                          |
+| `queued_reviews`       | `id`                  | `venueId`, `status`, `createdAt`  | Offline review queue for sync queue manager replay                                |
+| `unsyncedReviewDrafts` | `id`                  | `review.venueId`, `quarantinedAt` | Quarantined review drafts exceeding retry limit                                   |
+
+The upgrade handler also deletes the legacy `pending-actions` store (renamed to `pendingActions`). When upgrading or encountering version changes, `onversionchange` handlers immediately close open connections (`db.close()`) so newer connections are not blocked.
 
 ### Other databases
 
@@ -324,7 +329,6 @@ These are observations from reading the code while writing this guide. They are 
 
 For deeper sync debugging see [PWA_SYNC_DEBUG.md](./PWA_SYNC_DEBUG.md); for push, [PWA_PUSH_DEBUG.md](./PWA_PUSH_DEBUG.md).
 
-
 ## 11. Service Worker Lifecycle
 
 WorkSphere registers a custom service worker (`sw.js`) that controls the page lifecycle through three primary phases:
@@ -340,17 +344,16 @@ WorkSphere registers a custom service worker (`sw.js`) that controls the page li
 3. **Fetch Interception (`fetch` event):**
    - Intercepts network requests and delegates them to specialized runtime caching handlers depending on the asset type (API responses, vector tiles, or venue images).
 
-
 ## 12. Cache Buckets, Storage Limits & Policies
 
 WorkSphere segments cached assets into dedicated CacheStorage buckets to optimize performance and enforce granular eviction policies.
 
-| Cache Bucket Name | Target Asset Type | Storage Quota Limit | Eviction / Expiration Policy |
-| :--- | :--- | :--- | :--- |
-| `worksphere-static-v1` | App Shell (HTML, CSS, JS) | ~20 MB | Version-based cleanup on SW update |
-| `worksphere-images-v1` | Venue Thumbnails & Photos | ~50 - 100 MB | LRU (Least Recently Used), Max 30-day TTL |
-| `worksphere-tiles-v1` | Map Vector Tiles & Assets | ~100 MB | LRU eviction with max 500 cached tiles |
-| `worksphere-api-v1` | Geo-bounding box & Search | ~15 MB | Stale-While-Revalidate (60s max-age, 300s SWR) |
+| Cache Bucket Name      | Target Asset Type         | Storage Quota Limit | Eviction / Expiration Policy                   |
+| :--------------------- | :------------------------ | :------------------ | :--------------------------------------------- |
+| `worksphere-static-v1` | App Shell (HTML, CSS, JS) | ~20 MB              | Version-based cleanup on SW update             |
+| `worksphere-images-v1` | Venue Thumbnails & Photos | ~50 - 100 MB        | LRU (Least Recently Used), Max 30-day TTL      |
+| `worksphere-tiles-v1`  | Map Vector Tiles & Assets | ~100 MB             | LRU eviction with max 500 cached tiles         |
+| `worksphere-api-v1`    | Geo-bounding box & Search | ~15 MB              | Stale-While-Revalidate (60s max-age, 300s SWR) |
 
 ## 13. Stale-While-Revalidate Flow for Venue Thumbnails
 
@@ -364,5 +367,6 @@ When a remote worker views venue galleries or search results over cellular conne
 ## 14. IndexedDB Fallback & Quota Exceeded Handling
 
 When browser storage quotas are reached or CacheStorage APIs fail due to restrictive storage policies:
+
 - **Fallback Store:** Unsynced drafts, critical venue search states, and user interaction histories are safely mirrored in IndexedDB (`worksphere_offline_db`).
 - **Quota Management:** Background garbage collection automatically prunes expired items from `worksphere-images-v1` and `worksphere-tiles-v1` when storage usage exceeds 85% of allocated origin quotas.

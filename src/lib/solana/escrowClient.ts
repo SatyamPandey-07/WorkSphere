@@ -15,6 +15,8 @@ import {
   type SolanaPayEscrowManager,
   type ReserveSeatOptions,
   type SeatReservationState,
+  DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT,
+  fetchLatestBlockhashWithBackoff,
 } from "./solanaPayEscrow";
 import {
   getPriorityFeeEstimator,
@@ -42,6 +44,190 @@ export function getAssociatedTokenAddressSync(
   return address;
 }
 
+export const SOL_DECIMALS = 9;
+export const USDC_DECIMALS = 6;
+
+export type SupportedSettlementAsset = "SOL" | "USDC";
+
+export interface EscrowBookingQuoteInput {
+  /** Hourly rate as a decimal string (e.g., "0.14" SOL or "4.50" USDC) */
+  hourlyRate: string | number;
+  /** Booking duration in minutes (e.g., 90 for 1.5 hours) */
+  durationMinutes: number;
+  /** Settlement token ('SOL' = 9 decimals, 'USDC' = 6 decimals) */
+  asset?: SupportedSettlementAsset;
+  /** Optional explicit decimal precision override */
+  decimals?: number;
+}
+
+export interface EscrowBaseUnitQuote {
+  asset: SupportedSettlementAsset;
+  decimals: number;
+  baseUnits: bigint;
+  formattedDecimal: string;
+}
+
+/**
+ * Converts a decimal token amount into exact integer base units (`bigint`) using
+ * string splitting and right-padding—eliminating IEEE-754 floating-point drift
+ * (such as `0.14 * 1e9` or `1.005 * 1e6`).
+ */
+export function parseDecimalToBaseUnits(
+  amount: string | number,
+  decimals: number = SOL_DECIMALS,
+): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+    throw new RangeError(`Invalid token decimal precision: ${decimals}`);
+  }
+
+  const raw =
+    typeof amount === "number"
+      ? Number.isFinite(amount)
+        ? amount.toString()
+        : ""
+      : typeof amount === "string"
+        ? amount.trim()
+        : "";
+
+  if (!raw) {
+    throw new Error("Token amount must be a non-empty finite decimal string");
+  }
+
+  // Handle scientific notation strings (e.g. "1e-7") safely into fixed decimal representation
+  const normalized = expandScientificNotation(raw);
+
+  if (normalized.startsWith("-")) {
+    throw new Error(`Token amount cannot be negative: "${raw}"`);
+  }
+
+  const unsigned = normalized.startsWith("+")
+    ? normalized.slice(1)
+    : normalized;
+  const parts = unsigned.split(".");
+
+  if (parts.length > 2) {
+    throw new Error(`Malformed decimal amount: "${raw}"`);
+  }
+
+  const wholePartRaw = parts[0] === "" ? "0" : parts[0];
+  const fractionPartRaw = parts[1] ?? "";
+
+  if (
+    !/^\d+$/.test(wholePartRaw) ||
+    (fractionPartRaw !== "" && !/^\d+$/.test(fractionPartRaw))
+  ) {
+    throw new Error(`Invalid numeric characters in decimal amount: "${raw}"`);
+  }
+
+  if (fractionPartRaw.length > decimals) {
+    const excessDigits = fractionPartRaw.slice(decimals);
+    if (!/^0+$/.test(excessDigits)) {
+      throw new Error(
+        `Amount "${raw}" exceeds maximum supported precision of ${decimals} decimal places`,
+      );
+    }
+  }
+
+  const paddedFraction =
+    decimals === 0
+      ? ""
+      : fractionPartRaw.slice(0, decimals).padEnd(decimals, "0");
+
+  return BigInt(`${wholePartRaw}${paddedFraction}`);
+}
+
+/**
+ * Formats integer base units (`bigint`) back into a canonical decimal string without float loss.
+ */
+export function formatBaseUnitsToDecimal(
+  baseUnits: bigint,
+  decimals: number = SOL_DECIMALS,
+): string {
+  if (baseUnits < 0n) {
+    throw new Error("Base units cannot be negative");
+  }
+
+  if (decimals === 0) {
+    return baseUnits.toString();
+  }
+
+  const digits = baseUnits.toString().padStart(decimals + 1, "0");
+  const whole = digits.slice(0, -decimals);
+  const fraction = digits.slice(-decimals).replace(/0+$/, "");
+
+  return fraction.length > 0 ? `${whole}.${fraction}` : whole;
+}
+
+/**
+ * Expands valid scientific-notation numeric strings (e.g. "5e-8") into plain fixed-point strings.
+ */
+function expandScientificNotation(value: string): string {
+  const match = /^([+-]?)(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/.exec(value);
+  if (!match) {
+    return value;
+  }
+
+  const [, sign, intDigits, fracDigits = "", expStr] = match;
+  const exponent = parseInt(expStr, 10);
+  const combinedDigits = `${intDigits}${fracDigits}`;
+  const decimalPosition = intDigits.length + exponent;
+
+  if (decimalPosition <= 0) {
+    return `${sign}0.${"0".repeat(Math.abs(decimalPosition))}${combinedDigits}`;
+  }
+
+  if (decimalPosition >= combinedDigits.length) {
+    return `${sign}${combinedDigits}${"0".repeat(decimalPosition - combinedDigits.length)}`;
+  }
+
+  return `${sign}${combinedDigits.slice(0, decimalPosition)}.${combinedDigits.slice(decimalPosition)}`;
+}
+
+/**
+ * Computes exact escrow base units (`lamports` for SOL, micro-units for USDC) for a
+ * prorated multi-minute desk reservation using pure `BigInt` integer arithmetic.
+ */
+export function calculateEscrowBookingBaseUnits(
+  input: EscrowBookingQuoteInput,
+): EscrowBaseUnitQuote {
+  const asset: SupportedSettlementAsset = input.asset ?? "SOL";
+  const decimals =
+    input.decimals ?? (asset === "USDC" ? USDC_DECIMALS : SOL_DECIMALS);
+
+  if (!Number.isInteger(input.durationMinutes) || input.durationMinutes <= 0) {
+    throw new Error("Booking durationMinutes must be a positive integer");
+  }
+
+  const hourlyBaseUnits = parseDecimalToBaseUnits(input.hourlyRate, decimals);
+  const totalBaseUnits =
+    (hourlyBaseUnits * BigInt(input.durationMinutes)) / 60n;
+
+  return {
+    asset,
+    decimals,
+    baseUnits: totalBaseUnits,
+    formattedDecimal: formatBaseUnitsToDecimal(totalBaseUnits, decimals),
+  };
+}
+
+/**
+ * Validates that a connected wallet's pre-flight balance (plus Solana fee buffer)
+ * covers the exact `BigInt` escrow transfer amount before signing.
+ */
+export function assertSufficientEscrowBalance(params: {
+  walletBalanceBaseUnits: bigint;
+  requiredEscrowBaseUnits: bigint;
+  networkFeeReserveBaseUnits?: bigint;
+}): void {
+  const feeReserve = params.networkFeeReserveBaseUnits ?? 5_000n; // 5,000 lamports default signature fee
+  const totalRequired = params.requiredEscrowBaseUnits + feeReserve;
+
+  if (params.walletBalanceBaseUnits < totalRequired) {
+    throw new Error(
+      `InsufficientFunds: wallet balance ${params.walletBalanceBaseUnits.toString()} is less than required ${totalRequired.toString()} base units`,
+    );
+  }
+}
 export function createTransferInstruction(
   source: PublicKey,
   destination: PublicKey,
@@ -72,7 +258,6 @@ export const USDC_MINT = new PublicKey(
   process.env.NEXT_PUBLIC_USDC_MINT ??
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 );
-export const USDC_DECIMALS = 6;
 
 export type EscrowCurrency = "SOL" | "USDC";
 
@@ -83,6 +268,7 @@ export interface EscrowDepositParams {
   currency: EscrowCurrency;
   rpcUrl: string;
   priorityFeeMicroLamports?: number;
+  computeUnitLimit?: number;
 }
 
 export interface EscrowDepositResult {
@@ -91,6 +277,7 @@ export interface EscrowDepositResult {
   escrowBump: number;
   amountBaseUnits: bigint;
   recentBlockhash: string;
+  lastValidBlockHeight?: number;
 }
 
 export interface EscrowValidationResult {
@@ -175,12 +362,24 @@ export async function buildSolDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "SOL");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
 
   const transaction = new Transaction({
     recentBlockhash: blockhash,
     feePayer: payer,
   });
+
+  // Dynamic Compute Unit Budget: set dedicated compute unit limit
+  const computeUnitLimit =
+    params.computeUnitLimit ?? DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT;
+  if (typeof computeUnitLimit === "number" && computeUnitLimit > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: Math.floor(computeUnitLimit),
+      }),
+    );
+  }
 
   // Dynamic Priority Fee: estimate automatically if not explicitly provided
   let priorityFee = params.priorityFeeMicroLamports;
@@ -197,13 +396,23 @@ export async function buildSolDepositTransaction(
     }
   }
 
-  // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+  // SetComputeUnitPrice must be placed before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
-    transaction.add(
-      ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: Math.floor(priorityFee),
-      }),
+    const safeFee = Math.max(0, Math.floor(priorityFee));
+    const existingIndex = transaction.instructions.findIndex(
+      (ix) =>
+        ix.programId.equals(ComputeBudgetProgram.programId) &&
+        ix.data.length > 0 &&
+        ix.data[0] === 3,
     );
+    const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: safeFee,
+    });
+    if (existingIndex >= 0) {
+      transaction.instructions[existingIndex] = computeIx;
+    } else {
+      transaction.instructions.unshift(computeIx);
+    }
   }
 
   const memoData = Buffer.from(
@@ -233,6 +442,7 @@ export async function buildSolDepositTransaction(
     escrowBump: bump,
     amountBaseUnits,
     recentBlockhash: blockhash,
+    lastValidBlockHeight,
   };
 }
 
@@ -249,7 +459,8 @@ export async function buildUsdcDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "USDC");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
 
   const payerAta = getAssociatedTokenAddressSync(
     USDC_MINT,
@@ -271,6 +482,17 @@ export async function buildUsdcDepositTransaction(
     feePayer: payer,
   });
 
+  // Dynamic Compute Unit Budget: set dedicated compute unit limit
+  const computeUnitLimit =
+    params.computeUnitLimit ?? DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT;
+  if (typeof computeUnitLimit === "number" && computeUnitLimit > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: Math.floor(computeUnitLimit),
+      }),
+    );
+  }
+
   // Dynamic Priority Fee: estimate automatically if not explicitly provided
   let priorityFee = params.priorityFeeMicroLamports;
   if (priorityFee === undefined || priorityFee === null) {
@@ -287,13 +509,23 @@ export async function buildUsdcDepositTransaction(
     }
   }
 
-  // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+  // SetComputeUnitPrice must be placed before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
-    transaction.add(
-      ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: Math.floor(priorityFee),
-      }),
+    const safeFee = Math.max(0, Math.floor(priorityFee));
+    const existingIndex = transaction.instructions.findIndex(
+      (ix) =>
+        ix.programId.equals(ComputeBudgetProgram.programId) &&
+        ix.data.length > 0 &&
+        ix.data[0] === 3,
     );
+    const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: safeFee,
+    });
+    if (existingIndex >= 0) {
+      transaction.instructions[existingIndex] = computeIx;
+    } else {
+      transaction.instructions.unshift(computeIx);
+    }
   }
 
   const memoData = Buffer.from(
@@ -329,6 +561,7 @@ export async function buildUsdcDepositTransaction(
     escrowBump: bump,
     amountBaseUnits,
     recentBlockhash: blockhash,
+    lastValidBlockHeight,
   };
 }
 
@@ -845,6 +1078,51 @@ export async function simulateEscrowTransaction(
   };
 }
 
+/** Hard ceiling for a single RPC status/balance poll request. */
+export const ESCROW_RPC_POLL_TIMEOUT_MS = 5_000;
+
+/**
+ * Runs one RPC poll request under an explicit abort deadline.
+ *
+ * `@solana/web3.js` does not abort in-flight requests on its own, so when a
+ * node blackholes packets (no TCP RST) the returned promise never settles and
+ * the caller's retry loop stalls forever. This helper hands the operation an
+ * `AbortSignal` and also races it against that signal, so the caller always
+ * gets a rejection (`EscrowRpcTimeoutError`) once `timeoutMs` elapses.
+ */
+export async function withRpcPollTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  options: { timeoutMs?: number; endpoint?: string } = {},
+): Promise<T> {
+  const timeoutMs =
+    typeof options.timeoutMs === "number" &&
+    Number.isFinite(options.timeoutMs) &&
+    options.timeoutMs > 0
+      ? options.timeoutMs
+      : ESCROW_RPC_POLL_TIMEOUT_MS;
+  const endpoint = options.endpoint ?? "rpc-poll";
+
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const timeoutError = new EscrowRpcTimeoutError(timeoutMs, endpoint);
+      controller.abort(timeoutError);
+      reject(timeoutError);
+    }, timeoutMs);
+    (timer as { unref?: () => void }).unref?.();
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    // A late rejection from the abandoned operation must not go unhandled.
+    deadline.catch(() => {});
+  }
+}
+
 /**
  * Background worker verifying on-chain transaction finalization.
  */
@@ -857,9 +1135,14 @@ export async function reconcilePendingSignature({
   let attempts = 0;
   while (attempts < maxRetries) {
     try {
-      const status = await connection.getSignatureStatus(signature, {
-        searchTransactionHistory: true,
-      });
+      // A timeout rejects into the catch below, which counts it as a retry.
+      const status = await withRpcPollTimeout(
+        () =>
+          connection.getSignatureStatus(signature, {
+            searchTransactionHistory: true,
+          }),
+        { endpoint: "reconcilePendingSignature" },
+      );
 
       const confirmation = status.value;
       if (confirmation) {
@@ -1713,11 +1996,21 @@ export async function submitEscrowRefundTransaction(
 
     // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
     if (typeof priorityFee === "number" && priorityFee > 0) {
-      transaction.add(
-        ComputeBudgetProgram.setComputeUnitPrice({
-          microLamports: Math.floor(priorityFee),
-        }),
+      const safeFee = Math.max(0, Math.floor(priorityFee));
+      const existingIndex = transaction.instructions.findIndex(
+        (ix) =>
+          ix.programId.equals(ComputeBudgetProgram.programId) &&
+          ix.data.length > 0 &&
+          ix.data[0] === 3,
       );
+      const computeIx = ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: safeFee,
+      });
+      if (existingIndex >= 0) {
+        transaction.instructions[existingIndex] = computeIx;
+      } else {
+        transaction.instructions.unshift(computeIx);
+      }
     }
 
     transaction.add(instruction);
@@ -2569,6 +2862,16 @@ export class EscrowClient {
     return this.pool.execute((connection) => connection.getLatestBlockhash());
   }
 
+  /** Fetches the latest blockhash with exponential backoff on transient RPC errors. */
+  public async getLatestBlockhashWithRetry(
+    maxRetries = 3,
+    baseBackoffMs = 500,
+  ): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+    return this.pool.execute((connection) =>
+      fetchLatestBlockhashWithBackoff(connection, maxRetries, baseBackoffMs),
+    );
+  }
+
   /** Fetches a transaction's signature status through the failover pool. */
   public async getSignatureStatus(
     signature: string,
@@ -2774,7 +3077,9 @@ export class EscrowConfirmationStateMachine {
     return this._isTerminal;
   }
 
-  public subscribe(listener: (event: EscrowConfirmationEvent) => void): () => void {
+  public subscribe(
+    listener: (event: EscrowConfirmationEvent) => void,
+  ): () => void {
     this.listeners.push(listener);
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener);
@@ -2786,20 +3091,30 @@ export class EscrowConfirmationStateMachine {
     sourceOrOptions?:
       | EscrowConfirmationSource
       | { slot?: number | null; error?: string | null; reason?: string },
-    optionsParam?: { slot?: number | null; error?: string | null; reason?: string },
+    optionsParam?: {
+      slot?: number | null;
+      error?: string | null;
+      reason?: string;
+    },
   ): EscrowConfirmationEvent | null {
     if (this._isTerminal) {
       return null;
     }
 
     let source: EscrowConfirmationSource = "websocket";
-    let options: { slot?: number | null; error?: string | null; reason?: string } =
-      {};
+    let options: {
+      slot?: number | null;
+      error?: string | null;
+      reason?: string;
+    } = {};
 
     if (typeof sourceOrOptions === "string") {
       source = sourceOrOptions;
       if (optionsParam) options = optionsParam;
-    } else if (typeof sourceOrOptions === "object" && sourceOrOptions !== null) {
+    } else if (
+      typeof sourceOrOptions === "object" &&
+      sourceOrOptions !== null
+    ) {
       options = sourceOrOptions;
     }
 
@@ -2856,7 +3171,9 @@ export class EscrowConfirmationStateMachine {
       if (newStatus === "finalized") {
         this.resolvePromise(event);
       } else {
-        const err = new Error(options.error || `Escrow confirmation ended in state: ${newStatus}`);
+        const err = new Error(
+          options.error || `Escrow confirmation ended in state: ${newStatus}`,
+        );
         // Avoid unhandled rejection crash if caller doesn't attach .catch to promise
         this.promise.catch(() => {});
         this.rejectPromise(err);
@@ -3064,27 +3381,38 @@ export function subscribeToEscrowConfirmation(
     }
   };
 
+  // Single status fetch shared by every polling path. Each request is bounded
+  // by a 5s abort deadline so a blackholed RPC node can never hang the loop;
+  // a timeout rejects and is handled by the caller like any other poll error.
+  const fetchSignatureStatus = (): Promise<SignatureStatus | null> =>
+    withRpcPollTimeout(
+      async () => {
+        if (options.pollSignatureStatus) {
+          return options.pollSignatureStatus(cleanSignature);
+        }
+        if (connection) {
+          const res = await connection.getSignatureStatuses([cleanSignature], {
+            searchTransactionHistory: true,
+          });
+          return res.value?.[0] ?? null;
+        }
+        const res = await pool.execute((conn) =>
+          conn.getSignatureStatuses([cleanSignature], {
+            searchTransactionHistory: true,
+          }),
+        );
+        return res.value?.[0] ?? null;
+      },
+      { endpoint: "escrow-confirmation-poll" },
+    );
+
   // Helper to poll signature status once
   const pollOnce = async () => {
     if (stateMachine.isDone() || isUnsubscribed) return;
 
     let status: SignatureStatus | null = null;
     try {
-      if (options.pollSignatureStatus) {
-        status = await options.pollSignatureStatus(cleanSignature);
-      } else if (connection) {
-        const res = await connection.getSignatureStatuses([cleanSignature], {
-          searchTransactionHistory: true,
-        });
-        status = res.value?.[0] ?? null;
-      } else {
-        const res = await pool.execute((conn) =>
-          conn.getSignatureStatuses([cleanSignature], {
-            searchTransactionHistory: true,
-          }),
-        );
-        status = res.value?.[0] ?? null;
-      }
+      status = await fetchSignatureStatus();
     } catch (pollErr) {
       console.warn(
         `[EscrowStreaming] HTTP poll failed for ${cleanSignature}:`,
@@ -3155,9 +3483,12 @@ export function subscribeToEscrowConfirmation(
             finalRes = await options.pollSignatureStatus(cleanSignature);
             finalCheckSucceeded = true;
           } else if (connection) {
-            const res = await connection.getSignatureStatuses([cleanSignature], {
-              searchTransactionHistory: true,
-            });
+            const res = await connection.getSignatureStatuses(
+              [cleanSignature],
+              {
+                searchTransactionHistory: true,
+              },
+            );
             finalRes = res.value?.[0] ?? null;
             finalCheckSucceeded = true;
           } else {
@@ -3292,8 +3623,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,
@@ -3328,8 +3658,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,
@@ -3389,8 +3718,7 @@ export function subscribeToEscrowConfirmation(
         (notification, context) => {
           if (stateMachine.isDone() || isUnsubscribed) return;
           const err =
-            (notification as any)?.err ??
-            (notification as any)?.result?.err;
+            (notification as any)?.err ?? (notification as any)?.result?.err;
           if (err) {
             stateMachine.transition("failed", "websocket", {
               slot: context?.slot,

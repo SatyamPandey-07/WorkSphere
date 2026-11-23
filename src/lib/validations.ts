@@ -453,3 +453,77 @@ export function validateRequest<T>(
       .join(", "),
   };
 }
+
+// =========================================================================
+// PAGINATION SCHEMA & HELPERS
+// =========================================================================
+
+export const DEFAULT_PAGE = 1;
+export const DEFAULT_LIMIT = 50;
+export const MAX_LIMIT = 100;
+
+export interface ValidatedPagination {
+  page: number;
+  limit: number;
+  skip: number;
+}
+
+/**
+ * Validates and parses query parameters for pagination.
+ * Requires page and limit to be finite positive integers.
+ * Clamps limit to maxLimit (default: 100).
+ * Returns a validation error for non-numeric, negative, decimal, or zero values.
+ */
+export function parsePaginationParams(
+  pageParam: string | null | undefined,
+  limitParam: string | null | undefined,
+  defaultLimit: number = DEFAULT_LIMIT,
+  maxLimit: number = MAX_LIMIT,
+):
+  | { success: true; data: ValidatedPagination }
+  | { success: false; error: string } {
+  let page = DEFAULT_PAGE;
+  if (pageParam !== null && pageParam !== undefined && pageParam !== "") {
+    const trimmed = pageParam.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return {
+        success: false,
+        error: "page must be a positive integer",
+      };
+    }
+    const parsedPage = Number(trimmed);
+    if (!Number.isSafeInteger(parsedPage) || parsedPage < 1) {
+      return {
+        success: false,
+        error: "page must be a positive integer",
+      };
+    }
+    page = parsedPage;
+  }
+
+  let limit = defaultLimit;
+  if (limitParam !== null && limitParam !== undefined && limitParam !== "") {
+    const trimmed = limitParam.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return {
+        success: false,
+        error: "limit must be a positive integer",
+      };
+    }
+    const parsedLimit = Number(trimmed);
+    if (!Number.isSafeInteger(parsedLimit) || parsedLimit < 1) {
+      return {
+        success: false,
+        error: "limit must be a positive integer",
+      };
+    }
+    limit = Math.min(maxLimit, parsedLimit);
+  }
+
+  const skip = (page - 1) * limit;
+
+  return {
+    success: true,
+    data: { page, limit, skip },
+  };
+}

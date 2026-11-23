@@ -213,9 +213,9 @@ describe("validateDepositParams", () => {
   });
 
   it("accepts valid USDC params", () => {
-    expect(
-      validateDepositParams({ ...validParams, currency: "USDC" }),
-    ).toEqual({ valid: true });
+    expect(validateDepositParams({ ...validParams, currency: "USDC" })).toEqual(
+      { valid: true },
+    );
   });
 
   it("rejects missing payerWallet", () => {
@@ -325,6 +325,23 @@ describe("buildSolDepositTransaction", () => {
     );
   });
 
+  it("returns lastValidBlockHeight from latest blockhash query (#9635)", async () => {
+    const result = await buildSolDepositTransaction(validParams);
+    expect(result.lastValidBlockHeight).toBe(200_000);
+  });
+
+  it("incorporates compute unit limit instruction (#9635)", async () => {
+    const result = await buildSolDepositTransaction({
+      ...validParams,
+      computeUnitLimit: 300_000,
+    });
+    const { Transaction } = jest.requireActual("@solana/web3.js");
+    const tx = Transaction.from(
+      Buffer.from(result.serializedTransaction, "base64"),
+    );
+    expect(tx.instructions.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("throws on invalid params", async () => {
     await expect(
       buildSolDepositTransaction({ ...validParams, amount: -1 }),
@@ -377,6 +394,11 @@ describe("buildUsdcDepositTransaction", () => {
   it("returns the correct amount in USDC base units", async () => {
     const result = await buildUsdcDepositTransaction(usdcParams);
     expect(result.amountBaseUnits).toBe(BigInt(25 * 10 ** USDC_DECIMALS));
+  });
+
+  it("returns lastValidBlockHeight from latest blockhash query (#9635)", async () => {
+    const result = await buildUsdcDepositTransaction(usdcParams);
+    expect(result.lastValidBlockHeight).toBe(200_000);
   });
 
   it("throws on invalid params", async () => {
@@ -1241,7 +1263,9 @@ describe("POST /api/pay/solana", () => {
 // ===========================================================================
 
 describe("Anchor On-Chain Instructions & Verification", () => {
-  const recipientKey = new PublicKey("4sj1hqUXasW44qUiXtx47h14UHJbQhmcfGuNMLTzwanu");
+  const recipientKey = new PublicKey(
+    "4sj1hqUXasW44qUiXtx47h14UHJbQhmcfGuNMLTzwanu",
+  );
   const authorityKey = new PublicKey(VALID_WALLET);
 
   it("creates release instruction with correct Anchor discriminator and accounts", () => {
@@ -1380,4 +1404,3 @@ describe("Anchor On-Chain Instructions & Verification", () => {
     expect(getEscrowState("escrow-refund-test")).toBe("REFUNDED");
   });
 });
-

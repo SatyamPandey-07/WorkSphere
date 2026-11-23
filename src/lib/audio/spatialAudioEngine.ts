@@ -22,26 +22,26 @@
 // ─── 1. TYPES & INTERFACES ────────────────────────────────────────────────────
 
 export type RoomMaterialType =
-  | 'concrete'
-  | 'brick'
-  | 'wood'
-  | 'glass'
-  | 'drywall'
-  | 'carpet'
-  | 'fabric'
-  | 'acoustic_panel';
+  | "concrete"
+  | "brick"
+  | "wood"
+  | "glass"
+  | "drywall"
+  | "carpet"
+  | "fabric"
+  | "acoustic_panel";
 
 export type AcousticProfilePreset =
-  | 'small_booth'
-  | 'medium_coworking'
-  | 'large_cafe'
+  | "small_booth"
+  | "medium_coworking"
+  | "large_cafe"
   // Backward-compatible aliases matching RoomReverbConvolver presets:
-  | 'phone_booth'
-  | 'conference_room'
-  | 'open_hall'
-  | 'booth'
-  | 'coworking'
-  | 'cafe';
+  | "phone_booth"
+  | "conference_room"
+  | "open_hall"
+  | "booth"
+  | "coworking"
+  | "cafe";
 
 export interface RoomDimensions {
   /** Room width (X axis) in meters. Clamped to [0.5, 200.0]. */
@@ -123,6 +123,8 @@ export interface SpatialAudioEngineOptions {
   crossfadeDurationMs?: number;
   /** Initial master output gain [0.0, 1.0]. Default: 1.0. */
   initialMasterGain?: number;
+  /** Automatically resume suspended AudioContext on first user interaction (#7766). Default: true. */
+  autoResumeOnInteraction?: boolean;
 }
 
 export interface ParticipantSpatialNode {
@@ -138,16 +140,132 @@ export interface ParticipantSpatialNode {
 // ─── 2. ACOUSTIC CONSTANTS & LOOKUP TABLES ────────────────────────────────────
 
 /**
+ * Global interaction events for resuming suspended Web Audio contexts (#7766).
+ */
+export const AUDIO_RESUME_INTERACTION_EVENTS = [
+  "click",
+  "keydown",
+  "touchstart",
+] as const;
+
+export type AudioResumeInteractionEvent =
+  (typeof AUDIO_RESUME_INTERACTION_EVENTS)[number];
+
+export interface AutoResumeOptions {
+  onResumed?: () => void;
+  target?: EventTarget;
+}
+
+/**
+ * Attaches a one-time global interaction listener (click, keydown, touchstart)
+ * to automatically call audioCtx.resume() upon the first user interaction (#7766).
+ * Cleans up interaction listeners once the context transitions to the running state.
+ */
+export function attachAutoResumeListeners(
+  audioContext: AudioContext | null | undefined,
+  options?: AutoResumeOptions | (() => void),
+): () => void {
+  if (
+    !audioContext ||
+    audioContext.state === "closed" ||
+    audioContext.state === "running"
+  ) {
+    return () => {};
+  }
+
+  const callback = typeof options === "function" ? options : options?.onResumed;
+  const eventTarget =
+    (typeof options === "object" && options?.target) ||
+    (typeof window !== "undefined" ? window : undefined);
+
+  if (!eventTarget || typeof eventTarget.addEventListener !== "function") {
+    return () => {};
+  }
+
+  let isCleanedUp = false;
+  let isResuming = false;
+
+  const cleanup = () => {
+    if (isCleanedUp) return;
+    isCleanedUp = true;
+
+    try {
+      if (typeof eventTarget.removeEventListener === "function") {
+        eventTarget.removeEventListener("click", handleInteraction);
+        eventTarget.removeEventListener("keydown", handleInteraction);
+        eventTarget.removeEventListener("touchstart", handleInteraction);
+      }
+    } catch {
+      // Safe no-op on cleanup
+    }
+
+    try {
+      if (typeof audioContext.removeEventListener === "function") {
+        audioContext.removeEventListener("statechange", handleStateChange);
+      }
+    } catch {
+      // Safe no-op
+    }
+  };
+
+  const handleStateChange = () => {
+    if (audioContext.state === "running") {
+      cleanup();
+      callback?.();
+    }
+  };
+
+  const handleInteraction = async () => {
+    if (isResuming || isCleanedUp) return;
+    isResuming = true;
+
+    try {
+      if (audioContext.state === "suspended") {
+        const resumePromise = audioContext.resume();
+        if (resumePromise && typeof resumePromise.catch === "function") {
+          await resumePromise.catch(() => {
+            // Gracefully catch autoplay rejection without unhandled rejection errors
+          });
+        }
+      }
+    } catch {
+      // Gracefully swallow synchronous errors
+    } finally {
+      isResuming = false;
+      if (audioContext.state === "running") {
+        cleanup();
+        callback?.();
+      }
+    }
+  };
+
+  if (typeof audioContext.addEventListener === "function") {
+    audioContext.addEventListener("statechange", handleStateChange);
+  }
+
+  eventTarget.addEventListener("click", handleInteraction);
+  eventTarget.addEventListener("keydown", handleInteraction);
+  eventTarget.addEventListener("touchstart", handleInteraction, {
+    passive: true,
+  });
+
+  return cleanup;
+}
+
+/**
  * Standard absorption coefficients (alpha) at ~1000 Hz for physical venue materials.
  */
-export const MATERIAL_ABSORPTION_COEFFICIENTS: Record<RoomMaterialType, number> = {
+export const MATERIAL_ABSORPTION_COEFFICIENTS: Record<
+  RoomMaterialType,
+  number
+> = {
   concrete: 0.02,
   brick: 0.04,
   wood: 0.12,
   glass: 0.08,
-  drywall: 0.10,
+  drywall: 0.1,
   carpet: 0.35,
-  fabric: 0.50,
+  fabric: 0.5,
   acoustic_panel: 0.65,
 };
 
@@ -156,52 +274,54 @@ export const SPEED_OF_SOUND_MPS = 343.0; // Speed of sound in dry air at 20°C (
 /**
  * Acoustic Profiles calibrated for typical WorkSphere collaborative workspaces.
  */
-export const ACOUSTIC_PROFILE_PRESETS: Record<string, RoomAcousticProperties> = {
-  small_booth: {
-    dimensions: { width: 1.8, length: 1.8, height: 2.4 },
-    materials: {
-      walls: 'acoustic_panel',
-      ceiling: 'acoustic_panel',
-      floor: 'carpet',
+export const ACOUSTIC_PROFILE_PRESETS: Record<string, RoomAcousticProperties> =
+  {
+    small_booth: {
+      dimensions: { width: 1.8, length: 1.8, height: 2.4 },
+      materials: {
+        walls: "acoustic_panel",
+        ceiling: "acoustic_panel",
+        floor: "carpet",
+      },
+      rt60: 0.15,
+      dampingFactor: 3.5,
+      reflectionIntensity: 0.4,
+      preDelaySeconds: 0.003,
+      wetDryRatio: 0.18,
     },
-    rt60: 0.15,
-    dampingFactor: 3.5,
-    reflectionIntensity: 0.40,
-    preDelaySeconds: 0.003,
-    wetDryRatio: 0.18,
-  },
-  medium_coworking: {
-    dimensions: { width: 8.0, length: 12.0, height: 3.2 },
-    materials: {
-      walls: 'drywall',
-      ceiling: 'drywall',
-      floor: 'carpet',
+    medium_coworking: {
+      dimensions: { width: 8.0, length: 12.0, height: 3.2 },
+      materials: {
+        walls: "drywall",
+        ceiling: "drywall",
+        floor: "carpet",
+      },
+      rt60: 0.45,
+      dampingFactor: 2.2,
+      reflectionIntensity: 0.65,
+      preDelaySeconds: 0.012,
+      wetDryRatio: 0.35,
     },
-    rt60: 0.45,
-    dampingFactor: 2.2,
-    reflectionIntensity: 0.65,
-    preDelaySeconds: 0.012,
-    wetDryRatio: 0.35,
-  },
-  large_cafe: {
-    dimensions: { width: 16.0, length: 24.0, height: 5.5 },
-    materials: {
-      walls: 'brick',
-      ceiling: 'concrete',
-      floor: 'wood',
+    large_cafe: {
+      dimensions: { width: 16.0, length: 24.0, height: 5.5 },
+      materials: {
+        walls: "brick",
+        ceiling: "concrete",
+        floor: "wood",
+      },
+      rt60: 1.2,
+      dampingFactor: 1.4,
+      reflectionIntensity: 0.85,
+      preDelaySeconds: 0.028,
+      wetDryRatio: 0.55,
     },
-    rt60: 1.20,
-    dampingFactor: 1.4,
-    reflectionIntensity: 0.85,
-    preDelaySeconds: 0.028,
-    wetDryRatio: 0.55,
-  },
-};
+  };
 
 // Aliases for compatibility
 ACOUSTIC_PROFILE_PRESETS.phone_booth = ACOUSTIC_PROFILE_PRESETS.small_booth;
 ACOUSTIC_PROFILE_PRESETS.booth = ACOUSTIC_PROFILE_PRESETS.small_booth;
-ACOUSTIC_PROFILE_PRESETS.conference_room = ACOUSTIC_PROFILE_PRESETS.medium_coworking;
+ACOUSTIC_PROFILE_PRESETS.conference_room =
+  ACOUSTIC_PROFILE_PRESETS.medium_coworking;
 ACOUSTIC_PROFILE_PRESETS.coworking = ACOUSTIC_PROFILE_PRESETS.medium_coworking;
 ACOUSTIC_PROFILE_PRESETS.open_hall = ACOUSTIC_PROFILE_PRESETS.large_cafe;
 ACOUSTIC_PROFILE_PRESETS.cafe = ACOUSTIC_PROFILE_PRESETS.large_cafe;
@@ -210,8 +330,8 @@ export const DEFAULT_ROOM_PROPERTIES: RoomAcousticProperties =
   ACOUSTIC_PROFILE_PRESETS.medium_coworking;
 
 export const DEFAULT_PANNER_CONFIG: Required<SpatialPannerConfig> = {
-  panningModel: 'HRTF',
-  distanceModel: 'inverse',
+  panningModel: "HRTF",
+  distanceModel: "inverse",
   refDistance: 1.0,
   maxDistance: 50.0,
   rolloffFactor: 1.0,
@@ -221,16 +341,19 @@ export const DEFAULT_PANNER_CONFIG: Required<SpatialPannerConfig> = {
 };
 
 function isAudioNode(obj: unknown): obj is AudioNode {
-  if (typeof window !== 'undefined' && typeof window.AudioNode !== 'undefined') {
+  if (
+    typeof window !== "undefined" &&
+    typeof window.AudioNode !== "undefined"
+  ) {
     return obj instanceof window.AudioNode;
   }
-  if (typeof AudioNode !== 'undefined') {
+  if (typeof AudioNode !== "undefined") {
     return obj instanceof AudioNode;
   }
   return Boolean(
     obj &&
-    typeof (obj as AudioNode).connect === 'function' &&
-    typeof (obj as AudioNode).disconnect === 'function'
+    typeof (obj as AudioNode).connect === "function" &&
+    typeof (obj as AudioNode).disconnect === "function",
   );
 }
 
@@ -247,7 +370,7 @@ function clamp(value: number, min: number, max: number): number {
 function createMulberry32(seed: number): () => number {
   let s = Math.floor(seed) >>> 0;
   return () => {
-    s = (s + 0x6D2B79F5) >>> 0;
+    s = (s + 0x6d2b79f5) >>> 0;
     let t = Math.imul(s ^ (s >>> 15), 1 | s);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
@@ -257,11 +380,17 @@ function createMulberry32(seed: number): () => number {
 /**
  * Resolves a material identifier or numeric coefficient to a normalized absorption [0.01, 0.99].
  */
-export function resolveMaterialAbsorption(material?: RoomMaterialType | number, fallback: number = 0.15): number {
-  if (typeof material === 'number') {
+export function resolveMaterialAbsorption(
+  material?: RoomMaterialType | number,
+  fallback: number = 0.15,
+): number {
+  if (typeof material === "number") {
     return clamp(material, 0.01, 0.99);
   }
-  if (typeof material === 'string' && material in MATERIAL_ABSORPTION_COEFFICIENTS) {
+  if (
+    typeof material === "string" &&
+    material in MATERIAL_ABSORPTION_COEFFICIENTS
+  ) {
     return MATERIAL_ABSORPTION_COEFFICIENTS[material];
   }
   return fallback;
@@ -275,8 +404,13 @@ export function resolveMaterialAbsorption(material?: RoomMaterialType | number, 
  */
 export function calculateSabineRT60(
   dimensions: RoomDimensions,
-  materials?: RoomSurfaceMaterials
-): { rt60: number; volume: number; surfaceArea: number; averageAbsorption: number } {
+  materials?: RoomSurfaceMaterials,
+): {
+  rt60: number;
+  volume: number;
+  surfaceArea: number;
+  averageAbsorption: number;
+} {
   const w = clamp(dimensions?.width ?? 8.0, 0.5, 200.0);
   const l = clamp(dimensions?.length ?? 12.0, 0.5, 200.0);
   const h = clamp(dimensions?.height ?? 3.2, 0.5, 50.0);
@@ -290,15 +424,19 @@ export function calculateSabineRT60(
   let totalAbsorption: number;
   let averageAbsorption: number;
 
-  if (materials?.averageAbsorption !== undefined && Number.isFinite(materials.averageAbsorption)) {
+  if (
+    materials?.averageAbsorption !== undefined &&
+    Number.isFinite(materials.averageAbsorption)
+  ) {
     averageAbsorption = clamp(materials.averageAbsorption, 0.01, 0.99);
     totalAbsorption = surfaceArea * averageAbsorption;
   } else {
-    const alphaWalls = resolveMaterialAbsorption(materials?.walls, 0.10);
-    const alphaCeiling = resolveMaterialAbsorption(materials?.ceiling, 0.10);
+    const alphaWalls = resolveMaterialAbsorption(materials?.walls, 0.1);
+    const alphaCeiling = resolveMaterialAbsorption(materials?.ceiling, 0.1);
     const alphaFloor = resolveMaterialAbsorption(materials?.floor, 0.35);
 
-    totalAbsorption = sWalls * alphaWalls + sCeiling * alphaCeiling + sFloor * alphaFloor;
+    totalAbsorption =
+      sWalls * alphaWalls + sCeiling * alphaCeiling + sFloor * alphaFloor;
     averageAbsorption = totalAbsorption / Math.max(1e-4, surfaceArea);
   }
 
@@ -317,7 +455,9 @@ export function calculateSabineRT60(
 /**
  * Normalizes and validates partial room acoustic configuration into complete resolved values.
  */
-export function resolveRoomAcoustics(properties: Partial<RoomAcousticProperties> = {}): ResolvedRoomAcoustics {
+export function resolveRoomAcoustics(
+  properties: Partial<RoomAcousticProperties> = {},
+): ResolvedRoomAcoustics {
   const dimensions: RoomDimensions = {
     width: clamp(properties.dimensions?.width ?? 8.0, 0.5, 200.0),
     length: clamp(properties.dimensions?.length ?? 12.0, 0.5, 200.0),
@@ -325,12 +465,17 @@ export function resolveRoomAcoustics(properties: Partial<RoomAcousticProperties>
   };
 
   const sabine = calculateSabineRT60(dimensions, properties.materials);
-  const rt60 = properties.rt60 !== undefined && Number.isFinite(properties.rt60)
-    ? clamp(properties.rt60, 0.05, 5.0)
-    : sabine.rt60;
+  const rt60 =
+    properties.rt60 !== undefined && Number.isFinite(properties.rt60)
+      ? clamp(properties.rt60, 0.05, 5.0)
+      : sabine.rt60;
 
   const dampingFactor = clamp(properties.dampingFactor ?? 2.0, 0.5, 5.0);
-  const reflectionIntensity = clamp(properties.reflectionIntensity ?? 0.65, 0.0, 1.0);
+  const reflectionIntensity = clamp(
+    properties.reflectionIntensity ?? 0.65,
+    0.0,
+    1.0,
+  );
   const preDelaySeconds = clamp(properties.preDelaySeconds ?? 0.012, 0.0, 0.1);
   const wetDryRatio = clamp(properties.wetDryRatio ?? 0.35, 0.0, 1.0);
 
@@ -366,19 +511,20 @@ export function resolveRoomAcoustics(properties: Partial<RoomAcousticProperties>
 export function generateProceduralImpulseResponse(
   audioContext: AudioContext,
   roomConfig: Partial<RoomAcousticProperties>,
-  options: ImpulseResponseGeneratorOptions = {}
+  options: ImpulseResponseGeneratorOptions = {},
 ): AudioBuffer {
   const resolved = resolveRoomAcoustics(roomConfig);
   const sampleRate = options.sampleRate || audioContext.sampleRate || 44100;
   const channels = options.channels || 2;
   const duration = Math.max(
     0.05,
-    Math.min(options.maxDurationSeconds ?? 5.0, resolved.rt60)
+    Math.min(options.maxDurationSeconds ?? 5.0, resolved.rt60),
   );
   const length = Math.max(128, Math.ceil(sampleRate * duration));
 
   const buffer = audioContext.createBuffer(channels, length, sampleRate);
-  const prng = options.seed !== undefined ? createMulberry32(options.seed) : Math.random;
+  const prng =
+    options.seed !== undefined ? createMulberry32(options.seed) : Math.random;
 
   // RT60 exponential decay constant: exp(-decayConstant * rt60) = 0.001 (-60 dB)
   // decayConstant = ln(1000) / rt60 ≈ 6.90775527898 / rt60
@@ -393,16 +539,38 @@ export function generateProceduralImpulseResponse(
   // [distanceInMeters, boundaryAbsorption]
   const wallAlpha = resolved.averageAbsorption;
   const boundaryPaths: Array<{ delaySec: number; gain: number }> = [
-    { delaySec: (width * 0.5 * 2) / SPEED_OF_SOUND_MPS, gain: (1 - wallAlpha) * 0.7 },
-    { delaySec: (depth * 0.5 * 2) / SPEED_OF_SOUND_MPS, gain: (1 - wallAlpha) * 0.65 },
-    { delaySec: (height * 0.5 * 2) / SPEED_OF_SOUND_MPS, gain: (1 - wallAlpha) * 0.6 },
-    { delaySec: Math.sqrt(width * width + depth * depth) / SPEED_OF_SOUND_MPS, gain: (1 - wallAlpha) * 0.45 },
-    { delaySec: Math.sqrt(width * width + height * height) / SPEED_OF_SOUND_MPS, gain: (1 - wallAlpha) * 0.4 },
-    { delaySec: Math.sqrt(depth * depth + height * height) / SPEED_OF_SOUND_MPS, gain: (1 - wallAlpha) * 0.35 },
+    {
+      delaySec: (width * 0.5 * 2) / SPEED_OF_SOUND_MPS,
+      gain: (1 - wallAlpha) * 0.7,
+    },
+    {
+      delaySec: (depth * 0.5 * 2) / SPEED_OF_SOUND_MPS,
+      gain: (1 - wallAlpha) * 0.65,
+    },
+    {
+      delaySec: (height * 0.5 * 2) / SPEED_OF_SOUND_MPS,
+      gain: (1 - wallAlpha) * 0.6,
+    },
+    {
+      delaySec: Math.sqrt(width * width + depth * depth) / SPEED_OF_SOUND_MPS,
+      gain: (1 - wallAlpha) * 0.45,
+    },
+    {
+      delaySec: Math.sqrt(width * width + height * height) / SPEED_OF_SOUND_MPS,
+      gain: (1 - wallAlpha) * 0.4,
+    },
+    {
+      delaySec: Math.sqrt(depth * depth + height * height) / SPEED_OF_SOUND_MPS,
+      gain: (1 - wallAlpha) * 0.35,
+    },
   ];
 
   // Mixing time (seconds) when specular reflections transition to diffuse reverb
-  const mixingTime = clamp(0.012 + Math.sqrt(resolved.volume) / 1000, 0.01, 0.08);
+  const mixingTime = clamp(
+    0.012 + Math.sqrt(resolved.volume) / 1000,
+    0.01,
+    0.08,
+  );
 
   for (let c = 0; c < channels; c++) {
     const data = buffer.getChannelData(c);
@@ -416,13 +584,18 @@ export function generateProceduralImpulseResponse(
     // 2. Specular early reflections
     for (let r = 0; r < boundaryPaths.length; r++) {
       const ref = boundaryPaths[r];
-      const arrivalTime = preDelay + ref.delaySec + (r % 2 === 0 ? channelPhase : -channelPhase);
+      const arrivalTime =
+        preDelay + ref.delaySec + (r % 2 === 0 ? channelPhase : -channelPhase);
       const arrivalSample = Math.floor(arrivalTime * sampleRate);
 
       if (arrivalSample > directIdx && arrivalSample < length) {
         const decayAtArrival = Math.exp(-decayConstant * arrivalTime);
         const refPolarity = r % 2 === 0 ? 1.0 : -0.8;
-        data[arrivalSample] += refPolarity * ref.gain * resolved.reflectionIntensity * decayAtArrival;
+        data[arrivalSample] +=
+          refPolarity *
+          ref.gain *
+          resolved.reflectionIntensity *
+          decayAtArrival;
       }
     }
 
@@ -443,20 +616,22 @@ export function generateProceduralImpulseResponse(
       const densityRamp = Math.min(1.0, Math.pow(activeTime / mixingTime, 2));
 
       // White/Gaussian noise core [-1.0, 1.0] with decorrelation between channels
-      const noise = (prng() * 2.0 - 1.0);
+      const noise = prng() * 2.0 - 1.0;
 
       // High frequency damping: smoothing factor increases over time
       const dampingCoeff = Math.min(
         0.85,
-        Math.pow(activeTime / duration, 1.0 / resolved.dampingFactor) * 0.6
+        Math.pow(activeTime / duration, 1.0 / resolved.dampingFactor) * 0.6,
       );
 
       filterState = (1.0 - dampingCoeff) * noise + dampingCoeff * filterState;
 
       // Channel stereo spread modulation
-      const stereoSpread = 0.85 + 0.15 * Math.sin(2.0 * Math.PI * 120.0 * (t + channelPhase));
+      const stereoSpread =
+        0.85 + 0.15 * Math.sin(2.0 * Math.PI * 120.0 * (t + channelPhase));
 
-      const diffuseSample = filterState * decay * densityRamp * stereoSpread * 0.75;
+      const diffuseSample =
+        filterState * decay * densityRamp * stereoSpread * 0.75;
 
       data[i] += diffuseSample;
     }
@@ -506,7 +681,7 @@ export class SpatialAudioEngine {
 
   // Room Acoustics State
   private roomProperties: ResolvedRoomAcoustics;
-  private activePreset: AcousticProfilePreset | 'custom';
+  private activePreset: AcousticProfilePreset | "custom";
   private currentImpulseBuffer: AudioBuffer | null = null;
   private crossfadeDurationSec: number;
 
@@ -521,7 +696,7 @@ export class SpatialAudioEngine {
   private convolverB: ConvolverNode;
   private gainA: GainNode;
   private gainB: GainNode;
-  private activeConvolverId: 'A' | 'B' = 'A';
+  private activeConvolverId: "A" | "B" = "A";
   private activeTransitionTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Spatial Panner Defaults
@@ -537,6 +712,7 @@ export class SpatialAudioEngine {
 
   private isMuted: boolean = false;
   private preMuteMasterGain: number = 1.0;
+  private cleanupAutoResume: (() => void) | null = null;
 
   constructor(options: SpatialAudioEngineOptions = {}) {
     if (options.audioContext) {
@@ -544,29 +720,48 @@ export class SpatialAudioEngine {
       this.ownsContext = false;
     } else {
       const AudioCtxCtor =
-        typeof window !== 'undefined'
-          ? window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+        typeof window !== "undefined"
+          ? window.AudioContext ||
+            (window as unknown as { webkitAudioContext: typeof AudioContext })
+              .webkitAudioContext
           : undefined;
 
       if (!AudioCtxCtor) {
-        throw new Error('AudioContext is not available in the current environment.');
+        throw new Error(
+          "AudioContext is not available in the current environment.",
+        );
       }
       this.audioContext = new AudioCtxCtor();
       this.ownsContext = true;
     }
 
-    this.crossfadeDurationSec = Math.max(0.005, (options.crossfadeDurationMs ?? 30) / 1000);
+    if (
+      options.autoResumeOnInteraction !== false &&
+      this.audioContext.state === "suspended"
+    ) {
+      this.cleanupAutoResume = attachAutoResumeListeners(this.audioContext);
+    }
+
+    this.crossfadeDurationSec = Math.max(
+      0.005,
+      (options.crossfadeDurationMs ?? 30) / 1000,
+    );
     this.pannerDefaults = {
       ...DEFAULT_PANNER_CONFIG,
       ...options.pannerDefaults,
     };
 
     // Initialize Room Properties
-    this.activePreset = options.preset ? options.preset : (options.customProperties ? 'custom' : 'medium_coworking');
+    this.activePreset = options.preset
+      ? options.preset
+      : options.customProperties
+        ? "custom"
+        : "medium_coworking";
 
-    const baseConfig = options.preset && ACOUSTIC_PROFILE_PRESETS[options.preset]
-      ? ACOUSTIC_PROFILE_PRESETS[options.preset]
-      : DEFAULT_ROOM_PROPERTIES;
+    const baseConfig =
+      options.preset && ACOUSTIC_PROFILE_PRESETS[options.preset]
+        ? ACOUSTIC_PROFILE_PRESETS[options.preset]
+        : DEFAULT_ROOM_PROPERTIES;
 
     this.roomProperties = resolveRoomAcoustics({
       ...baseConfig,
@@ -578,7 +773,10 @@ export class SpatialAudioEngine {
       this.masterGain = this.audioContext.createGain();
       const initialVol = clamp(options.initialMasterGain ?? 1.0, 0.0, 1.0);
       if (this.masterGain.gain.setValueAtTime) {
-        this.masterGain.gain.setValueAtTime(initialVol, this.audioContext.currentTime);
+        this.masterGain.gain.setValueAtTime(
+          initialVol,
+          this.audioContext.currentTime,
+        );
       } else {
         this.masterGain.gain.value = initialVol;
       }
@@ -633,7 +831,7 @@ export class SpatialAudioEngine {
       // Synthesize initial impulse response and assign to Convolver A
       this.currentImpulseBuffer = generateProceduralImpulseResponse(
         this.audioContext,
-        this.roomProperties
+        this.roomProperties,
       );
       this.convolverA.buffer = this.currentImpulseBuffer;
 
@@ -665,7 +863,7 @@ export class SpatialAudioEngine {
    */
   public setRoomProperties(properties: Partial<RoomAcousticProperties>): void {
     if (this.isDisposed) return;
-    this.activePreset = 'custom';
+    this.activePreset = "custom";
     this.updateAcousticsInternal(properties);
   }
 
@@ -689,7 +887,7 @@ export class SpatialAudioEngine {
     };
   }
 
-  public getPreset(): AcousticProfilePreset | 'custom' {
+  public getPreset(): AcousticProfilePreset | "custom" {
     return this.activePreset;
   }
 
@@ -697,7 +895,7 @@ export class SpatialAudioEngine {
     return this.currentImpulseBuffer;
   }
 
-  public getActiveConvolverId(): 'A' | 'B' {
+  public getActiveConvolverId(): "A" | "B" {
     return this.activeConvolverId;
   }
 
@@ -715,12 +913,25 @@ export class SpatialAudioEngine {
 
     const listener = this.audioContext.listener;
     if (listener) {
-      if (listener.positionX && typeof listener.positionX.setValueAtTime === 'function') {
+      if (
+        listener.positionX &&
+        typeof listener.positionX.setValueAtTime === "function"
+      ) {
         listener.positionX.setValueAtTime(cx, this.audioContext.currentTime);
         listener.positionY.setValueAtTime(cy, this.audioContext.currentTime);
         listener.positionZ.setValueAtTime(cz, this.audioContext.currentTime);
-      } else if (typeof (listener as unknown as { setPosition?: (px: number, py: number, pz: number) => void }).setPosition === 'function') {
-        (listener as unknown as { setPosition: (px: number, py: number, pz: number) => void }).setPosition(cx, cy, cz);
+      } else if (
+        typeof (
+          listener as unknown as {
+            setPosition?: (px: number, py: number, pz: number) => void;
+          }
+        ).setPosition === "function"
+      ) {
+        (
+          listener as unknown as {
+            setPosition: (px: number, py: number, pz: number) => void;
+          }
+        ).setPosition(cx, cy, cz);
       }
     }
   }
@@ -734,7 +945,7 @@ export class SpatialAudioEngine {
     forwardZ: number,
     upX: number = 0,
     upY: number = 1,
-    upZ: number = 0
+    upZ: number = 0,
   ): void {
     if (this.isDisposed) return;
     const cfx = clamp(forwardX, -1, 1);
@@ -751,15 +962,42 @@ export class SpatialAudioEngine {
 
     const listener = this.audioContext.listener;
     if (listener) {
-      if (listener.forwardX && typeof listener.forwardX.setValueAtTime === 'function') {
+      if (
+        listener.forwardX &&
+        typeof listener.forwardX.setValueAtTime === "function"
+      ) {
         listener.forwardX.setValueAtTime(cfx, this.audioContext.currentTime);
         listener.forwardY.setValueAtTime(cfy, this.audioContext.currentTime);
         listener.forwardZ.setValueAtTime(cfz, this.audioContext.currentTime);
         listener.upX.setValueAtTime(cux, this.audioContext.currentTime);
         listener.upY.setValueAtTime(cuy, this.audioContext.currentTime);
         listener.upZ.setValueAtTime(cuz, this.audioContext.currentTime);
-      } else if (typeof (listener as unknown as { setOrientation?: (fx: number, fy: number, fz: number, ux: number, uy: number, uz: number) => void }).setOrientation === 'function') {
-        (listener as unknown as { setOrientation: (fx: number, fy: number, fz: number, ux: number, uy: number, uz: number) => void }).setOrientation(cfx, cfy, cfz, cux, cuy, cuz);
+      } else if (
+        typeof (
+          listener as unknown as {
+            setOrientation?: (
+              fx: number,
+              fy: number,
+              fz: number,
+              ux: number,
+              uy: number,
+              uz: number,
+            ) => void;
+          }
+        ).setOrientation === "function"
+      ) {
+        (
+          listener as unknown as {
+            setOrientation: (
+              fx: number,
+              fy: number,
+              fz: number,
+              ux: number,
+              uy: number,
+              uz: number,
+            ) => void;
+          }
+        ).setOrientation(cfx, cfy, cfz, cux, cuy, cuz);
       }
     }
   }
@@ -778,10 +1016,12 @@ export class SpatialAudioEngine {
   public addParticipant(
     id: string,
     source: AudioNode | MediaStream,
-    initialPosition?: { x: number; y: number; z: number }
+    initialPosition?: { x: number; y: number; z: number },
   ): ParticipantSpatialNode {
     if (this.isDisposed) {
-      throw new Error('Cannot add participant to a disposed SpatialAudioEngine.');
+      throw new Error(
+        "Cannot add participant to a disposed SpatialAudioEngine.",
+      );
     }
     this.removeParticipant(id);
 
@@ -807,12 +1047,25 @@ export class SpatialAudioEngine {
     pannerNode.coneOuterAngle = this.pannerDefaults.coneOuterAngle;
     pannerNode.coneOuterGain = this.pannerDefaults.coneOuterGain;
 
-    if (pannerNode.positionX && typeof pannerNode.positionX.setValueAtTime === 'function') {
+    if (
+      pannerNode.positionX &&
+      typeof pannerNode.positionX.setValueAtTime === "function"
+    ) {
       pannerNode.positionX.setValueAtTime(posX, this.audioContext.currentTime);
       pannerNode.positionY.setValueAtTime(posY, this.audioContext.currentTime);
       pannerNode.positionZ.setValueAtTime(posZ, this.audioContext.currentTime);
-    } else if (typeof (pannerNode as unknown as { setPosition?: (px: number, py: number, pz: number) => void }).setPosition === 'function') {
-      (pannerNode as unknown as { setPosition: (px: number, py: number, pz: number) => void }).setPosition(posX, posY, posZ);
+    } else if (
+      typeof (
+        pannerNode as unknown as {
+          setPosition?: (px: number, py: number, pz: number) => void;
+        }
+      ).setPosition === "function"
+    ) {
+      (
+        pannerNode as unknown as {
+          setPosition: (px: number, py: number, pz: number) => void;
+        }
+      ).setPosition(posX, posY, posZ);
     }
 
     // Connect Dry Path
@@ -842,7 +1095,12 @@ export class SpatialAudioEngine {
    * Updates a participant's 3D coordinates.
    * Note: This never regenerates the room impulse response buffer.
    */
-  public updateParticipantPosition(id: string, x: number, y: number, z: number): void {
+  public updateParticipantPosition(
+    id: string,
+    x: number,
+    y: number,
+    z: number,
+  ): void {
     if (this.isDisposed) return;
     const participant = this.participants.get(id);
     if (!participant) return;
@@ -853,19 +1111,37 @@ export class SpatialAudioEngine {
     participant.position = { x: cx, y: cy, z: cz };
 
     const panner = participant.pannerNode;
-    if (panner.positionX && typeof panner.positionX.setValueAtTime === 'function') {
+    if (
+      panner.positionX &&
+      typeof panner.positionX.setValueAtTime === "function"
+    ) {
       panner.positionX.setValueAtTime(cx, this.audioContext.currentTime);
       panner.positionY.setValueAtTime(cy, this.audioContext.currentTime);
       panner.positionZ.setValueAtTime(cz, this.audioContext.currentTime);
-    } else if (typeof (panner as unknown as { setPosition?: (px: number, py: number, pz: number) => void }).setPosition === 'function') {
-      (panner as unknown as { setPosition: (px: number, py: number, pz: number) => void }).setPosition(cx, cy, cz);
+    } else if (
+      typeof (
+        panner as unknown as {
+          setPosition?: (px: number, py: number, pz: number) => void;
+        }
+      ).setPosition === "function"
+    ) {
+      (
+        panner as unknown as {
+          setPosition: (px: number, py: number, pz: number) => void;
+        }
+      ).setPosition(cx, cy, cz);
     }
   }
 
   /**
    * Updates a participant's 3D orientation.
    */
-  public updateParticipantOrientation(id: string, ox: number, oy: number, oz: number): void {
+  public updateParticipantOrientation(
+    id: string,
+    ox: number,
+    oy: number,
+    oz: number,
+  ): void {
     if (this.isDisposed) return;
     const participant = this.participants.get(id);
     if (!participant) return;
@@ -876,12 +1152,25 @@ export class SpatialAudioEngine {
     participant.orientation = { x: cox, y: coy, z: coz };
 
     const panner = participant.pannerNode;
-    if (panner.orientationX && typeof panner.orientationX.setValueAtTime === 'function') {
+    if (
+      panner.orientationX &&
+      typeof panner.orientationX.setValueAtTime === "function"
+    ) {
       panner.orientationX.setValueAtTime(cox, this.audioContext.currentTime);
       panner.orientationY.setValueAtTime(coy, this.audioContext.currentTime);
       panner.orientationZ.setValueAtTime(coz, this.audioContext.currentTime);
-    } else if (typeof (panner as unknown as { setOrientation?: (fx: number, fy: number, fz: number) => void }).setOrientation === 'function') {
-      (panner as unknown as { setOrientation: (fx: number, fy: number, fz: number) => void }).setOrientation(cox, coy, coz);
+    } else if (
+      typeof (
+        panner as unknown as {
+          setOrientation?: (fx: number, fy: number, fz: number) => void;
+        }
+      ).setOrientation === "function"
+    ) {
+      (
+        panner as unknown as {
+          setOrientation: (fx: number, fy: number, fz: number) => void;
+        }
+      ).setOrientation(cox, coy, coz);
     }
   }
 
@@ -892,7 +1181,10 @@ export class SpatialAudioEngine {
 
     const target = clamp(volume, 0.0, 2.0);
     if (participant.dryGainNode.gain.setValueAtTime) {
-      participant.dryGainNode.gain.setValueAtTime(target, this.audioContext.currentTime);
+      participant.dryGainNode.gain.setValueAtTime(
+        target,
+        this.audioContext.currentTime,
+      );
     } else {
       participant.dryGainNode.gain.value = target;
     }
@@ -905,7 +1197,10 @@ export class SpatialAudioEngine {
 
     const target = clamp(sendLevel, 0.0, 2.0);
     if (participant.sendGainNode.gain.setValueAtTime) {
-      participant.sendGainNode.gain.setValueAtTime(target, this.audioContext.currentTime);
+      participant.sendGainNode.gain.setValueAtTime(
+        target,
+        this.audioContext.currentTime,
+      );
     } else {
       participant.sendGainNode.gain.value = target;
     }
@@ -1017,7 +1312,9 @@ export class SpatialAudioEngine {
    * Internal helper to synthesize new impulse response and crossfade seamlessly between
    * Convolver A and Convolver B to prevent audible clicks or audio-thread discontinuities.
    */
-  private updateAcousticsInternal(partialProps: Partial<RoomAcousticProperties>): void {
+  private updateAcousticsInternal(
+    partialProps: Partial<RoomAcousticProperties>,
+  ): void {
     const newProps = resolveRoomAcoustics({
       ...this.roomProperties,
       ...partialProps,
@@ -1037,7 +1334,8 @@ export class SpatialAudioEngine {
       dimsUnchanged &&
       newProps.rt60 === this.roomProperties.rt60 &&
       newProps.dampingFactor === this.roomProperties.dampingFactor &&
-      newProps.reflectionIntensity === this.roomProperties.reflectionIntensity &&
+      newProps.reflectionIntensity ===
+        this.roomProperties.reflectionIntensity &&
       newProps.preDelaySeconds === this.roomProperties.preDelaySeconds;
 
     this.roomProperties = newProps;
@@ -1048,7 +1346,10 @@ export class SpatialAudioEngine {
     }
 
     // Synthesize new impulse response buffer
-    const newBuffer = generateProceduralImpulseResponse(this.audioContext, this.roomProperties);
+    const newBuffer = generateProceduralImpulseResponse(
+      this.audioContext,
+      this.roomProperties,
+    );
     this.currentImpulseBuffer = newBuffer;
 
     // Ping-pong crossfade to inactive convolver
@@ -1060,7 +1361,7 @@ export class SpatialAudioEngine {
       this.activeTransitionTimer = null;
     }
 
-    if (this.activeConvolverId === 'A') {
+    if (this.activeConvolverId === "A") {
       // Load into inactive Convolver B
       this.convolverB.buffer = newBuffer;
 
@@ -1068,7 +1369,7 @@ export class SpatialAudioEngine {
       this.fadeGain(this.gainA, 1.0, 0.0, now, fadeDuration);
       this.fadeGain(this.gainB, 0.0, 1.0, now, fadeDuration);
 
-      this.activeConvolverId = 'B';
+      this.activeConvolverId = "B";
     } else {
       // Load into inactive Convolver A
       this.convolverA.buffer = newBuffer;
@@ -1077,18 +1378,30 @@ export class SpatialAudioEngine {
       this.fadeGain(this.gainB, 1.0, 0.0, now, fadeDuration);
       this.fadeGain(this.gainA, 0.0, 1.0, now, fadeDuration);
 
-      this.activeConvolverId = 'A';
+      this.activeConvolverId = "A";
     }
 
     // Schedule cleanup of inactive convolver after transition completes
-    this.activeTransitionTimer = setTimeout(() => {
-      this.activeTransitionTimer = null;
-    }, Math.ceil(fadeDuration * 1000) + 10);
+    this.activeTransitionTimer = setTimeout(
+      () => {
+        this.activeTransitionTimer = null;
+      },
+      Math.ceil(fadeDuration * 1000) + 10,
+    );
   }
 
-  private fadeGain(gainNode: GainNode, from: number, to: number, startTime: number, duration: number): void {
+  private fadeGain(
+    gainNode: GainNode,
+    from: number,
+    to: number,
+    startTime: number,
+    duration: number,
+  ): void {
     try {
-      if (gainNode.gain.setValueAtTime && gainNode.gain.linearRampToValueAtTime) {
+      if (
+        gainNode.gain.setValueAtTime &&
+        gainNode.gain.linearRampToValueAtTime
+      ) {
         gainNode.gain.setValueAtTime(from, startTime);
         gainNode.gain.linearRampToValueAtTime(to, startTime + duration);
       } else if (gainNode.gain.setValueAtTime) {
@@ -1126,7 +1439,7 @@ export class SpatialAudioEngine {
     this.updateListenerPosition(
       this.listenerPosition.x,
       this.listenerPosition.y,
-      this.listenerPosition.z
+      this.listenerPosition.z,
     );
     this.updateListenerOrientation(
       this.listenerOrientation.forward.x,
@@ -1134,7 +1447,7 @@ export class SpatialAudioEngine {
       this.listenerOrientation.forward.z,
       this.listenerOrientation.up.x,
       this.listenerOrientation.up.y,
-      this.listenerOrientation.up.z
+      this.listenerOrientation.up.z,
     );
   }
 
@@ -1152,6 +1465,11 @@ export class SpatialAudioEngine {
     if (this.activeTransitionTimer) {
       clearTimeout(this.activeTransitionTimer);
       this.activeTransitionTimer = null;
+    }
+
+    if (this.cleanupAutoResume) {
+      this.cleanupAutoResume();
+      this.cleanupAutoResume = null;
     }
 
     this.removeAllParticipants();
@@ -1176,7 +1494,7 @@ export class SpatialAudioEngine {
 
     if (this.ownsContext) {
       try {
-        if (typeof this.audioContext.close === 'function') {
+        if (typeof this.audioContext.close === "function") {
           this.audioContext.close().catch(() => {});
         }
       } catch {

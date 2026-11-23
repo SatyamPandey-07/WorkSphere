@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiResponse";
 
 export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ venueId: string }> }
+  _request: NextRequest,
+  { params }: { params: Promise<{ venueId: string }> },
 ) {
   try {
     const { venueId } = await params;
@@ -16,10 +16,10 @@ export async function GET(
       where: { id: venueId },
       include: {
         wifiTelemetry: {
-          orderBy: { timestamp: 'desc' },
-          take: 50
-        }
-      }
+          orderBy: { timestamp: "desc" },
+          take: 100,
+        },
+      },
     });
 
     if (!venue && !venueId.startsWith("mock-")) {
@@ -27,114 +27,152 @@ export async function GET(
     }
 
     const rawBaseSpeed = venue?.wifiSpeed;
-    const baseSpeed =
+    const venueBaseSpeed =
       typeof rawBaseSpeed === "number" &&
       Number.isFinite(rawBaseSpeed) &&
       rawBaseSpeed > 0
         ? rawBaseSpeed
-        : 50;
+        : null;
 
     const telemetryData = venue?.wifiTelemetry || [];
 
-    // Group telemetry data by hour and crowd level
-    const hourlyData: Record<number, { speeds: number[]; crowdLevels: string[] }> = {};
+    // Group actual recorded telemetry data by hour of day
+    const hourlyData: Record<
+      number,
+      {
+        downloads: number[];
+        uploads: number[];
+        latencies: number[];
+        crowdLevels: string[];
+      }
+    > = {};
+
     telemetryData.forEach((entry) => {
       if (!entry || !entry.timestamp) return;
-      const hour = new Date(entry.timestamp).getHours();
+      const date = new Date(entry.timestamp);
+      if (isNaN(date.getTime())) return;
+      const hour = date.getUTCHours();
       if (!Number.isFinite(hour) || hour < 0 || hour > 23) return;
+
       if (!hourlyData[hour]) {
-        hourlyData[hour] = { speeds: [], crowdLevels: [] };
+        hourlyData[hour] = {
+          downloads: [],
+          uploads: [],
+          latencies: [],
+          crowdLevels: [],
+        };
       }
-      if (typeof entry.download === "number" && Number.isFinite(entry.download) && entry.download > 0) {
-        hourlyData[hour].speeds.push(entry.download);
+
+      if (
+        typeof entry.download === "number" &&
+        Number.isFinite(entry.download) &&
+        entry.download >= 0
+      ) {
+        hourlyData[hour].downloads.push(entry.download);
       }
+
+      if (
+        typeof entry.upload === "number" &&
+        Number.isFinite(entry.upload) &&
+        entry.upload >= 0
+      ) {
+        hourlyData[hour].uploads.push(entry.upload);
+      }
+
+      if (
+        typeof entry.latency === "number" &&
+        Number.isFinite(entry.latency) &&
+        entry.latency >= 0
+      ) {
+        hourlyData[hour].latencies.push(entry.latency);
+      }
+
       if (entry.crowdLevel && typeof entry.crowdLevel === "string") {
         hourlyData[hour].crowdLevels.push(entry.crowdLevel);
       }
     });
 
     const predictions = [];
-    for (let hour = 8; hour <= 20; hour++) {
-      // 8 AM to 8 PM
-      let predictedSpeed = baseSpeed;
+    const recordedHours = Object.keys(hourlyData)
+      .map(Number)
+      .sort((a, b) => a - b);
+
+    for (const hour of recordedHours) {
+      const data = hourlyData[hour];
+      if (!data || data.downloads.length === 0) continue;
+
+      const avgDownload =
+        data.downloads.reduce((sum, s) => sum + s, 0) / data.downloads.length;
+
+      const avgUpload =
+        data.uploads.length > 0
+          ? data.uploads.reduce((sum, s) => sum + s, 0) / data.uploads.length
+          : 0;
+
+      const avgLatency =
+        data.latencies.length > 0
+          ? data.latencies.reduce((sum, s) => sum + s, 0) /
+            data.latencies.length
+          : 0;
+
       let crowdLevel = "unknown";
-      let averageUpload = Math.round(baseSpeed * 0.5);
-      let averageLatency = Math.round(baseSpeed * 0.1);
-
-      if (hourlyData[hour] && hourlyData[hour].speeds.length > 0) {
-        const validSpeeds = hourlyData[hour].speeds.filter(
-          (s) => typeof s === "number" && Number.isFinite(s) && s > 0,
-        );
-        const crowdLevels = hourlyData[hour].crowdLevels;
-
-        // Calculate average speed for the hour
-        const averageDownload =
-          validSpeeds.length > 0
-            ? validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length
-            : baseSpeed;
-        predictedSpeed = Math.round(
-          Number.isFinite(averageDownload) && averageDownload > 0
-            ? averageDownload
-            : baseSpeed,
-        );
-        averageUpload = Math.round(predictedSpeed * 0.5);
-        averageLatency = Math.max(1, Math.round(predictedSpeed * 0.1));
-
-        // Determine most common crowd level for the hour
-        if (crowdLevels.length > 0) {
-          const crowdCounts: Record<string, number> = {};
-          crowdLevels.forEach((level) => {
-            crowdCounts[level] = (crowdCounts[level] || 0) + 1;
-          });
-          crowdLevel =
-            Object.entries(crowdCounts).reduce(
-              (a, b) => (b[1] > a[1] ? b : a),
-              ["unknown", 0],
-            )[0] || "unknown";
-        }
-      } else {
-        // Fallback to heuristic if no historical data for the hour
-        let crowdMultiplier = 1.0;
-        if (hour >= 10 && hour <= 11) {
-          crowdMultiplier = 0.6; // 40% drop during morning rush
-          crowdLevel = "busy";
-        } else if (hour >= 14 && hour <= 16) {
-          crowdMultiplier = 0.5; // 50% drop during afternoon peak
-          crowdLevel = "very busy";
-        } else if (hour >= 12 && hour <= 13) {
-          crowdMultiplier = 0.8; // Lunchtime dip
-          crowdLevel = "moderate";
-        } else if (hour >= 17 && hour <= 18) {
-          crowdMultiplier = 0.7; // Evening transition
-          crowdLevel = "busy";
-        } else {
-          crowdMultiplier = 0.95; // Slightly below max at quiet times
-        }
-        const noise = Math.random() * 0.1 - 0.05; // +/- 5%
-        predictedSpeed = Math.round(baseSpeed * (crowdMultiplier + noise));
+      if (data.crowdLevels.length > 0) {
+        const crowdCounts: Record<string, number> = {};
+        data.crowdLevels.forEach((level) => {
+          crowdCounts[level] = (crowdCounts[level] || 0) + 1;
+        });
+        crowdLevel =
+          Object.entries(crowdCounts).reduce(
+            (a, b) => (b[1] > a[1] ? b : a),
+            ["unknown", 0],
+          )[0] || "unknown";
       }
 
-      // Ensure it doesn't go below 1 Mbps or return NaN
-      if (!Number.isFinite(predictedSpeed) || predictedSpeed < 1) predictedSpeed = 1;
-      if (!Number.isFinite(averageUpload) || averageUpload < 1) averageUpload = Math.round(predictedSpeed * 0.5);
-      if (!Number.isFinite(averageLatency) || averageLatency < 1) averageLatency = Math.max(1, Math.round(predictedSpeed * 0.1));
-
       const timeLabel =
-        hour === 12 ? "12 PM" : hour > 12 ? `${hour - 12} PM` : `${hour} AM`;
+        hour === 0
+          ? "12 AM"
+          : hour === 12
+            ? "12 PM"
+            : hour > 12
+              ? `${hour - 12} PM`
+              : `${hour} AM`;
+
+      const downloadSpeed = Math.round(avgDownload);
+      const uploadSpeed = Math.round(avgUpload);
+      const latencyMs = Math.round(avgLatency);
 
       predictions.push({
         time: timeLabel,
-        speed: predictedSpeed,
-        download: predictedSpeed,
-        upload: averageUpload,
-        latency: averageLatency,
+        speed: downloadSpeed,
+        download: downloadSpeed,
+        upload: uploadSpeed,
+        latency: latencyMs,
         crowd: crowdLevel,
+        sampleCount: data.downloads.length,
+        isEstimate: false,
       });
     }
 
-    return NextResponse.json({ predictions });
+    const hasTelemetry = predictions.length > 0;
+    const metadata = {
+      hasTelemetry,
+      insufficientData: !hasTelemetry,
+      totalSamples: telemetryData.length,
+      source: hasTelemetry
+        ? "telemetry"
+        : venueBaseSpeed !== null
+          ? "profile_estimate"
+          : "none",
+      venueBaseSpeed,
+    };
+
+    return NextResponse.json({ predictions, metadata });
   } catch (error) {
     console.error("Wifi prediction error:", error);
-    return apiError("Failed to generate wifi prediction", 500, "INTERNAL_ERROR");
+    return apiError(
+      "Failed to generate wifi prediction",
+      500,
+      "INTERNAL_ERROR",
+    );
   }
 }

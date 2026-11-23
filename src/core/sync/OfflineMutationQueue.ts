@@ -18,6 +18,123 @@ export const DEFAULT_BASE_DELAY_MS = 1000;
 export const DEFAULT_MAX_DELAY_MS = 30000;
 export const DEFAULT_DECORRELATED_FACTOR = 3;
 
+/** Minimum number of mutations in a batch or minimum payload bytes before compression is considered (#9728). */
+export const COMPRESSION_MIN_MUTATION_COUNT = 5;
+export const COMPRESSION_MIN_BYTES = 256;
+
+/**
+ * Checks whether native CompressionStream (gzip) or Node zlib is supported in current environment.
+ */
+export function isCompressionStreamSupported(): boolean {
+  if (
+    typeof CompressionStream !== "undefined" ||
+    (typeof globalThis !== "undefined" && typeof (globalThis as any).CompressionStream !== "undefined")
+  ) {
+    return true;
+  }
+  // Node / test environment fallback
+  try {
+    if (typeof require !== "undefined") {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const zlib = require("node:zlib") || require("zlib");
+      return typeof zlib?.gzipSync === "function";
+    }
+  } catch {}
+  return false;
+}
+
+/**
+ * Compresses an input string or Uint8Array using browser native CompressionStream (gzip),
+ * with graceful fallback to node:zlib in Node/Jest test environments.
+ * Returns null if compression is unsupported or fails.
+ */
+export async function compressPayloadGzip(
+  data: string | Uint8Array,
+): Promise<Uint8Array | null> {
+  const rawBytes =
+    typeof data === "string" ? new TextEncoder().encode(data) : data;
+
+  const CS =
+    typeof CompressionStream !== "undefined"
+      ? CompressionStream
+      : typeof globalThis !== "undefined"
+        ? (globalThis as any).CompressionStream
+        : undefined;
+
+  if (typeof CS === "function") {
+    try {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(rawBytes);
+          controller.close();
+        },
+      });
+
+      const compressedStream = stream.pipeThrough(new CS("gzip"));
+      const reader = compressedStream.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          total += value.length;
+        }
+      }
+
+      const output = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        output.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return output;
+    } catch (err) {
+      console.warn("[OfflineMutationQueue] Native CompressionStream failed, attempting fallback:", err);
+    }
+  }
+
+  // Node/Jest test environment fallback via node:zlib
+  try {
+    if (typeof require !== "undefined") {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const zlib = require("node:zlib") || require("zlib");
+      if (typeof zlib.gzipSync === "function") {
+        return new Uint8Array(zlib.gzipSync(Buffer.from(rawBytes)));
+      }
+    }
+  } catch (err) {
+    console.warn("[OfflineMutationQueue] zlib fallback failed:", err);
+  }
+
+  return null;
+}
+
+/**
+ * Evaluates whether a payload or batch is eligible for gzip compression.
+ * Must have > 5 mutations (or >= minBytes) and compression must not increase payload size.
+ */
+export function isCompressionEligible(
+  mutationCount: number,
+  originalByteLength: number,
+  compressedByteLength?: number,
+): boolean {
+  if (
+    mutationCount <= COMPRESSION_MIN_MUTATION_COUNT &&
+    originalByteLength < COMPRESSION_MIN_BYTES
+  ) {
+    return false;
+  }
+  if (
+    compressedByteLength !== undefined &&
+    compressedByteLength >= originalByteLength
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export type HttpMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 export type MutationStatus =
   | "PENDING"
@@ -534,12 +651,33 @@ export class OfflineMutationQueue<TPayload = unknown> {
         };
 
         try {
-          const bodyPayload =
+          let bodyPayload: BodyInit | undefined =
             mutation.method !== "DELETE" && mutation.payload !== undefined
               ? typeof mutation.payload === "string"
                 ? mutation.payload
                 : JSON.stringify(mutation.payload)
               : undefined;
+
+          // Compression support (#9728):
+          // Check if payload is eligible for compression (count > 5 if batch, or payload bytes >= minBytes)
+          if (typeof bodyPayload === "string" && bodyPayload.length > 0) {
+            const rawBytes = new TextEncoder().encode(bodyPayload);
+            const mutationCount =
+              Array.isArray((mutation.payload as any)?.mutations)
+                ? (mutation.payload as any).mutations.length
+                : 1;
+
+            if (isCompressionEligible(mutationCount, rawBytes.length)) {
+              const compressed = await compressPayloadGzip(rawBytes);
+              if (
+                compressed &&
+                isCompressionEligible(mutationCount, rawBytes.length, compressed.length)
+              ) {
+                bodyPayload = compressed;
+                headers["Content-Encoding"] = "gzip";
+              }
+            }
+          }
 
           const response = await this.fetchFn(mutation.endpoint || "", {
             method: mutation.method || "POST",

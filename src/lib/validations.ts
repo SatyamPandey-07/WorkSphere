@@ -6,6 +6,7 @@ import {
   MIN_USERNAME_LENGTH,
   MAX_USERNAME_LENGTH,
 } from "@/lib/profileSanitizer";
+import { sanitizeVenueFlagDetails } from "./validations/venueFlag";
 
 // =========================================================================
 // RESERVATION SCHEMAS
@@ -205,6 +206,7 @@ export const venueRatingSchema = z.object({
     .string()
     .trim()
     .max(1000)
+    .transform((val) => sanitizeVenueFlagDetails(val ?? ""))
     .refine((val) => val.length === 0 || val.length >= 3, {
       message: "Comment must be at least 3 characters if provided",
     })

@@ -395,8 +395,16 @@ self.addEventListener("sync", (event) => {
   if (event.tag === AVAILABILITY_SYNC_TAG) {
     event.waitUntil(syncAvailability());
   }
+
+  if (
+    event.tag === "sync-offline-mutations" ||
+    event.tag === "offline-mutation-sync"
+  ) {
+    event.waitUntil(syncOfflineMutations());
+
   if (event.tag === "nomad-checkin-sync") {
     event.waitUntil(syncNomadCheckins());
+
   }
 });
 
@@ -1066,6 +1074,204 @@ async function syncReceiptExports() {
   }
 }
 
+
+// Background Sync: process queued offline mutations with Decorrelated Jitter backoff (Issue #9618)
+let isSyncingOfflineMutations = false;
+let sw5xxDecorrelatedDelay = 1000;
+
+function calculateSWDecorrelatedJitter(prevDelay) {
+  const baseDelay = 1000;
+  const maxDelay = 30000;
+  const factor = 3;
+  const effectiveBase = Math.min(baseDelay, maxDelay);
+  const effectivePrev =
+    typeof prevDelay === "number" && prevDelay >= effectiveBase
+      ? prevDelay
+      : effectiveBase;
+  const ceiling = Math.min(maxDelay, effectivePrev * factor);
+  if (ceiling <= effectiveBase) return effectiveBase;
+  return Math.round(effectiveBase + (ceiling - effectiveBase) * Math.random());
+}
+
+async function getOfflineMutationsFromDB() {
+  if (typeof indexedDB === "undefined") return [];
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 1);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains("offline_mutations")) {
+          db.createObjectStore("offline_mutations", { keyPath: "id" });
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("offline_mutations")) {
+          resolve([]);
+          return;
+        }
+        const tx = db.transaction("offline_mutations", "readonly");
+        const store = tx.objectStore("offline_mutations");
+        const getReq = store.getAll();
+        getReq.onsuccess = () => resolve(getReq.result || []);
+        getReq.onerror = () => resolve([]);
+      };
+      req.onerror = () => resolve([]);
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+async function removeOfflineMutationFromDB(id) {
+  if (typeof indexedDB === "undefined") return;
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 1);
+      req.onsuccess = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("offline_mutations")) {
+          resolve();
+          return;
+        }
+        const tx = db.transaction("offline_mutations", "readwrite");
+        tx.objectStore("offline_mutations").delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      };
+      req.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+async function syncOfflineMutations() {
+  if (isSyncingOfflineMutations) return;
+  isSyncingOfflineMutations = true;
+
+  try {
+    await withIdbLock(async () => {
+      // 1. Process mutations from dedicated persistent offline_mutations store
+      try {
+        const persistentMutations = await getOfflineMutationsFromDB();
+        for (const mutation of persistentMutations) {
+          try {
+            const endpoint = mutation.endpoint || "/api/bookings";
+            const method = mutation.method || "POST";
+            const headers = {
+              "Content-Type": "application/json",
+              "X-Idempotency-Key": mutation.idempotencyKey || mutation.id,
+              ...(mutation.headers || {}),
+            };
+            const body =
+              method !== "DELETE" && mutation.payload !== undefined
+                ? typeof mutation.payload === "string"
+                  ? mutation.payload
+                  : JSON.stringify(mutation.payload)
+                : undefined;
+
+            const response = await fetch(endpoint, {
+              method,
+              headers,
+              body,
+            });
+
+            if (response.ok) {
+              await removeOfflineMutationFromDB(mutation.id);
+              sw5xxDecorrelatedDelay = 1000;
+            } else if (response.status >= 500 && response.status < 600) {
+              sw5xxDecorrelatedDelay = calculateSWDecorrelatedJitter(
+                sw5xxDecorrelatedDelay,
+              );
+              if (sw5xxDecorrelatedDelay > 0) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, sw5xxDecorrelatedDelay),
+                );
+              }
+            } else if (response.status >= 400 && response.status < 500) {
+              await removeOfflineMutationFromDB(mutation.id);
+            }
+          } catch (err) {
+            if (isNetworkError(err)) break;
+            console.error(
+              "[SW] Error syncing WorkSphereOfflineMutationsDB item:",
+              err,
+            );
+            break;
+          }
+        }
+      } catch {
+        // Continue to pendingActions
+      }
+
+      // 2. Process legacy pendingActions mutations
+      const db = await openIndexedDB();
+      const actions = await getPendingActions(db, [
+        "mutation",
+        "booking",
+        "booking-mutation",
+        "offline-mutation",
+      ]);
+
+      if (!actions || actions.length === 0) return;
+
+      for (const action of actions) {
+        try {
+          const endpoint = action.endpoint || action.url || "/api/bookings";
+          const method = action.method || "POST";
+          const headers = {
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": action.idempotencyKey || String(action.id),
+            ...(action.headers || {}),
+          };
+
+          const body =
+            method !== "DELETE" && action.payload !== undefined
+              ? typeof action.payload === "string"
+                ? action.payload
+                : JSON.stringify(action.payload)
+              : undefined;
+
+          const response = await fetch(endpoint, {
+            method,
+            headers,
+            body,
+          });
+
+          if (response.ok) {
+            await removePendingAction(db, action.id);
+            sw5xxDecorrelatedDelay = 1000;
+          } else if (response.status >= 500 && response.status < 600) {
+            sw5xxDecorrelatedDelay = calculateSWDecorrelatedJitter(
+              sw5xxDecorrelatedDelay,
+            );
+            if (sw5xxDecorrelatedDelay > 0) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, sw5xxDecorrelatedDelay),
+              );
+            }
+          } else if (response.status >= 400 && response.status < 500) {
+            // Permanent client error: remove bad action to prevent toxic queue poison
+            await removePendingAction(db, action.id);
+          }
+        } catch (err) {
+          if (isNetworkError(err)) {
+            console.warn(
+              "[SW] syncOfflineMutations: Network error — preserving mutations for next sync.",
+            );
+            break;
+          }
+          console.error("[SW] Failed to sync offline mutation:", err);
+          break;
+        }
+      }
+    });
+  } catch (error) {
+    console.error("[SW] Offline mutations sync encountered error:", error);
+  } finally {
+    isSyncingOfflineMutations = false;
+
 // Background Sync for offline desk check-ins (Issue #7427)
 let isSyncingCheckins = false;
 async function syncNomadCheckins() {
@@ -1142,6 +1348,7 @@ async function syncNomadCheckins() {
     console.error("[SW] syncNomadCheckins error:", err);
   } finally {
     isSyncingCheckins = false;
+
   }
 }
 

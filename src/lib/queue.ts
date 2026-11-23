@@ -81,3 +81,6 @@ export async function updateJobStatus(
     await requireRedis().hset(`pdf:job:${jobId}`, cleanUpdates);
   }
 }
+
+// ─── Offline Mutation Queue Integration (Issue #9618) ───────────────────────────
+export * from "@/core/sync/OfflineMutationQueue";

@@ -988,6 +988,8 @@ model VenueSeatWaitlist {
   @@index([userId, status])
   @@index([seatId])
   @@index([status, claimExpiresAt])
+  // Note: Partial unique index "VenueSeatWaitlist_active_uniqueness_idx" on (userId, venueId, date, time)
+  // WHERE status IN ('ACTIVE', 'NOTIFIED') is managed via migration to avoid blocking re-joins after CANCELLED/CLAIMED/EXPIRED.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

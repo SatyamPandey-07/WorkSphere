@@ -24,5 +24,11 @@ export {
   NomadPassportCoinSkeleton,
 } from "./NomadPassportCoin";
 export type { NomadPassportCoinProps } from "./NomadPassportCoin";
-export { NomadPassportCertificate } from "./NomadPassportCertificate";
-export type { NomadPassportCertificateProps } from "./NomadPassportCertificate";
+export {
+  NomadCertificateModal,
+  isEligibleForAttendanceCertificate,
+} from "./NomadCertificateModal";
+export type {
+  NomadCertificateModalProps,
+  AttendanceBookingData,
+} from "./NomadCertificateModal";

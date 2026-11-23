@@ -1,124 +1,101 @@
-import { createHmac, timingSafeEqual } from "crypto";
-
-export interface IotWebhookVerificationResult {
-  isValid: boolean;
-  reason?: string;
-  timestamp?: number;
-}
-
-export interface VerifyIotWebhookSignatureOptions {
-  /**
-   * Maximum acceptable difference between the webhook timestamp and the server's
-   * current time in seconds. Defaults to 300 seconds (5 minutes). Set to 0 to disable.
-   */
-  toleranceSeconds?: number;
-  /**
-   * Override current server timestamp (in seconds) for testing purposes.
-   */
-  currentTimestamp?: number;
-}
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Signs a payload using HMAC-SHA256 according to the WorkSphere specification:
- * Header format: `X-WorkSphere-Signature: t=${timestamp},v1=${signature}`
- * Signed string format: `${timestamp}.${rawBody}`
+ * Validates whether a given string is a non-empty, even-length, strict hexadecimal string.
+ * This prevents Node.js `Buffer.from(str, 'hex')` from permissively decoding malformed
+ * inputs (e.g. truncated odd-length hex or non-hex characters).
  */
-export function signIotWebhookPayload(
-  rawBody: string,
-  secret: string,
-  timestamp: number = Math.floor(Date.now() / 1000),
-): { header: string; signature: string; timestamp: number } {
-  const cleanSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret;
-  const hmac = createHmac("sha256", cleanSecret);
-  hmac.update(`${timestamp}.${rawBody}`);
-  const signature = hmac.digest("hex");
-  const header = `t=${timestamp},v1=${signature}`;
-
-  return {
-    header,
-    signature,
-    timestamp,
-  };
+export function isValidHex(str: unknown): str is string {
+  if (typeof str !== "string" || str.length === 0 || str.length % 2 !== 0) {
+    return false;
+  }
+  return /^[0-9a-fA-F]+$/.test(str);
 }
 
 /**
- * Verifies an incoming `X-WorkSphere-Signature` header against the raw request body and shared secret.
+ * Safely compares two hexadecimal HMAC/webhook signatures in constant time
+ * to prevent timing side-channel attacks.
  *
  * Requirements:
- * 1. Secret must be present and non-empty (fails closed).
- * 2. Signature header must follow `t=${timestamp},v1=${signature}` format.
- * 3. Timestamp freshness is validated against tolerance (default 300 seconds).
- * 4. HMAC-SHA256 is computed using the raw request body and timestamp.
- * 5. Uses `crypto.timingSafeEqual` with preceding buffer length check to avoid timing attacks or exceptions.
- * 6. Never throws unhandled exceptions or leaks secrets/sensitive data.
+ * 1. Convert both signatures into Buffers using hex encoding after verifying hex validity.
+ * 2. Check buffer lengths before calling `timingSafeEqual`, returning `false` for mismatched
+ *    lengths without throwing a `RangeError`.
+ * 3. Handle malformed, null, undefined, or empty signatures safely without throwing.
+ * 4. Delegate to Node.js `crypto.timingSafeEqual` for equal-length valid inputs.
+ *
+ * @param signature The received signature string (hex-encoded)
+ * @param computedSignature The expected/computed signature string (hex-encoded)
+ * @returns boolean indicating if the signatures match in constant time
  */
-export function verifyIotWebhookSignature(
+export function safeCompareSignatures(
+  signature: unknown,
+  computedSignature: unknown,
+): boolean {
+  try {
+    if (!isValidHex(signature) || !isValidHex(computedSignature)) {
+      return false;
+    }
+
+    const received = Buffer.from(signature as string, "hex");
+    const expected = Buffer.from(computedSignature as string, "hex");
+
+    if (received.length === 0 || expected.length === 0 || received.length !== expected.length) {
+      return false;
+    }
+
+    return timingSafeEqual(received, expected);
+  } catch {
+    return false;
+  }
+}
+
+export interface WebhookVerificationOptions {
+  /**
+   * Secret key for computing HMAC. If starts with "whsec_", prefix can be stripped.
+   */
+  secret: string;
+  /**
+   * Signature algorithm, defaults to "sha256".
+   */
+  algorithm?: string;
+  /**
+   * Prefix in signature header, e.g. "sha256=" or none.
+   */
+  prefix?: string;
+}
+
+/**
+ * Computes an HMAC digest for raw payload using specified secret and algorithm (default sha256).
+ */
+export function computeHmacSignature(
+  rawBody: string,
+  secret: string,
+  algorithm: string = "sha256",
+): string {
+  const cleanSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  return createHmac(algorithm, cleanSecret).update(rawBody, "utf8").digest("hex");
+}
+
+/**
+ * Verifies standard HMAC signature from webhook headers.
+ * Extracts signature (stripping optional prefix like "sha256="),
+ * calculates expected HMAC, and uses `safeCompareSignatures`.
+ */
+export function verifyHmacWebhookSignature(
   rawBody: string,
   signatureHeader: string | null | undefined,
   secret: string | null | undefined,
-  options?: VerifyIotWebhookSignatureOptions,
-): IotWebhookVerificationResult {
-  if (!secret || typeof secret !== "string" || secret.trim() === "") {
-    return { isValid: false, reason: "MISSING_SECRET" };
+  prefix: string = "sha256=",
+): boolean {
+  if (!signatureHeader || !secret || typeof signatureHeader !== "string" || typeof secret !== "string") {
+    return false;
   }
 
-  if (!signatureHeader || typeof signatureHeader !== "string") {
-    return { isValid: false, reason: "MISSING_SIGNATURE_HEADER" };
+  let signature = signatureHeader.trim();
+  if (prefix && signature.toLowerCase().startsWith(prefix.toLowerCase())) {
+    signature = signature.slice(prefix.length).trim();
   }
 
-  // Parse `t=${timestamp},v1=${signature}`
-  const parts = signatureHeader.split(",");
-  let timestampStr: string | null = null;
-  let signature: string | null = null;
-
-  for (const part of parts) {
-    const [key, ...rest] = part.trim().split("=");
-    const value = rest.join("=");
-    if (key === "t") timestampStr = value;
-    if (key === "v1") signature = value;
-  }
-
-  if (!timestampStr || !signature) {
-    return { isValid: false, reason: "INVALID_SIGNATURE_FORMAT" };
-  }
-
-  const timestamp = parseInt(timestampStr, 10);
-  if (isNaN(timestamp) || timestamp <= 0) {
-    return { isValid: false, reason: "INVALID_TIMESTAMP" };
-  }
-
-  // Validate timestamp freshness (tolerance window: +/- toleranceSeconds, default 300s)
-  const tolerance = options?.toleranceSeconds ?? 300;
-  const nowSec = options?.currentTimestamp ?? Math.floor(Date.now() / 1000);
-  if (tolerance > 0 && Math.abs(nowSec - timestamp) > tolerance) {
-    return { isValid: false, reason: "TIMESTAMP_OUT_OF_TOLERANCE", timestamp };
-  }
-
-  try {
-    const cleanSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret;
-    const hmac = createHmac("sha256", cleanSecret);
-    hmac.update(`${timestamp}.${rawBody}`);
-    const expectedSignature = hmac.digest("hex");
-
-    const sigBuffer = Buffer.from(signature, "hex");
-    const expectedBuffer = Buffer.from(expectedSignature, "hex");
-
-    // Ensure hex length is even and buffer length matches expected 32 bytes (256 bits)
-    if (
-      signature.length !== expectedSignature.length ||
-      sigBuffer.length !== expectedBuffer.length ||
-      sigBuffer.length === 0
-    ) {
-      return { isValid: false, reason: "SIGNATURE_MISMATCH", timestamp };
-    }
-
-    const matches = timingSafeEqual(sigBuffer, expectedBuffer);
-    if (!matches) {
-      return { isValid: false, reason: "SIGNATURE_MISMATCH", timestamp };
-    }
-
-    return { isValid: true, timestamp };
-  } catch {
-    return { isValid: false, reason: "VERIFICATION_ERROR", timestamp };
-  }
+  const expectedSignature = computeHmacSignature(rawBody, secret);
+  return safeCompareSignatures(signature, expectedSignature);
 }

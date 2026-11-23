@@ -1,7 +1,9 @@
-import { calculateDistanceMeters, Coordinates } from '../geo/geofence';
-
-// In-memory or Redis-backed state tracker for exit durations
-const exitTrackingMap = new Map<string, { startTime: number; venueId: string }>();
+import {
+  calculateDistanceMeters,
+  Coordinates,
+  GEOFENCE_RADIUS_METERS,
+} from "../geo/geofence";
+import { prisma } from "@/lib/prisma";
 
 // SSE clients broadcaster registry
 const sseClients = new Set<ReadableStreamDefaultController>();
@@ -10,16 +12,28 @@ export function registerSseClient(controller: ReadableStreamDefaultController) {
   sseClients.add(controller);
 }
 
-export function unregisterSseClient(controller: ReadableStreamDefaultController) {
+export function unregisterSseClient(
+  controller: ReadableStreamDefaultController,
+) {
   sseClients.delete(controller);
 }
 
-export function broadcastAvailabilityUpdate(venueId: string, deskId: string, status: string) {
-  const payload = JSON.stringify({ type: 'AVAILABILITY_UPDATE', venueId, deskId, status, timestamp: Date.now() });
+export function broadcastAvailabilityUpdate(
+  venueId: string,
+  deskId: string,
+  status: string,
+) {
+  const payload = JSON.stringify({
+    type: "AVAILABILITY_UPDATE",
+    venueId,
+    deskId,
+    status,
+    timestamp: Date.now(),
+  });
   for (const client of sseClients) {
     try {
       client.enqueue(new TextEncoder().encode(`data: ${payload}\n\n`));
-    } catch (e) {
+    } catch {
       sseClients.delete(client);
     }
   }
@@ -41,47 +55,99 @@ export async function processGeofenceExitCheck({
   venueCoords,
 }: ProcessGeofenceExitParams): Promise<{ status: string; message: string }> {
   const distance = calculateDistanceMeters(userCoords, venueCoords);
-  const GEOFENCE_THRESHOLD_METERS = 250;
   const DURATION_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 
-  if (distance <= GEOFENCE_THRESHOLD_METERS) {
-    // User is back within boundary, clear exit timer
-    exitTrackingMap.delete(bookingId);
-    return { status: 'INSIDE', message: 'User is within venue geofence boundary.' };
+  // Retrieve authoritative booking from database to check durable tracking state
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+  });
+
+  if (!booking) {
+    return { status: "NOT_FOUND", message: "Booking not found." };
   }
 
-  const now = Date.now();
-  let tracking = exitTrackingMap.get(bookingId);
-
-  if (!tracking || tracking.venueId !== venueId) {
-    // First detection outside boundary
-    exitTrackingMap.set(bookingId, { startTime: now, venueId });
+  // If booking is already completed or inactive, return immediately without duplicate transitions
+  if (booking.status === "COMPLETED") {
     return {
-      status: 'OUTSIDE_PENDING',
+      status: "COMPLETED",
+      message: "Booking is already completed.",
+    };
+  }
+
+  const activeStatuses = ["CONFIRMED", "PENDING", "CHECKED_IN"];
+  if (!activeStatuses.includes(booking.status)) {
+    return {
+      status: "INACTIVE",
+      message: `Booking is not active (current status: ${booking.status}).`,
+    };
+  }
+
+  // Case 1: User is inside the geofence boundary
+  if (distance <= GEOFENCE_RADIUS_METERS) {
+    // If exit tracking was previously recorded, reset it in database
+    if (booking.geofenceExitAt) {
+      await prisma.booking.updateMany({
+        where: { id: bookingId, geofenceExitAt: { not: null } },
+        data: { geofenceExitAt: null },
+      });
+    }
+    return {
+      status: "INSIDE",
+      message: "User is within venue geofence boundary.",
+    };
+  }
+
+  // Case 2: User is outside the geofence boundary
+  const now = Date.now();
+
+  // Subcase 2A: First detection outside boundary -> Persist exit timestamp in database
+  if (!booking.geofenceExitAt) {
+    await prisma.booking.updateMany({
+      where: {
+        id: bookingId,
+        geofenceExitAt: null,
+        status: { in: ["CONFIRMED", "PENDING", "CHECKED_IN"] },
+      },
+      data: { geofenceExitAt: new Date(now) },
+    });
+    return {
+      status: "OUTSIDE_PENDING",
       message: `User is ${Math.round(distance)}m away. Exit timer started.`,
     };
   }
 
-  const elapsedTime = now - tracking.startTime;
+  // Subcase 2B: Continued absence -> Calculate elapsed duration from persisted timestamp
+  const startTime = new Date(booking.geofenceExitAt).getTime();
+  const elapsedTime = now - startTime;
 
   if (elapsedTime > DURATION_THRESHOLD_MS) {
-    // Exceeded 30 minutes outside boundary -> Complete booking and release desk
-    exitTrackingMap.delete(bookingId);
+    // Exceeded 30 minutes outside boundary -> Atomically complete booking and release desk
+    const updateResult = await prisma.booking.updateMany({
+      where: {
+        id: bookingId,
+        status: { in: ["CONFIRMED", "PENDING", "CHECKED_IN"] },
+      },
+      data: {
+        status: "COMPLETED",
+        geofenceExitAt: null,
+      },
+    });
 
-    // TODO: Update database booking status to COMPLETED and free desk
-    // await db.booking.update({ where: { id: bookingId }, data: { status: 'COMPLETED' } });
-
-    // Broadcast real-time availability via SSE
-    broadcastAvailabilityUpdate(venueId, deskId, 'AVAILABLE');
+    // Broadcast real-time availability via SSE ONLY if this atomic transaction succeeded
+    // This prevents repeated requests or concurrent instances from releasing the same seat multiple times
+    if (updateResult.count > 0) {
+      broadcastAvailabilityUpdate(venueId, deskId, "AVAILABLE");
+    }
 
     return {
-      status: 'COMPLETED',
-      message: 'Booking automatically completed due to extended absence. Desk released.',
+      status: "COMPLETED",
+      message:
+        "Booking automatically completed due to extended absence. Desk released.",
     };
   }
 
   return {
-    status: 'OUTSIDE_COUNTDOWN',
+    status: "OUTSIDE_COUNTDOWN",
     message: `User outside boundary for ${Math.round(elapsedTime / 1000)}s. Threshold is 30 mins.`,
   };
 }

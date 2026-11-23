@@ -7,7 +7,7 @@ const mockPush = jest.fn();
 const mockDelete = jest.fn();
 const mockGet = jest.fn();
 const mockSet = jest.fn();
-const mockToArray = jest.fn().mockReturnValue([]);
+const _mockToArray = jest.fn().mockReturnValue([]);
 const mockOn = jest.fn();
 const mockOff = jest.fn();
 const mockDestroy = jest.fn();
@@ -19,7 +19,7 @@ const mockSetLocalState = jest.fn();
 const mockGetStates = jest.fn().mockReturnValue(new Map());
 const mockUndo = jest.fn();
 const mockRedo = jest.fn();
-const mockLength = 0;
+const _mockLength = 0;
 
 class MockYArray {
   private items: any[] = [];
@@ -194,11 +194,17 @@ describe("useCanvasWhiteboard", () => {
       act(() => {
         result.current.broadcastStroke("stroke-4918", [0, 0, 10, 10]);
         result.current.broadcastStroke("stroke-4918", [0, 0, 10, 10, 20, 20]);
-        result.current.broadcastStroke("stroke-4918", [0, 0, 10, 10, 20, 20, 30, 30]);
+        result.current.broadcastStroke(
+          "stroke-4918",
+          [0, 0, 10, 10, 20, 20, 30, 30],
+        );
       });
 
       // Before 16ms interval, updates are buffered and not yet committed
-      expect(mockSet).not.toHaveBeenCalledWith("points", [0, 0, 10, 10, 20, 20, 30, 30]);
+      expect(mockSet).not.toHaveBeenCalledWith(
+        "points",
+        [0, 0, 10, 10, 20, 20, 30, 30],
+      );
 
       // Advance by throttle interval (16ms)
       act(() => {
@@ -206,7 +212,10 @@ describe("useCanvasWhiteboard", () => {
       });
 
       // Dispatched batched points in a single transaction
-      expect(mockSet).toHaveBeenCalledWith("points", [0, 0, 10, 10, 20, 20, 30, 30]);
+      expect(mockSet).toHaveBeenCalledWith(
+        "points",
+        [0, 0, 10, 10, 20, 20, 30, 30],
+      );
     });
 
     it("throttles high-frequency updateShape point broadcasts during mouse move", () => {
@@ -268,4 +277,3 @@ describe("useCanvasWhiteboard", () => {
     });
   });
 });
-

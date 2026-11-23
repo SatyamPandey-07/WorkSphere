@@ -97,12 +97,27 @@ export function useUserLocation(options: UseUserLocationOptions = {}) {
 
   const isMountedRef = useRef(true);
 
-  // Fallback to server IP geolocation API (/api/routing/ip-location) or default coordinates
+  // Fallback to server IP geolocation API (/api/location) or default coordinates
   const fallbackToIp = useCallback(async () => {
+    const isStandardDefault =
+      defaultLocation.latitude === DEFAULT_FALLBACK_LOCATION.latitude &&
+      defaultLocation.longitude === DEFAULT_FALLBACK_LOCATION.longitude;
+
     try {
-      const response = await fetch("/api/routing/ip-location");
+      const response = await fetch("/api/location");
       if (response.ok) {
         const data = await response.json();
+
+        // If the server-side API fell back to its own default static coordinates,
+        // treat it as an unfulfilled IP resolution and apply the hook's configured defaultLocation.
+        if (data.source === "default") {
+          if (!isMountedRef.current) return;
+          setLocation(defaultLocation);
+          setLocationName(isStandardDefault ? "San Francisco, CA" : null);
+          setSource("default");
+          return;
+        }
+
         const resolvedLat = data.latitude ?? data.lat;
         const resolvedLng = data.longitude ?? data.lng;
 
@@ -127,7 +142,7 @@ export function useUserLocation(options: UseUserLocationOptions = {}) {
 
     if (!isMountedRef.current) return;
     setLocation(defaultLocation);
-    setLocationName("San Francisco, CA");
+    setLocationName(isStandardDefault ? "San Francisco, CA" : null);
     setSource("default");
   }, [defaultLocation]);
 

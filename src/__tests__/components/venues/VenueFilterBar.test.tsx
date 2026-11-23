@@ -37,4 +37,38 @@ describe('VenueFilterBar', () => {
       '1 amenity filter active.'
     );
   });
+
+  it('renders standing desks and external monitors filter chips (#9759)', () => {
+    const onQueryParamsChange = jest.fn();
+    render(
+      <VenueFilterBar
+        existingSearchParams="q=Pune"
+        onQueryParamsChange={onQueryParamsChange}
+      />
+    );
+
+    const standingDeskChip = screen.getByTestId('venue-filter-chip-standing_desks');
+    expect(standingDeskChip).toBeInTheDocument();
+    expect(standingDeskChip).toHaveTextContent('Standing Desk');
+    expect(standingDeskChip).toHaveAttribute('aria-pressed', 'false');
+
+    const monitorChip = screen.getByTestId('venue-filter-chip-external_monitors');
+    expect(monitorChip).toBeInTheDocument();
+    expect(monitorChip).toHaveTextContent('External Monitor (4K/USB-C)');
+    expect(monitorChip).toHaveAttribute('aria-pressed', 'false');
+
+    // Toggle standing desks
+    fireEvent.click(standingDeskChip);
+    expect(standingDeskChip).toHaveAttribute('aria-pressed', 'true');
+    expect(onQueryParamsChange).toHaveBeenCalledWith(
+      'q=Pune&amenities=standing_desks&standing_desks=true'
+    );
+
+    // Toggle external monitors
+    fireEvent.click(monitorChip);
+    expect(monitorChip).toHaveAttribute('aria-pressed', 'true');
+    expect(onQueryParamsChange).toHaveBeenCalledWith(
+      'q=Pune&amenities=standing_desks%2Cexternal_monitors&standing_desks=true&external_monitors=true'
+    );
+  });
 });

@@ -3478,7 +3478,6 @@ export function subscribeToEscrowConfirmation(
       if (isExpired && !stateMachine.isDone() && !isUnsubscribed) {
         let finalCheckSucceeded = false;
         try {
-
           let finalRes: SignatureStatus | null = null;
           if (options.pollSignatureStatus) {
             finalRes = await options.pollSignatureStatus(cleanSignature);
@@ -3501,10 +3500,6 @@ export function subscribeToEscrowConfirmation(
             finalRes = res.value?.[0] ?? null;
             finalCheckSucceeded = true;
           }
-
-          const finalRes: SignatureStatus | null = await fetchSignatureStatus();
-          finalCheckSucceeded = true;
-
 
           if (finalRes && !finalRes.err) {
             const finalCommitment = finalRes.confirmationStatus;

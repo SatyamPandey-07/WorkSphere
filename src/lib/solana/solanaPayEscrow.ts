@@ -127,7 +127,11 @@ function readHeaderValue(headers: unknown, name: string): string | undefined {
   for (const key of Object.keys(record)) {
     if (key.toLowerCase() === lowerName) {
       const val = record[key];
-      return typeof val === "string" ? val : typeof val === "number" ? String(val) : undefined;
+      return typeof val === "string"
+        ? val
+        : typeof val === "number"
+          ? String(val)
+          : undefined;
     }
   }
 
@@ -139,7 +143,10 @@ function readHeaderValue(headers: unknown, name: string): string | undefined {
  * Supports integer delta-seconds, floating seconds, and HTTP-date formats.
  * Returns undefined if header is absent, invalid, or negative.
  */
-export function parseRetryAfterMs(error: unknown, now: number = Date.now()): number | undefined {
+export function parseRetryAfterMs(
+  error: unknown,
+  now: number = Date.now(),
+): number | undefined {
   if (!error || typeof error !== "object") return undefined;
 
   const candidate = error as {
@@ -149,9 +156,15 @@ export function parseRetryAfterMs(error: unknown, now: number = Date.now()): num
   };
 
   // If error has a direct retryAfter property (numeric seconds or ms)
-  if (typeof candidate.retryAfter === "number" && Number.isFinite(candidate.retryAfter) && candidate.retryAfter > 0) {
+  if (
+    typeof candidate.retryAfter === "number" &&
+    Number.isFinite(candidate.retryAfter) &&
+    candidate.retryAfter > 0
+  ) {
     // If > 1000, likely already in ms, otherwise seconds
-    return candidate.retryAfter > 1000 ? Math.round(candidate.retryAfter) : Math.round(candidate.retryAfter * 1000);
+    return candidate.retryAfter > 1000
+      ? Math.round(candidate.retryAfter)
+      : Math.round(candidate.retryAfter * 1000);
   }
 
   const rawHeader =
@@ -165,7 +178,9 @@ export function parseRetryAfterMs(error: unknown, now: number = Date.now()): num
   // 1. Delta-seconds format (e.g. "3", "2.5")
   if (/^\d+(\.\d+)?$/.test(trimmed)) {
     const sec = parseFloat(trimmed);
-    return Number.isFinite(sec) && sec >= 0 ? Math.round(sec * 1000) : undefined;
+    return Number.isFinite(sec) && sec >= 0
+      ? Math.round(sec * 1000)
+      : undefined;
   }
 
   // 2. HTTP-date format (e.g. "Wed, 21 Oct 2026 07:28:00 GMT")
@@ -189,12 +204,17 @@ export function computeRpc429Delay(
   const maxDelay = options.maxDelayMs ?? DEFAULT_RPC_429_MAX_DELAY_MS;
   const randomFn = options.randomFn ?? Math.random;
 
-  const expDelay = Math.min(maxDelay, baseDelay * Math.pow(2, Math.max(0, attempt)));
+  const expDelay = Math.min(
+    maxDelay,
+    baseDelay * Math.pow(2, Math.max(0, attempt)),
+  );
   const rand = randomFn();
-  const validRand = typeof rand === "number" && Number.isFinite(rand) && rand >= 0 && rand <= 1 ? rand : 0.5;
+  const validRand =
+    typeof rand === "number" && Number.isFinite(rand) && rand >= 0 && rand <= 1
+      ? rand
+      : 0.5;
   return Math.round(validRand * expDelay);
 }
-
 
 export type SeatConfirmationMode = "websocket" | "polling";
 
@@ -321,7 +341,6 @@ export interface ReserveSeatOptions {
    * Optional AbortSignal to cleanly cancel the reservation and clean up active polling and timers (#9448).
    */
   signal?: AbortSignal;
-
 }
 
 interface ActiveSubscription {
@@ -451,12 +470,6 @@ export async function fetchLatestBlockhashWithBackoff(
     }
   }
   throw lastErr;
-
-  rpc429ConsecutiveCount?: number;
-  timeoutEndMs?: number;
-  rpc429RetryOptions?: Rpc429RetryOptions;
-  activeConnectionIsFallback?: boolean;
-
 }
 
 /**
@@ -685,7 +698,6 @@ export class SolanaPayEscrowManager {
         fallbackPollSignatureStatus,
         pollTimeoutMs,
         signal,
-
       );
     } else {
       this.subscribeToSignatureUpdates(
@@ -708,7 +720,6 @@ export class SolanaPayEscrowManager {
         fallbackPollSignatureStatus,
         pollTimeoutMs,
         signal,
-
       );
     }
 
@@ -754,7 +765,6 @@ export class SolanaPayEscrowManager {
     ) => Promise<SignatureStatus | null>,
     pollTimeoutMs: number = DEFAULT_RPC_POLL_TIMEOUT_MS,
     signal?: AbortSignal,
-
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
@@ -774,12 +784,7 @@ export class SolanaPayEscrowManager {
       attempt: 0,
       timeoutMs,
       pollIntervalMs,
-      pollSignatureStatus,
       confirmationMode: "websocket",
-    };
-
-    // 3. Confirmation timeout & slot expiration verification
-
       timeoutEndMs: Date.now() + timeoutMs,
       rpc429ConsecutiveCount: 0,
       rpc429RetryOptions,
@@ -983,7 +988,6 @@ export class SolanaPayEscrowManager {
     ) => Promise<SignatureStatus | null>,
     pollTimeoutMs: number = DEFAULT_RPC_POLL_TIMEOUT_MS,
     signal?: AbortSignal,
-
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
@@ -1003,12 +1007,7 @@ export class SolanaPayEscrowManager {
       attempt: 0,
       timeoutMs,
       pollIntervalMs,
-      pollSignatureStatus,
       confirmationMode: "polling",
-    };
-
-    // Overall timeout & slot expiration verification
-
       timeoutEndMs: Date.now() + timeoutMs,
       rpc429ConsecutiveCount: 0,
       rpc429RetryOptions,
@@ -1423,9 +1422,10 @@ export class SolanaPayEscrowManager {
 
         // Calculate backoff delay: check Retry-After first, then fallback to exponential jitter
         const parsedRetryAfter = parseRetryAfterMs(err);
-        let waitMs = parsedRetryAfter !== undefined
-          ? parsedRetryAfter
-          : computeRpc429Delay(currentAttempt, retryOpts);
+        let waitMs =
+          parsedRetryAfter !== undefined
+            ? parsedRetryAfter
+            : computeRpc429Delay(currentAttempt, retryOpts);
 
         // Check if raw Retry-After exceeded the remaining confirmation timeout budget
         if (subRecord.timeoutEndMs && parsedRetryAfter !== undefined) {
@@ -1480,7 +1480,6 @@ export class SolanaPayEscrowManager {
     }
 
     if (subRecord.pollAborted) return;
-
 
     // Status not visible on-chain yet — keep polling; verify if blockheight has expired
 
@@ -1664,7 +1663,6 @@ export class SolanaPayEscrowManager {
     const sub = this.activeSubscriptions.get(seatId);
     if (!sub) return;
 
-
     if (sub.parentSignal && sub.parentAbortHandler) {
       try {
         sub.parentSignal.removeEventListener("abort", sub.parentAbortHandler);
@@ -1688,7 +1686,6 @@ export class SolanaPayEscrowManager {
       }
       sub.stateRemovers = undefined;
     }
-
 
     // Halt any background polling loop for this reservation
     sub.pollAborted = true;

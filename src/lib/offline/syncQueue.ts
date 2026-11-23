@@ -12,8 +12,6 @@
  * - Dispatch BroadcastChannel notifications to the client UI once background sync completes.
  */
 
-import { createHmac } from "node:crypto";
-
 export const SYNC_TAG = "nomad-checkin-sync";
 export const CHECKIN_STORE_NAME = "pendingCheckins";
 export const CHECKIN_SYNC_BROADCAST_CHANNEL = "nomad-checkin-sync-channel";
@@ -59,13 +57,14 @@ export interface ReplayResult {
  * Generates a unique client-side nonce for replay attack prevention.
  */
 export function generateClientNonce(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   return (
-    Math.random().toString(36).substring(2, 15) +
-    "_" +
-    Date.now().toString(36)
+    Math.random().toString(36).substring(2, 15) + "_" + Date.now().toString(36)
   );
 }
 
@@ -81,17 +80,25 @@ export function signCheckinTimestamp(
 ): string {
   const payload = `${seatId}:${timestamp}:${nonce}`;
   try {
-    const hmac = createHmac("sha256", secretKey);
-    hmac.update(payload);
-    return hmac.digest("hex");
-  } catch {
-    // Pure browser fallback using DJB2-based deterministic hash if crypto is restricted
-    let hash = 5381;
-    for (let i = 0; i < payload.length; i++) {
-      hash = (hash * 33) ^ payload.charCodeAt(i);
+    if (typeof window === "undefined") {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const crypto = require("crypto");
+      if (crypto && typeof crypto.createHmac === "function") {
+        const hmac = crypto.createHmac("sha256", secretKey);
+        hmac.update(payload);
+        return hmac.digest("hex");
+      }
     }
-    return `sig_${(hash >>> 0).toString(16)}_${nonce.slice(0, 8)}`;
+  } catch {
+    // Pure browser fallback
   }
+
+  // Pure browser fallback using DJB2-based deterministic hash if crypto is restricted
+  let hash = 5381;
+  for (let i = 0; i < payload.length; i++) {
+    hash = (hash * 33) ^ payload.charCodeAt(i);
+  }
+  return `sig_${(hash >>> 0).toString(16)}_${nonce.slice(0, 8)}`;
 }
 
 /**
@@ -151,7 +158,9 @@ export async function openCheckinDB(
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(CHECKIN_STORE_NAME)) {
-        const store = db.createObjectStore(CHECKIN_STORE_NAME, { keyPath: "id" });
+        const store = db.createObjectStore(CHECKIN_STORE_NAME, {
+          keyPath: "id",
+        });
         store.createIndex("seatId", "seatId", { unique: false });
         store.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
         store.createIndex("status", "status", { unique: false });
@@ -175,9 +184,11 @@ export async function enqueueCheckin(
   const timestamp = payload.timestamp ?? Date.now();
   const clientNonce = payload.clientNonce ?? generateClientNonce();
   const signedTimestamp =
-    payload.signedTimestamp ?? signCheckinTimestamp(payload.seatId, timestamp, clientNonce);
+    payload.signedTimestamp ??
+    signCheckinTimestamp(payload.seatId, timestamp, clientNonce);
   const idempotencyKey =
-    payload.idempotencyKey ?? generateIdempotencyKey(payload.seatId, timestamp, clientNonce);
+    payload.idempotencyKey ??
+    generateIdempotencyKey(payload.seatId, timestamp, clientNonce);
   const id = payload.idempotencyKey ?? idempotencyKey;
 
   const storedItem: StoredCheckin = {
@@ -322,7 +333,8 @@ export async function replayCheckinQueue(
 ): Promise<ReplayResult> {
   const dbName = options.dbName ?? DEFAULT_OFFLINE_DB_NAME;
   const endpoint = options.endpoint ?? "/api/checkin";
-  const fetchFn = options.fetchFn ?? (typeof fetch !== "undefined" ? fetch : undefined);
+  const fetchFn =
+    options.fetchFn ?? (typeof fetch !== "undefined" ? fetch : undefined);
 
   const pending = await getPendingCheckins(dbName);
   const synced: StoredCheckin[] = [];
@@ -359,7 +371,12 @@ export async function replayCheckinQueue(
       if (response.ok || response.status === 409) {
         await deletePendingCheckin(item.id, dbName);
         synced.push({ ...item, status: "synced" });
-      } else if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+      } else if (
+        response.status >= 400 &&
+        response.status < 500 &&
+        response.status !== 408 &&
+        response.status !== 429
+      ) {
         // Unrecoverable client error — remove or mark failed
         await deletePendingCheckin(item.id, dbName);
         failed.push({ ...item, status: "failed" });

@@ -1075,6 +1075,24 @@ model IoTOrchestrationLog {
   @@index([userId])
 }
 
+/// /api/checkin/poap
+model PoapClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  venueId    String
+  latitude   Float
+  longitude  Float
+  wifiSsid   String
+  sensorHash String
+  nonce      String   @unique
+  signature  String
+  confidence Float
+  createdAt  DateTime @default(now())
+
+  @@index([userId, venueId])
+  @@index([createdAt])
+}
+
 /// /api/network/multiplex
 model MeshSession {
   id             String   @id @default(cuid())
@@ -1274,32 +1292,48 @@ enum MicroBillingSessionStatus {
   FAILED
 }
 
-/// Persistent hardware peripheral rental record for smart locker bays (#9582).
-model PeripheralRental {
-  id              String                 @id @default(cuid())
-  rentalId        String                 @unique
-  itemId          String
-  userId          String
-  venueId         String
-  lockerBayNumber Int
-  unlockPin       String
-  depositAmount   Float
-  hourlyRate      Float
-  startTime       DateTime               @default(now())
-  endTime         DateTime?
-  totalCostUsd    Float?
-  status          PeripheralRentalStatus @default(ACTIVE)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+/// Persistent time-barter agreement between nomads (#9585).
+model BarterAgreement {
+  id             String               @id @default(cuid())
+  providerId     String
+  receiverId     String
+  skillOffered   String
+  skillRequested String
+  amountMinutes  Int
+  state          BarterAgreementState @default(PROPOSED)
+  providerPubKey String
+  receiverPubKey String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  settlement     TimebankSettlement?
 
-  @@index([userId])
-  @@index([itemId])
-  @@index([venueId])
-  @@index([status])
+  @@index([providerId])
+  @@index([receiverId])
+  @@index([state])
 }
 
-enum PeripheralRentalStatus {
-  ACTIVE
+enum BarterAgreementState {
+  PROPOSED
+  ACCEPTED
+  IN_PROGRESS
   COMPLETED
+  SETTLED
   CANCELLED
+}
+
+/// Cryptographically verified timebank credit settlement (#9585).
+model TimebankSettlement {
+  id            String          @id @default(cuid())
+  agreementId   String          @unique
+  agreement     BarterAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  providerId    String
+  receiverId    String
+  amountMinutes Int
+  providerSig   String
+  receiverSig   String
+  nonce         String
+  settledAt     DateTime        @default(now())
+
+  @@index([providerId])
+  @@index([receiverId])
 }

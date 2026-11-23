@@ -2,6 +2,8 @@
 
 Welcome to the WorkSphere documentation hub. Use the topic-based sections below to find setup instructions, API contracts, architecture references, feature guides, and operational documentation.
 
+- [Clerk Webhook Integration Runbook](./auth/CLERK_WEBHOOK_INTEGRATION.md) — signature verification, event handling, secret rotation, local testing, and troubleshooting.
+
 ## Getting Started & Contributor Guides
 
 - [Repository contribution guide](../CONTRIBUTING.md) — contribution workflow, development expectations, and pull request guidelines.
@@ -17,9 +19,12 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [API Documentation Index](./api/README.md) — endpoint-specific API contracts and operational guides.
 - [REST API & Real-Time Streams](./API.md) — REST endpoints, authentication, request and response schemas, and event streams.
 - [API Reference](./API_REFERENCE.md) — high-level endpoint reference organized by feature.
+- [Smart Desk Sensor Telemetry Payload Specification & Protobuf Definitions](./iot/TELEMETRY_PAYLOAD_SPEC.md) — JSON telemetry payload schemas, Protocol Buffers definitions, HMAC-SHA256 webhook authentication, timestamp replay protection, and electrical power anomaly thresholds.
 - [Seat Hold Lease Extension API](./api/SEAT_HOLD_LEASE_EXTENSION.md) — seat-lock lease extension, fencing-token validation, and API response behavior.
 - [Anonymous ZKP Check-In OpenAPI 3.1 Specification](./api/zkp-checkin.openapi.yaml) — anonymous check-in proof and response contract.
 - [Venue Amenity Voting OpenAPI 3.1 Specification](./api/amenity-votes.openapi.yaml) — amenity metrics and vote submission contract.
+
+- [Causal Vector Clock Specification](./architecture/CAUSAL_VECTOR_CLOCK_SPEC.md) — application-level vector clock semantics, conflict ordering, and safe pruning requirements.
 
 ## Architecture & Distributed Systems
 
@@ -43,6 +48,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Security & Cryptography
 
+- [OAuth Refresh Token Rotation & Session Hijacking Mitigation Guide](./auth/REFRESH_TOKEN_ROTATION_GUIDE.md) — JWT access/refresh token rotation lifecycle, token family reuse detection, passwordChangedAt revocation, and cookie security.
 - [Markdown Syntax Rendering & Collaborative Chat Formatting Specification](./chat/MARKDOWN_RENDERING_SPEC.md) — Collaborative chat input sanitization, generative UI regex tokenization, Zod schema validation, XSS prevention, and DOMPurify specification.
 - [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) — overview of application security defenses and their interaction.
 - [Content Security Policy Nonce Architecture](./security/csp-nonce-architecture.md) — nonce-based CSP implementation and request security.
@@ -84,6 +90,8 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Offline Sync Flow](./architecture/offline-sync-flow.md) — application offline synchronization flow.
 - [Local Mesh CRDT Synchronization](./realtime/local-mesh-crdt-sync.md) — collaborative state replication over peer-to-peer mesh connections.
 - [CRDT Documentation Index](./crdt/README.md) — collaborative data protocols, specifications, and reading order.
+- [Yjs State Vector Exchange & Differential Compaction Architecture](./crdt/YJS_SYNC_PROTOCOL.md) — complete Yjs state vector exchange (`Y.encodeStateVector`), differential update computation (`Y.encodeStateAsUpdate`), wire codecs, and snapshot compaction engine.
+- [Ephemeral Awareness Vector Clock Compaction](./crdt/AWARENESS_VECTOR_COMPACTION.md) — ephemeral presence tracking, 30s TTL heartbeat eviction, and awareness vector compaction vs. document-level garbage collection.
 
 ## Testing, Monitoring & Operations
 

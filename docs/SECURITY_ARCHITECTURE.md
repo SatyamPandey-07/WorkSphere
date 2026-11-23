@@ -772,5 +772,6 @@ WorkSphere streams security telemetry events in Common Event Format (CEF) / JSON
 WorkSphere incorporates privacy-preserving Groth16 zero-knowledge proofs over the BN254 (`alt_bn128`) pairing-friendly elliptic curve for anonymous membership verification, student discount eligibility, and nomad activity statements without exposing user identities or PII.
 
 For complete technical specifications on circuit compilation, trusted setup ceremonies, proving and verification key lifecycle, browser WebAssembly vs Node.js execution, and client-side IndexedDB verification caching, refer to:
+- [`zkp/CIRCOM_PROFILING_AND_AUDIT.md`](zkp/CIRCOM_PROFILING_AND_AUDIT.md) — Circom constraint count profiling workflow, 15,000-constraint budget enforcement, Groth16 Phase 1/Phase 2 trusted setup audit checklist, and verification cost analysis.
 - [`zkp/GROTH16_BENCHMARK_RUNBOOK.md`](zkp/GROTH16_BENCHMARK_RUNBOOK.md) — Groth16 circuit proving key verification benchmark runbook, covering Circom compilation, trusted setup artifacts, SnarkJS proof lifecycle, mobile memory constraints, and IndexedDB proof verification caching.
 - [`zkp/GROTH16_CIRCUIT_ARCHITECTURE.md`](zkp/GROTH16_CIRCUIT_ARCHITECTURE.md) — Circuit constraint architecture, Poseidon hash commitment schemes, and Web Worker proof generation.

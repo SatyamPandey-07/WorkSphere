@@ -2,6 +2,9 @@
  * SkillEmbedder.ts
  * Generates high-dimensional vector embeddings for extracted skills to enable semantic similarity searches.
  * Interfaces with a vector database (e.g., pgvector via Prisma) to store and query embeddings.
+ *
+ * @see docs/ai/SEMANTIC_MATCHING_ENGINE.md for detailed documentation on embedding tokenization,
+ * cosine distance metrics, and pgvector HNSW index tuning.
  */
 
 export interface SkillEmbedding {
@@ -13,7 +16,7 @@ export class SkillEmbedder {
   private embeddingModel: string;
   private apiKey: string;
 
-  constructor(apiKey: string, model: string = 'text-embedding-3-small') {
+  constructor(apiKey: string, model: string = "text-embedding-3-small") {
     this.apiKey = apiKey;
     this.embeddingModel = model;
   }
@@ -29,7 +32,7 @@ export class SkillEmbedder {
     }
 
     const embeddings: SkillEmbedding[] = [];
-    
+
     // Process in batches to avoid rate limits
     const batchSize = 10;
     for (let i = 0; i < skills.length; i += batchSize) {
@@ -45,17 +48,20 @@ export class SkillEmbedder {
     try {
       // Mock implementation for scaffold. In production, replace with actual OpenAI/Groq embedding API call.
       // const response = await fetch('https://api.openai.com/v1/embeddings', { ... })
-      
-      const mockEmbeddings = skills.map(skill => ({
+
+      const mockEmbeddings = skills.map((skill) => ({
         skill,
         // Generate a deterministic mock 1536-dimensional vector for scaffold purposes
-        vector: Array.from({ length: 1536 }, (_, i) => Math.sin(i * skill.length) * 0.1)
+        vector: Array.from(
+          { length: 1536 },
+          (_, i) => Math.sin(i * skill.length) * 0.1,
+        ),
       }));
 
       return mockEmbeddings;
     } catch (error) {
-      console.error('Error fetching embeddings:', error);
-      throw new Error('Failed to generate skill embeddings.');
+      console.error("Error fetching embeddings:", error);
+      throw new Error("Failed to generate skill embeddings.");
     }
   }
 
@@ -64,7 +70,7 @@ export class SkillEmbedder {
    */
   public calculateCosineSimilarity(vecA: number[], vecB: number[]): number {
     if (vecA.length !== vecB.length) {
-      throw new Error('Vectors must be of the same dimension.');
+      throw new Error("Vectors must be of the same dimension.");
     }
 
     let dotProduct = 0;

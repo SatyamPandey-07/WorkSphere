@@ -20,6 +20,7 @@ Architecture decisions, implementation notes, and system-level design references
 - [Multi-region sync](./multi-region-sync.md)
 - [Offline sync flow](./offline-sync-flow.md)
 - [Reminder cron pipeline](./reminder-cron-pipeline.md)
+- [Semantic Matching Engine: Skill Embeddings & pgvector HNSW Indexing](../ai/SEMANTIC_MATCHING_ENGINE.md)
 
 ## Database and cache operations
 

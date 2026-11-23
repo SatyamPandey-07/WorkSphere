@@ -25,6 +25,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Architecture Documentation Index](./architecture/README.md) — system design references, distributed coordination, and architecture notes.
 - [Multi-Agent AI Architecture](./ARCHITECTURE.md) — agent orchestration, decision pipeline, and application-level AI architecture.
+- [Semantic Matching Engine & Vector Indexing](./ai/SEMANTIC_MATCHING_ENGINE.md) — resume tokenization, dense vector embeddings, pgvector HNSW tuning, and cosine distance query benchmarks.
 - [GossipSub WebRTC Mesh](./architecture/GOSSIPSUB_WEBRTC_MESH.md) — peer discovery, GossipSub parameters, heartbeat intervals, and mesh behavior.
 - [Distributed Locks and Fencing](./architecture/distributed-locks-and-fencing.md) — distributed lock coordination and fencing mechanisms.
 - [Multi-Region Synchronization](./architecture/multi-region-sync.md) — synchronization across distributed application regions.

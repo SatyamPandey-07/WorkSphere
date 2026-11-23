@@ -23,6 +23,13 @@ import {
 
 export const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000; // 60 seconds
 export const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2 seconds
+
+export const DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT = 250_000;
+export const DEFAULT_ESCROW_MAX_RETRIES = 3;
+export const DEFAULT_ESCROW_BASE_BACKOFF_MS = 1_000;
+export const DEFAULT_ESCROW_MAX_BACKOFF_MS = 8_000;
+export const DEFAULT_ESCROW_FEE_BUMP_MULTIPLIER = 1.5;
+
 export const DEFAULT_RPC_POLL_TIMEOUT_MS = 5_000; // 5 seconds strict abort timeout (#9448)
 export const STATUS_TIMEOUT = "timeout" as const;
 
@@ -188,6 +195,7 @@ export function computeRpc429Delay(
   return Math.round(validRand * expDelay);
 }
 
+
 export type SeatConfirmationMode = "websocket" | "polling";
 
 export type SeatState =
@@ -195,6 +203,23 @@ export type SeatState =
 
 export type PaymentConfirmationStage =
   "pending" | "confirmed" | "finalized" | "failed" | "timeout";
+
+export interface SolanaPayEscrowRetryConfig {
+  /** Maximum number of retry attempts before rolling back (default: 3). */
+  maxRetries?: number;
+  /** Base backoff delay in ms between retries (default: 1,000ms). */
+  baseBackoffMs?: number;
+  /** Maximum backoff delay in ms (default: 8,000ms). */
+  maxBackoffMs?: number;
+  /** Multiplier for priority fee on retry attempts (default: 1.5). */
+  feeBumpMultiplier?: number;
+  /** Dedicated compute unit limit for the transaction (default: 250,000). */
+  computeUnitLimit?: number;
+  /** Base priority fee in micro-lamports (default: 5,000). */
+  priorityFeeMicroLamports?: number;
+}
+
+export type EscrowReservationRetryConfig = SolanaPayEscrowRetryConfig;
 
 export interface SeatReservationState {
   seatId: string;
@@ -208,6 +233,9 @@ export interface SeatReservationState {
   error?: string | null;
   slot?: number;
   updatedAt: number;
+  retryAttempt?: number;
+  lastValidBlockHeight?: number;
+  recentBlockhash?: string;
 }
 
 export interface SeatReservationCallbacks {
@@ -217,6 +245,11 @@ export interface SeatReservationCallbacks {
   onFinalized?: (state: SeatReservationState) => void;
   onError?: (error: Error, state: SeatReservationState) => void;
   onRollback?: (reason: string, state: SeatReservationState) => void;
+  onRetry?: (
+    attempt: number,
+    reason: string,
+    state: SeatReservationState,
+  ) => void;
 }
 
 export interface ReserveSeatOptions {
@@ -246,6 +279,25 @@ export interface ReserveSeatOptions {
   ) => Promise<SignatureStatus | null>;
   /** Interval between background status polls (polling mode only). */
   pollIntervalMs?: number;
+
+  /** Recent blockhash of the submitted transaction for expiration tracking. */
+  recentBlockhash?: string;
+  /** Block height after which the transaction's blockhash expires. */
+  lastValidBlockHeight?: number;
+  /** Retry and backoff configuration under congestion/slot expiration. */
+  retryConfig?: SolanaPayEscrowRetryConfig;
+  /**
+   * Optional resubmission handler invoked when blockhash expires.
+   * Re-queries latest blockhash, re-signs/updates payload, and broadcasts new transaction.
+   */
+  resubmitTransaction?: (
+    freshBlockhash: string,
+    lastValidBlockHeight: number,
+    suggestedPriorityFeeMicroLamports?: number,
+  ) => Promise<string>;
+  /** Optional callback fired when a retry attempt is initiated. */
+  onRetryAttempt?: (attempt: number, error: Error, nextDelayMs: number) => void;
+
   /** Optional RPC HTTP 429 retry options (polling mode). */
   rpc429RetryOptions?: Rpc429RetryOptions;
   /**
@@ -269,6 +321,7 @@ export interface ReserveSeatOptions {
    * Optional AbortSignal to cleanly cancel the reservation and clean up active polling and timers (#9448).
    */
   signal?: AbortSignal;
+
 }
 
 interface ActiveSubscription {
@@ -295,10 +348,115 @@ interface ActiveSubscription {
   parentAbortHandler?: () => void;
   callbacks?: SeatReservationCallbacks;
   stateRemovers?: Array<() => void>;
+
+  recentBlockhash?: string;
+  lastValidBlockHeight?: number;
+  retryConfig?: SolanaPayEscrowRetryConfig;
+  resubmitTransaction?: (
+    freshBlockhash: string,
+    lastValidBlockHeight: number,
+    suggestedPriorityFeeMicroLamports?: number,
+  ) => Promise<string>;
+  onRetryAttempt?: (attempt: number, error: Error, nextDelayMs: number) => void;
+  attempt: number;
+  timeoutMs: number;
+  pollIntervalMs: number;
+  pollSignatureStatus?: (signature: string) => Promise<SignatureStatus | null>;
+  confirmationMode: SeatConfirmationMode;
+  isRetrying?: boolean;
+}
+
+/**
+ * Checks if an error corresponds to Solana blockhash/slot expiration.
+ */
+export function isBlockhashExpiredError(error: unknown): boolean {
+  if (!error) return false;
+  const msg =
+    typeof error === "string"
+      ? error
+      : ((error as any)?.message ?? JSON.stringify(error));
+  return (
+    msg.includes("Blockhash not found") ||
+    msg.includes("TransactionExpiredBlockheightExceededError") ||
+    msg.includes("blockhash has expired") ||
+    msg.includes("BlockheightExceeded") ||
+    msg.includes("BlockhashNotFound") ||
+    msg.includes("has expired") ||
+    msg.includes("slot expiration")
+  );
+}
+
+/**
+ * Calculates stepped micro-lamport priority fee with multiplier bound for retry attempts.
+ */
+export function calculatePriorityFeeForAttempt(
+  baseMicroLamports: number,
+  attempt: number,
+  multiplier = DEFAULT_ESCROW_FEE_BUMP_MULTIPLIER,
+  maxMicroLamports = 1_000_000,
+): number {
+  if (attempt <= 0) return Math.min(baseMicroLamports, maxMicroLamports);
+  const bumped = Math.round(baseMicroLamports * Math.pow(multiplier, attempt));
+  return Math.min(bumped, maxMicroLamports);
+}
+
+/**
+ * Verifies whether the block height on-chain has surpassed lastValidBlockHeight.
+ */
+export async function verifyBlockheightExpiration(
+  connection: Connection,
+  lastValidBlockHeight?: number,
+): Promise<{
+  expired: boolean;
+  currentBlockHeight?: number;
+  lastValidBlockHeight?: number;
+}> {
+  if (typeof lastValidBlockHeight !== "number" || lastValidBlockHeight <= 0) {
+    return { expired: false, lastValidBlockHeight };
+  }
+  try {
+    const currentBlockHeight = await connection.getBlockHeight("confirmed");
+    return {
+      expired: currentBlockHeight > lastValidBlockHeight,
+      currentBlockHeight,
+      lastValidBlockHeight,
+    };
+  } catch (err) {
+    console.warn(
+      "[SolanaPayEscrow] Failed to query current block height:",
+      err,
+    );
+    return { expired: false, lastValidBlockHeight };
+  }
+}
+
+/**
+ * Queries the latest blockhash with exponential backoff on transient RPC errors.
+ */
+export async function fetchLatestBlockhashWithBackoff(
+  connection: Connection,
+  maxRetries = DEFAULT_ESCROW_MAX_RETRIES,
+  baseBackoffMs = 500,
+): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await connection.getLatestBlockhash("confirmed");
+    } catch (err) {
+      lastErr = err;
+      if (attempt + 1 < maxRetries) {
+        const delay = baseBackoffMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastErr;
+
   rpc429ConsecutiveCount?: number;
   timeoutEndMs?: number;
   rpc429RetryOptions?: Rpc429RetryOptions;
   activeConnectionIsFallback?: boolean;
+
 }
 
 /**
@@ -467,6 +625,9 @@ export class SolanaPayEscrowManager {
       currency,
       error: null,
       updatedAt: Date.now(),
+      retryAttempt: 0,
+      lastValidBlockHeight: options.lastValidBlockHeight,
+      recentBlockhash: options.recentBlockhash,
     };
 
     this.reservations.set(seatId, initialState);
@@ -512,11 +673,19 @@ export class SolanaPayEscrowManager {
         pollIntervalMs,
         pollSignatureStatus,
         callbacks,
+
+        options.lastValidBlockHeight,
+        options.recentBlockhash,
+        options.retryConfig,
+        options.resubmitTransaction,
+        options.onRetryAttempt,
+
         rpc429RetryOptions,
         effectiveFallbackConn,
         fallbackPollSignatureStatus,
         pollTimeoutMs,
         signal,
+
       );
     } else {
       this.subscribeToSignatureUpdates(
@@ -527,11 +696,19 @@ export class SolanaPayEscrowManager {
         callbacks,
         pollIntervalMs,
         pollSignatureStatus,
+
+        options.lastValidBlockHeight,
+        options.recentBlockhash,
+        options.retryConfig,
+        options.resubmitTransaction,
+        options.onRetryAttempt,
+
         rpc429RetryOptions,
         effectiveFallbackConn,
         fallbackPollSignatureStatus,
         pollTimeoutMs,
         signal,
+
       );
     }
 
@@ -554,6 +731,21 @@ export class SolanaPayEscrowManager {
       signature: string,
       options?: { signal?: AbortSignal },
     ) => Promise<SignatureStatus | null>,
+
+    lastValidBlockHeight?: number,
+    recentBlockhash?: string,
+    retryConfig?: SolanaPayEscrowRetryConfig,
+    resubmitTransaction?: (
+      freshBlockhash: string,
+      lastValidBlockHeight: number,
+      suggestedPriorityFeeMicroLamports?: number,
+    ) => Promise<string>,
+    onRetryAttempt?: (
+      attempt: number,
+      error: Error,
+      nextDelayMs: number,
+    ) => void,
+
     rpc429RetryOptions?: Rpc429RetryOptions,
     fallbackConnection?: Connection,
     fallbackPollSignatureStatus?: (
@@ -562,6 +754,7 @@ export class SolanaPayEscrowManager {
     ) => Promise<SignatureStatus | null>,
     pollTimeoutMs: number = DEFAULT_RPC_POLL_TIMEOUT_MS,
     signal?: AbortSignal,
+
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
@@ -572,6 +765,21 @@ export class SolanaPayEscrowManager {
       fallbackPollSignatureStatus,
       pollTimeoutMs,
       callbacks,
+
+      lastValidBlockHeight,
+      recentBlockhash,
+      retryConfig,
+      resubmitTransaction,
+      onRetryAttempt,
+      attempt: 0,
+      timeoutMs,
+      pollIntervalMs,
+      pollSignatureStatus,
+      confirmationMode: "websocket",
+    };
+
+    // 3. Confirmation timeout & slot expiration verification
+
       timeoutEndMs: Date.now() + timeoutMs,
       rpc429ConsecutiveCount: 0,
       rpc429RetryOptions,
@@ -587,18 +795,17 @@ export class SolanaPayEscrowManager {
     }
 
     // 3. 60-Second timeout: rollback to available if transaction drops from mempool
+
     subRecord.timeoutTimer = setTimeout(() => {
-      const timeoutReason =
-        `Transaction confirmation timed out after ${Math.round(timeoutMs / 1000)} seconds ` +
-        `(dropped from mempool). Seat reservation has been restored to available.`;
-      this.rollback(seatId, timeoutReason, "timeout");
+      void this.handleTimeoutOrExpiration(seatId);
     }, timeoutMs);
     subRecord.timeoutTimer.unref?.();
 
     // Fallback trigger helper to initiate background polling if WebSocket disconnects
     let fallbackInitiated = false;
     const triggerFallbackPolling = (reason: string) => {
-      if (fallbackInitiated || subRecord.pollTimer || subRecord.pollAborted) return;
+      if (fallbackInitiated || subRecord.pollTimer || subRecord.pollAborted)
+        return;
       fallbackInitiated = true;
       console.warn(
         `[SolanaPayEscrow] WebSocket subscription degraded (${reason}); activating background status polling fallback.`,
@@ -643,6 +850,10 @@ export class SolanaPayEscrowManager {
         (notification, context) => {
           const err = (notification as any).err;
           if (err) {
+            if (isBlockhashExpiredError(err)) {
+              void this.handleTimeoutOrExpiration(seatId);
+              return;
+            }
             const errorMsg =
               typeof err === "string" ? err : JSON.stringify(err);
             const reason = `Transaction failed on-chain: ${errorMsg}. Seat reservation reverted to available.`;
@@ -672,6 +883,10 @@ export class SolanaPayEscrowManager {
         (notification, context) => {
           const err = (notification as any).err;
           if (err) {
+            if (isBlockhashExpiredError(err)) {
+              void this.handleTimeoutOrExpiration(seatId);
+              return;
+            }
             const errorMsg =
               typeof err === "string" ? err : JSON.stringify(err);
             const reason = `Transaction failed on-chain during finalization: ${errorMsg}. Seat reservation reverted to available.`;
@@ -745,6 +960,21 @@ export class SolanaPayEscrowManager {
       options?: { signal?: AbortSignal },
     ) => Promise<SignatureStatus | null>,
     callbacks?: SeatReservationCallbacks,
+
+    lastValidBlockHeight?: number,
+    recentBlockhash?: string,
+    retryConfig?: SolanaPayEscrowRetryConfig,
+    resubmitTransaction?: (
+      freshBlockhash: string,
+      lastValidBlockHeight: number,
+      suggestedPriorityFeeMicroLamports?: number,
+    ) => Promise<string>,
+    onRetryAttempt?: (
+      attempt: number,
+      error: Error,
+      nextDelayMs: number,
+    ) => void,
+
     rpc429RetryOptions?: Rpc429RetryOptions,
     fallbackConnection?: Connection,
     fallbackPollSignatureStatus?: (
@@ -753,6 +983,7 @@ export class SolanaPayEscrowManager {
     ) => Promise<SignatureStatus | null>,
     pollTimeoutMs: number = DEFAULT_RPC_POLL_TIMEOUT_MS,
     signal?: AbortSignal,
+
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
@@ -763,6 +994,21 @@ export class SolanaPayEscrowManager {
       fallbackPollSignatureStatus,
       pollTimeoutMs,
       callbacks,
+
+      lastValidBlockHeight,
+      recentBlockhash,
+      retryConfig,
+      resubmitTransaction,
+      onRetryAttempt,
+      attempt: 0,
+      timeoutMs,
+      pollIntervalMs,
+      pollSignatureStatus,
+      confirmationMode: "polling",
+    };
+
+    // Overall timeout & slot expiration verification
+
       timeoutEndMs: Date.now() + timeoutMs,
       rpc429ConsecutiveCount: 0,
       rpc429RetryOptions,
@@ -778,11 +1024,9 @@ export class SolanaPayEscrowManager {
     }
 
     // Overall timeout: rollback to available if transaction drops from mempool
+
     subRecord.timeoutTimer = setTimeout(() => {
-      const timeoutReason =
-        `Transaction confirmation timed out after ${Math.round(timeoutMs / 1000)} seconds ` +
-        `(dropped from mempool). Seat reservation has been restored to available.`;
-      this.rollback(seatId, timeoutReason, "timeout");
+      void this.handleTimeoutOrExpiration(seatId);
     }, timeoutMs);
     subRecord.timeoutTimer.unref?.();
 
@@ -793,6 +1037,223 @@ export class SolanaPayEscrowManager {
       pollIntervalMs,
       pollSignatureStatus,
     );
+  }
+
+  /**
+   * Handles timeout or slot expiration by checking on-chain blockheight and invoking
+   * exponential backoff retries with fresh blockhashes when available.
+   */
+  private async handleTimeoutOrExpiration(seatId: string): Promise<void> {
+    const subRecord = this.activeSubscriptions.get(seatId);
+    if (!subRecord || subRecord.pollAborted || subRecord.isRetrying) return;
+
+    const current = this.reservations.get(seatId);
+    if (
+      !current ||
+      current.state === "confirmed" ||
+      current.state === "finalized"
+    ) {
+      return;
+    }
+
+    const {
+      connection,
+      lastValidBlockHeight,
+      retryConfig,
+      resubmitTransaction,
+      callbacks,
+      timeoutMs,
+      pollIntervalMs,
+      pollSignatureStatus,
+      confirmationMode,
+    } = subRecord;
+
+    // 1. Verify on-chain blockheight: check if the blockhash has genuinely expired
+    if (typeof lastValidBlockHeight === "number" && lastValidBlockHeight > 0) {
+      const expiration = await verifyBlockheightExpiration(
+        connection,
+        lastValidBlockHeight,
+      );
+      if (!expiration.expired && expiration.currentBlockHeight !== undefined) {
+        // Blockhash is still valid on-chain despite RPC/timeout delay (clock drift / congestion)
+        // Keep waiting / polling until blockheight is actually exceeded
+        const remainingBlocks =
+          lastValidBlockHeight - expiration.currentBlockHeight;
+        const recheckMs = Math.max(
+          1_000,
+          Math.min(remainingBlocks * 400, timeoutMs),
+        );
+        subRecord.timeoutTimer = setTimeout(() => {
+          void this.handleTimeoutOrExpiration(seatId);
+        }, recheckMs);
+        subRecord.timeoutTimer.unref?.();
+        return;
+      }
+    }
+
+    // 2. Check if retry is configured and attempts remain
+    const maxRetries = retryConfig?.maxRetries ?? DEFAULT_ESCROW_MAX_RETRIES;
+    const currentAttempt = subRecord.attempt ?? 0;
+
+    if (resubmitTransaction && currentAttempt < maxRetries) {
+      subRecord.isRetrying = true;
+      const nextAttempt = currentAttempt + 1;
+      subRecord.attempt = nextAttempt;
+
+      const baseBackoff =
+        retryConfig?.baseBackoffMs ?? DEFAULT_ESCROW_BASE_BACKOFF_MS;
+      const maxBackoff =
+        retryConfig?.maxBackoffMs ?? DEFAULT_ESCROW_MAX_BACKOFF_MS;
+      const backoffDelay = Math.min(
+        baseBackoff * Math.pow(2, currentAttempt),
+        maxBackoff,
+      );
+
+      const feeMultiplier =
+        retryConfig?.feeBumpMultiplier ?? DEFAULT_ESCROW_FEE_BUMP_MULTIPLIER;
+      const baseFee = retryConfig?.priorityFeeMicroLamports ?? 5_000;
+      const suggestedFee = calculatePriorityFeeForAttempt(
+        baseFee,
+        nextAttempt,
+        feeMultiplier,
+      );
+
+      const retryReason =
+        `Transaction blockhash expired (attempt ${nextAttempt}/${maxRetries}). ` +
+        `Re-querying fresh blockhash with exponential backoff (${backoffDelay}ms) and stepped priority fee (${suggestedFee} micro-lamports).`;
+      console.warn(`[SolanaPayEscrow] ${retryReason}`);
+
+      callbacks?.onRetry?.(nextAttempt, retryReason, current);
+      subRecord.onRetryAttempt?.(
+        nextAttempt,
+        new Error(retryReason),
+        backoffDelay,
+      );
+
+      // Clean up previous listeners and timers before re-submitting
+      this.clearActiveListeners(subRecord);
+
+      if (backoffDelay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+      }
+
+      try {
+        const fresh = await fetchLatestBlockhashWithBackoff(connection);
+        const newSignature = await resubmitTransaction(
+          fresh.blockhash,
+          fresh.lastValidBlockHeight,
+          suggestedFee,
+        );
+
+        subRecord.signature = newSignature;
+        subRecord.recentBlockhash = fresh.blockhash;
+        subRecord.lastValidBlockHeight = fresh.lastValidBlockHeight;
+        subRecord.isRetrying = false;
+
+        const updatedState: SeatReservationState = {
+          ...current,
+          signature: newSignature,
+          retryAttempt: nextAttempt,
+          lastValidBlockHeight: fresh.lastValidBlockHeight,
+          recentBlockhash: fresh.blockhash,
+          error: null,
+          updatedAt: Date.now(),
+        };
+        this.reservations.set(seatId, updatedState);
+        callbacks?.onStateChange?.(updatedState);
+
+        // Re-arm confirmation tracking for the newly broadcasted transaction
+        if (confirmationMode === "polling") {
+          this.startPollingConfirmation(
+            connection,
+            seatId,
+            newSignature,
+            timeoutMs,
+            pollIntervalMs,
+            pollSignatureStatus,
+            callbacks,
+            fresh.lastValidBlockHeight,
+            fresh.blockhash,
+            retryConfig,
+            resubmitTransaction,
+            subRecord.onRetryAttempt,
+          );
+        } else {
+          this.subscribeToSignatureUpdates(
+            connection,
+            seatId,
+            newSignature,
+            timeoutMs,
+            callbacks,
+            pollIntervalMs,
+            pollSignatureStatus,
+            fresh.lastValidBlockHeight,
+            fresh.blockhash,
+            retryConfig,
+            resubmitTransaction,
+            subRecord.onRetryAttempt,
+          );
+        }
+        return;
+      } catch (err: any) {
+        console.error(
+          `[SolanaPayEscrow] Resubmission attempt ${nextAttempt} failed:`,
+          err,
+        );
+        subRecord.isRetrying = false;
+        if (subRecord.attempt < maxRetries) {
+          void this.handleTimeoutOrExpiration(seatId);
+          return;
+        }
+      }
+    }
+
+    // 3. Rollback when retries are exhausted or no resubmission handler exists
+    const timeoutReason =
+      subRecord.attempt > 0
+        ? `Transaction confirmation timed out after ${subRecord.attempt} retry attempts ` +
+          `(blockhash expired or dropped from mempool). Seat reservation has been restored to available.`
+        : `Transaction confirmation timed out after ${Math.round(timeoutMs / 1000)} seconds ` +
+          `(dropped from mempool). Seat reservation has been restored to available.`;
+    this.rollback(seatId, timeoutReason, "timeout");
+  }
+
+  /**
+   * Clears timers, listeners, and polling handlers for an active subscription without aborting.
+   */
+  private clearActiveListeners(sub: ActiveSubscription): void {
+    if (sub.timeoutTimer) {
+      clearTimeout(sub.timeoutTimer);
+      sub.timeoutTimer = undefined;
+    }
+    if (sub.pollTimer) {
+      clearTimeout(sub.pollTimer);
+      sub.pollTimer = undefined;
+    }
+    if (sub.stateRemovers) {
+      for (const remover of sub.stateRemovers) {
+        try {
+          remover();
+        } catch {}
+      }
+      sub.stateRemovers = undefined;
+    }
+    if (sub.confirmedSubId !== undefined) {
+      try {
+        Promise.resolve(
+          sub.connection.removeSignatureListener(sub.confirmedSubId),
+        ).catch(() => {});
+      } catch {}
+      sub.confirmedSubId = undefined;
+    }
+    if (sub.finalizedSubId !== undefined) {
+      try {
+        Promise.resolve(
+          sub.connection.removeSignatureListener(sub.finalizedSubId),
+        ).catch(() => {});
+      } catch {}
+      sub.finalizedSubId = undefined;
+    }
   }
 
   /**
@@ -1020,12 +1481,29 @@ export class SolanaPayEscrowManager {
 
     if (subRecord.pollAborted) return;
 
+
+    // Status not visible on-chain yet — keep polling; verify if blockheight has expired
+
     // Successful RPC response resets consecutive 429 counter
     subRecord.rpc429ConsecutiveCount = 0;
 
     // Status not visible on-chain yet — keep polling; the overall timeout
     // handles the dropped-from-mempool case.
+
     if (!status) {
+      if (typeof subRecord.lastValidBlockHeight === "number") {
+        try {
+          const currentBlockHeight =
+            await connection.getBlockHeight?.("confirmed");
+          if (
+            typeof currentBlockHeight === "number" &&
+            currentBlockHeight > subRecord.lastValidBlockHeight
+          ) {
+            void this.handleTimeoutOrExpiration(seatId);
+            return;
+          }
+        } catch {}
+      }
       this.scheduleNextPoll(
         subRecord,
         signature,
@@ -1036,6 +1514,10 @@ export class SolanaPayEscrowManager {
     }
 
     if (status.err) {
+      if (isBlockhashExpiredError(status.err)) {
+        void this.handleTimeoutOrExpiration(seatId);
+        return;
+      }
       const errorMsg =
         typeof status.err === "string"
           ? status.err
@@ -1182,6 +1664,7 @@ export class SolanaPayEscrowManager {
     const sub = this.activeSubscriptions.get(seatId);
     if (!sub) return;
 
+
     if (sub.parentSignal && sub.parentAbortHandler) {
       try {
         sub.parentSignal.removeEventListener("abort", sub.parentAbortHandler);
@@ -1206,40 +1689,10 @@ export class SolanaPayEscrowManager {
       sub.stateRemovers = undefined;
     }
 
+
     // Halt any background polling loop for this reservation
     sub.pollAborted = true;
-    if (sub.pollTimer) {
-      clearTimeout(sub.pollTimer);
-      sub.pollTimer = undefined;
-    }
-
-    if (sub.timeoutTimer) {
-      clearTimeout(sub.timeoutTimer);
-      sub.timeoutTimer = undefined;
-    }
-
-    if (sub.confirmedSubId !== undefined) {
-      try {
-        Promise.resolve(
-          sub.connection.removeSignatureListener(sub.confirmedSubId),
-        ).catch(() => {});
-      } catch {
-        // Ignore unhandled connection close errors
-      }
-      sub.confirmedSubId = undefined;
-    }
-
-    if (sub.finalizedSubId !== undefined) {
-      try {
-        Promise.resolve(
-          sub.connection.removeSignatureListener(sub.finalizedSubId),
-        ).catch(() => {});
-      } catch {
-        // Ignore unhandled connection close errors
-      }
-      sub.finalizedSubId = undefined;
-    }
-
+    this.clearActiveListeners(sub);
     this.activeSubscriptions.delete(seatId);
   }
 

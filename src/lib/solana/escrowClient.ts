@@ -15,6 +15,8 @@ import {
   type SolanaPayEscrowManager,
   type ReserveSeatOptions,
   type SeatReservationState,
+  DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT,
+  fetchLatestBlockhashWithBackoff,
 } from "./solanaPayEscrow";
 import {
   getPriorityFeeEstimator,
@@ -266,6 +268,7 @@ export interface EscrowDepositParams {
   currency: EscrowCurrency;
   rpcUrl: string;
   priorityFeeMicroLamports?: number;
+  computeUnitLimit?: number;
 }
 
 export interface EscrowDepositResult {
@@ -274,6 +277,7 @@ export interface EscrowDepositResult {
   escrowBump: number;
   amountBaseUnits: bigint;
   recentBlockhash: string;
+  lastValidBlockHeight?: number;
 }
 
 export interface EscrowValidationResult {
@@ -358,12 +362,24 @@ export async function buildSolDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "SOL");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
 
   const transaction = new Transaction({
     recentBlockhash: blockhash,
     feePayer: payer,
   });
+
+  // Dynamic Compute Unit Budget: set dedicated compute unit limit
+  const computeUnitLimit =
+    params.computeUnitLimit ?? DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT;
+  if (typeof computeUnitLimit === "number" && computeUnitLimit > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: Math.floor(computeUnitLimit),
+      }),
+    );
+  }
 
   // Dynamic Priority Fee: estimate automatically if not explicitly provided
   let priorityFee = params.priorityFeeMicroLamports;
@@ -380,7 +396,7 @@ export async function buildSolDepositTransaction(
     }
   }
 
-  // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+  // SetComputeUnitPrice must be placed before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
     const safeFee = Math.max(0, Math.floor(priorityFee));
     const existingIndex = transaction.instructions.findIndex(
@@ -426,6 +442,7 @@ export async function buildSolDepositTransaction(
     escrowBump: bump,
     amountBaseUnits,
     recentBlockhash: blockhash,
+    lastValidBlockHeight,
   };
 }
 
@@ -442,7 +459,8 @@ export async function buildUsdcDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "USDC");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
 
   const payerAta = getAssociatedTokenAddressSync(
     USDC_MINT,
@@ -464,6 +482,17 @@ export async function buildUsdcDepositTransaction(
     feePayer: payer,
   });
 
+  // Dynamic Compute Unit Budget: set dedicated compute unit limit
+  const computeUnitLimit =
+    params.computeUnitLimit ?? DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT;
+  if (typeof computeUnitLimit === "number" && computeUnitLimit > 0) {
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: Math.floor(computeUnitLimit),
+      }),
+    );
+  }
+
   // Dynamic Priority Fee: estimate automatically if not explicitly provided
   let priorityFee = params.priorityFeeMicroLamports;
   if (priorityFee === undefined || priorityFee === null) {
@@ -480,7 +509,7 @@ export async function buildUsdcDepositTransaction(
     }
   }
 
-  // SetComputeUnitPrice must be placed at instruction index 0 before business instructions
+  // SetComputeUnitPrice must be placed before business instructions
   if (typeof priorityFee === "number" && priorityFee > 0) {
     const safeFee = Math.max(0, Math.floor(priorityFee));
     const existingIndex = transaction.instructions.findIndex(
@@ -532,6 +561,7 @@ export async function buildUsdcDepositTransaction(
     escrowBump: bump,
     amountBaseUnits,
     recentBlockhash: blockhash,
+    lastValidBlockHeight,
   };
 }
 
@@ -2832,6 +2862,16 @@ export class EscrowClient {
     return this.pool.execute((connection) => connection.getLatestBlockhash());
   }
 
+  /** Fetches the latest blockhash with exponential backoff on transient RPC errors. */
+  public async getLatestBlockhashWithRetry(
+    maxRetries = 3,
+    baseBackoffMs = 500,
+  ): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+    return this.pool.execute((connection) =>
+      fetchLatestBlockhashWithBackoff(connection, maxRetries, baseBackoffMs),
+    );
+  }
+
   /** Fetches a transaction's signature status through the failover pool. */
   public async getSignatureStatus(
     signature: string,
@@ -3438,8 +3478,33 @@ export function subscribeToEscrowConfirmation(
       if (isExpired && !stateMachine.isDone() && !isUnsubscribed) {
         let finalCheckSucceeded = false;
         try {
+
+          let finalRes: SignatureStatus | null = null;
+          if (options.pollSignatureStatus) {
+            finalRes = await options.pollSignatureStatus(cleanSignature);
+            finalCheckSucceeded = true;
+          } else if (connection) {
+            const res = await connection.getSignatureStatuses(
+              [cleanSignature],
+              {
+                searchTransactionHistory: true,
+              },
+            );
+            finalRes = res.value?.[0] ?? null;
+            finalCheckSucceeded = true;
+          } else {
+            const res = await pool.execute((conn) =>
+              conn.getSignatureStatuses([cleanSignature], {
+                searchTransactionHistory: true,
+              }),
+            );
+            finalRes = res.value?.[0] ?? null;
+            finalCheckSucceeded = true;
+          }
+
           const finalRes: SignatureStatus | null = await fetchSignatureStatus();
           finalCheckSucceeded = true;
+
 
           if (finalRes && !finalRes.err) {
             const finalCommitment = finalRes.confirmationStatus;

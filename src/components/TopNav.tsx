@@ -90,7 +90,7 @@ function useIsAdmin(isSignedIn: boolean | undefined): boolean {
 }
 
 export function TopNav({ hideAuth = false }: TopNavProps) {
-  const { isSignedIn, user } = useUser();
+  const { isLoaded, isSignedIn, user } = useUser();
   const isAdmin = useIsAdmin(isSignedIn);
   const pathname = usePathname() ?? "";
   const [isMenuOpen, setIsMenuOpen] = useState(false);

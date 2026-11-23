@@ -7,10 +7,107 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { Readable } from "node:stream";
+import { createGunzip } from "node:zlib";
 import {
   OfflineMutationQueue,
   OfflineMutation,
 } from "@/core/sync/OfflineMutationQueue";
+
+/** Max compressed request size: 1 MB */
+export const MAX_COMPRESSED_BODY_BYTES = 1024 * 1024;
+/** Max decompressed payload size: 10 MB (prevents gzip bomb attacks) */
+export const MAX_DECOMPRESSED_BODY_BYTES = 10 * 1024 * 1024;
+
+export class PayloadTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PayloadTooLargeError";
+  }
+}
+
+export class DecompressionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DecompressionError";
+  }
+}
+
+/**
+ * Streams and decompresses an incoming request body using node:zlib createGunzip().
+ * Enforces strict input and output byte bounds to guard against decompression bombs.
+ */
+export async function decompressGzipStream(
+  request: NextRequest,
+  maxInputBytes = MAX_COMPRESSED_BODY_BYTES,
+  maxOutputBytes = MAX_DECOMPRESSED_BODY_BYTES,
+): Promise<string> {
+  const reqBody = request.body;
+  if (!reqBody) {
+    return "";
+  }
+
+  let nodeStream: Readable;
+  if (Buffer.isBuffer(reqBody) || reqBody instanceof Uint8Array) {
+    nodeStream = Readable.from(reqBody);
+  } else if (typeof (reqBody as any).getReader === "function") {
+    nodeStream = Readable.fromWeb(reqBody as any);
+  } else if (typeof (reqBody as any).pipe === "function") {
+    nodeStream = reqBody as unknown as Readable;
+  } else {
+    throw new DecompressionError("Unsupported request body stream type");
+  }
+
+  const gunzip = createGunzip();
+  let inBytes = 0;
+  let outBytes = 0;
+
+  nodeStream.on("data", (chunk: Buffer | Uint8Array) => {
+    inBytes += chunk.length;
+    if (inBytes > maxInputBytes) {
+      const err = new PayloadTooLargeError(
+        `Compressed payload exceeded maximum allowed size of ${maxInputBytes} bytes`,
+      );
+      nodeStream.destroy(err);
+      gunzip.destroy(err);
+    }
+  });
+
+  gunzip.on("data", (chunk: Buffer | Uint8Array) => {
+    outBytes += chunk.length;
+    if (outBytes > maxOutputBytes) {
+      const err = new PayloadTooLargeError(
+        `Decompressed payload exceeded maximum allowed size of ${maxOutputBytes} bytes`,
+      );
+      nodeStream.destroy(err);
+      gunzip.destroy(err);
+    }
+  });
+
+  return new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    gunzip.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+    gunzip.on("end", () => {
+      resolve(Buffer.concat(chunks).toString("utf-8"));
+    });
+    gunzip.on("error", (err) => {
+      if (err instanceof PayloadTooLargeError) {
+        reject(err);
+      } else {
+        reject(new DecompressionError(`Failed to decompress gzip stream: ${err.message}`));
+      }
+    });
+    nodeStream.on("error", (err) => {
+      if (err instanceof PayloadTooLargeError) {
+        reject(err);
+      } else {
+        reject(new DecompressionError(`Input stream error: ${err.message}`));
+      }
+    });
+
+    nodeStream.pipe(gunzip);
+  });
+}
 
 // In-memory sync queues and states indexed by booking/draft ID
 const bookingQueues = new Map<
@@ -52,7 +149,45 @@ export function resetBookingMutationQueues(): void {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const contentEncoding = (
+      request.headers.get("content-encoding") || ""
+    ).toLowerCase().trim();
+
+    let body: any;
+
+    if (contentEncoding === "gzip") {
+      try {
+        const decompressedText = await decompressGzipStream(request);
+        if (!decompressedText) {
+          return NextResponse.json(
+            { error: "Decompressed request body is empty" },
+            { status: 400 },
+          );
+        }
+        body = JSON.parse(decompressedText);
+      } catch (err: any) {
+        if (err instanceof PayloadTooLargeError) {
+          return NextResponse.json(
+            { error: "Payload Too Large: " + err.message },
+            { status: 413 },
+          );
+        }
+        return NextResponse.json(
+          { error: "Bad Request: Invalid gzip compressed data" },
+          { status: 400 },
+        );
+      }
+    } else if (contentEncoding === "" || contentEncoding === "identity") {
+      body = await request.json();
+    } else {
+      return NextResponse.json(
+        {
+          error: `Unsupported Media Type: Unsupported Content-Encoding '${contentEncoding}'. Supported: 'gzip', 'identity'`,
+        },
+        { status: 415 },
+      );
+    }
+
     const { draftId, draftPayload } = body || {};
 
     if (!draftId || !draftPayload || typeof draftPayload !== "object") {

@@ -16,15 +16,6 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
- feature/nomad-break-buffers
- feature/nomad-break-buffers
-import { Map as MapIcon, Sun, Moon } from "lucide-react";
-
-import { Map as MapIcon } from "lucide-react";
-import React, { useState, useEffect, useRef } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
- main
 
 import {
   calculateDistanceMeters,
@@ -40,7 +31,6 @@ import {
   Minus,
   RotateCcw,
 } from "lucide-react";
- main
 
 // Fix for default leaflet icons in React
 if (typeof window !== "undefined") {
@@ -115,7 +105,21 @@ export function InteractiveMap({
   >(activeBookingProp ?? null);
   const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [mapDimensions, setMapDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const mapRef = useRef<any>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const pendingDimensionsRef = useRef<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const lastDimensionsRef = useRef<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   useEffect(() => {
     setActiveBooking(activeBookingProp ?? null);
@@ -253,6 +257,77 @@ export function InteractiveMap({
         Number.isFinite(Number(m.lng)),
     );
   }, [markers]);
+
+  const hasMapContent = safeMarkers.length > 0 || Boolean(propCenter);
+
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!hasMapContent || !container || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    let disposed = false;
+    pendingDimensionsRef.current = null;
+    lastDimensionsRef.current = null;
+
+    const processResize = () => {
+      resizeFrameRef.current = null;
+      if (disposed) return;
+
+      const dimensions = pendingDimensionsRef.current;
+      pendingDimensionsRef.current = null;
+      if (
+        !dimensions ||
+        !Number.isFinite(dimensions.width) ||
+        !Number.isFinite(dimensions.height)
+      ) {
+        return;
+      }
+
+      const previous = lastDimensionsRef.current;
+      if (
+        previous &&
+        Math.abs(dimensions.width - previous.width) <= 2 &&
+        Math.abs(dimensions.height - previous.height) <= 2
+      ) {
+        return;
+      }
+
+      lastDimensionsRef.current = dimensions;
+      setMapDimensions(dimensions);
+    };
+
+    const observer = new ResizeObserver((entries) => {
+      if (disposed) return;
+      const entry = entries[entries.length - 1];
+      if (!entry) return;
+
+      pendingDimensionsRef.current = {
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      };
+      if (resizeFrameRef.current !== null) return;
+
+      resizeFrameRef.current = window.requestAnimationFrame(processResize);
+    });
+
+    observer.observe(container);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      pendingDimensionsRef.current = null;
+      lastDimensionsRef.current = null;
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+    };
+  }, [hasMapContent]);
+
+  useEffect(() => {
+    if (!mapDimensions) return;
+    mapRef.current?.invalidateSize?.({ pan: false });
+  }, [mapDimensions]);
 
   // Group and spiderfy overlapping markers
   const spiderfiedMarkers = useMemo(() => {
@@ -425,54 +500,21 @@ export function InteractiveMap({
   );
 
   // Dynamic Tile Layer URL depending on High Contrast mode
- feature/nomad-break-buffers
-feature/nomad-break-buffers
-
- feature/booking-concurrency-lock
-
- feature/logarithmic-volume-curve
-
-docs/git-worktree-guide
- main
- main
-main
-  const tileLayerUrl = isHighContrast
-    ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-
- feature/nomad-break-buffers
-
-feature/booking-concurrency-lock
-
- feature/logarithmic-volume-curve
-
-
-  const cartoKey = process.env.NEXT_PUBLIC_CARTO_KEY;
-
   const cartoKey =
     typeof process !== "undefined"
       ? process.env?.NEXT_PUBLIC_CARTO_KEY
       : undefined;
 
- main
   const tileLayerUrl = cartoKey
     ? isHighContrast
       ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
       : `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${cartoKey}`
- feature/nomad-break-buffers
-    : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
- main
- main
-main
- main
-
     : isHighContrast
       ? "https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png"
       : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
 
- main
   // Fallback empty view
-  if (safeMarkers.length === 0 && !propCenter) {
+  if (!hasMapContent) {
     return (
       <div
         data-testid="interactive-map-empty"
@@ -485,6 +527,7 @@ main
 
   return (
     <div
+      ref={mapContainerRef}
       data-testid="interactive-map"
       className={`w-full h-80 mt-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden relative z-0 ${className}`}
     >

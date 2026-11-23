@@ -17,6 +17,7 @@ import {
   type SeatReservationState,
   DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT,
   fetchLatestBlockhashWithBackoff,
+  MAX_RPC_CLOCK_SKEW_SECONDS,
 } from "./solanaPayEscrow";
 import {
   getPriorityFeeEstimator,
@@ -1687,11 +1688,21 @@ export async function refundEscrow(
 export function isEscrowExpired(
   bookingDate: Date,
   gracePeriodHours: number = 24,
+  clusterBlockTimeSec?: number | null,
+  skewToleranceSeconds: number = MAX_RPC_CLOCK_SKEW_SECONDS,
 ): boolean {
-  const now = new Date().getTime();
-  const expiryTime =
+  const expiryTimeMs =
     new Date(bookingDate).getTime() + gracePeriodHours * 60 * 60 * 1000;
-  return now > expiryTime;
+
+  if (typeof clusterBlockTimeSec === "number" && Number.isFinite(clusterBlockTimeSec)) {
+    // Cluster block-time is in seconds; convert expiryTime to seconds
+    const expiryTimeSec = Math.floor(expiryTimeMs / 1000);
+    // Tolerate up to skewToleranceSeconds of RPC node clock skew
+    return clusterBlockTimeSec > expiryTimeSec + skewToleranceSeconds;
+  }
+
+  const now = new Date().getTime();
+  return now > expiryTimeMs;
 }
 
 export function deriveEscrowPda(

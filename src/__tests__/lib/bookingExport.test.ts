@@ -1,9 +1,13 @@
-import { GET, escapeCsvField } from "@/app/api/bookings/export/route";
+import { GET, POST, escapeCsvField } from "@/app/api/bookings/export/route";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 
 jest.mock("@clerk/nextjs/server", () => ({
   auth: jest.fn(),
+}));
+
+jest.mock("@/lib/queue", () => ({
+  pushJob: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/lib/prisma", () => ({
@@ -255,5 +259,189 @@ describe("GET /api/bookings/export", () => {
     expect(jsonBooking.date).toBe("2027-01-10");
     expect(jsonBooking.time).toBe("09:00");
     expect(csvText).toContain("2027-01-10,09:00");
+  });
+});
+
+describe("POST /api/bookings/export", () => {
+  const mockBooking = {
+    id: "booking-101",
+    userId: "user_123",
+    confirmationId: "WS-#101",
+    date: "2026-11-20",
+    time: "14:00",
+    duration: 120,
+    status: "CONFIRMED",
+    projectBillingCode: "PROJ-TAX",
+    createdAt: new Date("2026-11-10T10:00:00Z"),
+    venue: {
+      name: "Downtown CoWork",
+      category: "Dedicated Desk",
+      address: "456 Market St",
+    },
+  };
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("returns 401 when request is unauthenticated", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: null });
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingIds: ["booking-101"], format: "csv" }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when body has an invalid export format", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingIds: ["booking-101"], format: "invalid" }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("Invalid export format");
+  });
+
+  it("returns 400 when no bookings or date range are selected", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingIds: [] }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("No bookings selected");
+  });
+
+  it("returns 404 when no matching bookings are found for selected IDs", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([]);
+
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingIds: ["non-existent"], format: "csv" }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(404);
+  });
+
+  it("exports selected bookings in CSV format via POST", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([mockBooking]);
+
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingIds: ["booking-101"], format: "csv" }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    expect(res.headers.get("content-disposition")).toContain(
+      'filename="WorkSphere_Bookings_',
+    );
+
+    const csv = await res.text();
+    expect(csv).toContain("Confirmation ID,Venue Name,Category,Address");
+    expect(csv).toContain("WS-#101");
+    expect(csv).toContain("Downtown CoWork");
+  });
+
+  it("exports selected bookings in XLSX format via POST", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([mockBooking]);
+
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingIds: ["booking-101"], format: "xlsx" }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(res.headers.get("content-disposition")).toContain(".xlsx");
+  });
+
+  it("exports selected bookings in PDF format via POST", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([mockBooking]);
+
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingIds: ["booking-101"], format: "pdf" }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/pdf");
+    expect(res.headers.get("content-disposition")).toContain(".pdf");
+  });
+
+  it("queues PDF tax export job and returns jobId for TaxExportModal", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format: "pdf", taxYear: "2026" }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.jobId).toBeDefined();
+    expect(typeof data.jobId).toBe("string");
+  });
+
+  it("exports tax summary in CSV format for TaxExportModal", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([mockBooking]);
+
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format: "csv", taxYear: "2026" }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    const csv = await res.text();
+    expect(csv).toContain("Downtown CoWork");
+  });
+
+  it("exports tax summary in XLSX format for custom date range in TaxExportModal", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([mockBooking]);
+
+    const req = new Request("http://localhost:3000/api/bookings/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "xlsx",
+        startDate: "2026-01-01",
+        endDate: "2026-12-31",
+      }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
   });
 });

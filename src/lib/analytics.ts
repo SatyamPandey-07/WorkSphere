@@ -15,7 +15,8 @@ type EventName =
   | "agent_completed"
   | "filter_applied"
   | "conversation_started"
-  | "error_occurred";
+  | "error_occurred"
+  | "web_vital_reported";
 
 export interface AnalyticsEvent {
   name: EventName;

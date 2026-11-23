@@ -24,6 +24,10 @@ import {
 export const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000; // 60 seconds
 export const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2 seconds
 
+/** Maximum RPC timestamp clock skew tolerated (in seconds) for cluster block-time comparisons (#9735). */
+export const MAX_RPC_CLOCK_SKEW_SECONDS = 300; // 5 minutes
+export const MAX_RPC_CLOCK_SKEW_MS = MAX_RPC_CLOCK_SKEW_SECONDS * 1_000;
+
 export const DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT = 250_000;
 export const DEFAULT_ESCROW_MAX_RETRIES = 3;
 export const DEFAULT_ESCROW_BASE_BACKOFF_MS = 1_000;
@@ -417,6 +421,148 @@ export function calculatePriorityFeeForAttempt(
   if (attempt <= 0) return Math.min(baseMicroLamports, maxMicroLamports);
   const bumped = Math.round(baseMicroLamports * Math.pow(multiplier, attempt));
   return Math.min(bumped, maxMicroLamports);
+}
+
+/**
+ * Queries cluster block-time for an anchor slot with multi-connection/fallback retry support
+ * and protects against node clock desynchronization (#9735).
+ *
+ * @param connection Primary Solana RPC connection
+ * @param slot Anchor slot number
+ * @param fallbackConnections Optional secondary/backup RPC connections to query if primary fails or returns null
+ * @returns Unix timestamp in seconds (null if unavailable across all attempts/endpoints)
+ */
+export async function getClusterBlockTime(
+  connection: Connection,
+  slot: number,
+  fallbackConnections: Connection[] = [],
+): Promise<number | null> {
+  if (!Number.isFinite(slot) || slot <= 0) {
+    return null;
+  }
+
+  const allConnections = [connection, ...fallbackConnections];
+  const observedTimes: number[] = [];
+
+  for (const conn of allConnections) {
+    try {
+      const blockTime = await conn.getBlockTime(slot);
+      if (typeof blockTime === "number" && Number.isFinite(blockTime) && blockTime > 0) {
+        observedTimes.push(blockTime);
+        // If first endpoint returns a valid block-time, return immediately unless we want quorum
+        if (observedTimes.length === 1 && fallbackConnections.length === 0) {
+          return blockTime;
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[SolanaPayEscrow] Failed to query getBlockTime for slot ${slot}:`,
+        err,
+      );
+    }
+  }
+
+  if (observedTimes.length === 0) {
+    return null;
+  }
+
+  // If multiple RPC endpoints returned block-time for the same anchor slot, verify consistency
+  if (observedTimes.length > 1) {
+    const minTime = Math.min(...observedTimes);
+    const maxTime = Math.max(...observedTimes);
+    if (maxTime - minTime > MAX_RPC_CLOCK_SKEW_SECONDS) {
+      console.warn(
+        `[SolanaPayEscrow] Inconsistent block times across RPC endpoints for slot ${slot}: min=${minTime}, max=${maxTime} (skew > ${MAX_RPC_CLOCK_SKEW_SECONDS}s)`,
+      );
+      // Fail safely when RPC nodes contradict each other beyond the acceptable skew threshold
+      return null;
+    }
+    // Return median/min cluster block-time safely
+    return minTime;
+  }
+
+  return observedTimes[0];
+}
+
+/**
+ * Validates whether an escrow commitment has expired using Solana cluster block-time (#9735).
+ *
+ * Tolerates up to MAX_RPC_CLOCK_SKEW_SECONDS (300s / 5 minutes) of RPC node clock skew.
+ * If block-time cannot be obtained (null / RPC failure), fails safely to prevent premature
+ * refund triggers or invalid commitment rejections.
+ *
+ * @param params Validation parameters including connection, slot, expiresAt (Date, ms, or sec), and skew tolerance
+ * @returns Object indicating whether commitment has expired and diagnostic metadata
+ */
+export async function validateEscrowCommitmentExpiration(params: {
+  connection: Connection;
+  slot?: number | null;
+  expiresAt: Date | number;
+  fallbackConnections?: Connection[];
+  skewToleranceSeconds?: number;
+}): Promise<{
+  expired: boolean;
+  blockTimeSec: number | null;
+  expiresAtSec: number;
+  reason?: string;
+  clockSource: "cluster_block_time" | "unavailable";
+}> {
+  const { connection, slot, expiresAt, fallbackConnections = [] } = params;
+  const skewSec = params.skewToleranceSeconds ?? MAX_RPC_CLOCK_SKEW_SECONDS;
+
+  // Normalize expiresAt to Unix timestamp in seconds
+  let expiresAtSec: number;
+  if (expiresAt instanceof Date) {
+    expiresAtSec = Math.floor(expiresAt.getTime() / 1000);
+  } else if (typeof expiresAt === "number") {
+    // If greater than 1e11, it is in milliseconds (e.g. 1.7e12)
+    expiresAtSec = expiresAt > 1e11 ? Math.floor(expiresAt / 1000) : Math.floor(expiresAt);
+  } else {
+    return {
+      expired: false,
+      blockTimeSec: null,
+      expiresAtSec: 0,
+      reason: "Invalid expiresAt parameter",
+      clockSource: "unavailable",
+    };
+  }
+
+  if (typeof slot !== "number" || slot <= 0) {
+    return {
+      expired: false,
+      blockTimeSec: null,
+      expiresAtSec,
+      reason: "Anchor slot is required to query cluster block-time",
+      clockSource: "unavailable",
+    };
+  }
+
+  const blockTimeSec = await getClusterBlockTime(connection, slot, fallbackConnections);
+
+  if (blockTimeSec === null) {
+    // Missing block-time or RPC failure: fail safe, do not trigger premature refund
+    return {
+      expired: false,
+      blockTimeSec: null,
+      expiresAtSec,
+      reason: "Cluster block-time unavailable for anchor slot",
+      clockSource: "unavailable",
+    };
+  }
+
+  // To tolerate clock skew up to skewSec (300s):
+  // An escrow is only considered expired when the verified cluster block-time strictly exceeds
+  // the expiration threshold plus the clock skew tolerance margin:
+  // blockTimeSec > expiresAtSec + skewSec
+  // Conversely, if blockTimeSec <= expiresAtSec - skewSec, it is safely active.
+  const isExpired = blockTimeSec > expiresAtSec + skewSec;
+
+  return {
+    expired: isExpired,
+    blockTimeSec,
+    expiresAtSec,
+    clockSource: "cluster_block_time",
+  };
 }
 
 /**

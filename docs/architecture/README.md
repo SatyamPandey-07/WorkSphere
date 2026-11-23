@@ -25,6 +25,7 @@ Architecture decisions, implementation notes, and system-level design references
 - [Causal vector-clock specification](./CAUSAL_VECTOR_CLOCK_SPEC.md)
 - [Offline sync flow](./offline-sync-flow.md)
 - [Reminder cron pipeline](./reminder-cron-pipeline.md)
+- [Semantic Matching Engine: Skill Embeddings & pgvector HNSW Indexing](../ai/SEMANTIC_MATCHING_ENGINE.md)
 
 ## Database and cache operations
 

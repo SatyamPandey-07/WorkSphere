@@ -30,7 +30,11 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Architecture Documentation Index](./architecture/README.md) — system design references, distributed coordination, and architecture notes.
 - [Multi-Agent AI Architecture](./ARCHITECTURE.md) — agent orchestration, decision pipeline, and application-level AI architecture.
+
+- [Semantic Matching Engine & Vector Indexing](./ai/SEMANTIC_MATCHING_ENGINE.md) — resume tokenization, dense vector embeddings, pgvector HNSW tuning, and cosine distance query benchmarks.
+
 - [Causal Ordering & Deterministic Tie-Breaking](./architecture/CAUSAL_ORDERING_AND_TIEBREAKING.md) — Vector Clock partial order mathematics, Hybrid Logical Clock tie-breaking heuristics, and distributed partition reconciliation.
+
 - [GossipSub WebRTC Mesh](./architecture/GOSSIPSUB_WEBRTC_MESH.md) — peer discovery, GossipSub parameters, heartbeat intervals, and mesh behavior.
 - [WebRTC Peer Connection Lifecycle & ICE Candidate Negotiation](./p2p/mesh-lifecycle.md) — complete peer connection lifecycles, 4-state browser state machine, SDP offer/answer exchange, Trickle ICE, STUN/TURN fallback, DataChannel lifecycle, diagnostic runbook, and multi-device development.
 - [GossipSub IP Colocation & Sybil Defense](./architecture/GOSSIPSUB_IP_COLOCATION.md) — subnet colocation scoring (/24 IPv4 and /48 IPv6), Sybil mitigation, exponential decay, and mesh pruning.

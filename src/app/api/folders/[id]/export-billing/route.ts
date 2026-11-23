@@ -15,13 +15,16 @@ export async function GET(
     }
 
     const { id } = await params;
-    const { folder, hasAccess } = await hasFolderAccess(id, userId);
+    const { folder, hasAccess, role } = await hasFolderAccess(id, userId);
 
     if (!folder) {
       return new NextResponse("Folder not found", { status: 404 });
     }
-    if (!hasAccess) {
-      return new NextResponse("Forbidden", { status: 403 });
+    if (!hasAccess || (role !== "OWNER" && role !== "EDITOR")) {
+      return new NextResponse(
+        "Forbidden: Insufficient permissions to export billing data",
+        { status: 403 },
+      );
     }
 
     // 1. Fetch all venues in the folder

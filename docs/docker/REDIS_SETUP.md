@@ -269,8 +269,8 @@ Expected behavior:
 
 Other documented real endpoints include:
 
-- `POST /api/auth/resend-otp`: 3 requests per five minutes, requiring CSRF
-  headers and a valid email.
+- `POST /api/auth/resend-otp`: Retired (HTTP 410 Gone); authentication
+  is handled natively via Clerk.
 - `GET /api/venues`: 60 requests per minute per authenticated user or IP.
 - `POST /api/venues/<venueId>/check-in`: 10 requests per minute per
   authenticated user.

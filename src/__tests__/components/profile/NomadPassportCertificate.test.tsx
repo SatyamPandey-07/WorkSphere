@@ -22,6 +22,16 @@ jest.mock("@/components/profile/NomadPassportCoin", () => ({
   NomadPassportCoinSkeleton: () => <div data-testid="mock-coin-skeleton" />,
 }));
 
+const mockDownloadNomadPassportPngBadge = jest
+  .fn()
+  .mockResolvedValue(undefined);
+jest.mock("@/lib/profile/badgeGenerator", () => ({
+  downloadNomadPassportPngBadge: (...args: any[]) =>
+    mockDownloadNomadPassportPngBadge(...args),
+  getNomadPassportPngFilename: (name: string) =>
+    `nomad-passport-${name.toLowerCase().replace(/\s+/g, "-")}.png`,
+}));
+
 describe("NomadPassportCertificate Component", () => {
   const originalClipboard = navigator.clipboard;
   const originalMatchMedia = window.matchMedia;
@@ -88,7 +98,9 @@ describe("NomadPassportCertificate Component", () => {
     expect(screen.getByText(/Tokyo Innovation Space/)).toBeInTheDocument();
     expect(screen.getByTestId("mock-nomad-passport-coin")).toBeInTheDocument();
 
-    const copyBtn = screen.getByRole("button", { name: "Copy Nomad Passport Link" });
+    const copyBtn = screen.getByRole("button", {
+      name: "Copy Nomad Passport Link",
+    });
     expect(copyBtn).toBeInTheDocument();
     expect(copyBtn).toHaveTextContent("Copy Nomad Passport Link");
   });
@@ -104,7 +116,9 @@ describe("NomadPassportCertificate Component", () => {
       />,
     );
 
-    const copyBtn = screen.getByRole("button", { name: "Copy Nomad Passport Link" });
+    const copyBtn = screen.getByRole("button", {
+      name: "Copy Nomad Passport Link",
+    });
     await act(async () => {
       fireEvent.click(copyBtn);
     });
@@ -138,19 +152,19 @@ describe("NomadPassportCertificate Component", () => {
 
   it("generates structured verification URL if no referralUrl prop is provided", async () => {
     render(
-      <NomadPassportCertificate
-        stamp={mockStamp}
-        userId="nomad-dev-42"
-      />,
+      <NomadPassportCertificate stamp={mockStamp} userId="nomad-dev-42" />,
     );
 
-    const copyBtn = screen.getByRole("button", { name: "Copy Nomad Passport Link" });
+    const copyBtn = screen.getByRole("button", {
+      name: "Copy Nomad Passport Link",
+    });
     await act(async () => {
       fireEvent.click(copyBtn);
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
-    const copiedUrl = (navigator.clipboard.writeText as jest.Mock).mock.calls[0][0];
+    const copiedUrl = (navigator.clipboard.writeText as jest.Mock).mock
+      .calls[0][0];
     expect(copiedUrl).toContain("/verify/nomad-passport?");
     expect(copiedUrl).toContain("stampId=stamp-9606-test");
     expect(copiedUrl).toContain("ref=nomad-dev-42");
@@ -158,13 +172,11 @@ describe("NomadPassportCertificate Component", () => {
   });
 
   it("triggers confetti animation on successful copy", async () => {
-    render(
-      <NomadPassportCertificate
-        stamp={mockStamp}
-      />,
-    );
+    render(<NomadPassportCertificate stamp={mockStamp} />);
 
-    const copyBtn = screen.getByRole("button", { name: "Copy Nomad Passport Link" });
+    const copyBtn = screen.getByRole("button", {
+      name: "Copy Nomad Passport Link",
+    });
     await act(async () => {
       fireEvent.click(copyBtn);
     });
@@ -185,13 +197,11 @@ describe("NomadPassportCertificate Component", () => {
       dispatchEvent: jest.fn(),
     }));
 
-    render(
-      <NomadPassportCertificate
-        stamp={mockStamp}
-      />,
-    );
+    render(<NomadPassportCertificate stamp={mockStamp} />);
 
-    const copyBtn = screen.getByRole("button", { name: "Copy Nomad Passport Link" });
+    const copyBtn = screen.getByRole("button", {
+      name: "Copy Nomad Passport Link",
+    });
     await act(async () => {
       fireEvent.click(copyBtn);
     });
@@ -217,7 +227,9 @@ describe("NomadPassportCertificate Component", () => {
       />,
     );
 
-    const copyBtn = screen.getByRole("button", { name: "Copy Nomad Passport Link" });
+    const copyBtn = screen.getByRole("button", {
+      name: "Copy Nomad Passport Link",
+    });
     await act(async () => {
       fireEvent.click(copyBtn);
     });
@@ -235,7 +247,9 @@ describe("NomadPassportCertificate Component", () => {
 
     // Live region announces failure
     const liveRegion = screen.getByTestId("copy-status-announcement");
-    expect(liveRegion).toHaveTextContent("Failed to copy link. Please copy manually.");
+    expect(liveRegion).toHaveTextContent(
+      "Failed to copy link. Please copy manually.",
+    );
   });
 
   it("handles environment without navigator.clipboard gracefully", async () => {
@@ -253,12 +267,100 @@ describe("NomadPassportCertificate Component", () => {
       />,
     );
 
-    const copyBtn = screen.getByRole("button", { name: "Copy Nomad Passport Link" });
+    const copyBtn = screen.getByRole("button", {
+      name: "Copy Nomad Passport Link",
+    });
     await act(async () => {
       fireEvent.click(copyBtn);
     });
 
     // Should display manual fallback
     expect(screen.getByTestId("manual-copy-fallback")).toBeInTheDocument();
+  });
+
+  describe("Download Nomad Passport PNG Badge (#9721)", () => {
+    it("renders download badge button with accessible ARIA label", () => {
+      render(
+        <NomadPassportCertificate stamp={mockStamp} userName="Alex Nomad" />,
+      );
+
+      const downloadBtn = screen.getByTestId("download-passport-badge-btn");
+      expect(downloadBtn).toBeInTheDocument();
+      expect(downloadBtn).toHaveTextContent("Download Badge (PNG)");
+      expect(downloadBtn).toHaveAttribute(
+        "aria-label",
+        "Download Nomad Passport Badge (PNG)",
+      );
+    });
+
+    it("downloads PNG badge and displays success confirmation upon clicking button", async () => {
+      const onDownloadSuccess = jest.fn();
+      render(
+        <NomadPassportCertificate
+          stamp={mockStamp}
+          userName="Alex Nomad"
+          onDownloadBadgeSuccess={onDownloadSuccess}
+        />,
+      );
+
+      const downloadBtn = screen.getByTestId("download-passport-badge-btn");
+      await act(async () => {
+        fireEvent.click(downloadBtn);
+      });
+
+      expect(mockDownloadNomadPassportPngBadge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          displayName: "Alex Nomad",
+          rank: "Nomad Vanguard",
+          verifiedCheckIns: 12,
+        }),
+        2,
+      );
+
+      expect(downloadBtn).toHaveTextContent("Badge Downloaded!");
+      expect(onDownloadSuccess).toHaveBeenCalledWith(
+        "nomad-passport-alex-nomad.png",
+      );
+
+      const liveRegion = screen.getByTestId("copy-status-announcement");
+      expect(liveRegion).toHaveTextContent(
+        "Nomad passport badge downloaded as nomad-passport-alex-nomad.png!",
+      );
+
+      // Fast-forward reset timer
+      act(() => {
+        jest.advanceTimersByTime(3000);
+      });
+
+      expect(downloadBtn).toHaveTextContent("Download Badge (PNG)");
+    });
+
+    it("handles PNG badge download errors gracefully", async () => {
+      const onDownloadError = jest.fn();
+      mockDownloadNomadPassportPngBadge.mockRejectedValueOnce(
+        new Error("Canvas export failed"),
+      );
+
+      render(
+        <NomadPassportCertificate
+          stamp={mockStamp}
+          userName="Alex Nomad"
+          onDownloadBadgeError={onDownloadError}
+        />,
+      );
+
+      const downloadBtn = screen.getByTestId("download-passport-badge-btn");
+      await act(async () => {
+        fireEvent.click(downloadBtn);
+      });
+
+      expect(downloadBtn).toHaveTextContent("Download Failed");
+      expect(onDownloadError).toHaveBeenCalledWith(expect.any(Error));
+
+      const liveRegion = screen.getByTestId("copy-status-announcement");
+      expect(liveRegion).toHaveTextContent(
+        "Failed to generate passport badge image.",
+      );
+    });
   });
 });

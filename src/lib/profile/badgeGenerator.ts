@@ -8,6 +8,7 @@
  */
 
 import { downloadSVG } from "@/lib/qr/svgQr";
+import { triggerBrowserDownload } from "@/lib/export/csvBuilder";
 
 export const BADGE_VIEWBOX_WIDTH = 600;
 export const BADGE_VIEWBOX_HEIGHT = 340;
@@ -204,8 +205,93 @@ export function getNomadBadgeFilename(displayName: string): string {
   return `nomad-badge-${slug || "member"}.svg`;
 }
 
+/** Builds a safe lowercase PNG file name such as `nomad-passport-alex-nomad.png`. */
+export function getNomadPassportPngFilename(username: string): string {
+  const slug = String(username ?? "")
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    .slice(0, 40);
+  return `nomad-passport-${slug || "member"}.png`;
+}
+
 /** Generates the badge and triggers a browser download. */
 export function downloadNomadBadge(params: NomadBadgeParams): void {
   const svg = generateNomadBadgeSvg(params);
   downloadSVG(svg, getNomadBadgeFilename(params.displayName));
+}
+
+/**
+ * Renders an SVG string onto an HTML5 Canvas at the specified scale (default 2x)
+ * and returns a PNG Blob.
+ */
+export async function renderSvgToPngBlob(
+  svgString: string,
+  scale: number = 2,
+): Promise<Blob> {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error("renderSvgToPngBlob must run in a browser environment");
+  }
+
+  return new Promise((resolve, reject) => {
+    const width = BADGE_VIEWBOX_WIDTH * scale;
+    const height = BADGE_VIEWBOX_HEIGHT * scale;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      reject(new Error("Unable to obtain 2D canvas context"));
+      return;
+    }
+
+    const img = new Image();
+    const svgBlob = new Blob([svgString], {
+      type: "image/svg+xml;charset=utf-8",
+    });
+    const url = URL.createObjectURL(svgBlob);
+
+    img.onload = () => {
+      try {
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error("Failed to encode canvas to PNG blob"));
+          }
+        }, "image/png");
+      } catch (err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      }
+    };
+
+    img.onerror = (err) => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`Failed to load SVG into image: ${err}`));
+    };
+
+    img.src = url;
+  });
+}
+
+/**
+ * Generates the badge SVG, renders it to an HTML5 Canvas at 2x resolution,
+ * and triggers an instant client-side PNG file download named `nomad-passport-[username].png`.
+ */
+export async function downloadNomadPassportPngBadge(
+  params: NomadBadgeParams,
+  scale: number = 2,
+): Promise<void> {
+  const svg = generateNomadBadgeSvg(params);
+  const pngBlob = await renderSvgToPngBlob(svg, scale);
+  const filename = getNomadPassportPngFilename(params.displayName);
+  triggerBrowserDownload(pngBlob, filename);
 }

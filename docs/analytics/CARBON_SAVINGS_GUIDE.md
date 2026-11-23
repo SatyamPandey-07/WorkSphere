@@ -28,7 +28,7 @@ Every calculator clamps negative, `NaN`, and infinite distances to 0 before doin
 | Dashboard UI | [`src/components/analytics/CarbonFootprintTracker.tsx`](../../src/components/analytics/CarbonFootprintTracker.tsx) | Date presets, exports, badge download. |
 | Dashboard data API | [`src/app/api/analytics/carbon-footprint/route.ts`](../../src/app/api/analytics/carbon-footprint/route.ts) | Date range filtering and ESG CSV export. |
 | Venue commute estimator | [`src/lib/commute/carbonEstimator.ts`](../../src/lib/commute/carbonEstimator.ts) | Round-trip, weekly and annual estimates per mode. |
-| Mode calculator | [`src/lib/analytics/carbonCalculator.ts`](../../src/lib/analytics/carbonCalculator.ts) | Grams per passenger-km by transit mode, used by the eco routing engine. |
+| Mode calculator | [`src/lib/analytics/carbonCalculator.ts`](../../src/lib/analytics/carbonCalculator.ts) | Kilograms saved for `foot`, `bike` and `transit` trips against a 251 g/km baseline. Not imported by any other file today. See the [methodology](./CARBON_CALCULATION_METHODOLOGY.md). |
 | Offset summary calculator | [`src/lib/sustainability/carbonCalculator.ts`](../../src/lib/sustainability/carbonCalculator.ts) | kg saved and tree equivalents per trip list. |
 
 ## Emission factor baselines
@@ -63,16 +63,14 @@ Used by `useCommuteEstimator` and the venue commute estimator UI. The gasoline c
 
 ### Mode calculator (`analytics/carbonCalculator.ts`)
 
-Used by the eco routing engine (`src/lib/routing/ecoRoutingEngine.ts`). Factors are grams per passenger-km. The default baseline for an internal combustion engine car is **192 g/km**, and callers can override it with `iceBaselineGramsPerKm`.
+Not imported by any other file today. The default baseline for an internal combustion engine car is **251 g/km** (`EPA_ICE_GRAMS_PER_KM`), and callers can override it with `iceEmissionGramsPerKm`. Full formulas, properties and a worked comparison are in the [Carbon Calculation Methodology](./CARBON_CALCULATION_METHODOLOGY.md).
 
-| Mode | g CO₂e / passenger-km |
+| Mode | g CO₂e / km |
 | --- | ---: |
 | `foot` | 0 |
 | `bike` | 0 |
-| `metro` | 28 |
-| `rail` | 35 |
-| `bus` | 68 |
-| `car_ice` (baseline) | 192 |
+| `transit` | 68 |
+| ICE car (baseline) | 251 |
 
 ### Offset summary calculator (`sustainability/carbonCalculator.ts`)
 
@@ -88,7 +86,7 @@ Used by the profile overview and nomad stats cards. The baseline is **170 g CO�
 
 ### Known inconsistencies
 
-The baselines differ between 170 and 192 g/km, and public transit ranges from 32 to 60 g/km depending on the file. Numbers shown on different screens can therefore disagree for the same trip. Until the tables are consolidated into one shared module, a contributor who changes a factor should update every table that represents the same mode and mention it in the pull request.
+The baselines differ between 170 and 251 g/km, and public transit ranges from 32 to 68 g/km depending on the file. Numbers shown on different screens can therefore disagree for the same trip. Until the tables are consolidated into one shared module, a contributor who changes a factor should update every table that represents the same mode and mention it in the pull request.
 
 ## Formulas
 
@@ -183,15 +181,15 @@ trees           = 667.2 / 21.77   = 30.6
 
 ### Mode calculator (`calculateCarbonSavings`)
 
-The mode calculator works in grams and takes an optional baseline override:
+The mode calculator works in kilograms and takes optional rate overrides:
 
 ```text
-iceBaselineGrams  = round2(d × (iceBaselineGramsPerKm ?? 192))
-modeEmissionGrams = round2(d × EF(mode))
-carbonSavedGrams  = round2(max(0, iceBaselineGrams − modeEmissionGrams))
+iceKg   = round4(d × (iceEmissionGramsPerKm ?? 251) / 1000)
+modeKg  = round4(d × (modeEmissionGramsPerKm ?? default(mode)) / 1000)
+savedKg = round4(max(0, iceKg − modeKg))
 ```
 
-`round2` rounds to two decimal places.
+`round4` rounds to four decimal places. See the [Carbon Calculation Methodology](./CARBON_CALCULATION_METHODOLOGY.md) for the properties and a step-by-step example.
 
 ### Tree equivalents
 

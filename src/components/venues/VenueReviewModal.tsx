@@ -3,6 +3,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Star, X, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  saveDraft,
+  getDraft,
+  deleteDraft,
+} from "@/lib/storage/reviewDraftStore";
 
 export const REVIEW_MIN_LENGTH = 10;
 export const REVIEW_MAX_LENGTH = 500;
@@ -63,6 +68,7 @@ export interface VenueReviewModalProps {
  * Modal dialog for submitting verified workspace ratings and written reviews.
  * Enforces non-empty, trimmed comment validation (min 10 characters, max 500 characters)
  * and displays a dynamic character counter with color threshold warnings.
+ * Persists drafts to IndexedDB with 500ms debounce.
  */
 export function VenueReviewModal({
   isOpen,
@@ -83,16 +89,75 @@ export function VenueReviewModal({
 
   const modalRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isInitialMount = useRef<boolean>(true);
 
-  // Sync initial props when modal opens
+  // Sync initial props and check IndexedDB for existing draft when modal opens
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) {
+      isInitialMount.current = true;
+      return;
+    }
+
+    let isActive = true;
+
+    async function initializeForm() {
       setRating(initialRating);
       setComment(initialComment);
       setIsTouched(false);
       setIsSubmitting(false);
+
+      try {
+        const existingDraft = await getDraft(venueId);
+        if (existingDraft && isActive) {
+          const timestamp = new Date(
+            existingDraft.updatedAt,
+          ).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          const shouldRestore = window.confirm(
+            `Restore draft from ${timestamp}?`,
+          );
+          if (shouldRestore && isActive) {
+            setRating(existingDraft.rating);
+            setComment(existingDraft.comment);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load review draft from IndexedDB:", error);
+      } finally {
+        if (isActive) {
+          isInitialMount.current = false;
+        }
+      }
     }
-  }, [isOpen, initialRating, initialComment]);
+
+    initializeForm();
+
+    return () => {
+      isActive = false;
+    };
+  }, [isOpen, venueId, initialRating, initialComment]);
+
+  // Auto-save form state to IndexedDB every 500ms when modified
+  useEffect(() => {
+    if (!isOpen || isInitialMount.current) return;
+
+    // Avoid saving completely empty state
+    if (rating === 0 && comment.trim() === "") return;
+
+    const timer = setTimeout(() => {
+      saveDraft(venueId, {
+        rating,
+        comment,
+        amenityTags: [],
+      }).catch((error) => {
+        console.error("Failed to auto-save review draft:", error);
+      });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, venueId, rating, comment]);
 
   const triggerElementRef = useRef<HTMLElement | null>(null);
 
@@ -158,6 +223,7 @@ export function VenueReviewModal({
         rating,
         comment: trimmedComment,
       });
+      await deleteDraft(venueId);
       onClose();
     } catch {
       // Handled by parent or toast notifications
@@ -211,7 +277,7 @@ export function VenueReviewModal({
             data-testid="venue-review-modal-close"
             onClick={onClose}
             aria-label="Close review modal"
-            className="rounded-xl p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="rounded-xl p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -243,7 +309,7 @@ export function VenueReviewModal({
                     onClick={() => setRating(star)}
                     onMouseEnter={() => setHoverRating(star)}
                     onMouseLeave={() => setHoverRating(null)}
-                    className="p-1 rounded-lg text-zinc-300 dark:text-zinc-700 hover:scale-110 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    className="p-1 rounded-lg text-zinc-300 dark:text-zinc-700 hover:scale-110 transition-transform focus:outline-none"
                   >
                     <Star
                       className={cn(
@@ -338,7 +404,7 @@ export function VenueReviewModal({
               type="button"
               data-testid="venue-review-cancel-button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold rounded-xl text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="px-4 py-2 text-xs font-semibold rounded-xl text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             >
               Cancel
             </button>
@@ -347,7 +413,7 @@ export function VenueReviewModal({
               data-testid="venue-review-submit-button"
               disabled={isSubmitDisabled}
               className={cn(
-                "inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all shadow-sm",
+                "inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all",
                 isSubmitDisabled
                   ? "bg-zinc-300 dark:bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-60"
                   : "bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-blue-500/20",

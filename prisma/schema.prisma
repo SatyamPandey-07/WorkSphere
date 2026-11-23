@@ -163,7 +163,7 @@ model Venue {
   beaconPathLossExponent Float?
   seatWaitlists          VenueSeatWaitlist[]
   liveFeedbacks          VenueLiveFeedback[]
-  slaPenaltyPoints       Int       @default(0)
+  slaPenaltyPoints       Int                                    @default(0)
   slaComplianceScore     Float?
   slaLastAuditedAt       DateTime?
   slaAudits              VenueSlaAudit[]
@@ -335,6 +335,7 @@ model Booking {
   recurringGroupId   String?
   frequency          String?
   guestCount         Int?
+  version            Int            @default(1)
 
   // A partial unique index, `Booking_active_seat_slot_key`, protects against
   // concurrent reservations of the same active (venueId, seat, date, time)
@@ -1074,6 +1075,24 @@ model IoTOrchestrationLog {
   @@index([userId])
 }
 
+/// /api/checkin/poap
+model PoapClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  venueId    String
+  latitude   Float
+  longitude  Float
+  wifiSsid   String
+  sensorHash String
+  nonce      String   @unique
+  signature  String
+  confidence Float
+  createdAt  DateTime @default(now())
+
+  @@index([userId, venueId])
+  @@index([createdAt])
+}
+
 /// /api/network/multiplex
 model MeshSession {
   id             String   @id @default(cuid())
@@ -1155,20 +1174,20 @@ model VenueCancellationWebhookEvent {
 }
 
 model WebhookOutboxEvent {
-  id                           String           @id
-  userId                       String
-  eventType                    WebhookEventType
-  data                         Json
-  state                        String           @default("PENDING")
-  attempts                     Int              @default(0)
-  completedEndpointIds         String[]         @default([])
-  permanentFailureEndpointIds  String[]         @default([])
-  lastError                    String?
-  nextAttemptAt                DateTime         @default(now())
-  lockedUntil                  DateTime?
-  deadLetteredAt               DateTime?
-  createdAt                    DateTime         @default(now())
-  updatedAt                    DateTime         @updatedAt
+  id                          String           @id
+  userId                      String
+  eventType                   WebhookEventType
+  data                        Json
+  state                       String           @default("PENDING")
+  attempts                    Int              @default(0)
+  completedEndpointIds        String[]         @default([])
+  permanentFailureEndpointIds String[]         @default([])
+  lastError                   String?
+  nextAttemptAt               DateTime         @default(now())
+  lockedUntil                 DateTime?
+  deadLetteredAt              DateTime?
+  createdAt                   DateTime         @default(now())
+  updatedAt                   DateTime         @updatedAt
 
   @@index([state, nextAttemptAt])
   @@index([state, lockedUntil])
@@ -1206,22 +1225,22 @@ model VenueSlaAudit {
 /// `REFUNDED` after the signature is confirmed on-chain. `refundTxSignature`
 /// plus the status guard make repeated or concurrent cron runs idempotent.
 model SolanaEscrow {
-  id                String             @id @default(cuid())
-  bookingId         String             @unique
-  depositorWallet   String
+  id                 String             @id @default(cuid())
+  bookingId          String             @unique
+  depositorWallet    String
   /// Base58 signature of the deposit transaction. Written upon broadcast.
   depositTxSignature String?            @unique
-  amountLamports    BigInt
-  currency          String             @default("SOL")
-  status            SolanaEscrowStatus @default(PENDING)
-  holdExpiresAt     DateTime
+  amountLamports     BigInt
+  currency           String             @default("SOL")
+  status             SolanaEscrowStatus @default(PENDING)
+  holdExpiresAt      DateTime
   /// Base58 signature of the refund transaction. Written before broadcast.
-  refundTxSignature String?
-  refundAttemptedAt DateTime?
-  refundedAt        DateTime?
-  lastRefundError   String?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  refundTxSignature  String?
+  refundAttemptedAt  DateTime?
+  refundedAt         DateTime?
+  lastRefundError    String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([status, holdExpiresAt])
   @@index([status, refundAttemptedAt])
@@ -1271,4 +1290,50 @@ enum MicroBillingSessionStatus {
   SETTLING
   SETTLED
   FAILED
+}
+
+/// Persistent time-barter agreement between nomads (#9585).
+model BarterAgreement {
+  id             String               @id @default(cuid())
+  providerId     String
+  receiverId     String
+  skillOffered   String
+  skillRequested String
+  amountMinutes  Int
+  state          BarterAgreementState @default(PROPOSED)
+  providerPubKey String
+  receiverPubKey String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  settlement     TimebankSettlement?
+
+  @@index([providerId])
+  @@index([receiverId])
+  @@index([state])
+}
+
+enum BarterAgreementState {
+  PROPOSED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  SETTLED
+  CANCELLED
+}
+
+/// Cryptographically verified timebank credit settlement (#9585).
+model TimebankSettlement {
+  id            String          @id @default(cuid())
+  agreementId   String          @unique
+  agreement     BarterAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  providerId    String
+  receiverId    String
+  amountMinutes Int
+  providerSig   String
+  receiverSig   String
+  nonce         String
+  settledAt     DateTime        @default(now())
+
+  @@index([providerId])
+  @@index([receiverId])
 }

@@ -23,6 +23,170 @@ import {
 
 export const DEFAULT_CONFIRMATION_TIMEOUT_MS = 60_000; // 60 seconds
 export const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2 seconds
+export const DEFAULT_RPC_POLL_TIMEOUT_MS = 5_000; // 5 seconds strict abort timeout (#9448)
+export const STATUS_TIMEOUT = "timeout" as const;
+
+export class SolanaRpcPollTimeoutError extends Error {
+  constructor(message = "Solana RPC status poll timed out after 5000ms") {
+    super(message);
+    this.name = "SolanaRpcPollTimeoutError";
+  }
+}
+
+// Exponential backoff with full jitter defaults for RPC HTTP 429 (#9510)
+export const DEFAULT_RPC_429_MAX_RETRIES = 5;
+export const DEFAULT_RPC_429_BASE_DELAY_MS = 500;
+export const DEFAULT_RPC_429_MAX_DELAY_MS = 8_000;
+
+export interface Rpc429RetryOptions {
+  /** Maximum consecutive 429 retry attempts before failing (default: 5). */
+  maxRetries?: number;
+  /** Base delay in ms for exponential backoff (default: 500). */
+  baseDelayMs?: number;
+  /** Maximum delay cap in ms for exponential backoff (default: 8,000). */
+  maxDelayMs?: number;
+  /** Custom random function for deterministic testing (returns in [0, 1)). */
+  randomFn?: () => number;
+}
+
+/**
+ * Detects whether an error represents an HTTP 429 (Too Many Requests) or rate limit.
+ * Supports standard HTTP status codes, Fetch/Axios error shapes, Solana RPC errors,
+ * and rate-limit error messages, without confusing unrelated failures as 429.
+ */
+export function isSolanaRpcRateLimitError(error: unknown): boolean {
+  if (!error) return false;
+
+  const candidate = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    code?: unknown;
+    name?: unknown;
+    message?: unknown;
+    response?: { status?: unknown; statusCode?: unknown };
+  };
+
+  for (const code of [
+    candidate.status,
+    candidate.statusCode,
+    candidate.code,
+    candidate.response?.status,
+    candidate.response?.statusCode,
+  ]) {
+    if (code === 429 || code === "429") {
+      return true;
+    }
+  }
+
+  const name = typeof candidate.name === "string" ? candidate.name : "";
+  if (name === "RateLimitError" || name === "TooManyRequestsError") {
+    return true;
+  }
+
+  const message =
+    typeof error === "string"
+      ? error
+      : typeof candidate.message === "string"
+        ? candidate.message
+        : "";
+
+  if (!message) return false;
+
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("429") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("ratelimit") ||
+    normalized.includes("resource exhausted") ||
+    normalized.includes("exceeded rate limit")
+  );
+}
+
+/**
+ * Reads a header from various header containers (Headers instance, plain Record, or nested in error.response).
+ */
+function readHeaderValue(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== "object") return undefined;
+
+  const getter = (headers as { get?: unknown }).get;
+  if (typeof getter === "function") {
+    const val = (getter as (header: string) => unknown).call(headers, name);
+    if (typeof val === "string") return val;
+  }
+
+  const record = headers as Record<string, unknown>;
+  const lowerName = name.toLowerCase();
+  for (const key of Object.keys(record)) {
+    if (key.toLowerCase() === lowerName) {
+      const val = record[key];
+      return typeof val === "string" ? val : typeof val === "number" ? String(val) : undefined;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extracts and parses a Retry-After header from an RPC error, returning delay in milliseconds.
+ * Supports integer delta-seconds, floating seconds, and HTTP-date formats.
+ * Returns undefined if header is absent, invalid, or negative.
+ */
+export function parseRetryAfterMs(error: unknown, now: number = Date.now()): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+
+  const candidate = error as {
+    headers?: unknown;
+    response?: { headers?: unknown };
+    retryAfter?: unknown;
+  };
+
+  // If error has a direct retryAfter property (numeric seconds or ms)
+  if (typeof candidate.retryAfter === "number" && Number.isFinite(candidate.retryAfter) && candidate.retryAfter > 0) {
+    // If > 1000, likely already in ms, otherwise seconds
+    return candidate.retryAfter > 1000 ? Math.round(candidate.retryAfter) : Math.round(candidate.retryAfter * 1000);
+  }
+
+  const rawHeader =
+    readHeaderValue(candidate.headers, "retry-after") ??
+    readHeaderValue(candidate.response?.headers, "retry-after");
+
+  if (!rawHeader) return undefined;
+  const trimmed = rawHeader.trim();
+  if (!trimmed) return undefined;
+
+  // 1. Delta-seconds format (e.g. "3", "2.5")
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const sec = parseFloat(trimmed);
+    return Number.isFinite(sec) && sec >= 0 ? Math.round(sec * 1000) : undefined;
+  }
+
+  // 2. HTTP-date format (e.g. "Wed, 21 Oct 2026 07:28:00 GMT")
+  const parsedDate = Date.parse(trimmed);
+  if (!Number.isNaN(parsedDate)) {
+    return Math.max(0, parsedDate - now);
+  }
+
+  return undefined;
+}
+
+/**
+ * Computes exponential backoff with full jitter for attempt number (0-indexed).
+ * Full jitter: delay = random * min(maxDelay, baseDelay * 2 ** attempt)
+ */
+export function computeRpc429Delay(
+  attempt: number,
+  options: Rpc429RetryOptions = {},
+): number {
+  const baseDelay = options.baseDelayMs ?? DEFAULT_RPC_429_BASE_DELAY_MS;
+  const maxDelay = options.maxDelayMs ?? DEFAULT_RPC_429_MAX_DELAY_MS;
+  const randomFn = options.randomFn ?? Math.random;
+
+  const expDelay = Math.min(maxDelay, baseDelay * Math.pow(2, Math.max(0, attempt)));
+  const rand = randomFn();
+  const validRand = typeof rand === "number" && Number.isFinite(rand) && rand >= 0 && rand <= 1 ? rand : 0.5;
+  return Math.round(validRand * expDelay);
+}
 
 export type SeatConfirmationMode = "websocket" | "polling";
 
@@ -76,9 +240,35 @@ export interface ReserveSeatOptions {
    * Optional failover-aware signature status poller used in polling mode.
    * Defaults to polling the provided connection's getSignatureStatuses.
    */
-  pollSignatureStatus?: (signature: string) => Promise<SignatureStatus | null>;
+  pollSignatureStatus?: (
+    signature: string,
+    options?: { signal?: AbortSignal },
+  ) => Promise<SignatureStatus | null>;
   /** Interval between background status polls (polling mode only). */
   pollIntervalMs?: number;
+  /** Optional RPC HTTP 429 retry options (polling mode). */
+  rpc429RetryOptions?: Rpc429RetryOptions;
+  /**
+   * Secondary fallback RPC connection used when primary RPC polls time out (#9448).
+   */
+  fallbackConnection?: Connection;
+  /** Alias for fallbackConnection (#9448). */
+  secondaryConnection?: Connection;
+  /**
+   * Secondary fallback signature status poller called when primary poll times out (#9448).
+   */
+  fallbackPollSignatureStatus?: (
+    signature: string,
+    options?: { signal?: AbortSignal },
+  ) => Promise<SignatureStatus | null>;
+  /**
+   * Timeout in ms for each individual RPC status poll attempt (default: 5,000ms) (#9448).
+   */
+  pollTimeoutMs?: number;
+  /**
+   * Optional AbortSignal to cleanly cancel the reservation and clean up active polling and timers (#9448).
+   */
+  signal?: AbortSignal;
 }
 
 interface ActiveSubscription {
@@ -90,8 +280,25 @@ interface ActiveSubscription {
   pollTimer?: ReturnType<typeof setTimeout>;
   pollAborted?: boolean;
   connection: Connection;
+  fallbackConnection?: Connection;
+  pollSignatureStatus?: (
+    signature: string,
+    options?: { signal?: AbortSignal },
+  ) => Promise<SignatureStatus | null>;
+  fallbackPollSignatureStatus?: (
+    signature: string,
+    options?: { signal?: AbortSignal },
+  ) => Promise<SignatureStatus | null>;
+  pollTimeoutMs?: number;
+  activeAbortController?: AbortController;
+  parentSignal?: AbortSignal;
+  parentAbortHandler?: () => void;
   callbacks?: SeatReservationCallbacks;
   stateRemovers?: Array<() => void>;
+  rpc429ConsecutiveCount?: number;
+  timeoutEndMs?: number;
+  rpc429RetryOptions?: Rpc429RetryOptions;
+  activeConnectionIsFallback?: boolean;
 }
 
 /**
@@ -101,11 +308,40 @@ interface ActiveSubscription {
 async function fetchSignatureStatusViaConnection(
   connection: Connection,
   signature: string,
+  options?: { signal?: AbortSignal },
 ): Promise<SignatureStatus | null> {
-  const response = await connection.getSignatureStatuses?.([signature], {
-    searchTransactionHistory: true,
+  const signal = options?.signal;
+  if (signal?.aborted) {
+    throw signal.reason || new Error("Aborted");
+  }
+
+  const fetchPromise = Promise.resolve().then(() =>
+    connection.getSignatureStatuses?.([signature], {
+      searchTransactionHistory: true,
+    }),
+  );
+
+  if (!signal) {
+    const response = await fetchPromise;
+    return response?.value?.[0] ?? null;
+  }
+
+  let abortHandler: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    abortHandler = () => {
+      reject(signal.reason || new Error("Aborted"));
+    };
+    signal.addEventListener("abort", abortHandler, { once: true });
   });
-  return response?.value?.[0] ?? null;
+
+  try {
+    const response = await Promise.race([fetchPromise, abortPromise]);
+    return response?.value?.[0] ?? null;
+  } finally {
+    if (abortHandler) {
+      signal.removeEventListener("abort", abortHandler);
+    }
+  }
 }
 
 export class SolanaPayEscrowManager {
@@ -169,6 +405,12 @@ export class SolanaPayEscrowManager {
       confirmationMode = "websocket",
       pollSignatureStatus,
       pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+      rpc429RetryOptions,
+      fallbackConnection,
+      secondaryConnection,
+      fallbackPollSignatureStatus,
+      pollTimeoutMs = DEFAULT_RPC_POLL_TIMEOUT_MS,
+      signal,
     } = options;
 
     if (!seatId || typeof seatId !== "string" || !seatId.trim()) {
@@ -240,6 +482,26 @@ export class SolanaPayEscrowManager {
     // Clean up any stale subscription for this seat before starting a new one
     this.cleanupSubscription(seatId);
 
+    const effectiveFallbackConn = fallbackConnection ?? secondaryConnection;
+
+    // Handle early abortion signal
+    if (signal?.aborted) {
+      const rolledBack = this.rollback(
+        seatId,
+        "Reservation aborted by client",
+        "failed",
+      );
+      return (
+        rolledBack ?? {
+          ...initialState,
+          state: "available",
+          paymentStatus: "failed",
+          error: "Reservation aborted by client",
+          updatedAt: Date.now(),
+        }
+      );
+    }
+
     // 2. Track confirmation (WebSocket notifications or background status polling) & start timeout
     if (confirmationMode === "polling") {
       this.startPollingConfirmation(
@@ -250,6 +512,11 @@ export class SolanaPayEscrowManager {
         pollIntervalMs,
         pollSignatureStatus,
         callbacks,
+        rpc429RetryOptions,
+        effectiveFallbackConn,
+        fallbackPollSignatureStatus,
+        pollTimeoutMs,
+        signal,
       );
     } else {
       this.subscribeToSignatureUpdates(
@@ -260,6 +527,11 @@ export class SolanaPayEscrowManager {
         callbacks,
         pollIntervalMs,
         pollSignatureStatus,
+        rpc429RetryOptions,
+        effectiveFallbackConn,
+        fallbackPollSignatureStatus,
+        pollTimeoutMs,
+        signal,
       );
     }
 
@@ -280,14 +552,39 @@ export class SolanaPayEscrowManager {
     pollIntervalMs: number = DEFAULT_POLL_INTERVAL_MS,
     pollSignatureStatus?: (
       signature: string,
+      options?: { signal?: AbortSignal },
     ) => Promise<SignatureStatus | null>,
+    rpc429RetryOptions?: Rpc429RetryOptions,
+    fallbackConnection?: Connection,
+    fallbackPollSignatureStatus?: (
+      signature: string,
+      options?: { signal?: AbortSignal },
+    ) => Promise<SignatureStatus | null>,
+    pollTimeoutMs: number = DEFAULT_RPC_POLL_TIMEOUT_MS,
+    signal?: AbortSignal,
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
       signature,
       connection,
+      fallbackConnection,
+      pollSignatureStatus,
+      fallbackPollSignatureStatus,
+      pollTimeoutMs,
       callbacks,
+      timeoutEndMs: Date.now() + timeoutMs,
+      rpc429ConsecutiveCount: 0,
+      rpc429RetryOptions,
     };
+
+    if (signal) {
+      const parentAbortHandler = () => {
+        this.rollback(seatId, "Reservation aborted by client", "failed");
+      };
+      signal.addEventListener("abort", parentAbortHandler, { once: true });
+      subRecord.parentSignal = signal;
+      subRecord.parentAbortHandler = parentAbortHandler;
+    }
 
     // 3. 60-Second timeout: rollback to available if transaction drops from mempool
     subRecord.timeoutTimer = setTimeout(() => {
@@ -445,15 +742,40 @@ export class SolanaPayEscrowManager {
     pollIntervalMs: number,
     pollSignatureStatus?: (
       signature: string,
+      options?: { signal?: AbortSignal },
     ) => Promise<SignatureStatus | null>,
     callbacks?: SeatReservationCallbacks,
+    rpc429RetryOptions?: Rpc429RetryOptions,
+    fallbackConnection?: Connection,
+    fallbackPollSignatureStatus?: (
+      signature: string,
+      options?: { signal?: AbortSignal },
+    ) => Promise<SignatureStatus | null>,
+    pollTimeoutMs: number = DEFAULT_RPC_POLL_TIMEOUT_MS,
+    signal?: AbortSignal,
   ): void {
     const subRecord: ActiveSubscription = {
       seatId,
       signature,
       connection,
+      fallbackConnection,
+      pollSignatureStatus,
+      fallbackPollSignatureStatus,
+      pollTimeoutMs,
       callbacks,
+      timeoutEndMs: Date.now() + timeoutMs,
+      rpc429ConsecutiveCount: 0,
+      rpc429RetryOptions,
     };
+
+    if (signal) {
+      const parentAbortHandler = () => {
+        this.rollback(seatId, "Reservation aborted by client", "failed");
+      };
+      signal.addEventListener("abort", parentAbortHandler, { once: true });
+      subRecord.parentSignal = signal;
+      subRecord.parentAbortHandler = parentAbortHandler;
+    }
 
     // Overall timeout: rollback to available if transaction drops from mempool
     subRecord.timeoutTimer = setTimeout(() => {
@@ -479,27 +801,30 @@ export class SolanaPayEscrowManager {
   private scheduleNextPoll(
     subRecord: ActiveSubscription,
     signature: string,
-    pollIntervalMs: number,
+    delayMs: number,
     pollSignatureStatus?: (
       signature: string,
+      options?: { signal?: AbortSignal },
     ) => Promise<SignatureStatus | null>,
+    normalPollIntervalMs?: number,
   ): void {
     if (subRecord.pollAborted) return;
+    const intervalToUse = normalPollIntervalMs ?? delayMs;
     subRecord.pollTimer = setTimeout(() => {
       void this.pollSignatureStatusOnce(
         subRecord,
         signature,
-        pollIntervalMs,
+        intervalToUse,
         pollSignatureStatus,
       );
-    }, pollIntervalMs);
+    }, delayMs);
     subRecord.pollTimer.unref?.();
   }
 
   /**
    * Performs one background status poll and advances the reservation state machine.
-   * Transient RPC failures are swallowed and retried on the next tick until the
-   * overall confirmation timeout rolls the reservation back.
+   * Handles HTTP 429 rate limit errors with exponential jitter backoff and Retry-After header.
+   * Wraps each poll attempt in an AbortController with a strict 5000ms timeout (#9448).
    */
   private async pollSignatureStatusOnce(
     subRecord: ActiveSubscription,
@@ -507,31 +832,196 @@ export class SolanaPayEscrowManager {
     pollIntervalMs: number,
     pollSignatureStatus?: (
       signature: string,
+      options?: { signal?: AbortSignal },
     ) => Promise<SignatureStatus | null>,
   ): Promise<void> {
     if (subRecord.pollAborted) return;
     const { seatId, connection, callbacks } = subRecord;
+    const timeoutMs = subRecord.pollTimeoutMs ?? DEFAULT_RPC_POLL_TIMEOUT_MS;
+
+    const executeAttempt = async (
+      conn: Connection,
+      poller?: (
+        sig: string,
+        opts?: { signal?: AbortSignal },
+      ) => Promise<SignatureStatus | null>,
+    ): Promise<SignatureStatus | null> => {
+      let didTimeout = false;
+      const controller = new AbortController();
+      subRecord.activeAbortController = controller;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          didTimeout = true;
+          controller.abort(
+            new SolanaRpcPollTimeoutError(
+              `Solana RPC status poll timed out after ${timeoutMs}ms`,
+            ),
+          );
+          reject(
+            new SolanaRpcPollTimeoutError(
+              `Solana RPC status poll timed out after ${timeoutMs}ms`,
+            ),
+          );
+        }, timeoutMs);
+        timer.unref?.();
+      });
+
+      try {
+        const pollPromise = poller
+          ? poller(signature, { signal: controller.signal })
+          : fetchSignatureStatusViaConnection(conn, signature, {
+              signal: controller.signal,
+            });
+
+        return await Promise.race([pollPromise, timeoutPromise]);
+      } catch (pollErr) {
+        if (didTimeout) {
+          throw new SolanaRpcPollTimeoutError(
+            `Solana RPC status poll timed out after ${timeoutMs}ms`,
+          );
+        }
+        throw pollErr;
+      } finally {
+        if (timer) clearTimeout(timer);
+        if (subRecord.activeAbortController === controller) {
+          subRecord.activeAbortController = undefined;
+        }
+      }
+    };
+
+    const pollerToUse = subRecord.pollSignatureStatus ?? pollSignatureStatus;
+    const fallbackConn = subRecord.fallbackConnection;
+    const fallbackPoller = subRecord.fallbackPollSignatureStatus;
+    const hasFallback = Boolean(fallbackConn || fallbackPoller);
 
     let status: SignatureStatus | null = null;
     try {
-      status = pollSignatureStatus
-        ? await pollSignatureStatus(signature)
-        : await fetchSignatureStatusViaConnection(connection, signature);
+      if (subRecord.activeConnectionIsFallback && hasFallback) {
+        status = await executeAttempt(
+          fallbackConn || connection,
+          fallbackPoller,
+        );
+      } else {
+        status = await executeAttempt(connection, pollerToUse);
+      }
     } catch (err) {
-      console.warn(
-        "[SolanaPayEscrow] Signature status poll failed; retrying next interval:",
-        err,
-      );
-      this.scheduleNextPoll(
-        subRecord,
-        signature,
-        pollIntervalMs,
-        pollSignatureStatus,
-      );
-      return;
+      if (subRecord.pollAborted) return;
+
+      const isTimeout =
+        err instanceof SolanaRpcPollTimeoutError ||
+        (err instanceof Error &&
+          (err.name === "AbortError" ||
+            err.message.includes("timed out") ||
+            err.message.includes("Timeout")));
+
+      if (isTimeout) {
+        console.warn(
+          `[SolanaPayEscrow] RPC status poll timed out after ${timeoutMs}ms.`,
+        );
+
+        if (hasFallback && !subRecord.activeConnectionIsFallback) {
+          console.warn(
+            "[SolanaPayEscrow] Failing over to secondary fallback RPC endpoint.",
+          );
+          subRecord.activeConnectionIsFallback = true;
+          try {
+            status = await executeAttempt(
+              fallbackConn || connection,
+              fallbackPoller,
+            );
+          } catch (fallbackErr) {
+            if (subRecord.pollAborted) return;
+            console.warn(
+              "[SolanaPayEscrow] Fallback RPC poll failed or timed out:",
+              fallbackErr,
+            );
+            const timeoutReason = `Transaction confirmation status polling timed out after ${timeoutMs}ms on primary and fallback RPC endpoints.`;
+            this.rollback(seatId, timeoutReason, STATUS_TIMEOUT);
+            return;
+          }
+        } else {
+          const timeoutReason = `Transaction confirmation status polling timed out after ${timeoutMs}ms.`;
+          this.rollback(seatId, timeoutReason, STATUS_TIMEOUT);
+          return;
+        }
+      } else if (isSolanaRpcRateLimitError(err)) {
+        const retryOpts = subRecord.rpc429RetryOptions || {};
+        const maxRetries = retryOpts.maxRetries ?? DEFAULT_RPC_429_MAX_RETRIES;
+        const currentAttempt = subRecord.rpc429ConsecutiveCount ?? 0;
+
+        if (currentAttempt >= maxRetries) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const reason = `Solana RPC rate limit exceeded (${maxRetries} retries exhausted): ${errMsg}. Seat reservation reverted to available.`;
+          this.rollback(seatId, reason, "failed");
+          return;
+        }
+
+        subRecord.rpc429ConsecutiveCount = currentAttempt + 1;
+
+        // Calculate backoff delay: check Retry-After first, then fallback to exponential jitter
+        const parsedRetryAfter = parseRetryAfterMs(err);
+        let waitMs = parsedRetryAfter !== undefined
+          ? parsedRetryAfter
+          : computeRpc429Delay(currentAttempt, retryOpts);
+
+        // Check if raw Retry-After exceeded the remaining confirmation timeout budget
+        if (subRecord.timeoutEndMs && parsedRetryAfter !== undefined) {
+          const remainingTimeout = subRecord.timeoutEndMs - Date.now();
+          if (remainingTimeout <= 0 || parsedRetryAfter > remainingTimeout) {
+            const timeoutReason = `Transaction confirmation timed out while waiting for rate-limit backoff. Seat reservation has been restored to available.`;
+            this.rollback(seatId, timeoutReason, "timeout");
+            return;
+          }
+        }
+
+        // Bounded by maxDelayMs if configured or default
+        const maxDelay = retryOpts.maxDelayMs ?? DEFAULT_RPC_429_MAX_DELAY_MS;
+        waitMs = Math.min(maxDelay, Math.max(0, waitMs));
+
+        // Ensure retry does not schedule past remaining confirmation timeout budget
+        if (subRecord.timeoutEndMs) {
+          const remainingTimeout = subRecord.timeoutEndMs - Date.now();
+          if (remainingTimeout <= 0 || waitMs > remainingTimeout) {
+            const timeoutReason = `Transaction confirmation timed out while waiting for rate-limit backoff. Seat reservation has been restored to available.`;
+            this.rollback(seatId, timeoutReason, "timeout");
+            return;
+          }
+        }
+
+        console.warn(
+          `[SolanaPayEscrow] Solana RPC 429 rate limit encountered (attempt ${subRecord.rpc429ConsecutiveCount}/${maxRetries}); retrying in ${waitMs}ms`,
+        );
+
+        this.scheduleNextPoll(
+          subRecord,
+          signature,
+          waitMs,
+          pollSignatureStatus,
+          pollIntervalMs,
+        );
+        return;
+      } else {
+        // Non-429 transient polling failure: maintain existing behavior
+        console.warn(
+          "[SolanaPayEscrow] Signature status poll failed; retrying next interval:",
+          err,
+        );
+        this.scheduleNextPoll(
+          subRecord,
+          signature,
+          pollIntervalMs,
+          pollSignatureStatus,
+        );
+        return;
+      }
     }
 
     if (subRecord.pollAborted) return;
+
+    // Successful RPC response resets consecutive 429 counter
+    subRecord.rpc429ConsecutiveCount = 0;
 
     // Status not visible on-chain yet — keep polling; the overall timeout
     // handles the dropped-from-mempool case.
@@ -692,6 +1182,21 @@ export class SolanaPayEscrowManager {
     const sub = this.activeSubscriptions.get(seatId);
     if (!sub) return;
 
+    if (sub.parentSignal && sub.parentAbortHandler) {
+      try {
+        sub.parentSignal.removeEventListener("abort", sub.parentAbortHandler);
+      } catch {}
+      sub.parentSignal = undefined;
+      sub.parentAbortHandler = undefined;
+    }
+
+    if (sub.activeAbortController) {
+      try {
+        sub.activeAbortController.abort(new Error("Subscription cleaned up"));
+      } catch {}
+      sub.activeAbortController = undefined;
+    }
+
     if (sub.stateRemovers) {
       for (const remover of sub.stateRemovers) {
         try {
@@ -737,6 +1242,13 @@ export class SolanaPayEscrowManager {
 
     this.activeSubscriptions.delete(seatId);
   }
+
+  /**
+   * Explicitly cleans up any active subscription, polling timers, and listeners for a seat.
+   */
+  public cleanup(seatId: string): void {
+    this.cleanupSubscription(seatId);
+  }
 }
 
 // Global default singleton instance
@@ -771,4 +1283,120 @@ export function resetSeatReservations(): void {
 
 export function validateSeatReservationPoW(submission: PoWSubmission): boolean {
   return solanaPayEscrowManager.validatePoW(submission);
+}
+
+export function cleanupSeatReservation(seatId: string): void {
+  solanaPayEscrowManager.cleanup(seatId);
+}
+
+export interface FetchSignatureStatusWithTimeoutOptions {
+  timeoutMs?: number;
+  fallbackConnection?: Connection;
+  secondaryConnection?: Connection;
+  fallbackPollSignatureStatus?: (
+    signature: string,
+    options?: { signal?: AbortSignal },
+  ) => Promise<SignatureStatus | null>;
+  signal?: AbortSignal;
+}
+
+/**
+ * Wraps an RPC status poll in an AbortController with a strict timeout (default 5000ms),
+ * failing over to secondary fallback RPC endpoint or returning STATUS_TIMEOUT (#9448).
+ */
+export async function fetchSignatureStatusWithTimeout(
+  connection: Connection,
+  signature: string,
+  options: FetchSignatureStatusWithTimeoutOptions = {},
+): Promise<SignatureStatus | null | typeof STATUS_TIMEOUT> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_RPC_POLL_TIMEOUT_MS;
+  const parentSignal = options.signal;
+  const fallbackConn =
+    options.fallbackConnection ?? options.secondaryConnection;
+  const fallbackPoller = options.fallbackPollSignatureStatus;
+
+  const tryPoll = async (
+    conn: Connection,
+    poller?: (
+      sig: string,
+      opts?: { signal?: AbortSignal },
+    ) => Promise<SignatureStatus | null>,
+  ): Promise<SignatureStatus | null> => {
+    let pollTimedOut = false;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const onParentAbort = () => {
+      controller.abort(parentSignal?.reason || new Error("Aborted"));
+    };
+    if (parentSignal) {
+      if (parentSignal.aborted) {
+        controller.abort(parentSignal.reason || new Error("Aborted"));
+      } else {
+        parentSignal.addEventListener("abort", onParentAbort, { once: true });
+      }
+    }
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        pollTimedOut = true;
+        controller.abort(
+          new SolanaRpcPollTimeoutError(
+            `Solana RPC status poll timed out after ${timeoutMs}ms`,
+          ),
+        );
+        reject(
+          new SolanaRpcPollTimeoutError(
+            `Solana RPC status poll timed out after ${timeoutMs}ms`,
+          ),
+        );
+      }, timeoutMs);
+      timer.unref?.();
+    });
+
+    try {
+      const pollPromise = poller
+        ? poller(signature, { signal: controller.signal })
+        : fetchSignatureStatusViaConnection(conn, signature, {
+            signal: controller.signal,
+          });
+
+      return await Promise.race([pollPromise, timeoutPromise]);
+    } catch (pollErr) {
+      if (pollTimedOut) {
+        throw new SolanaRpcPollTimeoutError(
+          `Solana RPC status poll timed out after ${timeoutMs}ms`,
+        );
+      }
+      throw pollErr;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (parentSignal) {
+        parentSignal.removeEventListener("abort", onParentAbort);
+      }
+    }
+  };
+
+  try {
+    return await tryPoll(connection);
+  } catch (err) {
+    const isTimeout =
+      err instanceof SolanaRpcPollTimeoutError ||
+      (err instanceof Error &&
+        (err.name === "AbortError" ||
+          err.message.includes("timed out") ||
+          err.message.includes("Timeout")));
+
+    if (isTimeout) {
+      if (fallbackConn || fallbackPoller) {
+        try {
+          return await tryPoll(fallbackConn || connection, fallbackPoller);
+        } catch {
+          return STATUS_TIMEOUT;
+        }
+      }
+      return STATUS_TIMEOUT;
+    }
+    throw err;
+  }
 }

@@ -1,15 +1,21 @@
-# OAuth Refresh Token Rotation & Session Hijacking Mitigation Guide
+# Session Management & Clerk-Native Session Lifecycle Guide
 
-This technical security guide documents WorkSphere's session management, JWT token signing, rotating refresh tokens with token-family reuse detection (theft protection), password-reset session invalidation, and cookie defense-in-depth architecture.
+> [!IMPORTANT]
+> **Architecture Update: Migration to Clerk-Native Session Lifecycle**
+> WorkSphere delegates authentication, token issuance, session activity tracking, and token rotation natively to **Clerk** (`@clerk/nextjs`).
+> The legacy custom token-family rotation implementation (`src/lib/auth/sessionTokens.ts`) and the custom session endpoints (`/api/auth/session/refresh`, `/api/auth/session/logout`) have been retired (HTTP 410 Gone).
+> Process-local memory maps (`tokenFamilyStore = new Map()`, `usedJtis = new Set()`) cannot coordinate state across serverless instances or multi-container deployments. All production session extension and termination now utilize Clerk's official session management primitives (`useSession()`, `session.touch()`, `session.getToken({ skipCache: true })`, and `useClerk().signOut()`).
 
-All mechanisms described herein are verified against WorkSphere's implementation in `src/lib/auth/sessionTokens.ts`, `src/app/api/auth/session/refresh/route.ts`, `src/app/api/auth/session/logout/route.ts`, `src/lib/security/csrf.ts`, and `prisma/schema.prisma`.
+This technical security guide documents WorkSphere's session management architecture, comparing the retired custom token-family model with the production Clerk-native session lifecycle.
 
 ---
 
 ## 1. Overview & Threat Model
 
 ### 1.1 Access Tokens vs. Refresh Tokens
+
 Modern web applications balance user experience (seamless sessions) with credential security:
+
 - **Access Tokens (`worksphere_access_token`)**:
   - Short-lived JWTs (15 minutes / `ACCESS_TOKEN_EXPIRY_SECONDS = 900`).
   - Signed using HMAC-SHA256 (`HS256`) via WebCrypto APIs.
@@ -20,6 +26,7 @@ Modern web applications balance user experience (seamless sessions) with credent
   - Used exclusively against `/api/auth/session/refresh` to obtain new access tokens.
 
 ### 1.2 The Threat of Static Refresh Tokens
+
 In systems with static, long-lived refresh tokens, if a token is intercepted (via cross-site scripting, rogue extensions, packet inspection on insecure networks, or physical device access), an adversary can maintain unauthorized API access indefinitely until the token expires—even if the legitimate user continues their normal session.
 
 WorkSphere neutralizes this threat through **Refresh Token Rotation (RTR)** coupled with **Token Family Reuse Detection**.
@@ -61,6 +68,7 @@ sequenceDiagram
 ```
 
 ### Step-by-Step Lifecycle Implementation:
+
 1. **Initial Issuance (`generateRefreshToken`)**:
    - Generates random 128-bit hex identifiers for `familyId` and `jti` (`generateRandomHex(16)`).
    - Initializes record: `{ familyId, userId, currentJti: jti, version: 1, revoked: false, expiresAt }`.
@@ -84,14 +92,18 @@ sequenceDiagram
 ## 3. Refresh-Token Families
 
 ### 3.1 What is a Token Family?
+
 A **Token Family** links all rotated generations of a refresh token to an initial authentication session:
 $$\text{Family} = (\text{familyId}, \text{userId}, \text{currentJti}, \text{version}, \text{revoked})$$
 
 ### 3.2 Family Successor Chains
+
 When a user logs in, Generation 1 is minted:
+
 ```
 [Gen 1: v=1, jti=A] ──(rotate)──► [Gen 2: v=2, jti=B] ──(rotate)──► [Gen 3: v=3, jti=C]
 ```
+
 - Each rotation generates a new single-use `jti` (JWT ID).
 - The family registry in `src/lib/auth/sessionTokens.ts` (`tokenFamilyStore = new Map<string, RefreshTokenRecord>()`) tracks the current authoritative `jti` and active `version`.
 - Any attempt to use an ancestor token (`jti=A` or `jti=B`) after `jti=C` has been issued violates the single-use invariant.
@@ -101,6 +113,7 @@ When a user logs in, Generation 1 is minted:
 ## 4. Refresh-Token Reuse & Replay Detection
 
 ### 4.1 The Replay Attack Scenario
+
 Consider an attacker who intercepts a valid refresh token on public Wi-Fi or via compromised local storage:
 
 ```mermaid
@@ -129,7 +142,9 @@ sequenceDiagram
 ```
 
 ### 4.2 Why Immediate Family Invalidation is Essential
+
 When the server observes an already-consumed token (`jti` in `usedJtis`), it cannot determine whether the presenter is the attacker or the legitimate user. By immediately marking the **entire family** as `revoked: true`:
+
 1. The attacker cannot rotate the stolen token to obtain fresh access tokens.
 2. The legitimate user is prompted to sign in again, terminating the compromised session.
 3. The compromise window is restricted to the lifetime of any in-flight 15-minute access token.
@@ -139,7 +154,9 @@ When the server observes an already-consumed token (`jti` in `usedJtis`), it can
 ## 5. Password-Reset & Password-Change Revocation
 
 ### 5.1 Verified Prisma Schema Field
+
 Inspected in `prisma/schema.prisma` line 18:
+
 ```prisma
 model User {
   id                   String                @id
@@ -149,11 +166,14 @@ model User {
   ...
 }
 ```
+
 - **Field Name**: `passwordChangedAt`
 - **Data Type**: `DateTime?` (PostgreSQL `timestamp with time zone`)
 
 ### 5.2 Verification Logic in Token Refresh (`src/app/api/auth/session/refresh/route.ts`)
+
 When `/api/auth/session/refresh` processes a rotation request:
+
 ```typescript
 const user = await prisma.user.findUnique({ where: { id: userId } });
 const passwordChangedAt = user?.passwordChangedAt
@@ -167,13 +187,15 @@ if (
 ) {
   return NextResponse.json(
     {
-      error: "Session invalidated. Your password was changed on another device. Please sign in again.",
+      error:
+        "Session invalidated. Your password was changed on another device. Please sign in again.",
       code: "STALE_REFTERM",
     },
     { status: 401 },
   );
 }
 ```
+
 - **Security Objective**: If a user changes their password on Device A, any refresh tokens held on Device B, Device C, or by an adversary will have an `iat` (issued at) timestamp prior to `passwordChangedAt`. Upon their next refresh attempt, all existing sessions are invalidated immediately.
 
 ---
@@ -181,8 +203,11 @@ if (
 ## 6. Cookie Security & Public Wi-Fi Hardening
 
 ### 6.1 Verified Cookie Configuration (`src/lib/auth/sessionTokens.ts`)
+
 ```typescript
-export function getRefreshCookieOptions(maxAgeSeconds = REFRESH_TOKEN_EXPIRY_SECONDS) {
+export function getRefreshCookieOptions(
+  maxAgeSeconds = REFRESH_TOKEN_EXPIRY_SECONDS,
+) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -194,6 +219,7 @@ export function getRefreshCookieOptions(maxAgeSeconds = REFRESH_TOKEN_EXPIRY_SEC
 ```
 
 ### 6.2 Cookie Security Attributes Explained:
+
 - **`HttpOnly: true`**:
   - The cookie cannot be accessed via JavaScript (`document.cookie`).
   - Protects refresh tokens from exfiltration through Cross-Site Scripting (XSS) attacks.
@@ -207,8 +233,10 @@ export function getRefreshCookieOptions(maxAgeSeconds = REFRESH_TOKEN_EXPIRY_SEC
   - Scopes the refresh cookie across all application routes.
 
 ### 6.3 Public Wi-Fi Risks & Mitigation Boundaries
+
 > [!WARNING]
 > While `HttpOnly` and `Secure` cookies provide essential baseline protection, they **do not** make an application immune to all threats on untrusted networks:
+>
 > - **TLS Termination & MitM**: Users on public Wi-Fi must be protected by strict HSTS (`Strict-Transport-Security`) to prevent SSL stripping attacks.
 > - **Compromised Endpoints**: If an attacker gains access to a user's local operating system or browser profile, cookies can be extracted directly from browser storage files regardless of `HttpOnly` flags.
 > - **Defense-in-Depth**: RTR and token-family invalidation ensure that even if a cookie is copied from disk, its first reuse triggers automatic session revocation.
@@ -218,6 +246,7 @@ export function getRefreshCookieOptions(maxAgeSeconds = REFRESH_TOKEN_EXPIRY_SEC
 ## 7. OAuth & External Identity Architecture
 
 WorkSphere leverages **Clerk** as its authoritative primary identity provider and OAuth coordinator:
+
 1. **OAuth Sign-In Flow**:
    - User initiates OAuth (Google, GitHub, Microsoft) via Clerk's frontend components.
    - Clerk handles PKCE (Proof Key for Code Exchange) and OAuth state parameters to defeat CSRF.
@@ -232,22 +261,24 @@ WorkSphere leverages **Clerk** as its authoritative primary identity provider an
 
 ## 8. Concrete Attack Scenarios & Mitigations
 
-| Attack Scenario | Threat & Risk | WorkSphere Existing Defense | Recommended Additional Protection |
-| :--- | :--- | :--- | :--- |
-| **Stolen Refresh Token** | Attacker obtains cookie and attempts unauthorized session renewal. | Refresh token rotation issues new credentials on each use; `HttpOnly` blocks JS exfiltration. | IP / User-Agent anomaly binding on refresh. |
-| **Reuse of Rotated Token** | Attacker replays an intercepted previous refresh token. | **Token Family Reuse Detection**: `usedJtis.has(jti)` marks family revoked; returns HTTP 401 `REUSE_DETECTED`. | Push notification alerting user to token reuse event. |
-| **Stolen Session Cookie** | Attacker extracts cookie from physical device or compromised browser. | Short-lived access token (15m); token rotation invalidates predecessor upon legitimate user refresh. | WebAuthn step-up reauthentication for sensitive mutations. |
-| **Password Changed on Another Device** | Compromised old device retains refresh token after password reset. | **`passwordChangedAt` timestamp check**: `iat < passwordChangedAt` triggers HTTP 401 `STALE_REFTERM`. | Immediate Redis blacklist broadcast across edge instances. |
-| **Concurrent Refresh Race** | Multiple browser tabs refresh simultaneously causing accidental reuse detection. | Single-flight promise coalescence in client; sequential family versioning. | Short grace period ($10\text{s}$) for concurrent refreshes in same family. |
-| **Cross-Site Request Forgery (CSRF)** | Malicious third-party site submits unauthorized state-changing request. | Double-submit CSRF cookie (`csrf_token`) verified against `x-csrf-token` header; `SameSite=Lax`. | `SameSite=Strict` on high-risk mutation endpoints. |
-| **Public Wi-Fi Interception** | Eavesdropper monitors unencrypted Wi-Fi traffic. | `Secure` cookie flag mandates TLS 1.3; strict CSP prevents script injection. | Preloaded HSTS header (`includeSubDomains; preload`). |
+| Attack Scenario                        | Threat & Risk                                                                    | WorkSphere Existing Defense                                                                                    | Recommended Additional Protection                                          |
+| :------------------------------------- | :------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------- |
+| **Stolen Refresh Token**               | Attacker obtains cookie and attempts unauthorized session renewal.               | Refresh token rotation issues new credentials on each use; `HttpOnly` blocks JS exfiltration.                  | IP / User-Agent anomaly binding on refresh.                                |
+| **Reuse of Rotated Token**             | Attacker replays an intercepted previous refresh token.                          | **Token Family Reuse Detection**: `usedJtis.has(jti)` marks family revoked; returns HTTP 401 `REUSE_DETECTED`. | Push notification alerting user to token reuse event.                      |
+| **Stolen Session Cookie**              | Attacker extracts cookie from physical device or compromised browser.            | Short-lived access token (15m); token rotation invalidates predecessor upon legitimate user refresh.           | WebAuthn step-up reauthentication for sensitive mutations.                 |
+| **Password Changed on Another Device** | Compromised old device retains refresh token after password reset.               | **`passwordChangedAt` timestamp check**: `iat < passwordChangedAt` triggers HTTP 401 `STALE_REFTERM`.          | Immediate Redis blacklist broadcast across edge instances.                 |
+| **Concurrent Refresh Race**            | Multiple browser tabs refresh simultaneously causing accidental reuse detection. | Single-flight promise coalescence in client; sequential family versioning.                                     | Short grace period ($10\text{s}$) for concurrent refreshes in same family. |
+| **Cross-Site Request Forgery (CSRF)**  | Malicious third-party site submits unauthorized state-changing request.          | Double-submit CSRF cookie (`csrf_token`) verified against `x-csrf-token` header; `SameSite=Lax`.               | `SameSite=Strict` on high-risk mutation endpoints.                         |
+| **Public Wi-Fi Interception**          | Eavesdropper monitors unencrypted Wi-Fi traffic.                                 | `Secure` cookie flag mandates TLS 1.3; strict CSP prevents script injection.                                   | Preloaded HSTS header (`includeSubDomains; preload`).                      |
 
 ---
 
 ## 9. Session Revocation & Logout
 
 ### 9.1 Single-Session Logout (`POST /api/auth/session/logout`)
+
 Verified in `src/app/api/auth/session/logout/route.ts`:
+
 1. Reads `worksphere_refresh_token` from cookie.
 2. Invokes `revokeRefreshTokenFamily(refreshToken)`:
    - Sets `record.revoked = true` in `tokenFamilyStore`.
@@ -258,6 +289,7 @@ Verified in `src/app/api/auth/session/logout/route.ts`:
    - `response.cookies.delete("worksphere_user_email")`
 
 ### 9.2 Invalidation of In-Flight Access Tokens
+
 - Access tokens are stateless JWTs signed with `HS256`.
 - Once issued, an access token remains cryptographically valid until its 15-minute expiration (`exp`), unless explicitly validated against a revocation blacklist.
 - **Design Tradeoff**: WorkSphere optimizes for high throughput by verifying access tokens statelessly in edge middleware. Session revocation takes effect immediately upon the next refresh cycle (at most 15 minutes).

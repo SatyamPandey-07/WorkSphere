@@ -18,7 +18,9 @@ jest.mock("@/lib/prisma", () => ({
           id: "b-001",
           userId: "user_123",
           status: "CONFIRMED",
-          bookingDate: new Date("2026-11-15T10:00:00Z"),
+          date: "2026-11-15",
+          time: "10:00",
+          timeZone: "UTC",
           durationMinutes: 120,
           price: 45.0,
           currency: "USD",
@@ -137,6 +139,10 @@ describe("GET /api/bookings/export", () => {
     expect(data.bookings.length).toBe(1);
     expect(data.bookings[0].id).toBe("b-001");
     expect(data.bookings[0].venueName).toBe('CoWork "Hub" Central');
+    expect(data.bookings[0].date).toBe("2026-11-15");
+    expect(data.bookings[0].time).toBe("10:00");
+    expect(data.bookings[0].timeZone).toBe("UTC");
+    expect(data.bookings[0].bookingDate).toBe("2026-11-15T10:00:00.000Z");
   });
 
   test("exports bookings in properly escaped CSV format with formula injection protection", async () => {
@@ -146,7 +152,9 @@ describe("GET /api/bookings/export", () => {
         id: "b-001",
         userId: "user_123",
         status: "CONFIRMED",
-        bookingDate: new Date("2026-11-15T10:00:00Z"),
+        date: "2026-11-15",
+        time: "10:00",
+        timeZone: "UTC",
         durationMinutes: 120,
         price: -15.5, // Negative discount/refund price
         currency: "USD",
@@ -175,6 +183,82 @@ describe("GET /api/bookings/export", () => {
     expect(text).toContain('"123 Main St, Floor 4"');
     // Verifies negative price is preserved numerically without apostrophe
     expect(text).toContain("-15.5");
+    // Verifies reservation date and time are used in CSV
+    expect(text).toContain("2026-11-15,10:00");
+  });
+
+  test("exports authoritative reservation schedule rather than booking creation timestamp", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "booking-future-1",
+        userId: "user_123",
+        status: "CONFIRMED",
+        date: "2026-12-25",
+        time: "15:30",
+        timeZone: "America/New_York",
+        durationMinutes: 60,
+        price: 25.0,
+        currency: "USD",
+        createdAt: new Date("2026-11-01T08:00:00Z"),
+        venue: {
+          name: "Future Workspace",
+          address: "789 Innovation Way",
+        },
+      },
+    ]);
+
+    const jsonReq = new Request("http://localhost:3000/api/bookings/export");
+    const jsonRes = await GET(jsonReq);
+    expect(jsonRes.status).toBe(200);
+    const jsonData = await jsonRes.json();
+
+    const booking = jsonData.bookings[0];
+    expect(booking.date).toBe("2026-12-25");
+    expect(booking.time).toBe("15:30");
+    expect(booking.timeZone).toBe("America/New_York");
+    // Does not fall back to createdAt (2026-11-01)
+    expect(booking.bookingDate).not.toContain("2026-11-01");
+    // Converts 15:30 EST (UTC-5) to 20:30 UTC
+    expect(booking.bookingDate).toBe("2026-12-25T20:30:00.000Z");
+    expect(booking.createdAt).toBe("2026-11-01T08:00:00.000Z");
+  });
+
+  test("produces consistent date and time values across JSON and CSV exports", async () => {
+    (auth as jest.Mock).mockResolvedValue({ userId: "user_123" });
+    const mockRecord = {
+      id: "booking-consistent-1",
+      userId: "user_123",
+      status: "CONFIRMED",
+      date: "2027-01-10",
+      time: "09:00",
+      timeZone: "UTC",
+      durationMinutes: 90,
+      price: 35.0,
+      currency: "USD",
+      createdAt: new Date("2026-11-05T12:00:00Z"),
+      venue: {
+        name: "Consistent Hub",
+        address: "100 Tech Blvd",
+      },
+    };
+
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([mockRecord]);
+    const jsonRes = await GET(
+      new Request("http://localhost:3000/api/bookings/export"),
+    );
+    const jsonData = await jsonRes.json();
+    const jsonBooking = jsonData.bookings[0];
+
+    (prisma.booking.findMany as jest.Mock).mockResolvedValueOnce([mockRecord]);
+    const csvRes = await GET(
+      new Request("http://localhost:3000/api/bookings/export?format=csv"),
+    );
+    const csvText = await csvRes.text();
+
+    expect(jsonBooking.date).toBe("2027-01-10");
+    expect(jsonBooking.time).toBe("09:00");
+    expect(csvText).toContain("2027-01-10,09:00");
   });
 });
 

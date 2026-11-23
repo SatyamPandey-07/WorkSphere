@@ -18,6 +18,10 @@ const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
 const VENUE_PHOTO_CACHE_NAME = "worksphere-venue-photos-v1";
 const PREFETCH_CACHE_NAME = "worksphere-prefetch-v1";
+const CACHE_VERSION = "v2";
+const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
+const RUNTIME_PUBLIC_CACHE_NAME = `worksphere-runtime-public-${CACHE_VERSION}`;
+const PUBLIC_CACHEABLE_API_PREFIXES = ["/api/venues/public", "/api/health"];
 const OFFLINE_URL = "/offline";
 const AVAILABILITY_SYNC_TAG = "availability-sync";
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
@@ -162,9 +166,12 @@ self.addEventListener("activate", (event) => {
             .filter(
               (name) =>
                 name !== CACHE_NAME &&
+                name !== STATIC_CACHE_NAME &&
+                name !== RUNTIME_PUBLIC_CACHE_NAME &&
                 name !== IMAGE_CACHE_NAME &&
                 name !== MAP_TILE_CACHE_NAME &&
                 name !== VIDEO_CACHE_NAME &&
+                name !== VENUE_PHOTO_CACHE_NAME &&
                 name !== PREFETCH_CACHE_NAME &&
                 !name.endsWith("-installing"),
             )
@@ -188,31 +195,117 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Handle Cache-First for maps and images, Network-First for everything else
+/**
+ * Determines whether a request carries user-specific credentials or explicit
+ * non-cacheable directives and must bypass Service Worker runtime caches.
+ */
+function isAuthenticatedOrPrivateRequest(request, url) {
+  if (request.method !== "GET") {
+    return true;
+  }
+
+  // Protected user-scoped API routes must never be cached in shared browser storage
+  if (url.pathname.startsWith("/api/")) {
+    const isAllowlistedPublic = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
+      url.pathname.startsWith(prefix),
+    );
+    if (!isAllowlistedPublic) {
+      return true;
+    }
+  }
+
+  // Check request headers for credentials or explicit no-store / no-cache directives
+  const authHeader = request.headers.get("Authorization");
+  const cookieHeader = request.headers.get("Cookie");
+  const cacheControl = (
+    request.headers.get("Cache-Control") || ""
+  ).toLowerCase();
+
+  if (authHeader || cookieHeader) {
+    return true;
+  }
+
+  if (cacheControl.includes("no-store") || cacheControl.includes("private")) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks response headers to ensure personalized or no-store responses are never persisted.
+ */
+function isCacheablePublicResponse(response) {
+  if (!response || !response.ok || response.status !== 200) {
+    return false;
+  }
+
+  // Opaque responses (status 0) or credentialed Vary headers must not be cached
+  if (response.type === "opaque" || response.type === "opaqueredirect") {
+    return false;
+  }
+
+  const cacheControl = (
+    response.headers.get("Cache-Control") || ""
+  ).toLowerCase();
+  if (
+    cacheControl.includes("no-store") ||
+    cacheControl.includes("private") ||
+    cacheControl.includes("no-cache")
+  ) {
+    return false;
+  }
+
+  const vary = (response.headers.get("Vary") || "").toLowerCase();
+  if (vary.includes("cookie") || vary.includes("authorization")) {
+    return false;
+  }
+
+  return true;
+}
+
+// Single coordinated fetch listener
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  const { request } = event;
+  if (request.method !== "GET") {
     return;
   }
-  if (event.request.url.includes("/download")) {
+  if (request.url.includes("/download")) {
     return;
   }
 
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return;
+  }
+
+  // 1. Bypass Service Worker cache entirely for authenticated, cookie-bearing,
+  // Cache-Control: no-store/private, or non-allowlisted /api/* routes
+  if (isAuthenticatedOrPrivateRequest(request, url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // 2. Non-private requests: check prefetch cache first, then delegate to handleFetch
   event.respondWith(
     caches.open(PREFETCH_CACHE_NAME).then((prefetchCache) => {
-      return prefetchCache.match(event.request).then((prefetchedResponse) => {
+      return prefetchCache.match(request).then((prefetchedResponse) => {
         if (prefetchedResponse) {
           return prefetchedResponse;
         }
-        return handleFetch(event.request, event);
+        return handleFetch(request, event, url);
       });
     }),
   );
 });
 
-async function handleFetch(request, event) {
-  const isVenuesApi = request.url.includes("/api/venues");
-  const isReservationsApi = request.url.includes(
-    "/api/reservations/availability",
+async function handleFetch(request, event, url) {
+  const reqUrl = url || new URL(request.url);
+  const pathname = reqUrl.pathname;
+  const isAllowlistedPublicApi = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
+    pathname.startsWith(prefix),
   );
   const isMapTile =
     request.url.includes("tile.openstreetmap.org") ||
@@ -222,27 +315,19 @@ async function handleFetch(request, event) {
     request.url.includes("res.cloudinary.com") ||
     request.url.includes("images.pexels.com");
 
-  if (isVenuesApi || isReservationsApi) {
+  if (isAllowlistedPublicApi) {
     try {
       const response = await fetch(request);
-      if (response.ok) {
-        const cache = await caches.open(CACHE_NAME);
+      if (response.ok && isCacheablePublicResponse(response)) {
+        const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
         cache.put(request, response.clone());
       }
       return response;
     } catch {
-      const cached = await caches.match(request);
+      const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
+      const cached = await cache.match(request);
       if (cached) return cached;
-      if (isReservationsApi) {
-        return new Response(
-          JSON.stringify({ seats: [], offline: true, cached: true }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-      if (isVenuesApi) {
+      if (pathname.startsWith("/api/venues/public")) {
         return new Response(
           JSON.stringify({ venues: [], offline: true, cached: true }),
           {
@@ -353,10 +438,15 @@ async function handleFetch(request, event) {
       return new Response("Asset Offline", { status: 503 });
     }
   } else {
-    // Existing Network-First logic for local assets
+    // Existing Network-First logic for local assets and page navigations
     try {
       const response = await fetch(request);
-      if (response.ok && request.url.startsWith("http")) {
+      if (
+        response.ok &&
+        request.url.startsWith("http") &&
+        !pathname.startsWith("/api/") &&
+        isCacheablePublicResponse(response)
+      ) {
         const cache = await caches.open(CACHE_NAME);
         cache.put(request, response.clone());
       }
@@ -401,10 +491,10 @@ self.addEventListener("sync", (event) => {
     event.tag === "offline-mutation-sync"
   ) {
     event.waitUntil(syncOfflineMutations());
+  }
 
   if (event.tag === "nomad-checkin-sync") {
     event.waitUntil(syncNomadCheckins());
-
   }
 });
 
@@ -1074,7 +1164,6 @@ async function syncReceiptExports() {
   }
 }
 
-
 // Background Sync: process queued offline mutations with Decorrelated Jitter backoff (Issue #9618)
 let isSyncingOfflineMutations = false;
 let sw5xxDecorrelatedDelay = 1000;
@@ -1271,6 +1360,8 @@ async function syncOfflineMutations() {
     console.error("[SW] Offline mutations sync encountered error:", error);
   } finally {
     isSyncingOfflineMutations = false;
+  }
+}
 
 // Background Sync for offline desk check-ins (Issue #7427)
 let isSyncingCheckins = false;
@@ -1317,7 +1408,12 @@ async function syncNomadCheckins() {
             const delTx = db.transaction("pendingCheckins", "readwrite");
             delTx.objectStore("pendingCheckins").delete(item.id);
             synced.push(item);
-          } else if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+          } else if (
+            response.status >= 400 &&
+            response.status < 500 &&
+            response.status !== 408 &&
+            response.status !== 429
+          ) {
             const delTx = db.transaction("pendingCheckins", "readwrite");
             delTx.objectStore("pendingCheckins").delete(item.id);
             failed.push(item);
@@ -1348,7 +1444,6 @@ async function syncNomadCheckins() {
     console.error("[SW] syncNomadCheckins error:", err);
   } finally {
     isSyncingCheckins = false;
-
   }
 }
 
@@ -1729,7 +1824,9 @@ function openIndexedDB() {
             keyPath: "id",
           });
           checkinStore.createIndex("seatId", "seatId", { unique: false });
-          checkinStore.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
+          checkinStore.createIndex("idempotencyKey", "idempotencyKey", {
+            unique: true,
+          });
           checkinStore.createIndex("status", "status", { unique: false });
           checkinStore.createIndex("timestamp", "timestamp", { unique: false });
         }
@@ -1899,84 +1996,6 @@ self.addEventListener("push", (event) => {
   }
 });
 
-const CACHE_VERSION = "v2";
-const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
-const RUNTIME_PUBLIC_CACHE_NAME = `worksphere-runtime-public-${CACHE_VERSION}`;
-
-const APP_SHELL_ASSETS = ["/", "/manifest.json"];
-
-// Strictly allowlist unauthenticated public endpoints safe for stale-while-revalidate
-const PUBLIC_CACHEABLE_API_PREFIXES = ["/api/venues/public", "/api/health"];
-
-/**
- * Determines whether a request carries user-specific credentials or explicit
- * non-cacheable directives and must bypass Service Worker runtime caches.
- */
-function isAuthenticatedOrPrivateRequest(request, url) {
-  if (request.method !== "GET") {
-    return true;
-  }
-
-  // Protected user-scoped API routes must never be cached in shared browser storage
-  if (url.pathname.startsWith("/api/")) {
-    const isAllowlistedPublic = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
-      url.pathname.startsWith(prefix),
-    );
-    if (!isAllowlistedPublic) {
-      return true;
-    }
-  }
-
-  // Check request headers for credentials or explicit no-store / no-cache directives
-  const authHeader = request.headers.get("Authorization");
-  const cookieHeader = request.headers.get("Cookie");
-  const cacheControl = (
-    request.headers.get("Cache-Control") || ""
-  ).toLowerCase();
-
-  if (authHeader || cookieHeader) {
-    return true;
-  }
-
-  if (cacheControl.includes("no-store") || cacheControl.includes("private")) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Checks response headers to ensure personalized or no-store responses are never persisted.
- */
-function isCacheablePublicResponse(response) {
-  if (!response || !response.ok || response.status !== 200) {
-    return false;
-  }
-
-  // Opaque responses (status 0) or credentialed Vary headers must not be cached
-  if (response.type === "opaque" || response.type === "opaqueredirect") {
-    return false;
-  }
-
-  const cacheControl = (
-    response.headers.get("Cache-Control") || ""
-  ).toLowerCase();
-  if (
-    cacheControl.includes("no-store") ||
-    cacheControl.includes("private") ||
-    cacheControl.includes("no-cache")
-  ) {
-    return false;
-  }
-
-  const vary = (response.headers.get("Vary") || "").toLowerCase();
-  if (vary.includes("cookie") || vary.includes("authorization")) {
-    return false;
-  }
-
-  return true;
-}
-
 /**
  * Purges all dynamic runtime caches (and optionally static caches) to guarantee
  * zero cross-user data leakage on shared coworking terminals.
@@ -1989,32 +2008,6 @@ async function purgeDynamicRuntimeCaches() {
 
   await Promise.all(deletions);
 }
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(STATIC_CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL_ASSETS)),
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    (async () => {
-      const cacheKeys = await caches.keys();
-      await Promise.all(
-        cacheKeys
-          .filter(
-            (key) =>
-              key !== STATIC_CACHE_NAME && key !== RUNTIME_PUBLIC_CACHE_NAME,
-          )
-          .map((key) => caches.delete(key)),
-      );
-      await self.clients.claim();
-    })(),
-  );
-});
 
 self.addEventListener("message", (event) => {
   const payload = event.data;
@@ -2034,52 +2027,12 @@ self.addEventListener("message", (event) => {
   }
 });
 
-self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  // Only intercept same-origin HTTP(S) requests
-  if (url.origin !== self.location.origin) {
-    return;
-  }
-
-  // Bypass Service Worker cache entirely for authenticated, cookie-bearing,
-  // Cache-Control: no-store, or non-allowlisted /api/* routes
-  if (isAuthenticatedOrPrivateRequest(request, url)) {
-    event.respondWith(fetch(request));
-    return;
-  }
-
-  // Stale-while-revalidate for verified unauthenticated static & public endpoints only
-  event.respondWith(
-    (async () => {
-      const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
-      const cachedResponse = await cache.match(request);
-
-      const networkFetchPromise = fetch(request)
-        .then((networkResponse) => {
-          if (isCacheablePublicResponse(networkResponse)) {
-            cache.put(request, networkResponse.clone());
-          }
-          return networkResponse;
-        })
-        .catch((error) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          throw error;
-        });
-
-      return cachedResponse || networkFetchPromise;
-    })(),
-  );
-});
-
 // Export helpers when imported in Node/Jest unit test environments
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     STATIC_CACHE_NAME,
     RUNTIME_PUBLIC_CACHE_NAME,
+    PUBLIC_CACHEABLE_API_PREFIXES,
     isAuthenticatedOrPrivateRequest,
     isCacheablePublicResponse,
     purgeDynamicRuntimeCaches,

@@ -71,3 +71,7 @@ export type {
   VenueFilterDropdownProps,
   FilterOption,
 } from "./VenueFilterDropdown";
+
+export { StarRating } from "./StarRating";
+export type { StarRatingProps } from "./StarRating";
+

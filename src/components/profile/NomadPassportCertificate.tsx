@@ -2,8 +2,20 @@
 
 import React, { useEffect, useId, useRef, useState } from "react";
 import confetti from "canvas-confetti";
-import { Check, Copy, Sparkles, AlertCircle } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Sparkles,
+  AlertCircle,
+  Download,
+  Loader2,
+} from "lucide-react";
 import type { PassportStamp } from "@/lib/zkp/nomadProof";
+import {
+  downloadNomadPassportPngBadge,
+  getNomadPassportPngFilename,
+  type NomadBadgeParams,
+} from "@/lib/profile/badgeGenerator";
 import NomadPassportCoin from "./NomadPassportCoin";
 
 export interface NomadPassportCertificateProps {
@@ -14,6 +26,8 @@ export interface NomadPassportCertificateProps {
   className?: string;
   onCopySuccess?: (url: string) => void;
   onCopyError?: (error: Error) => void;
+  onDownloadBadgeSuccess?: (filename: string) => void;
+  onDownloadBadgeError?: (error: Error) => void;
 }
 
 /**
@@ -39,7 +53,8 @@ function resolveNomadPassportUrl(
     if (stamp.badgeType) params.set("badgeType", stamp.badgeType);
     if (stamp.epoch !== undefined) params.set("epoch", stamp.epoch.toString());
     if (stamp.nullifierHash) params.set("nullifier", stamp.nullifierHash);
-    if (stamp.verificationSignature) params.set("sig", stamp.verificationSignature);
+    if (stamp.verificationSignature)
+      params.set("sig", stamp.verificationSignature);
     if (stamp.countryCode) params.set("country", stamp.countryCode);
     if (userId) params.set("ref", userId);
     return `${origin}/verify/nomad-passport?${params.toString()}`;
@@ -67,13 +82,21 @@ export function NomadPassportCertificate({
   className = "",
   onCopySuccess,
   onCopyError,
+  onDownloadBadgeSuccess,
+  onDownloadBadgeError,
 }: NomadPassportCertificateProps) {
-  const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">("idle");
+  const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">(
+    "idle",
+  );
+  const [downloadStatus, setDownloadStatus] = useState<
+    "idle" | "downloading" | "success" | "error"
+  >("idle");
   const [liveAnnouncement, setLiveAnnouncement] = useState<string>("");
   const [showManualFallback, setShowManualFallback] = useState<boolean>(false);
 
   const fallbackInputId = useId();
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const downloadTimerRef = useRef<NodeJS.Timeout | null>(null);
   const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const canonicalUrl = resolveNomadPassportUrl(referralUrl, stamp, userId);
@@ -83,6 +106,9 @@ export function NomadPassportCertificate({
     return () => {
       if (resetTimerRef.current) {
         clearTimeout(resetTimerRef.current);
+      }
+      if (downloadTimerRef.current) {
+        clearTimeout(downloadTimerRef.current);
       }
     };
   }, []);
@@ -180,6 +206,51 @@ export function NomadPassportCertificate({
     }
   };
 
+  const handleDownloadBadge = async () => {
+    setDownloadStatus("downloading");
+    setLiveAnnouncement("Generating high-resolution PNG badge...");
+
+    try {
+      const badgeParams: NomadBadgeParams = {
+        displayName: userName || "Nomad Explorer",
+        rank: stamp?.tierTitle || stamp?.badgeType || "Explorer",
+        verifiedCheckIns:
+          stamp?.epoch && Number.isFinite(stamp.epoch) && stamp.epoch > 0
+            ? stamp.epoch
+            : 1,
+        issuedAt: new Date(),
+      };
+
+      await downloadNomadPassportPngBadge(badgeParams, 2);
+      const filename = getNomadPassportPngFilename(badgeParams.displayName);
+
+      setDownloadStatus("success");
+      setLiveAnnouncement(`Nomad passport badge downloaded as ${filename}!`);
+      triggerCelebratoryConfetti();
+      onDownloadBadgeSuccess?.(filename);
+
+      if (downloadTimerRef.current) {
+        clearTimeout(downloadTimerRef.current);
+      }
+      downloadTimerRef.current = setTimeout(() => {
+        setDownloadStatus("idle");
+      }, 3000);
+    } catch (err: any) {
+      setDownloadStatus("error");
+      setLiveAnnouncement("Failed to generate passport badge image.");
+      onDownloadBadgeError?.(
+        err instanceof Error ? err : new Error(String(err)),
+      );
+
+      if (downloadTimerRef.current) {
+        clearTimeout(downloadTimerRef.current);
+      }
+      downloadTimerRef.current = setTimeout(() => {
+        setDownloadStatus("idle");
+      }, 3000);
+    }
+  };
+
   return (
     <div
       data-testid="nomad-passport-certificate"
@@ -215,7 +286,8 @@ export function NomadPassportCertificate({
             Nomad Passport Certificate
           </h2>
           <p className="text-sm text-slate-400">
-            Issued to <span className="font-semibold text-slate-200">{userName}</span>
+            Issued to{" "}
+            <span className="font-semibold text-slate-200">{userName}</span>
             {stamp?.venueName && ` at ${stamp.venueName}`}
           </p>
         </div>
@@ -229,22 +301,40 @@ export function NomadPassportCertificate({
         {stamp && (
           <div className="mt-4 grid w-full max-w-sm grid-cols-2 gap-2 text-left text-xs text-slate-300">
             <div className="rounded-lg border border-slate-800/80 bg-slate-950/50 p-2.5">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">Tier</span>
-              <p className="font-medium text-slate-200 capitalize">{stamp.tierTitle || stamp.badgeType}</p>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                Tier
+              </span>
+              <p className="font-medium text-slate-200 capitalize">
+                {stamp.tierTitle || stamp.badgeType}
+              </p>
             </div>
             <div className="rounded-lg border border-slate-800/80 bg-slate-950/50 p-2.5">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">Country</span>
-              <p className="font-medium text-slate-200">{stamp.countryName || stamp.countryCode || "Global"}</p>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                Country
+              </span>
+              <p className="font-medium text-slate-200">
+                {stamp.countryName || stamp.countryCode || "Global"}
+              </p>
             </div>
             {/* Cryptographic Issuer Credential Stamp */}
-            {(stamp.nullifierHash || stamp.verificationSignature || stamp.stampId) && (
+            {(stamp.nullifierHash ||
+              stamp.verificationSignature ||
+              stamp.stampId) && (
               <div className="col-span-2 min-w-0 rounded-lg border border-slate-800/80 bg-slate-950/50 p-2.5">
-                <span className="text-[10px] uppercase tracking-wider text-slate-500">Issuer Credential Stamp</span>
+                <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                  Issuer Credential Stamp
+                </span>
                 <p
-                  title={stamp.nullifierHash || stamp.verificationSignature || stamp.stampId}
+                  title={
+                    stamp.nullifierHash ||
+                    stamp.verificationSignature ||
+                    stamp.stampId
+                  }
                   className="font-mono text-[11px] text-slate-300 truncate sm:break-all select-all min-w-0"
                 >
-                  {stamp.nullifierHash || stamp.verificationSignature || stamp.stampId}
+                  {stamp.nullifierHash ||
+                    stamp.verificationSignature ||
+                    stamp.stampId}
                 </p>
               </div>
             )}
@@ -253,33 +343,87 @@ export function NomadPassportCertificate({
 
         {/* Action Controls */}
         <div className="mt-6 flex flex-col items-center gap-3">
-          <button
-            type="button"
-            onClick={handleCopyLink}
-            aria-label="Copy Nomad Passport Link"
-            data-testid="copy-nomad-passport-link-btn"
-            className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-900 ${
-              copyStatus === "success"
-                ? "bg-emerald-600 text-white shadow-emerald-500/20 hover:bg-emerald-500"
-                : "bg-cyan-600 text-white shadow-cyan-500/20 hover:bg-cyan-500 active:scale-95"
-            }`}
-          >
-            {copyStatus === "success" ? (
-              <>
-                <Check className="h-4 w-4 text-white" aria-hidden="true" />
-                <span>Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="h-4 w-4 text-white" aria-hidden="true" />
-                <span>Copy Nomad Passport Link</span>
-              </>
-            )}
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              aria-label="Copy Nomad Passport Link"
+              data-testid="copy-nomad-passport-link-btn"
+              className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                copyStatus === "success"
+                  ? "bg-emerald-600 text-white shadow-emerald-500/20 hover:bg-emerald-500"
+                  : "bg-cyan-600 text-white shadow-cyan-500/20 hover:bg-cyan-500 active:scale-95"
+              }`}
+            >
+              {copyStatus === "success" ? (
+                <>
+                  <Check className="h-4 w-4 text-white" aria-hidden="true" />
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4 text-white" aria-hidden="true" />
+                  <span>Copy Nomad Passport Link</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadBadge}
+              aria-label="Download Nomad Passport Badge (PNG)"
+              data-testid="download-passport-badge-btn"
+              disabled={downloadStatus === "downloading"}
+              className={`inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-2.5 text-sm font-semibold transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                downloadStatus === "success"
+                  ? "border-emerald-500/50 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50"
+                  : downloadStatus === "error"
+                    ? "border-rose-500/50 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50"
+                    : "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white active:scale-95"
+              } disabled:opacity-60`}
+            >
+              {downloadStatus === "downloading" ? (
+                <>
+                  <Loader2
+                    className="h-4 w-4 animate-spin text-cyan-400"
+                    aria-hidden="true"
+                  />
+                  <span>Generating PNG...</span>
+                </>
+              ) : downloadStatus === "success" ? (
+                <>
+                  <Check
+                    className="h-4 w-4 text-emerald-400"
+                    aria-hidden="true"
+                  />
+                  <span>Badge Downloaded!</span>
+                </>
+              ) : downloadStatus === "error" ? (
+                <>
+                  <AlertCircle
+                    className="h-4 w-4 text-rose-400"
+                    aria-hidden="true"
+                  />
+                  <span>Download Failed</span>
+                </>
+              ) : (
+                <>
+                  <Download
+                    className="h-4 w-4 text-cyan-400"
+                    aria-hidden="true"
+                  />
+                  <span>Download Badge (PNG)</span>
+                </>
+              )}
+            </button>
+          </div>
 
           {/* Visual confirmation pill below button */}
           {copyStatus === "success" && (
-            <p className="text-xs font-medium text-emerald-400 animate-fadeIn" data-testid="copy-success-badge">
+            <p
+              className="text-xs font-medium text-emerald-400 animate-fadeIn"
+              data-testid="copy-success-badge"
+            >
               Profile link copied to clipboard!
             </p>
           )}

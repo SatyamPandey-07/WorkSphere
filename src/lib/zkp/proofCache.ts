@@ -59,6 +59,10 @@ export const DEFAULT_FRESH_MS = 12 * 60 * 60 * 1000;
 export const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_MAX_CACHE_BYTES = 50 * 1024 * 1024; // 50 MB
 
+/** Proof-cache scopes for various circuits (#9615, #3358) */
+export const STUDENT_DISCOUNT_SCOPE = "student-discount";
+export const STUDENT_PROOF_SCOPE = "student-discount";
+
 const DB_NAME = "worksphere-zkp-proofs";
 const STORE = "proofs";
 const VERIFICATION_KEY_URL = "/zkp/verification_key.json";
@@ -156,8 +160,13 @@ export function calculateProofEntryBytes(
 }
 
 async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(text),
+  );
+  return Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 /**
@@ -186,21 +195,30 @@ export function getCircuitEpoch(): Promise<string | null> {
 
 const entryKey = (scope: string, commit: string) => `${scope}:${commit}`;
 
-function isUsable(entry: ProofCacheEntry | undefined, commit: string, epoch: string, now: number): boolean {
+function isUsable(
+  entry: ProofCacheEntry | undefined,
+  commit: string,
+  epoch: string,
+  now: number,
+): boolean {
   return (
     !!entry &&
     entry.epoch === epoch &&
     entry.expiresAt > now &&
     Array.isArray(entry.publicSignals) &&
     // Integrity: the proof must be for this credential's commitment.
-    entry.publicSignals[0] === commit &&
+    (entry.publicSignals[0] === commit ||
+      entry.publicSignals.includes(commit)) &&
     typeof entry.proof === "object" &&
     entry.proof !== null
   );
 }
 
 /** Read a usable cached proof, deleting it if it is expired or from another epoch. */
-export async function getCachedProof(scope: string, commit: string): Promise<ProofCacheEntry | null> {
+export async function getCachedProof(
+  scope: string,
+  commit: string,
+): Promise<ProofCacheEntry | null> {
   if (!isProofCacheAvailable()) return null;
   const epoch = await getCircuitEpoch();
   if (!epoch) return null;
@@ -236,8 +254,11 @@ export async function storeProof(
   const sanitizedProof = sanitizeProofForStorage(proof);
   const normalizedCommit =
     typeof commit === "bigint" ? (commit as bigint).toString() : String(commit);
+  const matchesCommit =
+    sanitizedProof.publicSignals[0] === normalizedCommit ||
+    sanitizedProof.publicSignals.includes(normalizedCommit);
 
-  if (!isProofCacheAvailable() || sanitizedProof.publicSignals[0] !== normalizedCommit) return;
+  if (!isProofCacheAvailable() || !matchesCommit) return;
   const epoch = await getCircuitEpoch();
   if (!epoch) return;
 
@@ -264,7 +285,11 @@ export async function storeProof(
   const attemptWrite = async (database: any) => {
     const tx = database.transaction(STORE, "readwrite");
     const others = await tx.store.index("scope").getAllKeys(scope);
-    await Promise.all(others.filter((k: string) => k !== entry.key).map((k: string) => tx.store.delete(k)));
+    await Promise.all(
+      others
+        .filter((k: string) => k !== entry.key)
+        .map((k: string) => tx.store.delete(k)),
+    );
 
     // Purge expired entries in transaction
     const allEntries: ProofCacheEntry[] = await tx.store.getAll();
@@ -276,13 +301,20 @@ export async function storeProof(
     }
 
     const validEntries = allEntries.filter((e) => e.expiresAt > now);
-    let totalBytes = validEntries.reduce((acc, e) => acc + (e.byteSize || calculateProofEntryBytes(e)), 0);
+    let totalBytes = validEntries.reduce(
+      (acc, e) => acc + (e.byteSize || calculateProofEntryBytes(e)),
+      0,
+    );
 
     // Evict oldest (least recently accessed) entries until new entry fits within maxByteSize
     if (totalBytes + entryBytes > maxByteSize) {
       const sorted = validEntries
         .filter((e) => e.key !== entry.key)
-        .sort((a, b) => (a.lastAccessedAt || a.createdAt) - (b.lastAccessedAt || b.createdAt));
+        .sort(
+          (a, b) =>
+            (a.lastAccessedAt || a.createdAt) -
+            (b.lastAccessedAt || b.createdAt),
+        );
 
       for (const oldest of sorted) {
         if (totalBytes + entryBytes <= maxByteSize) break;
@@ -299,12 +331,13 @@ export async function storeProof(
     const db = await getDb();
     await attemptWrite(db);
   } catch (err) {
-    const { isQuotaExceededError, dispatchStorageQuotaWarning } = await import(
-      "@/lib/cache/storageQuota"
-    );
+    const { isQuotaExceededError, dispatchStorageQuotaWarning } =
+      await import("@/lib/cache/storageQuota");
 
     if (isQuotaExceededError(err)) {
-      console.warn("[ProofCache] Storage quota exceeded; clearing proof cache and retrying.");
+      console.warn(
+        "[ProofCache] Storage quota exceeded; clearing proof cache and retrying.",
+      );
       dispatchStorageQuotaWarning("proofCache", err);
 
       try {
@@ -312,7 +345,10 @@ export async function storeProof(
         await db.clear(STORE);
         await attemptWrite(db);
       } catch (retryErr) {
-        console.warn("[ProofCache] Retrying storeProof after cache clear failed:", retryErr);
+        console.warn(
+          "[ProofCache] Retrying storeProof after cache clear failed:",
+          retryErr,
+        );
       }
     }
     // Caching is best-effort - never bubble unhandled rejection
@@ -320,7 +356,10 @@ export async function storeProof(
 }
 
 /** Drop one credential's proof, e.g. after the server rejects it. */
-export async function invalidateProof(scope: string, commit: string): Promise<void> {
+export async function invalidateProof(
+  scope: string,
+  commit: string,
+): Promise<void> {
   if (!isProofCacheAvailable() || !scope || !commit) return;
   try {
     await (await getDb()).delete(STORE, entryKey(scope, commit));
@@ -405,7 +444,9 @@ export async function getOrCreateProof(input: {
     const result = { proof: cached.proof, publicSignals: cached.publicSignals };
     if (Date.now() < cached.refreshAt) return { ...result, source: "cache" };
 
-    void generateOnce(scope, commit, generate, options).catch((err) => onBackgroundError?.(err));
+    void generateOnce(scope, commit, generate, options).catch((err) =>
+      onBackgroundError?.(err),
+    );
     return { ...result, source: "stale-cache" };
   }
 

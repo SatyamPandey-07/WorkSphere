@@ -7,6 +7,7 @@ import {
   IsochronePresetMinutes,
   ISOCHRONE_PRESETS,
 } from '@/lib/routing/ecoRoutingEngine';
+import { useBleProximity, type BleProximityResult } from '@/hooks/useBleProximity';
 
 export interface Coordinates {
   lat: number;
@@ -30,6 +31,7 @@ export interface VenueCardProps {
   onSelect?: (venue: VenueCardData) => void;
   className?: string;
   showIsochroneMap?: boolean;
+  enableBleProximity?: boolean;
 }
 
 export const WALKING_SPEED_KMH = 4.8;
@@ -124,10 +126,13 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   onSelect,
   className = '',
   showIsochroneMap = true,
+  enableBleProximity = false,
 }) => {
   const estimates = getVenueTravelEstimates(userLocation, venue);
   const venueCoords = extractVenueCoordinates(venue);
   const [selectedMinutes, setSelectedMinutes] = useState<IsochronePresetMinutes>(5);
+
+  const bleProximity: BleProximityResult = useBleProximity();
 
   const hasGps = hasValidCoordinates(userLocation);
 
@@ -186,6 +191,64 @@ export const VenueCard: React.FC<VenueCardProps> = ({
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-base font-semibold text-slate-900">{venue.name}</h3>
+
+        {enableBleProximity && (
+          <div data-testid="venue-ble-proximity-indicator" className="inline-flex items-center gap-1.5">
+            {bleProximity.status === 'nearby' && (
+              <span
+                data-testid="ble-proximity-nearby-badge"
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800 animate-pulse"
+                title={`Beacon nearby (~${bleProximity.distance}m, ${bleProximity.rssi} dBm)`}
+              >
+                <span aria-hidden="true">📡</span>
+                <span>Nearby ({bleProximity.distance}m)</span>
+              </span>
+            )}
+            {bleProximity.status === 'connected' && bleProximity.distance !== null && (
+              <span
+                data-testid="ble-proximity-connected-badge"
+                className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                title={`Beacon detected (~${bleProximity.distance}m)`}
+              >
+                <span aria-hidden="true">📶</span>
+                <span>{bleProximity.distance}m away</span>
+              </span>
+            )}
+            {bleProximity.status === 'searching' && (
+              <span
+                data-testid="ble-proximity-searching-badge"
+                className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+              >
+                <span aria-hidden="true">⏳</span>
+                <span>Searching beacons...</span>
+              </span>
+            )}
+            {bleProximity.status === 'idle' && bleProximity.isSupported && (
+              <button
+                type="button"
+                data-testid="ble-proximity-scan-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void bleProximity.startScanning();
+                }}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
+                title="Scan for partner hub BLE beacon"
+              >
+                <span aria-hidden="true">📡</span>
+                <span>Detect Beacon</span>
+              </button>
+            )}
+            {!bleProximity.isSupported && (
+              <span
+                data-testid="ble-proximity-unsupported-badge"
+                className="text-[11px] text-slate-400"
+                title="BLE proximity is unsupported in this browser"
+              >
+                BLE unavailable
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">

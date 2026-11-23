@@ -112,6 +112,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [End-to-End Playwright Guide](./testing/e2e-playwright.md) — browser-based end-to-end testing documentation.
 - [Web Vitals Guide](./telemetry/web-vitals-guide.md) — Core Web Vitals thresholds and performance telemetry.
 - [Vitals Export Pipeline](./telemetry/vitals-export-pipeline.md) — telemetry export and operational pipeline.
+- [Route Latency Heatmap Architecture](./admin/ROUTE_LATENCY_HEATMAP.md) — route telemetry collection, bucket aggregation, percentiles, API contract, and canvas rendering limitations.
 - [WebGPU Fallback Triage Runbook](./runbooks/WEBGPU_FALLBACK_TRIAGE.md) — diagnosing WebGPU device loss and fallback behavior.
 - [Reservation CDC Operations](./workers/RESERVATION_CDC_OPERATIONS.md) — PostgreSQL logical replication and Redis Stream operations.
 - [Troubleshooting](./TROUBLESHOOTING.md) — common development and operational troubleshooting guidance.

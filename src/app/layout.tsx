@@ -1,4 +1,5 @@
-﻿import type { Metadata, Viewport } from "next";
+﻿/* eslint-disable @typescript-eslint/no-unused-vars */
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { cookies, headers } from "next/headers";
@@ -88,8 +89,6 @@ export const viewport: Viewport = {
   themeColor: "#2563eb",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default async function RootLayout({

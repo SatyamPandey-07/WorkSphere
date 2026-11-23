@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from "react";
 
-export type CarbonPresetKey = '7d' | '30d' | 'this-month' | 'ytd';
+export type CarbonPresetKey = "7d" | "30d" | "this-month" | "ytd";
 
 export interface CarbonDailyMetric {
   date: string; // YYYY-MM-DD
@@ -31,14 +31,14 @@ const MS_PER_DAY = 86_400_000;
 
 export function toIsoDateString(date: Date): string {
   const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
 export function parseIsoDateUtc(iso: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
-  const [y, m, d] = iso.split('-').map(Number);
+  const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
   if (
     dt.getUTCFullYear() !== y ||
@@ -50,7 +50,10 @@ export function parseIsoDateUtc(iso: string): Date | null {
   return dt;
 }
 
-export function getInclusiveDaysCount(startIso: string, endIso: string): number {
+export function getInclusiveDaysCount(
+  startIso: string,
+  endIso: string,
+): number {
   const start = parseIsoDateUtc(startIso);
   const end = parseIsoDateUtc(endIso);
   if (!start || !end || start.getTime() > end.getTime()) return 0;
@@ -59,22 +62,22 @@ export function getInclusiveDaysCount(startIso: string, endIso: string): number 
 
 export function getPresetDateRange(
   preset: CarbonPresetKey,
-  todayIso: string
+  todayIso: string,
 ): { startDate: string; endDate: string } {
   const endDt = parseIsoDateUtc(todayIso) ?? new Date();
   const endDate = toIsoDateString(endDt);
 
-  if (preset === '7d') {
+  if (preset === "7d") {
     const startDt = new Date(endDt.getTime() - 6 * MS_PER_DAY);
     return { startDate: toIsoDateString(startDt), endDate };
   }
-  if (preset === '30d') {
+  if (preset === "30d") {
     const startDt = new Date(endDt.getTime() - 29 * MS_PER_DAY);
     return { startDate: toIsoDateString(startDt), endDate };
   }
-  if (preset === 'this-month') {
+  if (preset === "this-month") {
     const startDt = new Date(
-      Date.UTC(endDt.getUTCFullYear(), endDt.getUTCMonth(), 1)
+      Date.UTC(endDt.getUTCFullYear(), endDt.getUTCMonth(), 1),
     );
     return { startDate: toIsoDateString(startDt), endDate };
   }
@@ -85,23 +88,26 @@ export function getPresetDateRange(
 export function validateCustomDateRange(
   startDate: string,
   endDate: string,
-  maxDateIso: string
+  maxDateIso: string,
 ): string | null {
   if (!startDate || !endDate) {
-    return 'Please select both a start date and an end date.';
+    return "Please select both a start date and an end date.";
   }
   const start = parseIsoDateUtc(startDate);
   const end = parseIsoDateUtc(endDate);
   const maxDt = parseIsoDateUtc(maxDateIso);
 
   if (!start || !end) {
-    return 'Please enter valid calendar dates in YYYY-MM-DD format.';
+    return "Please enter valid calendar dates in YYYY-MM-DD format.";
   }
   if (start.getTime() > end.getTime()) {
-    return 'Start date must be on or before the end date.';
+    return "Start date must be on or before the end date.";
   }
-  if (maxDt && (start.getTime() > maxDt.getTime() || end.getTime() > maxDt.getTime())) {
-    return 'Dates cannot be in the future.';
+  if (
+    maxDt &&
+    (start.getTime() > maxDt.getTime() || end.getTime() > maxDt.getTime())
+  ) {
+    return "Dates cannot be in the future.";
   }
   return null;
 }
@@ -113,7 +119,7 @@ export function computeCarbonSavingsForRange(
     dailyMetrics?: CarbonDailyMetric[];
     dailyBaselineKgCo2?: number;
     dailyActualKgCo2?: number;
-  } = {}
+  } = {},
 ): CarbonSavingsSummary {
   const daysCount = getInclusiveDaysCount(startDate, endDate);
   if (daysCount <= 0) {
@@ -127,7 +133,7 @@ export function computeCarbonSavingsForRange(
   }
 
   const matchingRows = (options.dailyMetrics ?? []).filter(
-    (row) => row.date >= startDate && row.date <= endDate
+    (row) => row.date >= startDate && row.date <= endDate,
   );
 
   let baselineKgCo2 = 0;
@@ -145,7 +151,9 @@ export function computeCarbonSavingsForRange(
     actualKgCo2 = Number((actualPerDay * daysCount).toFixed(2));
   }
 
-  const savedKgCo2 = Number(Math.max(0, baselineKgCo2 - actualKgCo2).toFixed(2));
+  const savedKgCo2 = Number(
+    Math.max(0, baselineKgCo2 - actualKgCo2).toFixed(2),
+  );
   const savingsPercent =
     baselineKgCo2 > 0
       ? Number(((savedKgCo2 / baselineKgCo2) * 100).toFixed(1))
@@ -161,25 +169,25 @@ export function computeCarbonSavingsForRange(
 }
 
 const PRESET_BUTTONS: { key: CarbonPresetKey; label: string }[] = [
-  { key: '7d', label: '7 Days' },
-  { key: '30d', label: '30 Days' },
-  { key: 'this-month', label: 'This Month' },
-  { key: 'ytd', label: 'YTD' },
+  { key: "7d", label: "7 Days" },
+  { key: "30d", label: "30 Days" },
+  { key: "this-month", label: "This Month" },
+  { key: "ytd", label: "YTD" },
 ];
 
 export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
   dailyMetrics,
   dailyBaselineKgCo2,
   dailyActualKgCo2,
-  defaultPreset = '30d',
+  defaultPreset = "30d",
   todayIso: propTodayIso,
-  className = '',
+  className = "",
 }) => {
   const resolvedToday = propTodayIso ?? toIsoDateString(new Date());
   const initialRange = getPresetDateRange(defaultPreset, resolvedToday);
 
   const [activePreset, setActivePreset] = useState<CarbonPresetKey | null>(
-    defaultPreset
+    defaultPreset,
   );
   const [isCustomOpen, setIsCustomOpen] = useState(false);
   const [startDate, setStartDate] = useState(initialRange.startDate);
@@ -252,7 +260,11 @@ export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Date range presets">
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          role="group"
+          aria-label="Date range presets"
+        >
           {PRESET_BUTTONS.map((btn) => {
             const isSelected = activePreset === btn.key;
             return (
@@ -264,8 +276,8 @@ export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
                 onClick={() => handleSelectPreset(btn.key)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                   isSelected
-                    ? 'bg-emerald-500 text-slate-950'
-                    : 'border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600 hover:text-white'
+                    ? "bg-emerald-500 text-slate-950"
+                    : "border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600 hover:text-white"
                 }`}
               >
                 {btn.label}
@@ -281,8 +293,8 @@ export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
             onClick={handleToggleCustom}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
               isCustomOpen && activePreset === null
-                ? 'bg-indigo-500 text-white'
-                : 'border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600 hover:text-white'
+                ? "bg-indigo-500 text-white"
+                : "border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600 hover:text-white"
             }`}
           >
             Custom
@@ -336,21 +348,30 @@ export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
           <div className="text-xs text-slate-400">Baseline Emissions</div>
-          <div data-testid="baseline-emissions" className="mt-1 text-lg font-semibold text-slate-200">
+          <div
+            data-testid="baseline-emissions"
+            className="mt-1 text-lg font-semibold text-slate-200"
+          >
             {summary.baselineKgCo2.toFixed(2)} kg CO₂
           </div>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
           <div className="text-xs text-slate-400">Actual Emissions</div>
-          <div data-testid="actual-emissions" className="mt-1 text-lg font-semibold text-slate-200">
+          <div
+            data-testid="actual-emissions"
+            className="mt-1 text-lg font-semibold text-slate-200"
+          >
             {summary.actualKgCo2.toFixed(2)} kg CO₂
           </div>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
           <div className="text-xs text-slate-400">Net Carbon Saved</div>
-          <div data-testid="saved-emissions" className="mt-1 text-lg font-semibold text-emerald-400">
+          <div
+            data-testid="saved-emissions"
+            className="mt-1 text-lg font-semibold text-emerald-400"
+          >
             {summary.savedKgCo2.toFixed(2)} kg CO₂ ({summary.savingsPercent}%)
           </div>
         </div>
@@ -358,3 +379,5 @@ export const CarbonFootprintTracker: React.FC<CarbonFootprintTrackerProps> = ({
     </section>
   );
 };
+
+export default CarbonFootprintTracker;

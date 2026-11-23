@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-144%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-145%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-144-active-rockstars"><b>👥 Contributors (144)</b></a> •
+  <a href="#-contributors-145-active-rockstars"><b>👥 Contributors (145)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (144 Active Rockstars)
+### 🚀 Contributors (145 Active Rockstars)
 
-A massive thank you to all **144 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **145 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -990,6 +990,12 @@ A massive thank you to all **144 brilliant contributors and bots** building Work
         <sub><b>bhav-17</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Aviral02git">
+        <img src="https://avatars.githubusercontent.com/u/183893278?v=4" width="55px;" height="55px;" alt="Aviral02git" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Aviral02git</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1120,6 +1126,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### ⭐ User Features
 
+- **ML WiFi Quality Prediction Engine**: Real-time venue WiFi prediction computing estimated download/upload bandwidth, stability score, and jitter confidence based on spatial RF telemetry (`src/app/api/venues/[venueId]/wifi-prediction/route.ts`).
+- **Interactive Venue Noise & Decibel Timeline Chart**: Real-time acoustic noise level distribution chart rendering ambient historical decibel gradients with interactive hover tooltips (`src/components/chat/VenueNoiseChart.tsx`).
 - **Adaptive WebRTC Audio Bitrate Scaling**: Real-time packet loss and jitter telemetry dynamically throttling WebAudio Opus encoding bitrates (16 kbps - 128 kbps) to ensure crystal-clear voice collaboration in congested nomad coworking spaces (`src/lib/realtime/webrtc/meshConnection.ts`).
 - **Client-Side SnarkJS Proof Verification & IndexedDB Cache**: Local cryptographic caching of verified zero-knowledge student passes and access proofs with SHA-256 circuit hash invalidation (`src/lib/zkp/proofCache.ts`).
 - **Multi-Modal Eco-Commute Pareto Routing Engine**: Multi-objective routing optimizing travel duration, monetary fare, and EPA-aligned greenhouse gas emission reductions (`src/lib/routing/ecoRoutingEngine.ts`, `src/app/api/routing/multimodal/route.ts`).

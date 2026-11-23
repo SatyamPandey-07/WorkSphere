@@ -1,8 +1,10 @@
 /**
  * Decentralized Local Wi-Fi Mesh & Offline P2P Workspace Collaboration Engine
  * Implements WebRTC DataChannel signaling, CRDT vector clocks for offline document sync,
- * peer hop routing, and zero-WAN local network resilience.
+ * peer hop routing, Bloom filter message deduplication, and zero-WAN local network resilience.
  */
+
+import { MeshBloomFilter, type MeshBloomFilterConfig } from "./meshBloomFilter";
 
 export interface MeshPeerNode {
   peerId: string;
@@ -42,6 +44,11 @@ export interface LocalMeshTopology {
   activeMeshPeers: MeshPeerNode[];
   totalBandwidthKbps: number;
   meshResilienceRating: "optimal" | "robust" | "limited";
+  deduplicationStats?: {
+    droppedDuplicates: number;
+    bloomFilterMemoryBytes: number;
+    falsePositiveRate: number;
+  };
 }
 
 export class MeshCollabEngine {
@@ -113,5 +120,38 @@ export class MeshCollabEngine {
   ): number {
     if (typeof sentAt !== "number" || isNaN(sentAt)) return 0;
     return Math.max(0, Math.round(receivedAt - sentAt));
+  }
+
+  /**
+   * Creates an adaptive MeshBloomFilter for P2P mesh message deduplication
+   */
+  public static createMessageBloomFilter(
+    config?: Partial<MeshBloomFilterConfig>,
+  ): MeshBloomFilter {
+    return new MeshBloomFilter(config);
+  }
+
+  /**
+   * Tests if an incoming WebRTC DataChannel payload is a duplicate using a Bloom filter
+   */
+  public static isDuplicateMessage(
+    filter: MeshBloomFilter,
+    payload: ArrayBuffer | Uint8Array,
+  ): boolean {
+    const msgId = filter.extractMessageId(payload);
+    return filter.testAndAdd(msgId);
+  }
+
+  /**
+   * Calculates estimated mobile data savings from suppressed duplicate messages in KB
+   */
+  public static calculateBandwidthSavedKb(
+    droppedDuplicatesCount: number,
+    averagePayloadSizeBytes: number = 1024,
+  ): number {
+    if (droppedDuplicatesCount <= 0) return 0;
+    return Math.round(
+      (droppedDuplicatesCount * averagePayloadSizeBytes) / 1024,
+    );
   }
 }

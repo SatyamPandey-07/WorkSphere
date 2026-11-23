@@ -10,18 +10,17 @@ This document provides a high-level reference for the REST API endpoints availab
 
 | `POST /api/webhooks/clerk` | Verify Clerk/Svix-signed user lifecycle events and synchronize the WorkSphere user profile. See the [Clerk webhook integration runbook](./auth/CLERK_WEBHOOK_INTEGRATION.md). |
 
-
-| Endpoint                         | Description                                       |
-| -------------------------------- | ------------------------------------------------- |
-| `POST /api/auth/csrf-token`      | Generate a CSRF token for secure requests.        |
-| `POST /api/auth/forgot-password` | Initiate the password reset workflow.             |
-| `POST /api/auth/reset-password`  | Complete the password reset process.              |
-| `POST /api/auth/resend-otp`      | Resend a one-time password.                       |
-| `POST /api/auth/verify-otp`      | Verify a submitted one-time password.             |
-| `POST /api/auth/sso/pkce`        | Generate a PKCE challenge for SSO authentication. |
-| `GET /api/auth/sso/metadata`     | Retrieve SSO metadata.                            |
-| `POST /api/auth/sso/saml`        | Handle SAML authentication requests.              |
-| `POST /api/auth/webauthn/verify` | Verify a WebAuthn authentication request.         |
+| Endpoint                         | Description                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `POST /api/auth/csrf-token`      | Generate a CSRF token for secure requests.                                    |
+| `POST /api/auth/forgot-password` | Initiate the password reset workflow.                                         |
+| `POST /api/auth/reset-password`  | Complete the password reset process.                                          |
+| `POST /api/auth/resend-otp`      | Retired endpoint (HTTP 410 Gone). Password reset codes are managed via Clerk. |
+| `POST /api/auth/verify-otp`      | Retired endpoint (HTTP 410 Gone). Verification codes are managed via Clerk.   |
+| `POST /api/auth/sso/pkce`        | Generate a PKCE challenge for SSO authentication.                             |
+| `GET /api/auth/sso/metadata`     | Retrieve SSO metadata.                                                        |
+| `POST /api/auth/sso/saml`        | Handle SAML authentication requests.                                          |
+| `POST /api/auth/webauthn/verify` | Verify a WebAuthn authentication request.                                     |
 
 ---
 

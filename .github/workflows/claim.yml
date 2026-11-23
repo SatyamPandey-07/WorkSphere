@@ -158,6 +158,21 @@ jobs:
               // ==========================================
               console.log(`Processing /claim on issue #${issueNumber} by ${commenter}...`);
 
+              // 0. Ensure issue is an official maintainer issue or approved by maintainer
+              const issueAuthor = (context.payload.issue.user?.login || '').toLowerCase();
+              const issueLabels = (context.payload.issue.labels || []).map(l => (typeof l === 'string' ? l : l.name).toLowerCase());
+              const isMaintainerIssue = issueAuthor === 'satyampandey-07' || issueLabels.includes('approved') || issueLabels.includes('triage/accepted');
+              if (!isMaintainerIssue) {
+                const unauthorizedMsg = `Hi @${commenter}, this issue was created by a community contributor and has not yet been triaged or approved by the maintainer (@SatyamPandey-07). Only official maintainer issues or issues marked with \`approved\` can be claimed.`;
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: unauthorizedMsg
+                }).catch(e => console.warn('Comment API warning:', e.message));
+                return;
+              }
+
               // 1. Check if issue is already assigned to someone else
               if (assignees.length > 0) {
                 const currentAssignees = assignees.map(a => `@${a.login}`).join(', ');

@@ -44,7 +44,19 @@ const MemberLocationSchema = z.object({
 const MeetHalfwayRequestSchema = z.object({
   members: z
     .array(MemberLocationSchema)
-    .min(1, "At least one team member coordinate is required"),
+    .min(2, "At least two team member coordinates are required")
+    .refine(
+      (members) => {
+        if (members.length < 2) return true;
+        const uniqueCoordinates = new Set(
+          members.map((m) => `${m.latitude + 0},${m.longitude + 0}`),
+        );
+        return uniqueCoordinates.size >= 2;
+      },
+      {
+        message: "At least two distinct member locations are required",
+      },
+    ),
   category: z.string().optional(),
   minWifiSpeed: z.number().finite().min(0).default(0),
   minSeats: z.number().finite().int().min(1).optional(),

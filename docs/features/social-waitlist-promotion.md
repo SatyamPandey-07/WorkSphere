@@ -7,6 +7,7 @@ This technical specification details WorkSphere's venue seat waitlist promotion 
 ## Table of Contents
 
 1. [Executive Summary & Architectural Scope](#1-executive-summary--architectural-scope)
+   - [Public API Reference](#public-api-reference)
 2. [Waitlist FIFO Queue & Priority Escalation Algorithm](#2-waitlist-fifo-queue--priority-escalation-algorithm)
    - [FIFO Ordering & Queue Position Calculation](#fifo-ordering--queue-position-calculation)
    - [Timezone & Real-Instant Interval Matching](#timezone--real-instant-interval-matching)
@@ -30,6 +31,19 @@ This technical specification details WorkSphere's venue seat waitlist promotion 
 WorkSphere enables remote workers to book hot desks, quiet zones, and team islands at popular venues. When a venue's seating reaches maximum capacity, users can join a digital waitlist for specific time slots or seat types.
 
 When an existing reservation is cancelled or checked out early, WorkSphere's **Waitlist Promotion Pipeline** automatically identifies the next eligible waiter in line, locks the freed seat, grants an exclusive **15-minute claim offer window**, and dispatches critical WebPush alerts ([src/lib/waitlist/waitlistService.ts](../../src/lib/waitlist/waitlistService.ts)).
+
+### Public API Reference
+
+The waitlist lifecycle is exposed through four dedicated Next.js App Router endpoints:
+
+| Method   | Endpoint                                         | Description                                                                                             |
+| :------- | :----------------------------------------------- | :------------------------------------------------------------------------------------------------------ |
+| `GET`    | `/api/venues/{venueId}/waitlist`                 | Retrieves the authenticated user's active waitlist entries for a venue, including FIFO queue positions. |
+| `POST`   | `/api/venues/{venueId}/waitlist`                 | Joins a venue's waitlist for a specific date, time slot, duration, and seat preferences.                |
+| `DELETE` | `/api/venues/{venueId}/waitlist?waitlistId={id}` | Cancels an active waitlist entry owned by the authenticated user.                                       |
+| `POST`   | `/api/waitlist/{waitlistId}/claim`               | Atomically claims an offered seat in `NOTIFIED` status, creating a confirmed booking.                   |
+
+For detailed request and response contracts, parameter validation, queue calculation mechanics, error codes, and examples, see the [Venue Waitlist and Seat Claim API Guide](../api/WAITLIST_API.md).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -117,7 +131,7 @@ $$\text{Eligible} \iff \text{Interval}_{\text{Waiter}} \cap \text{Interval}_{\te
 When a seat becomes available, candidates are filtered in FIFO order against stated preferences:
 
 1. **Specific Seat ID (`seatId`):** If a waiter requested a specific desk ID, the freed seat must match `seatId`.
-2. **Seat Type Gating (`seatType`):** Matches desk type (`flex`, `dedicated`, `booth`, `meeting_room`).
+2. **Seat Type Gating (`seatType`):** Matches desk classification from the Prisma `SeatType` enum (`HOT_DESK`, `FIXED_DESK`, `MEETING_ROOM`, `PHONE_BOOTH`).
 3. **Quiet Zone Requirement (`requiresQuiet`):** Filters for seats with `isQuietZone === true`.
 4. **Power Outlet Requirement (`requiresOutlets`):** Filters for seats containing `"outlets"` in their amenity tags.
 5. **No Existing Conflicting Booking:** Verifies that no `CONFIRMED` or `PENDING` booking occupies the seat during the waiter's interval.
@@ -148,13 +162,13 @@ Each waitlist entry transitions through a strict state machine:
               └─────────┘ └─────────┘
 ```
 
-| State | Description | Next Allowed State |
-| :--- | :--- | :--- |
-| `ACTIVE` | User is waiting in the FIFO queue. | `NOTIFIED`, `CANCELLED` |
-| `NOTIFIED` | Seat offered; 15-minute timer (`claimExpiresAt`) is active. | `CLAIMED`, `EXPIRED` |
-| `CLAIMED` | Seat claimed by user; converted into `CONFIRMED` booking. | Terminal State |
-| `EXPIRED` | 15-minute claim window lapsed; seat passed to next waiter. | Terminal State |
-| `CANCELLED` | User voluntarily withdrew from waitlist. | Terminal State |
+| State       | Description                                                 | Next Allowed State      |
+| :---------- | :---------------------------------------------------------- | :---------------------- |
+| `ACTIVE`    | User is waiting in the FIFO queue.                          | `NOTIFIED`, `CANCELLED` |
+| `NOTIFIED`  | Seat offered; 15-minute timer (`claimExpiresAt`) is active. | `CLAIMED`, `EXPIRED`    |
+| `CLAIMED`   | Seat claimed by user; converted into `CONFIRMED` booking.   | Terminal State          |
+| `EXPIRED`   | 15-minute claim window lapsed; seat passed to next waiter.  | Terminal State          |
+| `CANCELLED` | User voluntarily withdrew from waitlist.                    | Terminal State          |
 
 ---
 
@@ -175,7 +189,10 @@ When a user clicks "Claim Seat", the claim runs inside a **Serializable Transact
      data: { status: "CLAIMED", claimedAt: new Date() },
    });
    if (marked.count !== 1) {
-     throw new WaitlistClaimError("NOT_CLAIMABLE", "This offer has already been claimed or expired.");
+     throw new WaitlistClaimError(
+       "NOT_CLAIMABLE",
+       "This offer has already been claimed or expired.",
+     );
    }
    ```
 3. **Atomic Booking Creation:** Converts the waitlist entry into a `CONFIRMED` booking with a unique confirmation ID (`WS-XXXXXX`).

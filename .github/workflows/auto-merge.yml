@@ -178,7 +178,16 @@ jobs:
                     });
                     if (issueRes.data && !issueRes.data.pull_request) {
                       const assignees = (issueRes.data.assignees || []).map(a => a.login.toLowerCase());
+                      const issueAuthor = (issueRes.data.user?.login || '').toLowerCase();
+                      const issueLabels = (issueRes.data.labels || []).map(l => (typeof l === 'string' ? l : l.name).toLowerCase());
+                      const isApprovedOrOfficial = issueAuthor === 'satyampandey-07' || issueLabels.includes('approved') || issueLabels.includes('triage/accepted');
                       const isMaintainer = ['satyampandey-07'].includes(prAuthor);
+
+                      if (!isApprovedOrOfficial && !isMaintainer) {
+                        console.log(`Issue #${num} was authored by @${issueAuthor} without maintainer approval. Skipping auto-merge.`);
+                        continue;
+                      }
+
                       if (isMaintainer || assignees.includes(prAuthor)) {
                         linkedIssues.push(`#${num}`);
                       } else {
@@ -329,6 +338,26 @@ jobs:
                 if (prDetails.mergeable === false || prDetails.mergeable_state === 'dirty') {
                   console.log(`PR #${prNumber} has merge conflicts (state: ${prDetails.mergeable_state}). Skipping auto-merge.`);
                   continue;
+                }
+
+                // Ensure CI build-and-test checks have not failed on this PR
+                try {
+                  const checkRunsRes = await github.rest.checks.listForRef({
+                    owner,
+                    repo,
+                    ref: pr.head.sha
+                  });
+                  const checkRuns = checkRunsRes.data?.check_runs || [];
+                  const failedCheck = checkRuns.find(c =>
+                    c.conclusion === 'failure' &&
+                    (c.name.includes('build-and-test') || c.name.includes('Continuous Integration'))
+                  );
+                  if (failedCheck) {
+                    console.log(`PR #${prNumber} has failing check "${failedCheck.name}". Skipping auto-merge until resolved.`);
+                    continue;
+                  }
+                } catch (checkErr) {
+                  console.warn('Check runs query note:', checkErr.message);
                 }
 
                 // Execute squash merge with co-author attribution

@@ -720,4 +720,5 @@ When adding support for a new entity or output format:
 ## 16. Related Documentation
 
 - [Booking Itinerary & PDF Verification System](booking-pdf-generation.md)
+- [Workspace Folder Exports Guide](../api/FOLDER_EXPORTS.md) — Documentation for the folder billing CSV export endpoint, field mappings, heuristic mock expenses, and manual CSV construction.
 - [API Documentation Index](../api/README.md)

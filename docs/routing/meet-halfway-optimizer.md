@@ -209,6 +209,25 @@ Where:
 
 ---
 
+### 3.4 Global Transit Preference & Effective Mode Resolution
+
+When evaluating commute times for a group, the team can establish a global commute policy via `MeetHalfwayOptions.transitPreference`:
+
+| Global Preference | Effective Transport Mode for Each Member                                                                           |
+| :---------------- | :----------------------------------------------------------------------------------------------------------------- |
+| `transit`         | Always `transit`, regardless of individual member transit mode.                                                    |
+| `walking`         | Always `walking`, regardless of individual member transit mode.                                                    |
+| `balanced`        | Respects each member's individual `transitMode`; defaults to `transit` when a member mode is omitted or undefined. |
+
+#### Operational Principles:
+
+- **Default Behavior:** An omitted global preference (or omitting `MeetHalfwayOptions`) defaults to `transit`, consistent with standard metropolitan transit routing.
+- **Estimate Propagation:** Effective modes are assigned to each member's `MemberTravelEstimate.transitMode` and determine the velocity used in the travel duration formula.
+- **Ranking Impact:** Derived durations directly influence aggregate travel time, commute variance ($\sigma_T$), fairness scores, and final `compositeRankScore` venue sorting.
+- **Speed Modeling:** All calculations continue to use the optimizer's deterministic approximate speed model ($v_{\text{km/h}}$ velocity matrix + $20\%$ routing overhead + $2\text{ min}$ terminal buffer) rather than querying live traffic conditions, transit schedules, or external routing APIs.
+
+---
+
 ## 4. Candidate Venue Evaluation & Multi-Factor Scoring
 
 Each candidate workspace $v$ in the venue pool is evaluated across four major vectors: commute burden, fairness, capacity sufficiency, and workspace amenities.
@@ -385,9 +404,17 @@ export interface OptimizationResult {
   fallbackApplied?: boolean;
   message?: string;
 }
+
+export interface MeetHalfwayOptions {
+  minRequiredSeats?: number;
+  transitPreference?: 'transit' | 'walking' | 'balanced';
+}
 ```
 
 ### 7.2 Method Signatures
+
+#### `MeetHalfwayOptimizer.resolveEffectiveTransitMode(memberMode?, globalPreference = 'transit'): 'transit' | 'driving' | 'bicycling' | 'walking'`
+Resolves a member's effective commute mode according to the team policy: forces `'transit'` under `'transit'`, forces `'walking'` under `'walking'`, preserves individual modes under `'balanced'` (falling back to `'transit'`), or defaults to `'transit'` when unspecified.
 
 #### `MeetHalfwayOptimizer.isTeamCoLocated(members, thresholdMeters = 150): boolean`
 Checks if all participant coordinates fall within a circular proximity threshold of the first member.
@@ -395,8 +422,8 @@ Checks if all participant coordinates fall within a circular proximity threshold
 #### `MeetHalfwayOptimizer.computeGeometricMedian(members, maxIterations = 100, tolerance = 1e-6): { latitude, longitude }`
 Computes the Fermat-Weber median point using Weiszfeld's algorithm with singularity clamping.
 
-#### `MeetHalfwayOptimizer.rankVenuesForTeam(members, venues, minRequiredSeats = members.length): OptimizationResult`
-Executes complete geo-clustering, venue evaluation, fairness scoring, and ranking pipeline.
+#### `MeetHalfwayOptimizer.rankVenuesForTeam(members, venues, minRequiredSeatsOrOptions?: number | MeetHalfwayOptions): OptimizationResult`
+Executes complete geo-clustering, venue evaluation, fairness scoring, and ranking pipeline according to the effective transit modes resolved from `MeetHalfwayOptions.transitPreference` (defaulting to `'transit'`). Supports numeric `minRequiredSeats` for backward compatibility.
 
 ---
 
@@ -432,7 +459,7 @@ The endpoint validates all incoming payload structures with Zod prior to centroi
 | `searchRadiusKm` | `number` | Optional (default: `25`) | Finite number strictly greater than 0 and at most 100 km (`MAX_SEARCH_RADIUS_KM = 100`). Aligns with the 100,000 m PostGIS spatial policy in `spatialVenueSearch.ts`. |
 | `minSeats` | `number` | Optional (fallback: `members.length`) | Positive integer ($\ge 1$). Fractional numbers, zero, and negative values are rejected. When omitted, falls back to the group member count. |
 | `minWifiSpeed` | `number` | Optional (default: `0`) | Finite non-negative number ($\ge 0$). Negative values are rejected. |
-| `transitPreference` | `string` | Optional (default: `"transit"`) | Supported values: `"transit"`, `"walking"`, `"balanced"`. (Note: transit-preference algorithmic tuning is tracked separately under issue #9299). |
+| `transitPreference` | `string` | Optional (default: `"transit"`) | Supported values: `"transit"`, `"walking"`, `"balanced"`. Determines effective member commute mode: `"transit"` forces public transit for all members; `"walking"` forces pedestrian speed for all members; `"balanced"` honors individual member modes (defaulting to `"transit"` when unspecified). An omitted preference defaults to `"transit"`. Affects member travel estimates, commute durations, and composite venue ranking using the internal velocity model without external routing APIs. |
 | `category` | `string` | Optional | Venue category string filter (e.g. `"coworking"`, `"cafe"`, `"library"`). Value `"all"` applies no filter. |
 | `hasOutlets` | `boolean` | Optional | When `true`, filters candidate venues requiring available power outlets. |
 

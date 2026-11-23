@@ -1,6 +1,7 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { buildVenueSearchParams } from '@/lib/venues/searchQuery';
 
 export const VENUE_SEARCH_HISTORY_STORAGE_KEY = 'worksphere:venue_search_history:v1';
 export const MAX_VENUE_SEARCH_HISTORY = 8;
@@ -9,6 +10,9 @@ export interface VenueSearchInputProps {
   value?: string;
   onChange?: (value: string) => void;
   onSelectQuery?: (query: string) => void;
+  onQueryParamsChange?: (queryString: string) => void;
+  activeAmenities?: string[];
+  existingSearchParams?: string;
   storageKey?: string;
   placeholder?: string;
   className?: string;
@@ -81,6 +85,9 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
   value: controlledValue,
   onChange,
   onSelectQuery,
+  onQueryParamsChange,
+  activeAmenities,
+  existingSearchParams = '',
   storageKey = VENUE_SEARCH_HISTORY_STORAGE_KEY,
   placeholder = 'Search cafes, coworking spaces, neighborhoods...',
   className = '',
@@ -109,6 +116,18 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
+
+  const emitSearchParams = (term: string) => {
+    if (!onQueryParamsChange) return;
+    const params = buildVenueSearchParams(
+      {
+        q: term,
+        amenities: activeAmenities,
+      },
+      existingSearchParams
+    );
+    onQueryParamsChange(params.toString());
+  };
 
   const recordSearchQuery = (term: string): string => {
     const cleanQuery = normalizeSearchQuery(term);
@@ -140,6 +159,7 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
     if (!cleanQuery) return;
     handleInputChange(cleanQuery);
     onSelectQuery?.(cleanQuery);
+    emitSearchParams(cleanQuery);
     setIsDropdownOpen(false);
   };
 
@@ -149,6 +169,7 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
       if (!cleanQuery) return;
       recordSearchQuery(cleanQuery);
       onSelectQuery?.(cleanQuery);
+      emitSearchParams(cleanQuery);
       setIsDropdownOpen(false);
     } else if (e.key === 'Escape') {
       setIsDropdownOpen(false);

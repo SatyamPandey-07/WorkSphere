@@ -1,5 +1,9 @@
 import React from "react";
+ feature/venuecard-a11y-focus-rings
+import { render, screen, fireEvent } from "@testing-library/react";
+
 import { act, fireEvent, render, screen } from "@testing-library/react";
+ main
 import { VenueCard } from "@/components/venue/VenueCard";
 
 describe("VenueCard Accessibility & Actions", () => {
@@ -8,6 +12,42 @@ describe("VenueCard Accessibility & Actions", () => {
     name: "CoWork Space Bandra",
     description: "Quiet workspace with high-speed internet.",
   };
+
+ feature/venuecard-a11y-focus-rings
+  test("renders all action buttons with descriptive aria-label attributes", () => {
+    render(<VenueCard venue={mockVenue} />);
+
+    const bookmarkBtn = screen.getByRole("button", {
+      name: `Bookmark ${mockVenue.name}`,
+    });
+    const favoriteBtn = screen.getByRole("button", {
+      name: `Favorite ${mockVenue.name}`,
+    });
+    const shareBtn = screen.getByRole("button", {
+      name: `Share ${mockVenue.name}`,
+    });
+
+    expect(bookmarkBtn).toBeInTheDocument();
+    expect(favoriteBtn).toBeInTheDocument();
+    expect(shareBtn).toBeInTheDocument();
+  });
+
+  test("applies focus-visible ring classes for keyboard navigation", () => {
+    render(<VenueCard venue={mockVenue} />);
+
+    const bookmarkBtn = screen.getByRole("button", {
+      name: `Bookmark ${mockVenue.name}`,
+    });
+    expect(bookmarkBtn).toHaveClass("focus-visible:ring-emerald-500");
+    expect(bookmarkBtn).toHaveClass("focus-visible:ring-offset-zinc-900");
+  });
+
+  test("triggers handlers on button click", () => {
+    const onBookmarkMock = jest.fn();
+    render(<VenueCard venue={mockVenue} onBookmark={onBookmarkMock} />);
+
+    const bookmarkBtn = screen.getByRole("button", {
+      name: `Bookmark ${mockVenue.name}`,
 
   afterEach(() => {
     jest.useRealTimers();
@@ -225,7 +265,12 @@ describe("VenueCard Accessibility & Actions", () => {
 
       expect(bookmarkBtn).not.toBeDisabled();
       expect(bookmarkBtn).toHaveAttribute("aria-pressed", "true");
+ main
     });
+    fireEvent.click(bookmarkBtn);
+
+ feature/venuecard-a11y-focus-rings
+    expect(onBookmarkMock).toHaveBeenCalledWith(mockVenue.id);
 
     test("rolls back optimistic toggle and re-enables button when mutation fails", async () => {
       let rejectMutation: (err: Error) => void = () => {};
@@ -311,5 +356,6 @@ describe("VenueCard Accessibility & Actions", () => {
       expect(bookmarkBtn).not.toBeDisabled();
       expect(bookmarkBtn).toHaveAttribute("aria-pressed", "true");
     });
+ main
   });
 });

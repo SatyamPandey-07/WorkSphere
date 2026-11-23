@@ -6,13 +6,14 @@ It describes the code as it exists in the repository. When this document and the
 
 ## Source of truth
 
-| Area | File |
-| --- | --- |
-| Service worker (registered at `/sw.js`) | `public/sw.js` |
-| Service worker registration and sync tag registration | `src/hooks/usePWA.tsx` |
-| IndexedDB connection and schema | `src/lib/offline/db.ts` |
-| Offline sync queue helpers | `src/lib/offline/` |
-| Image cache LRU helpers | `src/lib/swCacheLru.ts` |
+| Area                                                   | File                                                |
+| ------------------------------------------------------ | --------------------------------------------------- |
+| Service worker (registered at `/sw.js`)                | `public/sw.js`                                      |
+| Service worker registration and sync tag registration  | `src/hooks/usePWA.tsx`                              |
+| IndexedDB connection and schema (`worksphere-offline`) | `src/lib/offlineReviewSync.ts` & `public/sw.js`     |
+| Secondary offline cache (`WorkSphereOfflineDB`)        | `src/lib/offline/db.ts` & `src/lib/offlineStore.ts` |
+| Offline sync queue helpers                             | `src/lib/offline/`                                  |
+| Image cache LRU helpers                                | `src/lib/swCacheLru.ts`                             |
 
 Related guides: [PWA_SERVICE_WORKER_GUIDE.md](./PWA_SERVICE_WORKER_GUIDE.md), [PWA_TROUBLESHOOTING.md](./PWA_TROUBLESHOOTING.md), [OFFLINE_INDEXEDDB_SYNC.md](./OFFLINE_INDEXEDDB_SYNC.md).
 
@@ -57,10 +58,10 @@ sequenceDiagram
   SW->>SW: delete any cache ending in -installing
 ```
 
-| Phase | What the code does |
-| --- | --- |
-| install | Opens a temporary cache named `worksphere-v3-installing` and calls `addAll` for `/`, `/offline`, `/icons/icon.svg`, `/manifest.json`. Errors are logged, they do not abort the install. |
-| waiting | The worker deliberately does **not** call `skipWaiting()` on its own. This avoids infinite loaders when a new version takes over mid session. The page must send a `SKIP_WAITING` message. |
+| Phase    | What the code does                                                                                                                                                                                                                                                            |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| install  | Opens a temporary cache named `worksphere-v3-installing` and calls `addAll` for `/`, `/offline`, `/icons/icon.svg`, `/manifest.json`. Errors are logged, they do not abort the install.                                                                                       |
+| waiting  | The worker deliberately does **not** call `skipWaiting()` on its own. This avoids infinite loaders when a new version takes over mid session. The page must send a `SKIP_WAITING` message.                                                                                    |
 | activate | Deletes every cache whose name is not one of `worksphere-v3`, `worksphere-images-v4`, `worksphere-maptiles-v1`, `worksphere-video-tours-v1`, `worksphere-prefetch-v1` (or ending in `-installing`), then calls `clients.claim()`, then removes leftover `-installing` caches. |
 
 To ship a change that must invalidate old cached responses, bump the relevant cache name constant at the top of `public/sw.js`. The activate step then removes the old cache on every client.
@@ -69,14 +70,14 @@ To ship a change that must invalidate old cached responses, bump the relevant ca
 
 All names are constants at the top of `public/sw.js`.
 
-| Cache name | Used for | Strategy |
-| --- | --- | --- |
-| `worksphere-v3` | Pages, static assets, `/api/venues`, `/api/reservations/availability` | Network-first, falls back to cache |
-| `worksphere-images-v4` | `images.unsplash.com` assets | Cache-first with LRU eviction, capped at 20 MB (`MAX_IMAGE_CACHE_BYTES`) so iOS Safari does not kill the PWA |
-| `worksphere-maptiles-v1` | `tile.openstreetmap.org` and `basemaps.cartocdn.com` tiles | Cache-first |
-| `worksphere-venue-photos-v1` | `res.cloudinary.com` and `images.pexels.com` photos | Stale-while-revalidate |
-| `worksphere-video-tours-v1` | Video tour assets | Managed by the video helpers in `sw.js` |
-| `worksphere-prefetch-v1` | Routes and tiles prefetched by the page | Checked first for every GET |
+| Cache name                   | Used for                                                              | Strategy                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `worksphere-v3`              | Pages, static assets, `/api/venues`, `/api/reservations/availability` | Network-first, falls back to cache                                                                           |
+| `worksphere-images-v4`       | `images.unsplash.com` assets                                          | Cache-first with LRU eviction, capped at 20 MB (`MAX_IMAGE_CACHE_BYTES`) so iOS Safari does not kill the PWA |
+| `worksphere-maptiles-v1`     | `tile.openstreetmap.org` and `basemaps.cartocdn.com` tiles            | Cache-first                                                                                                  |
+| `worksphere-venue-photos-v1` | `res.cloudinary.com` and `images.pexels.com` photos                   | Stale-while-revalidate                                                                                       |
+| `worksphere-video-tours-v1`  | Video tour assets                                                     | Managed by the video helpers in `sw.js`                                                                      |
+| `worksphere-prefetch-v1`     | Routes and tiles prefetched by the page                               | Checked first for every GET                                                                                  |
 
 Note on naming: the map tile cache is called `worksphere-maptiles-v1` in the code. If you see `worksphere-offline-map-tiles-v1` in older notes or tickets, that is not the name the service worker uses today.
 
@@ -106,38 +107,57 @@ Details worth knowing:
 - **Unsplash images (cache-first with quota).** Size comes from `content-length`, or a 400 KB estimate for opaque responses. On `QuotaExceededError` the worker evicts and retries once.
 - **Everything else (network-first).** Successful responses are copied into `worksphere-v3`. When the network fails and nothing is cached, page navigations get the `/offline` page, other requests get `503`.
 
-## 5. IndexedDB: `worksphere-offline`
+## 5. IndexedDB Databases
 
-The connection and schema live in `src/lib/offline/db.ts`.
+WorkSphere intentionally uses separate IndexedDB databases for distinct functional domains. Understanding this separation is critical when inspecting storage or making schema changes:
 
-- Database name: `worksphere-offline`
-- Version constant: `DB_VERSION` (currently `8`)
-- Open timeout: 3 seconds. If `indexedDB.open` does not answer, the promise rejects with a `SecurityError`, which is what Safari Private Browsing causes. A one time alert tells the user to leave Private Browsing.
+1. **`worksphere-offline` (Primary PWA Store)**: The primary offline storage for venues, cached searches, review queues, image LRU tracking, and generic pending actions. Defined in `src/lib/offlineReviewSync.ts` and mirrored in the service worker (`public/sw.js`).
+2. **`WorkSphereOfflineDB` (Secondary Domain Outboxes)**: Dedicated outbox database for favorites, check-ins, and favorite tags. Defined in `src/lib/offline/db.ts` and used by `src/lib/offlineStore.ts`.
 
-### Object stores
+---
 
-These are the stores created in `onupgradeneeded` at the time of writing. `db.ts` is the source of truth if more are added later.
+### Database 1: `worksphere-offline` (Version 9)
 
-| Store | Key | Indexes |
-| --- | --- | --- |
-| `venues` | `id` | `type`, `savedAt` |
-| `favorites` | `id` | `savedAt` |
-| `searches` | `query` | `timestamp` |
-| `pending_sync_queue` | `id` | `domain`, `status`, `timestamp` |
-| `pendingActions` | `id` (auto increment) | none |
-| `receiptExports` | `bookingId` | `status`, `createdAt` |
-| `pendingFavorites` | `id` | none |
-| `preference_rankings` | `id` | none |
-| `recentlyViewedVenues` | `id` | `viewedAt` |
-| `pendingReviews` | `id` | `venueId`, `status`, `createdAt` |
-| `pending_notes_queue` | `id` (auto increment) | `by-folder` |
-| `notes_cache` | `folderId` | none |
-| `favorite_tags` | `id` | none |
-| `crdt_tombstones` | `id` | `deletedAt`, `isMerged` |
+- **Database name:** `worksphere-offline`
+- **Version constant:** `DB_VERSION = 9` in `src/lib/offlineReviewSync.ts`
+- **Service Worker version:** Opened at version `9` via `openIndexedDB()` in `public/sw.js`
+- **Open timeout:** 3 seconds. If `indexedDB.open` does not answer, the promise rejects with a `SecurityError`, which is what Safari Private Browsing causes. A one-time alert tells the user to leave Private Browsing.
 
-### Schema upgrade protocol
+#### Object Stores in `worksphere-offline`
 
-Upgrades are additive and idempotent. Every store creation is guarded:
+Both the page-side code (`src/lib/offlineReviewSync.ts`) and the service worker (`public/sw.js`) define and maintain these 13 object stores:
+
+| Store                  | Key Path              | Indexes                           | Purpose                                                           |
+| ---------------------- | --------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| `venues`               | `id`                  | `type`, `savedAt`                 | Saved venue records                                               |
+| `favorites`            | `id`                  | `savedAt`                         | Favorite venues (also updated by occupancy sync)                  |
+| `searches`             | `query`               | `timestamp`                       | Search history                                                    |
+| `pendingActions`       | `id` (auto-increment) | none                              | Generic queued actions (`crdt-sync`, `conversation-rename`, etc.) |
+| `imageCacheLRU`        | `url`                 | `lastAccessed`                    | LRU bookkeeping for the image cache quota                         |
+| `receiptExports`       | `bookingId`           | `status`, `createdAt`             | Receipt PDF export background jobs                                |
+| `pendingFavorites`     | `id` (auto-increment) | none                              | Queued favorite mutations                                         |
+| `availabilityDeltas`   | `venueId`             | `timestamp`                       | Last-known seat availability deltas                               |
+| `recentlyViewedVenues` | `id`                  | `viewedAt`                        | Recently viewed venue history                                     |
+| `pendingReviews`       | `id`                  | `venueId`, `status`, `createdAt`  | Offline review queue                                              |
+| `preference_rankings`  | `id`                  | none                              | Ranked venue preferences                                          |
+| `queued_reviews`       | `id`                  | `venueId`, `status`, `createdAt`  | Queued reviews for background replay                              |
+| `unsyncedReviewDrafts` | `id`                  | `review.venueId`, `quarantinedAt` | Quarantined review drafts exceeding retry limit                   |
+
+---
+
+### Database 2: `WorkSphereOfflineDB` (Version 3)
+
+- **Database name:** `WorkSphereOfflineDB`
+- **Version constant:** `OFFLINE_DB_VERSION = 3` in `src/lib/offline/db.ts`
+- **Opened by:** `src/lib/offlineStore.ts` and `src/lib/offline/db.ts`
+- **Stores:** `favorites-outbox`, `checkins-outbox`, `favorite-tags-outbox`
+- **Note:** `src/lib/offline/db.ts` is **not** the version authority for `worksphere-offline`.
+
+---
+
+### Schema Upgrade Protocol & VersionError Prevention
+
+IndexedDB upgrades are additive and idempotent. Every store creation is guarded:
 
 ```ts
 if (!database.objectStoreNames.contains("example")) {
@@ -145,17 +165,30 @@ if (!database.objectStoreNames.contains("example")) {
 }
 ```
 
-Behavior to rely on:
+#### Understanding IndexedDB `VersionError`
 
-1. **Bump `DB_VERSION`** whenever you add a store or index. The browser then runs `onupgradeneeded` once per client.
-2. **`onblocked`.** If another tab still holds an older connection, the upgrade is blocked. The client closes its own cached connection and logs a warning. Closing other tabs lets the upgrade finish.
-3. **`onversionchange`.** When a newer version is requested elsewhere, the connection closes itself and the cached instance is cleared, so the next call reopens at the new version.
-4. **Upgrade transaction errors.** `onabort` and `onerror` on the upgrade transaction are logged, and the open request rejects.
-5. The page also closes the database on `beforeunload`.
+Per the W3C IndexedDB specification, opening a database with a requested version lower than the version already established on disk triggers a fatal `VersionError`:
 
-### Keep the service worker version in sync
+> `VersionError: The requested version (X) is less than the existing version (Y).`
 
-The service worker opens the same database through its own `openIndexedDB()` helper in `public/sw.js`, and it passes a hard coded version number. That number must match `DB_VERSION` in `db.ts`. At the time of writing, `public/sw.js` opens version `7` while `db.ts` uses `8`. Per the IndexedDB spec, opening a database with a lower version than the one already on disk fails with a `VersionError`, so a worker pinned to an older number cannot open a database the page has already upgraded. Treat "bump `DB_VERSION`" and "bump the version in `public/sw.js` and mirror any new stores in its `onupgradeneeded`" as one change.
+This error occurs when page-side code upgrades `worksphere-offline` (e.g. to version 9) while the Service Worker in `public/sw.js` requests an older version (e.g. version 7). Because the Service Worker runs in a separate execution context, a version mismatch prevents the worker from opening the database, breaking background sync and offline action replay.
+
+#### Upgrade Lifecycle Handling:
+
+1. **`onversionchange`:** When a newer version is requested by another tab or context, the currently open connection closes itself gracefully and clears its cached instance (`swDb.close(); swDb = null;`), allowing the pending upgrade transaction to proceed.
+2. **`onblocked`:** If another open connection fails to close immediately, the upgrade is blocked. Both client and worker log a warning and ensure inactive connections are closed.
+3. **Upgrade Transaction Protection:** Errors on `transaction.onabort` and `transaction.onerror` are logged, rejecting the open request without corrupting database state.
+
+### Developer Checklist for IndexedDB Schema Changes
+
+When modifying the schema of `worksphere-offline`:
+
+- [ ] 1. Update `src/lib/offlineReviewSync.ts`: add/update store in `request.onupgradeneeded` and increment `DB_VERSION`.
+- [ ] 2. Update `public/sw.js`: mirror the store creation in `request.onupgradeneeded` and increment `indexedDB.open("worksphere-offline", NEW_VERSION)`.
+- [ ] 3. Ensure both contexts implement `onversionchange` (`db.close()`) to avoid blocking upgrades.
+- [ ] 4. Guard all store creations with `if (!db.objectStoreNames.contains("..."))`.
+- [ ] 5. Run regression tests verifying that Service Worker opens the database without `VersionError`.
+- [ ] 6. Update this runbook and `PWA_OFFLINE_GUIDE.md`.
 
 ## 6. Background sync
 
@@ -175,21 +208,21 @@ flowchart TD
 
 ### One time sync tags
 
-| Tag | Handler in `public/sw.js` |
-| --- | --- |
-| `sync-crdt` | `syncCrdt()` |
-| `sync-favorites` | `syncFavorites()` (older queue fallback) |
-| `sync-ratings` | `syncRatings()` (older queue fallback) |
-| `sync-reviews` | `syncPendingReviews()` |
-| `sync-conversations` | `syncConversations()` |
-| `receipt-export-sync` | `syncReceiptExports()` |
-| `availability-sync` | `syncAvailability()` |
+| Tag                   | Handler in `public/sw.js`                |
+| --------------------- | ---------------------------------------- |
+| `sync-crdt`           | `syncCrdt()`                             |
+| `sync-favorites`      | `syncFavorites()` (older queue fallback) |
+| `sync-ratings`        | `syncRatings()` (older queue fallback)   |
+| `sync-reviews`        | `syncPendingReviews()`                   |
+| `sync-conversations`  | `syncConversations()`                    |
+| `receipt-export-sync` | `syncReceiptExports()`                   |
+| `availability-sync`   | `syncAvailability()`                     |
 
 ### Periodic sync tags
 
-| Tag | Handler |
-| --- | --- |
-| `workspace-availability` | `syncAvailability()` |
+| Tag                       | Handler                         |
+| ------------------------- | ------------------------------- |
+| `workspace-availability`  | `syncAvailability()`            |
 | `refresh-favorite-venues` | `syncFavoriteVenuesOccupancy()` |
 
 `usePWA.tsx` registers `availability-sync` and the periodic tags when the browser supports them. Periodic sync is only available in some Chromium based browsers, so every feature must also work without it.
@@ -200,7 +233,7 @@ flowchart TD
 
 ### Adding a new queue
 
-1. Add the store and indexes in `db.ts` and bump `DB_VERSION`.
+1. Add the store and indexes in `src/lib/offlineReviewSync.ts` and bump `DB_VERSION`.
 2. Mirror the store in the service worker's `onupgradeneeded` and bump its version to match.
 3. Write the sync function in `public/sw.js`, using `isNetworkError` for failures.
 4. Add the tag to the `sync` event handler.
@@ -237,7 +270,9 @@ You can also do it from the console:
 caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n))));
 
 // unregister all service workers
-navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister()));
+navigator.serviceWorker
+  .getRegistrations()
+  .then((rs) => rs.forEach((r) => r.unregister()));
 
 // delete the offline database (this removes queued offline actions too)
 indexedDB.deleteDatabase("worksphere-offline");
@@ -247,16 +282,16 @@ Deleting the database also discards anything that was queued offline and not yet
 
 ### Symptoms and fixes
 
-| Symptom | Likely cause | What to do |
-| --- | --- | --- |
-| Old UI after a deploy | New worker is waiting | Send `SKIP_WAITING` from the page, or Skip waiting in DevTools, then reload |
-| Console: `IndexedDB open timed out (likely Safari Private Browsing)` | Browser blocks IndexedDB, or the open request is stuck behind another connection | Leave Private Browsing, close other tabs, reload |
-| Console: `Database upgrade blocked by open connection` | Another tab holds an older connection | Close the other tabs, the upgrade then completes |
-| Console: `Database version change detected, closing connection` | A newer version was requested elsewhere | Expected during an upgrade, the next call reopens the database |
-| Worker fails to open IndexedDB with a `VersionError` | Version number in `public/sw.js` is lower than the one on disk | Align it with `DB_VERSION` (section 5) |
-| `/offline` page not shown when offline | `/offline` was never cached by a successful fetch | Visit `/offline` once while online, then retest |
-| Map tiles missing offline | Tiles for that area were never viewed or prefetched | Browse the area online first |
-| Queued actions never sync | Browser did not fire `sync`, or `sync` is unsupported | Check `registration.sync` exists, reconnect, or trigger the handler from the page |
+| Symptom                                                              | Likely cause                                                                     | What to do                                                                        |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Old UI after a deploy                                                | New worker is waiting                                                            | Send `SKIP_WAITING` from the page, or Skip waiting in DevTools, then reload       |
+| Console: `IndexedDB open timed out (likely Safari Private Browsing)` | Browser blocks IndexedDB, or the open request is stuck behind another connection | Leave Private Browsing, close other tabs, reload                                  |
+| Console: `Database upgrade blocked by open connection`               | Another tab holds an older connection                                            | Close the other tabs, the upgrade then completes                                  |
+| Console: `Database version change detected, closing connection`      | A newer version was requested elsewhere                                          | Expected during an upgrade, the next call reopens the database                    |
+| Worker fails to open IndexedDB with a `VersionError`                 | Version number in `public/sw.js` is lower than the one on disk                   | Align it with `DB_VERSION` (section 5)                                            |
+| `/offline` page not shown when offline                               | `/offline` was never cached by a successful fetch                                | Visit `/offline` once while online, then retest                                   |
+| Map tiles missing offline                                            | Tiles for that area were never viewed or prefetched                              | Browse the area online first                                                      |
+| Queued actions never sync                                            | Browser did not fire `sync`, or `sync` is unsupported                            | Check `registration.sync` exists, reconnect, or trigger the handler from the page |
 
 ### Testing offline behavior
 

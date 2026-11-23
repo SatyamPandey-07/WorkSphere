@@ -70,7 +70,7 @@ Notification.permission; // "default" | "granted" | "denied"
 Push notifications themselves don't write anything to IndexedDB — the `push`/`notificationclick` handlers only call the Notifications API. What _does_ live in IndexedDB is the offline action queue that Background Sync drains (reviews/ratings, favorites, conversation edits), which is often being debugged alongside push in the same session since both surface as "did the background event actually run."
 
 1. Open **Application → IndexedDB → `worksphere-offline`**.
-2. You'll see these object stores (schema defined in both `src/lib/offlineStorage.ts` and mirrored in `public/sw.js`'s `openIndexedDB()`):
+2. You'll see these object stores (schema defined in `src/lib/offlineReviewSync.ts` at version 9 and mirrored in `public/sw.js`'s `openIndexedDB()`):
    - **`venues`** — cached venue records for offline browsing.
    - **`favorites`** — locally saved favorites (mirrors the `yFavorites` Yjs map).
    - **`searches`** — recent search results, capped at the 15 most recent queries.

@@ -1075,6 +1075,24 @@ model IoTOrchestrationLog {
   @@index([userId])
 }
 
+/// /api/checkin/poap
+model PoapClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  venueId    String
+  latitude   Float
+  longitude  Float
+  wifiSsid   String
+  sensorHash String
+  nonce      String   @unique
+  signature  String
+  confidence Float
+  createdAt  DateTime @default(now())
+
+  @@index([userId, venueId])
+  @@index([createdAt])
+}
+
 /// /api/network/multiplex
 model MeshSession {
   id             String   @id @default(cuid())
@@ -1274,57 +1292,48 @@ enum MicroBillingSessionStatus {
   FAILED
 }
 
-/// Persistent skill exchange listing for co-working barter exchanges (#9584).
-model SkillListing {
-  id               String             @id @default(cuid())
-  venueId          String
-  venueName        String
-  userId           String
-  userName         String
-  userTitle        String
-  offeringSkill    String
-  offeringCategory String
-  seekingSkill     String
-  seekingCategory  String
-  durationMinutes  Int                @default(30)
-  meetupSpot       String
-  status           SkillListingStatus @default(OPEN)
-  reputationScore  Int                @default(100)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  matches          SkillMatch[]
+/// Persistent time-barter agreement between nomads (#9585).
+model BarterAgreement {
+  id             String               @id @default(cuid())
+  providerId     String
+  receiverId     String
+  skillOffered   String
+  skillRequested String
+  amountMinutes  Int
+  state          BarterAgreementState @default(PROPOSED)
+  providerPubKey String
+  receiverPubKey String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  settlement     TimebankSettlement?
 
-  @@index([venueId])
-  @@index([userId])
-  @@index([status])
-  @@index([offeringCategory])
-  @@index([seekingCategory])
+  @@index([providerId])
+  @@index([receiverId])
+  @@index([state])
 }
 
-enum SkillListingStatus {
-  OPEN
-  MATCHED
+enum BarterAgreementState {
+  PROPOSED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  SETTLED
   CANCELLED
 }
 
-/// Confirmed skill exchange match between nomads (#9584).
-model SkillMatch {
-  id           String           @id @default(cuid())
-  listingId    String
-  listing      SkillListing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  proposerId   String
-  proposerName String
-  meetupSpot   String
-  meetupTime   String
-  status       SkillMatchStatus @default(CONFIRMED)
-  createdAt    DateTime         @default(now())
+/// Cryptographically verified timebank credit settlement (#9585).
+model TimebankSettlement {
+  id            String          @id @default(cuid())
+  agreementId   String          @unique
+  agreement     BarterAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  providerId    String
+  receiverId    String
+  amountMinutes Int
+  providerSig   String
+  receiverSig   String
+  nonce         String
+  settledAt     DateTime        @default(now())
 
-  @@index([listingId])
-  @@index([proposerId])
-  @@index([status])
-}
-
-enum SkillMatchStatus {
-  CONFIRMED
-  CANCELLED
+  @@index([providerId])
+  @@index([receiverId])
 }

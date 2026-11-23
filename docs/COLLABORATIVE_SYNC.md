@@ -712,3 +712,12 @@ describe('Yjs CRDT Convergence & State Vector Sync', () => {
   });
 });
 ```
+
+---
+
+## 11. State Vector Exchange, Differential Compaction & Awareness Specifications
+
+For comprehensive technical specifications covering state vector mechanics, differential updates, snapshot storage compaction, and ephemeral awareness lifecycle management, refer to the dedicated CRDT architecture guides:
+
+* [Yjs State Vector Exchange & Differential Compaction Architecture](./crdt/YJS_SYNC_PROTOCOL.md): In-depth specification detailing `Y.encodeStateVector`, `Y.encodeStateAsUpdate`, `Y.applyUpdate`, wire envelope formats (E2EE scratchpad, LZ77, and v2 deflate-raw codec), concurrency control via `AsyncRWLock`, and snapshot consolidation heuristics in `SnapshotManager`.
+* [Ephemeral Awareness Vector Clock Compaction & Garbage Collection](./crdt/AWARENESS_VECTOR_COMPACTION.md): Operational guide explaining monotonic presence tracking, 30s TTL peer expiration, tombstone retention, and the critical distinction between ephemeral awareness sweeping and durable Yjs document garbage collection (`doc.gc = true`).

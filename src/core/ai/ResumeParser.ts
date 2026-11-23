@@ -36,6 +36,7 @@ Required JSON Schema:
 export class ResumeParser {
   private client: Groq;
   private apiKey: string;
+  private static parseCache = new Map<string, ParsedResume>();
 
   constructor(apiKey?: string) {
     const key = apiKey || process.env.GROQ_API_KEY;
@@ -49,7 +50,15 @@ export class ResumeParser {
   }
 
   /**
+   * Clears the in-memory resume parsing cache.
+   */
+  public static clearCache(): void {
+    ResumeParser.parseCache.clear();
+  }
+
+  /**
    * Parses raw resume text into a structured ParsedResume object.
+   * Leverages caching to avoid re-parsing identical text repeatedly.
    * @param resumeText The raw text content of the resume.
    * @returns A promise resolving to the structured ParsedResume.
    */
@@ -60,11 +69,17 @@ export class ResumeParser {
       );
     }
 
+    const trimmed = resumeText.trim();
+    const cached = ResumeParser.parseCache.get(trimmed);
+    if (cached) {
+      return cached;
+    }
+
     try {
       const completion = await this.client.chat.completions.create({
         messages: [
           { role: "system", content: RESUME_PARSING_PROMPT },
-          { role: "user", content: resumeText },
+          { role: "user", content: trimmed },
         ],
         model: "llama3-70b-8192",
         temperature: 0.1,
@@ -79,7 +94,7 @@ export class ResumeParser {
       const parsedData = JSON.parse(content) as Partial<ParsedResume>;
 
       // Validate and sanitize the output
-      return {
+      const result: ParsedResume = {
         fullName: parsedData.fullName || "Unknown",
         email: parsedData.email || "Unknown",
         skills: Array.isArray(parsedData.skills)
@@ -100,6 +115,9 @@ export class ResumeParser {
             : 0,
         summary: parsedData.summary || "No summary provided.",
       };
+
+      ResumeParser.parseCache.set(trimmed, result);
+      return result;
     } catch (error: any) {
       console.error(
         "Error parsing resume via Groq API:",

@@ -1,4 +1,8 @@
 import {
+  formatToWallClock,
+  parseBookingDateTime,
+} from "@/lib/booking/dateTimeAdapter";
+import {
   MAX_RECURRING_BOOKING_WINDOW_DAYS,
   validateRecurringReservation,
 } from "@/lib/booking/recurringReservationValidation";
@@ -129,6 +133,138 @@ describe("validateRecurringReservation", () => {
       success: false,
       fieldErrors: { time: expect.stringContaining("every recurrence date") },
     });
+  });
+
+  it("preserves wall-clock time and converts to UTC individually across the November DST fall-back boundary", () => {
+    // 2027-11-07 is the US DST fall-back transition (clocks turn back from EDT UTC-4 to EST UTC-5).
+    const now = new Date("2027-10-01T12:00:00.000Z");
+    const result = validateRecurringReservation(
+      validInput({
+        date: "2027-10-25",
+        time: "09:00",
+        timeZone: "America/New_York",
+        frequency: "weekly",
+        occurrences: 4,
+      }),
+      now,
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.data.time).toBe("09:00");
+    expect(result.data.dates).toEqual([
+      "2027-10-25",
+      "2027-11-01",
+      "2027-11-08",
+      "2027-11-15",
+    ]);
+
+    // Pre-fallback occurrences (EDT, UTC-4) -> 13:00 UTC
+    const pre1 = parseBookingDateTime(
+      result.data.dates[0],
+      result.data.time,
+      result.data.timeZone,
+    );
+    const pre2 = parseBookingDateTime(
+      result.data.dates[1],
+      result.data.time,
+      result.data.timeZone,
+    );
+    expect(pre1?.toISOString()).toBe("2027-10-25T13:00:00.000Z");
+    expect(pre2?.toISOString()).toBe("2027-11-01T13:00:00.000Z");
+
+    // Post-fallback occurrences (EST, UTC-5) -> 14:00 UTC (not 13:00 UTC, which would shift local time to 08:00)
+    const post1 = parseBookingDateTime(
+      result.data.dates[2],
+      result.data.time,
+      result.data.timeZone,
+    );
+    const post2 = parseBookingDateTime(
+      result.data.dates[3],
+      result.data.time,
+      result.data.timeZone,
+    );
+    expect(post1?.toISOString()).toBe("2027-11-08T14:00:00.000Z");
+    expect(post2?.toISOString()).toBe("2027-11-15T14:00:00.000Z");
+
+    // Wall-clock time remains strictly 09:00 for every occurrence
+    for (const d of result.data.dates) {
+      const instant = parseBookingDateTime(
+        d,
+        result.data.time,
+        result.data.timeZone,
+      );
+      expect(instant).not.toBeNull();
+      const wallClock = formatToWallClock(instant!, result.data.timeZone);
+      expect(wallClock).toEqual({ date: d, time: "09:00" });
+    }
+  });
+
+  it("preserves wall-clock time and converts to UTC individually across the March DST spring-forward boundary", () => {
+    // 2027-03-14 is the US DST spring-forward transition (clocks turn forward from EST UTC-5 to EDT UTC-4).
+    const now = new Date("2027-02-15T12:00:00.000Z");
+    const result = validateRecurringReservation(
+      validInput({
+        date: "2027-03-01",
+        time: "09:00",
+        timeZone: "America/New_York",
+        frequency: "weekly",
+        occurrences: 4,
+      }),
+      now,
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.data.time).toBe("09:00");
+    expect(result.data.dates).toEqual([
+      "2027-03-01",
+      "2027-03-08",
+      "2027-03-15",
+      "2027-03-22",
+    ]);
+
+    // Pre-transition occurrences (EST, UTC-5) -> 14:00 UTC
+    const pre1 = parseBookingDateTime(
+      result.data.dates[0],
+      result.data.time,
+      result.data.timeZone,
+    );
+    const pre2 = parseBookingDateTime(
+      result.data.dates[1],
+      result.data.time,
+      result.data.timeZone,
+    );
+    expect(pre1?.toISOString()).toBe("2027-03-01T14:00:00.000Z");
+    expect(pre2?.toISOString()).toBe("2027-03-08T14:00:00.000Z");
+
+    // Post-transition occurrences (EDT, UTC-4) -> 13:00 UTC (not 14:00 UTC, which would shift local time to 10:00)
+    const post1 = parseBookingDateTime(
+      result.data.dates[2],
+      result.data.time,
+      result.data.timeZone,
+    );
+    const post2 = parseBookingDateTime(
+      result.data.dates[3],
+      result.data.time,
+      result.data.timeZone,
+    );
+    expect(post1?.toISOString()).toBe("2027-03-15T13:00:00.000Z");
+    expect(post2?.toISOString()).toBe("2027-03-22T13:00:00.000Z");
+
+    // Wall-clock time remains strictly 09:00 for every occurrence
+    for (const d of result.data.dates) {
+      const instant = parseBookingDateTime(
+        d,
+        result.data.time,
+        result.data.timeZone,
+      );
+      expect(instant).not.toBeNull();
+      const wallClock = formatToWallClock(instant!, result.data.timeZone);
+      expect(wallClock).toEqual({ date: d, time: "09:00" });
+    }
   });
 
   it("requires a valid minimum duration and valid recurrence count", () => {

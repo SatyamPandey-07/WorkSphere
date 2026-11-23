@@ -36,6 +36,24 @@ describe("CopyToClipboardButton", () => {
     expect(screen.getByText("Copy Location")).toBeInTheDocument();
   });
 
+  it("renders with custom ariaLabel on title and aria-label attributes", () => {
+    render(
+      <CopyToClipboardButton
+        textToCopy="37.7749° N, 122.4194° W"
+        ariaLabel="Copy GPS coordinates for Workspace Coffee"
+      />,
+    );
+
+    const button = screen.getByRole("button", {
+      name: "Copy GPS coordinates for Workspace Coffee",
+    });
+    expect(button).toBeInTheDocument();
+    expect(button).toHaveAttribute(
+      "title",
+      "Copy GPS coordinates for Workspace Coffee",
+    );
+  });
+
   it("copies text using navigator.clipboard.writeText and shows checkmark and toast", async () => {
     const mockWriteText = jest.fn().mockResolvedValue(undefined);
     Object.assign(navigator, {

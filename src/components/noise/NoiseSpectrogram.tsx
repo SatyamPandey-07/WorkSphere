@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, Square, Activity } from "lucide-react";
 import {
   FFT_SIZE,
-  FRAME_INTERVAL_MS,
   averageDbFromFrequencyBins,
   classifyNoise,
   normalizeBinDb,
@@ -13,19 +12,39 @@ import {
   type NoiseClass,
 } from "@/lib/noise/fftSpectrogram";
 import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
+import { useElementVisibility } from "@/hooks/useElementVisibility";
+import { useBatteryLowPowerThrottle } from "@/hooks/useBatteryLowPowerThrottle";
 
 type Status = "idle" | "requesting" | "running" | "error";
 
+export interface NoiseSpectrogramProps {
+  targetFps?: number;
+}
+
 /**
- * Real-time 60fps FFT spectrum bars + rolling waterfall spectrogram
+ * Real-time 60fps (or 15fps in low power mode) FFT spectrum bars + rolling waterfall spectrogram
  * via WebAudio AnalyserNode (fftSize 2048).
  */
-export function NoiseSpectrogram() {
+export function NoiseSpectrogram({ targetFps }: NoiseSpectrogramProps = {}) {
   const [status, setStatus] = useState<Status>("idle");
   const [liveDb, setLiveDb] = useState(0);
   const [peakDb, setPeakDb] = useState(0);
   const [noiseClass, setNoiseClass] = useState<NoiseClass>("Quiet");
 
+  const { renderFps } = useBatteryLowPowerThrottle();
+  const effectiveFps = targetFps ?? renderFps;
+  const frameIntervalMs = 1000 / effectiveFps;
+  const frameIntervalMsRef = useRef<number>(frameIntervalMs);
+  frameIntervalMsRef.current = frameIntervalMs;
+
+  const {
+    ref: containerRef,
+    isVisible,
+    isInViewport,
+  } = useElementVisibility<HTMLDivElement>();
+  const isVisibleRef = useRef<boolean>(isVisible);
+  isVisibleRef.current = isVisible;
+  const lastDrawnDbRef = useRef<number | null>(null);
   const spectrumRef = useRef<HTMLCanvasElement | null>(null);
   const waterfallRef = useRef<HTMLCanvasElement | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -41,6 +60,12 @@ export function NoiseSpectrogram() {
     isActive: status === "running",
     onPause: stop,
   });
+
+  useEffect(() => {
+    if (status === "running" && !isInViewport) {
+      stop();
+    }
+  }, [status, isInViewport, stop]);
 
   useEffect(() => {
     return () => cleanupRef.current?.();
@@ -113,13 +138,14 @@ export function NoiseSpectrogram() {
       setStatus("running");
 
       const tick = (timestamp: number) => {
+        const interval = frameIntervalMsRef.current;
         if (lastTick !== null) {
           const delta = timestamp - lastTick;
-          if (delta < FRAME_INTERVAL_MS) {
+          if (delta < interval) {
             raf = requestAnimationFrame(tick);
             return;
           }
-          lastTick = timestamp - (delta % FRAME_INTERVAL_MS);
+          lastTick = timestamp - (delta % interval);
         } else {
           lastTick = timestamp;
         }
@@ -132,12 +158,19 @@ export function NoiseSpectrogram() {
           sessionPeakRef.current = peak;
         }
 
-        setLiveDb(avg);
-        setPeakDb(sessionPeakRef.current);
-        setNoiseClass(classifyNoise(avg));
+        if (
+          isVisibleRef.current &&
+          (lastDrawnDbRef.current === null ||
+            Math.abs(avg - lastDrawnDbRef.current) >= 0.5)
+        ) {
+          lastDrawnDbRef.current = avg;
+          setLiveDb(avg);
+          setPeakDb(sessionPeakRef.current);
+          setNoiseClass(classifyNoise(avg));
 
-        drawSpectrumBars(spectrumRef.current, bins);
-        drawWaterfallColumn(waterfallRef.current, bins);
+          drawSpectrumBars(spectrumRef.current, bins);
+          drawWaterfallColumn(waterfallRef.current, bins);
+        }
 
         raf = requestAnimationFrame(tick);
       };
@@ -152,7 +185,10 @@ export function NoiseSpectrogram() {
   const classStyles = classBadge(noiseClass);
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 shadow-md dark:border-zinc-800 dark:bg-zinc-900/60">
+    <div
+      ref={containerRef}
+      className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 shadow-md dark:border-zinc-800 dark:bg-zinc-900/60"
+    >
       <div className="flex items-center justify-between gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-800">
         <div>
           <p className="text-sm font-bold uppercase tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -314,8 +350,7 @@ function drawWaterfallColumn(
 
   for (let y = 0; y < height; y++) {
     // Low frequencies at the bottom
-    const binIndex =
-      1 + Math.floor(((height - 1 - y) / height) * usable);
+    const binIndex = 1 + Math.floor(((height - 1 - y) / height) * usable);
     const t = normalizeBinDb(bins[Math.min(binIndex, bins.length - 1)]);
     const [r, g, b] = spectrogramColor(t);
     const o = y * 4;

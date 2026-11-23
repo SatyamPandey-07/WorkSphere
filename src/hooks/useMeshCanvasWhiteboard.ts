@@ -219,7 +219,10 @@ export function useMeshCanvasWhiteboard(
     flushStrokeBuffer,
     broadcastStroke: bufferStroke,
     bufferStrokePoints,
-  } = useStrokeBuffer({ onApplyPoints: applyShapePoints });
+  } = useStrokeBuffer({
+    onApplyPoints: applyShapePoints,
+    throttleIntervalMs: options?.throttleIntervalMs,
+  });
 
   const broadcastStroke = useCallback(
     (id: string, points: number[]) => {
@@ -438,7 +441,12 @@ export function useMeshCanvasWhiteboard(
       shapes.unobserveDeep(updateSnapshots);
       awareness?.off("change", handleAwarenessChange);
       unsubDocUpdateRef.current?.();
+      um.off("stack-item-added", updateUndoState);
+      um.off("stack-item-popped", updateUndoState);
+      um.clear();
       um.destroy();
+      setCanUndo(false);
+      setCanRedo(false);
       if (newProvider) {
         if (handleStatus) newProvider.off("status", handleStatus);
         if (handleSync) newProvider.off("sync", handleSync);

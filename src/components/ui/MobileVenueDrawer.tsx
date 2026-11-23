@@ -373,7 +373,7 @@ export function MobileVenueDrawer({
                 </div>
                 <span
                   data-testid="drawer-noise-badge"
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${noiseColor}`}
+                  className={`min-w-0 max-w-[45%] truncate px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${noiseColor}`}
                 >
                   {noiseLevel} space
                 </span>
@@ -482,7 +482,7 @@ export function MobileVenueDrawer({
                         type="date"
                         value={bookingDate}
                         onChange={(e) => setBookingDate(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs focus:ring-1 focus:ring-blue-500"
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs focus:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                         required
                       />
                     </div>
@@ -499,7 +499,7 @@ export function MobileVenueDrawer({
                         type="time"
                         value={bookingTime}
                         onChange={(e) => setBookingTime(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs focus:ring-1 focus:ring-blue-500"
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs focus:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                         required
                       />
                     </div>

@@ -6,57 +6,112 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
   MeetHalfwayOptimizer,
-  type TeamMemberLocation,
   type CandidateVenue,
 } from "@/core/routing/MeetHalfwayOptimizer";
+import { MAX_SEARCH_RADIUS_METERS } from "@/lib/search/spatialVenueSearch";
 
-interface MeetHalfwayRequestBody {
-  members: TeamMemberLocation[];
-  category?: string;
-  minWifiSpeed?: number;
-  minSeats?: number;
-  searchRadiusKm?: number;
-  hasOutlets?: boolean;
-  transitPreference?: 'transit' | 'walking' | 'balanced';
-}
+/**
+ * Maximum permissible search radius for Meet Halfway optimization in kilometers.
+ * Aligns with the 100,000 meter (100 km) spatial search policy in spatialVenueSearch.ts.
+ */
+export const MAX_SEARCH_RADIUS_KM = MAX_SEARCH_RADIUS_METERS / 1000;
+
+const MemberLocationSchema = z.object({
+  id: z
+    .string()
+    .min(1)
+    .refine((v) => v.trim().length > 0, {
+      message: "id must be a non-empty string",
+    }),
+  name: z
+    .string()
+    .min(1)
+    .refine((v) => v.trim().length > 0, {
+      message: "name must be a non-empty string",
+    }),
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
+  transitMode: z
+    .enum(["transit", "driving", "bicycling", "walking"])
+    .optional(),
+});
+
+const MeetHalfwayRequestSchema = z.object({
+  members: z
+    .array(MemberLocationSchema)
+    .min(2, "At least two team member coordinates are required")
+    .refine(
+      (members) => {
+        if (members.length < 2) return true;
+        const uniqueCoordinates = new Set(
+          members.map((m) => `${m.latitude + 0},${m.longitude + 0}`),
+        );
+        return uniqueCoordinates.size >= 2;
+      },
+      {
+        message: "At least two distinct member locations are required",
+      },
+    ),
+  category: z.string().optional(),
+  minWifiSpeed: z.number().finite().min(0).default(0),
+  minSeats: z.number().finite().int().min(1).optional(),
+  searchRadiusKm: z
+    .number()
+    .finite()
+    .positive()
+    .max(MAX_SEARCH_RADIUS_KM)
+    .default(25),
+  hasOutlets: z.boolean().optional(),
+  transitPreference: z
+    .enum(["transit", "walking", "balanced"])
+    .default("transit"),
+});
 
 export async function POST(req: NextRequest) {
   try {
-    const body: MeetHalfwayRequestBody = await req.json();
-    const {
-      members,
-      category,
-      minWifiSpeed = 0,
-      minSeats,
-      searchRadiusKm = 25,
-      hasOutlets,
-      transitPreference = 'transit',
-    } = body;
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-    if (!members || !Array.isArray(members) || members.length === 0) {
+    if (
+      typeof rawBody !== "object" ||
+      rawBody === null ||
+      Array.isArray(rawBody)
+    ) {
       return NextResponse.json(
-        { error: "At least one team member coordinate is required" },
-        { status: 400 }
+        { error: "Request body must be an object" },
+        { status: 400 },
       );
     }
 
-    // Validate coordinates
-    for (const m of members) {
-      if (
-        typeof m.latitude !== "number" ||
-        typeof m.longitude !== "number" ||
-        isNaN(m.latitude) ||
-        isNaN(m.longitude)
-      ) {
-        return NextResponse.json(
-          { error: `Invalid coordinates for member: ${m.name || m.id}` },
-          { status: 400 }
-        );
-      }
+    const parsed = MeetHalfwayRequestSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid request parameters",
+          details: parsed.error.flatten(),
+        },
+        { status: 400 },
+      );
     }
+
+    const {
+      members,
+      category,
+      minWifiSpeed,
+      minSeats,
+      searchRadiusKm,
+      hasOutlets,
+      transitPreference,
+    } = parsed.data;
 
     const requiredSeats = minSeats ?? members.length;
 
@@ -66,10 +121,11 @@ export async function POST(req: NextRequest) {
     // Approximate lat/lng delta for bounding box (1 deg lat ~= 111km)
     const latDelta = searchRadiusKm / 111;
     const lngDelta =
-      searchRadiusKm / (111 * Math.cos((centroid.latitude * Math.PI) / 180) || 1);
+      searchRadiusKm /
+      (111 * Math.cos((centroid.latitude * Math.PI) / 180) || 1);
 
     // 2. Fetch candidate venues from database
-    const venueWhereClause: any = {
+    const venueWhereClause: Prisma.VenueWhereInput = {
       latitude: {
         gte: centroid.latitude - latDelta,
         lte: centroid.latitude + latDelta,
@@ -146,7 +202,7 @@ export async function POST(req: NextRequest) {
     const optimization = MeetHalfwayOptimizer.rankVenuesForTeam(
       members,
       candidateVenues,
-      { minRequiredSeats: requiredSeats, transitPreference }
+      { minRequiredSeats: requiredSeats, transitPreference },
     );
 
     return NextResponse.json({
@@ -163,11 +219,15 @@ export async function POST(req: NextRequest) {
         searchRadiusKm,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[POST /api/routing/meet-halfway] Error:", error);
     return NextResponse.json(
-      { error: "Failed to compute meet-halfway optimization", details: error.message },
-      { status: 500 }
+      {
+        error: "Failed to compute meet-halfway optimization",
+        details: message,
+      },
+      { status: 500 },
     );
   }
 }

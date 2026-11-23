@@ -1,8 +1,15 @@
-// src/hooks/useAvionicsAudio.ts
+"use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useBatteryStatus } from "./useBatteryStatus";
+import {
+  ANALYSER_FFT_SIZE,
+  buildSpectralFrame,
+  detectWasmSimd,
+  type AnalyzerMode,
+  type SpectralFrame,
+} from "@/lib/audio/spectralFallback";
 
-const SINK_STORAGE_KEY = 'avionics_preferred_audio_sink_id';
 const SINK_STORAGE_KEY = "avionics_preferred_audio_sink_id";
 
 export interface AvionicsAudioOptions {
@@ -16,17 +23,13 @@ export interface AvionicsAudioOptions {
   filterCutoff?: number;
 }
 
-export function useAvionicsAudio() {
-  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedSinkId, setSelectedSinkId] = useState<string>('default');
-  const audioContextRef = useRef<AudioContext | null>(null);
+export interface PlayCautionOptions {
+  /** Number of alternating 800Hz / 1000Hz tone pairs to play. Default: 2 */
+  cycles?: number;
+  /** Custom volume for this play call (clamped to safe limiter ceiling). */
+  volume?: number;
+}
 
-  // Load preferred sinkId from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(SINK_STORAGE_KEY);
-      if (saved) {
-        setSelectedSinkId(saved);
 export interface AvionicsAudioReturn {
   /** Trigger the two-tone Master Caution alarm procedurally */
   playMasterCaution: (options?: PlayCautionOptions) => boolean;
@@ -54,6 +57,26 @@ export interface AvionicsAudioReturn {
   setAudioSink: (deviceId: string) => Promise<void>;
   /** Get or initialize AudioContext */
   getAudioContext: () => Promise<AudioContext | null>;
+  /** Real-time spectral energy bins computed by Wasm SIMD AudioWorklet */
+  spectralBins: Float32Array;
+  /** Current sound pressure level in decibels (dB SPL) */
+  splDb: number;
+  /** Dominant noise peak frequency in Hz */
+  dominantFrequencyHz: number;
+  /** Last AudioWorklet FFT frame processing latency in ms (< 5ms target) */
+  analyzerLatencyMs: number;
+  /** True while the frequency analyzer (WASM SIMD or AnalyserNode fallback) is running */
+  isAnalyzerActive: boolean;
+  /** Which analyzer feeds the spectral state: WASM SIMD worklet, native AnalyserNode fallback, or none */
+  analyzerMode: AnalyzerMode;
+  /**
+   * Start acoustic frequency analysis. Uses the WebAssembly SIMD AudioWorklet
+   * when supported and falls back to a native AnalyserNode otherwise; both
+   * produce identical spectralBins / splDb / dominantFrequencyHz output.
+   */
+  startFrequencyAnalyzer: (sourceStream?: MediaStream) => Promise<boolean>;
+  /** Stop and disconnect the AudioWorklet frequency analyzer */
+  stopFrequencyAnalyzer: () => void;
 }
 
 const CRITICAL_BATTERY_THRESHOLD = 0.05; // 5%
@@ -67,10 +90,12 @@ let globalAudioCtx:
 
 function getSharedAudioContext(preferredSinkId?: string): AudioContext | null {
   if (typeof window === "undefined") return null;
+
   const AudioContextClass =
     window.AudioContext ||
     (window as unknown as { webkitAudioContext: typeof AudioContext })
       .webkitAudioContext;
+
   if (!AudioContextClass) return null;
 
   if (!globalAudioCtx || globalAudioCtx.state === "closed") {
@@ -78,6 +103,7 @@ function getSharedAudioContext(preferredSinkId?: string): AudioContext | null {
       globalAudioCtx = new AudioContextClass() as AudioContext & {
         setSinkId?: (id: string) => Promise<void>;
       };
+
       if (preferredSinkId && typeof globalAudioCtx.setSinkId === "function") {
         globalAudioCtx.setSinkId(preferredSinkId).catch(() => {});
       }
@@ -85,13 +111,15 @@ function getSharedAudioContext(preferredSinkId?: string): AudioContext | null {
       return null;
     }
   }
+
   return globalAudioCtx;
 }
 
 /**
  * useAvionicsAudio
- * Hook that procedurally synthesizes military jet Master Caution two-tone audio warnings
- * and provides output device (headphones/speakers) sink selection.
+ * Hook that procedurally synthesizes military jet Master Caution two-tone audio warnings,
+ * provides output device (headphones/speakers) sink selection, and runs a 128-bit SIMD
+ * WebAssembly acoustic frequency analyzer inside an AudioWorklet processor.
  */
 export function useAvionicsAudio({
   volume = 0.25,
@@ -108,7 +136,17 @@ export function useAvionicsAudio({
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedSinkId, setSelectedSinkId] = useState<string>("default");
 
+  const [spectralBins, setSpectralBins] = useState<Float32Array>(
+    () => new Float32Array(256),
+  );
+  const [splDb, setSplDb] = useState<number>(20);
+  const [dominantFrequencyHz, setDominantFrequencyHz] = useState<number>(0);
+  const [analyzerLatencyMs, setAnalyzerLatencyMs] = useState<number>(0);
+  const [isAnalyzerActive, setIsAnalyzerActive] = useState<boolean>(false);
+  const [analyzerMode, setAnalyzerMode] = useState<AnalyzerMode>("inactive");
+
   const battery = useBatteryStatus();
+
   const isLowBattery = Boolean(
     battery.isSupported &&
     !battery.charging &&
@@ -117,6 +155,7 @@ export function useAvionicsAudio({
   );
 
   const isMutedRef = useRef(isMuted);
+
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
@@ -126,10 +165,25 @@ export function useAvionicsAudio({
   const cautionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const userInteractedRef = useRef(false);
 
+  // Retain a caution request until the AudioContext becomes available.
+  const pendingCautionRef = useRef<PlayCautionOptions | null>(null);
+
+  // Allows asynchronous resume handlers to invoke the latest playback callback.
+  const playMasterCautionRef = useRef<
+    ((options?: PlayCautionOptions) => boolean) | null
+  >(null);
+
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
+  const analyserTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Load preferred sinkId from localStorage on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem(SINK_STORAGE_KEY);
+
       if (saved) {
         setSelectedSinkId(saved);
       }
@@ -142,9 +196,11 @@ export function useAvionicsAudio({
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
           const devices = await navigator.mediaDevices.enumerateDevices();
+
           const outputs = devices.filter(
             (device) => device.kind === "audiooutput",
           );
+
           setAudioDevices(outputs);
         }
       } catch (e) {
@@ -156,6 +212,7 @@ export function useAvionicsAudio({
 
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
       navigator.mediaDevices.addEventListener("devicechange", fetchDevices);
+
       return () => {
         navigator.mediaDevices.removeEventListener(
           "devicechange",
@@ -168,6 +225,7 @@ export function useAvionicsAudio({
   // Update sinkId and persist in localStorage
   const setAudioSink = useCallback(async (deviceId: string) => {
     setSelectedSinkId(deviceId);
+
     if (typeof window !== "undefined") {
       localStorage.setItem(SINK_STORAGE_KEY, deviceId);
     }
@@ -181,17 +239,11 @@ export function useAvionicsAudio({
     }
   }, []);
 
-  const getAudioContext =
-    useCallback(async (): Promise<AudioContext | null> => {
-      const ctx = getSharedAudioContext(selectedSinkId);
-      if (ctx && ctx.state === "suspended") {
-        await ctx.resume().catch(() => {});
-      }
-      return ctx;
-    }, [selectedSinkId]);
-
   // Stop active caution chime
   const stopMasterCaution = useCallback(() => {
+    // Explicitly stopping a caution also cancels any queued playback.
+    pendingCautionRef.current = null;
+
     if (activeNodesRef.current.length > 0) {
       activeNodesRef.current.forEach(({ osc, gain }) => {
         try {
@@ -203,6 +255,7 @@ export function useAvionicsAudio({
           // Ignore already stopped/disconnected
         }
       });
+
       activeNodesRef.current = [];
     }
 
@@ -214,75 +267,322 @@ export function useAvionicsAudio({
       } catch {
         // Ignore
       }
+
+      masterGainRef.current = null;
     }
+
+    if (cautionTimeoutRef.current) {
+      clearTimeout(cautionTimeoutRef.current);
+      cautionTimeoutRef.current = null;
+    }
+
+    setIsCautionActive(false);
   }, []);
 
-  // Enumerate available audio output devices
-  useEffect(() => {
-    async function fetchDevices() {
-  // Unlock audio context via user interaction or explicit permission
+  // Resume a pending caution only after the AudioContext is running.
+  const resumePendingCaution = useCallback((ctx: AudioContext) => {
+    if (ctx.state !== "running") return;
+
+    setIsAudioUnlocked(true);
+
+    if (isMutedRef.current) {
+      pendingCautionRef.current = null;
+      return;
+    }
+
+    const pendingOptions = pendingCautionRef.current;
+
+    if (!pendingOptions) return;
+
+    // Clear first to prevent duplicate playback from concurrent events.
+    pendingCautionRef.current = null;
+
+    playMasterCautionRef.current?.(pendingOptions);
+  }, []);
+
+  const getAudioContext =
+    useCallback(async (): Promise<AudioContext | null> => {
+      const ctx = getSharedAudioContext(selectedSinkId);
+
+      if (ctx && ctx.state === "suspended") {
+        await ctx.resume().catch(() => {});
+      }
+
+      return ctx;
+    }, [selectedSinkId]);
+
   const unlockAudio = useCallback(async () => {
     userInteractedRef.current = true;
+
     const ctx = getSharedAudioContext(selectedSinkId);
-    if (!ctx) return;
 
-    if (ctx.state === "suspended") {
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const outputs = devices.filter((device) => device.kind === 'audiooutput');
-          setAudioDevices(outputs);
-        }
-      } catch (e) {
-        console.error('Failed to enumerate audio output devices:', e);
+    if (ctx) {
+      if (ctx.state === "suspended") {
+        await ctx.resume().catch(() => {});
       }
+
+      resumePendingCaution(ctx);
+    }
+  }, [selectedSinkId, resumePendingCaution]);
+
+  // Stop active WebAssembly SIMD AudioWorklet frequency analyzer
+  const stopFrequencyAnalyzer = useCallback(() => {
+    if (workletNodeRef.current) {
+      try {
+        workletNodeRef.current.port.onmessage = null;
+        workletNodeRef.current.disconnect();
+      } catch {
+        // Ignore already disconnected node
+      }
+
+      workletNodeRef.current = null;
     }
 
-    fetchDevices();
-
-    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
-      navigator.mediaDevices.addEventListener('devicechange', fetchDevices);
-      return () => {
-        navigator.mediaDevices.removeEventListener('devicechange', fetchDevices);
-      };
+    if (analyserTimerRef.current) {
+      clearInterval(analyserTimerRef.current);
+      analyserTimerRef.current = null;
     }
+
+    if (analyserNodeRef.current) {
+      try {
+        analyserNodeRef.current.disconnect();
+      } catch {
+        // Ignore already disconnected node
+      }
+
+      analyserNodeRef.current = null;
+    }
+
+    if (mediaSourceRef.current) {
+      try {
+        mediaSourceRef.current.disconnect();
+      } catch {
+        // Ignore
+      }
+
+      mediaSourceRef.current = null;
+    }
+
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
+    }
+
+    setIsAnalyzerActive(false);
+    setAnalyzerMode("inactive");
   }, []);
 
-  // Update sinkId and persist in localStorage
-  const setAudioSink = useCallback(async (deviceId: string) => {
-    setSelectedSinkId(deviceId);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(SINK_STORAGE_KEY, deviceId);
-    }
-    const running = ctx.state === "running";
-    setIsAudioUnlocked(running);
-  }, [selectedSinkId]);
+  // Single place that publishes an analysis frame, shared by the WASM worklet
+  // and the AnalyserNode fallback so consumers always get the same shapes.
+  const applySpectralFrame = useCallback(
+    (frame: Partial<SpectralFrame> | null | undefined) => {
+      if (!frame) return;
 
-  // Set up user interaction listeners to safely unlock AudioContext per browser autoplay policy
+      if (frame.bins instanceof Float32Array) {
+        setSpectralBins(frame.bins);
+      }
+
+      if (typeof frame.splDb === "number") {
+        setSplDb(frame.splDb);
+      }
+
+      if (typeof frame.dominantFrequencyHz === "number") {
+        setDominantFrequencyHz(frame.dominantFrequencyHz);
+      }
+
+      if (typeof frame.latencyMs === "number") {
+        setAnalyzerLatencyMs(frame.latencyMs);
+      }
+    },
+    [],
+  );
+
+  // Native AnalyserNode analyzer for browsers without WASM SIMD / AudioWorklet.
+  const startFallbackAnalyzer = useCallback(
+    async (
+      ctx: AudioContext,
+      sourceStream: MediaStream | undefined,
+      reason: string,
+    ): Promise<boolean> => {
+      console.warn(
+        `[useAvionicsAudio] ${reason}; using native AnalyserNode fallback for the frequency analyzer.`,
+      );
+
+      try {
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = ANALYSER_FFT_SIZE;
+        // No temporal smoothing, matching the worklet's raw per-frame output.
+        analyser.smoothingTimeConstant = 0;
+
+        let stream = sourceStream ?? null;
+
+        if (
+          !stream &&
+          typeof navigator !== "undefined" &&
+          navigator.mediaDevices?.getUserMedia
+        ) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          micStreamRef.current = stream;
+        }
+
+        if (stream) {
+          const src = ctx.createMediaStreamSource(stream);
+          src.connect(analyser);
+          mediaSourceRef.current = src;
+        }
+
+        const sampleRate = ctx.sampleRate || 48000;
+        const freqDb = new Float32Array(analyser.frequencyBinCount);
+        const timeDomain = new Float32Array(analyser.fftSize);
+        // One frame per FFT window, the same cadence as the worklet.
+        const pollMs = Math.max(
+          10,
+          Math.round((1000 * analyser.fftSize) / sampleRate),
+        );
+
+        analyserTimerRef.current = setInterval(() => {
+          const startTs = performance.now();
+          analyser.getFloatFrequencyData(freqDb);
+          analyser.getFloatTimeDomainData(timeDomain);
+
+          const frame = buildSpectralFrame(freqDb, timeDomain, sampleRate);
+          frame.latencyMs = performance.now() - startTs;
+          applySpectralFrame(frame);
+        }, pollMs);
+
+        analyserNodeRef.current = analyser;
+        setAnalyzerMode("fallback");
+        setIsAnalyzerActive(true);
+
+        return true;
+      } catch (err) {
+        console.error("Failed to start AnalyserNode frequency analyzer:", err);
+        stopFrequencyAnalyzer();
+
+        return false;
+      }
+    },
+    [applySpectralFrame, stopFrequencyAnalyzer],
+  );
+
+  // Start the acoustic frequency analyzer: WebAssembly SIMD inside an
+  // AudioWorklet when supported, native AnalyserNode otherwise (#8629).
+  const startFrequencyAnalyzer = useCallback(
+    async (sourceStream?: MediaStream): Promise<boolean> => {
+      const ctx = await getAudioContext();
+
+      if (!ctx) return false;
+
+      stopFrequencyAnalyzer();
+
+      if (!detectWasmSimd()) {
+        return startFallbackAnalyzer(ctx, sourceStream, "WASM SIMD is not supported");
+      }
+
+      if (!ctx.audioWorklet) {
+        return startFallbackAnalyzer(ctx, sourceStream, "AudioWorklet is not available");
+      }
+
+      let workletNode: AudioWorkletNode;
+      let wasmBytes: ArrayBuffer;
+
+      try {
+        await ctx.audioWorklet.addModule("/worklets/fft-processor.js");
+
+        const wasmResp = await fetch("/wasm/fft_analyzer.wasm");
+        wasmBytes = await wasmResp.arrayBuffer();
+
+        workletNode = new AudioWorkletNode(ctx, "fft-analyzer-processor", {
+          processorOptions: {
+            fftSize: ANALYSER_FFT_SIZE,
+            sampleRate: ctx.sampleRate || 48000,
+          },
+        });
+      } catch (err) {
+        console.error("Failed to load Wasm SIMD frequency analyzer:", err);
+
+        return startFallbackAnalyzer(ctx, sourceStream, "WASM analyzer failed to load");
+      }
+
+      try {
+        workletNode.port.onmessage = (event: MessageEvent) => {
+          const data = event.data;
+
+          if (!data || data.type !== "SPECTRAL_FRAME") return;
+
+          applySpectralFrame(data);
+        };
+
+        workletNode.port.postMessage({ type: "INIT_WASM", wasmBytes }, [
+          wasmBytes,
+        ]);
+
+        let stream = sourceStream ?? null;
+
+        if (
+          !stream &&
+          typeof navigator !== "undefined" &&
+          navigator.mediaDevices?.getUserMedia
+        ) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          micStreamRef.current = stream;
+        }
+
+        if (stream) {
+          const src = ctx.createMediaStreamSource(stream);
+          src.connect(workletNode);
+          mediaSourceRef.current = src;
+        }
+
+        workletNodeRef.current = workletNode;
+        setAnalyzerMode("wasm-simd");
+        setIsAnalyzerActive(true);
+
+        return true;
+      } catch (err) {
+        console.error("Failed to start Wasm SIMD frequency analyzer:", err);
+        stopFrequencyAnalyzer();
+
+        return false;
+      }
+    },
+    [
+      getAudioContext,
+      stopFrequencyAnalyzer,
+      startFallbackAnalyzer,
+      applySpectralFrame,
+    ],
+  );
+
+  // Unlock AudioContext on first user gesture.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
     const handleUserGesture = () => {
       userInteractedRef.current = true;
+
       const ctx = getSharedAudioContext(selectedSinkId);
-      if (ctx && ctx.state === "suspended") {
-        ctx
+
+      if (!ctx) return;
+
+      if (ctx.state === "suspended") {
+        void ctx
           .resume()
           .then(() => {
-            setIsAudioUnlocked(ctx.state === "running");
+            resumePendingCaution(ctx);
           })
           .catch(() => {});
-      } else if (ctx && ctx.state === "running") {
-        setIsAudioUnlocked(true);
+      } else if (ctx.state === "running") {
+        resumePendingCaution(ctx);
       }
     };
 
     const gestureEvents = ["click", "keydown", "touchstart", "pointerdown"];
+
     gestureEvents.forEach((evt) =>
       window.addEventListener(evt, handleUserGesture, { passive: true }),
     );
 
     const ctx = getSharedAudioContext(selectedSinkId);
+
     if (ctx && ctx.state === "running") {
       setIsAudioUnlocked(true);
       userInteractedRef.current = true;
@@ -293,6 +593,35 @@ export function useAvionicsAudio({
         window.removeEventListener(evt, handleUserGesture),
       );
     };
+  }, [selectedSinkId, resumePendingCaution]);
+
+  // Handle AudioContext suspend and resume on browser tab visibility change
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible") {
+        const audioCtx = getSharedAudioContext(selectedSinkId);
+
+        if (audioCtx && audioCtx.state === "suspended") {
+          try {
+            await audioCtx.resume();
+          } catch {
+            // Ignore resume rejection if blocked by browser policy
+          }
+        }
+
+        if (audioCtx && audioCtx.state === "running") {
+          setIsAudioUnlocked(true);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [selectedSinkId]);
 
   // Procedural Master Caution synthesis
@@ -301,22 +630,28 @@ export function useAvionicsAudio({
       if (isMutedRef.current) return false;
 
       const ctx = getSharedAudioContext(selectedSinkId);
+
       if (!ctx) return false;
 
-    if (audioContextRef.current) {
-      const ctx = audioContextRef.current as AudioContext & { setSinkId?: (id: string) => Promise<void> };
-      if (typeof ctx.setSinkId === 'function') {
-        try {
-          await ctx.setSinkId(deviceId);
-        } catch (e) {
-          console.error('Error applying audio context setSinkId:', e);
+      // Queue playback until a suspended AudioContext is resumed.
+      if (ctx.state !== "running") {
+        pendingCautionRef.current = options ?? {};
+
+        if (!userInteractedRef.current) {
+          return false;
         }
-        // Attempt resume if user has interacted
-        ctx.resume().catch(() => {});
-        if ((ctx.state as string) !== "running") return false;
+
+        void ctx
+          .resume()
+          .then(() => {
+            resumePendingCaution(ctx);
+          })
+          .catch(() => {});
+
+        return false;
       }
 
-      // Stop previous playback if active
+      // Stop previous playback if active.
       stopMasterCaution();
 
       const now = ctx.currentTime;
@@ -361,6 +696,7 @@ export function useAvionicsAudio({
         // Tone 1: 800Hz square wave
         const osc1 = ctx.createOscillator();
         const gain1 = ctx.createGain();
+
         osc1.type = "square";
         osc1.frequency.setValueAtTime(TONE_LOW_FREQ, cycleStart);
 
@@ -376,12 +712,14 @@ export function useAvionicsAudio({
         gain1.connect(lowPassFilter);
         osc1.start(cycleStart);
         osc1.stop(cycleStart + toneDuration + 0.01);
+
         nodes.push({ osc: osc1, gain: gain1 });
 
         // Tone 2: 1000Hz square wave
         const t2Start = cycleStart + toneDuration + interToneGap;
         const osc2 = ctx.createOscillator();
         const gain2 = ctx.createGain();
+
         osc2.type = "square";
         osc2.frequency.setValueAtTime(TONE_HIGH_FREQ, t2Start);
 
@@ -394,6 +732,7 @@ export function useAvionicsAudio({
         gain2.connect(lowPassFilter);
         osc2.start(t2Start);
         osc2.stop(t2Start + toneDuration + 0.01);
+
         nodes.push({ osc: osc2, gain: gain2 });
       }
 
@@ -401,6 +740,7 @@ export function useAvionicsAudio({
       setIsCautionActive(true);
 
       const totalDurationSec = cycles * singleCycleDuration;
+
       cautionTimeoutRef.current = setTimeout(
         () => {
           setIsCautionActive(false);
@@ -412,8 +752,19 @@ export function useAvionicsAudio({
 
       return true;
     },
-    [volume, filterCutoff, stopMasterCaution, selectedSinkId],
+    [
+      volume,
+      filterCutoff,
+      stopMasterCaution,
+      selectedSinkId,
+      resumePendingCaution,
+    ],
   );
+
+  // Keep the latest callback available to asynchronous resume handlers.
+  useEffect(() => {
+    playMasterCautionRef.current = playMasterCaution;
+  }, [playMasterCaution]);
 
   // Monitor online / offline network state
   useEffect(() => {
@@ -421,32 +772,45 @@ export function useAvionicsAudio({
 
     const handleOffline = () => {
       setIsOffline(true);
+
+      if (autoTrigger) {
+        playMasterCaution();
+      }
+    };
+
+    const handleOnline = () => {
+      setIsOffline(false);
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [autoTrigger, playMasterCaution]);
+
+  // Monitor critical battery (< 5%) transition
+  const prevLowBatteryRef = useRef(isLowBattery);
+
+  useEffect(() => {
+    if (!prevLowBatteryRef.current && isLowBattery) {
       if (autoTrigger) {
         playMasterCaution();
       }
     }
-  }, []);
 
-  // Get or initialize AudioContext with sinkId routing
-  const getAudioContext = useCallback(async () => {
-    if (!audioContextRef.current) {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioContextClass() as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+    prevLowBatteryRef.current = isLowBattery;
+  }, [isLowBattery, autoTrigger, playMasterCaution]);
 
-      if (typeof ctx.setSinkId === 'function' && selectedSinkId) {
-        try {
-          await ctx.setSinkId(selectedSinkId);
-        } catch (e) {
-          console.error('Failed to set initial audio sinkId:', e);
-        }
-      }
-      audioContextRef.current = ctx;
-    }
-    if (audioContextRef.current.state === 'suspended') {
-      await audioContextRef.current.resume();
-    }
-    return audioContextRef.current;
-  }, [selectedSinkId]);
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopMasterCaution();
+      stopFrequencyAnalyzer();
+    };
+  }, [stopMasterCaution, stopFrequencyAnalyzer]);
 
   return {
     playMasterCaution,
@@ -462,5 +826,13 @@ export function useAvionicsAudio({
     selectedSinkId,
     setAudioSink,
     getAudioContext,
+    spectralBins,
+    splDb,
+    dominantFrequencyHz,
+    analyzerLatencyMs,
+    isAnalyzerActive,
+    analyzerMode,
+    startFrequencyAnalyzer,
+    stopFrequencyAnalyzer,
   };
 }

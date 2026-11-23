@@ -1,131 +1,350 @@
 import React from "react";
-import { render, screen, fireEvent, act } from "@testing-library/react";
-import "@testing-library/jest-dom";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import {
   VenueDetailModal,
-  VenueDeveloperTab,
-  generateVenueCurlSnippet,
+  VenueDetail,
 } from "@/components/venues/VenueDetailModal";
 
-describe("VenueDetailModal Developer Tab & cURL Snippet Generator", () => {
-  describe("generateVenueCurlSnippet", () => {
-    it("generates correct cURL command for a given venueId", () => {
-      const snippet = generateVenueCurlSnippet("venue-xyz-123");
-      expect(snippet).toBe(
-        "curl -s https://work-sphere.vercel.app/api/venues/venue-xyz-123 | jq .",
-      );
-    });
+describe("VenueDetailModal (Zero-CLS Reserved Hero Gallery)", () => {
+  const sampleVenue: VenueDetail = {
+    id: "venue-cls-1",
+    name: "Third Wave Coffee Roasters",
+    address: "Baner Road, Pune",
+    category: "Work Cafe",
+    rating: 4.7,
+    reviewCount: 128,
+    wifiSpeedMbps: 145,
+    noiseDb: 48,
+    outletDensity: 4,
+    heroPhotoUrl: "https://images.pexels.com/photos/12345/cafe-hero.jpeg",
+    description:
+      "Bright corner seating with dedicated power strips and fiber Wi-Fi.",
+  };
 
-    it("handles fallback placeholder when venueId is empty", () => {
-      const snippet = generateVenueCurlSnippet("");
-      expect(snippet).toBe(
-        "curl -s https://work-sphere.vercel.app/api/venues/{venueId} | jq .",
-      );
-    });
+  test("reserves aspect-video container and displays skeleton shimmer until hero image finishes loading", () => {
+    render(
+      <VenueDetailModal
+        venue={sampleVenue}
+        isOpen={true}
+        onClose={jest.fn()}
+      />,
+    );
+
+    const galleryContainer = screen.getByTestId("venue-hero-gallery-container");
+    expect(galleryContainer.className).toContain("aspect-video");
+
+    // Before image finishes downloading: skeleton shimmer is mounted and img is opacity-0
+    const skeleton = screen.getByTestId("venue-hero-skeleton");
+    expect(skeleton).toBeInTheDocument();
+    expect(skeleton.className).toContain("animate-pulse");
+
+    const img = screen.getByAltText(
+      /Third Wave Coffee Roasters workspace preview/i,
+    );
+    expect(img).toHaveAttribute("width", "1280");
+    expect(img).toHaveAttribute("height", "720");
+    expect(img.className).toContain("opacity-0");
+
+    // Simulate network image load completion
+    fireEvent.load(img);
+
+    expect(screen.queryByTestId("venue-hero-skeleton")).not.toBeInTheDocument();
+    expect(img.className).toContain("opacity-100");
   });
 
-  describe("VenueDeveloperTab Component", () => {
+  test("renders fallback placeholder without collapsing gallery height when image fails to load", () => {
+    render(
+      <VenueDetailModal
+        venue={sampleVenue}
+        isOpen={true}
+        onClose={jest.fn()}
+      />,
+    );
+
+    const img = screen.getByAltText(
+      /Third Wave Coffee Roasters workspace preview/i,
+    );
+    fireEvent.error(img);
+
+    expect(screen.getByTestId("venue-hero-fallback")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("venue-hero-gallery-container").className,
+    ).toContain("aspect-video");
+  });
+
+  describe("venue link copying", () => {
+    const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      "clipboard",
+    );
+    const originalExecCommand = document.execCommand;
+
     beforeEach(() => {
       jest.useFakeTimers();
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: jest.fn().mockResolvedValue(undefined),
+        },
+      });
+      document.execCommand = jest.fn().mockReturnValue(true);
     });
 
     afterEach(() => {
+      jest.clearAllTimers();
       jest.useRealTimers();
+      jest.restoreAllMocks();
+      if (originalClipboardDescriptor) {
+        Object.defineProperty(
+          navigator,
+          "clipboard",
+          originalClipboardDescriptor,
+        );
+      } else {
+        delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+      }
+      document.execCommand = originalExecCommand;
     });
 
-    it("renders formatted cURL command inside terminal window", () => {
-      render(
-        <VenueDeveloperTab venueId="venue-999" venueName="Tech Hub Cafe" />,
-      );
-
-      expect(
-        screen.getByTestId("venue-developer-tab-content"),
-      ).toBeInTheDocument();
-      expect(screen.getByText("Tech Hub Cafe")).toBeInTheDocument();
-
-      const codeElement = screen.getByTestId("curl-command-text");
-      expect(codeElement).toBeInTheDocument();
-      expect(codeElement).toHaveTextContent(
-        "curl -s https://work-sphere.vercel.app/api/venues/venue-999 | jq .",
-      );
-    });
-
-    it("provides one-click copy button with animated 'Copied!' checkmark feedback", async () => {
-      // Mock navigator.clipboard
-      const mockWriteText = jest.fn().mockResolvedValue(undefined);
-      Object.assign(navigator, {
-        clipboard: {
-          writeText: mockWriteText,
-        },
-      });
-
-      render(<VenueDeveloperTab venueId="venue-42" />);
-
-      const copyBtn = screen.getByTestId("copy-curl-button");
-      expect(copyBtn).toHaveTextContent("Copy");
-
-      // Click copy button
-      await act(async () => {
-        fireEvent.click(copyBtn);
-      });
-
-      expect(mockWriteText).toHaveBeenCalledWith(
-        "curl -s https://work-sphere.vercel.app/api/venues/venue-42 | jq .",
-      );
-      expect(copyBtn).toHaveTextContent("Copied!");
-
-      // Fast forward past feedback timeout (2000ms)
-      act(() => {
-        jest.advanceTimersByTime(2000);
-      });
-
-      expect(copyBtn).toHaveTextContent("Copy");
-    });
-  });
-
-  describe("VenueDetailModal Integration", () => {
-    it("renders Developer tab and displays cURL snippet on tab selection", () => {
-      const mockVenue = {
-        id: "venue-sf-01",
-        name: "Mission Roasters",
-        lat: 37.76,
-        lng: -122.42,
-        category: "cafe",
-      } as any;
-
+    test("renders a copy button with the correct accessible label and title", () => {
       render(
         <VenueDetailModal
-          venue={mockVenue}
+          venue={sampleVenue}
           isOpen={true}
-          isFavorited={false}
           onClose={jest.fn()}
-          onGetDirections={jest.fn()}
-          onToggleFavorite={jest.fn()}
-          initialTab="overview"
         />,
       );
 
-      // Verify the Developer tab button is present
-      const developerTab = screen.getByTestId("tab-developer");
-      expect(developerTab).toBeInTheDocument();
-      expect(developerTab).toHaveTextContent("Developer");
-
-      // Initially on overview tab
-      expect(
-        screen.queryByTestId("venue-developer-tab-content"),
-      ).not.toBeInTheDocument();
-
-      // Click the Developer tab
-      fireEvent.click(developerTab);
-
-      // Now developer tab content is visible with the cURL command
-      expect(
-        screen.getByTestId("venue-developer-tab-content"),
-      ).toBeInTheDocument();
-      const codeElement = screen.getByTestId("curl-command-text");
-      expect(codeElement).toHaveTextContent(
-        "curl -s https://work-sphere.vercel.app/api/venues/venue-sf-01 | jq .",
-      );
+      const copyButton = screen.getByRole("button", {
+        name: "Copy venue link",
+      });
+      expect(copyButton).toBeInTheDocument();
+      expect(copyButton).toHaveAttribute("title", "Copy venue link");
+      expect(copyButton).toHaveAttribute("type", "button");
     });
+
+    test("copies the canonical venue URL and shows Copied!", async () => {
+      const writeText = jest.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText },
+      });
+
+      render(
+        <VenueDetailModal
+          venue={sampleVenue}
+          isOpen={true}
+          onClose={jest.fn()}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Copy venue link" }),
+        );
+      });
+
+      expect(writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/venues/${sampleVenue.id}`,
+      );
+      expect(screen.getByRole("status")).toHaveTextContent("Copied!");
+    });
+
+    test("reverts copy feedback after exactly 2000ms", async () => {
+      render(
+        <VenueDetailModal
+          venue={sampleVenue}
+          isOpen={true}
+          onClose={jest.fn()}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Copy venue link" }),
+        );
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Copied!");
+
+      act(() => {
+        jest.advanceTimersByTime(1999);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Copied!");
+
+      act(() => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+
+    test("handles clipboard rejection by trying the fallback and reporting success", async () => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: jest
+            .fn()
+            .mockRejectedValue(new Error("permission denied")),
+        },
+      });
+      document.execCommand = jest.fn().mockReturnValue(true);
+
+      render(
+        <VenueDetailModal
+          venue={sampleVenue}
+          isOpen={true}
+          onClose={jest.fn()}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Copy venue link" }),
+        );
+      });
+
+      expect(document.execCommand).toHaveBeenCalledWith("copy");
+      expect(screen.getByRole("status")).toHaveTextContent("Copied!");
+    });
+
+    test("handles an unavailable clipboard API gracefully", async () => {
+      delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+      document.execCommand = jest.fn().mockReturnValue(false);
+
+      render(
+        <VenueDetailModal
+          venue={sampleVenue}
+          isOpen={true}
+          onClose={jest.fn()}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Copy venue link" }),
+        );
+      });
+
+      expect(document.execCommand).toHaveBeenCalledWith("copy");
+      expect(screen.getByRole("status")).toHaveTextContent("Copy failed");
+      expect(screen.queryByText("Copied!")).not.toBeInTheDocument();
+    });
+
+    test("clears prior feedback timers on repeated clicks", async () => {
+      render(
+        <VenueDetailModal
+          venue={sampleVenue}
+          isOpen={true}
+          onClose={jest.fn()}
+        />,
+      );
+      const copyButton = screen.getByRole("button", {
+        name: "Copy venue link",
+      });
+
+      await act(async () => {
+        fireEvent.click(copyButton);
+      });
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+
+      await act(async () => {
+        fireEvent.click(copyButton);
+      });
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+
+      expect(screen.getByRole("status")).toHaveTextContent("Copied!");
+
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+
+    test("ignores an older copy result after a newer repeated click", async () => {
+      let resolveFirst: (() => void) | undefined;
+      const firstCopy = new Promise<void>((resolve) => {
+        resolveFirst = resolve;
+      });
+      const writeText = jest
+        .fn()
+        .mockReturnValueOnce(firstCopy)
+        .mockResolvedValueOnce(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText },
+      });
+
+      render(
+        <VenueDetailModal
+          venue={sampleVenue}
+          isOpen={true}
+          onClose={jest.fn()}
+        />,
+      );
+      const copyButton = screen.getByRole("button", {
+        name: "Copy venue link",
+      });
+
+      act(() => {
+        fireEvent.click(copyButton);
+      });
+      await act(async () => {
+        fireEvent.click(copyButton);
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Copied!");
+
+      await act(async () => {
+        resolveFirst?.();
+        await firstCopy;
+      });
+      expect(screen.getByRole("status")).toHaveTextContent("Copied!");
+      expect(writeText).toHaveBeenCalledTimes(2);
+    });
+
+    test("cleans up pending feedback when the modal unmounts", async () => {
+      const { unmount } = render(
+        <VenueDetailModal
+          venue={sampleVenue}
+          isOpen={true}
+          onClose={jest.fn()}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Copy venue link" }),
+        );
+      });
+
+      unmount();
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+  });
+
+  test("preserves close and reserve actions", () => {
+    const onClose = jest.fn();
+    const onBookClick = jest.fn();
+    render(
+      <VenueDetailModal
+        venue={sampleVenue}
+        isOpen={true}
+        onClose={onClose}
+        onBookClick={onBookClick}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close venue details" }),
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reserve Desk" }));
+    expect(onBookClick).toHaveBeenCalledWith(sampleVenue);
   });
 });

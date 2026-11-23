@@ -334,7 +334,7 @@ export function DualRangeSlider({
           className={cn(
             "absolute top-1/2 -translate-x-1/2 -translate-y-1/2",
             "h-5 w-5 rounded-full border-2 border-blue-600 bg-white dark:bg-zinc-900 shadow-md",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
             "transition-transform active:scale-110",
             activeThumb === "min" && "ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-zinc-900 scale-110",
             disabled ? "pointer-events-none" : "hover:scale-105",
@@ -368,7 +368,7 @@ export function DualRangeSlider({
           className={cn(
             "absolute top-1/2 -translate-x-1/2 -translate-y-1/2",
             "h-5 w-5 rounded-full border-2 border-blue-600 bg-white dark:bg-zinc-900 shadow-md",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
             "transition-transform active:scale-110",
             activeThumb === "max" && "ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-zinc-900 scale-110",
             disabled ? "pointer-events-none" : "hover:scale-105",

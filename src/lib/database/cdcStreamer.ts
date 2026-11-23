@@ -109,7 +109,9 @@ const LSN_PATTERN = /^([0-9a-fA-F]+)\/([0-9a-fA-F]+)$/;
  * Parses a PostgreSQL LSN (`16/B374D848`) into a BigInt so it can be compared
  * without losing precision.
  */
-export function parseLsn(lsn: string | bigint | number | null | undefined): bigint {
+export function parseLsn(
+  lsn: string | bigint | number | null | undefined,
+): bigint {
   if (typeof lsn === "bigint") return lsn;
   if (typeof lsn === "number") {
     return Number.isFinite(lsn) ? BigInt(Math.trunc(lsn)) : BigInt(0);
@@ -313,9 +315,7 @@ function coerceDecodedValue(raw: string | null, typeName?: string): unknown {
  * Extracts `column[type]:'value'` / `column[type]:null` pairs from a
  * test_decoding payload.
  */
-export function parseDecodedColumns(
-  input: string,
-): Record<string, unknown> {
+export function parseDecodedColumns(input: string): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   const pattern = new RegExp(DECODED_COLUMN_PATTERN.source, "g");
 
@@ -401,9 +401,13 @@ export function parseTestDecodingLine(line: string): LogicalChange | null {
 
     if (newTupleIndex >= 0) {
       const oldPart =
-        oldKeyIndex >= 0 ? body.slice(oldKeyIndex + "old-key:".length, newTupleIndex) : "";
+        oldKeyIndex >= 0
+          ? body.slice(oldKeyIndex + "old-key:".length, newTupleIndex)
+          : "";
       oldValues = oldPart.trim() ? parseDecodedColumns(oldPart) : null;
-      newValues = parseDecodedColumns(body.slice(newTupleIndex + "new-tuple:".length));
+      newValues = parseDecodedColumns(
+        body.slice(newTupleIndex + "new-tuple:".length),
+      );
     } else {
       newValues = parseDecodedColumns(body);
     }
@@ -538,52 +542,60 @@ class PgOutputCursor {
   }
 
   uint8(): number {
-    if (this.remaining < 1) throw new Error("pgoutput: unexpected end of message");
+    if (this.remaining < 1)
+      throw new Error("pgoutput: unexpected end of message");
     return this.buffer.readUInt8(this.offset++);
   }
 
   int8(): number {
-    if (this.remaining < 1) throw new Error("pgoutput: unexpected end of message");
+    if (this.remaining < 1)
+      throw new Error("pgoutput: unexpected end of message");
     return this.buffer.readInt8(this.offset++);
   }
 
   uint16(): number {
-    if (this.remaining < 2) throw new Error("pgoutput: unexpected end of message");
+    if (this.remaining < 2)
+      throw new Error("pgoutput: unexpected end of message");
     const value = this.buffer.readUInt16BE(this.offset);
     this.offset += 2;
     return value;
   }
 
   int16(): number {
-    if (this.remaining < 2) throw new Error("pgoutput: unexpected end of message");
+    if (this.remaining < 2)
+      throw new Error("pgoutput: unexpected end of message");
     const value = this.buffer.readInt16BE(this.offset);
     this.offset += 2;
     return value;
   }
 
   uint32(): number {
-    if (this.remaining < 4) throw new Error("pgoutput: unexpected end of message");
+    if (this.remaining < 4)
+      throw new Error("pgoutput: unexpected end of message");
     const value = this.buffer.readUInt32BE(this.offset);
     this.offset += 4;
     return value;
   }
 
   int32(): number {
-    if (this.remaining < 4) throw new Error("pgoutput: unexpected end of message");
+    if (this.remaining < 4)
+      throw new Error("pgoutput: unexpected end of message");
     const value = this.buffer.readInt32BE(this.offset);
     this.offset += 4;
     return value;
   }
 
   uint64(): bigint {
-    if (this.remaining < 8) throw new Error("pgoutput: unexpected end of message");
+    if (this.remaining < 8)
+      throw new Error("pgoutput: unexpected end of message");
     const value = this.buffer.readBigUInt64BE(this.offset);
     this.offset += 8;
     return value;
   }
 
   int64(): bigint {
-    if (this.remaining < 8) throw new Error("pgoutput: unexpected end of message");
+    if (this.remaining < 8)
+      throw new Error("pgoutput: unexpected end of message");
     const value = this.buffer.readBigInt64BE(this.offset);
     this.offset += 8;
     return value;
@@ -627,13 +639,7 @@ export interface PgOutputRelation {
 }
 
 export interface PgOutputDecodedMessage {
-  type:
-    | "begin"
-    | "commit"
-    | "change"
-    | "relation"
-    | "truncate"
-    | "other";
+  type: "begin" | "commit" | "change" | "relation" | "truncate" | "other";
   changes: LogicalChange[];
   relation?: PgOutputRelation;
   begin?: {
@@ -907,7 +913,9 @@ export function parseLogicalDecodingMessage(
   decoder: PgOutputDecoder = new PgOutputDecoder(),
 ): ParsedTestDecodingOutput | PgOutputDecodedMessage | null {
   if (plugin === "pgoutput") {
-    return decoder.parse(Buffer.isBuffer(payload) ? payload : Buffer.from(payload));
+    return decoder.parse(
+      Buffer.isBuffer(payload) ? payload : Buffer.from(payload),
+    );
   }
   return parseTestDecodingOutput(
     Buffer.isBuffer(payload) ? payload.toString("utf8") : payload,
@@ -966,7 +974,7 @@ export function transformCdcChange(
     timestamp,
     receivedAt,
     latencyMs: Math.max(0, Date.now() - receivedAt),
-    data: change.operation === "DELETE" ? oldValues : newValues ?? oldValues,
+    data: change.operation === "DELETE" ? oldValues : (newValues ?? oldValues),
     new: newValues,
     old: oldValues,
   };
@@ -1065,7 +1073,10 @@ function createTcpRedisAdapter(): CdcRedisLike | null {
     });
 
     client.on("error", (error: unknown) => {
-      defaultLogger.warn("[CDC] TCP Redis connection error:", errorMessage(error));
+      defaultLogger.warn(
+        "[CDC] TCP Redis connection error:",
+        errorMessage(error),
+      );
     });
 
     const adapter: CdcRedisLike = {
@@ -1082,14 +1093,7 @@ function createTcpRedisAdapter(): CdcRedisLike | null {
         }
         if (options?.maxlen && options.maxlen > 0) {
           if (options.approximate) {
-            return client.xadd(
-              key,
-              id,
-              "MAXLEN",
-              "~",
-              options.maxlen,
-              ...flat,
-            );
+            return client.xadd(key, id, "MAXLEN", "~", options.maxlen, ...flat);
           }
           return client.xadd(key, id, "MAXLEN", options.maxlen, ...flat);
         }
@@ -1206,8 +1210,7 @@ export class CdcStreamPublisher {
     this.slot = options.slot ?? CDC_DEFAULT_SLOT;
     this.streamKey = options.streamKey ?? CDC_STREAM_KEY;
     this.logger = options.logger ?? defaultLogger;
-    this.dedupeTtlSeconds =
-      options.dedupeTtlSeconds ?? CDC_DEDUPE_TTL_SECONDS;
+    this.dedupeTtlSeconds = options.dedupeTtlSeconds ?? CDC_DEDUPE_TTL_SECONDS;
     this.streamMaxLength =
       options.streamMaxLength && options.streamMaxLength > 0
         ? options.streamMaxLength
@@ -1483,7 +1486,8 @@ export class FileLsnStore implements CdcLsnStore {
   async load(slot: string): Promise<string | null> {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as { slot?: string; lsn?: string } | string;
+      const parsed = JSON.parse(raw) as
+        { slot?: string; lsn?: string } | string;
       if (typeof parsed === "string") return parsed;
       if (parsed && parsed.slot && parsed.slot !== slot) return null;
       return parsed?.lsn ?? null;
@@ -1822,8 +1826,11 @@ export class CdcStreamer {
     this.slot =
       options.slot ?? process.env.CDC_REPLICATION_SLOT ?? CDC_DEFAULT_SLOT;
     this.publication =
-      options.publication ?? process.env.CDC_PUBLICATION ?? CDC_DEFAULT_PUBLICATION;
-    this.plugin = options.plugin ?? process.env.CDC_PLUGIN ?? CDC_DEFAULT_PLUGIN;
+      options.publication ??
+      process.env.CDC_PUBLICATION ??
+      CDC_DEFAULT_PUBLICATION;
+    this.plugin =
+      options.plugin ?? process.env.CDC_PLUGIN ?? CDC_DEFAULT_PLUGIN;
     this.streamKey =
       options.streamKey ?? process.env.CDC_STREAM_KEY ?? CDC_STREAM_KEY;
     this.tables =
@@ -1934,7 +1941,10 @@ export class CdcStreamer {
     }
 
     await this.publisher.close();
-    if (this.options.redis === undefined && this.options.redisProvider === undefined) {
+    if (
+      this.options.redis === undefined &&
+      this.options.redisProvider === undefined
+    ) {
       closeCdcRedisClient();
     }
     this.running = false;
@@ -2120,7 +2130,7 @@ export class CdcStreamer {
         // to answer keepalive requests or PostgreSQL drops the connection.
         const resumeLsn =
           compareLsn(storedLsn ?? "0/0", serverLsn ?? "0/0") >= 0
-            ? storedLsn ?? serverLsn
+            ? (storedLsn ?? serverLsn)
             : serverLsn;
 
         this.lastProcessedLsn = resumeLsn;
@@ -2196,7 +2206,9 @@ export class CdcStreamer {
           [this.slot],
         );
         return {
-          confirmedFlushLsn: normalizeLsn(retry?.rows?.[0]?.confirmed_flush_lsn),
+          confirmedFlushLsn: normalizeLsn(
+            retry?.rows?.[0]?.confirmed_flush_lsn,
+          ),
         };
       }
 
@@ -2249,7 +2261,10 @@ export class CdcStreamer {
     }
 
     const tableList = tablesToPublish
-      .map((table: string) => `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`)
+      .map(
+        (table: string) =>
+          `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`,
+      )
       .join(", ");
 
     if (!publication?.rows?.length) {
@@ -2486,9 +2501,7 @@ export function createCdcStreamer(
   return new CdcStreamer(options);
 }
 
-export function getCdcStreamer(
-  options: CdcStreamerOptions = {},
-): CdcStreamer {
+export function getCdcStreamer(options: CdcStreamerOptions = {}): CdcStreamer {
   if (!defaultStreamer) defaultStreamer = createCdcStreamer(options);
   return defaultStreamer;
 }

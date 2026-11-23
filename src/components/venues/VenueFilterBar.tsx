@@ -11,6 +11,7 @@ import {
   Sun,
   Coffee,
   Check,
+  Monitor,
   SlidersHorizontal,
   Volume2,
   X,
@@ -18,6 +19,7 @@ import {
   LayoutGrid,
   Building2,
   BookOpen,
+  ArrowUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DualRangeSlider } from "@/components/ui/DualRangeSlider";
@@ -75,11 +77,21 @@ export interface VenueFilterBarProps {
   wifiSpeedRange?: [number, number];
   /** Callback fired when WiFi speed range changes */
   onWifiSpeedRangeChange?: (range: [number, number]) => void;
+  /** Controlled or active sorting value */
+  sortBy?: string;
+  /** Callback fired when sort option changes */
+  onSortChange?: (sort: string) => void;
+  /** Whether to show the sort dropdown. Default: true */
+  showSortDropdown?: boolean;
   /** Whether to show the custom range filters popover. Default: true */
   showCustomRangeFilters?: boolean;
   /** Additional class names applied to the outermost wrapper element. */
   className?: string;
   "data-testid"?: string;
+  /** Exact number of venues matching the resolved filters, when available. */
+  resultCount?: number;
+  /** Debounce interval for screen-reader filter announcements. */
+  announcementDebounceMs?: number;
 }
 
 export const DEFAULT_DECIBEL_RANGE: [number, number] = [30, 85];
@@ -111,6 +123,12 @@ export const DEFAULT_VENUE_FILTERS: VenueFilterItem[] = [
     paramKey: "coffee",
     icon: Coffee,
   },
+  {
+    id: "standing_desk",
+    label: "Standing Desk",
+    paramKey: "standingDesk",
+    icon: Monitor,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -139,18 +157,6 @@ function buildMaskImage(edge: ScrollEdge): string {
 // Component
 // ---------------------------------------------------------------------------
 
-/**
- * VenueFilterBar
- *
- * A horizontally scrollable row of category tabs and filter pill buttons for the /venues page.
- *
- * Key features:
- *  - Smooth pill tab sliding indicator using Framer Motion layoutId="activeFilterPill"
- *    with a responsive spring transition (stiffness: 450, damping: 30).
- *  - Keyboard navigation (ArrowLeft / ArrowRight / Home / End) to cycle through category tabs.
- *  - Apple HIG 44 × 44 pt minimum touch target on all interactive pills.
- *  - Uses CSS `mask-image` linear-gradient on the scroll container for smooth edge fade-out.
- */
 export function VenueFilterBar({
   filters = DEFAULT_VENUE_FILTERS,
   selectedFilters: controlledSelected,
@@ -166,9 +172,14 @@ export function VenueFilterBar({
   onDecibelRangeChange,
   wifiSpeedRange: controlledWifi,
   onWifiSpeedRangeChange,
+  sortBy: controlledSortBy,
+  onSortChange,
+  showSortDropdown = true,
   showCustomRangeFilters = true,
   className = "",
   "data-testid": testId = "venue-filter-bar",
+  resultCount,
+  announcementDebounceMs = 250,
 }: VenueFilterBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -181,6 +192,49 @@ export function VenueFilterBar({
   const pillRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [scrollEdge, setScrollEdge] = useState<ScrollEdge>("none");
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+
+  // -------------------------------------------------------------------------
+  // Sorting state & URL sync
+  // -------------------------------------------------------------------------
+  const urlSort = React.useMemo(() => {
+    if (!searchParams) return null;
+    return searchParams.get("sort");
+  }, [searchParams]);
+
+  const [internalSort, setInternalSort] = useState<string>(() => {
+    return controlledSortBy ?? urlSort ?? "recommended";
+  });
+
+  useEffect(() => {
+    if (controlledSortBy !== undefined) {
+      setInternalSort(controlledSortBy);
+    } else if (urlSort) {
+      setInternalSort(urlSort);
+    }
+  }, [controlledSortBy, urlSort]);
+
+  const currentSort = controlledSortBy ?? internalSort;
+
+  const handleSortChange = useCallback(
+    (newSort: string) => {
+      setInternalSort(newSort);
+      onSortChange?.(newSort);
+
+      if (syncWithUrl && pathname && router) {
+        const params = new URLSearchParams(
+          searchParams ? searchParams.toString() : "",
+        );
+        if (newSort === "recommended") {
+          params.delete("sort");
+        } else {
+          params.set("sort", newSort);
+        }
+        const qs = params.toString();
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      }
+    },
+    [onSortChange, syncWithUrl, pathname, router, searchParams],
+  );
 
   // -------------------------------------------------------------------------
   // Category tabs state & URL sync
@@ -229,7 +283,14 @@ export function VenueFilterBar({
         router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
       }
     },
-    [onSelectCategory, onCategoryChange, syncWithUrl, pathname, router, searchParams],
+    [
+      onSelectCategory,
+      onCategoryChange,
+      syncWithUrl,
+      pathname,
+      router,
+      searchParams,
+    ],
   );
 
   const handleCategoryKeyDown = useCallback(
@@ -294,8 +355,12 @@ export function VenueFilterBar({
     const maxDb = searchParams.get("maxDb");
     if (minDb !== null || maxDb !== null) {
       return [
-        minDb ? Math.max(20, Math.min(100, Number(minDb))) : DEFAULT_DECIBEL_RANGE[0],
-        maxDb ? Math.max(20, Math.min(100, Number(maxDb))) : DEFAULT_DECIBEL_RANGE[1],
+        minDb
+          ? Math.max(20, Math.min(100, Number(minDb)))
+          : DEFAULT_DECIBEL_RANGE[0],
+        maxDb
+          ? Math.max(20, Math.min(100, Number(maxDb)))
+          : DEFAULT_DECIBEL_RANGE[1],
       ];
     }
     return null;
@@ -342,11 +407,13 @@ export function VenueFilterBar({
     const isDbCustom =
       internalDecibels[0] !== DEFAULT_DECIBEL_RANGE[0] ||
       internalDecibels[1] !== DEFAULT_DECIBEL_RANGE[1] ||
-      (searchParams && (searchParams.has("minDb") || searchParams.has("maxDb")));
+      (searchParams &&
+        (searchParams.has("minDb") || searchParams.has("maxDb")));
     const isWifiCustom =
       internalWifi[0] !== DEFAULT_WIFI_RANGE[0] ||
       internalWifi[1] !== DEFAULT_WIFI_RANGE[1] ||
-      (searchParams && (searchParams.has("minWifi") || searchParams.has("maxWifi")));
+      (searchParams &&
+        (searchParams.has("minWifi") || searchParams.has("maxWifi")));
     return isDbCustom || isWifiCustom;
   }, [internalDecibels, internalWifi, searchParams]);
 
@@ -399,7 +466,6 @@ export function VenueFilterBar({
       if (val === "true" || val === "1") set.add(f.id);
     });
 
-    // Also honour comma-separated `amenities` param for interoperability
     const amenitiesParam = searchParams.get("amenities");
     if (amenitiesParam) {
       amenitiesParam.split(",").forEach((a) => set.add(a.trim()));
@@ -408,8 +474,50 @@ export function VenueFilterBar({
     return set;
   }, [controlledSelected, searchParams, filters]);
 
+  const hasAnnouncedFiltersRef = useRef(false);
+  const [filterAnnouncement, setFilterAnnouncement] = useState("");
+
+  useEffect(() => {
+    // Do not announce the initial render; only announce a user's resolved
+    // filter/category changes after the debounce window.
+    if (!hasAnnouncedFiltersRef.current) {
+      hasAnnouncedFiltersRef.current = true;
+      return;
+    }
+
+    const timer = window.setTimeout(
+      () => {
+        if (typeof resultCount === "number" && Number.isFinite(resultCount)) {
+          setFilterAnnouncement(
+            resultCount === 0
+              ? "No venues match the selected filters."
+              : `Found ${resultCount} venues matching the selected filters.`,
+          );
+          return;
+        }
+
+        const activeFilterCount =
+          activeSet.size + (hasCustomRangeActive ? 1 : 0);
+        setFilterAnnouncement(
+          activeFilterCount === 0
+            ? "All venues are shown."
+            : `${activeFilterCount} venue filters selected.`,
+        );
+      },
+      Math.max(0, announcementDebounceMs),
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [
+    activeSet,
+    currentCategory,
+    hasCustomRangeActive,
+    resultCount,
+    announcementDebounceMs,
+  ]);
+
   // -------------------------------------------------------------------------
-  // Scroll-edge detection — drives the mask-image gradient
+  // Scroll-edge detection
   // -------------------------------------------------------------------------
 
   const updateScrollEdge = useCallback(() => {
@@ -565,10 +673,6 @@ export function VenueFilterBar({
     searchParams,
   ]);
 
-  // -------------------------------------------------------------------------
-  // Render — return null if filters list is explicitly empty
-  // -------------------------------------------------------------------------
-
   if (filters.length === 0) return null;
 
   const maskImage = buildMaskImage(scrollEdge);
@@ -578,62 +682,102 @@ export function VenueFilterBar({
       data-testid={testId}
       className={cn("relative w-full space-y-2", className)}
     >
-      {/* Category Tabs with Framer Motion layoutId sliding pill indicator */}
-      {showCategoryTabs && categories.length > 0 && (
-        <LayoutGroup id="venue-filter-categories">
-          <div
-            role="tablist"
-            aria-label="Venue categories"
-            data-testid="venue-category-tabs"
-            className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1 scroll-smooth touch-pan-x"
-          >
-            {categories.map((cat, index) => {
-              const isSelected = currentCategory === cat.id;
-              const Icon = cat.icon;
+      <p
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="venue-filter-result-announcement"
+        className="sr-only"
+      >
+        {filterAnnouncement}
+      </p>
 
-              return (
-                <button
-                  key={cat.id}
-                  ref={(el) => {
-                    tabRefs.current[index] = el;
-                  }}
-                  type="button"
-                  role="tab"
-                  id={`venue-category-tab-${cat.id}`}
-                  aria-selected={isSelected}
-                  tabIndex={isSelected ? 0 : -1}
-                  data-testid={`venue-category-tab-${cat.id}`}
-                  data-selected={isSelected}
-                  onClick={() => handleSelectCategory(cat.id)}
-                  onKeyDown={(e) => handleCategoryKeyDown(e, index)}
-                  className={cn(
-                    "relative inline-flex items-center justify-center gap-1.5",
-                    "min-h-[40px] sm:min-h-[44px] px-4 py-1.5 rounded-full",
-                    "text-xs font-semibold shrink-0 select-none",
-                    "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-                    isSelected
-                      ? "text-white"
-                      : "text-zinc-600 hover:text-zinc-900 bg-zinc-100/80 hover:bg-zinc-200/80 border border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
-                  )}
-                >
-                  {isSelected && (
-                    <motion.div
-                      layoutId="activeFilterPill"
-                      transition={{ type: "spring", stiffness: 450, damping: 30 }}
-                      className="absolute inset-0 bg-blue-600 rounded-full shadow-sm"
-                      data-testid="active-filter-pill-indicator"
-                    />
-                  )}
-                  <span className="relative z-10 flex items-center gap-1.5">
-                    {Icon && <Icon className="w-3.5 h-3.5" />}
-                    <span>{cat.label}</span>
-                  </span>
-                </button>
-              );
-            })}
+      {/* Category Tabs & Sort Dropdown Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        {showCategoryTabs && categories.length > 0 && (
+          <LayoutGroup id="venue-filter-categories">
+            <div
+              role="tablist"
+              aria-label="Venue categories"
+              data-testid="venue-category-tabs"
+              className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-1 scroll-smooth touch-pan-x flex-1"
+            >
+              {categories.map((cat, index) => {
+                const isSelected = currentCategory === cat.id;
+                const Icon = cat.icon;
+
+                return (
+                  <button
+                    key={cat.id}
+                    ref={(el) => {
+                      tabRefs.current[index] = el;
+                    }}
+                    type="button"
+                    role="tab"
+                    id={`venue-category-tab-${cat.id}`}
+                    aria-selected={isSelected}
+                    tabIndex={isSelected ? 0 : -1}
+                    data-testid={`venue-category-tab-${cat.id}`}
+                    data-selected={isSelected}
+                    onClick={() => handleSelectCategory(cat.id)}
+                    onKeyDown={(e) => handleCategoryKeyDown(e, index)}
+                    className={cn(
+                      "relative inline-flex items-center justify-center gap-1.5",
+                      "min-h-[40px] sm:min-h-[44px] px-4 py-1.5 rounded-full",
+                      "text-xs font-semibold shrink-0 select-none",
+                      "transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
+                      isSelected
+                        ? "text-white"
+                        : "text-zinc-600 hover:text-zinc-900 bg-zinc-100/80 hover:bg-zinc-200/80 border border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
+                    )}
+                  >
+                    {isSelected && (
+                      <motion.div
+                        layoutId="activeFilterPill"
+                        transition={{
+                          type: "spring",
+                          stiffness: 450,
+                          damping: 30,
+                        }}
+                        className="absolute inset-0 bg-blue-600 rounded-full shadow-sm"
+                        data-testid="active-filter-pill-indicator"
+                      />
+                    )}
+                    <span className="relative z-10 flex items-center gap-1.5">
+                      {Icon && <Icon className="w-3.5 h-3.5" />}
+                      <span>{cat.label}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </LayoutGroup>
+        )}
+
+        {/* Sort Dropdown (Requirement 2) */}
+        {showSortDropdown && (
+          <div className="flex items-center gap-2 px-1 shrink-0">
+            <ArrowUpDown className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+            <select
+              id="venue-sort-select"
+              data-testid="venue-sort-select"
+              value={currentSort}
+              onChange={(e) => handleSortChange(e.target.value)}
+              aria-label="Sort venues"
+              className={cn(
+                "min-h-[40px] sm:min-h-[44px] px-3 py-1.5 rounded-xl text-xs font-semibold select-none",
+                "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border border-zinc-200/80",
+                "dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
+              )}
+            >
+              <option value="recommended">Recommended</option>
+              <option value="rating">Highest Rated</option>
+              <option value="distance">Distance: Nearest First</option>
+            </select>
           </div>
-        </LayoutGroup>
-      )}
+        )}
+      </div>
 
       {/* Amenity Filter Row */}
       <div
@@ -647,7 +791,6 @@ export function VenueFilterBar({
           transition: "mask-image 150ms ease, -webkit-mask-image 150ms ease",
         }}
       >
-        {/* Horizontally scrollable inner row */}
         <div
           ref={scrollRef}
           data-testid="venue-filter-bar-scroll"
@@ -655,7 +798,6 @@ export function VenueFilterBar({
           aria-label="Filter venues by amenity"
           className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-1 scroll-smooth touch-pan-x"
         >
-          {/* Custom Ambient Decibel & WiFi Speed Range Filter Trigger */}
           {showCustomRangeFilters && (
             <button
               ref={triggerRef}
@@ -671,6 +813,7 @@ export function VenueFilterBar({
                 "min-h-[44px] px-3 rounded-full",
                 "text-xs font-semibold shrink-0 select-none",
                 "transition-all active:scale-95 border",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
                 hasCustomRangeActive || isPopoverOpen
                   ? "bg-blue-600 text-white border-blue-600 shadow-sm hover:bg-blue-700 dark:bg-blue-600 dark:border-blue-500"
                   : "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
@@ -709,6 +852,7 @@ export function VenueFilterBar({
                   "min-h-[44px] px-3 rounded-full",
                   "text-xs font-semibold shrink-0 select-none",
                   "transition-all active:scale-95 border",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
                   isSelected
                     ? "bg-blue-600 text-white border-blue-600 shadow-sm hover:bg-blue-700 dark:bg-blue-600 dark:border-blue-500"
                     : "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 border-zinc-200/80 dark:bg-zinc-800/80 dark:hover:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/80",
@@ -742,7 +886,6 @@ export function VenueFilterBar({
             "animate-in fade-in duration-150",
           )}
         >
-          {/* Popover Header */}
           <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3 mb-4">
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -754,7 +897,7 @@ export function VenueFilterBar({
               type="button"
               data-testid="close-filter-popover-button"
               onClick={() => setIsPopoverOpen(false)}
-              className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="rounded-lg p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
               aria-label="Close custom filters popover"
             >
               <X className="w-4 h-4" />
@@ -762,7 +905,6 @@ export function VenueFilterBar({
           </div>
 
           <div className="space-y-6">
-            {/* Decibel Range Slider Section */}
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <Volume2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -786,7 +928,6 @@ export function VenueFilterBar({
               />
             </div>
 
-            {/* WiFi Speed Range Slider Section */}
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <Wifi className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
@@ -811,13 +952,12 @@ export function VenueFilterBar({
             </div>
           </div>
 
-          {/* Footer Actions */}
           <div className="flex items-center justify-between border-t border-zinc-100 dark:border-zinc-800 pt-4 mt-6">
             <button
               type="button"
               data-testid="reset-range-filters-button"
               onClick={handleResetRangeFilters}
-              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset Defaults
@@ -827,7 +967,7 @@ export function VenueFilterBar({
               type="button"
               data-testid="apply-range-filters-button"
               onClick={handleApplyRangeFilters}
-              className="inline-flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all active:scale-95"
+              className="inline-flex items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
             >
               Apply Filters
             </button>

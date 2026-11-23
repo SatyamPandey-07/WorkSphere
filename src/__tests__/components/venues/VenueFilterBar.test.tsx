@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import DefaultVenueFilterBar, {
   VenueFilterBar,
@@ -22,37 +22,44 @@ jest.mock("next/navigation", () => ({
 }));
 
 jest.mock("framer-motion", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require("react");
+
+  const MockMotionDiv = React.forwardRef(
+    (
+      {
+        layoutId,
+        transition,
+        children,
+        ...props
+      }: {
+        layoutId?: string;
+        transition?: { type?: string; stiffness?: number; damping?: number };
+        children?: React.ReactNode;
+        [key: string]: any;
+      },
+      ref: any,
+    ) => (
+      <div
+        ref={ref}
+        data-layoutid={layoutId}
+        data-spring-stiffness={transition?.stiffness}
+        data-spring-damping={transition?.damping}
+        data-spring-type={transition?.type}
+        {...props}
+      >
+        {children}
+      </div>
+    ),
+  );
+  MockMotionDiv.displayName = "MockMotionDiv";
+
   return {
-    LayoutGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    LayoutGroup: ({ children }: { children: React.ReactNode }) => (
+      <>{children}</>
+    ),
     motion: {
-      div: React.forwardRef(
-        (
-          {
-            layoutId,
-            transition,
-            children,
-            ...props
-          }: {
-            layoutId?: string;
-            transition?: { type?: string; stiffness?: number; damping?: number };
-            children?: React.ReactNode;
-            [key: string]: any;
-          },
-          ref: any,
-        ) => (
-          <div
-            ref={ref}
-            data-layoutid={layoutId}
-            data-spring-stiffness={transition?.stiffness}
-            data-spring-damping={transition?.damping}
-            data-spring-type={transition?.type}
-            {...props}
-          >
-            {children}
-          </div>
-        ),
-      ),
+      div: MockMotionDiv,
     },
   };
 });
@@ -70,6 +77,42 @@ describe("VenueFilterBar Component", () => {
   describe("Exports", () => {
     it("exports VenueFilterBar as both named and default export", () => {
       expect(DefaultVenueFilterBar).toBe(VenueFilterBar);
+    });
+  });
+
+  describe("Screen-reader filter announcements", () => {
+    it("announces the matching venue count after filter changes settle", async () => {
+      render(<VenueFilterBar resultCount={14} announcementDebounceMs={0} />);
+
+      fireEvent.click(screen.getByTestId("venue-category-tab-cafe"));
+
+      const announcement = screen.getByTestId(
+        "venue-filter-result-announcement",
+      );
+      expect(announcement).toHaveAttribute("role", "status");
+      expect(announcement).toHaveAttribute("aria-live", "polite");
+      expect(announcement).toHaveAttribute("aria-atomic", "true");
+      await waitFor(() => {
+        expect(announcement).toHaveTextContent(
+          "Found 14 venues matching the selected filters.",
+        );
+      });
+    });
+
+    it("announces an empty result set without changing the visual layout", async () => {
+      render(<VenueFilterBar resultCount={0} announcementDebounceMs={0} />);
+
+      fireEvent.click(screen.getByTestId("venue-category-tab-cafe"));
+
+      const announcement = screen.getByTestId(
+        "venue-filter-result-announcement",
+      );
+      expect(announcement).toHaveClass("sr-only");
+      await waitFor(() => {
+        expect(announcement).toHaveTextContent(
+          "No venues match the selected filters.",
+        );
+      });
     });
   });
 
@@ -94,7 +137,9 @@ describe("VenueFilterBar Component", () => {
       render(<VenueFilterBar />);
 
       expect(screen.getByTestId("venue-category-tabs")).toBeInTheDocument();
-      expect(screen.getByRole("tablist", { name: "Venue categories" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("tablist", { name: "Venue categories" }),
+      ).toBeInTheDocument();
 
       DEFAULT_VENUE_CATEGORIES.forEach((cat) => {
         const tab = screen.getByTestId(`venue-category-tab-${cat.id}`);
@@ -135,7 +180,9 @@ describe("VenueFilterBar Component", () => {
 
       const indicator = screen.getByTestId("active-filter-pill-indicator");
       expect(cafeTab).toContainElement(indicator);
-      expect(mockReplace).toHaveBeenCalledWith("/venues?category=cafe", { scroll: false });
+      expect(mockReplace).toHaveBeenCalledWith("/venues?category=cafe", {
+        scroll: false,
+      });
     });
 
     it("removes category query param when 'all' tab is selected", () => {
@@ -250,7 +297,9 @@ describe("VenueFilterBar Component", () => {
     it("hides category tabs when showCategoryTabs is false", () => {
       render(<VenueFilterBar showCategoryTabs={false} />);
 
-      expect(screen.queryByTestId("venue-category-tabs")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("venue-category-tabs"),
+      ).not.toBeInTheDocument();
       expect(screen.getByTestId("venue-filter-bar-scroll")).toBeInTheDocument();
     });
   });
@@ -276,12 +325,32 @@ describe("VenueFilterBar Component", () => {
       });
     });
 
+    it("renders and synchronizes the Standing Desk quick filter", () => {
+      const onToggle = jest.fn();
+      render(<VenueFilterBar onToggleFilter={onToggle} />);
+
+      const pill = screen.getByTestId("venue-filter-pill-standing_desk");
+      expect(pill).toHaveTextContent("Standing Desk");
+      fireEvent.click(pill);
+
+      expect(onToggle).toHaveBeenCalledWith("standing_desk", true);
+      expect(mockReplace).toHaveBeenCalledWith("/venues?standingDesk=true", {
+        scroll: false,
+      });
+    });
+
     it("respects controlled selectedFilters", () => {
-      render(<VenueFilterBar selectedFilters={["wifi"]} />);
+      render(<VenueFilterBar selectedFilters={["wifi", "standing_desk"]} />);
 
       const wifiPill = screen.getByTestId("venue-filter-pill-wifi");
       expect(wifiPill).toHaveAttribute("aria-checked", "true");
       expect(wifiPill).toHaveAttribute("data-selected", "true");
+
+      const standingDeskPill = screen.getByTestId(
+        "venue-filter-pill-standing_desk",
+      );
+      expect(standingDeskPill).toHaveAttribute("aria-checked", "true");
+      expect(standingDeskPill).toHaveAttribute("data-selected", "true");
 
       const outletsPill = screen.getByTestId("venue-filter-pill-outlets");
       expect(outletsPill).toHaveAttribute("aria-checked", "false");
@@ -297,7 +366,9 @@ describe("VenueFilterBar Component", () => {
       expect(triggerBtn).toHaveTextContent("Noise & Wi-Fi");
 
       // Popover should initially be closed
-      expect(screen.queryByTestId("venue-filter-popover")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("venue-filter-popover"),
+      ).not.toBeInTheDocument();
 
       // Open popover
       fireEvent.click(triggerBtn);
@@ -326,7 +397,9 @@ describe("VenueFilterBar Component", () => {
       expect(onDecibelChange).toHaveBeenCalled();
       expect(onWifiChange).toHaveBeenCalled();
       // Popover closes after apply
-      expect(screen.queryByTestId("venue-filter-popover")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("venue-filter-popover"),
+      ).not.toBeInTheDocument();
     });
 
     it("resets range filters to defaults when Reset Defaults is clicked", () => {
@@ -362,13 +435,17 @@ describe("VenueFilterBar Component", () => {
       // Close via close button
       const closeBtn = screen.getByTestId("close-filter-popover-button");
       fireEvent.click(closeBtn);
-      expect(screen.queryByTestId("venue-filter-popover")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("venue-filter-popover"),
+      ).not.toBeInTheDocument();
 
       // Open again and close via Escape key
       fireEvent.click(triggerBtn);
       expect(screen.getByTestId("venue-filter-popover")).toBeInTheDocument();
       fireEvent.keyDown(window, { key: "Escape" });
-      expect(screen.queryByTestId("venue-filter-popover")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("venue-filter-popover"),
+      ).not.toBeInTheDocument();
     });
   });
 });

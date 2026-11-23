@@ -38,8 +38,9 @@ export const TIER_CONFIGS: Record<RateLimitTier, TierConfig> = {
 
 /**
  * Multi-Tier Token Bucket Rate Limiting:
- * - Public search: 60 req/min
- * - Authentication endpoints: 5 req/min
+ * - Public search APIs: 60 req/min
+ * - Auth & CSRF issuance: 30 req/min
+ * - Mutating actions (reviews, bookings): 10 req/min
  * - Telemetry ingestion: 120 req/min
  */
 export const RATE_TIERS: Record<RateTierType, RateTier> = {
@@ -51,7 +52,13 @@ export const RATE_TIERS: Record<RateTierType, RateTier> = {
   },
   auth: {
     name: "auth",
-    limit: 5,
+    limit: 30,
+    windowMs: 60_000,
+    interval: "1 m",
+  },
+  mutations: {
+    name: "mutations",
+    limit: 10,
     windowMs: 60_000,
     interval: "1 m",
   },
@@ -64,10 +71,10 @@ export const RATE_TIERS: Record<RateTierType, RateTier> = {
 };
 
 /**
- * Maps an incoming API pathname to its corresponding rate tier.
+ * Maps an incoming API pathname (and optional HTTP method) to its corresponding rate tier.
  * Returns null if the route is not subject to public tier rate limiting.
  */
-export function matchRateTier(pathname: string): RateTier | null {
+export function matchRateTier(pathname: string, method?: string): RateTier | null {
   // Never rate-limit webhooks, cron jobs, or health checks
   if (
     pathname === "/api/webhook" ||
@@ -91,9 +98,27 @@ export function matchRateTier(pathname: string): RateTier | null {
     return RATE_TIERS.telemetry;
   }
 
-  // Authentication endpoints: 5 req/min (exempt CSRF token issuance which is a public session lifecycle endpoint)
+  // Mutating actions (reviews, bookings): 10 req/min
+  const upperMethod = method?.toUpperCase();
+  const isMutating = upperMethod
+    ? ["POST", "PUT", "PATCH", "DELETE"].includes(upperMethod)
+    : true;
+
   if (
-    (pathname.startsWith("/api/auth") && pathname !== "/api/auth/csrf-token") ||
+    isMutating &&
+    (pathname.startsWith("/api/bookings") ||
+      pathname.startsWith("/api/reviews") ||
+      pathname.includes("/reviews") ||
+      pathname.includes("/bookings") ||
+      pathname.includes("/booking"))
+  ) {
+    return RATE_TIERS.mutations;
+  }
+
+  // Authentication & CSRF issuance: 30 req/min
+  if (
+    pathname.startsWith("/api/auth") ||
+    pathname === "/api/csrf" ||
     pathname.startsWith("/api/partykit/auth") ||
     pathname === "/api/user/verify-student"
   ) {

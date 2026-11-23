@@ -45,6 +45,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [PostgreSQL Partitioning Maintenance](./database/table-partitioning-maintenance.md) — partition maintenance, query optimization, and archival workflows.
 - [Redis Keyspace](./database/REDIS_KEYSPACE.md) — Redis keyspace, TTL, and invalidation guidance.
 - [Prisma Troubleshooting](./troubleshooting/prisma.md) — common Prisma and database troubleshooting guidance.
+- [Spatial Geo-Query Guide](./search/SPATIAL_GEO_QUERY_GUIDE.md) — coordinate validation, bounding-box clamping, Haversine versus geodesic distance, PostGIS `ST_DWithin` radius queries, and GiST index behavior.
 
 ## Security & Cryptography
 

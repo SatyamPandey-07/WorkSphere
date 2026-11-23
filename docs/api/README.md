@@ -135,3 +135,4 @@ done
 - [Smart Desk Sensor Telemetry Payload Specification & Protobuf Definitions](../iot/TELEMETRY_PAYLOAD_SPEC.md) — JSON schemas, Protocol Buffers binary envelope, HMAC-SHA256 signature verification (`X-WorkSphere-Signature`), timestamp replay window, and electrical power anomaly thresholds.
 - [Solana Escrow Settlement and Refund Runbook](../solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow lifecycle, confirmation levels, refunds, and RPC failover for crypto seat deposits.
 - [Seat Hold Lease Extension API](./SEAT_HOLD_LEASE_EXTENSION.md) — extend a checkout seat hold once by five minutes using the holder's fencing token; request, errors, Redis key and sequence diagram.
+- [Spatial Geo-Query Guide](../search/SPATIAL_GEO_QUERY_GUIDE.md) — coordinate schema, bounding-box and radius search geometry, Haversine and PostGIS distance, and spatial index notes.

@@ -40,6 +40,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Database & Infrastructure
 
+- [PostgreSQL Connection Pooling & Starvation Prevention Runbook](./db/CONNECTION_POOLING_RUNBOOK.md) — Prisma 7 connection pool architecture, driver adapter tuning, PgBouncer session vs. transaction pooling, serverless deployment sizing, interactive transaction discipline, and diagnostic SQL queries.
 - [Partition Backup Verification and Restore Drills](./database/PARTITION_BACKUP_VERIFICATION.md) — backup archive verification, coverage, freshness, and restore checks.
 - [Database Partition Export and Archive Specification](./database/PARTITION_EXPORT_AND_ARCHIVE_SPECIFICATION.md) — partition export, archival lifecycle, and schema considerations.
 - [PostgreSQL Partitioning Maintenance](./database/table-partitioning-maintenance.md) — partition maintenance, query optimization, and archival workflows.

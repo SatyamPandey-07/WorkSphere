@@ -1078,6 +1078,24 @@ export async function simulateEscrowTransaction(
   };
 }
 
+/**
+ * Simulates an escrow deposit transaction against the configured RPC pool with failover.
+ */
+export async function simulateEscrowDeposit(
+  params: EscrowDepositParams,
+  options: EscrowQuorumSimulationOptions = {},
+): Promise<EscrowQuorumSimulationResult> {
+  const deposit = await buildDepositTransaction(params);
+  const pool = options.endpoints
+    ? getEscrowRpcPool({ endpoints: options.endpoints })
+    : getEscrowRpcPool();
+  const connection = await pool.getActiveConnection();
+  const tx = Transaction.from(
+    Buffer.from(deposit.serializedTransaction, "base64"),
+  );
+  return simulateEscrowTransaction(connection, tx, options);
+}
+
 /** Hard ceiling for a single RPC status/balance poll request. */
 export const ESCROW_RPC_POLL_TIMEOUT_MS = 5_000;
 
@@ -1114,12 +1132,16 @@ export async function withRpcPollTimeout<T>(
     (timer as { unref?: () => void }).unref?.();
   });
 
+  const opPromise = operation(controller.signal);
+  // Ensure the abandoned operation has an explicit .catch() handler attached
+  // before Promise.race aggregation so late rejections do not go unhandled (#7633).
+  opPromise.catch(() => {});
+  deadline.catch(() => {});
+
   try {
-    return await Promise.race([operation(controller.signal), deadline]);
+    return await Promise.race([opPromise, deadline]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
-    // A late rejection from the abandoned operation must not go unhandled.
-    deadline.catch(() => {});
   }
 }
 
@@ -2627,8 +2649,19 @@ export class EscrowRpcConnectionPool {
           }
 
           if (attempt >= this.maxRetriesPerEndpoint || !retryable) {
+            const nextCandidateIndex =
+              candidates[candidates.indexOf(index) + 1];
+            if (nextCandidateIndex !== undefined) {
+              console.warn(
+                `[EscrowRpcPool] Endpoint ${endpoint} failed (${toEscrowErrorMessage(error)}), failing over to ${this.endpoints[nextCandidateIndex]}`,
+              );
+            }
             break;
           }
+
+          console.warn(
+            `[EscrowRpcPool] Attempt ${attempt + 1} on ${endpoint} failed (${toEscrowErrorMessage(error)}), retrying with backoff...`,
+          );
 
           await this.sleep(
             computeEscrowRpcBackoffDelay(
@@ -2727,21 +2760,21 @@ export class EscrowRpcConnectionPool {
   private withTimeout<T>(promise: Promise<T>, endpoint: string): Promise<T> {
     if (this.requestTimeoutMs <= 0) return promise;
 
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
         reject(new EscrowRpcTimeoutError(this.requestTimeoutMs, endpoint));
       }, this.requestTimeoutMs);
-      timer.unref?.();
-      promise.then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-      );
+      (timer as { unref?: () => void }).unref?.();
+    });
+
+    // Ensure all endpoint probe promises and timeout wrappers have explicit .catch()
+    // handlers attached before Promise.race aggregation (#7633).
+    promise.catch(() => {});
+    timeoutPromise.catch(() => {});
+
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
     });
   }
 

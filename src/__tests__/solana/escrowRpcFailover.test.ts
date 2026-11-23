@@ -32,6 +32,8 @@ import {
   getEscrowClient,
   resetEscrowClient,
   simulateEscrowTransaction,
+  simulateEscrowDeposit,
+  withRpcPollTimeout,
   type QuorumTelemetryRecord,
 } from "@/lib/solana/escrowClient";
 import { SolanaPayEscrowManager } from "@/lib/solana/solanaPayEscrow";
@@ -315,6 +317,93 @@ describe("EscrowRpcConnectionPool failover", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("completes multi-endpoint failover cleanly without unhandled promise rejections on slow primary timeout (#7633)", async () => {
+    const unhandledRejections: unknown[] = [];
+    const rejectionHandler = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on("unhandledRejection", rejectionHandler);
+
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      let primaryLateReject: ((err: Error) => void) | undefined;
+      const primaryPromise = new Promise((_, reject) => {
+        primaryLateReject = reject;
+      });
+
+      const primary = createMockConnection({
+        getLatestBlockhash: jest.fn().mockImplementation(() => primaryPromise),
+      });
+      const secondary = createMockConnection();
+
+      const { pool } = buildPool(
+        [PRIMARY, SECONDARY],
+        { [PRIMARY]: primary, [SECONDARY]: secondary },
+        { requestTimeoutMs: 15, maxRetriesPerEndpoint: 0 },
+      );
+
+      const result = await pool.execute((conn) => conn.getLatestBlockhash());
+
+      expect(result.blockhash).toBe(
+        "GHtXQBtRBcvNx4VdU5KnfQuL1RKJbF1sHhGGbCPNg6cB",
+      );
+      expect(pool.getActiveEndpoint()).toBe(SECONDARY);
+
+      // Simulate primary endpoint socket rejecting late after failover
+      primaryLateReject?.(new Error("RPC connection timeout"));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      // Must not emit unhandled rejection
+      expect(unhandledRejections).toEqual([]);
+
+      // Must log clean failover diagnostic message
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`[EscrowRpcPool] Endpoint ${PRIMARY} failed`),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`failing over to ${SECONDARY}`),
+      );
+    } finally {
+      process.removeListener("unhandledRejection", rejectionHandler);
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not emit unhandled rejection when withRpcPollTimeout aborts an abandoned operation that rejects late (#7633)", async () => {
+    const unhandledRejections: unknown[] = [];
+    const rejectionHandler = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on("unhandledRejection", rejectionHandler);
+
+    try {
+      let lateReject: ((err: Error) => void) | undefined;
+      const hungOperation = (_signal: AbortSignal) =>
+        new Promise((_, reject) => {
+          lateReject = reject;
+        });
+
+      await expect(
+        withRpcPollTimeout(hungOperation, {
+          timeoutMs: 15,
+          endpoint: PRIMARY,
+        }),
+      ).rejects.toBeInstanceOf(EscrowRpcTimeoutError);
+
+      lateReject?.(new Error("RPC connection timeout"));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(unhandledRejections).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", rejectionHandler);
+    }
+  });
+
+  it("simulateEscrowDeposit is defined and callable (#7633)", () => {
+    expect(typeof simulateEscrowDeposit).toBe("function");
   });
 
   it("does not retry non-retryable errors on the same endpoint", async () => {

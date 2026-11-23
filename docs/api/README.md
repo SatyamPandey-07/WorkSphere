@@ -6,12 +6,12 @@ WorkSphere enforces per-client / per-key rate limits using Redis token buckets (
 
 ### HTTP Headers Returned on `429 Too Many Requests`
 
-| Header | Type | Description |
-| :--- | :--- | :--- |
-| `X-RateLimit-Limit` | Integer | Maximum number of requests permitted in the active rate-limit window / bucket capacity. |
-| `X-RateLimit-Remaining` | Integer | Remaining requests available in the current window (`0` when throttled with `429`). |
-| `X-RateLimit-Reset` | Integer / Epoch Seconds | Unix timestamp (in seconds) when the rate-limit window or bucket refill resets. |
-| `Retry-After` | Integer (seconds) or HTTP-date | Recommended wait time before retrying a `429` request—either seconds until retry or an HTTP date string (`IMF-fixdate`). |
+| Header                  | Type                           | Description                                                                                                              |
+| :---------------------- | :----------------------------- | :----------------------------------------------------------------------------------------------------------------------- |
+| `X-RateLimit-Limit`     | Integer                        | Maximum number of requests permitted in the active rate-limit window / bucket capacity.                                  |
+| `X-RateLimit-Remaining` | Integer                        | Remaining requests available in the current window (`0` when throttled with `429`).                                      |
+| `X-RateLimit-Reset`     | Integer / Epoch Seconds        | Unix timestamp (in seconds) when the rate-limit window or bucket refill resets.                                          |
+| `Retry-After`           | Integer (seconds) or HTTP-date | Recommended wait time before retrying a `429` request—either seconds until retry or an HTTP date string (`IMF-fixdate`). |
 
 ### TypeScript / JavaScript Example: Parsing `Retry-After` & Exponential Backoff
 
@@ -133,6 +133,8 @@ done
 ## Related Guides
 
 - [Smart Desk Sensor Telemetry Payload Specification & Protobuf Definitions](../iot/TELEMETRY_PAYLOAD_SPEC.md) — JSON schemas, Protocol Buffers binary envelope, HMAC-SHA256 signature verification (`X-WorkSphere-Signature`), timestamp replay window, and electrical power anomaly thresholds.
+- [Venue WiFi Spectrum & RF Diagnostics Guide](../venues/WIFI_SPECTRUM_DIAGNOSTICS.md) — RF spectrum bands, channel width degradation models, RSSI/SNR signal thresholds, and Wi-Fi prediction API response schemas.
 - [Solana Escrow Settlement and Refund Runbook](../solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow lifecycle, confirmation levels, refunds, and RPC failover for crypto seat deposits.
 - [Seat Hold Lease Extension API](./SEAT_HOLD_LEASE_EXTENSION.md) — extend a checkout seat hold once by five minutes using the holder's fencing token; request, errors, Redis key and sequence diagram.
 - [Spatial Geo-Query Guide](../search/SPATIAL_GEO_QUERY_GUIDE.md) — coordinate schema, bounding-box and radius search geometry, Haversine and PostGIS distance, and spatial index notes.
+```

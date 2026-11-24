@@ -25,6 +25,7 @@ export interface VenueFilterBarProps {
 
 export const DEFAULT_VENUE_AMENITY_FILTERS: VenueFilterOption[] = [
   { id: 'dogFriendly', label: 'Pet Friendly', paramKey: 'dogFriendly' },
+  { id: 'veganOptions', label: 'Vegan Options', paramKey: 'veganOptions' },
   { id: 'outdoorPatio', label: 'Outdoor Seating', paramKey: 'outdoorPatio' },
   {
     id: 'standing_desks',
@@ -173,6 +174,12 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
             aria-pressed={isActive}
             data-testid={`venue-filter-chip-${item.id}`}
             onClick={() => handleToggle(item)}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                handleToggle(item);
+              }
+            }}
             className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
               isActive
                 ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs'

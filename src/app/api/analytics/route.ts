@@ -124,26 +124,35 @@ export async function GET() {
           userId,
           wifiSpeed: { gt: 0 },
         },
-      },
-      select: {
-        venueId: true,
-      },
-    });
-    const uniqueCafesBooked = new Set(cafeBookings.map((b) => b.venueId)).size;
+      }),
+      // C. Database groupBy for distinct cafe venues
+      prisma.booking.groupBy({
+        by: ["venueId"],
+        where: {
+          userId,
+          status: "CONFIRMED",
+          venue: {
+            category: "cafe",
+          },
+        },
+      }),
+      // D. Count of venues created
+      prisma.venue.count({
+        where: { creatorId: userId },
+      }),
+      // E. Fetch ratings with createdAt to determine night reviews in user's timezone
+      prisma.venueRating.findMany({
+        where: { userId },
+        select: {
+          createdAt: true,
+        },
+      }),
+    ]);
 
-    // C. Fetch count of venues added
-    const venuesAddedCount = await prisma.venue.count({
-      where: { creatorId: userId },
-    });
-
-    const reviewsCount = allRatings.length;
-    const speedtestsCount = allRatings.filter(
-      (r) => r.wifiSpeed !== null && r.wifiSpeed > 0,
-    ).length;
-
+    const uniqueCafesBooked = uniqueCafeGroups.length;
     const userTimeZone = isValidTimeZone(user.timezone) ? user.timezone : "UTC";
 
-    const nightOwlReviewsCount = allRatings.filter((r) =>
+    const nightOwlReviewsCount = nightOwlRatings.filter((r) =>
       isNightOwlReview(new Date(r.createdAt), userTimeZone),
     ).length;
 

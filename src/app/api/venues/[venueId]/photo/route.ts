@@ -1,123 +1,91 @@
-import { NextRequest } from "next/server";
-import { getVenuePhotoUrl } from "@/lib/googlePlaces";
-import { prisma } from "@/lib/prisma";
-import { rateLimit } from "@/lib/rateLimit";
+import { NextRequest, NextResponse } from "next/server";
+import { getVenuePhotoDetails } from "@/lib/googlePlaces";
 
 /**
  * GET /api/venues/[venueId]/photo?name=...&lat=...&lng=...
  *
- * Resolves a Pexels venue photo and proxies the image bytes back.
- * Prioritizes canonical venue metadata from the database over caller-supplied
- * query parameters when resolving and caching photos.
- * Implements rate limiting on cache misses to prevent external API exhaustion.
+ * Resolves a Pexels venue photo and proxies the image bytes back,
+ * while exposing photographer and source attribution via headers and JSON metadata.
+ * The API key never leaves the server — the browser just sees our URL.
+ * Response is edge-cached for 24h so repeat renders cost 0 API calls.
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ venueId: string }> },
 ) {
   const { venueId } = await params;
-  if (!venueId || typeof venueId !== "string" || !venueId.trim()) {
+  const { searchParams } = req.nextUrl;
+
+  const name = searchParams.get("name");
+  const lat = parseFloat(searchParams.get("lat") ?? "");
+  const lng = parseFloat(searchParams.get("lng") ?? "");
+
+  if (!name || isNaN(lat) || isNaN(lng)) {
     return new Response(null, { status: 400 });
   }
 
-  const { searchParams } = req.nextUrl;
-  const callerName = searchParams.get("name")?.trim();
-  const latParam = searchParams.get("lat");
-  const lngParam = searchParams.get("lng");
-  const lat = latParam !== null && latParam !== "" ? parseFloat(latParam) : NaN;
-  const lng = lngParam !== null && lngParam !== "" ? parseFloat(lngParam) : NaN;
-
   try {
-    // 1. Resolve canonical venue record from database if it exists
-    const canonicalVenue = await prisma.venue.findFirst({
-      where: {
-        OR: [{ id: venueId }, { placeId: venueId }],
-      },
-      select: {
-        id: true,
-        placeId: true,
-        name: true,
-        latitude: true,
-        longitude: true,
-        photoReference: true,
-      },
-    });
+    const details = await getVenuePhotoDetails(venueId, name, lat, lng);
 
-    // 2. Resolve metadata: prefer canonical DB metadata over caller-supplied parameters
-    let searchName: string;
-    let searchLat: number;
-    let searchLng: number;
-
-    if (canonicalVenue) {
-      searchName = canonicalVenue.name;
-      searchLat = canonicalVenue.latitude;
-      searchLng = canonicalVenue.longitude;
-    } else {
-      // Unregistered / external venue: caller must provide valid metadata
-      if (
-        !callerName ||
-        callerName.length > 200 ||
-        isNaN(lat) ||
-        isNaN(lng) ||
-        !Number.isFinite(lat) ||
-        !Number.isFinite(lng) ||
-        lat < -90 ||
-        lat > 90 ||
-        lng < -180 ||
-        lng > 180
-      ) {
-        return new Response(null, { status: 400 });
-      }
-      searchName = callerName;
-      searchLat = lat;
-      searchLng = lng;
-    }
-
-    // 3. If cache miss requires external search, enforce rate limiting
-    const isCached = Boolean(canonicalVenue?.photoReference);
-    if (!isCached) {
-      const ip =
-        req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
-      const allowed = await rateLimit(`photo-miss:${ip}`, 30);
-      if (!allowed) {
-        return new Response(JSON.stringify({ error: "Too many requests" }), {
-          status: 429,
-          headers: {
-            "Content-Type": "application/json",
-            "Retry-After": "60",
-          },
-        });
-      }
-    }
-
-    // 4. Resolve photo URL using canonical or validated metadata
-    const photoUrl = await getVenuePhotoUrl(
-      canonicalVenue?.placeId ?? venueId,
-      searchName,
-      searchLat,
-      searchLng,
-    );
-
-    if (!photoUrl) {
-      console.warn(
-        `[photo] No photo found for venue "${searchName}" (${venueId})`,
-      );
+    if (!details || !details.url) {
+      console.warn(`[photo] No photo found for venue "${name}" (${venueId})`);
       return new Response(null, { status: 404 });
     }
 
-    // 5. Proxy the image bytes
-    const imageRes = await fetch(photoUrl, { redirect: "follow" });
+    // Return JSON metadata if requested
+    if (
+      searchParams.get("metadata") === "true" ||
+      req.headers.get("accept")?.includes("application/json")
+    ) {
+      return NextResponse.json({
+        venueId,
+        name,
+        url: `/api/venues/${encodeURIComponent(venueId)}/photo?name=${encodeURIComponent(name)}&lat=${lat}&lng=${lng}`,
+        imageUrl: details.url,
+        photographer: details.photographer ?? null,
+        photographerUrl: details.photographerUrl ?? null,
+        photoPageUrl: details.photoPageUrl ?? null,
+        source: details.source,
+      });
+    }
+
+    // Proxy the image — fetch follows redirect to the CDN URL
+    const imageRes = await fetch(details.url, { redirect: "follow" });
 
     if (!imageRes.ok) {
       return new Response(null, { status: 502 });
     }
 
-    return new Response(imageRes.body, {
-      headers: {
-        "Content-Type": imageRes.headers.get("Content-Type") || "image/jpeg",
-        "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=3600",
-      },
-    });
+    const headers = new Headers();
+    headers.set(
+      "Content-Type",
+      imageRes.headers.get("Content-Type") || "image/jpeg",
+    );
+    headers.set(
+      "Cache-Control",
+      "public, s-maxage=86400, stale-while-revalidate=3600",
+    );
+    headers.set("X-Photo-Source", details.source);
+
+    if (details.photographer) {
+      headers.set(
+        "X-Photo-Photographer",
+        encodeURIComponent(details.photographer),
+      );
+    }
+    if (details.photographerUrl) {
+      headers.set("X-Photo-Photographer-Url", details.photographerUrl);
+    }
+    if (details.photoPageUrl) {
+      headers.set("X-Photo-Page-Url", details.photoPageUrl);
+    }
+
+    headers.set(
+      "Access-Control-Expose-Headers",
+      "X-Photo-Source, X-Photo-Photographer, X-Photo-Photographer-Url, X-Photo-Page-Url",
+    );
+
+    return new Response(imageRes.body, { headers });
   } catch (err) {
     console.error("[/api/venues/photo] Error:", err);
     return new Response(null, { status: 500 });

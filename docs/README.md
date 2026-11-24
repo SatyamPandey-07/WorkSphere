@@ -13,6 +13,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Issue Claiming Guide](./contributing/claiming-issues.md) — issue claiming, assignment limits, and contribution workflow.
 - [GitHub Actions CI Workflow](./contributing/CI_WORKFLOW.md) — CI triggers, build and test jobs, and pull request checks.
 - [Release Process](./contributing/RELEASE_PROCESS.md) — tag-triggered draft releases, review, and publication.
+- [Arabic and Hebrew Right-to-Left (RTL) Localization Contributor Guide](./i18n/RTL_LOCALIZATION_GUIDE.md) — Tailwind 4 logical properties, dynamic `dir="rtl"` root document switching, and translation contribution checklist.
 
 ## API Reference & OpenAPI Specifications
 
@@ -23,6 +24,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Seat Hold Lease Extension API](./api/SEAT_HOLD_LEASE_EXTENSION.md) — seat-lock lease extension, fencing-token validation, and API response behavior.
 - [Anonymous ZKP Check-In OpenAPI 3.1 Specification](./api/zkp-checkin.openapi.yaml) — anonymous check-in proof and response contract.
 - [Venue Amenity Voting OpenAPI 3.1 Specification](./api/amenity-votes.openapi.yaml) — amenity metrics and vote submission contract.
+- [Prisma Database Aggregate Query Patterns](./api/PRISMA_AGGREGATION_GUIDE.md) — native database aggregates (`count`, `groupBy`), parallel execution with `Promise.all`, and index coverage for analytics endpoints.
 
 - [Causal Vector Clock Specification](./architecture/CAUSAL_VECTOR_CLOCK_SPEC.md) — application-level vector clock semantics, conflict ordering, and safe pruning requirements.
 
@@ -34,8 +36,10 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Semantic Matching Engine & Vector Indexing](./ai/SEMANTIC_MATCHING_ENGINE.md) — resume tokenization, dense vector embeddings, pgvector HNSW tuning, and cosine distance query benchmarks.
 
 - [Causal Ordering & Deterministic Tie-Breaking](./architecture/CAUSAL_ORDERING_AND_TIEBREAKING.md) — Vector Clock partial order mathematics, Hybrid Logical Clock tie-breaking heuristics, and distributed partition reconciliation.
+- [Logoot vs. LATA Sequence CRDT Comparison](./crdt/LOGOOOT_VS_LATA_COMPARISON.md) — comparative analysis of fractional positioning (Logoot) versus relative dependency trees (LATA), boundary growth, tombstone garbage collection, and memory overhead.
 
 - [GossipSub WebRTC Mesh](./architecture/GOSSIPSUB_WEBRTC_MESH.md) — peer discovery, GossipSub parameters, heartbeat intervals, and mesh behavior.
+- [WebRTC TURN Relay Bandwidth Throttle & Backpressure Specification](./architecture/WEBRTC_TURN_RELAY_THROTTLE.md) — candidate-pair relay detection, 48 kbps token-bucket rate limiting, priority queuing, and backpressure state transitions.
 - [WebRTC Peer Connection Lifecycle & ICE Candidate Negotiation](./p2p/mesh-lifecycle.md) — complete peer connection lifecycles, 4-state browser state machine, SDP offer/answer exchange, Trickle ICE, STUN/TURN fallback, DataChannel lifecycle, diagnostic runbook, and multi-device development.
 - [GossipSub IP Colocation & Sybil Defense](./architecture/GOSSIPSUB_IP_COLOCATION.md) — subnet colocation scoring (/24 IPv4 and /48 IPv6), Sybil mitigation, exponential decay, and mesh pruning.
 - [WebRTC Signaling Handshake Runbook](./p2p/WEBRTC_SIGNALING_HANDSHAKE.md) — PartyKit signaling, offer/answer exchange, trickle ICE, STUN/TURN traversal, Perfect Negotiation, and troubleshooting.
@@ -61,6 +65,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) — overview of application security defenses and their interaction.
 - [Content Security Policy Nonce Architecture](./security/csp-nonce-architecture.md) — nonce-based CSP implementation and request security.
 - [CSRF Protection Architecture](./security/csrf-protection-architecture.md) — CSRF protection and request validation design.
+- [CSRF Double-Submit Cookie Verification Specification](./security/CSRF_PROTECTION_SPEC.md) — HMAC-SHA256 CSRF token structure, SameSite/HttpOnly cookie attributes, subdomain isolation, and mutation verification pipeline.
 - [Double Ratchet Protocol](./security/DOUBLE_RATCHET_PROTOCOL.md) — encrypted messaging key evolution and protocol design.
 - [Skipped Message Key Store Runbook](./chat/SKIPPED_MESSAGE_KEY_STORE.md) — skipped-key retention, out-of-order recovery, storage limits, pruning, and source-verified security limitations.
 - [Zero-Knowledge Groth16 Proof Verification](./crypto/ZK_GROTH16_VERIFICATION.md) — zero-knowledge anonymous venue check-in architecture, Groth16 zk-SNARK pipeline, Poseidon nullifiers, and verification.
@@ -79,6 +84,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Voice Search](./features/VOICE_SEARCH.md) — voice search feature documentation.
 - [Seating Occupancy Forecasting](./features/seating-occupancy-forecasting.md) — seating occupancy forecasting functionality.
 - [Nomad Passport](./features/nomad-passport.md) — Nomad Passport feature and product workflow.
+- [Gamification XP & Badge Verification Guide](./badges/GAMIFICATION_XP_GUIDE.md) — XP earning formulas, Night Owl timezone normalization, and WiFi Scout speed test verification criteria.
 
 ## Audio & Acoustics
 
@@ -103,6 +109,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Dead Letter Queue](./offline/dead-letter-queue.md) — handling and recovery of failed offline jobs.
 - [Offline Sync Flow](./architecture/offline-sync-flow.md) — application offline synchronization flow.
 - [Local Mesh CRDT Synchronization](./realtime/local-mesh-crdt-sync.md) — collaborative state replication over peer-to-peer mesh connections.
+- [PartyKit WebSocket Room Heartbeat & Reconnection Protocol](./realtime/PARTYKIT_RECONNECTION_PROTOCOL.md) — 30s ping/pong heartbeats, randomized exponential jitter backoff, and room state reconciliation.
 - [CRDT Documentation Index](./crdt/README.md) — collaborative data protocols, specifications, and reading order.
 - [Yjs State Vector Exchange & Differential Compaction Architecture](./crdt/YJS_SYNC_PROTOCOL.md) — complete Yjs state vector exchange (`Y.encodeStateVector`), differential update computation (`Y.encodeStateAsUpdate`), wire codecs, and snapshot compaction engine.
 - [Ephemeral Awareness Vector Clock Compaction](./crdt/AWARENESS_VECTOR_COMPACTION.md) — ephemeral presence tracking, 30s TTL heartbeat eviction, and awareness vector compaction vs. document-level garbage collection.
@@ -111,6 +118,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Playwright Testing Guide](./testing/PLAYWRIGHT_GUIDE.md) — end-to-end testing for booking workflows.
 - [End-to-End Playwright Guide](./testing/e2e-playwright.md) — browser-based end-to-end testing documentation.
+- [Playwright PWA Offline Testing Runbook](./testing/PLAYWRIGHT_OFFLINE_TESTING.md) — network emulation (`context.setOffline`), IndexedDB draft inspection, and Service Worker cache verification.
 - [Web Vitals Guide](./telemetry/web-vitals-guide.md) — Core Web Vitals thresholds and performance telemetry.
 - [Vitals Export Pipeline](./telemetry/vitals-export-pipeline.md) — telemetry export and operational pipeline.
 - [Route Latency Heatmap Architecture](./admin/ROUTE_LATENCY_HEATMAP.md) — route telemetry collection, bucket aggregation, percentiles, API contract, and canvas rendering limitations.
@@ -133,3 +141,4 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 ## UI Components & Frontend
 
 - [NotificationBell Component Guide](./NOTIFICATION_BELL_GUIDE.md) — Top navigation notification bell, live polling, optimistic mark-as-read, undo restoration, and backend API contract.
+- [Bounded Texture Cache LRU Eviction & WebGL Lifecycle](./webgl/BOUNDED_TEXTURE_CACHE.md) — Bounded WebGL texture cache, LRU eviction policies, 64MB memory budgets, and WebGL context restoration handling.

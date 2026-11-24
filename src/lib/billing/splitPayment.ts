@@ -193,6 +193,14 @@ export function calculateSplitBill({
     throw new Error("totalAmount must be a finite non-negative number");
   }
 
+  for (const guest of guests) {
+    if (typeof guest.customAmount === "number") {
+      if (!Number.isFinite(guest.customAmount) || guest.customAmount < 0) {
+        throw new Error("customAmount must be a finite non-negative number");
+      }
+    }
+  }
+
   const totalCents = Math.round(totalAmount * 100);
   const participantCount = guests.length + 1; // Host + Guests
   const hasCustomAmounts = guests.some(
@@ -208,8 +216,16 @@ export function calculateSplitBill({
         g.customAmount ??
         Math.round((totalAmount / participantCount) * 100) / 100,
     );
-    const guestsSum = guestAmounts.reduce((a, b) => a + b, 0);
-    hostShare = Math.max(0, Math.round((totalAmount - guestsSum) * 100) / 100);
+    const guestsSumCents = guestAmounts.reduce(
+      (sum, amt) => sum + Math.round(amt * 100),
+      0,
+    );
+    if (guestsSumCents > totalCents) {
+      throw new Error(
+        "Total custom guest allocations exceeds total bill amount",
+      );
+    }
+    hostShare = Math.max(0, Math.round(totalCents - guestsSumCents) / 100);
   } else {
     const evenShare = Math.round((totalAmount / participantCount) * 100) / 100;
     guestAmounts = guests.map(() => evenShare);

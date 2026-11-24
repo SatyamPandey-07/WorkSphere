@@ -27,6 +27,37 @@ export interface BookingDraft {
   >;
 }
 
+export const BOOKING_DRAFT_EVENTS = {
+  CHANGED: "worksphere:booking-draft-changed",
+  SYNCED: "worksphere:booking-draft-synced",
+} as const;
+
+export const BOOKING_DRAFTS_BROADCAST_CHANNEL = "worksphere:booking-drafts-channel";
+
+function notifyDraftStoreChange(action: "save" | "delete" | "clear", draftId?: string): void {
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(
+        new CustomEvent(BOOKING_DRAFT_EVENTS.CHANGED, {
+          detail: { action, draftId },
+        })
+      );
+    } catch {
+      // Ignore in non-DOM contexts
+    }
+  }
+
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      const channel = new BroadcastChannel(BOOKING_DRAFTS_BROADCAST_CHANNEL);
+      channel.postMessage({ action, draftId, timestamp: Date.now() });
+      channel.close();
+    } catch {
+      // Ignore broadcast errors
+    }
+  }
+}
+
 export class DraftStore {
   private db: IDBDatabase | null = null;
   private memoryFallback: Map<string, BookingDraft> = new Map();
@@ -66,6 +97,7 @@ export class DraftStore {
 
     if (typeof indexedDB === "undefined") {
       this.memoryFallback.set(draft.id, { ...draft });
+      notifyDraftStoreChange("save", draft.id);
       return;
     }
 
@@ -76,7 +108,10 @@ export class DraftStore {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(draft);
 
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        notifyDraftStoreChange("save", draft.id);
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
   }
@@ -118,6 +153,7 @@ export class DraftStore {
   public async deleteDraft(id: string): Promise<void> {
     if (typeof indexedDB === "undefined") {
       this.memoryFallback.delete(id);
+      notifyDraftStoreChange("delete", id);
       return;
     }
 
@@ -128,7 +164,10 @@ export class DraftStore {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.delete(id);
 
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        notifyDraftStoreChange("delete", id);
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
   }
@@ -136,6 +175,7 @@ export class DraftStore {
   public async clearAll(): Promise<void> {
     if (typeof indexedDB === "undefined") {
       this.memoryFallback.clear();
+      notifyDraftStoreChange("clear");
       return;
     }
 
@@ -146,9 +186,33 @@ export class DraftStore {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.clear();
 
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        notifyDraftStoreChange("clear");
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
+  }
+
+  /**
+   * Returns the count of pending, unsynchronized booking drafts.
+   * Drafts with status CONFIRMED or CANCELLED, or deleted drafts, are excluded.
+   */
+  public async getPendingDraftCount(): Promise<number> {
+    try {
+      const drafts = await this.getAllDrafts();
+      const pendingDrafts = drafts.filter((draft) => {
+        const payloadStatus = typeof draft.payload?.status === "string" ? draft.payload.status : undefined;
+        if (payloadStatus === "CONFIRMED" || payloadStatus === "CANCELLED" || payloadStatus === "CANCELLED_BY_OPERATOR") {
+          return false;
+        }
+        return true;
+      });
+      return pendingDrafts.length;
+    } catch (error) {
+      console.error("[DraftStore] Failed to query pending draft count:", error);
+      return 0;
+    }
   }
 
   /**

@@ -437,4 +437,56 @@ describe("SchnorrThresholdAggregator", () => {
       expect(session.nonces.has("alice")).toBe(true);
     });
   });
+
+  describe("Nonce Commitment Immutability & Duplicate Rejection (#10092)", () => {
+    it("rejects duplicate and conflicting nonce submissions for the same participant", () => {
+      const sessionId = "session-test-duplicate-nonce";
+      const session = aggregator.createSession(
+        sessionId,
+        participants,
+        message,
+      );
+
+      const noncesA1 = SchnorrThresholdAggregator.generateNoncePair("alice");
+      const noncesA2 = SchnorrThresholdAggregator.generateNoncePair("alice"); // conflicting nonces
+      const noncesB = SchnorrThresholdAggregator.generateNoncePair("bob");
+      const noncesC = SchnorrThresholdAggregator.generateNoncePair("charlie");
+
+      // 1. First valid submission succeeds
+      aggregator.submitNonces(sessionId, noncesA1.publicNonces);
+      expect(session.nonces.has("alice")).toBe(true);
+      expect(session.nonces.get("alice")).toBe(noncesA1.publicNonces);
+      expect(session.state).toBe("INIT");
+
+      // 2. Identical duplicate submission is rejected and preserves session state
+      expect(() => {
+        aggregator.submitNonces(sessionId, noncesA1.publicNonces);
+      }).toThrow(/Duplicate nonce commitment rejected for participant alice/);
+      expect(session.nonces.get("alice")).toBe(noncesA1.publicNonces);
+      expect(session.state).toBe("INIT");
+
+      // 3. Conflicting duplicate submission is rejected without overwriting original commitment
+      expect(() => {
+        aggregator.submitNonces(sessionId, noncesA2.publicNonces);
+      }).toThrow(
+        /Conflicting duplicate nonce commitment rejected for participant alice/,
+      );
+      expect(session.nonces.get("alice")).toBe(noncesA1.publicNonces);
+      expect(session.state).toBe("INIT");
+
+      // 4. Other valid participants can submit their commitments and complete exchange
+      aggregator.submitNonces(sessionId, noncesB.publicNonces);
+      expect(session.state).toBe("INIT");
+
+      aggregator.submitNonces(sessionId, noncesC.publicNonces);
+      expect(session.state).toBe("NONCES_EXCHANGED");
+      expect(session.aggregateNonce).toBeDefined();
+      expect(session.nonceBindingFactor).toBeDefined();
+
+      // 5. Duplicate submission after all nonces collected is also rejected
+      expect(() => {
+        aggregator.submitNonces(sessionId, noncesA1.publicNonces);
+      }).toThrow();
+    });
+  });
 });

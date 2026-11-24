@@ -35,7 +35,10 @@ function createMockAudioContext() {
 
   const makeFilter = () => ({
     type: 'allpass' as BiquadFilterType,
-    frequency: { value: 1000 },
+    frequency: {
+      value: 1000,
+      setTargetAtTime: jest.fn(),
+    },
     connect: jest.fn(),
     disconnect: jest.fn(),
   });
@@ -61,7 +64,7 @@ function createMockAudioContext() {
       return {
         length,
         sampleRate,
-        numberOfChannels: 1,
+        numberOfChannels: _channels,
         duration: length / sampleRate,
         getChannelData: () => channelData,
         copyToChannel: (src: Float32Array) => channelData.set(src),
@@ -83,35 +86,41 @@ function createMockAudioContext() {
 }
 
 describe('NoiseSynthesizer & AmbientSoundGenerator v3 mixer', () => {
-  it('generates bounded samples for white, pink, and rain presets', () => {
-    for (const type of ['white', 'pink', 'rain'] as const) {
+  it('generates bounded samples for white, pink, brown, and rain presets', () => {
+    for (const type of ['white', 'pink', 'brown', 'rain'] as const) {
       const samples = generateNoiseSamples(type, 512, 44100);
       expect(samples).toHaveLength(512);
       for (let i = 0; i < samples.length; i += 1) {
         expect(samples[i]).toBeGreaterThanOrEqual(-1);
         expect(samples[i]).toBeLessThanOrEqual(1);
+        expect(Number.isFinite(samples[i])).toBe(true);
       }
     }
   });
 
-  it('wires multi-layer graph, attenuates volume, and pauses on tab hide or mute', async () => {
+  it('wires multi-layer graph, attenuates volume, updates cutoff, and pauses on tab hide or mute', async () => {
     const mockCtx = createMockAudioContext();
     const synth = new NoiseSynthesizer({
       soundType: 'rain',
       volume: 0.75,
-      layerLevels: { white: 0.2, pink: 0.3, rain: 0.9 },
+      cutoffFrequency: 8000,
+      layerLevels: { white: 0.2, pink: 0.3, brown: 0.4, rain: 0.9 },
       bufferDurationSeconds: 1,
       audioContextFactory: () => mockCtx,
+      useWorker: false, // test Web Audio fallback path directly
     });
 
     await synth.play();
-    expect(mockCtx.createBufferSource).toHaveBeenCalledTimes(3);
-    expect(mockCtx.createBiquadFilter).toHaveBeenCalledTimes(3);
-    expect(mockCtx.createGain).toHaveBeenCalledTimes(4);
+    expect(mockCtx.createBufferSource).toHaveBeenCalledTimes(4); // 4 layers
+    expect(mockCtx.createBiquadFilter).toHaveBeenCalledTimes(5); // 4 layer filters + 1 master cutoff filter
+    expect(mockCtx.createGain).toHaveBeenCalledTimes(5); // 1 master + 4 layers
     expect(mockCtx._masterGain.gain.value).toBeCloseTo(0.75, 2);
 
     synth.setVolume(0.25);
     expect(mockCtx._masterGain.gain.value).toBeCloseTo(0.25, 2);
+
+    synth.setCutoffFrequency(6000);
+    expect(synth.getState().cutoffFrequency).toBe(6000);
 
     Object.defineProperty(document, 'hidden', {
       value: true,
@@ -132,7 +141,7 @@ describe('NoiseSynthesizer & AmbientSoundGenerator v3 mixer', () => {
     await synth.dispose();
   });
 
-  it('renders mixer controls and safely handles storage quota errors', async () => {
+  it('renders mixer controls, adjusts cutoff frequency slider, and safely handles storage quota errors', async () => {
     const mockCtx = createMockAudioContext();
     (window as unknown as { AudioContext: unknown }).AudioContext = jest
       .fn()
@@ -144,7 +153,7 @@ describe('NoiseSynthesizer & AmbientSoundGenerator v3 mixer', () => {
         throw new Error('QuotaExceededError');
       });
 
-    render(<AmbientSoundGenerator initialSound="pink" initialVolume={0.5} />);
+    render(<AmbientSoundGenerator initialSound="pink" initialVolume={0.5} initialCutoff={10000} />);
 
     const playBtn = screen.getByTestId('ambient-play-toggle-btn');
     await act(async () => {
@@ -152,10 +161,23 @@ describe('NoiseSynthesizer & AmbientSoundGenerator v3 mixer', () => {
     });
     expect(playBtn.textContent).toBe('Pause');
 
+    // Test cutoff slider change
+    const cutoffSlider = screen.getByTestId('ambient-cutoff-slider');
+    fireEvent.change(cutoffSlider, {
+      target: { value: '5000' },
+    });
+    expect(screen.getByTestId('ambient-cutoff-value').textContent).toBe('5.0kHz');
+
+    // Test layer slider change
     fireEvent.change(screen.getByTestId('layer-slider-rain'), {
       target: { value: '65' },
     });
     expect(screen.getByTestId('ambient-sound-generator')).toBeTruthy();
+
+    // Select brown noise option
+    const brownOption = screen.getByTestId('sound-option-brown');
+    fireEvent.click(brownOption);
+    expect(brownOption.getAttribute('aria-pressed')).toBe('true');
 
     setItemSpy.mockRestore();
   });

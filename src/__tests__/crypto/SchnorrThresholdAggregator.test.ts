@@ -729,7 +729,9 @@ describe('SchnorrThresholdAggregator', () => {
       // 3. Conflicting duplicate submission is rejected without overwriting original commitment
       expect(() => {
         aggregator.submitNonces(sessionId, noncesA2.publicNonces);
-      }).toThrow(/Duplicate nonce commitment rejected for participant alice/);
+      }).toThrow(
+        /Conflicting duplicate nonce commitment rejected for participant alice/,
+      );
       expect(session.nonces.get("alice")).toBe(noncesA1.publicNonces);
       expect(session.state).toBe("INIT");
 

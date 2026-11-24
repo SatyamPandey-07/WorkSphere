@@ -22,7 +22,7 @@ import { VenueSummary } from "@/components/venue/VenueSummary";
 import { VenueAccordion } from "@/components/venue/VenueAccordion";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
 import { VenueShareModal } from "@/components/venue/VenueShareModal";
-import { generateVenueJsonLd } from "@/lib/seo/venueJsonLd";
+import { generateVenueJsonLd, serializeJsonLd } from "@/lib/seo/venueJsonLd";
 import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
 import { ColleaguePresenceIndicator } from "@/components/social/ColleaguePresenceIndicator";
@@ -75,8 +75,9 @@ export async function generateMetadata({
 
     const imageToUse = venue.imageUrl || fallbackImage;
     const title = `${venue.name} | WorkSphere`;
-    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${venue.address ? ` ${venue.address}` : ""
-      }`;
+    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${
+      venue.address ? ` ${venue.address}` : ""
+    }`;
 
     return {
       title,
@@ -147,7 +148,7 @@ export default async function VenuePage({ params }: PageProps) {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 flex flex-col font-sans">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
       <RecentlyViewedTracker
         venue={{

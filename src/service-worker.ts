@@ -15,13 +15,23 @@ import {
   ReplayOptions,
   ReplayResult,
 } from "./lib/offline/syncQueue";
+import {
+  MIGRATION_BROADCAST_CHANNEL,
+  openDatabaseWithMigration,
+  closeDatabaseConnections,
+  getMigrationDiagnostics,
+} from "./lib/offline/migrationCoordinator";
 
 export {
   SYNC_TAG,
   CHECKIN_STORE_NAME,
   CHECKIN_SYNC_BROADCAST_CHANNEL,
+  MIGRATION_BROADCAST_CHANNEL,
   replayCheckinQueue,
   openCheckinDB,
+  openDatabaseWithMigration,
+  closeDatabaseConnections,
+  getMigrationDiagnostics,
 };
 export type { ReplayOptions, ReplayResult };
 

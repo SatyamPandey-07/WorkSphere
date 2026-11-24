@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-145%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-147%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-145-active-rockstars"><b>👥 Contributors (145)</b></a> •
+  <a href="#-contributors-147-active-rockstars"><b>👥 Contributors (147)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (145 Active Rockstars)
+### 🚀 Contributors (147 Active Rockstars)
 
-A massive thank you to all **145 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **147 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -996,6 +996,20 @@ A massive thank you to all **145 brilliant contributors and bots** building Work
         <sub><b>Aviral02git</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Pruthviraj-patil20">
+        <img src="https://avatars.githubusercontent.com/u/260050545?v=4" width="55px;" height="55px;" alt="Pruthviraj-patil20" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Pruthviraj-patil20</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/priyanshiy1312-ui">
+        <img src="https://avatars.githubusercontent.com/u/285353667?v=4" width="55px;" height="55px;" alt="priyanshiy1312-ui" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>priyanshiy1312-ui</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1035,6 +1049,24 @@ A massive thank you to all **145 brilliant contributors and bots** building Work
 
 ### ⚡ Cutting-Edge Platform & Telemetry Innovations (NEW)
 
+- **Dynamic Isochrone Walking Polygons**: Real-time 5/10/15-minute walking distance isochrone boundaries with PostGIS spatial integration and travel-time contour rendering (`src/lib/routing/ecoRoutingEngine.ts`).
+- **Real-Time Timezone-Aware Venue Opening Status**: Live opening status badges calculating venue open, closed, and closing-soon states according to the venue's local timezone rules (`src/lib/venues/hours.ts`).
+- **WiFi Ping Jitter & Stability Metrics**: Real-time packet variance and stability gauge tracking network jitter and latency spikes on nomadic connections (`src/lib/wifi/jitter.ts`).
+- **Collaborative Image Upload Preview Modal**: Pre-upload thumbnail inspection dialog with rotation, aspect-ratio cropping, and byte size estimation for remote workspaces (`src/components/chat/ImageUploadPreviewModal.tsx`).
+- **Hexagonal Venue Spatial Clustering**: High-performance H3/hexagonal geospatial clustering for dense urban workspace maps (`src/lib/geospatial/spatialVenueClusterer.ts`).
+- **High-Contrast Accessibility Mode**: System-wide WCAG AAA high-contrast theme toggle accessible via footer controls and settings dashboard with dynamic CSS variable overrides (`src/components/HighContrastToggle.tsx`).
+- **Lightning WiFi Filter & Gigabit Verified Badge**: Dynamic 1Gbps+ network performance filter and verified throughput badge indicator for hyper-fast nomadic work hubs (`src/components/venues/VenueFilterBar.tsx`, `src/components/VenueCard.tsx`).
+- **Multi-Layer Web Audio Soundscape Mixer**: Immersive ambient sound generator with smooth crossfading across binaural brown noise, cafe chatter, and rain layers (`src/components/audio/AmbientSoundGenerator.tsx`).
+- **Administrative Audit Log Streaming Exporter**: Real-time streaming CSV and PDF audit export engine for workspace administrators with chunked memory buffering (`src/app/api/admin/venues/[venueId]/export/route.ts`, `src/lib/export/auditExporter.ts`).
+- **Schnorr Threshold Signature Aggregation**: Cryptographic multi-party signing module validating non-malleable secp256k1 curve points and preventing nonce collisions (`src/core/crypto/SchnorrThresholdAggregator.ts`).
+- **BFT Consensus View-Change Quorum Verification**: Byzantine Fault Tolerant consensus engine verifying proposal sequence numbers, parent hashes, and certified view-change quorums across nomadic edge nodes (`src/core/consensus/BFTConsensusCoordinator.ts`).
+
+- **Client-Side Core Web Vitals Reporter**: Real-time performance telemetry tracking CLS, INP, LCP, FCP, and TTFB directly reporting to `/api/telemetry/vitals` with configurable sampling rates and privacy consent guards (`src/lib/telemetry/webVitalsReporter.ts`, `src/components/analytics/WebVitalsReporter.tsx`).
+- **WebRTC TURN Relay Dynamic Bandwidth Throttling**: Automatic throughput regulation and dynamic relay bandwidth throttling across peer-to-peer data channels to mitigate packet loss on constrained mobile uplinks (`src/lib/realtime/webrtc/meshConnection.ts`).
+- **Multi-Threaded Circom Witness Worker Pool**: Scalable zero-knowledge witness generation worker pool executing SnarkJS Groth16 arithmetic constraints off the main UI thread with memory recycling and IndexedDB proof caching (`src/workers/zkpWorker.ts`, `src/features/zkp/studentDiscountVerifier.ts`).
+- **Nomad Attendance & Co-Working Verification Certificates**: Cryptographically verifiable attendance passports with custom PDF layout rendering, QR verification codes, and SHA-256 integrity checks (`src/lib/pdf/generateCertificate.ts`, `src/app/api/certificates/verify/route.ts`).
+- **Offline Booking Drafts & Reservation Synchronization**: IndexedDB draft caching enabling remote workers to compose workspace reservations while offline and automatically reconcile upon reconnecting (`src/worker/bookingSync/DraftStore.ts`, `src/worker/bookingSync/SyncQueue.ts`).
+- **Bounded WebGL Texture Cache & LRU Eviction**: High-efficiency WebGL texture memory caching preventing GPU leaks during 3D venue layout and interactive floorplan navigation (`src/lib/webgl/textureCache.ts`).
 - **Client-Side Web Worker ZKP Student Verification**: Offloads zero-knowledge SnarkJS / Groth16 proof synthesis to a dedicated background Web Worker, ensuring zero main-thread UI jank during verification (`src/workers/zkpProofWorker.ts`, `src/features/zkp/studentDiscountVerifier.ts`).
 - **P2P Battery-Aware Dynamic Bandwidth Throttling**: Monitors Battery Status API to intelligently throttle WebRTC mesh data rates and CRDT delta synchronization frequency during low-battery and unplugged states (`src/hooks/useBatteryOptimization.ts`, `src/core/p2p/MeshBandwidthThrottler.ts`).
 - **WebRTC Network Quality & Jitter Telemetry**: Real-time round-trip latency, jitter variance, and packet loss telemetry across multi-peer WebRTC DataChannels (`src/hooks/useMeshDataChannels.ts`, `src/lib/realtime/webrtc/telemetry.ts`).

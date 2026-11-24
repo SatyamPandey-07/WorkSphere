@@ -1,6 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  downloadAcousticsHistoryCSV,
+  formatAcousticsHistoryFilename,
+  calculateQuietScore,
+  type AcousticsHistoryRow,
+} from "@/lib/export/acousticsHistoryExport";
 
 export interface FrequencyBandEnergy {
   low: number;
@@ -11,6 +17,9 @@ export interface FrequencyBandEnergy {
 export interface NoiseSpectrogramProps {
   className?: string;
   fftSize?: number;
+  venueId?: string;
+  historicalReadings?: AcousticsHistoryRow[];
+  onExportCsv?: () => void;
 }
 
 /**
@@ -42,7 +51,7 @@ export function calculateFrequencyBandEnergy(
     if (frequencyHz < 300) {
       totals.low += magnitude;
       counts.low += 1;
-    } else if (frequencyHz <= 3000) {
+    } else if (frequencyHz < 3000) {
       totals.mid += magnitude;
       counts.mid += 1;
     } else {
@@ -72,6 +81,9 @@ const BANDS: Array<{
 export function NoiseSpectrogram({
   className = "",
   fftSize = 2048,
+  venueId,
+  historicalReadings,
+  onExportCsv,
 }: NoiseSpectrogramProps) {
   const [isActive, setIsActive] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
@@ -85,6 +97,56 @@ export function NoiseSpectrogram({
   const [isFilterEnabled, setIsFilterEnabled] = useState(false);
   const [notchFrequency, setNotchFrequency] = useState<60 | 1000>(60);
   const [isStarting, setIsStarting] = useState(false);
+
+  const handleExportCsv = useCallback(async () => {
+    if (onExportCsv) {
+      onExportCsv();
+      return;
+    }
+
+    if (historicalReadings && historicalReadings.length > 0) {
+      downloadAcousticsHistoryCSV(venueId || "current", historicalReadings);
+      return;
+    }
+
+    if (venueId) {
+      try {
+        const res = await fetch(
+          `/api/venues/${venueId}/acoustics/history?format=csv`
+        );
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = formatAcousticsHistoryFilename(venueId);
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          return;
+        }
+      } catch {
+        // Fall back to client-side generation
+      }
+    }
+
+    const fallbackRows: AcousticsHistoryRow[] = [
+      {
+        timestamp: new Date().toISOString(),
+        average_db: Math.round(energy.mid * 0.8 + 35),
+        peak_db: Math.round(energy.high * 0.9 + 45),
+        dominant_frequency_hz:
+          energy.high > energy.mid
+            ? 3500
+            : energy.mid > energy.low
+              ? 1000
+              : 250,
+        quiet_score: calculateQuietScore(Math.round(energy.mid * 0.8 + 35)),
+      },
+    ];
+    downloadAcousticsHistoryCSV(venueId || "current", fallbackRows);
+  }, [venueId, historicalReadings, onExportCsv, energy]);
 
   const streamRef = useRef<MediaStream | null>(null);
   const contextRef = useRef<AudioContext | null>(null);

@@ -18,6 +18,10 @@ const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
 const VENUE_PHOTO_CACHE_NAME = "worksphere-venue-photos-v1";
 const PREFETCH_CACHE_NAME = "worksphere-prefetch-v1";
+const CACHE_VERSION = "v2";
+const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
+const RUNTIME_PUBLIC_CACHE_NAME = `worksphere-runtime-public-${CACHE_VERSION}`;
+const PUBLIC_CACHEABLE_API_PREFIXES = ["/api/venues/public", "/api/health"];
 const OFFLINE_URL = "/offline";
 const AVAILABILITY_SYNC_TAG = "availability-sync";
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
@@ -162,9 +166,12 @@ self.addEventListener("activate", (event) => {
             .filter(
               (name) =>
                 name !== CACHE_NAME &&
+                name !== STATIC_CACHE_NAME &&
+                name !== RUNTIME_PUBLIC_CACHE_NAME &&
                 name !== IMAGE_CACHE_NAME &&
                 name !== MAP_TILE_CACHE_NAME &&
                 name !== VIDEO_CACHE_NAME &&
+                name !== VENUE_PHOTO_CACHE_NAME &&
                 name !== PREFETCH_CACHE_NAME &&
                 !name.endsWith("-installing"),
             )
@@ -188,31 +195,117 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Handle Cache-First for maps and images, Network-First for everything else
+/**
+ * Determines whether a request carries user-specific credentials or explicit
+ * non-cacheable directives and must bypass Service Worker runtime caches.
+ */
+function isAuthenticatedOrPrivateRequest(request, url) {
+  if (request.method !== "GET") {
+    return true;
+  }
+
+  // Protected user-scoped API routes must never be cached in shared browser storage
+  if (url.pathname.startsWith("/api/")) {
+    const isAllowlistedPublic = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
+      url.pathname.startsWith(prefix),
+    );
+    if (!isAllowlistedPublic) {
+      return true;
+    }
+  }
+
+  // Check request headers for credentials or explicit no-store / no-cache directives
+  const authHeader = request.headers.get("Authorization");
+  const cookieHeader = request.headers.get("Cookie");
+  const cacheControl = (
+    request.headers.get("Cache-Control") || ""
+  ).toLowerCase();
+
+  if (authHeader || cookieHeader) {
+    return true;
+  }
+
+  if (cacheControl.includes("no-store") || cacheControl.includes("private")) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks response headers to ensure personalized or no-store responses are never persisted.
+ */
+function isCacheablePublicResponse(response) {
+  if (!response || !response.ok || response.status !== 200) {
+    return false;
+  }
+
+  // Opaque responses (status 0) or credentialed Vary headers must not be cached
+  if (response.type === "opaque" || response.type === "opaqueredirect") {
+    return false;
+  }
+
+  const cacheControl = (
+    response.headers.get("Cache-Control") || ""
+  ).toLowerCase();
+  if (
+    cacheControl.includes("no-store") ||
+    cacheControl.includes("private") ||
+    cacheControl.includes("no-cache")
+  ) {
+    return false;
+  }
+
+  const vary = (response.headers.get("Vary") || "").toLowerCase();
+  if (vary.includes("cookie") || vary.includes("authorization")) {
+    return false;
+  }
+
+  return true;
+}
+
+// Single coordinated fetch listener
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  const { request } = event;
+  if (request.method !== "GET") {
     return;
   }
-  if (event.request.url.includes("/download")) {
+  if (request.url.includes("/download")) {
     return;
   }
 
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return;
+  }
+
+  // 1. Bypass Service Worker cache entirely for authenticated, cookie-bearing,
+  // Cache-Control: no-store/private, or non-allowlisted /api/* routes
+  if (isAuthenticatedOrPrivateRequest(request, url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // 2. Non-private requests: check prefetch cache first, then delegate to handleFetch
   event.respondWith(
     caches.open(PREFETCH_CACHE_NAME).then((prefetchCache) => {
-      return prefetchCache.match(event.request).then((prefetchedResponse) => {
+      return prefetchCache.match(request).then((prefetchedResponse) => {
         if (prefetchedResponse) {
           return prefetchedResponse;
         }
-        return handleFetch(event.request, event);
+        return handleFetch(request, event, url);
       });
     }),
   );
 });
 
-async function handleFetch(request, event) {
-  const isVenuesApi = request.url.includes("/api/venues");
-  const isReservationsApi = request.url.includes(
-    "/api/reservations/availability",
+async function handleFetch(request, event, url) {
+  const reqUrl = url || new URL(request.url);
+  const pathname = reqUrl.pathname;
+  const isAllowlistedPublicApi = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
+    pathname.startsWith(prefix),
   );
   const isMapTile =
     request.url.includes("tile.openstreetmap.org") ||
@@ -222,27 +315,19 @@ async function handleFetch(request, event) {
     request.url.includes("res.cloudinary.com") ||
     request.url.includes("images.pexels.com");
 
-  if (isVenuesApi || isReservationsApi) {
+  if (isAllowlistedPublicApi) {
     try {
       const response = await fetch(request);
-      if (response.ok) {
-        const cache = await caches.open(CACHE_NAME);
+      if (response.ok && isCacheablePublicResponse(response)) {
+        const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
         cache.put(request, response.clone());
       }
       return response;
     } catch {
-      const cached = await caches.match(request);
+      const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
+      const cached = await cache.match(request);
       if (cached) return cached;
-      if (isReservationsApi) {
-        return new Response(
-          JSON.stringify({ seats: [], offline: true, cached: true }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-      if (isVenuesApi) {
+      if (pathname.startsWith("/api/venues/public")) {
         return new Response(
           JSON.stringify({ venues: [], offline: true, cached: true }),
           {
@@ -353,10 +438,15 @@ async function handleFetch(request, event) {
       return new Response("Asset Offline", { status: 503 });
     }
   } else {
-    // Existing Network-First logic for local assets
+    // Existing Network-First logic for local assets and page navigations
     try {
       const response = await fetch(request);
-      if (response.ok && request.url.startsWith("http")) {
+      if (
+        response.ok &&
+        request.url.startsWith("http") &&
+        !pathname.startsWith("/api/") &&
+        isCacheablePublicResponse(response)
+      ) {
         const cache = await caches.open(CACHE_NAME);
         cache.put(request, response.clone());
       }
@@ -401,10 +491,10 @@ self.addEventListener("sync", (event) => {
     event.tag === "offline-mutation-sync"
   ) {
     event.waitUntil(syncOfflineMutations());
+  }
 
   if (event.tag === "nomad-checkin-sync") {
     event.waitUntil(syncNomadCheckins());
-
   }
 });
 
@@ -1074,7 +1164,6 @@ async function syncReceiptExports() {
   }
 }
 
-
 // Background Sync: process queued offline mutations with Decorrelated Jitter backoff (Issue #9618)
 let isSyncingOfflineMutations = false;
 let sw5xxDecorrelatedDelay = 1000;
@@ -1093,28 +1182,59 @@ function calculateSWDecorrelatedJitter(prevDelay) {
   return Math.round(effectiveBase + (ceiling - effectiveBase) * Math.random());
 }
 
+function ensureSwMutationsSchema(db, tx) {
+  let store = null;
+  if (!db.objectStoreNames.contains("offline_mutations")) {
+    store = db.createObjectStore("offline_mutations", { keyPath: "id" });
+  } else if (tx) {
+    try {
+      store = tx.objectStore("offline_mutations");
+    } catch {}
+  }
+  if (store) {
+    if (!store.indexNames.contains("status")) {
+      store.createIndex("status", "status", { unique: false });
+    }
+    if (!store.indexNames.contains("timestamp")) {
+      store.createIndex("timestamp", "timestamp", { unique: false });
+    }
+  }
+}
+
 async function getOfflineMutationsFromDB() {
   if (typeof indexedDB === "undefined") return [];
   return new Promise((resolve) => {
     try {
-      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 1);
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 2);
       req.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains("offline_mutations")) {
-          db.createObjectStore("offline_mutations", { keyPath: "id" });
-        }
+        ensureSwMutationsSchema(e.target.result, e.target.transaction);
+      };
+      req.onblocked = () => {
+        console.warn("[SW] WorkSphereOfflineMutationsDB upgrade blocked");
       };
       req.onsuccess = () => {
         const db = req.result;
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+        };
         if (!db.objectStoreNames.contains("offline_mutations")) {
+          db.close();
           resolve([]);
           return;
         }
         const tx = db.transaction("offline_mutations", "readonly");
         const store = tx.objectStore("offline_mutations");
         const getReq = store.getAll();
-        getReq.onsuccess = () => resolve(getReq.result || []);
-        getReq.onerror = () => resolve([]);
+        getReq.onsuccess = () => {
+          db.close();
+          resolve(getReq.result || []);
+        };
+        getReq.onerror = () => {
+          db.close();
+          resolve([]);
+        };
       };
       req.onerror = () => resolve([]);
     } catch {
@@ -1127,17 +1247,32 @@ async function removeOfflineMutationFromDB(id) {
   if (typeof indexedDB === "undefined") return;
   return new Promise((resolve) => {
     try {
-      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 1);
+      const req = indexedDB.open("WorkSphereOfflineMutationsDB", 2);
+      req.onupgradeneeded = (e) => {
+        ensureSwMutationsSchema(e.target.result, e.target.transaction);
+      };
       req.onsuccess = () => {
         const db = req.result;
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+        };
         if (!db.objectStoreNames.contains("offline_mutations")) {
+          db.close();
           resolve();
           return;
         }
         const tx = db.transaction("offline_mutations", "readwrite");
         tx.objectStore("offline_mutations").delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          resolve();
+        };
       };
       req.onerror = () => resolve();
     } catch {
@@ -1271,6 +1406,8 @@ async function syncOfflineMutations() {
     console.error("[SW] Offline mutations sync encountered error:", error);
   } finally {
     isSyncingOfflineMutations = false;
+  }
+}
 
 // Background Sync for offline desk check-ins (Issue #7427)
 let isSyncingCheckins = false;
@@ -1301,6 +1438,8 @@ async function syncNomadCheckins() {
               "Idempotency-Key": item.idempotencyKey,
               "X-Client-Nonce": item.clientNonce,
               "X-Signed-Timestamp": item.signedTimestamp,
+              "X-Device-Id": item.deviceId || "device_default",
+              "X-Protocol-Version": String(item.protocolVersion || 2),
             },
             body: JSON.stringify({
               seatId: item.seatId,
@@ -1310,6 +1449,9 @@ async function syncNomadCheckins() {
               clientNonce: item.clientNonce,
               signedTimestamp: item.signedTimestamp,
               idempotencyKey: item.idempotencyKey,
+              deviceId: item.deviceId || "device_default",
+              protocolVersion: item.protocolVersion || 2,
+              signature: item.signature || item.signedTimestamp,
             }),
           });
 
@@ -1317,7 +1459,12 @@ async function syncNomadCheckins() {
             const delTx = db.transaction("pendingCheckins", "readwrite");
             delTx.objectStore("pendingCheckins").delete(item.id);
             synced.push(item);
-          } else if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+          } else if (
+            response.status >= 400 &&
+            response.status < 500 &&
+            response.status !== 408 &&
+            response.status !== 429
+          ) {
             const delTx = db.transaction("pendingCheckins", "readwrite");
             delTx.objectStore("pendingCheckins").delete(item.id);
             failed.push(item);
@@ -1348,7 +1495,6 @@ async function syncNomadCheckins() {
     console.error("[SW] syncNomadCheckins error:", err);
   } finally {
     isSyncingCheckins = false;
-
   }
 }
 
@@ -1572,16 +1718,86 @@ async function syncFavoriteVenuesOccupancy() {
   }
 }
 
-// IndexedDB helpers
+// IndexedDB helpers (synchronized with src/lib/offline/migrations/migrationRegistry.ts)
 let swDb = null;
+let swMigrationUpgradeInProgress = false;
+let swMigrationChannel = null;
+
+function initSwMigrationCoordination() {
+  if (typeof BroadcastChannel === "undefined" || swMigrationChannel) return;
+  try {
+    swMigrationChannel = new BroadcastChannel(
+      "worksphere:idb-migration-coordination",
+    );
+    swMigrationChannel.onmessage = (event) => {
+      const msg = event.data;
+      if (!msg || msg.dbName !== "worksphere-offline") return;
+      if (msg.type === "UPGRADE_REQUESTED" || msg.type === "UPGRADE_BLOCKED") {
+        swMigrationUpgradeInProgress = true;
+        if (swDb) {
+          try {
+            swDb.close();
+          } catch {}
+          swDb = null;
+        }
+        try {
+          swMigrationChannel.postMessage({
+            type: "CONNECTION_CLOSED",
+            dbName: "worksphere-offline",
+            targetVersion: msg.targetVersion,
+            senderId: "sw",
+            timestamp: Date.now(),
+          });
+        } catch {}
+      } else if (
+        msg.type === "UPGRADE_COMPLETED" ||
+        msg.type === "UPGRADE_FAILED"
+      ) {
+        swMigrationUpgradeInProgress = false;
+      }
+    };
+  } catch {
+    swMigrationChannel = null;
+  }
+}
+
+initSwMigrationCoordination();
+
 function openIndexedDB() {
+  if (swMigrationUpgradeInProgress && swDb) {
+    try {
+      swDb.close();
+    } catch {}
+    swDb = null;
+  }
   if (swDb) return Promise.resolve(swDb);
+
+  const ensureStore = (db, tx, name, keyOpts, indexes) => {
+    let store = null;
+    if (!db.objectStoreNames.contains(name)) {
+      store = db.createObjectStore(name, keyOpts);
+    } else if (tx) {
+      try {
+        store = tx.objectStore(name);
+      } catch {}
+    }
+    if (store && Array.isArray(indexes)) {
+      for (const idx of indexes) {
+        if (!store.indexNames.contains(idx.name)) {
+          store.createIndex(idx.name, idx.keyPath, {
+            unique: Boolean(idx.unique),
+          });
+        }
+      }
+    }
+  };
+
   return new Promise((resolve, reject) => {
     try {
       const request = indexedDB.open("worksphere-offline", 9);
 
       request.onblocked = () => {
-        console.warn("[SW] IndexedDB upgrade blocked");
+        console.warn("[SW] IndexedDB upgrade blocked; yielding local handle");
         if (swDb) {
           try {
             swDb.close();
@@ -1595,7 +1811,9 @@ function openIndexedDB() {
       request.onsuccess = () => {
         swDb = request.result;
         swDb.onversionchange = () => {
-          swDb.close();
+          try {
+            swDb.close();
+          } catch {}
           swDb = null;
         };
         resolve(swDb);
@@ -1603,135 +1821,146 @@ function openIndexedDB() {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
+        const tx = event.target.transaction;
+        const oldVersion = event.oldVersion || 0;
+        const newVersion = event.newVersion || 9;
 
-        // Venues store
-        if (!db.objectStoreNames.contains("venues")) {
-          const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
-          venuesStore.createIndex("type", "type", { unique: false });
-          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        if (tx) {
+          tx.onabort = (e) => {
+            console.warn("[SW] Upgrade transaction aborted", tx.error || e);
+          };
+          tx.onerror = (e) => {
+            console.warn("[SW] Upgrade transaction error", tx.error || e);
+          };
         }
 
-        // Favorites store
-        if (!db.objectStoreNames.contains("favorites")) {
-          const favoritesStore = db.createObjectStore("favorites", {
-            keyPath: "id",
-          });
-          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-        }
+        db.onversionchange = () => {
+          try {
+            db.close();
+          } catch {}
+          if (swDb === db) swDb = null;
+        };
 
-        // Search history store
-        if (!db.objectStoreNames.contains("searches")) {
-          const searchesStore = db.createObjectStore("searches", {
-            keyPath: "query",
-          });
-          searchesStore.createIndex("timestamp", "timestamp", {
-            unique: false,
-          });
-        }
+        const steps = [
+          {
+            version: 1,
+            run: () => {
+              ensureStore(db, tx, "venues", { keyPath: "id" }, [
+                { name: "type", keyPath: "type" },
+                { name: "savedAt", keyPath: "savedAt" },
+              ]);
+              ensureStore(db, tx, "favorites", { keyPath: "id" }, [
+                { name: "savedAt", keyPath: "savedAt" },
+              ]);
+              ensureStore(db, tx, "searches", { keyPath: "query" }, [
+                { name: "timestamp", keyPath: "timestamp" },
+              ]);
+              ensureStore(db, tx, "pendingActions", {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            },
+          },
+          {
+            version: 2,
+            run: () => {
+              ensureStore(db, tx, "imageCacheLRU", { keyPath: "url" }, [
+                { name: "lastAccessed", keyPath: "lastAccessed" },
+              ]);
+            },
+          },
+          {
+            version: 3,
+            run: () => {
+              ensureStore(db, tx, "receiptExports", { keyPath: "bookingId" }, [
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+            },
+          },
+          {
+            version: 4,
+            run: () => {
+              if (db.objectStoreNames.contains("pending-actions")) {
+                db.deleteObjectStore("pending-actions");
+              }
+              ensureStore(db, tx, "pendingFavorites", {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            },
+          },
+          {
+            version: 5,
+            run: () => {
+              ensureStore(
+                db,
+                tx,
+                "availabilityDeltas",
+                { keyPath: "venueId" },
+                [{ name: "timestamp", keyPath: "timestamp" }],
+              );
+            },
+          },
+          {
+            version: 6,
+            run: () => {
+              ensureStore(db, tx, "recentlyViewedVenues", { keyPath: "id" }, [
+                { name: "viewedAt", keyPath: "viewedAt" },
+              ]);
+            },
+          },
+          {
+            version: 7,
+            run: () => {
+              ensureStore(db, tx, "pendingReviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+              ensureStore(db, tx, "preference_rankings", { keyPath: "id" });
+              ensureStore(db, tx, "queued_reviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+              ensureStore(db, tx, "unsyncedReviewDrafts", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "review.venueId" },
+                { name: "quarantinedAt", keyPath: "quarantinedAt" },
+              ]);
+            },
+          },
+          {
+            version: 8,
+            run: () => {
+              ensureStore(db, tx, "pendingReviews", { keyPath: "id" }, [
+                { name: "venueId", keyPath: "venueId" },
+                { name: "status", keyPath: "status" },
+                { name: "createdAt", keyPath: "createdAt" },
+              ]);
+            },
+          },
+          {
+            version: 9,
+            run: () => {
+              ensureStore(db, tx, "pendingCheckins", { keyPath: "id" }, [
+                { name: "seatId", keyPath: "seatId" },
+                {
+                  name: "idempotencyKey",
+                  keyPath: "idempotencyKey",
+                  unique: true,
+                },
+                { name: "status", keyPath: "status" },
+                { name: "timestamp", keyPath: "timestamp" },
+              ]);
+            },
+          },
+        ];
 
-        // Migration
-        if (db.objectStoreNames.contains("pending-actions")) {
-          db.deleteObjectStore("pending-actions");
-        }
-
-        // Pending actions store (unified name)
-        if (!db.objectStoreNames.contains("pendingActions")) {
-          db.createObjectStore("pendingActions", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-
-        // Image Cache LRU store
-        if (!db.objectStoreNames.contains("imageCacheLRU")) {
-          const lruStore = db.createObjectStore("imageCacheLRU", {
-            keyPath: "url",
-          });
-          lruStore.createIndex("lastAccessed", "lastAccessed", {
-            unique: false,
-          });
-        }
-
-        // Receipt exports store for offline background sync (Issue #1069)
-        if (!db.objectStoreNames.contains("receiptExports")) {
-          const receiptStore = db.createObjectStore("receiptExports", {
-            keyPath: "bookingId",
-          });
-          receiptStore.createIndex("status", "status", { unique: false });
-          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-
-        // Pending favorites store
-        if (!db.objectStoreNames.contains("pendingFavorites")) {
-          db.createObjectStore("pendingFavorites", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-
-        // Availability deltas store for periodic background sync (Issue #1126)
-        if (!db.objectStoreNames.contains("availabilityDeltas")) {
-          const deltaStore = db.createObjectStore("availabilityDeltas", {
-            keyPath: "venueId",
-          });
-          deltaStore.createIndex("timestamp", "timestamp", { unique: false });
-        }
-
-        // Recently viewed venues store (Issue #3512)
-        if (!db.objectStoreNames.contains("recentlyViewedVenues")) {
-          const recentStore = db.createObjectStore("recentlyViewedVenues", {
-            keyPath: "id",
-          });
-          recentStore.createIndex("viewedAt", "viewedAt", { unique: false });
-        }
-
-        // Dedicated offline reviews store (Issue #3366)
-        if (!db.objectStoreNames.contains("pendingReviews")) {
-          const reviewStore = db.createObjectStore("pendingReviews", {
-            keyPath: "id",
-          });
-          reviewStore.createIndex("venueId", "venueId", { unique: false });
-          reviewStore.createIndex("status", "status", { unique: false });
-          reviewStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-
-        // Preference rankings store (Issue #4102)
-        if (!db.objectStoreNames.contains("preference_rankings")) {
-          db.createObjectStore("preference_rankings", { keyPath: "id" });
-        }
-
-        // Queued reviews store (Issue #3469)
-        if (!db.objectStoreNames.contains("queued_reviews")) {
-          const queuedStore = db.createObjectStore("queued_reviews", {
-            keyPath: "id",
-          });
-          queuedStore.createIndex("venueId", "venueId", { unique: false });
-          queuedStore.createIndex("status", "status", { unique: false });
-          queuedStore.createIndex("createdAt", "createdAt", { unique: false });
-        }
-
-        // Unsynced review drafts store (Issue #3469)
-        if (!db.objectStoreNames.contains("unsyncedReviewDrafts")) {
-          const draftsStore = db.createObjectStore("unsyncedReviewDrafts", {
-            keyPath: "id",
-          });
-          draftsStore.createIndex("venueId", "review.venueId", {
-            unique: false,
-          });
-          draftsStore.createIndex("quarantinedAt", "quarantinedAt", {
-            unique: false,
-          });
-        }
-
-        // Pending check-ins for offline background sync (Issue #7427)
-        if (!db.objectStoreNames.contains("pendingCheckins")) {
-          const checkinStore = db.createObjectStore("pendingCheckins", {
-            keyPath: "id",
-          });
-          checkinStore.createIndex("seatId", "seatId", { unique: false });
-          checkinStore.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
-          checkinStore.createIndex("status", "status", { unique: false });
-          checkinStore.createIndex("timestamp", "timestamp", { unique: false });
+        for (const step of steps) {
+          if (step.version > oldVersion && step.version <= newVersion) {
+            step.run();
+          }
         }
       };
     } catch (err) {
@@ -1899,84 +2128,6 @@ self.addEventListener("push", (event) => {
   }
 });
 
-const CACHE_VERSION = "v2";
-const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
-const RUNTIME_PUBLIC_CACHE_NAME = `worksphere-runtime-public-${CACHE_VERSION}`;
-
-const APP_SHELL_ASSETS = ["/", "/manifest.json"];
-
-// Strictly allowlist unauthenticated public endpoints safe for stale-while-revalidate
-const PUBLIC_CACHEABLE_API_PREFIXES = ["/api/venues/public", "/api/health"];
-
-/**
- * Determines whether a request carries user-specific credentials or explicit
- * non-cacheable directives and must bypass Service Worker runtime caches.
- */
-function isAuthenticatedOrPrivateRequest(request, url) {
-  if (request.method !== "GET") {
-    return true;
-  }
-
-  // Protected user-scoped API routes must never be cached in shared browser storage
-  if (url.pathname.startsWith("/api/")) {
-    const isAllowlistedPublic = PUBLIC_CACHEABLE_API_PREFIXES.some((prefix) =>
-      url.pathname.startsWith(prefix),
-    );
-    if (!isAllowlistedPublic) {
-      return true;
-    }
-  }
-
-  // Check request headers for credentials or explicit no-store / no-cache directives
-  const authHeader = request.headers.get("Authorization");
-  const cookieHeader = request.headers.get("Cookie");
-  const cacheControl = (
-    request.headers.get("Cache-Control") || ""
-  ).toLowerCase();
-
-  if (authHeader || cookieHeader) {
-    return true;
-  }
-
-  if (cacheControl.includes("no-store") || cacheControl.includes("private")) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Checks response headers to ensure personalized or no-store responses are never persisted.
- */
-function isCacheablePublicResponse(response) {
-  if (!response || !response.ok || response.status !== 200) {
-    return false;
-  }
-
-  // Opaque responses (status 0) or credentialed Vary headers must not be cached
-  if (response.type === "opaque" || response.type === "opaqueredirect") {
-    return false;
-  }
-
-  const cacheControl = (
-    response.headers.get("Cache-Control") || ""
-  ).toLowerCase();
-  if (
-    cacheControl.includes("no-store") ||
-    cacheControl.includes("private") ||
-    cacheControl.includes("no-cache")
-  ) {
-    return false;
-  }
-
-  const vary = (response.headers.get("Vary") || "").toLowerCase();
-  if (vary.includes("cookie") || vary.includes("authorization")) {
-    return false;
-  }
-
-  return true;
-}
-
 /**
  * Purges all dynamic runtime caches (and optionally static caches) to guarantee
  * zero cross-user data leakage on shared coworking terminals.
@@ -1989,32 +2140,6 @@ async function purgeDynamicRuntimeCaches() {
 
   await Promise.all(deletions);
 }
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(STATIC_CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL_ASSETS)),
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    (async () => {
-      const cacheKeys = await caches.keys();
-      await Promise.all(
-        cacheKeys
-          .filter(
-            (key) =>
-              key !== STATIC_CACHE_NAME && key !== RUNTIME_PUBLIC_CACHE_NAME,
-          )
-          .map((key) => caches.delete(key)),
-      );
-      await self.clients.claim();
-    })(),
-  );
-});
 
 self.addEventListener("message", (event) => {
   const payload = event.data;
@@ -2034,52 +2159,12 @@ self.addEventListener("message", (event) => {
   }
 });
 
-self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  // Only intercept same-origin HTTP(S) requests
-  if (url.origin !== self.location.origin) {
-    return;
-  }
-
-  // Bypass Service Worker cache entirely for authenticated, cookie-bearing,
-  // Cache-Control: no-store, or non-allowlisted /api/* routes
-  if (isAuthenticatedOrPrivateRequest(request, url)) {
-    event.respondWith(fetch(request));
-    return;
-  }
-
-  // Stale-while-revalidate for verified unauthenticated static & public endpoints only
-  event.respondWith(
-    (async () => {
-      const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
-      const cachedResponse = await cache.match(request);
-
-      const networkFetchPromise = fetch(request)
-        .then((networkResponse) => {
-          if (isCacheablePublicResponse(networkResponse)) {
-            cache.put(request, networkResponse.clone());
-          }
-          return networkResponse;
-        })
-        .catch((error) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          throw error;
-        });
-
-      return cachedResponse || networkFetchPromise;
-    })(),
-  );
-});
-
 // Export helpers when imported in Node/Jest unit test environments
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     STATIC_CACHE_NAME,
     RUNTIME_PUBLIC_CACHE_NAME,
+    PUBLIC_CACHEABLE_API_PREFIXES,
     isAuthenticatedOrPrivateRequest,
     isCacheablePublicResponse,
     purgeDynamicRuntimeCaches,

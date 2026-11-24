@@ -267,22 +267,72 @@ export async function getUserWaitlistEntries(
     orderBy: { createdAt: "desc" },
   });
 
-  return Promise.all(
-    entries.map(async (entry) => {
-      const queuePosition = await calculateQueuePosition(
-        entry.venueId,
-        entry.date,
-        entry.time,
-        entry.createdAt,
-      );
-      const totalInQueue = await countActiveInQueue(
-        entry.venueId,
-        entry.date,
-        entry.time,
-      );
-      return formatWaitlistRecord(entry, queuePosition, totalInQueue);
-    }),
-  );
+  if (entries.length === 0) {
+    return [];
+  }
+
+  // Extract distinct queue definitions (venueId, date, time) to eliminate N+1 queries
+  const queueKey = (vId: string, d: string, t: string) => `${vId}|${d}|${t}`;
+  const distinctQueueMap = new Map<
+    string,
+    { venueId: string; date: string; time: string }
+  >();
+
+  for (const entry of entries) {
+    const key = queueKey(entry.venueId, entry.date, entry.time);
+    if (!distinctQueueMap.has(key)) {
+      distinctQueueMap.set(key, {
+        venueId: entry.venueId,
+        date: entry.date,
+        time: entry.time,
+      });
+    }
+  }
+
+  const queueConditions = Array.from(distinctQueueMap.values()).map((q) => ({
+    venueId: q.venueId,
+    date: q.date,
+    time: q.time,
+    status: { in: ["ACTIVE", "NOTIFIED"] as const },
+  }));
+
+  // Batch query all active entries for these distinct queues in a single database round trip
+  const queueItems = await prisma.venueSeatWaitlist.findMany({
+    where: {
+      OR: queueConditions,
+    },
+    select: {
+      id: true,
+      venueId: true,
+      date: true,
+      time: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  // Group queue items by queueKey and sort by createdAt
+  const queueMap = new Map<string, Array<{ id: string; createdAt: Date }>>();
+  for (const item of queueItems) {
+    const key = queueKey(item.venueId, item.date, item.time);
+    const list = queueMap.get(key) ?? [];
+    list.push({ id: item.id, createdAt: item.createdAt });
+    queueMap.set(key, list);
+  }
+
+  return entries.map((entry) => {
+    const key = queueKey(entry.venueId, entry.date, entry.time);
+    const queue = queueMap.get(key) ?? [];
+    const totalInQueue = queue.length;
+
+    // Calculate queue position: count of active entries with createdAt < entry.createdAt + 1
+    const countBefore = queue.filter(
+      (item) => item.createdAt.getTime() < entry.createdAt.getTime(),
+    ).length;
+    const queuePosition = countBefore + 1;
+
+    return formatWaitlistRecord(entry, queuePosition, totalInQueue);
+  });
 }
 
 /**
@@ -293,19 +343,22 @@ export async function cancelWaitlistEntry(
   userId: string,
   venueId?: string,
 ): Promise<boolean> {
-  const entry = await prisma.venueSeatWaitlist.findFirst({
-    where: { id: waitlistId, userId },
-  });
+  const whereClause: Prisma.VenueSeatWaitlistWhereInput = {
+    id: waitlistId,
+    userId,
+    status: { in: ["ACTIVE", "NOTIFIED"] },
+  };
 
-  if (!entry) return false;
-  if (venueId && entry.venueId !== venueId) return false;
+  if (venueId) {
+    whereClause.venueId = venueId;
+  }
 
-  await prisma.venueSeatWaitlist.update({
-    where: { id: waitlistId },
+  const result = await prisma.venueSeatWaitlist.updateMany({
+    where: whereClause,
     data: { status: "CANCELLED" },
   });
 
-  return true;
+  return result.count > 0;
 }
 
 /**

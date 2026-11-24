@@ -62,8 +62,12 @@ export async function GET() {
 
 // POST /api/favorites - Add favorite
 export async function POST(req: NextRequest) {
+  let currentUserId: string | undefined;
+  let currentVenueId: string | undefined;
+
   try {
     const { userId } = await auth();
+    currentUserId = userId;
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -98,6 +102,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    currentVenueId = dbVenue.id;
+
     const favorite = await prisma.favorite.upsert({
       where: {
         userId_venueId: {
@@ -128,11 +134,32 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("POST /api/favorites error:", error);
 
-    // Handle unique constraint violation (already favorited)
+    // Handle concurrent favorite creation idempotently.
     if (error.code === "P2002") {
+      const existingFavorite =
+        currentUserId && currentVenueId
+          ? await prisma.favorite.findFirst({
+              where: {
+                userId: currentUserId,
+                venueId: currentVenueId,
+              },
+              include: {
+                venue: true,
+                tags: true,
+              },
+            })
+          : null;
+
+      if (!existingFavorite) {
+        return NextResponse.json(
+          { error: "Favorite could not be retrieved after conflict" },
+          { status: 500 },
+        );
+      }
+
       return NextResponse.json(
-        { error: "Already in favorites" },
-        { status: 409 },
+        { bookmarked: true, favorite: existingFavorite },
+        { status: 200 },
       );
     }
 

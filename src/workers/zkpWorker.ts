@@ -1,10 +1,34 @@
-﻿export interface ZkpProofRequest {
-  type: "GENERATE_PROOF" | "ABORT";
+﻿import {
+  prepareGigabitCircuitInputs,
+  evaluateMeasurementsPrecheck,
+  resolveGigabitArtifactPaths,
+} from "@/features/zkp/gigabitSpeedVerifier";
+
+async function getSnarkjs(): Promise<any> {
+  // Use require when running in CommonJS/Node/Jest environment without Worker global
+  if (typeof require !== "undefined") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return require("snarkjs");
+    } catch {}
+  }
+  return await import("snarkjs");
+}
+
+export interface ZkpProofRequest {
+  type: "GENERATE_PROOF" | "GENERATE_GIGABIT_PROOF" | "ABORT";
   requestId?: string;
   payload?: {
     studentId?: string;
     institutionDomain?: string;
     nonce?: string;
+    // Gigabit venue verification payload (#10114)
+    venueId?: string;
+    measurements?: Array<{ downloadMbps: number; packetLossPercent: number }>;
+    salt?: string | bigint;
+    circuitInputs?: Record<string, unknown>;
+    wasmPath?: string;
+    zkeyPath?: string;
   };
 }
 
@@ -24,6 +48,7 @@ export interface ZkpProofSuccessMessage {
     pi_c: string[];
     publicSignals: string[];
   };
+  durationMs?: number;
 }
 
 export interface ZkpProofErrorMessage {
@@ -45,6 +70,114 @@ let abortedRequestId: string | null = null;
 
 export function releaseZkpWasmMemory(): void {
   _activeWasmHeapRef = null;
+}
+
+export async function runGigabitWitnessAndProof(
+  requestId: string | undefined,
+  payload: ZkpProofRequest["payload"],
+  emit: (msg: ZkpWorkerOutgoingMessage) => void,
+): Promise<void> {
+  abortedRequestId = null;
+  _activeWasmHeapRef = new Uint8Array(1024);
+
+  if (abortedRequestId === requestId) {
+    releaseZkpWasmMemory();
+    return;
+  }
+
+  emit({
+    type: "PROOF_PROGRESS",
+    requestId,
+    stage: "witness",
+    progress: 25,
+  });
+
+  if (!payload || typeof payload !== "object") {
+    releaseZkpWasmMemory();
+    emit({
+      type: "PROOF_ERROR",
+      requestId,
+      error: "Missing Gigabit network verification payload",
+    });
+    return;
+  }
+
+  try {
+    let circuitInputs: Record<string, unknown>;
+
+    if (payload.circuitInputs && typeof payload.circuitInputs === "object") {
+      circuitInputs = payload.circuitInputs;
+    } else {
+      if (!payload.venueId || !Array.isArray(payload.measurements)) {
+        throw new Error(
+          "Invalid Gigabit payload: must provide venueId and measurements array",
+        );
+      }
+
+      const precheck = evaluateMeasurementsPrecheck(payload.measurements);
+      if (!precheck.valid) {
+        throw new Error(`Pre-circuit constraint check failed: ${precheck.reason}`);
+      }
+
+      const prepared = prepareGigabitCircuitInputs({
+        venueId: payload.venueId,
+        measurements: payload.measurements,
+        salt: payload.salt,
+      });
+      circuitInputs = prepared.circuitInputs as unknown as Record<string, unknown>;
+    }
+
+    if (abortedRequestId === requestId) {
+      releaseZkpWasmMemory();
+      return;
+    }
+
+    emit({
+      type: "PROOF_PROGRESS",
+      requestId,
+      stage: "proving",
+      progress: 60,
+    });
+
+    const startTime = Date.now();
+    const snarkjs = await getSnarkjs();
+    const { wasmPath, zkeyPath } = resolveGigabitArtifactPaths(payload.wasmPath, payload.zkeyPath);
+    const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+      circuitInputs,
+      wasmPath,
+      zkeyPath,
+    );
+
+    if (abortedRequestId === requestId) {
+      releaseZkpWasmMemory();
+      return;
+    }
+
+    releaseZkpWasmMemory();
+
+    emit({
+      type: "PROOF_COMPLETE",
+      requestId,
+      proof: {
+        pi_a: proof.pi_a,
+        pi_b: proof.pi_b,
+        pi_c: proof.pi_c,
+        publicSignals,
+      },
+      durationMs: Date.now() - startTime,
+    });
+  } catch (err) {
+    releaseZkpWasmMemory();
+    const message = err instanceof Error ? err.message : String(err);
+    emit({
+      type: "PROOF_ERROR",
+      requestId,
+      error: message,
+    });
+  } finally {
+    releaseZkpWasmMemory();
+    await terminateCurveBn128();
+  }
 }
 
 export function runGroth16WitnessAndProof(
@@ -131,6 +264,23 @@ export function handleZkpWorkerMessage(
         error: message,
       });
     }
+    return;
+  }
+
+  if (data.type === "GENERATE_GIGABIT_PROOF") {
+    runGigabitWitnessAndProof(data.requestId, data.payload, emit).catch((err) => {
+      releaseZkpWasmMemory();
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Gigabit witness generation failed unexpectedly";
+      emit({
+        type: "PROOF_ERROR",
+        requestId: data.requestId,
+        error: message,
+      });
+    });
+    return;
   }
 }
 

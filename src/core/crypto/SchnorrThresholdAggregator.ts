@@ -63,6 +63,7 @@ export interface AggregationSession {
   nonceBindingFactor?: bigint;
   finalSignature?: Buffer;
   createdAt: number;
+  threshold?: number;
 }
 
 export interface BatchVerificationResult {
@@ -74,19 +75,47 @@ export class SchnorrThresholdAggregator {
   private sessions: Map<string, AggregationSession> = new Map();
   private readonly sessionTtlMs: number;
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
+  private readonly defaultThreshold?: number;
+  private readonly inFlightSubmissions: Map<string, Set<string>> = new Map();
 
-  constructor(sessionTtlMs = 5 * 60_000, cleanupIntervalMs = 30_000) {
-    this.sessionTtlMs =
-      Number.isFinite(sessionTtlMs) && sessionTtlMs > 0
-        ? sessionTtlMs
-        : 5 * 60_000;
-    const interval =
-      Number.isFinite(cleanupIntervalMs) && cleanupIntervalMs > 0
-        ? cleanupIntervalMs
+  constructor(
+    sessionTtlMsOrConfig?:
+      | number
+      | {
+          sessionTtlMs?: number;
+          cleanupIntervalMs?: number;
+          threshold?: number;
+          totalParticipants?: number;
+        },
+    cleanupIntervalMs = 30_000,
+    defaultThreshold?: number,
+  ) {
+    let ttl = 5 * 60_000;
+    let interval = 30_000;
+    let thresh = defaultThreshold;
+
+    if (
+      typeof sessionTtlMsOrConfig === "object" &&
+      sessionTtlMsOrConfig !== null
+    ) {
+      ttl = sessionTtlMsOrConfig.sessionTtlMs ?? 5 * 60_000;
+      interval = sessionTtlMsOrConfig.cleanupIntervalMs ?? 30_000;
+      thresh = sessionTtlMsOrConfig.threshold;
+    } else if (typeof sessionTtlMsOrConfig === "number") {
+      ttl = sessionTtlMsOrConfig;
+      interval = cleanupIntervalMs;
+    }
+
+    this.sessionTtlMs = Number.isFinite(ttl) && ttl > 0 ? ttl : 5 * 60_000;
+    const resolvedInterval =
+      Number.isFinite(interval) && interval > 0
+        ? interval
         : Math.min(30_000, this.sessionTtlMs);
+    this.defaultThreshold = thresh;
+
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpiredSessions();
-    }, interval);
+    }, resolvedInterval);
     (this.cleanupTimer as unknown as { unref?: () => void }).unref?.();
   }
 
@@ -100,6 +129,7 @@ export class SchnorrThresholdAggregator {
     for (const [sessionId, session] of this.sessions) {
       if (now - session.createdAt >= this.sessionTtlMs) {
         this.sessions.delete(sessionId);
+        this.inFlightSubmissions.delete(sessionId);
         removed++;
       }
     }
@@ -110,6 +140,7 @@ export class SchnorrThresholdAggregator {
   public dispose(): void {
     clearInterval(this.cleanupTimer);
     this.sessions.clear();
+    this.inFlightSubmissions.clear();
   }
 
   // --- SECP256K1 Finite Field & Curve Arithmetic ---
@@ -366,8 +397,25 @@ export class SchnorrThresholdAggregator {
     sessionId: string,
     participants: ParticipantInfo[],
     message: Buffer,
+    threshold?: number,
   ): AggregationSession {
     this.cleanupExpiredSessions();
+    if (!participants || participants.length === 0) {
+      throw new Error("Cannot create session with empty participants list.");
+    }
+
+    const resolvedThreshold =
+      threshold ?? this.defaultThreshold ?? participants.length;
+    if (
+      !Number.isInteger(resolvedThreshold) ||
+      resolvedThreshold < 1 ||
+      resolvedThreshold > participants.length
+    ) {
+      throw new Error(
+        `Invalid threshold ${resolvedThreshold}: must be an integer between 1 and ${participants.length}.`,
+      );
+    }
+
     const { aggregatedPublicKey, coefficients } =
       SchnorrThresholdAggregator.aggregatePublicKeys(participants);
 
@@ -381,6 +429,7 @@ export class SchnorrThresholdAggregator {
       partialSignatures: new Map(),
       state: "INIT",
       createdAt: Date.now(),
+      threshold: resolvedThreshold,
     };
 
     this.sessions.set(sessionId, session);
@@ -428,6 +477,17 @@ export class SchnorrThresholdAggregator {
     if (!noncePair.R1 || !noncePair.R2) {
       throw new Error("Nonce pair must contain both R1 and R2 commitments.");
     }
+
+    SchnorrThresholdAggregator.validatePoint(
+      noncePair.R1,
+      `participant ${noncePair.participantId} nonce R1`,
+      false,
+    );
+    SchnorrThresholdAggregator.validatePoint(
+      noncePair.R2,
+      `participant ${noncePair.participantId} nonce R2`,
+      false,
+    );
 
     session.nonces.set(noncePair.participantId, noncePair);
 
@@ -676,7 +736,7 @@ export class SchnorrThresholdAggregator {
 
   public submitPartialSignature(
     sessionId: string,
-    participantId: string,
+    participantIdOrIndex: string | number,
     partialSig: bigint,
   ): void {
     this.cleanupExpiredSessions();
@@ -688,31 +748,101 @@ export class SchnorrThresholdAggregator {
       );
     }
 
+    // Resolve signer identifier (supports participant ID string or numeric signer index)
+    let resolvedParticipantId: string;
+    if (typeof participantIdOrIndex === "number") {
+      if (
+        Number.isInteger(participantIdOrIndex) &&
+        participantIdOrIndex >= 0 &&
+        participantIdOrIndex < session.participants.length
+      ) {
+        resolvedParticipantId = session.participants[participantIdOrIndex].id;
+      } else {
+        resolvedParticipantId = String(participantIdOrIndex);
+      }
+    } else {
+      const directMatch = session.participants.some(
+        (p) => p.id === participantIdOrIndex,
+      );
+      if (!directMatch) {
+        const numericIndex = parseInt(participantIdOrIndex, 10);
+        if (
+          !isNaN(numericIndex) &&
+          String(numericIndex) === participantIdOrIndex &&
+          numericIndex >= 0 &&
+          numericIndex < session.participants.length
+        ) {
+          resolvedParticipantId = session.participants[numericIndex].id;
+        } else {
+          resolvedParticipantId = participantIdOrIndex;
+        }
+      } else {
+        resolvedParticipantId = participantIdOrIndex;
+      }
+    }
+
+    const isParticipant = session.participants.some(
+      (p) => p.id === resolvedParticipantId,
+    );
+    if (!isParticipant) {
+      throw new Error(`Participant ${participantIdOrIndex} not in session.`);
+    }
+
     // One signer contributes exactly one share per session. Reject duplicates
     // before verification so a later payload can never overwrite an accepted
     // contribution in the keyed accumulator.
-    if (session.partialSignatures.has(participantId)) {
+    if (session.partialSignatures.has(resolvedParticipantId)) {
       throw new Error(
-        `Duplicate partial signature rejected from participant ${participantId}.`,
+        `Duplicate partial signature rejected from participant ${resolvedParticipantId}.`,
       );
     }
 
-    const isValid = this.verifyPartialSignature(
-      session,
-      participantId,
+    // Synchronize concurrent / in-flight submissions for the same participant
+    let sessionLocks = this.inFlightSubmissions.get(sessionId);
+    if (!sessionLocks) {
+      sessionLocks = new Set();
+      this.inFlightSubmissions.set(sessionId, sessionLocks);
+    }
+    if (sessionLocks.has(resolvedParticipantId)) {
+      throw new Error(
+        `Duplicate partial signature rejected from participant ${resolvedParticipantId}.`,
+      );
+    }
+    sessionLocks.add(resolvedParticipantId);
+
+    try {
+      const isValid = this.verifyPartialSignature(
+        session,
+        resolvedParticipantId,
+        partialSig,
+      );
+      if (!isValid) {
+        throw new Error(
+          `Malicious or invalid partial signature rejected from participant ${resolvedParticipantId}.`,
+        );
+      }
+
+      session.partialSignatures.set(resolvedParticipantId, partialSig);
+
+      const targetThreshold = session.threshold ?? session.participants.length;
+      if (session.partialSignatures.size >= targetThreshold) {
+        session.state = "PARTIALS_COLLECTED";
+      }
+    } finally {
+      sessionLocks.delete(resolvedParticipantId);
+    }
+  }
+
+  public async submitPartialSignatureAsync(
+    sessionId: string,
+    participantIdOrIndex: string | number,
+    partialSig: bigint,
+  ): Promise<void> {
+    return this.submitPartialSignature(
+      sessionId,
+      participantIdOrIndex,
       partialSig,
     );
-    if (!isValid) {
-      throw new Error(
-        `Malicious or invalid partial signature rejected from participant ${participantId}.`,
-      );
-    }
-
-    session.partialSignatures.set(participantId, partialSig);
-
-    if (session.partialSignatures.size === session.participants.length) {
-      session.state = "PARTIALS_COLLECTED";
-    }
   }
 
   /**

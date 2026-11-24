@@ -15,11 +15,13 @@ export interface SavedAmbientPreset {
   soundType: AmbientSoundType;
   volume: number;
   layerLevels: LayerMixLevels;
+  cutoffFrequency?: number;
 }
 
 export interface AmbientSoundGeneratorProps {
   initialSound?: AmbientSoundType;
   initialVolume?: number;
+  initialCutoff?: number;
   storageKey?: string;
   className?: string;
 }
@@ -27,6 +29,7 @@ export interface AmbientSoundGeneratorProps {
 const SOUND_OPTIONS: { id: AmbientSoundType; label: string; hint: string }[] = [
   { id: 'white', label: 'White Noise', hint: 'Balanced masking for chatter' },
   { id: 'pink', label: 'Pink Noise', hint: 'Softer deep-focus warmth' },
+  { id: 'brown', label: 'Brown Noise', hint: 'Deep low-frequency rumble' },
   { id: 'rain', label: 'Rain Sound', hint: 'Gentle steady rainfall' },
 ];
 
@@ -39,26 +42,31 @@ export function loadSavedAmbientPreset(
   const defaultLevels = normalizeLayerLevels(undefined, fallbackSound);
 
   if (typeof window === 'undefined') {
-    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
+    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels, cutoffFrequency: 12000 };
   }
 
   try {
     const raw = window.localStorage.getItem(storageKey);
     if (!raw) {
-      return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
+      return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels, cutoffFrequency: 12000 };
     }
     const parsed = JSON.parse(raw) as Partial<SavedAmbientPreset>;
     const soundType: AmbientSoundType =
       parsed.soundType === 'white' ||
       parsed.soundType === 'pink' ||
+      parsed.soundType === 'brown' ||
       parsed.soundType === 'rain'
         ? parsed.soundType
         : fallbackSound;
     const volume = clampVolume(parsed.volume ?? safeVol);
     const layerLevels = normalizeLayerLevels(parsed.layerLevels, soundType);
-    return { soundType, volume, layerLevels };
+    const cutoffFrequency =
+      typeof parsed.cutoffFrequency === 'number' && Number.isFinite(parsed.cutoffFrequency)
+        ? Math.max(200, Math.min(20000, parsed.cutoffFrequency))
+        : 12000;
+    return { soundType, volume, layerLevels, cutoffFrequency };
   } catch {
-    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
+    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels, cutoffFrequency: 12000 };
   }
 }
 
@@ -77,6 +85,7 @@ export function saveAmbientPreset(
 export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   initialSound = 'pink',
   initialVolume = 0.5,
+  initialCutoff = 12000,
   storageKey = AMBIENT_PRESET_STORAGE_KEY,
   className = '',
 }) => {
@@ -90,6 +99,9 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     initialPreset.soundType
   );
   const [volume, setVolume] = useState<number>(initialPreset.volume);
+  const [cutoffFrequency, setCutoffFrequency] = useState<number>(
+    initialPreset.cutoffFrequency ?? initialCutoff
+  );
   const [layerLevels, setLayerLevels] = useState<LayerMixLevels>(
     initialPreset.layerLevels
   );
@@ -101,6 +113,7 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     synthRef.current = new NoiseSynthesizer({
       soundType: initialPreset.soundType,
       volume: initialPreset.volume,
+      cutoffFrequency: initialPreset.cutoffFrequency ?? initialCutoff,
       layerLevels: initialPreset.layerLevels,
       muted: false,
     });
@@ -127,10 +140,11 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   const persistCurrent = (
     nextSound: AmbientSoundType,
     nextVol: number,
-    nextLayers: LayerMixLevels
+    nextLayers: LayerMixLevels,
+    nextCutoff: number
   ) => {
     saveAmbientPreset(
-      { soundType: nextSound, volume: nextVol, layerLevels: nextLayers },
+      { soundType: nextSound, volume: nextVol, layerLevels: nextLayers, cutoffFrequency: nextCutoff },
       storageKey
     );
   };
@@ -139,12 +153,13 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     const nextLayers: LayerMixLevels = {
       white: nextType === 'white' ? Math.max(0.7, layerLevels.white) : 0,
       pink: nextType === 'pink' ? Math.max(0.7, layerLevels.pink) : 0,
+      brown: nextType === 'brown' ? Math.max(0.7, layerLevels.brown) : 0,
       rain: nextType === 'rain' ? Math.max(0.7, layerLevels.rain) : 0,
     };
     setSoundType(nextType);
     setLayerLevels(nextLayers);
     synthRef.current?.setSoundType(nextType);
-    persistCurrent(nextType, volume, nextLayers);
+    persistCurrent(nextType, volume, nextLayers, cutoffFrequency);
   };
 
   const handleLayerChange = (type: AmbientSoundType, nextVal: number) => {
@@ -152,7 +167,7 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     const nextLayers = { ...layerLevels, [type]: clamped };
     setLayerLevels(nextLayers);
     synthRef.current?.setLayerLevel(type, clamped);
-    persistCurrent(soundType, volume, nextLayers);
+    persistCurrent(soundType, volume, nextLayers, cutoffFrequency);
   };
 
   const handleTogglePlay = async () => {
@@ -179,7 +194,14 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     const clamped = clampVolume(nextVal);
     setVolume(clamped);
     synthRef.current?.setVolume(clamped);
-    persistCurrent(soundType, clamped, layerLevels);
+    persistCurrent(soundType, clamped, layerLevels, cutoffFrequency);
+  };
+
+  const handleCutoffChange = (nextCutoff: number) => {
+    const clamped = Math.max(200, Math.min(20000, nextCutoff));
+    setCutoffFrequency(clamped);
+    synthRef.current?.setCutoffFrequency(clamped);
+    persistCurrent(soundType, volume, layerLevels, clamped);
   };
 
   return (
@@ -225,7 +247,7 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       <div
         role="group"
         aria-label="Noise type"
-        className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"
+        className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4"
       >
         {SOUND_OPTIONS.map((opt) => {
           const active = soundType === opt.id;
@@ -277,7 +299,33 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
           </span>
         </div>
 
-        {(['white', 'pink', 'rain'] as const).map((layerKey) => (
+        <div className="flex items-center gap-3">
+          <label
+            htmlFor="ambient-cutoff-slider"
+            className="w-20 text-xs font-medium text-slate-600 dark:text-slate-300"
+          >
+            Cutoff
+          </label>
+          <input
+            id="ambient-cutoff-slider"
+            type="range"
+            min={200}
+            max={20000}
+            step={100}
+            value={cutoffFrequency}
+            data-testid="ambient-cutoff-slider"
+            onChange={(e) => handleCutoffChange(Number(e.target.value))}
+            className="h-2 w-full cursor-pointer accent-indigo-600"
+          />
+          <span
+            data-testid="ambient-cutoff-value"
+            className="w-10 text-right text-xs font-semibold text-slate-700 dark:text-slate-200"
+          >
+            {cutoffFrequency >= 1000 ? `${(cutoffFrequency / 1000).toFixed(1)}k` : `${cutoffFrequency}`}Hz
+          </span>
+        </div>
+
+        {(['white', 'pink', 'brown', 'rain'] as const).map((layerKey) => (
           <div key={layerKey} className="flex items-center gap-3">
             <label
               htmlFor={`layer-slider-${layerKey}`}

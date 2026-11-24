@@ -1,8 +1,9 @@
-﻿export type AmbientSoundType = 'white' | 'pink' | 'rain';
+﻿export type AmbientSoundType = 'white' | 'pink' | 'brown' | 'rain';
 
 export interface LayerMixLevels {
   white: number;
   pink: number;
+  brown: number;
   rain: number;
 }
 
@@ -11,6 +12,9 @@ export interface AudioContextLike {
   currentTime: number;
   state: AudioContextState;
   destination: AudioNode;
+  audioWorklet?: {
+    addModule: (moduleURL: string | URL) => Promise<void>;
+  };
   createBuffer: (
     numberOfChannels: number,
     length: number,
@@ -26,10 +30,13 @@ export interface AudioContextLike {
 export interface NoiseSynthesizerOptions {
   soundType?: AmbientSoundType;
   volume?: number;
+  cutoffFrequency?: number;
   layerLevels?: Partial<LayerMixLevels>;
   muted?: boolean;
   bufferDurationSeconds?: number;
   audioContextFactory?: () => AudioContextLike;
+  workerFactory?: () => Worker;
+  useWorker?: boolean;
 }
 
 export function clampVolume(value: number): number {
@@ -44,6 +51,7 @@ export function normalizeLayerLevels(
   return {
     white: clampVolume(levels?.white ?? (activePreset === 'white' ? 0.8 : 0)),
     pink: clampVolume(levels?.pink ?? (activePreset === 'pink' ? 0.8 : 0)),
+    brown: clampVolume(levels?.brown ?? (activePreset === 'brown' ? 0.8 : 0)),
     rain: clampVolume(levels?.rain ?? (activePreset === 'rain' ? 0.8 : 0)),
   };
 }
@@ -60,6 +68,17 @@ export function generateNoiseSamples(
   if (type === 'white') {
     for (let i = 0; i < safeLength; i += 1) {
       samples[i] = rng() * 2 - 1;
+    }
+    return samples;
+  }
+
+  if (type === 'brown') {
+    let lastOut = 0;
+    for (let i = 0; i < safeLength; i += 1) {
+      const white = rng() * 2 - 1;
+      lastOut = (lastOut + 0.02 * white) / 1.02;
+      const val = lastOut * 3.5;
+      samples[i] = Math.max(-1, Math.min(1, val));
     }
     return samples;
   }
@@ -121,6 +140,15 @@ function getDefaultAudioContextFactory(): () => AudioContextLike {
   };
 }
 
+export function getDefaultWorkerFactory(): () => Worker {
+  return () => {
+    return new Worker(
+      new URL('../../workers/audioSynthesizerWorker.ts', import.meta.url),
+      { type: 'module' }
+    );
+  };
+}
+
 interface LayerGraph {
   source: AudioBufferSourceNode;
   filter: BiquadFilterNode;
@@ -131,24 +159,35 @@ export class NoiseSynthesizer {
   private ctx: AudioContextLike | null = null;
   private layers: Partial<Record<AmbientSoundType, LayerGraph>> = {};
   private masterGain: GainNode | null = null;
+  private masterCutoffFilter: BiquadFilterNode | null = null;
 
   private soundType: AmbientSoundType;
   private volume: number;
+  private cutoffFrequency: number;
   private layerLevels: LayerMixLevels;
   private muted: boolean;
   private isPlaying = false;
   private readonly bufferDurationSeconds: number;
   private readonly createContext: () => AudioContextLike;
+  private readonly workerFactory?: () => Worker;
+  private readonly useWorker: boolean;
+  private worker: Worker | null = null;
   private listenersAttached = false;
 
   constructor(options: NoiseSynthesizerOptions = {}) {
     this.soundType = options.soundType ?? 'pink';
     this.volume = clampVolume(options.volume ?? 0.5);
+    this.cutoffFrequency = Math.max(
+      200,
+      Math.min(20000, options.cutoffFrequency ?? 12000)
+    );
     this.layerLevels = normalizeLayerLevels(options.layerLevels, this.soundType);
     this.muted = Boolean(options.muted);
     this.bufferDurationSeconds = Math.max(1, options.bufferDurationSeconds ?? 3);
     this.createContext =
       options.audioContextFactory ?? getDefaultAudioContextFactory();
+    this.workerFactory = options.workerFactory;
+    this.useWorker = options.useWorker ?? true;
     this.attachLifecycleListeners();
   }
 
@@ -211,7 +250,7 @@ export class NoiseSynthesizer {
     const effectiveMaster = this.muted ? 0 : clampVolume(this.volume);
     this.setParamSmooth(this.masterGain?.gain, effectiveMaster);
 
-    (['white', 'pink', 'rain'] as const).forEach((type) => {
+    (['white', 'pink', 'brown', 'rain'] as const).forEach((type) => {
       const layer = this.layers[type];
       if (!layer) return;
       const level = this.muted ? 0 : clampVolume(this.layerLevels[type]);
@@ -219,8 +258,27 @@ export class NoiseSynthesizer {
     });
   }
 
+  private applyCutoff(): void {
+    if (this.masterCutoffFilter?.frequency) {
+      this.setParamSmooth(
+        this.masterCutoffFilter.frequency,
+        this.cutoffFrequency
+      );
+    }
+    if (this.worker) {
+      try {
+        this.worker.postMessage({
+          type: 'SET_CUTOFF',
+          cutoffFrequency: this.cutoffFrequency,
+        });
+      } catch {
+        // Safe postMessage
+      }
+    }
+  }
+
   private stopLayersOnly(): void {
-    (['white', 'pink', 'rain'] as const).forEach((type) => {
+    (['white', 'pink', 'brown', 'rain'] as const).forEach((type) => {
       const layer = this.layers[type];
       if (!layer) return;
       try {
@@ -239,58 +297,186 @@ export class NoiseSynthesizer {
     });
   }
 
-  private buildMixerGraph(ctx: AudioContextLike): void {
+  /**
+   * Synthesize audio buffer via Web Worker or fallback to local synchronous generator.
+   */
+  private async createLayerBuffer(
+    ctx: AudioContextLike,
+    type: AmbientSoundType,
+    frameCount: number,
+    sampleRate: number
+  ): Promise<AudioBuffer> {
+    const buffer = ctx.createBuffer(2, frameCount, sampleRate);
+
+    // Try off-main-thread Web Worker synthesis if worker is available
+    if (this.useWorker) {
+      try {
+        const workerData = await this.synthesizeWithWorker(
+          type,
+          frameCount,
+          sampleRate
+        );
+        if (workerData && workerData.length === 2) {
+          for (let ch = 0; ch < 2; ch++) {
+            const channelFloat = new Float32Array(workerData[ch]);
+            if (typeof buffer.copyToChannel === 'function') {
+              buffer.copyToChannel(channelFloat, ch);
+            } else if (typeof buffer.getChannelData === 'function') {
+              buffer.getChannelData(ch).set(channelFloat);
+            }
+          }
+          return buffer;
+        }
+      } catch {
+        // Fall back to main thread generator
+      }
+    }
+
+    // AudioWorklet / Web Audio fallback path: Procedural generation on main thread
+    for (let ch = 0; ch < 2; ch++) {
+      const samples = generateNoiseSamples(type, frameCount, sampleRate);
+      if (typeof buffer.copyToChannel === 'function') {
+        buffer.copyToChannel(samples, ch);
+      } else if (typeof buffer.getChannelData === 'function') {
+        buffer.getChannelData(ch).set(samples);
+      }
+    }
+
+    return buffer;
+  }
+
+  private synthesizeWithWorker(
+    noiseType: AmbientSoundType,
+    frameCount: number,
+    sampleRate: number
+  ): Promise<ArrayBuffer[]> {
+    return new Promise((resolve, reject) => {
+      let workerInstance = this.worker;
+
+      if (!workerInstance && this.workerFactory) {
+        try {
+          workerInstance = this.workerFactory();
+          this.worker = workerInstance;
+        } catch (e) {
+          return reject(e);
+        }
+      } else if (!workerInstance && typeof Worker !== 'undefined') {
+        try {
+          workerInstance = getDefaultWorkerFactory()();
+          this.worker = workerInstance;
+        } catch (e) {
+          return reject(e);
+        }
+      }
+
+      if (!workerInstance) {
+        return reject(new Error('Web Worker not supported in this environment'));
+      }
+
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Worker synthesis timed out'));
+      }, 3000);
+
+      const onMessage = (event: MessageEvent<any>) => {
+        if (event.data?.type === 'SYNTHESIZED' || event.data?.type === 'CHUNK_READY') {
+          cleanup();
+          resolve(event.data.payload.buffers);
+        } else if (event.data?.type === 'ERROR') {
+          cleanup();
+          reject(new Error(event.data.payload?.message || 'Worker error'));
+        }
+      };
+
+      const onError = (err: any) => {
+        cleanup();
+        reject(err);
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        workerInstance?.removeEventListener('message', onMessage);
+        workerInstance?.removeEventListener('error', onError);
+      };
+
+      workerInstance.addEventListener('message', onMessage);
+      workerInstance.addEventListener('error', onError);
+
+      workerInstance.postMessage({
+        type: 'SYNTHESIZE',
+        noiseType,
+        sampleRate,
+        channels: 2,
+        bufferSize: frameCount,
+        cutoffFrequency: this.cutoffFrequency,
+      });
+    });
+  }
+
+  private async buildMixerGraph(ctx: AudioContextLike): Promise<void> {
     this.stopLayersOnly();
 
     const sampleRate = ctx.sampleRate || 44100;
     const frameCount = Math.floor(sampleRate * this.bufferDurationSeconds);
 
     const master = ctx.createGain();
-    master.connect(ctx.destination);
+    const cutoffFilter = ctx.createBiquadFilter();
+    cutoffFilter.type = 'lowpass';
+    cutoffFilter.frequency.value = this.cutoffFrequency;
+
+    master.connect(cutoffFilter);
+    cutoffFilter.connect(ctx.destination);
     this.masterGain = master;
+    this.masterCutoffFilter = cutoffFilter;
 
-    (['white', 'pink', 'rain'] as const).forEach((type) => {
-      const buffer = ctx.createBuffer(1, frameCount, sampleRate);
-      const samples = generateNoiseSamples(type, frameCount, sampleRate);
+    const layerTypes: AmbientSoundType[] = ['white', 'pink', 'brown', 'rain'];
 
-      if (typeof buffer.copyToChannel === 'function') {
-        buffer.copyToChannel(samples, 0);
-      } else if (typeof buffer.getChannelData === 'function') {
-        buffer.getChannelData(0).set(samples);
-      }
+    await Promise.all(
+      layerTypes.map(async (type) => {
+        const buffer = await this.createLayerBuffer(
+          ctx,
+          type,
+          frameCount,
+          sampleRate
+        );
 
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.loop = true;
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.loop = true;
 
-      const filter = ctx.createBiquadFilter();
-      if (type === 'rain') {
-        filter.type = 'lowpass';
-        filter.frequency.value = 1100;
-      } else if (type === 'pink') {
-        filter.type = 'lowshelf';
-        filter.frequency.value = 600;
-      } else {
-        filter.type = 'allpass';
-        filter.frequency.value = 1000;
-      }
+        const filter = ctx.createBiquadFilter();
+        if (type === 'rain') {
+          filter.type = 'lowpass';
+          filter.frequency.value = 1100;
+        } else if (type === 'pink') {
+          filter.type = 'lowshelf';
+          filter.frequency.value = 600;
+        } else if (type === 'brown') {
+          filter.type = 'lowpass';
+          filter.frequency.value = 400;
+        } else {
+          filter.type = 'allpass';
+          filter.frequency.value = 1000;
+        }
 
-      const layerGain = ctx.createGain();
-      layerGain.gain.value = this.layerLevels[type];
+        const layerGain = ctx.createGain();
+        layerGain.gain.value = this.layerLevels[type];
 
-      source.connect(filter);
-      filter.connect(layerGain);
-      layerGain.connect(master);
-      source.start();
+        source.connect(filter);
+        filter.connect(layerGain);
+        layerGain.connect(master);
+        source.start();
 
-      this.layers[type] = {
-        source,
-        filter,
-        gain: layerGain,
-      };
-    });
+        this.layers[type] = {
+          source,
+          filter,
+          gain: layerGain,
+        };
+      })
+    );
 
     this.applyGains();
+    this.applyCutoff();
   }
 
   public async play(): Promise<void> {
@@ -307,7 +493,7 @@ export class NoiseSynthesizer {
       await ctx.resume();
     }
 
-    this.buildMixerGraph(ctx);
+    await this.buildMixerGraph(ctx);
     this.isPlaying = true;
   }
 
@@ -330,6 +516,7 @@ export class NoiseSynthesizer {
     this.layerLevels = {
       white: nextType === 'white' ? Math.max(0.7, this.layerLevels.white) : 0,
       pink: nextType === 'pink' ? Math.max(0.7, this.layerLevels.pink) : 0,
+      brown: nextType === 'brown' ? Math.max(0.7, this.layerLevels.brown) : 0,
       rain: nextType === 'rain' ? Math.max(0.7, this.layerLevels.rain) : 0,
     };
     this.applyGains();
@@ -348,6 +535,11 @@ export class NoiseSynthesizer {
     this.applyGains();
   }
 
+  public setCutoffFrequency(nextCutoff: number): void {
+    this.cutoffFrequency = Math.max(200, Math.min(20000, nextCutoff));
+    this.applyCutoff();
+  }
+
   public setMuted(nextMuted: boolean): void {
     this.muted = Boolean(nextMuted);
     if (this.muted && this.isPlaying) {
@@ -362,27 +554,45 @@ export class NoiseSynthesizer {
       isPlaying: this.isPlaying,
       soundType: this.soundType,
       volume: this.volume,
+      cutoffFrequency: this.cutoffFrequency,
       layerLevels: { ...this.layerLevels },
       muted: this.muted,
       activeLayerCount: Object.keys(this.layers).length,
       hasMasterGain: Boolean(this.masterGain),
+      hasCutoffFilter: Boolean(this.masterCutoffFilter),
     };
   }
 
   public async dispose(): Promise<void> {
     this.pause();
     this.detachLifecycleListeners();
+    if (this.worker) {
+      try {
+        this.worker.terminate();
+      } catch {
+        // Safe terminate
+      }
+      this.worker = null;
+    }
+    if (this.masterCutoffFilter && typeof this.masterCutoffFilter.disconnect === 'function') {
+      try {
+        this.masterCutoffFilter.disconnect();
+      } catch {
+        // Already disconnected
+      }
+      this.masterCutoffFilter = null;
+    }
     if (this.masterGain && typeof this.masterGain.disconnect === 'function') {
       try {
         this.masterGain.disconnect();
       } catch {
         // Already disconnected
       }
+      this.masterGain = null;
     }
     if (this.ctx && typeof this.ctx.close === 'function') {
       await this.ctx.close();
     }
     this.ctx = null;
-    this.masterGain = null;
   }
 }

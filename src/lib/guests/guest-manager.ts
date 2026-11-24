@@ -97,6 +97,7 @@ export async function sendGuestInvitation(params: {
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
   durationMinutes: number;
+  timeZone?: string | null;
 }): Promise<InviteResult> {
   try {
     // 1. Build ICS event data
@@ -115,6 +116,7 @@ export async function sendGuestInvitation(params: {
       date: params.date,
       time: params.time,
       durationMinutes: params.durationMinutes,
+      timeZone: params.timeZone,
     });
 
     // 2. Generate ICS content
@@ -208,6 +210,7 @@ export async function inviteGuestsToBooking(
       date: string;
       time: string;
       durationMinutes: number;
+      timeZone?: string | null;
     };
   }>,
 ): Promise<InviteResult[]> {
@@ -243,6 +246,7 @@ export async function inviteGuestsToBooking(
           date: details.booking.date,
           time: details.booking.time,
           durationMinutes: details.booking.durationMinutes,
+          timeZone: details.booking.timeZone,
         }),
       ),
     );

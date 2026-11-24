@@ -44,19 +44,37 @@ export function calculateBackoffDelay(
     randomJitter?: number;
   }
 ): number {
-  const initialDelay = options?.initialDelay ?? INITIAL_RECONNECT_DELAY_MS;
-  const maxDelay = options?.maxDelay ?? MAX_RECONNECT_DELAY_MS;
+  const safeAttempts =
+    typeof attempts === "number" && Number.isFinite(attempts) && attempts >= 0
+      ? attempts
+      : 0;
+  const initialDelay =
+    typeof options?.initialDelay === "number" &&
+    Number.isFinite(options.initialDelay) &&
+    options.initialDelay >= 0
+      ? options.initialDelay
+      : INITIAL_RECONNECT_DELAY_MS;
+  const maxDelay =
+    typeof options?.maxDelay === "number" &&
+    Number.isFinite(options.maxDelay) &&
+    options.maxDelay >= 0
+      ? options.maxDelay
+      : MAX_RECONNECT_DELAY_MS;
   const jitter =
-    options?.randomJitter !== undefined
+    typeof options?.randomJitter === "number" &&
+    Number.isFinite(options.randomJitter) &&
+    options.randomJitter >= 0
       ? options.randomJitter
       : Math.random() * MAX_RECONNECT_JITTER_MS;
 
-  const delay = Math.min(
-    initialDelay * Math.pow(2, Math.max(0, attempts)) + jitter,
-    maxDelay
-  );
+  const exponential = initialDelay * Math.pow(2, Math.max(0, safeAttempts));
+  const rawDelay = exponential + jitter;
 
-  return Math.min(delay, maxDelay);
+  if (!Number.isFinite(rawDelay) || rawDelay < 0) {
+    return maxDelay;
+  }
+
+  return Math.min(rawDelay, maxDelay);
 }
 
 interface PeerReconnectState {
@@ -249,14 +267,30 @@ export function handleWorkerMessage(event: {
 
     case "TELEMETRY_UPDATE": {
       const { peerId, rtt, ackDelay, bytesPerSec } = payload || {};
-      if (!peerId || !analyzer.hasPeer(peerId)) {
+      if (!peerId || typeof peerId !== "string" || !analyzer.hasPeer(peerId)) {
         break;
       }
-      if (typeof rtt === "number") analyzer.recordRTT(peerId, rtt);
-      if (typeof ackDelay === "number")
+      if (
+        typeof rtt === "number" &&
+        Number.isFinite(rtt) &&
+        rtt >= 0
+      ) {
+        analyzer.recordRTT(peerId, rtt);
+      }
+      if (
+        typeof ackDelay === "number" &&
+        Number.isFinite(ackDelay) &&
+        ackDelay >= 0
+      ) {
         analyzer.recordACKDelay(peerId, ackDelay);
-      if (typeof bytesPerSec === "number")
+      }
+      if (
+        typeof bytesPerSec === "number" &&
+        Number.isFinite(bytesPerSec) &&
+        bytesPerSec >= 0
+      ) {
         analyzer.updateBandwidth(peerId, bytesPerSec);
+      }
       break;
     }
   }

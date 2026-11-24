@@ -85,4 +85,65 @@ describe("jitter calculation and WiFi stability gauge", () => {
       expect(summary.sampleCount).toBe(5);
     });
   });
+
+  describe("graceful handling of zero and single-packet intervals without NaN (#10121)", () => {
+    it("returns finite 0ms jitter and smoothed jitter for zero-packet intervals (empty or invalid arrays)", () => {
+      expect(calculateJitterMs([])).toBe(0);
+      expect(calculateJitterMs([NaN, Infinity, -10])).toBe(0);
+      expect(computeSmoothedJitter([])).toBe(0);
+      expect(computeSmoothedJitter([NaN, Infinity])).toBe(0);
+
+      const summary = summarizePingTelemetry([]);
+      expect(summary.sampleCount).toBe(0);
+      expect(summary.avgPingMs).toBe(0);
+      expect(summary.jitterMs).toBe(0);
+      expect(summary.smoothedJitterMs).toBe(0);
+      expect(Number.isFinite(summary.jitterMs)).toBe(true);
+      expect(Number.isFinite(summary.smoothedJitterMs)).toBe(true);
+      expect(summary.tier).toBe("excellent");
+    });
+
+    it("returns finite 0ms metrics for single-packet intervals without producing NaN variance or jitter", () => {
+      expect(calculateJitterMs([42])).toBe(0);
+      expect(computeSmoothedJitter([42])).toBe(0);
+
+      const summary = summarizePingTelemetry([42]);
+      expect(summary.sampleCount).toBe(1);
+      expect(summary.avgPingMs).toBe(42);
+      expect(summary.jitterMs).toBe(0);
+      expect(summary.smoothedJitterMs).toBe(0);
+      expect(Number.isFinite(summary.avgPingMs)).toBe(true);
+      expect(Number.isFinite(summary.jitterMs)).toBe(true);
+      expect(Number.isFinite(summary.smoothedJitterMs)).toBe(true);
+      expect(summary.tier).toBe("excellent");
+    });
+
+    it("handles non-finite options gracefully in computeSmoothedJitter", () => {
+      const samples = [20, 25, 22, 28];
+      const result = computeSmoothedJitter(samples, {
+        alpha: NaN,
+        outlierSigmaMultiplier: Infinity,
+      });
+      expect(Number.isFinite(result)).toBe(true);
+      expect(result).toBeGreaterThanOrEqual(0);
+    });
+
+    it("recovers and produces valid metrics when samples resume after empty or single intervals", () => {
+      // Disconnection / zero packets:
+      const disconnectedSummary = summarizePingTelemetry([]);
+      expect(disconnectedSummary.jitterMs).toBe(0);
+
+      // Single transient packet:
+      const singlePacketSummary = summarizePingTelemetry([50]);
+      expect(singlePacketSummary.jitterMs).toBe(0);
+
+      // Reconnection with full packet stream:
+      const recoveredSummary = summarizePingTelemetry([20, 24, 22, 26]);
+      expect(recoveredSummary.sampleCount).toBe(4);
+      expect(recoveredSummary.jitterMs).toBe(3.3);
+      expect(recoveredSummary.smoothedJitterMs).toBeGreaterThan(0);
+      expect(Number.isFinite(recoveredSummary.jitterMs)).toBe(true);
+      expect(Number.isFinite(recoveredSummary.smoothedJitterMs)).toBe(true);
+    });
+  });
 });

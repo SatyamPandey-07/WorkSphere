@@ -37,6 +37,10 @@ export class PacketTimingAnalyzer {
         this.removePeer(peerId);
     }
 
+    public reset(): void {
+        this.peers.clear();
+    }
+
     public hasPeer(peerId: string): boolean {
         return this.peers.has(peerId);
     }

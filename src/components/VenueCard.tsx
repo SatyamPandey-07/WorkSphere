@@ -917,6 +917,8 @@ export function VenueCard({
                 </span>
               </div>
             )}
+            {/* The wheelchair flag comes from the OSM `wheelchair=yes` tag.
+                Audit criteria and what "Accessible" means: docs/accessibility-audit.md */}
             {amenities.wheelchair && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Accessibility className="w-3 h-3 shrink-0" />

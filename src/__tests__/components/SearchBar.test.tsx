@@ -1,6 +1,10 @@
-﻿import React from "react";
+import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { SearchBar, trimSearchQuery, isValidSearchQuery } from "@/components/venues/SearchBar";
+import {
+  SearchBar,
+  trimSearchQuery,
+  isValidSearchQuery,
+} from "@/components/venues/SearchBar";
 
 describe("SearchBar component (#4401, #4404)", () => {
   const originalFetch = global.fetch;
@@ -295,6 +299,22 @@ describe("SearchBar component (#4401, #4404)", () => {
       expect(onSearch).toHaveBeenCalledWith("Coworking Hub");
     });
 
+    it("notifies the parent when the search input is cleared", () => {
+      const onSearch = jest.fn();
+      render(<SearchBar onSearch={onSearch} />);
+
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe" } });
+      });
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "" } });
+      });
+
+      expect(onSearch).toHaveBeenCalledWith("");
+    });
     it("prevents queries containing only whitespace from triggering search fetch on Enter", () => {
       const onSearch = jest.fn();
       render(<SearchBar onSearch={onSearch} />);
@@ -373,7 +393,9 @@ describe("SearchBar component (#4401, #4404)", () => {
 
         const input = screen.getByTestId("search-bar-input");
         act(() => {
-          fireEvent.change(input, { target: { value: "   quiet coworking spaces   " } });
+          fireEvent.change(input, {
+            target: { value: "   quiet coworking spaces   " },
+          });
         });
         act(() => {
           fireEvent.keyDown(input, { key: "Enter" });
@@ -539,7 +561,7 @@ describe("SearchBar AbortController & generation counter race-condition preventi
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(signals[0].aborted).toBe(false);
 
-    // Step 2: Type "cafe" â€” useEffect cleanup aborts request A immediately
+    // Step 2: Type "cafe" — useEffect cleanup aborts request A immediately
     act(() => {
       fireEvent.change(input, { target: { value: "cafe" } });
     });

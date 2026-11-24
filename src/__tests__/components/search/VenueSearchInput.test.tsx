@@ -222,5 +222,6 @@ describe('VenueSearchInput', () => {
       'sort=rating&q=quiet+cafe&amenities=outdoorPatio'
     );
     setItemSpy.mockRestore();
+
   });
 });

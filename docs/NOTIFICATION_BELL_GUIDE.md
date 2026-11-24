@@ -87,11 +87,14 @@ When a user explicitly clicks the **"Mark all as read"** button in the dropdown 
 > [!NOTE]
 > **API Action Usage:** The frontend consumes the `markAsUnread` API action specifically as the backend driver for the toast **Undo** capability, rather than exposing individual "mark as unread" buttons per notification item.
 
-### Implementation Discrepancy Note
+### Notification Management Persistence (Clear All & Dismiss)
 
 The component also contains UI handlers for `clearAllNotifications` (`{ "action": "clearAll" }`) and `dismissNotification` (`{ "action": "dismiss", "id": ... }`).
 
-However, the backend API route in [`src/app/api/user/notifications/route.ts`](../src/app/api/user/notifications/route.ts) currently handles only `markAsRead` and `markAsUnread`. Requests with `clearAll` or `dismiss` are rejected by the server with HTTP `400 Bad Request` (`{"error": "Invalid action"}`). The component handles `clearAll` and `dismiss` optimistically in local state, but backend persistence for those actions is not currently supported by the API route.
+Both actions are backed by the notifications API in [`src/app/api/user/notifications/route.ts`](../src/app/api/user/notifications/route.ts) with strict user ownership enforcement and bounded retry handling:
+
+- **`clearAll`:** Clears all notifications for the authenticated user from the active dataset. If the API request fails, the component rolls back to the previous notification list and unread count.
+- **`dismiss`:** Dismisses an individual notification for the authenticated user. If the backend API request returns a non-success status, the component restores the notification to the list and recovers the previous unread counter.
 
 ---
 
@@ -300,9 +303,86 @@ Content-Type: application/json
 
 ---
 
+### 4. POST `/api/user/notifications` — `clearAll`
+
+Clears all notifications belonging to the authenticated user from the notification log.
+
+#### Request
+
+```http
+POST /api/user/notifications HTTP/1.1
+Content-Type: application/json
+```
+
+```json
+{
+  "action": "clearAll"
+}
+```
+
+#### Behavior & Scope
+
+- **User Scoping:** Scoped strictly to the authenticated `userId`.
+- **Database Execution:** Uses `prisma.pushNotificationLog.deleteMany({ where: { userId } })`.
+- **Bounded Retry Wrapper:** Executed within `executeWithRetry` to handle concurrent transaction conflicts.
+
+#### Success Response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+{
+  "success": true
+}
+```
+
+---
+
+### 5. POST `/api/user/notifications` — `dismiss`
+
+Dismisses a single specific notification belonging to the authenticated user.
+
+#### Request
+
+```http
+POST /api/user/notifications HTTP/1.1
+Content-Type: application/json
+```
+
+```json
+{
+  "action": "dismiss",
+  "id": "cm3a1b2c3000008l0g1h2i3j4"
+}
+```
+
+#### Behavior & Scope
+
+- **Payload Validation:** `id` is required and must be a non-empty string. If omitted, returns HTTP `400 Bad Request`.
+- **Strict Ownership Enforcement:** Scoped to `where: { userId, id: body.id }`. Notifications belonging to another user cannot be deleted.
+- **Database Execution:** Uses `prisma.pushNotificationLog.deleteMany({ where: { userId, id: body.id } })` wrapped in `executeWithRetry`.
+
+#### Success Response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+{
+  "success": true
+}
+```
+
+---
+
 ## Bounded Concurrency Retry Wrapper
 
-Both `markAsRead` and `markAsUnread` operations are executed through a shared bounded retry helper (`executeWithRetry`):
+All mutation operations (`markAsRead`, `markAsUnread`, `clearAll`, `dismiss`) are executed through a shared bounded retry helper (`executeWithRetry`):
 
 ```typescript
 async function executeWithRetry<T>(
@@ -329,8 +409,8 @@ async function executeWithRetry<T>(
 
 ## Error Responses and Status Codes
 
-| Status Code                     | Error Response                       | Cause                                                                                                                      |
-| ------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| **`401 Unauthorized`**          | `{"error": "Unauthorized"}`          | Request missing an authenticated Clerk session context (`userId` is null).                                                 |
-| **`400 Bad Request`**           | `{"error": "Invalid action"}`        | Action is unsupported (e.g., `clearAll`, `dismiss`), or payload for `markAsUnread` has missing, non-array, or empty `ids`. |
-| **`500 Internal Server Error`** | `{"error": "Internal Server Error"}` | Unhandled database exception, unexpected server error, or failure persisting after all 5 retry attempts.                   |
+| Status Code                     | Error Response                                      | Cause                                                                                                    |
+| ------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **`401 Unauthorized`**          | `{"error": "Unauthorized"}`                         | Request missing an authenticated Clerk session context (`userId` is null).                               |
+| **`400 Bad Request`**           | `{"error": "Invalid action"}` or `{"error": "..."}` | Action is unsupported, payload for `markAsUnread` has missing/empty `ids`, or `dismiss` is missing `id`. |
+| **`500 Internal Server Error`** | `{"error": "Internal Server Error"}`                | Unhandled database exception, unexpected server error, or failure persisting after all 5 retry attempts. |

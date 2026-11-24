@@ -25,7 +25,9 @@ describe("StarRating component (#9761)", () => {
     });
 
     test("renders unrated state when rating is null or undefined with zero or undefined reviews", () => {
-      const { rerender } = render(<StarRating rating={null} totalReviews={null} />);
+      const { rerender } = render(
+        <StarRating rating={null} totalReviews={null} />,
+      );
       expect(screen.getByTestId("star-rating-unrated")).toBeInTheDocument();
       expect(screen.getByText("New (No reviews yet)")).toBeInTheDocument();
 
@@ -95,20 +97,23 @@ describe("StarRating component (#9761)", () => {
       expect(screen.getByTestId("star-empty-4")).toBeInTheDocument();
 
       // Label displays 3.5 (24)
-      expect(screen.getByTestId("star-rating-label")).toHaveTextContent("3.5(24)");
+      expect(screen.getByTestId("star-rating-label")).toHaveTextContent(
+        "3.5(24)",
+      );
     });
 
-    test("renders clean fractional star for 4.2 rating with 20% width fill", () => {
+    test("rounds 4.2 rating to 4.0", () => {
       render(<StarRating rating={4.2} totalReviews={8} />);
 
-      expect(screen.getByTestId("star-full-0")).toBeInTheDocument();
-      expect(screen.getByTestId("star-full-1")).toBeInTheDocument();
-      expect(screen.getByTestId("star-full-2")).toBeInTheDocument();
-      expect(screen.getByTestId("star-full-3")).toBeInTheDocument();
+      expect(screen.getByTestId("star-rating-label")).toHaveTextContent(
+        "4.0(8)",
+      );
 
-      const fractional = screen.getByTestId("star-fractional-4");
-      const fillWrapper = fractional.querySelector(".overflow-hidden");
-      expect(fillWrapper).toHaveStyle({ width: "20%" });
+      for (let i = 0; i < 4; i++) {
+        expect(screen.getByTestId(`star-full-${i}`)).toBeInTheDocument();
+      }
+
+      expect(screen.getByTestId("star-empty-4")).toBeInTheDocument();
     });
   });
 
@@ -127,7 +132,9 @@ describe("StarRating component (#9761)", () => {
         expect(screen.getByTestId(`star-full-${i}`)).toBeInTheDocument();
       }
 
-      expect(screen.getByTestId("star-rating-label")).toHaveTextContent("5.0(50)");
+      expect(screen.getByTestId("star-rating-label")).toHaveTextContent(
+        "5.0(50)",
+      );
     });
 
     test("supports reviewCount alias and custom size variants", () => {
@@ -139,6 +146,53 @@ describe("StarRating component (#9761)", () => {
         "4.0 out of 5 stars (15 reviews)",
       );
       expect(screen.getByTestId("star-full-0")).toHaveClass("w-5 h-5");
+    });
+  });
+
+  describe("rating normalization (#9905)", () => {
+    test("clamps ratings above 5 to 5 full stars", () => {
+      render(<StarRating rating={5.2} totalReviews={10} />);
+
+      expect(screen.getByTestId("star-rating-label")).toHaveTextContent(
+        "5.0(10)",
+      );
+
+      for (let i = 0; i < 5; i++) {
+        expect(screen.getByTestId(`star-full-${i}`)).toBeInTheDocument();
+      }
+    });
+
+    test("treats negative ratings as unrated", () => {
+      render(<StarRating rating={-0.5} totalReviews={10} />);
+
+      expect(screen.getByTestId("star-rating-unrated")).toBeInTheDocument();
+      expect(screen.queryByTestId("star-full-0")).not.toBeInTheDocument();
+    });
+
+    test("rounds ratings to the nearest half star", () => {
+      const { rerender } = render(
+        <StarRating rating={4.26} totalReviews={10} />,
+      );
+
+      expect(screen.getByTestId("star-rating-label")).toHaveTextContent(
+        "4.5(10)",
+      );
+
+      rerender(<StarRating rating={4.24} totalReviews={10} />);
+
+      expect(screen.getByTestId("star-rating-label")).toHaveTextContent(
+        "4.0(10)",
+      );
+    });
+
+    test("renders no filled stars for NaN", () => {
+      render(<StarRating rating={NaN} totalReviews={10} />);
+
+      expect(screen.getByTestId("star-rating-unrated")).toBeInTheDocument();
+
+      for (let i = 0; i < 5; i++) {
+        expect(screen.getByTestId(`star-outline-${i}`)).toBeInTheDocument();
+      }
     });
   });
 });

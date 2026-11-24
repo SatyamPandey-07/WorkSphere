@@ -3,7 +3,7 @@ import {
   formatLocalDate,
 } from "@/lib/validations/dateFilter";
 
-describe("Date Preset Calculation (Issue #9608)", () => {
+describe("Date Preset Calculation (Issue #9608 & #9885)", () => {
   describe("formatLocalDate", () => {
     it("formats local date components as YYYY-MM-DD", () => {
       const d = new Date(2026, 10, 23); // Nov 23, 2026
@@ -150,6 +150,123 @@ describe("Date Preset Calculation (Issue #9608)", () => {
       expect(result).toEqual({
         startDate: "2027-01-02", // Saturday
         endDate: "2027-01-03", // Sunday
+      });
+    });
+  });
+
+  describe("Next Monday preset (#9885)", () => {
+    it("calculates immediately following Monday when today is Sunday (day 0 -> +1 day)", () => {
+      // Nov 22, 2026 is Sunday
+      const ref = new Date(2026, 10, 22);
+      expect(ref.getDay()).toBe(0);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2026-11-23",
+        endDate: "2026-11-23",
+      });
+    });
+
+    it("calculates following week's Monday when today is Monday (day 1 -> +7 days)", () => {
+      // Nov 23, 2026 is Monday
+      const ref = new Date(2026, 10, 23);
+      expect(ref.getDay()).toBe(1);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2026-11-30",
+        endDate: "2026-11-30",
+      });
+    });
+
+    it("calculates upcoming Monday when today is Tuesday (day 2 -> +6 days)", () => {
+      const ref = new Date(2026, 10, 24);
+      expect(ref.getDay()).toBe(2);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2026-11-30",
+        endDate: "2026-11-30",
+      });
+    });
+
+    it("calculates upcoming Monday when today is Wednesday (day 3 -> +5 days)", () => {
+      const ref = new Date(2026, 10, 25);
+      expect(ref.getDay()).toBe(3);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2026-11-30",
+        endDate: "2026-11-30",
+      });
+    });
+
+    it("calculates upcoming Monday when today is Thursday (day 4 -> +4 days)", () => {
+      const ref = new Date(2026, 10, 26);
+      expect(ref.getDay()).toBe(4);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2026-11-30",
+        endDate: "2026-11-30",
+      });
+    });
+
+    it("calculates upcoming Monday when today is Friday (day 5 -> +3 days)", () => {
+      const ref = new Date(2026, 10, 27);
+      expect(ref.getDay()).toBe(5);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2026-11-30",
+        endDate: "2026-11-30",
+      });
+    });
+
+    it("calculates upcoming Monday when today is Saturday (day 6 -> +2 days)", () => {
+      const ref = new Date(2026, 10, 28);
+      expect(ref.getDay()).toBe(6);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2026-11-30",
+        endDate: "2026-11-30",
+      });
+    });
+
+    it("handles month boundary transitions", () => {
+      // May 30, 2026 is Saturday -> Next Monday is June 1, 2026
+      const ref = new Date(2026, 4, 30);
+      expect(ref.getDay()).toBe(6);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2026-06-01",
+        endDate: "2026-06-01",
+      });
+    });
+
+    it("handles year boundary transitions (December to January)", () => {
+      // Dec 30, 2026 is Wednesday -> Next Monday is Jan 4, 2027
+      const ref = new Date(2026, 11, 30);
+      expect(ref.getDay()).toBe(3);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2027-01-04",
+        endDate: "2027-01-04",
+      });
+    });
+
+    it("handles leap year February boundary transitions", () => {
+      // Feb 26, 2028 is Saturday -> Next Monday is Feb 28, 2028 (leap year)
+      const ref = new Date(2028, 1, 26);
+      expect(ref.getDay()).toBe(6);
+
+      const result = getDatePreset("nextMonday", ref);
+      expect(result).toEqual({
+        startDate: "2028-02-28",
+        endDate: "2028-02-28",
       });
     });
   });

@@ -1,16 +1,11 @@
 /**
  * SkillEmbedder.ts
-
- * Generates high-dimensional vector embeddings for extracted skills to enable semantic similarity searches.
- * Interfaces with a vector database (e.g., pgvector via Prisma) to store and query embeddings.
- *
- * @see docs/ai/SEMANTIC_MATCHING_ENGINE.md for detailed documentation on embedding tokenization,
- * cosine distance metrics, and pgvector HNSW index tuning.
-
  * Generates 1024-dimensional vector embeddings for extracted skills using real embedding providers
  * (Cohere embed-english-v3.0 or OpenAI text-embedding-3-small with dimensions: 1024),
  * ensuring dimensional compatibility with Venue.searchEmbedding (vector(1024)).
-
+ *
+ * @see docs/ai/SEMANTIC_MATCHING_ENGINE.md for detailed documentation on embedding tokenization,
+ * cosine distance metrics, and pgvector HNSW index tuning.
  */
 
 export interface SkillEmbedding {
@@ -28,11 +23,6 @@ export class SkillEmbedder {
   constructor(apiKey?: string, provider?: "cohere" | "openai") {
     const cohereKey = process.env.COHERE_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
-
-
-  constructor(apiKey: string, model: string = "text-embedding-3-small") {
-    this.apiKey = apiKey;
-    this.embeddingModel = model;
 
     if (apiKey && apiKey !== "mock-key") {
       this.apiKey = apiKey;
@@ -56,7 +46,6 @@ export class SkillEmbedder {
    */
   public static clearCache(): void {
     SkillEmbedder.globalEmbeddingCache.clear();
-
   }
 
   /**
@@ -70,16 +59,6 @@ export class SkillEmbedder {
       return [];
     }
 
-
-    const embeddings: SkillEmbedding[] = [];
-
-    // Process in batches to avoid rate limits
-    const batchSize = 10;
-    for (let i = 0; i < skills.length; i += batchSize) {
-      const batch = skills.slice(i, i + batchSize);
-      const batchResults = await this.fetchEmbeddings(batch);
-      embeddings.push(...batchResults);
-
     const cleanSkills = skills.map((s) => s.trim()).filter((s) => s.length > 0);
 
     if (cleanSkills.length === 0) {
@@ -91,7 +70,9 @@ export class SkillEmbedder {
     const cacheKeyPrefix = `${this.provider}:`;
 
     for (const skill of cleanSkills) {
-      const cached = SkillEmbedder.globalEmbeddingCache.get(`${cacheKeyPrefix}${skill.toLowerCase()}`);
+      const cached = SkillEmbedder.globalEmbeddingCache.get(
+        `${cacheKeyPrefix}${skill.toLowerCase()}`,
+      );
       if (cached) {
         results.push({ skill, vector: cached });
       } else {
@@ -105,36 +86,19 @@ export class SkillEmbedder {
         const batch = missingSkills.slice(i, i + batchSize);
         const batchResults = await this.fetchEmbeddings(batch);
         for (const item of batchResults) {
-          SkillEmbedder.globalEmbeddingCache.set(`${cacheKeyPrefix}${item.skill.toLowerCase()}`, item.vector);
+          SkillEmbedder.globalEmbeddingCache.set(
+            `${cacheKeyPrefix}${item.skill.toLowerCase()}`,
+            item.vector,
+          );
           results.push(item);
         }
       }
-
     }
 
     return results;
   }
 
   private async fetchEmbeddings(skills: string[]): Promise<SkillEmbedding[]> {
-
-    try {
-      // Mock implementation for scaffold. In production, replace with actual OpenAI/Groq embedding API call.
-      // const response = await fetch('https://api.openai.com/v1/embeddings', { ... })
-
-      const mockEmbeddings = skills.map((skill) => ({
-        skill,
-        // Generate a deterministic mock 1536-dimensional vector for scaffold purposes
-        vector: Array.from(
-          { length: 1536 },
-          (_, i) => Math.sin(i * skill.length) * 0.1,
-        ),
-      }));
-
-      return mockEmbeddings;
-    } catch (error) {
-      console.error("Error fetching embeddings:", error);
-      throw new Error("Failed to generate skill embeddings.");
-
     if (this.provider === "cohere") {
       return this.fetchCohereEmbeddings(skills);
     }
@@ -209,7 +173,6 @@ export class SkillEmbedder {
       throw new Error(
         `OpenAI embedding API failed (${response.status}): ${errorText}`,
       );
-
     }
 
     const result = await response.json();
@@ -278,7 +241,10 @@ export class SkillEmbedder {
  */
 export function normalizeSkill(skill: string): string {
   if (!skill || typeof skill !== "string") return "";
-  return skill.toLowerCase().trim().replace(/[-_\s]+/g, "");
+  return skill
+    .toLowerCase()
+    .trim()
+    .replace(/[-_\s]+/g, "");
 }
 
 /**

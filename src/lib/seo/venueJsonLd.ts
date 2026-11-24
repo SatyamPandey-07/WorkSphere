@@ -39,12 +39,15 @@ export interface VenueJsonLd {
 export interface VenueLike {
   id?: string;
   name: string;
-  address?: string | null | {
-    streetAddress?: string;
-    addressLocality?: string;
-    postalCode?: string;
-    addressCountry?: string;
-  };
+  address?:
+    | string
+    | null
+    | {
+        streetAddress?: string;
+        addressLocality?: string;
+        postalCode?: string;
+        addressCountry?: string;
+      };
   latitude: number;
   longitude: number;
   telephone?: string | null;
@@ -78,7 +81,7 @@ export interface VenueLike {
  * Parses raw address string or object into a Schema.org PostalAddress
  */
 export function parsePostalAddress(
-  address?: VenueLike["address"]
+  address?: VenueLike["address"],
 ): PostalAddressSchema {
   if (!address) {
     return {
@@ -162,7 +165,7 @@ export function parsePostalAddress(
  * Extracts location amenity features into Schema.org LocationFeatureSpecification array
  */
 export function extractAmenityFeatures(
-  venue: VenueLike
+  venue: VenueLike,
 ): LocationFeatureSpecificationSchema[] {
   if (Array.isArray(venue.amenityFeature)) {
     return venue.amenityFeature;
@@ -170,7 +173,10 @@ export function extractAmenityFeatures(
 
   const features: LocationFeatureSpecificationSchema[] = [];
 
-  const addFeature = (name: string, value: boolean | string | number = true) => {
+  const addFeature = (
+    name: string,
+    value: boolean | string | number = true,
+  ) => {
     if (!features.some((f) => f.name.toLowerCase() === name.toLowerCase())) {
       features.push({
         "@type": "LocationFeatureSpecification",
@@ -278,9 +284,8 @@ export function generateVenueJsonLd(venue: VenueLike): VenueJsonLd {
     ratingValue = venue.rating;
   } else if (Array.isArray(venue.ratings) && venue.ratings.length > 0) {
     const sum = venue.ratings.reduce(
-      (acc, r) =>
-        acc + (typeof r.wifiQuality === "number" ? r.wifiQuality : 5),
-      0
+      (acc, r) => acc + (typeof r.wifiQuality === "number" ? r.wifiQuality : 5),
+      0,
     );
     ratingValue = Math.round((sum / venue.ratings.length) * 10) / 10;
   }
@@ -318,4 +323,18 @@ export function generateVenueJsonLd(venue: VenueLike): VenueJsonLd {
       : {}),
     amenityFeature: extractAmenityFeatures(venue),
   };
+}
+
+/**
+ * Safely serializes data into a JSON string suitable for embedding inside an HTML <script> tag.
+ * Replaces characters that could terminate the script tag or trigger HTML parsing
+ * (<, >, &, \u2028, \u2029) with their unicode escape sequences.
+ */
+export function serializeJsonLd(data: unknown): string {
+  return JSON.stringify(data ?? null)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }

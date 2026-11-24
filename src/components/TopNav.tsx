@@ -28,6 +28,8 @@ import { NetworkStatusPill } from "@/components/NetworkStatusPill";
 import { OfflineSyncStatusBadge } from "@/components/sync/OfflineSyncStatusBadge";
 import { OfflineConflictBadge } from "@/components/offline/OfflineConflictBadge";
 import { StorageUsageWarningBadge } from "@/components/Header/StorageUsageWarningBadge";
+import { OfflineDraftCountBadge } from "@/components/navigation/OfflineDraftCountBadge";
+import { BatterySaverIndicator } from "@/components/navigation/BatterySaverIndicator";
 import { QuickSearchTrigger } from "@/components/ui/QuickSearchTrigger";
 import { LanternPowerRing } from "@/components/analytics/LanternPowerRing";
 
@@ -189,10 +191,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                   <Icon className="w-4 h-4" />
                   {label}
                   {showBadge && (
-                    <ChatUnreadBadge
-                      count={unreadCount}
-                      className="ml-1"
-                    />
+                    <ChatUnreadBadge count={unreadCount} className="ml-1" />
                   )}
                 </Link>
               );
@@ -205,6 +204,8 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
           <NetworkStatusPill />
           <OfflineSyncStatusBadge />
           <OfflineConflictBadge />
+          <OfflineDraftCountBadge />
+          <BatterySaverIndicator />
           <StorageUsageWarningBadge />
           <LanternPowerRing size="sm" className="hidden sm:inline-flex" />
           <ThemeToggle />

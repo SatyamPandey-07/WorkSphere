@@ -1,4 +1,53 @@
-﻿'use client';
+
+import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DEFAULT_VENUE_AMENITIES,
+  getAmenitySuggestions,
+} from "../../lib/search/venueSearchSanitizer";
+
+export interface VenueSearchInputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "type"
+> {
+  shortcutLabel?: string;
+  showShortcutBadge?: boolean;
+  hasZeroResults?: boolean;
+  resultCount?: number;
+  amenitiesList?: readonly string[];
+  onSelectSuggestion?: (suggestion: string) => void;
+}
+
+export function isMacPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const platform = navigator.platform ?? "";
+  const userAgent = navigator.userAgent ?? "";
+  return (
+    /mac|iphone|ipad|ipod/i.test(platform) ||
+    /mac os x|macintosh/i.test(userAgent)
+  );
+}
+
+export function useGlobalSearchShortcut(
+  inputRef: React.RefObject<HTMLInputElement | null>,
+  enabled = true,
+): string {
+  const [shortcutLabel, setShortcutLabel] = useState<string>("Ctrl+K");
+
+  useEffect(() => {
+    setShortcutLabel(isMacPlatform() ? "⌘K" : "Ctrl+K");
+  }, []);
+
+  useEffect(() => {
+    if (!enabled || typeof window === "undefined") return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isShortcut =
+        event.key.toLowerCase() === "k" &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey;
+
+'use client';
 
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { buildVenueSearchParams } from '@/lib/venues/searchQuery';
@@ -195,6 +244,7 @@ export const VenueSearchInput = forwardRef<HTMLInputElement, VenueSearchInputPro
     onQueryParamsChange(params.toString());
   };
 
+
   const recordSearchQuery = (term: string): string => {
     const cleanQuery = normalizeSearchQuery(term);
     if (!cleanQuery) return '';
@@ -229,6 +279,11 @@ export const VenueSearchInput = forwardRef<HTMLInputElement, VenueSearchInputPro
     setIsDropdownOpen(false);
   };
 
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [enabled, inputRef]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       const cleanQuery = normalizeSearchQuery(query);
@@ -241,6 +296,7 @@ export const VenueSearchInput = forwardRef<HTMLInputElement, VenueSearchInputPro
       setIsDropdownOpen(false);
     }
   };
+
 
   return (
     <div ref={containerRef} className={`relative w-full ${className}`.trim()}>
@@ -312,6 +368,7 @@ export const VenueSearchInput = forwardRef<HTMLInputElement, VenueSearchInputPro
               </li>
             ))}
           </ul>
+
         </div>
       )}
     </div>

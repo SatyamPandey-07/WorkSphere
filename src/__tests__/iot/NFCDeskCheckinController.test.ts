@@ -157,4 +157,45 @@ describe('NFCDeskCheckinController - ISO 14443 NFC & Smart Presence State Machin
       expect(controller.getDeskStatus(deskId)?.state).toBe(DeskState.AVAILABLE);
     });
   });
+
+  describe('onTapRejected callback', () => {
+    it('fires for an invalid signature as well as onUnauthorizedTap', () => {
+      const rejected: string[] = [];
+      let unauthorized = 0;
+      controller.onTapRejected = (_d, reason) => rejected.push(reason);
+      controller.onUnauthorizedTap = () => {
+        unauthorized++;
+      };
+
+      const payload = createValidPayload('user-alice');
+      const res = controller.checkIn({ ...payload, signature: 'deadbeef' }, payload.timestamp);
+
+      expect(res.success).toBe(false);
+      expect(rejected).toHaveLength(1);
+      expect(unauthorized).toBe(1);
+    });
+
+    it('fires when the desk is occupied by another user', () => {
+      const rejected: string[] = [];
+      const first = createValidPayload('user-alice');
+      controller.checkIn(first, first.timestamp);
+
+      controller.onTapRejected = (_d, reason) => rejected.push(reason);
+      const second = createValidPayload('user-bob');
+      const res = controller.checkIn(second, second.timestamp);
+
+      expect(res.success).toBe(false);
+      expect(rejected).toEqual(['Desk is already occupied by user user-alice']);
+    });
+
+    it('does not fire on a successful check-in', () => {
+      let fired = false;
+      controller.onTapRejected = () => {
+        fired = true;
+      };
+      const payload = createValidPayload('user-alice');
+      expect(controller.checkIn(payload, payload.timestamp).success).toBe(true);
+      expect(fired).toBe(false);
+    });
+  });
 });

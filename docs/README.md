@@ -67,6 +67,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Double Ratchet Protocol](./security/DOUBLE_RATCHET_PROTOCOL.md) — encrypted messaging key evolution and protocol design.
 - [Skipped Message Key Store Runbook](./chat/SKIPPED_MESSAGE_KEY_STORE.md) — skipped-key retention, out-of-order recovery, storage limits, pruning, and source-verified security limitations.
 - [Zero-Knowledge Groth16 Proof Verification](./crypto/ZK_GROTH16_VERIFICATION.md) — zero-knowledge anonymous venue check-in architecture, Groth16 zk-SNARK pipeline, Poseidon nullifiers, and verification.
+- [Circom Witness Generation Worker Pool Architecture](./zkp/CIRCOM_WITNESS_WORKER_POOL.md) — Web Worker thread offloading, BN254 elliptic curve constraints, watchdog timeouts, and WASM memory lifecycle.
 - [Merchant Solana Escrow Settlement & Automated Refund Dispute Guide](./payments/solana-escrow.md) — non-custodial Solana escrow state machine, PDA derivation, deposit and settlement transactions, 2-of-3 multi-sig disputes, automated expiry refunds, and Devnet testing.
 - [ZKP Verification Runbook](./security/ZKP_VERIFICATION_RUNBOOK.md) — Groth16 verification architecture and key rotation procedures.
 - [Solana Escrow Settlement and Refund Runbook](./solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow PDA derivation, confirmation levels, release and timeout refunds, and RPC failover.

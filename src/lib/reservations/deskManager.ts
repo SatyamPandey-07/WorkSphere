@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { calculateDistanceMeters, Coordinates } from "../geo/geofence";
 import { prisma } from "@/lib/prisma";
 
@@ -32,6 +33,95 @@ export function broadcastAvailabilityUpdate(
     } catch {
       sseClients.delete(client);
     }
+  }
+}
+
+export interface BookSeatVersionGuardResult {
+  success: boolean;
+  booking?: any;
+  error?: string;
+  code?: number;
+}
+
+/**
+ * Attempts to book a seat using a Prisma transaction with version column
+ * guard for optimistic concurrency control. Only one concurrent request
+ * can succeed; others receive 409 Conflict.
+ */
+export async function bookSeatWithVersionGuard(
+  seatId: string,
+  userId: string,
+  venueId: string,
+  date: string,
+  time: string,
+  timeZone: string,
+  duration: number,
+): Promise<BookSeatVersionGuardResult> {
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Double-check availability inside the locked transaction
+      const existing = await tx.booking.findFirst({
+        where: {
+          seatId,
+          status: "CONFIRMED",
+          date,
+          time,
+          timeZone,
+        },
+        select: { id: true, version: true, status: true },
+      });
+
+      if (existing) {
+        return {
+          success: false,
+          error: "Seat is already booked for the selected time slot",
+          code: 409,
+        };
+      }
+
+      // 2. Create new reservation record with version = 1
+      const newBooking = await tx.booking.create({
+        data: {
+          userId,
+          venueId,
+          seatId,
+          seatNumber: "desk-101",
+          duration,
+          date,
+          time,
+          timeZone,
+          status: "CONFIRMED",
+          confirmationId: `WS-${crypto.randomBytes(4).toString("hex").toUpperCase()}`,
+        },
+        select: { id: true, version: true, status: true, seat: true },
+      });
+
+      return {
+        success: true,
+        booking: newBooking,
+      };
+    });
+
+    return result;
+  } catch (err: any) {
+    const code = err.code;
+    if (code === "P2002") {
+      // Unique constraint violation - another transaction already booked this slot
+      return {
+        success: false,
+        error: "Seat already booked. Choose another.",
+        code: 409,
+      };
+    }
+    if (code === "P2034" || code === "P2028") {
+      // Transaction deadlock / write conflict - another transaction won
+      return {
+        success: false,
+        error: "Concurrent booking conflict. Please retry.",
+        code: 409,
+      };
+    }
+    throw err;
   }
 }
 

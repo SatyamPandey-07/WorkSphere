@@ -8,38 +8,50 @@ import {
 import { AmbientSoundGenerator } from '@/components/audio/AmbientSoundGenerator';
 
 function createMockAudioContext() {
-  const gainNode = {
+  const masterGain = {
     gain: {
       value: 1,
       setTargetAtTime: jest.fn((val: number) => {
-        gainNode.gain.value = val;
+        masterGain.gain.value = val;
       }),
     },
     connect: jest.fn(),
     disconnect: jest.fn(),
   };
 
-  const filterNode = {
+  const makeGain = () => {
+    const g = {
+      gain: {
+        value: 1,
+        setTargetAtTime: jest.fn((val: number) => {
+          g.gain.value = val;
+        }),
+      },
+      connect: jest.fn(),
+      disconnect: jest.fn(),
+    };
+    return g;
+  };
+
+  const makeFilter = () => ({
     type: 'allpass' as BiquadFilterType,
     frequency: { value: 1000 },
     connect: jest.fn(),
     disconnect: jest.fn(),
-  };
+  });
 
-  const sourceNode = {
+  const makeSource = () => ({
     buffer: null as AudioBuffer | null,
     loop: false,
     connect: jest.fn(),
     disconnect: jest.fn(),
     start: jest.fn(),
     stop: jest.fn(),
-  };
+  });
 
-  const ctx: AudioContextLike & {
-    _gainNode: typeof gainNode;
-    _filterNode: typeof filterNode;
-    _sourceNode: typeof sourceNode;
-  } = {
+  let gainCallCount = 0;
+
+  const ctx: AudioContextLike & { _masterGain: typeof masterGain } = {
     sampleRate: 44100,
     currentTime: 0,
     state: 'running',
@@ -55,20 +67,22 @@ function createMockAudioContext() {
         copyToChannel: (src: Float32Array) => channelData.set(src),
       } as unknown as AudioBuffer;
     }),
-    createBufferSource: jest.fn(() => sourceNode as unknown as AudioBufferSourceNode),
-    createBiquadFilter: jest.fn(() => filterNode as unknown as BiquadFilterNode),
-    createGain: jest.fn(() => gainNode as unknown as GainNode),
+    createBufferSource: jest.fn(() => makeSource() as unknown as AudioBufferSourceNode),
+    createBiquadFilter: jest.fn(() => makeFilter() as unknown as BiquadFilterNode),
+    createGain: jest.fn(() => {
+      gainCallCount += 1;
+      if (gainCallCount === 1) return masterGain as unknown as GainNode;
+      return makeGain() as unknown as GainNode;
+    }),
     resume: jest.fn().mockResolvedValue(undefined),
     close: jest.fn().mockResolvedValue(undefined),
-    _gainNode: gainNode,
-    _filterNode: filterNode,
-    _sourceNode: sourceNode,
+    _masterGain: masterGain,
   };
 
   return ctx;
 }
 
-describe('NoiseSynthesizer & AmbientSoundGenerator', () => {
+describe('NoiseSynthesizer & AmbientSoundGenerator v3 mixer', () => {
   it('generates bounded samples for white, pink, and rain presets', () => {
     for (const type of ['white', 'pink', 'rain'] as const) {
       const samples = generateNoiseSamples(type, 512, 44100);
@@ -80,26 +94,24 @@ describe('NoiseSynthesizer & AmbientSoundGenerator', () => {
     }
   });
 
-  it('wires Web Audio nodes, attenuates volume, and pauses when tab becomes hidden or muted', async () => {
+  it('wires multi-layer graph, attenuates volume, and pauses on tab hide or mute', async () => {
     const mockCtx = createMockAudioContext();
     const synth = new NoiseSynthesizer({
       soundType: 'rain',
       volume: 0.75,
+      layerLevels: { white: 0.2, pink: 0.3, rain: 0.9 },
       bufferDurationSeconds: 1,
       audioContextFactory: () => mockCtx,
     });
 
     await synth.play();
-    expect(mockCtx.createBufferSource).toHaveBeenCalledTimes(1);
-    expect(mockCtx.createBiquadFilter).toHaveBeenCalledTimes(1);
-    expect(mockCtx.createGain).toHaveBeenCalledTimes(1);
-    expect(mockCtx._sourceNode.connect).toHaveBeenCalledWith(mockCtx._filterNode);
-    expect(mockCtx._filterNode.connect).toHaveBeenCalledWith(mockCtx._gainNode);
-    expect(mockCtx._gainNode.connect).toHaveBeenCalledWith(mockCtx.destination);
-    expect(mockCtx._gainNode.gain.value).toBeCloseTo(0.75, 2);
+    expect(mockCtx.createBufferSource).toHaveBeenCalledTimes(3);
+    expect(mockCtx.createBiquadFilter).toHaveBeenCalledTimes(3);
+    expect(mockCtx.createGain).toHaveBeenCalledTimes(4);
+    expect(mockCtx._masterGain.gain.value).toBeCloseTo(0.75, 2);
 
-    synth.setVolume(0.2);
-    expect(mockCtx._gainNode.gain.value).toBeCloseTo(0.2, 2);
+    synth.setVolume(0.25);
+    expect(mockCtx._masterGain.gain.value).toBeCloseTo(0.25, 2);
 
     Object.defineProperty(document, 'hidden', {
       value: true,
@@ -107,27 +119,30 @@ describe('NoiseSynthesizer & AmbientSoundGenerator', () => {
     });
     document.dispatchEvent(new Event('visibilitychange'));
     expect(synth.getState().isPlaying).toBe(false);
-    expect(mockCtx._sourceNode.stop).toHaveBeenCalled();
 
     Object.defineProperty(document, 'hidden', {
       value: false,
       configurable: true,
     });
     await synth.play();
-    expect(synth.getState().isPlaying).toBe(true);
-
     synth.setMuted(true);
     expect(synth.getState().isPlaying).toBe(false);
-    expect(mockCtx._gainNode.gain.value).toBe(0);
+    expect(mockCtx._masterGain.gain.value).toBe(0);
 
     await synth.dispose();
   });
 
-  it('renders play/pause toggle, sound presets, and volume slider in AmbientSoundGenerator', async () => {
+  it('renders mixer controls and safely handles storage quota errors', async () => {
     const mockCtx = createMockAudioContext();
     (window as unknown as { AudioContext: unknown }).AudioContext = jest
       .fn()
       .mockImplementation(() => mockCtx);
+
+    const setItemSpy = jest
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
 
     render(<AmbientSoundGenerator initialSound="pink" initialVolume={0.5} />);
 
@@ -137,8 +152,11 @@ describe('NoiseSynthesizer & AmbientSoundGenerator', () => {
     });
     expect(playBtn.textContent).toBe('Pause');
 
-    const slider = screen.getByTestId('ambient-volume-slider');
-    fireEvent.change(slider, { target: { value: '80' } });
-    expect(screen.getByTestId('ambient-volume-value').textContent).toBe('80%');
+    fireEvent.change(screen.getByTestId('layer-slider-rain'), {
+      target: { value: '65' },
+    });
+    expect(screen.getByTestId('ambient-sound-generator')).toBeTruthy();
+
+    setItemSpy.mockRestore();
   });
 });

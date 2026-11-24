@@ -4,12 +4,23 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   clampVolume,
   NoiseSynthesizer,
+  normalizeLayerLevels,
   type AmbientSoundType,
+  type LayerMixLevels,
 } from '@/lib/audio/noiseSynthesizer';
+
+export const AMBIENT_PRESET_STORAGE_KEY = 'worksphere:ambient_soundscape:v1';
+
+export interface SavedAmbientPreset {
+  soundType: AmbientSoundType;
+  volume: number;
+  layerLevels: LayerMixLevels;
+}
 
 export interface AmbientSoundGeneratorProps {
   initialSound?: AmbientSoundType;
   initialVolume?: number;
+  storageKey?: string;
   className?: string;
 }
 
@@ -19,21 +30,78 @@ const SOUND_OPTIONS: { id: AmbientSoundType; label: string; hint: string }[] = [
   { id: 'rain', label: 'Rain Sound', hint: 'Gentle steady rainfall' },
 ];
 
+export function loadSavedAmbientPreset(
+  fallbackSound: AmbientSoundType,
+  fallbackVolume: number,
+  storageKey = AMBIENT_PRESET_STORAGE_KEY
+): SavedAmbientPreset {
+  const safeVol = clampVolume(fallbackVolume);
+  const defaultLevels = normalizeLayerLevels(undefined, fallbackSound);
+
+  if (typeof window === 'undefined') {
+    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
+    }
+    const parsed = JSON.parse(raw) as Partial<SavedAmbientPreset>;
+    const soundType: AmbientSoundType =
+      parsed.soundType === 'white' ||
+      parsed.soundType === 'pink' ||
+      parsed.soundType === 'rain'
+        ? parsed.soundType
+        : fallbackSound;
+    const volume = clampVolume(parsed.volume ?? safeVol);
+    const layerLevels = normalizeLayerLevels(parsed.layerLevels, soundType);
+    return { soundType, volume, layerLevels };
+  } catch {
+    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
+  }
+}
+
+export function saveAmbientPreset(
+  preset: SavedAmbientPreset,
+  storageKey = AMBIENT_PRESET_STORAGE_KEY
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(preset));
+  } catch {
+    // Ignore storage quota or private-browsing errors
+  }
+}
+
 export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   initialSound = 'pink',
   initialVolume = 0.5,
+  storageKey = AMBIENT_PRESET_STORAGE_KEY,
   className = '',
 }) => {
-  const [soundType, setSoundType] = useState<AmbientSoundType>(initialSound);
-  const [volume, setVolume] = useState<number>(() => clampVolume(initialVolume));
+  const initialPreset = loadSavedAmbientPreset(
+    initialSound,
+    initialVolume,
+    storageKey
+  );
+
+  const [soundType, setSoundType] = useState<AmbientSoundType>(
+    initialPreset.soundType
+  );
+  const [volume, setVolume] = useState<number>(initialPreset.volume);
+  const [layerLevels, setLayerLevels] = useState<LayerMixLevels>(
+    initialPreset.layerLevels
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
   const synthRef = useRef<NoiseSynthesizer | null>(null);
   if (!synthRef.current) {
     synthRef.current = new NoiseSynthesizer({
-      soundType: initialSound,
-      volume: clampVolume(initialVolume),
+      soundType: initialPreset.soundType,
+      volume: initialPreset.volume,
+      layerLevels: initialPreset.layerLevels,
       muted: false,
     });
   }
@@ -56,9 +124,35 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
+  const persistCurrent = (
+    nextSound: AmbientSoundType,
+    nextVol: number,
+    nextLayers: LayerMixLevels
+  ) => {
+    saveAmbientPreset(
+      { soundType: nextSound, volume: nextVol, layerLevels: nextLayers },
+      storageKey
+    );
+  };
+
   const handleSelectSound = (nextType: AmbientSoundType) => {
+    const nextLayers: LayerMixLevels = {
+      white: nextType === 'white' ? Math.max(0.7, layerLevels.white) : 0,
+      pink: nextType === 'pink' ? Math.max(0.7, layerLevels.pink) : 0,
+      rain: nextType === 'rain' ? Math.max(0.7, layerLevels.rain) : 0,
+    };
     setSoundType(nextType);
+    setLayerLevels(nextLayers);
     synthRef.current?.setSoundType(nextType);
+    persistCurrent(nextType, volume, nextLayers);
+  };
+
+  const handleLayerChange = (type: AmbientSoundType, nextVal: number) => {
+    const clamped = clampVolume(nextVal);
+    const nextLayers = { ...layerLevels, [type]: clamped };
+    setLayerLevels(nextLayers);
+    synthRef.current?.setLayerLevel(type, clamped);
+    persistCurrent(soundType, volume, nextLayers);
   };
 
   const handleTogglePlay = async () => {
@@ -85,6 +179,7 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     const clamped = clampVolume(nextVal);
     setVolume(clamped);
     synthRef.current?.setVolume(clamped);
+    persistCurrent(soundType, clamped, layerLevels);
   };
 
   return (
@@ -96,7 +191,7 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-900 sm:text-base dark:text-slate-100">
-            Focus Soundscape
+            Focus Soundscape Mixer
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Synthesized in-browser with zero external audio files
@@ -156,29 +251,57 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
         })}
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <label
-          htmlFor="ambient-volume-slider"
-          className="text-xs font-medium text-slate-600 dark:text-slate-300"
-        >
-          Volume
-        </label>
-        <input
-          id="ambient-volume-slider"
-          type="range"
-          min={0}
-          max={100}
-          value={Math.round(volume * 100)}
-          data-testid="ambient-volume-slider"
-          onChange={(e) => handleVolumeChange(Number(e.target.value) / 100)}
-          className="h-2 w-full cursor-pointer accent-indigo-600"
-        />
-        <span
-          data-testid="ambient-volume-value"
-          className="w-10 text-right text-xs font-semibold text-slate-700 dark:text-slate-200"
-        >
-          {Math.round(volume * 100)}%
-        </span>
+      <div className="mt-4 space-y-2.5">
+        <div className="flex items-center gap-3">
+          <label
+            htmlFor="ambient-volume-slider"
+            className="w-20 text-xs font-medium text-slate-600 dark:text-slate-300"
+          >
+            Master
+          </label>
+          <input
+            id="ambient-volume-slider"
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(volume * 100)}
+            data-testid="ambient-volume-slider"
+            onChange={(e) => handleVolumeChange(Number(e.target.value) / 100)}
+            className="h-2 w-full cursor-pointer accent-indigo-600"
+          />
+          <span
+            data-testid="ambient-volume-value"
+            className="w-10 text-right text-xs font-semibold text-slate-700 dark:text-slate-200"
+          >
+            {Math.round(volume * 100)}%
+          </span>
+        </div>
+
+        {(['white', 'pink', 'rain'] as const).map((layerKey) => (
+          <div key={layerKey} className="flex items-center gap-3">
+            <label
+              htmlFor={`layer-slider-${layerKey}`}
+              className="w-20 text-xs capitalize text-slate-500 dark:text-slate-400"
+            >
+              {layerKey}
+            </label>
+            <input
+              id={`layer-slider-${layerKey}`}
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(layerLevels[layerKey] * 100)}
+              data-testid={`layer-slider-${layerKey}`}
+              onChange={(e) =>
+                handleLayerChange(layerKey, Number(e.target.value) / 100)
+              }
+              className="h-1.5 w-full cursor-pointer accent-indigo-500"
+            />
+            <span className="w-10 text-right text-[11px] text-slate-500 dark:text-slate-400">
+              {Math.round(layerLevels[layerKey] * 100)}%
+            </span>
+          </div>
+        ))}
       </div>
     </section>
   );

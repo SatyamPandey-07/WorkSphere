@@ -184,9 +184,11 @@ export async function getVerificationCacheDb(
 ): Promise<IDBPDatabase<any>> {
   if (!dbInstancePromise) {
     dbInstancePromise = openDB(dbName, 1, {
-      upgrade(db, oldVersion, newVersion, tx) {
+      upgrade(db) {
         if (!db.objectStoreNames.contains(storeName)) {
-          const store = db.createObjectStore(storeName, { keyPath: "cacheKey" });
+          const store = db.createObjectStore(storeName, {
+            keyPath: "cacheKey",
+          });
           store.createIndex(ZKP_VERIFIED_PROOFS_INDEX_HASH, "proofHash", {
             unique: false,
           });
@@ -194,10 +196,14 @@ export async function getVerificationCacheDb(
         }
       },
       blocked() {
-        console.warn("[ZKP VerificationCache] Database open request blocked by older connection.");
+        console.warn(
+          "[ZKP VerificationCache] Database open request blocked by older connection.",
+        );
       },
       blocking() {
-        console.warn("[ZKP VerificationCache] Database upgrade blocking; closing connection.");
+        console.warn(
+          "[ZKP VerificationCache] Database upgrade blocking; closing connection.",
+        );
         if (dbInstancePromise) {
           void dbInstancePromise.then((db) => db.close()).catch(() => {});
           dbInstancePromise = null;
@@ -230,10 +236,7 @@ export async function getCachedVerification(
     const { cacheKey, proofHash, vKeyFingerprint } =
       await computeVerificationCacheKey(input);
 
-    const db = await getVerificationCacheDb(
-      options.dbName,
-      options.storeName,
-    );
+    const db = await getVerificationCacheDb(options.dbName, options.storeName);
     const store = options.storeName || ZKP_VERIFIED_PROOFS_STORE_NAME;
 
     const entry: VerifiedProofEntry | undefined = await db.get(store, cacheKey);
@@ -300,7 +303,7 @@ export async function getCachedVerification(
     void db.put(store, entry).catch(() => {});
 
     return { hit: true, entry };
-  } catch (err) {
+  } catch {
     // Treat any error as a cache miss to safely fallback to cryptographic verification
     return { hit: false, reason: "error" };
   }
@@ -320,10 +323,7 @@ export async function cacheVerifiedProof(
     const { cacheKey, proofHash, vKeyFingerprint } =
       await computeVerificationCacheKey(input);
 
-    const db = await getVerificationCacheDb(
-      options.dbName,
-      options.storeName,
-    );
+    const db = await getVerificationCacheDb(options.dbName, options.storeName);
     const storeName = options.storeName || ZKP_VERIFIED_PROOFS_STORE_NAME;
     const ttlMs = options.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS;
     const maxEntries = options.maxEntries ?? DEFAULT_MAX_VERIFIED_ENTRIES;
@@ -380,7 +380,7 @@ export async function cacheVerifiedProof(
     scheduleIdleCleanup(options);
 
     return true;
-  } catch (err) {
+  } catch {
     // Quota or storage write failure: best effort, never fail verification
     return false;
   }
@@ -394,10 +394,7 @@ export async function purgeExpiredVerifications(
 ): Promise<number> {
   if (!isVerificationCacheAvailable()) return 0;
   try {
-    const db = await getVerificationCacheDb(
-      options.dbName,
-      options.storeName,
-    );
+    const db = await getVerificationCacheDb(options.dbName, options.storeName);
     const storeName = options.storeName || ZKP_VERIFIED_PROOFS_STORE_NAME;
     const tx = db.transaction(storeName, "readwrite");
     const store = tx.objectStore(storeName);
@@ -421,7 +418,9 @@ export async function purgeExpiredVerifications(
 /**
  * Schedules background cleanup during idle period or via setTimeout fallback.
  */
-export function scheduleIdleCleanup(options: VerificationCacheOptions = {}): void {
+export function scheduleIdleCleanup(
+  options: VerificationCacheOptions = {},
+): void {
   if (scheduledCleanupTimeout) return;
 
   const runCleanup = () => {
@@ -447,10 +446,7 @@ export async function clearVerificationCache(
 ): Promise<void> {
   if (!isVerificationCacheAvailable()) return;
   try {
-    const db = await getVerificationCacheDb(
-      options.dbName,
-      options.storeName,
-    );
+    const db = await getVerificationCacheDb(options.dbName, options.storeName);
     const storeName = options.storeName || ZKP_VERIFIED_PROOFS_STORE_NAME;
     await db.clear(storeName);
   } catch {
@@ -502,4 +498,6 @@ export {
   DEFAULT_FRESH_MS,
   DEFAULT_MAX_AGE_MS,
   DEFAULT_MAX_CACHE_BYTES,
+  STUDENT_DISCOUNT_SCOPE,
+  STUDENT_PROOF_SCOPE,
 } from "./proofCacheLegacy";

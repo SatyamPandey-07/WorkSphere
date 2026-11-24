@@ -4,15 +4,23 @@ import {
   BadgeValidationError,
   createNomadBadgeBlob,
   downloadNomadBadge,
+  downloadNomadPassportPngBadge,
   escapeSvgText,
   generateNomadBadgeSvg,
   getNomadBadgeFilename,
+  getNomadPassportPngFilename,
+  renderSvgToPngBlob,
   validateBadgeParams,
 } from "@/lib/profile/badgeGenerator";
 import { downloadSVG } from "@/lib/qr/svgQr";
+import { triggerBrowserDownload } from "@/lib/export/csvBuilder";
 
 jest.mock("@/lib/qr/svgQr", () => ({
   downloadSVG: jest.fn(),
+}));
+
+jest.mock("@/lib/export/csvBuilder", () => ({
+  triggerBrowserDownload: jest.fn(),
 }));
 
 const ISSUED = "2026-11-22T11:17:00.000Z";
@@ -96,9 +104,9 @@ describe("validateBadgeParams", () => {
   });
 
   it("rejects missing params", () => {
-    expect(() =>
-      validateBadgeParams(null as unknown as typeof base),
-    ).toThrow(BadgeValidationError);
+    expect(() => validateBadgeParams(null as unknown as typeof base)).toThrow(
+      BadgeValidationError,
+    );
   });
 
   it("accepts zero check-ins and defaults issuedAt to now", () => {
@@ -161,7 +169,11 @@ describe("generateNomadBadgeSvg", () => {
 
   it("neutralizes attribute breakout through the aria-label", () => {
     const evil = `" onload="alert(1)`;
-    const svg = generateNomadBadgeSvg({ ...base, displayName: evil, rank: evil });
+    const svg = generateNomadBadgeSvg({
+      ...base,
+      displayName: evil,
+      rank: evil,
+    });
     const doc = parseSvg(svg);
     expect(doc.getElementsByTagName("parsererror")).toHaveLength(0);
     expect(doc.documentElement.hasAttribute("onload")).toBe(false);
@@ -208,7 +220,9 @@ describe("createNomadBadgeBlob", () => {
 
 describe("getNomadBadgeFilename", () => {
   it("slugifies the display name", () => {
-    expect(getNomadBadgeFilename("Alex Nomad")).toBe("nomad-badge-alex-nomad.svg");
+    expect(getNomadBadgeFilename("Alex Nomad")).toBe(
+      "nomad-badge-alex-nomad.svg",
+    );
   });
 
   it("removes path separators and unsafe characters", () => {
@@ -242,5 +256,124 @@ describe("downloadNomadBadge", () => {
       BadgeValidationError,
     );
     expect(downloadSVG).not.toHaveBeenCalled();
+  });
+});
+
+describe("getNomadPassportPngFilename (#9721)", () => {
+  it("slugifies username and appends .png", () => {
+    expect(getNomadPassportPngFilename("Alex Nomad")).toBe(
+      "nomad-passport-alex-nomad.png",
+    );
+    expect(getNomadPassportPngFilename("Jane_Doe #42")).toBe(
+      "nomad-passport-jane-doe-42.png",
+    );
+  });
+
+  it("falls back to nomad-passport-member.png when username is empty", () => {
+    expect(getNomadPassportPngFilename("")).toBe("nomad-passport-member.png");
+    expect(getNomadPassportPngFilename("   ")).toBe(
+      "nomad-passport-member.png",
+    );
+    expect(getNomadPassportPngFilename(undefined as unknown as string)).toBe(
+      "nomad-passport-member.png",
+    );
+  });
+});
+
+describe("renderSvgToPngBlob and downloadNomadPassportPngBadge (#9721)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("renders SVG onto canvas at 2x scale and outputs PNG blob", async () => {
+    const origCreateElement = document.createElement.bind(document);
+    const mockBlob = new Blob(["png-data"], { type: "image/png" });
+
+    const mockImage = {
+      onload: null as any,
+      onerror: null as any,
+      set src(_val: string) {
+        setTimeout(() => this.onload?.(), 10);
+      },
+    };
+    const origImage = global.Image;
+    global.Image = jest.fn(() => mockImage as any);
+
+    const origCreateObjectURL = URL.createObjectURL;
+    const origRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = jest.fn(() => "blob:mock-svg");
+    URL.revokeObjectURL = jest.fn();
+
+    const mockCtx = {
+      clearRect: jest.fn(),
+      drawImage: jest.fn(),
+    };
+
+    jest
+      .spyOn(document, "createElement")
+      .mockImplementation((tagName: string) => {
+        const el = origCreateElement(tagName);
+        if (tagName === "canvas") {
+          (el as any).getContext = jest.fn(() => mockCtx);
+          (el as any).toBlob = jest.fn((cb: any) => cb(mockBlob));
+        }
+        return el;
+      });
+
+    const svg = generateNomadBadgeSvg(base);
+    const blob = await renderSvgToPngBlob(svg, 2);
+
+    expect(blob).toBe(mockBlob);
+    expect(mockCtx.drawImage).toHaveBeenCalled();
+
+    global.Image = origImage;
+    URL.createObjectURL = origCreateObjectURL;
+    URL.revokeObjectURL = origRevokeObjectURL;
+    jest.restoreAllMocks();
+  });
+
+  it("downloads PNG badge named nomad-passport-[username].png", async () => {
+    const mockBlob = new Blob(["png-data"], { type: "image/png" });
+    const mockImage = {
+      onload: null as any,
+      onerror: null as any,
+      set src(_val: string) {
+        setTimeout(() => this.onload?.(), 10);
+      },
+    };
+    const origImage = global.Image;
+    global.Image = jest.fn(() => mockImage as any);
+
+    const origCreateObjectURL = URL.createObjectURL;
+    const origRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = jest.fn(() => "blob:mock-svg");
+    URL.revokeObjectURL = jest.fn();
+
+    const origCreateElement = document.createElement.bind(document);
+    jest
+      .spyOn(document, "createElement")
+      .mockImplementation((tagName: string) => {
+        const el = origCreateElement(tagName);
+        if (tagName === "canvas") {
+          (el as any).getContext = jest.fn(() => ({
+            clearRect: jest.fn(),
+            drawImage: jest.fn(),
+          }));
+          (el as any).toBlob = jest.fn((cb: any) => cb(mockBlob));
+        }
+        return el;
+      });
+
+    await downloadNomadPassportPngBadge(base, 2);
+
+    expect(triggerBrowserDownload).toHaveBeenCalledWith(
+      mockBlob,
+      "nomad-passport-alex-nomad.png",
+    );
+
+    global.Image = origImage;
+    URL.createObjectURL = origCreateObjectURL;
+    URL.revokeObjectURL = origRevokeObjectURL;
+    jest.restoreAllMocks();
   });
 });

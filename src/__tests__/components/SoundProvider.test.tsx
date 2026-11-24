@@ -1,7 +1,12 @@
 import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { SoundProvider, useSound } from "@/components/SoundProvider";
+import {
+  SoundProvider,
+  useSound,
+  playBookmarkChime,
+  playUnbookmarkTone,
+} from "@/components/SoundProvider";
 
 function TestConsumer() {
   const { soundEnabled, toggleSound, setSoundEnabled } = useSound();
@@ -190,5 +195,144 @@ describe("SoundProvider and useSound (#6931)", () => {
     });
 
     expect(screen.getByTestId("sound-status")).toHaveTextContent("disabled");
+  });
+
+  describe("Bookmark Tactile Sound Effects (#7203)", () => {
+    let mockOscillator: any;
+    let mockGain: any;
+    let mockContext: any;
+
+    beforeEach(() => {
+      mockOscillator = {
+        type: "sine",
+        frequency: {
+          setValueAtTime: jest.fn(),
+          exponentialRampToValueAtTime: jest.fn(),
+        },
+        connect: jest.fn(),
+        start: jest.fn(),
+        stop: jest.fn(),
+      };
+      mockGain = {
+        gain: {
+          setValueAtTime: jest.fn(),
+          linearRampToValueAtTime: jest.fn(),
+          exponentialRampToValueAtTime: jest.fn(),
+        },
+        connect: jest.fn(),
+      };
+      mockContext = {
+        currentTime: 0,
+        state: "running",
+        destination: {},
+        createOscillator: jest.fn(() => mockOscillator),
+        createGain: jest.fn(() => mockGain),
+        resume: jest.fn().mockResolvedValue(undefined),
+        close: jest.fn().mockResolvedValue(undefined),
+      };
+
+      (window as any).AudioContext = jest.fn(() => mockContext);
+    });
+
+    afterEach(() => {
+      delete (window as any).AudioContext;
+      delete (window as any).webkitAudioContext;
+    });
+
+    it("synthesizes micro-acoustic chime via playBookmarkChime", () => {
+      const result = playBookmarkChime(0.5);
+      expect(result).toBe(true);
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(2);
+      expect(mockContext.createGain).toHaveBeenCalledTimes(1);
+      expect(mockOscillator.start).toHaveBeenCalledTimes(2);
+    });
+
+    it("synthesizes soft low-frequency tone via playUnbookmarkTone", () => {
+      const result = playUnbookmarkTone(0.5);
+      expect(result).toBe(true);
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(1);
+      expect(mockContext.createGain).toHaveBeenCalledTimes(1);
+      expect(mockOscillator.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("silences feedback when volume is <= 0", () => {
+      expect(playBookmarkChime(0)).toBe(false);
+      expect(playUnbookmarkTone(-0.5)).toBe(false);
+      expect(mockContext.createOscillator).not.toHaveBeenCalled();
+    });
+
+    it("returns false gracefully when AudioContext is unavailable in window", () => {
+      delete (window as any).AudioContext;
+      delete (window as any).webkitAudioContext;
+      expect(playBookmarkChime(0.5)).toBe(false);
+      expect(playUnbookmarkTone(0.5)).toBe(false);
+    });
+
+    it("allows useSound({ suppressError: true }) without throwing outside SoundProvider", () => {
+      function SuppressedConsumer() {
+        const sound = useSound({ suppressError: true });
+        return (
+          <span data-testid="suppressed-enabled">
+            {String(sound.soundEnabled)}
+          </span>
+        );
+      }
+
+      render(<SuppressedConsumer />);
+      expect(screen.getByTestId("suppressed-enabled")).toHaveTextContent(
+        "false",
+      );
+    });
+
+    it("triggers playBookmarkSound from SoundProvider context respecting global mute", () => {
+      function SoundTriggerConsumer() {
+        const { playBookmarkSound, setSoundEnabled } = useSound();
+        return (
+          <div>
+            <button
+              data-testid="play-bookmark"
+              onClick={() => playBookmarkSound(true)}
+            >
+              Bookmark
+            </button>
+            <button
+              data-testid="play-unbookmark"
+              onClick={() => playBookmarkSound(false)}
+            >
+              Unbookmark
+            </button>
+            <button
+              data-testid="mute-btn"
+              onClick={() => setSoundEnabled(false)}
+            >
+              Mute
+            </button>
+          </div>
+        );
+      }
+
+      render(
+        <SoundProvider defaultEnabled={true}>
+          <SoundTriggerConsumer />
+        </SoundProvider>,
+      );
+
+      fireEvent.click(screen.getByTestId("play-bookmark"));
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(2);
+
+      jest.clearAllMocks();
+      fireEvent.click(screen.getByTestId("play-unbookmark"));
+      expect(mockContext.createOscillator).toHaveBeenCalledTimes(1);
+
+      // Now mute globally
+      fireEvent.click(screen.getByTestId("mute-btn"));
+      jest.clearAllMocks();
+
+      fireEvent.click(screen.getByTestId("play-bookmark"));
+      expect(mockContext.createOscillator).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId("play-unbookmark"));
+      expect(mockContext.createOscillator).not.toHaveBeenCalled();
+    });
   });
 });

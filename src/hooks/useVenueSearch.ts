@@ -1,6 +1,10 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  getVenueSearchCache,
+  setVenueSearchCache,
+} from "@/lib/search/venueSearchCache";
 
 export interface VenueSearchResult {
   id: string;
@@ -173,6 +177,16 @@ export function useVenueSearch<T = VenueSearchResult>(
           url += `&${additionalParams}`;
         }
 
+        // Return cached results when the query and filters match.
+        const cachedItems = getVenueSearchCache<T>(url);
+
+        if (cachedItems !== null) {
+          setVenues(cachedItems);
+          setSuggestedQuery(null);
+          setIsLoading(false);
+          return;
+        }
+
         const response = await fetch(url, {
           signal: controller.signal,
         });
@@ -200,6 +214,7 @@ export function useVenueSearch<T = VenueSearchResult>(
             ? data.venues
             : [];
 
+        setVenueSearchCache<T>(url, items);
         setVenues(items);
         setSuggestedQuery(
           typeof data?.suggestedQuery === "string" ? data.suggestedQuery : null,

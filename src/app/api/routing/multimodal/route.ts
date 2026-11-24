@@ -1,126 +1,151 @@
-import { NextResponse } from 'next/server';
+/**
+ * route.ts
+ * API endpoint exposing the multi-modal routing matrix to the frontend map components.
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { MicroMobilityAggregator } from "@/core/routing/MicroMobilityAggregator";
+import { TransitGraphBuilder } from "@/core/routing/TransitGraphBuilder";
+import { MultiModalDijkstra } from "@/core/routing/MultiModalDijkstra";
 import {
-  buildEcoRouteOptions,
-  type EcoRoutingHooks,
-  type GeoPoint,
-} from '@/lib/routing/ecoRoutingEngine';
+  calculateEcoRoute,
+  areValidCoordinates,
+  generateMultiModalRouteCards,
+} from "@/lib/routing/ecoRoutingEngine";
 
-export const ROUTING_SLA_BUDGET_MS = 450;
-export const INTERNAL_DEADLINE_MS = 400;
-
-export interface MultimodalRoutingRequest {
-  origin: GeoPoint;
-  destination: GeoPoint;
-  hooks?: EcoRoutingHooks;
-}
-
-function isValidPoint(pt: unknown): pt is GeoPoint {
-  if (!pt || typeof pt !== 'object') return false;
-  const candidate = pt as { lat?: unknown; lng?: unknown };
-  return (
-    typeof candidate.lat === 'number' &&
-    Number.isFinite(candidate.lat) &&
-    candidate.lat >= -90 &&
-    candidate.lat <= 90 &&
-    typeof candidate.lng === 'number' &&
-    Number.isFinite(candidate.lng) &&
-    candidate.lng >= -180 &&
-    candidate.lng <= 180
-  );
-}
-
-export async function handleMultimodalEcoPost(
-  body: unknown,
-  options: { deadlineMs?: number; hooks?: EcoRoutingHooks } = {}
-) {
-  const startedAt = Date.now();
-  const deadlineMs = options.deadlineMs ?? INTERNAL_DEADLINE_MS;
-
-  if (!body || typeof body !== 'object') {
-    return {
-      status: 400,
-      payload: { error: 'Invalid JSON request body.' },
-    };
-  }
-
-  const reqBody = body as MultimodalRoutingRequest;
-  if (!isValidPoint(reqBody.origin) || !isValidPoint(reqBody.destination)) {
-    return {
-      status: 400,
-      payload: {
-        error: 'Valid origin and destination { lat, lng } coordinates are required.',
-      },
-    };
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), deadlineMs);
-
+export async function POST(request: NextRequest) {
   try {
-    const mergedHooks: EcoRoutingHooks = {
-      ...reqBody.hooks,
-      ...options.hooks,
-    };
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-    const routes = await Promise.race([
-      buildEcoRouteOptions(
-        reqBody.origin,
-        reqBody.destination,
-        mergedHooks,
-        controller.signal
-      ),
-      new Promise<never>((_, reject) => {
-        controller.signal.addEventListener('abort', () => {
-          reject(new Error('ROUTING_DEADLINE_EXCEEDED'));
-        });
-      }),
-    ]);
+    const {
+      startLat,
+      startLng,
+      endLat,
+      endLng,
+      radiusMeters = 1000,
+      elevationProfile,
+      elevationGainMeters,
+      weightKg,
+      unitPreference = "metric",
+    } = body || {};
 
-    const elapsedMs = Date.now() - startedAt;
-    return {
-      status: 200,
-      payload: {
-        routes,
-        paretoRoutes: routes.filter((r) => r.paretoOptimal),
-        slaBudgetMs: ROUTING_SLA_BUDGET_MS,
-        latencyMs: elapsedMs,
-        degradedFallback: false,
-      },
-    };
-  } catch {
-    const fallbackRoutes = await buildEcoRouteOptions(
-      reqBody.origin,
-      reqBody.destination,
-      {}
+    if (
+      typeof startLat !== "number" ||
+      typeof startLng !== "number" ||
+      typeof endLat !== "number" ||
+      typeof endLng !== "number" ||
+      !areValidCoordinates({ lat: startLat, lng: startLng }) ||
+      !areValidCoordinates({ lat: endLat, lng: endLng })
+    ) {
+      return NextResponse.json(
+        { error: "Missing coordinates" },
+        { status: 400 },
+      );
+    }
+
+    // 1. Fetch micro-mobility options (gracefully handle if aggregator fails)
+    let vehicles: any[] = [];
+    try {
+      const aggregator = new MicroMobilityAggregator();
+      vehicles = await aggregator.fetchVehiclesInRadius(
+        startLat,
+        startLng,
+        radiusMeters,
+      );
+    } catch (aggError) {
+      console.warn(
+        "[multimodal/route] MicroMobilityAggregator error:",
+        aggError,
+      );
+    }
+
+    // 2. Build graph (with robust routing engine fallback)
+    const graph = new TransitGraphBuilder();
+    graph.addNode({
+      id: "start",
+      type: "road_intersection",
+      latitude: startLat,
+      longitude: startLng,
+    });
+    graph.addNode({
+      id: "end",
+      type: "venue",
+      latitude: endLat,
+      longitude: endLng,
+    });
+
+    if (vehicles && vehicles.length > 0) {
+      graph.mergeMicroMobilityData(vehicles, "end");
+    }
+
+    // Calculate walking edge via eco routing engine (handles 503/504/timeout with Haversine fallback)
+    const ecoRoute = await calculateEcoRoute(
+      { lat: startLat, lng: startLng },
+      { lat: endLat, lng: endLng },
+      { profile: "walking" },
     );
-    const elapsedMs = Date.now() - startedAt;
 
-    return {
-      status: 200,
-      payload: {
-        routes: fallbackRoutes,
-        paretoRoutes: fallbackRoutes.filter((r) => r.paretoOptimal),
-        slaBudgetMs: ROUTING_SLA_BUDGET_MS,
-        latencyMs: elapsedMs,
-        degradedFallback: true,
-      },
-    };
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
+    const walkingDistanceMeters = ecoRoute?.distanceMeters || 1200;
+    const walkingDurationSeconds = ecoRoute?.durationSeconds || 900;
 
-export async function POST(request: Request) {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
+    graph.addEdge({
+      fromId: "start",
+      toId: "end",
+      mode: "walking",
+      distanceMeters: walkingDistanceMeters,
+      durationSeconds: walkingDurationSeconds,
+      cost: 0,
+    });
+
+    // 3. Calculate route via Dijkstra
+    const dijkstra = new MultiModalDijkstra(graph, 1.0, 0.5);
+    const route = dijkstra.findOptimalRoute("start", "end");
+
+    // 4. Generate eco-commute route recommendation cards with elevation badges & calorie chips
+    const hasMicroMobility = vehicles && vehicles.length > 0;
+    const routeCards = generateMultiModalRouteCards({
+      walkingDistanceMeters,
+      walkingDurationSeconds,
+      hasMicroMobility,
+      microMobilityVehicleCount: vehicles.length,
+      microMobilityDistanceMeters: 1500,
+      microMobilityDurationSeconds: 360,
+      microMobilityCost: vehicles[0]?.pricePerMinute
+        ? vehicles[0].pricePerMinute * 6
+        : 2.5,
+      elevationProfile,
+      elevationGainMeters,
+      weightKg,
+      unitPreference,
+    });
+
     return NextResponse.json(
-      { error: 'Malformed JSON payload.' },
-      { status: 400 }
+      {
+        success: true,
+        route: route || {
+          path: ["start", "end"],
+          totalDurationSeconds: ecoRoute.durationSeconds,
+          totalCost: 0,
+          modes: ["walking"],
+          isEstimated: true,
+          fallbackReason: "NO_GRAPH_PATH",
+        },
+        availableVehicles: vehicles,
+        routeCards,
+        recommendationCards: routeCards,
+      },
+      { status: 200 },
+    );
+  } catch (error: any) {
+    console.error("Multi-modal routing error:", error);
+    return NextResponse.json(
+      { error: error?.message || "Internal server error" },
+      { status: 500 },
     );
   }
-
-  const result = await handleMultimodalEcoPost(body);
-  return NextResponse.json(result.payload, { status: result.status });
 }

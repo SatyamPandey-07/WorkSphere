@@ -1,4 +1,5 @@
-﻿import type { Metadata, Viewport } from "next";
+﻿/* eslint-disable @typescript-eslint/no-unused-vars */
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { cookies, headers } from "next/headers";
@@ -12,6 +13,7 @@ import { SkipToContent } from "../components/ui/SkipToContent";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { ScrollToTopButton } from "../components/ui/ScrollToTopButton";
 import { CookieBanner } from "../components/CookieBanner";
+import { WebVitalsReporter } from "../components/analytics/WebVitalsReporter";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { SyncManager } from "../hooks/usePWA";
 import { ToastProvider } from "../components/ui/Toast";
@@ -87,8 +89,6 @@ export const viewport: Viewport = {
   themeColor: "#2563eb",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default async function RootLayout({
@@ -115,6 +115,8 @@ export default async function RootLayout({
       <SoundProvider>
         <ToastProvider>
           <CurrencyProvider>
+            <CookieBanner />
+            <WebVitalsReporter />
             <OfflineBanner />
             <RateLimitBanner />
             <PWAUpdateListener />
@@ -149,7 +151,7 @@ export default async function RootLayout({
     </ClerkProvider>
   );
 
- return (
+  return (
     <html
       lang="en"
       data-theme={theme}
@@ -173,5 +175,5 @@ export default async function RootLayout({
         {bodyContent}
       </body>
     </html>
-  )
+  );
 }

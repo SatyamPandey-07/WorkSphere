@@ -57,7 +57,19 @@ export function setStoredHighContrast(enabled: boolean): void {
   }
 }
 
-export function HighContrastToggle() {
+export interface HighContrastToggleProps {
+  variant?: "card" | "switch" | "compact";
+  className?: string;
+  id?: string;
+  showLabel?: boolean;
+}
+
+export function HighContrastToggle({
+  variant = "card",
+  className = "",
+  id,
+  showLabel = true,
+}: HighContrastToggleProps = {}) {
   const { setHighContrast } = useTheme();
   const setHighContrastRef = React.useRef(setHighContrast);
   setHighContrastRef.current = setHighContrast;
@@ -174,6 +186,88 @@ export function HighContrastToggle() {
     }
   };
 
+  if (variant === "switch" || variant === "compact") {
+    const switchId = id || "high-contrast-toggle";
+
+    if (!mounted) {
+      return (
+        <div
+          className={`inline-flex items-center gap-2 opacity-80 ${className}`}
+        >
+          {showLabel && (
+            <label
+              htmlFor={switchId}
+              className="text-xs font-medium text-zinc-600 dark:text-zinc-400 select-none cursor-pointer flex items-center gap-1.5"
+            >
+              <Contrast className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>High Contrast</span>
+            </label>
+          )}
+          <button
+            type="button"
+            role="switch"
+            id={switchId}
+            aria-checked={highContrast}
+            aria-label="High Contrast"
+            onClick={handleToggle}
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-400 dark:focus-visible:ring-cyan-400 dark:focus-visible:ring-offset-zinc-950 ${
+              highContrast
+                ? "bg-zinc-900 dark:bg-white"
+                : "bg-zinc-300 dark:bg-zinc-700"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full shadow-sm ring-0 transition duration-200 ease-in-out ${
+                highContrast
+                  ? "translate-x-4 bg-white dark:bg-zinc-900"
+                  : "translate-x-0 bg-white dark:bg-zinc-200"
+              }`}
+            />
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`inline-flex items-center gap-2 ${className}`}>
+        {showLabel && (
+          <label
+            htmlFor={switchId}
+            className="text-xs font-medium text-zinc-600 dark:text-zinc-400 select-none cursor-pointer flex items-center gap-1.5"
+          >
+            <Contrast className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>High Contrast</span>
+          </label>
+        )}
+        <button
+          type="button"
+          role="switch"
+          id={switchId}
+          aria-checked={highContrast}
+          aria-label="High Contrast"
+          aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
+          title="Toggle high-contrast mode (Ctrl/Cmd + Shift + H)"
+          onClick={handleToggle}
+          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-400 dark:focus-visible:ring-cyan-400 dark:focus-visible:ring-offset-zinc-950 ${
+            highContrast
+              ? "bg-zinc-900 dark:bg-white"
+              : "bg-zinc-300 dark:bg-zinc-700"
+          }`}
+        >
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full shadow-sm ring-0 transition duration-200 ease-in-out ${
+              highContrast
+                ? "translate-x-4 bg-white dark:bg-zinc-900"
+                : "translate-x-0 bg-white dark:bg-zinc-200"
+            }`}
+          />
+        </button>
+      </div>
+    );
+  }
+
   if (!mounted) {
     return (
       <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm transition-colors opacity-80">
@@ -194,6 +288,8 @@ export function HighContrastToggle() {
       </div>
     );
   }
+
+  const switchId = id || "high-contrast-toggle";
 
   return (
     <div
@@ -235,13 +331,13 @@ export function HighContrastToggle() {
       <button
         type="button"
         role="switch"
-        id="high-contrast-toggle"
+        id={switchId}
         aria-checked={highContrast}
-        aria-label="Toggle high-contrast mode"
+        aria-label="High Contrast"
         aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
         title="Toggle high-contrast mode (Ctrl/Cmd + Shift + H)"
         onClick={handleToggle}
-        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent,#3b82f6)] focus:ring-offset-2 dark:focus:ring-offset-zinc-950 ${
+        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-400 dark:focus-visible:ring-cyan-400 dark:focus-visible:ring-offset-zinc-950 ${
           highContrast
             ? "bg-zinc-900 dark:bg-white"
             : "bg-zinc-200 dark:bg-zinc-700"
@@ -258,4 +354,10 @@ export function HighContrastToggle() {
       </button>
     </div>
   );
+}
+
+export function HighContrastSwitch(
+  props: Omit<HighContrastToggleProps, "variant">,
+) {
+  return <HighContrastToggle variant="switch" {...props} />;
 }

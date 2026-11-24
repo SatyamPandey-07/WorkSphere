@@ -6,6 +6,11 @@ This specification documents the Admin Vitals API implementation located in
 [`src/lib/export/domain/systemVitalExporter.ts`](../../src/lib/export/domain/systemVitalExporter.ts).
 CRDT snapshot compression telemetry is also included.
 
+The separate route latency heatmap endpoint is part of the same admin
+observability surface but has its own collector and response contract. See
+[Route Latency Heatmap Architecture](../admin/ROUTE_LATENCY_HEATMAP.md) for its
+implementation details and data limitations.
+
 ## Endpoint
 
 `GET /api/admin/vitals` returns a live snapshot of process memory, uptime,
@@ -325,3 +330,43 @@ Troubleshooting:
 - **Operational scope:** This endpoint provides live operational inspection. It
   does not provide persistent timeseries storage, cluster-wide aggregation, or a
   dedicated machine API token.
+
+## Route Latency Heatmap API
+
+`GET /api/admin/system/latency-heatmap` returns the route latency heatmap
+snapshot. It is a distinct endpoint from `/api/admin/vitals`; it does not use
+the vitals endpoint's Prometheus content negotiation or `format` parameter.
+It accepts the optional `range` query parameter (`1h`, `24h`, or `7d`), has no
+request body, and defaults unsupported or missing values to `1h`.
+
+The route uses Clerk middleware for session authentication, then calls
+`getAdminUser()` for administrator authorization. Unauthenticated requests are
+redirected to sign-in with HTTP 307. Authenticated users who fail the admin
+check receive HTTP 403. Successful JSON responses include
+`Content-Type: application/json` and
+`Cache-Control: private, no-store, max-age=0`.
+
+The HTTP 200 response follows `RouteLatencyHeatmapData`: `generatedAt`, `range`,
+`bucketIntervalMinutes`, `timeBuckets`, `routes`, and `summary`. Route rows
+contain route identity/category, totals, overall average and p95, slow-path
+state, severity, and cells. Each cell contains its time-bucket identity,
+count, average, p50, p95, min, max, and status. The response has no p99 field,
+raw sample array, error-rate field, or sampling-rate metadata. Exact field
+types, an illustrative response, and error details are documented in the
+[route latency heatmap guide](../admin/ROUTE_LATENCY_HEATMAP.md#8-api-telemetry-payload).
+
+> [!IMPORTANT]
+> The collector has no in-repository call site for `recordApiLatency` in the
+> inspected source. It also synthesizes deterministic baseline values for
+> empty buckets. Consequently, counts and percentile values should not be
+> interpreted as production request measurements without verifying an
+> external or newly added recorder integration. The CSV export's p99 is
+> derived from cell summaries; it is not an API response field or a
+> request-level p99.
+
+The endpoint returns HTTP 403 with `{"error":"Admin access required"}` when
+route-level authorization fails. Caught authorization or aggregation errors
+are logged and return HTTP 500 with
+`{"error":"Failed to generate route latency heatmap"}`. Unlike the vitals
+route's documented cache behavior, these route-generated error responses do
+not add the success response's `Cache-Control` header.

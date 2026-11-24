@@ -861,9 +861,20 @@ export class BFTConsensusCoordinator<T = unknown> {
     }
 
     // Verify cryptographic signature before accepting or buffering
-    if (!this.verifyViewChangeSignature(msg)) {
+    let isValidSignature = false;
+    try {
+      isValidSignature = this.verifyViewChangeSignature(msg);
+    } catch (err: unknown) {
       console.warn(
-        `ViewChange rejected: unauthenticated or invalid signature from ${msg.fromNodeId}`,
+        `ViewChange rejected: cryptographic signature verification threw exception for ${msg.fromNodeId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return null;
+    }
+
+    if (!isValidSignature) {
+      console.warn(
+        `ViewChange rejected: unauthenticated or invalid signature from ${msg.fromNodeId} for target view ${msg.newView}`,
       );
       return null;
     }

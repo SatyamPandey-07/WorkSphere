@@ -8,6 +8,7 @@
 export * from "./types";
 export * from "./csvBuilder";
 export * from "./csvExporter";
+export * from "./acousticsHistoryExport";
 export * from "./pdfBuilder";
 export * from "./excelBuilder";
 export * from "./domain";

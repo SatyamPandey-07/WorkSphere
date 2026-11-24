@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import {
   HighContrastToggle,
   HighContrastSwitch,
+  HighContrastStatusBadge,
   HIGH_CONTRAST_STORAGE_KEY,
 } from "@/components/HighContrastToggle";
 
@@ -196,5 +197,115 @@ describe("HighContrastToggle Component", () => {
     expect(switchBtn.className).toContain("focus-visible:ring-offset-2");
     expect(switchBtn.className).toContain("focus-visible:ring-amber-400");
     expect(switchBtn.className).toContain("dark:focus-visible:ring-cyan-400");
+  });
+
+  describe("HighContrastStatusBadge and integrated status in settings", () => {
+    it("displays 'Standard Contrast' by default when disabled", () => {
+      render(<HighContrastStatusBadge />);
+
+      const badge = screen.getByTestId("high-contrast-status-badge");
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveTextContent("Standard Contrast");
+      expect(badge).toHaveAttribute("aria-live", "polite");
+      expect(badge).toHaveAttribute("aria-atomic", "true");
+    });
+
+    it("displays 'High Contrast: Active (WCAG AAA)' when high contrast is enabled in localStorage", () => {
+      localStorage.setItem(HIGH_CONTRAST_STORAGE_KEY, "true");
+      render(<HighContrastStatusBadge />);
+
+      const badge = screen.getByTestId("high-contrast-status-badge");
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveTextContent("High Contrast: Active (WCAG AAA)");
+      expect(badge).toHaveAttribute("aria-live", "polite");
+      expect(badge).toHaveAttribute("aria-atomic", "true");
+    });
+
+    it("updates immediately when custom event worksphere_high_contrast_change is fired", () => {
+      render(<HighContrastStatusBadge />);
+
+      const badge = screen.getByTestId("high-contrast-status-badge");
+      expect(badge).toHaveTextContent("Standard Contrast");
+
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent("worksphere_high_contrast_change", { detail: true }),
+        );
+      });
+
+      expect(badge).toHaveTextContent("High Contrast: Active (WCAG AAA)");
+
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent("worksphere_high_contrast_change", { detail: false }),
+        );
+      });
+
+      expect(badge).toHaveTextContent("Standard Contrast");
+    });
+
+    it("updates immediately without page reload when HighContrastToggle is toggled", () => {
+      render(
+        <div>
+          <HighContrastStatusBadge />
+          <HighContrastToggle />
+        </div>,
+      );
+
+      const badge = screen.getByTestId("high-contrast-status-badge");
+      const toggle = screen.getByRole("switch");
+
+      expect(badge).toHaveTextContent("Standard Contrast");
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+
+      // Click toggle
+      fireEvent.click(toggle);
+
+      expect(badge).toHaveTextContent("High Contrast: Active (WCAG AAA)");
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+
+      // Click toggle again
+      fireEvent.click(toggle);
+
+      expect(badge).toHaveTextContent("Standard Contrast");
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+    });
+
+    it("renders badge within HighContrastToggle when showStatusBadge=true", () => {
+      render(<HighContrastToggle showStatusBadge />);
+
+      const badge = screen.getByTestId("high-contrast-status-badge");
+      const toggle = screen.getByRole("switch");
+
+      expect(badge).toHaveTextContent("Standard Contrast");
+
+      fireEvent.click(toggle);
+
+      expect(badge).toHaveTextContent("High Contrast: Active (WCAG AAA)");
+    });
+
+    it("syncs badge with system forced-colors media query when unset", () => {
+      forcedColorsMatches = true;
+      render(<HighContrastStatusBadge />);
+
+      const badge = screen.getByTestId("high-contrast-status-badge");
+      expect(badge).toHaveTextContent("High Contrast: Active (WCAG AAA)");
+    });
+
+    it("updates badge when forced-colors changes dynamically", () => {
+      render(<HighContrastStatusBadge />);
+
+      const badge = screen.getByTestId("high-contrast-status-badge");
+      expect(badge).toHaveTextContent("Standard Contrast");
+
+      forcedColorsMatches = true;
+      act(() => {
+        for (const listener of matchMediaListeners) {
+          listener({ matches: true } as MediaQueryListEvent);
+        }
+      });
+
+      expect(badge).toHaveTextContent("High Contrast: Active (WCAG AAA)");
+    });
   });
 });

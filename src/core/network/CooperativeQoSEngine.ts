@@ -46,31 +46,53 @@ export class TokenBucket {
 export class CooperativeQoSEngine {
     private policy: QoSPolicy;
     private buckets: Map<string, TokenBucket> = new Map();
-    private activePeers: number = 0;
+    private registeredPeers: Set<string> = new Set();
+    private hasExplicitRegistrations: boolean = false;
+    public activePeers: number = 0;
 
     constructor(policy: QoSPolicy) {
         this.policy = policy;
     }
 
     public addPeer(peerId: string): void {
-        if (!this.buckets.has(peerId)) {
-            this.activePeers++;
+        this.hasExplicitRegistrations = true;
+        if (!this.registeredPeers.has(peerId)) {
+            this.registeredPeers.add(peerId);
+            this.activePeers = this.registeredPeers.size;
             this.recalculateLimits();
         }
     }
 
     public removePeer(peerId: string): void {
-        if (this.buckets.has(peerId)) {
+        if (this.registeredPeers.has(peerId)) {
+            this.registeredPeers.delete(peerId);
             this.buckets.delete(peerId);
-            this.activePeers--;
+            this.activePeers = this.registeredPeers.size;
             this.recalculateLimits();
         }
+    }
+
+    public hasPeer(peerId: string): boolean {
+        return this.registeredPeers.has(peerId);
+    }
+
+    public getActivePeers(): number {
+        return this.registeredPeers.size;
+    }
+
+    public getRegisteredPeers(): string[] {
+        return Array.from(this.registeredPeers);
+    }
+
+    public getFairShareRate(): number {
+        return this.calculateFairShareRate();
     }
 
     /**
      * Throttles the "Bandwidth Hog" by reducing their token refill rate.
      */
     public penalizePeer(peerId: string, penaltyFactor: number): void {
+        if (this.hasExplicitRegistrations && !this.registeredPeers.has(peerId)) return;
         const bucket = this.buckets.get(peerId);
         if (bucket) {
             const baseRate = this.calculateFairShareRate();
@@ -79,6 +101,7 @@ export class CooperativeQoSEngine {
     }
 
     public restorePeer(peerId: string): void {
+        if (this.hasExplicitRegistrations && !this.registeredPeers.has(peerId)) return;
         const bucket = this.buckets.get(peerId);
         if (bucket) {
             bucket.setRate(this.calculateFairShareRate());
@@ -91,6 +114,10 @@ export class CooperativeQoSEngine {
      */
     public allowPacket(peerId: string, bytes: number, isPriority: boolean): boolean {
         if (isPriority) return true;
+
+        if (this.hasExplicitRegistrations && !this.registeredPeers.has(peerId)) {
+            return false;
+        }
 
         let bucket = this.buckets.get(peerId);
         if (!bucket) {

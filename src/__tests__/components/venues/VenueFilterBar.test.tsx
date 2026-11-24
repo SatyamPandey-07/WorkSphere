@@ -71,4 +71,38 @@ describe('VenueFilterBar', () => {
       'q=Pune&amenities=standing_desks%2Cexternal_monitors&standing_desks=true&external_monitors=true'
     );
   });
+
+  it('renders and toggles vegan options and pet friendly amenity chips with keyboard support (#9882)', () => {
+    const onQueryParamsChange = jest.fn();
+    render(
+      <VenueFilterBar
+        existingSearchParams="q=Goa"
+        onQueryParamsChange={onQueryParamsChange}
+      />
+    );
+
+    const veganChip = screen.getByTestId('venue-filter-chip-veganOptions');
+    expect(veganChip).toBeInTheDocument();
+    expect(veganChip).toHaveTextContent('Vegan Options');
+    expect(veganChip).toHaveAttribute('aria-pressed', 'false');
+
+    const petChip = screen.getByTestId('venue-filter-chip-dogFriendly');
+    expect(petChip).toBeInTheDocument();
+    expect(petChip).toHaveTextContent('Pet Friendly');
+    expect(petChip).toHaveAttribute('aria-pressed', 'false');
+
+    // Toggle Vegan Options with Space key
+    fireEvent.keyDown(veganChip, { key: ' ' });
+    expect(veganChip).toHaveAttribute('aria-pressed', 'true');
+    expect(onQueryParamsChange).toHaveBeenCalledWith(
+      'q=Goa&amenities=veganOptions&veganOptions=true'
+    );
+
+    // Toggle Pet Friendly with Enter key
+    fireEvent.keyDown(petChip, { key: 'Enter' });
+    expect(petChip).toHaveAttribute('aria-pressed', 'true');
+    expect(onQueryParamsChange).toHaveBeenCalledWith(
+      'q=Goa&amenities=veganOptions%2CdogFriendly&dogFriendly=true&veganOptions=true'
+    );
+  });
 });

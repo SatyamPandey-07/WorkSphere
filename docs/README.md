@@ -70,6 +70,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Merchant Solana Escrow Settlement & Automated Refund Dispute Guide](./payments/solana-escrow.md) — non-custodial Solana escrow state machine, PDA derivation, deposit and settlement transactions, 2-of-3 multi-sig disputes, automated expiry refunds, and Devnet testing.
 - [ZKP Verification Runbook](./security/ZKP_VERIFICATION_RUNBOOK.md) — Groth16 verification architecture and key rotation procedures.
 - [Solana Escrow Settlement and Refund Runbook](./solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow PDA derivation, confirmation levels, release and timeout refunds, and RPC failover.
+- [Solana Durable Nonce Offline Signing Runbook](./solana/DURABLE_NONCE_OFFLINE_SIGNING.md) — persistent nonce account initialization, instruction ordering, offline transaction serialization, air-gapped signing workflows, and RPC recovery.
 
 ## Features & Product Documentation
 

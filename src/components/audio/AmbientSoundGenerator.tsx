@@ -1,306 +1,186 @@
 ﻿'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  clampVolume,
-  NoiseSynthesizer,
-  normalizeLayerLevels,
-  type AmbientSoundType,
-  type LayerMixLevels,
+  DEFAULT_SOUNDSCAPE_PRESET,
+  loadSoundscapePresets,
+  NoiseSoundscapeEngine,
+  saveSoundscapePresets,
+  type NoiseLayerType,
+  type SoundscapePreset,
+  type StorageLike,
 } from '@/lib/audio/noiseSynthesizer';
 
-export const AMBIENT_PRESET_STORAGE_KEY = 'worksphere:ambient_soundscape:v1';
-
-export interface SavedAmbientPreset {
-  soundType: AmbientSoundType;
-  volume: number;
-  layerLevels: LayerMixLevels;
-}
-
 export interface AmbientSoundGeneratorProps {
-  initialSound?: AmbientSoundType;
-  initialVolume?: number;
-  storageKey?: string;
-  className?: string;
-}
-
-const SOUND_OPTIONS: { id: AmbientSoundType; label: string; hint: string }[] = [
-  { id: 'white', label: 'White Noise', hint: 'Balanced masking for chatter' },
-  { id: 'pink', label: 'Pink Noise', hint: 'Softer deep-focus warmth' },
-  { id: 'rain', label: 'Rain Sound', hint: 'Gentle steady rainfall' },
-];
-
-export function loadSavedAmbientPreset(
-  fallbackSound: AmbientSoundType,
-  fallbackVolume: number,
-  storageKey = AMBIENT_PRESET_STORAGE_KEY
-): SavedAmbientPreset {
-  const safeVol = clampVolume(fallbackVolume);
-  const defaultLevels = normalizeLayerLevels(undefined, fallbackSound);
-
-  if (typeof window === 'undefined') {
-    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
-  }
-
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) {
-      return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
-    }
-    const parsed = JSON.parse(raw) as Partial<SavedAmbientPreset>;
-    const soundType: AmbientSoundType =
-      parsed.soundType === 'white' ||
-      parsed.soundType === 'pink' ||
-      parsed.soundType === 'rain'
-        ? parsed.soundType
-        : fallbackSound;
-    const volume = clampVolume(parsed.volume ?? safeVol);
-    const layerLevels = normalizeLayerLevels(parsed.layerLevels, soundType);
-    return { soundType, volume, layerLevels };
-  } catch {
-    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels };
-  }
-}
-
-export function saveAmbientPreset(
-  preset: SavedAmbientPreset,
-  storageKey = AMBIENT_PRESET_STORAGE_KEY
-): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(preset));
-  } catch {
-    // Ignore storage quota or private-browsing errors
-  }
+  storage?: StorageLike | null;
+  initialPresets?: SoundscapePreset[];
 }
 
 export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
-  initialSound = 'pink',
-  initialVolume = 0.5,
-  storageKey = AMBIENT_PRESET_STORAGE_KEY,
-  className = '',
+  storage,
+  initialPresets,
 }) => {
-  const initialPreset = loadSavedAmbientPreset(
-    initialSound,
-    initialVolume,
-    storageKey
+  const presets = useMemo(
+    () => initialPresets ?? loadSoundscapePresets(storage),
+    [initialPresets, storage]
   );
 
-  const [soundType, setSoundType] = useState<AmbientSoundType>(
-    initialPreset.soundType
-  );
-  const [volume, setVolume] = useState<number>(initialPreset.volume);
-  const [layerLevels, setLayerLevels] = useState<LayerMixLevels>(
-    initialPreset.layerLevels
-  );
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-
-  const synthRef = useRef<NoiseSynthesizer | null>(null);
-  if (!synthRef.current) {
-    synthRef.current = new NoiseSynthesizer({
-      soundType: initialPreset.soundType,
-      volume: initialPreset.volume,
-      layerLevels: initialPreset.layerLevels,
-      muted: false,
-    });
+  const activeInitial = presets[0] ?? DEFAULT_SOUNDSCAPE_PRESET;
+  const engineRef = useRef<NoiseSoundscapeEngine | null>(null);
+  if (!engineRef.current) {
+    engineRef.current = new NoiseSoundscapeEngine(null);
+    engineRef.current.applyPreset(activeInitial);
   }
 
-  useEffect(() => {
-    const synth = synthRef.current;
-    return () => {
-      void synth?.dispose();
-    };
-  }, []);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [masterGain, setMasterGain] = useState(activeInitial.masterGain);
+  const [layers, setLayers] = useState<Record<NoiseLayerType, number>>({
+    ...activeInitial.layers,
+  });
 
   useEffect(() => {
-    const handleVisibility = () => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        synthRef.current?.pause();
+    const onVisibility = () => {
+      if (typeof document === 'undefined') return;
+      if (document.hidden) {
+        void engineRef.current?.handleVisibilityChange(true);
         setIsPlaying(false);
+      } else {
+        void engineRef.current?.handleVisibilityChange(false);
       }
     };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+      void engineRef.current?.dispose();
+    };
   }, []);
 
-  const persistCurrent = (
-    nextSound: AmbientSoundType,
-    nextVol: number,
-    nextLayers: LayerMixLevels
-  ) => {
-    saveAmbientPreset(
-      { soundType: nextSound, volume: nextVol, layerLevels: nextLayers },
-      storageKey
-    );
-  };
-
-  const handleSelectSound = (nextType: AmbientSoundType) => {
-    const nextLayers: LayerMixLevels = {
-      white: nextType === 'white' ? Math.max(0.7, layerLevels.white) : 0,
-      pink: nextType === 'pink' ? Math.max(0.7, layerLevels.pink) : 0,
-      rain: nextType === 'rain' ? Math.max(0.7, layerLevels.rain) : 0,
-    };
-    setSoundType(nextType);
-    setLayerLevels(nextLayers);
-    synthRef.current?.setSoundType(nextType);
-    persistCurrent(nextType, volume, nextLayers);
-  };
-
-  const handleLayerChange = (type: AmbientSoundType, nextVal: number) => {
-    const clamped = clampVolume(nextVal);
-    const nextLayers = { ...layerLevels, [type]: clamped };
-    setLayerLevels(nextLayers);
-    synthRef.current?.setLayerLevel(type, clamped);
-    persistCurrent(soundType, volume, nextLayers);
-  };
-
-  const handleTogglePlay = async () => {
-    const synth = synthRef.current;
-    if (!synth) return;
-    if (isMuted) {
-      setIsMuted(false);
-      synth.setMuted(false);
+  const togglePlayback = async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (isPlaying) {
+      await engine.pause();
+      setIsPlaying(false);
+    } else {
+      const started = await engine.start();
+      setIsPlaying(started);
     }
-    const playing = await synth.togglePlay();
-    setIsPlaying(playing);
   };
 
-  const handleToggleMute = () => {
+  const toggleMute = async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
     const nextMuted = !isMuted;
+    await engine.setMuted(nextMuted);
     setIsMuted(nextMuted);
-    synthRef.current?.setMuted(nextMuted);
     if (nextMuted) {
       setIsPlaying(false);
     }
   };
 
-  const handleVolumeChange = (nextVal: number) => {
-    const clamped = clampVolume(nextVal);
-    setVolume(clamped);
-    synthRef.current?.setVolume(clamped);
-    persistCurrent(soundType, clamped, layerLevels);
+  const handleLayerChange = (layer: NoiseLayerType, value: number) => {
+    const updated = engineRef.current?.setLayerGain(layer, value) ?? value;
+    setLayers((prev) => ({ ...prev, [layer]: updated }));
+  };
+
+  const handleMasterChange = (value: number) => {
+    const updated = engineRef.current?.setMasterGain(value) ?? value;
+    setMasterGain(updated);
+  };
+
+  const handleSavePreset = () => {
+    const customPreset: SoundscapePreset = {
+      id: `custom-${Date.now()}`,
+      name: 'Custom Nomad Mix',
+      masterGain,
+      layers,
+    };
+    saveSoundscapePresets([customPreset, ...presets], storage);
   };
 
   return (
     <section
-      aria-label="Ambient cafe sound generator"
       data-testid="ambient-sound-generator"
-      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-800 dark:bg-slate-900 ${className}`.trim()}
+      aria-label="Ambient focus soundscape mixer"
+      className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900 sm:text-base dark:text-slate-100">
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
             Focus Soundscape Mixer
           </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Synthesized in-browser with zero external audio files
+          <p data-testid="soundscape-status" className="text-xs text-slate-500">
+            Status: {isMuted ? 'Muted' : isPlaying ? 'Playing' : 'Paused'}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleToggleMute}
-            aria-pressed={isMuted}
-            aria-label={isMuted ? 'Unmute sound' : 'Mute sound'}
-            data-testid="ambient-mute-btn"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            {isMuted ? 'Muted' : 'Mute'}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void handleTogglePlay()}
-            aria-pressed={isPlaying}
-            data-testid="ambient-play-toggle-btn"
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-indigo-700"
+            data-testid="toggle-play-btn"
+            onClick={() => void togglePlayback()}
+            className="rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
           >
             {isPlaying ? 'Pause' : 'Play'}
           </button>
+          <button
+            type="button"
+            data-testid="toggle-mute-btn"
+            onClick={() => void toggleMute()}
+            className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+          >
+            {isMuted ? 'Unmute' : 'Mute'}
+          </button>
+          <button
+            type="button"
+            data-testid="save-preset-btn"
+            onClick={handleSavePreset}
+            className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+          >
+            Save Preset
+          </button>
         </div>
       </div>
 
-      <div
-        role="group"
-        aria-label="Noise type"
-        className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"
-      >
-        {SOUND_OPTIONS.map((opt) => {
-          const active = soundType === opt.id;
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              aria-pressed={active}
-              data-testid={`sound-option-${opt.id}`}
-              onClick={() => handleSelectSound(opt.id)}
-              className={`rounded-xl border px-3 py-2 text-left transition ${
-                active
-                  ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 dark:border-indigo-500 dark:bg-indigo-950/60 dark:text-indigo-100'
-                  : 'border-slate-200 bg-slate-50/50 text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300'
-              }`}
-            >
-              <div className="text-xs font-semibold">{opt.label}</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {opt.hint}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 space-y-2.5">
-        <div className="flex items-center gap-3">
-          <label
-            htmlFor="ambient-volume-slider"
-            className="w-20 text-xs font-medium text-slate-600 dark:text-slate-300"
-          >
-            Master
-          </label>
+      <div className="space-y-2.5">
+        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+          Master Volume ({Math.round(masterGain * 100)}%)
           <input
-            id="ambient-volume-slider"
             type="range"
             min={0}
-            max={100}
-            value={Math.round(volume * 100)}
-            data-testid="ambient-volume-slider"
-            onChange={(e) => handleVolumeChange(Number(e.target.value) / 100)}
-            className="h-2 w-full cursor-pointer accent-indigo-600"
+            max={1}
+            step={0.05}
+            value={masterGain}
+            data-testid="master-gain-slider"
+            onChange={(e) => handleMasterChange(Number(e.target.value))}
+            className="mt-1 w-full"
           />
-          <span
-            data-testid="ambient-volume-value"
-            className="w-10 text-right text-xs font-semibold text-slate-700 dark:text-slate-200"
-          >
-            {Math.round(volume * 100)}%
-          </span>
-        </div>
+        </label>
 
-        {(['white', 'pink', 'rain'] as const).map((layerKey) => (
-          <div key={layerKey} className="flex items-center gap-3">
-            <label
-              htmlFor={`layer-slider-${layerKey}`}
-              className="w-20 text-xs capitalize text-slate-500 dark:text-slate-400"
-            >
-              {layerKey}
-            </label>
+        {(['white', 'pink', 'rain'] as const).map((layer) => (
+          <label
+            key={layer}
+            className="block text-xs font-medium capitalize text-slate-700 dark:text-slate-300"
+          >
+            {layer} Layer ({Math.round(layers[layer] * 100)}%)
             <input
-              id={`layer-slider-${layerKey}`}
               type="range"
               min={0}
-              max={100}
-              value={Math.round(layerLevels[layerKey] * 100)}
-              data-testid={`layer-slider-${layerKey}`}
-              onChange={(e) =>
-                handleLayerChange(layerKey, Number(e.target.value) / 100)
-              }
-              className="h-1.5 w-full cursor-pointer accent-indigo-500"
+              max={1}
+              step={0.05}
+              value={layers[layer]}
+              data-testid={`layer-slider-${layer}`}
+              onChange={(e) => handleLayerChange(layer, Number(e.target.value))}
+              className="mt-1 w-full"
             />
-            <span className="w-10 text-right text-[11px] text-slate-500 dark:text-slate-400">
-              {Math.round(layerLevels[layerKey] * 100)}%
-            </span>
-          </div>
+          </label>
         ))}
       </div>
     </section>

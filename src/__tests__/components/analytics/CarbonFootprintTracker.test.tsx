@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { CarbonFootprintTracker } from '@/components/analytics/CarbonFootprintTracker';
 
 describe('CarbonFootprintTracker', () => {
-  it('clamps progress bar fill to 100% and displays an above-baseline badge at 135%', () => {
+  it('clamps progress bar width to 100% and renders an over-baseline badge at 135%', () => {
     render(
       <CarbonFootprintTracker
         venueName="Bandra Cowork Hub"
@@ -19,11 +19,11 @@ describe('CarbonFootprintTracker', () => {
     );
   });
 
-  it('clamps negative values to 0% and hides the over-baseline badge when within baseline', () => {
+  it('clamps under-zero inputs to 0% and omits the badge within baseline', () => {
     render(
       <CarbonFootprintTracker
         venueName="Lower Parel Space"
-        actualKwh={-50}
+        actualKwh={-20}
         baselineKwh={500}
       />
     );

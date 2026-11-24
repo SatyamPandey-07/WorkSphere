@@ -29,6 +29,18 @@ export class PacketTimingAnalyzer {
         }
     }
 
+    public removePeer(peerId: string): void {
+        this.peers.delete(peerId);
+    }
+
+    public unregisterPeer(peerId: string): void {
+        this.removePeer(peerId);
+    }
+
+    public hasPeer(peerId: string): boolean {
+        return this.peers.has(peerId);
+    }
+
     /**
      * Records a new RTT sample for a specific peer.
      */
@@ -58,7 +70,8 @@ export class PacketTimingAnalyzer {
 
     public updateBandwidth(peerId: string, bytesPerSec: number): void {
         const peer = this.peers.get(peerId);
-        if (peer) peer.bytesSentPerSec = bytesPerSec;
+        if (!peer) return;
+        peer.bytesSentPerSec = bytesPerSec;
     }
 
     /**

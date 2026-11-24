@@ -186,7 +186,16 @@ async function handleBooking(request: NextRequest): Promise<NextResponse> {
   }
 
   const startsAt = parseBookingDateTime(date, time, timeZone);
-  if (!startsAt || startsAt.getTime() < Date.now() - PAST_GRACE_MS) {
+  if (!startsAt) {
+    return NextResponse.json(
+      {
+        error:
+          "Requested booking time does not exist on this date in the selected time zone.",
+      },
+      { status: 400 },
+    );
+  }
+  if (startsAt.getTime() < Date.now() - PAST_GRACE_MS) {
     return NextResponse.json(
       { error: "You can't book a time in the past." },
       { status: 400 },

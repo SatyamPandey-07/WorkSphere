@@ -37,6 +37,11 @@ export interface QuorumCertificate {
   aggregatedAt: number;
 }
 
+export interface ViewChangeCertificate {
+  view: number;
+  signatures: Record<string, string>;
+}
+
 export interface BlockProposal<T = unknown> {
   view: number;
   sequence: number;
@@ -45,6 +50,7 @@ export interface BlockProposal<T = unknown> {
   blockHash: string;
   parentHash: string;
   justifyQC?: QuorumCertificate;
+  viewChangeEvidence?: ViewChangeMessage[] | ViewChangeCertificate;
   timestamp: number;
 }
 
@@ -117,6 +123,7 @@ export class BFTConsensusCoordinator<T = unknown> {
   // View change votes: viewNumber -> Map<nodeId, ViewChangeMessage>
   private viewChangePool: Map<number, Map<string, ViewChangeMessage>> =
     new Map();
+  private lastViewChangeEvidence: Map<number, ViewChangeMessage[]> = new Map();
   // Bounded buffer for valid future-view change messages: viewNumber -> Map<nodeId, ViewChangeMessage>
   private futureViewChangeBuffer: Map<number, Map<string, ViewChangeMessage>> =
     new Map();
@@ -338,10 +345,21 @@ export class BFTConsensusCoordinator<T = unknown> {
     };
 
     const blockHash = BFTConsensusCoordinator.hashPayload(blockContent);
+    const viewChangeMessages =
+      this.lastViewChangeEvidence.get(this.currentView) ??
+      (this.viewChangePool.get(this.currentView)
+        ? Array.from(this.viewChangePool.get(this.currentView)!.values())
+        : undefined);
+    let viewChangeEvidence: ViewChangeMessage[] | undefined;
+    if (viewChangeMessages && viewChangeMessages.length >= this.quorumSize) {
+      viewChangeEvidence = viewChangeMessages;
+    }
+
     const proposal: BlockProposal<T> = {
       ...blockContent,
       blockHash,
       justifyQC: this.lastCommitQC ?? undefined,
+      ...(viewChangeEvidence ? { viewChangeEvidence } : {}),
     };
 
     this.currentSequence = nextSeq;
@@ -351,9 +369,73 @@ export class BFTConsensusCoordinator<T = unknown> {
   }
 
   /**
+   * Validates view-change quorum evidence (either array of signed ViewChangeMessages or ViewChangeCertificate)
+   */
+  public verifyViewChangeEvidence(
+    targetView: number,
+    evidence?: ViewChangeMessage[] | ViewChangeCertificate,
+  ): boolean {
+    try {
+      if (!evidence || typeof evidence !== "object") {
+        return false;
+      }
+
+      const seenSigners = new Set<string>();
+
+      if (Array.isArray(evidence)) {
+        for (const msg of evidence) {
+          if (!msg || typeof msg !== "object") continue;
+          if (msg.newView !== targetView) continue;
+          if (!this.validators.includes(msg.fromNodeId)) continue;
+          if (seenSigners.has(msg.fromNodeId)) continue;
+
+          if (this.verifyViewChangeSignature(msg)) {
+            seenSigners.add(msg.fromNodeId);
+          }
+        }
+      } else {
+        const cert = evidence as ViewChangeCertificate;
+        const certView = cert.view ?? (cert as any).newView;
+        if (certView !== targetView) {
+          return false;
+        }
+        const signatures = cert.signatures;
+        if (!signatures || typeof signatures !== "object") {
+          return false;
+        }
+
+        for (const [nodeId, sig] of Object.entries(signatures)) {
+          if (!this.validators.includes(nodeId)) continue;
+          if (seenSigners.has(nodeId)) continue;
+          if (typeof sig !== "string" || !sig) continue;
+
+          const msg: ViewChangeMessage = {
+            fromNodeId: nodeId,
+            newView: targetView,
+            signature: sig,
+            timestamp: 0,
+          };
+          if (this.verifyViewChangeSignature(msg)) {
+            seenSigners.add(nodeId);
+          }
+        }
+      }
+
+      return seenSigners.size >= this.quorumSize;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Handles an incoming block proposal from leader
    */
   public handleProposal(proposal: BlockProposal<T>): BFTVote | null {
+    if (!proposal || typeof proposal !== "object") {
+      console.warn("Proposal rejected: malformed proposal payload");
+      return null;
+    }
+
     const expectedLeader = this.getLeaderForView(proposal.view);
     if (proposal.proposerId !== expectedLeader) {
       console.warn(
@@ -367,6 +449,44 @@ export class BFTConsensusCoordinator<T = unknown> {
         `Proposal rejected: stale view ${proposal.view} < current ${this.currentView}`,
       );
       return null;
+    }
+
+    // Reject proposals targeting unauthorized future views
+    if (proposal.view > this.currentView) {
+      if (proposal.view > this.currentView + this.maxFutureViewWindow) {
+        console.warn(
+          `Proposal rejected: view ${proposal.view} exceeds max future view window`,
+        );
+        return null;
+      }
+
+      const hasLocalQuorum =
+        (this.viewChangePool.get(proposal.view)?.size ?? 0) >= this.quorumSize;
+      const hasEvidenceQuorum = this.verifyViewChangeEvidence(
+        proposal.view,
+        proposal.viewChangeEvidence,
+      );
+
+      if (!hasLocalQuorum && !hasEvidenceQuorum) {
+        console.warn(
+          `Proposal rejected: future view ${proposal.view} requires certified view-change quorum evidence`,
+        );
+        return null;
+      }
+    }
+
+    // Validate relevant justification certificate if present
+    if (proposal.justifyQC) {
+      if (!this.verifyQuorumCertificate(proposal.justifyQC)) {
+        console.warn("Proposal rejected: invalid justification certificate");
+        return null;
+      }
+      if (proposal.justifyQC.view > proposal.view) {
+        console.warn(
+          `Proposal rejected: justifyQC view ${proposal.justifyQC.view} cannot exceed proposal view ${proposal.view}`,
+        );
+        return null;
+      }
     }
 
     // Verify block hash
@@ -386,8 +506,32 @@ export class BFTConsensusCoordinator<T = unknown> {
       return null;
     }
 
+    // Transition view only after all validations have succeeded
+    if (proposal.view > this.currentView) {
+      if (
+        Array.isArray(proposal.viewChangeEvidence) &&
+        proposal.viewChangeEvidence.length > 0
+      ) {
+        for (const msg of proposal.viewChangeEvidence) {
+          if (
+            msg &&
+            msg.newView === proposal.view &&
+            this.validators.includes(msg.fromNodeId) &&
+            this.verifyViewChangeSignature(msg)
+          ) {
+            if (!this.viewChangePool.has(msg.newView)) {
+              this.viewChangePool.set(msg.newView, new Map());
+            }
+            this.viewChangePool.get(msg.newView)!.set(msg.fromNodeId, msg);
+          }
+        }
+      }
+      this.currentView = proposal.view;
+      this.resetViewBackoff();
+      this.cleanupStaleViewChangeEntries();
+    }
+
     this.currentProposal = proposal;
-    this.currentView = proposal.view;
     this.currentSequence = proposal.sequence;
     this.currentPhase = "PREPARE";
 
@@ -716,6 +860,7 @@ export class BFTConsensusCoordinator<T = unknown> {
     pool.set(msg.fromNodeId, msg);
 
     if (pool.size >= this.quorumSize && msg.newView > this.currentView) {
+      this.lastViewChangeEvidence.set(msg.newView, Array.from(pool.values()));
       this.currentView = msg.newView;
       this.currentPhase = "PREPARE";
       this.currentProposal = null;
@@ -783,7 +928,7 @@ export class BFTConsensusCoordinator<T = unknown> {
    */
   private cleanupStaleViewChangeEntries(): void {
     for (const view of Array.from(this.viewChangePool.keys())) {
-      if (view <= this.currentView) {
+      if (view < this.currentView) {
         this.viewChangePool.delete(view);
       }
     }

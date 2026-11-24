@@ -46,6 +46,45 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   const audioContextRef = useRef<any>(null);
   const engineRef = useRef<NoiseSoundscapeEngine | null>(null);
 
+  // Track active layer gain nodes and registered event listeners to prevent memory leaks (#10119)
+  const layerGainNodesRef = useRef<Map<string, any>>(new Map());
+  const masterGainNodeRef = useRef<any>(null);
+  const listenersRef = useRef<Set<() => void>>(new Set());
+
+  // Defensive, idempotent GainNode disconnection
+  const safelyDisconnectNode = (node: any) => {
+    if (!node) return;
+    try {
+      if (typeof node.disconnect === 'function') {
+        node.disconnect();
+      }
+    } catch {
+      // Node may already be disconnected or in invalid state
+    }
+  };
+
+  // Disconnect and release an individual layer's GainNode
+  const cleanupLayerGainNode = (layerKey: string) => {
+    const existing = layerGainNodesRef.current.get(layerKey);
+    if (existing) {
+      safelyDisconnectNode(existing);
+      layerGainNodesRef.current.delete(layerKey);
+    }
+  };
+
+  // Disconnect and release all GainNodes owned by the component
+  const cleanupAllGainNodes = () => {
+    layerGainNodesRef.current.forEach((node) => {
+      safelyDisconnectNode(node);
+    });
+    layerGainNodesRef.current.clear();
+
+    if (masterGainNodeRef.current) {
+      safelyDisconnectNode(masterGainNodeRef.current);
+      masterGainNodeRef.current = null;
+    }
+  };
+
   if (!engineRef.current) {
     let ctx: any = null;
     if (audioContext !== undefined) {
@@ -65,6 +104,17 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       }
     }
     audioContextRef.current = ctx;
+
+    // Track master gain node if audio context supports createGain
+    if (ctx && typeof ctx.createGain === 'function') {
+      try {
+        const masterNode = ctx.createGain();
+        masterGainNodeRef.current = masterNode;
+      } catch {
+        // Safe fallback
+      }
+    }
+
     engineRef.current = new NoiseSoundscapeEngine(ctx);
     engineRef.current.applyPreset(activeInitial);
   }
@@ -87,6 +137,9 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
         if (prev.rain === normalizedRain) return prev;
         return { ...prev, rain: normalizedRain };
       });
+      if (normalizedRain <= 0) {
+        cleanupLayerGainNode('rain');
+      }
       engineRef.current?.setLayerGain('rain', normalizedRain);
     }
   }, [preferences.rain]);
@@ -104,13 +157,32 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
 
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onVisibility);
+      listenersRef.current.add(onVisibility);
     }
 
     return () => {
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisibility);
+        listenersRef.current.delete(onVisibility);
       }
+      // Detach any remaining registered listeners
+      listenersRef.current.forEach((listener) => {
+        if (typeof document !== 'undefined') {
+          try {
+            document.removeEventListener('visibilitychange', listener);
+          } catch {
+            // Ignore
+          }
+        }
+      });
+      listenersRef.current.clear();
+
+      // Disconnect and release all GainNodes on unmount
+      cleanupAllGainNodes();
+
       void engineRef.current?.dispose();
+      engineRef.current = null;
+      audioContextRef.current = null;
     };
   }, []);
 
@@ -153,6 +225,9 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   };
 
   const handleLayerChange = (layer: NoiseLayerType, value: number) => {
+    if (value <= 0) {
+      cleanupLayerGainNode(layer);
+    }
     const updated = engineRef.current?.setLayerGain(layer, value) ?? value;
     setLayers((prev) => ({ ...prev, [layer]: updated }));
     if (layer === 'rain') {
@@ -161,6 +236,9 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   };
 
   const handleSoundscapeLayerChange = (layer: SoundLayer, value: number) => {
+    if (value <= 0) {
+      cleanupLayerGainNode(layer);
+    }
     setLayerVolume(layer, value);
     if (layer === 'rain') {
       const normalized = value / 100;

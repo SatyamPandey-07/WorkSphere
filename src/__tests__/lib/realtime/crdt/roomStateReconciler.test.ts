@@ -61,7 +61,9 @@ describe('Room CRDT State Reconciler & Offline Outbox Queue', () => {
 
     const ab = mergeRoomStates(stateA, stateB);
     const ba = mergeRoomStates(stateB, stateA);
-    expect(ab.elements['card-1']?.payload).toEqual(ba.elements['card-1']?.payload);
+    expect(ab.elements['card-1']?.payload).toEqual(
+      ba.elements['card-1']?.payload
+    );
 
     expect(mergeRoomStates(ab, ab).elements['card-1']?.payload).toEqual(
       ab.elements['card-1']?.payload

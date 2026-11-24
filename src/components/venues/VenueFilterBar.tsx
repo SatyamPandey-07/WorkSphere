@@ -3,6 +3,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpDown, Monitor } from 'lucide-react';
 import { buildVenueSearchParams } from '@/lib/venues/searchQuery';
+import {
+  useSearchPreferences,
+  ALLOWED_RADIUS_OPTIONS,
+} from '@/hooks/useSearchPreferences';
 
 export interface VenueFilterOption {
   id: string;
@@ -21,6 +25,18 @@ export interface VenueFilterBarProps {
   announcementDebounceMs?: number;
   onQueryParamsChange?: (queryString: string) => void;
   className?: string;
+  /**
+   * Search radius in km. If omitted, radius preference is restored from localStorage (#9890).
+   */
+  radius?: number;
+  /**
+   * Callback fired when search radius is changed.
+   */
+  onRadiusChange?: (radius: number) => void;
+  /**
+   * Whether to display the radius filter select dropdown. Default: true.
+   */
+  showRadiusFilter?: boolean;
 }
 
 export const DEFAULT_VENUE_AMENITY_FILTERS: VenueFilterOption[] = [
@@ -51,7 +67,16 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
   announcementDebounceMs = 200,
   onQueryParamsChange,
   className = '',
+  radius: propRadius,
+  onRadiusChange,
+  showRadiusFilter = true,
 }) => {
+  const { radius: preferenceRadius, setRadius } = useSearchPreferences({
+    initialRadius: propRadius,
+    onRadiusChange,
+  });
+
+  const activeRadius = propRadius !== undefined ? propRadius : preferenceRadius;
   const [internalSelected, setInternalSelected] = useState<Set<string>>(() => {
     const initial = new Set<string>(selectedIds ?? []);
     const params = new URLSearchParams(existingSearchParams);
@@ -191,6 +216,31 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
           </button>
         );
       })}
+
+      {showRadiusFilter && (
+        <div className="inline-flex items-center gap-1.5 ml-auto text-xs font-semibold text-slate-600 dark:text-slate-300">
+          <label htmlFor="venue-filter-radius-select" className="text-xs">
+            Radius:
+          </label>
+          <select
+            id="venue-filter-radius-select"
+            data-testid="venue-filter-radius-select"
+            aria-label="Filter radius"
+            value={activeRadius}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              setRadius(val);
+            }}
+            className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          >
+            {ALLOWED_RADIUS_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt === 0 ? 'Any distance' : opt < 1 ? `${opt * 1000}m` : `${opt}km`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 };

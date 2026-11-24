@@ -36,6 +36,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Semantic Matching Engine & Vector Indexing](./ai/SEMANTIC_MATCHING_ENGINE.md) — resume tokenization, dense vector embeddings, pgvector HNSW tuning, and cosine distance query benchmarks.
 
 - [Causal Ordering & Deterministic Tie-Breaking](./architecture/CAUSAL_ORDERING_AND_TIEBREAKING.md) — Vector Clock partial order mathematics, Hybrid Logical Clock tie-breaking heuristics, and distributed partition reconciliation.
+- [Logoot vs. LATA Sequence CRDT Comparison](./crdt/LOGOOOT_VS_LATA_COMPARISON.md) — comparative analysis of fractional positioning (Logoot) versus relative dependency trees (LATA), boundary growth, tombstone garbage collection, and memory overhead.
 
 - [GossipSub WebRTC Mesh](./architecture/GOSSIPSUB_WEBRTC_MESH.md) — peer discovery, GossipSub parameters, heartbeat intervals, and mesh behavior.
 - [WebRTC Peer Connection Lifecycle & ICE Candidate Negotiation](./p2p/mesh-lifecycle.md) — complete peer connection lifecycles, 4-state browser state machine, SDP offer/answer exchange, Trickle ICE, STUN/TURN fallback, DataChannel lifecycle, diagnostic runbook, and multi-device development.

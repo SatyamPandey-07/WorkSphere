@@ -3,6 +3,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import {
   calculateHaversineKm,
   clusterVenuesHexagonally,
+ feat/geospatial-hex-venue-clustering
+  hexDistance,
+  rankVenuesForNomad,
+
   clusterVenuesByH3Resolution,
   filterVenuesByBoundingBox,
   getHexagonBoundary,
@@ -12,6 +16,7 @@ import {
   isCoordinateInBoundingBox,
   rankVenuesForNomad,
   zoomToH3Resolution,
+ main
   type VenueCandidate,
 } from '@/lib/geospatial/spatialVenueClusterer';
 import {
@@ -77,13 +82,22 @@ describe('Hexagonal Spatial Venue Clusterer & Commute Ranking', () => {
     expect(ranked.length).toBe(3);
   });
 
+ feat/geospatial-hex-venue-clustering
+  it('renders cluster expansion, venue selection callback, and empty-radius fallback', () => {
+    const onSelectVenue = jest.fn();
+
   it('renders cluster expansion and empty-radius fallback in VenueClusterMapOverlay', () => {
+ main
     render(
       <VenueClusterMapOverlay
         venues={sampleVenues}
         origin={bhandupOrigin}
         maxRadiusKm={5}
         cellRadiusKm={1.5}
+ feat/geospatial-hex-venue-clustering
+        onSelectVenue={onSelectVenue}
+
+ main
       />
     );
 
@@ -95,6 +109,12 @@ describe('Hexagonal Spatial Venue Clusterer & Commute Ranking', () => {
       screen.getByTestId(`cluster-venues-list-${firstCluster.cellId}`)
     ).toBeTruthy();
 
+ feat/geospatial-hex-venue-clustering
+    fireEvent.click(screen.getAllByText('Select')[0]);
+    expect(onSelectVenue).toHaveBeenCalledTimes(1);
+
+
+ main
     render(
       <VenueClusterMapOverlay
         venues={sampleVenues}
@@ -106,6 +126,8 @@ describe('Hexagonal Spatial Venue Clusterer & Commute Ranking', () => {
       EMPTY_RADIUS_VENUES_MESSAGE
     );
   });
+ feat/geospatial-hex-venue-clustering
+
 
   describe('H3 Hierarchical Hexagonal Indexing & Aggregations (#10008)', () => {
     it('maps zoom levels to H3 resolutions (7, 8, 9)', () => {
@@ -216,4 +238,5 @@ describe('Hexagonal Spatial Venue Clusterer & Commute Ranking', () => {
       expect(elapsed).toBeLessThan(10); // Acceptance criteria: <10ms for 500 venues
     });
   });
+ main
 });

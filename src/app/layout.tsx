@@ -172,6 +172,7 @@ export default async function RootLayout({
           nonce={nonce}
           dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
         />
+        <SkipToContent>Skip to main content</SkipToContent>
         {bodyContent}
       </body>
     </html>

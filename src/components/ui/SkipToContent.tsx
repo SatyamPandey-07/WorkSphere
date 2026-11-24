@@ -56,7 +56,7 @@ export function SkipToContent({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        "sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:p-4 focus:bg-blue-600 focus:text-white",
+        "sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:px-4 focus:py-2 focus:bg-indigo-600 focus:text-white focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:ring-offset-2",
         className
       )}
       {...props}

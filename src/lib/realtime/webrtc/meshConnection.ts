@@ -17,6 +17,122 @@ export interface MeshPeerConfig {
   ) => void;
 }
 
+export const INITIAL_RECONNECT_DELAY_MS = 1000;
+export const MAX_RECONNECT_DELAY_MS = 30000;
+export const MAX_RECONNECT_JITTER_MS = 500;
+
+export function calculateReconnectBackoffDelay(
+  attempts: number,
+  options?: {
+    initialDelay?: number;
+    maxDelay?: number;
+    randomJitter?: number;
+  }
+): number {
+  const initialDelay = options?.initialDelay ?? INITIAL_RECONNECT_DELAY_MS;
+  const maxDelay = options?.maxDelay ?? MAX_RECONNECT_DELAY_MS;
+  const jitter =
+    options?.randomJitter !== undefined
+      ? options.randomJitter
+      : Math.random() * MAX_RECONNECT_JITTER_MS;
+
+  const delay = Math.min(
+    initialDelay * Math.pow(2, Math.max(0, attempts)) + jitter,
+    maxDelay
+  );
+
+  return Math.min(delay, maxDelay);
+}
+
+interface PeerReconnectState {
+  attempts: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+const meshPeerReconnectRegistry = new Map<string, PeerReconnectState>();
+
+export function getMeshPeerReconnectState(peerId: string): {
+  attempts: number;
+  hasActiveTimer: boolean;
+} {
+  const state = meshPeerReconnectRegistry.get(peerId);
+  return {
+    attempts: state ? state.attempts : 0,
+    hasActiveTimer: !!(state && state.timer !== null),
+  };
+}
+
+export function resetMeshPeerReconnect(peerId: string): void {
+  const state = meshPeerReconnectRegistry.get(peerId);
+  if (state) {
+    if (state.timer !== null) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    meshPeerReconnectRegistry.delete(peerId);
+  }
+}
+
+export function clearAllMeshPeerReconnects(): void {
+  for (const state of meshPeerReconnectRegistry.values()) {
+    if (state.timer !== null) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+  }
+  meshPeerReconnectRegistry.clear();
+}
+
+export function handleMeshPeerPingAck(peerId: string): void {
+  const state = meshPeerReconnectRegistry.get(peerId);
+  if (state) {
+    state.attempts = 0;
+  }
+}
+
+export function scheduleMeshPeerReconnect(
+  peerId: string,
+  reconnectCallback: () => void | Promise<void>,
+  options?: {
+    initialDelay?: number;
+    maxDelay?: number;
+    randomJitter?: number;
+  }
+): number | null {
+  if (!peerId) return null;
+
+  let state = meshPeerReconnectRegistry.get(peerId);
+  if (!state) {
+    state = { attempts: 0, timer: null };
+    meshPeerReconnectRegistry.set(peerId, state);
+  }
+
+  // Prevent multiple simultaneous reconnect timers for the same peer
+  if (state.timer !== null) {
+    return null;
+  }
+
+  const delay = calculateReconnectBackoffDelay(state.attempts, options);
+  state.attempts++;
+
+  state.timer = setTimeout(() => {
+    if (state) {
+      state.timer = null;
+    }
+    try {
+      void reconnectCallback();
+    } catch (err) {
+      console.warn(`[MeshPeerConnection] Reconnect callback error for peer ${peerId}:`, err);
+    }
+  }, delay);
+
+  if (state.timer && typeof (state.timer as any).unref === 'function') {
+    (state.timer as any).unref();
+  }
+
+  return delay;
+}
+
 export class MeshPeerConnection {
   public readonly peerId: string;
   private pc: RTCPeerConnection | null = null;
@@ -76,6 +192,7 @@ export class MeshPeerConnection {
 
     if (state === 'connected' || state === 'completed') {
       this.clearRestartTimer();
+      resetMeshPeerReconnect(this.peerId);
       return;
     }
 
@@ -147,6 +264,7 @@ export class MeshPeerConnection {
   public close(): void {
     this.isClosed = true;
     this.clearRestartTimer();
+    resetMeshPeerReconnect(this.peerId);
     cleanupMeshPeerDataChannels(this);
     if (this.pc) {
       this.pc.oniceconnectionstatechange = null;
@@ -192,6 +310,7 @@ interface ChannelKeepaliveSession {
   channel: RTCDataChannel;
   timer: ReturnType<typeof setInterval> | null;
   intervalMs: number;
+  peerId?: string;
   onOpenHandler: (() => void) | null;
   onMessageHandler: ((event: MessageEvent) => void) | null;
   onCloseHandler: (() => void) | null;
@@ -219,6 +338,7 @@ export function startDataChannelKeepalive(
   channel: RTCDataChannel,
   options?: {
     intervalMs?: number;
+    peerId?: string;
     onPongReceived?: (ts: number, rttMs?: number) => void;
   }
 ): void {
@@ -232,6 +352,7 @@ export function startDataChannelKeepalive(
       channel,
       timer: null,
       intervalMs,
+      peerId: options?.peerId,
       onOpenHandler: null,
       onMessageHandler: null,
       onCloseHandler: null,
@@ -242,6 +363,9 @@ export function startDataChannelKeepalive(
     setupKeepaliveInterception(session, channel);
   } else {
     session.intervalMs = intervalMs;
+    if (options?.peerId) {
+      session.peerId = options.peerId;
+    }
     if (options?.onPongReceived) {
       session.onPongReceived = options.onPongReceived;
     }
@@ -395,6 +519,9 @@ export function handleIncomingChannelMessage(
         const now = Date.now();
         const rttMs = typeof parsed.ts === 'number' && parsed.ts > 0 ? Math.max(0, now - parsed.ts) : undefined;
         session.onPongReceived?.(parsed.ts, rttMs);
+        if (session.peerId) {
+          handleMeshPeerPingAck(session.peerId);
+        }
         return true; // Consumed heartbeat
       }
     }
@@ -419,7 +546,7 @@ export function registerMeshPeerDataChannel(
   }
   channels.add(channel);
 
-  startDataChannelKeepalive(channel);
+  startDataChannelKeepalive(channel, { peerId: peer.peerId });
 }
 
 /**

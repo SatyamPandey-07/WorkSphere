@@ -7,7 +7,6 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { escapeCSVField } from "./csvBuilder";
 import {
   PdfDocumentBuilder,
   drawSafeText,
@@ -46,6 +45,75 @@ export interface VenueAuditPdfOptions {
   venueId?: string;
   month?: string;
   title?: string;
+}
+
+/**
+ * Escapes a cell value according to RFC 4180 specifications with formula injection protection:
+ * - If value is null or undefined, returns empty string.
+ * - Handles Date, boolean, number, string, and unknown objects.
+ * - Formula injection protection: Fields starting with =, +, -, @, |, \t, \r are prepended
+ *   with a single quote (') to prevent execution when opened in Excel/Spreadsheets.
+ * - RFC 4180: Fields containing commas (,), double quotes ("), line feeds (\n), or carriage returns (\r)
+ *   MUST be enclosed in double quotes. Internal double quotes (") MUST be escaped by doubling them ("").
+ */
+export function escapeAuditCsvField(
+  val: unknown,
+  sanitizeFormulas: boolean = true,
+): string {
+  if (val === null || val === undefined) {
+    return "";
+  }
+
+  // Handle finite JavaScript numbers directly
+  if (typeof val === "number") {
+    if (!Number.isFinite(val)) return "";
+    return String(val);
+  }
+
+  // Handle boolean values
+  if (typeof val === "boolean") {
+    return String(val);
+  }
+
+  let str: string;
+  if (val instanceof Date) {
+    str = isNaN(val.getTime()) ? "" : val.toISOString();
+  } else if (Array.isArray(val)) {
+    str = val.join("; ");
+  } else if (typeof val === "object") {
+    str = JSON.stringify(val);
+  } else {
+    str = String(val).replace(/\0/g, "");
+  }
+
+  // If pure signed decimal/integer number, return as-is
+  if (/^-?\d+(\.\d+)?$/.test(str.trim())) {
+    return str.trim();
+  }
+
+  // Formula injection sanitization: Prepend single quote (') if value starts with formula trigger (=, +, -, @, |, \t, \r)
+  // Spreadsheet engines trim leading whitespace before formula evaluation, so test both raw and trimmed string
+  if (
+    sanitizeFormulas &&
+    (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()))
+  ) {
+    if (!str.startsWith("'")) {
+      str = "'" + str;
+    }
+  }
+
+  // RFC 4180 Rule 6 & 7: Enclose in double quotes if string contains comma, double quote, LF, or CR.
+  // Internal double quotes MUST be escaped as double double-quotes ("").
+  if (
+    str.includes('"') ||
+    str.includes(",") ||
+    str.includes("\n") ||
+    str.includes("\r")
+  ) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+
+  return str;
 }
 
 /**
@@ -115,11 +183,11 @@ export function formatAverageDecibels(
  */
 export function formatAuditCsvRow(row: VenueAuditExportRow): string {
   const fields = [
-    escapeCSVField(formatAuditTimestamp(row.timestamp)),
-    escapeCSVField(row.userId ?? ""),
-    escapeCSVField(formatSeatLabel(row.seatLabel)),
-    escapeCSVField(formatCheckInDuration(row.checkInDuration)),
-    escapeCSVField(formatAverageDecibels(row.averageDecibels)),
+    escapeAuditCsvField(formatAuditTimestamp(row.timestamp)),
+    escapeAuditCsvField(row.userId ?? ""),
+    escapeAuditCsvField(formatSeatLabel(row.seatLabel)),
+    escapeAuditCsvField(formatCheckInDuration(row.checkInDuration)),
+    escapeAuditCsvField(formatAverageDecibels(row.averageDecibels)),
   ];
   return fields.join(",") + "\r\n";
 }

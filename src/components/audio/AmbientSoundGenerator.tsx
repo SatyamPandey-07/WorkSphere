@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Volume2, VolumeX } from 'lucide-react';
 import {
   DEFAULT_SOUNDSCAPE_PRESET,
   loadSoundscapePresets,
@@ -110,10 +111,17 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     const engine = engineRef.current;
     if (!engine) return;
     const nextMuted = !isMuted;
-    await engine.setMuted(nextMuted);
-    setIsMuted(nextMuted);
     if (nextMuted) {
-      setIsPlaying(false);
+      engine.setMasterGain(0, 0.05);
+      await engine.setMuted(true);
+      setIsMuted(true);
+      if (isPlaying) {
+        setIsPlaying(false);
+      }
+    } else {
+      await engine.setMuted(false);
+      engine.setMasterGain(masterGain, 0.05);
+      setIsMuted(false);
     }
   };
 
@@ -123,8 +131,10 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   };
 
   const handleMasterChange = (value: number) => {
-    const updated = engineRef.current?.setMasterGain(value) ?? value;
-    setMasterGain(updated);
+    setMasterGain(value);
+    if (!isMuted) {
+      engineRef.current?.setMasterGain(value, 0.05);
+    }
   };
 
   const handleSavePreset = () => {
@@ -166,9 +176,22 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
             type="button"
             data-testid="toggle-mute-btn"
             onClick={() => void toggleMute()}
-            className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+            aria-label={isMuted ? 'Unmute sound' : 'Mute sound'}
+            aria-pressed={isMuted}
+            title={isMuted ? 'Unmute master soundscape' : 'Mute master soundscape'}
+            className="flex items-center gap-1.5 rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
           >
-            {isMuted ? 'Unmute' : 'Mute'}
+            {isMuted ? (
+              <>
+                <VolumeX className="h-3.5 w-3.5 text-red-500" aria-hidden="true" />
+                <span>Unmute</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" aria-hidden="true" />
+                <span>Mute</span>
+              </>
+            )}
           </button>
           <button
             type="button"

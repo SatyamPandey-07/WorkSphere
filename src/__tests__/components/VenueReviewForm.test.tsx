@@ -1,8 +1,12 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { VenueReviewForm } from "@/components/ui/VenueReviewForm";
 
 describe("VenueReviewForm Star Rating", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    jest.clearAllMocks();
+  });
   it("renders 5 star slots and initial rating state", () => {
     render(<VenueReviewForm initialRating={0} />);
 
@@ -313,6 +317,72 @@ describe("VenueReviewForm Star Rating", () => {
       expect(
         localStorage.getItem("worksphere:review-draft:venue-offline"),
       ).toBeNull();
+    });
+  });
+
+  describe("Double Submit Prevention (#10011)", () => {
+    it("prevents duplicate submissions on rapid double clicks", async () => {
+      let resolveSubmit: (val?: any) => void;
+      const onSubmit = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveSubmit = resolve;
+          })
+      );
+
+      render(<VenueReviewForm initialRating={4.5} onSubmit={onSubmit} />);
+
+      const textarea = screen.getByPlaceholderText(/share your experience/i);
+      fireEvent.change(textarea, {
+        target: { value: "Great workspace, very quiet!" },
+      });
+
+      const submitButton = screen.getByTestId("submit-review-button");
+
+      // First click dispatches
+      fireEvent.click(submitButton);
+
+      // Rapid second and third clicks while pending
+      fireEvent.click(submitButton);
+      fireEvent.click(submitButton);
+
+      // Only called once!
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(onSubmit).toHaveBeenCalledWith(
+        "Great workspace, very quiet!",
+        4.5
+      );
+
+      // While pending, submit button is disabled and displays spinner
+      expect(submitButton).toBeDisabled();
+      expect(screen.getByTestId("submit-spinner")).toBeInTheDocument();
+      expect(screen.getByText("Submitting...")).toBeInTheDocument();
+
+      // Resolve the pending request
+      await act(async () => {
+        resolveSubmit!();
+      });
+
+      // After resolution, spinner disappears and disabled resets
+      await screen.findByText("Submit Review");
+      expect(screen.queryByTestId("submit-spinner")).not.toBeInTheDocument();
+    });
+
+    it("ignores subsequent clicks while the first request is unresolved", () => {
+      const onSubmit = jest.fn(() => new Promise(() => {})); // Never resolves
+      render(<VenueReviewForm initialRating={5} onSubmit={onSubmit} />);
+
+      const textarea = screen.getByPlaceholderText(/share your experience/i);
+      fireEvent.change(textarea, { target: { value: "Fast internet and friendly staff" } });
+
+      const submitButton = screen.getByTestId("submit-review-button");
+      fireEvent.click(submitButton);
+
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+
+      // Try firing another submit
+      fireEvent.click(submitButton);
+      expect(onSubmit).toHaveBeenCalledTimes(1);
     });
   });
 });

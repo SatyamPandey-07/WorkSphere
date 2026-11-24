@@ -106,6 +106,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Dead Letter Queue](./offline/dead-letter-queue.md) — handling and recovery of failed offline jobs.
 - [Offline Sync Flow](./architecture/offline-sync-flow.md) — application offline synchronization flow.
 - [Local Mesh CRDT Synchronization](./realtime/local-mesh-crdt-sync.md) — collaborative state replication over peer-to-peer mesh connections.
+- [PartyKit WebSocket Room Heartbeat & Reconnection Protocol](./realtime/PARTYKIT_RECONNECTION_PROTOCOL.md) — 30s ping/pong heartbeats, randomized exponential jitter backoff, and room state reconciliation.
 - [CRDT Documentation Index](./crdt/README.md) — collaborative data protocols, specifications, and reading order.
 - [Yjs State Vector Exchange & Differential Compaction Architecture](./crdt/YJS_SYNC_PROTOCOL.md) — complete Yjs state vector exchange (`Y.encodeStateVector`), differential update computation (`Y.encodeStateAsUpdate`), wire codecs, and snapshot compaction engine.
 - [Ephemeral Awareness Vector Clock Compaction](./crdt/AWARENESS_VECTOR_COMPACTION.md) — ephemeral presence tracking, 30s TTL heartbeat eviction, and awareness vector compaction vs. document-level garbage collection.

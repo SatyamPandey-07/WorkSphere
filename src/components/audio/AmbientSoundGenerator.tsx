@@ -11,122 +11,85 @@ import {
   type SoundscapePreset,
   type StorageLike,
 } from '@/lib/audio/noiseSynthesizer';
-
-export const AMBIENT_PRESET_STORAGE_KEY = 'worksphere:ambient_soundscape:v1';
-
-export interface SavedAmbientPreset {
-  soundType: AmbientSoundType;
-  volume: number;
-  layerLevels: LayerMixLevels;
-  cutoffFrequency?: number;
-}
+import {
+  useSoundscapePreferences,
+  type SoundLayer,
+} from '@/hooks/useSoundscapePreferences';
 
 export interface AmbientSoundGeneratorProps {
-  initialSound?: AmbientSoundType;
-  initialVolume?: number;
-  initialCutoff?: number;
+  storage?: StorageLike | null;
+  initialPresets?: SoundscapePreset[];
+  audioContext?: any;
+  audioContextFactory?: () => any;
   storageKey?: string;
   className?: string;
 }
 
-const SOUND_OPTIONS: { id: AmbientSoundType; label: string; hint: string }[] = [
-  { id: 'white', label: 'White Noise', hint: 'Balanced masking for chatter' },
-  { id: 'pink', label: 'Pink Noise', hint: 'Softer deep-focus warmth' },
-  { id: 'brown', label: 'Brown Noise', hint: 'Deep low-frequency rumble' },
-  { id: 'rain', label: 'Rain Sound', hint: 'Gentle steady rainfall' },
-];
-
-export function loadSavedAmbientPreset(
-  fallbackSound: AmbientSoundType,
-  fallbackVolume: number,
-  storageKey = AMBIENT_PRESET_STORAGE_KEY
-): SavedAmbientPreset {
-  const safeVol = clampVolume(fallbackVolume);
-  const defaultLevels = normalizeLayerLevels(undefined, fallbackSound);
-
-  if (typeof window === 'undefined') {
-    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels, cutoffFrequency: 12000 };
-  }
-
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    if (!raw) {
-      return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels, cutoffFrequency: 12000 };
-    }
-    const parsed = JSON.parse(raw) as Partial<SavedAmbientPreset>;
-    const soundType: AmbientSoundType =
-      parsed.soundType === 'white' ||
-      parsed.soundType === 'pink' ||
-      parsed.soundType === 'brown' ||
-      parsed.soundType === 'rain'
-        ? parsed.soundType
-        : fallbackSound;
-    const volume = clampVolume(parsed.volume ?? safeVol);
-    const layerLevels = normalizeLayerLevels(parsed.layerLevels, soundType);
-    const cutoffFrequency =
-      typeof parsed.cutoffFrequency === 'number' && Number.isFinite(parsed.cutoffFrequency)
-        ? Math.max(200, Math.min(20000, parsed.cutoffFrequency))
-        : 12000;
-    return { soundType, volume, layerLevels, cutoffFrequency };
-  } catch {
-    return { soundType: fallbackSound, volume: safeVol, layerLevels: defaultLevels, cutoffFrequency: 12000 };
-  }
-}
-
-export function saveAmbientPreset(
-  preset: SavedAmbientPreset,
-  storageKey = AMBIENT_PRESET_STORAGE_KEY
-): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(preset));
-  } catch {
-    // Ignore storage quota or private-browsing errors
-  }
-}
-
 export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
-  initialSound = 'pink',
-  initialVolume = 0.5,
-  initialCutoff = 12000,
-  storageKey = AMBIENT_PRESET_STORAGE_KEY,
+  storage,
+  initialPresets,
+  audioContext,
+  audioContextFactory,
+  storageKey,
   className = '',
 }) => {
+  const { preferences, setLayerVolume } = useSoundscapePreferences(
+    storageKey ? { storageKey } : undefined
+  );
+
   const presets = useMemo(
     () => initialPresets ?? loadSoundscapePresets(storage),
     [initialPresets, storage]
   );
 
-  const [soundType, setSoundType] = useState<AmbientSoundType>(
-    initialPreset.soundType
-  );
-  const [volume, setVolume] = useState<number>(initialPreset.volume);
-  const [cutoffFrequency, setCutoffFrequency] = useState<number>(
-    initialPreset.cutoffFrequency ?? initialCutoff
-  );
-  const [layerLevels, setLayerLevels] = useState<LayerMixLevels>(
-    initialPreset.layerLevels
-  );
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const activeInitial = presets[0] ?? DEFAULT_SOUNDSCAPE_PRESET;
+  const audioContextRef = useRef<any>(null);
+  const engineRef = useRef<NoiseSoundscapeEngine | null>(null);
 
-  const synthRef = useRef<NoiseSynthesizer | null>(null);
-  if (!synthRef.current) {
-    synthRef.current = new NoiseSynthesizer({
-      soundType: initialPreset.soundType,
-      volume: initialPreset.volume,
-      cutoffFrequency: initialPreset.cutoffFrequency ?? initialCutoff,
-      layerLevels: initialPreset.layerLevels,
-      muted: false,
-    });
+  if (!engineRef.current) {
+    let ctx: any = null;
+    if (audioContext !== undefined) {
+      ctx = audioContext;
+    } else if (audioContextFactory) {
+      ctx = audioContextFactory();
+    } else if (typeof window !== 'undefined') {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        try {
+          ctx = new AudioCtx();
+        } catch {
+          ctx = null;
+        }
+      }
+    }
+    audioContextRef.current = ctx;
+    engineRef.current = new NoiseSoundscapeEngine(ctx);
+    engineRef.current.applyPreset(activeInitial);
   }
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [masterGain, setMasterGain] = useState(activeInitial.masterGain);
-  const [layers, setLayers] = useState<Record<NoiseLayerType, number>>({
+
+  // Sync initial sound layers from persistent preferences
+  const [layers, setLayers] = useState<Record<NoiseLayerType, number>>(() => ({
     ...activeInitial.layers,
-  });
+    rain: preferences.rain !== undefined ? preferences.rain / 100 : activeInitial.layers.rain,
+  }));
+
+  // Update audio engine when preferences change
+  useEffect(() => {
+    if (preferences.rain !== undefined) {
+      const normalizedRain = preferences.rain / 100;
+      setLayers((prev) => {
+        if (prev.rain === normalizedRain) return prev;
+        return { ...prev, rain: normalizedRain };
+      });
+      engineRef.current?.setLayerGain('rain', normalizedRain);
+    }
+  }, [preferences.rain]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -139,37 +102,36 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       }
     };
 
-  const persistCurrent = (
-    nextSound: AmbientSoundType,
-    nextVol: number,
-    nextLayers: LayerMixLevels,
-    nextCutoff: number
-  ) => {
-    saveAmbientPreset(
-      { soundType: nextSound, volume: nextVol, layerLevels: nextLayers, cutoffFrequency: nextCutoff },
-      storageKey
-    );
-  };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
 
-  const handleSelectSound = (nextType: AmbientSoundType) => {
-    const nextLayers: LayerMixLevels = {
-      white: nextType === 'white' ? Math.max(0.7, layerLevels.white) : 0,
-      pink: nextType === 'pink' ? Math.max(0.7, layerLevels.pink) : 0,
-      brown: nextType === 'brown' ? Math.max(0.7, layerLevels.brown) : 0,
-      rain: nextType === 'rain' ? Math.max(0.7, layerLevels.rain) : 0,
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+      void engineRef.current?.dispose();
     };
-    setSoundType(nextType);
-    setLayerLevels(nextLayers);
-    synthRef.current?.setSoundType(nextType);
-    persistCurrent(nextType, volume, nextLayers, cutoffFrequency);
-  };
+  }, []);
 
-  const handleLayerChange = (type: AmbientSoundType, nextVal: number) => {
-    const clamped = clampVolume(nextVal);
-    const nextLayers = { ...layerLevels, [type]: clamped };
-    setLayerLevels(nextLayers);
-    synthRef.current?.setLayerLevel(type, clamped);
-    persistCurrent(soundType, volume, nextLayers, cutoffFrequency);
+  const togglePlayback = async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (isPlaying) {
+      await engine.pause();
+      setIsPlaying(false);
+    } else {
+      const ctx = audioContextRef.current;
+      if (ctx && typeof ctx.resume === 'function' && ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch {
+          // Autoplay policy or user gesture required
+        }
+      }
+      const started = await engine.start();
+      setIsPlaying(started);
+    }
   };
 
   const toggleMute = async () => {
@@ -193,6 +155,18 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   const handleLayerChange = (layer: NoiseLayerType, value: number) => {
     const updated = engineRef.current?.setLayerGain(layer, value) ?? value;
     setLayers((prev) => ({ ...prev, [layer]: updated }));
+    if (layer === 'rain') {
+      setLayerVolume('rain', Math.round(updated * 100));
+    }
+  };
+
+  const handleSoundscapeLayerChange = (layer: SoundLayer, value: number) => {
+    setLayerVolume(layer, value);
+    if (layer === 'rain') {
+      const normalized = value / 100;
+      engineRef.current?.setLayerGain('rain', normalized);
+      setLayers((prev) => ({ ...prev, rain: normalized }));
+    }
   };
 
   const handleMasterChange = (value: number) => {
@@ -202,25 +176,21 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     }
   };
 
-  const handleVolumeChange = (nextVal: number) => {
-    const clamped = clampVolume(nextVal);
-    setVolume(clamped);
-    synthRef.current?.setVolume(clamped);
-    persistCurrent(soundType, clamped, layerLevels, cutoffFrequency);
-  };
-
-  const handleCutoffChange = (nextCutoff: number) => {
-    const clamped = Math.max(200, Math.min(20000, nextCutoff));
-    setCutoffFrequency(clamped);
-    synthRef.current?.setCutoffFrequency(clamped);
-    persistCurrent(soundType, volume, layerLevels, clamped);
+  const handleSavePreset = () => {
+    const customPreset: SoundscapePreset = {
+      id: `custom-${Date.now()}`,
+      name: 'Custom Nomad Mix',
+      masterGain,
+      layers,
+    };
+    saveSoundscapePresets([customPreset, ...presets], storage);
   };
 
   return (
     <section
       data-testid="ambient-sound-generator"
       aria-label="Ambient focus soundscape mixer"
-      className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      className={`space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -273,43 +243,9 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
         </div>
       </div>
 
-      <div
-        role="group"
-        aria-label="Noise type"
-        className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4"
-      >
-        {SOUND_OPTIONS.map((opt) => {
-          const active = soundType === opt.id;
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              aria-pressed={active}
-              data-testid={`sound-option-${opt.id}`}
-              onClick={() => handleSelectSound(opt.id)}
-              className={`rounded-xl border px-3 py-2 text-left transition ${
-                active
-                  ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 dark:border-indigo-500 dark:bg-indigo-950/60 dark:text-indigo-100'
-                  : 'border-slate-200 bg-slate-50/50 text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300'
-              }`}
-            >
-              <div className="text-xs font-semibold">{opt.label}</div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {opt.hint}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 space-y-2.5">
-        <div className="flex items-center gap-3">
-          <label
-            htmlFor="ambient-volume-slider"
-            className="w-20 text-xs font-medium text-slate-600 dark:text-slate-300"
-          >
-            Master
-          </label>
+      <div className="space-y-2.5">
+        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+          Master Volume ({Math.round(masterGain * 100)}%)
           <input
             type="range"
             min={0}
@@ -322,40 +258,12 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
           />
         </label>
 
-        <div className="flex items-center gap-3">
+        {(['white', 'pink', 'rain'] as const).map((layer) => (
           <label
-            htmlFor="ambient-cutoff-slider"
-            className="w-20 text-xs font-medium text-slate-600 dark:text-slate-300"
+            key={layer}
+            className="block text-xs font-medium capitalize text-slate-700 dark:text-slate-300"
           >
-            Cutoff
-          </label>
-          <input
-            id="ambient-cutoff-slider"
-            type="range"
-            min={200}
-            max={20000}
-            step={100}
-            value={cutoffFrequency}
-            data-testid="ambient-cutoff-slider"
-            onChange={(e) => handleCutoffChange(Number(e.target.value))}
-            className="h-2 w-full cursor-pointer accent-indigo-600"
-          />
-          <span
-            data-testid="ambient-cutoff-value"
-            className="w-10 text-right text-xs font-semibold text-slate-700 dark:text-slate-200"
-          >
-            {cutoffFrequency >= 1000 ? `${(cutoffFrequency / 1000).toFixed(1)}k` : `${cutoffFrequency}`}Hz
-          </span>
-        </div>
-
-        {(['white', 'pink', 'brown', 'rain'] as const).map((layerKey) => (
-          <div key={layerKey} className="flex items-center gap-3">
-            <label
-              htmlFor={`layer-slider-${layerKey}`}
-              className="w-20 text-xs capitalize text-slate-500 dark:text-slate-400"
-            >
-              {layerKey}
-            </label>
+            {layer} Layer ({Math.round(layers[layer] * 100)}%)
             <input
               type="range"
               min={0}
@@ -368,6 +276,59 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
             />
           </label>
         ))}
+
+        {/* Dedicated ambient soundscape layer controls for issue #10110 */}
+        <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Ambient Soundscape Volumes
+          </h4>
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Brown Noise ({preferences.brown}%)
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={preferences.brown}
+                data-testid="soundscape-slider-brown"
+                aria-label="Brown noise volume"
+                onChange={(e) => handleSoundscapeLayerChange('brown', Number(e.target.value))}
+                className="mt-1 w-full"
+              />
+            </label>
+
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Cafe Chatter ({preferences.cafe}%)
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={preferences.cafe}
+                data-testid="soundscape-slider-cafe"
+                aria-label="Cafe chatter volume"
+                onChange={(e) => handleSoundscapeLayerChange('cafe', Number(e.target.value))}
+                className="mt-1 w-full"
+              />
+            </label>
+
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Rainfall ({preferences.rain}%)
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={preferences.rain}
+                data-testid="soundscape-slider-rain"
+                aria-label="Rainfall volume"
+                onChange={(e) => handleSoundscapeLayerChange('rain', Number(e.target.value))}
+                className="mt-1 w-full"
+              />
+            </label>
+          </div>
+        </div>
       </div>
     </section>
   );

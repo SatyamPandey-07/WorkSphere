@@ -1392,6 +1392,8 @@ async function syncNomadCheckins() {
               "Idempotency-Key": item.idempotencyKey,
               "X-Client-Nonce": item.clientNonce,
               "X-Signed-Timestamp": item.signedTimestamp,
+              "X-Device-Id": item.deviceId || "device_default",
+              "X-Protocol-Version": String(item.protocolVersion || 2),
             },
             body: JSON.stringify({
               seatId: item.seatId,
@@ -1401,6 +1403,9 @@ async function syncNomadCheckins() {
               clientNonce: item.clientNonce,
               signedTimestamp: item.signedTimestamp,
               idempotencyKey: item.idempotencyKey,
+              deviceId: item.deviceId || "device_default",
+              protocolVersion: item.protocolVersion || 2,
+              signature: item.signature || item.signedTimestamp,
             }),
           });
 

@@ -18,6 +18,8 @@ export const CHECKIN_SYNC_BROADCAST_CHANNEL = "nomad-checkin-sync-channel";
 export const DEFAULT_OFFLINE_DB_NAME = "worksphere-offline";
 export const DEFAULT_OFFLINE_DB_VERSION = 9;
 
+export * from "./deviceAttestation";
+
 export interface CheckinPayload {
   seatId: string;
   venueId?: string;
@@ -30,6 +32,9 @@ export interface CheckinPayload {
   retryCount?: number;
   createdAt?: number;
   metadata?: Record<string, unknown>;
+  deviceId?: string;
+  protocolVersion?: number;
+  signature?: string;
 }
 
 export interface StoredCheckin {
@@ -45,6 +50,9 @@ export interface StoredCheckin {
   retryCount: number;
   createdAt: number;
   metadata?: Record<string, unknown>;
+  deviceId?: string;
+  protocolVersion?: number;
+  signature?: string;
 }
 
 export interface ReplayResult {
@@ -80,25 +88,19 @@ export function signCheckinTimestamp(
 ): string {
   const payload = `${seatId}:${timestamp}:${nonce}`;
   try {
-    if (typeof window === "undefined") {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const crypto = require("crypto");
-      if (crypto && typeof crypto.createHmac === "function") {
-        const hmac = crypto.createHmac("sha256", secretKey);
-        hmac.update(payload);
-        return hmac.digest("hex");
-      }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const cryptoModule = require("crypto");
+    if (cryptoModule && typeof cryptoModule.createHmac === "function") {
+      const hmac = cryptoModule.createHmac("sha256", secretKey);
+      hmac.update(payload);
+      return hmac.digest("hex");
     }
   } catch {
-    // Pure browser fallback
+    // require("crypto") not available
   }
 
-  // Pure browser fallback using DJB2-based deterministic hash if crypto is restricted
-  let hash = 5381;
-  for (let i = 0; i < payload.length; i++) {
-    hash = (hash * 33) ^ payload.charCodeAt(i);
-  }
-  return `sig_${(hash >>> 0).toString(16)}_${nonce.slice(0, 8)}`;
+  // Never fallback to insecure DJB2 hash
+  throw new Error("Cryptographic signing requires Node crypto or Web Crypto; insecure fallback disabled.");
 }
 
 /**
@@ -204,6 +206,9 @@ export async function enqueueCheckin(
     retryCount: payload.retryCount ?? 0,
     createdAt: payload.createdAt ?? Date.now(),
     metadata: payload.metadata,
+    deviceId: payload.deviceId ?? "device_default",
+    protocolVersion: payload.protocolVersion ?? 2,
+    signature: payload.signature ?? signedTimestamp,
   };
 
   const db = await openCheckinDB(dbName);
@@ -354,6 +359,8 @@ export async function replayCheckinQueue(
           "Idempotency-Key": item.idempotencyKey,
           "X-Client-Nonce": item.clientNonce,
           "X-Signed-Timestamp": item.signedTimestamp,
+          "X-Device-Id": item.deviceId || "device_default",
+          "X-Protocol-Version": String(item.protocolVersion || 2),
         },
         body: JSON.stringify({
           seatId: item.seatId,
@@ -363,6 +370,9 @@ export async function replayCheckinQueue(
           clientNonce: item.clientNonce,
           signedTimestamp: item.signedTimestamp,
           idempotencyKey: item.idempotencyKey,
+          deviceId: item.deviceId || "device_default",
+          protocolVersion: item.protocolVersion || 2,
+          signature: item.signature ?? item.signedTimestamp,
         }),
       });
 

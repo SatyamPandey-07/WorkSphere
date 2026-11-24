@@ -72,6 +72,8 @@ export class NFCDeskCheckinController {
   public onDeskCheckout?: (deskId: string, userId: string, durationMs: number) => void;
   public onDeskAutoReleased?: (deskId: string, previousUserId: string) => void;
   public onUnauthorizedTap?: (deskId: string, reason: string) => void;
+  /** Fires for every rejected check-in tap (bad signature, maintenance, occupied). */
+  public onTapRejected?: (deskId: string, reason: string) => void;
 
   constructor(config: NFCDeskControllerConfig = {}) {
     this.maxClockSkewMs = config.maxClockSkewMs ?? 30000;
@@ -104,6 +106,7 @@ export class NFCDeskCheckinController {
       if (this.onUnauthorizedTap) {
         this.onUnauthorizedTap(payload.deskId, authResult.error ?? 'Authentication failed');
       }
+      this.onTapRejected?.(payload.deskId, authResult.error ?? 'Authentication failed');
       return { success: false, state: DeskState.AVAILABLE, error: authResult.error };
     }
 
@@ -111,11 +114,16 @@ export class NFCDeskCheckinController {
 
     if (desk.state === DeskState.MAINTENANCE) {
       this.rejectedTaps++;
+      this.onTapRejected?.(payload.deskId, 'Desk is under maintenance');
       return { success: false, state: desk.state, error: 'Desk is under maintenance' };
     }
 
     if (desk.state === DeskState.OCCUPIED && desk.activeUserId !== payload.userId) {
       this.rejectedTaps++;
+      this.onTapRejected?.(
+        payload.deskId,
+        `Desk is already occupied by user ${desk.activeUserId}`
+      );
       return {
         success: false,
         state: desk.state,

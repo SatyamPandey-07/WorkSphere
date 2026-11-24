@@ -970,7 +970,8 @@ textarea:focus::placeholder {
 }
 
 /* ─── High-Contrast Mode Styles (WCAG 2.1 AAA Compliant - 7:1 Ratio) ── */
-html.high-contrast {
+html.high-contrast,
+html[data-high-contrast="true"] {
   --background: #ffffff;
   --foreground: #000000;
   --contrast-border: #000000;
@@ -992,7 +993,10 @@ html.high-contrast.dark,
 html.high-contrast.cyberpunk,
 html.high-contrast .dark,
 html.dark.high-contrast,
-html[data-high-contrast="true"].dark {
+html[data-high-contrast="true"].dark,
+html[data-high-contrast="true"].cyberpunk,
+html[data-high-contrast="true"] .dark,
+html.dark[data-high-contrast="true"] {
   --background: #000000;
   --foreground: #ffffff;
   --contrast-border: #ffffff;
@@ -1011,7 +1015,9 @@ html[data-high-contrast="true"].dark {
 }
 
 html.high-contrast,
-html.high-contrast body {
+html.high-contrast body,
+html[data-high-contrast="true"],
+html[data-high-contrast="true"] body {
   background-color: #ffffff !important;
   color: #000000 !important;
 }
@@ -1019,7 +1025,11 @@ html.high-contrast body {
 html.high-contrast.dark,
 html.high-contrast.dark body,
 html.dark.high-contrast,
-html.dark.high-contrast body {
+html.dark.high-contrast body,
+html[data-high-contrast="true"].dark,
+html[data-high-contrast="true"].dark body,
+html.dark[data-high-contrast="true"],
+html.dark[data-high-contrast="true"] body {
   background-color: #000000 !important;
   color: #ffffff !important;
 }
@@ -1035,7 +1045,18 @@ html.high-contrast .text-gray-700,
 html.high-contrast .text-slate-500,
 html.high-contrast .text-slate-600,
 html.high-contrast .text-slate-700,
-html.high-contrast .text-muted-foreground {
+html.high-contrast .text-muted-foreground,
+html[data-high-contrast="true"] .text-zinc-500,
+html[data-high-contrast="true"] .text-zinc-600,
+html[data-high-contrast="true"] .text-zinc-700,
+html[data-high-contrast="true"] .text-zinc-800,
+html[data-high-contrast="true"] .text-gray-500,
+html[data-high-contrast="true"] .text-gray-600,
+html[data-high-contrast="true"] .text-gray-700,
+html[data-high-contrast="true"] .text-slate-500,
+html[data-high-contrast="true"] .text-slate-600,
+html[data-high-contrast="true"] .text-slate-700,
+html[data-high-contrast="true"] .text-muted-foreground {
   color: #000000 !important;
 }
 
@@ -1048,11 +1069,31 @@ html.high-contrast.dark .text-gray-500,
 html.high-contrast.dark .text-slate-300,
 html.high-contrast.dark .text-slate-400,
 html.high-contrast.dark .text-slate-500,
-html.high-contrast.dark .text-muted-foreground {
+html.high-contrast.dark .text-muted-foreground,
+html[data-high-contrast="true"].dark .text-zinc-300,
+html[data-high-contrast="true"].dark .text-zinc-400,
+html[data-high-contrast="true"].dark .text-zinc-500,
+html[data-high-contrast="true"].dark .text-gray-300,
+html[data-high-contrast="true"].dark .text-gray-400,
+html[data-high-contrast="true"].dark .text-gray-500,
+html[data-high-contrast="true"].dark .text-slate-300,
+html[data-high-contrast="true"].dark .text-slate-400,
+html[data-high-contrast="true"].dark .text-slate-500,
+html[data-high-contrast="true"].dark .text-muted-foreground,
+html.dark[data-high-contrast="true"] .text-zinc-300,
+html.dark[data-high-contrast="true"] .text-zinc-400,
+html.dark[data-high-contrast="true"] .text-zinc-500,
+html.dark[data-high-contrast="true"] .text-gray-300,
+html.dark[data-high-contrast="true"] .text-gray-400,
+html.dark[data-high-contrast="true"] .text-gray-500,
+html.dark[data-high-contrast="true"] .text-slate-300,
+html.dark[data-high-contrast="true"] .text-slate-400,
+html.dark[data-high-contrast="true"] .text-slate-500,
+html.dark[data-high-contrast="true"] .text-muted-foreground {
   color: #ffffff !important;
 }
 
-/* High-Contrast Borders */
+/* High-Contrast Borders: Increase border widths (2px solid) */
 html.high-contrast .border,
 html.high-contrast .border-t,
 html.high-contrast .border-b,
@@ -1060,7 +1101,17 @@ html.high-contrast .border-l,
 html.high-contrast .border-r,
 html.high-contrast [class*="border-zinc-"],
 html.high-contrast [class*="border-gray-"],
-html.high-contrast [class*="border-slate-"] {
+html.high-contrast [class*="border-slate-"],
+html[data-high-contrast="true"] .border,
+html[data-high-contrast="true"] .border-t,
+html[data-high-contrast="true"] .border-b,
+html[data-high-contrast="true"] .border-l,
+html[data-high-contrast="true"] .border-r,
+html[data-high-contrast="true"] [class*="border-zinc-"],
+html[data-high-contrast="true"] [class*="border-gray-"],
+html[data-high-contrast="true"] [class*="border-slate-"] {
+  border-width: 2px !important;
+  border-style: solid !important;
   border-color: #000000 !important;
 }
 
@@ -1071,8 +1122,38 @@ html.high-contrast.dark .border-l,
 html.high-contrast.dark .border-r,
 html.high-contrast.dark [class*="border-zinc-"],
 html.high-contrast.dark [class*="border-gray-"],
-html.high-contrast.dark [class*="border-slate-"] {
+html.high-contrast.dark [class*="border-slate-"],
+html[data-high-contrast="true"].dark .border,
+html[data-high-contrast="true"].dark .border-t,
+html[data-high-contrast="true"].dark .border-b,
+html[data-high-contrast="true"].dark .border-l,
+html[data-high-contrast="true"].dark .border-r,
+html[data-high-contrast="true"].dark [class*="border-zinc-"],
+html[data-high-contrast="true"].dark [class*="border-gray-"],
+html[data-high-contrast="true"].dark [class*="border-slate-"],
+html.dark[data-high-contrast="true"] .border,
+html.dark[data-high-contrast="true"] .border-t,
+html.dark[data-high-contrast="true"] .border-b,
+html.dark[data-high-contrast="true"] .border-l,
+html.dark[data-high-contrast="true"] .border-r,
+html.dark[data-high-contrast="true"] [class*="border-zinc-"],
+html.dark[data-high-contrast="true"] [class*="border-gray-"],
+html.dark[data-high-contrast="true"] [class*="border-slate-"] {
+  border-width: 2px !important;
+  border-style: solid !important;
   border-color: #ffffff !important;
+}
+
+/* Remove subtle low-contrast gradients */
+html.high-contrast [class*="bg-gradient-"],
+html[data-high-contrast="true"] [class*="bg-gradient-"],
+html.high-contrast [class*="from-"],
+html[data-high-contrast="true"] [class*="from-"],
+html.high-contrast [class*="to-"],
+html[data-high-contrast="true"] [class*="to-"],
+html.high-contrast [class*="via-"],
+html[data-high-contrast="true"] [class*="via-"] {
+  background-image: none !important;
 }
 
 /* Reinforced Outline Focus Rings for all interactive components (WCAG 2.1 AAA) */
@@ -1088,7 +1169,20 @@ html.high-contrast [role="checkbox"]:focus-visible,
 html.high-contrast [role="tab"]:focus-visible,
 html.high-contrast [role="menuitem"]:focus-visible,
 html.high-contrast [role="option"]:focus-visible,
-html.high-contrast [tabindex]:focus-visible {
+html.high-contrast [tabindex]:focus-visible,
+html[data-high-contrast="true"] :focus-visible,
+html[data-high-contrast="true"] button:focus-visible,
+html[data-high-contrast="true"] a:focus-visible,
+html[data-high-contrast="true"] input:focus-visible,
+html[data-high-contrast="true"] select:focus-visible,
+html[data-high-contrast="true"] textarea:focus-visible,
+html[data-high-contrast="true"] [role="button"]:focus-visible,
+html[data-high-contrast="true"] [role="switch"]:focus-visible,
+html[data-high-contrast="true"] [role="checkbox"]:focus-visible,
+html[data-high-contrast="true"] [role="tab"]:focus-visible,
+html[data-high-contrast="true"] [role="menuitem"]:focus-visible,
+html[data-high-contrast="true"] [role="option"]:focus-visible,
+html[data-high-contrast="true"] [tabindex]:focus-visible {
   outline: 3px solid #000000 !important;
   outline-offset: 2px !important;
   box-shadow:
@@ -1108,7 +1202,33 @@ html.high-contrast.dark [role="checkbox"]:focus-visible,
 html.high-contrast.dark [role="tab"]:focus-visible,
 html.high-contrast.dark [role="menuitem"]:focus-visible,
 html.high-contrast.dark [role="option"]:focus-visible,
-html.high-contrast.dark [tabindex]:focus-visible {
+html.high-contrast.dark [tabindex]:focus-visible,
+html[data-high-contrast="true"].dark :focus-visible,
+html[data-high-contrast="true"].dark button:focus-visible,
+html[data-high-contrast="true"].dark a:focus-visible,
+html[data-high-contrast="true"].dark input:focus-visible,
+html[data-high-contrast="true"].dark select:focus-visible,
+html[data-high-contrast="true"].dark textarea:focus-visible,
+html[data-high-contrast="true"].dark [role="button"]:focus-visible,
+html[data-high-contrast="true"].dark [role="switch"]:focus-visible,
+html[data-high-contrast="true"].dark [role="checkbox"]:focus-visible,
+html[data-high-contrast="true"].dark [role="tab"]:focus-visible,
+html[data-high-contrast="true"].dark [role="menuitem"]:focus-visible,
+html[data-high-contrast="true"].dark [role="option"]:focus-visible,
+html[data-high-contrast="true"].dark [tabindex]:focus-visible,
+html.dark[data-high-contrast="true"] :focus-visible,
+html.dark[data-high-contrast="true"] button:focus-visible,
+html.dark[data-high-contrast="true"] a:focus-visible,
+html.dark[data-high-contrast="true"] input:focus-visible,
+html.dark[data-high-contrast="true"] select:focus-visible,
+html.dark[data-high-contrast="true"] textarea:focus-visible,
+html.dark[data-high-contrast="true"] [role="button"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="switch"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="checkbox"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="tab"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="menuitem"]:focus-visible,
+html.dark[data-high-contrast="true"] [role="option"]:focus-visible,
+html.dark[data-high-contrast="true"] [tabindex]:focus-visible {
   outline: 3px solid #ffea00 !important;
   outline-offset: 2px !important;
   box-shadow:

@@ -49,8 +49,9 @@ export function useGlobalSearchShortcut(
 
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { buildVenueSearchParams } from '@/lib/venues/searchQuery';
+import { usePlatformModifier } from '@/hooks/usePlatformModifier';
 
 export const VENUE_SEARCH_HISTORY_STORAGE_KEY = 'worksphere:venue_search_history:v1';
 export const MAX_VENUE_SEARCH_HISTORY = 8;
@@ -65,6 +66,9 @@ export interface VenueSearchInputProps {
   storageKey?: string;
   placeholder?: string;
   className?: string;
+  enableShortcut?: boolean;
+  shortcutLabel?: string;
+  'aria-label'?: string;
 }
 
 export function normalizeSearchQuery(rawQuery: string): string {
@@ -130,7 +134,15 @@ export function saveVenueSearchHistory(
   }
 }
 
-export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
+export function useGlobalSearchShortcut(
+  _inputRef: React.RefObject<HTMLInputElement | null>,
+  _enableShortcut = true
+): string {
+  const { isMac } = usePlatformModifier();
+  return isMac ? '⌘K' : 'Ctrl+K';
+}
+
+export const VenueSearchInput = forwardRef<HTMLInputElement, VenueSearchInputProps>(({
   value: controlledValue,
   onChange,
   onSelectQuery,
@@ -140,14 +152,23 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
   storageKey = VENUE_SEARCH_HISTORY_STORAGE_KEY,
   placeholder = 'Search cafes, coworking spaces, neighborhoods...',
   className = '',
-}) => {
+  enableShortcut = true,
+  shortcutLabel,
+  'aria-label': ariaLabel = 'Search venues',
+}, forwardedRef) => {
   const [internalQuery, setInternalQuery] = useState(controlledValue ?? '');
   const [history, setHistory] = useState<string[]>(() => loadVenueSearchHistory(storageKey));
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [statusAnnouncement, setStatusAnnouncement] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const { isMac } = usePlatformModifier();
+
+  useImperativeHandle(forwardedRef, () => inputRef.current as HTMLInputElement);
 
   const query = controlledValue !== undefined ? controlledValue : internalQuery;
+
+  const displayedShortcut = shortcutLabel ?? (isMac ? '⌘K' : 'Ctrl+K');
 
   useEffect(() => {
     setHistory(loadVenueSearchHistory(storageKey));
@@ -165,6 +186,51 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
+
+  useEffect(() => {
+    if (!enableShortcut) return;
+
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'k') return;
+
+      const shortcutMatches = isMac
+        ? event.metaKey && !event.ctrlKey
+        : event.ctrlKey && !event.metaKey;
+      if (
+        !shortcutMatches ||
+        event.altKey ||
+        event.shiftKey ||
+        (event.metaKey && event.ctrlKey)
+      ) return;
+
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName.toLowerCase();
+        if (
+          target !== inputRef.current &&
+          (
+            tagName === 'input' ||
+            tagName === 'textarea' ||
+            tagName === 'select' ||
+            target.isContentEditable ||
+            target.closest('[contenteditable="true"]')
+          )
+        ) {
+          return;
+        }
+      }
+
+      event.preventDefault();
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus();
+      input.select();
+      setIsDropdownOpen(true);
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [enableShortcut, isMac]);
 
   const emitSearchParams = (term: string) => {
     if (!onQueryParamsChange) return;
@@ -235,10 +301,14 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
   return (
     <div ref={containerRef} className={`relative w-full ${className}`.trim()}>
       <input
+        ref={inputRef}
         type="search"
         value={query}
         placeholder={placeholder}
-        aria-label="Search venues"
+        aria-label={ariaLabel}
+        aria-keyshortcuts={
+          enableShortcut ? (isMac ? 'Meta+K' : 'Control+K') : undefined
+        }
         data-testid="venue-search-input"
         onFocus={() => setIsDropdownOpen(true)}
         onChange={(e) => {
@@ -246,133 +316,18 @@ export const VenueSearchInput: React.FC<VenueSearchInputProps> = ({
           setIsDropdownOpen(true);
         }}
         onKeyDown={handleKeyDown}
-        className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
+        className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none md:pr-20"
       />
 
-
-export const VenueSearchInput = forwardRef<
-  HTMLInputElement,
-  VenueSearchInputProps
->(function VenueSearchInput(
-  {
-    className = "",
-    shortcutLabel,
-    showShortcutBadge = true,
-    hasZeroResults = false,
-    resultCount,
-    amenitiesList = DEFAULT_VENUE_AMENITIES,
-    onSelectSuggestion,
-    value,
-    onChange,
-    ...rest
-  },
-  ref,
-) {
-  const [isFocused, setIsFocused] = useState(false);
-  const innerRef = useRef<HTMLInputElement | null>(null);
-
-  const setRefs = (node: HTMLInputElement | null) => {
-    innerRef.current = node;
-    if (typeof ref === "function") {
-      ref(node);
-    } else if (ref && typeof ref === "object") {
-      (ref as React.MutableRefObject<HTMLInputElement | null>).current = node;
-    }
-  };
-
-  const resolvedLabel = shortcutLabel ?? (isMacPlatform() ? "⌘K" : "Ctrl+K");
-  const queryValue = typeof value === "string" ? value : "";
-  const hasValue = queryValue.length > 0 || Boolean(rest.defaultValue);
-  const shouldDisplayBadge = showShortcutBadge && !isFocused && !hasValue;
-
-  // Detect zero or low results
-  const isLowOrZeroResults =
-    hasZeroResults || (typeof resultCount === "number" && resultCount <= 1);
-
-  const suggestions: string[] = useMemo(() => {
-    if (!isLowOrZeroResults || !queryValue.trim()) return [];
-    return getAmenitySuggestions(queryValue, amenitiesList, 2);
-  }, [isLowOrZeroResults, queryValue, amenitiesList]);
-
-  const handleSuggestionClick = (suggestion: string) => {
-    if (onChange) {
-      const syntheticEvent = {
-        target: { value: suggestion },
-        currentTarget: { value: suggestion },
-      } as React.ChangeEvent<HTMLInputElement>;
-      onChange(syntheticEvent);
-    }
-    onSelectSuggestion?.(suggestion);
-
-    // Re-execute search by updating the input element and dispatching events/submit
-    const inputEl = innerRef.current;
-    if (inputEl) {
-      inputEl.value = suggestion;
-      inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-      const form = inputEl.form;
-      if (form) {
-        if (typeof form.requestSubmit === "function") {
-          form.requestSubmit();
-        } else {
-          form.dispatchEvent(
-            new Event("submit", { bubbles: true, cancelable: true }),
-          );
-        }
-      }
-    }
-  };
-
-  return (
-    <div className="flex flex-col w-full gap-1">
-      <div className="relative flex items-center w-full">
-        <input
-          ref={setRefs}
-          type="search"
-          value={value}
-          onChange={onChange}
-          onFocus={(e) => {
-            setIsFocused(true);
-            rest.onFocus?.(e);
-          }}
-          onBlur={(e) => {
-            setIsFocused(false);
-            rest.onBlur?.(e);
-          }}
-          className={`w-full pr-16 ${className}`.trim()}
-          {...rest}
-        />
-
-        {shouldDisplayBadge && (
-          <kbd
-            aria-label={`Keyboard shortcut ${resolvedLabel}`}
-            data-testid="search-shortcut-badge"
-            className="pointer-events-none absolute right-2.5 inline-flex items-center rounded border border-slate-300/80 bg-slate-100/90 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 select-none"
-          >
-            {resolvedLabel}
-          </kbd>
-        )}
-      </div>
-
-      {suggestions.length > 0 && (
-        <div
-          className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600 mt-0.5"
-          data-testid="amenity-suggestions"
-          role="status"
-          aria-live="polite"
+      {enableShortcut && (
+        <kbd
+          data-testid="search-shortcut-badge"
+          aria-label={`Shortcut: ${isMac ? 'Command' : 'Control'} plus K`}
+          className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-500 shadow-sm md:inline-flex"
         >
-          <span className="font-medium text-slate-500">Did you mean:</span>
-          {suggestions.map((suggestion: string) => (
-            <button
-              key={suggestion}
-              type="button"
-              onClick={() => handleSuggestionClick(suggestion)}
-              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900 border border-indigo-200 transition-colors cursor-pointer"
-              data-testid={`amenity-suggestion-${suggestion}`}
-              aria-label={`Search for ${suggestion}`}
-            >
-              {suggestion}?
-            </button>
-          ))}
+          {displayedShortcut}
+        </kbd>
+      )}
 
       <div
         role="status"
@@ -418,7 +373,6 @@ export const VenueSearchInput = forwardRef<
       )}
     </div>
   );
-
 });
 
-};
+VenueSearchInput.displayName = 'VenueSearchInput';

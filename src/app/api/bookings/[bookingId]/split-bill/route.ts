@@ -39,9 +39,13 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const origin = url.origin;
 
     // Estimate base total amount if not explicitly stored (e.g. $15/hr or $25 meeting room base)
-    const baseHourlyRate = booking.venue?.category === "coworking_space" ? 20 : 15;
+    const baseHourlyRate =
+      booking.venue?.category === "coworking_space" ? 20 : 15;
     const durationHours = (booking.duration || 60) / 60;
-    const totalAmount = Math.max(10, Math.round(baseHourlyRate * durationHours * 100) / 100);
+    const totalAmount = Math.max(
+      10,
+      Math.round(baseHourlyRate * durationHours * 100) / 100,
+    );
 
     const split = calculateSplitBill({
       bookingId: booking.id,
@@ -55,6 +59,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
         email: g.email,
         name: g.name || undefined,
         paid: g.paidAt != null,
+        paymentStatus: g.paymentStatus || undefined,
+        paymentReference: g.paymentReference || undefined,
       })),
       origin,
     });
@@ -92,16 +98,24 @@ export async function POST(req: NextRequest, context: RouteContext) {
     });
 
     if (!booking || booking.userId !== userId) {
-      return NextResponse.json({ error: "Booking not found or unauthorized" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Booking not found or unauthorized" },
+        { status: 404 },
+      );
     }
 
     const body = await req.json().catch(() => ({}));
-    const rawAmount = body.totalAmount === undefined ? 30 : Number(body.totalAmount);
+    const rawAmount =
+      body.totalAmount === undefined ? 30 : Number(body.totalAmount);
     if (!Number.isFinite(rawAmount) || rawAmount <= 0 || rawAmount > 100000) {
-      return NextResponse.json({ error: "Invalid totalAmount" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid totalAmount" },
+        { status: 400 },
+      );
     }
     const totalAmount = Math.round(rawAmount * 100) / 100;
-    const customGuestAmounts: Record<string, number> = body.customGuestAmounts || {};
+    const customGuestAmounts: Record<string, number> =
+      body.customGuestAmounts || {};
     const currency =
       typeof body.currency === "string" && /^[A-Z]{3}$/.test(body.currency)
         ? body.currency
@@ -122,6 +136,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
         email: g.email,
         name: g.name || undefined,
         paid: g.paidAt != null,
+        paymentStatus: g.paymentStatus || undefined,
+        paymentReference: g.paymentReference || undefined,
         customAmount: customGuestAmounts[g.id],
       })),
       origin,

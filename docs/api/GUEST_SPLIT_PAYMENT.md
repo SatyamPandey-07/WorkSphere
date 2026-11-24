@@ -20,10 +20,12 @@ When a host reserves a workspace and adds guests, the billing system computes in
 
 ## 2. Endpoint Summary
 
-| Method | Endpoint                      | Description                                                                                                                   |
-| :----- | :---------------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/api/payments/split/{token}` | Verifies the split payment token and returns checkout details, venue information, host name, and current payment status.      |
-| `POST` | `/api/payments/split/{token}` | Idempotently records payment state in WorkSphere's database using the verified token claims and unlocks a digital guest pass. |
+| Method | Endpoint                               | Description                                                                                                                   |
+| :----- | :------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/payments/split/{token}`          | Verifies the split payment token and returns checkout details, venue information, host name, and current payment status.      |
+| `POST` | `/api/payments/split/{token}`          | Idempotently records payment state in WorkSphere's database using the verified token claims and unlocks a digital guest pass. |
+| `POST` | `/api/payments/split/{token}/checkout` | Creates an external payment-provider checkout session (e.g. Stripe Checkout) using server-side canonical amounts.             |
+| `POST` | `/api/webhooks/payment`                | Dedicated payment-provider webhook endpoint that validates signatures and confirms external payment settlement.               |
 
 ---
 
@@ -360,7 +362,50 @@ The split-payment recording flow enforces strict idempotency:
 
 ---
 
-## 11. Guest Pass Response
+## 11. External Payment-Provider Integration & Settlement Lifecycle
+
+WorkSphere supports verified external settlement for guest split bills via an extensible provider abstraction (`src/lib/billing/paymentProvider.ts`):
+
+### Architecture & Provider Abstraction
+
+Instead of coupling booking and billing logic directly to one vendor, WorkSphere defines the `PaymentProvider` interface:
+
+1. **Checkout Session Creation (`POST /api/payments/split/{token}/checkout`):**
+   - Receives the verified split payment token.
+   - Derives amount, currency, booking ID, and guest ID from trusted server-side data (the client cannot tamper with financial values).
+   - Verifies the booking is active and the guest has not already paid.
+   - Creates a checkout session via the configured provider (`StripePaymentProvider`).
+   - Returns the hosted checkout URL (`checkoutUrl`) and session identifier (`sessionId`).
+
+2. **Verified Payment Confirmation (`POST /api/webhooks/payment`):**
+   - Webhook notifications from the external payment provider (e.g. Stripe or custom gateway) are delivered to `/api/webhooks/payment`.
+   - The endpoint strictly verifies signatures using constant-time comparison (`crypto.timingSafeEqual`) against `STRIPE_WEBHOOK_SECRET` or `PAYMENT_WEBHOOK_SECRET`.
+   - Unsigned, forged, or invalid webhook notifications are rejected with HTTP 401.
+
+3. **Settlement Lifecycle States:**
+   - `PENDING`: Checkout initiated; awaiting provider confirmation.
+   - `COMPLETED`: Provider confirmed successful payment (`checkout.session.completed` / `payment_intent.succeeded`). The guest record is updated with `paidAt`, `paidAmountCents`, `paidCurrency`, and `paymentReference`. RSVP status transitions to `ACCEPTED`.
+   - `FAILED`: Payment intent failed or was declined. `paymentStatus` is marked `FAILED`; `paidAt` remains `null`.
+   - `CANCELLED`: Checkout session expired or was aborted by the guest.
+   - `REFUNDED`: External refund confirmed (`charge.refunded`). `paidAt` is cleared.
+
+4. **Idempotency & Replay Protection:**
+   - Duplicate webhook delivery events are checked against `guest.paidAt != null`. If an event for an already-paid guest is re-delivered, the handler acknowledges the event idempotently (`alreadyProcessed: true`) without updating timestamps or creating duplicate passes.
+
+5. **Environment Configuration:**
+
+```env
+# Stripe Payment Provider Keys
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# General Payment Webhook Secret
+PAYMENT_WEBHOOK_SECRET=your_payment_webhook_hmac_secret
+```
+
+---
+
+## 12. Guest Pass Response
 
 The `guestPass` object returned upon successful payment provides the guest with access credentials:
 

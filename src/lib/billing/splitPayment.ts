@@ -51,6 +51,8 @@ export interface GuestShare {
   name?: string;
   amount: number;
   paid: boolean;
+  paymentStatus?: string;
+  paymentReference?: string;
   paymentToken: string;
   paymentUrl: string;
   shareLinks: {
@@ -244,6 +246,9 @@ export function calculateSplitBill({
       name: guest.name,
       amount,
       paid: Boolean(guest.paid),
+      paymentStatus:
+        guest.paymentStatus || (guest.paid ? "COMPLETED" : "PENDING"),
+      paymentReference: guest.paymentReference,
       paymentToken: token,
       paymentUrl,
       shareLinks: {

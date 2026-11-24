@@ -12,6 +12,8 @@ export interface VenueCandidate extends GeoCoordinate {
   latencyMs?: number;
   transitDistanceKm?: number;
   rating?: number;
+  noiseLevelDb?: number;
+  quietScore?: number;
 }
 
 export interface AxialHexCell {
@@ -293,4 +295,302 @@ export function rankVenuesForNomad(
     if (a.distanceKm !== b.distanceKm) return a.distanceKm - b.distanceKm;
     return a.venue.id.localeCompare(b.venue.id);
   });
+}
+
+export interface BoundingBox {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+export type H3Resolution = 7 | 8 | 9;
+
+export const H3_RESOLUTIONS = {
+  RES_7: 7,
+  RES_8: 8,
+  RES_9: 9,
+} as const;
+
+export const H3_RESOLUTION_EDGE_KM: Record<number, number> = {
+  6: 3.23,
+  7: 1.22,
+  8: 0.461,
+  9: 0.174,
+  10: 0.066,
+};
+
+export const H3_RESOLUTION_AREA_KM2: Record<number, number> = {
+  6: 36.13,
+  7: 5.16,
+  8: 0.737,
+  9: 0.105,
+  10: 0.015,
+};
+
+export interface HexVenueCluster {
+  cellId: string;
+  resolution: number;
+  q: number;
+  r: number;
+  center: GeoCoordinate;
+  centroid: GeoCoordinate;
+  boundary: GeoCoordinate[];
+  polygonGeoJson: [number, number][];
+  venues: VenueCandidate[];
+  venueCount: number;
+  density: number;
+  avgWifiMbps: number;
+  avgQuietScore: number;
+  totalAvailableSeats: number;
+}
+
+export interface HexGeoJsonFeature {
+  type: 'Feature';
+  id: string;
+  geometry: {
+    type: 'Polygon';
+    coordinates: [number, number][][];
+  };
+  properties: {
+    cellId: string;
+    resolution: number;
+    venueCount: number;
+    density: number;
+    avgWifiMbps: number;
+    avgQuietScore: number;
+    totalAvailableSeats: number;
+    centroidLat: number;
+    centroidLng: number;
+  };
+}
+
+export interface HexGeoJsonFeatureCollection {
+  type: 'FeatureCollection';
+  features: HexGeoJsonFeature[];
+}
+
+export function zoomToH3Resolution(zoom: number): number {
+  if (zoom <= 12) return 7;
+  if (zoom <= 14) return 8;
+  return 9;
+}
+
+export function isCoordinateInBoundingBox(
+  coord: GeoCoordinate,
+  bbox: BoundingBox
+): boolean {
+  if (!isValidCoordinate(coord)) return false;
+  if (coord.lat < bbox.minLat || coord.lat > bbox.maxLat) return false;
+
+  if (bbox.minLng > bbox.maxLng) {
+    return coord.lng >= bbox.minLng || coord.lng <= bbox.maxLng;
+  }
+  return coord.lng >= bbox.minLng && coord.lng <= bbox.maxLng;
+}
+
+export function filterVenuesByBoundingBox(
+  venues: readonly VenueCandidate[],
+  bbox: BoundingBox
+): VenueCandidate[] {
+  return venues.filter((v) => isCoordinateInBoundingBox(v, bbox));
+}
+
+export function axialHexToCenter(
+  cell: AxialHexCell,
+  cellRadiusKm: number
+): GeoCoordinate {
+  const kmPerDegLat = 111.32;
+  const safeRadius =
+    typeof cellRadiusKm === 'number' && Number.isFinite(cellRadiusKm) && cellRadiusKm > 0
+      ? cellRadiusKm
+      : 0.461;
+
+  const xKm = 1.5 * cell.q * safeRadius;
+  const yKm = (SQRT3 / 2) * (2 * cell.r + cell.q) * safeRadius;
+
+  const lat = Math.max(-90, Math.min(90, yKm / kmPerDegLat));
+  const cosLat = Math.max(0.1, Math.cos(toRadians(lat)));
+  const lng = Math.max(-180, Math.min(180, xKm / (kmPerDegLat * cosLat)));
+
+  return {
+    lat: Math.round(lat * 1_000_000) / 1_000_000,
+    lng: Math.round(lng * 1_000_000) / 1_000_000,
+  };
+}
+
+export function getHexagonBoundary(
+  center: GeoCoordinate,
+  radiusKm: number
+): GeoCoordinate[] {
+  const kmPerDegLat = 111.32;
+  const cosLat = Math.max(0.1, Math.cos(toRadians(center.lat)));
+  const kmPerDegLng = kmPerDegLat * cosLat;
+  const vertices: GeoCoordinate[] = [];
+
+  for (let i = 0; i < 6; i++) {
+    const angleRad = (i * Math.PI) / 3;
+    const dxKm = radiusKm * Math.cos(angleRad);
+    const dyKm = radiusKm * Math.sin(angleRad);
+
+    const lat = Math.max(-90, Math.min(90, center.lat + dyKm / kmPerDegLat));
+    const lng = Math.max(-180, Math.min(180, center.lng + dxKm / kmPerDegLng));
+
+    vertices.push({
+      lat: Math.round(lat * 1_000_000) / 1_000_000,
+      lng: Math.round(lng * 1_000_000) / 1_000_000,
+    });
+  }
+
+  return vertices;
+}
+
+export function getHexagonGeoJsonPolygon(
+  center: GeoCoordinate,
+  radiusKm: number
+): [number, number][] {
+  const boundary = getHexagonBoundary(center, radiusKm);
+  const ring: [number, number][] = boundary.map((pt) => [pt.lng, pt.lat]);
+  if (boundary.length > 0) {
+    ring.push([boundary[0].lng, boundary[0].lat]);
+  }
+  return ring;
+}
+
+export function extractQuietScore(venue: VenueCandidate): number | undefined {
+  if (typeof venue.quietScore === 'number' && Number.isFinite(venue.quietScore)) {
+    return Math.max(0, Math.min(100, venue.quietScore));
+  }
+  if (typeof venue.noiseLevelDb === 'number' && Number.isFinite(venue.noiseLevelDb)) {
+    return Math.max(0, Math.min(100, Math.round(100 - (venue.noiseLevelDb - 30) * 1.5)));
+  }
+  return undefined;
+}
+
+export function clusterVenuesByH3Resolution(
+  venues: readonly VenueCandidate[],
+  options: {
+    resolution?: number;
+    zoom?: number;
+    bbox?: BoundingBox;
+  } = {}
+): HexVenueCluster[] {
+  const resolution =
+    options.resolution ??
+    (typeof options.zoom === 'number' ? zoomToH3Resolution(options.zoom) : 8);
+
+  const radiusKm = H3_RESOLUTION_EDGE_KM[resolution] ?? 0.461;
+  const areaKm2 = H3_RESOLUTION_AREA_KM2[resolution] ?? 0.737;
+
+  const filteredVenues = options.bbox
+    ? filterVenuesByBoundingBox(venues, options.bbox)
+    : venues;
+
+  const buckets = new Map<string, { cell: AxialHexCell; items: VenueCandidate[] }>();
+
+  for (let i = 0; i < filteredVenues.length; i++) {
+    const venue = filteredVenues[i];
+    if (!isValidCoordinate(venue)) continue;
+
+    const cell = latLngToAxialHex(venue, radiusKm);
+    const key = `${cell.q}:${cell.r}`;
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.items.push(venue);
+    } else {
+      buckets.set(key, { cell, items: [venue] });
+    }
+  }
+
+  const clusters: HexVenueCluster[] = [];
+
+  for (const [key, { cell, items }] of buckets.entries()) {
+    let latSum = 0;
+    let lngSum = 0;
+    let totalAvailableSeats = 0;
+    let wifiSum = 0;
+    let wifiCount = 0;
+    let quietSum = 0;
+    let quietCount = 0;
+
+    for (let i = 0; i < items.length; i++) {
+      const v = items[i];
+      latSum += v.lat;
+      lngSum += v.lng;
+      totalAvailableSeats += Math.max(0, v.availableSeats || 0);
+
+      if (typeof v.wifiMbps === 'number' && Number.isFinite(v.wifiMbps) && v.wifiMbps >= 0) {
+        wifiSum += v.wifiMbps;
+        wifiCount++;
+      }
+
+      const qScore = extractQuietScore(v);
+      if (qScore !== undefined) {
+        quietSum += qScore;
+        quietCount++;
+      }
+    }
+
+    const itemCount = items.length;
+    const centroid: GeoCoordinate = {
+      lat: Math.round((latSum / itemCount) * 1_000_000) / 1_000_000,
+      lng: Math.round((lngSum / itemCount) * 1_000_000) / 1_000_000,
+    };
+
+    const center = axialHexToCenter(cell, radiusKm);
+    const boundary = getHexagonBoundary(center, radiusKm);
+    const polygonGeoJson = getHexagonGeoJsonPolygon(center, radiusKm);
+
+    const avgWifiMbps =
+      wifiCount > 0 ? Math.round((wifiSum / wifiCount) * 10) / 10 : 0;
+    const avgQuietScore =
+      quietCount > 0 ? Math.round((quietSum / quietCount) * 10) / 10 : 70;
+    const density = Math.round((itemCount / areaKm2) * 10) / 10;
+
+    clusters.push({
+      cellId: `h3:res${resolution}:${key}`,
+      resolution,
+      q: cell.q,
+      r: cell.r,
+      center,
+      centroid,
+      boundary,
+      polygonGeoJson,
+      venues: items,
+      venueCount: itemCount,
+      density,
+      avgWifiMbps,
+      avgQuietScore,
+      totalAvailableSeats,
+    });
+  }
+
+  return clusters.sort((a, b) => b.venueCount - a.venueCount);
+}
+
+export function hexClustersToGeoJson(
+  clusters: readonly HexVenueCluster[]
+): HexGeoJsonFeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: clusters.map((cluster) => ({
+      type: 'Feature',
+      id: cluster.cellId,
+      geometry: {
+        type: 'Polygon',
+        coordinates: [cluster.polygonGeoJson],
+      },
+      properties: {
+        cellId: cluster.cellId,
+        resolution: cluster.resolution,
+        venueCount: cluster.venueCount,
+        density: cluster.density,
+        avgWifiMbps: cluster.avgWifiMbps,
+        avgQuietScore: cluster.avgQuietScore,
+        totalAvailableSeats: cluster.totalAvailableSeats,
+        centroidLat: cluster.centroid.lat,
+        centroidLng: cluster.centroid.lng,
+      },
+    })),
+  };
 }

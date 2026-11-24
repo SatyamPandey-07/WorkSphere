@@ -60,17 +60,31 @@ export function generateNoiseSamples(
   type: AmbientSoundType,
   length: number,
   sampleRate: number,
-  rng: () => number = Math.random
+  durationSeconds: number,
+  layer: NoiseLayerType,
+  seed = 42
 ): Float32Array {
-  const safeLength = Math.max(1, Math.floor(length));
-  const samples = new Float32Array(safeLength);
+  const safeRate =
+    typeof sampleRate === 'number' && Number.isFinite(sampleRate) && sampleRate > 0
+      ? Math.floor(sampleRate)
+      : 44_100;
+  const safeDuration =
+    typeof durationSeconds === 'number' &&
+    Number.isFinite(durationSeconds) &&
+    durationSeconds > 0
+      ? durationSeconds
+      : 2;
 
-  if (type === 'white') {
-    for (let i = 0; i < safeLength; i += 1) {
-      samples[i] = rng() * 2 - 1;
-    }
-    return samples;
-  }
+  const length = Math.max(1, Math.floor(safeRate * safeDuration));
+  const output = new Float32Array(length);
+
+  let state = (seed >>> 0) || 1;
+  const nextRand = (): number => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 
   if (type === 'brown') {
     let lastOut = 0;
@@ -102,43 +116,37 @@ export function generateNoiseSamples(
       b5 = -0.7616 * b5 - white * 0.016898;
       const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
       b6 = white * 0.115926;
-      samples[i] = Math.max(-1, Math.min(1, pink));
-    }
-    return samples;
-  }
-
-  let smooth = 0;
-  let dropletEnv = 0;
-  const decay = Math.exp(-1 / Math.max(1, sampleRate * 0.018));
-
-  for (let i = 0; i < safeLength; i += 1) {
-    const white = rng() * 2 - 1;
-    smooth = 0.82 * smooth + 0.18 * white;
-    if (rng() < 0.0015) {
-      dropletEnv = Math.max(dropletEnv, rng() * 0.75);
+      output[i] = Math.max(-1, Math.min(1, pink));
     } else {
-      dropletEnv *= decay;
+      brownOut = (brownOut + 0.04 * white) / 1.04;
+      const dropletGate = nextRand() > 0.9965 ? (nextRand() * 2 - 1) * 0.35 : 0;
+      output[i] = Math.max(-1, Math.min(1, brownOut * 2.4 + dropletGate));
     }
-    const rainSample = smooth * 0.55 + white * dropletEnv * 0.45;
-    samples[i] = Math.max(-1, Math.min(1, rainSample));
   }
 
-  return samples;
+  return output;
 }
 
-function getDefaultAudioContextFactory(): () => AudioContextLike {
-  return () => {
-    const win = window as unknown as {
-      AudioContext?: new () => AudioContextLike;
-      webkitAudioContext?: new () => AudioContextLike;
-    };
-    const Ctor = win.AudioContext ?? win.webkitAudioContext;
-    if (!Ctor) {
-      throw new Error('Web Audio API is not supported in this browser');
+export function loadSoundscapePresets(
+  storage?: StorageLike | null,
+  storageKey = PRESET_STORAGE_KEY
+): SoundscapePreset[] {
+  const targetStorage =
+    storage !== undefined
+      ? storage
+      : typeof window !== 'undefined' && window.localStorage
+      ? window.localStorage
+      : null;
+
+  if (!targetStorage) return [DEFAULT_SOUNDSCAPE_PRESET];
+
+  try {
+    const raw = targetStorage.getItem(storageKey);
+    if (!raw) return [DEFAULT_SOUNDSCAPE_PRESET];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [DEFAULT_SOUNDSCAPE_PRESET];
     }
-    return new Ctor();
-  };
-}
 
 export function getDefaultWorkerFactory(): () => Worker {
   return () => {
@@ -190,65 +198,57 @@ export class NoiseSynthesizer {
     this.useWorker = options.useWorker ?? true;
     this.attachLifecycleListeners();
   }
+}
 
-  private readonly handleVisibilityChange = (): void => {
-    if (typeof document !== 'undefined' && document.hidden && this.isPlaying) {
-      this.pause();
-    }
+export interface AudioGainParamLike {
+  value: number;
+  setTargetAtTime?: (
+    target: number,
+    startTime: number,
+    timeConstant: number
+  ) => void;
+  linearRampToValueAtTime?: (value: number, endTime: number) => void;
+}
+
+export interface AudioContextLike {
+  currentTime?: number;
+  state?: string;
+  sampleRate?: number;
+  suspend?: () => Promise<void> | void;
+  resume?: () => Promise<void> | void;
+  close?: () => Promise<void> | void;
+  createGain?: () => {
+    gain: AudioGainParamLike;
+    connect: (dest: unknown) => void;
+    disconnect?: () => void;
   };
+}
 
-  private readonly handlePageHide = (): void => {
-    if (this.isPlaying) {
-      this.pause();
-    }
-  };
+export function rampGainSmoothly(
+  param: AudioGainParamLike | undefined,
+  targetGain: number,
+  currentTime = 0,
+  rampSeconds = 0.08
+): number {
+  const safeTarget = clampGain(targetGain);
+  if (!param) return safeTarget;
 
-  private attachLifecycleListeners(): void {
-    if (this.listenersAttached) return;
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', this.handleVisibilityChange);
-    }
-    if (typeof window !== 'undefined') {
-      window.addEventListener('pagehide', this.handlePageHide);
-      window.addEventListener('beforeunload', this.handlePageHide);
-    }
-    this.listenersAttached = true;
+  const safeTime = Number.isFinite(currentTime) ? Math.max(0, currentTime) : 0;
+  const safeRamp =
+    typeof rampSeconds === 'number' && Number.isFinite(rampSeconds) && rampSeconds > 0
+      ? rampSeconds
+      : 0.05;
+
+  if (typeof param.setTargetAtTime === 'function') {
+    param.setTargetAtTime(safeTarget, safeTime, safeRamp / 3);
+  } else if (typeof param.linearRampToValueAtTime === 'function') {
+    param.linearRampToValueAtTime(safeTarget, safeTime + safeRamp);
+  } else {
+    param.value = safeTarget;
   }
 
-  public detachLifecycleListeners(): void {
-    if (!this.listenersAttached) return;
-    if (typeof document !== 'undefined') {
-      document.removeEventListener(
-        'visibilitychange',
-        this.handleVisibilityChange
-      );
-    }
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('pagehide', this.handlePageHide);
-      window.removeEventListener('beforeunload', this.handlePageHide);
-    }
-    this.listenersAttached = false;
-  }
-
-  private ensureContext(): AudioContextLike {
-    if (!this.ctx) {
-      this.ctx = this.createContext();
-    }
-    return this.ctx;
-  }
-
-  private setParamSmooth(param: AudioParam | undefined, target: number): void {
-    if (!param) return;
-    if (this.ctx && 'setTargetAtTime' in param) {
-      param.setTargetAtTime(target, this.ctx.currentTime ?? 0, 0.02);
-    } else {
-      param.value = target;
-    }
-  }
-
-  private applyGains(): void {
-    const effectiveMaster = this.muted ? 0 : clampVolume(this.volume);
-    this.setParamSmooth(this.masterGain?.gain, effectiveMaster);
+  return safeTarget;
+}
 
     (['white', 'pink', 'brown', 'rain'] as const).forEach((type) => {
       const layer = this.layers[type];
@@ -479,36 +479,26 @@ export class NoiseSynthesizer {
     this.applyCutoff();
   }
 
-  public async play(): Promise<void> {
-    if (this.muted) {
-      this.pause();
-      return;
-    }
-    if (typeof document !== 'undefined' && document.hidden) {
-      return;
+  public async start(): Promise<boolean> {
+    if (this.isTabHidden) {
+      this.isPlaying = false;
+      return false;
     }
 
-    const ctx = this.ensureContext();
-    if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
-      await ctx.resume();
+    if (this.ctx && typeof this.ctx.resume === 'function') {
+      await this.ctx.resume();
     }
 
     await this.buildMixerGraph(ctx);
     this.isPlaying = true;
+    return true;
   }
 
-  public pause(): void {
-    this.stopLayersOnly();
+  public async pause(): Promise<void> {
     this.isPlaying = false;
-  }
-
-  public async togglePlay(): Promise<boolean> {
-    if (this.isPlaying) {
-      this.pause();
-      return false;
+    if (this.ctx && typeof this.ctx.suspend === 'function') {
+      await this.ctx.suspend();
     }
-    await this.play();
-    return this.isPlaying;
   }
 
   public setSoundType(nextType: AmbientSoundType): void {
@@ -522,17 +512,21 @@ export class NoiseSynthesizer {
     this.applyGains();
   }
 
-  public setLayerLevel(type: AmbientSoundType, nextLevel: number): void {
-    this.layerLevels = {
-      ...this.layerLevels,
-      [type]: clampVolume(nextLevel),
-    };
-    this.applyGains();
+  public async handleVisibilityChange(hidden: boolean): Promise<void> {
+    this.isTabHidden = Boolean(hidden);
+    if (this.isTabHidden && this.isPlaying) {
+      await this.pause();
+    }
   }
 
-  public setVolume(nextVolume: number): void {
-    this.volume = clampVolume(nextVolume);
-    this.applyGains();
+  public setMasterGain(gain: number, rampSeconds = 0.08): number {
+    this.masterGainValue = clampGain(gain);
+    const now = this.ctx?.currentTime ?? 0;
+    if (this.ctx && typeof this.ctx.createGain === 'function') {
+      const node = this.ctx.createGain();
+      rampGainSmoothly(node.gain, this.masterGainValue, now, rampSeconds);
+    }
+    return this.masterGainValue;
   }
 
   public setCutoffFrequency(nextCutoff: number): void {
@@ -547,6 +541,7 @@ export class NoiseSynthesizer {
     } else {
       this.applyGains();
     }
+    return clamped;
   }
 
   public getState() {
@@ -584,12 +579,19 @@ export class NoiseSynthesizer {
     }
     if (this.masterGain && typeof this.masterGain.disconnect === 'function') {
       try {
-        this.masterGain.disconnect();
+        src.stop?.();
       } catch {
-        // Already disconnected
+        // Ignore already stopped nodes
+      }
+      try {
+        src.disconnect?.();
+      } catch {
+        // Ignore disconnect errors
       }
       this.masterGain = null;
     }
+    this.activeSources.length = 0;
+
     if (this.ctx && typeof this.ctx.close === 'function') {
       await this.ctx.close();
     }

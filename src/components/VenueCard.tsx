@@ -930,6 +930,21 @@ export function VenueCard({
           </div>
         )}
 
+        {/* Gigabit Verified Badge (#9893) */}
+        {((typeof venue.wifiSpeed === "number" && venue.wifiSpeed >= 100) ||
+          (typeof venue.amenities?.wifiSpeed === "number" &&
+            venue.amenities.wifiSpeed >= 100)) && (
+          <div className="flex items-center gap-2 mb-3">
+            <span
+              data-testid="gigabit-verified-badge"
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 shadow-xs"
+            >
+              <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
+              <span>Gigabit Verified</span>
+            </span>
+          </div>
+        )}
+
         {/* Aerospace Mach Speed Classification Badge (#6175) */}
         {venue.amenities?.wifiSpeed ? (
           <div className="flex items-center gap-2 mb-3">
@@ -1195,7 +1210,9 @@ export function VenueCard({
             )}
 
             {/* Standing Desk Tag (#9759) */}
-            {((venue as any).standing_desks || (venue as any).hasStandingDesks || (venue.amenities as any)?.standing_desks) && (
+            {((venue as any).standing_desks ||
+              (venue as any).hasStandingDesks ||
+              (venue.amenities as any)?.standing_desks) && (
               <div
                 data-testid="amenity-badge-standing-desks"
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
@@ -1211,7 +1228,9 @@ export function VenueCard({
             )}
 
             {/* External Monitor Tag (#9759) */}
-            {((venue as any).external_monitors || (venue as any).hasExternalMonitors || (venue.amenities as any)?.external_monitors) && (
+            {((venue as any).external_monitors ||
+              (venue as any).hasExternalMonitors ||
+              (venue.amenities as any)?.external_monitors) && (
               <div
                 data-testid="amenity-badge-external-monitors"
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"

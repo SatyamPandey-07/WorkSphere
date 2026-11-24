@@ -474,15 +474,28 @@ export class WebGLTextureCache {
     }
     this.pending.clear();
 
-    const errors = this.disposeAllEntries();
-    throwCleanupErrors(
-      errors,
-      "Failed to release resources after WebGL context loss.",
-    );
+    try {
+      const errors = this.disposeAllEntries();
+      if (errors.length > 0) {
+        console.warn(
+          "Failed to release resources cleanly after WebGL context loss:",
+          errors
+        );
+      }
+    } catch (err) {
+      console.warn("Error during WebGL context loss cleanup:", err);
+    }
   };
 
   private readonly handleContextRestored = () => {
-    if (!this.disposed) this.contextLost = false;
+    if (!this.disposed) {
+      this.contextLost = false;
+      this.entries.clear();
+      this.retired.clear();
+      this.textures.clear();
+      this.bitmaps.clear();
+      this.objectUrls.clear();
+    }
   };
 
   private readonly handlePageHide = (event: PageTransitionEvent) => {

@@ -1,6 +1,22 @@
-import { createHash } from "crypto";
+import { Buffer } from "buffer";
+import {
+  createHash,
+  createPublicKey,
+  generateKeyPairSync,
+  KeyObject,
+  sign,
+  verify,
+} from "crypto";
 
 export type BFTPhase = "PREPARE" | "PRE_COMMIT" | "COMMIT" | "DECIDED";
+
+export interface BFTSigningInterface {
+  sign(payload: Uint8Array): string;
+}
+
+export interface BFTVerificationInterface {
+  verify(nodeId: string, payload: Uint8Array, signature: string): boolean;
+}
 
 export interface BFTVote {
   nodeId: string;
@@ -21,6 +37,11 @@ export interface QuorumCertificate {
   aggregatedAt: number;
 }
 
+export interface ViewChangeCertificate {
+  view: number;
+  signatures: Record<string, string>;
+}
+
 export interface BlockProposal<T = unknown> {
   view: number;
   sequence: number;
@@ -29,6 +50,7 @@ export interface BlockProposal<T = unknown> {
   blockHash: string;
   parentHash: string;
   justifyQC?: QuorumCertificate;
+  viewChangeEvidence?: ViewChangeMessage[] | ViewChangeCertificate;
   timestamp: number;
 }
 
@@ -52,6 +74,15 @@ export interface BFTCoordinatorConfig<T = unknown> {
   maxFutureViewWindow?: number;
   /** Maximum messages stored per future view (default: validators.length) */
   maxBufferedMessagesPerView?: number;
+  /** Public keys of authorized validators (nodeId -> KeyObject | PEM | hex DER or raw 32-byte public key) */
+  validatorPublicKeys?:
+    Record<string, string | KeyObject> | Map<string, string | KeyObject>;
+  /** Externally managed signer for this coordinator\x27s nodeId. Private keys remain external. */
+  signer?: BFTSigningInterface | ((payload: Uint8Array) => string);
+  /** Optional custom signature verification interface or function */
+  verifier?:
+    | BFTVerificationInterface
+    | ((nodeId: string, payload: Uint8Array, signature: string) => boolean);
   /** Called with the signed ViewChangeMessage to broadcast to peers when the view timer expires */
   onViewChangeBroadcast?: (msg: ViewChangeMessage) => void;
   onCommit?: (block: BlockProposal<T>, qc: QuorumCertificate) => void;
@@ -92,12 +123,20 @@ export class BFTConsensusCoordinator<T = unknown> {
   // View change votes: viewNumber -> Map<nodeId, ViewChangeMessage>
   private viewChangePool: Map<number, Map<string, ViewChangeMessage>> =
     new Map();
+  private lastViewChangeEvidence: Map<number, ViewChangeMessage[]> = new Map();
   // Bounded buffer for valid future-view change messages: viewNumber -> Map<nodeId, ViewChangeMessage>
   private futureViewChangeBuffer: Map<number, Map<string, ViewChangeMessage>> =
     new Map();
   public readonly maxFutureViewWindow: number;
   public readonly maxBufferedMessagesPerView: number;
   private isDrainingFutureViewBuffer = false;
+
+  // Asymmetric cryptographic key and signing state
+  public static readonly VOTE_DOMAIN = "BFT_VOTE_V1";
+  public static readonly VIEW_CHANGE_DOMAIN = "BFT_VIEW_CHANGE_V1";
+  private validatorPublicKeys: Map<string, KeyObject> = new Map();
+  private signer?: BFTSigningInterface;
+  private verifier?: BFTVerificationInterface;
 
   private committedBlocks: BlockProposal<T>[] = [];
   private lastCommitQC: QuorumCertificate | null = null;
@@ -133,6 +172,113 @@ export class BFTConsensusCoordinator<T = unknown> {
       config.maxBufferedMessagesPerView ?? this.validators.length,
     );
     this.onViewChangeBroadcastCallback = config.onViewChangeBroadcast;
+
+    if (config.validatorPublicKeys) {
+      if (config.validatorPublicKeys instanceof Map) {
+        config.validatorPublicKeys.forEach((key, id) => {
+          try {
+            this.validatorPublicKeys.set(
+              id,
+              BFTConsensusCoordinator.parsePublicKey(key),
+            );
+          } catch (err) {
+            console.warn(
+              `Failed to parse public key for validator ${id}:`,
+              err,
+            );
+          }
+        });
+      } else {
+        Object.entries(config.validatorPublicKeys).forEach(([id, key]) => {
+          try {
+            this.validatorPublicKeys.set(
+              id,
+              BFTConsensusCoordinator.parsePublicKey(key),
+            );
+          } catch (err) {
+            console.warn(
+              `Failed to parse public key for validator ${id}:`,
+              err,
+            );
+          }
+        });
+      }
+    }
+
+    if (config.signer) {
+      this.signer =
+        typeof config.signer === "function"
+          ? { sign: config.signer }
+          : config.signer;
+    }
+
+    if (config.verifier) {
+      this.verifier =
+        typeof config.verifier === "function"
+          ? { verify: config.verifier }
+          : config.verifier;
+    }
+  }
+
+  /**
+   * Parses an Ed25519 public key in PEM, raw 32-byte hex, or SPKI DER hex format
+   */
+  public static parsePublicKey(key: string | KeyObject): KeyObject {
+    if (typeof key !== "string") {
+      return key;
+    }
+    const trimmed = key.trim();
+    if (trimmed.startsWith("-----BEGIN")) {
+      return createPublicKey(trimmed);
+    }
+    const buf = Buffer.from(trimmed, "hex");
+    if (buf.length === 32) {
+      // Wrap raw 32-byte Ed25519 public key with standard SPKI DER header
+      const spkiPrefix = Buffer.from("302a300506032b6570032100", "hex");
+      return createPublicKey({
+        key: Buffer.concat([spkiPrefix, buf]),
+        format: "der",
+        type: "spki",
+      });
+    }
+    return createPublicKey({
+      key: buf,
+      format: "der",
+      type: "spki",
+    });
+  }
+
+  /**
+   * Constructs the canonical domain-separated payload for a BFT vote
+   */
+  public static formatVotePayload(
+    nodeId: string,
+    phase: BFTPhase,
+    view: number,
+    sequence: number,
+    blockHash: string,
+  ): Uint8Array {
+    return Buffer.from(
+      `${BFTConsensusCoordinator.VOTE_DOMAIN}:${nodeId}:${phase}:${view}:${sequence}:${blockHash}`,
+      "utf8",
+    );
+  }
+
+  /**
+   * Constructs the canonical domain-separated payload for a ViewChangeMessage
+   */
+  public static formatViewChangePayload(
+    fromNodeId: string,
+    newView: number,
+    lastCommitQC?: QuorumCertificate,
+  ): Uint8Array {
+    const qcPart = lastCommitQC
+      ? `${lastCommitQC.view}:${lastCommitQC.sequence}:${lastCommitQC.blockHash}`
+      : "none";
+    return Buffer.from(
+      `${BFTConsensusCoordinator.VIEW_CHANGE_DOMAIN}:${fromNodeId}:${newView}:${qcPart}`,
+      "utf8",
+    );
   }
 
   /**
@@ -199,10 +345,21 @@ export class BFTConsensusCoordinator<T = unknown> {
     };
 
     const blockHash = BFTConsensusCoordinator.hashPayload(blockContent);
+    const viewChangeMessages =
+      this.lastViewChangeEvidence.get(this.currentView) ??
+      (this.viewChangePool.get(this.currentView)
+        ? Array.from(this.viewChangePool.get(this.currentView)!.values())
+        : undefined);
+    let viewChangeEvidence: ViewChangeMessage[] | undefined;
+    if (viewChangeMessages && viewChangeMessages.length >= this.quorumSize) {
+      viewChangeEvidence = viewChangeMessages;
+    }
+
     const proposal: BlockProposal<T> = {
       ...blockContent,
       blockHash,
       justifyQC: this.lastCommitQC ?? undefined,
+      ...(viewChangeEvidence ? { viewChangeEvidence } : {}),
     };
 
     this.currentSequence = nextSeq;
@@ -212,9 +369,73 @@ export class BFTConsensusCoordinator<T = unknown> {
   }
 
   /**
+   * Validates view-change quorum evidence (either array of signed ViewChangeMessages or ViewChangeCertificate)
+   */
+  public verifyViewChangeEvidence(
+    targetView: number,
+    evidence?: ViewChangeMessage[] | ViewChangeCertificate,
+  ): boolean {
+    try {
+      if (!evidence || typeof evidence !== "object") {
+        return false;
+      }
+
+      const seenSigners = new Set<string>();
+
+      if (Array.isArray(evidence)) {
+        for (const msg of evidence) {
+          if (!msg || typeof msg !== "object") continue;
+          if (msg.newView !== targetView) continue;
+          if (!this.validators.includes(msg.fromNodeId)) continue;
+          if (seenSigners.has(msg.fromNodeId)) continue;
+
+          if (this.verifyViewChangeSignature(msg)) {
+            seenSigners.add(msg.fromNodeId);
+          }
+        }
+      } else {
+        const cert = evidence as ViewChangeCertificate;
+        const certView = cert.view ?? (cert as any).newView;
+        if (certView !== targetView) {
+          return false;
+        }
+        const signatures = cert.signatures;
+        if (!signatures || typeof signatures !== "object") {
+          return false;
+        }
+
+        for (const [nodeId, sig] of Object.entries(signatures)) {
+          if (!this.validators.includes(nodeId)) continue;
+          if (seenSigners.has(nodeId)) continue;
+          if (typeof sig !== "string" || !sig) continue;
+
+          const msg: ViewChangeMessage = {
+            fromNodeId: nodeId,
+            newView: targetView,
+            signature: sig,
+            timestamp: 0,
+          };
+          if (this.verifyViewChangeSignature(msg)) {
+            seenSigners.add(nodeId);
+          }
+        }
+      }
+
+      return seenSigners.size >= this.quorumSize;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Handles an incoming block proposal from leader
    */
   public handleProposal(proposal: BlockProposal<T>): BFTVote | null {
+    if (!proposal || typeof proposal !== "object") {
+      console.warn("Proposal rejected: malformed proposal payload");
+      return null;
+    }
+
     const expectedLeader = this.getLeaderForView(proposal.view);
     if (proposal.proposerId !== expectedLeader) {
       console.warn(
@@ -228,6 +449,100 @@ export class BFTConsensusCoordinator<T = unknown> {
         `Proposal rejected: stale view ${proposal.view} < current ${this.currentView}`,
       );
       return null;
+    }
+
+    // Reject proposals targeting unauthorized future views
+    if (proposal.view > this.currentView) {
+      if (proposal.view > this.currentView + this.maxFutureViewWindow) {
+        console.warn(
+          `Proposal rejected: view ${proposal.view} exceeds max future view window`,
+        );
+        return null;
+      }
+
+      const hasLocalQuorum =
+        (this.viewChangePool.get(proposal.view)?.size ?? 0) >= this.quorumSize;
+      const hasEvidenceQuorum = this.verifyViewChangeEvidence(
+        proposal.view,
+        proposal.viewChangeEvidence,
+      );
+
+      if (!hasLocalQuorum && !hasEvidenceQuorum) {
+        console.warn(
+          `Proposal rejected: future view ${proposal.view} requires certified view-change quorum evidence`,
+        );
+        return null;
+      }
+    }
+
+    // Validate proposal sequence number
+    if (typeof proposal.sequence !== "number" || isNaN(proposal.sequence)) {
+      console.warn("Proposal rejected: invalid sequence number");
+      return null;
+    }
+
+    if (proposal.sequence <= this.currentSequence) {
+      console.warn(
+        `Proposal rejected: stale or replayed sequence ${proposal.sequence} <= current ${this.currentSequence}`,
+      );
+      return null;
+    }
+
+    if (proposal.sequence !== this.currentSequence + 1) {
+      console.warn(
+        `Proposal rejected: out-of-order sequence ${proposal.sequence} (expected ${this.currentSequence + 1})`,
+      );
+      return null;
+    }
+
+    // Validate parent hash against expected committed predecessor
+    const expectedParentHash =
+      this.lastCommitQC?.blockHash ??
+      (this.committedBlocks.length > 0
+        ? this.committedBlocks[this.committedBlocks.length - 1].blockHash
+        : "0000000000000000000000000000000000000000000000000000000000000000");
+
+    if (proposal.parentHash !== expectedParentHash) {
+      console.warn(
+        `Proposal rejected: invalid parentHash ${proposal.parentHash} (expected ${expectedParentHash})`,
+      );
+      return null;
+    }
+
+    // Validate justification certificate against committed chain
+    if (this.lastCommitQC) {
+      if (!proposal.justifyQC) {
+        console.warn(
+          "Proposal rejected: missing justification certificate for committed chain",
+        );
+        return null;
+      }
+      if (proposal.justifyQC.blockHash !== this.lastCommitQC.blockHash) {
+        console.warn(
+          `Proposal rejected: justifyQC blockHash ${proposal.justifyQC.blockHash} does not match lastCommitQC ${this.lastCommitQC.blockHash}`,
+        );
+        return null;
+      }
+    }
+
+    // Validate relevant justification certificate if present
+    if (proposal.justifyQC) {
+      if (!this.verifyQuorumCertificate(proposal.justifyQC)) {
+        console.warn("Proposal rejected: invalid justification certificate");
+        return null;
+      }
+      if (proposal.justifyQC.view > proposal.view) {
+        console.warn(
+          `Proposal rejected: justifyQC view ${proposal.justifyQC.view} cannot exceed proposal view ${proposal.view}`,
+        );
+        return null;
+      }
+      if (proposal.justifyQC.sequence >= proposal.sequence) {
+        console.warn(
+          `Proposal rejected: justifyQC sequence ${proposal.justifyQC.sequence} must be lower than proposal sequence ${proposal.sequence}`,
+        );
+        return null;
+      }
     }
 
     // Verify block hash
@@ -247,8 +562,32 @@ export class BFTConsensusCoordinator<T = unknown> {
       return null;
     }
 
+    // Transition view only after all validations have succeeded
+    if (proposal.view > this.currentView) {
+      if (
+        Array.isArray(proposal.viewChangeEvidence) &&
+        proposal.viewChangeEvidence.length > 0
+      ) {
+        for (const msg of proposal.viewChangeEvidence) {
+          if (
+            msg &&
+            msg.newView === proposal.view &&
+            this.validators.includes(msg.fromNodeId) &&
+            this.verifyViewChangeSignature(msg)
+          ) {
+            if (!this.viewChangePool.has(msg.newView)) {
+              this.viewChangePool.set(msg.newView, new Map());
+            }
+            this.viewChangePool.get(msg.newView)!.set(msg.fromNodeId, msg);
+          }
+        }
+      }
+      this.currentView = proposal.view;
+      this.resetViewBackoff();
+      this.cleanupStaleViewChangeEntries();
+    }
+
     this.currentProposal = proposal;
-    this.currentView = proposal.view;
     this.currentSequence = proposal.sequence;
     this.currentPhase = "PREPARE";
 
@@ -404,25 +743,28 @@ export class BFTConsensusCoordinator<T = unknown> {
         return false;
       }
 
-      const validSignatures = Object.entries(qc.signatures).filter(
-        ([nodeId, sig]) => {
-          try {
-            if (!this.validators.includes(nodeId)) return false;
-            return this.verifyNodeSignature(
-              nodeId,
-              qc.phase,
-              qc.view,
-              qc.sequence,
-              qc.blockHash,
-              sig,
-            );
-          } catch {
-            return false;
+      const seenSigners = new Set<string>();
+      for (const [nodeId, sig] of Object.entries(qc.signatures)) {
+        try {
+          if (!this.validators.includes(nodeId)) continue;
+          if (seenSigners.has(nodeId)) continue; // Must be distinct authorized validators
+          const isValid = this.verifyNodeSignature(
+            nodeId,
+            qc.phase,
+            qc.view,
+            qc.sequence,
+            qc.blockHash,
+            sig,
+          );
+          if (isValid) {
+            seenSigners.add(nodeId);
           }
-        },
-      );
+        } catch {
+          // Skip invalid signatures gracefully
+        }
+      }
 
-      return validSignatures.length >= this.quorumSize;
+      return seenSigners.size >= this.quorumSize;
     } catch (err: unknown) {
       console.warn(
         `Quorum certificate verification failed:`,
@@ -468,15 +810,25 @@ export class BFTConsensusCoordinator<T = unknown> {
     requestedView?: number,
   ): ViewChangeMessage {
     const targetView = requestedView ?? this.currentView + 1;
-    const sig = createHash("sha256")
-      .update(`${this.nodeId}:NEW_VIEW:${targetView}:${reason}`)
-      .digest("hex");
+    let signature = "";
+    if (this.signer) {
+      const payload = BFTConsensusCoordinator.formatViewChangePayload(
+        this.nodeId,
+        targetView,
+        this.lastCommitQC ?? undefined,
+      );
+      signature = this.signer.sign(payload);
+    } else {
+      console.warn(
+        `Node ${this.nodeId} triggering view-change without external signer configured`,
+      );
+    }
 
     const msg: ViewChangeMessage = {
       fromNodeId: this.nodeId,
       newView: targetView,
       lastCommitQC: this.lastCommitQC ?? undefined,
-      signature: sig,
+      signature,
       timestamp: Date.now(),
     };
 
@@ -485,17 +837,34 @@ export class BFTConsensusCoordinator<T = unknown> {
   }
 
   /**
-   * Ingests a View Change message, buffers future-view messages, and transitions views upon reaching 2f+1 quorum
+   * Ingests a View Change message, verifies its cryptographic signature, buffers valid
+   * future-view messages, and transitions views upon reaching 2f+1 quorum
    */
   public handleViewChange(
     msg: ViewChangeMessage,
   ): { newLeader: string; view: number } | null {
+    if (!msg || typeof msg !== "object") {
+      console.warn("ViewChange rejected: malformed view-change message");
+      return null;
+    }
+
     if (!this.validators.includes(msg.fromNodeId)) {
+      console.warn(
+        `ViewChange rejected: node ${msg.fromNodeId} is not an authorized validator`,
+      );
       return null;
     }
 
     // Reject stale messages targeting views at or below currentView
     if (msg.newView <= this.currentView) {
+      return null;
+    }
+
+    // Verify cryptographic signature before accepting or buffering
+    if (!this.verifyViewChangeSignature(msg)) {
+      console.warn(
+        `ViewChange rejected: unauthenticated or invalid signature from ${msg.fromNodeId}`,
+      );
       return null;
     }
 
@@ -523,7 +892,10 @@ export class BFTConsensusCoordinator<T = unknown> {
     }
 
     const viewBuffer = this.futureViewChangeBuffer.get(msg.newView)!;
-    if (viewBuffer.size >= this.maxBufferedMessagesPerView && !viewBuffer.has(msg.fromNodeId)) {
+    if (
+      viewBuffer.size >= this.maxBufferedMessagesPerView &&
+      !viewBuffer.has(msg.fromNodeId)
+    ) {
       return;
     }
 
@@ -544,6 +916,7 @@ export class BFTConsensusCoordinator<T = unknown> {
     pool.set(msg.fromNodeId, msg);
 
     if (pool.size >= this.quorumSize && msg.newView > this.currentView) {
+      this.lastViewChangeEvidence.set(msg.newView, Array.from(pool.values()));
       this.currentView = msg.newView;
       this.currentPhase = "PREPARE";
       this.currentProposal = null;
@@ -575,7 +948,8 @@ export class BFTConsensusCoordinator<T = unknown> {
     try {
       while (true) {
         const nextEligibleView = this.currentView + 1;
-        const bufferedForNext = this.futureViewChangeBuffer.get(nextEligibleView);
+        const bufferedForNext =
+          this.futureViewChangeBuffer.get(nextEligibleView);
         if (!bufferedForNext || bufferedForNext.size === 0) {
           break;
         }
@@ -610,7 +984,7 @@ export class BFTConsensusCoordinator<T = unknown> {
    */
   private cleanupStaleViewChangeEntries(): void {
     for (const view of Array.from(this.viewChangePool.keys())) {
-      if (view <= this.currentView) {
+      if (view < this.currentView) {
         this.viewChangePool.delete(view);
       }
     }
@@ -680,7 +1054,8 @@ export class BFTConsensusCoordinator<T = unknown> {
       this.disposed ||
       !this.viewTimerActive ||
       generation !== this.viewTimerGeneration
-    ) return;
+    )
+      return;
     this.viewTimer = null;
 
     const targetView =
@@ -704,7 +1079,8 @@ export class BFTConsensusCoordinator<T = unknown> {
       this.disposed ||
       !this.viewTimerActive ||
       generation !== this.viewTimerGeneration
-    ) return;
+    )
+      return;
     this.startViewTimer();
   }
 
@@ -735,13 +1111,20 @@ export class BFTConsensusCoordinator<T = unknown> {
   }
 
   public createVote(phase: BFTPhase, blockHash: string): BFTVote {
-    const signature = this.generateSignature(
+    if (!this.signer) {
+      throw new Error(
+        `Node ${this.nodeId} cannot create vote: no external signer configured`,
+      );
+    }
+
+    const payload = BFTConsensusCoordinator.formatVotePayload(
       this.nodeId,
       phase,
       this.currentView,
       this.currentSequence,
       blockHash,
     );
+    const signature = this.signer.sign(payload);
 
     return {
       nodeId: this.nodeId,
@@ -752,18 +1135,6 @@ export class BFTConsensusCoordinator<T = unknown> {
       signature,
       timestamp: Date.now(),
     };
-  }
-
-  private generateSignature(
-    nodeId: string,
-    phase: BFTPhase,
-    view: number,
-    sequence: number,
-    blockHash: string,
-  ): string {
-    return createHash("sha256")
-      .update(`BFT_SIG:${nodeId}:${phase}:${view}:${sequence}:${blockHash}`)
-      .digest("hex");
   }
 
   /**
@@ -789,17 +1160,22 @@ export class BFTConsensusCoordinator<T = unknown> {
       ) {
         return false;
       }
-      if (typeof signature !== "string") {
+      if (typeof signature !== "string" || signature.length === 0) {
         return false;
       }
-      const expected = this.generateSignature(
+      if (!this.validators.includes(nodeId)) {
+        return false;
+      }
+
+      const payload = BFTConsensusCoordinator.formatVotePayload(
         nodeId,
         phase,
         view,
         sequence,
         blockHash,
       );
-      return signature === expected;
+
+      return this.verifySignatureInternal(nodeId, payload, signature);
     } catch (err: unknown) {
       console.warn(
         `Cryptographic signature verification failed for node ${nodeId}:`,
@@ -807,6 +1183,82 @@ export class BFTConsensusCoordinator<T = unknown> {
       );
       return false;
     }
+  }
+
+  /**
+   * Verifies an individual ViewChangeMessage signature
+   */
+  public verifyViewChangeSignature(msg: ViewChangeMessage): boolean {
+    try {
+      if (!msg || typeof msg !== "object") {
+        return false;
+      }
+      if (
+        !msg.fromNodeId ||
+        msg.newView === undefined ||
+        typeof msg.newView !== "number" ||
+        !msg.signature ||
+        typeof msg.signature !== "string" ||
+        msg.signature.length === 0
+      ) {
+        return false;
+      }
+      if (!this.validators.includes(msg.fromNodeId)) {
+        return false;
+      }
+
+      const payload = BFTConsensusCoordinator.formatViewChangePayload(
+        msg.fromNodeId,
+        msg.newView,
+        msg.lastCommitQC,
+      );
+
+      return this.verifySignatureInternal(
+        msg.fromNodeId,
+        payload,
+        msg.signature,
+      );
+    } catch (err: unknown) {
+      console.warn(
+        `Cryptographic signature verification failed for view-change from ${msg?.fromNodeId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Dispatches payload and signature to injected verifier or built-in Ed25519 verification
+   */
+  private verifySignatureInternal(
+    nodeId: string,
+    payload: Uint8Array,
+    signature: string,
+  ): boolean {
+    if (this.verifier) {
+      return this.verifier.verify(nodeId, payload, signature);
+    }
+
+    const keyObj = this.validatorPublicKeys.get(nodeId);
+    if (!keyObj) {
+      console.warn(
+        `Signature verification failed: no public key registered for validator ${nodeId}`,
+      );
+      return false;
+    }
+
+    let sigBuf: Buffer;
+    try {
+      sigBuf = Buffer.from(signature, "hex");
+      // Ed25519 signature is strictly 64 bytes (128 hex chars)
+      if (sigBuf.length !== 64) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+
+    return verify(null, payload, keyObj, sigBuf);
   }
 
   /**
@@ -878,3 +1330,48 @@ export class BFTConsensusCoordinator<T = unknown> {
     }
   }
 }
+
+/**
+ * Helper to generate an Ed25519 keypair for an individual validator node.
+ * The private key remains encapsulated inside the returned external signer closure.
+ */
+export function generateEd25519ValidatorKey(nodeId: string): {
+  nodeId: string;
+  publicKey: string;
+  publicKeyObject: KeyObject;
+  signer: BFTSigningInterface;
+} {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const pubDer = publicKey.export({ type: "spki", format: "der" });
+  const rawPubHex = pubDer.slice(-32).toString("hex");
+  return {
+    nodeId,
+    publicKey: rawPubHex,
+    publicKeyObject: publicKey,
+    signer: {
+      sign: (payload: Uint8Array) =>
+        sign(null, payload, privateKey).toString("hex"),
+    },
+  };
+}
+
+/**
+ * Helper to generate a complete Ed25519 key set for a list of validator node IDs.
+ */
+export function createTestValidatorKeySet(validatorIds: string[]): {
+  publicKeys: Record<string, string>;
+  signers: Record<string, BFTSigningInterface>;
+} {
+  const publicKeys: Record<string, string> = {};
+  const signers: Record<string, BFTSigningInterface> = {};
+  for (const id of validatorIds) {
+    const key = generateEd25519ValidatorKey(id);
+    publicKeys[id] = key.publicKey;
+    signers[id] = key.signer;
+  }
+  return { publicKeys, signers };
+}
+
+export const formatVotePayload = BFTConsensusCoordinator.formatVotePayload;
+export const formatViewChangePayload =
+  BFTConsensusCoordinator.formatViewChangePayload;

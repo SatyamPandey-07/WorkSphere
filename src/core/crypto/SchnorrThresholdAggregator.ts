@@ -357,6 +357,12 @@ export class SchnorrThresholdAggregator {
     if (!isParticipant)
       throw new Error(`Participant ${noncePair.participantId} not in session.`);
 
+    if (session.nonces.has(noncePair.participantId)) {
+      throw new Error(
+        `Duplicate nonce submission rejected from participant ${noncePair.participantId}.`,
+      );
+    }
+
     session.nonces.set(noncePair.participantId, noncePair);
 
     // Check if all nonces collected

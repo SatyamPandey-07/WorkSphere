@@ -88,6 +88,107 @@ describe('SchnorrThresholdAggregator', () => {
             const e = aggregator.computeChallenge(session);
             expect(e).toBeGreaterThan(0n);
         });
+
+        it('accepts first valid nonce commitment and rejects identical and conflicting duplicate submissions', () => {
+            const sessionId = 'session-test-nonce-duplicates';
+            const session = aggregator.createSession(sessionId, participants, message);
+            expect(session.state).toBe('INIT');
+
+            const noncesA1 = SchnorrThresholdAggregator.generateNoncePair('alice');
+            const noncesA2 = SchnorrThresholdAggregator.generateNoncePair('alice');
+            const noncesB = SchnorrThresholdAggregator.generateNoncePair('bob');
+            const noncesC = SchnorrThresholdAggregator.generateNoncePair('charlie');
+
+            // 1. First valid nonce commitment is accepted
+            aggregator.submitNonces(sessionId, noncesA1.publicNonces);
+            expect(session.nonces.size).toBe(1);
+            expect(session.nonces.get('alice')).toBe(noncesA1.publicNonces);
+            expect(session.state).toBe('INIT');
+
+            // 2. An identical duplicate submission is rejected
+            expect(() => {
+                aggregator.submitNonces(sessionId, noncesA1.publicNonces);
+            }).toThrow('Duplicate nonce submission rejected from participant alice');
+
+            // 4. The original nonce commitment remains unchanged after identical duplicate rejection
+            expect(session.nonces.size).toBe(1);
+            expect(session.nonces.get('alice')).toBe(noncesA1.publicNonces);
+            // 5. Rejected duplicate submissions do not corrupt the session state
+            expect(session.state).toBe('INIT');
+
+            // 3. A conflicting duplicate submission is rejected
+            expect(() => {
+                aggregator.submitNonces(sessionId, noncesA2.publicNonces);
+            }).toThrow('Duplicate nonce submission rejected from participant alice');
+
+            // 4. The original nonce commitment remains unchanged after conflicting rejection
+            expect(session.nonces.size).toBe(1);
+            expect(session.nonces.get('alice')).toBe(noncesA1.publicNonces);
+            expect(session.nonces.get('alice')?.R1).toEqual(noncesA1.publicNonces.R1);
+            expect(session.nonces.get('alice')?.R2).toEqual(noncesA1.publicNonces.R2);
+            // 5. Session state remains intact
+            expect(session.state).toBe('INIT');
+
+            // 6. Other valid participants can still submit their nonce commitments
+            aggregator.submitNonces(sessionId, noncesB.publicNonces);
+            expect(session.nonces.size).toBe(2);
+            expect(session.state).toBe('INIT');
+
+            aggregator.submitNonces(sessionId, noncesC.publicNonces);
+            expect(session.nonces.size).toBe(3);
+
+            // 7. Remaining valid participants can complete aggregation successfully
+            expect(session.state).toBe('NONCES_EXCHANGED');
+            expect(session.aggregateNonce).toBeDefined();
+
+            const sigA = aggregator.signPartial(session, 'alice', cosignerA.privateKey, noncesA1);
+            const sigB = aggregator.signPartial(session, 'bob', cosignerB.privateKey, noncesB);
+            const sigC = aggregator.signPartial(session, 'charlie', cosignerC.privateKey, noncesC);
+
+            aggregator.submitPartialSignature(sessionId, 'alice', sigA);
+            aggregator.submitPartialSignature(sessionId, 'bob', sigB);
+            aggregator.submitPartialSignature(sessionId, 'charlie', sigC);
+
+            expect(session.state).toBe('PARTIALS_COLLECTED');
+            const { signature } = aggregator.aggregateSignature(sessionId);
+            expect(session.state).toBe('FINALIZED');
+            expect(SchnorrThresholdAggregator.verifyAggregatedSignature(message, signature, session.aggregatedPublicKey)).toBe(true);
+        });
+
+        it('isolates duplicate nonce detection between separate signing sessions', () => {
+            const session1Id = 'session-isolation-01';
+            const session2Id = 'session-isolation-02';
+
+            const session1 = aggregator.createSession(session1Id, participants, message);
+            const session2 = aggregator.createSession(session2Id, participants, message);
+
+            const noncesA = SchnorrThresholdAggregator.generateNoncePair('alice');
+            const noncesB = SchnorrThresholdAggregator.generateNoncePair('bob');
+
+            // Alice submits to session 1
+            aggregator.submitNonces(session1Id, noncesA.publicNonces);
+            expect(session1.nonces.has('alice')).toBe(true);
+            expect(session2.nonces.has('alice')).toBe(false);
+
+            // Alice submits to session 2 - should succeed and not be treated as a duplicate
+            expect(() => {
+                aggregator.submitNonces(session2Id, noncesA.publicNonces);
+            }).not.toThrow();
+
+            expect(session2.nonces.has('alice')).toBe(true);
+            expect(session2.nonces.get('alice')).toBe(noncesA.publicNonces);
+
+            // Further submission in session 1 from Alice is rejected
+            expect(() => {
+                aggregator.submitNonces(session1Id, noncesA.publicNonces);
+            }).toThrow('Duplicate nonce submission rejected from participant alice');
+
+            // Nonce submission from Bob in session 1 still succeeds
+            expect(() => {
+                aggregator.submitNonces(session1Id, noncesB.publicNonces);
+            }).not.toThrow();
+            expect(session1.nonces.get('bob')).toBe(noncesB.publicNonces);
+        });
     });
 
     describe('Partial Signature Generation, Verification & Misbehavior Detection', () => {

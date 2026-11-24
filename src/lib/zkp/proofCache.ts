@@ -68,18 +68,8 @@ export interface CacheCheckResult {
   reason?: "miss" | "expired" | "mismatch" | "storage_disabled" | "error";
 }
 
-
-/** Proof-cache scopes for various circuits (#9615, #3358) */
-export const STUDENT_DISCOUNT_SCOPE = "student-discount";
-export const STUDENT_PROOF_SCOPE = "student-discount";
-
-const DB_NAME = "worksphere-zkp-proofs";
-const STORE = "proofs";
-const VERIFICATION_KEY_URL = "/zkp/verification_key.json";
-
 let dbInstancePromise: Promise<IDBPDatabase<any>> | null = null;
 let scheduledCleanupTimeout: any = null;
-
 
 /**
  * Checks whether IndexedDB and Web Crypto subtle are available.
@@ -167,16 +157,6 @@ export async function computeVerificationCacheKey(
     vKeyFingerprint = await computeVKeyFingerprint(input.vKey);
   }
 
-
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(text),
-  );
-  return Array.from(new Uint8Array(digest), (b) =>
-    b.toString(16).padStart(2, "0"),
-  ).join("");
-
   const normalizedSignals = (input.publicSignals || []).map((s) =>
     typeof s === "bigint" ? s.toString() : String(s),
   );
@@ -193,7 +173,6 @@ async function sha256Hex(text: string): Promise<string> {
   const cacheKey = await sha256Hex(canonicalJson);
 
   return { cacheKey, proofHash, vKeyFingerprint };
-
 }
 
 /**
@@ -205,9 +184,11 @@ export async function getVerificationCacheDb(
 ): Promise<IDBPDatabase<any>> {
   if (!dbInstancePromise) {
     dbInstancePromise = openDB(dbName, 1, {
-      upgrade(db, oldVersion, newVersion, tx) {
+      upgrade(db) {
         if (!db.objectStoreNames.contains(storeName)) {
-          const store = db.createObjectStore(storeName, { keyPath: "cacheKey" });
+          const store = db.createObjectStore(storeName, {
+            keyPath: "cacheKey",
+          });
           store.createIndex(ZKP_VERIFIED_PROOFS_INDEX_HASH, "proofHash", {
             unique: false,
           });
@@ -215,10 +196,14 @@ export async function getVerificationCacheDb(
         }
       },
       blocked() {
-        console.warn("[ZKP VerificationCache] Database open request blocked by older connection.");
+        console.warn(
+          "[ZKP VerificationCache] Database open request blocked by older connection.",
+        );
       },
       blocking() {
-        console.warn("[ZKP VerificationCache] Database upgrade blocking; closing connection.");
+        console.warn(
+          "[ZKP VerificationCache] Database upgrade blocking; closing connection.",
+        );
         if (dbInstancePromise) {
           void dbInstancePromise.then((db) => db.close()).catch(() => {});
           dbInstancePromise = null;
@@ -231,37 +216,6 @@ export async function getVerificationCacheDb(
   }
   return dbInstancePromise;
 }
-
-
-const entryKey = (scope: string, commit: string) => `${scope}:${commit}`;
-
-function isUsable(
-  entry: ProofCacheEntry | undefined,
-  commit: string,
-  epoch: string,
-  now: number,
-): boolean {
-  return (
-    !!entry &&
-    entry.epoch === epoch &&
-    entry.expiresAt > now &&
-    Array.isArray(entry.publicSignals) &&
-    // Integrity: the proof must be for this credential's commitment.
-    (entry.publicSignals[0] === commit ||
-      entry.publicSignals.includes(commit)) &&
-    typeof entry.proof === "object" &&
-    entry.proof !== null
-  );
-}
-
-/** Read a usable cached proof, deleting it if it is expired or from another epoch. */
-export async function getCachedProof(
-  scope: string,
-  commit: string,
-): Promise<ProofCacheEntry | null> {
-  if (!isProofCacheAvailable()) return null;
-  const epoch = await getCircuitEpoch();
-  if (!epoch) return null;
 
 /**
  * Checks IndexedDB for a previously verified proof matching the input.
@@ -278,15 +232,11 @@ export async function getCachedVerification(
     return { hit: false, reason: "storage_disabled" };
   }
 
-
   try {
     const { cacheKey, proofHash, vKeyFingerprint } =
       await computeVerificationCacheKey(input);
 
-    const db = await getVerificationCacheDb(
-      options.dbName,
-      options.storeName,
-    );
+    const db = await getVerificationCacheDb(options.dbName, options.storeName);
     const store = options.storeName || ZKP_VERIFIED_PROOFS_STORE_NAME;
 
     const entry: VerifiedProofEntry | undefined = await db.get(store, cacheKey);
@@ -353,7 +303,7 @@ export async function getCachedVerification(
     void db.put(store, entry).catch(() => {});
 
     return { hit: true, entry };
-  } catch (err) {
+  } catch {
     // Treat any error as a cache miss to safely fallback to cryptographic verification
     return { hit: false, reason: "error" };
   }
@@ -363,53 +313,6 @@ export async function getCachedVerification(
  * Stores a successfully verified proof in IndexedDB.
  * Enforces TTL, maximum storage bounds, and LRU eviction.
  */
-
-export async function storeProof(
-  scope: string,
-  commit: string,
-  proof: CachedProof,
-  options: ProofCacheOptions = {},
-): Promise<void> {
-  const sanitizedProof = sanitizeProofForStorage(proof);
-  const normalizedCommit =
-    typeof commit === "bigint" ? (commit as bigint).toString() : String(commit);
-  const matchesCommit =
-    sanitizedProof.publicSignals[0] === normalizedCommit ||
-    sanitizedProof.publicSignals.includes(normalizedCommit);
-
-  if (!isProofCacheAvailable() || !matchesCommit) return;
-  const epoch = await getCircuitEpoch();
-  if (!epoch) return;
-
-  const now = Date.now();
-  const maxAge = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
-  const fresh = Math.min(options.freshMs ?? DEFAULT_FRESH_MS, maxAge);
-  const maxByteSize = options.maxByteSize ?? DEFAULT_MAX_CACHE_BYTES;
-  const entryBytes = calculateProofEntryBytes(sanitizedProof);
-
-  const entry: ProofCacheEntry = {
-    key: entryKey(scope, normalizedCommit),
-    scope,
-    commit: normalizedCommit,
-    epoch,
-    proof: sanitizedProof.proof,
-    publicSignals: sanitizedProof.publicSignals,
-    createdAt: now,
-    refreshAt: now + fresh,
-    expiresAt: now + maxAge,
-    byteSize: entryBytes,
-    lastAccessedAt: now,
-  };
-
-  const attemptWrite = async (database: any) => {
-    const tx = database.transaction(STORE, "readwrite");
-    const others = await tx.store.index("scope").getAllKeys(scope);
-    await Promise.all(
-      others
-        .filter((k: string) => k !== entry.key)
-        .map((k: string) => tx.store.delete(k)),
-    );
-
 export async function cacheVerifiedProof(
   input: VerificationInput,
   options: VerificationCacheOptions = {},
@@ -420,11 +323,7 @@ export async function cacheVerifiedProof(
     const { cacheKey, proofHash, vKeyFingerprint } =
       await computeVerificationCacheKey(input);
 
-
-    const db = await getVerificationCacheDb(
-      options.dbName,
-      options.storeName,
-    );
+    const db = await getVerificationCacheDb(options.dbName, options.storeName);
     const storeName = options.storeName || ZKP_VERIFIED_PROOFS_STORE_NAME;
     const ttlMs = options.ttlMs ?? DEFAULT_VERIFICATION_TTL_MS;
     const maxEntries = options.maxEntries ?? DEFAULT_MAX_VERIFIED_ENTRIES;
@@ -459,23 +358,6 @@ export async function cacheVerifiedProof(
       }
     }
 
-
-    const validEntries = allEntries.filter((e) => e.expiresAt > now);
-    let totalBytes = validEntries.reduce(
-      (acc, e) => acc + (e.byteSize || calculateProofEntryBytes(e)),
-      0,
-    );
-
-    // Evict oldest (least recently accessed) entries until new entry fits within maxByteSize
-    if (totalBytes + entryBytes > maxByteSize) {
-      const sorted = validEntries
-        .filter((e) => e.key !== entry.key)
-        .sort(
-          (a, b) =>
-            (a.lastAccessedAt || a.createdAt) -
-            (b.lastAccessedAt || b.createdAt),
-        );
-
     const liveEntries = allEntries.filter((e) => e.expiresAt > now);
 
     // 2. If capacity exceeded, evict least recently used/verified
@@ -484,7 +366,6 @@ export async function cacheVerifiedProof(
       const sorted = liveEntries
         .filter((e) => e.cacheKey !== cacheKey)
         .sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
-
 
       const itemsToRemove = liveEntries.length - maxEntries + 1;
       for (let i = 0; i < itemsToRemove && i < sorted.length; i++) {
@@ -495,54 +376,13 @@ export async function cacheVerifiedProof(
     await store.put(entry);
     await tx.done;
 
-
-  try {
-    const db = await getDb();
-    await attemptWrite(db);
-  } catch (err) {
-    const { isQuotaExceededError, dispatchStorageQuotaWarning } =
-      await import("@/lib/cache/storageQuota");
-
-    if (isQuotaExceededError(err)) {
-      console.warn(
-        "[ProofCache] Storage quota exceeded; clearing proof cache and retrying.",
-      );
-      dispatchStorageQuotaWarning("proofCache", err);
-
-      try {
-        const db = await getDb();
-        await db.clear(STORE);
-        await attemptWrite(db);
-      } catch (retryErr) {
-        console.warn(
-          "[ProofCache] Retrying storeProof after cache clear failed:",
-          retryErr,
-        );
-      }
-    }
-    // Caching is best-effort - never bubble unhandled rejection
-  }
-}
-
-/** Drop one credential's proof, e.g. after the server rejects it. */
-export async function invalidateProof(
-  scope: string,
-  commit: string,
-): Promise<void> {
-  if (!isProofCacheAvailable() || !scope || !commit) return;
-  try {
-    await (await getDb()).delete(STORE, entryKey(scope, commit));
-  } catch {
-    // ignore
-
     // Trigger scheduled background idle cleanup
     scheduleIdleCleanup(options);
 
     return true;
-  } catch (err) {
+  } catch {
     // Quota or storage write failure: best effort, never fail verification
     return false;
-
   }
 }
 
@@ -554,10 +394,7 @@ export async function purgeExpiredVerifications(
 ): Promise<number> {
   if (!isVerificationCacheAvailable()) return 0;
   try {
-    const db = await getVerificationCacheDb(
-      options.dbName,
-      options.storeName,
-    );
+    const db = await getVerificationCacheDb(options.dbName, options.storeName);
     const storeName = options.storeName || ZKP_VERIFIED_PROOFS_STORE_NAME;
     const tx = db.transaction(storeName, "readwrite");
     const store = tx.objectStore(storeName);
@@ -581,7 +418,9 @@ export async function purgeExpiredVerifications(
 /**
  * Schedules background cleanup during idle period or via setTimeout fallback.
  */
-export function scheduleIdleCleanup(options: VerificationCacheOptions = {}): void {
+export function scheduleIdleCleanup(
+  options: VerificationCacheOptions = {},
+): void {
   if (scheduledCleanupTimeout) return;
 
   const runCleanup = () => {
@@ -607,10 +446,7 @@ export async function clearVerificationCache(
 ): Promise<void> {
   if (!isVerificationCacheAvailable()) return;
   try {
-    const db = await getVerificationCacheDb(
-      options.dbName,
-      options.storeName,
-    );
+    const db = await getVerificationCacheDb(options.dbName, options.storeName);
     const storeName = options.storeName || ZKP_VERIFIED_PROOFS_STORE_NAME;
     await db.clear(storeName);
   } catch {
@@ -622,32 +458,10 @@ export async function clearVerificationCache(
  * Closes the active database connection and resets internal cache state.
  * For test teardown and connection cleanup.
  */
-
-export async function getOrCreateProof(input: {
-  scope: string;
-  commit: string;
-  generate: () => Promise<CachedProof>;
-  options?: ProofCacheOptions;
-  /** Called when a background refresh fails (the stale proof was already served). */
-  onBackgroundError?: (error: unknown) => void;
-}): Promise<CachedProof & { source: ProofSource }> {
-  const { scope, commit, generate, options = {}, onBackgroundError } = input;
-
-  const cached = await getCachedProof(scope, commit);
-  if (cached) {
-    const result = { proof: cached.proof, publicSignals: cached.publicSignals };
-    if (Date.now() < cached.refreshAt) return { ...result, source: "cache" };
-
-    void generateOnce(scope, commit, generate, options).catch((err) =>
-      onBackgroundError?.(err),
-    );
-    return { ...result, source: "stale-cache" };
-
 export async function _resetVerificationCacheForTesting(): Promise<void> {
   if (scheduledCleanupTimeout) {
     clearTimeout(scheduledCleanupTimeout);
     scheduledCleanupTimeout = null;
-
   }
   if (dbInstancePromise) {
     try {
@@ -684,4 +498,6 @@ export {
   DEFAULT_FRESH_MS,
   DEFAULT_MAX_AGE_MS,
   DEFAULT_MAX_CACHE_BYTES,
+  STUDENT_DISCOUNT_SCOPE,
+  STUDENT_PROOF_SCOPE,
 } from "./proofCacheLegacy";

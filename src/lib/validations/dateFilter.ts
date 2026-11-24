@@ -463,7 +463,7 @@ export function parseBookingDateFilter(
 
 // ─── Booking Date Presets (#9608) ─────────────────────────────────────────
 
-export type DatePresetKey = "today" | "tomorrow" | "weekend";
+export type DatePresetKey = "today" | "tomorrow" | "weekend" | "nextMonday";
 
 export interface DatePresetResult {
   startDate: string;
@@ -537,6 +537,15 @@ export function getDatePreset(
         startDate: formatLocalDate(saturday),
         endDate: formatLocalDate(sunday),
       };
+    }
+
+    case "nextMonday": {
+      // Days until next Monday: Sun (0) -> 1, Mon (1) -> 7, Tue (2) -> 6, ..., Sat (6) -> 2
+      const dayOfWeek = referenceDate.getDay();
+      const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+      const nextMonday = new Date(year, month, date + daysUntilMonday);
+      const formatted = formatLocalDate(nextMonday);
+      return { startDate: formatted, endDate: formatted };
     }
   }
 }

@@ -101,3 +101,37 @@ export function calculatePassExpiration(
 
   return new Date(resolvedUtcMs);
 }
+
+/**
+ * Calculates the next upcoming Monday strictly following a given reference date.
+ *
+ * Rules:
+ * - Sunday (0): returns the immediately following Monday (+1 day).
+ * - Monday (1): returns the following week's Monday (+7 days), NOT the current day.
+ * - Tuesday (2) through Saturday (6): returns the upcoming Monday (8 - dayOfWeek days).
+ *
+ * Deterministic and pure: does not mutate the reference Date and correctly handles
+ * month boundaries, leap years, and year transitions.
+ */
+export function getNextMonday(referenceDate: Date = new Date()): Date {
+  const ref = referenceDate instanceof Date && !isNaN(referenceDate.getTime())
+    ? referenceDate
+    : new Date();
+
+  const year = ref.getFullYear();
+  const month = ref.getMonth();
+  const date = ref.getDate();
+  const dayOfWeek = ref.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+
+  // Days until next Monday:
+  // Sun (0) -> 1
+  // Mon (1) -> 7 (next week's Monday)
+  // Tue (2) -> 6
+  // Wed (3) -> 5
+  // Thu (4) -> 4
+  // Fri (5) -> 3
+  // Sat (6) -> 2
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+
+  return new Date(year, month, date + daysUntilMonday);
+}

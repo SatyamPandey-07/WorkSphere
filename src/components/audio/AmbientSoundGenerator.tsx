@@ -14,11 +14,15 @@ import {
 export interface AmbientSoundGeneratorProps {
   storage?: StorageLike | null;
   initialPresets?: SoundscapePreset[];
+  audioContext?: AudioContextLike | null;
+  audioContextFactory?: () => AudioContextLike | null;
 }
 
 export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   storage,
   initialPresets,
+  audioContext,
+  audioContextFactory,
 }) => {
   const presets = useMemo(
     () => initialPresets ?? loadSoundscapePresets(storage),
@@ -26,9 +30,29 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
   );
 
   const activeInitial = presets[0] ?? DEFAULT_SOUNDSCAPE_PRESET;
+  const audioContextRef = useRef<AudioContextLike | null>(null);
   const engineRef = useRef<NoiseSoundscapeEngine | null>(null);
+
   if (!engineRef.current) {
-    engineRef.current = new NoiseSoundscapeEngine(null);
+    let ctx: AudioContextLike | null = null;
+    if (audioContext !== undefined) {
+      ctx = audioContext;
+    } else if (audioContextFactory) {
+      ctx = audioContextFactory();
+    } else if (typeof window !== 'undefined') {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        try {
+          ctx = new AudioCtx();
+        } catch {
+          ctx = null;
+        }
+      }
+    }
+    audioContextRef.current = ctx;
+    engineRef.current = new NoiseSoundscapeEngine(ctx);
     engineRef.current.applyPreset(activeInitial);
   }
 
@@ -69,6 +93,14 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
       await engine.pause();
       setIsPlaying(false);
     } else {
+      const ctx = audioContextRef.current;
+      if (ctx && typeof ctx.resume === 'function' && ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch {
+          // Autoplay policy or user gesture required
+        }
+      }
       const started = await engine.start();
       setIsPlaying(started);
     }

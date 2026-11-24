@@ -87,4 +87,29 @@ describe('Multi-Layer Web Audio Soundscape Mixer & Presets', () => {
       );
     });
   });
+
+  it('defers AudioContext resume until first user interaction to avoid autoplay warnings', async () => {
+    const resume = jest.fn().mockResolvedValue(undefined);
+    const mockCtx = {
+      state: 'suspended',
+      resume,
+      createGain: () => ({
+        gain: { value: 1, setTargetAtTime: jest.fn() },
+        connect: jest.fn(),
+      }),
+    };
+
+    render(<AmbientSoundGenerator storage={null} audioContext={mockCtx} />);
+
+    // On initial mount, AudioContext remains suspended and resume is NOT called
+    expect(resume).not.toHaveBeenCalled();
+    expect(screen.getByTestId('soundscape-status').textContent).toContain('Paused');
+
+    // Upon first user click, resume is called and audio playback begins immediately
+    fireEvent.click(screen.getByTestId('toggle-play-btn'));
+    await waitFor(() => {
+      expect(resume).toHaveBeenCalled();
+      expect(screen.getByTestId('soundscape-status').textContent).toContain('Playing');
+    });
+  });
 });

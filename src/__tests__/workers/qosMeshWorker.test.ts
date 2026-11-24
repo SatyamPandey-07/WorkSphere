@@ -208,4 +208,178 @@ describe("qosMeshWorker Lifecycle & Idempotent Initialization (#10085)", () => {
     expect(() => stopEvaluation()).not.toThrow();
     expect(getEvaluationInterval()).toBeNull();
   });
+
+  describe("QoS Telemetry Protection against NaN and Network Disconnection (#10121)", () => {
+    it("handles zero and one-packet intervals and rejects non-finite telemetry without corrupting state", () => {
+      handleWorkerMessage({ data: { type: "INIT" } });
+      handleWorkerMessage({
+        data: { type: "PEER_JOINED", payload: { peerId: "peer-dc" } },
+      });
+
+      // Send telemetry with NaN, Infinity, and negative values
+      handleWorkerMessage({
+        data: {
+          type: "TELEMETRY_UPDATE",
+          payload: {
+            peerId: "peer-dc",
+            rtt: NaN,
+            ackDelay: Infinity,
+            bytesPerSec: -100,
+          },
+        },
+      });
+
+      const metrics = analyzer.getMetrics();
+      const peerMetric = metrics.find((m) => m.peerId === "peer-dc");
+      expect(peerMetric).toBeDefined();
+      expect(peerMetric?.rttHistory).toEqual([]);
+      expect(peerMetric?.ackDelayHistory).toEqual([]);
+      expect(peerMetric?.bytesSentPerSec).toBe(0);
+
+      // Single valid packet should not create NaN or corrupted state
+      handleWorkerMessage({
+        data: {
+          type: "TELEMETRY_UPDATE",
+          payload: {
+            peerId: "peer-dc",
+            rtt: 40,
+            ackDelay: 15,
+            bytesPerSec: 10_000,
+          },
+        },
+      });
+
+      expect(peerMetric?.rttHistory).toEqual([40]);
+      expect(peerMetric?.ackDelayHistory).toEqual([15]);
+      expect(peerMetric?.bytesSentPerSec).toBe(10_000);
+      expect(analyzer.identifyHog()).toBeNull();
+    });
+
+    it("ensures no emitted throttle or telemetry payload contains NaN or non-finite metrics during abrupt disconnection", () => {
+      handleWorkerMessage({ data: { type: "INIT" } });
+      handleWorkerMessage({
+        data: { type: "PEER_JOINED", payload: { peerId: "peer-1" } },
+      });
+      handleWorkerMessage({
+        data: { type: "PEER_JOINED", payload: { peerId: "peer-2" } },
+      });
+
+      // Abrupt disconnection: peer leaves or sends empty/invalid measurements
+      handleWorkerMessage({
+        data: {
+          type: "TELEMETRY_UPDATE",
+          payload: {
+            peerId: "peer-1",
+            rtt: NaN,
+            ackDelay: undefined,
+            bytesPerSec: null,
+          },
+        },
+      });
+
+      // Trigger mesh evaluation
+      jest.advanceTimersByTime(1000);
+
+      // Verify no THROTTLE_APPLIED or invalid postMessage emissions occurred
+      const emittedMessages = mockPostMessage.mock.calls.map((call) => call[0]);
+      for (const msg of emittedMessages) {
+        if (msg.payload?.metrics) {
+          for (const m of msg.payload.metrics) {
+            expect(Number.isFinite(m.bytesSentPerSec)).toBe(true);
+            for (const rtt of m.rttHistory) {
+              expect(Number.isFinite(rtt)).toBe(true);
+            }
+            for (const ack of m.ackDelayHistory) {
+              expect(Number.isFinite(ack)).toBe(true);
+            }
+          }
+        }
+      }
+    });
+
+    it("recovers valid telemetry calculations after network disconnection and resumption", () => {
+      handleWorkerMessage({ data: { type: "INIT" } });
+      handleWorkerMessage({
+        data: { type: "PEER_JOINED", payload: { peerId: "peer-rec-1" } },
+      });
+      handleWorkerMessage({
+        data: { type: "PEER_JOINED", payload: { peerId: "peer-rec-2" } },
+      });
+      handleWorkerMessage({
+        data: { type: "PEER_JOINED", payload: { peerId: "peer-rec-hog" } },
+      });
+
+      // Disconnection phase: send empty / malformed telemetry
+      for (let i = 0; i < 3; i++) {
+        handleWorkerMessage({
+          data: {
+            type: "TELEMETRY_UPDATE",
+            payload: {
+              peerId: "peer-rec-1",
+              rtt: NaN,
+              ackDelay: -5,
+              bytesPerSec: Infinity,
+            },
+          },
+        });
+      }
+
+      // Reconnection phase: legitimate packets start arriving
+      for (let i = 0; i < 10; i++) {
+        handleWorkerMessage({
+          data: {
+            type: "TELEMETRY_UPDATE",
+            payload: {
+              peerId: "peer-rec-1",
+              rtt: 25,
+              ackDelay: 10,
+              bytesPerSec: 50_000,
+            },
+          },
+        });
+        handleWorkerMessage({
+          data: {
+            type: "TELEMETRY_UPDATE",
+            payload: {
+              peerId: "peer-rec-2",
+              rtt: 28,
+              ackDelay: 12,
+              bytesPerSec: 50_000,
+            },
+          },
+        });
+        handleWorkerMessage({
+          data: {
+            type: "TELEMETRY_UPDATE",
+            payload: {
+              peerId: "peer-rec-hog",
+              rtt: 140,
+              ackDelay: i % 2 === 0 ? 10 : 300,
+              bytesPerSec: 5_000_000,
+            },
+          },
+        });
+      }
+
+      jest.advanceTimersByTime(1000);
+
+      const throttleCalls = mockPostMessage.mock.calls.filter(
+        (call) => call[0]?.type === "THROTTLE_APPLIED",
+      );
+      expect(throttleCalls).toHaveLength(1);
+      expect(throttleCalls[0][0].payload.peerId).toBe("peer-rec-hog");
+      const metrics = throttleCalls[0][0].payload.metrics;
+      expect(metrics.length).toBeGreaterThan(0);
+      for (const m of metrics) {
+        expect(Number.isFinite(m.bytesSentPerSec)).toBe(true);
+        expect(m.bytesSentPerSec).not.toBeNaN();
+        for (const rtt of m.rttHistory) {
+          expect(Number.isFinite(rtt)).toBe(true);
+        }
+        for (const ack of m.ackDelayHistory) {
+          expect(Number.isFinite(ack)).toBe(true);
+        }
+      }
+    });
+  });
 });

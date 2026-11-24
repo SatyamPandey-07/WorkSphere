@@ -69,6 +69,7 @@ export function ImageUploadPreviewModal({
 
   const modalRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Load preview source from file or URL
   useEffect(() => {
@@ -94,6 +95,42 @@ export function ImageUploadPreviewModal({
     const { naturalWidth, naturalHeight } = e.currentTarget;
     setDimensions({ width: naturalWidth, height: naturalHeight });
   };
+
+  // Re-draw canvas when image loads, dimensions change, or rotation updates
+  useEffect(() => {
+    if (!previewSrc || !dimensions.width || !dimensions.height) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const { width: targetWidth, height: targetHeight } =
+      calculateRotatedDimensions(dimensions.width, dimensions.height, rotation);
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    let ctx: CanvasRenderingContext2D | null = null;
+    try {
+      ctx = canvas.getContext("2d");
+    } catch {
+      ctx = null;
+    }
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, targetWidth, targetHeight);
+    ctx.save();
+    ctx.translate(targetWidth / 2, targetHeight / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+
+    if (imgRef.current) {
+      ctx.drawImage(
+        imgRef.current,
+        -dimensions.width / 2,
+        -dimensions.height / 2,
+        dimensions.width,
+        dimensions.height
+      );
+    }
+    ctx.restore();
+  }, [previewSrc, dimensions, rotation]);
 
   const handleRotateCw = useCallback(() => {
     setRotation((prev) => (prev + 90) % 360);
@@ -130,7 +167,12 @@ export function ImageUploadPreviewModal({
       const canvas = document.createElement("canvas");
       canvas.width = targetWidth;
       canvas.height = targetHeight;
-      const ctx = canvas.getContext("2d");
+      let ctx: CanvasRenderingContext2D | null = null;
+      try {
+        ctx = canvas.getContext("2d");
+      } catch {
+        ctx = null;
+      }
 
       if (ctx && imgRef.current) {
         ctx.translate(targetWidth / 2, targetHeight / 2);
@@ -145,11 +187,19 @@ export function ImageUploadPreviewModal({
       }
 
       const blob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob(
-          (b) => resolve(b || (imageFile as Blob) || new Blob()),
-          (imageFile as File)?.type || "image/jpeg",
-          0.9
-        );
+        if (typeof canvas.toBlob === "function") {
+          try {
+            canvas.toBlob(
+              (b) => resolve(b || (imageFile as Blob) || new Blob()),
+              (imageFile as File)?.type || "image/jpeg",
+              0.9
+            );
+            return;
+          } catch {
+            // fallback
+          }
+        }
+        resolve((imageFile as Blob) || new Blob());
       });
 
       const fileName =
@@ -326,21 +376,31 @@ export function ImageUploadPreviewModal({
               data-testid="image-preview-container"
               data-swapped={isSwapped ? "true" : "false"}
             >
+              {/* Offscreen image to load natural dimensions and draw onto canvas */}
               <img
                 ref={imgRef}
                 src={previewSrc}
-                alt="Upload preview"
+                alt="Source preview"
                 onLoad={handleImageLoad}
+                className="hidden"
+                data-testid="preview-source-image"
+              />
+              <canvas
+                ref={canvasRef}
+                width={targetWidth || 800}
+                height={targetHeight || 600}
                 style={{
-                  transform: `rotate(${rotation}deg) scale(${zoom})`,
+                  transform: `scale(${zoom})`,
                   transformOrigin: "center center",
                   transition: "transform 150ms ease-out",
-                  maxWidth: isSwapped ? "50vh" : "100%",
-                  maxHeight: isSwapped ? "100%" : "50vh",
+                  maxWidth: "100%",
+                  maxHeight: "50vh",
                   objectFit: "contain",
                 }}
                 className="rounded-lg shadow-md select-none"
-                data-testid="preview-image"
+                data-testid="preview-canvas"
+                data-target-width={targetWidth}
+                data-target-height={targetHeight}
               />
             </div>
           ) : (

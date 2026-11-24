@@ -13,6 +13,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Issue Claiming Guide](./contributing/claiming-issues.md) — issue claiming, assignment limits, and contribution workflow.
 - [GitHub Actions CI Workflow](./contributing/CI_WORKFLOW.md) — CI triggers, build and test jobs, and pull request checks.
 - [Release Process](./contributing/RELEASE_PROCESS.md) — tag-triggered draft releases, review, and publication.
+- [Arabic and Hebrew Right-to-Left (RTL) Localization Contributor Guide](./i18n/RTL_LOCALIZATION_GUIDE.md) — Tailwind 4 logical properties, dynamic `dir="rtl"` root document switching, and translation contribution checklist.
 
 ## API Reference & OpenAPI Specifications
 

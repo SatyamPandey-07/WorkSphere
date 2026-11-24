@@ -150,7 +150,9 @@ A proposal is rejected (the method logs a warning and returns `null`, no vote is
 
 1. `proposal.proposerId` is not `getLeaderForView(proposal.view)`.
 2. `proposal.view` is lower than this node's `currentView` (stale view).
-3. The recomputed SHA-256 of the proposal content does not equal `proposal.blockHash`.
+3. `proposal.view` is greater than `currentView` without certified view-change quorum evidence or exceeds `maxFutureViewWindow`.
+4. `proposal.justifyQC` is present and invalid or its view exceeds `proposal.view`.
+5. The recomputed SHA-256 of the proposal content does not equal `proposal.blockHash`.
 
 On success the node adopts the proposal's `view` and `sequence`, resets its phase to `PREPARE`, and returns a `PREPARE` vote.
 

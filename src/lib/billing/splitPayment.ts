@@ -7,7 +7,43 @@
 
 import crypto from "crypto";
 
-const SPLIT_SECRET = process.env.SPLIT_PAYMENT_SECRET || "worksphere-split-secret-key-2026";
+export const INSECURE_DEFAULT_SECRET = "worksphere-split-secret-key-2026";
+export const MIN_SPLIT_SECRET_LENGTH = 32;
+
+/**
+ * Retrieves and validates the signing secret for split payment tokens.
+ * Fails closed in production if SPLIT_PAYMENT_SECRET is missing, weak, or insecure default.
+ */
+export function getSplitPaymentSecret(): string {
+  const secret = process.env.SPLIT_PAYMENT_SECRET?.trim();
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction) {
+    if (!secret) {
+      throw new Error(
+        "SPLIT_PAYMENT_SECRET environment variable is missing in production. Token operations failed closed.",
+      );
+    }
+    if (secret === INSECURE_DEFAULT_SECRET) {
+      throw new Error(
+        "SPLIT_PAYMENT_SECRET is set to an insecure default value in production. A secure high-entropy secret is required.",
+      );
+    }
+    if (secret.length < MIN_SPLIT_SECRET_LENGTH) {
+      throw new Error(
+        `SPLIT_PAYMENT_SECRET is too short in production (${secret.length} chars). Minimum length is ${MIN_SPLIT_SECRET_LENGTH} characters.`,
+      );
+    }
+    return secret;
+  }
+
+  // Non-production (test/development)
+  if (secret) {
+    return secret;
+  }
+
+  return INSECURE_DEFAULT_SECRET;
+}
 
 export interface GuestShare {
   guestId: string;
@@ -52,7 +88,9 @@ export interface SplitTokenPayload {
 /**
  * Creates a signed, tamper-proof payment token for a guest.
  */
-export function generateSplitPaymentToken(payload: Omit<SplitTokenPayload, "expiresAt"> & { expiresInHours?: number }): string {
+export function generateSplitPaymentToken(
+  payload: Omit<SplitTokenPayload, "expiresAt"> & { expiresInHours?: number },
+): string {
   const expiresInHours = payload.expiresInHours ?? 72;
   const expiresAt = Date.now() + expiresInHours * 60 * 60 * 1000;
 
@@ -71,8 +109,9 @@ export function generateSplitPaymentToken(payload: Omit<SplitTokenPayload, "expi
 
   const json = JSON.stringify(data);
   const base64Data = Buffer.from(json).toString("base64url");
+  const secret = getSplitPaymentSecret();
   const signature = crypto
-    .createHmac("sha256", SPLIT_SECRET)
+    .createHmac("sha256", secret)
     .update(base64Data)
     .digest("base64url");
 
@@ -82,14 +121,17 @@ export function generateSplitPaymentToken(payload: Omit<SplitTokenPayload, "expi
 /**
  * Verifies and decodes a split payment token.
  */
-export function verifySplitPaymentToken(token: string): SplitTokenPayload | null {
+export function verifySplitPaymentToken(
+  token: string,
+): SplitTokenPayload | null {
+  const secret = getSplitPaymentSecret();
   try {
     const parts = token.split(".");
     if (parts.length !== 2) return null;
 
     const [base64Data, signature] = parts;
     const expectedSig = crypto
-      .createHmac("sha256", SPLIT_SECRET)
+      .createHmac("sha256", secret)
       .update(base64Data)
       .digest("base64url");
 
@@ -134,23 +176,36 @@ export function calculateSplitBill({
   time: string;
   totalAmount: number;
   currency?: string;
-  guests: Array<{ id: string; email: string; name?: string; paid?: boolean; customAmount?: number }>;
+  guests: Array<{
+    id: string;
+    email: string;
+    name?: string;
+    paid?: boolean;
+    customAmount?: number;
+  }>;
   origin?: string;
 }): SplitBillSummary {
   const participantCount = guests.length + 1; // Host + Guests
-  const hasCustomAmounts = guests.some((g) => typeof g.customAmount === "number");
+  const hasCustomAmounts = guests.some(
+    (g) => typeof g.customAmount === "number",
+  );
 
   let guestAmounts: number[];
   let hostShare: number;
 
   if (hasCustomAmounts) {
-    guestAmounts = guests.map((g) => g.customAmount ?? Math.round((totalAmount / participantCount) * 100) / 100);
+    guestAmounts = guests.map(
+      (g) =>
+        g.customAmount ??
+        Math.round((totalAmount / participantCount) * 100) / 100,
+    );
     const guestsSum = guestAmounts.reduce((a, b) => a + b, 0);
     hostShare = Math.max(0, Math.round((totalAmount - guestsSum) * 100) / 100);
   } else {
     const evenShare = Math.round((totalAmount / participantCount) * 100) / 100;
     guestAmounts = guests.map(() => evenShare);
-    hostShare = Math.round((totalAmount - evenShare * guests.length) * 100) / 100;
+    hostShare =
+      Math.round((totalAmount - evenShare * guests.length) * 100) / 100;
   }
 
   const guestShares: GuestShare[] = guests.map((guest, idx) => {
@@ -175,7 +230,9 @@ export function calculateSplitBill({
     );
     const whatsapp = `https://wa.me/?text=${waText}`;
 
-    const mailSubj = encodeURIComponent(`Workspace Guest Pass & Split Bill - ${venueName}`);
+    const mailSubj = encodeURIComponent(
+      `Workspace Guest Pass & Split Bill - ${venueName}`,
+    );
     const mailBody = encodeURIComponent(
       `Hi ${guestLabel},\n\nYou've been invited to join a workspace booking at ${venueName} on ${date} at ${time}.\n\nYour split share is $${amount.toFixed(2)} ${currency}.\nClick here to complete payment and unlock your digital Guest Pass with WiFi credentials:\n${paymentUrl}\n\nSee you there!`,
     );

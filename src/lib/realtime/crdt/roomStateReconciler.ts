@@ -56,7 +56,10 @@ export function mergeVectorClocks(a: VectorClock, b: VectorClock): VectorClock {
   return merged;
 }
 
-export function compareVectorClocks(a: VectorClock, b: VectorClock): CausalRelation {
+export function compareVectorClocks(
+  a: VectorClock,
+  b: VectorClock
+): CausalRelation {
   const peers = new Set<string>([...Object.keys(a), ...Object.keys(b)]);
   let hasLess = false;
   let hasGreater = false;
@@ -81,28 +84,32 @@ export function isMutationNewer<TPayload>(
   candidate: CrdtMutation<TPayload>,
   current: CrdtElementEntry<TPayload>
 ): boolean {
-  const relation = compareVectorClocks(candidate.vectorClock, current.vectorClock);
+  const relation = compareVectorClocks(
+    candidate.vectorClock,
+    current.vectorClock
+  );
   if (relation === 'after') return true;
   if (relation === 'before' || relation === 'equal') return false;
-
-  if (candidate.lamport !== current.lamport) {
-    return candidate.lamport > current.lamport;
-  }
 
   const peerCmp = candidate.peerId.localeCompare(current.peerId);
   if (peerCmp !== 0) {
     return peerCmp > 0;
   }
 
+  if (candidate.lamport !== current.lamport) {
+    return candidate.lamport > current.lamport;
+  }
+
   if (candidate.updatedAtMs !== current.updatedAtMs) {
     return candidate.updatedAtMs > current.updatedAtMs;
   }
 
-  if (candidate.op !== current.deleted ? candidate.op === 'remove' : false) {
-    return candidate.op === 'remove';
+  const candidateDeleted = candidate.op === 'remove';
+  if (candidateDeleted !== current.deleted) {
+    return candidateDeleted;
   }
 
-  return candidate.mutationId.localeCompare(current.peerId) > 0;
+  return candidate.mutationId.localeCompare(`${current.peerId}:${current.lamport}`) > 0;
 }
 
 export function createInitialRoomState<TPayload = unknown>(

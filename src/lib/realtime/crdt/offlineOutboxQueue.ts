@@ -25,7 +25,10 @@ export class OfflineOutboxQueue<TPayload = unknown> {
 
   constructor(options: OfflineOutboxOptions<TPayload> = {}) {
     this.storageKey = options.storageKey ?? 'worksphere:crdt_outbox:v1';
-    this.maxSize = Math.max(1, Math.floor(options.maxSize ?? DEFAULT_OUTBOX_MAX_SIZE));
+    this.maxSize = Math.max(
+      1,
+      Math.floor(options.maxSize ?? DEFAULT_OUTBOX_MAX_SIZE)
+    );
     this.storage =
       options.storage !== undefined
         ? options.storage

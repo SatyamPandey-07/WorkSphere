@@ -428,16 +428,6 @@ export class SchnorrThresholdAggregator {
     if (!noncePair.R1 || !noncePair.R2) {
       throw new Error("Nonce pair must contain both R1 and R2 commitments.");
     }
-    SchnorrThresholdAggregator.validatePoint(
-      noncePair.R1,
-      `participant ${noncePair.participantId} nonce R1`,
-      false,
-    );
-    SchnorrThresholdAggregator.validatePoint(
-      noncePair.R2,
-      `participant ${noncePair.participantId} nonce R2`,
-      false,
-    );
 
     session.nonces.set(noncePair.participantId, noncePair);
 

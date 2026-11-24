@@ -128,11 +128,11 @@ export async function POST(req: NextRequest, context: RouteContext) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const rawAmount =
-      body.totalAmount === undefined ? 30 : Number(body.totalAmount);
-    if (!Number.isFinite(rawAmount) || rawAmount <= 0 || rawAmount > 100000) {
+
+    const parseResult = splitBillBodySchema.safeParse(body);
+    if (!parseResult.success) {
       return NextResponse.json(
-        { error: "Invalid totalAmount" },
+        { error: "Invalid request payload", details: parseResult.error.errors },
         { status: 400 },
       );
     }
@@ -144,12 +144,30 @@ export async function POST(req: NextRequest, context: RouteContext) {
     } = parseResult.data;
 
     const totalAmount = Math.round(rawAmount * 100) / 100;
-    const customGuestAmounts: Record<string, number> =
-      body.customGuestAmounts || {};
-    const currency =
-      typeof body.currency === "string" && /^[A-Z]{3}$/.test(body.currency)
-        ? body.currency
-        : "USD";
+
+    const validGuestIds = new Set(booking.guests.map((g) => g.id));
+    for (const guestId of Object.keys(customGuestAmounts)) {
+      if (!validGuestIds.has(guestId)) {
+        return NextResponse.json(
+          { error: `Unknown guest ID: ${guestId}` },
+          { status: 400 },
+        );
+      }
+    }
+
+    const totalCustomAllocationCents = Object.values(customGuestAmounts).reduce(
+      (sum, amt) => sum + Math.round(amt * 100),
+      0,
+    );
+    const totalCents = Math.round(totalAmount * 100);
+    if (totalCustomAllocationCents > totalCents) {
+      return NextResponse.json(
+        {
+          error: `Total custom guest amounts (${totalCustomAllocationCents / 100}) exceed the total bill amount (${totalAmount})`,
+        },
+        { status: 400 },
+      );
+    }
 
     const url = new URL(req.url);
     const origin = url.origin;

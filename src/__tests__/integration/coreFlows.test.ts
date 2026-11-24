@@ -505,7 +505,12 @@ describeIfDb("core flows (real database)", () => {
         );
 
         expect(results).toEqual([
-          { endpointId: endpoint.id, status: "SUCCESS", statusCode: 204 },
+          {
+            channel: "webhook",
+            endpointId: endpoint.id,
+            status: "SUCCESS",
+            statusCode: 204,
+          },
         ]);
         expect(received).toHaveLength(1);
         const { headers, body } = received[0];

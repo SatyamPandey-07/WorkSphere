@@ -118,7 +118,7 @@ const SPLIT_SECRET = process.env.SPLIT_PAYMENT_SECRET || "<in-source-fallback>";
 
 > [!WARNING]
 > **Production Secret Requirement:**  
-> The current implementation falls back to an in-source default key when `SPLIT_PAYMENT_SECRET` is absent from environment variables, rather than failing closed. Production deployments **must** explicitly configure a unique, high-entropy `SPLIT_PAYMENT_SECRET` in their environment configuration to protect token signatures against tampering.
+> The system enforces a fail-closed policy when `SPLIT_PAYMENT_SECRET` is absent, weak (under 32 characters), or configured to known insecure defaults in production environments (`NODE_ENV === "production"`). Production deployments must configure a unique, high-entropy `SPLIT_PAYMENT_SECRET` of at least 32 characters in their environment configuration.
 
 ### Operational Considerations
 

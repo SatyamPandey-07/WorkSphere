@@ -194,7 +194,61 @@ export const venueCreateSchema = z.object({
   dogFriendly: z.boolean().optional(),
   catsAllowed: z.boolean().optional(),
   musicStyle: z.string().optional(),
+  placeId: z
+    .string()
+    .trim()
+    .min(1, "placeId cannot be empty")
+    .max(255, "placeId cannot exceed 255 characters")
+    .optional(),
+  rating: z
+    .number()
+    .min(0, "Rating must be between 0 and 5")
+    .max(5, "Rating must be between 0 and 5")
+    .optional()
+    .nullable(),
+  imageUrl: z
+    .string()
+    .trim()
+    .url("Invalid image URL")
+    .max(2048, "Image URL cannot exceed 2048 characters")
+    .refine(
+      (url) => /^https?:\/\//i.test(url),
+      "Image URL must use http or https protocol",
+    )
+    .optional()
+    .nullable()
+    .or(z.literal("")),
 });
+
+export const venueSupplementalMetadataSchema = z.object({
+  placeId: z
+    .string({ required_error: "placeId is required" })
+    .trim()
+    .min(1, "placeId is required")
+    .max(255, "placeId cannot exceed 255 characters"),
+  rating: z
+    .number()
+    .min(0, "Rating must be between 0 and 5")
+    .max(5, "Rating must be between 0 and 5")
+    .optional()
+    .nullable(),
+  imageUrl: z
+    .string()
+    .trim()
+    .url("Invalid image URL")
+    .max(2048, "Image URL cannot exceed 2048 characters")
+    .refine(
+      (url) => /^https?:\/\//i.test(url),
+      "Image URL must use http or https protocol",
+    )
+    .optional()
+    .nullable()
+    .or(z.literal("")),
+});
+
+export type VenueSupplementalMetadata = z.infer<
+  typeof venueSupplementalMetadataSchema
+>;
 
 export const venueRatingSchema = z.object({
   wifiQuality: z.number().min(1).max(5),

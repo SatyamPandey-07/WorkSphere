@@ -355,7 +355,9 @@ export function generateMultiModalRouteCards(
   }
 
   return cards;
+}
 
+/**
  * Resilient eco-routing engine with fallback to direct Haversine distance
  * and walking time estimation when external routing services (OSRM, Valhalla, etc.)
  * return 503, 504, network timeouts, or errors.
@@ -364,14 +366,14 @@ export function generateMultiModalRouteCards(
  * 5, 10, and 15-minute presets.
  */
 
-import { haversineKm, isValidCoordinate } from '@/lib/distance';
+import { haversineKm, isValidCoordinate } from "@/lib/distance";
 
 export interface RouteCoordinates {
   lat: number;
   lng: number;
 }
 
-export type RoutingProfile = 'walking' | 'cycling' | 'driving';
+export type RoutingProfile = "walking" | "cycling" | "driving";
 
 export interface EcoRoutingOptions {
   profile?: RoutingProfile;
@@ -403,7 +405,9 @@ export const ISOCHRONE_WALKING_SPEED_KMH = 5.0;
  * Travel-time presets supported by the isochrone generator (in minutes).
  */
 export type IsochronePresetMinutes = 5 | 10 | 15;
-export const ISOCHRONE_PRESETS: readonly IsochronePresetMinutes[] = [5, 10, 15] as const;
+export const ISOCHRONE_PRESETS: readonly IsochronePresetMinutes[] = [
+  5, 10, 15,
+] as const;
 
 export interface IsochroneOptions {
   walkingSpeedKmH?: number; // Defaults to 5.0 km/h
@@ -416,9 +420,9 @@ export interface IsochronePolygon {
   radiusMeters: number;
   coordinates: Array<{ lat: number; lng: number }>;
   geoJson: {
-    type: 'Feature';
+    type: "Feature";
     geometry: {
-      type: 'Polygon';
+      type: "Polygon";
       coordinates: number[][][]; // GeoJSON format: [[[lng, lat], ...]]
     };
     properties: {
@@ -434,12 +438,12 @@ export interface IsochronePolygon {
  * Validates coordinate pair.
  */
 export function areValidCoordinates(
-  coord?: RouteCoordinates | null
+  coord?: RouteCoordinates | null,
 ): coord is RouteCoordinates {
-  if (!coord || typeof coord !== 'object') return false;
+  if (!coord || typeof coord !== "object") return false;
   return (
-    typeof coord.lat === 'number' &&
-    typeof coord.lng === 'number' &&
+    typeof coord.lat === "number" &&
+    typeof coord.lng === "number" &&
     isValidCoordinate(coord.lat, coord.lng)
   );
 }
@@ -451,9 +455,9 @@ export function areValidCoordinates(
 export function calculateDirectHaversineFallback(
   start: RouteCoordinates,
   end: RouteCoordinates,
-  profile: RoutingProfile = 'walking',
+  profile: RoutingProfile = "walking",
   walkingSpeedKmH: number = DEFAULT_WALKING_SPEED_KMH,
-  fallbackReason: string = 'ROUTING_SERVICE_UNAVAILABLE'
+  fallbackReason: string = "ROUTING_SERVICE_UNAVAILABLE",
 ): EcoRouteResult {
   const distanceKm = haversineKm(start.lat, start.lng, end.lat, end.lng);
   const distanceMeters = Math.round(distanceKm * 1000);
@@ -461,7 +465,8 @@ export function calculateDirectHaversineFallback(
   // Speed in m/s = (km/h * 1000) / 3600 = km/h / 3.6
   // Duration in seconds = distanceMeters / (speedKmH / 3.6)
   const speedMps = (walkingSpeedKmH * 1000) / 3600;
-  const durationSeconds = speedMps > 0 ? Math.round(distanceMeters / speedMps) : 0;
+  const durationSeconds =
+    speedMps > 0 ? Math.round(distanceMeters / speedMps) : 0;
 
   return {
     path: [
@@ -484,18 +489,21 @@ export function calculateDirectHaversineFallback(
 export async function calculateEcoRoute(
   start: RouteCoordinates,
   end: RouteCoordinates,
-  options: EcoRoutingOptions = {}
+  options: EcoRoutingOptions = {},
 ): Promise<EcoRouteResult> {
   const {
-    profile = 'walking',
+    profile = "walking",
     timeoutMs = 5000,
-    baseUrl = process.env.NEXT_PUBLIC_OSRM_URL || 'https://router.project-osrm.org',
+    baseUrl = process.env.NEXT_PUBLIC_OSRM_URL ||
+      "https://router.project-osrm.org",
     walkingSpeedKmH = DEFAULT_WALKING_SPEED_KMH,
   } = options;
 
   // 1. Validate coordinates
   if (!areValidCoordinates(start) || !areValidCoordinates(end)) {
-    throw new Error('Invalid or missing coordinates provided for eco-route calculation.');
+    throw new Error(
+      "Invalid or missing coordinates provided for eco-route calculation.",
+    );
   }
 
   // 2. Trivial case: start equals destination
@@ -513,13 +521,14 @@ export async function calculateEcoRoute(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  const osrmProfile = profile === 'walking' ? 'foot' : profile === 'cycling' ? 'bicycle' : 'car';
+  const osrmProfile =
+    profile === "walking" ? "foot" : profile === "cycling" ? "bicycle" : "car";
   const url = `${baseUrl}/route/v1/${osrmProfile}/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
 
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: 'application/json' },
+      headers: { Accept: "application/json" },
     });
 
     clearTimeout(timeoutId);
@@ -527,14 +536,14 @@ export async function calculateEcoRoute(
     if (!response.ok) {
       const reason =
         response.status === 503
-          ? 'SERVICE_UNAVAILABLE_503'
+          ? "SERVICE_UNAVAILABLE_503"
           : response.status === 504
-          ? 'GATEWAY_TIMEOUT_504'
-          : `HTTP_ERROR_${response.status}`;
+            ? "GATEWAY_TIMEOUT_504"
+            : `HTTP_ERROR_${response.status}`;
 
       console.warn(
         `[ecoRoutingEngine] Routing provider returned status ${response.status}. Falling back to Haversine direct estimate.`,
-        { status: response.status, url: baseUrl }
+        { status: response.status, url: baseUrl },
       );
 
       return calculateDirectHaversineFallback(
@@ -542,7 +551,7 @@ export async function calculateEcoRoute(
         end,
         profile,
         walkingSpeedKmH,
-        reason
+        reason,
       );
     }
 
@@ -550,14 +559,14 @@ export async function calculateEcoRoute(
 
     if (!data || !Array.isArray(data.routes) || data.routes.length === 0) {
       console.warn(
-        '[ecoRoutingEngine] Routing provider returned no routes. Falling back to Haversine estimate.'
+        "[ecoRoutingEngine] Routing provider returned no routes. Falling back to Haversine estimate.",
       );
       return calculateDirectHaversineFallback(
         start,
         end,
         profile,
         walkingSpeedKmH,
-        'NO_ROUTES_RETURNED'
+        "NO_ROUTES_RETURNED",
       );
     }
 
@@ -569,7 +578,13 @@ export async function calculateEcoRoute(
     }));
 
     return {
-      path: path.length > 0 ? path : [{ lat: start.lat, lng: start.lng }, { lat: end.lat, lng: end.lng }],
+      path:
+        path.length > 0
+          ? path
+          : [
+              { lat: start.lat, lng: start.lng },
+              { lat: end.lat, lng: end.lng },
+            ],
       distanceMeters: Math.round(primaryRoute.distance ?? 0),
       durationSeconds: Math.round(primaryRoute.duration ?? 0),
       isEstimated: false,
@@ -578,11 +593,12 @@ export async function calculateEcoRoute(
   } catch (error: any) {
     clearTimeout(timeoutId);
 
-    const isTimeout = error?.name === 'AbortError' || error?.message?.includes('timeout');
-    const fallbackReason = isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR';
+    const isTimeout =
+      error?.name === "AbortError" || error?.message?.includes("timeout");
+    const fallbackReason = isTimeout ? "TIMEOUT" : "NETWORK_ERROR";
 
     console.warn(
-      `[ecoRoutingEngine] Routing provider failure (${fallbackReason}): ${error?.message || error}. Falling back to Haversine direct estimate.`
+      `[ecoRoutingEngine] Routing provider failure (${fallbackReason}): ${error?.message || error}. Falling back to Haversine direct estimate.`,
     );
 
     return calculateDirectHaversineFallback(
@@ -590,7 +606,7 @@ export async function calculateEcoRoute(
       end,
       profile,
       walkingSpeedKmH,
-      fallbackReason
+      fallbackReason,
     );
   }
 }
@@ -611,22 +627,27 @@ export async function calculateEcoRoute(
 export function generateWalkingIsochrone(
   origin: RouteCoordinates | null | undefined,
   minutes: number,
-  options: IsochroneOptions = {}
+  options: IsochroneOptions = {},
 ): IsochronePolygon | null {
   if (!areValidCoordinates(origin)) {
     return null;
   }
 
-  if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) {
+  if (
+    typeof minutes !== "number" ||
+    !Number.isFinite(minutes) ||
+    minutes <= 0
+  ) {
     return null;
   }
 
-  const {
-    walkingSpeedKmH = ISOCHRONE_WALKING_SPEED_KMH,
-    steps = 36,
-  } = options;
+  const { walkingSpeedKmH = ISOCHRONE_WALKING_SPEED_KMH, steps = 36 } = options;
 
-  if (typeof walkingSpeedKmH !== 'number' || !Number.isFinite(walkingSpeedKmH) || walkingSpeedKmH <= 0) {
+  if (
+    typeof walkingSpeedKmH !== "number" ||
+    !Number.isFinite(walkingSpeedKmH) ||
+    walkingSpeedKmH <= 0
+  ) {
     return null;
   }
 
@@ -651,20 +672,20 @@ export function generateWalkingIsochrone(
 
     const pointLatRad = Math.asin(
       Math.sin(latRad) * Math.cos(angularDistance) +
-        Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearing)
+        Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearing),
     );
 
     const pointLngRad =
       lngRad +
       Math.atan2(
         Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latRad),
-        Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(pointLatRad)
+        Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(pointLatRad),
       );
 
     const pointLat = Number(toDeg(pointLatRad).toFixed(6));
     // Normalize longitude between -180 and 180
     let pointLng = toDeg(pointLngRad);
-    pointLng = ((pointLng + 180) % 360 + 360) % 360 - 180;
+    pointLng = ((((pointLng + 180) % 360) + 360) % 360) - 180;
     pointLng = Number(pointLng.toFixed(6));
 
     coordinates.push({ lat: pointLat, lng: pointLng });
@@ -679,9 +700,9 @@ export function generateWalkingIsochrone(
     radiusMeters,
     coordinates,
     geoJson: {
-      type: 'Feature',
+      type: "Feature",
       geometry: {
-        type: 'Polygon',
+        type: "Polygon",
         coordinates: [geoJsonCoordinates],
       },
       properties: {
@@ -691,5 +712,4 @@ export function generateWalkingIsochrone(
       },
     },
   };
-
 }

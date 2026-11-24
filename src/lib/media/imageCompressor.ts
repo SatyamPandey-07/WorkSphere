@@ -1,4 +1,3 @@
-
 /**
  * Client-side image compression and transformation utility for P2P mesh WebRTC uploads.
  * Handles dimension calculation, rotation, cropping, and payload size estimation.
@@ -334,15 +333,15 @@ export async function estimateCompressedSize(
   const result = await compressImage(source, options);
   return result.sizeBytes;
 }
-=======
+
 export interface ImageCompressionOptions {
   maxDimension?: number;
   maxBytes?: number;
   initialQuality?: number;
   minQuality?: number;
   qualityStep?: number;
-  preferredMimeType?: 'image/webp' | 'image/jpeg';
-  fallbackMimeType?: 'image/jpeg';
+  preferredMimeType?: "image/webp" | "image/jpeg";
+  fallbackMimeType?: "image/jpeg";
 }
 
 export interface ImageCompressionResult {
@@ -362,7 +361,7 @@ export const DEFAULT_IMAGE_QUALITY = 0.8;
 export function calculateScaledDimensions(
   width: number,
   height: number,
-  maxDimension = MAX_IMAGE_DIMENSION
+  maxDimension = MAX_IMAGE_DIMENSION,
 ): { width: number; height: number } {
   if (width <= 0 || height <= 0) {
     return { width: 1, height: 1 };
@@ -382,8 +381,8 @@ export function calculateScaledDimensions(
 }
 
 function replaceExtension(filename: string, mimeType: string): string {
-  const ext = mimeType === 'image/webp' ? '.webp' : '.jpg';
-  const dotIndex = filename.lastIndexOf('.');
+  const ext = mimeType === "image/webp" ? ".webp" : ".jpg";
+  const dotIndex = filename.lastIndexOf(".");
   const base = dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
   return `${base}${ext}`;
 }
@@ -391,9 +390,9 @@ function replaceExtension(filename: string, mimeType: string): string {
 async function canvasToBlobAsync(
   canvas: HTMLCanvasElement,
   mimeType: string,
-  quality: number
+  quality: number,
 ): Promise<Blob | null> {
-  if (typeof canvas.toBlob !== 'function') {
+  if (typeof canvas.toBlob !== "function") {
     return null;
   }
   return new Promise<Blob | null>((resolve) => {
@@ -403,14 +402,14 @@ async function canvasToBlobAsync(
 
 export async function compressImageFile(
   file: File,
-  options: ImageCompressionOptions = {}
+  options: ImageCompressionOptions = {},
 ): Promise<ImageCompressionResult> {
   const originalSize = file.size;
-  if (!file.type || !file.type.startsWith('image/')) {
+  if (!file.type || !file.type.startsWith("image/")) {
     return {
       file,
       compressed: false,
-      mimeType: file.type || 'application/octet-stream',
+      mimeType: file.type || "application/octet-stream",
       width: 0,
       height: 0,
       originalSize,
@@ -418,7 +417,10 @@ export async function compressImageFile(
     };
   }
 
-  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') {
+  if (
+    typeof createImageBitmap !== "function" ||
+    typeof document === "undefined"
+  ) {
     return {
       file,
       compressed: false,
@@ -435,19 +437,19 @@ export async function compressImageFile(
   const initialQuality = options.initialQuality ?? DEFAULT_IMAGE_QUALITY;
   const minQuality = options.minQuality ?? 0.45;
   const qualityStep = options.qualityStep ?? 0.1;
-  const preferredMimeType = options.preferredMimeType ?? 'image/webp';
-  const fallbackMimeType = options.fallbackMimeType ?? 'image/jpeg';
+  const preferredMimeType = options.preferredMimeType ?? "image/webp";
+  const fallbackMimeType = options.fallbackMimeType ?? "image/jpeg";
 
   const bitmap = await createImageBitmap(file);
   try {
     let targetDims = calculateScaledDimensions(
       bitmap.width,
       bitmap.height,
-      maxDimension
+      maxDimension,
     );
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
     if (!ctx) {
       return {
         file,
@@ -499,7 +501,7 @@ export async function compressImageFile(
       targetDims = calculateScaledDimensions(
         bitmap.width,
         bitmap.height,
-        currentMaxDim
+        currentMaxDim,
       );
       canvas.width = targetDims.width;
       canvas.height = targetDims.height;
@@ -508,7 +510,7 @@ export async function compressImageFile(
       const resizedBlob = await canvasToBlobAsync(
         canvas,
         activeMime,
-        Math.max(minQuality, initialQuality - 0.1)
+        Math.max(minQuality, initialQuality - 0.1),
       );
       if (resizedBlob && resizedBlob.size < bestBlob.size) {
         bestBlob = resizedBlob;
@@ -523,7 +525,7 @@ export async function compressImageFile(
       {
         type: activeMime,
         lastModified: Date.now(),
-      }
+      },
     );
 
     return {
@@ -536,9 +538,8 @@ export async function compressImageFile(
       outputSize: outputFile.size,
     };
   } finally {
-    if (typeof bitmap.close === 'function') {
+    if (typeof bitmap.close === "function") {
       bitmap.close();
     }
   }
 }
-

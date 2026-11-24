@@ -1,6 +1,5 @@
 "use client";
 
-
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Clock,
@@ -15,27 +14,11 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useRateLimit } from "@/hooks/useRateLimit";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { markRoomAsRead } from "@/lib/chat/unreadTracker";
 import {
   ImageUploadPreviewModal,
   ImageUploadPayload,
 } from "./ImageUploadPreviewModal";
-
-import React from "react";
-import {
-  ChatInput as BaseChatInput,
-  type Venue,
-  type ClientVenue,
-  type Message,
-  VenueChatCard,
-  VenueListings,
-  MessageList,
-} from "./ChatMessages";
-import {
-  getStoredUnreadCount,
-  markRoomAsRead,
-  setStoredUnreadCount,
-} from "@/lib/chat/unreadTracker";
-
 
 export interface ChatInputProps {
   input: string;
@@ -44,7 +27,9 @@ export interface ChatInputProps {
   onSubmit: (e: React.FormEvent) => void;
   distanceRadius?: number;
   onDistanceChange?: (radius: number) => void;
-
+  roomId?: string | null;
+  userId?: string | null;
+  onFocus?: () => void;
   onImageUpload?: (payload: ImageUploadPayload) => void | Promise<void>;
 }
 
@@ -55,6 +40,9 @@ export function ChatInput({
   onSubmit,
   distanceRadius = 0,
   onDistanceChange,
+  roomId = "default",
+  userId = null,
+  onFocus,
   onImageUpload,
 }: ChatInputProps) {
   const safeInput = input || "";
@@ -394,7 +382,13 @@ export function ChatInput({
             type="text"
             value={safeInput}
             onChange={(e) => onInputChange(e.target.value ?? "")}
-            onFocus={() => setIsFocused(true)}
+            onFocus={() => {
+              setIsFocused(true);
+              if (roomId) {
+                markRoomAsRead(roomId, userId);
+              }
+              onFocus?.();
+            }}
             onBlur={() => setIsFocused(false)}
             placeholder={
               isListening ? "Listening…" : "Where's the focus mode hotspot?"
@@ -477,51 +471,5 @@ export function ChatInput({
     </div>
   );
 }
-=======
-  roomId?: string | null;
-  userId?: string | null;
-  onFocus?: () => void;
-}
-
-/**
- * ChatInput
- *
- * Wraps BaseChatInput and provides room unread state clearing whenever
- * the input or container gains focus.
- */
-export function ChatInput({
-  roomId = "default",
-  userId = null,
-  onFocus,
-  ...props
-}: ChatInputProps) {
-  const activeRoom = roomId || "default";
-
-  const handleFocus = () => {
-    // Automatically clear badge count when user focuses the chat input
-    markRoomAsRead(activeRoom, userId);
-    onFocus?.();
-  };
-
-  return (
-    <div onFocus={handleFocus} data-testid="chat-input-wrapper">
-      <BaseChatInput {...props} />
-    </div>
-  );
-}
-
-export {
-  BaseChatInput,
-  type Venue,
-  type ClientVenue,
-  type Message,
-  VenueChatCard,
-  VenueListings,
-  MessageList,
-  getStoredUnreadCount,
-  markRoomAsRead,
-  setStoredUnreadCount,
-};
 
 export default ChatInput;
-

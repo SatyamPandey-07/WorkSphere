@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-146%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-147%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-146-active-rockstars"><b>👥 Contributors (146)</b></a> •
+  <a href="#-contributors-147-active-rockstars"><b>👥 Contributors (147)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (146 Active Rockstars)
+### 🚀 Contributors (147 Active Rockstars)
 
-A massive thank you to all **146 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **147 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -1003,6 +1003,14 @@ A massive thank you to all **146 brilliant contributors and bots** building Work
       </a>
     </td>
   </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/priyanshiy1312-ui">
+        <img src="https://avatars.githubusercontent.com/u/285353667?v=4" width="55px;" height="55px;" alt="priyanshiy1312-ui" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>priyanshiy1312-ui</b></sub>
+      </a>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -1040,6 +1048,12 @@ A massive thank you to all **146 brilliant contributors and bots** building Work
 ## ✨ Features
 
 ### ⚡ Cutting-Edge Platform & Telemetry Innovations (NEW)
+
+- **Dynamic Isochrone Walking Polygons**: Real-time 5/10/15-minute walking distance isochrone boundaries with PostGIS spatial integration and travel-time contour rendering (`src/lib/routing/ecoRoutingEngine.ts`).
+- **Real-Time Timezone-Aware Venue Opening Status**: Live opening status badges calculating venue open, closed, and closing-soon states according to the venue's local timezone rules (`src/lib/venues/hours.ts`).
+- **WiFi Ping Jitter & Stability Metrics**: Real-time packet variance and stability gauge tracking network jitter and latency spikes on nomadic connections (`src/lib/wifi/jitter.ts`).
+- **Collaborative Image Upload Preview Modal**: Pre-upload thumbnail inspection dialog with rotation, aspect-ratio cropping, and byte size estimation for remote workspaces (`src/components/chat/ImageUploadPreviewModal.tsx`).
+- **Hexagonal Venue Spatial Clustering**: High-performance H3/hexagonal geospatial clustering for dense urban workspace maps (`src/lib/geospatial/spatialVenueClusterer.ts`).
 
 - **Client-Side Core Web Vitals Reporter**: Real-time performance telemetry tracking CLS, INP, LCP, FCP, and TTFB directly reporting to `/api/telemetry/vitals` with configurable sampling rates and privacy consent guards (`src/lib/telemetry/webVitalsReporter.ts`, `src/components/analytics/WebVitalsReporter.tsx`).
 - **WebRTC TURN Relay Dynamic Bandwidth Throttling**: Automatic throughput regulation and dynamic relay bandwidth throttling across peer-to-peer data channels to mitigate packet loss on constrained mobile uplinks (`src/lib/realtime/webrtc/meshConnection.ts`).

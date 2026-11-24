@@ -12,3 +12,4 @@ export * from "./storageStats";
 export * from "./SyncQueueManager";
 export * from "./SeatSyncCoordinator";
 export * from "./tombstoneCompactor";
+export * from "./syncQueue";

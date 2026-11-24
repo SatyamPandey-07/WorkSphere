@@ -30,6 +30,8 @@ import {
   BadgeCheck,
   Music,
   Sunset,
+  Monitor,
+  ArrowUpDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
@@ -1190,6 +1192,38 @@ export function VenueCard({
               </div>
             )}
 
+            {/* Standing Desk Tag (#9759) */}
+            {((venue as any).standing_desks || (venue as any).hasStandingDesks || (venue.amenities as any)?.standing_desks) && (
+              <div
+                data-testid="amenity-badge-standing-desks"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title="Standing Desk"
+                >
+                  Standing Desk
+                </span>
+              </div>
+            )}
+
+            {/* External Monitor Tag (#9759) */}
+            {((venue as any).external_monitors || (venue as any).hasExternalMonitors || (venue.amenities as any)?.external_monitors) && (
+              <div
+                data-testid="amenity-badge-external-monitors"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+              >
+                <Monitor className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title="External Monitor (4K/USB-C)"
+                >
+                  External Monitor
+                </span>
+              </div>
+            )}
+
             {/* Strict Silent Rooms Tag */}
             {isLibrary && !voteMetrics.silentRoom.hidden && (
               <div
@@ -1594,7 +1628,7 @@ export function VenueCard({
         </div>
 
         {/* Amenities */}
-        <div className="flex flex-wrap gap-1.5 overflow-hidden mb-4">
+        <div className="flex flex-wrap items-center gap-1.5 overflow-hidden mb-4">
           {venue.wifiQuality && venue.wifiQuality >= 3 && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Wifi className="w-4 h-4 text-blue-600 shrink-0" />

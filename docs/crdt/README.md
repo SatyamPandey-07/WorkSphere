@@ -16,6 +16,8 @@ collaborative data layer. All documents describe the Yjs 13.6.33 /
 | [`whiteboard-architecture.md`](./whiteboard-architecture.md)                           | Architecture         | Canvas schema, connection lifecycle, snapshot persistence, and the `gc: false` server configuration.                                                           |
 | [`CRDT_DATACHANNEL_FRAMING.md`](./CRDT_DATACHANNEL_FRAMING.md)                         | Protocol             | Binary framing for CRDT updates sent over WebRTC data channels.                                                                                                |
 
+| [`STATE_VECTOR_CHECKSUM_PROTOCOL.md`](./STATE_VECTOR_CHECKSUM_PROTOCOL.md) | Protocol | SHA-256 state-vector digest caching, peer reconnect invalidation, mismatch recovery, and test guidance. |
+
 ## Reading order
 
 1. [`whiteboard-architecture.md`](./whiteboard-architecture.md) for the system

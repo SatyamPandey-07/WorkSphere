@@ -1,83 +1,99 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import {
-  buildSignInRedirectUrl,
-  isAuthRoute,
-  sanitizeRedirectUrl,
-} from '@/lib/auth/redirectSanitizer';
+﻿import { NextRequest, NextResponse } from 'next/server';
 
-const isPublicRoute = createRouteMatcher([
-  '/',
-  '/sign-in(.*)',
-  '/sign-up(.*)',
-  '/sso-callback(.*)',
-  '/offline',
-  '/api/health(.*)',
-  '/api/webhooks/(.*)',
-  '/api/venues/check-in/iot',
-  '/api/venues/search(.*)',
-]);
+export function generateCspNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
 
-const isProtectedWorkspaceRoute = createRouteMatcher([
-  '/workspace(.*)',
-  '/dashboard(.*)',
-  '/admin(.*)',
-  '/user-profile(.*)',
-  '/analytics/nomad-tax(.*)',
-]);
-
-export default clerkMiddleware(async (auth, req: NextRequest) => {
-  const { pathname, search } = req.nextUrl;
-
-  // 1. If the user is already on `/sign-in` or `/sign-up` (for example, when third-party
-  //    or session cookies are blocked in incognito/Safari), NEVER redirect to `/sign-in` again.
-  //    Only normalize the `redirect_url` param if it is recursively nested or unsafe.
-  if (isAuthRoute(pathname)) {
-    const rawRedirect = req.nextUrl.searchParams.get('redirect_url');
-    if (rawRedirect) {
-      const sanitized = sanitizeRedirectUrl(rawRedirect);
-      if (sanitized !== rawRedirect) {
-        const cleanedUrl = new URL(pathname, req.nextUrl.origin);
-        req.nextUrl.searchParams.forEach((value, key) => {
-          if (key !== 'redirect_url') {
-            cleanedUrl.searchParams.set(key, value);
-          }
-        });
-        cleanedUrl.searchParams.set('redirect_url', sanitized);
-        return NextResponse.redirect(cleanedUrl);
-      }
-    }
-    return NextResponse.next();
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
   }
+  return btoa(binary);
+}
 
-  // 2. Allow public routes through without auth enforcement
-  if (isPublicRoute(req) && !isProtectedWorkspaceRoute(req)) {
-    return NextResponse.next();
-  }
+export function buildContentSecurityPolicy(nonce: string): string {
+  const directives: Record<string, string[]> = {
+    'default-src': ["'self'"],
+    'script-src': [
+      "'self'",
+      `'nonce-${nonce}'`,
+      "'strict-dynamic'",
+      'https://*.clerk.accounts.dev',
+      'https://*.clerk.com',
+      'https://api.mapbox.com',
+      'https://events.mapbox.com',
+    ],
+    'style-src': [
+      "'self'",
+      `'nonce-${nonce}'`,
+      "'unsafe-inline'",
+      'https://api.mapbox.com',
+    ],
+    'img-src': [
+      "'self'",
+      'data:',
+      'blob:',
+      'https://images.unsplash.com',
+      'https://res.cloudinary.com',
+      'https://img.clerk.com',
+      'https://*.clerk.com',
+      'https://*.mapbox.com',
+    ],
+    'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
+    'connect-src': [
+      "'self'",
+      'https://*.clerk.accounts.dev',
+      'https://*.clerk.com',
+      'https://api.mapbox.com',
+      'https://events.mapbox.com',
+      'https://*.tiles.mapbox.com',
+      'https://api.devnet.solana.com',
+      'https://api.mainnet-beta.solana.com',
+      'wss://api.devnet.solana.com',
+      'wss://api.mainnet-beta.solana.com',
+    ],
+    'worker-src': ["'self'", 'blob:'],
+    'frame-src': [
+      "'self'",
+      'https://*.clerk.accounts.dev',
+      'https://*.clerk.com',
+    ],
+    'object-src': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'"],
+    'frame-ancestors': ["'none'"],
+    'upgrade-insecure-requests': [],
+  };
 
-  // 3. Enforce authentication on protected routes with loop-safe single-level `redirect_url`
-  const session = await auth();
-  if (!session.userId && (isProtectedWorkspaceRoute(req) || !isPublicRoute(req))) {
-    const signInUrl = buildSignInRedirectUrl(req.nextUrl, '/sign-in');
+  return Object.entries(directives)
+    .map(([key, values]) => (values.length > 0 ? `${key} ${values.join(' ')}` : key))
+    .join('; ');
+}
 
-    // Guard against no-op self-redirect loops
-    const currentFull = `${pathname}${search}`;
-    const targetFull = `${signInUrl.pathname}${signInUrl.search}`;
-    if (currentFull === targetFull) {
-      return NextResponse.next();
-    }
+export function middleware(request: NextRequest): NextResponse {
+  const nonce = generateCspNonce();
+  const cspHeader = buildContentSecurityPolicy(nonce);
 
-    return NextResponse.redirect(signInUrl);
-  }
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-nonce', nonce);
+  requestHeaders.set('Content-Security-Policy', cspHeader);
 
-  return NextResponse.next();
-});
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
+
+  response.headers.set('x-nonce', nonce);
+  response.headers.set('Content-Security-Policy', cspHeader);
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  return response;
+}
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files
-    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest|wasm)).*)',
-    // Always run for API routes
-    '/(api|trpc)(.*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

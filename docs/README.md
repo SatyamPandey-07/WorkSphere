@@ -57,6 +57,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Redis Keyspace](./database/REDIS_KEYSPACE.md) — Redis keyspace, TTL, and invalidation guidance.
 - [Prisma Troubleshooting](./troubleshooting/prisma.md) — common Prisma and database troubleshooting guidance.
 - [Spatial Geo-Query Guide](./search/SPATIAL_GEO_QUERY_GUIDE.md) — coordinate validation, bounding-box clamping, Haversine versus geodesic distance, PostGIS `ST_DWithin` radius queries, and GiST index behavior.
+- [PostGIS Spherical Bounding Box Index Tuning Guide](./geo/POSTGIS_INDEX_TUNING.md) — GiST indexing on geography(Point, 4326), ST_DWithin vs ST_DistanceSphere comparison, <-> KNN spatial search, and EXPLAIN ANALYZE tuning.
 
 ## Security & Cryptography
 

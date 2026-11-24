@@ -115,6 +115,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Playwright Testing Guide](./testing/PLAYWRIGHT_GUIDE.md) — end-to-end testing for booking workflows.
 - [End-to-End Playwright Guide](./testing/e2e-playwright.md) — browser-based end-to-end testing documentation.
+- [Playwright PWA Offline Testing Runbook](./testing/PLAYWRIGHT_OFFLINE_TESTING.md) — network emulation (`context.setOffline`), IndexedDB draft inspection, and Service Worker cache verification.
 - [Web Vitals Guide](./telemetry/web-vitals-guide.md) — Core Web Vitals thresholds and performance telemetry.
 - [Vitals Export Pipeline](./telemetry/vitals-export-pipeline.md) — telemetry export and operational pipeline.
 - [Route Latency Heatmap Architecture](./admin/ROUTE_LATENCY_HEATMAP.md) — route telemetry collection, bucket aggregation, percentiles, API contract, and canvas rendering limitations.

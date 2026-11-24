@@ -7,6 +7,13 @@ import {
   sign,
   verify,
 } from "crypto";
+import {
+  CryptographicTimeoutEvidence,
+  TimeoutVerificationContext,
+  TimeoutWitnessProof,
+  ViewChangeManager,
+  ViewChangeTimeoutChallenge,
+} from "./ViewChangeManager";
 
 export type BFTPhase = "PREPARE" | "PRE_COMMIT" | "COMMIT" | "DECIDED";
 
@@ -60,6 +67,8 @@ export interface ViewChangeMessage {
   lastCommitQC?: QuorumCertificate;
   signature: string;
   timestamp: number;
+  /** Cryptographically verifiable timeout challenge and witness signatures */
+  timeoutEvidence?: CryptographicTimeoutEvidence;
 }
 
 export interface BFTCoordinatorConfig<T = unknown> {
@@ -83,6 +92,10 @@ export interface BFTCoordinatorConfig<T = unknown> {
   verifier?:
     | BFTVerificationInterface
     | ((nodeId: string, payload: Uint8Array, signature: string) => boolean);
+  /** Whether to enforce cryptographic timeout challenges on view-change messages (default: false for backward compatibility, true when challenges are provided) */
+  requireTimeoutChallenges?: boolean;
+  /** Clock tolerance for challenge timestamps in ms (default: 10000) */
+  clockToleranceMs?: number;
   /** Called with the signed ViewChangeMessage to broadcast to peers when the view timer expires */
   onViewChangeBroadcast?: (msg: ViewChangeMessage) => void;
   onCommit?: (block: BlockProposal<T>, qc: QuorumCertificate) => void;
@@ -102,6 +115,8 @@ export class BFTConsensusCoordinator<T = unknown> {
   public readonly timeoutMs: number;
   public readonly viewChangeTimeoutMs: number;
   public readonly maxViewChangeTimeoutMs: number;
+  public readonly requireTimeoutChallenges: boolean;
+  public readonly clockToleranceMs: number;
 
   private currentView: number = 0;
   private viewTimer: ReturnType<typeof setTimeout> | null = null;
@@ -145,6 +160,7 @@ export class BFTConsensusCoordinator<T = unknown> {
     qc: QuorumCertificate,
   ) => void;
   private onSlashCallback?: (nodeId: string, reason: string) => void;
+  private viewChangeManager: ViewChangeManager;
 
   constructor(config: BFTCoordinatorConfig<T>) {
     if (!config.validators || config.validators.length < 4) {
@@ -165,6 +181,8 @@ export class BFTConsensusCoordinator<T = unknown> {
       this.viewChangeTimeoutMs,
       config.maxViewChangeTimeoutMs ?? 30000,
     );
+    this.requireTimeoutChallenges = config.requireTimeoutChallenges ?? false;
+    this.clockToleranceMs = Math.max(0, config.clockToleranceMs ?? 10000);
     this.currentViewTimeoutMs = this.viewChangeTimeoutMs;
     this.maxFutureViewWindow = Math.max(1, config.maxFutureViewWindow ?? 10);
     this.maxBufferedMessagesPerView = Math.max(
@@ -218,6 +236,8 @@ export class BFTConsensusCoordinator<T = unknown> {
           ? { verify: config.verifier }
           : config.verifier;
     }
+
+    this.viewChangeManager = new ViewChangeManager(1000, this.clockToleranceMs);
   }
 
   /**
@@ -803,11 +823,96 @@ export class BFTConsensusCoordinator<T = unknown> {
   }
 
   /**
+   * Returns verification context for timeout challenges
+   */
+  public getTimeoutVerificationContext(
+    now?: number,
+  ): TimeoutVerificationContext {
+    return {
+      currentView: this.currentView,
+      currentSequence: this.currentSequence,
+      expectedTimeoutMs: this.currentViewTimeoutMs,
+      validators: this.validators,
+      quorumSize: this.quorumSize,
+      validatorPublicKeys: this.validatorPublicKeys,
+      verifier: this.verifier,
+      clockToleranceMs: this.clockToleranceMs,
+      now,
+    };
+  }
+
+  /**
+   * Gets the internal ViewChangeManager instance
+   */
+  public getViewChangeManager(): ViewChangeManager {
+    return this.viewChangeManager;
+  }
+
+  /**
+   * Generates a signed timeout challenge for requesting view change
+   */
+  public createTimeoutChallenge(
+    requestedView?: number,
+    timeoutDurationMs?: number,
+    now?: number,
+  ): ViewChangeTimeoutChallenge {
+    if (!this.signer) {
+      throw new Error(
+        `Node ${this.nodeId} cannot create timeout challenge: no external signer configured`,
+      );
+    }
+    const targetView = requestedView ?? this.currentView + 1;
+    const duration = timeoutDurationMs ?? this.currentViewTimeoutMs;
+    return this.viewChangeManager.createTimeoutChallenge(
+      this.currentView,
+      targetView,
+      this.currentSequence,
+      this.nodeId,
+      duration,
+      this.signer,
+      now,
+    );
+  }
+
+  /**
+   * Signs a witness proof certifying that a timeout challenge has elapsed
+   */
+  public createTimeoutWitness(
+    challengeId: string,
+    timestamp?: number,
+  ): TimeoutWitnessProof {
+    if (!this.signer) {
+      throw new Error(
+        `Node ${this.nodeId} cannot create timeout witness: no external signer configured`,
+      );
+    }
+    return this.viewChangeManager.createWitnessProof(
+      challengeId,
+      this.nodeId,
+      this.signer,
+      timestamp,
+    );
+  }
+
+  /**
+   * Ingests a witness proof for a timeout challenge
+   */
+  public addTimeoutWitness(
+    challengeId: string,
+    proof: TimeoutWitnessProof,
+    now?: number,
+  ): boolean {
+    const context = this.getTimeoutVerificationContext(now);
+    return this.viewChangeManager.addWitnessProof(challengeId, proof, context);
+  }
+
+  /**
    * Generates a View Change message when pacemaker detects leader timeout
    */
   public triggerViewChange(
     reason: string,
     requestedView?: number,
+    timeoutEvidence?: CryptographicTimeoutEvidence,
   ): ViewChangeMessage {
     const targetView = requestedView ?? this.currentView + 1;
     let signature = "";
@@ -824,12 +929,36 @@ export class BFTConsensusCoordinator<T = unknown> {
       );
     }
 
+    let evidence = timeoutEvidence;
+    if (!evidence && this.requireTimeoutChallenges && this.signer) {
+      // Auto-generate challenge and own witness if timeout challenges are required
+      const challenge = this.viewChangeManager.createTimeoutChallenge(
+        this.currentView,
+        targetView,
+        this.currentSequence,
+        this.nodeId,
+        this.currentViewTimeoutMs,
+        this.signer,
+      );
+      const witness = this.viewChangeManager.createWitnessProof(
+        challenge.challengeId,
+        this.nodeId,
+        this.signer,
+        Date.now(),
+      );
+      evidence = {
+        challenge,
+        witnesses: [witness],
+      };
+    }
+
     const msg: ViewChangeMessage = {
       fromNodeId: this.nodeId,
       newView: targetView,
       lastCommitQC: this.lastCommitQC ?? undefined,
       signature,
       timestamp: Date.now(),
+      ...(evidence ? { timeoutEvidence: evidence } : {}),
     };
 
     this.handleViewChange(msg);
@@ -927,6 +1056,13 @@ export class BFTConsensusCoordinator<T = unknown> {
     pool.set(msg.fromNodeId, msg);
 
     if (pool.size >= this.quorumSize && msg.newView > this.currentView) {
+      // Mark challenge as used to prevent replay
+      if (msg.timeoutEvidence) {
+        this.viewChangeManager.markChallengeUsed(
+          msg.timeoutEvidence.challenge.challengeId,
+        );
+      }
+
       this.lastViewChangeEvidence.set(msg.newView, Array.from(pool.values()));
       this.currentView = msg.newView;
       this.currentPhase = "PREPARE";
@@ -936,6 +1072,7 @@ export class BFTConsensusCoordinator<T = unknown> {
 
       // Clean up stale entries from viewChangePool and futureViewChangeBuffer
       this.cleanupStaleViewChangeEntries();
+      this.viewChangeManager.pruneStaleChallenges(this.currentView);
 
       // Drain any buffered future-view messages that have now become eligible
       const chainedTransition = this.drainFutureViewBuffer();
@@ -1218,6 +1355,35 @@ export class BFTConsensusCoordinator<T = unknown> {
         return false;
       }
 
+      if (this.requireTimeoutChallenges && !msg.timeoutEvidence) {
+        console.warn(
+          `ViewChange rejected: missing required cryptographic timeout evidence from ${msg.fromNodeId}`,
+        );
+        return false;
+      }
+
+      if (msg.timeoutEvidence) {
+        // Use message timestamp or Date.now() as verification time
+        const verifyTime =
+          msg.timestamp && msg.timestamp > 0 ? msg.timestamp : Date.now();
+        const context = this.getTimeoutVerificationContext(verifyTime);
+        // If msg specifies an intended future view, pass it into context check
+        const targetViewContext = {
+          ...context,
+          currentView: msg.newView - 1,
+        };
+        const isValidEvidence = this.viewChangeManager.verifyTimeoutEvidence(
+          msg.timeoutEvidence,
+          targetViewContext,
+        );
+        if (!isValidEvidence) {
+          console.warn(
+            `ViewChange rejected: invalid or premature cryptographic timeout challenge/witnesses from ${msg.fromNodeId}`,
+          );
+          return false;
+        }
+      }
+
       const payload = BFTConsensusCoordinator.formatViewChangePayload(
         msg.fromNodeId,
         msg.newView,
@@ -1386,3 +1552,5 @@ export function createTestValidatorKeySet(validatorIds: string[]): {
 export const formatVotePayload = BFTConsensusCoordinator.formatVotePayload;
 export const formatViewChangePayload =
   BFTConsensusCoordinator.formatViewChangePayload;
+
+export * from "./ViewChangeManager";

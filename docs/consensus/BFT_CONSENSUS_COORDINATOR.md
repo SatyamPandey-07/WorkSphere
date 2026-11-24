@@ -57,13 +57,16 @@ const coordinator = new BFTConsensusCoordinator<MyPayload>({
 });
 ```
 
-| Field        | Required | Notes                                                                                                                                                             |
-| ------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nodeId`     | yes      | This node's ID. It should be in `validators`.                                                                                                                     |
-| `validators` | yes      | Copied and **sorted** in the constructor. Every node must be given the same list, or leaders and quorums will not match.                                          |
-| `timeoutMs`  | no       | Default `5000`. In the current code this is only the default timeout for **async signature verification** (see [section 7](#7-timeouts-and-recovery-procedures)). |
-| `onCommit`   | no       | Called with the block and the COMMIT QC when a block is decided.                                                                                                  |
-| `onSlash`    | no       | Called with the offender and a reason string when equivocation is detected.                                                                                       |
+| Field                 | Required | Notes                                                                                                                                                                |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nodeId`              | yes      | This node's ID. It should be in `validators`.                                                                                                                        |
+| `validators`          | yes      | Copied and **sorted** in the constructor. Every node must be given the same list, or leaders and quorums will not match.                                             |
+| `validatorPublicKeys` | no       | Optional mapping (`Record<string, string>` or `Map<string, KeyObject>`) of validator IDs to Ed25519 public keys for signature verification.                          |
+| `signer`              | no       | Injected `BFTSigningInterface` (`{ sign: (payload: Uint8Array) => string }`) to create asymmetric Ed25519 signatures while keeping private keys outside coordinator. |
+| `verifier`            | no       | Injected `BFTVerificationInterface` for custom cryptographic verification. Defaults to Node `crypto.verify`.                                                         |
+| `timeoutMs`           | no       | Default `5000`. In the current code this is only the default timeout for **async signature verification** (see [section 7](#7-timeouts-and-recovery-procedures)).    |
+| `onCommit`            | no       | Called with the block and the COMMIT QC when a block is decided.                                                                                                     |
+| `onSlash`             | no       | Called with the offender and a reason string when equivocation is detected.                                                                                          |
 
 ---
 
@@ -221,13 +224,21 @@ Because the count is over a `Record` keyed by node ID, one validator cannot be c
 
 ### How signatures are produced
 
-Votes are signed by `generateSignature`, which returns:
+Votes are signed using asymmetric cryptography (Ed25519) via the injected `signer`:
 
 ```text
-sha256("BFT_SIG:" + nodeId + ":" + phase + ":" + view + ":" + sequence + ":" + blockHash)
+Payload: "BFT_VOTE_V1:" + nodeId + ":" + phase + ":" + view + ":" + sequence + ":" + blockHash
+Signature: 64-byte Ed25519 signature (128 hex characters)
 ```
 
-`verifyNodeSignature` recomputes that digest and compares it with the supplied signature. It first rejects empty fields and non-string signatures. **This is a deterministic hash, not an asymmetric signature**, and it uses no secret key. It detects corrupted or mismatched fields, but it does not prove that the named validator produced it. See [Current limitations](#9-current-limitations).
+Similarly, view-change messages are signed over a canonical domain-separated payload:
+
+```text
+Payload: "BFT_VIEW_CHANGE_V1:" + fromNodeId + ":" + newView + ":" + lastCommitQCPart
+Signature: 64-byte Ed25519 signature (128 hex characters)
+```
+
+`verifyNodeSignature` verifies the Ed25519 signature against the sender's public key registered in `validatorPublicKeys`. It strictly rejects empty fields, non-string signatures, deterministic SHA-256 digests (which are only 32 bytes / 64 hex characters), and malformed signatures. Private keys are never held inside the coordinator, maintaining a strict authentication boundary.
 
 ### Block hashing
 
@@ -259,7 +270,7 @@ interface ViewChangeMessage {
 }
 ```
 
-`triggerViewChange(reason)` builds a message for `currentView + 1`, signs it with `sha256(nodeId + ":NEW_VIEW:" + targetView + ":" + reason)`, feeds it to this node's own `handleViewChange`, and returns it so you can broadcast it.
+`triggerViewChange(reason)` builds a message for `currentView + 1`, signs it with the node's Ed25519 signer over `BFT_VIEW_CHANGE_V1:${nodeId}:${targetView}:${lastCommitQC}`, feeds it to this node's own `handleViewChange`, and returns it so you can broadcast it.
 
 ### New-view aggregation (`handleViewChange`)
 
@@ -274,9 +285,10 @@ stateDiagram-v2
 Step by step:
 
 1. Messages from non-validators are ignored (`null`).
-2. The message is stored in `viewChangePool[newView]`, keyed by sender, so duplicates from one node count once.
-3. When that pool holds at least `quorumSize` messages **and** `newView > currentView`, the node moves to the new view: `currentView = newView`, `currentPhase = 'PREPARE'`, `currentProposal = null`.
-4. The method returns `{ newLeader, view }`. In every other case it returns `null`.
+2. **Cryptographic signature check.** The Ed25519 signature on `ViewChangeMessage` is verified against `validatorPublicKeys`. Unauthenticated or forged messages are rejected immediately before entering any pool or buffer.
+3. The message is stored in `viewChangePool[newView]`, keyed by sender, so duplicates from one node count once. (Future-view messages within the allowed window are held in a buffer until their view becomes active).
+4. When that pool holds at least `quorumSize` valid authenticated messages **and** `newView > currentView`, the node moves to the new view: `currentView = newView`, `currentPhase = 'PREPARE'`, `currentProposal = null`.
+5. The method returns `{ newLeader, view }`. In every other case it returns `null`.
 
 Messages for a view that is not higher than the current one still go into the pool but never cause a transition.
 
@@ -391,17 +403,16 @@ if (result && result.newLeader === coordinator.nodeId) {
 
 These are properties of the code today, not design goals. They matter if you plan to expose the coordinator to real or hostile traffic.
 
-1. **Signatures are not secret-backed.** A vote signature is `sha256` of public fields, so any party can compute a "valid" signature for any validator. The checks catch corruption and mismatches, not impersonation. Real deployments need per-validator asymmetric keys (for example Ed25519) in `generateSignature` and `verifyNodeSignature`.
-2. **The equivocation check runs before signature verification of the new vote.** A forged conflicting vote that names an honest validator can trigger `onSlash` for that validator. Until this is fixed, treat `onSlash` as a signal to investigate, not as proof.
-3. **`blockHash` ignores nested payload fields.** `hashPayload` passes the sorted top-level keys of the object as the `JSON.stringify` replacer array. That array also filters keys at nested levels, so payload properties whose names are not among `view`, `sequence`, `proposerId`, `payload`, `parentHash` or `timestamp` are left out of the hash. Two proposals whose payloads differ only in other keys, such as `{ tx: 'A' }` and `{ tx: 'B' }`, get the same hash.
-4. **A QC is re-emitted for each vote past quorum.** The check is `pool.size >= quorumSize`, so with `N = 4` the fourth vote of a phase returns another QC and runs `advancePhaseOnQC` again. For the COMMIT phase this appends the block to `committedBlocks` a second time and calls `onCommit` again. Make `onCommit` idempotent (key on `blockHash` and `sequence`) until this is fixed.
-5. **No internal pacemaker.** Nothing starts a timer or triggers a view change by itself. `timeoutMs` only bounds async signature verification.
-6. **View-change messages are not authenticated.** The signature on a `ViewChangeMessage` is created but never verified, and `lastCommitQC` inside it is not checked or used to pick which block the new leader extends.
-7. **`justifyQC` and `parentHash` are not validated** in `handleProposal`. A follower does not check that a proposal extends the last decided block.
-8. **Phase transitions are not strictly ordered.** `advancePhaseOnQC` moves the phase according to the QC's phase and does not check that the previous phase completed or that the QC matches `currentProposal` (only the COMMIT step checks the block hash).
-9. **No persistence, no catch-up, no validator-set changes.** State is in memory, and `validators` is fixed at construction time.
-10. **Clusters of 1 to 3 validators have quorum 1** (see [section 2](#2-quorum-requirements-2f--1-of-3f--1)). The constructor contains an empty `if (validators.length < 4)` block with comments only; it does not warn or throw.
-11. **Slashing is a callback only** (see [section 6](#6-slashable-offenses)).
+1. **Asymmetric signatures & verification.** Votes and view-change messages are authenticated using Ed25519 asymmetric cryptography with injected signers and registered `validatorPublicKeys`. Private keys remain outside the coordinator. Deterministic SHA-256 hashes are rejected.
+2. **`blockHash` ignores nested payload fields.** `hashPayload` passes the sorted top-level keys of the object as the `JSON.stringify` replacer array. That array also filters keys at nested levels, so payload properties whose names are not among `view`, `sequence`, `proposerId`, `payload`, `parentHash` or `timestamp` are left out of the hash. Two proposals whose payloads differ only in other keys, such as `{ tx: 'A' }` and `{ tx: 'B' }`, get the same hash.
+3. **A QC is re-emitted for each vote past quorum.** The check is `pool.size >= quorumSize`, so with `N = 4` the fourth vote of a phase returns another QC and runs `advancePhaseOnQC` again. For the COMMIT phase this appends the block to `committedBlocks` a second time and calls `onCommit` again. Make `onCommit` idempotent (key on `blockHash` and `sequence`) until this is fixed.
+4. **No internal pacemaker.** Nothing starts a timer or triggers a view change by itself. `timeoutMs` only bounds async signature verification.
+5. **`lastCommitQC` in view change is advisory.** The signature on `ViewChangeMessage` is verified, but `lastCommitQC` inside it is not automatically checked or used to pick which block the new leader extends.
+6. **`justifyQC` and `parentHash` are not validated** in `handleProposal`. A follower does not check that a proposal extends the last decided block.
+7. **Phase transitions are not strictly ordered.** `advancePhaseOnQC` moves the phase according to the QC's phase and does not check that the previous phase completed or that the QC matches `currentProposal` (only the COMMIT step checks the block hash).
+8. **No persistence, no catch-up, no validator-set changes.** State is in memory, and `validators` is fixed at construction time.
+9. **Clusters of 1 to 3 validators have quorum 1** (see [section 2](#2-quorum-requirements-2f--1-of-3f--1)). The constructor contains an empty `if (validators.length < 4)` block with comments only; it does not warn or throw.
+10. **Slashing is a callback only** (see [section 6](#6-slashable-offenses)).
 
 ---
 

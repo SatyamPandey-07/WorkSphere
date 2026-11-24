@@ -1,17 +1,42 @@
 import {
   BFTConsensusCoordinator,
+  createTestValidatorKeySet,
+  formatViewChangePayload,
   ViewChangeMessage,
 } from "../../core/consensus/BFTConsensusCoordinator";
 
 const validators = ["node-0", "node-1", "node-2", "node-3"];
+const keySet = createTestValidatorKeySet(validators);
 
-function vcMsg(from: string, newView: number): ViewChangeMessage {
-  return { fromNodeId: from, newView, signature: "sig", timestamp: Date.now() };
+function vcMsg(from: string, newView: number, highQC?: any): ViewChangeMessage {
+  const signer = keySet.signers[from];
+  let signature = "sig";
+  if (signer) {
+    const payload = formatViewChangePayload(from, newView, highQC);
+    signature = signer.sign(payload).toString("hex");
+  }
+  return {
+    fromNodeId: from,
+    newView,
+    highQC,
+    signature,
+    timestamp: Date.now(),
+  };
+}
+
+function createCoordinator(opts?: any): BFTConsensusCoordinator {
+  return new BFTConsensusCoordinator({
+    nodeId: "node-0",
+    validators,
+    validatorPublicKeys: keySet.publicKeys,
+    signer: keySet.signers["node-0"],
+    ...opts,
+  });
 }
 
 describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Livelock Prevention", () => {
   it("1. Original livelock reproduction: future-view messages arrive before preceding-view quorum and auto-transition upon eligibility", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
     expect(c.getCurrentView()).toBe(0);
 
     // Node is at view 0.
@@ -41,7 +66,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("2. Future-view retention: valid future-view messages are retained in buffer instead of being dropped", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
     expect(c.handleViewChange(vcMsg("node-1", 3))).toBeNull();
     expect(c.handleViewChange(vcMsg("node-2", 3))).toBeNull();
 
@@ -63,7 +88,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("3. Multiple future views: messages for views 3, 2, and 1 arrive in completely reversed order", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
 
     // Deliver View 3 quorum
     c.handleViewChange(vcMsg("node-1", 3));
@@ -88,7 +113,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("4. Duplicate messages: repeated messages from one validator never inflate quorum", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
 
     // Send 5 messages for view 2 from the same validator node-1
     for (let i = 0; i < 5; i++) {
@@ -106,7 +131,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("5. Unauthorized validators: invalid validator identities cannot enter the buffer or trigger transitions", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
 
     expect(c.handleViewChange(vcMsg("malicious-attacker", 2))).toBeNull();
     expect(c.handleViewChange(vcMsg("unknown-node", 1))).toBeNull();
@@ -120,7 +145,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("6. Stale messages: old messages cannot regress coordinator state", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
 
     // Advance to view 1
     c.handleViewChange(vcMsg("node-1", 1));
@@ -135,9 +160,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("7. Buffer limits: excessive future views beyond maxFutureViewWindow are discarded", () => {
-    const c = new BFTConsensusCoordinator({
-      nodeId: "node-0",
-      validators,
+    const c = createCoordinator({
       maxFutureViewWindow: 3,
     });
     expect(c.maxFutureViewWindow).toBe(3);
@@ -161,7 +184,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("8. Partial quorum: insufficient messages cannot cause advancement", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
 
     // 2 of 3 messages for view 2 (partial quorum)
     c.handleViewChange(vcMsg("node-1", 2));
@@ -183,7 +206,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("9. Cleanup: stale entries are pruned on view transition", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
 
     // Store messages for view 1 and view 2
     c.handleViewChange(vcMsg("node-1", 1));
@@ -205,7 +228,7 @@ describe("Issue #8905 - Future View-Change Message Buffering & Out-of-Order Live
   });
 
   it("10. Re-entrancy protection: draining buffer cannot trigger infinite loop or duplicate transitions", () => {
-    const c = new BFTConsensusCoordinator({ nodeId: "node-0", validators });
+    const c = createCoordinator();
 
     // Setup cascading transitions 1 -> 2 -> 3
     for (let v = 3; v >= 1; v--) {

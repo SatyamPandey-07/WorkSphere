@@ -293,19 +293,22 @@ export async function cancelWaitlistEntry(
   userId: string,
   venueId?: string,
 ): Promise<boolean> {
-  const entry = await prisma.venueSeatWaitlist.findFirst({
-    where: { id: waitlistId, userId },
-  });
+  const whereClause: Prisma.VenueSeatWaitlistWhereInput = {
+    id: waitlistId,
+    userId,
+    status: { in: ["ACTIVE", "NOTIFIED"] },
+  };
 
-  if (!entry) return false;
-  if (venueId && entry.venueId !== venueId) return false;
+  if (venueId) {
+    whereClause.venueId = venueId;
+  }
 
-  await prisma.venueSeatWaitlist.update({
-    where: { id: waitlistId },
+  const result = await prisma.venueSeatWaitlist.updateMany({
+    where: whereClause,
     data: { status: "CANCELLED" },
   });
 
-  return true;
+  return result.count > 0;
 }
 
 /**

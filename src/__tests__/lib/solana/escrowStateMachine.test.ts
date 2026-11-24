@@ -89,11 +89,7 @@ describe('Solana Escrow State Machine & Idempotent Settlement', () => {
       .fn()
       .mockResolvedValue({ txSignature: '5xSolanaSignature123' });
 
-    const client = new SolanaEscrowClient(
-      { submitSettlement },
-      {},
-      [baseEscrow]
-    );
+    const client = new SolanaEscrowClient({ submitSettlement }, [baseEscrow]);
 
     client.openDispute('escrow-901', 'Power outage');
 

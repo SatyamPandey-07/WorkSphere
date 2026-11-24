@@ -1,4 +1,11 @@
-import { CooperativeQoSEngine, QoSPolicy } from '@/core/network/CooperativeQoSEngine';
+import {
+  CooperativeQoSEngine,
+  QoSPolicy,
+  TokenBucket,
+  BPS_TO_BYTES_PER_MS,
+  BITS_PER_BYTE,
+  MS_PER_SECOND,
+} from '@/core/network/CooperativeQoSEngine';
 import { PacketTimingAnalyzer } from '@/core/network/PacketTimingAnalyzer';
 import {
   analyzer,
@@ -247,6 +254,123 @@ describe('Cooperative QoS Peer State Cleanup & Active Accounting (#10077)', () =
 
       expect(analyzer.hasPeer('worker-peer-2')).toBe(false);
       expect(analyzer.getMetrics().some((m) => m.peerId === 'worker-peer-2')).toBe(false);
+    });
+  });
+
+  describe('TokenBucket Bandwidth Conversion & Refill Rate Accuracy (#10082)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('validates conversion constants (8 bits/byte, 1000 ms/sec, divisor 8000)', () => {
+      expect(BITS_PER_BYTE).toBe(8);
+      expect(MS_PER_SECOND).toBe(1000);
+      expect(BPS_TO_BYTES_PER_MS).toBe(8000);
+
+      // 1 Mbps = 1,000,000 bps = 125,000 bytes per second = 125 bytes/ms
+      const oneMbpsBps = 1_000_000;
+      const bucket = new TokenBucket(1_000_000, oneMbpsBps);
+
+      expect(bucket.getRefillRateBytesPerMs()).toBe(125);
+      expect(bucket.getRefillRateBytesPerMs() * 1000).toBe(125_000);
+      expect(bucket.refillRate).toBe(125);
+    });
+
+    it('enforces that 1 Mbps corresponds exactly to 125,000 bytes per second of refill', () => {
+      const capacity = 500_000;
+      const rate1Mbps = 1_000_000;
+      const bucket = new TokenBucket(capacity, rate1Mbps);
+
+      // Drain all initial tokens
+      expect(bucket.consume(capacity)).toBe(true);
+      expect(bucket.consume(1)).toBe(false);
+
+      // Advance time by exactly 1000 ms (1 second)
+      jest.advanceTimersByTime(1000);
+
+      // In 1 second at 1 Mbps, exactly 125,000 bytes must be refilled
+      expect(bucket.consume(125_000)).toBe(true);
+      // Extra byte should fail
+      expect(bucket.consume(1)).toBe(false);
+    });
+
+    it('accurately refills tokens across multiple bandwidth configurations', () => {
+      const testCases = [
+        { name: '500 kbps', bps: 500_000, expectedBytesPerSec: 62_500 },
+        { name: '2 Mbps', bps: 2_000_000, expectedBytesPerSec: 250_000 },
+        { name: '8 Mbps', bps: 8_000_000, expectedBytesPerSec: 1_000_000 },
+        { name: '50 Mbps', bps: 50_000_000, expectedBytesPerSec: 6_250_000 },
+      ];
+
+      for (const tc of testCases) {
+        const capacity = tc.expectedBytesPerSec * 2;
+        const bucket = new TokenBucket(capacity, tc.bps);
+
+        // Drain bucket
+        expect(bucket.consume(capacity)).toBe(true);
+
+        // Advance 2 seconds
+        jest.advanceTimersByTime(2000);
+
+        // Should have refilled 2 seconds worth of bytes
+        const expected2SecBytes = tc.expectedBytesPerSec * 2;
+        expect(bucket.consume(expected2SecBytes)).toBe(true);
+        expect(bucket.consume(1)).toBe(false);
+      }
+    });
+
+    it('preserves correct units when dynamically updating rate with setRate()', () => {
+      const bucket = new TokenBucket(2_000_000, 1_000_000); // 1 Mbps initially
+      expect(bucket.consume(2_000_000)).toBe(true); // drain
+
+      // Update rate to 4 Mbps (500,000 bytes/sec = 500 bytes/ms)
+      bucket.setRate(4_000_000);
+      expect(bucket.getRefillRateBytesPerMs()).toBe(500);
+
+      jest.advanceTimersByTime(1000); // 1 second
+      expect(bucket.consume(500_000)).toBe(true);
+      expect(bucket.consume(1)).toBe(false);
+
+      // Throttle dynamically down to 256 kbps (32,000 bytes/sec = 32 bytes/ms)
+      bucket.setRate(256_000);
+      expect(bucket.getRefillRateBytesPerMs()).toBe(32);
+
+      jest.advanceTimersByTime(1000); // 1 second
+      expect(bucket.consume(32_000)).toBe(true);
+      expect(bucket.consume(1)).toBe(false);
+    });
+
+    it('enforces accurate fair-share bandwidth limits in CooperativeQoSEngine', () => {
+      // 50 Mbps max, 10 Mbps reserve -> 40 Mbps available * 0.8 factor = 32 Mbps total fair share
+      const policy: QoSPolicy = {
+        maxBandwidthBps: 50_000_000,
+        voipReserveBps: 10_000_000,
+        fairShareFactor: 0.8,
+      };
+      const engine = new CooperativeQoSEngine(policy);
+
+      // 2 peers: 32 Mbps / 2 = 16 Mbps each
+      // 16 Mbps = 2,000,000 bytes/sec = 2,000 bytes/ms
+      engine.addPeer('peer-1');
+      engine.addPeer('peer-2');
+
+      expect(engine.getFairShareRate()).toBe(16_000_000);
+
+      // Trigger bucket creation and drain for peer-1 (default capacity 1MB = 1024*1024 bytes)
+      const defaultCapacity = 1024 * 1024;
+      expect(engine.allowPacket('peer-1', defaultCapacity, false)).toBe(true);
+      expect(engine.allowPacket('peer-1', 1, false)).toBe(false);
+
+      // Advance by 500 ms (0.5 second)
+      // At 16 Mbps (2,000 bytes/ms), 500 ms should refill 1,000,000 bytes
+      jest.advanceTimersByTime(500);
+
+      expect(engine.allowPacket('peer-1', 1_000_000, false)).toBe(true);
+      expect(engine.allowPacket('peer-1', 1, false)).toBe(false);
     });
   });
 });

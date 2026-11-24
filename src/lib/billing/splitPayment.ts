@@ -161,6 +161,8 @@ export function verifySplitPaymentToken(
 
 /**
  * Calculates even or weighted split amounts.
+ * Uses integer minor units (cents) to avoid floating-point drift
+ * and ensures total allocations reconcile exactly to the total bill amount.
  */
 export function calculateSplitBill({
   bookingId,
@@ -187,6 +189,11 @@ export function calculateSplitBill({
   }>;
   origin?: string;
 }): SplitBillSummary {
+  if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+    throw new Error("totalAmount must be a finite non-negative number");
+  }
+
+  const totalCents = Math.round(totalAmount * 100);
   const participantCount = guests.length + 1; // Host + Guests
   const hasCustomAmounts = guests.some(
     (g) => typeof g.customAmount === "number",

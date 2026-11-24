@@ -1,10 +1,10 @@
 ﻿export interface VenueTelemetrySample {
-  downloadMbps?: number;
-  uploadMbps?: number;
-  latencyMs?: number;
-  noiseDb?: number;
-  powerKw?: number;
-  timestampMs?: number;
+  downloadMbps?: number | null;
+  uploadMbps?: number | null;
+  latencyMs?: number | null;
+  noiseDb?: number | null;
+  powerKw?: number | null;
+  timestampMs?: number | null;
 }
 
 export interface TelemetryAnomaly {
@@ -20,11 +20,18 @@ export interface AggregatedVenueTelemetry {
   avgUploadMbps: number;
   avgLatencyMs: number;
   avgNoiseDb: number;
+  totalPowerKw: number;
   acousticRating: 'Quiet Focus' | 'Moderate Cafe' | 'Loud / Noisy';
   baselineUsagePercent: number;
   clampedBarPercent: number;
   overagePercent: number;
   anomalies: TelemetryAnomaly[];
+}
+
+export interface TelemetrySnapshotPayload {
+  venueId: string;
+  exportedAt: string;
+  telemetry: AggregatedVenueTelemetry;
 }
 
 function isFiniteNonNegative(value: unknown): value is number {
@@ -40,19 +47,21 @@ export function classifyAcousticLevel(
   avgNoiseDb: number,
   sampleCount: number
 ): 'Quiet Focus' | 'Moderate Cafe' | 'Loud / Noisy' {
-  if (sampleCount <= 0 || avgNoiseDb <= 50) return 'Quiet Focus';
+  if (sampleCount <= 0 || !Number.isFinite(avgNoiseDb) || avgNoiseDb <= 50) {
+    return 'Quiet Focus';
+  }
   if (avgNoiseDb <= 68) return 'Moderate Cafe';
   return 'Loud / Noisy';
 }
 
 export function detectTelemetryAnomalies(
-  samples: readonly VenueTelemetrySample[]
+  samples: readonly (VenueTelemetrySample | null | undefined)[]
 ): TelemetryAnomaly[] {
   const anomalies: TelemetryAnomaly[] = [];
+
   const validLatency = samples
     .map((s) => s?.latencyMs)
     .filter(isFiniteNonNegative);
-
   if (validLatency.length >= 2) {
     const avgLat =
       validLatency.reduce((acc, v) => acc + v, 0) / validLatency.length;
@@ -106,7 +115,7 @@ export function detectTelemetryAnomalies(
 }
 
 export function aggregateVenueTelemetry(
-  samples?: readonly VenueTelemetrySample[] | null,
+  samples?: readonly (VenueTelemetrySample | null | undefined)[] | null,
   baselineKwh = 1000
 ): AggregatedVenueTelemetry {
   if (!samples || samples.length === 0) {
@@ -116,6 +125,7 @@ export function aggregateVenueTelemetry(
       avgUploadMbps: 0,
       avgLatencyMs: 0,
       avgNoiseDb: 0,
+      totalPowerKw: 0,
       acousticRating: 'Quiet Focus',
       baselineUsagePercent: 0,
       clampedBarPercent: 0,
@@ -174,6 +184,7 @@ export function aggregateVenueTelemetry(
       avgUploadMbps: 0,
       avgLatencyMs: 0,
       avgNoiseDb: 0,
+      totalPowerKw: 0,
       acousticRating: 'Quiet Focus',
       baselineUsagePercent: 0,
       clampedBarPercent: 0,
@@ -186,13 +197,15 @@ export function aggregateVenueTelemetry(
   const avgUploadMbps = ulCount > 0 ? round1(ulSum / ulCount) : 0;
   const avgLatencyMs = latCount > 0 ? round1(latSum / latCount) : 0;
   const avgNoiseDb = noiseCount > 0 ? round1(noiseSum / noiseCount) : 0;
+  const totalPowerKw = round1(powerSum);
 
   const safeBaseline =
-    typeof baselineKwh === 'number' && Number.isFinite(baselineKwh) && baselineKwh > 0
+    typeof baselineKwh === 'number' &&
+    Number.isFinite(baselineKwh) &&
+    baselineKwh > 0
       ? baselineKwh
       : 1;
-  const estimatedKwh = powerSum;
-  const baselineUsagePercent = round1((estimatedKwh / safeBaseline) * 100);
+  const baselineUsagePercent = round1((totalPowerKw / safeBaseline) * 100);
   const clampedBarPercent = Math.min(100, Math.max(0, baselineUsagePercent));
   const overagePercent = Math.max(0, Math.round(baselineUsagePercent - 100));
 
@@ -202,6 +215,7 @@ export function aggregateVenueTelemetry(
     avgUploadMbps,
     avgLatencyMs,
     avgNoiseDb,
+    totalPowerKw,
     acousticRating: classifyAcousticLevel(avgNoiseDb, sampleCount),
     baselineUsagePercent,
     clampedBarPercent,
@@ -214,13 +228,10 @@ export function exportTelemetrySnapshotJson(
   venueId: string,
   telemetry: AggregatedVenueTelemetry
 ): string {
-  return JSON.stringify(
-    {
-      venueId,
-      exportedAt: new Date().toISOString(),
-      telemetry,
-    },
-    null,
-    2
-  );
+  const payload: TelemetrySnapshotPayload = {
+    venueId,
+    exportedAt: new Date().toISOString(),
+    telemetry,
+  };
+  return JSON.stringify(payload, null, 2);
 }

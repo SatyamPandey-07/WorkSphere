@@ -19,6 +19,8 @@ export const DEFAULT_OFFLINE_DB_NAME = "worksphere-offline";
 export const DEFAULT_OFFLINE_DB_VERSION = 9;
 
 export * from "./deviceAttestation";
+import { openDatabaseWithMigration } from "./migrationCoordinator";
+import { worksphereOfflineRegistry } from "./migrations/migrationRegistry";
 
 export interface CheckinPayload {
   seatId: string;
@@ -145,31 +147,22 @@ export async function openCheckinDB(
     throw new Error("IndexedDB is not available in this environment.");
   }
 
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(dbName, version);
+  if (dbName === DEFAULT_OFFLINE_DB_NAME) {
+    return openDatabaseWithMigration(dbName, {
+      targetVersion: version,
+    });
+  }
 
-    request.onerror = () => {
-      reject(request.error || new Error("Failed to open IndexedDB"));
-    };
-
-    request.onsuccess = () => {
-      const db = request.result;
-      resolve(db);
-    };
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(CHECKIN_STORE_NAME)) {
-        const store = db.createObjectStore(CHECKIN_STORE_NAME, {
-          keyPath: "id",
-        });
-        store.createIndex("seatId", "seatId", { unique: false });
-        store.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
-        store.createIndex("status", "status", { unique: false });
-        store.createIndex("timestamp", "timestamp", { unique: false });
-      }
-    };
-  });
+  return openDatabaseWithMigration(
+    {
+      ...worksphereOfflineRegistry,
+      dbName,
+      currentVersion: version,
+    },
+    {
+      targetVersion: version,
+    },
+  );
 }
 
 /**

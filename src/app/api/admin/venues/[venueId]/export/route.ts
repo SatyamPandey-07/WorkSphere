@@ -86,8 +86,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const { searchParams } = new URL(request.url);
     const format = (searchParams.get("format") || "csv").toLowerCase();
     const month = searchParams.get("month") || undefined;
-    const startDate = searchParams.get("startDate") || undefined;
-    const endDate = searchParams.get("endDate") || undefined;
+    const startDateParam = searchParams.get("startDate") || undefined;
+    const endDateParam = searchParams.get("endDate") || undefined;
 
     if (format !== "csv" && format !== "pdf") {
       return NextResponse.json(
@@ -97,6 +97,55 @@ export async function GET(request: NextRequest, context: RouteContext) {
         },
         { status: 400 },
       );
+    }
+
+    // Date range validation
+    let startDate: string | undefined = undefined;
+    let endDate: string | undefined = undefined;
+
+    if (startDateParam || endDateParam) {
+      if (!startDateParam || !endDateParam) {
+        return NextResponse.json(
+          { error: "Both startDate and endDate must be provided when filtering by date range" },
+          { status: 400 },
+        );
+      }
+
+      const parsedStart = new Date(startDateParam);
+      const parsedEnd = new Date(endDateParam);
+
+      if (isNaN(parsedStart.getTime())) {
+        return NextResponse.json(
+          { error: "Invalid startDate parameter. Must be a valid ISO date string." },
+          { status: 400 },
+        );
+      }
+
+      if (isNaN(parsedEnd.getTime())) {
+        return NextResponse.json(
+          { error: "Invalid endDate parameter. Must be a valid ISO date string." },
+          { status: 400 },
+        );
+      }
+
+      if (parsedStart.getTime() >= parsedEnd.getTime()) {
+        return NextResponse.json(
+          { error: "startDate must be strictly before endDate" },
+          { status: 400 },
+        );
+      }
+
+      const diffMs = parsedEnd.getTime() - parsedStart.getTime();
+      const maxMs = 90 * 24 * 60 * 60 * 1000;
+      if (diffMs > maxMs) {
+        return NextResponse.json(
+          { error: "Date range cannot exceed 90 days" },
+          { status: 400 },
+        );
+      }
+
+      startDate = parsedStart.toISOString();
+      endDate = parsedEnd.toISOString();
     }
 
     // 5. Fetch audit data

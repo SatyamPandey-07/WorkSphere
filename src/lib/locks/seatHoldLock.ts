@@ -559,7 +559,7 @@ function parseLockValue(raw: unknown): SeatLockData | null {
   return null;
 }
 
-function getLockKey(venueId: string, seatId: string): string {
+export function getLockKey(venueId: string, seatId: string): string {
   return `seat:hold:${venueId}:${seatId}`;
 }
 

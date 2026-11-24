@@ -1,281 +1,208 @@
+/** @jest-environment jsdom */
 import React from "react";
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  act,
-} from "@testing-library/react";
-import "@testing-library/jest-dom";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import {
   ImageUploadPreviewModal,
-  ImageUploadPayload,
+  calculateRotatedDimensions,
 } from "@/components/chat/ImageUploadPreviewModal";
-import * as imageCompressor from "@/lib/media/imageCompressor";
 
-describe("ImageUploadPreviewModal Component", () => {
-  const mockFile = new File(
-    ["sample-binary-image-data-string"],
-    "desk-view.png",
-    {
-      type: "image/png",
-    },
-  );
-  const mockOnCancel = jest.fn();
-  const mockOnConfirm = jest.fn();
-
-  let originalCreateObjectURL: typeof URL.createObjectURL;
-  let originalRevokeObjectURL: typeof URL.revokeObjectURL;
-
-  beforeAll(() => {
-    originalCreateObjectURL = global.URL.createObjectURL;
-    originalRevokeObjectURL = global.URL.revokeObjectURL;
-    global.URL.createObjectURL = jest.fn(
-      () => "blob:http://localhost/mock-preview-id",
-    );
-    global.URL.revokeObjectURL = jest.fn();
-
-    // Mock getImageDimensions and compressImage to provide deterministic responses
-    jest.spyOn(imageCompressor, "getImageDimensions").mockResolvedValue({
-      width: 1920,
-      height: 1080,
-    });
-
-    jest.spyOn(imageCompressor, "compressImage").mockResolvedValue({
-      blob: new Blob(["compressed-image-data"], { type: "image/jpeg" }),
-      dataUrl: "data:image/jpeg;base64,mockcompresseddata",
-      width: 1920,
-      height: 1080,
-      sizeBytes: 81920, // 80 KB
-      originalSizeBytes: 120000,
-      mimeType: "image/jpeg",
-    });
-  });
-
-  afterAll(() => {
-    global.URL.createObjectURL = originalCreateObjectURL;
-    global.URL.revokeObjectURL = originalRevokeObjectURL;
-    jest.restoreAllMocks();
-  });
-
+describe("ImageUploadPreviewModal (#10006 & #10016)", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    global.URL.createObjectURL = jest.fn(() => "blob:mock-preview-url");
+    global.URL.revokeObjectURL = jest.fn();
+    HTMLCanvasElement.prototype.getContext = jest.fn(
+      () =>
+        ({
+          clearRect: jest.fn(),
+          save: jest.fn(),
+          restore: jest.fn(),
+          translate: jest.fn(),
+          rotate: jest.fn(),
+          drawImage: jest.fn(),
+        } as any)
+    );
+    HTMLCanvasElement.prototype.toBlob = jest.fn(function (callback) {
+      callback(new Blob(["mock-blob"], { type: "image/jpeg" }));
+    });
   });
 
-  it("does not render when isOpen is false", () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={false}
-        file={mockFile}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
-    expect(
-      screen.queryByTestId("image-upload-preview-modal"),
-    ).not.toBeInTheDocument();
+  describe("calculateRotatedDimensions", () => {
+    it("preserves dimensions for 0 and 180 degrees", () => {
+      expect(calculateRotatedDimensions(800, 600, 0)).toEqual({
+        width: 800,
+        height: 600,
+        isSwapped: false,
+      });
+      expect(calculateRotatedDimensions(800, 600, 180)).toEqual({
+        width: 800,
+        height: 600,
+        isSwapped: false,
+      });
+    });
+
+    it("swaps width and height for 90 and 270 degrees to preserve aspect ratio", () => {
+      expect(calculateRotatedDimensions(800, 600, 90)).toEqual({
+        width: 600,
+        height: 800,
+        isSwapped: true,
+      });
+      expect(calculateRotatedDimensions(800, 600, 270)).toEqual({
+        width: 600,
+        height: 800,
+        isSwapped: true,
+      });
+    });
   });
 
-  it("does not render when file is null", () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={true}
-        file={null}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
-    expect(
-      screen.queryByTestId("image-upload-preview-modal"),
-    ).not.toBeInTheDocument();
-  });
+  describe("Component Rendering and Accessibility", () => {
+    it("renders modal with role dialog and aria attributes", () => {
+      render(
+        <ImageUploadPreviewModal
+          isOpen={true}
+          imageUrl="http://example.com/photo.jpg"
+          onClose={jest.fn()}
+          onConfirm={jest.fn()}
+        />
+      );
 
-  it("displays instant high-res preview and output byte size (Acceptance Criteria 1)", async () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={true}
-        file={mockFile}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
-
-    // Modal dialog rendered
-    expect(
-      screen.getByTestId("image-upload-preview-modal"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Image Upload Preview")).toBeInTheDocument();
-    expect(screen.getByText("desk-view.png")).toBeInTheDocument();
-
-    // Instant preview thumbnail
-    const thumbnail = screen.getByTestId("image-preview-thumbnail");
-    expect(thumbnail).toBeInTheDocument();
-    expect(thumbnail).toHaveAttribute(
-      "src",
-      "blob:http://localhost/mock-preview-id",
-    );
-
-    // Check dimensions displayed
-    await waitFor(() => {
-      expect(screen.getByTestId("image-dimensions")).toHaveTextContent(
-        "1920 × 1080 px",
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAttribute("aria-modal", "true");
+      expect(dialog).toHaveAttribute(
+        "aria-labelledby",
+        "image-preview-modal-title"
       );
     });
 
-    // Check estimated output byte size
-    await waitFor(() => {
-      const payloadSizeEl = screen.getByTestId("image-payload-size");
-      expect(payloadSizeEl).toHaveTextContent("80.0 KB");
-    });
-  });
-
-  it("handles cancellation via close button and cancel button (Acceptance Criteria 3)", async () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={true}
-        file={mockFile}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
-
-    await screen.findByTestId("image-dimensions");
-
-    // Click cancel button in footer
-    const cancelBtn = screen.getByTestId("cancel-preview-btn");
-    fireEvent.click(cancelBtn);
-    expect(mockOnCancel).toHaveBeenCalledTimes(1);
-
-    // Click close 'X' button in header
-    const closeBtn = screen.getByTestId("close-preview-modal-btn");
-    fireEvent.click(closeBtn);
-    expect(mockOnCancel).toHaveBeenCalledTimes(2);
-  });
-
-  it("supports keyboard control: Esc to cancel (Acceptance Criteria 2)", async () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={true}
-        file={mockFile}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
-
-    await screen.findByTestId("image-dimensions");
-
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(mockOnCancel).toHaveBeenCalledTimes(1);
-  });
-
-  it("supports keyboard control: Enter to upload (Acceptance Criteria 2)", async () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={true}
-        file={mockFile}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
-
-    await screen.findByTestId("image-dimensions");
-
-    // Press enter on the window
-    await act(async () => {
-      fireEvent.keyDown(window, { key: "Enter" });
-    });
-
-    await waitFor(() => {
-      expect(mockOnConfirm).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it("allows entering a caption and passes it upon confirmation (Acceptance Criteria 3)", async () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={true}
-        file={mockFile}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
-
-    await screen.findByTestId("image-dimensions");
-
-    const captionInput = screen.getByTestId("image-caption-input");
-    fireEvent.change(captionInput, {
-      target: { value: "Quiet spot near power outlets" },
-    });
-    expect(captionInput).toHaveValue("Quiet spot near power outlets");
-
-    // Click confirm upload button
-    const uploadBtn = screen.getByTestId("confirm-upload-btn");
-    await act(async () => {
-      fireEvent.click(uploadBtn);
-    });
-
-    await waitFor(() => {
-      expect(mockOnConfirm).toHaveBeenCalledTimes(1);
-      const payload: ImageUploadPayload = mockOnConfirm.mock.calls[0][0];
-      expect(payload.caption).toBe("Quiet spot near power outlets");
-      expect(payload.sizeBytes).toBe(81920);
-      expect(payload.dimensions).toEqual({ width: 1920, height: 1080 });
-    });
-  });
-
-  it("allows rotating the image clockwise", async () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={true}
-        file={mockFile}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
-
-    await screen.findByTestId("image-dimensions");
-
-    const rotateBtn = screen.getByTestId("rotate-image-btn");
-    expect(rotateBtn).toHaveTextContent("Rotate");
-
-    // Rotate 90 deg
-    fireEvent.click(rotateBtn);
-    expect(screen.getByTestId("rotate-image-btn")).toHaveTextContent(
-      "Rotate (90°)",
-    );
-
-    const thumbnail = screen.getByTestId("image-preview-thumbnail");
-    expect(thumbnail).toHaveStyle("transform: rotate(90deg)");
-
-    // Dimensions display should reflect rotated orientation (height x width)
-    await waitFor(() => {
-      expect(screen.getByTestId("image-dimensions")).toHaveTextContent(
-        "1080 × 1920 px",
+    it("displays keyboard shortcut tooltips on control buttons", () => {
+      render(
+        <ImageUploadPreviewModal
+          isOpen={true}
+          imageUrl="http://example.com/photo.jpg"
+          onClose={jest.fn()}
+          onConfirm={jest.fn()}
+        />
       );
+
+      const rotateCwBtn = screen.getByTestId("rotate-cw-button");
+      expect(rotateCwBtn).toHaveAttribute(
+        "aria-label",
+        "Rotate clockwise (R)"
+      );
+
+      const rotateCcwBtn = screen.getByTestId("rotate-ccw-button");
+      expect(rotateCcwBtn).toHaveAttribute(
+        "aria-label",
+        "Rotate counter-clockwise (Shift + R)"
+      );
+
+      const zoomInBtn = screen.getByTestId("zoom-in-button");
+      expect(zoomInBtn).toHaveAttribute("aria-label", "Zoom in (+)");
+
+      const zoomOutBtn = screen.getByTestId("zoom-out-button");
+      expect(zoomOutBtn).toHaveAttribute("aria-label", "Zoom out (-)");
     });
-  });
 
-  it("allows switching crop aspect ratio options", async () => {
-    render(
-      <ImageUploadPreviewModal
-        isOpen={true}
-        file={mockFile}
-        onCancel={mockOnCancel}
-        onConfirm={mockOnConfirm}
-      />,
-    );
+    it("responds to keyboard events when open", () => {
+      const onClose = jest.fn();
+      render(
+        <ImageUploadPreviewModal
+          isOpen={true}
+          imageUrl="http://example.com/photo.jpg"
+          onClose={onClose}
+          onConfirm={jest.fn()}
+        />
+      );
 
-    await screen.findByTestId("image-dimensions");
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(onClose).toHaveBeenCalled();
+    });
 
-    const squareOption = screen.getByTestId("crop-option-square");
-    fireEvent.click(squareOption);
-    expect(squareOption).toHaveClass("bg-zinc-700");
-    expect(screen.getByTestId("image-dimensions")).toHaveTextContent(
-      "1080 × 1080 px",
-    );
+    it("updates zoom indicator on +/- shortcut events", () => {
+      render(
+        <ImageUploadPreviewModal
+          isOpen={true}
+          imageUrl="http://example.com/photo.jpg"
+          onClose={jest.fn()}
+          onConfirm={jest.fn()}
+        />
+      );
 
-    const widescreenOption = screen.getByTestId("crop-option-16:9");
-    fireEvent.click(widescreenOption);
-    expect(widescreenOption).toHaveClass("bg-zinc-700");
+      const indicator = screen.getByTestId("zoom-level-indicator");
+      expect(indicator).toHaveTextContent("100%");
+
+      fireEvent.keyDown(window, { key: "+" });
+      expect(indicator).toHaveTextContent("125%");
+
+      fireEvent.keyDown(window, { key: "-" });
+      expect(indicator).toHaveTextContent("100%");
+    });
+
+    it("swaps preview canvas width and height and preserves aspect ratio when rotated 90 degrees", () => {
+      render(
+        <ImageUploadPreviewModal
+          isOpen={true}
+          imageUrl="http://example.com/photo.jpg"
+          onClose={jest.fn()}
+          onConfirm={jest.fn()}
+        />
+      );
+
+      // Simulate natural image load with 4:3 dimensions (800x600)
+      const img = screen.getByTestId("preview-source-image");
+      Object.defineProperty(img, "naturalWidth", { value: 800, configurable: true });
+      Object.defineProperty(img, "naturalHeight", { value: 600, configurable: true });
+      fireEvent.load(img);
+
+      const container = screen.getByTestId("image-preview-container");
+      expect(container).toHaveAttribute("data-swapped", "false");
+      expect(container.style.aspectRatio).toBe("800 / 600");
+
+      const canvas = screen.getByTestId("preview-canvas");
+      expect(canvas).toHaveAttribute("data-target-width", "800");
+      expect(canvas).toHaveAttribute("data-target-height", "600");
+
+      // Rotate 90° CW
+      const rotateCwBtn = screen.getByTestId("rotate-cw-button");
+      fireEvent.click(rotateCwBtn);
+
+      expect(container).toHaveAttribute("data-swapped", "true");
+      expect(container.style.aspectRatio).toBe("600 / 800");
+      expect(canvas).toHaveAttribute("data-target-width", "600");
+      expect(canvas).toHaveAttribute("data-target-height", "800");
+    });
+
+    it("exports rotated dimensions upon confirmation", async () => {
+      const onConfirm = jest.fn();
+      render(
+        <ImageUploadPreviewModal
+          isOpen={true}
+          imageUrl="http://example.com/photo.jpg"
+          onClose={jest.fn()}
+          onConfirm={onConfirm}
+        />
+      );
+
+      const img = screen.getByTestId("preview-source-image");
+      Object.defineProperty(img, "naturalWidth", { value: 800, configurable: true });
+      Object.defineProperty(img, "naturalHeight", { value: 600, configurable: true });
+      fireEvent.load(img);
+
+      // Rotate 90° CW
+      fireEvent.click(screen.getByTestId("rotate-cw-button"));
+
+      // Confirm upload
+      const confirmBtn = screen.getByTestId("confirm-upload-button");
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(onConfirm).toHaveBeenCalled();
+      });
+
+      const payload = onConfirm.mock.calls[0][0];
+      expect(payload.width).toBe(600);
+      expect(payload.height).toBe(800);
+      expect(payload.rotation).toBe(90);
+    });
   });
 });

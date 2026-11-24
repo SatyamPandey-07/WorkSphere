@@ -105,4 +105,38 @@ describe('VenueFilterBar', () => {
       'q=Goa&amenities=veganOptions%2CdogFriendly&dogFriendly=true&veganOptions=true'
     );
   });
+
+  it('renders radius dropdown with default 5km and updates localStorage and callbacks on selection (#9890)', () => {
+    localStorage.clear();
+    const onRadiusChange = jest.fn();
+
+    render(<VenueFilterBar onRadiusChange={onRadiusChange} />);
+
+    const select = screen.getByTestId('venue-filter-radius-select') as HTMLSelectElement;
+    expect(select).toBeInTheDocument();
+    expect(select.value).toBe('5');
+
+    fireEvent.change(select, { target: { value: '10' } });
+    expect(select.value).toBe('10');
+    expect(localStorage.getItem('worksphere_search_radius')).toBe('10');
+    expect(onRadiusChange).toHaveBeenCalledWith(10);
+  });
+
+  it('restores valid saved radius preference from localStorage on mount (#9890)', () => {
+    localStorage.setItem('worksphere_search_radius', '25');
+
+    render(<VenueFilterBar />);
+
+    const select = screen.getByTestId('venue-filter-radius-select') as HTMLSelectElement;
+    expect(select.value).toBe('25');
+  });
+
+  it('falls back to 5km default radius when stored value is invalid (#9890)', () => {
+    localStorage.setItem('worksphere_search_radius', 'corrupt_value');
+
+    render(<VenueFilterBar />);
+
+    const select = screen.getByTestId('venue-filter-radius-select') as HTMLSelectElement;
+    expect(select.value).toBe('5');
+  });
 });

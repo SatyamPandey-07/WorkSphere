@@ -1,513 +1,448 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   RotateCw,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
   X,
   Upload,
-  Loader2,
-  FileText,
-  Sparkles,
-  Maximize2,
 } from "lucide-react";
-import {
-  compressImage,
-  formatFileSize,
-  getImageDimensions,
-  ImageDimensions,
-  CropArea,
-} from "@/lib/media/imageCompressor";
+import { useModalKeyboardNavigation } from "@/hooks/useModalKeyboardNavigation";
 
-export interface ImageUploadPayload {
-  file: File;
-  blob: Blob;
-  dataUrl: string;
-  caption: string;
-  dimensions: ImageDimensions;
-  sizeBytes: number;
+export interface ProcessedImagePayload {
+  file: File | Blob;
+  width: number;
+  height: number;
+  rotation: number;
+  zoom: number;
 }
-
-export type AspectRatioOption = "original" | "square" | "16:9";
 
 export interface ImageUploadPreviewModalProps {
   isOpen: boolean;
-  file: File | null;
-  onCancel: () => void;
-  onConfirm: (payload: ImageUploadPayload) => void | Promise<void>;
-  maxWidth?: number;
-  maxHeight?: number;
+  imageFile?: File | Blob | null;
+  imageUrl?: string | null;
+  onClose: () => void;
+  onConfirm: (payload: ProcessedImagePayload) => void | Promise<void>;
+  title?: string;
+}
+
+/**
+ * Calculates rotated canvas and container dimensions.
+ * For 90° and 270° angles, width and height are swapped to preserve aspect ratio.
+ */
+export function calculateRotatedDimensions(
+  width: number,
+  height: number,
+  rotation: number
+): { width: number; height: number; isSwapped: boolean } {
+  if (width <= 0 || height <= 0) {
+    return { width: 0, height: 0, isSwapped: false };
+  }
+  const normalized = ((rotation % 360) + 360) % 360;
+  const isSwapped = normalized === 90 || normalized === 270;
+  return {
+    width: isSwapped ? height : width,
+    height: isSwapped ? width : height,
+    isSwapped,
+  };
 }
 
 export function ImageUploadPreviewModal({
   isOpen,
-  file,
-  onCancel,
+  imageFile,
+  imageUrl: externalImageUrl,
+  onClose,
   onConfirm,
-  maxWidth = 1920,
-  maxHeight = 1080,
+  title = "Review & Upload Image",
 }: ImageUploadPreviewModalProps) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [rotation, setRotation] = useState<number>(0);
-  const [aspectRatio, setAspectRatio] = useState<AspectRatioOption>("original");
-  const [caption, setCaption] = useState<string>("");
-  const [dimensions, setDimensions] = useState<ImageDimensions>({
+  const [rotation, setRotation] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({
     width: 0,
     height: 0,
   });
-  const [estimatedSize, setEstimatedSize] = useState<number>(0);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const modalRef = useRef<HTMLDivElement>(null);
-  const captionInputRef = useRef<HTMLInputElement>(null);
-  const previewUrlRef = useRef<string | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Setup preview URL and extract initial dimensions
+  // Load preview source from file or URL
   useEffect(() => {
-    if (!file || !isOpen) {
-      if (previewUrlRef.current) {
-        URL.revokeObjectURL(previewUrlRef.current);
-        previewUrlRef.current = null;
-      }
-      setPreviewUrl(null);
-      setRotation(0);
-      setAspectRatio("original");
-      setCaption("");
-      setDimensions({ width: 0, height: 0 });
-      setEstimatedSize(0);
-      return;
+    if (!isOpen) return;
+
+    setRotation(0);
+    setZoom(1);
+
+    if (imageFile) {
+      const objectUrl = URL.createObjectURL(imageFile);
+      setPreviewSrc(objectUrl);
+      return () => {
+        URL.revokeObjectURL(objectUrl);
+      };
+    } else if (externalImageUrl) {
+      setPreviewSrc(externalImageUrl);
+    } else {
+      setPreviewSrc(null);
     }
+  }, [isOpen, imageFile, externalImageUrl]);
 
-    const objectUrl = URL.createObjectURL(file);
-    previewUrlRef.current = objectUrl;
-    setPreviewUrl(objectUrl);
-    setEstimatedSize(file.size);
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth, naturalHeight } = e.currentTarget;
+    setDimensions({ width: naturalWidth, height: naturalHeight });
+  };
 
-    let isMounted = true;
-
-    getImageDimensions(file)
-      .then((dims) => {
-        if (isMounted) {
-          setDimensions(dims);
-        }
-      })
-      .catch(() => {
-        // Fallback default if image load fails
-        if (isMounted) {
-          setDimensions({ width: 800, height: 600 });
-        }
-      });
-
-    return () => {
-      isMounted = false;
-      if (previewUrlRef.current) {
-        URL.revokeObjectURL(previewUrlRef.current);
-        previewUrlRef.current = null;
-      }
-    };
-  }, [file, isOpen]);
-
-  // Recalculate estimated compressed size and dimensions when rotation or crop changes
+  // Re-draw canvas when image loads, dimensions change, or rotation updates
   useEffect(() => {
-    if (!file || !isOpen) return;
+    if (!previewSrc || !dimensions.width || !dimensions.height) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    let isMounted = true;
-    setIsProcessing(true);
+    const { width: targetWidth, height: targetHeight } =
+      calculateRotatedDimensions(dimensions.width, dimensions.height, rotation);
 
-    const timer = setTimeout(async () => {
-      try {
-        let cropArea: CropArea | null = null;
-        if (dimensions.width > 0 && dimensions.height > 0) {
-          if (aspectRatio === "square") {
-            const side = Math.min(dimensions.width, dimensions.height);
-            cropArea = {
-              x: Math.floor((dimensions.width - side) / 2),
-              y: Math.floor((dimensions.height - side) / 2),
-              width: side,
-              height: side,
-            };
-          } else if (aspectRatio === "16:9") {
-            const targetHeight = Math.floor((dimensions.width * 9) / 16);
-            if (targetHeight <= dimensions.height) {
-              cropArea = {
-                x: 0,
-                y: Math.floor((dimensions.height - targetHeight) / 2),
-                width: dimensions.width,
-                height: targetHeight,
-              };
-            } else {
-              const targetWidth = Math.floor((dimensions.height * 16) / 9);
-              cropArea = {
-                x: Math.floor((dimensions.width - targetWidth) / 2),
-                y: 0,
-                width: targetWidth,
-                height: dimensions.height,
-              };
-            }
-          }
-        }
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    let ctx: CanvasRenderingContext2D | null = null;
+    try {
+      ctx = canvas.getContext("2d");
+    } catch {
+      ctx = null;
+    }
+    if (!ctx) return;
 
-        const result = await compressImage(file, {
-          maxWidth,
-          maxHeight,
-          rotation,
-          crop: cropArea,
-          quality: 0.82,
-        });
+    ctx.clearRect(0, 0, targetWidth, targetHeight);
+    ctx.save();
+    ctx.translate(targetWidth / 2, targetHeight / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
 
-        if (isMounted) {
-          setEstimatedSize(result.sizeBytes);
-        }
-      } catch {
-        // Fallback to file.size if client canvas compression is mock/restricted
-        if (isMounted) {
-          setEstimatedSize(file.size);
-        }
-      } finally {
-        if (isMounted) {
-          setIsProcessing(false);
-        }
-      }
-    }, 150);
+    if (imgRef.current) {
+      ctx.drawImage(
+        imgRef.current,
+        -dimensions.width / 2,
+        -dimensions.height / 2,
+        dimensions.width,
+        dimensions.height
+      );
+    }
+    ctx.restore();
+  }, [previewSrc, dimensions, rotation]);
 
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-    };
-  }, [file, isOpen, rotation, aspectRatio, dimensions, maxWidth, maxHeight]);
-
-  // Rotate 90 degrees clockwise
-  const handleRotate = useCallback(() => {
+  const handleRotateCw = useCallback(() => {
     setRotation((prev) => (prev + 90) % 360);
   }, []);
 
-  // Compute crop bounds helper
-  const getCropArea = useCallback((): CropArea | null => {
-    if (!dimensions.width || !dimensions.height) return null;
-    if (aspectRatio === "square") {
-      const side = Math.min(dimensions.width, dimensions.height);
-      return {
-        x: Math.floor((dimensions.width - side) / 2),
-        y: Math.floor((dimensions.height - side) / 2),
-        width: side,
-        height: side,
-      };
-    }
-    if (aspectRatio === "16:9") {
-      const targetHeight = Math.floor((dimensions.width * 9) / 16);
-      if (targetHeight <= dimensions.height) {
-        return {
-          x: 0,
-          y: Math.floor((dimensions.height - targetHeight) / 2),
-          width: dimensions.width,
-          height: targetHeight,
-        };
-      }
-      const targetWidth = Math.floor((dimensions.height * 16) / 9);
-      return {
-        x: Math.floor((dimensions.width - targetWidth) / 2),
-        y: 0,
-        width: targetWidth,
-        height: dimensions.height,
-      };
-    }
-    return null;
-  }, [dimensions, aspectRatio]);
+  const handleRotateCcw = useCallback(() => {
+    setRotation((prev) => (prev + 270) % 360);
+  }, []);
 
-  // Confirm and upload workflow
+  const handleZoomIn = useCallback(() => {
+    setZoom((prev) => Math.min(3, Math.round((prev + 0.25) * 100) / 100));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoom((prev) => Math.max(0.5, Math.round((prev - 0.25) * 100) / 100));
+  }, []);
+
+  const handleResetZoom = useCallback(() => {
+    setZoom(1);
+  }, []);
+
   const handleConfirm = useCallback(async () => {
-    if (!file || isSubmitting) return;
-
+    if (isSubmitting || !previewSrc) return;
     setIsSubmitting(true);
+
     try {
-      const cropArea = getCropArea();
-      const compressed = await compressImage(file, {
-        maxWidth,
-        maxHeight,
-        rotation,
-        crop: cropArea,
-        quality: 0.82,
+      const { width: targetWidth, height: targetHeight } = calculateRotatedDimensions(
+        dimensions.width || 800,
+        dimensions.height || 600,
+        rotation
+      );
+
+      // Render to canvas to bake in rotation and dimensions
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      let ctx: CanvasRenderingContext2D | null = null;
+      try {
+        ctx = canvas.getContext("2d");
+      } catch {
+        ctx = null;
+      }
+
+      if (ctx && imgRef.current) {
+        ctx.translate(targetWidth / 2, targetHeight / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.drawImage(
+          imgRef.current,
+          -dimensions.width / 2,
+          -dimensions.height / 2,
+          dimensions.width,
+          dimensions.height
+        );
+      }
+
+      const blob = await new Promise<Blob>((resolve) => {
+        if (typeof canvas.toBlob === "function") {
+          try {
+            canvas.toBlob(
+              (b) => resolve(b || (imageFile as Blob) || new Blob()),
+              (imageFile as File)?.type || "image/jpeg",
+              0.9
+            );
+            return;
+          } catch {
+            // fallback
+          }
+        }
+        resolve((imageFile as Blob) || new Blob());
+      });
+
+      const fileName =
+        imageFile instanceof File ? imageFile.name : "uploaded-image.jpg";
+      const exportedFile = new File([blob], fileName, {
+        type: blob.type || "image/jpeg",
       });
 
       await onConfirm({
-        file,
-        blob: compressed.blob,
-        dataUrl: compressed.dataUrl,
-        caption: caption.trim(),
-        dimensions: { width: compressed.width, height: compressed.height },
-        sizeBytes: compressed.sizeBytes,
-      });
-    } catch (err) {
-      console.error("Failed to compress image before upload:", err);
-      // Fallback: send raw file
-      await onConfirm({
-        file,
-        blob: file,
-        dataUrl: previewUrl || "",
-        caption: caption.trim(),
-        dimensions,
-        sizeBytes: file.size,
+        file: exportedFile,
+        width: targetWidth,
+        height: targetHeight,
+        rotation,
+        zoom,
       });
     } finally {
       setIsSubmitting(false);
     }
   }, [
-    file,
     isSubmitting,
-    getCropArea,
-    maxWidth,
-    maxHeight,
-    rotation,
-    caption,
-    onConfirm,
-    previewUrl,
+    previewSrc,
     dimensions,
+    rotation,
+    zoom,
+    imageFile,
+    onConfirm,
   ]);
 
-  // Keyboard accessibility: Escape to cancel, Enter to upload
-  useEffect(() => {
-    if (!isOpen) return;
+  // Hook up full accessibility focus trap & keyboard shortcuts
+  useModalKeyboardNavigation({
+    isOpen,
+    containerRef: modalRef,
+    onClose,
+    onConfirm: handleConfirm,
+    onRotateClockwise: handleRotateCw,
+    onRotateCounterClockwise: handleRotateCcw,
+    onZoomIn: handleZoomIn,
+    onZoomOut: handleZoomOut,
+    onResetZoom: handleResetZoom,
+  });
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-      } else if (e.key === "Enter") {
-        // If user is focused on the caption input, plain Enter uploads
-        // If user is on an action button, native click handles it; otherwise Enter triggers upload
-        if (!isSubmitting) {
-          e.preventDefault();
-          handleConfirm();
-        }
-      }
-    };
+  if (!isOpen) return null;
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onCancel, handleConfirm, isSubmitting]);
+  const { width: targetWidth, height: targetHeight, isSwapped } =
+    calculateRotatedDimensions(dimensions.width, dimensions.height, rotation);
 
-  if (!isOpen || !file) return null;
-
-  // Active display dimensions respecting crop and rotation
-  let activeWidth = dimensions.width;
-  let activeHeight = dimensions.height;
-
-  if (dimensions.width > 0 && dimensions.height > 0) {
-    if (aspectRatio === "square") {
-      const side = Math.min(dimensions.width, dimensions.height);
-      activeWidth = side;
-      activeHeight = side;
-    } else if (aspectRatio === "16:9") {
-      const targetHeight = Math.floor((dimensions.width * 9) / 16);
-      if (targetHeight <= dimensions.height) {
-        activeHeight = targetHeight;
-      } else {
-        activeWidth = Math.floor((dimensions.height * 16) / 9);
-      }
-    }
-  }
-
-  const isRotatedSideways = rotation === 90 || rotation === 270;
-  const displayWidth = isRotatedSideways ? activeHeight : activeWidth;
-  const displayHeight = isRotatedSideways ? activeWidth : activeHeight;
+  const aspectRatio =
+    targetWidth && targetHeight ? `${targetWidth} / ${targetHeight}` : "auto";
 
   return (
     <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="image-preview-modal-title"
+      ref={modalRef}
       data-testid="image-upload-preview-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
     >
-      <div
-        ref={modalRef}
-        className="w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
-      >
+      <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/80">
-          <div>
-            <h2
-              id="image-preview-modal-title"
-              className="text-base font-bold text-zinc-100 flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4 text-emerald-400" />
-              Image Upload Preview
-            </h2>
-            <p className="text-xs text-zinc-400 truncate max-w-sm">
-              {file.name}
-            </p>
-          </div>
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <h2
+            id="image-preview-modal-title"
+            className="text-base font-semibold text-white"
+          >
+            {title}
+          </h2>
           <button
             type="button"
-            data-testid="close-preview-modal-btn"
-            onClick={onCancel}
-            aria-label="Close modal"
-            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-full transition-colors"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            aria-label="Close modal (Esc)"
+            title="Cancel & close (Esc)"
+            data-testid="modal-close-button"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="p-6 overflow-y-auto space-y-5">
-          {/* High-res Image Preview Viewport */}
-          <div className="relative w-full aspect-video bg-zinc-950 rounded-2xl border border-zinc-800/80 flex items-center justify-center overflow-hidden group">
-            {previewUrl ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={previewUrl}
-                alt="Upload preview"
-                data-testid="image-preview-thumbnail"
-                style={{
-                  transform: `rotate(${rotation}deg)`,
-                  transition: "transform 0.25s ease-in-out",
-                  maxHeight: "100%",
-                  maxWidth: "100%",
-                  objectFit: aspectRatio === "original" ? "contain" : "cover",
-                }}
-                className={`rounded-lg shadow-md ${
-                  aspectRatio === "square"
-                    ? "aspect-square"
-                    : aspectRatio === "16:9"
-                      ? "aspect-video"
-                      : ""
-                }`}
-              />
-            ) : (
-              <div className="flex flex-col items-center gap-2 text-zinc-500">
-                <Loader2 className="w-8 h-8 animate-spin" />
-                <span className="text-xs">Loading preview…</span>
-              </div>
-            )}
-
-            {/* Quick action overlay buttons on image */}
-            <div className="absolute top-3 right-3 flex gap-2">
-              <button
-                type="button"
-                data-testid="rotate-image-btn"
-                onClick={handleRotate}
-                title="Rotate 90° clockwise"
-                aria-label="Rotate image"
-                className="px-3 py-1.5 bg-black/60 hover:bg-black/80 text-zinc-200 hover:text-white rounded-xl backdrop-blur-md border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 shadow-md"
-              >
-                <RotateCw className="w-3.5 h-3.5" />
-                Rotate {rotation ? `(${rotation}°)` : ""}
-              </button>
-            </div>
-          </div>
-
-          {/* Metadata Badges Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/60 text-xs text-zinc-400">
-            <div className="flex items-center gap-4">
-              <span className="flex items-center gap-1.5">
-                <Maximize2 className="w-3.5 h-3.5 text-zinc-500" />
-                Dimensions:{" "}
-                <strong
-                  data-testid="image-dimensions"
-                  className="text-zinc-200 font-mono"
-                >
-                  {displayWidth || "—"} × {displayHeight || "—"} px
-                </strong>
-              </span>
-
-              <span className="flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-zinc-500" />
-                Estimated Payload:{" "}
-                <strong
-                  data-testid="image-payload-size"
-                  className="text-emerald-400 font-mono"
-                >
-                  {isProcessing
-                    ? "Calculating…"
-                    : formatFileSize(estimatedSize)}
-                </strong>
-              </span>
-            </div>
-
-            {/* Crop Aspect Ratio Selector */}
-            <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-lg border border-zinc-800">
-              <span className="text-[10px] uppercase font-bold text-zinc-500 px-1.5">
-                Crop
-              </span>
-              {(["original", "square", "16:9"] as AspectRatioOption[]).map(
-                (option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    data-testid={`crop-option-${option}`}
-                    onClick={() => setAspectRatio(option)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium capitalize transition-colors ${
-                      aspectRatio === option
-                        ? "bg-zinc-700 text-white"
-                        : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    {option}
-                  </button>
-                ),
-              )}
-            </div>
-          </div>
-
-          {/* Caption Input */}
-          <div className="space-y-1.5">
-            <label
-              htmlFor="image-caption-input"
-              className="text-xs font-semibold text-zinc-300 flex items-center justify-between"
+        {/* Toolbar with Tooltip Hints */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 bg-zinc-950/50 px-5 py-2.5 text-xs text-zinc-300">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleRotateCcw}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 font-medium transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              title="Rotate counter-clockwise (Shift + R)"
+              aria-label="Rotate counter-clockwise (Shift + R)"
+              data-testid="rotate-ccw-button"
             >
-              <span>Add Caption</span>
-              <span className="text-[10px] text-zinc-500">
-                Press Enter to upload
-              </span>
-            </label>
-            <input
-              id="image-caption-input"
-              ref={captionInputRef}
-              type="text"
-              data-testid="image-caption-input"
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              placeholder="Add context or notes for collaborative room nomads..."
-              className="w-full px-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500 transition-colors"
-            />
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>Rotate 90° CCW</span>
+              <kbd className="ml-1 rounded bg-white/10 px-1 py-0.5 text-[10px] text-zinc-400">
+                ⇧R
+              </kbd>
+            </button>
+            <button
+              type="button"
+              onClick={handleRotateCw}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 font-medium transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              title="Rotate clockwise (R)"
+              aria-label="Rotate clockwise (R)"
+              data-testid="rotate-cw-button"
+            >
+              <RotateCw className="h-3.5 w-3.5" />
+              <span>Rotate 90° CW</span>
+              <kbd className="ml-1 rounded bg-white/10 px-1 py-0.5 text-[10px] text-zinc-400">
+                R
+              </kbd>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              disabled={zoom <= 0.5}
+              className="flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1.5 font-medium transition hover:bg-white/10 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              title="Zoom out (-)"
+              aria-label="Zoom out (-)"
+              data-testid="zoom-out-button"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+              <kbd className="rounded bg-white/10 px-1 py-0.5 text-[10px] text-zinc-400">
+                -
+              </kbd>
+            </button>
+            <span
+              className="w-12 text-center font-mono text-[11px] text-zinc-400"
+              data-testid="zoom-level-indicator"
+            >
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              disabled={zoom >= 3}
+              className="flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1.5 font-medium transition hover:bg-white/10 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              title="Zoom in (+)"
+              aria-label="Zoom in (+)"
+              data-testid="zoom-in-button"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+              <kbd className="rounded bg-white/10 px-1 py-0.5 text-[10px] text-zinc-400">
+                +
+              </kbd>
+            </button>
+            <button
+              type="button"
+              onClick={handleResetZoom}
+              className="flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1.5 font-medium transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              title="Reset zoom (0)"
+              aria-label="Reset zoom (0)"
+              data-testid="zoom-reset-button"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              <kbd className="rounded bg-white/10 px-1 py-0.5 text-[10px] text-zinc-400">
+                0
+              </kbd>
+            </button>
           </div>
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-zinc-800 bg-zinc-900/80">
-          <span className="text-[11px] text-zinc-500">
-            Esc to cancel • Enter to upload
-          </span>
+        {/* Image Preview Canvas Area */}
+        <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black/40 p-6 min-h-[300px]">
+          {previewSrc ? (
+            <div
+              className="relative flex items-center justify-center transition-all duration-200"
+              style={{
+                aspectRatio,
+                maxWidth: "100%",
+                maxHeight: "50vh",
+              }}
+              data-testid="image-preview-container"
+              data-swapped={isSwapped ? "true" : "false"}
+            >
+              {/* Offscreen image to load natural dimensions and draw onto canvas */}
+              <img
+                ref={imgRef}
+                src={previewSrc}
+                alt="Source preview"
+                onLoad={handleImageLoad}
+                className="hidden"
+                data-testid="preview-source-image"
+              />
+              <canvas
+                ref={canvasRef}
+                width={targetWidth || 800}
+                height={targetHeight || 600}
+                style={{
+                  transform: `scale(${zoom})`,
+                  transformOrigin: "center center",
+                  transition: "transform 150ms ease-out",
+                  maxWidth: "100%",
+                  maxHeight: "50vh",
+                  objectFit: "contain",
+                }}
+                className="rounded-lg shadow-md select-none"
+                data-testid="preview-canvas"
+                data-target-width={targetWidth}
+                data-target-height={targetHeight}
+              />
+            </div>
+          ) : (
+            <div className="text-sm text-zinc-500">No image loaded</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t border-white/10 px-5 py-3 bg-zinc-950/70">
+          <div className="flex items-center gap-3 text-[11px] text-zinc-400">
+            <span>
+              <kbd className="rounded bg-white/10 px-1.5 py-0.5 text-zinc-300">
+                Esc
+              </kbd>{" "}
+              Cancel
+            </span>
+            <span>
+              <kbd className="rounded bg-white/10 px-1.5 py-0.5 text-zinc-300">
+                ↵
+              </kbd>{" "}
+              Confirm
+            </span>
+          </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
-              data-testid="cancel-preview-btn"
-              onClick={onCancel}
-              disabled={isSubmitting}
-              className="px-4 py-2 rounded-xl text-sm font-semibold text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              onClick={onClose}
+              className="rounded-lg border border-white/10 px-4 py-2 text-xs font-medium text-zinc-300 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+              data-testid="cancel-button"
             >
               Cancel
             </button>
-
             <button
               type="button"
-              data-testid="confirm-upload-btn"
               onClick={handleConfirm}
-              disabled={isSubmitting}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold flex items-center gap-2 shadow-lg shadow-emerald-900/20 active:scale-95 transition-all disabled:opacity-50"
+              disabled={isSubmitting || !previewSrc}
+              className="flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-xs font-semibold text-white shadow-lg transition hover:bg-sky-400 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+              data-testid="confirm-upload-button"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Compressing…</span>
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4" />
-                  <span>Upload</span>
-                </>
-              )}
+              <Upload className="h-3.5 w-3.5" />
+              <span>{isSubmitting ? "Uploading..." : "Confirm & Upload"}</span>
             </button>
           </div>
         </div>
@@ -515,3 +450,5 @@ export function ImageUploadPreviewModal({
     </div>
   );
 }
+
+export default ImageUploadPreviewModal;

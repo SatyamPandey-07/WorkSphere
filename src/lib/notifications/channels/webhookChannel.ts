@@ -5,7 +5,7 @@ import type { WebhookEndpoint, WebhookEventType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isSafeWebhookUrl } from "@/lib/ssrfValidation";
 import { isWithinNotificationWindow } from "@/lib/notificationWindow";
-import { defaultNotificationHttpClient } from "../httpClient";
+import { defaultNotificationHttpClient, SsrfBlockedError } from "../httpClient";
 import type {
   NotificationChannel,
   NotificationMessage,
@@ -99,15 +99,28 @@ export async function deliverToEndpoint(
           },
           body,
         },
-        { timeoutMs: 5000, maxRetries: 2 },
+        {
+          timeoutMs: 5000,
+          maxRetries: 2,
+          maxRedirects: 3,
+          validateUrl: isSafeWebhookUrl,
+        },
       );
 
       statusCode = res.status;
       status = res.ok ? "SUCCESS" : "FAILED";
-    } catch {
-      status = defaultNotificationHttpClient.isCircuitOpen(endpoint.url)
-        ? "CIRCUIT_OPEN"
-        : "FAILED";
+    } catch (err: any) {
+      if (
+        err instanceof SsrfBlockedError ||
+        err?.name === "SsrfBlockedError" ||
+        err?.message?.includes("SSRF validation blocked")
+      ) {
+        status = "BLOCKED";
+      } else {
+        status = defaultNotificationHttpClient.isCircuitOpen(endpoint.url)
+          ? "CIRCUIT_OPEN"
+          : "FAILED";
+      }
     }
   }
 

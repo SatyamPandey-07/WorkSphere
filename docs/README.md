@@ -143,6 +143,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [CSV and Excel Export Architecture Developer Guide](./export/CSV_EXCEL_EXPORT_GUIDE.md) — Comprehensive developer reference for typed CSV and Excel XML export builders, RFC-4180 escaping, formula injection sanitization, and browser download handling.
 - [Booking Itinerary & PDF Verification System](./export/booking-pdf-generation.md) — Specification and architecture for booking receipts, vector QR matrix generation, and cryptographic verification seals.
+- [Nomad Attendance Certificate Cryptographic Verification Flow](./certificates/NOMAD_CERTIFICATE_VERIFICATION.md) — End-to-end nomad stay certificate lifecycle, pdf-lib vector layout, HMAC-SHA256 tamper-evident payload, and public verification API.
 
 ## UI Components & Frontend
 

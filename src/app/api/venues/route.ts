@@ -912,8 +912,10 @@ export async function POST(req: NextRequest) {
       oatAlmondMilk,
       pourOverAvailable,
       musicStyle,
+      placeId,
+      rating,
+      imageUrl,
     } = validation.data;
-    const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
 
     // Validate placeId (required for upsert)
     if (!placeId) {
@@ -922,6 +924,9 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    const cleanImageUrl =
+      imageUrl && imageUrl.trim() !== "" ? imageUrl.trim() : null;
 
     const existing = await prisma.venue.findUnique({
       where: { placeId },
@@ -940,8 +945,8 @@ export async function POST(req: NextRequest) {
     let requiresReview = false;
 
     // Run Vision Validation if an image was provided
-    if (imageUrl) {
-      const visionResult = await analyzeVenueImage(imageUrl, {
+    if (cleanImageUrl) {
+      const visionResult = await analyzeVenueImage(cleanImageUrl, {
         hasOutlets,
         category,
       });
@@ -984,7 +989,7 @@ export async function POST(req: NextRequest) {
         musicStyle,
         crowdsourced: true,
         requiresReview,
-        ...(imageUrl && { imageUrl }),
+        ...(cleanImageUrl && { imageUrl: cleanImageUrl }),
       },
       create: {
         placeId,
@@ -993,7 +998,7 @@ export async function POST(req: NextRequest) {
         longitude,
         category,
         address,
-        rating,
+        rating: rating ?? null,
         wifiQuality,
         hasOutlets: hasOutlets || false,
         noiseLevel,
@@ -1017,7 +1022,7 @@ export async function POST(req: NextRequest) {
         musicStyle,
         crowdsourced: true,
         requiresReview,
-        imageUrl,
+        imageUrl: cleanImageUrl,
         creatorId: userId,
       },
     });

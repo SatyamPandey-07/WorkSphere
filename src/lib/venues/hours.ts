@@ -75,7 +75,7 @@ export function formatMinutes12Hour(minutesFromMidnight: number): string {
   const mins = normalized % 60;
   const period = h24 >= 12 ? 'PM' : 'AM';
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  const minStr = mins === 0 ? '' : `:${String(mins).padStart(2, '0')}`;
+  const minStr = `:${String(mins).padStart(2, '0')}`;
   return `${h12}${minStr} ${period}`;
 }
 
@@ -143,7 +143,7 @@ export function getVenueOpeningStatus(
     const minutesRemaining = active.endAbs - minutesSinceMidnight;
     const closesAtFormatted = formatMinutes12Hour(active.closeMinutesOfDay);
 
-    if (minutesRemaining <= 60) {
+    if (minutesRemaining < 60) {
       const badgeText = `Closing Soon (Closes at ${closesAtFormatted})`;
       return {
         state: 'closing_soon',

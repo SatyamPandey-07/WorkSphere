@@ -51,6 +51,58 @@ describe('getVenueOpeningStatus & VenueCard badge', () => {
     expect(overnightStatus.badgeText).toBe('Open Now');
   });
 
+  it('correctly identifies cross-midnight operating windows (20:00-04:00 and 17:00-01:00)', () => {
+    // 20:00 - 04:00 schedule on Friday night / Saturday morning in UTC
+    const clubVenue: VenueOpeningHours = {
+      timeZone: 'UTC',
+      schedule: {
+        fri: [{ open: '20:00', close: '04:00' }],
+      },
+    };
+
+    // Friday at 22:00 UTC (open)
+    const friNight = getVenueOpeningStatus(clubVenue, '2026-11-27T22:00:00.000Z');
+    expect(friNight.state).toBe('open');
+    expect(friNight.badgeText).toBe('Open Now');
+
+    // Saturday at 01:15 UTC (cross-midnight window, open)
+    const satEarly = getVenueOpeningStatus(clubVenue, '2026-11-28T01:15:00.000Z');
+    expect(satEarly.state).toBe('open');
+    expect(satEarly.badgeText).toBe('Open Now');
+    expect(satEarly.closesAtFormatted).toBe('4:00 AM');
+
+    // Saturday at 03:15 UTC (closing soon, < 60 min remaining)
+    const satClosingSoon = getVenueOpeningStatus(clubVenue, '2026-11-28T03:15:00.000Z');
+    expect(satClosingSoon.state).toBe('closing_soon');
+    expect(satClosingSoon.badgeText).toBe('Closing Soon (Closes at 4:00 AM)');
+
+    // Saturday at 04:15 UTC (closed)
+    const satAfterClose = getVenueOpeningStatus(clubVenue, '2026-11-28T04:15:00.000Z');
+    expect(satAfterClose.state).toBe('closed');
+
+    // 17:00 - 01:00 schedule
+    const loungeVenue: VenueOpeningHours = {
+      timeZone: 'UTC',
+      schedule: {
+        fri: [{ open: '17:00', close: '01:00' }],
+      },
+    };
+
+    // Friday at 23:30 UTC (open)
+    const loungeBeforeMidnight = getVenueOpeningStatus(loungeVenue, '2026-11-27T23:30:00.000Z');
+    expect(loungeBeforeMidnight.state).toBe('open');
+    expect(loungeBeforeMidnight.badgeText).toBe('Open Now');
+
+    // Saturday at 00:20 UTC (cross-midnight, closing soon within 40 min)
+    const loungeAfterMidnight = getVenueOpeningStatus(loungeVenue, '2026-11-28T00:20:00.000Z');
+    expect(loungeAfterMidnight.state).toBe('closing_soon');
+    expect(loungeAfterMidnight.badgeText).toBe('Closing Soon (Closes at 1:00 AM)');
+
+    // Saturday at 01:05 UTC (closed)
+    const loungeClosed = getVenueOpeningStatus(loungeVenue, '2026-11-28T01:05:00.000Z');
+    expect(loungeClosed.state).toBe('closed');
+  });
+
   it('renders accessible status badge on VenueCard', () => {
     render(
       <VenueCard

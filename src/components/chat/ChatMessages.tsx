@@ -85,6 +85,28 @@ export interface Message {
   isStreaming?: boolean;
 }
 
+/**
+ * Deduplicates chat messages by unique identifier (message.id).
+ * Retains the first occurrence, preserving message sequence and order.
+ * Prevents duplicate message bubbles from rendering during rapid WebRTC
+ * DataChannel reconnects or redundant peer mesh history sync (#10014).
+ */
+export function deduplicateChatMessages(
+  messages: readonly Message[],
+): Message[] {
+  if (!Array.isArray(messages)) return [];
+  const seen = new Set<string>();
+  const result: Message[] = [];
+  for (const msg of messages) {
+    if (!msg || !msg.id) continue;
+    if (!seen.has(msg.id)) {
+      seen.add(msg.id);
+      result.push(msg);
+    }
+  }
+  return result;
+}
+
 const AGENT_ICONS: Record<string, React.ElementType> = {
   Orchestrator: Brain,
   Context: SearchIcon,
@@ -1074,7 +1096,13 @@ export function MessageList({
 
   const { speakingMessageId, speakingSentenceIndex } = useSpeechSynthesis();
 
-  const prevMessageCountRef = useRef(messages.length);
+  // Deduplicate incoming messages to prevent rendering duplicate bubbles on rapid WebRTC reconnect (#10014)
+  const displayMessages = useMemo(
+    () => deduplicateChatMessages(messages),
+    [messages],
+  );
+
+  const prevMessageCountRef = useRef(displayMessages.length);
   const isNearBottomRef = useRef(true);
   const [hasNewMessagesBelow, setHasNewMessagesBelow] = useState(false);
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
@@ -1119,8 +1147,8 @@ export function MessageList({
   // Handle messages changes and auto-scroll logic
   useEffect(() => {
     const container = containerRef.current;
-    const isNewMessage = messages.length > prevMessageCountRef.current;
-    prevMessageCountRef.current = messages.length;
+    const isNewMessage = displayMessages.length > prevMessageCountRef.current;
+    prevMessageCountRef.current = displayMessages.length;
 
     if (!container) return;
 
@@ -1135,12 +1163,12 @@ export function MessageList({
       setHasNewMessagesBelow(true);
       setShowScrollToLatest(true);
     }
-  }, [messages, isLoading]);
+  }, [displayMessages, isLoading]);
 
   // Also re-check whenever the container's own size changes
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || typeof ResizeObserver === "undefined") return;
     const resizeObserver = new ResizeObserver(() => {
       if (isNearBottomRef.current || isLoading) {
         requestAnimationFrame(() => {
@@ -1160,7 +1188,7 @@ export function MessageList({
         className="flex-1 overflow-y-auto p-4 space-y-4"
         style={{ scrollbarGutter: "stable" }}
       >
-        {messages.length === 0 && (
+        {displayMessages.length === 0 && (
           <div className="text-center py-8">
             <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
             <p className="text-zinc-900 dark:text-white font-bold mb-4 uppercase text-xs tracking-widest">
@@ -1181,9 +1209,10 @@ export function MessageList({
           </div>
         )}
 
-        {messages.map((message) => (
+        {displayMessages.map((message) => (
           <div
             key={message.id}
+            data-testid={`chat-message-${message.id}`}
             className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
           >
             {message.role === "assistant" &&
@@ -1351,7 +1380,7 @@ export function MessageList({
         <div ref={messagesEndRef} />
       </div>
 
-      {showScrollToLatest && messages.length > 0 && (
+      {showScrollToLatest && displayMessages.length > 0 && (
         <button
           type="button"
           onClick={handleScrollToLatest}

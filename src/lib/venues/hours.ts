@@ -1,4 +1,4 @@
-﻿export type WeekdayKey = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
+﻿export type WeekdayKey = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
 
 export interface DailyTimeWindow {
   open: string;
@@ -11,7 +11,7 @@ export interface VenueOpeningHours {
   schedule?: Partial<Record<WeekdayKey, DailyTimeWindow[]>>;
 }
 
-export type VenueOpeningState = 'open' | 'closing_soon' | 'closed';
+export type VenueOpeningState = "open" | "closing_soon" | "closed";
 
 export interface VenueOpeningStatus {
   state: VenueOpeningState;
@@ -20,39 +20,51 @@ export interface VenueOpeningStatus {
   closesAtFormatted?: string;
   opensAtFormatted?: string;
   minutesRemaining?: number;
+  countdownText?: string;
 }
 
-const WEEKDAY_ORDER: WeekdayKey[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const WEEKDAY_ORDER: WeekdayKey[] = [
+  "sun",
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+];
 
 function resolveTimeZone(tz?: string): string {
-  if (!tz) return 'UTC';
+  if (!tz) return "UTC";
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz }).format(new Date(0));
+    new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(new Date(0));
     return tz;
   } catch {
-    return 'UTC';
+    return "UTC";
   }
 }
 
-function getLocalClock(date: Date, timeZone: string): {
+function getLocalClock(
+  date: Date,
+  timeZone: string,
+): {
   weekdayIndex: number;
   minutesSinceMidnight: number;
 } {
-  const partsFormatter = new Intl.DateTimeFormat('en-US', {
+  const partsFormatter = new Intl.DateTimeFormat("en-US", {
     timeZone,
-    weekday: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
   });
 
   const parts = partsFormatter.formatToParts(date);
-  const weekdayShort = (parts.find((p) => p.type === 'weekday')?.value ?? 'Sun')
+  const weekdayShort = (parts.find((p) => p.type === "weekday")?.value ?? "Sun")
     .toLowerCase()
     .slice(0, 3) as WeekdayKey;
   const weekdayIndex = Math.max(0, WEEKDAY_ORDER.indexOf(weekdayShort));
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value);
-  const minute = Number(parts.find((p) => p.type === 'minute')?.value);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value);
 
   return {
     weekdayIndex,
@@ -61,9 +73,9 @@ function getLocalClock(date: Date, timeZone: string): {
 }
 
 function parseMinutes(hhmm: string): number {
-  const [hStr, mStr] = hhmm.split(':');
+  const [hStr, mStr] = hhmm.split(":");
   const hours = Number(hStr);
-  const minutes = Number(mStr ?? '0');
+  const minutes = Number(mStr ?? "0");
   if (Number.isNaN(hours) || Number.isNaN(minutes)) return 0;
   if (hours === 24 && minutes === 0) return 1440;
   return Math.max(0, Math.min(1439, hours * 60 + minutes));
@@ -73,10 +85,26 @@ export function formatMinutes12Hour(minutesFromMidnight: number): string {
   const normalized = ((minutesFromMidnight % 1440) + 1440) % 1440;
   const h24 = Math.floor(normalized / 60);
   const mins = normalized % 60;
-  const period = h24 >= 12 ? 'PM' : 'AM';
+  const period = h24 >= 12 ? "PM" : "AM";
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  const minStr = `:${String(mins).padStart(2, '0')}`;
+  const minStr = `:${String(mins).padStart(2, "0")}`;
   return `${h12}${minStr} ${period}`;
+}
+
+export function formatCountdown(
+  minutes: number,
+  prefix: "Closes in" | "Opens in",
+): string {
+  const clamped = Math.max(0, Math.floor(minutes));
+  const hours = Math.floor(clamped / 60);
+  const mins = clamped % 60;
+  if (hours === 0) {
+    return `${prefix} ${mins}m`;
+  }
+  if (mins === 0) {
+    return `${prefix} ${hours}h`;
+  }
+  return `${prefix} ${hours}h ${mins}m`;
 }
 
 interface ActiveInterval {
@@ -87,7 +115,7 @@ interface ActiveInterval {
 
 function collectIntervals(
   openingHours: VenueOpeningHours,
-  baseDayIndex: number
+  baseDayIndex: number,
 ): ActiveInterval[] {
   const schedule = openingHours.schedule ?? {};
   const intervals: ActiveInterval[] = [];
@@ -120,72 +148,86 @@ function collectIntervals(
 
 export function getVenueOpeningStatus(
   openingHours: VenueOpeningHours,
-  currentTime: Date | string | number = new Date()
+  currentTime: Date | string | number = new Date(),
 ): VenueOpeningStatus {
   if (openingHours.is24Seven) {
     return {
-      state: 'open',
-      badgeText: 'Open Now',
-      ariaLabel: 'Venue is currently Open Now, operating 24/7',
+      state: "open",
+      badgeText: "Open Now",
+      ariaLabel: "Venue is currently Open Now, operating 24/7",
     };
   }
 
-  const nowDate = currentTime instanceof Date ? currentTime : new Date(currentTime);
+  const nowDate =
+    currentTime instanceof Date ? currentTime : new Date(currentTime);
   const timeZone = resolveTimeZone(openingHours.timeZone);
-  const { weekdayIndex, minutesSinceMidnight } = getLocalClock(nowDate, timeZone);
+  const { weekdayIndex, minutesSinceMidnight } = getLocalClock(
+    nowDate,
+    timeZone,
+  );
   const intervals = collectIntervals(openingHours, weekdayIndex);
 
   const active = intervals.find(
-    (iv) => minutesSinceMidnight >= iv.startAbs && minutesSinceMidnight < iv.endAbs
+    (iv) =>
+      minutesSinceMidnight >= iv.startAbs && minutesSinceMidnight < iv.endAbs,
   );
 
   if (active) {
     const minutesRemaining = active.endAbs - minutesSinceMidnight;
     const closesAtFormatted = formatMinutes12Hour(active.closeMinutesOfDay);
+    const countdownText = formatCountdown(minutesRemaining, "Closes in");
 
     if (minutesRemaining < 60) {
       const badgeText = `Closing Soon (Closes at ${closesAtFormatted})`;
       return {
-        state: 'closing_soon',
+        state: "closing_soon",
         badgeText,
         ariaLabel: `Venue is ${badgeText}`,
         closesAtFormatted,
         minutesRemaining,
+        countdownText,
       };
     }
 
     return {
-      state: 'open',
-      badgeText: 'Open Now',
+      state: "open",
+      badgeText: "Open Now",
       ariaLabel: `Venue is Open Now, closes at ${closesAtFormatted}`,
       closesAtFormatted,
       minutesRemaining,
+      countdownText,
     };
   }
 
-  const nextUpcoming = intervals.find((iv) => iv.startAbs > minutesSinceMidnight);
+  const nextUpcoming = intervals.find(
+    (iv) => iv.startAbs > minutesSinceMidnight,
+  );
   if (nextUpcoming) {
+    const minutesRemaining = nextUpcoming.startAbs - minutesSinceMidnight;
+    const countdownText = formatCountdown(minutesRemaining, "Opens in");
     const opensAtFormatted = formatMinutes12Hour(nextUpcoming.startAbs);
     const dayDiff = Math.floor(nextUpcoming.startAbs / 1440);
     const dayPhrase =
       dayDiff === 0
-        ? 'today'
+        ? "today"
         : dayDiff === 1
-        ? 'tomorrow'
-        : WEEKDAY_ORDER[(((weekdayIndex + dayDiff) % 7) + 7) % 7];
+          ? "tomorrow"
+          : WEEKDAY_ORDER[(((weekdayIndex + dayDiff) % 7) + 7) % 7];
 
     const badgeText = `Closed (Opens ${dayPhrase} at ${opensAtFormatted})`;
     return {
-      state: 'closed',
+      state: "closed",
       badgeText,
       ariaLabel: `Venue is ${badgeText}`,
       opensAtFormatted,
+      minutesRemaining,
+      countdownText,
     };
   }
 
   return {
-    state: 'closed',
-    badgeText: 'Closed',
-    ariaLabel: 'Venue is currently Closed',
+    state: "closed",
+    badgeText: "Closed",
+    ariaLabel: "Venue is currently Closed",
   };
 }

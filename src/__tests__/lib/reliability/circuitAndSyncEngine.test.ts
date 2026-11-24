@@ -34,8 +34,16 @@ describe('ResilienceCircuitBreaker, BoundedSyncOutbox & SessionHealthPanel', () 
     expect(breaker.getState()).toBe('closed');
   });
 
-  it('compacts superseded sync events and drains bounded outbox', async () => {
-    const outbox = new BoundedSyncOutbox<{ title: string }>(3);
+  it('compacts superseded sync events by (version, timestampMs, peerId) and drains bounded outbox', async () => {
+    const outbox = new BoundedSyncOutbox<{ title: string }>(2);
+    outbox.push({
+      id: '0',
+      key: 'legacy-note',
+      payload: { title: 'evicted' },
+      version: 1,
+      peerId: 'peer-a',
+      timestampMs: 50,
+    });
     outbox.push({
       id: '1',
       key: 'note-1',
@@ -53,13 +61,15 @@ describe('ResilienceCircuitBreaker, BoundedSyncOutbox & SessionHealthPanel', () 
       timestampMs: 200,
     });
 
+    expect(outbox.size()).toBe(2);
+
     const sent: unknown[] = [];
     const count = await outbox.drain((batch) => {
       sent.push(...batch);
     });
-    expect(count).toBe(1);
+    expect(count).toBe(2);
     expect(outbox.size()).toBe(0);
-    expect(sent).toHaveLength(1);
+    expect(sent).toHaveLength(2);
   });
 
   it('renders session health metrics with clamped energy bar and sync trigger', () => {

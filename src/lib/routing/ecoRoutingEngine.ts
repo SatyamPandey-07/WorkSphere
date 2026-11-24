@@ -355,7 +355,9 @@ export function generateMultiModalRouteCards(
   }
 
   return cards;
+}
 
+/**
  * Resilient eco-routing engine with fallback to direct Haversine distance
  * and walking time estimation when external routing services (OSRM, Valhalla, etc.)
  * return 503, 504, network timeouts, or errors.

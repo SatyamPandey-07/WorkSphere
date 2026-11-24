@@ -240,6 +240,81 @@ describe("ecoRoutingEngine", () => {
       expect(mountainCalories!).toBeGreaterThan(flatCalories!);
     });
 
+    it("clamps downhill walking calories to positive metabolic minimum floor and verifies downhill < flat < uphill", () => {
+      // 30 min, 2400m walking at 80 m/min, 70kg adult
+      const downhillCalories = calculateEcoCalories({
+        mode: "walking",
+        durationMinutes: 30,
+        distanceMeters: 2400,
+        elevationGainMeters: -200, // Destination is 200m lower than origin
+        weightKg: 70,
+        includeGradientAdjustment: true,
+      });
+
+      const flatCalories = calculateEcoCalories({
+        mode: "walking",
+        durationMinutes: 30,
+        distanceMeters: 2400,
+        elevationGainMeters: 0,
+        weightKg: 70,
+        includeGradientAdjustment: true,
+      });
+
+      const uphillCalories = calculateEcoCalories({
+        mode: "walking",
+        durationMinutes: 30,
+        distanceMeters: 2400,
+        elevationGainMeters: 100,
+        weightKg: 70,
+        includeGradientAdjustment: true,
+      });
+
+      // Clamped to positive baseline metabolic equivalent (~3.0 METs gross, ~2.5 kcal/min floor)
+      expect(downhillCalories).toBeDefined();
+      expect(downhillCalories).toBeGreaterThanOrEqual(74);
+      expect(flatCalories).toBe(84);
+      expect(uphillCalories).toBe(147);
+
+      // Logical progression: downhill <= flat < uphill, all strictly positive
+      expect(downhillCalories!).toBeLessThan(flatCalories!);
+      expect(flatCalories!).toBeLessThan(uphillCalories!);
+    });
+
+    it("verifies downhill, flat, and uphill calorie metrics for cycling", () => {
+      const downhillCycling = calculateEcoCalories({
+        mode: "cycling",
+        durationMinutes: 30,
+        distanceMeters: 8000,
+        elevationGainMeters: -200,
+        weightKg: 70,
+        includeGradientAdjustment: true,
+      });
+
+      const flatCycling = calculateEcoCalories({
+        mode: "cycling",
+        durationMinutes: 30,
+        distanceMeters: 8000,
+        elevationGainMeters: 0,
+        weightKg: 70,
+        includeGradientAdjustment: true,
+      });
+
+      const uphillCycling = calculateEcoCalories({
+        mode: "cycling",
+        durationMinutes: 30,
+        distanceMeters: 8000,
+        elevationGainMeters: 100,
+        weightKg: 70,
+        includeGradientAdjustment: true,
+      });
+
+      expect(downhillCycling).toBeDefined();
+      expect(downhillCycling).toBeGreaterThan(0);
+      expect(flatCycling).toBe(213);
+      expect(uphillCycling).toBeGreaterThan(flatCycling!);
+      expect(downhillCycling!).toBeLessThan(flatCycling!);
+    });
+
     it("accurately calculates calories from distance alone for walking when duration is omitted", () => {
       // 2400 meters walking at standard 80 m/min (~4.8 km/h) = 30 minutes duration
       // ACSM formula with 50m climb: 116 kcal

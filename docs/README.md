@@ -90,6 +90,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Audio & Acoustics
 
+- [WebAssembly SIMD vs Web Audio AnalyserNode Fallback Benchmark Guide](./audio/WASM_SIMD_AUDIO_BENCHMARK.md) — SIMD vectorization, WebAssembly feature detection, AnalyserNode fallback, FFT frequency precision, and benchmark methodology.
 - [Opus Audio Tuning & Adaptive Jitter Buffer Reference](./webrtc/OPUS_AUDIO_TUNING.md) — Opus packet-loss concealment (PLC), in-band forward error correction (FEC), WebRTC jitter-buffer telemetry, and WorkSphere's adaptive bitrate step ladder.
 - [Ambient Noise Spectrogram Architecture](./audio/NOISE_SPECTROGRAM_ARCHITECTURE.md) — microphone capture, FFT processing, spectrum rendering, waterfall visualization, and audio lifecycle troubleshooting.
 - [Acoustic Grading Specification](./audio/ACOUSTIC_GRADING_SPECIFICATION.md) — noise tier boundaries, dB, A-weighting and Leq calculations, Hann-windowed FFT sampling, RT60 reverberation, and crowd-sourced reading guidelines.

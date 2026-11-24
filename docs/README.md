@@ -138,6 +138,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 - [Commuter Carbon Savings Guide](./analytics/CARBON_SAVINGS_GUIDE.md) — emission factor baselines, avoided-emissions formulas, transit mode differentials, date range presets, and CSV and team badge SVG exports.
 - [Carbon Calculation Methodology](./analytics/CARBON_CALCULATION_METHODOLOGY.md) — mode calculator constants, formulas and properties, a step-by-step transit comparison, and how the factor tables differ.
+- [Venue Carbon Footprint Methodology](./analytics/carbon-methodology.md) — venue energy against baseline, kWh and emissions formulas with an 8-hour sample, grid factor guidance, eco badge rules, and how to add telemetry signals.
 - [GHG Scope 3 Methodology](./sustainability/ghg-scope-3-methodology.md) — GHG Protocol Scope 3 framing, carbon engine implementation, and ESG audit CSV contract.
 
 ## Export & Reporting

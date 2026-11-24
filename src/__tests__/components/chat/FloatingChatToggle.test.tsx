@@ -1,9 +1,13 @@
 import React from 'react';
 import { render, screen, fireEvent, renderHook, act } from '@testing-library/react';
 import { FloatingChatToggle } from '@/components/chat/FloatingChatToggle';
-import { useChatChannel } from '@/hooks/useChatChannel';
+import {
+  useChatChannel,
+  getChatHistoryStorageKey,
+  getStoredChatHistory,
+} from '@/hooks/useChatChannel';
 
-describe('FloatingChatToggle and useChatChannel (#9753)', () => {
+describe('FloatingChatToggle and useChatChannel (#9753, #9891)', () => {
   beforeEach(() => {
     localStorage.clear();
     jest.clearAllMocks();
@@ -48,6 +52,50 @@ describe('FloatingChatToggle and useChatChannel (#9753)', () => {
       fireEvent.click(screen.getByTestId('floating-chat-toggle'));
       expect(onToggle).toHaveBeenCalledTimes(1);
     });
+
+    it('displays subtle inline system notice when drawer is open and system note is present', () => {
+      const messages = [
+        {
+          id: 'sys-1',
+          senderName: 'System',
+          content: 'Chat history cleared locally.',
+          timestamp: Date.now(),
+          isSystem: true,
+        },
+      ];
+      render(
+        <FloatingChatToggle
+          isOpen={true}
+          onToggle={jest.fn()}
+          messages={messages}
+        />
+      );
+
+      const notice = screen.getByTestId('floating-chat-system-notice');
+      expect(notice).toBeInTheDocument();
+      expect(notice).toHaveTextContent('Chat history cleared locally.');
+    });
+
+    it('does not display system notice banner when drawer is closed', () => {
+      const messages = [
+        {
+          id: 'sys-1',
+          senderName: 'System',
+          content: 'Chat history cleared locally.',
+          timestamp: Date.now(),
+          isSystem: true,
+        },
+      ];
+      render(
+        <FloatingChatToggle
+          isOpen={false}
+          onToggle={jest.fn()}
+          messages={messages}
+        />
+      );
+
+      expect(screen.queryByTestId('floating-chat-system-notice')).not.toBeInTheDocument();
+    });
   });
 
   describe('useChatChannel hook', () => {
@@ -56,6 +104,7 @@ describe('FloatingChatToggle and useChatChannel (#9753)', () => {
 
       expect(result.current.isOpen).toBe(false);
       expect(result.current.unreadCount).toBe(0);
+      expect(result.current.messages).toEqual([]);
     });
 
     it('increments unread count when incoming message timestamp is greater than lastReadTimestamp and drawer is closed', () => {
@@ -142,6 +191,257 @@ describe('FloatingChatToggle and useChatChannel (#9753)', () => {
       });
 
       expect(result.current.unreadCount).toBe(0);
+    });
+  });
+
+  describe('Issue #9891 — Slash command /clear handling', () => {
+    it('submitting /clear intercepts the command and returns true', () => {
+      const mockBroadcast = jest.fn();
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId: 'room-clear', currentUserId: 'user-1', onBroadcastMessage: mockBroadcast })
+      );
+
+      let intercepted: boolean | undefined;
+      act(() => {
+        intercepted = result.current.sendMessage('/clear');
+      });
+
+      expect(intercepted).toBe(true);
+    });
+
+    it('/clear is not added to the normal message list and is not broadcast to room peers', () => {
+      const mockBroadcast = jest.fn();
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId: 'room-clear', currentUserId: 'user-1', onBroadcastMessage: mockBroadcast })
+      );
+
+      act(() => {
+        result.current.sendMessage('First regular message');
+      });
+      expect(mockBroadcast).toHaveBeenCalledTimes(1);
+
+      mockBroadcast.mockClear();
+
+      act(() => {
+        result.current.sendMessage('/clear');
+      });
+
+      expect(mockBroadcast).not.toHaveBeenCalled();
+      const hasNormalClearMessage = result.current.messages.some(
+        (m) => m.content === '/clear' && !m.isSystem
+      );
+      expect(hasNormalClearMessage).toBe(false);
+    });
+
+    it('current channel messages are cleared from React state and inline system note appears', () => {
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId: 'room-clear', currentUserId: 'user-1' })
+      );
+
+      act(() => {
+        result.current.sendMessage('Message 1');
+        result.current.sendMessage('Message 2');
+      });
+      expect(result.current.messages.length).toBe(2);
+
+      act(() => {
+        result.current.sendMessage('/clear');
+      });
+
+      expect(result.current.messages).toHaveLength(1);
+      expect(result.current.messages[0].content).toBe('Chat history cleared locally.');
+      expect(result.current.messages[0].isSystem).toBe(true);
+      expect(result.current.messages[0].senderName).toBe('System');
+    });
+
+    it('current channel history is removed from local persistence', () => {
+      const roomId = 'room-persisted';
+      const userId = 'user-1';
+      const storageKey = getChatHistoryStorageKey(roomId, userId);
+
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId, currentUserId: userId })
+      );
+
+      act(() => {
+        result.current.sendMessage('Message to persist');
+      });
+
+      expect(localStorage.getItem(storageKey)).not.toBeNull();
+      const storedBefore = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      expect(storedBefore.length).toBe(1);
+
+      act(() => {
+        result.current.sendMessage('/clear');
+      });
+
+      expect(localStorage.getItem(storageKey)).toBeNull();
+      expect(getStoredChatHistory(roomId, userId)).toEqual([]);
+    });
+
+    it('cleared history does not reappear after component remount or reload', () => {
+      const roomId = 'room-reload-test';
+      const userId = 'user-1';
+
+      const { result, unmount } = renderHook(() =>
+        useChatChannel({ roomId, currentUserId: userId })
+      );
+
+      act(() => {
+        result.current.sendMessage('Message to be cleared');
+      });
+      act(() => {
+        result.current.sendMessage('/clear');
+      });
+
+      unmount();
+
+      const { result: remounted } = renderHook(() =>
+        useChatChannel({ roomId, currentUserId: userId })
+      );
+
+      expect(remounted.current.messages).toEqual([]);
+    });
+
+    it('unread count resets to 0 upon executing /clear', () => {
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId: 'room-unread-test', currentUserId: 'user-1', initialIsOpen: false })
+      );
+
+      act(() => {
+        result.current.onIncomingMessage({
+          id: 'msg-remote-1',
+          senderId: 'user-remote',
+          content: 'Hello unread',
+          timestamp: Date.now() + 1000,
+        });
+      });
+      expect(result.current.unreadCount).toBe(1);
+
+      act(() => {
+        result.current.sendMessage('/clear');
+      });
+
+      expect(result.current.unreadCount).toBe(0);
+    });
+
+    it('does not clear other channels message history or unread counts', () => {
+      const channelA = 'channel-A';
+      const channelB = 'channel-B';
+      const userId = 'user-multi';
+
+      const { result: resA } = renderHook(() =>
+        useChatChannel({ roomId: channelA, currentUserId: userId })
+      );
+      const { result: resB } = renderHook(() =>
+        useChatChannel({ roomId: channelB, currentUserId: userId })
+      );
+
+      act(() => {
+        resA.current.sendMessage('Channel A message');
+        resB.current.sendMessage('Channel B message');
+      });
+
+      expect(getStoredChatHistory(channelA, userId).length).toBe(1);
+      expect(getStoredChatHistory(channelB, userId).length).toBe(1);
+
+      act(() => {
+        resA.current.sendMessage('/clear');
+      });
+
+      // Channel A is cleared
+      expect(getStoredChatHistory(channelA, userId)).toEqual([]);
+      expect(resA.current.messages[0].content).toBe('Chat history cleared locally.');
+
+      // Channel B is preserved
+      expect(getStoredChatHistory(channelB, userId).length).toBe(1);
+      expect(resB.current.messages.length).toBe(1);
+      expect(resB.current.messages[0].content).toBe('Channel B message');
+    });
+
+    it('handles leading/trailing whitespace and case insensitivity', () => {
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId: 'room-case', currentUserId: 'user-1' })
+      );
+
+      act(() => {
+        result.current.sendMessage('Existing message');
+      });
+
+      let intercepted = false;
+      act(() => {
+        intercepted = result.current.sendMessage('   /CLEAR   ');
+      });
+
+      expect(intercepted).toBe(true);
+      expect(result.current.messages[0].content).toBe('Chat history cleared locally.');
+
+      act(() => {
+        intercepted = result.current.sendMessage('  /Clear  ');
+      });
+      expect(intercepted).toBe(true);
+    });
+
+    it('handles repeated /clear commands safely without errors', () => {
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId: 'room-repeated', currentUserId: 'user-1' })
+      );
+
+      expect(() => {
+        act(() => {
+          result.current.sendMessage('/clear');
+          result.current.sendMessage('/clear');
+          result.current.sendMessage('   /clear   ');
+        });
+      }).not.toThrow();
+
+      expect(result.current.messages).toHaveLength(1);
+      expect(result.current.messages[0].content).toBe('Chat history cleared locally.');
+      expect(result.current.unreadCount).toBe(0);
+    });
+
+    it('normal messages still submit and broadcast normally', () => {
+      const mockBroadcast = jest.fn();
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId: 'room-normal', currentUserId: 'user-1', onBroadcastMessage: mockBroadcast })
+      );
+
+      let intercepted = false;
+      act(() => {
+        intercepted = result.current.sendMessage('Hello normal chat');
+      });
+
+      expect(intercepted).toBe(false);
+      expect(mockBroadcast).toHaveBeenCalledTimes(1);
+      expect(mockBroadcast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: 'Hello normal chat',
+          roomId: 'room-normal',
+          senderId: 'user-1',
+        })
+      );
+      expect(result.current.messages).toHaveLength(1);
+      expect(result.current.messages[0].content).toBe('Hello normal chat');
+    });
+
+    it('direct invocation of clearChatHistory resets state, persistence, and sets system note', () => {
+      const { result } = renderHook(() =>
+        useChatChannel({ roomId: 'room-direct-clear', currentUserId: 'user-1' })
+      );
+
+      act(() => {
+        result.current.sendMessage('Some msg');
+      });
+      expect(result.current.messages.length).toBe(1);
+
+      act(() => {
+        result.current.clearChatHistory();
+      });
+
+      expect(result.current.messages).toHaveLength(1);
+      expect(result.current.messages[0].content).toBe('Chat history cleared locally.');
+      expect(result.current.unreadCount).toBe(0);
+      expect(getStoredChatHistory('room-direct-clear', 'user-1')).toEqual([]);
     });
   });
 });

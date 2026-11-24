@@ -405,6 +405,26 @@ export class SchnorrThresholdAggregator {
     if (!isParticipant)
       throw new Error(`Participant ${noncePair.participantId} not in session.`);
 
+    // Each participant contributes exactly one nonce commitment per session.
+    // Reject duplicate submissions so an existing commitment cannot be overwritten or altered.
+    if (session.nonces.has(noncePair.participantId)) {
+      const existing = session.nonces.get(noncePair.participantId)!;
+      const isIdentical =
+        existing.R1?.x === noncePair.R1?.x &&
+        existing.R1?.y === noncePair.R1?.y &&
+        existing.R2?.x === noncePair.R2?.x &&
+        existing.R2?.y === noncePair.R2?.y;
+
+      if (isIdentical) {
+        throw new Error(
+          `Duplicate nonce commitment rejected for participant ${noncePair.participantId}.`,
+        );
+      }
+      throw new Error(
+        `Conflicting duplicate nonce commitment rejected for participant ${noncePair.participantId}.`,
+      );
+    }
+
     if (!noncePair.R1 || !noncePair.R2) {
       throw new Error("Nonce pair must contain both R1 and R2 commitments.");
     }

@@ -879,4 +879,628 @@ describe("BFTConsensusCoordinator", () => {
       expect(coordinator.handleVote(replayedVote)).toBeNull();
     });
   });
+
+  describe("Proposal View Validation & Certified View-Change Quorum", () => {
+    const validators4 = ["node-0", "node-1", "node-2", "node-3"];
+    let keys4: ReturnType<typeof createTestValidatorKeySet>;
+
+    beforeEach(() => {
+      keys4 = createTestValidatorKeySet(validators4);
+    });
+
+    it("rejects proposals targeting unauthorized future views without view-change evidence", () => {
+      const follower = new BFTConsensusCoordinator({
+        nodeId: "node-0",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-0"],
+      });
+
+      expect(follower.getCurrentView()).toBe(0);
+
+      // Node-1 is leader for view 1
+      // Craft proposal for view 1 without view-change evidence
+      const blockContent = {
+        view: 1,
+        sequence: 1,
+        proposerId: "node-1",
+        payload: { tx: "unauthorized-future-view" },
+        parentHash:
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        timestamp: Date.now(),
+      };
+      const blockHash = BFTConsensusCoordinator.hashPayload(blockContent);
+      const proposal: BlockProposal = {
+        ...blockContent,
+        blockHash,
+      };
+
+      const vote = follower.handleProposal(proposal);
+      expect(vote).toBeNull();
+      // Follower state must NOT be modified
+      expect(follower.getCurrentView()).toBe(0);
+      expect(follower.getCurrentLeader()).toBe("node-0");
+    });
+
+    it("rejects future proposals with invalid, insufficient, or mismatched view-change evidence", () => {
+      const follower = new BFTConsensusCoordinator({
+        nodeId: "node-0",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-0"],
+      });
+
+      // 1. Insufficient evidence: only 1 signature when quorum is 3
+      const vc1 = new BFTConsensusCoordinator({
+        nodeId: "node-1",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-1"],
+      }).triggerViewChange("timeout", 1);
+
+      const blockContent = {
+        view: 1,
+        sequence: 1,
+        proposerId: "node-1",
+        payload: { tx: "partial-evidence" },
+        parentHash:
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        timestamp: Date.now(),
+      };
+      const blockHash = BFTConsensusCoordinator.hashPayload(blockContent);
+
+      const proposalInsufficient: BlockProposal = {
+        ...blockContent,
+        blockHash,
+        viewChangeEvidence: [vc1],
+      };
+      expect(follower.handleProposal(proposalInsufficient)).toBeNull();
+      expect(follower.getCurrentView()).toBe(0);
+
+      // 2. Forged signature in view-change evidence
+      const forgedVC: ViewChangeMessage = {
+        fromNodeId: "node-2",
+        newView: 1,
+        signature: "forged-signature-0000",
+        timestamp: Date.now(),
+      };
+      const proposalForged: BlockProposal = {
+        ...blockContent,
+        blockHash,
+        viewChangeEvidence: [vc1, forgedVC, { ...vc1, fromNodeId: "node-3" }],
+      };
+      expect(follower.handleProposal(proposalForged)).toBeNull();
+      expect(follower.getCurrentView()).toBe(0);
+
+      // 3. Mismatched target view: evidence targets view 2, but proposal is for view 1
+      const vcTarget2_0 = new BFTConsensusCoordinator({
+        nodeId: "node-0",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-0"],
+      }).triggerViewChange("timeout", 2);
+      const vcTarget2_1 = new BFTConsensusCoordinator({
+        nodeId: "node-1",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-1"],
+      }).triggerViewChange("timeout", 2);
+      const vcTarget2_2 = new BFTConsensusCoordinator({
+        nodeId: "node-2",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-2"],
+      }).triggerViewChange("timeout", 2);
+
+      const proposalMismatched: BlockProposal = {
+        ...blockContent,
+        blockHash,
+        viewChangeEvidence: [vcTarget2_0, vcTarget2_1, vcTarget2_2],
+      };
+      expect(follower.handleProposal(proposalMismatched)).toBeNull();
+      expect(follower.getCurrentView()).toBe(0);
+    });
+
+    it("rejects proposals targeting views beyond maxFutureViewWindow", () => {
+      const follower = new BFTConsensusCoordinator({
+        nodeId: "node-0",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-0"],
+        maxFutureViewWindow: 5,
+      });
+
+      // View 10 exceeds 0 + 5
+      const targetView = 10;
+      const expectedLeader = follower.getLeaderForView(targetView);
+      const blockContent = {
+        view: targetView,
+        sequence: 1,
+        proposerId: expectedLeader,
+        payload: { tx: "too-far" },
+        parentHash:
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        timestamp: Date.now(),
+      };
+      const blockHash = BFTConsensusCoordinator.hashPayload(blockContent);
+
+      const proposal: BlockProposal = {
+        ...blockContent,
+        blockHash,
+      };
+
+      expect(follower.handleProposal(proposal)).toBeNull();
+      expect(follower.getCurrentView()).toBe(0);
+    });
+
+    it("rejects proposals with invalid or future justification certificates", () => {
+      const coordinator = new BFTConsensusCoordinator({
+        nodeId: "node-1",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-1"],
+      });
+
+      // 1. Invalid justification certificate (invalid signature)
+      const invalidQC: QuorumCertificate = {
+        view: 0,
+        sequence: 0,
+        blockHash: "prev-hash",
+        phase: "COMMIT",
+        signatures: {
+          "node-0": "invalid-signature",
+          "node-1": "invalid-signature",
+          "node-2": "invalid-signature",
+        },
+        aggregatedAt: Date.now(),
+      };
+
+      const blockContent = {
+        view: 0,
+        sequence: 1,
+        proposerId: "node-0",
+        payload: { tx: "with-bad-qc" },
+        parentHash: "prev-hash",
+        timestamp: Date.now(),
+      };
+      const blockHash = BFTConsensusCoordinator.hashPayload(blockContent);
+
+      const proposalWithBadQC: BlockProposal = {
+        ...blockContent,
+        blockHash,
+        justifyQC: invalidQC,
+      };
+
+      expect(coordinator.handleProposal(proposalWithBadQC)).toBeNull();
+
+      // 2. Justification certificate from future view (justifyQC.view > proposal.view)
+      // Create a legitimately signed QC for view 2
+      const futureSignatures: Record<string, string> = {};
+      for (const id of ["node-0", "node-1", "node-2"]) {
+        const payload = Buffer.from(
+          `BFT_VOTE_V1:${id}:COMMIT:2:1:future-hash`,
+          "utf8",
+        );
+        futureSignatures[id] = keys4.signers[id].sign(payload);
+      }
+      const futureQC: QuorumCertificate = {
+        view: 2,
+        sequence: 1,
+        blockHash: "future-hash",
+        phase: "COMMIT",
+        signatures: futureSignatures,
+        aggregatedAt: Date.now(),
+      };
+
+      const proposalWithFutureQC: BlockProposal = {
+        ...blockContent,
+        blockHash,
+        justifyQC: futureQC,
+      };
+
+      expect(coordinator.handleProposal(proposalWithFutureQC)).toBeNull();
+    });
+
+    it("ensures rejected proposals do not modify coordinator state", () => {
+      const coordinator = new BFTConsensusCoordinator({
+        nodeId: "node-0",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-0"],
+      });
+
+      const initialView = coordinator.getCurrentView();
+      const initialLeader = coordinator.getCurrentLeader();
+
+      // Attempt handling an invalid proposal with hash mismatch
+      const badHashProposal: BlockProposal = {
+        view: 0,
+        sequence: 1,
+        proposerId: "node-0",
+        payload: { bad: true },
+        blockHash: "corrupted-hash",
+        parentHash:
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        timestamp: Date.now(),
+      };
+
+      expect(coordinator.handleProposal(badHashProposal)).toBeNull();
+      expect(coordinator.getCurrentView()).toBe(initialView);
+      expect(coordinator.getCurrentLeader()).toBe(initialLeader);
+    });
+
+    it("accepts certified future-view proposals with valid view-change evidence and transitions view", () => {
+      const follower = new BFTConsensusCoordinator({
+        nodeId: "node-0",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-0"],
+      });
+
+      expect(follower.getCurrentView()).toBe(0);
+
+      // Generate 3 valid ViewChangeMessages for view 1 (quorum = 3)
+      const vc0 = follower.triggerViewChange("timeout", 1);
+      const vc1 = new BFTConsensusCoordinator({
+        nodeId: "node-1",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-1"],
+      }).triggerViewChange("timeout", 1);
+      const vc2 = new BFTConsensusCoordinator({
+        nodeId: "node-2",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-2"],
+      }).triggerViewChange("timeout", 1);
+
+      // Node-1 is leader for view 1
+      const leader1 = new BFTConsensusCoordinator({
+        nodeId: "node-1",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-1"],
+      });
+
+      // Ingest view changes into leader1 so it transitions to view 1
+      leader1.handleViewChange(vc0);
+      leader1.handleViewChange(vc1);
+      leader1.handleViewChange(vc2);
+      expect(leader1.getCurrentView()).toBe(1);
+
+      // Leader1 proposes next block, carrying viewChangeEvidence
+      const proposal = leader1.propose({ tx: "certified-view-1" });
+      expect(proposal.view).toBe(1);
+      expect(proposal.viewChangeEvidence).toBeDefined();
+
+      // Follower (still on view 0) handles the certified proposal
+      const vote = follower.handleProposal(proposal);
+      expect(vote).not.toBeNull();
+      expect(vote?.phase).toBe("PREPARE");
+      expect(vote?.view).toBe(1);
+      expect(vote?.nodeId).toBe("node-0");
+      expect(vote?.blockHash).toBe(proposal.blockHash);
+
+      // Follower successfully transitioned to view 1
+      expect(follower.getCurrentView()).toBe(1);
+      expect(follower.getCurrentLeader()).toBe("node-1");
+    });
+
+    it("supports skipped view transitions when certified by valid view-change quorum evidence", () => {
+      const follower = new BFTConsensusCoordinator({
+        nodeId: "node-0",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-0"],
+      });
+
+      expect(follower.getCurrentView()).toBe(0);
+
+      // Skip directly from view 0 to view 2
+      const targetView = 2;
+      const expectedLeader = follower.getLeaderForView(targetView); // "node-2"
+
+      const vcMsgs: ViewChangeMessage[] = [];
+      for (const id of ["node-0", "node-1", "node-2"]) {
+        const c = new BFTConsensusCoordinator({
+          nodeId: id,
+          validators: validators4,
+          validatorPublicKeys: keys4.publicKeys,
+          signer: keys4.signers[id],
+        });
+        vcMsgs.push(c.triggerViewChange("skipped-timeout", targetView));
+      }
+
+      const blockContent = {
+        view: targetView,
+        sequence: 1,
+        proposerId: expectedLeader,
+        payload: { tx: "skipped-view-transition" },
+        parentHash:
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        timestamp: Date.now(),
+      };
+      const blockHash = BFTConsensusCoordinator.hashPayload(blockContent);
+
+      const certifiedSkippedProposal: BlockProposal = {
+        ...blockContent,
+        blockHash,
+        viewChangeEvidence: vcMsgs,
+      };
+
+      const vote = follower.handleProposal(certifiedSkippedProposal);
+      expect(vote).not.toBeNull();
+      expect(vote?.view).toBe(2);
+      expect(vote?.phase).toBe("PREPARE");
+      expect(follower.getCurrentView()).toBe(2);
+      expect(follower.getCurrentLeader()).toBe(expectedLeader);
+    });
+  });
+
+  describe("Proposal Sequence Monotonicity, Parent Hash & Justification Verification", () => {
+    const validators4 = ["node-0", "node-1", "node-2", "node-3"];
+    let keys4: ReturnType<typeof createTestValidatorKeySet>;
+
+    beforeEach(() => {
+      keys4 = createTestValidatorKeySet(validators4);
+    });
+
+    it("rejects stale, replayed, or out-of-order sequence proposals", () => {
+      const leader = new BFTConsensusCoordinator({
+        nodeId: "node-0",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-0"],
+      });
+
+      const follower = new BFTConsensusCoordinator({
+        nodeId: "node-1",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-1"],
+      });
+
+      // 1. Initial valid proposal seq 1
+      const p1 = leader.propose({ tx: "block-1" });
+      expect(p1.sequence).toBe(1);
+
+      const vote1 = follower.handleProposal(p1);
+      expect(vote1).not.toBeNull();
+      expect(follower.getCurrentSequence()).toBe(1);
+
+      // 2. Replay p1 (stale/replayed: seq 1 <= current 1)
+      const replayedVote = follower.handleProposal(p1);
+      expect(replayedVote).toBeNull();
+      expect(follower.getCurrentSequence()).toBe(1);
+
+      // 3. Stale proposal with seq 0
+      const staleContent = {
+        view: 0,
+        sequence: 0,
+        proposerId: "node-0",
+        payload: { tx: "stale-0" },
+        parentHash:
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        timestamp: Date.now(),
+      };
+      const staleProposal: BlockProposal = {
+        ...staleContent,
+        blockHash: BFTConsensusCoordinator.hashPayload(staleContent),
+      };
+      expect(follower.handleProposal(staleProposal)).toBeNull();
+      expect(follower.getCurrentSequence()).toBe(1);
+
+      // 4. Out-of-order proposal skipping sequence (seq 3 when current is 1)
+      const outOfOrderContent = {
+        view: 0,
+        sequence: 3,
+        proposerId: "node-0",
+        payload: { tx: "skip-seq" },
+        parentHash: p1.blockHash,
+        timestamp: Date.now(),
+      };
+      const outOfOrderProposal: BlockProposal = {
+        ...outOfOrderContent,
+        blockHash: BFTConsensusCoordinator.hashPayload(outOfOrderContent),
+      };
+      expect(follower.handleProposal(outOfOrderProposal)).toBeNull();
+      expect(follower.getCurrentSequence()).toBe(1);
+    });
+
+    it("rejects proposals with invalid parentHash", () => {
+      const coordinator = new BFTConsensusCoordinator({
+        nodeId: "node-1",
+        validators: validators4,
+        validatorPublicKeys: keys4.publicKeys,
+        signer: keys4.signers["node-1"],
+      });
+
+      // At genesis, expected parentHash is 64 zeros
+      const wrongParentContent = {
+        view: 0,
+        sequence: 1,
+        proposerId: "node-0",
+        payload: { tx: "wrong-parent" },
+        parentHash:
+          "1111111111111111111111111111111111111111111111111111111111111111",
+        timestamp: Date.now(),
+      };
+      const wrongParentProposal: BlockProposal = {
+        ...wrongParentContent,
+        blockHash: BFTConsensusCoordinator.hashPayload(wrongParentContent),
+      };
+
+      expect(coordinator.handleProposal(wrongParentProposal)).toBeNull();
+      expect(coordinator.getCurrentSequence()).toBe(0);
+    });
+
+    it("rejects proposals extending committed chain when justifyQC is missing or invalid", () => {
+      const nodes = validators4.map(
+        (id) =>
+          new BFTConsensusCoordinator({
+            nodeId: id,
+            validators: validators4,
+            validatorPublicKeys: keys4.publicKeys,
+            signer: keys4.signers[id],
+          }),
+      );
+
+      const [node0, node1, node2] = nodes;
+
+      // 1. Propose and commit Block 1
+      const p1 = node0.propose({ tx: "commit-me" });
+      const voteP1 = node1.handleProposal(p1)!;
+      const voteP2 = node2.handleProposal(p1)!;
+
+      // PREPARE -> PRE_COMMIT -> COMMIT
+      const prep0 = node0.createVote("PREPARE", p1.blockHash);
+      node0.handleVote(prep0);
+      node0.handleVote(voteP1);
+      const _prepQC = node0.handleVote(voteP2)!;
+
+      node1.handleVote(prep0);
+      node1.handleVote(voteP1);
+      node1.handleVote(voteP2);
+
+      const pc0 = node0.createVote("PRE_COMMIT", p1.blockHash);
+      const pc1 = node1.createVote("PRE_COMMIT", p1.blockHash);
+      const pc2 = node2.createVote("PRE_COMMIT", p1.blockHash);
+      node0.handleVote(pc0);
+      node0.handleVote(pc1);
+      const _pcQC = node0.handleVote(pc2)!;
+
+      node1.handleVote(pc0);
+      node1.handleVote(pc1);
+      node1.handleVote(pc2);
+
+      const c0 = node0.createVote("COMMIT", p1.blockHash);
+      const c1 = node1.createVote("COMMIT", p1.blockHash);
+      const c2 = node2.createVote("COMMIT", p1.blockHash);
+      node0.handleVote(c0);
+      node0.handleVote(c1);
+      const commitQC = node0.handleVote(c2)!;
+
+      node1.handleVote(c0);
+      node1.handleVote(c1);
+      node1.handleVote(c2);
+
+      expect(node1.getLastCommitQC()).not.toBeNull();
+      expect(node1.getCommittedBlocks().length).toBe(1);
+
+      // Now node1 expects next proposal to have sequence 2, parentHash p1.blockHash, and justifyQC === commitQC
+      // Case A: Missing justifyQC
+      const noQCContent = {
+        view: 0,
+        sequence: 2,
+        proposerId: "node-0",
+        payload: { tx: "no-qc" },
+        parentHash: p1.blockHash,
+        timestamp: Date.now(),
+      };
+      const noQCProposal: BlockProposal = {
+        ...noQCContent,
+        blockHash: BFTConsensusCoordinator.hashPayload(noQCContent),
+      };
+      expect(node1.handleProposal(noQCProposal)).toBeNull();
+      expect(node1.getCurrentSequence()).toBe(1);
+
+      // Case B: Mismatched justifyQC blockHash
+      const mismatchedQC: QuorumCertificate = {
+        ...commitQC,
+        blockHash: "other-hash-000",
+      };
+      const mismatchQCProposal: BlockProposal = {
+        ...noQCContent,
+        blockHash: BFTConsensusCoordinator.hashPayload(noQCContent),
+        justifyQC: mismatchedQC,
+      };
+      expect(node1.handleProposal(mismatchQCProposal)).toBeNull();
+      expect(node1.getCurrentSequence()).toBe(1);
+
+      // Case C: Mismatched parentHash
+      const wrongParentP2 = {
+        view: 0,
+        sequence: 2,
+        proposerId: "node-0",
+        payload: { tx: "wrong-parent" },
+        parentHash: "wrong-predecessor-hash",
+        timestamp: Date.now(),
+      };
+      const wrongParentProposal: BlockProposal = {
+        ...wrongParentP2,
+        blockHash: BFTConsensusCoordinator.hashPayload(wrongParentP2),
+        justifyQC: commitQC,
+      };
+      expect(node1.handleProposal(wrongParentProposal)).toBeNull();
+      expect(node1.getCurrentSequence()).toBe(1);
+    });
+
+    it("valid proposals advance sequence state consistently across multiple blocks", () => {
+      const nodes = validators4.map(
+        (id) =>
+          new BFTConsensusCoordinator({
+            nodeId: id,
+            validators: validators4,
+            validatorPublicKeys: keys4.publicKeys,
+            signer: keys4.signers[id],
+          }),
+      );
+
+      const [node0, node1, node2] = nodes;
+
+      // --- Block 1 ---
+      const p1 = node0.propose({ tx: "tx-1" });
+      expect(p1.sequence).toBe(1);
+
+      const vote1 = node1.handleProposal(p1)!;
+      expect(vote1).not.toBeNull();
+      expect(node1.getCurrentSequence()).toBe(1);
+
+      // Commit Block 1 on node0 and node1
+      const prep0 = node0.createVote("PREPARE", p1.blockHash);
+      const prep1 = vote1;
+      const prep2 = node2.handleProposal(p1)!;
+      node0.handleVote(prep0);
+      node0.handleVote(prep1);
+      node0.handleVote(prep2);
+      node1.handleVote(prep0);
+      node1.handleVote(prep1);
+      node1.handleVote(prep2);
+
+      const pc0 = node0.createVote("PRE_COMMIT", p1.blockHash);
+      const pc1 = node1.createVote("PRE_COMMIT", p1.blockHash);
+      const pc2 = node2.createVote("PRE_COMMIT", p1.blockHash);
+      node0.handleVote(pc0);
+      node0.handleVote(pc1);
+      node0.handleVote(pc2);
+      node1.handleVote(pc0);
+      node1.handleVote(pc1);
+      node1.handleVote(pc2);
+
+      const c0 = node0.createVote("COMMIT", p1.blockHash);
+      const c1 = node1.createVote("COMMIT", p1.blockHash);
+      const c2 = node2.createVote("COMMIT", p1.blockHash);
+      node0.handleVote(c0);
+      node0.handleVote(c1);
+      node0.handleVote(c2);
+      node1.handleVote(c0);
+      node1.handleVote(c1);
+      node1.handleVote(c2);
+
+      expect(node0.getLastCommitQC()?.blockHash).toBe(p1.blockHash);
+      expect(node1.getLastCommitQC()?.blockHash).toBe(p1.blockHash);
+
+      // --- Block 2 ---
+      const p2 = node0.propose({ tx: "tx-2" }, p1.blockHash);
+      expect(p2.sequence).toBe(2);
+      expect(p2.parentHash).toBe(p1.blockHash);
+      expect(p2.justifyQC).toBeDefined();
+
+      const vote2 = node1.handleProposal(p2);
+      expect(vote2).not.toBeNull();
+      expect(vote2?.phase).toBe("PREPARE");
+      expect(vote2?.sequence).toBe(2);
+      expect(node1.getCurrentSequence()).toBe(2);
+    });
+  });
 });

@@ -4,6 +4,7 @@ import {
   formatCheckInDuration,
   formatAverageDecibels,
   formatAuditCsvRow,
+  escapeAuditCsvField,
   parseDateRange,
   createVenueAuditCsvStream,
   generateVenueAuditCSV,
@@ -112,6 +113,214 @@ describe("auditExporter Unit Tests", () => {
       const line = formatAuditCsvRow(row);
       expect(line).toContain("'=cmd");
       expect(line).toContain("'+12345");
+    });
+  });
+
+  describe("RFC 4180 Escaping Requirements (#10120)", () => {
+    // Standard RFC 4180 CSV parser helper for test validation
+    function parseRFC4180CSV(csv: string): string[][] {
+      const records: string[][] = [];
+      let currentRow: string[] = [];
+      let currentField = "";
+      let inQuotes = false;
+      let i = 0;
+
+      while (i < csv.length) {
+        const char = csv[i];
+        if (inQuotes) {
+          if (char === '"') {
+            if (i + 1 < csv.length && csv[i + 1] === '"') {
+              currentField += '"';
+              i += 2;
+              continue;
+            } else {
+              inQuotes = false;
+              i++;
+              continue;
+            }
+          } else {
+            currentField += char;
+            i++;
+            continue;
+          }
+        } else {
+          if (char === '"') {
+            inQuotes = true;
+            i++;
+            continue;
+          } else if (char === ",") {
+            currentRow.push(currentField);
+            currentField = "";
+            i++;
+            continue;
+          } else if (char === "\r") {
+            if (i + 1 < csv.length && csv[i + 1] === "\n") {
+              i++;
+            }
+            currentRow.push(currentField);
+            records.push(currentRow);
+            currentRow = [];
+            currentField = "";
+            i++;
+            continue;
+          } else if (char === "\n") {
+            currentRow.push(currentField);
+            records.push(currentRow);
+            currentRow = [];
+            currentField = "";
+            i++;
+            continue;
+          } else {
+            currentField += char;
+            i++;
+            continue;
+          }
+        }
+      }
+
+      if (currentRow.length > 0 || currentField.length > 0) {
+        currentRow.push(currentField);
+        records.push(currentRow);
+      }
+
+      return records;
+    }
+
+    it("1. leaves normal fields without special characters unchanged", () => {
+      expect(escapeAuditCsvField("desk-101")).toBe("desk-101");
+      expect(escapeAuditCsvField("user_abcdef")).toBe("user_abcdef");
+    });
+
+    it("2. quotes fields containing commas", () => {
+      expect(escapeAuditCsvField("Chrome, Windows")).toBe('"Chrome, Windows"');
+    });
+
+    it("3. doubles double quotes and quotes the field", () => {
+      expect(escapeAuditCsvField('Mozilla "Test" Agent')).toBe(
+        '"Mozilla ""Test"" Agent"',
+      );
+    });
+
+    it("4. encloses fields containing LF (\\n) in quotes preserving the newline", () => {
+      const input = "Mozilla/5.0\nChrome/120";
+      const escaped = escapeAuditCsvField(input);
+      expect(escaped).toBe('"Mozilla/5.0\nChrome/120"');
+    });
+
+    it("5. encloses fields containing CR (\\r) in quotes preserving carriage return", () => {
+      const input = "Mozilla/5.0\rSafari/605";
+      const escaped = escapeAuditCsvField(input);
+      expect(escaped).toBe('"Mozilla/5.0\rSafari/605"');
+    });
+
+    it("6. encloses fields containing CRLF (\\r\\n) in quotes preserving the line break", () => {
+      const input = "Mozilla/5.0\r\nChrome/120";
+      const escaped = escapeAuditCsvField(input);
+      expect(escaped).toBe('"Mozilla/5.0\r\nChrome/120"');
+    });
+
+    it("7. correctly escapes multiline fields containing both quotes and commas", () => {
+      const input = 'Error: Failed to connect,\r\ndetail: "timeout after 30s"';
+      const escaped = escapeAuditCsvField(input);
+      expect(escaped).toBe(
+        '"Error: Failed to connect,\r\ndetail: ""timeout after 30s"""',
+      );
+    });
+
+    it("8. handles multiple special characters without shifting subsequent columns", () => {
+      const row: VenueAuditExportRow = {
+        timestamp: "2026-11-24T12:00:00.000Z",
+        userId: 'admin,"super"\r\nlevel-2',
+        seatLabel: 'Zone "A", Floor\n2',
+        checkInDuration: 120,
+        averageDecibels: 55.4,
+      };
+
+      const line = formatAuditCsvRow(row);
+      const parsed = parseRFC4180CSV(line);
+
+      expect(parsed.length).toBe(1);
+      expect(parsed[0].length).toBe(5);
+      expect(parsed[0][0]).toBe("2026-11-24T12:00:00.000Z");
+      expect(parsed[0][1]).toBe('admin,"super"\r\nlevel-2');
+      expect(parsed[0][2]).toBe('Zone "A", Floor\n2');
+      expect(parsed[0][3]).toBe("120 mins");
+      expect(parsed[0][4]).toBe("55.4");
+    });
+
+    it("9. preserves expected behavior for empty, null, and undefined values", () => {
+      expect(escapeAuditCsvField(null)).toBe("");
+      expect(escapeAuditCsvField(undefined)).toBe("");
+      expect(escapeAuditCsvField("")).toBe("");
+
+      const row: VenueAuditExportRow = {
+        timestamp: "",
+        userId: "",
+        seatLabel: null,
+        checkInDuration: null,
+        averageDecibels: undefined,
+      };
+
+      const line = formatAuditCsvRow(row);
+      expect(line).toBe(',,Hot Desk,N/A,N/A\r\n');
+    });
+
+    it("10. ensures formula-injection protection composes correctly with quoting", () => {
+      const formulaWithComma = "=HYPERLINK(\"http://evil.com\", \"Click\")";
+      const escaped = escapeAuditCsvField(formulaWithComma);
+      // Leading '=' triggers formula sanitization prepending "'", and the comma and quotes trigger RFC 4180 wrapping
+      expect(escaped).toBe('"\'=HYPERLINK(""http://evil.com"", ""Click"")"');
+
+      const parsed = parseRFC4180CSV(escaped);
+      expect(parsed[0][0]).toBe('\'=HYPERLINK("http://evil.com", "Click")');
+    });
+
+    it("parses full CSV output with multiline user agents and notes using RFC 4180 parser", () => {
+      const rows: VenueAuditExportRow[] = [
+        {
+          timestamp: "2026-11-24T10:00:00.000Z",
+          userId: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\nAppleWebKit/537.36 (KHTML, like Gecko)\r\nChrome/120.0.0.0",
+          seatLabel: 'Desk #12, "Executive Suite"',
+          checkInDuration: 90,
+          averageDecibels: 42.5,
+        },
+        {
+          timestamp: "2026-11-24T11:00:00.000Z",
+          userId: "user_normal",
+          seatLabel: "Desk 3",
+          checkInDuration: 60,
+          averageDecibels: 50.0,
+        },
+      ];
+
+      const csv = generateVenueAuditCSV(rows);
+      const parsed = parseRFC4180CSV(csv);
+
+      // Header row + 2 data rows = 3 records
+      expect(parsed.length).toBe(3);
+      expect(parsed[0]).toEqual([
+        "Timestamp",
+        "User ID",
+        "Seat Label",
+        "Check-in Duration",
+        "Average Decibels",
+      ]);
+
+      expect(parsed[1][0]).toBe("2026-11-24T10:00:00.000Z");
+      expect(parsed[1][1]).toBe(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\nAppleWebKit/537.36 (KHTML, like Gecko)\r\nChrome/120.0.0.0",
+      );
+      expect(parsed[1][2]).toBe('Desk #12, "Executive Suite"');
+      expect(parsed[1][3]).toBe("90 mins");
+      expect(parsed[1][4]).toBe("42.5");
+
+      expect(parsed[2]).toEqual([
+        "2026-11-24T11:00:00.000Z",
+        "user_normal",
+        "Desk 3",
+        "60 mins",
+        "50.0",
+      ]);
     });
   });
 

@@ -7,8 +7,43 @@
 
 import crypto from "crypto";
 
-const SPLIT_SECRET =
-  process.env.SPLIT_PAYMENT_SECRET || "worksphere-split-secret-key-2026";
+export const INSECURE_DEFAULT_SECRET = "worksphere-split-secret-key-2026";
+export const MIN_SPLIT_SECRET_LENGTH = 32;
+
+/**
+ * Retrieves and validates the signing secret for split payment tokens.
+ * Fails closed in production if SPLIT_PAYMENT_SECRET is missing, weak, or insecure default.
+ */
+export function getSplitPaymentSecret(): string {
+  const secret = process.env.SPLIT_PAYMENT_SECRET?.trim();
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction) {
+    if (!secret) {
+      throw new Error(
+        "SPLIT_PAYMENT_SECRET environment variable is missing in production. Token operations failed closed.",
+      );
+    }
+    if (secret === INSECURE_DEFAULT_SECRET) {
+      throw new Error(
+        "SPLIT_PAYMENT_SECRET is set to an insecure default value in production. A secure high-entropy secret is required.",
+      );
+    }
+    if (secret.length < MIN_SPLIT_SECRET_LENGTH) {
+      throw new Error(
+        `SPLIT_PAYMENT_SECRET is too short in production (${secret.length} chars). Minimum length is ${MIN_SPLIT_SECRET_LENGTH} characters.`,
+      );
+    }
+    return secret;
+  }
+
+  // Non-production (test/development)
+  if (secret) {
+    return secret;
+  }
+
+  return INSECURE_DEFAULT_SECRET;
+}
 
 export interface GuestShare {
   guestId: string;
@@ -76,8 +111,9 @@ export function generateSplitPaymentToken(
 
   const json = JSON.stringify(data);
   const base64Data = Buffer.from(json).toString("base64url");
+  const secret = getSplitPaymentSecret();
   const signature = crypto
-    .createHmac("sha256", SPLIT_SECRET)
+    .createHmac("sha256", secret)
     .update(base64Data)
     .digest("base64url");
 
@@ -90,13 +126,14 @@ export function generateSplitPaymentToken(
 export function verifySplitPaymentToken(
   token: string,
 ): SplitTokenPayload | null {
+  const secret = getSplitPaymentSecret();
   try {
     const parts = token.split(".");
     if (parts.length !== 2) return null;
 
     const [base64Data, signature] = parts;
     const expectedSig = crypto
-      .createHmac("sha256", SPLIT_SECRET)
+      .createHmac("sha256", secret)
       .update(base64Data)
       .digest("base64url");
 
@@ -146,8 +183,6 @@ export function calculateSplitBill({
     email: string;
     name?: string;
     paid?: boolean;
-    paymentStatus?: string;
-    paymentReference?: string;
     customAmount?: number;
   }>;
   origin?: string;

@@ -45,7 +45,6 @@ describe("SchnorrThresholdAggregator", () => {
       expect(twoG.x).toBe(mul2G.x);
       expect(twoG.y).toBe(mul2G.y);
     });
-
     it("verifies scalar multiplication identity with 1*G = G", () => {
       const G = SchnorrThresholdAggregator.getGenerator();
       const oneG = SchnorrThresholdAggregator.pointMul(1n, G);
@@ -435,6 +434,172 @@ describe("SchnorrThresholdAggregator", () => {
         validNonces.publicNonces,
       );
       expect(session.nonces.has("alice")).toBe(true);
+    });
+  });
+
+  describe("Nonce Commitment Immutability & Duplicate Rejection (#10092)", () => {
+    it("rejects duplicate and conflicting nonce submissions for the same participant", () => {
+      const sessionId = "session-test-duplicate-nonce";
+      const session = aggregator.createSession(
+        sessionId,
+        participants,
+        message,
+      );
+
+      const noncesA1 = SchnorrThresholdAggregator.generateNoncePair("alice");
+      const noncesA2 = SchnorrThresholdAggregator.generateNoncePair("alice"); // conflicting nonces
+      const noncesB = SchnorrThresholdAggregator.generateNoncePair("bob");
+      const noncesC = SchnorrThresholdAggregator.generateNoncePair("charlie");
+
+      // 1. First valid submission succeeds
+      aggregator.submitNonces(sessionId, noncesA1.publicNonces);
+      expect(session.nonces.has("alice")).toBe(true);
+      expect(session.nonces.get("alice")).toBe(noncesA1.publicNonces);
+      expect(session.state).toBe("INIT");
+
+      // 2. Identical duplicate submission is rejected and preserves session state
+      expect(() => {
+        aggregator.submitNonces(sessionId, noncesA1.publicNonces);
+      }).toThrow(/Duplicate nonce commitment rejected for participant alice/);
+      expect(session.nonces.get("alice")).toBe(noncesA1.publicNonces);
+      expect(session.state).toBe("INIT");
+
+      // 3. Conflicting duplicate submission is rejected without overwriting original commitment
+      expect(() => {
+        aggregator.submitNonces(sessionId, noncesA2.publicNonces);
+      }).toThrow(
+        /Conflicting duplicate nonce commitment rejected for participant alice/,
+      );
+      expect(session.nonces.get("alice")).toBe(noncesA1.publicNonces);
+      expect(session.state).toBe("INIT");
+
+      // 4. Other valid participants can submit their commitments and complete exchange
+      aggregator.submitNonces(sessionId, noncesB.publicNonces);
+      expect(session.state).toBe("INIT");
+
+      aggregator.submitNonces(sessionId, noncesC.publicNonces);
+      expect(session.state).toBe("NONCES_EXCHANGED");
+      expect(session.aggregateNonce).toBeDefined();
+      expect(session.nonceBindingFactor).toBeDefined();
+
+      // 5. Duplicate submission after all nonces collected is also rejected
+      expect(() => {
+        aggregator.submitNonces(sessionId, noncesA1.publicNonces);
+      }).toThrow();
+    });
+  });
+
+  describe("Threshold Fulfillment & Concurrent Submission Protection (#10123)", () => {
+    it("rejects duplicate submissions for the same signer index and requires strictly unique signers for threshold fulfillment", async () => {
+      // Setup 5 participants with threshold 3
+      const cosigners5 = Array.from({ length: 5 }, () =>
+        SchnorrThresholdAggregator.generateKeyPair(),
+      );
+      const participants5: ParticipantInfo[] = cosigners5.map((c, i) => ({
+        id: `participant-${i}`,
+        publicKey: c.publicKey,
+      }));
+
+      const sessionId = "session-threshold-concurrent-10123";
+      const session = aggregator.createSession(
+        sessionId,
+        participants5,
+        message,
+        3,
+      );
+      expect(session.threshold).toBe(3);
+      expect(session.state).toBe("INIT");
+
+      // Nonce exchange for all 5 participants
+      const nonces5 = participants5.map((p) =>
+        SchnorrThresholdAggregator.generateNoncePair(p.id),
+      );
+      for (const n of nonces5) {
+        aggregator.submitNonces(sessionId, n.publicNonces);
+      }
+      expect(session.state).toBe("NONCES_EXCHANGED");
+
+      // Sign partials
+      const sigs5 = participants5.map((p, i) =>
+        aggregator.signPartial(
+          session,
+          p.id,
+          cosigners5[i].privateKey,
+          nonces5[i],
+        ),
+      );
+
+      // 1. Concurrent submissions for identical signer index (index 0)
+      const results = await Promise.allSettled([
+        Promise.resolve().then(() =>
+          aggregator.submitPartialSignature(sessionId, 0, sigs5[0]),
+        ),
+        Promise.resolve().then(() =>
+          aggregator.submitPartialSignature(sessionId, 0, sigs5[0]),
+        ),
+        Promise.resolve().then(() =>
+          aggregator.submitPartialSignature(sessionId, 0, sigs5[0]),
+        ),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === "fulfilled");
+      const rejected = results.filter((r) => r.status === "rejected");
+
+      expect(fulfilled.length).toBe(1);
+      expect(rejected.length).toBe(2);
+      for (const r of rejected) {
+        if (r.status === "rejected") {
+          expect(r.reason.message).toMatch(
+            /Duplicate partial signature rejected from participant participant-0/,
+          );
+        }
+      }
+
+      // Threshold (3) is NOT fulfilled because only 1 unique signer submitted
+      expect(session.state).toBe("NONCES_EXCHANGED");
+      expect(session.partialSignatures.size).toBe(1);
+
+      // 2. Submit second unique signer (index 1) - threshold still not reached
+      aggregator.submitPartialSignature(sessionId, 1, sigs5[1]);
+      expect(session.state).toBe("NONCES_EXCHANGED");
+      expect(session.partialSignatures.size).toBe(2);
+
+      // Attempt duplicate submission for signer 1 should be rejected
+      expect(() => {
+        aggregator.submitPartialSignature(sessionId, 1, sigs5[1]);
+      }).toThrow(
+        /Duplicate partial signature rejected from participant participant-1/,
+      );
+
+      // 3. Submit third unique signer (index 2) - threshold of 3 is reached
+      aggregator.submitPartialSignature(sessionId, 2, sigs5[2]);
+      expect(session.state).toBe("PARTIALS_COLLECTED");
+      expect(session.partialSignatures.size).toBe(3);
+
+      // Once threshold is collected, state is PARTIALS_COLLECTED and further submissions rejected
+      expect(() => {
+        aggregator.submitPartialSignature(sessionId, 3, sigs5[3]);
+      }).toThrow(/Cannot submit partial signature in state PARTIALS_COLLECTED/);
+    });
+
+    it("rejects invalid threshold values during session creation", () => {
+      expect(() =>
+        aggregator.createSession(
+          "invalid-threshold-0",
+          participants,
+          message,
+          0,
+        ),
+      ).toThrow(/Invalid threshold/);
+
+      expect(() =>
+        aggregator.createSession(
+          "invalid-threshold-overflow",
+          participants,
+          message,
+          4,
+        ),
+      ).toThrow(/Invalid threshold/);
     });
   });
 });

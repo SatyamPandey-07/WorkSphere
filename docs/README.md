@@ -102,6 +102,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Theme Token Architecture](./ui/THEME_TOKEN_ARCHITECTURE.md) — complete CSS variable dictionary, dark mode, Cyberpunk Neon, high-contrast theming, and semantic token migration guide.
 - [Fluid Typography and Spacing Guide](./ui/FLUID_TYPOGRAPHY_AND_SPACING.md) — token hierarchy, 4px spacing grid, clamp-based fluid font sizes, WCAG 2.1 AA contrast ratios, and CSS variable reference tables.
 - [Accessibility Guide](./ACCESSIBILITY_GUIDE.md) — accessibility standards and implementation guidance.
+- [Venue Accessibility Audit Guidelines](./accessibility-audit.md) — step-free access, elevator and restroom audit rubric, how the code scores accessibility, and how to review accessibility reports.
 - [Venue Action Glassmorphic Pulse Guide](./ui/GLASSMORPHIC_PULSE_GUIDE.md) — theme-specific venue action button animations, rendering, accessibility, and contrast analysis.
 - [Breadcrumb Component](./components/Breadcrumb.md) — breadcrumb component behavior and usage.
 - [Floor Plan Viewer 3D](./components/FloorPlanViewer3D.md) — 3D floor-plan viewer documentation.

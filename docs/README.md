@@ -62,6 +62,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) — overview of application security defenses and their interaction.
 - [Content Security Policy Nonce Architecture](./security/csp-nonce-architecture.md) — nonce-based CSP implementation and request security.
 - [CSRF Protection Architecture](./security/csrf-protection-architecture.md) — CSRF protection and request validation design.
+- [CSRF Double-Submit Cookie Verification Specification](./security/CSRF_PROTECTION_SPEC.md) — HMAC-SHA256 CSRF token structure, SameSite/HttpOnly cookie attributes, subdomain isolation, and mutation verification pipeline.
 - [Double Ratchet Protocol](./security/DOUBLE_RATCHET_PROTOCOL.md) — encrypted messaging key evolution and protocol design.
 - [Skipped Message Key Store Runbook](./chat/SKIPPED_MESSAGE_KEY_STORE.md) — skipped-key retention, out-of-order recovery, storage limits, pruning, and source-verified security limitations.
 - [Zero-Knowledge Groth16 Proof Verification](./crypto/ZK_GROTH16_VERIFICATION.md) — zero-knowledge anonymous venue check-in architecture, Groth16 zk-SNARK pipeline, Poseidon nullifiers, and verification.

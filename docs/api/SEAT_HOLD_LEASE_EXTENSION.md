@@ -58,6 +58,18 @@ The route trims the supplied token and rejects missing, non-string, or empty val
 
 **Important:** The request field is named `token`, not `fencingToken`. The endpoint does not accept client-supplied extension durations or client IDs.
 
+## Redis Key and TTL
+
+When Redis is available, each hold is one JSON string under this key:
+
+```text
+seat:hold:{venueId}:{seatId}
+```
+
+The key's TTL is the lease. A new hold starts at 300 seconds. The extension script reads `PTTL`, adds 300,000 ms and writes the value back with `SET ... PX`, so the key TTL and the stored `expiresAt` move together. When the key expires, the hold is gone and the next extension returns `NOT_FOUND`.
+
+The route does not rely on a client clock. `remainingSeconds` is computed on the server.
+
 ## Lease Extension Rules
 
 The implementation enforces the following rules:
@@ -195,6 +207,15 @@ Returned when the lock-extension operation encounters an internal error, such as
 }
 ```
 
+### Where the issue's error list differs from the code
+
+| Issue says | Code does |
+| --- | --- |
+| 404 seat not held | Matches. The body has `code: "CONFLICT"`, not `NOT_FOUND`. |
+| 409 lock expired or held by another peer | Expired is a 404. A different owner or wrong token is a 403. 409 covers `ALREADY_EXTENDED`, `TOO_CLOSE_TO_EXPIRY` and `INVALID_LOCK`. |
+| 429 extension limit reached | The limit is one extension, and reaching it returns 409 `ALREADY_EXTENDED`. |
+| Max 3 extensions | One extension per lock. |
+
 **429 Too Many Requests:** The endpoint does not currently implement an endpoint-specific `429` response or rate-limit handling.
 
 ## Client Examples
@@ -232,6 +253,61 @@ async function extendSeatHold(venueId, seatId, fencingToken) {
 
 This example assumes the request is made in the application's authenticated Clerk session context.
 
+### TypeScript
+
+```typescript
+type SeatHoldLock = {
+  venueId: string;
+  seatId: string;
+  userId: string;
+  heldAt: number;
+  expiresAt: number;
+  version: number;
+  fencingToken?: string;
+  extensionUsed?: boolean;
+};
+
+type ExtendResult =
+  | { success: true; lock: SeatHoldLock; remainingSeconds: number }
+  | {
+      success: false;
+      error: string;
+      code?: string;
+      reason?:
+        | "NOT_FOUND"
+        | "UNAUTHORIZED"
+        | "ALREADY_EXTENDED"
+        | "TOO_CLOSE_TO_EXPIRY"
+        | "INVALID_LOCK"
+        | "ERROR";
+      remainingSeconds?: number;
+    };
+
+export async function extendSeatHold(
+  venueId: string,
+  seatId: string,
+  token: string,
+): Promise<ExtendResult> {
+  const res = await fetch(
+    `/api/venues/${encodeURIComponent(venueId)}/seats/${encodeURIComponent(seatId)}/lock/extend`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    },
+  );
+  return (await res.json()) as ExtendResult;
+}
+
+// Usage: stop offering the button once the single extension is spent.
+const result = await extendSeatHold("venue_123", "seat_456", token);
+if (!result.success && result.reason === "ALREADY_EXTENDED") {
+  // Show the final countdown, do not retry.
+}
+```
+
+Do not retry `ALREADY_EXTENDED`, `UNAUTHORIZED` or `NOT_FOUND`. They will not succeed on a second try.
+
 ### cURL
 
 ```bash
@@ -245,6 +321,29 @@ curl -X POST \
 ```
 
 Replace the example identifiers and session cookies with valid values from your application environment.
+
+## Concurrency Sequence
+
+Two tabs of the same user send an extension at nearly the same time. The Lua script runs atomically in Redis, so only one request can see `extensionUsed` as false.
+
+```mermaid
+sequenceDiagram
+    participant A as Client A
+    participant B as Client B
+    participant API as Extend route
+    participant R as Redis
+
+    A->>API: POST lock/extend (token T)
+    B->>API: POST lock/extend (token T)
+    API->>R: EVAL extend script (A)
+    R-->>API: ok, PTTL + 300000, extensionUsed = true, version 2
+    API-->>A: 200 remainingSeconds
+    API->>R: EVAL extend script (B)
+    R-->>API: ALREADY_EXTENDED
+    API-->>B: 409 reason ALREADY_EXTENDED
+```
+
+A stale or foreign holder is rejected the same way, with a 403, because the script compares both `userId` and `fencingToken` before touching the key.
 
 ## Fencing Tokens and Lock Safety
 

@@ -3,6 +3,9 @@
  * Generates 1024-dimensional vector embeddings for extracted skills using real embedding providers
  * (Cohere embed-english-v3.0 or OpenAI text-embedding-3-small with dimensions: 1024),
  * ensuring dimensional compatibility with Venue.searchEmbedding (vector(1024)).
+ *
+ * @see docs/ai/SEMANTIC_MATCHING_ENGINE.md for detailed documentation on embedding tokenization,
+ * cosine distance metrics, and pgvector HNSW index tuning.
  */
 
 export interface SkillEmbedding {
@@ -15,6 +18,7 @@ export const TARGET_EMBEDDING_DIMENSION = 1024;
 export class SkillEmbedder {
   private apiKey: string;
   private provider: "cohere" | "openai";
+  private static globalEmbeddingCache = new Map<string, number[]>();
 
   constructor(apiKey?: string, provider?: "cohere" | "openai") {
     const cohereKey = process.env.COHERE_API_KEY;
@@ -38,7 +42,15 @@ export class SkillEmbedder {
   }
 
   /**
+   * Clears the in-memory skill embedding cache (useful for tests and memory management).
+   */
+  public static clearCache(): void {
+    SkillEmbedder.globalEmbeddingCache.clear();
+  }
+
+  /**
    * Generates 1024-dimensional embeddings for a list of skills.
+   * Leverages caching to avoid regenerating embeddings for identical skills.
    * @param skills Array of skill strings.
    * @returns Promise resolving to an array of SkillEmbedding objects.
    */
@@ -53,16 +65,37 @@ export class SkillEmbedder {
       return [];
     }
 
-    const embeddings: SkillEmbedding[] = [];
-    const batchSize = 10;
+    const results: SkillEmbedding[] = [];
+    const missingSkills: string[] = [];
+    const cacheKeyPrefix = `${this.provider}:`;
 
-    for (let i = 0; i < cleanSkills.length; i += batchSize) {
-      const batch = cleanSkills.slice(i, i + batchSize);
-      const batchResults = await this.fetchEmbeddings(batch);
-      embeddings.push(...batchResults);
+    for (const skill of cleanSkills) {
+      const cached = SkillEmbedder.globalEmbeddingCache.get(
+        `${cacheKeyPrefix}${skill.toLowerCase()}`,
+      );
+      if (cached) {
+        results.push({ skill, vector: cached });
+      } else {
+        missingSkills.push(skill);
+      }
     }
 
-    return embeddings;
+    if (missingSkills.length > 0) {
+      const batchSize = 10;
+      for (let i = 0; i < missingSkills.length; i += batchSize) {
+        const batch = missingSkills.slice(i, i + batchSize);
+        const batchResults = await this.fetchEmbeddings(batch);
+        for (const item of batchResults) {
+          SkillEmbedder.globalEmbeddingCache.set(
+            `${cacheKeyPrefix}${item.skill.toLowerCase()}`,
+            item.vector,
+          );
+          results.push(item);
+        }
+      }
+    }
+
+    return results;
   }
 
   private async fetchEmbeddings(skills: string[]): Promise<SkillEmbedding[]> {
@@ -165,24 +198,105 @@ export class SkillEmbedder {
 
   /**
    * Calculates cosine similarity between two vectors.
+   * Clamps results within [-1.0, 1.0] and handles zero/non-finite inputs safely.
    */
-  public calculateCosineSimilarity(vecA: number[], vecB: number[]): number {
+  public calculateCosineSimilarity(
+    vecA: number[] | Float64Array | null | undefined,
+    vecB: number[] | Float64Array | null | undefined,
+  ): number {
+    if (!vecA || !vecB) return 0;
     if (vecA.length !== vecB.length) {
       throw new Error("Vectors must be of the same dimension.");
     }
+    if (vecA.length === 0) return 0;
 
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
 
     for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
+      const a = vecA[i];
+      const b = vecB[i];
+      if (!Number.isFinite(a) || !Number.isFinite(b)) {
+        return 0;
+      }
+      dotProduct += a * b;
+      normA += a * a;
+      normB += b * b;
     }
 
     if (normA === 0 || normB === 0) return 0;
 
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+    if (denominator === 0 || !Number.isFinite(denominator)) return 0;
+
+    const rawSim = dotProduct / denominator;
+    return Math.max(-1.0, Math.min(1.0, rawSim));
   }
+}
+
+/**
+ * Normalizes a skill string for uniform comparison and deduplication.
+ * Strips whitespace, hyphens, and underscores, converting to lowercase.
+ */
+export function normalizeSkill(skill: string): string {
+  if (!skill || typeof skill !== "string") return "";
+  return skill
+    .toLowerCase()
+    .trim()
+    .replace(/[-_\s]+/g, "");
+}
+
+/**
+ * Extracts shared skill highlights between resume skills and candidate skills.
+ * Preserves original display casing from the resume or candidate where available.
+ * Returns a bounded list of unique matched skills.
+ */
+export function extractSharedSkillHighlights(
+  resumeSkills: string[],
+  candidateSkills: string[],
+  maxHighlights = 10,
+): string[] {
+  if (!Array.isArray(resumeSkills) || !Array.isArray(candidateSkills)) {
+    return [];
+  }
+
+  const normalizedResumeMap = new Map<string, string>();
+  for (const s of resumeSkills) {
+    if (typeof s === "string") {
+      const trimmed = s.trim();
+      const norm = normalizeSkill(trimmed);
+      if (norm && !normalizedResumeMap.has(norm)) {
+        normalizedResumeMap.set(norm, trimmed);
+      }
+    }
+  }
+
+  const shared: string[] = [];
+  const seenNorm = new Set<string>();
+
+  for (const c of candidateSkills) {
+    if (typeof c === "string") {
+      const trimmed = c.trim();
+      const norm = normalizeSkill(trimmed);
+      if (norm && normalizedResumeMap.has(norm) && !seenNorm.has(norm)) {
+        seenNorm.add(norm);
+        shared.push(normalizedResumeMap.get(norm) || trimmed);
+        if (shared.length >= maxHighlights) {
+          break;
+        }
+      }
+    }
+  }
+
+  return shared;
+}
+
+/**
+ * Converts a cosine similarity score [-1, 1] to a bounded match percentage [0, 100].
+ */
+export function similarityToMatchPercentage(similarity: number): number {
+  if (!Number.isFinite(similarity)) return 0;
+  const clamped = Math.max(0, Math.min(1, similarity));
+  return parseFloat((clamped * 100).toFixed(1));
 }

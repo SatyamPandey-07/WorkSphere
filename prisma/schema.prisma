@@ -353,22 +353,24 @@ model Booking {
 }
 
 model BookingGuest {
-  id              String      @id @default(cuid())
-  bookingId       String
-  booking         Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  email           String
-  name            String?
-  phone           String?
-  status          GuestStatus @default(PENDING)
-  calendarUid     String?
-  sentAt          DateTime?
+  id               String      @id @default(cuid())
+  bookingId        String
+  booking          Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  email            String
+  name             String?
+  phone            String?
+  status           GuestStatus @default(PENDING)
+  calendarUid      String?
+  sentAt           DateTime?
   // Split-bill payment state. `status = ACCEPTED` only means the guest RSVP'd
   // "yes"; a guest has paid if and only if `paidAt` is set.
-  paidAt          DateTime?
-  paidAmountCents Int?
-  paidCurrency    String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  paidCurrency     String?
+  paymentReference String?
+  paymentStatus    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   @@unique([bookingId, email])
   @@index([bookingId])
@@ -983,6 +985,8 @@ model VenueSeatWaitlist {
   claimedAt       DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+  // Note: Partial unique index "VenueSeatWaitlist_active_uniqueness_idx" on (userId, venueId, date, time)
+  // WHERE status IN ('ACTIVE', 'NOTIFIED') is managed via migration to avoid blocking re-joins after CANCELLED/CLAIMED/EXPIRED.
 
   @@index([venueId, date, status])
   @@index([userId, status])
@@ -1073,6 +1077,24 @@ model IoTOrchestrationLog {
   executedAt     DateTime @default(now())
 
   @@index([userId])
+}
+
+/// /api/checkin/poap
+model PoapClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  venueId    String
+  latitude   Float
+  longitude  Float
+  wifiSsid   String
+  sensorHash String
+  nonce      String   @unique
+  signature  String
+  confidence Float
+  createdAt  DateTime @default(now())
+
+  @@index([userId, venueId])
+  @@index([createdAt])
 }
 
 /// /api/network/multiplex
@@ -1272,4 +1294,50 @@ enum MicroBillingSessionStatus {
   SETTLING
   SETTLED
   FAILED
+}
+
+/// Persistent time-barter agreement between nomads (#9585).
+model BarterAgreement {
+  id             String               @id @default(cuid())
+  providerId     String
+  receiverId     String
+  skillOffered   String
+  skillRequested String
+  amountMinutes  Int
+  state          BarterAgreementState @default(PROPOSED)
+  providerPubKey String
+  receiverPubKey String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  settlement     TimebankSettlement?
+
+  @@index([providerId])
+  @@index([receiverId])
+  @@index([state])
+}
+
+enum BarterAgreementState {
+  PROPOSED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  SETTLED
+  CANCELLED
+}
+
+/// Cryptographically verified timebank credit settlement (#9585).
+model TimebankSettlement {
+  id            String          @id @default(cuid())
+  agreementId   String          @unique
+  agreement     BarterAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  providerId    String
+  receiverId    String
+  amountMinutes Int
+  providerSig   String
+  receiverSig   String
+  nonce         String
+  settledAt     DateTime        @default(now())
+
+  @@index([providerId])
+  @@index([receiverId])
 }

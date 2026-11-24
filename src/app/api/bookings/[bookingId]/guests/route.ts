@@ -76,6 +76,101 @@ async function verifyBookingOwnership(bookingId: string, userId: string) {
 }
 
 // =============================================================================
+// Helper: Handle Public RSVP Submission (POST / PATCH)
+// =============================================================================
+
+async function handleGuestRsvpSubmission(
+  bookingId: string,
+  guestId: string,
+  status: string,
+  isHtmlResponse: boolean,
+) {
+  if (status !== "ACCEPTED" && status !== "DECLINED") {
+    return isHtmlResponse
+      ? new NextResponse("Invalid status value", { status: 400 })
+      : NextResponse.json({ error: "Invalid status value" }, { status: 400 });
+  }
+
+  const guest = await prisma.bookingGuest.findFirst({
+    where: {
+      id: guestId,
+      bookingId,
+    },
+    include: {
+      booking: {
+        include: {
+          venue: true,
+        },
+      },
+    },
+  });
+
+  if (!guest) {
+    return isHtmlResponse
+      ? new NextResponse("Guest invitation not found", { status: 404 })
+      : NextResponse.json(
+          { error: "Guest invitation not found" },
+          { status: 404 },
+        );
+  }
+
+  const updatedGuest = await prisma.bookingGuest.update({
+    where: { id: guestId },
+    data: { status: status as any },
+  });
+
+  await eventBus.emit("booking:guest-rsvp", {
+    bookingId,
+    guestId,
+    guestEmail: guest.email,
+    status,
+  });
+
+  if (isHtmlResponse) {
+    const venueName = guest.booking.venue.name;
+    const isAccepting = status === "ACCEPTED";
+    const statusText = isAccepting ? "Accepted" : "Declined";
+    const statusColor = isAccepting ? "#10b981" : "#ef4444";
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>RSVP Confirmed</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .card { background: #ffffff; padding: 40px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; max-width: 450px; width: 100%; box-sizing: border-box; }
+          .badge { display: inline-block; background-color: ${statusColor}; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-bottom: 20px; text-transform: uppercase; }
+          h1 { font-size: 24px; color: #18181b; margin: 0 0 10px 0; }
+          p { color: #52525b; font-size: 15px; margin: 0 0 20px 0; line-height: 1.5; }
+          .venue { font-weight: bold; color: #7c3aed; }
+          .footer { color: #a1a1aa; font-size: 12px; margin-top: 30px; border-top: 1px solid #e4e4e7; padding-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="badge">${statusText}</div>
+          <h1>RSVP Submitted!</h1>
+          <p>You have successfully ${statusText.toLowerCase()} the invitation to join the workspace session at <span class="venue">${venueName}</span>.</p>
+          <div class="footer">Powered by WorkSphere</div>
+        </div>
+      </body>
+      </html>
+    `;
+    return new NextResponse(html, {
+      headers: { "Content-Type": "text/html" },
+    });
+  }
+
+  return NextResponse.json({
+    success: true,
+    guest: updatedGuest,
+  });
+}
+
+// =============================================================================
 // GET /api/bookings/[bookingId]/guests
 // =============================================================================
 
@@ -88,9 +183,9 @@ export async function GET(
     const guestId = searchParams.get("guestId");
     const status = searchParams.get("status");
 
-    // Public Guest RSVP route (from invite email)
-    if (guestId && status) {
-      if (status !== "ACCEPTED" && status !== "DECLINED") {
+    // Public Guest RSVP route (from invite email) - Read-only confirmation interface (#10066)
+    if (guestId) {
+      if (status && status !== "ACCEPTED" && status !== "DECLINED") {
         return new NextResponse("Invalid status value", { status: 400 });
       }
 
@@ -114,22 +209,15 @@ export async function GET(
         return new NextResponse("Guest invitation not found", { status: 404 });
       }
 
-      await prisma.bookingGuest.update({
-        where: { id: guestId },
-        data: { status: status as any },
-      });
-
-      await eventBus.emit("booking:guest-rsvp", {
-        bookingId,
-        guestId,
-        guestEmail: guest.email,
-        status,
-      });
-
       const venueName = guest.booking.venue.name;
-      const isAccepting = status === "ACCEPTED";
-      const statusText = isAccepting ? "Accepted" : "Declined";
-      const statusColor = isAccepting ? "#10b981" : "#ef4444";
+      const proposedStatus = status === "DECLINED" ? "DECLINED" : "ACCEPTED";
+      const isAccepting = proposedStatus === "ACCEPTED";
+      const primaryAction = isAccepting
+        ? "Accept Invitation"
+        : "Decline Invitation";
+      const primaryColor = isAccepting ? "#10b981" : "#ef4444";
+      const altStatus = isAccepting ? "DECLINED" : "ACCEPTED";
+      const altAction = isAccepting ? "Decline instead" : "Accept instead";
 
       const html = `
         <!DOCTYPE html>
@@ -141,18 +229,32 @@ export async function GET(
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
             .card { background: #ffffff; padding: 40px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; max-width: 450px; width: 100%; box-sizing: border-box; }
-            .badge { display: inline-block; background-color: ${statusColor}; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-bottom: 20px; text-transform: uppercase; }
+            .badge { display: inline-block; background-color: #6366f1; color: white; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 13px; margin-bottom: 20px; text-transform: uppercase; }
             h1 { font-size: 24px; color: #18181b; margin: 0 0 10px 0; }
-            p { color: #52525b; font-size: 15px; margin: 0 0 20px 0; line-height: 1.5; }
+            p { color: #52525b; font-size: 15px; margin: 0 0 24px 0; line-height: 1.5; }
             .venue { font-weight: bold; color: #7c3aed; }
-            .footer { color: #a1a1aa; font-size: 12px; margin-top: 30px; border-top: 1px solid #e4e4e7; padding-top: 20px; }
+            .btn { display: block; width: 100%; padding: 12px 20px; border-radius: 10px; font-size: 15px; font-weight: bold; cursor: pointer; border: none; margin-bottom: 12px; transition: opacity 0.2s; text-decoration: none; }
+            .btn-primary { background-color: ${primaryColor}; color: white; }
+            .btn-alt { background-color: #f4f4f5; color: #3f3f46; border: 1px solid #e4e4e7; }
+            .btn:hover { opacity: 0.9; }
+            .footer { color: #a1a1aa; font-size: 12px; margin-top: 24px; border-top: 1px solid #e4e4e7; padding-top: 20px; }
           </style>
         </head>
         <body>
           <div class="card">
-            <div class="badge">${statusText}</div>
-            <h1>RSVP Submitted!</h1>
-            <p>You have successfully ${statusText.toLowerCase()} the invitation to join the workspace session at <span class="venue">${venueName}</span>.</p>
+            <div class="badge">Invitation RSVP</div>
+            <h1>Respond to Invitation</h1>
+            <p>You have been invited to join a session at <span class="venue">${venueName}</span>. Please click below to confirm your response.</p>
+            <form method="POST" action="/api/bookings/${bookingId}/guests">
+              <input type="hidden" name="guestId" value="${guestId}">
+              <input type="hidden" name="status" value="${proposedStatus}">
+              <button type="submit" class="btn btn-primary">${primaryAction}</button>
+            </form>
+            <form method="POST" action="/api/bookings/${bookingId}/guests">
+              <input type="hidden" name="guestId" value="${guestId}">
+              <input type="hidden" name="status" value="${altStatus}">
+              <button type="submit" class="btn btn-alt">${altAction}</button>
+            </form>
             <div class="footer">Powered by WorkSphere</div>
           </div>
         </body>
@@ -225,14 +327,48 @@ export async function POST(
   { params }: { params: Promise<{ bookingId: string }> },
 ) {
   try {
+    const { bookingId } = await params;
+
+    // Check for public guest RSVP submission (via HTML form or JSON) (#10066)
+    const contentType = req.headers.get("content-type") || "";
+    if (
+      contentType.includes("application/x-www-form-urlencoded") ||
+      contentType.includes("multipart/form-data")
+    ) {
+      const formData = await req.formData();
+      const guestId = formData.get("guestId");
+      const status = formData.get("status");
+      if (typeof guestId === "string" && typeof status === "string") {
+        return handleGuestRsvpSubmission(bookingId, guestId, status, true);
+      }
+    } else {
+      try {
+        const cloned = req.clone();
+        const jsonBody = await cloned.json();
+        if (
+          jsonBody &&
+          typeof jsonBody.guestId === "string" &&
+          typeof jsonBody.status === "string" &&
+          !jsonBody.guests
+        ) {
+          return handleGuestRsvpSubmission(
+            bookingId,
+            jsonBody.guestId,
+            jsonBody.status,
+            false,
+          );
+        }
+      } catch {
+        // Not a JSON RSVP payload; proceed to owner add-guests validation
+      }
+    }
+
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     await ensureUserExists(userId);
-
-    const { bookingId } = await params;
 
     // Verify booking ownership
     const ownership = await verifyBookingOwnership(bookingId, userId);
@@ -262,6 +398,52 @@ export async function POST(
 
     const { guests } = validation.data;
 
+    // Normalize emails and check for duplicates within the request
+    const normalizedEmails = guests.map((g) => g.email.trim().toLowerCase());
+    const seenEmails = new Set<string>();
+    const duplicateEmailsInRequest: string[] = [];
+
+    for (const email of normalizedEmails) {
+      if (seenEmails.has(email)) {
+        duplicateEmailsInRequest.push(email);
+      }
+      seenEmails.add(email);
+    }
+
+    if (duplicateEmailsInRequest.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Duplicate guest email addresses found in request",
+          duplicates: Array.from(new Set(duplicateEmailsInRequest)),
+        },
+        { status: 400 },
+      );
+    }
+
+    // Check if any of these guests have already been invited to this booking
+    const existingGuests = await prisma.bookingGuest.findMany({
+      where: {
+        bookingId,
+        email: { in: Array.from(seenEmails) },
+      },
+      select: { email: true, status: true },
+    });
+
+    if (existingGuests && existingGuests.length > 0) {
+      return NextResponse.json(
+        {
+          error: "One or more guests have already been invited to this booking",
+          existingGuests: existingGuests.map(
+            (g: { email: string; status: string }) => ({
+              email: g.email,
+              status: g.status,
+            }),
+          ),
+        },
+        { status: 409 },
+      );
+    }
+
     // Fetch booking details for the invite flow
     const booking = ownership.booking;
 
@@ -283,9 +465,9 @@ export async function POST(
     const results = await inviteGuestsToBooking(
       bookingId,
       guests.map((g) => ({
-        email: g.email,
-        name: g.name,
-        phone: g.phone,
+        email: g.email.trim().toLowerCase(),
+        name: g.name ? g.name.trim() : undefined,
+        phone: g.phone ? g.phone.trim() : undefined,
       })),
       async () => ({
         venue: {
@@ -304,6 +486,7 @@ export async function POST(
           date: booking.date,
           time: booking.time,
           durationMinutes: booking.duration || 60,
+          timeZone: booking.timeZone,
         },
       }),
     );
@@ -322,6 +505,15 @@ export async function POST(
     });
   } catch (error: any) {
     console.error("[POST /api/bookings/[bookingId]/guests] Error:", error);
+    if (error?.code === "P2002") {
+      return NextResponse.json(
+        {
+          error:
+            "A guest with this email address has already been invited to this booking",
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { error: "Failed to send invitations" },
       { status: 500 },
@@ -416,40 +608,7 @@ export async function PATCH(
     }
 
     const { guestId, status } = validation.data;
-
-    // Verify the guest belongs to the booking
-    const guest = await prisma.bookingGuest.findFirst({
-      where: {
-        id: guestId,
-        bookingId,
-      },
-    });
-
-    if (!guest) {
-      return NextResponse.json(
-        { error: "Guest invitation not found" },
-        { status: 404 },
-      );
-    }
-
-    // Update guest status
-    const updatedGuest = await prisma.bookingGuest.update({
-      where: { id: guestId },
-      data: { status: status as any },
-    });
-
-    // Emit event for real-time notification
-    await eventBus.emit("booking:guest-rsvp", {
-      bookingId,
-      guestId,
-      guestEmail: guest.email,
-      status,
-    });
-
-    return NextResponse.json({
-      success: true,
-      guest: updatedGuest,
-    });
+    return handleGuestRsvpSubmission(bookingId, guestId, status, false);
   } catch (error: any) {
     console.error("[PATCH /api/bookings/[bookingId]/guests] Error:", error);
     return NextResponse.json(

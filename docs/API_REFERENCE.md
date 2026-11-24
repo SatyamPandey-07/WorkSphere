@@ -8,17 +8,19 @@ This document provides a high-level reference for the REST API endpoints availab
 
 # Authentication
 
-| Endpoint                         | Description                                       |
-| -------------------------------- | ------------------------------------------------- |
-| `POST /api/auth/csrf-token`      | Generate a CSRF token for secure requests.        |
-| `POST /api/auth/forgot-password` | Initiate the password reset workflow.             |
-| `POST /api/auth/reset-password`  | Complete the password reset process.              |
-| `POST /api/auth/resend-otp`      | Resend a one-time password.                       |
-| `POST /api/auth/verify-otp`      | Verify a submitted one-time password.             |
-| `POST /api/auth/sso/pkce`        | Generate a PKCE challenge for SSO authentication. |
-| `GET /api/auth/sso/metadata`     | Retrieve SSO metadata.                            |
-| `POST /api/auth/sso/saml`        | Handle SAML authentication requests.              |
-| `POST /api/auth/webauthn/verify` | Verify a WebAuthn authentication request.         |
+| `POST /api/webhooks/clerk` | Verify Clerk/Svix-signed user lifecycle events and synchronize the WorkSphere user profile. See the [Clerk webhook integration runbook](./auth/CLERK_WEBHOOK_INTEGRATION.md). |
+
+| Endpoint                         | Description                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `POST /api/auth/csrf-token`      | Generate a CSRF token for secure requests.                                    |
+| `POST /api/auth/forgot-password` | Initiate the password reset workflow.                                         |
+| `POST /api/auth/reset-password`  | Complete the password reset process.                                          |
+| `POST /api/auth/resend-otp`      | Retired endpoint (HTTP 410 Gone). Password reset codes are managed via Clerk. |
+| `POST /api/auth/verify-otp`      | Retired endpoint (HTTP 410 Gone). Verification codes are managed via Clerk.   |
+| `POST /api/auth/sso/pkce`        | Generate a PKCE challenge for SSO authentication.                             |
+| `GET /api/auth/sso/metadata`     | Retrieve SSO metadata.                                                        |
+| `POST /api/auth/sso/saml`        | Handle SAML authentication requests.                                          |
+| `POST /api/auth/webauthn/verify` | Verify a WebAuthn authentication request.                                     |
 
 ---
 
@@ -38,8 +40,11 @@ This document provides a high-level reference for the REST API endpoints availab
 | `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                                                                                                                             |
 | `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                                                                                                                                    |
 | `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                                                                                                                              |
-| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                                                                                                                                       |
+| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics and time-bucket distributions.                                                                                                                         |
+| `POST /api/venues/{venueId}/noise-metrics`         | Submit calibrated crowdsourced ambient decibel reading.                                                                                                                             |
 | `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                                                                                                                                    |
+| `GET /api/venues/acoustics/rt60`                   | Retrieve venue RT60 reverberation time heatmap and call quality scores.                                                                                                             |
+| `POST /api/venues/acoustics/rt60`                  | Ingest crowdsourced RT60 reverberation decay measurements.                                                                                                                          |
 | `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                                                                                                                                     |
 | `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                                                                                                                                         |
 | `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                                                                                                                           |
@@ -123,6 +128,227 @@ Accept: application/json
 Query venues situated within geographic bounding-box coordinates, with support for anti-meridian (180°/-180°) Date Line crossover, exact category matching, sanitized text search, and pagination.
 
 For the complete parameter reference, anti-meridian SQL logic, request examples, and response schemas, see the [Spatial Venue Bounding-Box Search API Guide](./api/SPATIAL_VENUE_SEARCH.md).
+
+---
+
+### Endpoint Specification: Environmental Acoustics & Noise Telemetry
+
+For the formal OpenAPI 3.1.0 contract, see [openapi.yaml](./api/openapi.yaml).
+
+WorkSphere provides end-to-end environmental acoustics monitoring, crowdsourced sound level ratings, hardware IoT sensor ingestion, and spatial reverberation mapping across the following endpoints:
+
+- `GET /api/venues/{venueId}/noise-metrics` — Retrieve venue ambient noise metrics and 4-period time buckets.
+- `POST /api/venues/{venueId}/noise-metrics` — Submit authenticated user decibel readings ($30\text{--}90\text{ dB}$).
+- `POST /api/telemetry/noise` — Ingest hardware IoT noise telemetry with Gaussian differential privacy.
+- `GET /api/venues/acoustics/rt60` — Retrieve spatial reverberation time ($T_{60}$) heatmap and call-quality scores.
+- `POST /api/venues/acoustics/rt60` — Ingest crowdsourced impulse response RT60 measurements.
+
+#### Query Parameters (Acoustic Telemetry)
+
+| Parameter            | Type      | Required | Default | Description                                                                                                                                            |
+| :------------------- | :-------- | :------: | :-----: | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `windowHours`        | `integer` |    No    |  `24`   | Lookback window in hours for aggregation (min `1`, max `168`).                                                                                         |
+| `frequencyBand`      | `string`  |    No    | `"all"` | Acoustic band filter (`"all"`, `"low"`, `"mid"`, `"high"`, `"sub-bass"`, `"speech"`, `"clatter"`, or octave bands `"125Hz"`–`"8kHz"`, `"1/3-octave"`). |
+| `includeSpectrogram` | `boolean` |    No    | `false` | When `true`, includes FFT spectrogram frequency distribution and energy decomposition in the response payload.                                         |
+
+#### Request & Response Examples
+
+##### 1. GET `/api/venues/{venueId}/noise-metrics?windowHours=24&frequencyBand=all&includeSpectrogram=true`
+
+Retrieves 4-period noise buckets (`morning`, `lunch`, `afternoon`, `evening`) and total sample count.
+
+```http
+GET /api/venues/cly019abc0001xyz890venue1/noise-metrics?windowHours=24&includeSpectrogram=true HTTP/1.1
+Host: worksphere.app
+Accept: application/json
+```
+
+**Response (`200 OK`):**
+
+```json
+{
+  "venueId": "cly019abc0001xyz890venue1",
+  "buckets": [
+    {
+      "key": "morning",
+      "label": "Morning",
+      "averageDb": 41.2,
+      "peakDb": 52.8,
+      "samples": 14
+    },
+    {
+      "key": "lunch",
+      "label": "Lunch hour",
+      "averageDb": 58.7,
+      "peakDb": 71.3,
+      "samples": 22
+    },
+    {
+      "key": "afternoon",
+      "label": "Afternoon",
+      "averageDb": 49.4,
+      "peakDb": 63.0,
+      "samples": 18
+    },
+    {
+      "key": "evening",
+      "label": "Evening",
+      "averageDb": 44.1,
+      "peakDb": 55.6,
+      "samples": 9
+    }
+  ],
+  "totalSamples": 63,
+  "spectrogram": {
+    "sampleRate": 44100,
+    "windowHours": 24,
+    "frequencyBand": "all",
+    "bands": [
+      {
+        "band": "low",
+        "frequencyRange": "20Hz-250Hz",
+        "averageEnergyDb": 36.4,
+        "peakFrequencyHz": 120
+      },
+      {
+        "band": "mid",
+        "frequencyRange": "250Hz-4kHz",
+        "averageEnergyDb": 51.2,
+        "peakFrequencyHz": 1050
+      },
+      {
+        "band": "high",
+        "frequencyRange": "4kHz-16kHz",
+        "averageEnergyDb": 31.8,
+        "peakFrequencyHz": 5400
+      }
+    ]
+  }
+}
+```
+
+##### 2. POST `/api/venues/{venueId}/noise-metrics`
+
+Submits an authenticated user decibel measurement. Requires Clerk authentication (`Authorization: Bearer <session_token>`).
+
+**Request Body:**
+
+```json
+{
+  "decibels": 52.4,
+  "peakDecibels": 64.1
+}
+```
+
+**Response (`201 Created`):**
+
+```json
+{
+  "success": true,
+  "venueId": "cly019abc0001xyz890venue1",
+  "decibels": 52.4,
+  "noiseLevel": "moderate",
+  "buckets": [
+    {
+      "key": "morning",
+      "label": "Morning",
+      "averageDb": 41.2,
+      "peakDb": 52.8,
+      "samples": 14
+    },
+    {
+      "key": "lunch",
+      "label": "Lunch hour",
+      "averageDb": 58.7,
+      "peakDb": 71.3,
+      "samples": 22
+    },
+    {
+      "key": "afternoon",
+      "label": "Afternoon",
+      "averageDb": 49.8,
+      "peakDb": 64.1,
+      "samples": 19
+    },
+    {
+      "key": "evening",
+      "label": "Evening",
+      "averageDb": 44.1,
+      "peakDb": 55.6,
+      "samples": 9
+    }
+  ],
+  "totalSamples": 64
+}
+```
+
+##### 3. POST `/api/telemetry/noise` (Hardware IoT Sensor Ingestion)
+
+Hardware IoT devices authenticate with `Authorization: Bearer <WORKER_SECRET>` and stream sound pressure observations protected by Gaussian Differential Privacy.
+
+**Request Body:**
+
+```json
+{
+  "venueId": "cly019abc0001xyz890venue1",
+  "decibelLevel": 56.8,
+  "measuredAt": "2026-11-22T16:30:00.000Z",
+  "sensorId": "station-acoustic-north-wing-02"
+}
+```
+
+**Response (`200 OK`):**
+
+```json
+{
+  "success": true,
+  "venueId": "cly019abc0001xyz890venue1",
+  "noiseCategory": "moderate",
+  "timestamp": "2026-11-22T16:30:00.000Z",
+  "sensorId": "station-acoustic-north-wing-02",
+  "privacy": {
+    "epsilon": 0.32,
+    "delta": 0.00001,
+    "submissions": 15
+  }
+}
+```
+
+##### 4. GET & POST `/api/venues/acoustics/rt60` (Reverberation & Call Quality)
+
+- `GET /api/venues/acoustics/rt60?venueId=...` returns zone reverberation decay metrics ($T_{60}$) and normalized call-quality scores (0–100).
+- `POST /api/venues/acoustics/rt60` ingests crowdsourced Web Audio worklet impulse response measurements.
+
+**Request Body (POST):**
+
+```json
+{
+  "venueId": "cly019abc0001xyz890venue1",
+  "zoneId": "zone_quiet_annex",
+  "rt60": 0.45,
+  "coordinates": { "x": 12.4, "y": 8.1, "z": 1.2 }
+}
+```
+
+**Response (`200 OK`):**
+
+```json
+{
+  "success": true,
+  "message": "Acoustic data ingested successfully"
+}
+```
+
+#### Rate Limiting & Error Responses
+
+Acoustic endpoints fall under the **Telemetry & Sensor Streams** rate-limit tier (**120 requests / 1 minute**).
+
+| HTTP Status             | Error Code          | Description & Sample Payload                                                                                                                                                         |
+| :---------------------- | :------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400 Bad Request`       | `VALIDATION_FAILED` | Out-of-range decibel reading ($< 30$ or $> 90\text{ dB}$):<br/>`{ "success": false, "error": "Decibel reading must be a number between 30 and 90 dB", "code": "VALIDATION_FAILED" }` |
+| `401 Unauthorized`      | `UNAUTHORIZED`      | Missing or invalid Clerk session token or `WORKER_SECRET` header:<br/>`{ "success": false, "error": "Unauthorized", "code": "UNAUTHORIZED" }`                                        |
+| `404 Not Found`         | `VENUE_NOT_FOUND`   | Venue identifier does not exist:<br/>`{ "success": false, "error": "Venue not found", "code": "VENUE_NOT_FOUND" }`                                                                   |
+| `429 Too Many Requests` | `RATE_LIMITED`      | Quota exceeded or daily privacy budget exhausted:<br/>`{ "error": "Rate limited", "code": "RATE_LIMITED" }` (or `{ "error": "Daily telemetry privacy budget exhausted" }`)           |
 
 ---
 
@@ -273,28 +499,29 @@ For detailed request and response contracts, concurrency guarantees, waitlist me
 
 # Other APIs
 
-| Endpoint                         | Description                          |
-| -------------------------------- | ------------------------------------ |
-| `POST /api/chat`                 | AI chat endpoint.                    |
-| `POST /api/upload`               | Upload files.                        |
-| `POST /api/translate`            | Translate content.                   |
-| `POST /api/menu-translate`       | Translate venue menus.               |
-| `GET /api/newsletter`            | Newsletter subscription endpoint.    |
-| `GET /api/memory`                | Memory service endpoint.             |
-| `POST /api/memory/extract`       | Extract structured memory.           |
-| `GET /api/sync`                  | Synchronise application data.        |
-| `GET /api/jobs/{jobId}`          | Retrieve job status.                 |
-| `POST /api/push/subscribe`       | Subscribe to push notifications.     |
-| `POST /api/push/unsubscribe`     | Unsubscribe from push notifications. |
-| `GET /api/push/vapid-public-key` | Retrieve the VAPID public key.       |
-| `POST /api/webhook`              | Webhook endpoint.                    |
-| `POST /api/webhooks/test`        | Test webhook endpoint.               |
-| `POST /api/webhooks/worker`      | Worker webhook endpoint.             |
-| `POST /api/partykit/auth`        | Authenticate PartyKit connections.   |
-| `GET /api/availability/delta`    | Retrieve availability updates.       |
-| `POST /api/cron/reminders`       | Scheduled reminder task.             |
-| `GET /api/ar/anchors`            | Retrieve AR anchors.                 |
-| `GET /api/ar/anchors/{id}`       | Retrieve a specific AR anchor.       |
+| Endpoint                         | Description                                                              |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `POST /api/chat`                 | AI chat endpoint.                                                        |
+| `POST /api/upload`               | Upload files.                                                            |
+| `POST /api/translate`            | Translate content.                                                       |
+| `POST /api/menu-translate`       | Translate venue menus.                                                   |
+| `GET /api/newsletter`            | Newsletter subscription endpoint.                                        |
+| `GET /api/memory`                | Memory service endpoint.                                                 |
+| `POST /api/memory/extract`       | Extract structured memory.                                               |
+| `GET /api/sync`                  | Synchronise application data.                                            |
+| `GET /api/jobs/{jobId}`          | Retrieve job status.                                                     |
+| `POST /api/push/subscribe`       | Subscribe to push notifications.                                         |
+| `POST /api/push/unsubscribe`     | Unsubscribe from push notifications.                                     |
+| `GET /api/push/vapid-public-key` | Retrieve the VAPID public key.                                           |
+| `POST /api/webhook`              | Webhook endpoint.                                                        |
+| `POST /api/webhooks/test`        | Test webhook endpoint.                                                   |
+| `POST /api/webhooks/worker`      | Worker webhook endpoint.                                                 |
+| `POST /api/telemetry/noise`      | Ingest IoT hardware acoustic sensor telemetry with differential privacy. |
+| `POST /api/partykit/auth`        | Authenticate PartyKit connections.                                       |
+| `GET /api/availability/delta`    | Retrieve availability updates.                                           |
+| `POST /api/cron/reminders`       | Scheduled reminder task.                                                 |
+| `GET /api/ar/anchors`            | Retrieve AR anchors.                                                     |
+| `GET /api/ar/anchors/{id}`       | Retrieve a specific AR anchor.                                           |
 
 ---
 

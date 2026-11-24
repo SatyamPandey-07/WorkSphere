@@ -19,7 +19,9 @@ import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
-import { Contrast } from "lucide-react";
+import { Contrast, Plus, Minus } from "lucide-react";
+import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
+import { MapShortcutLegend, isEditableElement } from "./map/MapShortcutLegend";
 import {
   MapMarkerFactory,
   SEAT_RING_COLORS,
@@ -61,22 +63,80 @@ function MapController({ mapView }: { mapView: MapView | null }) {
   return null;
 }
 
-function ResetMapViewControl({ center }: { center: [number, number] }) {
+function MapNavigationControls({
+  center,
+  isLegendOpen,
+  onOpenLegend,
+  onCloseLegend,
+}: {
+  center: [number, number];
+  isLegendOpen: boolean;
+  onOpenLegend: () => void;
+  onCloseLegend: () => void;
+}) {
   const map = useMap();
 
   return (
-    <div className="absolute bottom-8 right-4 z-[1000] sm:bottom-4">
+    <div className="absolute bottom-8 right-4 z-[1000] sm:bottom-4 flex items-center gap-2">
+      {/* Zoom In */}
+      <ShortcutTooltip
+        content="Zoom in"
+        shortcut="+"
+        withModifier={false}
+        position="top"
+      >
+        <button
+          type="button"
+          aria-label="Zoom in"
+          data-testid="map-zoom-in-button"
+          onClick={() => map.zoomIn()}
+          className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 p-2 text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          <span className="sr-only">Zoom in (+)</span>
+        </button>
+      </ShortcutTooltip>
+
+      {/* Zoom Out */}
+      <ShortcutTooltip
+        content="Zoom out"
+        shortcut="-"
+        withModifier={false}
+        position="top"
+      >
+        <button
+          type="button"
+          aria-label="Zoom out"
+          data-testid="map-zoom-out-button"
+          onClick={() => map.zoomOut()}
+          className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 p-2 text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <Minus className="h-4 w-4" aria-hidden="true" />
+          <span className="sr-only">Zoom out (-)</span>
+        </button>
+      </ShortcutTooltip>
+
+      {/* Reset View */}
       <button
         type="button"
         aria-label="Reset Map View"
+        data-testid="map-reset-view-button"
         onClick={() => map.setView(center, 13)}
-        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white"
+        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
       >
         Reset Map View
       </button>
+
+      {/* Keyboard Shortcut Legend */}
+      <MapShortcutLegend
+        isOpen={isLegendOpen}
+        onOpen={onOpenLegend}
+        onClose={onCloseLegend}
+      />
     </div>
   );
 }
+
 
 function AutoCenter({
   markers,
@@ -745,6 +805,8 @@ const Map = ({
   // =========================================================================
   // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
   // =========================================================================
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
+  const [showForecastControls, setShowForecastControls] = useState(false);
   const [routingQueue, setRoutingQueue] = useState<any[]>(initialRoutingQueue);
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
   const [isRoutingLoading, setIsRoutingLoading] = useState<boolean>(false);
@@ -778,6 +840,33 @@ const Map = ({
       handleSelectMarker(null);
     }
   }, [markers, selectedMarkerId, handleSelectMarker]);
+
+  // Global keydown handler for map shortcuts (Esc to deselect, F to toggle filters, ? to toggle legend)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (isEditableElement(e.target) || isEditableElement(document.activeElement)) {
+        return;
+      }
+
+      if (e.key === "Escape") {
+        if (isLegendOpen) {
+          setIsLegendOpen(false);
+        } else if (selectedMarkerId) {
+          handleSelectMarker(null);
+        }
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        setShowForecastControls((prev) => !prev);
+      } else if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        e.preventDefault();
+        setIsLegendOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isLegendOpen, selectedMarkerId, handleSelectMarker]);
 
   const activeVenueForDrawer = useMemo(() => {
     if (!selectedMarkerId) return null;
@@ -1486,10 +1575,15 @@ const Map = ({
         }}
       >
         <ScaleControl position="bottomleft" metric={true} imperial={false} />
-        <ResetMapViewControl center={center} />
+        <MapNavigationControls
+          center={center}
+          isLegendOpen={isLegendOpen}
+          onOpenLegend={() => setIsLegendOpen(true)}
+          onCloseLegend={() => setIsLegendOpen(false)}
+        />
 
-        {/* Map Control Options: High-Contrast Mode Toggle (WCAG 2.1 AA) */}
-        <div className="map-accessibility-controls absolute top-3 left-16 z-[1000]">
+        {/* Map Control Options: High-Contrast Mode Toggle (WCAG 2.1 AA) and Filter Toggle */}
+        <div className="map-accessibility-controls absolute top-3 left-16 z-[1000] flex items-center gap-2">
           <button
             type="button"
             role="switch"
@@ -1505,34 +1599,58 @@ const Map = ({
             <Contrast className="w-3.5 h-3.5 text-current" />
             <span>High Contrast</span>
           </button>
+
+          <ShortcutTooltip
+            content="Toggle forecast filters"
+            shortcut="F"
+            withModifier={false}
+            position="bottom"
+          >
+            <button
+              type="button"
+              aria-label="Toggle venue filters"
+              aria-expanded={showForecastControls}
+              data-testid="map-toggle-filters-button"
+              onClick={() => setShowForecastControls((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${
+                showForecastControls
+                  ? "bg-blue-600 text-white border-blue-500 ring-2 ring-blue-400"
+                  : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              }`}
+            >
+              <span>Filters</span>
+            </button>
+          </ShortcutTooltip>
         </div>
         {/* Forecast selector UI */}
-        <div className="map-forecast-controls">
-          <label htmlFor="day-select">Day</label>
-          <select
-            id="day-select"
-            value={selectedDay}
-            onChange={(e) => setSelectedDay(parseInt(e.target.value))}
-          >
-            <option value={0}>Sunday</option>
-            <option value={1}>Monday</option>
-            <option value={2}>Tuesday</option>
-            <option value={3}>Wednesday</option>
-            <option value={4}>Thursday</option>
-            <option value={5}>Friday</option>
-            <option value={6}>Saturday</option>
-          </select>
-          <label htmlFor="hour-range">Hour</label>
-          <input
-            id="hour-range"
-            type="range"
-            min={0}
-            max={23}
-            value={selectedHour}
-            onChange={(e) => setSelectedHour(parseInt(e.target.value))}
-          />
-          <span>{selectedHour}:00</span>
-        </div>
+        {showForecastControls && (
+          <div className="map-forecast-controls" data-testid="map-forecast-controls">
+            <label htmlFor="day-select">Day</label>
+            <select
+              id="day-select"
+              value={selectedDay}
+              onChange={(e) => setSelectedDay(parseInt(e.target.value))}
+            >
+              <option value={0}>Sunday</option>
+              <option value={1}>Monday</option>
+              <option value={2}>Tuesday</option>
+              <option value={3}>Wednesday</option>
+              <option value={4}>Thursday</option>
+              <option value={5}>Friday</option>
+              <option value={6}>Saturday</option>
+            </select>
+            <label htmlFor="hour-range">Hour</label>
+            <input
+              id="hour-range"
+              type="range"
+              min={0}
+              max={23}
+              value={selectedHour}
+              onChange={(e) => setSelectedHour(parseInt(e.target.value))}
+            />
+            <span>{selectedHour}:00</span>
+          </div>
+        )}
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer

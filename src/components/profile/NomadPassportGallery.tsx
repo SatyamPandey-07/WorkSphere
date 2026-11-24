@@ -30,6 +30,7 @@ import {
 import { generateClientNomadProof } from "@/lib/zkp/nomadProofClient";
 import { downloadSVG, generateQRCodeSVG } from "@/lib/qr/svgQr";
 import NomadPassportCoin from "./NomadPassportCoin";
+import NomadPassportStampSkeleton from "./NomadPassportStampSkeleton";
 
 /**
  * Celebratory sound chime synthesized using the Web Audio API upon successful PoAP token / passport stamp minting.
@@ -205,10 +206,12 @@ const INITIAL_EARNED_STAMPS: PassportStamp[] = [
 
 export interface NomadPassportGalleryProps {
   initialStamps?: PassportStamp[];
+  isLoading?: boolean;
 }
 
 export default function NomadPassportGallery({
   initialStamps,
+  isLoading = false,
 }: NomadPassportGalleryProps = {}) {
   const [selectedStatement, setSelectedStatement] =
     useState<NomadProductivityStatement>(AVAILABLE_STATEMENTS[0]);
@@ -529,7 +532,9 @@ export default function NomadPassportGallery({
           </span>
         </div>
 
-        {mintedStamps.length === 0 ? (
+        {isLoading ? (
+          <NomadPassportStampSkeleton count={3} />
+        ) : mintedStamps.length === 0 ? (
           <div
             data-testid="zero-stamps-empty-state"
             className="flex flex-col items-center justify-center py-12 px-6 rounded-2xl bg-slate-950/40 border border-dashed border-slate-800 text-center space-y-4 animate-in fade-in duration-300"

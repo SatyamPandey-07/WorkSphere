@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import {
   HighContrastToggle,
+  HighContrastSwitch,
   HIGH_CONTRAST_STORAGE_KEY,
 } from "@/components/HighContrastToggle";
 
@@ -157,5 +158,43 @@ describe("HighContrastToggle Component", () => {
     expect(document.documentElement.classList.contains("high-contrast")).toBe(
       true,
     );
+  });
+
+  it("renders switch variant with visible label and toggles properly", () => {
+    render(<HighContrastToggle variant="switch" id="custom-switch" />);
+
+    const label = screen.getByText("High Contrast");
+    expect(label).toBeInTheDocument();
+
+    const switchBtn = screen.getByRole("switch", { name: /high contrast/i });
+    expect(switchBtn).toBeInTheDocument();
+    expect(switchBtn).toHaveAttribute("id", "custom-switch");
+    expect(switchBtn).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(switchBtn);
+
+    expect(switchBtn).toHaveAttribute("aria-checked", "true");
+    expect(document.documentElement.getAttribute("data-high-contrast")).toBe(
+      "true",
+    );
+    expect(localStorage.getItem(HIGH_CONTRAST_STORAGE_KEY)).toBe("true");
+  });
+
+  it("renders HighContrastSwitch component helper correctly", () => {
+    render(<HighContrastSwitch id="helper-switch" />);
+
+    const switchBtn = screen.getByRole("switch", { name: /high contrast/i });
+    expect(switchBtn).toBeInTheDocument();
+    expect(switchBtn).toHaveAttribute("id", "helper-switch");
+  });
+
+  it("applies high-contrast visible focus ring classes for WCAG 2.4.7 keyboard navigation compliance", () => {
+    render(<HighContrastToggle id="focus-test-toggle" />);
+
+    const switchBtn = screen.getByRole("switch");
+    expect(switchBtn.className).toContain("focus-visible:ring-2");
+    expect(switchBtn.className).toContain("focus-visible:ring-offset-2");
+    expect(switchBtn.className).toContain("focus-visible:ring-amber-400");
+    expect(switchBtn.className).toContain("dark:focus-visible:ring-cyan-400");
   });
 });

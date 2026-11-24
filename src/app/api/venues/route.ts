@@ -5,6 +5,7 @@ import {
   venueSearchSchema,
   venueCreateSchema,
   validateRequest,
+  parsePaginationParams,
   type VenueSearch,
 } from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
@@ -167,11 +168,14 @@ export async function GET(req: NextRequest) {
     const pageParam = searchParams.get("page");
     const limitParam = searchParams.get("limit");
 
-    const page = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1;
-    const limit = limitParam
-      ? Math.min(100, Math.max(1, parseInt(limitParam, 10)))
-      : 50;
-    const skip = (page - 1) * limit;
+    const paginationResult = parsePaginationParams(pageParam, limitParam);
+    if (!paginationResult.success) {
+      return NextResponse.json(
+        { error: paginationResult.error },
+        { status: 400 },
+      );
+    }
+    const { page, limit, skip } = paginationResult.data;
 
     // Fallback: If no coordinates are provided, return all venues (or filtered by cities/query)
     if (!searchParams.get("lat") || !searchParams.get("lng")) {
@@ -259,6 +263,12 @@ export async function GET(req: NextRequest) {
       }
       if (isEnabled("wifi") || selectedAmenities.has("wifi")) {
         andConditions.push({ wifiQuality: { gte: 3 } });
+      }
+      const minWifiSpeedParam = searchParams.get("minWifiSpeed");
+      if (minWifiSpeedParam !== null && !isNaN(Number(minWifiSpeedParam))) {
+        andConditions.push({
+          wifiSpeed: { gte: parseFloat(minWifiSpeedParam) },
+        });
       }
       if (isEnabled("outlets") || selectedAmenities.has("outlets")) {
         andConditions.push({ hasOutlets: true });
@@ -466,6 +476,7 @@ export async function GET(req: NextRequest) {
       "maxLng",
       "semanticWeight",
       "fullTextWeight",
+      "minWifiSpeed",
     ];
     for (const key of keys) {
       const val = searchParams.get(key);
@@ -605,6 +616,11 @@ export async function GET(req: NextRequest) {
       } else if (wifiSpeedBand === "ultra") {
         where.wifiSpeed = { gte: 100 };
       }
+    }
+
+    const minWifiSpeed = searchParams.get("minWifiSpeed");
+    if (minWifiSpeed !== null && !isNaN(Number(minWifiSpeed))) {
+      where.wifiSpeed = { gte: parseFloat(minWifiSpeed) };
     }
 
     if (hasPhoneBooths) {
@@ -908,8 +924,10 @@ export async function POST(req: NextRequest) {
       oatAlmondMilk,
       pourOverAvailable,
       musicStyle,
+      placeId,
+      rating,
+      imageUrl,
     } = validation.data;
-    const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
 
     // Validate placeId (required for upsert)
     if (!placeId) {
@@ -918,6 +936,9 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    const cleanImageUrl =
+      imageUrl && imageUrl.trim() !== "" ? imageUrl.trim() : null;
 
     const existing = await prisma.venue.findUnique({
       where: { placeId },
@@ -936,8 +957,8 @@ export async function POST(req: NextRequest) {
     let requiresReview = false;
 
     // Run Vision Validation if an image was provided
-    if (imageUrl) {
-      const visionResult = await analyzeVenueImage(imageUrl, {
+    if (cleanImageUrl) {
+      const visionResult = await analyzeVenueImage(cleanImageUrl, {
         hasOutlets,
         category,
       });
@@ -980,7 +1001,7 @@ export async function POST(req: NextRequest) {
         musicStyle,
         crowdsourced: true,
         requiresReview,
-        ...(imageUrl && { imageUrl }),
+        ...(cleanImageUrl && { imageUrl: cleanImageUrl }),
       },
       create: {
         placeId,
@@ -989,7 +1010,7 @@ export async function POST(req: NextRequest) {
         longitude,
         category,
         address,
-        rating,
+        rating: rating ?? null,
         wifiQuality,
         hasOutlets: hasOutlets || false,
         noiseLevel,
@@ -1013,7 +1034,7 @@ export async function POST(req: NextRequest) {
         musicStyle,
         crowdsourced: true,
         requiresReview,
-        imageUrl,
+        imageUrl: cleanImageUrl,
         creatorId: userId,
       },
     });

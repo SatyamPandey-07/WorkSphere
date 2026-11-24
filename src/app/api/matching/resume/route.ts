@@ -1,16 +1,21 @@
 /**
  * route.ts
  * Real resume text extraction, Groq LLM structured parsing, 1024-dimensional skill embedding,
- * and pgvector semantic venue search pipeline.
+ * and progressive streaming semantic resume skill similarity ranker with cosine scoring (SSE).
  */
 
 import { NextResponse } from "next/server";
-import { ResumeParser } from "@/core/ai/ResumeParser";
+import { ResumeParser, ParsedResume } from "@/core/ai/ResumeParser";
 import {
   SkillEmbedder,
   TARGET_EMBEDDING_DIMENSION,
+  extractSharedSkillHighlights,
+  similarityToMatchPercentage,
 } from "@/core/ai/SkillEmbedder";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
+
+export const dynamic = "force-dynamic";
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
@@ -54,10 +59,56 @@ export function extractTextFromBuffer(
   return trimmed;
 }
 
+export interface CandidateResult {
+  candidateId: string;
+  rank: number;
+  matchPercentage: number;
+  sharedSkills: string[];
+}
+
+export type SSEResumeEvent =
+  | { type: "start"; requestId: string; totalCandidates: number }
+  | ({ type: "candidate" } & CandidateResult)
+  | { type: "progress"; processed: number; total: number }
+  | { type: "complete"; processed: number; returned: number }
+  | { type: "error"; code: string; message: string };
+
+function formatSSE(event: SSEResumeEvent): string {
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+function computeNormalizedCompositeVector(vectors: number[][]): number[] {
+  const composite = new Array(TARGET_EMBEDDING_DIMENSION).fill(0);
+  if (!vectors.length) return composite;
+
+  for (const vec of vectors) {
+    for (let i = 0; i < TARGET_EMBEDDING_DIMENSION; i++) {
+      composite[i] += vec[i];
+    }
+  }
+  for (let i = 0; i < TARGET_EMBEDDING_DIMENSION; i++) {
+    composite[i] /= vectors.length;
+  }
+
+  // L2 Normalize
+  let norm = 0;
+  for (let i = 0; i < TARGET_EMBEDDING_DIMENSION; i++) {
+    norm += composite[i] * composite[i];
+  }
+  norm = Math.sqrt(norm);
+  if (norm > 0) {
+    for (let i = 0; i < TARGET_EMBEDDING_DIMENSION; i++) {
+      composite[i] /= norm;
+    }
+  }
+  return composite;
+}
+
 export async function POST(request: Request) {
   try {
     let extractedText = "";
     const contentType = request.headers.get("content-type") || "";
+    const acceptsStream = request.headers.get("accept")?.includes("text/event-stream");
 
     if (
       contentType.includes("multipart/form-data") ||
@@ -151,7 +202,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: configErr.message }, { status: 503 });
     }
 
-    const parsedResume = await parser.parse(extractedText);
+    let parsedResume: ParsedResume;
+    try {
+      parsedResume = await parser.parse(extractedText);
+    } catch (err: any) {
+      return NextResponse.json(
+        { error: err?.message || "Failed to parse resume text." },
+        { status: 400 },
+      );
+    }
 
     // 3. Generate real 1024-dimensional embeddings for extracted skills
     let embedder: SkillEmbedder;
@@ -161,9 +220,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: configErr.message }, { status: 503 });
     }
 
-    const skillEmbeddings = await embedder.embedSkills(parsedResume.skills);
+    let skillEmbeddings: Array<{ skill: string; vector: number[] }> = [];
+    try {
+      skillEmbeddings = await embedder.embedSkills(parsedResume.skills);
+    } catch (embedErr: any) {
+      return NextResponse.json(
+        { error: embedErr?.message || "Failed to generate skill embeddings." },
+        { status: 500 },
+      );
+    }
 
-    // 4. Semantic search against pgvector in Venue.searchEmbedding
+    // If client requested SSE stream, execute progressive ranking stream
+    if (acceptsStream) {
+      return handleStreamingCandidateMatch({
+        request,
+        parsedResume,
+        skillEmbeddings,
+        embedder,
+      });
+    }
+
+    // Default REST behavior (backward-compatible)
     let matchedVenues: Array<{
       id: string;
       name: string;
@@ -172,29 +249,9 @@ export async function POST(request: Request) {
     }> = [];
 
     if (skillEmbeddings.length > 0) {
-      // Compute composite query vector by averaging skill vectors
-      const queryVector = new Array(TARGET_EMBEDDING_DIMENSION).fill(0);
-      for (const item of skillEmbeddings) {
-        for (let i = 0; i < TARGET_EMBEDDING_DIMENSION; i++) {
-          queryVector[i] += item.vector[i];
-        }
-      }
-      for (let i = 0; i < TARGET_EMBEDDING_DIMENSION; i++) {
-        queryVector[i] /= skillEmbeddings.length;
-      }
-
-      // L2 Normalize
-      let norm = 0;
-      for (let i = 0; i < TARGET_EMBEDDING_DIMENSION; i++) {
-        norm += queryVector[i] * queryVector[i];
-      }
-      norm = Math.sqrt(norm);
-      if (norm > 0) {
-        for (let i = 0; i < TARGET_EMBEDDING_DIMENSION; i++) {
-          queryVector[i] /= norm;
-        }
-      }
-
+      const queryVector = computeNormalizedCompositeVector(
+        skillEmbeddings.map((item) => item.vector),
+      );
       const embeddingString = `[${queryVector.join(",")}]`;
 
       const venues = await prisma.$queryRaw<
@@ -242,4 +299,204 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+/**
+ * Progressive streaming semantic candidate similarity ranker using Server-Sent Events (SSE).
+ */
+export async function handleStreamingCandidateMatch({
+  request,
+  parsedResume,
+  skillEmbeddings,
+  embedder: _embedder,
+  candidateLimit = 20,
+  batchSize = 5,
+}: {
+  request: Request;
+  parsedResume: ParsedResume;
+  skillEmbeddings: Array<{ skill: string; vector: number[] }>;
+  embedder?: SkillEmbedder;
+  candidateLimit?: number;
+  batchSize?: number;
+}): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  const encoder = new TextEncoder();
+  const signal = request.signal;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      let isClosed = false;
+
+      const safeEnqueue = (event: SSEResumeEvent) => {
+        if (isClosed || signal.aborted) return;
+        try {
+          controller.enqueue(encoder.encode(formatSSE(event)));
+        } catch {
+          isClosed = true;
+        }
+      };
+
+      const closeStream = () => {
+        if (!isClosed) {
+          isClosed = true;
+          try {
+            controller.close();
+          } catch {
+            // Already closed
+          }
+        }
+      };
+
+      if (signal.aborted) {
+        closeStream();
+        return;
+      }
+
+      signal.addEventListener("abort", () => {
+        isClosed = true;
+        try {
+          controller.close();
+        } catch {
+          // Ignore
+        }
+      });
+
+      try {
+        if (!skillEmbeddings || skillEmbeddings.length === 0) {
+          safeEnqueue({ type: "start", requestId, totalCandidates: 0 });
+          safeEnqueue({ type: "complete", processed: 0, returned: 0 });
+          closeStream();
+          return;
+        }
+
+        const queryVector = computeNormalizedCompositeVector(
+          skillEmbeddings.map((item) => item.vector),
+        );
+        const embeddingString = `[${queryVector.join(",")}]`;
+
+        // 1. Fetch count of candidate records with embeddings
+        let totalCount = 0;
+        try {
+          const countResult = await prisma.$queryRaw<Array<{ count: bigint | number }>>`
+            SELECT COUNT(*)::int AS count
+            FROM "Venue" v
+            WHERE v."searchEmbedding" IS NOT NULL;
+          `;
+          totalCount = Number(countResult[0]?.count ?? 0);
+        } catch (dbErr: any) {
+          console.error("Failed to query candidate count:", dbErr);
+          safeEnqueue({
+            type: "error",
+            code: "DATABASE_ERROR",
+            message: "Failed to initialize candidate similarity search.",
+          });
+          closeStream();
+          return;
+        }
+
+        const effectiveTotal = Math.min(totalCount, candidateLimit);
+        safeEnqueue({
+          type: "start",
+          requestId,
+          totalCandidates: effectiveTotal,
+        });
+
+        if (effectiveTotal === 0) {
+          safeEnqueue({ type: "complete", processed: 0, returned: 0 });
+          closeStream();
+          return;
+        }
+
+        // 2. Fetch and stream candidates progressively in bounded batches ordered by cosine similarity
+        let processedCount = 0;
+        let returnedCount = 0;
+        let rank = 1;
+        let offset = 0;
+
+        while (offset < effectiveTotal && !isClosed && !signal.aborted) {
+          const currentBatchLimit = Math.min(batchSize, effectiveTotal - offset);
+
+          const batch = await prisma.$queryRaw<
+            Array<{
+              id: string;
+              name: string;
+              similarity: number;
+              tags?: string[] | null;
+            }>
+          >`
+            SELECT
+              v."id",
+              v."name",
+              1 - (v."searchEmbedding" <=> ${embeddingString}::vector) AS similarity
+            FROM "Venue" v
+            WHERE v."searchEmbedding" IS NOT NULL
+            ORDER BY v."searchEmbedding" <=> ${embeddingString}::vector ASC
+            LIMIT ${currentBatchLimit}
+            OFFSET ${offset};
+          `;
+
+          if (!batch || batch.length === 0) {
+            break;
+          }
+
+          for (const item of batch) {
+            if (isClosed || signal.aborted) break;
+
+            const matchPercentage = similarityToMatchPercentage(Number(item.similarity));
+            const candidateSkills = Array.isArray(item.tags) ? item.tags : [];
+            const sharedSkills = extractSharedSkillHighlights(
+              parsedResume.skills,
+              candidateSkills,
+            );
+
+            safeEnqueue({
+              type: "candidate",
+              rank,
+              candidateId: item.id,
+              matchPercentage,
+              sharedSkills,
+            });
+
+            rank++;
+            returnedCount++;
+          }
+
+          processedCount += batch.length;
+          offset += batch.length;
+
+          safeEnqueue({
+            type: "progress",
+            processed: processedCount,
+            total: effectiveTotal,
+          });
+        }
+
+        if (!isClosed && !signal.aborted) {
+          safeEnqueue({
+            type: "complete",
+            processed: processedCount,
+            returned: returnedCount,
+          });
+        }
+      } catch (err: any) {
+        console.error("Streaming error during candidate ranking:", err);
+        safeEnqueue({
+          type: "error",
+          code: "MATCHING_FAILED",
+          message: "Unable to complete candidate matching.",
+        });
+      } finally {
+        closeStream();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

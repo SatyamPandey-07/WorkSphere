@@ -2,51 +2,80 @@
 
 ## 1. Overview: Tracking Ephemeral Awareness Without State Bloat
 
-In collaborative workspaces and live rooms, **awareness state**—peer presence clocks, cursor coordinates, viewport selections, and ephemeral statuses (such as `"typing"`, `"viewing"`, or `"away"`)—changes far more frequently than persistent document state.
+In collaborative workspaces, interactive whiteboards, and live meeting rooms, **awareness state**—peer presence clocks, cursor coordinates, viewport selections, focus timers, and ephemeral statuses (such as `"active"`, `"idle"`, or `"focusing"`)—changes far more frequently than persistent document state.
 
-`src/core/crdt/AwarenessVectorCompactor.ts` isolates ephemeral awareness tracking from durable CRDT operations so that:
+WorkSphere separates ephemeral awareness tracking from durable CRDT operations via `src/lib/crdt/awarenessCompactor.ts` and `src/core/crdt/AwarenessProtocol.ts` so that:
 
-* **Presence clocks** record per-peer monotonic sequence/logical ticks alongside last-observed activity timestamps.
-* **Cursor positions & ephemeral statuses** stay in a lightweight, bounded awareness map rather than polluting CRDT operation logs or increasing snapshot serialization size.
-* **Disconnected peers** are garbage collected automatically once idle past the **30s (`30,000 ms`) TTL** without allowing stale late packets to resurrect phantom cursors or regress monotonic watermarks.
+* **Presence Clocks**: Record per-peer monotonic vector clock sequence numbers alongside last-observed activity timestamps (`updatedAt` / `lastActiveAt`).
+* **Cursor Coordinates & Ephemeral Statuses**: Stay in an in-memory awareness table rather than polluting CRDT operation logs or increasing document snapshot serialization size.
+* **Disconnected Peers**: Are garbage collected automatically once idle past the **30s (`30,000 ms`) TTL** without allowing stale late packets to resurrect phantom cursors or regress monotonic vector clocks.
 
----
-
-## 2. Monotonic Compaction Algorithm (30s TTL GC)
-
-The compactor maintains:
-* An active map of `peerId -> AwarenessEntry` (`clock`, `lastSeenMs`, `cursor`, `status`).
-* A tombstoned/pruned watermark map (`prunedClocks: Map<peerId, number>`) recording the highest clock seen before eviction.
-* A monotonically non-decreasing `compactionWatermarkMs` (`nextWatermark = Math.max(prevWatermark, nowMs - TTL_MS)` with `TTL_MS = 30_000`).
-
-### Step-by-Step Compaction Walkthrough
-
-1. **Advance the monotonic compaction watermark:** Compute `candidateCutoff = nowMs - 30_000` and set `watermarkMs = Math.max(state.watermarkMs, candidateCutoff)`. Even if `nowMs` fluctuates slightly on a single tick, `watermarkMs` never moves backward.
-2. **Identify expired peers:** Scan active peer entries and select peers where `nowMs - entry.lastSeenMs > 30_000` (or `entry.lastSeenMs < watermarkMs` when disconnected/inactive).
-3. **Record high-water marks & evict entries:** For each expired `peerId`, store `max(prunedClocks.get(peerId) ?? 0, entry.clock)` and remove the active awareness entry so its cursor payload, status string, and metadata can be garbage collected.
-4. **Filter stale inbound awareness frames:** When an awareness update arrives for `peerId`, compare its clock against both the active entry clock and `prunedClocks.get(peerId)`. Drop frames whose clock is `<=` the pruned/current clock (or whose timestamp is older than the active compaction cutoff) so expired peers do not flap back into active presence lists.
-5. **Emit compact delta:** Return the list of evicted `peerId`s and updated vector summary so room broadcasters can notify active peers to clear stale cursors.
+> [!IMPORTANT]
+> **Awareness Cleanup vs. Yjs Document Garbage Collection**:
+> Awareness cleanup purges temporary client presence from in-memory presence tables. It **does not** delete or alter durable Yjs document state (`Y.Doc`), text history, canvas shapes, or tombstone records. For full details on document-level state-vector exchange, differential updates, and delta journal compaction, see [Yjs State Vector Exchange & Differential Compaction Architecture](./YJS_SYNC_PROTOCOL.md).
 
 ---
 
-## 3. Edge Cases: Split-Brain & Clock Skew
+## 2. Awareness State vs. Document Compaction as Separate Concerns
+
+| Concern | Ephemeral Awareness Layer | Durable Document CRDT Layer |
+| :--- | :--- | :--- |
+| **Primary Class** | `AwarenessCompactor` / `AwarenessProtocol` | `SnapshotManager` / `Y.Doc` |
+| **Payload Nature** | Ephemeral (mouse coordinates, focus state, typing) | Durable mutations (text edits, canvas shape vectors) |
+| **Persistence Target** | Process memory only; never saved to disk or DB | IndexedDB, Redis, PostgreSQL snapshots |
+| **Clock Representation** | Per-client monotonic integer + `updatedAt` ms | Half-open Yjs State Vector $\text{ID}(client, clock)$ |
+| **Eviction Mechanics** | Discarded after 30s inactivity (`heartbeatTimeoutMs`) | Consolidated into baseline snapshot; deltas pruned |
+| **Data Loss Severity** | Zero (presence is re-broadcasted on reconnection) | Catastrophic if deltas pruned without valid snapshot |
+
+---
+
+## 3. Monotonic Compaction Algorithm (`src/lib/crdt/awarenessCompactor.ts`)
+
+The `AwarenessCompactor` maintains:
+* `peers`: An active map of `clientId -> PeerAwarenessEntry<T>` containing `clock`, `updatedAt`, and `state`.
+* `config`: Configurable timeouts:
+  - `heartbeatTimeoutMs`: 30,000 ms (default).
+  - `tombstoneRetentionMs`: 10,000 ms (default).
+  - `autoSweepIntervalMs`: 15,000 ms (default).
+  - `maxClientsLimit`: 1,000 clients (default).
+* `stats`: Telemetry tracking `activeClients`, `tombstoneCount`, `totalPrunedCount`, and `staleUpdatesRejected`.
+
+### Step-by-Step Compaction Sweep Walkthrough (`compactSweep()`)
+
+1. **Scan Inactive Clients**: Every `autoSweepIntervalMs` (15s), the timer scans all entries in `peers`.
+2. **Mark Tombstones**: For any entry where `state !== null` and `now - entry.updatedAt > heartbeatTimeoutMs` (30s):
+   - Monotonically increment local/peer clock.
+   - Set `entry.state = null` (tombstone).
+   - Record `entry.updatedAt = now`.
+   - Fire change notification to listeners so UI removes cursor avatars.
+3. **Purge Expired Tombstones**: For any entry where `state === null` and `now - entry.updatedAt > tombstoneRetentionMs` (10s):
+   - Completely delete entry from `peers` map.
+   - Increment `totalPrunedCount`.
+4. **Reject Out-of-Order Packets (`applyRemoteUpdate()`)**: When an inbound awareness packet arrives:
+   - If incoming `clock <= existing.clock`, the update is rejected as stale (`staleUpdatesRejected++`).
+   - If `state === null` (remote peer gracefully departed), entry is set to tombstone immediately.
+   - If incoming `clock > existing.clock`, the new clock and state are accepted and `updatedAt` is refreshed to current time.
+
+---
+
+## 4. Edge Cases: Split-Brain Partitions and Clock Skew
 
 ### Split-Brain Partitions
-* **Scenario:** A room splits into two network partitions. Peer A leaves in Partition 1 and is pruned after `30s`, while Peer B in Partition 2 still holds a cached view of Peer A.
-* **Resolution:** When partitions heal and sync awareness vectors, each compactor merges per-peer clocks using `max(localClock, remoteClock)` and applies the `30s` inactivity rule against current wall/reference time (`nowMs`). Any peer still actively heartbeating remains present; any peer silent past `30s` is evicted consistently once heartbeats stop.
+* **Scenario:** A room splits into two network partitions. Peer A disconnects in Partition 1 and expires after 30s, while Peer B in Partition 2 still holds a cached presence entry for Peer A.
+* **Resolution:** When partitions reconnect and exchange awareness updates, `applyRemoteUpdate()` compares vector clocks. If Peer A is genuinely offline, no new heartbeats are emitted; Partition 2's local sweep prunes Peer A once its local inactivity exceeds `heartbeatTimeoutMs`. If Peer A reconnected with a higher clock, the newer presence state is integrated immediately.
 
 ### Clock Skew Between Peers or Local Timer Jumps
-* **Scenario:** A remote peer's local clock runs ahead (`+15s` or `+2m`) or a local client experiences a brief clock jump/tab pause.
+* **Scenario:** A remote peer's system clock is skewed ahead by minutes or a browser tab is suspended in background.
 * **Resolution:**
-  * Never let a single skew spike pull `compactionWatermarkMs` backward—enforce monotonic `Math.max(prevWatermark, ...)`.
-  * Clamp or bound extreme future timestamps against a maximum allowed clock skew window (`maxSkewMs`) when evaluating freshness so a skewed peer cannot keep a ghost entry alive indefinitely or poison eviction cutoffs.
-  * Rely primarily on monotonic per-peer sequence/logical clocks for ordering updates from the same peer, and use `lastSeenMs` / `30s` TTL for liveness eviction.
+  - `AwarenessCompactor` orders sequential updates from the same peer using its **monotonic logical clock** (`entry.clock`), not the remote wall clock.
+  - Inactivity timeouts are computed using local reference time (`now = Date.now()`) measured by the receiving node upon packet arrival.
+  - Skewed remote timestamps cannot prevent local eviction because eviction evaluates elapsed duration since local arrival.
 
 ---
 
-## 4. Memory Footprint Benchmarks (100+ Concurrent Peers)
+## 5. Memory Footprint Benchmarks (100+ Concurrent Peers)
 
-| Room Scale | Uncompacted Awareness Map + History | After 30s TTL Compaction (`AwarenessVectorCompactor`) | Approximate Reduction |
+| Room Scale | Uncompacted Awareness Map + History | After 30s TTL Compaction (`AwarenessCompactor`) | Approximate Reduction |
 | :--- | :--- | :--- | :--- |
 | **100 peers** (40 churned over session) | ~1.4 MB – 2.2 MB | ~140 KB – 230 KB | ~85% – 90% |
 | **150 peers** (75 churned over session) | ~2.8 MB – 4.1 MB | ~210 KB – 340 KB | ~90% – 92% |
@@ -54,9 +83,19 @@ The compactor maintains:
 
 ---
 
-## 5. Production Tuning Recommendations for High-Density Rooms
+## 6. Production Tuning Recommendations for High-Density Rooms
 
 * **Keep cursor payloads compact:** Store numeric coordinates (`x`, `y`) and short status enums rather than large nested UI/selection objects in awareness state.
-* **Run GC on a steady cadence (e.g., every `5s`–`10s`):** Sweep expired entries on a regular interval rather than only on write bursts, so idle rooms with churn still reclaim memory promptly.
-* **Cap retained pruned tombstones:** Bound `prunedClocks` size (e.g., LRU or time-bounded eviction of ancient tombstones) so long-lived rooms with thousands of historical visitors over days do not grow the tombstone map unboundedly.
-* **Tune heartbeat vs. `30s` TTL:** Send active peer heartbeats every `5s`–`10s` (3–6 heartbeats per `30s` TTL window) so healthy peers never expire spuriously on a single dropped packet, while genuinely disconnected peers clear cleanly right after `30s`.
+* **Steady Sweep Interval:** Keep `autoSweepIntervalMs = 15_000` (15s) so idle rooms reclaim memory promptly without burning background CPU cycles.
+* **Heartbeat Cadence:** Send active peer heartbeats every 5s (`HEARTBEAT_INTERVAL_MS = 5_000` in `AwarenessProtocol.ts`)—ensuring 6 heartbeats within the 30s timeout window so spurious packet loss does not drop active peers.
+* **Client Ceiling Cap:** Enforce `maxClientsLimit = 1_000` to prevent memory exhaustion in open public rooms under bot or spam traffic.
+
+---
+
+## 7. Cross References
+
+- [Yjs State Vector Exchange & Differential Compaction Architecture](./YJS_SYNC_PROTOCOL.md)
+- [CRDT Documentation Hub](./README.md)
+- [PartyKit Collaborative Sync Architecture](../COLLABORATIVE_SYNC.md)
+- [Source: AwarenessCompactor](../../src/lib/crdt/awarenessCompactor.ts)
+- [Source: AwarenessProtocol](../../src/core/crdt/AwarenessProtocol.ts)

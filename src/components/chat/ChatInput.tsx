@@ -1,143 +1,475 @@
-'use client';
+"use client";
 
-import React, { useRef, useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  compressImageFile,
-  type ImageCompressionResult,
-} from '@/lib/media/imageCompressor';
+  Clock,
+  Trash2,
+  X,
+  Mic,
+  MicOff,
+  Send,
+  Loader2,
+  Image as ImageIcon,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useRateLimit } from "@/hooks/useRateLimit";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { markRoomAsRead } from "@/lib/chat/unreadTracker";
+import {
+  ImageUploadPreviewModal,
+  ImageUploadPayload,
+} from "./ImageUploadPreviewModal";
 
 export interface ChatInputProps {
-  onSendMessage?: (payload: {
-    text: string;
-    attachments: File[];
-    compressionMeta: ImageCompressionResult[];
-  }) => void | Promise<void>;
-  placeholder?: string;
-  disabled?: boolean;
+  input: string;
+  isLoading: boolean;
+  onInputChange: (value: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  distanceRadius?: number;
+  onDistanceChange?: (radius: number) => void;
+  roomId?: string | null;
+  userId?: string | null;
+  onFocus?: () => void;
+  onImageUpload?: (payload: ImageUploadPayload) => void | Promise<void>;
 }
 
-export const ChatInput: React.FC<ChatInputProps> = ({
-  onSendMessage,
-  placeholder = 'Message the room...',
-  disabled = false,
-}) => {
-  const [text, setText] = useState('');
-  const [attachments, setAttachments] = useState<File[]>([]);
-  const [compressionMeta, setCompressionMeta] = useState<ImageCompressionResult[]>([]);
-  const [isCompressing, setIsCompressing] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+export function ChatInput({
+  input = "",
+  isLoading,
+  onInputChange,
+  onSubmit,
+  distanceRadius = 0,
+  onDistanceChange,
+  roomId = "default",
+  userId = null,
+  onFocus,
+  onImageUpload,
+}: ChatInputProps) {
+  const safeInput = input || "";
+  const MAX_CHARS = 2000;
+  const charCount = safeInput.length;
+  const isOverLimit = charCount > MAX_CHARS;
+  const retryAfter = useRateLimit("chat");
 
-  const processIncomingFiles = async (rawFiles: FileList | File[]) => {
-    const fileArray = Array.from(rawFiles);
-    if (fileArray.length === 0) return;
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const [shortcutLabel, setShortcutLabel] = useState("Ctrl+K");
+  const inputRef = useRef<HTMLInputElement>(null);
 
-    setIsCompressing(true);
-    try {
-      const results = await Promise.all(
-        fileArray.map((file) => compressImageFile(file))
+  // Image Upload & Preview Modal State
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleClear = () => {
+    onInputChange("");
+    inputRef.current?.focus();
+  };
+
+  useEffect(() => {
+    const history = localStorage.getItem("ws-recent-searches");
+    if (history) {
+      try {
+        setRecentSearches(JSON.parse(history));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const isApple =
+      typeof navigator !== "undefined" &&
+      /Mac|iPhone|iPad|iPod/i.test(
+        navigator.platform || navigator.userAgent || "",
       );
-      setAttachments((prev) => [...prev, ...results.map((r) => r.file)]);
-      setCompressionMeta((prev) => [...prev, ...results]);
-    } finally {
-      setIsCompressing(false);
+    setShortcutLabel(isApple ? "⌘K" : "Ctrl+K");
+  }, []);
+
+  // Keep the composer above the iOS soft keyboard / browser chrome.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const sync = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardInset(inset);
+    };
+
+    sync();
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    return () => {
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+    };
+  }, []);
+
+  const saveToHistory = (term: string) => {
+    const updated = [
+      term,
+      ...recentSearches.filter((item) => item !== term),
+    ].slice(0, 5);
+    setRecentSearches(updated);
+    localStorage.setItem("ws-recent-searches", JSON.stringify(updated));
+  };
+
+  const clearHistory = () => {
+    setRecentSearches([]);
+    localStorage.removeItem("ws-recent-searches");
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (safeInput.trim() && !isOverLimit) {
+      saveToHistory(safeInput.trim());
+    }
+    onSubmit(e);
+  };
+
+  // ── File Picker & Modal Handlers ─────────────────────────────────────────
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      setSelectedImageFile(file);
+      setIsImageModalOpen(true);
     }
   };
 
-  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (disabled || !e.dataTransfer?.files?.length) return;
-    await processIncomingFiles(e.dataTransfer.files);
+  const handleModalCancel = () => {
+    setIsImageModalOpen(false);
+    setSelectedImageFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (disabled || isCompressing) return;
-    if (!text.trim() && attachments.length === 0) return;
-
-    await onSendMessage?.({
-      text: text.trim(),
-      attachments,
-      compressionMeta,
-    });
-
-    setText('');
-    setAttachments([]);
-    setCompressionMeta([]);
+  const handleModalConfirm = async (payload: ImageUploadPayload) => {
+    try {
+      if (onImageUpload) {
+        await onImageUpload(payload);
+      }
+    } finally {
+      setIsImageModalOpen(false);
+      setSelectedImageFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
   };
+
+  // ── Voice input banner state ─────────────────────────────────────────────
+  const [showVoiceBanner, setShowVoiceBanner] = useState(false);
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Show the banner and auto-hide it after 6 seconds. */
+  const triggerBanner = useCallback(() => {
+    setShowVoiceBanner(true);
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => setShowVoiceBanner(false), 6000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    };
+  }, []);
+
+  // ── Speech recognition ───────────────────────────────────────────────────
+  const handleTranscript = useCallback(
+    (text: string) => {
+      if (!text) return;
+      const current = (input || "").trim();
+      onInputChange(current ? `${current} ${text}` : text);
+    },
+    [input, onInputChange],
+  );
+
+  const { isSupported, status, errorMessage, startListening, stopListening } =
+    useSpeechRecognition(handleTranscript);
+
+  const isListening = status === "listening";
+
+  const handleMicClick = useCallback(() => {
+    if (!isSupported) {
+      triggerBanner();
+      return;
+    }
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isSupported, isListening, startListening, stopListening, triggerBanner]);
+
+  useEffect(() => {
+    if (errorMessage) triggerBanner();
+  }, [errorMessage, triggerBanner]);
+
+  const showCharCounter = charCount > 800;
+  let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
+  if (isOverLimit || charCount > 1000) {
+    counterColor = "text-red-500";
+  } else if (charCount >= MAX_CHARS - 200) {
+    counterColor = "text-yellow-500";
+  }
+
+  // ── Mic button styling ───────────────────────────────────────────────────
+  const micButtonBase =
+    "p-3 rounded-xl transition-all active:scale-95 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-accent)]";
+
+  const micButtonStyle = !isSupported
+    ? `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60 cursor-pointer`
+    : isListening
+      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse cursor-pointer`
+      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 cursor-pointer`;
+
+  const micAriaLabel = !isSupported
+    ? "Voice input is not supported in this browser"
+    : isListening
+      ? "Stop voice input"
+      : "Start voice input";
 
   return (
     <div
-      data-testid="chat-dropzone"
-      onDragOver={(e) => {
-        e.preventDefault();
-        if (!disabled) setIsDragging(true);
-      }}
-      onDragLeave={() => setIsDragging(false)}
-      onDrop={handleDrop}
-      className={`rounded-xl border p-3 transition-colors ${
-        isDragging
-          ? 'border-indigo-500 bg-indigo-50/50'
-          : 'border-slate-200 bg-white'
-      }`}
-    >
-      <form onSubmit={handleSubmit} className="flex items-center gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          aria-label="Attach files"
-          data-testid="chat-file-input"
-          disabled={disabled || isCompressing}
-          onChange={(e) => {
-            if (e.target.files) {
-              void processIncomingFiles(e.target.files);
-              e.target.value = '';
+      data-keyboard-inset={keyboardInset}
+      className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 pb-[max(1rem,env(safe-area-inset-bottom))]"
+      style={
+        keyboardInset > 0
+          ? {
+              paddingBottom: `calc(${keyboardInset}px + env(safe-area-inset-bottom, 0px))`,
             }
-          }}
-          className="hidden"
-        />
+          : undefined
+      }
+    >
+      <AnimatePresence>
+        {isFocused && recentSearches.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="absolute bottom-full left-4 right-4 mb-2 z-50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col gap-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                Recent Searches
+              </span>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  clearHistory();
+                }}
+                className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {recentSearches.map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onInputChange(term);
+                  }}
+                  className="px-3 py-1.5 bg-zinc-100 accent-bg-hover dark:bg-zinc-900 accent-bg-dark-10 border border-zinc-200/50 dark:border-zinc-800 accent-border-20 accent-border-dark-20 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 accent-text-hover dark:text-zinc-400 dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] transition-all flex items-center gap-1"
+                >
+                  {term}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Unsupported-browser / error banner ─────────────────────────── */}
+      {showVoiceBanner && (
+        <div
+          role="alert"
+          className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <MicOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="font-semibold leading-snug">
+            {errorMessage ||
+              "Voice input is not supported in this browser. Please use Chrome, Edge, or enable speech recognition in Firefox (about:config → media.webspeech.recognition.enable)."}
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss voice input warning"
+            onClick={() => setShowVoiceBanner(false)}
+            className="ml-auto cursor-pointer shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Hidden File Input for Image Selection */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        data-testid="chat-image-file-input"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
+      <form
+        id="ws-chat-form"
+        onSubmit={handleFormSubmit}
+        className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:accent-border transition-all shadow-inner"
+      >
+        {/* Image Attachment Button */}
+        <button
+          type="button"
+          onClick={handleAttachClick}
+          data-testid="chat-attach-image-btn"
+          aria-label="Attach image"
+          title="Attach image"
+          disabled={isLoading || retryAfter > 0}
+          className="p-3 rounded-xl cursor-pointer transition-all active:scale-95 shadow-sm bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 disabled:opacity-50 flex items-center justify-center"
+        >
+          <ImageIcon className="w-5 h-5" />
+        </button>
 
         <button
           type="button"
-          disabled={disabled || isCompressing}
-          onClick={() => fileInputRef.current?.click()}
-          className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          onClick={handleMicClick}
+          className={`p-3 rounded-xl cursor-pointer transition-all active:scale-95 shadow-lg group ${
+            isListening
+              ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+              : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+          }`}
+          title={isListening ? "Stop dictation" : "Start dictation"}
         >
-          {isCompressing ? 'Compressing...' : 'Attach'}
+          <Mic className="w-5 h-5" />
         </button>
 
-        <input
-          type="text"
-          value={text}
-          disabled={disabled}
-          placeholder={placeholder}
-          onChange={(e) => setText(e.target.value)}
-          className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none"
-        />
+        <div className="flex items-center border-r border-zinc-200 dark:border-zinc-700/50 pr-2 mr-2">
+          <select
+            value={distanceRadius}
+            onChange={(e) => onDistanceChange?.(Number(e.target.value))}
+            className="bg-transparent text-sm font-semibold text-zinc-600 dark:text-zinc-300 cursor-pointer focus:outline-none appearance-none pr-6 pl-2 relative"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2371717A%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 0.2rem top 50%",
+              backgroundSize: "0.65rem auto",
+            }}
+            title="Filter by distance"
+            aria-label="Filter by distance"
+          >
+            <option value={0}>Any</option>
+            <option value={1}>1 km</option>
+            <option value={5}>5 km</option>
+            <option value={10}>10 km</option>
+          </select>
+        </div>
 
+        <div className="relative flex min-w-0 flex-1 items-center">
+          <input
+            ref={inputRef}
+            type="text"
+            value={safeInput}
+            onChange={(e) => onInputChange(e.target.value ?? "")}
+            onFocus={() => {
+              setIsFocused(true);
+              if (roomId) {
+                markRoomAsRead(roomId, userId);
+              }
+              onFocus?.();
+            }}
+            onBlur={() => setIsFocused(false)}
+            placeholder={
+              isListening ? "Listening…" : "Where's the focus mode hotspot?"
+            }
+            disabled={isLoading || retryAfter > 0}
+            className="w-full bg-transparent px-4 py-3 pr-16 text-sm font-bold text-zinc-900 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 dark:text-zinc-50"
+          />
+          {safeInput.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="absolute right-2 p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              aria-label="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          {!safeInput.trim() && (
+            <kbd
+              className="pointer-events-none absolute right-2 hidden select-none rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-zinc-400 shadow-sm sm:inline-block dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500"
+              aria-hidden="true"
+              title="Focus search"
+            >
+              {shortcutLabel}
+            </kbd>
+          )}
+        </div>
+
+        {/* ── Microphone button ──────────────────────────────────────────── */}
+        <button
+          type="button"
+          onClick={handleMicClick}
+          aria-label={micAriaLabel}
+          aria-disabled={!isSupported}
+          title={micAriaLabel}
+          className={micButtonStyle}
+        >
+          {isListening ? (
+            <MicOff className="w-5 h-5" aria-hidden="true" />
+          ) : (
+            <Mic className="w-5 h-5" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* ── Send button ────────────────────────────────────────────────── */}
         <button
           type="submit"
-          disabled={disabled || isCompressing}
-          className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          disabled={isLoading || !input.trim() || isOverLimit || retryAfter > 0}
+          className="p-3 bg-[var(--primary-accent)] cursor-pointer hover:opacity-90 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group flex items-center justify-center gap-1.5"
         >
-          Send
+          {isLoading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : retryAfter > 0 ? (
+            <span className="text-xs font-black whitespace-nowrap px-1">
+              Retry in {retryAfter}s
+            </span>
+          ) : (
+            <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+          )}
         </button>
       </form>
 
-      {attachments.length > 0 && (
-        <ul data-testid="chat-attachment-list" className="mt-2 flex flex-wrap gap-1.5">
-          {attachments.map((file, idx) => (
-            <li
-              key={`${file.name}-${idx}`}
-              className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700"
-            >
-              {file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)
-            </li>
-          ))}
-        </ul>
+      {showCharCounter && (
+        <div className="mt-2 text-right">
+          <span
+            className={`text-xs font-semibold transition-colors ${counterColor}`}
+          >
+            {charCount}/{MAX_CHARS}
+          </span>
+        </div>
       )}
+
+      {/* Image Preview Thumbnail Modal */}
+      <ImageUploadPreviewModal
+        isOpen={isImageModalOpen}
+        file={selectedImageFile}
+        onCancel={handleModalCancel}
+        onConfirm={handleModalConfirm}
+      />
     </div>
   );
-};
+}
+
+export default ChatInput;

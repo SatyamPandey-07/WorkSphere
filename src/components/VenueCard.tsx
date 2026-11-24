@@ -30,6 +30,8 @@ import {
   BadgeCheck,
   Music,
   Sunset,
+  Monitor,
+  ArrowUpDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
@@ -915,6 +917,8 @@ export function VenueCard({
                 </span>
               </div>
             )}
+            {/* The wheelchair flag comes from the OSM `wheelchair=yes` tag.
+                Audit criteria and what "Accessible" means: docs/accessibility-audit.md */}
             {amenities.wheelchair && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Accessibility className="w-3 h-3 shrink-0" />
@@ -923,6 +927,21 @@ export function VenueCard({
                 </span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Gigabit Verified Badge (#9893) */}
+        {((typeof venue.wifiSpeed === "number" && venue.wifiSpeed >= 100) ||
+          (typeof venue.amenities?.wifiSpeed === "number" &&
+            venue.amenities.wifiSpeed >= 100)) && (
+          <div className="flex items-center gap-2 mb-3">
+            <span
+              data-testid="gigabit-verified-badge"
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 shadow-xs"
+            >
+              <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-500 shrink-0" />
+              <span>Gigabit Verified</span>
+            </span>
           </div>
         )}
 
@@ -1187,6 +1206,42 @@ export function VenueCard({
                     👎
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Standing Desk Tag (#9759) */}
+            {((venue as any).standing_desks ||
+              (venue as any).hasStandingDesks ||
+              (venue.amenities as any)?.standing_desks) && (
+              <div
+                data-testid="amenity-badge-standing-desks"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title="Standing Desk"
+                >
+                  Standing Desk
+                </span>
+              </div>
+            )}
+
+            {/* External Monitor Tag (#9759) */}
+            {((venue as any).external_monitors ||
+              (venue as any).hasExternalMonitors ||
+              (venue.amenities as any)?.external_monitors) && (
+              <div
+                data-testid="amenity-badge-external-monitors"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+              >
+                <Monitor className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title="External Monitor (4K/USB-C)"
+                >
+                  External Monitor
+                </span>
               </div>
             )}
 

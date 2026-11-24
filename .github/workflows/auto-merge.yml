@@ -178,16 +178,7 @@ jobs:
                     });
                     if (issueRes.data && !issueRes.data.pull_request) {
                       const assignees = (issueRes.data.assignees || []).map(a => a.login.toLowerCase());
-                      const issueAuthor = (issueRes.data.user?.login || '').toLowerCase();
-                      const issueLabels = (issueRes.data.labels || []).map(l => (typeof l === 'string' ? l : l.name).toLowerCase());
-                      const isApprovedOrOfficial = issueAuthor === 'satyampandey-07' || issueLabels.includes('approved') || issueLabels.includes('triage/accepted');
                       const isMaintainer = ['satyampandey-07'].includes(prAuthor);
-
-                      if (!isApprovedOrOfficial && !isMaintainer) {
-                        console.log(`Issue #${num} was authored by @${issueAuthor} without maintainer approval. Skipping auto-merge.`);
-                        continue;
-                      }
-
                       if (isMaintainer || assignees.includes(prAuthor)) {
                         linkedIssues.push(`#${num}`);
                       } else {

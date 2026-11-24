@@ -1,226 +1,301 @@
-/**
- * studentDiscountVerifier.ts
- *
- * Client-side and server-side verification orchestrator for Student Discount ZKP.
- * Integrates IndexedDB proof verification caching (#9500) with SnarkJS Groth16 verification.
- *
- * Expected flow:
- * 1. Receive proof, public signals, Merkle root, and verification context.
- * 2. Generate the deterministic cache key.
- * 3. Check IndexedDB for a valid cached verification.
- * 4. If a valid cache hit exists, return the successful verification result immediately.
- * 5. If no valid cache entry exists, invoke the existing SnarkJS verification function.
- * 6. If verification returns true, store the successful result in IndexedDB.
- * 7. If verification returns false, do not cache it.
- * 8. If verification throws, preserve existing error-handling behavior and do not cache the result.
- */
+﻿import {
+  type ZkpWorkerOutgoingMessage,
+  releaseZkpWasmMemory,
+  ZkpWitnessWorkerPool,
+  type ZkpWorkerPoolOptions,
+} from "@/workers/zkpWorker";
 
-import {
-  getCachedVerification,
-  cacheVerifiedProof,
-  type VerificationCacheOptions,
-  type VerificationInput,
-} from "../../lib/zkp/proofCache";
+export const ZKP_WATCHDOG_TIMEOUT_MS = 30_000;
+export const ZKP_TIMEOUT_USER_ALERT =
+  "Proof generation timed out. Please try again.";
 
-export interface StudentDiscountVerificationParams {
-  proof: unknown;
-  publicSignals: (string | number | bigint)[];
-  merkleRoot?: string;
-  epoch?: number | string;
-  circuitId?: string;
-  vKey?: unknown;
-  vKeyFingerprint?: string;
-  cacheOptions?: VerificationCacheOptions;
+export interface StudentDiscountProofInput {
+  studentId: string;
+  institutionDomain: string;
+  nonce?: string;
 }
 
-export interface StudentDiscountVerificationResult {
-  isValid: boolean;
-  fromCache: boolean;
-  latencyMs: number;
-  reason?: string;
-}
-
-/** In-flight cache promises to deduplicate concurrent verification requests for the same proof */
-const pendingVerifications = new Map<string, Promise<StudentDiscountVerificationResult>>();
-
-/**
- * Loads default student membership verification key if not provided.
- */
-export async function loadDefaultStudentVerificationKey(): Promise<unknown | null> {
-  // If in browser, fetch from static asset
-  if (typeof window !== "undefined" && typeof fetch === "function") {
-    try {
-      const res = await fetch("/zkp/student_membership_vkey.json");
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // If in Node / Server environment
-  try {
-    const fs = await import("fs");
-    const path = await import("path");
-    const vkeyPath = path.join(
-      process.cwd(),
-      "public",
-      "zkp",
-      "student_membership_vkey.json",
-    );
-    if (fs.existsSync(vkeyPath)) {
-      return JSON.parse(fs.readFileSync(vkeyPath, "utf-8"));
-    }
-  } catch {
-    // ignore
-  }
-
-  return null;
-}
-
-/**
- * Verifies a student discount Groth16 zero-knowledge proof, querying client IndexedDB cache
- * first to avoid expensive pairing operations on previously verified proofs.
- */
-export async function verifyStudentDiscountProof(
-  params: StudentDiscountVerificationParams,
-  snarkjsVerifier?: (
-    vKey: unknown,
-    publicSignals: string[],
-    proof: unknown,
-  ) => Promise<boolean>,
-): Promise<StudentDiscountVerificationResult> {
-  const start = performance.now();
-  const {
-    proof,
-    publicSignals,
-    merkleRoot,
-    circuitId = "student_membership",
-    vKeyFingerprint,
-    cacheOptions = {},
-  } = params;
-
-  // Basic validation
-  if (!proof || !publicSignals || !Array.isArray(publicSignals) || publicSignals.length === 0) {
-    return {
-      isValid: false,
-      fromCache: false,
-      latencyMs: performance.now() - start,
-      reason: "Missing or malformed proof/publicSignals",
-    };
-  }
-
-  // Deduce root if not explicitly provided
-  const effectiveRoot = merkleRoot ?? (publicSignals.length >= 1 ? String(publicSignals[0]) : undefined);
-
-  // Load vKey if needed
-  let effectiveVKey = params.vKey;
-  if (!effectiveVKey && !vKeyFingerprint) {
-    effectiveVKey = await loadDefaultStudentVerificationKey();
-  }
-
-  const verificationInput: VerificationInput = {
-    proof,
-    publicSignals,
-    merkleRoot: effectiveRoot,
-    circuitId,
-    vKey: effectiveVKey,
-    vKeyFingerprint,
+export interface StudentDiscountProofResult {
+  proof: {
+    pi_a: string[];
+    pi_b: string[][];
+    pi_c: string[];
+    publicSignals: string[];
   };
+  timedOut: false;
+  canRetry: true;
+}
 
-  // Step 1: Check client-side IndexedDB cache
-  try {
-    const cached = await getCachedVerification(verificationInput, cacheOptions);
-    if (cached.hit) {
-      return {
-        isValid: true,
-        fromCache: true,
-        latencyMs: performance.now() - start,
-      };
-    }
-  } catch (err) {
-    // Caching check failed, fall back to SnarkJS verification
-    console.warn("[StudentDiscountVerifier] Cache lookup failed, falling back to SnarkJS:", err);
+export interface ZkpWorkerLike {
+  postMessage: (message: unknown) => void;
+  terminate: () => void;
+  onmessage: ((event: MessageEvent<ZkpWorkerOutgoingMessage>) => void) | null;
+  onerror: ((event: ErrorEvent | unknown) => void) | null;
+}
+
+export interface VerifyStudentDiscountOptions {
+  timeoutMs?: number;
+  workerFactory?: () => ZkpWorkerLike;
+  onProgress?: (progress: number, stage?: string) => void;
+  poolSize?: number;
+}
+
+export class ProofGenerationTimeoutError extends Error {
+  public readonly canRetry = true;
+  public readonly code = "ZKP_WITNESS_TIMEOUT";
+
+  constructor(message: string = ZKP_TIMEOUT_USER_ALERT) {
+    super(message);
+    this.name = "ProofGenerationTimeoutError";
   }
+}
 
-  // Step 2: Handle concurrency deduplication for in-flight verifications of the same proof
-  let cacheKey: string | null = null;
-  try {
-    const { computeVerificationCacheKey } = await import("../../lib/zkp/proofCache");
-    const res = await computeVerificationCacheKey(verificationInput);
-    cacheKey = res.cacheKey;
-  } catch {
-    // Synchronous fallback cacheKey calculation using JSON if import fails
-    try {
-      cacheKey = JSON.stringify({
-        p: (proof as any)?.pi_a,
-        s: publicSignals,
-        c: circuitId,
-      });
-    } catch {
-      // ignore
-    }
+function defaultWorkerFactory(): ZkpWorkerLike {
+  if (typeof Worker !== "undefined") {
+    return new Worker("/workers/zkpWorker.js") as unknown as ZkpWorkerLike;
   }
+  throw new Error("Web Worker constructor is not available.");
+}
 
-  if (cacheKey && pendingVerifications.has(cacheKey)) {
-    return pendingVerifications.get(cacheKey)!;
-  }
+export function createStudentDiscountVerifier(
+  options: VerifyStudentDiscountOptions = {},
+) {
+  const timeoutMs = options.timeoutMs ?? ZKP_WATCHDOG_TIMEOUT_MS;
+  const createWorker = options.workerFactory ?? defaultWorkerFactory;
 
-  const runVerificationPromise = (async (): Promise<StudentDiscountVerificationResult> => {
-    // Step 3: Perform SnarkJS Groth16 verification
-    const stringSignals = publicSignals.map((s) =>
-      typeof s === "bigint" ? s.toString() : String(s),
-    );
+  async function generateStudentDiscountProof(
+    input: StudentDiscountProofInput,
+    callOptions: Pick<
+      VerifyStudentDiscountOptions,
+      "onProgress" | "timeoutMs"
+    > = {},
+  ): Promise<StudentDiscountProofResult> {
+    const effectiveTimeoutMs = callOptions.timeoutMs ?? timeoutMs;
+    const progressCallback = callOptions.onProgress ?? options.onProgress;
 
-    let isValid = false;
-    try {
-      if (snarkjsVerifier) {
-        isValid = await snarkjsVerifier(effectiveVKey, stringSignals, proof);
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const snarkjs = require("snarkjs");
-        isValid = await snarkjs.groth16.verify(effectiveVKey, stringSignals, proof);
-      }
-    } finally {
-      // Terminate BN128 curve memory in node if applicable
-      const g = globalThis as typeof globalThis & {
-        curve_bn128?: { terminate: () => Promise<void> };
-      };
-      if (g.curve_bn128) {
-        try {
-          await g.curve_bn128.terminate();
-        } catch {
-          // ignore
+    return new Promise<StudentDiscountProofResult>((resolve, reject) => {
+      let settled = false;
+      let watchdogId: ReturnType<typeof setTimeout> | null = null;
+      let worker: ZkpWorkerLike | null = null;
+
+      const clearWatchdog = () => {
+        if (watchdogId !== null) {
+          clearTimeout(watchdogId);
+          watchdogId = null;
         }
-      }
-    }
+      };
 
-    // Step 4: If verification succeeded, store in IndexedDB
-    if (isValid) {
+      const cleanupListeners = () => {
+        if (worker) {
+          worker.onmessage = null;
+          worker.onerror = null;
+        }
+      };
+
+      const settleOnce = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearWatchdog();
+        cleanupListeners();
+        fn();
+      };
+
+      const armWatchdog = () => {
+        clearWatchdog();
+        watchdogId = setTimeout(() => {
+          settleOnce(() => {
+            if (worker) {
+              try {
+                worker.postMessage({ type: "ABORT" });
+              } catch {
+                // Ignore if worker thread is wedged
+              }
+              try {
+                worker.terminate();
+              } catch {
+                // Ignore termination errors
+              }
+              worker = null;
+            }
+            releaseZkpWasmMemory();
+            reject(new ProofGenerationTimeoutError(ZKP_TIMEOUT_USER_ALERT));
+          });
+        }, effectiveTimeoutMs);
+      };
+
       try {
-        await cacheVerifiedProof(verificationInput, cacheOptions);
-      } catch (cacheErr) {
-        // Caching error must never fail authentication
-        console.warn("[StudentDiscountVerifier] Failed to cache verified proof:", cacheErr);
+        worker = createWorker();
+      } catch (err) {
+        settleOnce(() => {
+          releaseZkpWasmMemory();
+          reject(
+            err instanceof Error
+              ? err
+              : new Error("Unable to initialize proof worker"),
+          );
+        });
+        return;
       }
-    }
 
-    return {
-      isValid,
-      fromCache: false,
-      latencyMs: performance.now() - start,
-    };
-  })();
+      worker.onmessage = (event: MessageEvent<ZkpWorkerOutgoingMessage>) => {
+        if (settled) return;
+        const msg = event?.data;
+        if (!msg || typeof msg !== "object") return;
 
-  if (cacheKey) {
-    pendingVerifications.set(cacheKey, runVerificationPromise);
-    runVerificationPromise
-      .catch(() => {})
-      .finally(() => {
-        pendingVerifications.delete(cacheKey!);
+        if (msg.type === "PROOF_PROGRESS") {
+          armWatchdog();
+          progressCallback?.(msg.progress, msg.stage);
+          return;
+        }
+
+        if (msg.type === "PROOF_COMPLETE") {
+          settleOnce(() => {
+            if (worker) {
+              try {
+                worker.terminate();
+              } catch {}
+              worker = null;
+            }
+            releaseZkpWasmMemory();
+            resolve({
+              proof: msg.proof,
+              timedOut: false,
+              canRetry: true,
+            });
+          });
+          return;
+        }
+
+        if (msg.type === "PROOF_ERROR") {
+          settleOnce(() => {
+            if (worker) {
+              try {
+                worker.terminate();
+              } catch {}
+              worker = null;
+            }
+            releaseZkpWasmMemory();
+            reject(new Error(msg.error || "Proof generation failed"));
+          });
+        }
+      };
+
+      worker.onerror = (event: unknown) => {
+        if (settled) return;
+        settleOnce(() => {
+          if (worker) {
+            try {
+              worker.terminate();
+            } catch {}
+            worker = null;
+          }
+          releaseZkpWasmMemory();
+          const detail =
+            event && typeof event === "object" && "message" in event
+              ? String((event as { message?: unknown }).message ?? "")
+              : "";
+          reject(
+            new Error(
+              detail || "WebAssembly proof worker encountered an error",
+            ),
+          );
+        });
+      };
+
+      armWatchdog();
+      worker.postMessage({
+        type: "GENERATE_PROOF",
+        payload: input,
       });
+    });
   }
 
-  return runVerificationPromise;
+  return {
+    generateStudentDiscountProof,
+    timeoutMs,
+    alertMessage: ZKP_TIMEOUT_USER_ALERT,
+  };
+}
+
+export interface StudentDiscountVerifierOptions
+  extends VerifyStudentDiscountOptions, Partial<ZkpWorkerPoolOptions> {
+  useWorkerPool?: boolean;
+  createWorker?: () => any;
+  wasmPath?: string;
+  zkeyPath?: string;
+}
+
+export class StudentDiscountVerifier {
+  private pool: ZkpWitnessWorkerPool | null = null;
+  private options: StudentDiscountVerifierOptions;
+
+  constructor(options: StudentDiscountVerifierOptions = {}) {
+    this.options = options;
+  }
+
+  public getWorkerPool(): ZkpWitnessWorkerPool {
+    if (!this.pool) {
+      this.pool = new ZkpWitnessWorkerPool({
+        poolSize: this.options.poolSize,
+        timeoutMs: this.options.timeoutMs,
+        workerFactory: this.options.createWorker || this.options.workerFactory,
+      });
+    }
+    return this.pool;
+  }
+
+  public async generateProof(inputs: Record<string, unknown>): Promise<{
+    proof: unknown;
+    publicSignals: string[];
+    durationMs: number;
+    proofSource: "worker" | "fallback";
+  }> {
+    if (this.options.useWorkerPool) {
+      const pool = this.getWorkerPool();
+      const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const res = await pool.executeTask({
+        id: jobId,
+        circuitInputs: inputs,
+        wasmUrl: this.options.wasmPath,
+        zkeyUrl: this.options.zkeyPath,
+        timeoutMs: this.options.timeoutMs,
+      });
+      return {
+        proof: res.proof,
+        publicSignals: res.publicSignals,
+        durationMs: res.durationMs,
+        proofSource: "worker",
+      };
+    }
+
+    const verifier = createStudentDiscountVerifier(this.options);
+    const res = await verifier.generateStudentDiscountProof({
+      studentId: String(inputs.studentId || inputs.secret || "student"),
+      institutionDomain: String(
+        inputs.institutionDomain || inputs.root || "edu",
+      ),
+      nonce: String(inputs.nonce || inputs.epoch || "0"),
+    });
+    return {
+      proof: res.proof,
+      publicSignals: res.proof.publicSignals,
+      durationMs: 0,
+      proofSource: "worker",
+    };
+  }
+
+  public async verifyOrGenerate(
+    input: StudentDiscountProofInput,
+  ): Promise<StudentDiscountProofResult> {
+    const verifier = createStudentDiscountVerifier(this.options);
+    return verifier.generateStudentDiscountProof(input);
+  }
+
+  public async terminate(): Promise<void> {
+    if (this.pool) {
+      await this.pool.terminate();
+      this.pool = null;
+    }
+    releaseZkpWasmMemory();
+  }
 }

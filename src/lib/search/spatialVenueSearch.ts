@@ -1,6 +1,6 @@
-import { z } from 'zod';
-import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Strict WGS84 coordinate schema enforcing:
@@ -9,23 +9,23 @@ import { prisma } from '@/lib/prisma';
  */
 export const GeoCoordinateSchema = z.object({
   latitude: z
-    .number({ invalid_type_error: 'Latitude must be a finite number' })
+    .number({ invalid_type_error: "Latitude must be a finite number" })
     .finite()
-    .min(-90, 'Latitude must be >= -90 degrees')
-    .max(90, 'Latitude must be <= 90 degrees'),
+    .min(-90, "Latitude must be >= -90 degrees")
+    .max(90, "Latitude must be <= 90 degrees"),
   longitude: z
-    .number({ invalid_type_error: 'Longitude must be a finite number' })
+    .number({ invalid_type_error: "Longitude must be a finite number" })
     .finite()
-    .min(-180, 'Longitude must be >= -180 degrees')
-    .max(180, 'Longitude must be <= 180 degrees'),
+    .min(-180, "Longitude must be >= -180 degrees")
+    .max(180, "Longitude must be <= 180 degrees"),
 });
 
 export const SpatialVenueSearchInputSchema = GeoCoordinateSchema.extend({
   radiusMeters: z
     .number()
     .finite()
-    .positive('Radius must be greater than 0 meters')
-    .max(50_000, 'Radius cannot exceed 50,000 meters')
+    .positive("Radius must be greater than 0 meters")
+    .max(50_000, "Radius cannot exceed 50,000 meters")
     .default(5_000),
   limit: z.number().int().min(1).max(100).default(25),
   maxNoiseDb: z.number().min(20).max(120).optional(),
@@ -33,7 +33,9 @@ export const SpatialVenueSearchInputSchema = GeoCoordinateSchema.extend({
 });
 
 export type GeoCoordinate = z.infer<typeof GeoCoordinateSchema>;
-export type SpatialVenueSearchInput = z.input<typeof SpatialVenueSearchInputSchema>;
+export type SpatialVenueSearchInput = z.input<
+  typeof SpatialVenueSearchInputSchema
+>;
 
 export interface SpatialVenueSearchRow {
   id: string;
@@ -46,6 +48,7 @@ export interface SpatialVenueSearchRow {
   outletDensity: number | null;
   rating: number | null;
   distanceMeters: number;
+  distanceKm: number;
 }
 
 /**
@@ -73,7 +76,7 @@ export function buildPostGisGeographyPoint(coord: GeoCoordinate): Prisma.Sql {
  */
 export function calculateSphericalDistanceMeters(
   origin: GeoCoordinate,
-  target: GeoCoordinate
+  target: GeoCoordinate,
 ): number {
   const a = GeoCoordinateSchema.parse(origin);
   const b = GeoCoordinateSchema.parse(target);
@@ -101,7 +104,7 @@ export function calculateSphericalDistanceMeters(
  * enforcing strict (longitude, latitude) parameter ordering in ST_MakePoint($1, $2).
  */
 export async function searchVenuesWithinRadius(
-  rawInput: SpatialVenueSearchInput
+  rawInput: SpatialVenueSearchInput,
 ): Promise<SpatialVenueSearchRow[]> {
   const input = SpatialVenueSearchInputSchema.parse(rawInput);
   const [longitude, latitude] = toPostGisLonLatTuple({
@@ -110,12 +113,12 @@ export async function searchVenuesWithinRadius(
   });
 
   const noiseFilter =
-    typeof input.maxNoiseDb === 'number'
+    typeof input.maxNoiseDb === "number"
       ? Prisma.sql`AND (v."noiseDb" IS NULL OR v."noiseDb" <= ${input.maxNoiseDb})`
       : Prisma.empty;
 
   const wifiFilter =
-    typeof input.minWifiMbps === 'number'
+    typeof input.minWifiMbps === "number"
       ? Prisma.sql`AND (v."wifiSpeedMbps" IS NOT NULL AND v."wifiSpeedMbps" >= ${input.minWifiMbps})`
       : Prisma.empty;
 
@@ -148,8 +151,19 @@ export async function searchVenuesWithinRadius(
     LIMIT ${input.limit}
   `);
 
-  return rows.map((row) => ({
-    ...row,
-    distanceMeters: Number(row.distanceMeters),
-  }));
+  return rows
+    .map((row) => {
+      const distanceMeters = Number(row.distanceMeters);
+      return {
+        ...row,
+        distanceMeters,
+        distanceKm: Number((distanceMeters / 1000).toFixed(1)),
+      };
+    })
+    .sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
+
+export const DEFAULT_SEARCH_RADIUS_METERS = 5000;
+export const MAX_SEARCH_RADIUS_METERS = 50000;
+export const MAX_SPATIAL_RESULT_LIMIT = 100;
+export const searchVenuesNearby = searchVenuesWithinRadius;

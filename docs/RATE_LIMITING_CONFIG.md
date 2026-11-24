@@ -1,4 +1,3 @@
-
 # Rate Limiting Configuration Reference
 
 This document lists the exact rate-limit parameters configured for every rate-limited
@@ -16,14 +15,14 @@ identifier is the signed-in user's Clerk `userId` when available, otherwise the
 caller's IP address (read from the `x-forwarded-for` header, falling back to
 `x-real-ip`).
 
-| Route                              | Method | Limit / min | Identifier key format      |
-| :---------------------------------- | :----: | :---------: | :-------------------------- |
-| `/api/chat`                         | POST   | 20          | `<userId or IP>` (no prefix)|
-| `/api/auth/forgot-password`         | POST   | 3           | `forgot-password:<ip>`      |
-| `/api/auth/resend-otp`              | POST   | 3           | `resend-otp:<ip>`           |
-| `/api/auth/reset-password`          | POST   | 5           | `reset-password:<ip>`       |
-| `/api/auth/verify-otp`              | POST   | 5           | `verify-otp:<ip>`           |
-| `/api/venues`                       | GET    | 120         | `venues-search:<userId or ip>` |
+| Route                       | Method |  Limit / min  | Identifier key format          |
+| :-------------------------- | :----: | :-----------: | :----------------------------- |
+| `/api/chat`                 |  POST  |      20       | `<userId or IP>` (no prefix)   |
+| `/api/auth/forgot-password` |  POST  |       3       | `forgot-password:<ip>`         |
+| `/api/auth/resend-otp`      |  POST  | Retired (410) | `resend-otp:<ip>` (retired)    |
+| `/api/auth/reset-password`  |  POST  |       5       | `reset-password:<ip>`          |
+| `/api/auth/verify-otp`      |  POST  |       5       | `verify-otp:<ip>`              |
+| `/api/venues`               |  GET   |      120      | `venues-search:<userId or ip>` |
 
 > **Note on `/api/venues`:** its limit is much higher than the others because
 > search/autocomplete fires on nearly every keystroke. The 120/min ceiling is

@@ -1,345 +1,565 @@
-export interface RtspAudioSample {
-  timestampMs: number;
-  packetsSent: number;
-  packetsLost: number;
-  rttMs?: number;
-}
+﻿export const ICE_RESTART_TIMEOUT_MS = 10_000;
 
-export interface AdaptiveAudioTelemetryEvent {
-  type: 'audio:bitrate_changed';
+export interface MeshPeerConfig {
   peerId: string;
-  previousBitrateBps: number;
-  nextBitrateBps: number;
-  lossFraction: number;
-  rttMs: number;
-  reason: string;
-  timestampMs: number;
-}
-
-export const MIN_AUDIO_BITRATE_BPS = 16_000;
-export const THROTTLED_AUDIO_BITRATE_BPS = 24_000;
-export const MAX_AUDIO_BITRATE_BPS = 64_000;
-export const SLIDING_WINDOW_MS = 5_000;
-
-export function computeWindowedAudioMetrics(
-  samples: RtspAudioSample[],
-  windowMs = SLIDING_WINDOW_MS
-): {
-  lossFraction: number;
-  avgRttMs: number;
-  hasData: boolean;
-} {
-  if (samples.length === 0) {
-    return { lossFraction: 0, avgRttMs: 0, hasData: false };
-  }
-
-  const latestTs = samples[samples.length - 1].timestampMs;
-  const cutoff = latestTs - windowMs;
-  const windowed = samples.filter((s) => s.timestampMs >= cutoff);
-  const active = windowed.length >= 2 ? windowed : samples;
-
-  const first = active[0];
-  const last = active[active.length - 1];
-
-  const deltaSent = Math.max(0, last.packetsSent - first.packetsSent);
-  const deltaLost = Math.max(0, last.packetsLost - first.packetsLost);
-  const totalPackets = deltaSent + deltaLost;
-  const lossFraction = totalPackets > 0 ? deltaLost / totalPackets : 0;
-
-  const rttValues = active
-    .map((s) => s.rttMs)
-    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0);
-
-  const avgRttMs =
-    rttValues.length > 0
-      ? rttValues.reduce((sum, v) => sum + v, 0) / rttValues.length
-      : 0;
-
-  return {
-    lossFraction,
-    avgRttMs,
-    hasData: totalPackets > 0 || rttValues.length > 0,
-  };
-}
-
-export function selectTargetAudioBitrateBps(
-  currentBitrateBps: number,
-  lossFraction: number,
-  rttMs: number
-): { targetBps: number; reason: string } {
-  const clampedCurrent = Math.min(
-    MAX_AUDIO_BITRATE_BPS,
-    Math.max(MIN_AUDIO_BITRATE_BPS, currentBitrateBps)
-  );
-
-  if (lossFraction > 0.15) {
-    return {
-      targetBps: MIN_AUDIO_BITRATE_BPS,
-      reason: `high_packet_loss (${(lossFraction * 100).toFixed(1)}%)`,
-    };
-  }
-
-  if (lossFraction > 0.05) {
-    return {
-      targetBps: THROTTLED_AUDIO_BITRATE_BPS,
-      reason: `elevated_packet_loss (${(lossFraction * 100).toFixed(1)}%)`,
-    };
-  }
-
-  if (lossFraction < 0.01 && rttMs < 80) {
-    const restoredBps =
-      clampedCurrent < THROTTLED_AUDIO_BITRATE_BPS
-        ? THROTTLED_AUDIO_BITRATE_BPS
-        : MAX_AUDIO_BITRATE_BPS;
-    return {
-      targetBps: restoredBps,
-      reason: `healthy_link (loss=${(lossFraction * 100).toFixed(2)}%, rtt=${Math.round(rttMs)}ms)`,
-    };
-  }
-
-  return {
-    targetBps: clampedCurrent,
-    reason: 'hold_current_bitrate',
-  };
-}
-
-export async function applyAudioMaxBitrate(
-  sender: RTCRtpSender,
-  maxBitrateBps: number
-): Promise<boolean> {
-  if (typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') {
-    return false;
-  }
-
-  const boundedBitrate = Math.min(
-    MAX_AUDIO_BITRATE_BPS,
-    Math.max(MIN_AUDIO_BITRATE_BPS, Math.round(maxBitrateBps))
-  );
-
-  const params = sender.getParameters();
-  const encodings = Array.isArray(params.encodings) && params.encodings.length > 0
-    ? params.encodings
-    : [{}];
-
-  const nextEncodings = encodings.map((enc) => ({
-    ...enc,
-    maxBitrate: boundedBitrate,
-  }));
-
-  await sender.setParameters({
-    ...params,
-    encodings: nextEncodings,
-  });
-
-  return true;
-}
-
-export class AdaptiveAudioBitrateController {
-  private readonly peerId: string;
-  private readonly samples: RtspAudioSample[] = [];
-  private readonly onTelemetry?: (event: AdaptiveAudioTelemetryEvent) => void;
-  private currentBitrateBps: number;
-
-  constructor(
+  iceServers?: RTCIceServer[];
+  relayIceServers?: RTCIceServer[];
+  iceRestartTimeoutMs?: number;
+  onSendOffer?: (
     peerId: string,
-    options: {
-      initialBitrateBps?: number;
-      onTelemetry?: (event: AdaptiveAudioTelemetryEvent) => void;
-    } = {}
-  ) {
-    this.peerId = peerId;
-    this.currentBitrateBps = Math.min(
-      MAX_AUDIO_BITRATE_BPS,
-      Math.max(
-        MIN_AUDIO_BITRATE_BPS,
-        options.initialBitrateBps ?? MAX_AUDIO_BITRATE_BPS
-      )
-    );
-    this.onTelemetry = options.onTelemetry;
+    offer: RTCSessionDescriptionInit,
+    options?: { forceRelay?: boolean }
+  ) => Promise<void> | void;
+  onIceCandidate?: (peerId: string, candidate: RTCIceCandidateInit) => void;
+  onStateChange?: (
+    peerId: string,
+    state: RTCIceConnectionState | 'relay_reconnecting' | 'closed'
+  ) => void;
+}
+
+export const INITIAL_RECONNECT_DELAY_MS = 1000;
+export const MAX_RECONNECT_DELAY_MS = 30000;
+export const MAX_RECONNECT_JITTER_MS = 500;
+
+export function calculateReconnectBackoffDelay(
+  attempts: number,
+  options?: {
+    initialDelay?: number;
+    maxDelay?: number;
+    randomJitter?: number;
+  }
+): number {
+  const initialDelay = options?.initialDelay ?? INITIAL_RECONNECT_DELAY_MS;
+  const maxDelay = options?.maxDelay ?? MAX_RECONNECT_DELAY_MS;
+  const jitter =
+    options?.randomJitter !== undefined
+      ? options.randomJitter
+      : Math.random() * MAX_RECONNECT_JITTER_MS;
+
+  const delay = Math.min(
+    initialDelay * Math.pow(2, Math.max(0, attempts)) + jitter,
+    maxDelay
+  );
+
+  return Math.min(delay, maxDelay);
+}
+
+interface PeerReconnectState {
+  attempts: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+const meshPeerReconnectRegistry = new Map<string, PeerReconnectState>();
+
+export function getMeshPeerReconnectState(peerId: string): {
+  attempts: number;
+  hasActiveTimer: boolean;
+} {
+  const state = meshPeerReconnectRegistry.get(peerId);
+  return {
+    attempts: state ? state.attempts : 0,
+    hasActiveTimer: !!(state && state.timer !== null),
+  };
+}
+
+export function resetMeshPeerReconnect(peerId: string): void {
+  const state = meshPeerReconnectRegistry.get(peerId);
+  if (state) {
+    if (state.timer !== null) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    meshPeerReconnectRegistry.delete(peerId);
+  }
+}
+
+export function clearAllMeshPeerReconnects(): void {
+  for (const state of meshPeerReconnectRegistry.values()) {
+    if (state.timer !== null) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+  }
+  meshPeerReconnectRegistry.clear();
+}
+
+export function handleMeshPeerPingAck(peerId: string): void {
+  const state = meshPeerReconnectRegistry.get(peerId);
+  if (state) {
+    state.attempts = 0;
+  }
+}
+
+export function scheduleMeshPeerReconnect(
+  peerId: string,
+  reconnectCallback: () => void | Promise<void>,
+  options?: {
+    initialDelay?: number;
+    maxDelay?: number;
+    randomJitter?: number;
+  }
+): number | null {
+  if (!peerId) return null;
+
+  let state = meshPeerReconnectRegistry.get(peerId);
+  if (!state) {
+    state = { attempts: 0, timer: null };
+    meshPeerReconnectRegistry.set(peerId, state);
   }
 
-  getBitrateBps(): number {
-    return this.currentBitrateBps;
+  // Prevent multiple simultaneous reconnect timers for the same peer
+  if (state.timer !== null) {
+    return null;
   }
 
-  async sampleAndAdapt(
-    pc: Pick<RTCPeerConnection, 'getStats' | 'getSenders'>,
-    timestampMs = Date.now()
-  ): Promise<number> {
-    const stats = await pc.getStats();
-    let packetsSent = 0;
-    let packetsLost = 0;
-    let rttMs: number | undefined;
+  const delay = calculateReconnectBackoffDelay(state.attempts, options);
+  state.attempts++;
 
-    stats.forEach((report) => {
-      const r = report as {
-        type?: string;
-        kind?: string;
-        mediaType?: string;
-        packetsSent?: number;
-        packetsLost?: number;
-        roundTripTime?: number;
-      };
-      const isAudio = r.kind === 'audio' || r.mediaType === 'audio';
-      if (r.type === 'outbound-rtp' && isAudio && typeof r.packetsSent === 'number') {
-        packetsSent += r.packetsSent;
-      }
-      if (r.type === 'remote-inbound-rtp') {
-        if (typeof r.packetsLost === 'number') {
-          packetsLost += r.packetsLost;
-        }
-        if (typeof r.roundTripTime === 'number') {
-          rttMs = r.roundTripTime * 1000;
-        }
-      }
-    });
+  state.timer = setTimeout(() => {
+    if (state) {
+      state.timer = null;
+    }
+    try {
+      void reconnectCallback();
+    } catch (err) {
+      console.warn(`[MeshPeerConnection] Reconnect callback error for peer ${peerId}:`, err);
+    }
+  }, delay);
 
-    this.samples.push({ timestampMs, packetsSent, packetsLost, rttMs });
-    const cutoff = timestampMs - SLIDING_WINDOW_MS * 2;
-    while (this.samples.length > 0 && this.samples[0].timestampMs < cutoff) {
-      this.samples.shift();
+  if (state.timer && typeof (state.timer as any).unref === 'function') {
+    (state.timer as any).unref();
+  }
+
+  return delay;
+}
+
+export class MeshPeerConnection {
+  public readonly peerId: string;
+  private pc: RTCPeerConnection | null = null;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private isClosed = false;
+  private readonly iceServers: RTCIceServer[];
+  private readonly relayIceServers: RTCIceServer[];
+  private readonly restartTimeoutMs: number;
+  private readonly onSendOffer?: MeshPeerConfig['onSendOffer'];
+  private readonly onIceCandidate?: MeshPeerConfig['onIceCandidate'];
+  private readonly onStateChange?: MeshPeerConfig['onStateChange'];
+
+  constructor(config: MeshPeerConfig) {
+    this.peerId = config.peerId;
+    this.iceServers = config.iceServers ?? [
+      { urls: 'stun:stun.l.google.com:19302' },
+    ];
+    this.relayIceServers = config.relayIceServers ?? this.iceServers;
+    this.restartTimeoutMs = config.iceRestartTimeoutMs ?? ICE_RESTART_TIMEOUT_MS;
+    this.onSendOffer = config.onSendOffer;
+    this.onIceCandidate = config.onIceCandidate;
+    this.onStateChange = config.onStateChange;
+    this.attachPeerConnection(false);
+  }
+
+  public get connection(): RTCPeerConnection | null {
+    return this.pc;
+  }
+
+  private attachPeerConnection(forceRelay: boolean): void {
+    const rtcConfig: RTCConfiguration = {
+      iceServers: forceRelay ? this.relayIceServers : this.iceServers,
+      ...(forceRelay ? { iceTransportPolicy: 'relay' as RTCIceTransportPolicy } : {}),
+    };
+
+    const peer = new RTCPeerConnection(rtcConfig);
+    peer.onicecandidate = (event) => {
+      if (event.candidate && this.onIceCandidate) {
+        this.onIceCandidate(this.peerId, event.candidate.toJSON());
+      }
+    };
+
+    peer.oniceconnectionstatechange = () => {
+      this.handleIceConnectionStateChange(peer);
+    };
+
+    this.pc = peer;
+  }
+
+  public async handleIceConnectionStateChange(
+    peer: RTCPeerConnection | null = this.pc
+  ): Promise<void> {
+    if (this.isClosed || !peer) return;
+
+    const state = peer.iceConnectionState;
+    this.onStateChange?.(this.peerId, state);
+
+    if (state === 'connected' || state === 'completed') {
+      this.clearRestartTimer();
+      resetMeshPeerReconnect(this.peerId);
+      return;
     }
 
-    const { lossFraction, avgRttMs, hasData } = computeWindowedAudioMetrics(
-      this.samples,
-      SLIDING_WINDOW_MS
-    );
-    if (!hasData) {
-      return this.currentBitrateBps;
+    if (state === 'disconnected' || state === 'failed') {
+      await this.triggerIceRestart(peer);
+    }
+  }
+
+  public async triggerIceRestart(
+    peer: RTCPeerConnection | null = this.pc
+  ): Promise<void> {
+    if (this.isClosed || !peer) return;
+
+    if (typeof peer.restartIce === 'function') {
+      peer.restartIce();
     }
 
-    const { targetBps, reason } = selectTargetAudioBitrateBps(
-      this.currentBitrateBps,
-      lossFraction,
-      avgRttMs
-    );
+    this.startRestartTimeout();
 
-    if (targetBps !== this.currentBitrateBps) {
-      const audioSender = pc
-        .getSenders()
-        .find((s) => s.track?.kind === 'audio');
-
-      if (audioSender) {
-        await applyAudioMaxBitrate(audioSender, targetBps);
+    if (typeof peer.createOffer === 'function') {
+      const offer = await peer.createOffer({ iceRestart: true });
+      if (typeof peer.setLocalDescription === 'function') {
+        await peer.setLocalDescription(offer);
       }
+      await this.onSendOffer?.(this.peerId, offer, { forceRelay: false });
+    }
+  }
 
-      const previousBitrateBps = this.currentBitrateBps;
-      this.currentBitrateBps = targetBps;
+  private startRestartTimeout(): void {
+    this.clearRestartTimer();
+    this.restartTimer = setTimeout(() => {
+      void this.fallbackToTurnRelay();
+    }, this.restartTimeoutMs);
+  }
 
-      this.onTelemetry?.({
-        type: 'audio:bitrate_changed',
-        peerId: this.peerId,
-        previousBitrateBps,
-        nextBitrateBps: targetBps,
-        lossFraction,
-        rttMs: avgRttMs,
-        reason,
-        timestampMs,
-      });
+  private clearRestartTimer(): void {
+    if (this.restartTimer !== null) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+  }
+
+  public async fallbackToTurnRelay(): Promise<void> {
+    if (this.isClosed) return;
+    this.clearRestartTimer();
+
+    if (this.pc) {
+      this.pc.oniceconnectionstatechange = null;
+      this.pc.onicecandidate = null;
+      if (typeof this.pc.close === 'function') {
+        this.pc.close();
+      }
+      this.pc = null;
     }
 
-    return this.currentBitrateBps;
+    this.onStateChange?.(this.peerId, 'relay_reconnecting');
+    this.attachPeerConnection(true);
+
+    const relayPeer = this.pc;
+    if (relayPeer && typeof relayPeer.createOffer === 'function') {
+      const offer = await relayPeer.createOffer({ iceRestart: true });
+      if (typeof relayPeer.setLocalDescription === 'function') {
+        await relayPeer.setLocalDescription(offer);
+      }
+      await this.onSendOffer?.(this.peerId, offer, { forceRelay: true });
+    }
+  }
+
+  public close(): void {
+    this.isClosed = true;
+    this.clearRestartTimer();
+    resetMeshPeerReconnect(this.peerId);
+    cleanupMeshPeerDataChannels(this);
+    if (this.pc) {
+      this.pc.oniceconnectionstatechange = null;
+      this.pc.onicecandidate = null;
+      if (typeof this.pc.close === 'function') {
+        this.pc.close();
+      }
+      this.pc = null;
+    }
+    this.onStateChange?.(this.peerId, 'closed');
   }
 }
 
 /**
- * DataChannel listener tracking registry to prevent memory leaks and duplicate listeners
- * across peer reconnections, ICE renegotiations, and channel replacements.
+ * 15-second keepalive interval for WebRTC DataChannels to prevent cellular NAT gateway timeouts.
+ * Issue #9895: keepalive ping on 15s intervals
  */
-type ChannelListenerMap = Map<string, Set<EventListenerOrEventListenerObject>>;
-const channelListenerRegistry = new WeakMap<RTCDataChannel, ChannelListenerMap>();
+export const DATA_CHANNEL_KEEPALIVE_INTERVAL_MS = 15_000;
 
-export function registerDataChannelListener(
-  channel: RTCDataChannel,
-  type: string,
-  listener: EventListenerOrEventListenerObject,
-  options?: boolean | AddEventListenerOptions
-): void {
-  if (!channel || typeof channel.addEventListener !== 'function') return;
-
-  let listenerMap = channelListenerRegistry.get(channel);
-  if (!listenerMap) {
-    listenerMap = new Map();
-    channelListenerRegistry.set(channel, listenerMap);
-  }
-
-  let listenersForType = listenerMap.get(type);
-  if (!listenersForType) {
-    listenersForType = new Set();
-    listenerMap.set(type, listenersForType);
-  }
-
-  // Idempotent registration: attach if not already tracked
-  if (!listenersForType.has(listener)) {
-    channel.addEventListener(type, listener, options);
-    listenersForType.add(listener);
-  }
+export interface KeepalivePingPacket {
+  type: 'PING';
+  ts: number;
 }
 
-export function unregisterDataChannelListener(
-  channel: RTCDataChannel,
-  type: string,
-  listener: EventListenerOrEventListenerObject,
-  options?: boolean | EventListenerOptions
-): void {
-  if (!channel || typeof channel.removeEventListener !== 'function') return;
-
-  const listenerMap = channelListenerRegistry.get(channel);
-  if (listenerMap) {
-    const listenersForType = listenerMap.get(type);
-    if (listenersForType && listenersForType.has(listener)) {
-      channel.removeEventListener(type, listener, options);
-      listenersForType.delete(listener);
-      if (listenersForType.size === 0) {
-        listenerMap.delete(type);
-      }
-    }
-  } else {
-    channel.removeEventListener(type, listener, options);
-  }
+export interface KeepalivePongPacket {
+  type: 'PONG';
+  ts: number;
 }
 
-export function cleanupDataChannelListeners(channel: RTCDataChannel): void {
+export type KeepalivePacket = KeepalivePingPacket | KeepalivePongPacket;
+
+export function isKeepalivePacket(data: unknown): data is KeepalivePacket {
+  if (!data || typeof data !== 'object') return false;
+  const candidate = data as Record<string, unknown>;
+  return (
+    (candidate.type === 'PING' || candidate.type === 'PONG') &&
+    typeof candidate.ts === 'number' &&
+    Number.isFinite(candidate.ts)
+  );
+}
+
+interface ChannelKeepaliveSession {
+  channel: RTCDataChannel;
+  timer: ReturnType<typeof setInterval> | null;
+  intervalMs: number;
+  peerId?: string;
+  onOpenHandler: (() => void) | null;
+  onMessageHandler: ((event: MessageEvent) => void) | null;
+  onCloseHandler: (() => void) | null;
+  onErrorHandler: ((event: Event) => void) | null;
+  onPongReceived?: (ts: number, rttMs?: number) => void;
+}
+
+const channelKeepaliveRegistry = new WeakMap<RTCDataChannel, ChannelKeepaliveSession>();
+const peerDataChannelsRegistry = new WeakMap<MeshPeerConnection, Set<RTCDataChannel>>();
+
+/**
+ * Checks whether keepalive is currently active/running on a DataChannel.
+ */
+export function isDataChannelKeepaliveActive(channel: RTCDataChannel): boolean {
+  if (!channel) return false;
+  const session = channelKeepaliveRegistry.get(channel);
+  return session !== undefined && session.timer !== null;
+}
+
+/**
+ * Starts sending a PING packet every 15 seconds over an open DataChannel.
+ * Ensures at most one interval per channel, idempotent operation, and safe cleanup.
+ */
+export function startDataChannelKeepalive(
+  channel: RTCDataChannel,
+  options?: {
+    intervalMs?: number;
+    peerId?: string;
+    onPongReceived?: (ts: number, rttMs?: number) => void;
+  }
+): void {
   if (!channel) return;
 
-  const listenerMap = channelListenerRegistry.get(channel);
-  if (listenerMap && typeof channel.removeEventListener === 'function') {
-    for (const [type, listeners] of listenerMap.entries()) {
-      for (const listener of listeners) {
-        try {
-          channel.removeEventListener(type, listener);
-        } catch {
-          // Ignore removal errors on closed or mock channels
-        }
-      }
+  const intervalMs = options?.intervalMs ?? DATA_CHANNEL_KEEPALIVE_INTERVAL_MS;
+  let session = channelKeepaliveRegistry.get(channel);
+
+  if (!session) {
+    session = {
+      channel,
+      timer: null,
+      intervalMs,
+      peerId: options?.peerId,
+      onOpenHandler: null,
+      onMessageHandler: null,
+      onCloseHandler: null,
+      onErrorHandler: null,
+      onPongReceived: options?.onPongReceived,
+    };
+    channelKeepaliveRegistry.set(channel, session);
+    setupKeepaliveInterception(session, channel);
+  } else {
+    session.intervalMs = intervalMs;
+    if (options?.peerId) {
+      session.peerId = options.peerId;
     }
-    listenerMap.clear();
-    channelListenerRegistry.delete(channel);
+    if (options?.onPongReceived) {
+      session.onPongReceived = options.onPongReceived;
+    }
   }
 
-  // Clear property event handlers as well to prevent memory leaks from inline handlers
-  try {
-    channel.onmessage = null;
-    channel.onerror = null;
-    channel.onclose = null;
-    channel.onopen = null;
-  } catch {
-    // Ignore property assignment errors on strict mocks
+  // If channel is already open and timer not yet started, start interval
+  if (channel.readyState === 'open' && session.timer === null) {
+    startPingTimer(session, intervalMs);
   }
 }
 
-export function getDataChannelListenerCount(
+/**
+ * Stops keepalive timers and removes listeners for a DataChannel.
+ * Fully idempotent.
+ */
+export function stopDataChannelKeepalive(channel: RTCDataChannel): void {
+  if (!channel) return;
+  const session = channelKeepaliveRegistry.get(channel);
+  if (!session) return;
+
+  if (session.timer !== null) {
+    clearInterval(session.timer);
+    session.timer = null;
+  }
+
+  // Detach event listeners if they were added via addEventListener
+  if (typeof channel.removeEventListener === 'function') {
+    if (session.onOpenHandler) {
+      channel.removeEventListener('open', session.onOpenHandler);
+      session.onOpenHandler = null;
+    }
+    if (session.onMessageHandler) {
+      channel.removeEventListener('message', session.onMessageHandler);
+      session.onMessageHandler = null;
+    }
+    if (session.onCloseHandler) {
+      channel.removeEventListener('close', session.onCloseHandler);
+      session.onCloseHandler = null;
+    }
+    if (session.onErrorHandler) {
+      channel.removeEventListener('error', session.onErrorHandler);
+      session.onErrorHandler = null;
+    }
+  }
+
+  channelKeepaliveRegistry.delete(channel);
+}
+
+function startPingTimer(session: ChannelKeepaliveSession, intervalMs: number): void {
+  if (session.timer !== null) return;
+
+  session.timer = setInterval(() => {
+    const ch = session.channel;
+    if (!ch || ch.readyState !== 'open') {
+      if (session.timer !== null) {
+        clearInterval(session.timer);
+        session.timer = null;
+      }
+      return;
+    }
+
+    try {
+      const pingPacket: KeepalivePingPacket = {
+        type: 'PING',
+        ts: Date.now(),
+      };
+      ch.send(JSON.stringify(pingPacket));
+    } catch {
+      // Ignore send errors during abrupt closing
+    }
+  }, intervalMs);
+
+  if (session.timer && typeof (session.timer as any).unref === 'function') {
+    (session.timer as any).unref();
+  }
+}
+
+function setupKeepaliveInterception(
+  session: ChannelKeepaliveSession,
+  channel: RTCDataChannel
+): void {
+  session.onOpenHandler = () => {
+    if (channel.readyState === 'open' && session.timer === null) {
+      startPingTimer(session, DATA_CHANNEL_KEEPALIVE_INTERVAL_MS);
+    }
+  };
+
+  session.onMessageHandler = (event: MessageEvent) => {
+    handleIncomingChannelMessage(session, channel, event);
+  };
+
+  session.onCloseHandler = () => {
+    stopDataChannelKeepalive(channel);
+  };
+
+  session.onErrorHandler = () => {
+    if (channel.readyState === 'closed' || channel.readyState === 'closing') {
+      stopDataChannelKeepalive(channel);
+    }
+  };
+
+  if (typeof channel.addEventListener === 'function') {
+    channel.addEventListener('open', session.onOpenHandler);
+    channel.addEventListener('message', session.onMessageHandler);
+    channel.addEventListener('close', session.onCloseHandler);
+    channel.addEventListener('error', session.onErrorHandler);
+  }
+}
+
+/**
+ * Defensively inspects incoming message payload.
+ * If PING -> replies with PONG and swallows message (does not invoke app handler).
+ * If PONG -> consumes internally, updates RTT callback if available, and swallows message.
+ * If unrelated message -> returns false so it continues to application handlers.
+ */
+export function handleIncomingChannelMessage(
+  session: ChannelKeepaliveSession,
   channel: RTCDataChannel,
-  type?: string
-): number {
-  const listenerMap = channelListenerRegistry.get(channel);
-  if (!listenerMap) return 0;
-  if (type) {
-    return listenerMap.get(type)?.size ?? 0;
+  event: MessageEvent
+): boolean {
+  if (typeof event.data === 'string') {
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(event.data);
+    } catch {
+      // Malformed JSON is not a heartbeat, pass through to application
+      return false;
+    }
+
+    if (isKeepalivePacket(parsed)) {
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      }
+
+      if (parsed.type === 'PING') {
+        if (channel.readyState === 'open') {
+          try {
+            const pongPacket: KeepalivePongPacket = {
+              type: 'PONG',
+              ts: parsed.ts, // Echo received ping timestamp
+            };
+            channel.send(JSON.stringify(pongPacket));
+          } catch {
+            // Ignore send errors
+          }
+        }
+        return true; // Consumed heartbeat
+      }
+
+      if (parsed.type === 'PONG') {
+        const now = Date.now();
+        const rttMs = typeof parsed.ts === 'number' && parsed.ts > 0 ? Math.max(0, now - parsed.ts) : undefined;
+        session.onPongReceived?.(parsed.ts, rttMs);
+        if (session.peerId) {
+          handleMeshPeerPingAck(session.peerId);
+        }
+        return true; // Consumed heartbeat
+      }
+    }
   }
-  let total = 0;
-  for (const listeners of listenerMap.values()) {
-    total += listeners.size;
+
+  return false;
+}
+
+/**
+ * Tracks a DataChannel on a MeshPeerConnection instance and automatically starts keepalive.
+ */
+export function registerMeshPeerDataChannel(
+  peer: MeshPeerConnection,
+  channel: RTCDataChannel
+): void {
+  if (!peer || !channel) return;
+
+  let channels = peerDataChannelsRegistry.get(peer);
+  if (!channels) {
+    channels = new Set();
+    peerDataChannelsRegistry.set(peer, channels);
   }
-  return total;
+  channels.add(channel);
+
+  startDataChannelKeepalive(channel, { peerId: peer.peerId });
+}
+
+/**
+ * Cleans up all DataChannels associated with a MeshPeerConnection instance.
+ */
+export function cleanupMeshPeerDataChannels(peer: MeshPeerConnection): void {
+  if (!peer) return;
+  const channels = peerDataChannelsRegistry.get(peer);
+  if (channels) {
+    for (const channel of channels) {
+      stopDataChannelKeepalive(channel);
+    }
+    channels.clear();
+    peerDataChannelsRegistry.delete(peer);
+  }
 }

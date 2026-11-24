@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Send, Star, RefreshCw } from "lucide-react";
+import { Send, Star, RefreshCw, Loader2 } from "lucide-react";
 import { submitReviewWithOfflineSync } from "@/lib/offlineReviewSync";
 
 export interface PendingReview {
@@ -44,6 +44,8 @@ export function VenueReviewForm({
   const [hoverRating, setHoverRating] = useState<number | null>(null);
   const [reviewText, setReviewText] = useState("");
   const [pendingReviews, setPendingReviews] = useState<PendingReview[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const isLoadedRef = useRef(false);
   const MAX_CHARS = 500;
 
@@ -104,10 +106,10 @@ export function VenueReviewForm({
     saveDraft(newText, currentRating);
   };
 
-  // Check if empty or exceeded
+  // Check if empty or exceeded or submitting
   const isExceeded = currentLength > MAX_CHARS;
   const isEmpty = trimmedLength === 0;
-  const isDisabled = isEmpty || isExceeded;
+  const isDisabled = isEmpty || isExceeded || isSubmitting;
 
   const handleRatingChange = (newRating: number) => {
     const clamped = Math.min(5, Math.max(0.5, Math.round(newRating * 2) / 2));
@@ -158,60 +160,70 @@ export function VenueReviewForm({
     handleRatingChange(score);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isDisabled) return;
+    if (isDisabled || isSubmitting || isSubmittingRef.current) return;
     const trimmed = reviewText.trim();
     if (trimmed.length === 0) return;
 
-    const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
 
-    if (isOffline) {
-      // Optimistically append review to local feed with Pending Sync badge
-      const pending: PendingReview = {
-        id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        venueId,
-        text: trimmed,
-        rating: currentRating,
-        createdAt: Date.now(),
-        status: "pending_sync",
-      };
+    try {
+      const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
 
-      setPendingReviews((prev) => [pending, ...prev]);
-      onOptimisticReview?.(pending);
-
-      // Enqueue into offlineStorage / sync queue
-      try {
-        submitReviewWithOfflineSync({
-          venueId: venueId || "default",
-          comment: trimmed,
+      if (isOffline) {
+        // Optimistically append review to local feed with Pending Sync badge
+        const pending: PendingReview = {
+          id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          venueId,
+          text: trimmed,
           rating: currentRating,
-        }).catch(() => {});
-      } catch {
-        // Ignore offline sync queue failure
+          createdAt: Date.now(),
+          status: "pending_sync",
+        };
+
+        setPendingReviews((prev) => [pending, ...prev]);
+        onOptimisticReview?.(pending);
+
+        // Enqueue into offlineStorage / sync queue
+        try {
+          submitReviewWithOfflineSync({
+            venueId: venueId || "default",
+            comment: trimmed,
+            rating: currentRating,
+          }).catch(() => {});
+        } catch {
+          // Ignore offline sync queue failure
+        }
+
+        if (onSubmit) {
+          await Promise.resolve(onSubmit(trimmed, currentRating));
+        }
+
+        // Clear draft
+        try {
+          localStorage.removeItem(getDraftStorageKey(venueId));
+        } catch {}
+
+        setReviewText("");
+        return;
       }
 
-      onSubmit?.(trimmed, currentRating);
+      if (onSubmit) {
+        await Promise.resolve(onSubmit(trimmed, currentRating));
+      }
 
-      // Clear draft
+      // Clear draft after successful submission
       try {
         localStorage.removeItem(getDraftStorageKey(venueId));
       } catch {}
 
       setReviewText("");
-      return;
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
-
-    if (onSubmit) {
-      onSubmit(trimmed, currentRating);
-    }
-
-    // Clear draft after successful submission
-    try {
-      localStorage.removeItem(getDraftStorageKey(venueId));
-    } catch {}
-
-    setReviewText("");
   };
 
   return (
@@ -359,14 +371,25 @@ export function VenueReviewForm({
             <button
               type="submit"
               disabled={isDisabled}
+              aria-disabled={isDisabled}
+              data-testid="submit-review-button"
               className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
                 isDisabled
                   ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500 cursor-not-allowed opacity-70"
                   : "bg-blue-600 hover:bg-blue-700 text-white shadow-sm active:scale-95"
               }`}
             >
-              <Send className="w-4 h-4" />
-              Submit Review
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" data-testid="submit-spinner" />
+                  <span>Submitting...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  <span>Submit Review</span>
+                </>
+              )}
             </button>
           </div>
         </div>

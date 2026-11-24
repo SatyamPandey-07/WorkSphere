@@ -20,11 +20,11 @@
   <b>🌟 Official Selected Project for <a href="https://github.com/SatyamPandey-07/WorkSphere">ECSoC 2026</a> (Elite Coders Summer of Code), <a href="https://github.com/SatyamPandey-07/WorkSphere">OSCI 2026</a> (Open Source Contribution India) &amp; <a href="https://woc.codesocial.tech">WOCS 2026</a> (Winter of Code Social by Code Social) 🌟</b>
 </p>
 
-[![Next.js](https://img.shields.io/badge/Next.js-15.5-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.4.3-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.3.1-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Prisma ORM](https://img.shields.io/badge/Prisma-7.2-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![Prisma ORM](https://img.shields.io/badge/Prisma-7.10.1-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![PartyKit](https://img.shields.io/badge/PartyKit-WebSockets-FF5722?style=for-the-badge&logo=partykit&logoColor=white)](https://partykit.io/)
 [![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
@@ -33,7 +33,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-144%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-147%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![WOCS 2026](https://img.shields.io/badge/WOCS-2026-00B4D8?style=flat-square)](https://woc.codesocial.tech)
@@ -51,7 +51,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-144-active-rockstars"><b>👥 Contributors (144)</b></a> •
+  <a href="#-contributors-147-active-rockstars"><b>👥 Contributors (147)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -74,9 +74,9 @@
 
 ---
 
-### 🚀 Contributors (144 Active Rockstars)
+### 🚀 Contributors (147 Active Rockstars)
 
-A massive thank you to all **144 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **147 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table width="100%">
   <tr>
@@ -990,6 +990,26 @@ A massive thank you to all **144 brilliant contributors and bots** building Work
         <sub><b>bhav-17</b></sub>
       </a>
     </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Aviral02git">
+        <img src="https://avatars.githubusercontent.com/u/183893278?v=4" width="55px;" height="55px;" alt="Aviral02git" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Aviral02git</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Pruthviraj-patil20">
+        <img src="https://avatars.githubusercontent.com/u/260050545?v=4" width="55px;" height="55px;" alt="Pruthviraj-patil20" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Pruthviraj-patil20</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/priyanshiy1312-ui">
+        <img src="https://avatars.githubusercontent.com/u/285353667?v=4" width="55px;" height="55px;" alt="priyanshiy1312-ui" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>priyanshiy1312-ui</b></sub>
+      </a>
+    </td>
   </tr>
 </table>
 
@@ -1029,6 +1049,24 @@ A massive thank you to all **144 brilliant contributors and bots** building Work
 
 ### ⚡ Cutting-Edge Platform & Telemetry Innovations (NEW)
 
+- **Dynamic Isochrone Walking Polygons**: Real-time 5/10/15-minute walking distance isochrone boundaries with PostGIS spatial integration and travel-time contour rendering (`src/lib/routing/ecoRoutingEngine.ts`).
+- **Real-Time Timezone-Aware Venue Opening Status**: Live opening status badges calculating venue open, closed, and closing-soon states according to the venue's local timezone rules (`src/lib/venues/hours.ts`).
+- **WiFi Ping Jitter & Stability Metrics**: Real-time packet variance and stability gauge tracking network jitter and latency spikes on nomadic connections (`src/lib/wifi/jitter.ts`).
+- **Collaborative Image Upload Preview Modal**: Pre-upload thumbnail inspection dialog with rotation, aspect-ratio cropping, and byte size estimation for remote workspaces (`src/components/chat/ImageUploadPreviewModal.tsx`).
+- **Hexagonal Venue Spatial Clustering**: High-performance H3/hexagonal geospatial clustering for dense urban workspace maps (`src/lib/geospatial/spatialVenueClusterer.ts`).
+- **High-Contrast Accessibility Mode**: System-wide WCAG AAA high-contrast theme toggle accessible via footer controls and settings dashboard with dynamic CSS variable overrides (`src/components/HighContrastToggle.tsx`).
+- **Lightning WiFi Filter & Gigabit Verified Badge**: Dynamic 1Gbps+ network performance filter and verified throughput badge indicator for hyper-fast nomadic work hubs (`src/components/venues/VenueFilterBar.tsx`, `src/components/VenueCard.tsx`).
+- **Multi-Layer Web Audio Soundscape Mixer**: Immersive ambient sound generator with smooth crossfading across binaural brown noise, cafe chatter, and rain layers (`src/components/audio/AmbientSoundGenerator.tsx`).
+- **Administrative Audit Log Streaming Exporter**: Real-time streaming CSV and PDF audit export engine for workspace administrators with chunked memory buffering (`src/app/api/admin/venues/[venueId]/export/route.ts`, `src/lib/export/auditExporter.ts`).
+- **Schnorr Threshold Signature Aggregation**: Cryptographic multi-party signing module validating non-malleable secp256k1 curve points and preventing nonce collisions (`src/core/crypto/SchnorrThresholdAggregator.ts`).
+- **BFT Consensus View-Change Quorum Verification**: Byzantine Fault Tolerant consensus engine verifying proposal sequence numbers, parent hashes, and certified view-change quorums across nomadic edge nodes (`src/core/consensus/BFTConsensusCoordinator.ts`).
+
+- **Client-Side Core Web Vitals Reporter**: Real-time performance telemetry tracking CLS, INP, LCP, FCP, and TTFB directly reporting to `/api/telemetry/vitals` with configurable sampling rates and privacy consent guards (`src/lib/telemetry/webVitalsReporter.ts`, `src/components/analytics/WebVitalsReporter.tsx`).
+- **WebRTC TURN Relay Dynamic Bandwidth Throttling**: Automatic throughput regulation and dynamic relay bandwidth throttling across peer-to-peer data channels to mitigate packet loss on constrained mobile uplinks (`src/lib/realtime/webrtc/meshConnection.ts`).
+- **Multi-Threaded Circom Witness Worker Pool**: Scalable zero-knowledge witness generation worker pool executing SnarkJS Groth16 arithmetic constraints off the main UI thread with memory recycling and IndexedDB proof caching (`src/workers/zkpWorker.ts`, `src/features/zkp/studentDiscountVerifier.ts`).
+- **Nomad Attendance & Co-Working Verification Certificates**: Cryptographically verifiable attendance passports with custom PDF layout rendering, QR verification codes, and SHA-256 integrity checks (`src/lib/pdf/generateCertificate.ts`, `src/app/api/certificates/verify/route.ts`).
+- **Offline Booking Drafts & Reservation Synchronization**: IndexedDB draft caching enabling remote workers to compose workspace reservations while offline and automatically reconcile upon reconnecting (`src/worker/bookingSync/DraftStore.ts`, `src/worker/bookingSync/SyncQueue.ts`).
+- **Bounded WebGL Texture Cache & LRU Eviction**: High-efficiency WebGL texture memory caching preventing GPU leaks during 3D venue layout and interactive floorplan navigation (`src/lib/webgl/textureCache.ts`).
 - **Client-Side Web Worker ZKP Student Verification**: Offloads zero-knowledge SnarkJS / Groth16 proof synthesis to a dedicated background Web Worker, ensuring zero main-thread UI jank during verification (`src/workers/zkpProofWorker.ts`, `src/features/zkp/studentDiscountVerifier.ts`).
 - **P2P Battery-Aware Dynamic Bandwidth Throttling**: Monitors Battery Status API to intelligently throttle WebRTC mesh data rates and CRDT delta synchronization frequency during low-battery and unplugged states (`src/hooks/useBatteryOptimization.ts`, `src/core/p2p/MeshBandwidthThrottler.ts`).
 - **WebRTC Network Quality & Jitter Telemetry**: Real-time round-trip latency, jitter variance, and packet loss telemetry across multi-peer WebRTC DataChannels (`src/hooks/useMeshDataChannels.ts`, `src/lib/realtime/webrtc/telemetry.ts`).
@@ -1120,6 +1158,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ### ⭐ User Features
 
+- **ML WiFi Quality Prediction Engine**: Real-time venue WiFi prediction computing estimated download/upload bandwidth, stability score, and jitter confidence based on spatial RF telemetry (`src/app/api/venues/[venueId]/wifi-prediction/route.ts`).
+- **Interactive Venue Noise & Decibel Timeline Chart**: Real-time acoustic noise level distribution chart rendering ambient historical decibel gradients with interactive hover tooltips (`src/components/chat/VenueNoiseChart.tsx`).
 - **Adaptive WebRTC Audio Bitrate Scaling**: Real-time packet loss and jitter telemetry dynamically throttling WebAudio Opus encoding bitrates (16 kbps - 128 kbps) to ensure crystal-clear voice collaboration in congested nomad coworking spaces (`src/lib/realtime/webrtc/meshConnection.ts`).
 - **Client-Side SnarkJS Proof Verification & IndexedDB Cache**: Local cryptographic caching of verified zero-knowledge student passes and access proofs with SHA-256 circuit hash invalidation (`src/lib/zkp/proofCache.ts`).
 - **Multi-Modal Eco-Commute Pareto Routing Engine**: Multi-objective routing optimizing travel duration, monetary fare, and EPA-aligned greenhouse gas emission reductions (`src/lib/routing/ecoRoutingEngine.ts`, `src/app/api/routing/multimodal/route.ts`).
@@ -1321,25 +1361,25 @@ WorkSphere brings together geospatial data, ambient intelligence, and real-time 
 
 ## 🛠️ Tech Stack
 
-| Category               | Technology                                                              |
-| ---------------------- | ----------------------------------------------------------------------- |
-| **Framework**          | Next.js 15.5 (App Router with Server Components & Server Actions)       |
-| **Language**           | TypeScript 5.0                                                          |
-| **Styling**            | Tailwind CSS 4.0, Radix UI Primitives, Lucide Icons                     |
-| **AI / Multi-Agent**   | Groq SDK (Llama 3.3 70B Versatile), In-Browser Intent Orchestrator      |
-| **Database**           | Neon Serverless PostgreSQL + Prisma 7.2 ORM (with `@prisma/adapter-pg`) |
-| **Authentication**     | Clerk (JWTs, Webhook Sync, Passkeys & WebAuthn)                         |
-| **Web3 & FinTech**     | Solana Web3.js, Solana Pay Protocol, Smart Contract Escrows             |
-| **Edge Audio / DSP**   | WebAssembly (WASM C DSP), AudioWorklet API, Web Audio Oscillators       |
-| **Spatial & AR**       | WebXR Device API, Three.js / WebGL, Voxel Octrees                       |
-| **Maps & Routing**     | React Leaflet, OpenStreetMap, OSRM Road Machine, CartoDB Dark Matter    |
-| **Real-time & P2P**    | PartyKit WebSockets, Server-Sent Events (SSE), WebRTC DataChannels      |
-| **Digital Twin / IoT** | Matter / HomeKit Bridge, MQTT Telemetry, Web Bluetooth Low Energy (BLE) |
-| **Cryptography / ZKP** | Web Crypto API (SubtleCrypto HMAC-SHA256), WASM ZK-SNARKs (SnarkJS)     |
-| **PDF Generation**     | pdf-lib 2.x (Zero-filesystem serverless execution)                      |
-| **Testing**            | Jest 29, React Testing Library, Playwright E2E (838+ test suites)       |
-| **PWA & Offline**      | Service Workers, IndexedDB, Background Sync API, Web Locks API          |
-| **Deployment**         | Vercel (Edge & Serverless Functions)                                    |
+| Category               | Technology                                                                 |
+| ---------------------- | -------------------------------------------------------------------------- |
+| **Framework**          | Next.js 16.4.3 (App Router with Server Components & Server Actions)        |
+| **Language**           | TypeScript 6.0.3                                                           |
+| **Styling**            | Tailwind CSS 4.0, Radix UI Primitives, Lucide Icons                        |
+| **AI / Multi-Agent**   | Groq SDK (Llama 3.3 70B Versatile), In-Browser Intent Orchestrator         |
+| **Database**           | Neon Serverless PostgreSQL + Prisma 7.10.1 ORM (with `@prisma/adapter-pg`) |
+| **Authentication**     | Clerk (JWTs, Webhook Sync, Passkeys & WebAuthn)                            |
+| **Web3 & FinTech**     | Solana Web3.js, Solana Pay Protocol, Smart Contract Escrows                |
+| **Edge Audio / DSP**   | WebAssembly (WASM C DSP), AudioWorklet API, Web Audio Oscillators          |
+| **Spatial & AR**       | WebXR Device API, Three.js / WebGL, Voxel Octrees                          |
+| **Maps & Routing**     | React Leaflet, OpenStreetMap, OSRM Road Machine, CartoDB Dark Matter       |
+| **Real-time & P2P**    | PartyKit WebSockets, Server-Sent Events (SSE), WebRTC DataChannels         |
+| **Digital Twin / IoT** | Matter / HomeKit Bridge, MQTT Telemetry, Web Bluetooth Low Energy (BLE)    |
+| **Cryptography / ZKP** | Web Crypto API (SubtleCrypto HMAC-SHA256), WASM ZK-SNARKs (SnarkJS)        |
+| **PDF Generation**     | pdf-lib 2.x (Zero-filesystem serverless execution)                         |
+| **Testing**            | Jest 29, React Testing Library, Playwright E2E (838+ test suites)          |
+| **PWA & Offline**      | Service Workers, IndexedDB, Background Sync API, Web Locks API             |
+| **Deployment**         | Vercel (Edge & Serverless Functions)                                       |
 
 ---
 
@@ -1909,7 +1949,7 @@ worksphere/
 | `e2e/`            | Playwright end-to-end test suites for full browser flows                                                                          |
 | `public/`         | Static files served directly: service worker (`sw.js`), PWA manifest, and app icons                                               |
 | `scripts/`        | One-off and CI utility scripts (database seeding, asset generation, etc.)                                                         |
-| `src/app/`        | Next.js 15 App Router — every page, layout, and API route handler lives here                                                      |
+| `src/app/`        | Next.js 16 App Router — every page, layout, and API route handler lives here                                                      |
 | `src/components/` | Reusable React components: map, chatbot, venue cards, rating dialog, error boundary, and design-system primitives                 |
 | `src/context/`    | React context providers that share global state (currency, events, etc.) across the component tree                                |
 | `src/core/`       | Framework-agnostic business logic and domain services, kept separate from Next.js specifics                                       |

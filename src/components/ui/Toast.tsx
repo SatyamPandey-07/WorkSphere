@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Info,
 } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 export type ToastType = "success" | "error" | "warning" | "info";
@@ -29,6 +30,7 @@ export interface ToastOptions {
   action?: { label: string; onClick: () => void };
   variant?: ToastVariant;
   timestamp?: string;
+  persistAcrossRoutes?: boolean;
 }
 
 export interface Toast {
@@ -45,6 +47,7 @@ export interface Toast {
   countdown?: number;
   duration?: number;
   updatedAt?: number;
+  persistAcrossRoutes?: boolean;
 }
 
 export interface ToastContextValue {
@@ -73,6 +76,16 @@ export function useToast(): ToastContextValue {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const previousPathnameRef = useRef(pathname);
+
+  useEffect(() => {
+    if (previousPathnameRef.current === pathname) return;
+
+    previousPathnameRef.current = pathname;
+    setToasts((prev) => prev.filter((toast) => toast.persistAcrossRoutes));
+  }, [pathname]);
   const recentMessagesRef = useRef<Map<string, number>>(new Map());
 
   const addToast = useCallback(
@@ -89,6 +102,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       let toastKey: string | undefined = idOrKey;
       let variant: ToastVariant = "default";
       let timestamp: string | undefined;
+      let persistAcrossRoutes = false;
 
       if (actionOrOptions) {
         if ("onClick" in actionOrOptions && "label" in actionOrOptions) {
@@ -100,6 +114,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           if (opts.duration !== undefined) effectiveDuration = opts.duration;
           if (opts.variant) variant = opts.variant;
           if (opts.timestamp) timestamp = opts.timestamp;
+          if (opts.persistAcrossRoutes !== undefined) {
+            persistAcrossRoutes = opts.persistAcrossRoutes;
+          }
           if (opts.id) toastKey = opts.id;
           else if (opts.key) toastKey = opts.key;
         }
@@ -127,7 +144,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               ...updated[existingIndex],
               message,
               type,
-              variant: variant !== "default" ? variant : updated[existingIndex].variant,
+              variant:
+                variant !== "default"
+                  ? variant
+                  : updated[existingIndex].variant,
               timestamp: effectiveTimestamp,
               action: action ?? updated[existingIndex].action,
               countdown:
@@ -140,6 +160,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   : updated[existingIndex].duration,
               key: toastKey,
               updatedAt: now,
+              persistAcrossRoutes:
+                persistAcrossRoutes ||
+                updated[existingIndex].persistAcrossRoutes,
             };
             return updated;
           }
@@ -156,6 +179,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               countdown: effectiveCountdown,
               duration: effectiveDuration,
               updatedAt: now,
+              persistAcrossRoutes,
             },
           ];
         });
@@ -220,6 +244,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             countdown: effectiveCountdown,
             duration: effectiveDuration,
             updatedAt: now,
+            persistAcrossRoutes,
           },
         ];
       });
@@ -251,9 +276,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handleReviewSyncFailure = (event: Event) => {
-      const detail = "data" in event
-        ? (event as MessageEvent).data
-        : (event as CustomEvent).detail;
+      const detail =
+        "data" in event
+          ? (event as MessageEvent).data
+          : (event as CustomEvent).detail;
       const reviewId: string | undefined = detail?.id;
       if (detail?.type !== "REVIEW_SYNC_FAILED" || !reviewId) return;
 
@@ -277,7 +303,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 }),
               );
               if (detail.venueId) {
-                window.location.assign(
+                router.push(
                   `/venues/${encodeURIComponent(detail.venueId)}?reviewDraft=${encodeURIComponent(reviewId)}`,
                 );
               }
@@ -316,7 +342,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       );
       reviewSyncChannel?.close();
     };
-  }, [addToast]);
+  }, [addToast, router]);
 
   const contextValue = useMemo(() => ({ toast: addToast }), [addToast]);
 
@@ -547,10 +573,18 @@ function ToastItem({
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_#10b981]" />
         </span>
       ) : (
-        <Icon className={cn("w-4 h-4 shrink-0", iconColor)} aria-hidden="true" />
+        <Icon
+          className={cn("w-4 h-4 shrink-0", iconColor)}
+          aria-hidden="true"
+        />
       )}
 
-      <div className={cn("flex-1 flex flex-col items-start text-sm", isHud ? "text-emerald-300" : "text-zinc-700 dark:text-zinc-300")}>
+      <div
+        className={cn(
+          "flex-1 flex flex-col items-start text-sm",
+          isHud ? "text-emerald-300" : "text-zinc-700 dark:text-zinc-300",
+        )}
+      >
         <div className="flex items-center flex-wrap gap-1 font-medium">
           {isHud && toast.timestamp && (
             <span
@@ -614,7 +648,6 @@ export interface TacticalHUDToastProps {
 export function TacticalHUDToast({
   message,
   timestamp,
-  type = "info",
   action,
   onDismiss,
   className = "",
@@ -642,20 +675,48 @@ export function TacticalHUDToast({
       )}
     >
       {/* Corner brackets */}
-      <span className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none" aria-hidden="true">⌜</span>
-      <span className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none" aria-hidden="true">⌝</span>
-      <span className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none" aria-hidden="true">⌞</span>
-      <span className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none" aria-hidden="true">⌟</span>
+      <span
+        className="absolute top-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
+        aria-hidden="true"
+      >
+        ⌜
+      </span>
+      <span
+        className="absolute top-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
+        aria-hidden="true"
+      >
+        ⌝
+      </span>
+      <span
+        className="absolute bottom-0.5 left-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
+        aria-hidden="true"
+      >
+        ⌞
+      </span>
+      <span
+        className="absolute bottom-0.5 right-1 font-mono text-emerald-400 text-xs select-none pointer-events-none"
+        aria-hidden="true"
+      >
+        ⌟
+      </span>
 
       {/* Emerald status dot */}
-      <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true" data-testid="hud-emerald-status-dot">
+      <span
+        className="relative flex h-2.5 w-2.5 shrink-0"
+        aria-hidden="true"
+        data-testid="hud-emerald-status-dot"
+      >
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_#10b981]" />
       </span>
 
       <div className="flex-1 flex flex-col items-start text-sm text-emerald-300">
         <div className="flex items-center flex-wrap gap-1 font-medium">
-          <span className="text-[11px] font-mono text-emerald-400 font-bold tracking-wider select-none" aria-hidden="true" data-testid="hud-telemetry-timestamp">
+          <span
+            className="text-[11px] font-mono text-emerald-400 font-bold tracking-wider select-none"
+            aria-hidden="true"
+            data-testid="hud-telemetry-timestamp"
+          >
             [{currentTimestamp}]
           </span>
           <span>{message}</span>

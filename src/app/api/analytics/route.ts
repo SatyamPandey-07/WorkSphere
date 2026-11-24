@@ -105,23 +105,24 @@ export async function GET() {
 
     const u = user as any;
 
-    // 1.5. Calculate Gamification Data
-    // A. Fetch all ratings to determine night reviews and speedtests
-    const allRatings = await prisma.venueRating.findMany({
-      where: { userId },
-      select: {
-        createdAt: true,
-        wifiSpeed: true,
-      },
-    });
-
-    // B. Fetch all unique cafe bookings
-    const cafeBookings = await prisma.booking.findMany({
-      where: {
-        userId,
-        status: "CONFIRMED",
-        venue: {
-          category: "cafe",
+    // 1.5. Calculate Gamification Data via Database Aggregates
+    // Execute database-level aggregations in parallel instead of unbounded in-memory table scans
+    const [
+      reviewsCount,
+      speedtestsCount,
+      uniqueCafeGroups,
+      venuesAddedCount,
+      nightOwlRatings,
+    ] = await Promise.all([
+      // A. Database count of all user ratings
+      prisma.venueRating.count({
+        where: { userId },
+      }),
+      // B. Database count of verified speedtests (wifiSpeed > 0)
+      prisma.venueRating.count({
+        where: {
+          userId,
+          wifiSpeed: { gt: 0 },
         },
       },
       select: {

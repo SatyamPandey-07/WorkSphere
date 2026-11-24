@@ -278,6 +278,15 @@ export async function GET(request: NextRequest) {
       venues = [{ id, name: "Workspace Venue", address: "Sample Address" }];
     }
 
+    const minWifiSpeedParam = searchParams.get("minWifiSpeed");
+    if (minWifiSpeedParam && !isNaN(Number(minWifiSpeedParam))) {
+      const minSpeed = parseFloat(minWifiSpeedParam);
+      venues = venues.filter((v: any) => {
+        const speed = v.wifiSpeed ?? v.amenities?.wifiSpeed;
+        return typeof speed === "number" && speed >= minSpeed;
+      });
+    }
+
     // 4. Return response with caching headers
     return NextResponse.json(
       {

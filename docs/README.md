@@ -82,6 +82,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Voice Search](./features/VOICE_SEARCH.md) — voice search feature documentation.
 - [Seating Occupancy Forecasting](./features/seating-occupancy-forecasting.md) — seating occupancy forecasting functionality.
 - [Nomad Passport](./features/nomad-passport.md) — Nomad Passport feature and product workflow.
+- [Gamification XP & Badge Verification Guide](./badges/GAMIFICATION_XP_GUIDE.md) — XP earning formulas, Night Owl timezone normalization, and WiFi Scout speed test verification criteria.
 
 ## Audio & Acoustics
 

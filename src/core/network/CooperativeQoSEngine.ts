@@ -9,16 +9,21 @@ export interface QoSPolicy {
     fairShareFactor: number; // 0.0 to 1.0 (e.g., 0.8 = 80% of equal share)
 }
 
+export const BITS_PER_BYTE = 8;
+export const MS_PER_SECOND = 1000;
+export const BPS_TO_BYTES_PER_MS = BITS_PER_BYTE * MS_PER_SECOND; // 8000 bps = 1 byte/ms = 1000 bytes/sec
+
 export class TokenBucket {
     private tokens: number;
     private maxTokens: number;
-    private refillRate: number; // Tokens per millisecond
+    private refillRateBytesPerMs: number; // Tokens (bytes) per millisecond
     private lastRefill: number;
 
     constructor(capacityBytes: number, refillRateBps: number) {
         this.maxTokens = capacityBytes;
         this.tokens = capacityBytes;
-        this.refillRate = refillRateBps / 1000; // Convert bps to bytes/ms
+        // 8 bits per byte, 1000 ms per second -> divide bps by 8000 to get bytes/ms
+        this.refillRateBytesPerMs = refillRateBps / BPS_TO_BYTES_PER_MS;
         this.lastRefill = Date.now();
     }
 
@@ -32,13 +37,30 @@ export class TokenBucket {
     }
 
     public setRate(newRateBps: number): void {
-        this.refillRate = newRateBps / 1000;
+        this.refillRateBytesPerMs = newRateBps / BPS_TO_BYTES_PER_MS;
+    }
+
+    public get refillRate(): number {
+        return this.refillRateBytesPerMs;
+    }
+
+    public getRefillRateBytesPerMs(): number {
+        return this.refillRateBytesPerMs;
+    }
+
+    public getRefillRateBps(): number {
+        return this.refillRateBytesPerMs * BPS_TO_BYTES_PER_MS;
+    }
+
+    public getTokens(): number {
+        this.refill();
+        return this.tokens;
     }
 
     private refill(): void {
         const now = Date.now();
-        const elapsed = now - this.lastRefill;
-        this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRate);
+        const elapsed = Math.max(0, now - this.lastRefill);
+        this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRateBytesPerMs);
         this.lastRefill = now;
     }
 }
@@ -86,6 +108,10 @@ export class CooperativeQoSEngine {
 
     public getFairShareRate(): number {
         return this.calculateFairShareRate();
+    }
+
+    public getBucket(peerId: string): TokenBucket | undefined {
+        return this.buckets.get(peerId);
     }
 
     /**

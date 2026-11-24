@@ -26,32 +26,34 @@ import type { GuestInfo, InviteResult } from "./types";
 
 /**
  * Create BookingGuest records in the database.
- * Uses raw SQL via Prisma $executeRaw since the BookingGuest model
- * has been added to the schema. Falls back to creating records directly.
+ * Normalizes email addresses and executes insertions within a transaction
+ * to prevent partial writes.
  */
 async function createGuestRecords(
   bookingId: string,
   guests: GuestInfo[],
 ): Promise<Array<{ id: string; email: string; name?: string | null }>> {
-  const records = await Promise.all(
-    guests.map((guest) =>
-      prisma.bookingGuest.create({
-        data: {
-          bookingId,
-          email: guest.email,
-          name: guest.name || null,
-          phone: guest.phone || null,
-          status: "PENDING",
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-        },
-      }),
-    ),
+  const operations = guests.map((guest) =>
+    prisma.bookingGuest.create({
+      data: {
+        bookingId,
+        email: guest.email.trim().toLowerCase(),
+        name: guest.name || null,
+        phone: guest.phone || null,
+        status: "PENDING",
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+      },
+    }),
   );
-  return records;
+
+  if (typeof prisma.$transaction === "function") {
+    return await prisma.$transaction(operations);
+  }
+  return await Promise.all(operations);
 }
 
 /**

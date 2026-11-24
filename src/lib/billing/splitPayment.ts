@@ -7,7 +7,8 @@
 
 import crypto from "crypto";
 
-const SPLIT_SECRET = process.env.SPLIT_PAYMENT_SECRET || "worksphere-split-secret-key-2026";
+const SPLIT_SECRET =
+  process.env.SPLIT_PAYMENT_SECRET || "worksphere-split-secret-key-2026";
 
 export interface GuestShare {
   guestId: string;
@@ -52,7 +53,9 @@ export interface SplitTokenPayload {
 /**
  * Creates a signed, tamper-proof payment token for a guest.
  */
-export function generateSplitPaymentToken(payload: Omit<SplitTokenPayload, "expiresAt"> & { expiresInHours?: number }): string {
+export function generateSplitPaymentToken(
+  payload: Omit<SplitTokenPayload, "expiresAt"> & { expiresInHours?: number },
+): string {
   const expiresInHours = payload.expiresInHours ?? 72;
   const expiresAt = Date.now() + expiresInHours * 60 * 60 * 1000;
 
@@ -82,7 +85,9 @@ export function generateSplitPaymentToken(payload: Omit<SplitTokenPayload, "expi
 /**
  * Verifies and decodes a split payment token.
  */
-export function verifySplitPaymentToken(token: string): SplitTokenPayload | null {
+export function verifySplitPaymentToken(
+  token: string,
+): SplitTokenPayload | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 2) return null;
@@ -117,6 +122,8 @@ export function verifySplitPaymentToken(token: string): SplitTokenPayload | null
 
 /**
  * Calculates even or weighted split amounts.
+ * Uses integer minor units (cents) to avoid floating-point drift
+ * and ensures total allocations reconcile exactly to the total bill amount.
  */
 export function calculateSplitBill({
   bookingId,
@@ -134,23 +141,60 @@ export function calculateSplitBill({
   time: string;
   totalAmount: number;
   currency?: string;
-  guests: Array<{ id: string; email: string; name?: string; paid?: boolean; customAmount?: number }>;
+  guests: Array<{
+    id: string;
+    email: string;
+    name?: string;
+    paid?: boolean;
+    customAmount?: number;
+  }>;
   origin?: string;
 }): SplitBillSummary {
+  if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+    throw new Error("totalAmount must be a finite non-negative number");
+  }
+
+  const totalCents = Math.round(totalAmount * 100);
   const participantCount = guests.length + 1; // Host + Guests
-  const hasCustomAmounts = guests.some((g) => typeof g.customAmount === "number");
+  const hasCustomAmounts = guests.some(
+    (g) => typeof g.customAmount === "number",
+  );
 
   let guestAmounts: number[];
   let hostShare: number;
 
   if (hasCustomAmounts) {
-    guestAmounts = guests.map((g) => g.customAmount ?? Math.round((totalAmount / participantCount) * 100) / 100);
-    const guestsSum = guestAmounts.reduce((a, b) => a + b, 0);
-    hostShare = Math.max(0, Math.round((totalAmount - guestsSum) * 100) / 100);
+    const guestCents: number[] = guests.map((g) => {
+      if (typeof g.customAmount === "number") {
+        if (!Number.isFinite(g.customAmount) || g.customAmount < 0) {
+          throw new Error(
+            `Custom amount for guest ${g.id} must be a finite non-negative number`,
+          );
+        }
+        return Math.round(g.customAmount * 100);
+      }
+      return Math.round(totalCents / participantCount);
+    });
+
+    const guestsSumCents = guestCents.reduce((a, b) => a + b, 0);
+    if (guestsSumCents > totalCents) {
+      throw new Error(
+        `Sum of custom guest amounts ($${(guestsSumCents / 100).toFixed(2)}) exceeds total bill amount ($${(totalCents / 100).toFixed(2)})`,
+      );
+    }
+
+    const hostShareCents = totalCents - guestsSumCents;
+    guestAmounts = guestCents.map((cents) => cents / 100);
+    hostShare = hostShareCents / 100;
   } else {
-    const evenShare = Math.round((totalAmount / participantCount) * 100) / 100;
-    guestAmounts = guests.map(() => evenShare);
-    hostShare = Math.round((totalAmount - evenShare * guests.length) * 100) / 100;
+    // Equal split with integer cents precision ensuring exact reconciliation
+    const baseShareCents = Math.floor(totalCents / participantCount);
+    const remainderCents = totalCents - baseShareCents * participantCount;
+    const guestShareCents = baseShareCents;
+    const hostShareCents = baseShareCents + remainderCents;
+
+    guestAmounts = guests.map(() => guestShareCents / 100);
+    hostShare = hostShareCents / 100;
   }
 
   const guestShares: GuestShare[] = guests.map((guest, idx) => {
@@ -175,7 +219,9 @@ export function calculateSplitBill({
     );
     const whatsapp = `https://wa.me/?text=${waText}`;
 
-    const mailSubj = encodeURIComponent(`Workspace Guest Pass & Split Bill - ${venueName}`);
+    const mailSubj = encodeURIComponent(
+      `Workspace Guest Pass & Split Bill - ${venueName}`,
+    );
     const mailBody = encodeURIComponent(
       `Hi ${guestLabel},\n\nYou've been invited to join a workspace booking at ${venueName} on ${date} at ${time}.\n\nYour split share is $${amount.toFixed(2)} ${currency}.\nClick here to complete payment and unlock your digital Guest Pass with WiFi credentials:\n${paymentUrl}\n\nSee you there!`,
     );

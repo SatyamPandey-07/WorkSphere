@@ -264,6 +264,12 @@ export async function GET(req: NextRequest) {
       if (isEnabled("wifi") || selectedAmenities.has("wifi")) {
         andConditions.push({ wifiQuality: { gte: 3 } });
       }
+      const minWifiSpeedParam = searchParams.get("minWifiSpeed");
+      if (minWifiSpeedParam !== null && !isNaN(Number(minWifiSpeedParam))) {
+        andConditions.push({
+          wifiSpeed: { gte: parseFloat(minWifiSpeedParam) },
+        });
+      }
       if (isEnabled("outlets") || selectedAmenities.has("outlets")) {
         andConditions.push({ hasOutlets: true });
       }
@@ -470,6 +476,7 @@ export async function GET(req: NextRequest) {
       "maxLng",
       "semanticWeight",
       "fullTextWeight",
+      "minWifiSpeed",
     ];
     for (const key of keys) {
       const val = searchParams.get(key);
@@ -609,6 +616,11 @@ export async function GET(req: NextRequest) {
       } else if (wifiSpeedBand === "ultra") {
         where.wifiSpeed = { gte: 100 };
       }
+    }
+
+    const minWifiSpeed = searchParams.get("minWifiSpeed");
+    if (minWifiSpeed !== null && !isNaN(Number(minWifiSpeed))) {
+      where.wifiSpeed = { gte: parseFloat(minWifiSpeed) };
     }
 
     if (hasPhoneBooths) {

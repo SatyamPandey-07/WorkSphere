@@ -140,6 +140,42 @@ export class SchnorrThresholdAggregator {
     return p.x === 0n && p.y === 0n;
   }
 
+  /**
+   * Validates whether an ECPoint is a valid point on the secp256k1 curve.
+   * Checks that coordinates are non-negative bigints, strictly less than SECP256K1_P,
+   * satisfy y^2 = x^3 + 7 (mod p), and optionally rejects the point at infinity.
+   */
+  public static isValidPoint(p: ECPoint, allowInfinity = false): boolean {
+    if (!p || typeof p.x !== "bigint" || typeof p.y !== "bigint") {
+      return false;
+    }
+    if (SchnorrThresholdAggregator.isInfinity(p)) {
+      return allowInfinity;
+    }
+    if (p.x < 0n || p.x >= SECP256K1_P || p.y < 0n || p.y >= SECP256K1_P) {
+      return false;
+    }
+    const y2 = SchnorrThresholdAggregator.mod(p.y * p.y, SECP256K1_P);
+    const x3Plus7 = SchnorrThresholdAggregator.mod(
+      p.x * p.x * p.x + 7n,
+      SECP256K1_P,
+    );
+    return y2 === x3Plus7;
+  }
+
+  /**
+   * Asserts that a point is valid on the secp256k1 curve, throwing an Error if invalid.
+   */
+  public static validatePoint(
+    p: ECPoint,
+    context = "Point",
+    allowInfinity = false,
+  ): void {
+    if (!SchnorrThresholdAggregator.isValidPoint(p, allowInfinity)) {
+      throw new Error(`Invalid secp256k1 point for ${context}.`);
+    }
+  }
+
   public static pointAdd(p1: ECPoint, p2: ECPoint): ECPoint {
     if (SchnorrThresholdAggregator.isInfinity(p1)) return p2;
     if (SchnorrThresholdAggregator.isInfinity(p2)) return p1;
@@ -225,6 +261,18 @@ export class SchnorrThresholdAggregator {
   } {
     if (participants.length === 0)
       throw new Error("At least one participant required.");
+
+    // Validate each participant's public key
+    for (const part of participants) {
+      if (!part || !part.id || !part.publicKey) {
+        throw new Error("Invalid participant format.");
+      }
+      SchnorrThresholdAggregator.validatePoint(
+        part.publicKey,
+        `participant ${part.id} public key`,
+        false,
+      );
+    }
 
     // Sort keys lexicographically by x-coordinate hex representation
     const sorted = [...participants].sort((a, b) =>

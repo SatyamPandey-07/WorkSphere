@@ -1,12 +1,18 @@
-﻿'use client';
+﻿"use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpDown, Monitor } from 'lucide-react';
-import { buildVenueSearchParams } from '@/lib/venues/searchQuery';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ArrowUpDown, Monitor } from "lucide-react";
+import { buildVenueSearchParams } from "@/lib/venues/searchQuery";
 import {
   useSearchPreferences,
   ALLOWED_RADIUS_OPTIONS,
-} from '@/hooks/useSearchPreferences';
+} from "@/hooks/useSearchPreferences";
 
 export interface VenueFilterOption {
   id: string;
@@ -40,20 +46,25 @@ export interface VenueFilterBarProps {
 }
 
 export const DEFAULT_VENUE_AMENITY_FILTERS: VenueFilterOption[] = [
-  { id: 'dogFriendly', label: 'Pet Friendly', paramKey: 'dogFriendly' },
-  { id: 'veganOptions', label: 'Vegan Options', paramKey: 'veganOptions' },
-  { id: 'outdoorPatio', label: 'Outdoor Seating', paramKey: 'outdoorPatio' },
+  { id: "dogFriendly", label: "Pet Friendly", paramKey: "dogFriendly" },
+  { id: "veganOptions", label: "Vegan Options", paramKey: "veganOptions" },
+  { id: "outdoorPatio", label: "Outdoor Seating", paramKey: "outdoorPatio" },
   {
-    id: 'standing_desks',
-    label: 'Standing Desk',
-    paramKey: 'standing_desks',
+    id: "standing_desks",
+    label: "Standing Desk",
+    paramKey: "standing_desks",
     icon: ArrowUpDown,
   },
   {
-    id: 'external_monitors',
-    label: 'External Monitor (4K/USB-C)',
-    paramKey: 'external_monitors',
+    id: "external_monitors",
+    label: "External Monitor (4K/USB-C)",
+    paramKey: "external_monitors",
     icon: Monitor,
+  },
+  {
+    id: "lightning_wifi",
+    label: "⚡ 100+ Mbps",
+    paramKey: "minWifiSpeed",
   },
 ];
 
@@ -62,11 +73,11 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
   selectedIds,
   onToggleFilter,
   searchQuery,
-  existingSearchParams = '',
+  existingSearchParams = "",
   resultCount,
   announcementDebounceMs = 200,
   onQueryParamsChange,
-  className = '',
+  className = "",
   radius: propRadius,
   onRadiusChange,
   showRadiusFilter = true,
@@ -82,12 +93,18 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
     const params = new URLSearchParams(existingSearchParams);
     filters.forEach((f) => {
       const val = params.get(f.paramKey);
-      if (val === 'true' || val === '1') initial.add(f.id);
+      if (
+        val === "true" ||
+        val === "1" ||
+        (f.paramKey === "minWifiSpeed" && (val === "100" || Number(val) >= 100))
+      ) {
+        initial.add(f.id);
+      }
     });
-    const amenitiesParam = params.get('amenities');
+    const amenitiesParam = params.get("amenities");
     if (amenitiesParam) {
       amenitiesParam
-        .split(',')
+        .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
         .forEach((a) => initial.add(a));
@@ -100,7 +117,7 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
   }, [selectedIds, internalSelected]);
 
   const hasMountedRef = useRef(false);
-  const [announcement, setAnnouncement] = useState('');
+  const [announcement, setAnnouncement] = useState("");
 
   useEffect(() => {
     if (!hasMountedRef.current) {
@@ -108,22 +125,25 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
       return;
     }
 
-    const timer = window.setTimeout(() => {
-      if (typeof resultCount === 'number' && Number.isFinite(resultCount)) {
-        setAnnouncement(
-          resultCount === 0
-            ? 'No venues match the selected filters.'
-            : `${resultCount} venues match the selected filters.`
-        );
-        return;
-      }
+    const timer = window.setTimeout(
+      () => {
+        if (typeof resultCount === "number" && Number.isFinite(resultCount)) {
+          setAnnouncement(
+            resultCount === 0
+              ? "No venues match the selected filters."
+              : `${resultCount} venues match the selected filters.`,
+          );
+          return;
+        }
 
-      setAnnouncement(
-        activeSet.size === 0
-          ? 'All amenity filters cleared.'
-          : `${activeSet.size} amenity filter${activeSet.size === 1 ? '' : 's'} active.`
-      );
-    }, Math.max(0, announcementDebounceMs));
+        setAnnouncement(
+          activeSet.size === 0
+            ? "All amenity filters cleared."
+            : `${activeSet.size} amenity filter${activeSet.size === 1 ? "" : "s"} active.`,
+        );
+      },
+      Math.max(0, announcementDebounceMs),
+    );
 
     return () => window.clearTimeout(timer);
   }, [activeSet, searchQuery, resultCount, announcementDebounceMs]);
@@ -144,17 +164,27 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
 
       onToggleFilter?.(item.id, nextActive);
 
+      const isLightningWifiActive =
+        nextSet.has("lightning_wifi") ||
+        nextSet.has("minWifiSpeed") ||
+        filters.some((f) => f.paramKey === "minWifiSpeed" && nextSet.has(f.id));
+
       const params = buildVenueSearchParams(
         {
           q: searchQuery,
           amenities: Array.from(nextSet),
+          minWifiSpeed: isLightningWifiActive ? 100 : undefined,
         },
-        existingSearchParams
+        existingSearchParams,
       );
 
       filters.forEach((f) => {
         if (nextSet.has(f.id)) {
-          params.set(f.paramKey, 'true');
+          if (f.paramKey === "minWifiSpeed") {
+            params.set("minWifiSpeed", "100");
+          } else {
+            params.set(f.paramKey, "true");
+          }
         } else {
           params.delete(f.paramKey);
         }
@@ -170,7 +200,7 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
       existingSearchParams,
       filters,
       onQueryParamsChange,
-    ]
+    ],
   );
 
   return (
@@ -200,15 +230,15 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
             data-testid={`venue-filter-chip-${item.id}`}
             onClick={() => handleToggle(item)}
             onKeyDown={(e) => {
-              if (e.key === ' ' || e.key === 'Enter') {
+              if (e.key === " " || e.key === "Enter") {
                 e.preventDefault();
                 handleToggle(item);
               }
             }}
             className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
               isActive
-                ? 'border-indigo-600 bg-indigo-600 text-white shadow-xs'
-                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                ? "border-indigo-600 bg-indigo-600 text-white shadow-xs"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
             }`}
           >
             {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
@@ -235,7 +265,11 @@ export const VenueFilterBar: React.FC<VenueFilterBarProps> = ({
           >
             {ALLOWED_RADIUS_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
-                {opt === 0 ? 'Any distance' : opt < 1 ? `${opt * 1000}m` : `${opt}km`}
+                {opt === 0
+                  ? "Any distance"
+                  : opt < 1
+                    ? `${opt * 1000}m`
+                    : `${opt}km`}
               </option>
             ))}
           </select>

@@ -23,6 +23,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 - [Seat Hold Lease Extension API](./api/SEAT_HOLD_LEASE_EXTENSION.md) — seat-lock lease extension, fencing-token validation, and API response behavior.
 - [Anonymous ZKP Check-In OpenAPI 3.1 Specification](./api/zkp-checkin.openapi.yaml) — anonymous check-in proof and response contract.
 - [Venue Amenity Voting OpenAPI 3.1 Specification](./api/amenity-votes.openapi.yaml) — amenity metrics and vote submission contract.
+- [Prisma Database Aggregate Query Patterns](./api/PRISMA_AGGREGATION_GUIDE.md) — native database aggregates (`count`, `groupBy`), parallel execution with `Promise.all`, and index coverage for analytics endpoints.
 
 - [Causal Vector Clock Specification](./architecture/CAUSAL_VECTOR_CLOCK_SPEC.md) — application-level vector clock semantics, conflict ordering, and safe pruning requirements.
 

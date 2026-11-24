@@ -1,10 +1,10 @@
-/**
+﻿/**
  * AcousticFilterEngine
  * Web Audio BiquadFilterNode preset engine for real-time background noise suppression.
  *
  * Implements typed presets:
  * - 'off': Direct audio bypass without altering the original signal.
- * - 'voice-focus': Bandpass filtering targeting the 300–3400 Hz human voice band
+ * - 'voice-focus': Bandpass filtering targeting the 300-3400 Hz human voice band
  *   (approximated using BiquadFilterNode bandpass centered at ~1850 Hz, Q=1.0).
  *   Note: A single second-order bandpass filter centered at ~1850 Hz with Q=1.0 provides
  *   smooth roll-off below and above the voice band; while commonly used for telephony/speech
@@ -42,7 +42,10 @@ export function clampFrequency(freq: number, sampleRate = 48000): number {
   if (!Number.isFinite(freq) || Number.isNaN(freq)) {
     return 1000;
   }
-  const maxSafeFreq = Math.min(MAX_FILTER_FREQ, Math.max(MIN_FILTER_FREQ, (sampleRate / 2) - 1));
+  const maxSafeFreq = Math.min(
+    MAX_FILTER_FREQ,
+    Math.max(MIN_FILTER_FREQ, sampleRate / 2 - 1),
+  );
   return Math.min(maxSafeFreq, Math.max(MIN_FILTER_FREQ, freq));
 }
 
@@ -59,8 +62,13 @@ export function clampQ(q: number): number {
 /**
  * Type guard to validate whether an arbitrary value is an AcousticFilterPreset.
  */
-export function isValidAcousticFilterPreset(value: unknown): value is AcousticFilterPreset {
-  return typeof value === "string" && (ACOUSTIC_FILTER_PRESETS as readonly string[]).includes(value);
+export function isValidAcousticFilterPreset(
+  value: unknown,
+): value is AcousticFilterPreset {
+  return (
+    typeof value === "string" &&
+    (ACOUSTIC_FILTER_PRESETS as readonly string[]).includes(value)
+  );
 }
 
 export class AcousticFilterEngine {
@@ -69,6 +77,24 @@ export class AcousticFilterEngine {
 
   private currentPreset: AcousticFilterPreset = "off";
   private isDisposed = false;
+  private readonly handleVisibilityChange = (): void => {
+    if (
+      this.isDisposed ||
+      typeof document === "undefined" ||
+      document.visibilityState !== "visible" ||
+      this.ctx.state !== "suspended"
+    ) {
+      return;
+    }
+
+    try {
+      void this.ctx.resume().catch(() => {
+        // A user gesture may still be required by the browser.
+      });
+    } catch {
+      // Handle synchronous resume failures gracefully.
+    }
+  };
 
   // Audio Node Graph
   public readonly inputNode: GainNode;
@@ -93,18 +119,24 @@ export class AcousticFilterEngine {
 
   // Tracks connected source stream / node for cleanup tracking
   private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private destinationNode: AudioNode | MediaStreamAudioDestinationNode | null = null;
+  private destinationNode: AudioNode | MediaStreamAudioDestinationNode | null =
+    null;
 
   constructor(
     audioContext: AudioContext,
     options: AcousticFilterEngineOptions = {},
   ) {
     if (!audioContext || typeof audioContext.createGain !== "function") {
-      throw new Error("A valid AudioContext instance is required to initialize AcousticFilterEngine.");
+      throw new Error(
+        "A valid AudioContext instance is required to initialize AcousticFilterEngine.",
+      );
     }
 
     this.ctx = audioContext;
-    this.transitionTimeConstant = Math.max(0.005, options.transitionTimeConstant ?? 0.05);
+    this.transitionTimeConstant = Math.max(
+      0.005,
+      options.transitionTimeConstant ?? 0.05,
+    );
 
     // Master input and output nodes
     this.inputNode = this.ctx.createGain();
@@ -149,11 +181,20 @@ export class AcousticFilterEngine {
 
     this.setupAudioGraph();
 
-    const initial = options.initialPreset && isValidAcousticFilterPreset(options.initialPreset)
-      ? options.initialPreset
-      : "off";
+    const initial =
+      options.initialPreset &&
+      isValidAcousticFilterPreset(options.initialPreset)
+        ? options.initialPreset
+        : "off";
 
     this.applyPresetInstant(initial);
+
+    if (typeof document !== "undefined") {
+      document.addEventListener(
+        "visibilitychange",
+        this.handleVisibilityChange,
+      );
+    }
   }
 
   /**
@@ -223,7 +264,9 @@ export class AcousticFilterEngine {
     if (isValidAcousticFilterPreset(preset)) {
       targetPreset = preset;
     } else {
-      console.warn(`[AcousticFilterEngine] Invalid preset "${preset}", falling back to "off".`);
+      console.warn(
+        `[AcousticFilterEngine] Invalid preset "${preset}", falling back to "off".`,
+      );
       targetPreset = "off";
     }
 
@@ -265,7 +308,9 @@ export class AcousticFilterEngine {
    */
   public connectSourceStream(stream: MediaStream): MediaStreamAudioSourceNode {
     if (this.isDisposed) {
-      throw new Error("Cannot connect source stream to a disposed AcousticFilterEngine.");
+      throw new Error(
+        "Cannot connect source stream to a disposed AcousticFilterEngine.",
+      );
     }
     if (this.sourceNode) {
       try {
@@ -285,7 +330,9 @@ export class AcousticFilterEngine {
    */
   public connectSourceNode(node: AudioNode): void {
     if (this.isDisposed) {
-      throw new Error("Cannot connect source node to a disposed AcousticFilterEngine.");
+      throw new Error(
+        "Cannot connect source node to a disposed AcousticFilterEngine.",
+      );
     }
     node.connect(this.inputNode);
   }
@@ -293,9 +340,13 @@ export class AcousticFilterEngine {
   /**
    * Connects the filter engine output to a destination AudioNode or MediaStreamDestinationNode.
    */
-  public connectDestination(destination: AudioNode | MediaStreamAudioDestinationNode): void {
+  public connectDestination(
+    destination: AudioNode | MediaStreamAudioDestinationNode,
+  ): void {
     if (this.isDisposed) {
-      throw new Error("Cannot connect destination to a disposed AcousticFilterEngine.");
+      throw new Error(
+        "Cannot connect destination to a disposed AcousticFilterEngine.",
+      );
     }
     if (this.destinationNode) {
       try {
@@ -311,7 +362,9 @@ export class AcousticFilterEngine {
    */
   public createOutputStream(): MediaStream {
     if (this.isDisposed) {
-      throw new Error("Cannot create output stream from a disposed AcousticFilterEngine.");
+      throw new Error(
+        "Cannot create output stream from a disposed AcousticFilterEngine.",
+      );
     }
     const dest = this.ctx.createMediaStreamDestination();
     this.connectDestination(dest);
@@ -324,6 +377,13 @@ export class AcousticFilterEngine {
   public dispose(): void {
     if (this.isDisposed) return;
     this.isDisposed = true;
+
+    if (typeof document !== "undefined") {
+      document.removeEventListener(
+        "visibilitychange",
+        this.handleVisibilityChange,
+      );
+    }
 
     try {
       if (this.sourceNode) {

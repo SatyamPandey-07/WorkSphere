@@ -1,5 +1,11 @@
 ﻿export type AmbientSoundType = 'white' | 'pink' | 'rain';
 
+export interface LayerMixLevels {
+  white: number;
+  pink: number;
+  rain: number;
+}
+
 export interface AudioContextLike {
   sampleRate: number;
   currentTime: number;
@@ -20,6 +26,7 @@ export interface AudioContextLike {
 export interface NoiseSynthesizerOptions {
   soundType?: AmbientSoundType;
   volume?: number;
+  layerLevels?: Partial<LayerMixLevels>;
   muted?: boolean;
   bufferDurationSeconds?: number;
   audioContextFactory?: () => AudioContextLike;
@@ -28,6 +35,17 @@ export interface NoiseSynthesizerOptions {
 export function clampVolume(value: number): number {
   if (!Number.isFinite(value)) return 0.5;
   return Math.min(1, Math.max(0, value));
+}
+
+export function normalizeLayerLevels(
+  levels?: Partial<LayerMixLevels>,
+  activePreset: AmbientSoundType = 'pink'
+): LayerMixLevels {
+  return {
+    white: clampVolume(levels?.white ?? (activePreset === 'white' ? 0.8 : 0)),
+    pink: clampVolume(levels?.pink ?? (activePreset === 'pink' ? 0.8 : 0)),
+    rain: clampVolume(levels?.rain ?? (activePreset === 'rain' ? 0.8 : 0)),
+  };
 }
 
 export function generateNoiseSamples(
@@ -103,14 +121,20 @@ function getDefaultAudioContextFactory(): () => AudioContextLike {
   };
 }
 
+interface LayerGraph {
+  source: AudioBufferSourceNode;
+  filter: BiquadFilterNode;
+  gain: GainNode;
+}
+
 export class NoiseSynthesizer {
   private ctx: AudioContextLike | null = null;
-  private sourceNode: AudioBufferSourceNode | null = null;
-  private filterNode: BiquadFilterNode | null = null;
-  private gainNode: GainNode | null = null;
+  private layers: Partial<Record<AmbientSoundType, LayerGraph>> = {};
+  private masterGain: GainNode | null = null;
 
   private soundType: AmbientSoundType;
   private volume: number;
+  private layerLevels: LayerMixLevels;
   private muted: boolean;
   private isPlaying = false;
   private readonly bufferDurationSeconds: number;
@@ -120,6 +144,7 @@ export class NoiseSynthesizer {
   constructor(options: NoiseSynthesizerOptions = {}) {
     this.soundType = options.soundType ?? 'pink';
     this.volume = clampVolume(options.volume ?? 0.5);
+    this.layerLevels = normalizeLayerLevels(options.layerLevels, this.soundType);
     this.muted = Boolean(options.muted);
     this.bufferDurationSeconds = Math.max(1, options.bufferDurationSeconds ?? 3);
     this.createContext =
@@ -173,78 +198,99 @@ export class NoiseSynthesizer {
     return this.ctx;
   }
 
-  private applyGain(): void {
-    if (!this.gainNode) return;
-    const effectiveGain = this.muted ? 0 : clampVolume(this.volume);
-    if (this.ctx && this.gainNode.gain && 'setTargetAtTime' in this.gainNode.gain) {
-      this.gainNode.gain.setTargetAtTime(
-        effectiveGain,
-        this.ctx.currentTime ?? 0,
-        0.015
-      );
-    } else if (this.gainNode.gain) {
-      this.gainNode.gain.value = effectiveGain;
+  private setParamSmooth(param: AudioParam | undefined, target: number): void {
+    if (!param) return;
+    if (this.ctx && 'setTargetAtTime' in param) {
+      param.setTargetAtTime(target, this.ctx.currentTime ?? 0, 0.02);
+    } else {
+      param.value = target;
     }
   }
 
-  private stopSourceOnly(): void {
-    if (this.sourceNode) {
+  private applyGains(): void {
+    const effectiveMaster = this.muted ? 0 : clampVolume(this.volume);
+    this.setParamSmooth(this.masterGain?.gain, effectiveMaster);
+
+    (['white', 'pink', 'rain'] as const).forEach((type) => {
+      const layer = this.layers[type];
+      if (!layer) return;
+      const level = this.muted ? 0 : clampVolume(this.layerLevels[type]);
+      this.setParamSmooth(layer.gain.gain, level);
+    });
+  }
+
+  private stopLayersOnly(): void {
+    (['white', 'pink', 'rain'] as const).forEach((type) => {
+      const layer = this.layers[type];
+      if (!layer) return;
       try {
-        this.sourceNode.stop();
+        layer.source.stop();
       } catch {
         // Already stopped
       }
       try {
-        this.sourceNode.disconnect();
+        layer.source.disconnect();
+        layer.filter.disconnect();
+        layer.gain.disconnect();
       } catch {
         // Already disconnected
       }
-      this.sourceNode = null;
-    }
+      delete this.layers[type];
+    });
   }
 
-  private buildLoopingGraph(ctx: AudioContextLike): void {
-    this.stopSourceOnly();
+  private buildMixerGraph(ctx: AudioContextLike): void {
+    this.stopLayersOnly();
 
     const sampleRate = ctx.sampleRate || 44100;
     const frameCount = Math.floor(sampleRate * this.bufferDurationSeconds);
-    const buffer = ctx.createBuffer(1, frameCount, sampleRate);
-    const samples = generateNoiseSamples(this.soundType, frameCount, sampleRate);
 
-    if (typeof buffer.copyToChannel === 'function') {
-      buffer.copyToChannel(samples, 0);
-    } else if (typeof buffer.getChannelData === 'function') {
-      buffer.getChannelData(0).set(samples);
-    }
+    const master = ctx.createGain();
+    master.connect(ctx.destination);
+    this.masterGain = master;
 
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
+    (['white', 'pink', 'rain'] as const).forEach((type) => {
+      const buffer = ctx.createBuffer(1, frameCount, sampleRate);
+      const samples = generateNoiseSamples(type, frameCount, sampleRate);
 
-    const filter = ctx.createBiquadFilter();
-    if (this.soundType === 'rain') {
-      filter.type = 'lowpass';
-      filter.frequency.value = 1100;
-    } else if (this.soundType === 'pink') {
-      filter.type = 'lowshelf';
-      filter.frequency.value = 600;
-    } else {
-      filter.type = 'allpass';
-      filter.frequency.value = 1000;
-    }
+      if (typeof buffer.copyToChannel === 'function') {
+        buffer.copyToChannel(samples, 0);
+      } else if (typeof buffer.getChannelData === 'function') {
+        buffer.getChannelData(0).set(samples);
+      }
 
-    const gain = ctx.createGain();
-    this.gainNode = gain;
-    this.filterNode = filter;
-    this.sourceNode = source;
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
 
-    this.applyGain();
+      const filter = ctx.createBiquadFilter();
+      if (type === 'rain') {
+        filter.type = 'lowpass';
+        filter.frequency.value = 1100;
+      } else if (type === 'pink') {
+        filter.type = 'lowshelf';
+        filter.frequency.value = 600;
+      } else {
+        filter.type = 'allpass';
+        filter.frequency.value = 1000;
+      }
 
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
+      const layerGain = ctx.createGain();
+      layerGain.gain.value = this.layerLevels[type];
 
-    source.start();
+      source.connect(filter);
+      filter.connect(layerGain);
+      layerGain.connect(master);
+      source.start();
+
+      this.layers[type] = {
+        source,
+        filter,
+        gain: layerGain,
+      };
+    });
+
+    this.applyGains();
   }
 
   public async play(): Promise<void> {
@@ -261,12 +307,12 @@ export class NoiseSynthesizer {
       await ctx.resume();
     }
 
-    this.buildLoopingGraph(ctx);
+    this.buildMixerGraph(ctx);
     this.isPlaying = true;
   }
 
   public pause(): void {
-    this.stopSourceOnly();
+    this.stopLayersOnly();
     this.isPlaying = false;
   }
 
@@ -281,14 +327,25 @@ export class NoiseSynthesizer {
 
   public setSoundType(nextType: AmbientSoundType): void {
     this.soundType = nextType;
-    if (this.isPlaying && this.ctx && !this.muted) {
-      this.buildLoopingGraph(this.ctx);
-    }
+    this.layerLevels = {
+      white: nextType === 'white' ? Math.max(0.7, this.layerLevels.white) : 0,
+      pink: nextType === 'pink' ? Math.max(0.7, this.layerLevels.pink) : 0,
+      rain: nextType === 'rain' ? Math.max(0.7, this.layerLevels.rain) : 0,
+    };
+    this.applyGains();
+  }
+
+  public setLayerLevel(type: AmbientSoundType, nextLevel: number): void {
+    this.layerLevels = {
+      ...this.layerLevels,
+      [type]: clampVolume(nextLevel),
+    };
+    this.applyGains();
   }
 
   public setVolume(nextVolume: number): void {
     this.volume = clampVolume(nextVolume);
-    this.applyGain();
+    this.applyGains();
   }
 
   public setMuted(nextMuted: boolean): void {
@@ -296,7 +353,7 @@ export class NoiseSynthesizer {
     if (this.muted && this.isPlaying) {
       this.pause();
     } else {
-      this.applyGain();
+      this.applyGains();
     }
   }
 
@@ -305,20 +362,27 @@ export class NoiseSynthesizer {
       isPlaying: this.isPlaying,
       soundType: this.soundType,
       volume: this.volume,
+      layerLevels: { ...this.layerLevels },
       muted: this.muted,
-      hasFilterNode: Boolean(this.filterNode),
-      hasGainNode: Boolean(this.gainNode),
+      activeLayerCount: Object.keys(this.layers).length,
+      hasMasterGain: Boolean(this.masterGain),
     };
   }
 
   public async dispose(): Promise<void> {
     this.pause();
     this.detachLifecycleListeners();
+    if (this.masterGain && typeof this.masterGain.disconnect === 'function') {
+      try {
+        this.masterGain.disconnect();
+      } catch {
+        // Already disconnected
+      }
+    }
     if (this.ctx && typeof this.ctx.close === 'function') {
       await this.ctx.close();
     }
     this.ctx = null;
-    this.filterNode = null;
-    this.gainNode = null;
+    this.masterGain = null;
   }
 }

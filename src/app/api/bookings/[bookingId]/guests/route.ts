@@ -262,6 +262,52 @@ export async function POST(
 
     const { guests } = validation.data;
 
+    // Normalize emails and check for duplicates within the request
+    const normalizedEmails = guests.map((g) => g.email.trim().toLowerCase());
+    const seenEmails = new Set<string>();
+    const duplicateEmailsInRequest: string[] = [];
+
+    for (const email of normalizedEmails) {
+      if (seenEmails.has(email)) {
+        duplicateEmailsInRequest.push(email);
+      }
+      seenEmails.add(email);
+    }
+
+    if (duplicateEmailsInRequest.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Duplicate guest email addresses found in request",
+          duplicates: Array.from(new Set(duplicateEmailsInRequest)),
+        },
+        { status: 400 },
+      );
+    }
+
+    // Check if any of these guests have already been invited to this booking
+    const existingGuests = await prisma.bookingGuest.findMany({
+      where: {
+        bookingId,
+        email: { in: Array.from(seenEmails) },
+      },
+      select: { email: true, status: true },
+    });
+
+    if (existingGuests && existingGuests.length > 0) {
+      return NextResponse.json(
+        {
+          error: "One or more guests have already been invited to this booking",
+          existingGuests: existingGuests.map(
+            (g: { email: string; status: string }) => ({
+              email: g.email,
+              status: g.status,
+            }),
+          ),
+        },
+        { status: 409 },
+      );
+    }
+
     // Fetch booking details for the invite flow
     const booking = ownership.booking;
 
@@ -283,9 +329,9 @@ export async function POST(
     const results = await inviteGuestsToBooking(
       bookingId,
       guests.map((g) => ({
-        email: g.email,
-        name: g.name,
-        phone: g.phone,
+        email: g.email.trim().toLowerCase(),
+        name: g.name ? g.name.trim() : undefined,
+        phone: g.phone ? g.phone.trim() : undefined,
       })),
       async () => ({
         venue: {
@@ -322,6 +368,15 @@ export async function POST(
     });
   } catch (error: any) {
     console.error("[POST /api/bookings/[bookingId]/guests] Error:", error);
+    if (error?.code === "P2002") {
+      return NextResponse.json(
+        {
+          error:
+            "A guest with this email address has already been invited to this booking",
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { error: "Failed to send invitations" },
       { status: 500 },

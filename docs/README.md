@@ -106,6 +106,7 @@ Welcome to the WorkSphere documentation hub. Use the topic-based sections below 
 
 ## Offline Support & Realtime Systems
 
+- [Offline Booking Draft State Machine & Conflict Resolution Guide](./pwa/OFFLINE_BOOKING_DRAFTS.md) — IndexedDB draft persistence, vector clock causal sync, CRDT field resolution, and Service Worker background synchronization.
 - [PWA Service Worker Caching Strategy & Invalidation Runbook](./pwa/SERVICE_WORKER_CACHING_STRATEGY.md) — Progressive Web App service worker caching tiers, Workbox strategies, deployment versioning, background sync queues, and storage quota management.
 - [IndexedDB Offline Sync Architecture](./offline/indexeddb-sync-architecture.md) — offline mutations, IndexedDB storage, and synchronization.
 - [Dead Letter Queue](./offline/dead-letter-queue.md) — handling and recovery of failed offline jobs.

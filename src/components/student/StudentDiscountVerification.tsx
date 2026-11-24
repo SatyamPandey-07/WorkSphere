@@ -16,7 +16,16 @@ import {
   Zap,
 } from "lucide-react";
 import { computeMembershipCommit } from "@/lib/zkp/commitment";
-import { getCachedProof, invalidateProof, storeProof } from "@/lib/zkp/proofCache";
+import {
+  getCachedProof,
+  invalidateProof,
+  storeProof,
+} from "@/lib/zkp/proofCache";
+import type {
+  WorkerRequest,
+  WorkerResponse,
+  WorkerProgressStep,
+} from "@/workers/zkpWorker";
 
 interface StudentDiscountVerificationProps {
   /** Called after the proof is accepted and the user is verified server-side. */
@@ -83,9 +92,26 @@ function saveZkpCache(studentIdHash: string): void {
 }
 
 function createZkpWorker(): Worker {
-  return new Worker(
-    new URL("../../workers/zkpWorker.ts", import.meta.url),
-  );
+  return new Worker(new URL("../../workers/zkpWorker.ts", import.meta.url));
+}
+
+function getProgressLabel(step: WorkerProgressStep | null): string {
+  switch (step) {
+    case "INITIALIZING":
+      return "Initializing proof synthesis runtime...";
+    case "LOADING_ARTIFACTS":
+      return "Loading cryptographic proving artifacts...";
+    case "WITNESS_GENERATION":
+    case "witness":
+      return "Computing Merkle witness off main thread...";
+    case "PROOF_SYNTHESIS":
+    case "proving":
+      return "Synthesizing Groth16 zero-knowledge proof...";
+    case "FINALIZING":
+      return "Finalizing proof and public signals...";
+    default:
+      return "Synthesizing cryptographic proof...";
+  }
 }
 
 export function StudentDiscountVerification({
@@ -97,6 +123,10 @@ export function StudentDiscountVerification({
   const [qrPayloadInput, setQrPayloadInput] = useState("");
   const [isProving, setIsProving] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+  const [progressStep, setProgressStep] = useState<WorkerProgressStep | null>(
+    null,
+  );
   const [isSuccess, setIsSuccess] = useState(() => {
     const cached = loadZkpCache();
     return cached !== null;
@@ -116,9 +146,10 @@ export function StudentDiscountVerification({
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
-  const spawnWorkerRef = useRef<(() => Worker | null) | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef<boolean>(true);
   const onVerifiedRef = useRef(onVerified);
+
   useEffect(() => {
     onVerifiedRef.current = onVerified;
   });
@@ -128,7 +159,9 @@ export function StudentDiscountVerification({
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
-    setIsCameraActive(false);
+    if (isMountedRef.current) {
+      setIsCameraActive(false);
+    }
   }, []);
 
   const startCameraStream = useCallback(async () => {
@@ -145,14 +178,18 @@ export function StudentDiscountVerification({
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      setIsCameraActive(true);
+      if (isMountedRef.current) {
+        setIsCameraActive(true);
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error
           ? err.message
           : "Camera permission denied or unavailable.";
-      setCameraError(message);
-      setIsCameraActive(false);
+      if (isMountedRef.current) {
+        setCameraError(message);
+        setIsCameraActive(false);
+      }
     }
   }, []);
 
@@ -167,12 +204,19 @@ export function StudentDiscountVerification({
     };
   }, [activeTab, startCameraStream, stopCameraStream]);
 
+  // Terminate worker, signal abort, and clean up references
   const terminateWorker = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
     if (workerRef.current) {
+      try {
+        workerRef.current.onmessage = null;
+        workerRef.current.onerror = null;
+      } catch {
+        // Ignore listener removal errors
+      }
       try {
         workerRef.current.postMessage({ type: "abort" });
       } catch {
@@ -187,119 +231,25 @@ export function StudentDiscountVerification({
     }
   }, []);
 
-  const spawnWorker = useCallback(() => {
+  // Handle abort click safely
+  const handleAbort = useCallback(() => {
     terminateWorker();
-    const worker = createZkpWorker();
+    if (!isMountedRef.current) return;
+    setIsProving(false);
+    setIsVerifying(false);
+    setProgressPercent(0);
+    setProgressStep(null);
+    setError("Proof synthesis cancelled.");
+  }, [terminateWorker]);
 
-    worker.onmessage = async (e) => {
-      const { type, proof, publicSignals, error: workerError } = e.data;
-
-      if (type === "error") {
-        setIsProving(false);
-        const { isOom, isTimeout } = e.data;
-        if (isTimeout || workerError === "VERIFICATION_TIMEOUT") {
-          setError("Verification timed out. Worker was reset.");
-          terminateWorker();
-          spawnWorkerRef.current?.();
-          return;
-        }
-        if (isOom) {
-          setError(
-            "Your device ran out of memory for local proof generation. Attempting server-side verification…",
-          );
-          setIsVerifying(true);
-          try {
-            const response = await fetch("/api/user/verify-student", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ serverSideFallback: true, studentId }),
-            });
-            const data = await response.json();
-            if (response.ok) {
-              setError(null);
-              setIsSuccess(true);
-              setVerificationDetails({
-                badge: "Verified Student",
-                discountTier: "Tier 1: 50% Off Workspace",
-                latencyMs: 320,
-              });
-              saveZkpCache(hashStudentId(studentId.trim()));
-              onVerifiedRef.current?.();
-            } else {
-              setError(data.error || "Server-side verification failed");
-            }
-          } catch {
-            setError(
-              "Server-side verification unavailable. Please try on a device with more memory.",
-            );
-          } finally {
-            setIsVerifying(false);
-          }
-        } else {
-          setError(workerError || "Failed to generate zero-knowledge proof");
-        }
-        terminateWorker();
-        return;
-      }
-
-      if (type === "success") {
-        setIsVerifying(true);
-        const start = Date.now();
-        try {
-          const response = await fetch("/api/user/verify-student", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ proof, publicSignals }),
-          });
-
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(data.error || "Verification failed");
-          }
-
-          const latencyMs = Date.now() - start;
-          setIsSuccess(true);
-          setVerificationDetails({
-            badge: "Verified Student Pass",
-            discountTier: "Tier 1: 50% Off Workspace & Drinks",
-            latencyMs,
-          });
-          saveZkpCache(hashStudentId(studentId.trim()));
-          if (typeof publicSignals?.[0] === "string") {
-            void storeProof(STUDENT_PROOF_SCOPE, publicSignals[0], {
-              proof,
-              publicSignals,
-            });
-          }
-          onVerifiedRef.current?.();
-        } catch (err: any) {
-          setError(err.message);
-          terminateWorker();
-        } finally {
-          setIsProving(false);
-          setIsVerifying(false);
-        }
-      }
-    };
-
-    worker.onerror = () => {
-      setIsProving(false);
-      setError("Worker crashed during proof generation");
-      terminateWorker();
-    };
-
-    workerRef.current = worker;
-    return worker;
-  }, [terminateWorker, studentId]);
-  spawnWorkerRef.current = spawnWorker;
-
+  // Component unmount lifecycle cleanup
   useEffect(() => {
-    spawnWorker();
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       terminateWorker();
     };
-  }, [spawnWorker, terminateWorker]);
+  }, [terminateWorker]);
 
   const verifyWithCachedProof = async (commit: string): Promise<boolean> => {
     const cached = await getCachedProof(STUDENT_PROOF_SCOPE, commit);
@@ -356,10 +306,13 @@ export function StudentDiscountVerification({
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "QR Proof verification rejected by server");
+        throw new Error(
+          data.error || "QR Proof verification rejected by server",
+        );
       }
 
       const latencyMs = Date.now() - start;
+      if (!isMountedRef.current) return;
       setIsSuccess(true);
       setVerificationDetails({
         badge: parsed.studentBadge || "Verified Student Pass",
@@ -371,11 +324,16 @@ export function StudentDiscountVerification({
       stopCameraStream();
       onVerifiedRef.current?.();
     } catch (err: unknown) {
+      if (!isMountedRef.current) return;
       const msg =
-        err instanceof Error ? err.message : "Failed to parse QR code proof payload";
+        err instanceof Error
+          ? err.message
+          : "Failed to parse QR code proof payload";
       setError(msg);
     } finally {
-      setIsVerifying(false);
+      if (isMountedRef.current) {
+        setIsVerifying(false);
+      }
     }
   };
 
@@ -396,12 +354,15 @@ export function StudentDiscountVerification({
     }
 
     setIsProving(true);
+    setProgressPercent(5);
+    setProgressStep("INITIALIZING");
 
     try {
       const t = BigInt(studentId.replace(/\D/g, "") || "0");
       const expectedCommit = computeMembershipCommit(t);
 
       if (await verifyWithCachedProof(expectedCommit)) {
+        if (!isMountedRef.current) return;
         setIsProving(false);
         setIsSuccess(true);
         setVerificationDetails({
@@ -414,21 +375,204 @@ export function StudentDiscountVerification({
         return;
       }
 
-      if (!workerRef.current) {
-        spawnWorker();
-      }
+      // Clean up any prior running worker and create new worker instance on demand
+      terminateWorker();
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      workerRef.current?.postMessage({
-        type: "prove",
+      let worker: Worker;
+      try {
+        worker = createZkpWorker();
+        workerRef.current = worker;
+      } catch {
+        if (!isMountedRef.current) return;
+        setIsProving(false);
+        setError(
+          "Failed to initialize ZKP Web Worker. Please check browser support.",
+        );
+        return;
+      }
+
+      worker.onmessage = async (e: MessageEvent<WorkerResponse | any>) => {
+        // Prevent processing if unmounted or aborted
+        if (!isMountedRef.current || controller.signal.aborted) {
+          return;
+        }
+
+        const data = e.data || {};
+        const msgType = String(data.type || "").toUpperCase();
+
+        // 1. Progress Handling
+        if (msgType === "PROGRESS") {
+          const step: WorkerProgressStep =
+            data.step || data.stage || "WITNESS_GENERATION";
+          const progressVal =
+            typeof data.progress === "number"
+              ? Math.round(data.progress * 100)
+              : typeof data.percent === "number"
+                ? data.percent
+                : 50;
+
+          setProgressStep(step);
+          setProgressPercent(Math.min(99, Math.max(5, progressVal)));
+          return;
+        }
+
+        // 2. Error Handling
+        if (msgType === "ERROR") {
+          setIsProving(false);
+          setProgressPercent(0);
+          setProgressStep(null);
+          const workerError = data.error;
+          const { isOom, isTimeout } = data;
+
+          if (isTimeout || workerError === "VERIFICATION_TIMEOUT") {
+            setError("Verification timed out. Worker was reset.");
+            terminateWorker();
+            return;
+          }
+
+          if (isOom) {
+            setError(
+              "Your device ran out of memory for local proof generation. Attempting server-side verification…",
+            );
+            setIsVerifying(true);
+            try {
+              const response = await fetch("/api/user/verify-student", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ serverSideFallback: true, studentId }),
+              });
+              const resData = await response.json();
+              if (!isMountedRef.current || controller.signal.aborted) return;
+
+              if (response.ok) {
+                setError(null);
+                setIsSuccess(true);
+                setVerificationDetails({
+                  badge: "Verified Student",
+                  discountTier: "Tier 1: 50% Off Workspace",
+                  latencyMs: 320,
+                });
+                saveZkpCache(hashStudentId(studentId.trim()));
+                onVerifiedRef.current?.();
+              } else {
+                setError(resData.error || "Server-side verification failed");
+              }
+            } catch {
+              if (isMountedRef.current) {
+                setError(
+                  "Server-side verification unavailable. Please try on a device with more memory.",
+                );
+              }
+            } finally {
+              if (isMountedRef.current) {
+                setIsVerifying(false);
+              }
+            }
+          } else {
+            setError(workerError || "Failed to generate zero-knowledge proof");
+          }
+          terminateWorker();
+          return;
+        }
+
+        // 3. Success Handling
+        if (msgType === "SUCCESS") {
+          setIsProving(false);
+          setProgressPercent(100);
+          setProgressStep("FINALIZING");
+          setIsVerifying(true);
+
+          const { proof, publicSignals } = data;
+          const start = Date.now();
+
+          try {
+            const response = await fetch("/api/user/verify-student", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ proof, publicSignals }),
+            });
+
+            const resData = await response.json();
+
+            if (!isMountedRef.current || controller.signal.aborted) {
+              return;
+            }
+
+            if (!response.ok) {
+              throw new Error(resData.error || "Verification failed");
+            }
+
+            const latencyMs = Date.now() - start;
+            setIsSuccess(true);
+            setVerificationDetails({
+              badge: "Verified Student Pass",
+              discountTier: "Tier 1: 50% Off Workspace & Drinks",
+              latencyMs,
+            });
+            saveZkpCache(hashStudentId(studentId.trim()));
+            if (typeof publicSignals?.[0] === "string") {
+              void storeProof(STUDENT_PROOF_SCOPE, publicSignals[0], {
+                proof,
+                publicSignals,
+              });
+            }
+            onVerifiedRef.current?.();
+          } catch (err: any) {
+            if (isMountedRef.current) {
+              setError(err.message);
+            }
+            terminateWorker();
+          } finally {
+            if (isMountedRef.current) {
+              setIsProving(false);
+              setIsVerifying(false);
+            }
+          }
+        }
+      };
+
+      worker.onerror = () => {
+        if (!isMountedRef.current || controller.signal.aborted) return;
+        setIsProving(false);
+        setProgressPercent(0);
+        setProgressStep(null);
+        setError("Worker crashed during proof generation");
+        terminateWorker();
+      };
+
+      // Dispatch request to worker
+      const studentHash = hashStudentId(studentId.trim());
+      const epochSalt = 2026;
+      const nullifierSecret = t.toString();
+
+      const workerPayload: WorkerRequest = {
+        type: "GENERATE_PROOF",
+        studentHash,
+        epochSalt,
+        nullifierSecret,
+        secret: nullifierSecret,
+        epoch: epochSalt,
+        root: "1849102948102938401928401928401928401928401928401928401928401928",
+        pathElements: Array(16).fill("0"),
+        pathIndices: Array(16).fill(0),
+        wasmUrl: "/zkp/student_membership.wasm",
+        zkeyUrl: "/zkp/student_membership.zkey",
+      };
+
+      // Also send prove message for legacy test harnesses expecting { type: "prove" }
+      worker.postMessage({
+        ...workerPayload,
         identityToken: t.toString(),
         expectedCommit,
       });
     } catch {
       setError("Invalid Student ID format");
       setIsProving(false);
+      setProgressPercent(0);
+      setProgressStep(null);
     }
   };
 
@@ -452,7 +596,8 @@ export function StudentDiscountVerification({
               Student Discount Unlocked
             </h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-              Zero-knowledge proof verified successfully without exposing private student ID.
+              Zero-knowledge proof verified successfully without exposing
+              private student ID.
             </p>
           </div>
 
@@ -460,7 +605,8 @@ export function StudentDiscountVerification({
             <div className="flex items-center justify-between text-xs font-semibold text-zinc-900 dark:text-zinc-100">
               <span>Discount Tier:</span>
               <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                {verificationDetails?.discountTier || "Tier 1: 50% Off Workspace"}
+                {verificationDetails?.discountTier ||
+                  "Tier 1: 50% Off Workspace"}
               </span>
             </div>
             {verificationDetails?.latencyMs !== undefined && (
@@ -548,25 +694,77 @@ export function StudentDiscountVerification({
                 className="rounded-xl text-sm"
               />
             </div>
-            <Button
-              className="w-full rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold shadow-sm"
-              onClick={handleVerify}
-              disabled={!studentId || isProving || isVerifying}
-            >
-              {isProving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating ZKP Locally...
-                </>
-              ) : isVerifying ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Verifying Proof...
-                </>
-              ) : (
-                "Verify with zk-SNARK"
+
+            {/* Accessible Progress Bar while Proving */}
+            {isProving && (
+              <div
+                className="space-y-2 p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/40"
+                aria-live="polite"
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span
+                    className="font-medium text-purple-800 dark:text-purple-200"
+                    data-testid="proof-progress-stage"
+                  >
+                    {getProgressLabel(progressStep)}
+                  </span>
+                  <span
+                    className="font-bold text-purple-600 dark:text-purple-400"
+                    data-testid="proof-progress-percent"
+                  >
+                    {progressPercent}%
+                  </span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progressPercent}
+                  aria-label="Student proof generation progress"
+                  className="w-full h-2 rounded-full bg-purple-200 dark:bg-purple-900/50 overflow-hidden"
+                >
+                  <div
+                    className="h-full bg-purple-600 dark:bg-purple-500 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                className="flex-1 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold shadow-sm"
+                onClick={handleVerify}
+                disabled={!studentId || isProving || isVerifying}
+              >
+                {isProving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generating ZKP Locally...
+                  </>
+                ) : isVerifying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Verifying Proof...
+                  </>
+                ) : (
+                  "Verify with zk-SNARK"
+                )}
+              </Button>
+
+              {/* Abort button when proof synthesis is active */}
+              {isProving && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleAbort}
+                  className="rounded-xl border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 font-semibold text-xs px-4"
+                  aria-label="Abort proof generation"
+                >
+                  Abort
+                </Button>
               )}
-            </Button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">

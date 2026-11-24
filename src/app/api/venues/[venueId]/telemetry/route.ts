@@ -1,9 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { enqueueTelemetry } from "@/lib/telemetryQueue";
 import { applyPrivacyFilter } from "@/lib/privacy/differentialPrivacy";
 import { apiError } from "@/lib/apiResponse";
+
+export const CANONICAL_CROWD_LEVELS = [
+  "empty",
+  "low",
+  "quiet",
+  "moderate",
+  "busy",
+  "very busy",
+  "packed",
+] as const;
+
+export type CanonicalCrowdLevel = (typeof CANONICAL_CROWD_LEVELS)[number];
+
+export const telemetrySchema = z.object({
+  download: z
+    .number({ message: "Download speed must be a valid number" })
+    .finite("Download speed must be a finite number")
+    .nonnegative("Download speed must be a non-negative number"),
+  upload: z
+    .number({ message: "Upload speed must be a valid number" })
+    .finite("Upload speed must be a finite number")
+    .nonnegative("Upload speed must be a non-negative number"),
+  latency: z
+    .number({ message: "Latency must be a valid number" })
+    .finite("Latency must be a finite number")
+    .nonnegative("Latency must be a non-negative number"),
+  crowdLevel: z
+    .string({ message: "Crowd level is required" })
+    .trim()
+    .toLowerCase()
+    .pipe(
+      z.enum(CANONICAL_CROWD_LEVELS, {
+        message: "Invalid crowd level",
+      }),
+    ),
+});
 
 export async function POST(
   req: NextRequest,
@@ -17,13 +54,6 @@ export async function POST(
     }
 
     const { venueId } = await params;
-    const body = await req.json();
-
-    const { download, upload, latency, crowdLevel } = body;
-
-    if (!download || !upload || !latency || !crowdLevel) {
-      return apiError("Missing required telemetry fields", 400, "VALIDATION_FAILED");
-    }
 
     const venue = await prisma.venue.findUnique({
       where: { id: venueId },
@@ -34,11 +64,29 @@ export async function POST(
       return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return apiError("Invalid JSON in request body", 400, "VALIDATION_FAILED");
+    }
+
+    const parseResult = telemetrySchema.safeParse(body);
+    if (!parseResult.success) {
+      const errorMessage =
+        parseResult.error.issues?.[0]?.message ||
+        parseResult.error.errors?.[0]?.message ||
+        "Validation failed";
+      return apiError(errorMessage, 400, "VALIDATION_FAILED");
+    }
+
+    const { download, upload, latency, crowdLevel } = parseResult.data;
+
     await enqueueTelemetry({
       venueId,
-      download: parseFloat(download),
-      upload: parseFloat(upload),
-      latency: parseFloat(latency),
+      download,
+      upload,
+      latency,
       crowdLevel,
       timestamp: new Date().toISOString(),
     });

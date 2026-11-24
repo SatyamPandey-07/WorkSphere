@@ -331,6 +331,26 @@ jobs:
                   continue;
                 }
 
+                // Ensure CI build-and-test checks have not failed on this PR
+                try {
+                  const checkRunsRes = await github.rest.checks.listForRef({
+                    owner,
+                    repo,
+                    ref: pr.head.sha
+                  });
+                  const checkRuns = checkRunsRes.data?.check_runs || [];
+                  const failedCheck = checkRuns.find(c =>
+                    c.conclusion === 'failure' &&
+                    (c.name.includes('build-and-test') || c.name.includes('Continuous Integration'))
+                  );
+                  if (failedCheck) {
+                    console.log(`PR #${prNumber} has failing check "${failedCheck.name}". Skipping auto-merge until resolved.`);
+                    continue;
+                  }
+                } catch (checkErr) {
+                  console.warn('Check runs query note:', checkErr.message);
+                }
+
                 // Execute squash merge with co-author attribution
                 const isMaintainer = prAuthor === 'satyampandey-07';
                 let coAuthorTrailers = [];

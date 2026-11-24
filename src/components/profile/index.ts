@@ -16,6 +16,8 @@ export type {
 export { ProfileOverview } from "./ProfileOverview";
 export { NomadStatsCard } from "./NomadStatsCard";
 export type { NomadStatsCardProps } from "./NomadStatsCard";
+export { NomadPassportCertificate } from "./NomadPassportCertificate";
+export type { NomadPassportCertificateProps } from "./NomadPassportCertificate";
 export type { ProfileOverviewProps } from "./ProfileOverview";
 export {
   NomadPassportCoin,
@@ -23,6 +25,10 @@ export {
 } from "./NomadPassportCoin";
 export type { NomadPassportCoinProps } from "./NomadPassportCoin";
 export {
-  NomadPassportVerificationBadge,
-  type NomadPassportVerificationBadgeProps,
-} from "./NomadPassportVerificationBadge";
+  NomadCertificateModal,
+  isEligibleForAttendanceCertificate,
+} from "./NomadCertificateModal";
+export type {
+  NomadCertificateModalProps,
+  AttendanceBookingData,
+} from "./NomadCertificateModal";

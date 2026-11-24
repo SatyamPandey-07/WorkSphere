@@ -1,52 +1,132 @@
 # Admin Vitals API
 
-This specification was verified against canonical
-[`SatyamPandey-07/WorkSphere` `main`](https://github.com/SatyamPandey-07/WorkSphere/tree/bbcdc818976670ae505fbb217471dbb127a2998d).
-PR [#8896](https://github.com/SatyamPandey-07/WorkSphere/pull/8896) is merged
-there and its CRDT snapshot compression telemetry is included.
+This specification documents the Admin Vitals API implementation located in
+[`src/app/api/admin/vitals/route.ts`](../../src/app/api/admin/vitals/route.ts),
+[`src/lib/admin.ts`](../../src/lib/admin.ts), and
+[`src/lib/export/domain/systemVitalExporter.ts`](../../src/lib/export/domain/systemVitalExporter.ts).
+CRDT snapshot compression telemetry is also included.
+
+The separate route latency heatmap endpoint is part of the same admin
+observability surface but has its own collector and response contract. See
+[Route Latency Heatmap Architecture](../admin/ROUTE_LATENCY_HEATMAP.md) for its
+implementation details and data limitations.
 
 ## Endpoint
 
-`GET /api/admin/vitals` returns a live snapshot of process memory, uptime, and
-recent HTTP latency.
+`GET /api/admin/vitals` returns a live snapshot of process memory, uptime,
+recent HTTP latency metrics, and CRDT differential snapshot compression telemetry.
 
-The response format is selected as follows:
+The response format is negotiated based on request parameters and headers:
 
-| Request                                | Response                   |
-| -------------------------------------- | -------------------------- |
-| Default request                        | JSON                       |
-| `?format=prometheus` or `?format=prom` | Prometheus text exposition |
-| `Accept: text/plain`                   | Prometheus text exposition |
-| `Accept: application/openmetrics-text` | Prometheus text exposition |
+| Request Condition                                       | Response Format            | Returned Content-Type                      |
+| ------------------------------------------------------- | -------------------------- | ------------------------------------------ |
+| Default request (no match below)                        | JSON snapshot              | `application/json`                         |
+| `format=prometheus` or `format=prom`                    | Prometheus text exposition | `text/plain; version=0.0.4; charset=utf-8` |
+| `Accept` header contains `text/plain`                   | Prometheus text exposition | `text/plain; version=0.0.4; charset=utf-8` |
+| `Accept` header contains `application/openmetrics-text` | Prometheus text exposition | `text/plain; version=0.0.4; charset=utf-8` |
 
-The Prometheus response uses
-`Content-Type: text/plain; version=0.0.4; charset=utf-8`. The OpenMetrics Accept
-value selects the same Prometheus 0.0.4 response; this handler does not emit an
-OpenMetrics content type or end marker. Both response formats set
-`Cache-Control: no-store, max-age=0`.
+The `format` query parameter and `Accept` header values are normalized to lowercase before comparison.
 
-The handler does not read a `range` query parameter. Other than `format`, query
-parameters do not change the snapshot.
+JSON and Prometheus success responses, as well as route-generated 403 and 500 JSON error responses, include `Cache-Control: no-store, max-age=0`. Unauthenticated requests intercepted and redirected by Clerk middleware before reaching the route handler are not guaranteed to carry this header.
 
-### Authentication and authorization
+> [!IMPORTANT]
+> **OpenMetrics Negotiation:** While `Accept: application/openmetrics-text` selects Prometheus text output, the route still returns the Prometheus 0.0.4 content type (`text/plain; version=0.0.4; charset=utf-8`). The route handler does not emit an OpenMetrics-specific content type or an OpenMetrics EOF marker (`# EOF`).
+>
+> **Query Parameters:** The route reads only the `format` query parameter. Any supplied `range` parameter is ignored; no range filtering is performed.
 
-`/api/admin/vitals` is not in the public-route allowlist in
-[`src/middleware.ts`](../../src/middleware.ts). The Clerk middleware therefore
-requires an authenticated session; an unauthenticated request is redirected to
-the sign-in route. The route handler itself does not perform an additional
-authorization check, and the middleware does not enforce an admin role for this
-API path. Do not expose it as an unauthenticated public endpoint.
+## Authentication and Administrator Authorization
 
-The `/api/admin/vitals` route does not define a scraper token or validate a
-Prometheus credential; Clerk middleware is its authentication mechanism. For
-machine scraping, place an authenticated internal gateway in front of the
-application. The gateway must authenticate Prometheus, then forward requests
-using an authenticated Clerk session. The example below authenticates
-Prometheus to such a gateway; it is not a direct Clerk configuration.
+Access to `/api/admin/vitals` requires two distinct validation stages: **Clerk session authentication** at the middleware layer, followed by **administrator authorization** in the route handler.
+
+### 1. Clerk Middleware Authentication
+
+The `/api/admin/vitals` path is not included in the public-route allowlist (`isPublicRoute`) in [`src/middleware.ts`](../../src/middleware.ts). It is matched by the API matcher `/(api|trpc)(.*)`.
+
+- Requests without an active Clerk session are intercepted by Clerk middleware and redirected to the sign-in flow:
+  ```http
+  307 Temporary Redirect -> /sign-in?redirect_url=...
+  ```
+- Middleware authentication verifies that the requester has a valid Clerk session, but it does **not** check administrator roles or permissions. Authenticated non-administrator accounts pass through middleware and reach the route handler.
+
+### 2. Route-Level Administrator Authorization
+
+Upon receiving the request, the route handler in [`src/app/api/admin/vitals/route.ts`](../../src/app/api/admin/vitals/route.ts) immediately executes an explicit administrator check:
+
+```typescript
+const adminUser = await getAdminUser();
+
+if (!adminUser) {
+  return forbiddenResponse();
+}
+```
+
+The `getAdminUser()` helper in [`src/lib/admin.ts`](../../src/lib/admin.ts) evaluates eligibility according to the following strict rules:
+
+1. **User Identity:** Obtains the current authenticated user via Clerk's `currentUser()`. If no user is available, it returns `null`.
+2. **Email Allowlist Verification:**
+   - Evaluates the `ADMIN_EMAILS` or fallback `ADMIN_EMAIL` environment variable.
+   - The value is split by commas, trimmed, normalized to lowercase, and filtered for non-empty entries.
+   - **Verified Email Requirement:** Only Clerk email addresses with verification status `"verified"` (`e.verification?.status === "verified"`) are compared against the allowlist. Unverified email addresses attached to a user profile are explicitly ignored to prevent unauthorized self-promotion.
+   - If any verified email matches an entry in the allowlist, `getAdminUser()` returns the user object.
+3. **Metadata Role Verification:**
+   - If the user does not qualify through the email allowlist, the helper inspects Clerk user metadata.
+   - The role is read from `privateMetadata.role`, falling back to `publicMetadata.role` when `privateMetadata.role` is absent or not a string (`privateRole ?? publicRole ?? ""`).
+   - The role is normalized to lowercase and evaluated case-insensitively against the permitted set:
+     - `"admin"`
+     - `"super_admin"`
+     - `"superadmin"`
+   - If the role matches, `getAdminUser()` returns the user object; otherwise, it returns `null`.
+
+Authenticated users who are neither on the verified email allowlist nor assigned an accepted administrator role are denied access with HTTP 403.
+
+## HTTP Error Responses
+
+The route handler defines dedicated response helpers for authorization rejections and internal runtime failures:
+
+| Condition                   |         HTTP Status         | Headers                              | JSON Response Body                              | Description                                                                                                              |
+| :-------------------------- | :-------------------------: | :----------------------------------- | :---------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------- |
+| Non-administrator access    |       `403 Forbidden`       | `Cache-Control: no-store, max-age=0` | `{"error": "Admin access required"}`            | The user is authenticated via Clerk but does not possess administrator privileges.                                       |
+| Authorization check failure | `500 Internal Server Error` | `Cache-Control: no-store, max-age=0` | `{"error": "Failed to generate system vitals"}` | `getAdminUser()` threw an unexpected exception during execution (logged as `[AdminVitals] Authorization check failed:`). |
+| Export or snapshot failure  | `500 Internal Server Error` | `Cache-Control: no-store, max-age=0` | `{"error": "Failed to generate system vitals"}` | Snapshot generation or Prometheus formatting threw an unexpected exception (logged as `[AdminVitals] Export failed:`).   |
+
+> [!NOTE]
+> **403 Forbidden vs. 401 Unauthorized:**
+> The route returns `403 Forbidden` when an authenticated user lacks administrator privileges. It does **not** return `401 Unauthorized`. Unauthenticated requests do not reach the route handler; they are redirected to `/sign-in` by Clerk middleware.
+
+## Prometheus Scraping and Operational Architecture
+
+The `/api/admin/vitals` endpoint does not implement machine-to-machine (M2M) authentication, a scraper token, or a dedicated service credential. It relies exclusively on Clerk session authentication and route-level administrator eligibility through either a verified email allowlist match or an accepted Clerk metadata role.
+
+### Gateway Architecture for Automated Scraping (Illustrative)
+
+Automated monitoring scrapers like Prometheus cannot directly log into Clerk or complete interactive redirect flows. Because the route strictly requires an authenticated administrator session, an automated setup would technically require an intermediary gateway or proxy to forward a valid Clerk administrator session:
+
+```
++------------+   Basic Auth / mTLS    +----------------------+   Clerk Admin Session   +--------------------+
+| Prometheus | ---------------------> | Hypothetical Gateway | ----------------------> | WorkSphere API     |
+| Scraper    |                        | (Reverse Proxy)      | (Cookie: __session=...) | /api/admin/vitals  |
++------------+                        +----------------------+                         +--------------------+
+```
+
+> [!CAUTION]
+> **Credential Reuse and Production Limitations:**
+>
+> - **Illustrative Architecture Only:** The gateway configuration described here is an illustrative description of the authentication requirements imposed by the current route implementation, **not** a gateway implementation supplied by this repository.
+> - **Not a Recommended Production Pattern:** Forwarding an administrator's Clerk session cookie technically satisfies the route's current check, but reusing a human administrator's session for unattended background scraping is **not** a recommended or production-ready architecture.
+> - **Security & Operational Risks:** Reusing a human administrator's session cookie or bearer token for background scraping has concrete production limitations: credential storage, session expiration, rotation, revocation, and manual re-authentication when sessions expire or rotate.
+> - **Lack of Machine Authentication:** The current endpoint does not implement machine-to-machine authentication, a scraper token, or a dedicated service credential. A properly scoped machine-to-machine service token would be the standard production architecture if background scraping is adopted in the future.
+
+> [!WARNING]
+> **Authentication Boundary Distinction:**
+>
+> - A reverse-proxy gateway using Basic Auth or mTLS protects the connection between Prometheus and the gateway, but does not solve the upstream authentication requirement without injecting valid Clerk credentials. Basic Auth or mTLS in Prometheus `scrape_configs` authenticates Prometheus to the intermediary gateway **only**; it does not satisfy WorkSphere's administrator authorization check.
+> - If the gateway forwards requests without an active, verified Clerk administrator session, WorkSphere's middleware redirects the request to `/sign-in` (HTTP 307) or the route handler rejects it with `403 Forbidden`.
+
+Example Prometheus scrape configuration targeting a hypothetical internal gateway:
 
 ```yaml
 scrape_configs:
-  - job_name: worksphere
+  - job_name: worksphere-admin-vitals
     scheme: https
     metrics_path: /api/admin/vitals
     params:
@@ -57,23 +137,15 @@ scrape_configs:
           - worksphere-vitals-gateway.internal:8443
     basic_auth:
       username: prometheus
-      password_file: /etc/prometheus/secrets/worksphere-vitals-gateway-password
+      password_file: /etc/prometheus/secrets/gateway-password
 ```
 
-This is a valid Prometheus scrape job when the named private gateway is
-configured to authenticate Prometheus with Basic Auth and forward the request
-to the application using an authenticated Clerk session. Replace the example
-gateway address and keep the password file readable only by Prometheus. The
-repository's [`vercel.json`](https://github.com/SatyamPandey-07/WorkSphere/blob/bbcdc818976670ae505fbb217471dbb127a2998d/vercel.json)
-does not configure a metrics endpoint or scraper credentials, and
-[`docker-compose.yml`](../../docker-compose.yml) configures PostgreSQL and
-Redis only; neither defines this gateway. Prometheus cannot scrape the protected
-route unauthenticated.
+This configuration illustrates how Prometheus might authenticate to an intermediary gateway using Basic Auth. The repository's [`vercel.json`](../../vercel.json) does not configure a metrics endpoint or scraper credentials, and [`docker-compose.yml`](../../docker-compose.yml) configures PostgreSQL and Redis only; neither defines or supplies this gateway.
 
 ## JSON response
 
-The default response is the `SystemVitalsSnapshot` built by the canonical
-[`systemVitalExporter.ts`](https://github.com/SatyamPandey-07/WorkSphere/blob/bbcdc818976670ae505fbb217471dbb127a2998d/src/lib/export/domain/systemVitalExporter.ts):
+The default response is the `SystemVitalsSnapshot` built by
+[`src/lib/export/domain/systemVitalExporter.ts`](../../src/lib/export/domain/systemVitalExporter.ts):
 
 | Field                     | Meaning                                                                                               |
 | ------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -146,8 +218,8 @@ worksphere_http_request_duration_ms_count 42
 
 ### CRDT snapshot compression metric schemas
 
-The canonical
-[`systemVitalExporter.ts`](https://github.com/SatyamPandey-07/WorkSphere/blob/bbcdc818976670ae505fbb217471dbb127a2998d/src/lib/export/domain/systemVitalExporter.ts)
+The exporter in
+[`src/lib/export/domain/systemVitalExporter.ts`](../../src/lib/export/domain/systemVitalExporter.ts)
 emits the following seven metrics. None has labels.
 
 | Metric                                                     | Prometheus type | Exact HELP description                                     | Unit                | Meaning                                                                                             |
@@ -171,27 +243,26 @@ Consequently, the decompression duration counter is not a histogram and may
 include both update and state-vector work.
 
 Collection behavior is implemented in
-[`compressionTelemetry.ts`](https://github.com/SatyamPandey-07/WorkSphere/blob/bbcdc818976670ae505fbb217471dbb127a2998d/src/lib/crdt/compressionTelemetry.ts)
+[`src/lib/crdt/compressionTelemetry.ts`](../../src/lib/crdt/compressionTelemetry.ts)
 and
-[`snapshotManager.ts`](https://github.com/SatyamPandey-07/WorkSphere/blob/bbcdc818976670ae505fbb217471dbb127a2998d/src/lib/crdt/snapshotManager.ts).
+[`src/lib/crdt/snapshotManager.ts`](../../src/lib/crdt/snapshotManager.ts).
 
 These metrics are process-local and reset when the process restarts. They have
 no per-route, per-room, or per-instance labels, and do not aggregate across
 application instances. The ratio is a gauge computed from the accumulated byte
 counters, not a per-operation measurement.
 
-The issue's `worksphere_crdt_snapshot_raw_bytes_total` and
-`worksphere_crdt_snapshot_compressed_bytes_total` names match the implementation.
-The issue's `worksphere_crdt_snapshot_compress_total` is not emitted; the
-counter is named `worksphere_crdt_snapshot_compressions_total`. The issue's
-`worksphere_crdt_snapshot_duration_seconds` is also not emitted: compression
-and decompression durations are separate millisecond counters. Do not alias or
-convert these names in the documentation as if the implementation exposed them.
+The implementation emits `worksphere_crdt_snapshot_raw_bytes_total` and
+`worksphere_crdt_snapshot_compressed_bytes_total`. Note that the compression
+counter is named `worksphere_crdt_snapshot_compressions_total` (not
+`worksphere_crdt_snapshot_compress_total`), and compression/decompression durations
+are separate millisecond counters (not a combined duration in seconds). Do not
+alias or convert these names in documentation.
 
 Illustrative Prometheus exposition for the CRDT metrics (values are examples;
 the compression counts, byte totals, ratio, and compression-time total follow
 the fixtures in
-[`snapshotCompressionVitals.test.ts`](https://github.com/SatyamPandey-07/WorkSphere/blob/bbcdc818976670ae505fbb217471dbb127a2998d/src/__tests__/lib/crdt/snapshotCompressionVitals.test.ts)):
+[`src/__tests__/lib/crdt/snapshotCompressionVitals.test.ts`](../../src/__tests__/lib/crdt/snapshotCompressionVitals.test.ts)):
 
 ```text
 # HELP worksphere_crdt_snapshot_compressions_total Number of CRDT snapshot compressions performed
@@ -219,28 +290,83 @@ worksphere_crdt_snapshot_compression_ratio 0.75
 
 ## Scraping and troubleshooting
 
-When an authenticated request can reach the application, request Prometheus
-format with either `?format=prometheus` or `Accept: text/plain`. Inspect the
-response body for the `# HELP` and `# TYPE` declarations and the corresponding
-samples. For example:
+When an authenticated administrator request or authorized gateway reaches the
+application, request Prometheus format with either `?format=prometheus` or
+`Accept: text/plain`. Inspect the response body for the `# HELP` and `# TYPE`
+declarations and the corresponding samples. For example:
 
 ```sh
 curl -H 'Accept: text/plain' \
+  -H 'Cookie: __session=<clerk-admin-session-token>' \
   'https://<authorized-host>/api/admin/vitals?format=prometheus'
 ```
 
+> [!WARNING]
+> The `curl` command above uses `<clerk-admin-session-token>` solely as an illustrative placeholder. Operators must never expose real session cookies in scripts or logs, and must never commit or hardcode Clerk session tokens or cookies in version control or Prometheus scraper configuration files. Session tokens represent active user credentials and must be protected.
+
 Troubleshooting:
 
-- A sign-in redirect means the request did not reach the handler with an
-  authenticated Clerk session. Confirm the gateway's upstream authentication;
-  Prometheus should scrape the protected gateway, not an unauthenticated public
-  route.
-- The CRDT counters are emitted as zero before any qualifying operation. Check
-  that snapshots are being compressed and that the update has the recognized
-  compressed-payload header.
-- Zero or small latency counts can mean the process has received little recent
-  traffic; the rolling buffer is neither durable nor shared between instances.
-- A process restart resets process-local latency samples and CRDT telemetry;
-  uptime and memory values then describe the new process.
-- This endpoint is intended for operational inspection. It does not provide
-  persistent history, cluster aggregation, or a dedicated machine-auth token.
+- **Sign-in redirect (HTTP 307):** The request reached Clerk middleware without
+  an authenticated session. Note that Prometheus Basic Auth or mTLS to an intermediary
+  gateway does not authenticate the upstream WorkSphere request; an active Clerk
+  session is required.
+- **HTTP 403 Forbidden (`{"error": "Admin access required"}`):** The request has
+  a valid Clerk session, but the user does not qualify as an administrator.
+  Verify that the user's verified email address is listed in `ADMIN_EMAILS` or
+  `ADMIN_EMAIL`, or that their Clerk `privateMetadata.role` (or fallback
+  `publicMetadata.role`) is set to `"admin"`, `"super_admin"`, or `"superadmin"`.
+- **HTTP 500 Internal Server Error (`{"error": "Failed to generate system vitals"}`):**
+  An unhandled error occurred during administrator authorization lookup or during
+  snapshot generation / Prometheus formatting. Inspect server logs for
+  `[AdminVitals] Authorization check failed:` or `[AdminVitals] Export failed:`.
+- **Zero CRDT counters:** CRDT counters remain zero until qualifying snapshot
+  operations occur. Verify that snapshots are compressed and that payload headers
+  match expected compression magic bytes.
+- **Low or zero latency counts:** The rolling buffer retains latency samples for
+  300 seconds (at most 10,000 samples). In low-traffic or freshly started
+  instances, percentiles and counts will be zero or reflect few samples.
+- **Process restart reset:** Latency samples, buffer state, and CRDT counters are
+  process-local in-memory metrics and reset upon server restart.
+- **Operational scope:** This endpoint provides live operational inspection. It
+  does not provide persistent timeseries storage, cluster-wide aggregation, or a
+  dedicated machine API token.
+
+## Route Latency Heatmap API
+
+`GET /api/admin/system/latency-heatmap` returns the route latency heatmap
+snapshot. It is a distinct endpoint from `/api/admin/vitals`; it does not use
+the vitals endpoint's Prometheus content negotiation or `format` parameter.
+It accepts the optional `range` query parameter (`1h`, `24h`, or `7d`), has no
+request body, and defaults unsupported or missing values to `1h`.
+
+The route uses Clerk middleware for session authentication, then calls
+`getAdminUser()` for administrator authorization. Unauthenticated requests are
+redirected to sign-in with HTTP 307. Authenticated users who fail the admin
+check receive HTTP 403. Successful JSON responses include
+`Content-Type: application/json` and
+`Cache-Control: private, no-store, max-age=0`.
+
+The HTTP 200 response follows `RouteLatencyHeatmapData`: `generatedAt`, `range`,
+`bucketIntervalMinutes`, `timeBuckets`, `routes`, and `summary`. Route rows
+contain route identity/category, totals, overall average and p95, slow-path
+state, severity, and cells. Each cell contains its time-bucket identity,
+count, average, p50, p95, min, max, and status. The response has no p99 field,
+raw sample array, error-rate field, or sampling-rate metadata. Exact field
+types, an illustrative response, and error details are documented in the
+[route latency heatmap guide](../admin/ROUTE_LATENCY_HEATMAP.md#8-api-telemetry-payload).
+
+> [!IMPORTANT]
+> The collector has no in-repository call site for `recordApiLatency` in the
+> inspected source. It also synthesizes deterministic baseline values for
+> empty buckets. Consequently, counts and percentile values should not be
+> interpreted as production request measurements without verifying an
+> external or newly added recorder integration. The CSV export's p99 is
+> derived from cell summaries; it is not an API response field or a
+> request-level p99.
+
+The endpoint returns HTTP 403 with `{"error":"Admin access required"}` when
+route-level authorization fails. Caught authorization or aggregation errors
+are logged and return HTTP 500 with
+`{"error":"Failed to generate route latency heatmap"}`. Unlike the vitals
+route's documented cache behavior, these route-generated error responses do
+not add the success response's `Cache-Control` header.

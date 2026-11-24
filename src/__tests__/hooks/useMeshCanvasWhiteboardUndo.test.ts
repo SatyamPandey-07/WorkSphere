@@ -175,4 +175,96 @@ describe("useMeshCanvasWhiteboard Undo-Tree Manager", () => {
       ),
     ).toBe(true);
   });
+
+  it("cleans up UndoManager, clears undo/redo stacks and detaches listeners on unmount", async () => {
+    let hookUserA: any;
+    const destroySpy = jest.spyOn(Y.UndoManager.prototype, "destroy");
+    const clearSpy = jest.spyOn(Y.UndoManager.prototype, "clear");
+    const offSpy = jest.spyOn(Y.UndoManager.prototype, "off");
+
+    await act(async () => {
+      hookUserA = renderHook(() =>
+        useMeshCanvasWhiteboard("canvas-cleanup-room", {
+          userId: "user-A",
+          userName: "Alice",
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      hookUserA.result.current.addShape({
+        id: "shape-cleanup-1",
+        type: "pen",
+        points: [0, 0, 10, 10],
+        color: "#ffffff",
+        width: 3,
+        opacity: 1,
+        userId: "user-A",
+      });
+    });
+
+    expect(hookUserA.result.current.canUndo).toBe(true);
+
+    await act(async () => {
+      hookUserA.unmount();
+      await Promise.resolve();
+    });
+
+    expect(clearSpy).toHaveBeenCalled();
+    expect(destroySpy).toHaveBeenCalled();
+    expect(offSpy).toHaveBeenCalledWith("stack-item-added", expect.any(Function));
+    expect(offSpy).toHaveBeenCalledWith("stack-item-popped", expect.any(Function));
+
+    clearSpy.mockRestore();
+    destroySpy.mockRestore();
+    offSpy.mockRestore();
+  });
+
+  it("isolates undo stacks across room switching without leaking undo history", async () => {
+    let currentCanvasId = "room-1";
+    let hook: any;
+
+    await act(async () => {
+      hook = renderHook(
+        ({ canvasId }: { canvasId: string }) =>
+          useMeshCanvasWhiteboard(canvasId, {
+            userId: "user-A",
+            userName: "Alice",
+          }),
+        { initialProps: { canvasId: currentCanvasId } },
+      );
+      await Promise.resolve();
+    });
+
+    // Draw in room-1
+    await act(async () => {
+      hook.result.current.addShape({
+        id: "room-1-shape",
+        type: "pen",
+        points: [0, 0, 5, 5],
+        color: "#ffffff",
+        width: 2,
+        opacity: 1,
+        userId: "user-A",
+      });
+    });
+
+    expect(hook.result.current.canUndo).toBe(true);
+
+    // Switch to room-2
+    await act(async () => {
+      hook.rerender({ canvasId: "room-2" });
+      await Promise.resolve();
+    });
+
+    // In fresh room-2, undo should be false and previous shapes should not be in snapshot
+    expect(hook.result.current.canUndo).toBe(false);
+    expect(hook.result.current.canRedo).toBe(false);
+    expect(
+      hook.result.current.shapeSnapshots.some(
+        (s: any) => s.id === "room-1-shape",
+      ),
+    ).toBe(false);
+  });
 });

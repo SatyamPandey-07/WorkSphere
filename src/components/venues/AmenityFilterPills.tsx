@@ -64,6 +64,18 @@ export const POPULAR_AMENITIES: AmenityFilterItem[] = [
     paramKey: "standingDesk",
     icon: Monitor,
   },
+  {
+    id: "standing_desks",
+    label: "Standing Desk",
+    paramKey: "standing_desks",
+    icon: Monitor,
+  },
+  {
+    id: "external_monitors",
+    label: "External Monitor (4K/USB-C)",
+    paramKey: "external_monitors",
+    icon: Monitor,
+  },
 ];
 
 export interface AmenityFilterPillsProps {

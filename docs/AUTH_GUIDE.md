@@ -150,8 +150,8 @@ WorkSphere distinguishes between **Public** routes (accessible to guests without
 | `/api/collections/public(.*)` | Public            | Public collection retrieval, sharing, and upvote endpoints                                     |
 | `/api/webhook(.*)`            | Public            | External incoming webhooks (e.g., Clerk user sync, Stripe events; verified by Svix/signatures) |
 | `/api/auth/csrf-token`        | Public            | Generates and issues CSRF protection tokens                                                    |
-| `/api/auth/resend-otp`        | Public            | Resends one-time verification codes during sign-in/verification                                |
-| `/api/auth/verify-otp`        | Public            | Validates one-time verification codes                                                          |
+| `/api/auth/resend-otp`        | Retired (410)     | Retired legacy endpoint (HTTP 410 Gone). Password reset codes are resent via Clerk.            |
+| `/api/auth/verify-otp`        | Retired (410)     | Retired legacy endpoint (HTTP 410 Gone). Verification codes are verified via Clerk.            |
 | `/api/auth/forgot-password`   | Public            | Initiates account password recovery requests                                                   |
 | `/api/auth/reset-password`    | Public            | Finalizes password reset operations                                                            |
 | `/api/auth/webauthn/verify`   | Public            | WebAuthn passkey assertion verification during sign-in                                         |
@@ -462,3 +462,26 @@ To test unauthenticated scenarios, configure the mock to return `null`:
 - **Mistake**: Testing protected admin routes (`/admin/*` or `/api/admin/*`) with a standard authenticated user.
 - **Result**: Requests are denied with HTTP `403 Forbidden` or redirected to `/` because admin routes enforce role checks beyond basic authentication.
 - **Solution**: Set the user's Clerk metadata role to `admin` or add their email to the `ADMIN_EMAILS` environment variable.
+
+---
+
+## 8. Password Recovery & Verification Architecture
+
+WorkSphere relies exclusively on Clerk for native password reset and verification code lifecycle.
+
+- **Forgot Password**: The forgot password page (`/forgot-password`) initiates code dispatch via:
+  ```typescript
+  await signIn.create({
+    strategy: "reset_password_email_code",
+    identifier: cleanEmail,
+  });
+  ```
+- **Reset Password & Verification**: The reset password page (`/reset-password`) authoritatively attempts verification and updates the password via:
+  ```typescript
+  await signIn.attemptFirstFactor({
+    strategy: "reset_password_email_code",
+    code: cleanCode,
+    password,
+  });
+  ```
+- **Legacy Endpoints Retired**: The legacy standalone endpoints `POST /api/auth/verify-otp` and `POST /api/auth/resend-otp` have been retired and return `HTTP 410 Gone` with `{ code: "ENDPOINT_RETIRED" }`. No standalone OTP generation, verification, or unauthenticated token validation is accepted outside of Clerk's native authentication pipeline.

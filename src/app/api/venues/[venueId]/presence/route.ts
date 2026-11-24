@@ -55,7 +55,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       take: 20,
     });
 
-    // 2. Fetch active CheckIns
+    // 2. Fetch active CheckIns with user's WorkBuddy consent status
     const checkIns = await prisma.checkIn.findMany({
       where: {
         venueId: venue.id,
@@ -68,13 +68,20 @@ export async function GET(_req: NextRequest, context: RouteContext) {
             firstName: true,
             lastName: true,
             imageUrl: true,
+            workStatus: {
+              select: {
+                isPublic: true,
+                until: true,
+                venueId: true,
+              },
+            },
           },
         },
       },
       take: 20,
     });
 
-    // 3. Fetch active today's confirmed bookings
+    // 3. Fetch active today's confirmed bookings with user's WorkBuddy consent status
     const activeBookings = await prisma.booking.findMany({
       where: {
         venueId: venue.id,
@@ -88,18 +95,64 @@ export async function GET(_req: NextRequest, context: RouteContext) {
             firstName: true,
             lastName: true,
             imageUrl: true,
+            workStatus: {
+              select: {
+                isPublic: true,
+                until: true,
+                venueId: true,
+              },
+            },
           },
         },
       },
       take: 20,
     });
 
-    // Deduplicate colleagues by userId
+    // Calculate total aggregate occupancy across all sources without leaking identities
+    const allOccupantUserIds = new Set<string>();
+    for (const b of buddyStatuses)
+      if (b.userId) allOccupantUserIds.add(b.userId);
+    for (const c of checkIns) if (c.userId) allOccupantUserIds.add(c.userId);
+    for (const bk of activeBookings)
+      if (bk.userId) allOccupantUserIds.add(bk.userId);
+    const totalOccupants = allOccupantUserIds.size;
+
+    // Unauthenticated callers receive aggregate occupancy only (zero PII exposure)
+    if (!currentUserId) {
+      return NextResponse.json({
+        venueId: venue.id,
+        venueName: venue.name,
+        activeCount: totalOccupants,
+        totalOccupancy: totalOccupants,
+        colleagues: [],
+        isSelfPresent: false,
+      });
+    }
+
+    const hasPublicConsent = (
+      user: {
+        id: string;
+        workStatus?: { isPublic: boolean; until: Date; venueId: string } | null;
+      } | null,
+    ): boolean => {
+      if (!user) return false;
+      if (user.id === currentUserId) return true; // User can always view their own status
+      if (!user.workStatus) return false;
+      return (
+        user.workStatus.isPublic === true &&
+        user.workStatus.venueId === venue.id &&
+        new Date(user.workStatus.until) > now
+      );
+    };
+
+    // Deduplicate colleagues by userId (only users with explicit public consent)
     const colleagueMap = new Map<string, ColleaguePresenceItem>();
 
     for (const b of buddyStatuses) {
       if (!b.user) continue;
-      const name = [b.user.firstName, b.user.lastName].filter(Boolean).join(" ") || "WorkSphere Member";
+      const name =
+        [b.user.firstName, b.user.lastName].filter(Boolean).join(" ") ||
+        "WorkSphere Member";
       colleagueMap.set(b.user.id, {
         userId: b.user.id,
         name,
@@ -113,7 +166,12 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
     for (const c of checkIns) {
       if (!c.user || colleagueMap.has(c.user.id)) continue;
-      const name = [c.user.firstName, c.user.lastName].filter(Boolean).join(" ") || "WorkSphere Member";
+      // Require explicit public presence consent before exposing attendee details
+      if (!hasPublicConsent(c.user)) continue;
+
+      const name =
+        [c.user.firstName, c.user.lastName].filter(Boolean).join(" ") ||
+        "WorkSphere Member";
       colleagueMap.set(c.user.id, {
         userId: c.user.id,
         name,
@@ -134,7 +192,12 @@ export async function GET(_req: NextRequest, context: RouteContext) {
           existing.seatNumber = bk.seatNumber;
         }
       } else {
-        const name = [bk.user.firstName, bk.user.lastName].filter(Boolean).join(" ") || "WorkSphere Member";
+        // Require explicit public presence consent before exposing attendee details
+        if (!hasPublicConsent(bk.user)) continue;
+
+        const name =
+          [bk.user.firstName, bk.user.lastName].filter(Boolean).join(" ") ||
+          "WorkSphere Member";
         colleagueMap.set(bk.user.id, {
           userId: bk.user.id,
           name,
@@ -148,19 +211,26 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     }
 
     const colleagues = Array.from(colleagueMap.values());
-    const isSelfPresent = currentUserId ? colleagueMap.has(currentUserId) : false;
+    const isSelfPresent = currentUserId
+      ? allOccupantUserIds.has(currentUserId)
+      : false;
 
     return NextResponse.json({
       venueId: venue.id,
       venueName: venue.name,
-      activeCount: colleagues.length,
+      activeCount: totalOccupants,
+      totalOccupancy: totalOccupants,
       colleagues,
       isSelfPresent,
     });
   } catch (error: any) {
     console.error("[GET /api/venues/[venueId]/presence] Error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch venue presence", activeCount: 0, colleagues: [] },
+      {
+        error: "Failed to fetch venue presence",
+        activeCount: 0,
+        colleagues: [],
+      },
       { status: 500 },
     );
   }

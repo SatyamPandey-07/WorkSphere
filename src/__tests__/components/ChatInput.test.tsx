@@ -1,5 +1,11 @@
 import React from "react";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  waitFor,
+} from "@testing-library/react";
 import { ChatInput } from "../../components/chat/ChatMessages";
 import "@testing-library/jest-dom";
 
@@ -241,5 +247,114 @@ describe("ChatInput Ctrl+K shortcut badge", () => {
     );
 
     expect(screen.queryByTitle("Focus search")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatInput image attachment and preview modal workflow", () => {
+  const originalCreateObjectURL = global.URL.createObjectURL;
+  const originalRevokeObjectURL = global.URL.revokeObjectURL;
+
+  beforeAll(() => {
+    global.URL.createObjectURL = jest.fn(
+      () => "blob:http://localhost/mock-preview",
+    );
+    global.URL.revokeObjectURL = jest.fn();
+  });
+
+  afterAll(() => {
+    global.URL.createObjectURL = originalCreateObjectURL;
+    global.URL.revokeObjectURL = originalRevokeObjectURL;
+  });
+
+  it("triggers file picker when attach image button is clicked", () => {
+    render(
+      <ChatInput
+        input=""
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    const fileInput = screen.getByTestId("chat-image-file-input");
+    const clickSpy = jest.spyOn(fileInput, "click");
+
+    const attachBtn = screen.getByTestId("chat-attach-image-btn");
+    fireEvent.click(attachBtn);
+
+    expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it("opens preview modal when an image file is selected and closes on cancel", () => {
+    render(
+      <ChatInput
+        input=""
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    const fileInput = screen.getByTestId("chat-image-file-input");
+    const testFile = new File(["dummy-data"], "workspace.png", {
+      type: "image/png",
+    });
+
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    // Modal should be opened
+    expect(
+      screen.getByTestId("image-upload-preview-modal"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("workspace.png")).toBeInTheDocument();
+
+    // Cancel modal
+    const cancelBtn = screen.getByTestId("cancel-preview-btn");
+    fireEvent.click(cancelBtn);
+
+    // Modal should close
+    expect(
+      screen.queryByTestId("image-upload-preview-modal"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("calls onImageUpload when modal upload is confirmed", async () => {
+    const mockOnImageUpload = jest.fn();
+
+    render(
+      <ChatInput
+        input=""
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+        onImageUpload={mockOnImageUpload}
+      />,
+    );
+
+    const fileInput = screen.getByTestId("chat-image-file-input");
+    const testFile = new File(["dummy-data"], "workspace.png", {
+      type: "image/png",
+    });
+
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    expect(
+      screen.getByTestId("image-upload-preview-modal"),
+    ).toBeInTheDocument();
+
+    const uploadBtn = screen.getByTestId("confirm-upload-btn");
+    await act(async () => {
+      fireEvent.click(uploadBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockOnImageUpload).toHaveBeenCalledTimes(1);
+      expect(mockOnImageUpload.mock.calls[0][0].file.name).toBe(
+        "workspace.png",
+      );
+      expect(
+        screen.queryByTestId("image-upload-preview-modal"),
+      ).not.toBeInTheDocument();
+    });
   });
 });

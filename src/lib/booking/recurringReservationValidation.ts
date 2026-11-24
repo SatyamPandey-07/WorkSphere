@@ -44,6 +44,13 @@ function addCalendarDays(date: string, days: number): string {
     .slice(0, 10);
 }
 
+/**
+ * Validates a recurring reservation request.
+ *
+ * Each recurrence occurrence preserves the local wall-clock time in the venue's
+ * IANA time zone and converts to UTC individually per occurrence date, preventing
+ * offset shifts across Daylight Saving Time (DST) spring-forward and fall-back boundaries.
+ */
 export function validateRecurringReservation(
   input: unknown,
   now: Date = new Date(),
@@ -64,7 +71,11 @@ export function validateRecurringReservation(
   }
 
   let timeZone = "UTC";
-  if (body.timeZone !== undefined && body.timeZone !== null && body.timeZone !== "") {
+  if (
+    body.timeZone !== undefined &&
+    body.timeZone !== null &&
+    body.timeZone !== ""
+  ) {
     if (isValidTimeZone(body.timeZone)) {
       timeZone = body.timeZone;
     } else {
@@ -74,7 +85,8 @@ export function validateRecurringReservation(
 
   const duration = Number(body.duration);
   if (!Number.isInteger(duration) || duration < 30 || duration > 480) {
-    fieldErrors.duration = "duration must be an integer between 30 and 480 minutes.";
+    fieldErrors.duration =
+      "duration must be an integer between 30 and 480 minutes.";
   }
 
   const requestedFrequency =
@@ -88,7 +100,11 @@ export function validateRecurringReservation(
     : "weekly";
 
   let endDate: string | null = null;
-  if (body.endDate !== undefined && body.endDate !== null && body.endDate !== "") {
+  if (
+    body.endDate !== undefined &&
+    body.endDate !== null &&
+    body.endDate !== ""
+  ) {
     if (typeof body.endDate === "string" && isValidBookingDate(body.endDate)) {
       endDate = body.endDate;
     } else {
@@ -108,10 +124,7 @@ export function validateRecurringReservation(
       Number.isInteger(body.occurrences) &&
       body.occurrences > 0
     ) {
-      occurrences = Math.min(
-        body.occurrences,
-        MAX_RECURRING_OCCURRENCES,
-      );
+      occurrences = Math.min(body.occurrences, MAX_RECURRING_OCCURRENCES);
     } else {
       fieldErrors.occurrences = "occurrences must be a positive integer.";
     }
@@ -169,12 +182,7 @@ export function validateRecurringReservation(
     return { success: false, fieldErrors };
   }
 
-  const dates = generateRecurringDates(
-    date,
-    frequency,
-    endDate,
-    occurrences,
-  );
+  const dates = generateRecurringDates(date, frequency, endDate, occurrences);
   if (dates.length === 0) {
     return {
       success: false,
@@ -197,11 +205,7 @@ export function validateRecurringReservation(
     const time = normalizedTime ?? "";
     const start = parseBookingDateTime(bookingDate, time, timeZone);
     const wallClock = start ? formatToWallClock(start, timeZone) : null;
-    if (
-      !start ||
-      wallClock?.date !== bookingDate ||
-      wallClock?.time !== time
-    ) {
+    if (!start || wallClock?.date !== bookingDate || wallClock?.time !== time) {
       return {
         success: false,
         fieldErrors: {

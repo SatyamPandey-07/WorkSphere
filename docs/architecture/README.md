@@ -20,6 +20,7 @@ Architecture decisions, implementation notes, and system-level design references
 
 - [ADR-004: Dual PostGIS spatial and trigram venue search](./ADR-004-spatial-phonetic-venue-search.md)
 - [Distributed WebRTC mesh signaling and STUN/TURN fallback](./WEBRTC_MESH_SIGNALING.md)
+- [WebRTC TURN Relay Bandwidth Throttle & Backpressure Specification](./WEBRTC_TURN_RELAY_THROTTLE.md)
 - [Middleware routing](./middleware-routing.md)
 - [Multi-region sync](./multi-region-sync.md)
 - [Causal vector-clock specification](./CAUSAL_VECTOR_CLOCK_SPEC.md)

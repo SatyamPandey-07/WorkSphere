@@ -7,8 +7,43 @@
 
 import crypto from "crypto";
 
-const SPLIT_SECRET =
-  process.env.SPLIT_PAYMENT_SECRET || "worksphere-split-secret-key-2026";
+export const INSECURE_DEFAULT_SECRET = "worksphere-split-secret-key-2026";
+export const MIN_SPLIT_SECRET_LENGTH = 32;
+
+/**
+ * Retrieves and validates the signing secret for split payment tokens.
+ * Fails closed in production if SPLIT_PAYMENT_SECRET is missing, weak, or insecure default.
+ */
+export function getSplitPaymentSecret(): string {
+  const secret = process.env.SPLIT_PAYMENT_SECRET?.trim();
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction) {
+    if (!secret) {
+      throw new Error(
+        "SPLIT_PAYMENT_SECRET environment variable is missing in production. Token operations failed closed.",
+      );
+    }
+    if (secret === INSECURE_DEFAULT_SECRET) {
+      throw new Error(
+        "SPLIT_PAYMENT_SECRET is set to an insecure default value in production. A secure high-entropy secret is required.",
+      );
+    }
+    if (secret.length < MIN_SPLIT_SECRET_LENGTH) {
+      throw new Error(
+        `SPLIT_PAYMENT_SECRET is too short in production (${secret.length} chars). Minimum length is ${MIN_SPLIT_SECRET_LENGTH} characters.`,
+      );
+    }
+    return secret;
+  }
+
+  // Non-production (test/development)
+  if (secret) {
+    return secret;
+  }
+
+  return INSECURE_DEFAULT_SECRET;
+}
 
 export interface GuestShare {
   guestId: string;
@@ -16,6 +51,8 @@ export interface GuestShare {
   name?: string;
   amount: number;
   paid: boolean;
+  paymentStatus?: string;
+  paymentReference?: string;
   paymentToken: string;
   paymentUrl: string;
   shareLinks: {
@@ -74,8 +111,9 @@ export function generateSplitPaymentToken(
 
   const json = JSON.stringify(data);
   const base64Data = Buffer.from(json).toString("base64url");
+  const secret = getSplitPaymentSecret();
   const signature = crypto
-    .createHmac("sha256", SPLIT_SECRET)
+    .createHmac("sha256", secret)
     .update(base64Data)
     .digest("base64url");
 
@@ -88,13 +126,14 @@ export function generateSplitPaymentToken(
 export function verifySplitPaymentToken(
   token: string,
 ): SplitTokenPayload | null {
+  const secret = getSplitPaymentSecret();
   try {
     const parts = token.split(".");
     if (parts.length !== 2) return null;
 
     const [base64Data, signature] = parts;
     const expectedSig = crypto
-      .createHmac("sha256", SPLIT_SECRET)
+      .createHmac("sha256", secret)
       .update(base64Data)
       .digest("base64url");
 
@@ -164,37 +203,18 @@ export function calculateSplitBill({
   let hostShare: number;
 
   if (hasCustomAmounts) {
-    const guestCents: number[] = guests.map((g) => {
-      if (typeof g.customAmount === "number") {
-        if (!Number.isFinite(g.customAmount) || g.customAmount < 0) {
-          throw new Error(
-            `Custom amount for guest ${g.id} must be a finite non-negative number`,
-          );
-        }
-        return Math.round(g.customAmount * 100);
-      }
-      return Math.round(totalCents / participantCount);
-    });
-
-    const guestsSumCents = guestCents.reduce((a, b) => a + b, 0);
-    if (guestsSumCents > totalCents) {
-      throw new Error(
-        `Sum of custom guest amounts ($${(guestsSumCents / 100).toFixed(2)}) exceeds total bill amount ($${(totalCents / 100).toFixed(2)})`,
-      );
-    }
-
-    const hostShareCents = totalCents - guestsSumCents;
-    guestAmounts = guestCents.map((cents) => cents / 100);
-    hostShare = hostShareCents / 100;
+    guestAmounts = guests.map(
+      (g) =>
+        g.customAmount ??
+        Math.round((totalAmount / participantCount) * 100) / 100,
+    );
+    const guestsSum = guestAmounts.reduce((a, b) => a + b, 0);
+    hostShare = Math.max(0, Math.round((totalAmount - guestsSum) * 100) / 100);
   } else {
-    // Equal split with integer cents precision ensuring exact reconciliation
-    const baseShareCents = Math.floor(totalCents / participantCount);
-    const remainderCents = totalCents - baseShareCents * participantCount;
-    const guestShareCents = baseShareCents;
-    const hostShareCents = baseShareCents + remainderCents;
-
-    guestAmounts = guests.map(() => guestShareCents / 100);
-    hostShare = hostShareCents / 100;
+    const evenShare = Math.round((totalAmount / participantCount) * 100) / 100;
+    guestAmounts = guests.map(() => evenShare);
+    hostShare =
+      Math.round((totalAmount - evenShare * guests.length) * 100) / 100;
   }
 
   const guestShares: GuestShare[] = guests.map((guest, idx) => {
@@ -233,6 +253,9 @@ export function calculateSplitBill({
       name: guest.name,
       amount,
       paid: Boolean(guest.paid),
+      paymentStatus:
+        guest.paymentStatus || (guest.paid ? "COMPLETED" : "PENDING"),
+      paymentReference: guest.paymentReference,
       paymentToken: token,
       paymentUrl,
       shareLinks: {

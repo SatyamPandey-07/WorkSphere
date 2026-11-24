@@ -87,4 +87,73 @@ describe('Multi-Layer Web Audio Soundscape Mixer & Presets', () => {
       );
     });
   });
+
+  it('defers AudioContext resume until first user interaction to avoid autoplay warnings', async () => {
+    const resume = jest.fn().mockResolvedValue(undefined);
+    const mockCtx = {
+      state: 'suspended',
+      resume,
+      createGain: () => ({
+        gain: { value: 1, setTargetAtTime: jest.fn() },
+        connect: jest.fn(),
+      }),
+    };
+
+    render(<AmbientSoundGenerator storage={null} audioContext={mockCtx} />);
+
+    // On initial mount, AudioContext remains suspended and resume is NOT called
+    expect(resume).not.toHaveBeenCalled();
+    expect(screen.getByTestId('soundscape-status').textContent).toContain('Paused');
+
+    // Upon first user click, resume is called and audio playback begins immediately
+    fireEvent.click(screen.getByTestId('toggle-play-btn'));
+    await waitFor(() => {
+      expect(resume).toHaveBeenCalled();
+      expect(screen.getByTestId('soundscape-status').textContent).toContain('Playing');
+    });
+  });
+
+  it('toggles master mute with smooth ramp, preserves slider value, and shows visual indicator', async () => {
+    const setTargetAtTime = jest.fn();
+    const mockCtx = {
+      currentTime: 1.0,
+      state: 'running',
+      createGain: () => ({
+        gain: { value: 0.6, setTargetAtTime },
+        connect: jest.fn(),
+      }),
+    };
+
+    render(<AmbientSoundGenerator storage={null} audioContext={mockCtx} />);
+
+    const muteBtn = screen.getByTestId('toggle-mute-btn');
+    const masterSlider = screen.getByTestId('master-gain-slider') as HTMLInputElement;
+
+    expect(masterSlider.value).toBe('0.6');
+    expect(muteBtn.textContent).toContain('Mute');
+    expect(muteBtn).toHaveAttribute('aria-pressed', 'false');
+
+    // Click mute
+    fireEvent.click(muteBtn);
+    await waitFor(() => {
+      expect(screen.getByTestId('soundscape-status').textContent).toContain('Muted');
+    });
+    expect(muteBtn.textContent).toContain('Unmute');
+    expect(muteBtn).toHaveAttribute('aria-pressed', 'true');
+    // Gain ramped to 0 smoothly over 50ms
+    expect(setTargetAtTime).toHaveBeenCalledWith(0, expect.any(Number), expect.any(Number));
+    // Slider value remains preserved at 0.6
+    expect(masterSlider.value).toBe('0.6');
+
+    // Click unmute
+    fireEvent.click(muteBtn);
+    await waitFor(() => {
+      expect(screen.getByTestId('soundscape-status').textContent).not.toContain('Muted');
+    });
+    expect(muteBtn.textContent).toContain('Mute');
+    expect(muteBtn).toHaveAttribute('aria-pressed', 'false');
+    // Master gain is restored
+    expect(setTargetAtTime).toHaveBeenCalledWith(0.6, expect.any(Number), expect.any(Number));
+    expect(masterSlider.value).toBe('0.6');
+  });
 });

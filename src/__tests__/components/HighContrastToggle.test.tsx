@@ -187,4 +187,14 @@ describe("HighContrastToggle Component", () => {
     expect(switchBtn).toBeInTheDocument();
     expect(switchBtn).toHaveAttribute("id", "helper-switch");
   });
+
+  it("applies high-contrast visible focus ring classes for WCAG 2.4.7 keyboard navigation compliance", () => {
+    render(<HighContrastToggle id="focus-test-toggle" />);
+
+    const switchBtn = screen.getByRole("switch");
+    expect(switchBtn.className).toContain("focus-visible:ring-2");
+    expect(switchBtn.className).toContain("focus-visible:ring-offset-2");
+    expect(switchBtn.className).toContain("focus-visible:ring-amber-400");
+    expect(switchBtn.className).toContain("dark:focus-visible:ring-cyan-400");
+  });
 });

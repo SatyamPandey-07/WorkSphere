@@ -225,4 +225,71 @@ describe("BFTConsensusCoordinator view-change timeout and leader rotation", () =
 
     expect(onViewChangeBroadcast).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects uncertified future-view proposals from rotated leader after timeout", () => {
+    const c = new BFTConsensusCoordinator({
+      nodeId: "node-2",
+      validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-2"],
+    });
+
+    // Node-1 is leader for view 1
+    const uncertifiedProposal = {
+      view: 1,
+      sequence: 1,
+      proposerId: "node-1",
+      payload: { tx: "rotated-leader-proposal" },
+      parentHash:
+        "0000000000000000000000000000000000000000000000000000000000000000",
+      timestamp: Date.now(),
+    };
+    const blockHash = BFTConsensusCoordinator.hashPayload(uncertifiedProposal);
+
+    // Node-2 is still on view 0, receives proposal without viewChangeEvidence
+    const vote = c.handleProposal({
+      ...uncertifiedProposal,
+      blockHash,
+    });
+
+    expect(vote).toBeNull();
+    expect(c.getCurrentView()).toBe(0);
+    c.dispose();
+  });
+
+  it("accepts certified proposals from rotated leader after pacemaker view change", () => {
+    const c = new BFTConsensusCoordinator({
+      nodeId: "node-2",
+      validators,
+      validatorPublicKeys: testKeys.publicKeys,
+      signer: testKeys.signers["node-2"],
+    });
+
+    // Certified with 3 ViewChangeMessages for view 1
+    const vcMsgs = [vcMsg("node-0", 1), vcMsg("node-1", 1), vcMsg("node-2", 1)];
+
+    const certifiedProposal = {
+      view: 1,
+      sequence: 1,
+      proposerId: "node-1",
+      payload: { tx: "certified-rotated-leader-proposal" },
+      parentHash:
+        "0000000000000000000000000000000000000000000000000000000000000000",
+      timestamp: Date.now(),
+    };
+    const blockHash = BFTConsensusCoordinator.hashPayload(certifiedProposal);
+
+    const vote = c.handleProposal({
+      ...certifiedProposal,
+      blockHash,
+      viewChangeEvidence: vcMsgs,
+    });
+
+    expect(vote).not.toBeNull();
+    expect(vote?.phase).toBe("PREPARE");
+    expect(vote?.view).toBe(1);
+    expect(c.getCurrentView()).toBe(1);
+    expect(c.getCurrentLeader()).toBe("node-1");
+    c.dispose();
+  });
 });

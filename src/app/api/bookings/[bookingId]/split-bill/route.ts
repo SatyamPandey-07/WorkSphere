@@ -82,6 +82,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
         email: g.email,
         name: g.name || undefined,
         paid: g.paidAt != null,
+        paymentStatus: g.paymentStatus || undefined,
+        paymentReference: g.paymentReference || undefined,
       })),
       origin,
     });
@@ -125,18 +127,12 @@ export async function POST(req: NextRequest, context: RouteContext) {
       );
     }
 
-    const rawBody = await req.json().catch(() => ({}));
-    const parseResult = splitBillBodySchema.safeParse(rawBody);
-
-    if (!parseResult.success) {
+    const body = await req.json().catch(() => ({}));
+    const rawAmount =
+      body.totalAmount === undefined ? 30 : Number(body.totalAmount);
+    if (!Number.isFinite(rawAmount) || rawAmount <= 0 || rawAmount > 100000) {
       return NextResponse.json(
-        {
-          error: "Invalid request payload",
-          details: parseResult.error.issues.map((i) => ({
-            field: i.path.join("."),
-            message: i.message,
-          })),
-        },
+        { error: "Invalid totalAmount" },
         { status: 400 },
       );
     }
@@ -148,36 +144,12 @@ export async function POST(req: NextRequest, context: RouteContext) {
     } = parseResult.data;
 
     const totalAmount = Math.round(rawAmount * 100) / 100;
-    const totalCents = Math.round(totalAmount * 100);
-
-    // Validate that all guest IDs in customGuestAmounts belong to this booking
-    const validGuestIdSet = new Set(booking.guests.map((g) => g.id));
-    for (const guestId of Object.keys(customGuestAmounts)) {
-      if (!validGuestIdSet.has(guestId)) {
-        return NextResponse.json(
-          {
-            error: `Unknown guest ID: ${guestId}. Custom amount can only be allocated to guests on this booking.`,
-          },
-          { status: 400 },
-        );
-      }
-    }
-
-    // Validate that total custom allocations do not exceed the total bill amount
-    let customSumCents = 0;
-    for (const amount of Object.values(customGuestAmounts)) {
-      const amountCents = Math.round(amount * 100);
-      customSumCents += amountCents;
-    }
-
-    if (customSumCents > totalCents) {
-      return NextResponse.json(
-        {
-          error: `Total custom guest allocations ($${(customSumCents / 100).toFixed(2)}) exceed the total bill amount ($${totalAmount.toFixed(2)}).`,
-        },
-        { status: 400 },
-      );
-    }
+    const customGuestAmounts: Record<string, number> =
+      body.customGuestAmounts || {};
+    const currency =
+      typeof body.currency === "string" && /^[A-Z]{3}$/.test(body.currency)
+        ? body.currency
+        : "USD";
 
     const url = new URL(req.url);
     const origin = url.origin;
@@ -194,6 +166,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
         email: g.email,
         name: g.name || undefined,
         paid: g.paidAt != null,
+        paymentStatus: g.paymentStatus || undefined,
+        paymentReference: g.paymentReference || undefined,
         customAmount: customGuestAmounts[g.id],
       })),
       origin,

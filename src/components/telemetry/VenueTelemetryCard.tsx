@@ -8,7 +8,7 @@ import {
 
 export interface VenueTelemetryCardProps {
   venueName: string;
-  samples: readonly VenueTelemetrySample[];
+  samples: readonly (VenueTelemetrySample | null | undefined)[];
   baselineKwh?: number;
 }
 
@@ -54,7 +54,7 @@ export const VenueTelemetryCard: React.FC<VenueTelemetryCardProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span
             data-testid="telemetry-acoustic-badge"
             className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"

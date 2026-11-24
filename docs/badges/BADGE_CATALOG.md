@@ -11,17 +11,17 @@ live under `src/components/badges/`.
 The following records are returned by the analytics API. Their earned state
 and progress are calculated from the authenticated user's data.
 
-| Badge | API ID | Unlock condition | Progress |
-| --- | --- | --- | --- |
-| WiFi Scout | `wifi_scout` | 3 or more venue speed tests with a positive Wi-Fi speed value | Up to 3 speed tests |
-| Cafe Nomad | `cafe_nomad` | Confirmed bookings at 5 distinct venues whose category is `cafe` | Up to 5 unique cafes |
-| Night Owl | `night_owl` | At least one venue review created at or after 21:00 or before 05:00 in the server runtime's local timezone | 0 or 1 qualifying review |
-| Verified Explorer | `verified_explorer` | 10 or more accurate amenity votes | Up to 10 accurate votes |
+| Badge             | API ID              | Unlock condition                                                                                                               | Progress                 |
+| ----------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| WiFi Scout        | `wifi_scout`        | 3 or more venue speed tests with a positive Wi-Fi speed value                                                                  | Up to 3 speed tests      |
+| Cafe Nomad        | `cafe_nomad`        | Confirmed bookings at 5 distinct venues whose category is `cafe`                                                               | Up to 5 unique cafes     |
+| Night Owl         | `night_owl`         | At least one venue review created at or after 21:00 or before 05:00 in the user's configured IANA timezone (falls back to UTC) | 0 or 1 qualifying review |
+| Verified Explorer | `verified_explorer` | 10 or more accurate amenity votes                                                                                              | Up to 10 accurate votes  |
 
-The Night Owl calculation currently uses JavaScript `Date.getHours()` on the
-server. It is therefore based on the runtime timezone, not a stored venue or
-user timezone. Do not describe it as a user's local time until that behavior is
-changed.
+The Night Owl calculation uses the user's saved IANA timezone (`user.timezone`),
+safely falling back to UTC if not configured or invalid. The local review hour is
+evaluated in that timezone (`hours >= 21 || hours < 5`), ensuring consistent
+evaluation regardless of the server runtime's local timezone.
 
 ## Implemented visual components
 

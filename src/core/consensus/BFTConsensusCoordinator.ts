@@ -475,6 +475,56 @@ export class BFTConsensusCoordinator<T = unknown> {
       }
     }
 
+    // Validate proposal sequence number
+    if (typeof proposal.sequence !== "number" || isNaN(proposal.sequence)) {
+      console.warn("Proposal rejected: invalid sequence number");
+      return null;
+    }
+
+    if (proposal.sequence <= this.currentSequence) {
+      console.warn(
+        `Proposal rejected: stale or replayed sequence ${proposal.sequence} <= current ${this.currentSequence}`,
+      );
+      return null;
+    }
+
+    if (proposal.sequence !== this.currentSequence + 1) {
+      console.warn(
+        `Proposal rejected: out-of-order sequence ${proposal.sequence} (expected ${this.currentSequence + 1})`,
+      );
+      return null;
+    }
+
+    // Validate parent hash against expected committed predecessor
+    const expectedParentHash =
+      this.lastCommitQC?.blockHash ??
+      (this.committedBlocks.length > 0
+        ? this.committedBlocks[this.committedBlocks.length - 1].blockHash
+        : "0000000000000000000000000000000000000000000000000000000000000000");
+
+    if (proposal.parentHash !== expectedParentHash) {
+      console.warn(
+        `Proposal rejected: invalid parentHash ${proposal.parentHash} (expected ${expectedParentHash})`,
+      );
+      return null;
+    }
+
+    // Validate justification certificate against committed chain
+    if (this.lastCommitQC) {
+      if (!proposal.justifyQC) {
+        console.warn(
+          "Proposal rejected: missing justification certificate for committed chain",
+        );
+        return null;
+      }
+      if (proposal.justifyQC.blockHash !== this.lastCommitQC.blockHash) {
+        console.warn(
+          `Proposal rejected: justifyQC blockHash ${proposal.justifyQC.blockHash} does not match lastCommitQC ${this.lastCommitQC.blockHash}`,
+        );
+        return null;
+      }
+    }
+
     // Validate relevant justification certificate if present
     if (proposal.justifyQC) {
       if (!this.verifyQuorumCertificate(proposal.justifyQC)) {
@@ -484,6 +534,12 @@ export class BFTConsensusCoordinator<T = unknown> {
       if (proposal.justifyQC.view > proposal.view) {
         console.warn(
           `Proposal rejected: justifyQC view ${proposal.justifyQC.view} cannot exceed proposal view ${proposal.view}`,
+        );
+        return null;
+      }
+      if (proposal.justifyQC.sequence >= proposal.sequence) {
+        console.warn(
+          `Proposal rejected: justifyQC sequence ${proposal.justifyQC.sequence} must be lower than proposal sequence ${proposal.sequence}`,
         );
         return null;
       }

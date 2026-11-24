@@ -151,8 +151,10 @@ A proposal is rejected (the method logs a warning and returns `null`, no vote is
 1. `proposal.proposerId` is not `getLeaderForView(proposal.view)`.
 2. `proposal.view` is lower than this node's `currentView` (stale view).
 3. `proposal.view` is greater than `currentView` without certified view-change quorum evidence or exceeds `maxFutureViewWindow`.
-4. `proposal.justifyQC` is present and invalid or its view exceeds `proposal.view`.
-5. The recomputed SHA-256 of the proposal content does not equal `proposal.blockHash`.
+4. `proposal.sequence` is not strictly `currentSequence + 1` (stale, replayed, or out-of-order sequence).
+5. `proposal.parentHash` does not match the expected committed predecessor (`lastCommitQC.blockHash` or genesis hash).
+6. `proposal.justifyQC` is missing when extending a committed chain, or is invalid, or its view/sequence exceeds the proposal.
+7. The recomputed SHA-256 of the proposal content does not equal `proposal.blockHash`.
 
 On success the node adopts the proposal's `view` and `sequence`, resets its phase to `PREPARE`, and returns a `PREPARE` vote.
 
@@ -410,7 +412,7 @@ These are properties of the code today, not design goals. They matter if you pla
 3. **A QC is re-emitted for each vote past quorum.** The check is `pool.size >= quorumSize`, so with `N = 4` the fourth vote of a phase returns another QC and runs `advancePhaseOnQC` again. For the COMMIT phase this appends the block to `committedBlocks` a second time and calls `onCommit` again. Make `onCommit` idempotent (key on `blockHash` and `sequence`) until this is fixed.
 4. **No internal pacemaker.** Nothing starts a timer or triggers a view change by itself. `timeoutMs` only bounds async signature verification.
 5. **`lastCommitQC` in view change is advisory.** The signature on `ViewChangeMessage` is verified, but `lastCommitQC` inside it is not automatically checked or used to pick which block the new leader extends.
-6. **`justifyQC` and `parentHash` are not validated** in `handleProposal`. A follower does not check that a proposal extends the last decided block.
+6. **`justifyQC`, `parentHash`, and sequence validation.** `handleProposal` verifies that proposals strictly increment `currentSequence`, match the expected committed `parentHash`, and carry a valid `justifyQC` verifying quorum signatures.
 7. **Phase transitions are not strictly ordered.** `advancePhaseOnQC` moves the phase according to the QC's phase and does not check that the previous phase completed or that the QC matches `currentProposal` (only the COMMIT step checks the block hash).
 8. **No persistence, no catch-up, no validator-set changes.** State is in memory, and `validators` is fixed at construction time.
 9. **Clusters of 1 to 3 validators have quorum 1** (see [section 2](#2-quorum-requirements-2f--1-of-3f--1)). The constructor contains an empty `if (validators.length < 4)` block with comments only; it does not warn or throw.

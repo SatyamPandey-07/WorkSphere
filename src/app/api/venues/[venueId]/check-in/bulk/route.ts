@@ -132,7 +132,35 @@ export async function POST(req: NextRequest, context: RouteContext) {
       let updatedBookings: typeof matchingBookings = [];
 
       if (eligibleIds.length > 0) {
-        // Atomically update booking rows to CHECKED_IN
+        // Record check-in timestamp and upsert CheckIn occupancy records
+        const checkInTime = checkInTimestamp
+          ? new Date(checkInTimestamp)
+          : new Date();
+        const expiresAt = new Date(checkInTime.getTime() + 4 * 60 * 60 * 1000);
+
+        // Atomically ensure occupancy records are created as an integral part of the transaction
+        for (const booking of eligibleBookings) {
+          await tx.checkIn.upsert({
+            where: {
+              userId_venueId: {
+                userId: booking.userId,
+                venueId: venue.id,
+              },
+            },
+            create: {
+              userId: booking.userId,
+              venueId: venue.id,
+              createdAt: checkInTime,
+              expiresAt,
+            },
+            update: {
+              createdAt: checkInTime,
+              expiresAt,
+            },
+          });
+        }
+
+        // Atomically update booking rows to CHECKED_IN once occupancy records are ensured
         await tx.booking.updateMany({
           where: {
             id: { in: eligibleIds },
@@ -142,37 +170,6 @@ export async function POST(req: NextRequest, context: RouteContext) {
             status: "CHECKED_IN",
           },
         });
-
-        // Record check-in timestamp and upsert CheckIn records if supported
-        const checkInTime = checkInTimestamp
-          ? new Date(checkInTimestamp)
-          : new Date();
-        const expiresAt = new Date(checkInTime.getTime() + 4 * 60 * 60 * 1000);
-
-        for (const booking of eligibleBookings) {
-          try {
-            await tx.checkIn.upsert({
-              where: {
-                userId_venueId: {
-                  userId: booking.userId,
-                  venueId: venue.id,
-                },
-              },
-              create: {
-                userId: booking.userId,
-                venueId: venue.id,
-                createdAt: checkInTime,
-                expiresAt,
-              },
-              update: {
-                createdAt: checkInTime,
-                expiresAt,
-              },
-            });
-          } catch {
-            // Ignore CheckIn table constraints if user relation is mocked or absent
-          }
-        }
 
         updatedBookings = await tx.booking.findMany({
           where: {

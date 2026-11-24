@@ -29,6 +29,8 @@ export interface VenueDetail {
   photos?: string[];
   heroPhotoUrl?: string | null;
   description?: string | null;
+  amenities?: string[] | null;
+  tags?: string[] | null;
 }
 
 export interface VenueDetailModalProps {
@@ -266,6 +268,7 @@ export function VenueDetailModal({
 
           {/* Hero Image (absolutely positioned inside aspect-video box so 0px layout shift occurs) */}
           {currentPhotoUrl && !isCurrentErrored ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               key={currentPhotoUrl}
               src={currentPhotoUrl}
@@ -365,6 +368,27 @@ export function VenueDetailModal({
             </p>
           )}
 
+          {/* Venue Amenity Tags with responsive mobile wrapping */}
+          {((venue.amenities && venue.amenities.length > 0) ||
+            (venue.tags && venue.tags.length > 0)) && (
+            <div
+              data-testid="venue-modal-amenities"
+              className="mt-3 flex flex-wrap items-center gap-1.5 overflow-hidden"
+            >
+              {[...(venue.amenities || []), ...(venue.tags || [])]
+                .filter((item, index, arr) => arr.indexOf(item) === index)
+                .map((amenity, idx) => (
+                  <span
+                    key={`${amenity}-${idx}`}
+                    data-testid="modal-amenity-tag-pill"
+                    className="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-200 border border-zinc-700 break-words"
+                  >
+                    {amenity}
+                  </span>
+                ))}
+            </div>
+          )}
+
           {/* Workspace Telemetry Metrics */}
           <div className="mt-4 grid grid-cols-3 gap-2.5">
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
@@ -425,6 +449,54 @@ export function VenueDetailModal({
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+export function VenueDeveloperTab({
+  venueId,
+  venueName: _venueName,
+}: {
+  venueId: string;
+  venueName?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const snippet = `curl -X GET https://work-sphere-one.vercel.app/api/venues/${venueId}`;
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(snippet);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-slate-200">Developer API Info</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 rounded bg-slate-800 px-2 py-1 text-slate-300 hover:bg-slate-700"
+        >
+          {copied ? (
+            <Check className="h-3 w-3 text-emerald-400" />
+          ) : (
+            <Copy className="h-3 w-3" />
+          )}
+          <span>{copied ? "Copied" : "Copy cURL"}</span>
+        </button>
+      </div>
+      <div>
+        <p className="text-slate-400">Venue ID:</p>
+        <code className="rounded bg-slate-950 px-2 py-0.5 font-mono text-emerald-400">
+          {venueId}
+        </code>
+      </div>
+      <div>
+        <p className="text-slate-400">cURL Request:</p>
+        <pre className="mt-1 overflow-x-auto rounded bg-slate-950 p-2 font-mono text-slate-300">
+          {snippet}
+        </pre>
       </div>
     </div>
   );

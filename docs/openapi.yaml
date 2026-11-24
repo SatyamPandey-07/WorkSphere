@@ -1,0 +1,735 @@
+openapi: 3.1.0
+
+info:
+  title: WorkSphere Meet Halfway Geometric Optimization API
+  version: 1.0.0
+  summary: Multi-participant geometric median centroid optimization and workspace ranking.
+  description: |
+    Computes an equitable physical meeting location for distributed team members.
+    The algorithm computes the L1 Geometric Median centroid (Fermat-Weber point) using
+    Weiszfeld's algorithm, queries candidate workspaces in PostgreSQL within an
+    approximate bounding box, evaluates multimodal commute times and fairness across
+    transportation modes, checks contiguous seating capacity, and returns composite-scored
+    workspace recommendations.
+
+servers:
+  - url: /
+    description: Current WorkSphere deployment
+
+tags:
+  - name: Routing & Optimization
+    description: Geometric median centroid calculation, multi-modal commute evaluation, and workspace recommendations.
+  - name: Seat Holds
+    description: Checkout-time seat hold leases protected by fencing tokens.
+
+paths:
+  /api/routing/meet-halfway:
+    post:
+      operationId: computeMeetHalfwayOptimization
+      tags:
+        - Routing & Optimization
+      summary: Compute optimal meet-halfway recommendations for a team
+      description: |
+        Receives participant geographic coordinates and optional workspace criteria,
+        calculates the geometric median centroid, and returns up to 10 ranked workspace
+        recommendations with estimated travel times, fairness scores, and capacity details.
+      security:
+        - clerkSessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetHalfwayRequest"
+            examples:
+              balancedTeam:
+                summary: Multi-modal team with balanced preference
+                value:
+                  members:
+                    - id: mem-1
+                      name: Alex
+                      latitude: 37.7749
+                      longitude: -122.4194
+                      transitMode: transit
+                    - id: mem-2
+                      name: Jordan
+                      latitude: 37.7833
+                      longitude: -122.4167
+                      transitMode: bicycling
+                  category: coworking
+                  minWifiSpeed: 50
+                  minSeats: 2
+                  searchRadiusKm: 15
+                  hasOutlets: true
+                  transitPreference: balanced
+      responses:
+        "200":
+          description: Successful optimization with ranked workspace recommendations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetHalfwayResponse"
+              examples:
+                successResult:
+                  summary: Ranked recommendations result
+                  value:
+                    success: true
+                    centroid:
+                      latitude: 37.7791
+                      longitude: -122.418
+                    totalCandidatesEvaluated: 4
+                    recommendations:
+                      - venue:
+                          id: venue_sf_101
+                          name: Downtown Central Workspace
+                          latitude: 37.7812
+                          longitude: -122.4155
+                          category: coworking
+                          address: 456 Market St, San Francisco, CA
+                          rating: 4.8
+                          wifiSpeed: 150
+                          wifiQuality: 5
+                          hasOutlets: true
+                          maxCapacity: 40
+                          currentOccupancy: 12
+                          availableSeatsCount: 28
+                          imageUrl: https://images.example.com/venues/downtown.jpg
+                        centroidDistanceMeters: 452
+                        aggregateDurationMinutes: 24
+                        averageDurationMinutes: 12
+                        maxDurationMinutes: 14
+                        fairnessScore: 94
+                        compositeRankScore: 126
+                        availableCapacity: 28
+                        memberEstimates:
+                          - memberId: mem-1
+                            memberName: Alex
+                            distanceMeters: 768
+                            durationMinutes: 10
+                            transitMode: transit
+                          - memberId: mem-2
+                            memberName: Jordan
+                            distanceMeters: 1025
+                            durationMinutes: 14
+                            transitMode: bicycling
+                    isCoLocated: false
+                    fallbackApplied: false
+                    teamSummary:
+                      memberCount: 2
+                      requiredSeats: 2
+                      searchRadiusKm: 15
+        "400":
+          description: Validation failure, malformed JSON, or non-object request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestError"
+              examples:
+                validationFailure:
+                  summary: Schema validation error
+                  value:
+                    error: Invalid request parameters
+                    details:
+                      formErrors: []
+                      fieldErrors:
+                        members:
+                          - At least one team member coordinate is required
+        "500":
+          description: Unhandled runtime or database exception.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalServerError"
+              examples:
+                serverError:
+                  summary: Internal optimization error
+                  value:
+                    error: Failed to compute meet-halfway optimization
+                    details: Database query timeout
+
+  /api/venues/{venueId}/seats/{seatId}/lock/extend:
+    post:
+      operationId: extendSeatHoldLease
+      tags:
+        - Seat Holds
+      summary: Extend a seat hold lease by five minutes
+      description: |
+        Extends the authenticated holder's checkout lease by exactly 300 seconds.
+        The fencing token returned at lock acquisition must be supplied as `token`.
+        Each lock can be extended once, and only while more than 60 seconds remain.
+        The fencing token is preserved, not reissued. The endpoint has no rate limiting
+        of its own, so it never returns 429.
+      security:
+        - clerkSessionAuth: []
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Venue that contains the seat.
+        - name: seatId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Seat whose hold should be extended.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeatHoldExtensionRequest"
+            example:
+              token: "12345"
+      responses:
+        "200":
+          description: Lease extended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldExtensionSuccess"
+        "400":
+          description: Missing, non-string or empty `token`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldError"
+              example:
+                success: false
+                error: A seat-hold fencing token is required.
+                code: INVALID_INPUT
+        "401":
+          description: No authenticated Clerk session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldError"
+              example:
+                success: false
+                error: Unauthorized
+                code: UNAUTHORIZED
+        "403":
+          description: The caller does not own the lock, or the token does not match.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldExtensionRejected"
+              example:
+                success: false
+                error: SEAT_HOLD_EXTENSION_REJECTED
+                code: FORBIDDEN
+                reason: UNAUTHORIZED
+        "404":
+          description: No active lock for this seat (never held, or already expired).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldExtensionRejected"
+              example:
+                success: false
+                error: SEAT_HOLD_EXTENSION_REJECTED
+                code: CONFLICT
+                reason: NOT_FOUND
+        "409":
+          description: Extension rejected because of the lock state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldExtensionRejected"
+              example:
+                success: false
+                error: SEAT_HOLD_EXTENSION_REJECTED
+                code: CONFLICT
+                reason: ALREADY_EXTENDED
+        "500":
+          description: Redis or other internal failure while extending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldExtensionRejected"
+              example:
+                success: false
+                error: SEAT_HOLD_EXTENSION_REJECTED
+                code: CONFLICT
+                reason: ERROR
+
+components:
+  securitySchemes:
+    clerkSessionAuth:
+      type: apiKey
+      in: cookie
+      name: __session
+      description: Active Clerk authentication session cookie required by edge middleware.
+
+  schemas:
+    TransitMode:
+      type: string
+      enum:
+        - transit
+        - driving
+        - bicycling
+        - walking
+      description: Mode of transportation used by an individual team participant.
+
+    TransitPreference:
+      type: string
+      enum:
+        - transit
+        - walking
+        - balanced
+      default: transit
+      description: |
+        Global team transport policy. 'transit' forces all members to transit speed (25 km/h);
+        'walking' forces all members to walking speed (4.8 km/h); 'balanced' respects each
+        participant's individual transitMode (defaulting to transit if missing).
+
+    MemberLocation:
+      type: object
+      required:
+        - id
+        - name
+        - latitude
+        - longitude
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Non-empty participant identifier.
+          example: mem-1
+        name:
+          type: string
+          minLength: 1
+          description: Non-empty participant display name.
+          example: Alex
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          description: Geographic latitude coordinate in decimal degrees.
+          example: 37.7749
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+          description: Geographic longitude coordinate in decimal degrees.
+          example: -122.4194
+        transitMode:
+          $ref: "#/components/schemas/TransitMode"
+
+    MeetHalfwayRequest:
+      type: object
+      required:
+        - members
+      properties:
+        members:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/MemberLocation"
+          description: Array of participant locations. Must contain at least one member.
+        category:
+          type: string
+          description: Workspace category filter (e.g. 'coworking', 'cafe'). 'all' acts as wildcard.
+          example: coworking
+        minWifiSpeed:
+          type: number
+          minimum: 0
+          default: 0
+          description: Minimum download speed in Mbps.
+          example: 50
+        minSeats:
+          type: integer
+          minimum: 1
+          description: Minimum contiguous seating capacity required. Defaults to members.length.
+          example: 4
+        searchRadiusKm:
+          type: number
+          minimum: 0
+          exclusiveMinimum: 0
+          maximum: 100
+          default: 25
+          description: Geographic search radius in kilometers around the centroid (max 100 km).
+          example: 15
+        hasOutlets:
+          type: boolean
+          description: Filter exclusively for venues with verified power outlets.
+          example: true
+        transitPreference:
+          $ref: "#/components/schemas/TransitPreference"
+
+    CentroidCoordinates:
+      type: object
+      required:
+        - latitude
+        - longitude
+      properties:
+        latitude:
+          type: number
+          description: Latitude coordinate of the calculated geometric median.
+          example: 37.7777
+        longitude:
+          type: number
+          description: Longitude coordinate of the calculated geometric median.
+          example: -122.4181
+
+    CandidateVenue:
+      type: object
+      required:
+        - id
+        - name
+        - latitude
+        - longitude
+        - category
+        - maxCapacity
+        - currentOccupancy
+      properties:
+        id:
+          type: string
+          description: Unique venue identifier (CUID).
+          example: venue_sf_101
+        name:
+          type: string
+          description: Display name of the workspace venue.
+          example: Downtown Central Workspace
+        latitude:
+          type: number
+          description: Latitude coordinate in decimal degrees.
+          example: 37.7812
+        longitude:
+          type: number
+          description: Longitude coordinate in decimal degrees.
+          example: -122.4155
+        category:
+          type: string
+          description: Workspace category classification.
+          example: coworking
+        address:
+          type:
+            - string
+            - "null"
+          description: Physical street address.
+          example: 456 Market St, San Francisco, CA
+        rating:
+          type:
+            - number
+            - "null"
+          description: Venue star rating score.
+          example: 4.8
+        wifiSpeed:
+          type:
+            - number
+            - "null"
+          description: Measured Wi-Fi download speed in Mbps.
+          example: 150
+        wifiQuality:
+          type:
+            - number
+            - "null"
+          description: Wi-Fi quality score (1 to 5).
+          example: 5
+        hasOutlets:
+          type: boolean
+          description: Whether power outlets are accessible.
+          example: true
+        maxCapacity:
+          type: integer
+          description: Maximum seating capacity.
+          example: 40
+        currentOccupancy:
+          type: integer
+          description: Current count of active checked-in occupants.
+          example: 12
+        availableSeatsCount:
+          type: integer
+          description: Computed available seats.
+          example: 28
+        imageUrl:
+          type:
+            - string
+            - "null"
+          description: Image URL for the venue.
+          example: https://images.example.com/venues/downtown.jpg
+
+    MemberTravelEstimate:
+      type: object
+      required:
+        - memberId
+        - memberName
+        - distanceMeters
+        - durationMinutes
+        - transitMode
+      properties:
+        memberId:
+          type: string
+          description: Identifier matching submitted participant id.
+          example: mem-1
+        memberName:
+          type: string
+          description: Name matching submitted participant name.
+          example: Alex
+        distanceMeters:
+          type: integer
+          description: Haversine distance in meters to the venue.
+          example: 768
+        durationMinutes:
+          type: integer
+          description: Estimated door-to-door commute duration in minutes.
+          example: 10
+        transitMode:
+          type: string
+          description: Effective travel mode applied during calculation.
+          example: transit
+
+    RankedVenueRecommendation:
+      type: object
+      required:
+        - venue
+        - centroidDistanceMeters
+        - aggregateDurationMinutes
+        - averageDurationMinutes
+        - maxDurationMinutes
+        - fairnessScore
+        - compositeRankScore
+        - availableCapacity
+        - memberEstimates
+      properties:
+        venue:
+          $ref: "#/components/schemas/CandidateVenue"
+        centroidDistanceMeters:
+          type: integer
+          description: Haversine distance in meters between geometric centroid and venue.
+          example: 452
+        aggregateDurationMinutes:
+          type: integer
+          description: Sum of all member commute times in minutes.
+          example: 24
+        averageDurationMinutes:
+          type: integer
+          description: Mean commute time across all participants.
+          example: 12
+        maxDurationMinutes:
+          type: integer
+          description: Longest commute time among participants.
+          example: 14
+        fairnessScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Commute equity score (100 = identical commute times).
+          example: 94
+        compositeRankScore:
+          type: integer
+          minimum: 0
+          description: Multi-objective composite ranking score.
+          example: 126
+        availableCapacity:
+          type: integer
+          description: Available seating capacity at the venue.
+          example: 28
+        memberEstimates:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberTravelEstimate"
+          description: Per-member commute calculations.
+
+    TeamSummary:
+      type: object
+      required:
+        - memberCount
+        - requiredSeats
+        - searchRadiusKm
+      properties:
+        memberCount:
+          type: integer
+          description: Total participant count.
+          example: 2
+        requiredSeats:
+          type: integer
+          description: Effective minimum seats constraint applied.
+          example: 2
+        searchRadiusKm:
+          type: number
+          description: Search radius in kilometers used for bounding box.
+          example: 15
+
+    MeetHalfwayResponse:
+      type: object
+      required:
+        - success
+        - centroid
+        - totalCandidatesEvaluated
+        - recommendations
+        - isCoLocated
+        - fallbackApplied
+        - teamSummary
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+          description: Always true on successful optimization.
+        centroid:
+          $ref: "#/components/schemas/CentroidCoordinates"
+        totalCandidatesEvaluated:
+          type: integer
+          description: Total candidate venues evaluated from database.
+          example: 4
+        recommendations:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/RankedVenueRecommendation"
+          description: Top 10 ranked workspace recommendations ordered by compositeRankScore descending.
+        isCoLocated:
+          type: boolean
+          description: True if all participants are within 150m of one another.
+          example: false
+        fallbackApplied:
+          type: boolean
+          description: True if capacity filtering was relaxed because zero venues met requiredSeats.
+          example: false
+        message:
+          type: string
+          description: Informational status message when co-located or when fallback is applied.
+          example: No venues met the full group capacity. Showing best nearby alternatives.
+        teamSummary:
+          $ref: "#/components/schemas/TeamSummary"
+
+    BadRequestError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: High-level error summary.
+          example: Invalid request parameters
+        details:
+          type: object
+          additionalProperties: true
+          description: Structured validation error details from Zod schema parser.
+
+    InternalServerError:
+      type: object
+      required:
+        - error
+        - details
+      properties:
+        error:
+          type: string
+          description: High-level error description.
+          example: Failed to compute meet-halfway optimization
+        details:
+          type: string
+          description: Internal error message.
+          example: Database connection timeout
+
+    SeatHoldExtensionRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: Fencing token issued when the seat hold was acquired. Trimmed by the server.
+
+    SeatHoldLock:
+      type: object
+      required:
+        - venueId
+        - seatId
+        - userId
+        - heldAt
+        - expiresAt
+        - version
+      properties:
+        venueId:
+          type: string
+        seatId:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        heldAt:
+          type: integer
+          format: int64
+          description: Acquisition time in Unix milliseconds.
+        expiresAt:
+          type: integer
+          format: int64
+          description: Expiry time in Unix milliseconds.
+        version:
+          type: integer
+          description: Starts at 1 and increases by 1 on a successful extension.
+        fencingToken:
+          type: string
+        extensionUsed:
+          type: boolean
+          description: True once the single permitted extension has been consumed.
+
+    SeatHoldExtensionSuccess:
+      type: object
+      required:
+        - success
+        - lock
+        - remainingSeconds
+      properties:
+        success:
+          type: boolean
+          const: true
+        lock:
+          $ref: "#/components/schemas/SeatHoldLock"
+        remainingSeconds:
+          type: integer
+          minimum: 0
+          description: Seconds left on the lease after the extension, rounded up.
+
+    SeatHoldError:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+        code:
+          type: string
+
+    SeatHoldExtensionRejected:
+      type: object
+      required:
+        - success
+        - error
+        - code
+        - reason
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          const: SEAT_HOLD_EXTENSION_REJECTED
+        code:
+          type: string
+          enum:
+            - FORBIDDEN
+            - CONFLICT
+          description: FORBIDDEN for 403, CONFLICT for 404, 409 and 500.
+        reason:
+          type: string
+          enum:
+            - NOT_FOUND
+            - UNAUTHORIZED
+            - ALREADY_EXTENDED
+            - TOO_CLOSE_TO_EXPIRY
+            - INVALID_LOCK
+            - ERROR
+        remainingSeconds:
+          type: integer
+          description: Present on some rejections, such as TOO_CLOSE_TO_EXPIRY.

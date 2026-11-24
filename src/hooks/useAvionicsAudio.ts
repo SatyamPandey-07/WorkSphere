@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useBatteryStatus } from "./useBatteryStatus";
+import {
+  ANALYSER_FFT_SIZE,
+  buildSpectralFrame,
+  detectWasmSimd,
+  type AnalyzerMode,
+  type SpectralFrame,
+} from "@/lib/audio/spectralFallback";
 
 const SINK_STORAGE_KEY = "avionics_preferred_audio_sink_id";
 
@@ -58,9 +65,15 @@ export interface AvionicsAudioReturn {
   dominantFrequencyHz: number;
   /** Last AudioWorklet FFT frame processing latency in ms (< 5ms target) */
   analyzerLatencyMs: number;
-  /** True while the AudioWorklet frequency analyzer is actively running */
+  /** True while the frequency analyzer (WASM SIMD or AnalyserNode fallback) is running */
   isAnalyzerActive: boolean;
-  /** Start WebAssembly SIMD AudioWorklet acoustic frequency analysis */
+  /** Which analyzer feeds the spectral state: WASM SIMD worklet, native AnalyserNode fallback, or none */
+  analyzerMode: AnalyzerMode;
+  /**
+   * Start acoustic frequency analysis. Uses the WebAssembly SIMD AudioWorklet
+   * when supported and falls back to a native AnalyserNode otherwise; both
+   * produce identical spectralBins / splDb / dominantFrequencyHz output.
+   */
   startFrequencyAnalyzer: (sourceStream?: MediaStream) => Promise<boolean>;
   /** Stop and disconnect the AudioWorklet frequency analyzer */
   stopFrequencyAnalyzer: () => void;
@@ -130,6 +143,7 @@ export function useAvionicsAudio({
   const [dominantFrequencyHz, setDominantFrequencyHz] = useState<number>(0);
   const [analyzerLatencyMs, setAnalyzerLatencyMs] = useState<number>(0);
   const [isAnalyzerActive, setIsAnalyzerActive] = useState<boolean>(false);
+  const [analyzerMode, setAnalyzerMode] = useState<AnalyzerMode>("inactive");
 
   const battery = useBatteryStatus();
 
@@ -162,6 +176,8 @@ export function useAvionicsAudio({
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
+  const analyserTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load preferred sinkId from localStorage on mount
   useEffect(() => {
@@ -322,6 +338,21 @@ export function useAvionicsAudio({
       workletNodeRef.current = null;
     }
 
+    if (analyserTimerRef.current) {
+      clearInterval(analyserTimerRef.current);
+      analyserTimerRef.current = null;
+    }
+
+    if (analyserNodeRef.current) {
+      try {
+        analyserNodeRef.current.disconnect();
+      } catch {
+        // Ignore already disconnected node
+      }
+
+      analyserNodeRef.current = null;
+    }
+
     if (mediaSourceRef.current) {
       try {
         mediaSourceRef.current.disconnect();
@@ -338,54 +369,148 @@ export function useAvionicsAudio({
     }
 
     setIsAnalyzerActive(false);
+    setAnalyzerMode("inactive");
   }, []);
 
-  // Start WebAssembly SIMD acoustic frequency analyzer in AudioWorkletGlobalScope
+  // Single place that publishes an analysis frame, shared by the WASM worklet
+  // and the AnalyserNode fallback so consumers always get the same shapes.
+  const applySpectralFrame = useCallback(
+    (frame: Partial<SpectralFrame> | null | undefined) => {
+      if (!frame) return;
+
+      if (frame.bins instanceof Float32Array) {
+        setSpectralBins(frame.bins);
+      }
+
+      if (typeof frame.splDb === "number") {
+        setSplDb(frame.splDb);
+      }
+
+      if (typeof frame.dominantFrequencyHz === "number") {
+        setDominantFrequencyHz(frame.dominantFrequencyHz);
+      }
+
+      if (typeof frame.latencyMs === "number") {
+        setAnalyzerLatencyMs(frame.latencyMs);
+      }
+    },
+    [],
+  );
+
+  // Native AnalyserNode analyzer for browsers without WASM SIMD / AudioWorklet.
+  const startFallbackAnalyzer = useCallback(
+    async (
+      ctx: AudioContext,
+      sourceStream: MediaStream | undefined,
+      reason: string,
+    ): Promise<boolean> => {
+      console.warn(
+        `[useAvionicsAudio] ${reason}; using native AnalyserNode fallback for the frequency analyzer.`,
+      );
+
+      try {
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = ANALYSER_FFT_SIZE;
+        // No temporal smoothing, matching the worklet's raw per-frame output.
+        analyser.smoothingTimeConstant = 0;
+
+        let stream = sourceStream ?? null;
+
+        if (
+          !stream &&
+          typeof navigator !== "undefined" &&
+          navigator.mediaDevices?.getUserMedia
+        ) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          micStreamRef.current = stream;
+        }
+
+        if (stream) {
+          const src = ctx.createMediaStreamSource(stream);
+          src.connect(analyser);
+          mediaSourceRef.current = src;
+        }
+
+        const sampleRate = ctx.sampleRate || 48000;
+        const freqDb = new Float32Array(analyser.frequencyBinCount);
+        const timeDomain = new Float32Array(analyser.fftSize);
+        // One frame per FFT window, the same cadence as the worklet.
+        const pollMs = Math.max(
+          10,
+          Math.round((1000 * analyser.fftSize) / sampleRate),
+        );
+
+        analyserTimerRef.current = setInterval(() => {
+          const startTs = performance.now();
+          analyser.getFloatFrequencyData(freqDb);
+          analyser.getFloatTimeDomainData(timeDomain);
+
+          const frame = buildSpectralFrame(freqDb, timeDomain, sampleRate);
+          frame.latencyMs = performance.now() - startTs;
+          applySpectralFrame(frame);
+        }, pollMs);
+
+        analyserNodeRef.current = analyser;
+        setAnalyzerMode("fallback");
+        setIsAnalyzerActive(true);
+
+        return true;
+      } catch (err) {
+        console.error("Failed to start AnalyserNode frequency analyzer:", err);
+        stopFrequencyAnalyzer();
+
+        return false;
+      }
+    },
+    [applySpectralFrame, stopFrequencyAnalyzer],
+  );
+
+  // Start the acoustic frequency analyzer: WebAssembly SIMD inside an
+  // AudioWorklet when supported, native AnalyserNode otherwise (#8629).
   const startFrequencyAnalyzer = useCallback(
     async (sourceStream?: MediaStream): Promise<boolean> => {
       const ctx = await getAudioContext();
 
-      if (!ctx || !ctx.audioWorklet) return false;
+      if (!ctx) return false;
 
       stopFrequencyAnalyzer();
+
+      if (!detectWasmSimd()) {
+        return startFallbackAnalyzer(ctx, sourceStream, "WASM SIMD is not supported");
+      }
+
+      if (!ctx.audioWorklet) {
+        return startFallbackAnalyzer(ctx, sourceStream, "AudioWorklet is not available");
+      }
+
+      let workletNode: AudioWorkletNode;
+      let wasmBytes: ArrayBuffer;
 
       try {
         await ctx.audioWorklet.addModule("/worklets/fft-processor.js");
 
         const wasmResp = await fetch("/wasm/fft_analyzer.wasm");
-        const wasmBytes = await wasmResp.arrayBuffer();
+        wasmBytes = await wasmResp.arrayBuffer();
 
-        const workletNode = new AudioWorkletNode(
-          ctx,
-          "fft-analyzer-processor",
-          {
-            processorOptions: {
-              fftSize: 512,
-              sampleRate: ctx.sampleRate || 48000,
-            },
+        workletNode = new AudioWorkletNode(ctx, "fft-analyzer-processor", {
+          processorOptions: {
+            fftSize: ANALYSER_FFT_SIZE,
+            sampleRate: ctx.sampleRate || 48000,
           },
-        );
+        });
+      } catch (err) {
+        console.error("Failed to load Wasm SIMD frequency analyzer:", err);
 
+        return startFallbackAnalyzer(ctx, sourceStream, "WASM analyzer failed to load");
+      }
+
+      try {
         workletNode.port.onmessage = (event: MessageEvent) => {
           const data = event.data;
 
           if (!data || data.type !== "SPECTRAL_FRAME") return;
 
-          if (data.bins instanceof Float32Array) {
-            setSpectralBins(data.bins);
-          }
-
-          if (typeof data.splDb === "number") {
-            setSplDb(data.splDb);
-          }
-
-          if (typeof data.dominantFrequencyHz === "number") {
-            setDominantFrequencyHz(data.dominantFrequencyHz);
-          }
-
-          if (typeof data.latencyMs === "number") {
-            setAnalyzerLatencyMs(data.latencyMs);
-          }
+          applySpectralFrame(data);
         };
 
         workletNode.port.postMessage({ type: "INIT_WASM", wasmBytes }, [
@@ -410,6 +535,7 @@ export function useAvionicsAudio({
         }
 
         workletNodeRef.current = workletNode;
+        setAnalyzerMode("wasm-simd");
         setIsAnalyzerActive(true);
 
         return true;
@@ -420,7 +546,12 @@ export function useAvionicsAudio({
         return false;
       }
     },
-    [getAudioContext, stopFrequencyAnalyzer],
+    [
+      getAudioContext,
+      stopFrequencyAnalyzer,
+      startFallbackAnalyzer,
+      applySpectralFrame,
+    ],
   );
 
   // Unlock AudioContext on first user gesture.
@@ -700,6 +831,7 @@ export function useAvionicsAudio({
     dominantFrequencyHz,
     analyzerLatencyMs,
     isAnalyzerActive,
+    analyzerMode,
     startFrequencyAnalyzer,
     stopFrequencyAnalyzer,
   };

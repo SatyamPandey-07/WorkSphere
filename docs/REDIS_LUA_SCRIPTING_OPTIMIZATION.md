@@ -1315,7 +1315,7 @@ No load test scripts or benchmarking data present.
 
 - [src/app/api/auth/forgot-password/route.ts](../src/app/api/auth/forgot-password/route.ts)
 
-- [src/app/api/auth/resend-otp/route.ts](../src/app/api/auth/resend-otp/route.ts)
+- [src/app/api/auth/resend-otp/route.ts](../src/app/api/auth/resend-otp/route.ts) (Retired: returns HTTP 410 Gone; authentication handled via Clerk)
 
 - [src/app/api/auth/reset-password/route.ts](../src/app/api/auth/reset-password/route.ts)
 

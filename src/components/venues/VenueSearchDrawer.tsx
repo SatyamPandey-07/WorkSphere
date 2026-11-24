@@ -84,6 +84,8 @@ export const AMENITIES_LIST = [
   { id: "quiet", label: "Quiet Zone" },
   { id: "phonebooths", label: "Phone Booths" },
   { id: "standing_desk", label: "Standing Desk" },
+  { id: "standing_desks", label: "Standing Desk" },
+  { id: "external_monitors", label: "External Monitor (4K/USB-C)" },
 ];
 
 export const CATEGORIES_LIST = [

@@ -49,7 +49,39 @@ export function usePushNotifications() {
       try {
         const reg = await navigator.serviceWorker.ready;
         const subscription = await reg.pushManager.getSubscription();
-        setIsSubscribed(subscription !== null);
+        if (!subscription) {
+          setIsSubscribed(false);
+          return;
+        }
+
+        const token = await getToken();
+        if (!token) {
+          setIsSubscribed(false);
+          return;
+        }
+
+        const res = await fetch(
+          `/api/push/subscribe?endpoint=${encodeURIComponent(subscription.endpoint)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isOwnedByOther) {
+            // Subscription belongs to another account (switched user on shared browser).
+            // Unsubscribe browser pushManager so user starts clean.
+            await subscription.unsubscribe().catch(() => {});
+            setIsSubscribed(false);
+          } else {
+            setIsSubscribed(Boolean(data.isSubscribed));
+          }
+        } else {
+          setIsSubscribed(false);
+        }
       } catch {
         setIsSubscribed(false);
       }
@@ -59,7 +91,8 @@ export function usePushNotifications() {
 
     // Listen for permission changes via the Permissions API (Chromium only)
     if ("permissions" in navigator) {
-      navigator.permissions.query({ name: "notifications" as PermissionName })
+      navigator.permissions
+        .query({ name: "notifications" as PermissionName })
         .then((status) => {
           const onChange = () => {
             setPermission(status.state as NotificationPermission);
@@ -72,7 +105,7 @@ export function usePushNotifications() {
         })
         .catch(() => {});
     }
-  }, [isSupported, userId]);
+  }, [isSupported, userId, getToken]);
 
   const subscribe = useCallback(async () => {
     if (!isSupported || !userId) return false;
@@ -115,7 +148,7 @@ export function usePushNotifications() {
       }
 
       const token = await getToken();
-      await fetch("/api/push/subscribe", {
+      const res = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -127,6 +160,18 @@ export function usePushNotifications() {
           auth: subJson.keys.auth,
         }),
       });
+
+      if (!res.ok) {
+        if (res.status === 409) {
+          console.warn(
+            "[Push] Subscription conflict: endpoint owned by another user. Resetting browser subscription.",
+          );
+          await subscription.unsubscribe().catch(() => {});
+        }
+        setIsSubscribed(false);
+        setIsLoading(false);
+        return false;
+      }
 
       setIsSubscribed(true);
       setIsLoading(false);
@@ -166,7 +211,7 @@ export function usePushNotifications() {
       await subscription.unsubscribe();
 
       const token = await getToken();
-      await fetch("/api/push/unsubscribe", {
+      const res = await fetch("/api/push/unsubscribe", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -174,6 +219,13 @@ export function usePushNotifications() {
         },
         body: JSON.stringify({ endpoint }),
       });
+
+      if (!res.ok) {
+        console.warn(
+          "[Push] Server unsubscribe returned non-ok status:",
+          res.status,
+        );
+      }
 
       setIsSubscribed(false);
       setIsLoading(false);

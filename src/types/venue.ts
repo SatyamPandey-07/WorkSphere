@@ -28,6 +28,11 @@ export interface VenueAmenities {
   hasQuietZone?: boolean;
   hasAncHeadsetRental?: boolean;
 
+  standing_desks?: boolean;
+  hasStandingDesks?: boolean;
+  external_monitors?: boolean;
+  hasExternalMonitors?: boolean;
+
   petsAllowedIndoors?: boolean;
   largeDogsAllowed?: boolean;
   smallDogsOnly?: boolean;
@@ -36,7 +41,11 @@ export interface VenueAmenities {
   patioOnly?: boolean;
   waterBowlsProvided?: boolean;
   dogFriendly?: boolean;
+  petFriendly?: boolean;
   catsAllowed?: boolean;
+
+  veganOptions?: boolean;
+  veganFood?: boolean;
 
   singleOriginBeans?: boolean;
   specialtyEspresso?: boolean;

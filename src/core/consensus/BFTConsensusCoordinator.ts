@@ -321,6 +321,10 @@ export class BFTConsensusCoordinator<T = unknown> {
     return this.currentSequence;
   }
 
+  public getCurrentProposal(): BlockProposal<T> | null {
+    return this.currentProposal ? { ...this.currentProposal } : null;
+  }
+
   public getCommittedBlocks(): BlockProposal<T>[] {
     return [...this.committedBlocks];
   }

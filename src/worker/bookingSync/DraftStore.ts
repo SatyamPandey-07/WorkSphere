@@ -6,6 +6,11 @@
  */
 
 import { VectorClock } from "../../core/crdt/CrdtVectorClock";
+import {
+  encryptPayload,
+  decryptPayload,
+  EncryptedPayload,
+} from "../../lib/security/clientEncryption";
 
 const DB_NAME = "WorkSphereBookingDB";
 const DB_VERSION = 1;
@@ -25,6 +30,8 @@ export interface BookingDraft {
     string,
     { timestamp: number; clock: VectorClock; lamport: number; nodeId: string }
   >;
+  encryptedPayload?: EncryptedPayload;
+  isEncrypted?: boolean;
 }
 
 export const BOOKING_DRAFT_EVENTS = {
@@ -85,6 +92,27 @@ export class DraftStore {
     });
   }
 
+  private async hydrateDraft(draft?: BookingDraft): Promise<BookingDraft | undefined> {
+    if (!draft) return undefined;
+    if (!draft.isEncrypted || !draft.encryptedPayload) {
+      return { ...draft };
+    }
+
+    try {
+      const decrypted = await decryptPayload<Record<string, unknown>>(draft.encryptedPayload);
+      return {
+        ...draft,
+        payload: decrypted,
+      };
+    } catch (err: any) {
+      console.error(`[DraftStore] Failed to decrypt draft ${draft.id}:`, err);
+      return {
+        ...draft,
+        payload: { __corrupted: true, error: err.message },
+      };
+    }
+  }
+
   public async saveDraft(draft: BookingDraft): Promise<void> {
     // Ensure vector clock is initialized for offline causal tracking
     if (!draft.vectorClock) {
@@ -95,8 +123,24 @@ export class DraftStore {
       };
     }
 
+    // Transparently encrypt the sensitive booking payload before writing to IndexedDB or memory
+    let storedDraft: BookingDraft = { ...draft };
+    if (draft.payload && Object.keys(draft.payload).length > 0) {
+      try {
+        const encrypted = await encryptPayload(draft.payload);
+        storedDraft = {
+          ...draft,
+          payload: {}, // Strip raw plaintext reservation data
+          encryptedPayload: encrypted,
+          isEncrypted: true,
+        };
+      } catch (err) {
+        console.warn("[DraftStore] Encryption failed, persisting unencrypted fallback:", err);
+      }
+    }
+
     if (typeof indexedDB === "undefined") {
-      this.memoryFallback.set(draft.id, { ...draft });
+      this.memoryFallback.set(draft.id, storedDraft);
       notifyDraftStoreChange("save", draft.id);
       return;
     }
@@ -106,7 +150,7 @@ export class DraftStore {
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, "readwrite");
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(draft);
+      const request = store.put(storedDraft);
 
       request.onsuccess = () => {
         notifyDraftStoreChange("save", draft.id);
@@ -116,14 +160,17 @@ export class DraftStore {
     });
   }
 
-  public async getDraft(id: string): Promise<BookingDraft | undefined> {
+  /**
+   * Internal/test helper: retrieves raw unhydrated draft from persistent storage.
+   */
+  public async getRawDraft(id: string): Promise<BookingDraft | undefined> {
     if (typeof indexedDB === "undefined") {
       return this.memoryFallback.get(id);
     }
 
     if (!this.db) await this.init();
 
-    return new Promise((resolve, reject) => {
+    return new Promise<BookingDraft | undefined>((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, "readonly");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get(id);
@@ -133,21 +180,48 @@ export class DraftStore {
     });
   }
 
-  public async getAllDrafts(): Promise<BookingDraft[]> {
+  public async getDraft(id: string): Promise<BookingDraft | undefined> {
+    let rawDraft: BookingDraft | undefined;
     if (typeof indexedDB === "undefined") {
-      return Array.from(this.memoryFallback.values());
+      rawDraft = this.memoryFallback.get(id);
+      return this.hydrateDraft(rawDraft);
     }
 
     if (!this.db) await this.init();
 
-    return new Promise((resolve, reject) => {
+    rawDraft = await new Promise<BookingDraft | undefined>((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, "readonly");
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
+      const request = store.get(id);
 
-      request.onsuccess = () => resolve(request.result || []);
+      request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
+
+    return this.hydrateDraft(rawDraft);
+  }
+
+  public async getAllDrafts(): Promise<BookingDraft[]> {
+    let rawDrafts: BookingDraft[] = [];
+    if (typeof indexedDB === "undefined") {
+      rawDrafts = Array.from(this.memoryFallback.values());
+    } else {
+      if (!this.db) await this.init();
+
+      rawDrafts = await new Promise<BookingDraft[]>((resolve, reject) => {
+        const transaction = this.db!.transaction(STORE_NAME, "readonly");
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAll();
+
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    const hydrated = await Promise.all(
+      rawDrafts.map((d) => this.hydrateDraft(d))
+    );
+    return hydrated.filter((d): d is BookingDraft => d !== undefined);
   }
 
   public async deleteDraft(id: string): Promise<void> {

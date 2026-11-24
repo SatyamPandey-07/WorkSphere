@@ -27,9 +27,12 @@ describe("SkipToContent Component", () => {
       "focus:top-4",
       "focus:left-4",
       "focus:z-50",
-      "focus:p-4",
-      "focus:bg-blue-600",
-      "focus:text-white"
+      "focus:rounded-lg",
+      "focus:px-4",
+      "focus:py-2",
+      "focus:bg-indigo-600",
+      "focus:text-white",
+      "focus:shadow-lg"
     );
   });
 
@@ -57,7 +60,7 @@ describe("SkipToContent Component", () => {
       "font-bold",
       "sr-only",
       "focus:not-sr-only",
-      "focus:bg-blue-600",
+      "focus:bg-indigo-600",
       "focus:text-white"
     );
   });

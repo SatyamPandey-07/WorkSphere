@@ -304,6 +304,7 @@ export async function POST(
           date: booking.date,
           time: booking.time,
           durationMinutes: booking.duration || 60,
+          timeZone: booking.timeZone,
         },
       }),
     );

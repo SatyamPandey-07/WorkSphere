@@ -1,6 +1,5 @@
 "use client";
 
-import { useRateLimit } from "@/hooks/useRateLimit";
 import {
   BookOpen,
   Brain,
@@ -14,10 +13,7 @@ import {
   Info,
   Loader2,
   MapPin,
-  Mic,
-  MicOff,
   Navigation,
-  Send,
   Star,
   Volume2,
   Wifi,
@@ -27,8 +23,6 @@ import {
   Copy,
   Check,
   Clock,
-  Trash2,
-  X,
 } from "lucide-react";
 import {
   markRoomAsRead,
@@ -46,8 +40,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { motion, LayoutGroup } from "framer-motion";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
@@ -1089,7 +1082,7 @@ export function MessageList({
   const [hasNewMessagesBelow, setHasNewMessagesBelow] = useState(false);
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
-  const checkIsNearBottom = useCallback(() => {
+  const _checkIsNearBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return true;
     const distanceFromBottom =
@@ -1170,203 +1163,209 @@ export function MessageList({
         className="flex-1 overflow-y-auto p-4 space-y-4"
         style={{ scrollbarGutter: "stable" }}
       >
-      {messages.length === 0 && (
-        <div className="text-center py-8">
-          <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
-          <p className="text-zinc-900 dark:text-white font-bold mb-4 uppercase text-xs tracking-widest">
-            How can I help you find a workspace today?
-          </p>
-          <div className="grid grid-cols-1 gap-2">
-            {initialSuggestions.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => onSuggestionClick(s)}
-                disabled={isLoading}
-                className="text-left cursor-pointer px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-[var(--primary-accent)] hover:text-white transition-all shadow-sm"
-              >
-                {s}
-              </button>
-            ))}
+        {messages.length === 0 && (
+          <div className="text-center py-8">
+            <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
+            <p className="text-zinc-900 dark:text-white font-bold mb-4 uppercase text-xs tracking-widest">
+              How can I help you find a workspace today?
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {initialSuggestions.map((s, i) => (
+                <button
+                  key={i}
+                  onClick={() => onSuggestionClick(s)}
+                  disabled={isLoading}
+                  className="text-left cursor-pointer px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-[var(--primary-accent)] hover:text-white transition-all shadow-sm"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {messages.map((message) => (
-        <div
-          key={message.id}
-          className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
-        >
-          {message.role === "assistant" &&
-          message.content.trim().length === 0 ? (
-            <ChatMessageSkeleton />
-          ) : (
-            <div
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
+          >
+            {message.role === "assistant" &&
+            message.content.trim().length === 0 ? (
+              <ChatMessageSkeleton />
+            ) : (
               <div
-                className={`group relative max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
-                  message.role === "user"
-                    ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
-                    : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
-                }`}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {message.role === "assistant" && (
-                  <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <ReadAloudButton text={message.content} />
-                    <CopyMessageButton text={message.content} />
+                <div
+                  className={`group relative max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
+                    message.role === "user"
+                      ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
+                      : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
+                  }`}
+                >
+                  {message.role === "assistant" && (
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <ReadAloudButton text={message.content} />
+                      <CopyMessageButton text={message.content} />
+                    </div>
+                  )}
+                  <div
+                    className={`text-sm font-medium leading-relaxed ${message.role === "assistant" ? "pr-12" : ""}`}
+                  >
+                    {message.role === "assistant" ? (
+                      <div className="relative">
+                        <MessageRenderer
+                          content={message.content}
+                          speakingSentenceIndex={
+                            speakingMessageId === message.id
+                              ? speakingSentenceIndex
+                              : null
+                          }
+                        />
+                        {message.isStreaming && (
+                          <span className="inline-flex gap-0.5 items-center ml-1 accent-text dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] font-black animate-pulse">
+                            <span>.</span>
+                            <span>.</span>
+                            <span>.</span>
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <TranslatedMessage
+                        messageId={message.id}
+                        text={message.content}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {message.agentSteps && message.agentSteps.length > 0 && (
+              <div className="ml-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => onToggleSteps(message.id)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-all hover:scale-105"
+                  >
+                    <TerminalIcon className="w-3 h-3" />
+                    <span>Agent Reasoning Details</span>
+                    {expandedSteps[message.id] ? (
+                      <ChevronUp className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                  </button>
+                  {message.cached && (
+                    <span className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 text-[10px] font-bold uppercase tracking-wider">
+                      ⚡ Cached
+                    </span>
+                  )}
+                  {message.complexity === "simple" && !message.cached && (
+                    <span className="flex items-center gap-1 px-2 py-1 rounded accent-bg-10 accent-text accent-bg-dark-20 dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] text-[10px] font-bold uppercase tracking-wider">
+                      ⚡ Simple Routing
+                    </span>
+                  )}
+                </div>
+
+                {expandedSteps[message.id] && (
+                  <div className="mt-3 space-y-2 ml-4">
+                    {message.agentSteps.map((step, idx) => {
+                      const Icon = AGENT_ICONS[step.agent] || Brain;
+                      const color = AGENT_COLORS[step.agent] || "text-zinc-500";
+                      const skipped = (step.result as any)?.skipped;
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`rounded-xl p-3 text-xs border ${skipped ? "bg-zinc-900/50 border-zinc-800/50 opacity-50" : "bg-zinc-950 border-zinc-800"}`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div
+                              className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${color}`}
+                            >
+                              {(() => {
+                                const AnyIcon = Icon as any;
+                                return <AnyIcon className="w-3 h-3" />;
+                              })()}
+                              <span>
+                                {step.agent} {skipped && "(Skipped)"}
+                              </span>
+                            </div>
+                            {step.latencyMs !== undefined && (
+                              <span className="text-[10px] text-zinc-500 font-mono font-bold">
+                                {step.latencyMs}ms
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-zinc-400 font-mono text-[11px]">
+                            {(() => {
+                              const res = step.result as any;
+                              if (res.reasoning) return String(res.reasoning);
+                              if (res.reason) return String(res.reason);
+                              if (step.agent === "Action")
+                                return `Rendered ${res.markerCount || 0} map markers.`;
+                              if (step.agent === "Context")
+                                return res.skipped
+                                  ? "Skipped."
+                                  : `Extracted filters: ${JSON.stringify(res.parameters)}`;
+                              if (step.agent === "Data")
+                                return res.skipped
+                                  ? "Skipped."
+                                  : `Found ${res.venueCount || 0} venues.`;
+                              return JSON.stringify(res).slice(0, 100);
+                            })()}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-                <div
-                  className={`text-sm font-medium leading-relaxed ${message.role === "assistant" ? "pr-12" : ""}`}
-                >
-                  {message.role === "assistant" ? (
-                    <div className="relative">
-                      <MessageRenderer
-                        content={message.content}
-                        speakingSentenceIndex={
-                          speakingMessageId === message.id
-                            ? speakingSentenceIndex
-                            : null
-                        }
-                      />
-                      {message.isStreaming && (
-                        <span className="inline-flex gap-0.5 items-center ml-1 accent-text dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] font-black animate-pulse">
-                          <span>.</span>
-                          <span>.</span>
-                          <span>.</span>
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <TranslatedMessage
-                      messageId={message.id}
-                      text={message.content}
-                    />
-                  )}
-                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {message.agentSteps && message.agentSteps.length > 0 && (
-            <div className="ml-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => onToggleSteps(message.id)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-all hover:scale-105"
-                >
-                  <TerminalIcon className="w-3 h-3" />
-                  <span>Agent Reasoning Details</span>
-                  {expandedSteps[message.id] ? (
-                    <ChevronUp className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                </button>
-                {message.cached && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 text-[10px] font-bold uppercase tracking-wider">
-                    ⚡ Cached
-                  </span>
-                )}
-                {message.complexity === "simple" && !message.cached && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded accent-bg-10 accent-text accent-bg-dark-20 dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] text-[10px] font-bold uppercase tracking-wider">
-                    ⚡ Simple Routing
-                  </span>
-                )}
-              </div>
+            {message.venues && message.venues.length > 0 && (
+              <VenueListings
+                venues={message.venues}
+                favorites={favorites}
+                onGetDirections={onGetDirections}
+                onToggleFavorite={onToggleFavorite}
+                onRateVenue={onRateVenue}
+                onOpenDetails={onOpenDetails}
+                onBook={onBook}
+                onRefresh={onRefreshVenues}
+              />
+            )}
+          </div>
+        ))}
 
-              {expandedSteps[message.id] && (
-                <div className="mt-3 space-y-2 ml-4">
-                  {message.agentSteps.map((step, idx) => {
-                    const Icon = AGENT_ICONS[step.agent] || Brain;
-                    const color = AGENT_COLORS[step.agent] || "text-zinc-500";
-                    const skipped = (step.result as any)?.skipped;
+        {isLoading && (
+          <div className="space-y-6 pt-4">
+            <BrainTerminal />
+          </div>
+        )}
 
-                    return (
-                      <div
-                        key={idx}
-                        className={`rounded-xl p-3 text-xs border ${skipped ? "bg-zinc-900/50 border-zinc-800/50 opacity-50" : "bg-zinc-950 border-zinc-800"}`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <div
-                            className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${color}`}
-                          >
-                            {(() => {
-                              const AnyIcon = Icon as any;
-                              return <AnyIcon className="w-3 h-3" />;
-                            })()}
-                            <span>
-                              {step.agent} {skipped && "(Skipped)"}
-                            </span>
-                          </div>
-                          {step.latencyMs !== undefined && (
-                            <span className="text-[10px] text-zinc-500 font-mono font-bold">
-                              {step.latencyMs}ms
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-zinc-400 font-mono text-[11px]">
-                          {(() => {
-                            const res = step.result as any;
-                            if (res.reasoning) return String(res.reasoning);
-                            if (res.reason) return String(res.reason);
-                            if (step.agent === "Action")
-                              return `Rendered ${res.markerCount || 0} map markers.`;
-                            if (step.agent === "Context")
-                              return res.skipped
-                                ? "Skipped."
-                                : `Extracted filters: ${JSON.stringify(res.parameters)}`;
-                            if (step.agent === "Data")
-                              return res.skipped
-                                ? "Skipped."
-                                : `Found ${res.venueCount || 0} venues.`;
-                            return JSON.stringify(res).slice(0, 100);
-                          })()}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+        {error && (
+          <div className="bg-red-950 border-2 border-red-800 rounded-xl px-4 py-3 text-xs font-bold text-red-100">
+            SYSTEM ERROR: {error}
+          </div>
+        )}
 
-          {message.venues && message.venues.length > 0 && (
-            <VenueListings
-              venues={message.venues}
-              favorites={favorites}
-              onGetDirections={onGetDirections}
-              onToggleFavorite={onToggleFavorite}
-              onRateVenue={onRateVenue}
-              onOpenDetails={onOpenDetails}
-              onBook={onBook}
-              onRefresh={onRefreshVenues}
-            />
-          )}
-        </div>
-      ))}
-
-      {isLoading && (
-        <div className="space-y-6 pt-4">
-          <BrainTerminal />
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-950 border-2 border-red-800 rounded-xl px-4 py-3 text-xs font-bold text-red-100">
-          SYSTEM ERROR: {error}
-        </div>
-      )}
-
-      <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} />
       </div>
 
       {showScrollToLatest && messages.length > 0 && (
         <button
           type="button"
           onClick={handleScrollToLatest}
-          aria-label={hasNewMessagesBelow ? "New messages below" : "Scroll to latest message"}
-          title={hasNewMessagesBelow ? "New messages below" : "Scroll to latest"}
+          aria-label={
+            hasNewMessagesBelow
+              ? "New messages below"
+              : "Scroll to latest message"
+          }
+          title={
+            hasNewMessagesBelow ? "New messages below" : "Scroll to latest"
+          }
           className={`absolute bottom-3 z-10 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
             hasNewMessagesBelow
               ? "left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg text-xs font-bold flex items-center gap-1.5 animate-bounce"
@@ -1417,6 +1416,9 @@ function CopyMessageButton({ text }: { text: string }) {
 }
 
 // ─── ChatInput ────────────────────────────────────────────────────────────────
+
+
+export { ChatInput, type ChatInputProps } from "./ChatInput";
 
 export interface ChatInputProps {
   input: string;
@@ -1818,3 +1820,4 @@ export function ChatInput({
     </div>
   );
 }
+

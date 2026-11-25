@@ -181,6 +181,43 @@ const updateHeatLayer = (instance: any, props: any, prevProps: any) => {
 };
 
 const HeatmapOverlay = createLayerComponent(createHeatLayer, updateHeatLayer);
+
+/**
+ * ============================================================================
+ * Mapbox & Leaflet Sidebar ResizeObserver Workaround (#10425)
+ * ============================================================================
+ *
+ * Why Sidebar Resizing Requires Map Resize Handling:
+ * ----------------------------------------------------
+ * WebGL and Canvas map renderers (such as Mapbox GL JS and Leaflet) calculate
+ * tile coordinates, pixel projections, bounding viewports, and interaction
+ * hit-boxes based on the explicit pixel width and height of their container DOM element.
+ *
+ * In responsive layouts featuring collapsible or animated sidebars (such as
+ * WorkSphere's AI venue recommendation chat panel or filters tray):
+ * 1. Opening, closing, or dragging the sidebar changes the available width of the
+ *    adjacent map container.
+ * 2. Standard CSS flexbox / grid layout transitions do NOT trigger native `window.resize`
+ *    events because the browser window's outer dimensions remain unchanged.
+ * 3. Without explicit resize notifications, the map engine continues rendering to its
+ *    stale container dimensions. This manifests as:
+ *    - Grey / missing tile strips along the expanded edge.
+ *    - Distorted aspect ratios and stretching in WebGL tile layers.
+ *    - Off-center markers and misaligned gesture / click hit-testing.
+ *
+ * How the ResizeObserver Workaround Works:
+ * -----------------------------------------
+ * 1. Attaches a `ResizeObserver` directly to the map container DOM element (`map.getContainer()`).
+ * 2. Detects any dimensional shift caused by sidebar open/close CSS transitions, flex reflows,
+ *    or layout re-computations without polling.
+ * 3. Debounces the handler (`delay = 150ms`) to avoid high-frequency recalculation thrashing
+ *    during active CSS animations or drag resizing.
+ * 4. Calls `map.invalidateSize()` to recalculate tile layout, viewport boundaries, and
+ *    canvas buffers.
+ * 5. Re-centers the view using `map.setView(centerBeforeResize, map.getZoom(), { animate: false })`
+ *    to preserve the user's spatial focus point across sidebar toggles.
+ * 6. Gracefully falls back to window `resize` events when `ResizeObserver` is unavailable.
+ */
 function ResizeWatcher({ delay = 150 }: { delay?: number }) {
   const map = useMap();
 
@@ -197,10 +234,25 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
       }, delay);
     };
 
+    // Attach ResizeObserver to the map container element for sidebar width shifts
+    let resizeObserver: ResizeObserver | null = null;
+    const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+
+    if (container && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserver.observe(container);
+    }
+
+    // Window resize event fallback
     window.addEventListener("resize", handleResize);
 
     return () => {
       clearTimeout(timer);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       window.removeEventListener("resize", handleResize);
     };
   }, [map, delay]);

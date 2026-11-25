@@ -28,202 +28,6 @@ export const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2 seconds
 export const DEFAULT_CONSECUTIVE_429_THRESHOLD = 3;
 export const DEFAULT_CIRCUIT_COOLDOWN_MS = 30_000; // 30 seconds
 
-/** Maximum RPC timestamp clock skew tolerated (in seconds) for cluster block-time comparisons (#9735). */
-export const MAX_RPC_CLOCK_SKEW_SECONDS = 300; // 5 minutes
-export const MAX_RPC_CLOCK_SKEW_MS = MAX_RPC_CLOCK_SKEW_SECONDS * 1_000;
-
-export const DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT = 250_000;
-export const DEFAULT_ESCROW_MAX_RETRIES = 3;
-export const DEFAULT_ESCROW_BASE_BACKOFF_MS = 1_000;
-export const DEFAULT_ESCROW_MAX_BACKOFF_MS = 8_000;
-export const DEFAULT_ESCROW_FEE_BUMP_MULTIPLIER = 1.5;
-
-export const DEFAULT_RPC_POLL_TIMEOUT_MS = 5_000; // 5 seconds strict abort timeout (#9448)
-export const STATUS_TIMEOUT = "timeout" as const;
-
-export class SolanaRpcPollTimeoutError extends Error {
-  constructor(message = "Solana RPC status poll timed out after 5000ms") {
-    super(message);
-    this.name = "SolanaRpcPollTimeoutError";
-  }
-}
-
-// Exponential backoff with full jitter defaults for RPC HTTP 429 (#9510)
-export const DEFAULT_RPC_429_MAX_RETRIES = 5;
-export const DEFAULT_RPC_429_BASE_DELAY_MS = 500;
-export const DEFAULT_RPC_429_MAX_DELAY_MS = 8_000;
-
-export interface Rpc429RetryOptions {
-  /** Maximum consecutive 429 retry attempts before failing (default: 5). */
-  maxRetries?: number;
-  /** Base delay in ms for exponential backoff (default: 500). */
-  baseDelayMs?: number;
-  /** Maximum delay cap in ms for exponential backoff (default: 8,000). */
-  maxDelayMs?: number;
-  /** Custom random function for deterministic testing (returns in [0, 1)). */
-  randomFn?: () => number;
-}
-
-/**
- * Detects whether an error represents an HTTP 429 (Too Many Requests) or rate limit.
- * Supports standard HTTP status codes, Fetch/Axios error shapes, Solana RPC errors,
- * and rate-limit error messages, without confusing unrelated failures as 429.
- */
-export function isSolanaRpcRateLimitError(error: unknown): boolean {
-  if (!error) return false;
-
-  const candidate = error as {
-    status?: unknown;
-    statusCode?: unknown;
-    code?: unknown;
-    name?: unknown;
-    message?: unknown;
-    response?: { status?: unknown; statusCode?: unknown };
-  };
-
-  for (const code of [
-    candidate.status,
-    candidate.statusCode,
-    candidate.code,
-    candidate.response?.status,
-    candidate.response?.statusCode,
-  ]) {
-    if (code === 429 || code === "429") {
-      return true;
-    }
-  }
-
-  const name = typeof candidate.name === "string" ? candidate.name : "";
-  if (name === "RateLimitError" || name === "TooManyRequestsError") {
-    return true;
-  }
-
-  const message =
-    typeof error === "string"
-      ? error
-      : typeof candidate.message === "string"
-        ? candidate.message
-        : "";
-
-  if (!message) return false;
-
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("429") ||
-    normalized.includes("too many requests") ||
-    normalized.includes("rate limit") ||
-    normalized.includes("ratelimit") ||
-    normalized.includes("resource exhausted") ||
-    normalized.includes("exceeded rate limit")
-  );
-}
-
-/**
- * Reads a header from various header containers (Headers instance, plain Record, or nested in error.response).
- */
-function readHeaderValue(headers: unknown, name: string): string | undefined {
-  if (!headers || typeof headers !== "object") return undefined;
-
-  const getter = (headers as { get?: unknown }).get;
-  if (typeof getter === "function") {
-    const val = (getter as (header: string) => unknown).call(headers, name);
-    if (typeof val === "string") return val;
-  }
-
-  const record = headers as Record<string, unknown>;
-  const lowerName = name.toLowerCase();
-  for (const key of Object.keys(record)) {
-    if (key.toLowerCase() === lowerName) {
-      const val = record[key];
-      return typeof val === "string"
-        ? val
-        : typeof val === "number"
-          ? String(val)
-          : undefined;
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Extracts and parses a Retry-After header from an RPC error, returning delay in milliseconds.
- * Supports integer delta-seconds, floating seconds, and HTTP-date formats.
- * Returns undefined if header is absent, invalid, or negative.
- */
-export function parseRetryAfterMs(
-  error: unknown,
-  now: number = Date.now(),
-): number | undefined {
-  if (!error || typeof error !== "object") return undefined;
-
-  const candidate = error as {
-    headers?: unknown;
-    response?: { headers?: unknown };
-    retryAfter?: unknown;
-  };
-
-  // If error has a direct retryAfter property (numeric seconds or ms)
-  if (
-    typeof candidate.retryAfter === "number" &&
-    Number.isFinite(candidate.retryAfter) &&
-    candidate.retryAfter > 0
-  ) {
-    // If > 1000, likely already in ms, otherwise seconds
-    return candidate.retryAfter > 1000
-      ? Math.round(candidate.retryAfter)
-      : Math.round(candidate.retryAfter * 1000);
-  }
-
-  const rawHeader =
-    readHeaderValue(candidate.headers, "retry-after") ??
-    readHeaderValue(candidate.response?.headers, "retry-after");
-
-  if (!rawHeader) return undefined;
-  const trimmed = rawHeader.trim();
-  if (!trimmed) return undefined;
-
-  // 1. Delta-seconds format (e.g. "3", "2.5")
-  if (/^\d+(\.\d+)?$/.test(trimmed)) {
-    const sec = parseFloat(trimmed);
-    return Number.isFinite(sec) && sec >= 0
-      ? Math.round(sec * 1000)
-      : undefined;
-  }
-
-  // 2. HTTP-date format (e.g. "Wed, 21 Oct 2026 07:28:00 GMT")
-  const parsedDate = Date.parse(trimmed);
-  if (!Number.isNaN(parsedDate)) {
-    return Math.max(0, parsedDate - now);
-  }
-
-  return undefined;
-}
-
-/**
- * Computes exponential backoff with full jitter for attempt number (0-indexed).
- * Full jitter: delay = random * min(maxDelay, baseDelay * 2 ** attempt)
- */
-export function computeRpc429Delay(
-  attempt: number,
-  options: Rpc429RetryOptions = {},
-): number {
-  const baseDelay = options.baseDelayMs ?? DEFAULT_RPC_429_BASE_DELAY_MS;
-  const maxDelay = options.maxDelayMs ?? DEFAULT_RPC_429_MAX_DELAY_MS;
-  const randomFn = options.randomFn ?? Math.random;
-
-  const expDelay = Math.min(
-    maxDelay,
-    baseDelay * Math.pow(2, Math.max(0, attempt)),
-  );
-  const rand = randomFn();
-  const validRand =
-    typeof rand === "number" && Number.isFinite(rand) && rand >= 0 && rand <= 1
-      ? rand
-      : 0.5;
-  return Math.round(validRand * expDelay);
-}
-
 export type SeatConfirmationMode = "websocket" | "polling";
 
 export type SeatState =
@@ -273,6 +77,15 @@ export interface SeatReservationCallbacks {
   ) => void;
 }
 
+/**
+ * Unified signature status poller signature supporting both single-argument
+ * and connection-aware callers.
+ */
+export type PollSignatureStatusFn = (
+  signature: string,
+  activeConnection?: Connection,
+) => Promise<SignatureStatus | null>;
+
 export interface ReserveSeatOptions {
   connection: Connection;
   seatId: string;
@@ -294,10 +107,7 @@ export interface ReserveSeatOptions {
    * Optional failover-aware signature status poller used in polling mode.
    * Defaults to polling the active connection's getSignatureStatuses.
    */
-  pollSignatureStatus?: (
-    signature: string,
-    activeConnection: Connection,
-  ) => Promise<SignatureStatus | null>;
+  pollSignatureStatus?: PollSignatureStatusFn;
   /** Interval between background status polls (polling mode only). */
   pollIntervalMs?: number;
   /** Circuit breaker and failover configuration */
@@ -312,15 +122,18 @@ export interface ActiveSubscription {
   timeoutTimer?: ReturnType<typeof setTimeout>;
   pollTimer?: ReturnType<typeof setTimeout>;
   pollAborted?: boolean;
+  timeoutEndMs: number;
   primaryConnection: Connection;
   fallbackConnection?: Connection;
   activeConnection: Connection;
   activeEndpoint: "primary" | "fallback";
+  activeConnectionIsFallback: boolean;
   callbacks?: SeatReservationCallbacks;
 
   // Circuit breaker state tracking
   circuitState: CircuitBreakerState;
   consecutive429Count: number;
+  rpc429ConsecutiveCount: number;
   consecutive429Threshold: number;
   cooldownMs: number;
   circuitOpenedAt?: number;
@@ -599,22 +412,25 @@ export class SolanaPayEscrowManager {
     timeoutMs: number,
     callbacks?: SeatReservationCallbacks,
     pollIntervalMs: number = DEFAULT_POLL_INTERVAL_MS,
-    pollSignatureStatus?: (
-      signature: string,
-      activeConnection: Connection,
-    ) => Promise<SignatureStatus | null>,
+    pollSignatureStatus?: PollSignatureStatusFn,
     circuitBreaker?: CircuitBreakerConfig,
   ): void {
+    const now = Date.now();
+    const timeoutEndMs = now + timeoutMs;
+
     const subRecord: ActiveSubscription = {
       seatId,
       signature,
+      timeoutEndMs,
       primaryConnection: connection,
       fallbackConnection: circuitBreaker?.fallbackConnection,
       activeConnection: connection,
       activeEndpoint: "primary",
+      activeConnectionIsFallback: false,
       callbacks,
       circuitState: "closed",
       consecutive429Count: 0,
+      rpc429ConsecutiveCount: 0,
       consecutive429Threshold:
         circuitBreaker?.consecutive429Threshold ??
         DEFAULT_CONSECUTIVE_429_THRESHOLD,
@@ -781,23 +597,26 @@ export class SolanaPayEscrowManager {
     signature: string,
     timeoutMs: number,
     pollIntervalMs: number,
-    pollSignatureStatus?: (
-      signature: string,
-      activeConnection: Connection,
-    ) => Promise<SignatureStatus | null>,
+    pollSignatureStatus?: PollSignatureStatusFn,
     callbacks?: SeatReservationCallbacks,
     circuitBreaker?: CircuitBreakerConfig,
   ): void {
+    const now = Date.now();
+    const timeoutEndMs = now + timeoutMs;
+
     const subRecord: ActiveSubscription = {
       seatId,
       signature,
+      timeoutEndMs,
       primaryConnection: connection,
       fallbackConnection: circuitBreaker?.fallbackConnection,
       activeConnection: connection,
       activeEndpoint: "primary",
+      activeConnectionIsFallback: false,
       callbacks,
       circuitState: "closed",
       consecutive429Count: 0,
+      rpc429ConsecutiveCount: 0,
       consecutive429Threshold:
         circuitBreaker?.consecutive429Threshold ??
         DEFAULT_CONSECUTIVE_429_THRESHOLD,
@@ -1052,12 +871,8 @@ export class SolanaPayEscrowManager {
   private scheduleNextPoll(
     subRecord: ActiveSubscription,
     signature: string,
-    delayMs: number,
-    pollSignatureStatus?: (
-      signature: string,
-      activeConnection: Connection,
-    ) => Promise<SignatureStatus | null>,
-    normalPollIntervalMs?: number,
+    pollIntervalMs: number,
+    pollSignatureStatus?: PollSignatureStatusFn,
   ): void {
     if (subRecord.pollAborted) return;
     const intervalToUse = normalPollIntervalMs ?? delayMs;
@@ -1077,6 +892,7 @@ export class SolanaPayEscrowManager {
    */
   private handle429Occurrence(subRecord: ActiveSubscription): void {
     subRecord.consecutive429Count += 1;
+    subRecord.rpc429ConsecutiveCount = subRecord.consecutive429Count;
 
     // If we were testing recovery (half_open), an immediate 429 re-trips back to open
     if (subRecord.circuitState === "half_open") {
@@ -1085,6 +901,7 @@ export class SolanaPayEscrowManager {
       if (subRecord.fallbackConnection) {
         subRecord.activeConnection = subRecord.fallbackConnection;
         subRecord.activeEndpoint = "fallback";
+        subRecord.activeConnectionIsFallback = true;
       }
       subRecord.callbacks?.onCircuitStateChange?.("open", subRecord.activeEndpoint);
       return;
@@ -1101,6 +918,7 @@ export class SolanaPayEscrowManager {
       if (subRecord.fallbackConnection) {
         subRecord.activeConnection = subRecord.fallbackConnection;
         subRecord.activeEndpoint = "fallback";
+        subRecord.activeConnectionIsFallback = true;
       }
 
       subRecord.callbacks?.onCircuitStateChange?.("open", subRecord.activeEndpoint);
@@ -1120,21 +938,27 @@ export class SolanaPayEscrowManager {
         subRecord.circuitState = "half_open";
         subRecord.activeConnection = subRecord.primaryConnection;
         subRecord.activeEndpoint = "primary";
+        subRecord.activeConnectionIsFallback = false;
         subRecord.callbacks?.onCircuitStateChange?.("half_open", "primary");
         return subRecord.primaryConnection;
       }
 
       // Still in cool-down: stay on fallback if available, else primary
       if (subRecord.fallbackConnection) {
+        subRecord.activeConnectionIsFallback = true;
         return subRecord.fallbackConnection;
       }
+      subRecord.activeConnectionIsFallback = false;
       return subRecord.primaryConnection;
     }
 
     if (subRecord.circuitState === "half_open") {
+      subRecord.activeConnectionIsFallback = false;
       return subRecord.primaryConnection;
     }
 
+    subRecord.activeConnectionIsFallback =
+      subRecord.activeEndpoint === "fallback";
     return subRecord.activeConnection;
   }
 
@@ -1143,32 +967,38 @@ export class SolanaPayEscrowManager {
    */
   private handleSuccessfulRpc(subRecord: ActiveSubscription): void {
     subRecord.consecutive429Count = 0;
+    subRecord.rpc429ConsecutiveCount = 0;
 
     if (subRecord.circuitState === "half_open") {
       // Primary recovered successfully!
       subRecord.circuitState = "closed";
       subRecord.activeConnection = subRecord.primaryConnection;
       subRecord.activeEndpoint = "primary";
+      subRecord.activeConnectionIsFallback = false;
       subRecord.circuitOpenedAt = undefined;
       subRecord.callbacks?.onCircuitStateChange?.("closed", "primary");
     }
   }
 
   /**
-   * Performs one background status poll and advances the reservation state machine.
-   * Seamlessly applies the circuit breaker without dropping or resetting subscription progress.
+   * Consolidated single implementation for signature status polling.
+   * Advances the reservation state machine and maintains timeout and failover status.
    */
   private async pollSignatureStatusOnce(
     subRecord: ActiveSubscription,
     signature: string,
     pollIntervalMs: number,
-    pollSignatureStatus?: (
-      signature: string,
-      activeConnection: Connection,
-    ) => Promise<SignatureStatus | null>,
+    pollSignatureStatus?: PollSignatureStatusFn,
   ): Promise<void> {
     if (subRecord.pollAborted) return;
     const { seatId, callbacks } = subRecord;
+
+    // Check if timeout has expired based on persistent deadline
+    if (Date.now() >= subRecord.timeoutEndMs) {
+      const timeoutReason = `Transaction confirmation timed out. Seat reservation has been restored to available.`;
+      this.rollback(seatId, timeoutReason, "timeout");
+      return;
+    }
 
     const queryConnection = this.evaluateConnectionForPoll(subRecord);
 

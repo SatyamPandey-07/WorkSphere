@@ -1,1 +1,326 @@
-﻿import { useCallback, useMemo, useState } from 'react'; export interface EscrowPreflightParams { depositUsdc: number; protocolFeeBps?: number; walletSolBalance: number; walletUsdcBalance: number; hasUsdcAta?: boolean; requiresEscrowAccountRent?: boolean; estimatedTxFeeSol?: number; } export interface EscrowPreflightBreakdown { depositUsdc: number; protocolFeeUsdc: number; totalRequiredUsdc: number; usdcShortfall: number; escrowAccountRentSol: number; ataCreationRentSol: number; networkFeeSol: number; totalRequiredSol: number; solShortfall: number; isReady: boolean; summaryLines: string[]; } export interface UseNomadEscrowOptions { initialParams?: EscrowPreflightParams; } export interface UseNomadEscrowResult { params: EscrowPreflightParams; preflight: EscrowPreflightBreakdown; setParams: (next: Partial<EscrowPreflightParams>) => void; resetParams: () => void; } const USDC_DECIMALS = 1_000_000; const LAMPORTS_PER_SOL = 1_000_000_000; export const DEFAULT_ESCROW_ACCOUNT_RENT_SOL = 0.00228288; export const DEFAULT_USDC_ATA_RENT_SOL = 0.00203928; export const DEFAULT_ESTIMATED_TX_FEE_SOL = 0.000015; export const DEFAULT_PROTOCOL_FEE_BPS = 250; function roundMicroUsdc(amountUsdc: number): number { if (typeof amountUsdc !== 'number' || !Number.isFinite(amountUsdc) || amountUsdc <= 0) return 0; return Math.round(amountUsdc * USDC_DECIMALS); } function fromMicroUsdc(micro: number): number { return Number((micro / USDC_DECIMALS).toFixed(6)); } function roundLamports(amountSol: number): number { if (typeof amountSol !== 'number' || !Number.isFinite(amountSol) || amountSol <= 0) return 0; return Math.round(amountSol * LAMPORTS_PER_SOL); } function fromLamports(lamports: number): number { return Number((lamports / LAMPORTS_PER_SOL).toFixed(9)); } export function computeEscrowPreflightBreakdown(params: EscrowPreflightParams): EscrowPreflightBreakdown { const feeBps = typeof params.protocolFeeBps === 'number' && Number.isFinite(params.protocolFeeBps) && params.protocolFeeBps >= 0 ? Math.floor(params.protocolFeeBps) : DEFAULT_PROTOCOL_FEE_BPS; const depositMicro = roundMicroUsdc(params.depositUsdc); const feeMicro = Math.ceil((depositMicro * feeBps) / 10_000); const totalRequiredMicro = depositMicro + feeMicro; const walletUsdcMicro = roundMicroUsdc(params.walletUsdcBalance); const usdcShortfallMicro = Math.max(0, totalRequiredMicro - walletUsdcMicro); const escrowRentLamports = params.requiresEscrowAccountRent === false ? 0 : roundLamports(DEFAULT_ESCROW_ACCOUNT_RENT_SOL); const ataRentLamports = params.hasUsdcAta === false ? roundLamports(DEFAULT_USDC_ATA_RENT_SOL) : 0; const txFeeLamports = roundLamports(params.estimatedTxFeeSol ?? DEFAULT_ESTIMATED_TX_FEE_SOL); const totalRequiredLamports = escrowRentLamports + ataRentLamports + txFeeLamports; const walletSolLamports = roundLamports(params.walletSolBalance); const solShortfallLamports = Math.max(0, totalRequiredLamports - walletSolLamports); const depositUsdc = fromMicroUsdc(depositMicro); const protocolFeeUsdc = fromMicroUsdc(feeMicro); const totalRequiredUsdc = fromMicroUsdc(totalRequiredMicro); const usdcShortfall = fromMicroUsdc(usdcShortfallMicro); const escrowAccountRentSol = fromLamports(escrowRentLamports); const ataCreationRentSol = fromLamports(ataRentLamports); const networkFeeSol = fromLamports(txFeeLamports); const totalRequiredSol = fromLamports(totalRequiredLamports); const solShortfall = fromLamports(solShortfallLamports); const isReady = usdcShortfallMicro === 0 && solShortfallLamports === 0; const summaryLines: string[] = [`USDC Required: ${totalRequiredUsdc.toFixed(2)} USDC (${depositUsdc.toFixed(2)} deposit + ${protocolFeeUsdc.toFixed(2)} fee)`, `SOL Required: ${totalRequiredSol.toFixed(6)} SOL (${escrowAccountRentSol.toFixed(6)} escrow rent + ${ataCreationRentSol.toFixed(6)} ATA rent + ${networkFeeSol.toFixed(6)} gas)`]; if (usdcShortfall > 0) summaryLines.push(`Insufficient USDC: add at least ${usdcShortfall.toFixed(2)} USDC`); if (solShortfall > 0) summaryLines.push(`Insufficient SOL: add at least ${solShortfall.toFixed(6)} SOL`); return { depositUsdc, protocolFeeUsdc, totalRequiredUsdc, usdcShortfall, escrowAccountRentSol, ataCreationRentSol, networkFeeSol, totalRequiredSol, solShortfall, isReady, summaryLines }; } const DEFAULT_PREFLIGHT_PARAMS: EscrowPreflightParams = { depositUsdc: 0, protocolFeeBps: DEFAULT_PROTOCOL_FEE_BPS, walletSolBalance: 0, walletUsdcBalance: 0, hasUsdcAta: true, requiresEscrowAccountRent: true, estimatedTxFeeSol: DEFAULT_ESTIMATED_TX_FEE_SOL }; export function useNomadEscrow(options: UseNomadEscrowOptions = {}): UseNomadEscrowResult { const baseline = useMemo<EscrowPreflightParams>(() => ({ ...DEFAULT_PREFLIGHT_PARAMS, ...options.initialParams }), [options.initialParams]); const [params, setParamsState] = useState<EscrowPreflightParams>(baseline); const setParams = useCallback((next: Partial<EscrowPreflightParams>) => { setParamsState((prev) => ({ ...prev, ...next })); }, []); const resetParams = useCallback(() => { setParamsState(baseline); }, [baseline]); const preflight = useMemo(() => computeEscrowPreflightBreakdown(params), [params]); return { params, preflight, setParams, resetParams }; } export default useNomadEscrow;
+"use client";
+
+/**
+ * useNomadEscrow.ts
+ *
+ * Custom React hook for executing, simulating, and reconciling Solana escrow transactions
+ * with optimistic UI updates and wallet-scoped balance caching (#10453).
+ *
+ * Wallet Balance Caching & Disconnect/Reconnect Invalidation (#10453):
+ * - Balances are scoped strictly to the currently connected wallet's public key (base58).
+ * - When a wallet disconnects, switches, or reconnects, cached balance and preflight state
+ *   is invalidated immediately so balances from one wallet are never reused for another.
+ * - Stale-request protection: uses an incrementing session/request generation ID and
+ *   AbortController to cancel in-flight balance requests and ignore responses from previous
+ *   wallet sessions or earlier balance queries.
+ * - Preflight balance checks verify whether the current wallet has sufficient lamports
+ *   before transaction submission, refreshing from RPC when stale or missing.
+ */
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import {
+  simulateEscrowTransaction,
+  reconcilePendingSignature,
+} from "@/lib/solana/escrowClient";
+
+export type EscrowStatus = "idle" | "simulating" | "confirmed_optimistic" | "finalized" | "error";
+
+export interface WalletBalanceCacheEntry {
+  publicKey: string;
+  lamports: number;
+  sol: number;
+  fetchedAt: number;
+}
+
+export interface UseNomadEscrowOptions {
+  rpcUrl?: string;
+  walletPublicKey?: string | PublicKey | null;
+  /** Balance cache TTL in milliseconds (default: 30 seconds) */
+  cacheTtlMs?: number;
+}
+
+export interface PreflightCheckResult {
+  allowed: boolean;
+  balanceLamports: number;
+  requiredLamports: number;
+  error?: string;
+}
+
+export function useNomadEscrow(
+  rpcUrlOrOptions: string | UseNomadEscrowOptions = "https://api.mainnet-beta.solana.com"
+) {
+  const options: UseNomadEscrowOptions =
+    typeof rpcUrlOrOptions === "string"
+      ? { rpcUrl: rpcUrlOrOptions }
+      : rpcUrlOrOptions;
+
+  const rpcUrl = options.rpcUrl || "https://api.mainnet-beta.solana.com";
+  const rawWallet = options.walletPublicKey;
+  const cacheTtlMs = options.cacheTtlMs ?? 30_000;
+
+  const currentWalletKey: string | null = rawWallet
+    ? typeof rawWallet === "string"
+      ? rawWallet.trim()
+      : rawWallet.toBase58()
+    : null;
+
+  const [status, setStatus] = useState<EscrowStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pendingSignature, setPendingSignature] = useState<string | null>(null);
+
+  // Balance & Preflight state
+  const [balance, setBalance] = useState<number | null>(null); // in SOL
+  const [balanceLamports, setBalanceLamports] = useState<number | null>(null);
+  const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+
+  // Session-generation tracking & wallet-scoped cache refs to prevent stale responses
+  const sessionGenRef = useRef<number>(0);
+  const activeAbortControllerRef = useRef<AbortController | null>(null);
+  const cachedBalanceRef = useRef<WalletBalanceCacheEntry | null>(null);
+  const activeWalletRef = useRef<string | null>(currentWalletKey);
+
+  /**
+   * Invalidates cached balance and aborts in-flight requests.
+   */
+  const invalidateBalanceCache = useCallback(() => {
+    cachedBalanceRef.current = null;
+    setBalance(null);
+    setBalanceLamports(null);
+    setBalanceError(null);
+    setIsLoadingBalance(false);
+
+    // Cancel in-flight queries
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Fetches fresh balance for the connected wallet with session-generation protection.
+   * Ensures responses from disconnected or previously active wallets are discarded.
+   */
+  const fetchBalance = useCallback(
+    async (forceFresh: boolean = false): Promise<number | null> => {
+      if (!currentWalletKey) {
+        invalidateBalanceCache();
+        return null;
+      }
+
+      // 1. Check valid wallet-scoped cache unless forceFresh is requested
+      const now = Date.now();
+      const existing = cachedBalanceRef.current;
+      if (
+        !forceFresh &&
+        existing &&
+        existing.publicKey === currentWalletKey &&
+        now - existing.fetchedAt < cacheTtlMs
+      ) {
+        setBalance(existing.sol);
+        setBalanceLamports(existing.lamports);
+        return existing.lamports;
+      }
+
+      // 2. Abort previous in-flight request and bump session generation
+      if (activeAbortControllerRef.current) {
+        activeAbortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      activeAbortControllerRef.current = controller;
+
+      sessionGenRef.current += 1;
+      const currentGen = sessionGenRef.current;
+      const targetWallet = currentWalletKey;
+
+      setIsLoadingBalance(true);
+      setBalanceError(null);
+
+      try {
+        const connection = new Connection(rpcUrl, "confirmed");
+        const pubkey = new PublicKey(targetWallet);
+        const lamports = await connection.getBalance(pubkey);
+
+        // Discard stale responses if wallet changed or aborted in the interim
+        if (
+          controller.signal.aborted ||
+          sessionGenRef.current !== currentGen ||
+          activeWalletRef.current !== targetWallet
+        ) {
+          return null;
+        }
+
+        const sol = lamports / 1e9;
+        const entry: WalletBalanceCacheEntry = {
+          publicKey: targetWallet,
+          lamports,
+          sol,
+          fetchedAt: Date.now(),
+        };
+
+        cachedBalanceRef.current = entry;
+        setBalance(sol);
+        setBalanceLamports(lamports);
+        setIsLoadingBalance(false);
+        return lamports;
+      } catch (err: any) {
+        if (controller.signal.aborted || sessionGenRef.current !== currentGen) {
+          return null;
+        }
+        setIsLoadingBalance(false);
+        const errMsg = err?.message || "Failed to fetch wallet balance";
+        setBalanceError(errMsg);
+        return null;
+      }
+    },
+    [currentWalletKey, rpcUrl, cacheTtlMs, invalidateBalanceCache]
+  );
+
+  /**
+   * Preflight check: ensures current wallet has required lamports prior to transaction.
+   * Guarantees balance is fresh and matches current wallet public key.
+   */
+  const checkBalancePreflight = useCallback(
+    async (requiredLamports: number): Promise<PreflightCheckResult> => {
+      if (!currentWalletKey) {
+        return {
+          allowed: false,
+          balanceLamports: 0,
+          requiredLamports,
+          error: "Wallet is not connected.",
+        };
+      }
+
+      const currentLamports = await fetchBalance(true);
+      if (currentLamports === null) {
+        return {
+          allowed: false,
+          balanceLamports: 0,
+          requiredLamports,
+          error: balanceError || "Unable to determine current wallet balance for preflight.",
+        };
+      }
+
+      if (currentLamports < requiredLamports) {
+        return {
+          allowed: false,
+          balanceLamports: currentLamports,
+          requiredLamports,
+          error: `Insufficient balance. Required: ${requiredLamports / 1e9} SOL, Available: ${
+            currentLamports / 1e9
+          } SOL.`,
+        };
+      }
+
+      return {
+        allowed: true,
+        balanceLamports: currentLamports,
+        requiredLamports,
+      };
+    },
+    [currentWalletKey, fetchBalance, balanceError]
+  );
+
+  // Synchronously react to wallet changes, disconnects, and reconnects
+  useEffect(() => {
+    const prevWallet = activeWalletRef.current;
+    activeWalletRef.current = currentWalletKey;
+
+    if (prevWallet !== currentWalletKey) {
+      // Wallet switched, disconnected, or reconnected
+      sessionGenRef.current += 1;
+      invalidateBalanceCache();
+
+      if (currentWalletKey) {
+        // Automatically fetch fresh balance for new wallet
+        fetchBalance(true);
+      }
+    }
+  }, [currentWalletKey, invalidateBalanceCache, fetchBalance]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      sessionGenRef.current += 1;
+      if (activeAbortControllerRef.current) {
+        activeAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const executeEscrowTransaction = async (
+    transaction: Transaction,
+    sendTransactionFn: (tx: Transaction) => Promise<string>,
+    requiredLamports?: number
+  ) => {
+    setStatus("simulating");
+    setErrorMessage(null);
+
+    // Optional preflight check if requiredLamports is supplied
+    if (requiredLamports !== undefined) {
+      const preflight = await checkBalancePreflight(requiredLamports);
+      if (!preflight.allowed) {
+        setStatus("error");
+        setErrorMessage(preflight.error || "Preflight balance check failed.");
+        return { success: false, error: preflight.error };
+      }
+    }
+
+    const connection = new Connection(rpcUrl, "confirmed");
+
+    // 1. Client-Side RPC Simulation (<50ms)
+    const simResult = await simulateEscrowTransaction(connection, transaction);
+
+    if (!simResult.success) {
+      setStatus("error");
+      setErrorMessage(simResult.error || "Transaction simulation failed (e.g. slippage exceeded).");
+      return { success: false, error: simResult.error };
+    }
+
+    // 2. Submit transaction to RPC nodes & Apply Optimistic UI Transition (<50ms)
+    try {
+      const signature = await sendTransactionFn(transaction);
+      setPendingSignature(signature);
+      setStatus("confirmed_optimistic");
+
+      // Invalidate balance cache after submission since transaction alters lamports
+      invalidateBalanceCache();
+
+      // 3. Background Signature Reconciliation Worker
+      reconcilePendingSignature({ signature, connection }).then((isFinalized) => {
+        if (isFinalized) {
+          setStatus("finalized");
+          // Refresh balance after finalization
+          if (currentWalletKey) {
+            fetchBalance(true);
+          }
+        } else {
+          // Revert optimistic mutation on on-chain drop / blockhash expiration
+          setStatus("error");
+          setErrorMessage("Transaction dropped or expired on-chain. Please retry.");
+        }
+      });
+
+      return { success: true, signature };
+    } catch (err: any) {
+      setStatus("error");
+      setErrorMessage(err.message || "Failed to submit transaction.");
+      return { success: false, error: err.message };
+    }
+  };
+
+  return {
+    status,
+    errorMessage,
+    pendingSignature,
+    balance,
+    balanceLamports,
+    isLoadingBalance,
+    balanceError,
+    fetchBalance,
+    invalidateBalanceCache,
+    checkBalancePreflight,
+    executeEscrowTransaction,
+  };
+}

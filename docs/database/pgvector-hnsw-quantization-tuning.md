@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-WorkSphere uses PostgreSQL with the [`pgvector`](https://github.com/pgvector/pgvector) extension to power real-time Approximate Nearest Neighbor (ANN) vector searches across high-dimensional semantic workspace embeddings. The query construction and parameter optimization are orchestrated through [`PgVectorQueryOptimizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/search/PgVectorQueryOptimizer.ts) and consumed by the semantic search pipeline in [`src/app/api/search/semantic/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/search/semantic/route.ts).
+WorkSphere uses PostgreSQL with the [`pgvector`](https://github.com/pgvector/pgvector) extension to power real-time Approximate Nearest Neighbor (ANN) vector searches across high-dimensional semantic workspace embeddings. The query construction and parameter optimization are orchestrated through [`PgVectorQueryOptimizer.ts`](../../src/core/search/PgVectorQueryOptimizer.ts) and consumed by the semantic search pipeline in [`src/app/api/search/semantic/route.ts`](../../src/app/api/search/semantic/route.ts).
 
 This engineering guide provides detailed specifications for:
 - **HNSW (Hierarchical Navigable Small World) Indexing:** Selecting and tuning graph construction hyperparameters (`m`, `ef_construction`) and runtime probe depth (`hnsw.ef_search`).
@@ -224,7 +224,7 @@ effective_cache_size = 24GB
 
 ## 7. Integration with `PgVectorQueryOptimizer`
 
-[`PgVectorQueryOptimizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/search/PgVectorQueryOptimizer.ts) combines vector distance metrics with structured metadata filters (amenities, minimum ratings, geographic bounds, opening status).
+[`PgVectorQueryOptimizer.ts`](../../src/core/search/PgVectorQueryOptimizer.ts) combines vector distance metrics with structured metadata filters (amenities, minimum ratings, geographic bounds, opening status).
 
 ### 7.1 Dynamic Query Generation Pattern
 

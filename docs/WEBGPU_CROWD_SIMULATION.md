@@ -34,7 +34,7 @@ WorkSphere features a high-performance WebGPU-powered crowd evacuation and densi
 
 ## 2. WGSL Shader Code Structure
 
-The WebGPU engine is powered by six WGSL shader modules defined in [`src/lib/webgpu/crowdShaders.wgsl.ts`](file:///c:/Users/babin/Desktop/ECSoC_2026/WorkSphere/src/lib/webgpu/crowdShaders.wgsl.ts):
+The WebGPU engine is powered by six WGSL shader modules defined in [`src/lib/webgpu/crowdShaders.wgsl.ts`](../src/lib/webgpu/crowdShaders.wgsl.ts):
 
 ### 2.1 Boids & Pathfinding Compute Shader (`cs_main`)
 

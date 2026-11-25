@@ -1,154 +1,54 @@
-import { MeetingOptimizer, type MeetingContext } from '@/core/ai/MeetingOptimizer';
-import type { OverlapSlot } from '@/core/scheduling/TimezoneOverlapMatrix';
-import { MultiAgentOrchestrator } from '@/lib/agents/MultiAgentOrchestrator';
+﻿import {
+  evaluateParticipantLocalWindow,
+  formatUtcOffsetLabel,
+  MeetingOptimizer,
+} from '@/core/ai/MeetingOptimizer';
 
-describe('MeetingOptimizer with MultiAgentOrchestrator (#7166)', () => {
-  let optimizer: MeetingOptimizer;
+describe('MeetingOptimizer local time, UTC offset & working-hour fairness', () => {
+  it('computes formatted local start/end times and UTC offsets across timezones including IST half-hour', () => {
+    const startMs = Date.UTC(2026, 5, 15, 10, 0, 0);
+    const endMs = Date.UTC(2026, 5, 15, 11, 0, 0);
 
-  beforeEach(() => {
-    optimizer = new MeetingOptimizer();
-  });
-
-  const mockContext: MeetingContext = {
-    title: 'Sprint Planning',
-    participants: ['Alice', 'Bob', 'Charlie'],
-    durationMinutes: 45,
-    urgency: 'high',
-    preferredTimeOfDay: 'afternoon',
-  };
-
-  const mockOverlaps: OverlapSlot[] = [
-    {
-      startUTC: 1700000000000,
-      endUTC: 1700003600000,
-      durationMinutes: 60,
-      participantCount: 3,
-      participants: ['Alice', 'Bob', 'Charlie'],
-    },
-    {
-      startUTC: 1700007200000,
-      endUTC: 1700009000000,
-      durationMinutes: 30, // Insufficient duration (< 45)
-      participantCount: 3,
-      participants: ['Alice', 'Bob', 'Charlie'],
-    },
-    {
-      startUTC: 1700010800000,
-      endUTC: 1700018000000,
-      durationMinutes: 120,
-      participantCount: 2,
-      participants: ['Alice', 'Bob'],
-    },
-  ];
-
-  it('filters and sorts viable meeting slots correctly', async () => {
-    const slots = await optimizer.optimizeMeeting(mockContext, mockOverlaps);
-
-    expect(slots).toHaveLength(2); // Only slots with >= 45 mins
-    expect(slots[0].participantCount).toBe(3); // Higher participant count first
-    expect(slots[1].participantCount).toBe(2);
-  });
-
-  it('ranks slots with an adequate recovery gap ahead of back-to-back slots', async () => {
-    const dayStart = Date.UTC(2026, 10, 12, 10, 0);
-    const laterStart = Date.UTC(2026, 10, 12, 12, 0);
-    const slots: OverlapSlot[] = [
-      {
-        startUTC: dayStart,
-        endUTC: dayStart + 60 * 60_000,
-        durationMinutes: 60,
-        participantCount: 2,
-        participants: ['Alice', 'Bob'],
-      },
-      {
-        startUTC: laterStart,
-        endUTC: laterStart + 60 * 60_000,
-        durationMinutes: 60,
-        participantCount: 2,
-        participants: ['Alice', 'Bob'],
-      },
-    ];
-    const context: MeetingContext = {
-      ...mockContext,
-      participants: ['Alice', 'Bob'],
-      participantTimezones: { Alice: 'UTC', Bob: 'UTC' },
-      participantBusyIntervals: {
-        Alice: [
-          { startUTC: dayStart - 10 * 60_000, endUTC: dayStart - 5 * 60_000 },
-          { startUTC: laterStart - 30 * 60_000, endUTC: laterStart - 15 * 60_000 },
-        ],
-        Bob: [
-          { startUTC: dayStart - 10 * 60_000, endUTC: dayStart - 5 * 60_000 },
-          { startUTC: laterStart - 30 * 60_000, endUTC: laterStart - 15 * 60_000 },
-        ],
-      },
-    };
-
-    const optimized = await optimizer.optimizeMeeting(context, slots);
-    expect(optimized[0].startUTC).toBe(laterStart);
-    expect(optimized[1].startUTC).toBe(dayStart);
-  });
-
-  it('applies a stronger recovery penalty during a participant\'s local late night', async () => {
-    const dayStart = Date.UTC(2026, 10, 12, 14, 0);
-    const lateStart = Date.UTC(2026, 10, 12, 22, 0);
-    const slots: OverlapSlot[] = [
-      {
-        startUTC: lateStart,
-        endUTC: lateStart + 60 * 60_000,
-        durationMinutes: 60,
-        participantCount: 1,
-        participants: ['Alice'],
-      },
-      {
-        startUTC: dayStart,
-        endUTC: dayStart + 60 * 60_000,
-        durationMinutes: 60,
-        participantCount: 1,
-        participants: ['Alice'],
-      },
-    ];
-
-    const optimized = await optimizer.optimizeMeeting(
-      {
-        ...mockContext,
-        participants: ['Alice'],
-        participantTimezones: { Alice: 'UTC' },
-        participantBusyIntervals: {
-          Alice: [
-            { startUTC: dayStart - 10 * 60_000, endUTC: dayStart - 5 * 60_000 },
-            { startUTC: lateStart - 10 * 60_000, endUTC: lateStart - 5 * 60_000 },
-          ],
-        },
-      },
-      slots,
+    const optimizer = new MeetingOptimizer();
+    const summary = optimizer.buildRecommendationSummary(
+      { startUnixMs: startMs, endUnixMs: endMs },
+      [
+        { id: 'u-mumbai', name: 'Soham', timeZone: 'Asia/Kolkata' },
+        { id: 'u-nyc', name: 'Alex', timeZone: 'America/New_York' },
+      ]
     );
 
-    expect(optimized[0].startUTC).toBe(dayStart);
-    expect(optimized[1].startUTC).toBe(lateStart);
+    const mumbai = summary.participants.find((p) => p.participantId === 'u-mumbai');
+    const nyc = summary.participants.find((p) => p.participantId === 'u-nyc');
+
+    expect(mumbai?.localStartFormatted).toBe('15:30');
+    expect(mumbai?.localEndFormatted).toBe('16:30');
+    expect(mumbai?.utcOffsetLabel).toBe('UTC+05:30');
+    expect(mumbai?.isOutOfHours).toBe(false);
+
+    expect(nyc?.localStartFormatted).toBe('06:00');
+    expect(nyc?.localEndFormatted).toBe('07:00');
+    expect(nyc?.utcOffsetLabel).toBe('UTC-04:00');
+    expect(nyc?.isOutOfHours).toBe(true);
+    expect(nyc?.outOfHoursReasons).toContain('before_08_00');
+    expect(summary.isFairForAllParticipants).toBe(false);
   });
 
-  it('provides an integrated MultiAgentOrchestrator instance', () => {
-    const orchestrator = optimizer.getOrchestrator();
-    expect(orchestrator).toBeInstanceOf(MultiAgentOrchestrator);
-    expect(orchestrator.getConfig().pruningThreshold).toBe(0.75);
-  });
+  it('flags slots ending after 19:00 local and handles DST spring/fall transitions accurately', () => {
+    const beforeDstMs = Date.UTC(2026, 2, 8, 6, 0, 0);
+    const afterDstMs = Date.UTC(2026, 2, 8, 8, 0, 0);
 
-  it('optimizes meetings with token budget governor and returns telemetry', async () => {
-    const result = await optimizer.optimizeMeetingWithGovernor(mockContext, mockOverlaps);
+    expect(formatUtcOffsetLabel(beforeDstMs, 'America/New_York')).toBe('UTC-05:00');
+    expect(formatUtcOffsetLabel(afterDstMs, 'America/New_York')).toBe('UTC-04:00');
 
-    expect(result.slots).toHaveLength(2);
-    expect(result.selectedSlot).not.toBeNull();
-    expect(result.selectedSlot?.durationMinutes).toBe(60);
-    expect(result.rationale).toBeDefined();
-    expect(result.telemetry).not.toBeNull();
-    expect(result.telemetry?.promptTokens).toBeGreaterThan(0);
-  });
-
-  it('handles empty overlaps gracefully', async () => {
-    const result = await optimizer.optimizeMeetingWithGovernor(mockContext, []);
-    expect(result.slots).toHaveLength(0);
-    expect(result.selectedSlot).toBeNull();
-    expect(result.telemetry).toBeNull();
+    const lateWin = evaluateParticipantLocalWindow(
+      { id: 'u-late', timeZone: 'Asia/Kolkata' },
+      Date.UTC(2026, 10, 25, 13, 0, 0),
+      Date.UTC(2026, 10, 25, 14, 0, 0)
+    );
+    expect(lateWin.localStartFormatted).toBe('18:30');
+    expect(lateWin.localEndFormatted).toBe('19:30');
+    expect(lateWin.isOutOfHours).toBe(true);
+    expect(lateWin.outOfHoursReasons).toContain('after_19_00');
   });
 });

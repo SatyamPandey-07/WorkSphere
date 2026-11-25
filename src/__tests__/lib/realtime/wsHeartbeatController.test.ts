@@ -1,4 +1,4 @@
-﻿import {
+import {
   WsHeartbeatController,
   type WsSocketLike,
 } from '@/lib/realtime/wsHeartbeatController';
@@ -20,6 +20,138 @@ describe('WsHeartbeatController', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('tracks min, max, average, and jitter RTT over a rolling window of 10 heartbeats', () => {
+    let mockTime = 10_000;
+    const sent: string[] = [];
+    const currentSocket = makeMockSocket(sent);
+
+    const controller = new WsHeartbeatController({
+      heartbeatIntervalMs: 1_000,
+      pongTimeoutMs: 500,
+      createSocket: () => currentSocket,
+      nowFn: () => mockTime,
+    });
+
+    // Initial state before heartbeats
+    const initialStats = controller.getLatencyStats();
+    expect(initialStats).toEqual({
+      min: null,
+      max: null,
+      average: null,
+      jitter: null,
+      sampleCount: 0,
+    });
+
+    controller.connect();
+    controller.handleOpen();
+
+    // 1st Heartbeat: RTT = 50ms
+    mockTime += 1_000;
+    jest.advanceTimersByTime(1_000);
+    mockTime += 50;
+    controller.handleIncomingMessage('pong');
+
+    let stats = controller.getLatencyStats();
+    expect(stats).toEqual({
+      min: 50,
+      max: 50,
+      average: 50,
+      jitter: 0,
+      sampleCount: 1,
+    });
+
+    // 2nd Heartbeat: RTT = 70ms (|70 - 50| = 20) -> jitter = 20
+    mockTime += 950;
+    jest.advanceTimersByTime(1_000);
+    mockTime += 70;
+    controller.handleIncomingMessage('pong');
+
+    stats = controller.getLatencyStats();
+    expect(stats).toEqual({
+      min: 50,
+      max: 70,
+      average: 60,
+      jitter: 20,
+      sampleCount: 2,
+    });
+
+    // 3rd Heartbeat: RTT = 60ms (|60 - 70| = 10) -> jitter = (20 + 10) / 2 = 15
+    mockTime += 930;
+    jest.advanceTimersByTime(1_000);
+    mockTime += 60;
+    controller.handleIncomingMessage('pong');
+
+    stats = controller.getLatencyStats();
+    expect(stats).toEqual({
+      min: 50,
+      max: 70,
+      average: 60,
+      jitter: 15,
+      sampleCount: 3,
+    });
+
+    // Feed 8 more measurements to exceed the 10-window limit:
+    // Window will contain 10 elements.
+    const rtts = [40, 80, 50, 90, 30, 70, 60, 100];
+    for (const rtt of rtts) {
+      mockTime += 1_000;
+      jest.advanceTimersByTime(1_000);
+      mockTime += rtt;
+      controller.handleIncomingMessage('pong');
+    }
+
+    stats = controller.getLatencyStats();
+    expect(stats.sampleCount).toBe(10);
+    // Oldest sample (50) was discarded. Current window:
+    // [70, 60, 40, 80, 50, 90, 30, 70, 60, 100]
+    expect(stats.min).toBe(30);
+    expect(stats.max).toBe(100);
+    // Sum = 70 + 60 + 40 + 80 + 50 + 90 + 30 + 70 + 60 + 100 = 650 -> avg = 65
+    expect(stats.average).toBe(65);
+    // Consecutive diffs:
+    // |60-70|=10, |40-60|=20, |80-40|=40, |50-80|=30, |90-50|=40, |30-90|=60, |70-30|=40, |60-70|=10, |100-60|=40
+    // Sum diffs = 10 + 20 + 40 + 30 + 40 + 60 + 40 + 10 + 40 = 290
+    // Jitter = 290 / 9 = 32.22
+    expect(stats.jitter).toBe(32.22);
+
+    controller.dispose();
+  });
+
+  it('resets latency statistics upon reconnection or disconnect', () => {
+    let mockTime = 1_000;
+    const sent: string[] = [];
+    const currentSocket = makeMockSocket(sent);
+
+    const controller = new WsHeartbeatController({
+      heartbeatIntervalMs: 1_000,
+      pongTimeoutMs: 500,
+      createSocket: () => currentSocket,
+      nowFn: () => mockTime,
+    });
+
+    controller.connect();
+    controller.handleOpen();
+
+    mockTime += 1_000;
+    jest.advanceTimersByTime(1_000);
+    mockTime += 45;
+    controller.handleIncomingMessage('pong');
+
+    expect(controller.getLatencyStats().sampleCount).toBe(1);
+
+    // Reconnecting resets latency stats
+    controller.connect();
+    expect(controller.getLatencyStats()).toEqual({
+      min: null,
+      max: null,
+      average: null,
+      jitter: null,
+      sampleCount: 0,
+    });
+
+    controller.dispose();
   });
 
   it('transitions to stalled on missed pong and schedules bounded backoff reconnect without overlapping timers', () => {

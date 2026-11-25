@@ -46,6 +46,19 @@ export interface AllocationAssignment {
   matchReasons?: string[];
 }
 
+export type CapacityUtilizationLevel = "low" | "moderate" | "high" | "full";
+
+export type CapacityUtilizationTone = "emerald" | "amber" | "orange" | "rose";
+
+export interface CapacityUtilizationBadge {
+  percentage: number;
+  label: string;
+  level: CapacityUtilizationLevel;
+  tone: CapacityUtilizationTone;
+  allocatedSeats: number;
+  totalCapacity: number;
+}
+
 export interface DeskAllocationResult {
   feasible: boolean;
   isFallback: boolean;
@@ -53,6 +66,63 @@ export interface DeskAllocationResult {
   unassignedPersonIds: string[];
   totalAllocated: number;
   totalRequested: number;
+  totalCapacity: number;
+  capacityUtilizationPercent: number;
+  utilizationBadge: CapacityUtilizationBadge;
+}
+
+/**
+ * Computes a capacity utilization percentage and display badge metadata
+ * for a set of desk allocation results.
+ */
+export function computeCapacityUtilizationBadge(
+  allocatedSeats: number,
+  totalCapacity: number,
+): CapacityUtilizationBadge {
+  const safeCapacity =
+    Number.isFinite(totalCapacity) && totalCapacity > 0
+      ? Math.floor(totalCapacity)
+      : 0;
+  const safeAllocated =
+    Number.isFinite(allocatedSeats) && allocatedSeats > 0
+      ? Math.min(safeCapacity, Math.floor(allocatedSeats))
+      : 0;
+
+  const percentage =
+    safeCapacity > 0
+      ? Math.min(100, Math.max(0, Math.round((safeAllocated / safeCapacity) * 100)))
+      : 0;
+
+  let level: CapacityUtilizationLevel = "low";
+  let tone: CapacityUtilizationTone = "emerald";
+  if (percentage >= 100) {
+    level = "full";
+    tone = "rose";
+  } else if (percentage >= 80) {
+    level = "high";
+    tone = "orange";
+  } else if (percentage >= 50) {
+    level = "moderate";
+    tone = "amber";
+  }
+
+  return {
+    percentage,
+    label: `${percentage}% Utilized`,
+    level,
+    tone,
+    allocatedSeats: safeAllocated,
+    totalCapacity: safeCapacity,
+  };
+}
+
+function calculateAvailableCapacity(desks: DeskResource[]): number {
+  return desks.reduce((acc, desk) => {
+    if (desk.isAvailable === false) return acc;
+    const cap = desk.capacity ?? 1;
+    if (!Number.isFinite(cap) || cap <= 0) return acc;
+    return acc + Math.floor(cap);
+  }, 0);
 }
 
 export class DeskAutoAllocator {
@@ -239,6 +309,12 @@ export class DeskAutoAllocator {
     assignments.sort((a, b) => a.personId.localeCompare(b.personId));
     unassignedPersonIds.sort((a, b) => a.localeCompare(b));
 
+    const totalCapacity = calculateAvailableCapacity(desks);
+    const utilizationBadge = computeCapacityUtilizationBadge(
+      assignments.length,
+      totalCapacity,
+    );
+
     return {
       feasible: false,
       isFallback: true,
@@ -246,6 +322,9 @@ export class DeskAutoAllocator {
       unassignedPersonIds,
       totalAllocated: assignments.length,
       totalRequested: persons.length,
+      totalCapacity,
+      capacityUtilizationPercent: utilizationBadge.percentage,
+      utilizationBadge,
     };
   }
 
@@ -258,7 +337,10 @@ export class DeskAutoAllocator {
     persons: PersonCandidate[],
     desks: DeskResource[],
   ): DeskAllocationResult {
+    const totalCapacity = calculateAvailableCapacity(desks);
+
     if (!persons || persons.length === 0) {
+      const utilizationBadge = computeCapacityUtilizationBadge(0, totalCapacity);
       return {
         feasible: true,
         isFallback: false,
@@ -266,6 +348,9 @@ export class DeskAutoAllocator {
         unassignedPersonIds: [],
         totalAllocated: 0,
         totalRequested: 0,
+        totalCapacity,
+        capacityUtilizationPercent: utilizationBadge.percentage,
+        utilizationBadge,
       };
     }
 
@@ -278,12 +363,6 @@ export class DeskAutoAllocator {
 
     const availableDesks = desks.filter(
       (d) => d.isAvailable !== false && (d.capacity ?? 1) > 0,
-    );
-
-    // If total desks < total persons, full assignment is trivially infeasible
-    const totalCapacity = availableDesks.reduce(
-      (acc, d) => acc + (d.capacity ?? 1),
-      0,
     );
 
     if (totalCapacity >= sortedPersons.length) {
@@ -308,6 +387,11 @@ export class DeskAutoAllocator {
           }
           assignments.sort((a, b) => a.personId.localeCompare(b.personId));
 
+          const utilizationBadge = computeCapacityUtilizationBadge(
+            assignments.length,
+            totalCapacity,
+          );
+
           return {
             feasible: true,
             isFallback: false,
@@ -315,6 +399,9 @@ export class DeskAutoAllocator {
             unassignedPersonIds: [],
             totalAllocated: assignments.length,
             totalRequested: persons.length,
+            totalCapacity,
+            capacityUtilizationPercent: utilizationBadge.percentage,
+            utilizationBadge,
           };
         }
       }

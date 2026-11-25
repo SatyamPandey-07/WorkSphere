@@ -181,26 +181,148 @@ const updateHeatLayer = (instance: any, props: any, prevProps: any) => {
 };
 
 const HeatmapOverlay = createLayerComponent(createHeatLayer, updateHeatLayer);
+
+/**
+ * ResizeWatcher & Zero-Height Flash Prevention (#10448, #10425):
+ *
+ * Problem:
+ * When the map sidebar is rapidly toggled (opened/closed), CSS layout animations and flex/grid reflows
+ * can momentarily cause the map container's measured height or width to drop to 0px before settling.
+ * In Leaflet / Mapbox:
+ * 1. Calling `map.invalidateSize()` while `offsetHeight` or `clientHeight` is 0 (or near zero) resets the
+ *    map canvas/tile viewport to 0x0.
+ * 2. This causes tile unmounting, a jarring visual "white flash" / collapse, and miscalculated tile bounds.
+ * 3. Rapid repeated toggles trigger multiple overlapping resize events and asynchronous animation frames.
+ *    If an earlier callback resolves after a later toggle, stale dimensions and coordinates get applied.
+ *
+ * Workaround:
+ * 1. Maintain the last known valid (non-zero) dimensions (`lastValidDimensionsRef`) and enforce a minimum
+ *    height floor (e.g., `minHeight: "100px"`, `minWidth: "100px"`) on the container style to prevent hard collapses.
+ * 2. In `ResizeObserver` and window `resize` handlers, inspect candidate container dimensions:
+ *    If `height <= 0` or `width <= 0`, ignore the transient 0x0 measurement to prevent resetting the map canvas,
+ *    and schedule a check via `requestAnimationFrame` for when the layout transition finishes and dimensions recover.
+ * 3. Cancel and clear pending debounce timers (`setTimeout`) and animation frame requests (`cancelAnimationFrame`)
+ *    on every new resize event and during component unmount to eliminate race conditions and callback leaks.
+ * 4. Coordinate `map.invalidateSize({ debounceMoveend: true })` and preserve the map's center and zoom
+ *    viewport only when container dimensions are confirmed strictly positive and settled.
+ */
 function ResizeWatcher({ delay = 150 }: { delay?: number }) {
   const map = useMap();
+  const lastValidDimensionsRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+  const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
 
-    const handleResize = () => {
+    const cancelPendingWork = () => {
       clearTimeout(timer);
-      const centerBeforeResize = map.getCenter();
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+
+    const performMapResize = () => {
+      const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+      if (!container) return;
+
+      const currentWidth = container.clientWidth || container.offsetWidth;
+      const currentHeight = container.clientHeight || container.offsetHeight;
+
+      // Transient zero-height / zero-width guard:
+      // If the sidebar is mid-animation and height or width is 0, do NOT invalidate size
+      // as it causes Leaflet/Mapbox to calculate an empty tile grid and flash white.
+      if (currentWidth <= 0 || currentHeight <= 0) {
+        // Defer until the container dimension recovers in a subsequent frame
+        cancelPendingWork();
+        rafIdRef.current = requestAnimationFrame(() => {
+          performMapResize();
+        });
+        return;
+      }
+
+      // Record valid dimensions
+      lastValidDimensionsRef.current = { width: currentWidth, height: currentHeight };
+
+      try {
+        const centerBeforeResize = map.getCenter();
+        const zoomBeforeResize = map.getZoom();
+
+        map.invalidateSize();
+
+        if (centerBeforeResize) {
+          map.setView(centerBeforeResize, zoomBeforeResize, { animate: false });
+        }
+      } catch (err) {
+        // Safe fallback if map is in transient unmount state
+      }
+    };
+
+    const handleResize = () => {
+      cancelPendingWork();
+
+      const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+      if (container) {
+        const w = container.clientWidth || container.offsetWidth;
+        const h = container.clientHeight || container.offsetHeight;
+
+        // If dimensions are non-zero, record immediately to keep baseline stable
+        if (w > 0 && h > 0) {
+          lastValidDimensionsRef.current = { width: w, height: h };
+        } else {
+          // In transient zero-height measurement during rapid toggle:
+          // Maintain map container stability by skipping premature invalidateSize
+          // and scheduling recovery once layout settles.
+          rafIdRef.current = requestAnimationFrame(() => {
+            handleResize();
+          });
+          return;
+        }
+      }
 
       timer = setTimeout(() => {
-        map.invalidateSize();
-        map.setView(centerBeforeResize, map.getZoom(), { animate: false });
+        performMapResize();
       }, delay);
     };
+
+    // Attach ResizeObserver to the map container element for sidebar width shifts
+    let resizeObserver: ResizeObserver | null = null;
+    const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+
+    if (container && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver((entries) => {
+        if (!entries || entries.length === 0) {
+          handleResize();
+          return;
+        }
+
+        const entry = entries[0];
+        const cr = entry.contentRect;
+        const width = cr ? cr.width : (entry.target as HTMLElement).clientWidth;
+        const height = cr ? cr.height : (entry.target as HTMLElement).clientHeight;
+
+        // Ignore transient zero-height or zero-width frames during sidebar toggle animations
+        if (width <= 0 || height <= 0) {
+          cancelPendingWork();
+          rafIdRef.current = requestAnimationFrame(() => {
+            handleResize();
+          });
+          return;
+        }
+
+        handleResize();
+      });
+
+      resizeObserver.observe(container);
+    }
 
     window.addEventListener("resize", handleResize);
 
     return () => {
-      clearTimeout(timer);
+      cancelPendingWork();
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       window.removeEventListener("resize", handleResize);
     };
   }, [map, delay]);
@@ -1438,6 +1560,8 @@ const Map = ({
         style={{
           width: "95%",
           height: "95%",
+          minHeight: "200px",
+          minWidth: "200px",
           borderRadius: "12px",
           position: "relative",
           zIndex: 20,

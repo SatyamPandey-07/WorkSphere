@@ -31,101 +31,26 @@ The middleware executes on every incoming request matching the `config.matcher` 
    - If the request has a valid Clerk session, execution continues.
    - If the request lacks a valid session:
      - **Web Pages**: The user is automatically redirected to `/sign-in` with a `redirect_url` parameter to return them after authentication.
-     - **API Routes**: Clerk immediately returns an HTTP `401 Unauthorized` response.
+     - **API Routes**: Clerk returns its non-document unauthenticated response; in the installed Clerk middleware version this is a not-found response rather than a sign-in redirect.
 4. **Admin Route Authorization (`isAdminRoute`)**: For routes starting with `/admin` or `/api/admin`, the middleware checks whether the authenticated user has an administrative role (`admin`, `super_admin`, `superadmin` in `sessionClaims.metadata.role`) or matches `ADMIN_EMAILS`. Unauthorized requests receive a `403 Forbidden` (for APIs) or are redirected to `/` (for pages).
 5. **Security & Context Headers**: Injects Content Security Policy (CSP) headers with a unique cryptographic nonce, tracks request pathnames via `x-pathname`, and validates CSRF tokens on mutating API calls.
 
 > **Security architecture:** Rate limiting, CSP nonces and CSRF validation run in the same middleware pipeline as authentication. See the [Security Architecture Overview](./security/SECURITY_OVERVIEW.md) for the handler order, sequence diagrams and the exact rules for each layer.
 
-### Middleware Implementation Example
+### Middleware Execution Flow
 
-The core Clerk authentication logic in [src/middleware.ts](../src/middleware.ts) is structured as follows:
+The Next.js entry point in [src/middleware.ts](../src/middleware.ts) initializes Clerk with `clerkMiddleware` and invokes the centralized `runMiddlewarePipeline` from [src/lib/middleware/chain.ts](../src/lib/middleware/chain.ts). Clerk's `auth()` and `auth.protect()` are passed into the pipeline context; protected routes are enforced once, while public routes in the `ROUTE_PERMISSIONS` manifest continue without authentication.
 
-```typescript
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+The handlers execute in this order:
 
-// 1. Define routes accessible without authentication
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
-  "/venues(.*)",
-  "/collections/public(.*)",
-  "/collections/join(.*)",
-  "/api/venues(.*)",
-  "/api/map/(.*)",
-  "/api/collections/public(.*)",
-  "/api/webhook(.*)",
-  "/api/auth/csrf-token",
-  "/api/auth/resend-otp",
-  "/api/auth/verify-otp",
-  "/api/auth/forgot-password",
-  "/api/auth/reset-password",
-  "/api/auth/webauthn/verify",
-  "/privacy(.*)",
-  "/terms(.*)",
-]);
+1. **Rate limiting** applies configured API tiers. Sensitive routes use the authenticated user ID when available and otherwise use the client IP.
+2. **Authentication and authorization** allow routes explicitly marked public, require a Clerk session for other matched routes, and apply the existing admin role/email policy to `/admin` and `/api/admin`.
+3. **Security headers** reuse the entry point's per-request CSP nonce and policy, propagate `x-csp-nonce` and `x-pathname` to the downstream request, and attach the CSP to the response.
+4. **CSRF protection** verifies cookie/header pairs for non-exempt state-changing API requests and issues a token cookie on eligible safe requests. Exemptions are defined in the same route-permission manifest.
 
-const isAdminRoute = createRouteMatcher(["/admin(.*)", "/api/admin(.*)"]);
+The entry point adds security headers to the final Clerk response without replacing that response, so redirects, rate-limit responses, and cookies remain intact. Its matcher skips static assets and service-worker files, explicitly includes API routes, and retains the Clerk proxy path configured in the route manifest.
 
-// 2. Protect routes inside the clerkMiddleware handler
-export default function middleware(request: any, event: any) {
-  const clerkMw = clerkMiddleware(async (auth, req) => {
-    // Protect all routes by default unless matched by isPublicRoute
-    if (!isPublicRoute(req)) {
-      await auth.protect();
-    }
-
-    // Role-based access control for administrative paths
-    if (isAdminRoute(req)) {
-      const authObj = await auth();
-      const role = (
-        authObj.sessionClaims?.metadata?.role as string | undefined
-      )?.toLowerCase();
-      const isAdminRole =
-        role === "admin" || role === "super_admin" || role === "superadmin";
-
-      const adminEmails = (
-        process.env.ADMIN_EMAILS ||
-        process.env.ADMIN_EMAIL ||
-        ""
-      )
-        .split(",")
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean);
-
-      const isEnvAdmin = adminEmails.length > 0 && Boolean(authObj.userId);
-
-      if (!isAdminRole && !isEnvAdmin) {
-        if (req.nextUrl.pathname.startsWith("/api")) {
-          return NextResponse.json(
-            { error: "Forbidden: Admin access required" },
-            { status: 403 },
-          );
-        }
-        return NextResponse.redirect(new URL("/", req.url));
-      }
-    }
-
-    // Security headers and CSRF verification follow...
-  });
-
-  return clerkMw(request, event);
-}
-
-// 3. Matcher configuration controlling which paths run through middleware
-export const config = {
-  matcher: [
-    // Skip static assets, media, fonts, and service workers
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf|eot|css|js|json|txt|xml|webmanifest)|manifest\\.json|sw\\.js|service-worker\\.js|robots\\.txt).*)",
-    // Always run for API routes
-    "/(api|trpc)(.*)",
-    // Clerk internal proxy routes
-    "/__clerk/:path*",
-  ],
-};
-```
+Public-route exceptions, CSRF exemptions, and admin-only rules are maintained in [src/lib/middleware/routes.ts](../src/lib/middleware/routes.ts); do not duplicate or broaden those rules in the entry point.
 
 ---
 

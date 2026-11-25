@@ -137,5 +137,6 @@ done
 - [Solana Escrow Settlement and Refund Runbook](../solana/ESCROW_SETTLEMENT_RUNBOOK.md) — escrow lifecycle, confirmation levels, refunds, and RPC failover for crypto seat deposits.
 - [Seat Hold Lease Extension API](./SEAT_HOLD_LEASE_EXTENSION.md) — extend a checkout seat hold once by five minutes using the holder's fencing token; request, errors, Redis key and sequence diagram.
 - [Venue Reviews Redaction and Privacy Guarantees](./VENUE_REVIEWS_PRIVACY.md) — what anonymous and signed-in callers receive from the reviews endpoint, recursive `userId` redaction, caching, and change checklist.
+- [Telemetry Gateway Fail-Closed Authentication](./TELEMETRY_GATEWAY_AUTH.md) — how the batch telemetry endpoint authenticates gateways, when it returns 503 or 401, and a checklist for changing auth.
 - [Spatial Geo-Query Guide](../search/SPATIAL_GEO_QUERY_GUIDE.md) — coordinate schema, bounding-box and radius search geometry, Haversine and PostGIS distance, and spatial index notes.
 ```

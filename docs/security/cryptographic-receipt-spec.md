@@ -1,6 +1,6 @@
 # Cryptographic Booking Receipt Verification & Digital Signing Specification
 
-This document defines the cryptographic architecture and technical specification for verifiable digital booking receipts in WorkSphere, implemented in [`src/lib/crypto/receiptSigner.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/crypto/receiptSigner.ts) and verified via [`src/app/api/receipts/verify/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/receipts/verify/route.ts).
+This document defines the cryptographic architecture and technical specification for verifiable digital booking receipts in WorkSphere, implemented in [`src/lib/crypto/receiptSigner.ts`](../../src/lib/crypto/receiptSigner.ts) and verified via [`src/app/api/receipts/verify/route.ts`](../../src/app/api/receipts/verify/route.ts).
 
 ---
 
@@ -90,7 +90,7 @@ To eliminate digest ambiguity, WorkSphere enforces **RFC 8785 JSON Canonicalizat
 
 ### Deterministic Field Normalization
 
-Every receipt payload conforms to [`ReservationReceiptPayload`](file:///c:/Users/admin/Desktop/workfere/src/lib/crypto/receiptSigner.ts#L35):
+Every receipt payload conforms to [`ReservationReceiptPayload`](../../src/lib/crypto/receiptSigner.ts#L35):
 
 ```typescript
 export interface ReservationReceiptPayload {
@@ -148,7 +148,7 @@ The 64-character hexadecimal digest represents the unalterable fingerprint of th
 
 ## 4. Digital Signature Schemes: ECDSA (P-256 / P-384) & RSA-SHA256
 
-WorkSphere implements multiple industry-standard asymmetric signature algorithms configured in [`ALGORITHM_CONFIGS`](file:///c:/Users/admin/Desktop/workfere/src/lib/crypto/receiptSigner.ts#L14):
+WorkSphere implements multiple industry-standard asymmetric signature algorithms configured in [`ALGORITHM_CONFIGS`](../../src/lib/crypto/receiptSigner.ts#L14):
 
 ### Algorithm Configurations Matrix
 
@@ -270,7 +270,7 @@ A core requirement of the WorkSphere receipt verification system is **100% offli
 
 ### Air-Gapped QR Code Data Payload
 
-WorkSphere generates high-density 2D QR codes (via [`src/lib/qr/svgQr.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/qr/svgQr.ts)) embedded in booking receipts and mobile wallet passes. The payload encodes a compact URL or a minified Base64URL cryptographic token:
+WorkSphere generates high-density 2D QR codes (via [`src/lib/qr/svgQr.ts`](../../src/lib/qr/svgQr.ts)) embedded in booking receipts and mobile wallet passes. The payload encodes a compact URL or a minified Base64URL cryptographic token:
 
 ```
 https://worksphere.app/verify#t=<BASE64URL_RECEIPT_TOKEN>
@@ -319,7 +319,7 @@ For connected applications, web browsers, and third-party accounting integration
 
 ### POST `/api/receipts/verify`
 
-Defined in [`src/app/api/receipts/verify/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/receipts/verify/route.ts).
+Defined in [`src/app/api/receipts/verify/route.ts`](../../src/app/api/receipts/verify/route.ts).
 
 #### Request Headers
 ```http
@@ -407,7 +407,7 @@ To audit public keys independently:
 
 ## 9. TypeScript Data Contracts & API Reference
 
-All functions are exported directly from [`src/lib/crypto/receiptSigner.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/crypto/receiptSigner.ts):
+All functions are exported directly from [`src/lib/crypto/receiptSigner.ts`](../../src/lib/crypto/receiptSigner.ts):
 
 ### Core Types
 

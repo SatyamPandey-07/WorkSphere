@@ -1,4 +1,4 @@
-import {
+import type {
   NodeState,
   LogEntry,
   RequestVoteArgs,
@@ -30,6 +30,7 @@ export class RaftNode {
   private electionTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private votesReceived: number = 0;
+  private applyCallback: ((entry: LogEntry) => void) | null = null;
 
   constructor(id: string, peers: string[], network: RaftNetwork) {
     this.id = id;
@@ -37,6 +38,10 @@ export class RaftNode {
     this.network = network;
     this.loadPersistentState();
     this.resetElectionTimeout();
+  }
+
+  public onApply(callback: (entry: LogEntry) => void): void {
+    this.applyCallback = callback;
   }
 
   private loadPersistentState() {
@@ -157,6 +162,30 @@ export class RaftNode {
     }
   }
 
+  private retryAppendEntries(peerId: string) {
+    if (this.state !== 'Leader') return;
+
+    const prevIndex = (this.nextIndex.get(peerId) || 1) - 1;
+    const prevTerm = this.log[prevIndex - 1]?.term || 0;
+    const entries = this.log.slice(prevIndex);
+
+    const args: AppendEntriesArgs = {
+      term: this.currentTerm,
+      leaderId: this.id,
+      prevLogIndex: prevIndex,
+      prevLogTerm: prevTerm,
+      entries,
+      leaderCommit: this.commitIndex,
+    };
+
+    this.network
+      .sendAppendEntries(peerId, args)
+      .then((reply) => {
+        this.handleAppendEntriesReply(peerId, reply, prevIndex + entries.length);
+      })
+      .catch(() => {});
+  }
+
   private handleAppendEntriesReply(peerId: string, reply: AppendEntriesReply, newMatchIndex: number) {
     if (this.state !== 'Leader') return;
 
@@ -168,12 +197,90 @@ export class RaftNode {
     if (reply.success) {
       this.matchIndex.set(peerId, newMatchIndex);
       this.nextIndex.set(peerId, newMatchIndex + 1);
+      this.updateCommitIndex();
     } else {
       const currentNext = this.nextIndex.get(peerId) || 1;
       if (currentNext > 1) {
         this.nextIndex.set(peerId, currentNext - 1);
+        this.retryAppendEntries(peerId);
       }
     }
+  }
+
+  /**
+   * Advances commitIndex when a log entry is replicated across a majority of nodes.
+   */
+  private updateCommitIndex() {
+    if (this.state !== 'Leader') return;
+
+    // Collect match indices across all cluster nodes (including leader itself at this.log.length)
+    const matchIndices = [this.log.length];
+    for (const peerId of this.peers) {
+      matchIndices.push(this.matchIndex.get(peerId) || 0);
+    }
+
+    // Sort descending to find median quorum point
+    matchIndices.sort((a, b) => b - a);
+    const quorumIndex = Math.floor(matchIndices.length / 2);
+    const medianMatch = matchIndices[quorumIndex];
+
+    // In Raft: leader only commits entries from its current term by counting replicas
+    if (medianMatch > this.commitIndex) {
+      const entry = this.log[medianMatch - 1];
+      if (entry && entry.term === this.currentTerm) {
+        this.commitIndex = medianMatch;
+        this.applyCommittedEntries();
+      }
+    }
+  }
+
+  /**
+   * Dispatches committed entries to the registered state machine callback.
+   */
+  private applyCommittedEntries() {
+    while (this.commitIndex > this.lastApplied) {
+      this.lastApplied += 1;
+      const entry = this.log[this.lastApplied - 1];
+      if (entry && this.applyCallback) {
+        try {
+          this.applyCallback(entry);
+        } catch (err) {
+          console.error(`[RaftNode ${this.id}] Error applying log entry ${this.lastApplied}:`, err);
+        }
+      }
+    }
+  }
+
+  /**
+   * Proposes a new client command to the cluster. Only accepted if the node is Leader.
+   */
+  public async propose(command: unknown): Promise<{ success: boolean; index?: number; term?: number }> {
+    if (this.state !== 'Leader') {
+      return { success: false };
+    }
+
+    const index = this.log.length + 1;
+    const entry: LogEntry = {
+      term: this.currentTerm,
+      index,
+      command,
+    };
+
+    this.log.push(entry);
+    this.persistState();
+    this.matchIndex.set(this.id, index);
+
+    // Eagerly broadcast AppendEntries to peers
+    this.sendHeartbeats();
+
+    // Check if immediate quorum reached
+    this.updateCommitIndex();
+
+    return {
+      success: true,
+      index,
+      term: this.currentTerm,
+    };
   }
 
   public onRequestVote(args: RequestVoteArgs): RequestVoteReply {
@@ -225,6 +332,7 @@ export class RaftNode {
 
     if (args.leaderCommit > this.commitIndex) {
       this.commitIndex = Math.min(args.leaderCommit, this.log.length);
+      this.applyCommittedEntries();
     }
 
     return { term: this.currentTerm, success: true };

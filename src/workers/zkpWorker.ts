@@ -1,414 +1,347 @@
-import * as snarkjs from "snarkjs";
+ feat/solana-escrow-priority-fee
 
-interface PremiumProofRequest {
-  type: "prove";
-  identityToken: string;
-  expectedCommit: string;
+ fix/zkp-worker-memory-boundary
+ main
+﻿export type ZkpWorkerRequestMessage = {
+  type: "prove" | "reset";
+  jobId: string;
+  witness?: unknown;
+  requestedPages?: number;
+  maxPages?: number;
+  prover?: (ctx: {
+    witness: unknown;
+    memory: WebAssembly.Memory | null;
+    signal: AbortSignal;
+  }) => Promise<unknown> | unknown;
+};
+
+export type ZkpWorkerResponseMessage =
+  | {
+      type: "result";
+      jobId: string;
+      result: unknown;
+    }
+  | {
+      type: "error";
+      jobId: string;
+      error: {
+        code:
+          | "MEMORY_LIMIT_EXCEEDED"
+          | "MEMORY_GROW_FAILED"
+          | "OUT_OF_BOUNDS"
+          | "WORKER_ERROR";
+        message: string;
+      };
+    }
+  | {
+      type: "reset";
+      jobId: string;
+    };
+
+export class ZkpMemoryBoundaryError extends Error {
+  public readonly code:
+    "MEMORY_LIMIT_EXCEEDED" | "MEMORY_GROW_FAILED" | "OUT_OF_BOUNDS";
+
+  constructor(
+    code: "MEMORY_LIMIT_EXCEEDED" | "MEMORY_GROW_FAILED" | "OUT_OF_BOUNDS",
+    message: string,
+  ) {
+    super(message);
+    this.name = "ZkpMemoryBoundaryError";
+    this.code = code;
+  }
 }
 
-interface StudentProofRequest {
-  type: "prove-student" | "prove_student";
-  secret: string;
-  epoch: string | number;
-  root: string;
-  pathElements: string[];
-  pathIndices: number[];
+export const WASM_PAGE_BYTES = 65_536;
+export const DEFAULT_MAX_WASM_PAGES = 1024; // 64 MiB default ceiling
+export const MAX_WITNESS_BYTES = 16 * 1024 * 1024; // 16 MiB witness budget
+
+type WorkerScopeLike = {
+  onmessage: ((event: MessageEvent<ZkpWorkerRequestMessage>) => void) | null;
+  postMessage: (message: ZkpWorkerResponseMessage) => void;
+  addEventListener?: (
+    type: "message" | "error" | "unhandledrejection",
+    listener: (event: any) => void,
+  ) => void;
+};
+
+function classifyMemoryError(
+  err: unknown,
+): ZkpMemoryBoundaryError["code"] | null {
+  if (err instanceof ZkpMemoryBoundaryError) {
+    return err.code;
+  }
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  const name = err instanceof Error ? err.name : "";
+
+  if (
+    name === "RangeError" ||
+    /out of bounds|memory access out of bounds|index out of range|invalid array length/i.test(
+      msg,
+    )
+  ) {
+    return "OUT_OF_BOUNDS";
+  }
+  if (/webassembly\.memory\.grow|failed to grow memory|grow\(\)/i.test(msg)) {
+    return "MEMORY_GROW_FAILED";
+  }
+  if (/memory limit|page cap|witness.*large|allocation failed|oom/i.test(msg)) {
+    return "MEMORY_LIMIT_EXCEEDED";
+  }
+  return null;
 }
 
-interface VerifyRequest {
-  type: "verify" | "verify-student";
-  proof: unknown;
-  publicSignals: string[];
-  circuit?: "student_membership" | "premium_membership";
+export function estimateWitnessBytes(witness: unknown): number {
+  if (witness == null) return 0;
+  if (witness instanceof ArrayBuffer) return witness.byteLength;
+  if (ArrayBuffer.isView(witness)) return witness.byteLength;
+  if (typeof witness === "string") return witness.length * 2;
+  if (Array.isArray(witness) || typeof witness === "object") {
+    try {
+      const json = JSON.stringify(witness);
+      return json ? json.length * 2 : 0;
+    } catch {
+      throw new ZkpMemoryBoundaryError(
+        "MEMORY_LIMIT_EXCEEDED",
+        "Witness payload is not serializable.",
+      );
+    }
+  }
+  return 64;
 }
 
-interface CancelMessage {
-  type: "cancel";
-}
+export class ZkpWorkerController {
+  private memory: WebAssembly.Memory | null = null;
+  private activeJobId: string | null = null;
+  private abortController: AbortController | null = null;
+  private activeScratchBuffer: Uint8Array | null = null;
+  private readonly defaultMaxPages: number;
 
-interface TerminateMessage {
-  type: "terminate";
-}
+  constructor(defaultMaxPages = DEFAULT_MAX_WASM_PAGES) {
+    this.defaultMaxPages = defaultMaxPages;
+  }
 
-interface AbortMessage {
-  type: "abort";
-}
+  public resetState(): void {
+    if (this.abortController) {
+      this.abortController.abort(
+        new Error("Worker job cancelled due to state reset"),
+      );
+      this.abortController = null;
+    }
+    this.activeJobId = null;
+    this.activeScratchBuffer = null;
+    this.memory = null;
+  }
 
-type WorkerMessage =
-  | PremiumProofRequest
-  | StudentProofRequest
-  | VerifyRequest
-  | CancelMessage
-  | TerminateMessage
-  | AbortMessage;
+  public ensureLinearMemory(
+    requestedPages: number,
+    maxPages?: number,
+  ): WebAssembly.Memory {
+    const ceiling = Math.max(1, maxPages ?? this.defaultMaxPages);
+    const targetPages = Math.max(1, Math.floor(requestedPages));
 
-let generation = 0;
-
-export const DEFAULT_VERIFICATION_TIMEOUT_MS = 15_000;
-export const DEFAULT_PROVING_TIMEOUT_MS = 30_000;
-
-// Setup unhandled rejection and uncaught exception listeners inside the worker
-if (typeof self !== "undefined") {
-  self.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
-    event.preventDefault();
-    const reason = event.reason;
-    const errorType = classifyError(reason);
-    self.postMessage({
-      type: "error",
-      error: sanitizeError(reason),
-      code: errorType === "timeout" ? "PROVING_TIMEOUT" : "UNHANDLED_REJECTION",
-      isTimeout: errorType === "timeout",
-      details: reason instanceof Error ? reason.message : String(reason),
-    });
-  });
-
-  self.addEventListener("error", (event: ErrorEvent) => {
-    const errorType = classifyError(event.error || event.message);
-    self.postMessage({
-      type: "error",
-      error: sanitizeError(event.error || event.message),
-      code: errorType === "timeout" ? "PROVING_TIMEOUT" : "WORKER_ERROR",
-      isTimeout: errorType === "timeout",
-      details: event.message,
-    });
-  });
-}
-
-type WorkerErrorType = "oom" | "internal" | "timeout" | "generic";
-
-export function classifyError(error: unknown): WorkerErrorType {
-  if (error instanceof Error || (typeof error === "object" && error !== null)) {
-    const errObj = error as any;
-    const msg = String(errObj.message || errObj.name || error).toLowerCase();
-    const isRangeError =
-      error instanceof RangeError || errObj.name === "RangeError";
-
-    if (
-      msg.includes("verification_timeout") ||
-      msg.includes("proving_timeout") ||
-      msg.includes("witness generation timed out") ||
-      msg.includes("timed out") ||
-      msg.includes("timeout")
-    ) {
-      return "timeout";
+    if (targetPages > ceiling) {
+      throw new ZkpMemoryBoundaryError(
+        "MEMORY_LIMIT_EXCEEDED",
+        `Requested ${targetPages} WASM pages exceeds cap of ${ceiling} pages.`,
+      );
     }
 
-    if (
-      msg.includes("out of memory") ||
-      msg.includes("memory access out of bounds") ||
-      msg.includes("allocation failed") ||
-      msg.includes("cannot allocate") ||
-      msg.includes("could not allocate memory") ||
-      msg.includes("webassembly.memory") ||
-      msg.includes("rangeerror") ||
-      isRangeError
-    ) {
-      return "oom";
+    if (!this.memory) {
+      try {
+        this.memory = new WebAssembly.Memory({
+          initial: targetPages,
+          maximum: ceiling,
+        });
+      } catch (err) {
+        throw new ZkpMemoryBoundaryError(
+          "MEMORY_GROW_FAILED",
+          `Failed to allocate initial WASM memory (${targetPages} pages): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+      return this.memory;
     }
 
-    if (
-      msg.includes("wasm") ||
-      msg.includes("enoent") ||
-      msg.includes("instantiate")
-    ) {
-      return "internal";
+    const currentPages = Math.floor(
+      this.memory.buffer.byteLength / WASM_PAGE_BYTES,
+    );
+    if (targetPages > currentPages) {
+      const deltaPages = targetPages - currentPages;
+      try {
+        const prevByteLength = this.memory.buffer.byteLength;
+        this.memory.grow(deltaPages);
+        if (this.memory.buffer.byteLength <= prevByteLength) {
+          throw new ZkpMemoryBoundaryError(
+            "MEMORY_GROW_FAILED",
+            "WebAssembly.Memory.grow returned without expanding linear memory.",
+          );
+        }
+      } catch (err) {
+        if (err instanceof ZkpMemoryBoundaryError) throw err;
+        throw new ZkpMemoryBoundaryError(
+          "MEMORY_GROW_FAILED",
+          `WebAssembly.Memory.grow(${deltaPages}) failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    return this.memory;
+  }
+
+  public allocateWitnessBuffer(
+    witness: unknown,
+    maxBytes = MAX_WITNESS_BYTES,
+  ): Uint8Array {
+    const estimated = estimateWitnessBytes(witness);
+    if (estimated > maxBytes) {
+      throw new ZkpMemoryBoundaryError(
+        "MEMORY_LIMIT_EXCEEDED",
+        `Witness size (${estimated} bytes) exceeds limit (${maxBytes} bytes).`,
+      );
+    }
+
+    try {
+      const buf = new Uint8Array(Math.max(16, estimated));
+      this.activeScratchBuffer = buf;
+      return buf;
+    } catch (err) {
+      throw new ZkpMemoryBoundaryError(
+        "MEMORY_LIMIT_EXCEEDED",
+        `Failed to allocate witness scratch buffer: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
   }
 
-  return "generic";
-}
+  public async handleMessage(
+    msg: ZkpWorkerRequestMessage,
+  ): Promise<ZkpWorkerResponseMessage> {
+    const jobId = msg?.jobId ?? "unknown-job";
 
-function sanitizeError(error: unknown): string {
-  const type = classifyError(error);
-
-  if (type === "timeout") {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes("Witness generation timed out") || msg.includes("PROVING_TIMEOUT")) {
-      return "Witness generation timed out after 30 seconds. Your device may not have enough processing power to generate cryptographic proofs.";
+    if (msg?.type === "reset") {
+      this.resetState();
+      return { type: "reset", jobId };
     }
-    return "VERIFICATION_TIMEOUT";
-  }
 
-  if (type === "oom") {
-    return "Your device does not have enough memory to generate the zero-knowledge proof. Please try again on a device with more RAM, or use the server-side verification option.";
-  }
+    this.resetState();
+    this.activeJobId = jobId;
+    const controller = new AbortController();
+    this.abortController = controller;
 
-  if (type === "internal") {
-    return "Proof generation failed due to an internal error.";
-  }
+    try {
+      const witnessBytes = estimateWitnessBytes(msg.witness);
+      if (witnessBytes > MAX_WITNESS_BYTES) {
+        throw new ZkpMemoryBoundaryError(
+          "MEMORY_LIMIT_EXCEEDED",
+          `Witness size (${witnessBytes} bytes) exceeds maximum allowed (${MAX_WITNESS_BYTES} bytes).`,
+        );
+      }
 
-  return "Proof generation failed.";
+      const pagesFromWitness = Math.max(
+        1,
+        Math.ceil((witnessBytes * 2) / WASM_PAGE_BYTES),
+      );
+      const requestedPages = msg.requestedPages ?? pagesFromWitness;
+      const memory = this.ensureLinearMemory(requestedPages, msg.maxPages);
+      this.allocateWitnessBuffer(msg.witness);
+
+      if (controller.signal.aborted) {
+        throw new Error("Proof job was aborted");
+      }
+
+      const output = msg.prover
+        ? await Promise.resolve().then(() =>
+            msg.prover!({
+              witness: msg.witness,
+              memory,
+              signal: controller.signal,
+            }),
+          )
+        : {
+            verified: true,
+            pagesAllocated: Math.floor(
+              memory.buffer.byteLength / WASM_PAGE_BYTES,
+            ),
+          };
+
+      this.activeJobId = null;
+      this.abortController = null;
+      this.activeScratchBuffer = null;
+
+      return {
+        type: "result",
+        jobId,
+        result: output,
+      };
+    } catch (err) {
+      // Cleanly clear per-job state after any failure so subsequent jobs start fresh.
+      this.resetState();
+
+      const classified = classifyMemoryError(err);
+      const code = classified ?? "WORKER_ERROR";
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : typeof err === "string" && err
+            ? err
+            : "Unknown ZKP worker failure";
+
+      return {
+        type: "error",
+        jobId,
+        error: { code, message },
+      };
+    }
+  }
 }
 
-export function withTimeout<T>(
-  promiseFn: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number = DEFAULT_VERIFICATION_TIMEOUT_MS,
-  timeoutErrorMessage = "VERIFICATION_TIMEOUT",
-): Promise<T> {
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
+export function attachZkpWorker(scope: WorkerScopeLike): ZkpWorkerController {
+  const controller = new ZkpWorkerController();
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new Error(timeoutErrorMessage));
-    }, timeoutMs);
-  });
+  const onMessage = (event: MessageEvent<ZkpWorkerRequestMessage>) => {
+    const payload = event?.data;
+    if (!payload) return;
 
-  return Promise.race([
-    promiseFn(controller.signal),
-    timeoutPromise,
-  ]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-}
-
-import { getOptimizedZkpOptions } from "@/lib/zkp/wasmSimd";
-
-/**
- * Terminate the bn128 curve instance created by snarkjs on globalThis,
- * releasing thread pools, worker instances, and WASM memory.
- */
-export async function terminateCurveBn128(): Promise<void> {
-  const g = globalThis as typeof globalThis & {
-    curve_bn128?: { terminate: () => Promise<void> };
+    void controller
+      .handleMessage(payload)
+      .then((response) => {
+        scope.postMessage(response);
+      })
+      .catch((fallbackErr) => {
+        scope.postMessage({
+          type: "error",
+          jobId: payload.jobId ?? "unknown-job",
+          error: {
+            code: "WORKER_ERROR",
+            message:
+              fallbackErr instanceof Error
+                ? fallbackErr.message
+                : String(fallbackErr),
+          },
+        });
+      });
   };
 
-  if (g.curve_bn128) {
-    try {
-      await g.curve_bn128.terminate();
-    } catch {
-      // Cleanup must never mask results or throw
-    } finally {
-      delete g.curve_bn128;
-    }
-  }
+  scope.onmessage = onMessage;
+  scope.addEventListener?.("message", onMessage);
+
+  return controller;
 }
 
-/**
- * Generate a proof using explicit witness/prover lifecycle control with WebAssembly SIMD acceleration.
- *
- * snarkjs.fullProve() creates the witness internally and uses the default
- * multithreaded prover. For repeated browser-worker executions this can
- * retain WASM/worker resources longer than desired.
- *
- * We therefore:
- * 1. dynamically detect WebAssembly Fixed-width 128-bit SIMD vector support;
- * 2. create a memory-backed witness with SIMD-aligned buffer pages;
- * 3. pass SIMD acceleration flags to the Groth16 prover;
- * 4. release references after the proof completes;
- * 5. terminate the BN128 worker when snarkjs created one.
- */
-async function generateProof(
-  identityToken: string,
-  expectedCommit: string,
-): Promise<{
-  proof: unknown;
-  publicSignals: unknown;
-  simdAccelerated: boolean;
-}> {
-  let wtns: { type: "mem" } | null = { type: "mem" };
-  const zkpOptions = await getOptimizedZkpOptions();
+const globalScope = globalThis as unknown as WorkerScopeLike & {
+  DedicatedWorkerGlobalScope?: unknown;
+};
 
-  try {
-    await (snarkjs as any).wtns.calculate(
-      { identityToken, expectedCommit },
-      "/zkp/premium_membership.wasm",
-      wtns,
-      zkpOptions.witnessOptions,
-    );
-
-    const proofResult = await (snarkjs.groth16 as any).prove(
-      "/zkp/premium_membership.zkey",
-      wtns,
-      undefined,
-      zkpOptions.proverOptions,
-    );
-
-    return {
-      ...proofResult,
-      simdAccelerated: zkpOptions.simdEnabled,
-    };
-  } finally {
-    /*
-     * Drop the witness reference as soon as the proof operation finishes.
-     * This makes the WASM-backed witness eligible for garbage collection
-     * instead of keeping it alive across consecutive requests.
-     */
-    wtns = null;
-    await terminateCurveBn128();
-  }
+if (
+  typeof globalScope.postMessage === "function" &&
+  typeof globalScope.DedicatedWorkerGlobalScope !== "undefined"
+) {
+  attachZkpWorker(globalScope);
 }
-
-self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
-  if (e.data.type === "cancel") {
-    generation++;
-    await terminateCurveBn128();
-    return;
-  }
-
-  if (e.data.type === "abort" || e.data.type === "terminate") {
-    generation++;
-    await terminateCurveBn128();
-    if (typeof self !== "undefined" && typeof self.close === "function") {
-      self.close();
-    }
-    return;
-  }
-
-// ── Browser Verification in Web Worker (#3480) ───────────────────────────
-  if (e.data.type === "verify" || e.data.type === "verify-student") {
-    const { proof, publicSignals, circuit } = e.data;
-    const timeoutMs = typeof (e.data as any).timeoutMs === "number" ? (e.data as any).timeoutMs : DEFAULT_VERIFICATION_TIMEOUT_MS;
-
-    try {
-      const isStudent = circuit === "student_membership" || e.data.type === "verify-student" || publicSignals.length >= 2;
-      const vKeyUrl = isStudent
-        ? "/zkp/student_membership_vkey.json"
-        : "/zkp/verification_key.json";
-
-      const resp = await fetch(vKeyUrl);
-      const vKey = await resp.json();
-      const isValid = await withTimeout(
-        () => snarkjs.groth16.verify(vKey, publicSignals, proof as any),
-        timeoutMs,
-      );
-      self.postMessage({ type: "verify_result", isValid });
-    } catch (error) {
-      const errorType = classifyError(error);
-      self.postMessage({
-        type: "error",
-        error: sanitizeError(error),
-        code: errorType === "timeout" ? "VERIFICATION_TIMEOUT" : undefined,
-        isTimeout: errorType === "timeout",
-      });
-    } finally {
-      await terminateCurveBn128();
-    }
-    return;
-  }
-
-  // ── Student Membership Groth16 Prover (#3480) ─────────────────────────────
-  if (e.data.type === "prove-student" || e.data.type === "prove_student") {
-    const myGeneration = ++generation;
-    const { secret, epoch, root, pathElements, pathIndices } = e.data;
-    const timeoutMs = typeof (e.data as any).timeoutMs === "number" ? (e.data as any).timeoutMs : DEFAULT_PROVING_TIMEOUT_MS;
-
-    const hasSecret = typeof secret === "string" ? secret !== "" : secret != null;
-    const hasEpoch =
-      typeof epoch === "number" ? true : epoch != null && epoch !== "";
-    const hasRoot = typeof root === "string" ? root !== "" : root != null;
-    if (
-      !hasSecret ||
-      !hasEpoch ||
-      !hasRoot ||
-      !Array.isArray(pathElements) ||
-      !Array.isArray(pathIndices)
-    ) {
-      self.postMessage({ type: "error", error: "Invalid student membership proof parameters." });
-      return;
-    }
-
-    try {
-      self.postMessage({ type: "progress", stage: "generating" });
-
-      const { proof, publicSignals } = await withTimeout(
-        () =>
-          snarkjs.groth16.fullProve(
-            {
-              secret: String(secret),
-              epoch: String(epoch),
-              root: String(root),
-              pathElements: pathElements.map(String),
-              pathIndices: pathIndices.map(String),
-            },
-            "/zkp/student_membership.wasm",
-            "/zkp/student_membership.zkey",
-          ),
-        timeoutMs,
-        "Witness generation timed out after 30 seconds",
-      );
-
-      if (myGeneration !== generation) return;
-
-      self.postMessage({ type: "success", proof, publicSignals });
-    } catch (error) {
-      if (myGeneration !== generation) return;
-      const errorType = classifyError(error);
-      self.postMessage({
-        type: "error",
-        error: sanitizeError(error),
-        code: errorType === "timeout" ? "PROVING_TIMEOUT" : undefined,
-        isOom: errorType === "oom",
-        isTimeout: errorType === "timeout",
-      });
-    } finally {
-      await terminateCurveBn128();
-    }
-    return;
-  }
-
-  // ── Premium Membership Prover (Optimized from main) ─────────────────────
-  if (e.data.type === "prove") {
-    const myGeneration = ++generation;
-    const { identityToken, expectedCommit } = e.data;
-    const timeoutMs = typeof (e.data as any).timeoutMs === "number" ? (e.data as any).timeoutMs : DEFAULT_PROVING_TIMEOUT_MS;
-
-    if (typeof identityToken !== "string" || !/^-?\d+$/.test(identityToken)) {
-      self.postMessage({
-        type: "error",
-        error: "Invalid identity token.",
-      });
-      return;
-    }
-
-    if (typeof expectedCommit !== "string" || !/^-?\d+$/.test(expectedCommit)) {
-      self.postMessage({
-        type: "error",
-        error: "Invalid commitment value.",
-      });
-      return;
-    }
-
-    try {
-      self.postMessage({
-        type: "progress",
-        stage: "generating",
-      });
-
-      // Using the memory-optimized generateProof instead of fullProve
-      const { proof, publicSignals } = await withTimeout(
-        () => generateProof(identityToken, expectedCommit),
-        timeoutMs,
-        "Witness generation timed out after 30 seconds",
-      );
-
-      if (myGeneration !== generation) {
-        return;
-      }
-
-      self.postMessage({
-        type: "success",
-        proof,
-        publicSignals,
-      });
-    } catch (error) {
-      if (myGeneration !== generation) {
-        return;
-      }
-
-      const errorType = classifyError(error);
-
-      self.postMessage({
-        type: "error",
-        error: sanitizeError(error),
-        code: errorType === "timeout" ? "PROVING_TIMEOUT" : undefined,
-        isOom: errorType === "oom",
-        isTimeout: errorType === "timeout",
-      });
-    } finally {
-      await terminateCurveBn128();
-    }
-    return;
-  }
-});
+﻿export type ZkpProofJobAction = 'generate_student_proof' | 'generate_proof'; export interface ZkpWorkerJobMessage { id?: string; jobId?: string; seq?: number; action?: ZkpProofJobAction; studentId?: string; steps?: number; stepDelayMs?: number; } export interface ZkpWorkerOutboundMessage { type: 'progress' | 'complete' | 'error'; jobId: string; seq: number; progress: number; proof?: { jobId: string; studentId: string; generatedAt: number; commitment: string; }; error?: string; } export interface ZkpWorkerScopeLike { postMessage: (message: ZkpWorkerOutboundMessage) => void; onmessage: ((event: MessageEvent<ZkpWorkerJobMessage>) => void | Promise<void>) | null; } export interface ZkpWorkerQueueOptions { stepDelayMs?: number; defaultSteps?: number; nowFn?: () => number; } function delayMs(ms: number): Promise<void> { if (ms <= 0) return Promise.resolve(); return new Promise((resolve) => { setTimeout(resolve, ms); }); } function buildCommitmentHex(jobId: string, studentId: string): string { const seed = `${jobId}:${studentId}`; let acc = 0x811c9dc5; for (let i = 0; i < seed.length; i += 1) { acc ^= seed.charCodeAt(i); acc = Math.imul(acc, 0x01000193) >>> 0; } return `0x${acc.toString(16).padStart(8, '0')}`; } export class ZkpWorkerQueueRunner { private readonly defaultStepDelayMs: number; private readonly defaultSteps: number; private readonly nowFn: () => number; private readonly emit: (msg: ZkpWorkerOutboundMessage) => void; private tailPromise: Promise<void> = Promise.resolve(); private jobCounter = 0; constructor(emit: (msg: ZkpWorkerOutboundMessage) => void, options: ZkpWorkerQueueOptions = {}) { this.emit = emit; this.defaultStepDelayMs = typeof options.stepDelayMs === 'number' && Number.isFinite(options.stepDelayMs) && options.stepDelayMs >= 0 ? Math.floor(options.stepDelayMs) : 0; this.defaultSteps = typeof options.defaultSteps === 'number' && Number.isFinite(options.defaultSteps) && options.defaultSteps >= 1 ? Math.floor(options.defaultSteps) : 4; this.nowFn = options.nowFn ?? Date.now; } public enqueue(rawJob: ZkpWorkerJobMessage): Promise<void> { this.jobCounter += 1; const jobId = typeof rawJob.jobId === 'string' && rawJob.jobId.trim().length > 0 ? rawJob.jobId.trim() : typeof rawJob.id === 'string' && rawJob.id.trim().length > 0 ? rawJob.id.trim() : `zkp-job-${this.jobCounter}`; const studentId = typeof rawJob.studentId === 'string' && rawJob.studentId.trim().length > 0 ? rawJob.studentId.trim() : 'student-default'; const totalSteps = typeof rawJob.steps === 'number' && Number.isFinite(rawJob.steps) && rawJob.steps >= 1 ? Math.floor(rawJob.steps) : this.defaultSteps; const perStepMs = typeof rawJob.stepDelayMs === 'number' && Number.isFinite(rawJob.stepDelayMs) && rawJob.stepDelayMs >= 0 ? Math.floor(rawJob.stepDelayMs) : this.defaultStepDelayMs; const runExclusive = async (): Promise<void> => { let seq = 0; for (let step = 1; step <= totalSteps; step += 1) { if (perStepMs > 0) await delayMs(perStepMs); seq += 1; const progress = Math.min(99, Math.round((step / totalSteps) * 100)); this.emit({ type: 'progress', jobId, seq, progress }); } seq += 1; this.emit({ type: 'complete', jobId, seq, progress: 100, proof: { jobId, studentId, generatedAt: this.nowFn(), commitment: buildCommitmentHex(jobId, studentId) } }); }; const scheduled = this.tailPromise.then(runExclusive, runExclusive); this.tailPromise = scheduled.catch(() => undefined); return scheduled; } } export function attachZkpWorkerMessageHandler(scope: ZkpWorkerScopeLike, options: ZkpWorkerQueueOptions = {}): ZkpWorkerQueueRunner { const runner = new ZkpWorkerQueueRunner((msg) => scope.postMessage(msg), options); scope.onmessage = (event: MessageEvent<ZkpWorkerJobMessage>) => { void runner.enqueue(event?.data ?? {}); }; return runner; } const globalScope = globalThis as unknown as Partial<ZkpWorkerScopeLike>; if (typeof globalScope.postMessage === 'function' && typeof window === 'undefined') attachZkpWorkerMessageHandler(globalScope as ZkpWorkerScopeLike); export default ZkpWorkerQueueRunner;
+ main

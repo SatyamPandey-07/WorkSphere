@@ -17,6 +17,10 @@ import { prisma } from "@/lib/prisma";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { notifyNextInWaitlist } from "@/lib/waitlist";
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
+import {
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 type RouteContext = {
   params: Promise<{
@@ -133,7 +137,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
-    if (booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR") {
+    if (
+      booking.status === "CANCELLED" ||
+      booking.status === "CANCELLED_BY_OPERATOR"
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -154,18 +161,33 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const targetDate = typeof body.date === "string" && body.date.trim() ? body.date.trim() : booking.date;
-    const rawTime = typeof body.time === "string" && body.time.trim() ? body.time.trim() : booking.time;
+    const targetDate =
+      typeof body.date === "string" && body.date.trim()
+        ? body.date.trim()
+        : booking.date;
+    const rawTime =
+      typeof body.time === "string" && body.time.trim()
+        ? body.time.trim()
+        : booking.time;
     const targetTime = normalizeBookingTime(rawTime);
-    const targetDuration = body.duration !== undefined ? Number(body.duration) : (booking.duration ?? 60);
+    const targetDuration =
+      body.duration !== undefined
+        ? Number(body.duration)
+        : (booking.duration ?? 60);
     const targetTimeZone = isValidTimeZone(body.timeZone)
       ? body.timeZone
       : booking.timeZone || "UTC";
-    const targetSeatId = typeof body.seatId === "string" && body.seatId.trim() ? body.seatId.trim() : booking.seatId;
+    const targetSeatId =
+      typeof body.seatId === "string" && body.seatId.trim()
+        ? body.seatId.trim()
+        : booking.seatId;
 
     if (!isValidBookingDate(targetDate)) {
       return NextResponse.json(
-        { success: false, error: "Invalid booking date format. Use YYYY-MM-DD." },
+        {
+          success: false,
+          error: "Invalid booking date format. Use YYYY-MM-DD.",
+        },
         { status: 400 },
       );
     }
@@ -177,17 +199,31 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
-    if (!Number.isInteger(targetDuration) || targetDuration < 30 || targetDuration > 480) {
+    if (
+      !Number.isInteger(targetDuration) ||
+      targetDuration < 30 ||
+      targetDuration > 480
+    ) {
       return NextResponse.json(
-        { success: false, error: "Duration must be an integer between 30 and 480 minutes." },
+        {
+          success: false,
+          error: "Duration must be an integer between 30 and 480 minutes.",
+        },
         { status: 400 },
       );
     }
 
-    const startsAt = parseBookingDateTime(targetDate, targetTime, targetTimeZone);
+    const startsAt = parseBookingDateTime(
+      targetDate,
+      targetTime,
+      targetTimeZone,
+    );
     if (!startsAt || startsAt.getTime() < Date.now() - PAST_GRACE_MS) {
       return NextResponse.json(
-        { success: false, error: "You cannot reschedule a booking to a time in the past." },
+        {
+          success: false,
+          error: "You cannot reschedule a booking to a time in the past.",
+        },
         { status: 400 },
       );
     }
@@ -290,6 +326,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       ),
     );
 
+    await invalidateVenueAvailability(
+      venueAvailabilityCacheKey(booking.venueId),
+    );
+
     publishVenueAvailability(booking.venueId, {
       type: "seat_rescheduled",
       bookingId: booking.id,
@@ -328,7 +368,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json(
         {
           success: false,
-          error: "The requested time slot or desk is not available. Please choose another time or desk.",
+          error:
+            "The requested time slot or desk is not available. Please choose another time or desk.",
         },
         { status: 409 },
       );
@@ -337,7 +378,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json(
         {
           success: false,
-          error: "This booking was changed or cancelled by another request. Please refresh and try again.",
+          error:
+            "This booking was changed or cancelled by another request. Please refresh and try again.",
         },
         { status: 409 },
       );
@@ -415,7 +457,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
       );
     }
 
-    if (booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR") {
+    if (
+      booking.status === "CANCELLED" ||
+      booking.status === "CANCELLED_BY_OPERATOR"
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -499,6 +544,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
       );
     }
 
+    await invalidateVenueAvailability(
+      venueAvailabilityCacheKey(booking.venueId),
+    );
+
     emitWebhookEvent(userId, "BOOKING_CANCELLED", {
       bookingId: booking.id,
       confirmationId: booking.confirmationId,
@@ -517,7 +566,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
       booking.seatId,
       booking.timeZone,
     ).catch((err) => {
-      console.error("[Booking Cancellation] Waitlist notification failed:", err);
+      console.error(
+        "[Booking Cancellation] Waitlist notification failed:",
+        err,
+      );
     });
 
     return NextResponse.json({

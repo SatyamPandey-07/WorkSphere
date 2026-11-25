@@ -224,7 +224,7 @@ The spectrum is divided into 7 standardized acoustic frequency bands:
 
 ## 4. Double Ratchet & Curve25519 Cryptographic Primitives
 
-The end-to-end encrypted chat subsystem implements the **Double Ratchet Algorithm** ([`src/wasm/crypto/double_ratchet.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/double_ratchet.c)) combined with **Curve25519 (X25519)** key exchange ([`src/wasm/crypto/curve25519.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/curve25519.c)).
+The end-to-end encrypted chat subsystem implements the **Double Ratchet Algorithm** ([`src/wasm/crypto/double_ratchet.c`](../../src/wasm/crypto/double_ratchet.c)) combined with **Curve25519 (X25519)** key exchange ([`src/wasm/crypto/curve25519.c`](../../src/wasm/crypto/curve25519.c)).
 
 ```mermaid
 sequenceDiagram
@@ -301,7 +301,7 @@ void clamp_private_key(uint8_t *key) {
 
 ## 5. Web Worker Multi-Threading & Zero-Copy Memory Management
 
-To maintain a fluid $60\text{ fps}$ UI and prevent audio glitching, WASM audio processing runs in a dedicated Web Worker ([`src/workers/acousticFingerprintWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/acousticFingerprintWorker.ts)).
+To maintain a fluid $60\text{ fps}$ UI and prevent audio glitching, WASM audio processing runs in a dedicated Web Worker ([`src/workers/acousticFingerprintWorker.ts`](../../src/workers/acousticFingerprintWorker.ts)).
 
 ### 5.1 Zero-Copy Buffer Transfer Pipeline
 

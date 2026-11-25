@@ -1,109 +1,60 @@
-import { Connection, Transaction } from "@solana/web3.js";
-import {
-  simulateEscrowTransaction,
-  DEFAULT_SIMULATION_TIMEOUT_MS,
-} from "@/lib/solana/escrowClient";
+﻿import {
+  computeBackoffDelayMs,
+  RPC_BUSY_USER_MESSAGE,
+  SolanaEscrowClient,
+  withRpcRateLimitRetry,
+} from '@/lib/solana/escrowClient';
 
-describe("simulateEscrowTransaction", () => {
-  const dummyTx = new Transaction();
-  const noOpSleep = jest.fn().mockResolvedValue(undefined);
+describe('SolanaEscrowClient 429 retry & exponential backoff', () => {
+  it('computes 500ms -> 1000ms -> 2000ms base backoff with +/-200ms jitter', () => {
+    expect(computeBackoffDelayMs(0, { randomFn: () => 0.5 })).toBe(500);
+    expect(computeBackoffDelayMs(1, { randomFn: () => 0.5 })).toBe(1000);
+    expect(computeBackoffDelayMs(2, { randomFn: () => 0.5 })).toBe(2000);
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    delete process.env.NEXT_PUBLIC_SOLANA_RPC_FALLBACK_URL;
+    expect(computeBackoffDelayMs(0, { randomFn: () => 1 })).toBe(700);
+    expect(computeBackoffDelayMs(0, { randomFn: () => 0 })).toBe(300);
   });
 
-  it("recovers after transient RPC timeouts and succeeds on retry", async () => {
-    const mockSimulate = jest
-      .fn()
-      .mockRejectedValueOnce(new Error("FetchError: network timeout"))
-      .mockRejectedValueOnce(new Error("429 Too Many Requests"))
-      .mockResolvedValueOnce({
-        value: {
-          err: null,
-          logs: ["Program log: Escrow OK"],
-          unitsConsumed: 1200,
-        },
-      });
+  it('retries up to 3 times on HTTP 429 / Too Many Requests and succeeds on recovery', async () => {
+    const sleepMock = jest.fn().mockResolvedValue(undefined);
+    let calls = 0;
 
-    const factory = jest.fn(
-      () => ({ simulateTransaction: mockSimulate }) as unknown as Connection,
-    );
-
-    const result = await simulateEscrowTransaction(dummyTx, {
-      primaryRpcUrl: "https://primary.devnet.solana.com",
-      connectionFactory: factory,
-      sleepFn: noOpSleep,
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.attempts).toBe(3);
-      expect(result.rpcEndpoint).toBe("https://primary.devnet.solana.com");
-    }
-    expect(noOpSleep).toHaveBeenCalledTimes(2);
-  });
-
-  it("falls back to secondary RPC endpoint when primary exhausts retries", async () => {
-    const primarySimulate = jest
-      .fn()
-      .mockRejectedValue(new Error("503 Service Unavailable"));
-    const fallbackSimulate = jest.fn().mockResolvedValueOnce({
-      value: {
-        err: null,
-        logs: ["Program log: Fallback OK"],
-        unitsConsumed: 950,
+    const client = new SolanaEscrowClient(
+      {
+        getEscrowStatus: jest.fn().mockImplementation(async (escrowId: string) => {
+          calls += 1;
+          if (calls <= 3) {
+            throw new Error('429 Too Many Requests: rate limit exceeded');
+          }
+          return { escrowId, status: 'funded', lamports: 1_000_000 };
+        }),
       },
-    });
+      { sleepFn: sleepMock, randomFn: () => 0.5 }
+    );
 
-    const factory = jest.fn((endpoint: string) => {
-      if (endpoint.includes("fallback")) {
-        return {
-          simulateTransaction: fallbackSimulate,
-        } as unknown as Connection;
-      }
-      return { simulateTransaction: primarySimulate } as unknown as Connection;
-    });
-
-    const result = await simulateEscrowTransaction(dummyTx, {
-      primaryRpcUrl: "https://primary.devnet.solana.com",
-      fallbackRpcUrl: "https://fallback.devnet.solana.com",
-      connectionFactory: factory,
-      sleepFn: noOpSleep,
-    });
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.rpcEndpoint).toBe("https://fallback.devnet.solana.com");
-      expect(result.attempts).toBe(5); // 4 primary attempts + 1 fallback attempt
-    }
+    const result = await client.getEscrowStatus('escrow-abc');
+    expect(result.status).toBe('funded');
+    expect(calls).toBe(4);
+    expect(sleepMock).toHaveBeenCalledTimes(3);
+    expect(sleepMock).toHaveBeenNthCalledWith(1, 500);
+    expect(sleepMock).toHaveBeenNthCalledWith(2, 1000);
+    expect(sleepMock).toHaveBeenNthCalledWith(3, 2000);
   });
 
-  it("enforces timeout via Promise.race and returns structured retryable timeout payload", async () => {
-    const hangingSimulate = jest.fn(
-      () => new Promise(() => {}), // Never resolves
-    );
+  it('throws descriptive user message after 3 failed 429 retries', async () => {
+    const sleepMock = jest.fn().mockResolvedValue(undefined);
+    const failingOp = jest
+      .fn()
+      .mockRejectedValue({ status: 429, message: 'Too Many Requests' });
 
-    const factory = jest.fn(
-      () => ({ simulateTransaction: hangingSimulate }) as unknown as Connection,
-    );
+    await expect(
+      withRpcRateLimitRetry(failingOp, {
+        sleepFn: sleepMock,
+        randomFn: () => 0.5,
+      })
+    ).rejects.toThrow(RPC_BUSY_USER_MESSAGE);
 
-    const result = await simulateEscrowTransaction(dummyTx, {
-      timeoutMs: 25,
-      maxRetries: 2,
-      primaryRpcUrl: "https://primary.devnet.solana.com",
-      connectionFactory: factory,
-      sleepFn: noOpSleep,
-    });
-
-    expect(DEFAULT_SIMULATION_TIMEOUT_MS).toBe(8000);
-    expect(result).toEqual(
-      expect.objectContaining({
-        success: false,
-        error: "RPC_SIMULATION_TIMEOUT",
-        retryable: true,
-        attempts: 3,
-      }),
-    );
+    expect(failingOp).toHaveBeenCalledTimes(4);
+    expect(sleepMock).toHaveBeenCalledTimes(3);
   });
 });

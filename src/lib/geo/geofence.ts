@@ -3,6 +3,8 @@ export interface Coordinates {
   longitude: number;
 }
 
+export const GEOFENCE_RADIUS_METERS = 250;
+
 /**
  * Calculates the distance in meters between two GPS coordinates using the Haversine formula.
  */
@@ -25,7 +27,7 @@ export function calculateDistanceMeters(coord1: Coordinates, coord2: Coordinates
 export function isOutsideGeofence(
   userLocation: Coordinates,
   venueLocation: Coordinates,
-  thresholdMeters = 250
+  thresholdMeters = GEOFENCE_RADIUS_METERS
 ): boolean {
   const distance = calculateDistanceMeters(userLocation, venueLocation);
   return distance > thresholdMeters;

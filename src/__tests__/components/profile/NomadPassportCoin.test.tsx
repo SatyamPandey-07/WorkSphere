@@ -241,4 +241,44 @@ describe("NomadPassportCoin & NomadPassportCoinSkeleton Component", () => {
       expect(vibrateMock).toHaveBeenCalledWith([10, 30, 10]);
     });
   });
+
+  describe("NomadPassportCoin Reduced Motion (#10244)", () => {
+    it("includes Tailwind motion-reduce:transition-none on the fallback rotor", () => {
+      render(
+        <NomadPassportCoin
+          stamp={mockStamp}
+          isLoading={false}
+          isLoaded={true}
+        />,
+      );
+
+      const rotor = screen.getByTestId("nomad-coin-rotor");
+      expect(rotor).toBeInTheDocument();
+      expect(rotor).toHaveClass("motion-reduce:transition-none");
+    });
+
+    it("preserves standard 3D transform and rotation classes when flipped", () => {
+      render(
+        <NomadPassportCoin
+          stamp={mockStamp}
+          isLoading={false}
+          isLoaded={true}
+        />,
+      );
+
+      const button = screen.getByRole("button");
+      const rotor = screen.getByTestId("nomad-coin-rotor");
+
+      // Initially unflipped
+      expect(rotor).not.toHaveClass("rotateY180");
+
+      // Flip on mouse enter
+      fireEvent.mouseEnter(button);
+      expect(rotor.className).toMatch(/rotateY180/);
+
+      // Unflip on mouse leave
+      fireEvent.mouseLeave(button);
+      expect(rotor.className).not.toMatch(/rotateY180/);
+    });
+  });
 });

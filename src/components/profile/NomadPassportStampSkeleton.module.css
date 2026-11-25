@@ -1,0 +1,53 @@
+.hexagon {
+  position: relative;
+  width: 56px;
+  height: 64px;
+  flex-shrink: 0;
+  overflow: hidden;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+  background: #1e293b;
+}
+
+.shimmer,
+.shimmerBar {
+  position: relative;
+  overflow: hidden;
+  background: #1e293b;
+}
+
+.shimmer {
+  position: absolute;
+  inset: 0;
+}
+
+.shimmer::after,
+.shimmerBar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(103, 232, 249, 0.18) 50%,
+    transparent 80%
+  );
+  animation: passportShimmer 1.8s ease-in-out infinite;
+}
+
+.shimmerBar::after {
+  position: absolute;
+}
+
+@keyframes passportShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer::after,
+  .shimmerBar::after {
+    animation: none;
+  }
+}

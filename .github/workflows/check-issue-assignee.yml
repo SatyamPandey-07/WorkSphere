@@ -39,6 +39,32 @@ jobs:
                 return;
               }
 
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti'];
+              if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthorLower)) {
+                console.log(`Closing PR #${prNumber} from blocked contributor: ${prAuthor}`);
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: `🚫 Pull requests and contributions from @${prAuthor} are blocked on this repository. This pull request has been automatically closed.`
+                });
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  state: 'closed'
+                });
+                try {
+                  await github.rest.issues.lock({
+                    owner,
+                    repo,
+                    issue_number: prNumber,
+                    lock_reason: 'spam'
+                  });
+                } catch (lockErr) {}
+                return;
+              }
+
               const title = pr.title || '';
               const rawBody = pr.body || '';
               const body = rawBody

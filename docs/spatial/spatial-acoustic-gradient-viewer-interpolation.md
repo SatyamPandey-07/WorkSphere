@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Engine Architecture
 
-The WorkSphere Spatial Acoustic Engine ([`src/lib/spatial/acousticGradientEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/spatial/acousticGradientEngine.ts)) and UI Viewer ([`src/components/venue/SpatialAcousticGradientViewer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SpatialAcousticGradientViewer.tsx)) provide real-time 2D spatial acoustic modeling, sound pressure level (SPL) decay, and heat-map gradient rendering across venue floorplans. Remote workers require precise acoustic transparency to find quiet reading nooks, avoid loud espresso steam wands, or locate suitable areas for confidential voice calls.
+The WorkSphere Spatial Acoustic Engine ([`src/lib/spatial/acousticGradientEngine.ts`](../../src/lib/spatial/acousticGradientEngine.ts)) and UI Viewer ([`src/components/venue/SpatialAcousticGradientViewer.tsx`](../../src/components/venue/SpatialAcousticGradientViewer.tsx)) provide real-time 2D spatial acoustic modeling, sound pressure level (SPL) decay, and heat-map gradient rendering across venue floorplans. Remote workers require precise acoustic transparency to find quiet reading nooks, avoid loud espresso steam wands, or locate suitable areas for confidential voice calls.
 
 By combining physical geometric sound attenuation with logarithmic acoustic energy superposition and Inverse Distance Weighting (IDW) interpolation mechanics, the engine renders continuous $30\text{ dB}$ to $75\text{ dB}$ sound pressure contours from sparse sensor nodes and discrete acoustic emitters.
 
@@ -169,7 +169,7 @@ export function decibelsToRgba(db: number): [number, number, number, number] {
 
 ### 5.1 Canvas Projection Loop
 
-The canvas render function projected in [`src/components/venue/SpatialAcousticGradientViewer.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SpatialAcousticGradientViewer.tsx) iterates across all cell coordinates $(r, c)$:
+The canvas render function projected in [`src/components/venue/SpatialAcousticGradientViewer.tsx`](../../src/components/venue/SpatialAcousticGradientViewer.tsx) iterates across all cell coordinates $(r, c)$:
 
 $$\text{cellW} = \frac{\text{canvas.width}}{\text{gridWidth}}, \quad \text{cellH} = \frac{\text{canvas.height}}{\text{gridHeight}}$$
 

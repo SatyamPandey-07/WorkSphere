@@ -5,17 +5,25 @@ import {
   venueSearchSchema,
   venueCreateSchema,
   validateRequest,
+  parsePaginationParams,
   type VenueSearch,
 } from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { ensureUserExists } from "@/lib/auth";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
-import { sanitizeSearchQuery, splitSearchList } from "@/lib/searchSanitizer";
+import {
+  normalizeSearchQuery,
+  sanitizeSearchQuery,
+  splitSearchList,
+} from "@/lib/searchSanitizer";
+import { trackEvent } from "@/lib/analytics";
 import { getFuzzyThreshold, isFuzzyMatch } from "@/lib/search/fuzzySearch";
 import {
   indexVenueSearchEmbedding,
+  scheduleTrendingVenueSearchPrefetch,
   searchVenuesWithRrf,
+  labelFuzzySuggestions,
 } from "@/lib/search/hybridVenueSearch";
 
 // Search/autocomplete is expected to fire on every keystroke (debounced client-side
@@ -52,6 +60,14 @@ function suggestVenueQuery(
   return suggestion;
 }
 
+function isEnabledSearchParam(
+  searchParams: URLSearchParams,
+  key: string,
+): boolean {
+  const value = searchParams.get(key);
+  return value === "true" || value === "1";
+}
+
 interface VenueSearchData {
   lat: number;
   lng: number;
@@ -65,6 +81,8 @@ interface VenueSearchData {
   outlets?: boolean;
   quiet?: boolean;
   ergonomic?: boolean;
+  standingDesk?: boolean;
+  externalMonitor?: boolean;
   outletDensity?: string;
   wifiSpeedBand?: string;
   hasPhoneBooths?: boolean;
@@ -118,22 +136,40 @@ export async function GET(req: NextRequest) {
     const pageParam = searchParams.get("page");
     const limitParam = searchParams.get("limit");
 
-    const page = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1;
-    const limit = limitParam
-      ? Math.min(100, Math.max(1, parseInt(limitParam, 10)))
-      : 50;
-    const skip = (page - 1) * limit;
+    const paginationResult = parsePaginationParams(pageParam, limitParam);
+    if (!paginationResult.success) {
+      return NextResponse.json(
+        { error: paginationResult.error },
+        { status: 400 },
+      );
+    }
+    const { page, limit, skip } = paginationResult.data;
 
     // Fallback: If no coordinates are provided, return all venues (or filtered by cities/query)
     if (!searchParams.get("lat") || !searchParams.get("lng")) {
       const citiesParam = searchParams.get("cities");
-      const queryParam = searchParams.get("query") || searchParams.get("q");
+      // Trim before the value is used for filtering, ranking or suggestions. A
+      // blank `query` must not shadow a real `q`, and a whitespace-only value
+      // means "no text query" rather than a search for nothing (#7727).
+      const queryParam =
+        [searchParams.get("query"), searchParams.get("q")]
+          .map((value) => value?.trim() ?? "")
+          .find((value) => value !== "") || null;
+      if (queryParam) recordVenueSearch(queryParam);
       const minLatParam = searchParams.get("minLat");
       const maxLatParam = searchParams.get("maxLat");
       const minLngParam = searchParams.get("minLng");
       const maxLngParam = searchParams.get("maxLng");
       const where: any = {};
       const andConditions: any[] = [];
+      const selectedAmenities = new Set(
+        (searchParams.get("amenities") ?? searchParams.get("filters") ?? "")
+          .split(",")
+          .map((amenity) => amenity.trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const isEnabled = (key: string) =>
+        searchParams.get(key) === "true" || searchParams.get(key) === "1";
 
       if (
         minLatParam !== null &&
@@ -186,6 +222,16 @@ export async function GET(req: NextRequest) {
             })),
           });
         }
+      }
+
+      if (isEnabledSearchParam(searchParams, "ergonomic")) {
+        andConditions.push({ hasErgonomic: true });
+      }
+      if (isEnabledSearchParam(searchParams, "standingDesk")) {
+        andConditions.push({ hasStandingDesk: true });
+      }
+      if (isEnabledSearchParam(searchParams, "externalMonitor")) {
+        andConditions.push({ hasExternalMonitor: true });
       }
 
       const suggestionWhere =
@@ -262,10 +308,13 @@ export async function GET(req: NextRequest) {
           .filter((venue): venue is (typeof matchingVenues)[number] =>
             Boolean(venue),
           );
-        const venues = orderedVenues.slice(skip, skip + limit);
+        const venues = labelFuzzySuggestions(
+          orderedVenues.slice(skip, skip + limit),
+          ranked,
+        );
         const total = orderedVenues.length;
 
-        return NextResponse.json({
+        return makeSearchResponse(req, userId, queryParam, {
           venues,
           pagination: {
             page,
@@ -275,6 +324,7 @@ export async function GET(req: NextRequest) {
             hasNextPage: skip + venues.length < total,
           },
           fuzzyMatched: Boolean(ranked.fuzzyMatched),
+          ...(ranked.lowConfidenceFallback && { lowConfidenceFallback: true }),
           ...(ranked.suggestedQuery
             ? {
                 suggestedQuery: ranked.suggestedQuery,
@@ -313,7 +363,7 @@ export async function GET(req: NextRequest) {
               ).map((venue) => venue.name),
             )
           : undefined;
-      return NextResponse.json({
+      const responseBody = {
         venues,
         ...(suggestedQuery && { suggestedQuery }),
         pagination: {
@@ -323,7 +373,10 @@ export async function GET(req: NextRequest) {
           totalPages: Math.ceil(total / limit),
           hasNextPage: skip + venues.length < total,
         },
-      });
+      };
+      return queryParam
+        ? makeSearchResponse(req, userId, queryParam, responseBody)
+        : NextResponse.json(responseBody);
     }
 
     // Validate search params with Zod
@@ -337,6 +390,8 @@ export async function GET(req: NextRequest) {
       "outlets",
       "quiet",
       "ergonomic",
+      "standingDesk",
+      "externalMonitor",
       "outletDensity",
       "wifiSpeedBand",
       "hasPhoneBooths",
@@ -356,17 +411,47 @@ export async function GET(req: NextRequest) {
       "musicStyle",
       "cities",
       "query",
+      "q",
       "minLat",
       "maxLat",
       "minLng",
       "maxLng",
       "semanticWeight",
       "fullTextWeight",
+      "minWifiSpeed",
     ];
     for (const key of keys) {
       const val = searchParams.get(key);
       if (val !== null) {
         rawData[key] = sanitizeSearchQuery(val);
+      }
+    }
+    if (
+      rawData.standingDesk === undefined &&
+      (searchParams.get("amenities") ?? searchParams.get("filters"))
+        ?.split(",")
+        .some((amenity) => amenity.trim().toLowerCase() === "standing_desk")
+    ) {
+      rawData.standingDesk = "true";
+    }
+    const selectedAmenities = new Set(
+      (searchParams.get("amenities") ?? searchParams.get("filters") ?? "")
+        .split(",")
+        .map((amenity) => amenity.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const amenityParameterAliases: Record<string, string> = {
+      wifi: "wifi",
+      outlets: "outlets",
+      quiet: "quiet",
+      ergonomic: "ergonomic",
+      phonebooths: "hasPhoneBooths",
+    };
+    for (const [amenity, parameter] of Object.entries(
+      amenityParameterAliases,
+    )) {
+      if (rawData[parameter] === undefined && selectedAmenities.has(amenity)) {
+        rawData[parameter] = "true";
       }
     }
     const validation = validateRequest<VenueSearch>(venueSearchSchema, rawData);
@@ -388,6 +473,8 @@ export async function GET(req: NextRequest) {
       outlets,
       quiet,
       ergonomic,
+      standingDesk,
+      externalMonitor,
       outletDensity,
       wifiSpeedBand,
       hasPhoneBooths,
@@ -442,6 +529,21 @@ export async function GET(req: NextRequest) {
     if (ergonomic) {
       where.hasErgonomic = true;
     }
+    if (standingDesk) {
+      where.hasStandingDesk = true;
+    }
+    if (externalMonitor) {
+      where.hasExternalMonitor = true;
+    }
+
+    if (standingDesk) {
+      where.validations = {
+        some: {
+          amenity: { equals: "standing_desk", mode: "insensitive" },
+          upvotes: { gt: 0 },
+        },
+      };
+    }
 
     if (outletDensity && outletDensity !== "none") {
       if (outletDensity === "every_table") {
@@ -463,6 +565,11 @@ export async function GET(req: NextRequest) {
       } else if (wifiSpeedBand === "ultra") {
         where.wifiSpeed = { gte: 100 };
       }
+    }
+
+    const minWifiSpeed = searchParams.get("minWifiSpeed");
+    if (minWifiSpeed !== null && !isNaN(Number(minWifiSpeed))) {
+      where.wifiSpeed = { gte: parseFloat(minWifiSpeed) };
     }
 
     if (hasPhoneBooths) {
@@ -542,9 +649,11 @@ export async function GET(req: NextRequest) {
     }
 
     const querySearch = rawData.query || rawData.q;
+    if (querySearch) recordVenueSearch(querySearch);
     let total: number;
     let venues: any[];
     let fuzzyMatched = false;
+    let lowConfidenceFallback = false;
     let suggestedQuery: string | undefined;
 
     if (querySearch) {
@@ -569,6 +678,7 @@ export async function GET(req: NextRequest) {
             : undefined,
       });
       fuzzyMatched = Boolean(ranked.fuzzyMatched);
+      lowConfidenceFallback = Boolean(ranked.lowConfidenceFallback);
       suggestedQuery = ranked.suggestedQuery;
       const rankedIds = ranked.map(({ id }) => id);
       const matchingVenues = rankedIds.length
@@ -589,7 +699,10 @@ export async function GET(req: NextRequest) {
           Boolean(venue),
         );
       total = orderedVenues.length;
-      venues = orderedVenues.slice(skip, skip + limit);
+      venues = labelFuzzySuggestions(
+        orderedVenues.slice(skip, skip + limit),
+        ranked,
+      );
     } else {
       total = await prisma.venue.count({ where });
       venues = await prisma.venue.findMany({
@@ -677,7 +790,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const body = {
       venues,
       ...(suggestedQuery && { suggestedQuery }),
       pagination: {
@@ -688,13 +801,17 @@ export async function GET(req: NextRequest) {
         hasNextPage: skip + venues.length < total,
       },
       fuzzyMatched: Boolean(fuzzyMatched),
+      ...(lowConfidenceFallback && { lowConfidenceFallback: true }),
       ...(suggestedQuery
         ? {
             suggestedQuery,
             notice: `Showing results for ${suggestedQuery}`,
           }
         : {}),
-    });
+    };
+    return querySearch
+      ? makeSearchResponse(req, userId, querySearch, body)
+      : NextResponse.json(body);
   } catch (error) {
     console.error("GET /api/venues error:", error);
     return NextResponse.json(
@@ -739,6 +856,8 @@ export async function POST(req: NextRequest) {
       hasOutlets,
       noiseLevel,
       hasErgonomic,
+      hasStandingDesk,
+      hasExternalMonitor,
       outletDensity,
       wifiSpeed,
       hasPhoneBooths,
@@ -756,8 +875,10 @@ export async function POST(req: NextRequest) {
       oatAlmondMilk,
       pourOverAvailable,
       musicStyle,
+      placeId,
+      rating,
+      imageUrl,
     } = validation.data;
-    const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
 
     // Validate placeId (required for upsert)
     if (!placeId) {
@@ -766,6 +887,9 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    const cleanImageUrl =
+      imageUrl && imageUrl.trim() !== "" ? imageUrl.trim() : null;
 
     const existing = await prisma.venue.findUnique({
       where: { placeId },
@@ -784,8 +908,8 @@ export async function POST(req: NextRequest) {
     let requiresReview = false;
 
     // Run Vision Validation if an image was provided
-    if (imageUrl) {
-      const visionResult = await analyzeVenueImage(imageUrl, {
+    if (cleanImageUrl) {
+      const visionResult = await analyzeVenueImage(cleanImageUrl, {
         hasOutlets,
         category,
       });
@@ -809,6 +933,8 @@ export async function POST(req: NextRequest) {
         hasOutlets,
         noiseLevel,
         hasErgonomic,
+        hasStandingDesk,
+        hasExternalMonitor,
         outletDensity,
         wifiSpeed,
         hasPhoneBooths,
@@ -828,7 +954,7 @@ export async function POST(req: NextRequest) {
         musicStyle,
         crowdsourced: true,
         requiresReview,
-        ...(imageUrl && { imageUrl }),
+        ...(cleanImageUrl && { imageUrl: cleanImageUrl }),
       },
       create: {
         placeId,
@@ -837,11 +963,13 @@ export async function POST(req: NextRequest) {
         longitude,
         category,
         address,
-        rating,
+        rating: rating ?? null,
         wifiQuality,
         hasOutlets: hasOutlets || false,
         noiseLevel,
         hasErgonomic: hasErgonomic || false,
+        hasStandingDesk: hasStandingDesk || false,
+        hasExternalMonitor: hasExternalMonitor || false,
         outletDensity: outletDensity || "none",
         wifiSpeed: wifiSpeed || null,
         hasPhoneBooths: hasPhoneBooths || false,
@@ -861,7 +989,7 @@ export async function POST(req: NextRequest) {
         musicStyle,
         crowdsourced: true,
         requiresReview,
-        imageUrl,
+        imageUrl: cleanImageUrl,
         creatorId: userId,
       },
     });

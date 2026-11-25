@@ -4,49 +4,72 @@
  * Combines venue ID, user ID, timestamp, and sensor data into a verifiable claim.
  */
 
+import crypto from "crypto";
+
 export interface PoAPClaim {
-    userId: string;
-    venueId: string;
-    timestamp: number;
-    latitude: number;
-    longitude: number;
-    wifiSsid: string;
-    sensorHash: string;
+  id: string;
+  userId: string;
+  venueId: string;
+  timestamp: number;
+  latitude: number;
+  longitude: number;
+  wifiSsid: string;
+  sensorHash: string;
+  nonce: string;
 }
 
 export class PoAPGenerator {
-    public generateClaim(
-        userId: string,
-        venueId: string,
-        latitude: number,
-        longitude: number,
-        wifiSsid: string,
-        sensorData: string
-    ): PoAPClaim {
-        const sensorHash = this.hashString(sensorData);
+  public generateClaim(
+    userId: string,
+    venueId: string,
+    latitude: number,
+    longitude: number,
+    wifiSsid: string,
+    sensorData: string,
+    nonce?: string,
+  ): PoAPClaim {
+    const sensorHash = this.hashString(sensorData);
+    const claimNonce = nonce || crypto.randomBytes(16).toString("hex");
 
-        return {
-            userId,
-            venueId,
-            timestamp: Date.now(),
-            latitude,
-            longitude,
-            wifiSsid,
-            sensorHash
-        };
-    }
+    return {
+      id: crypto.randomUUID(),
+      userId,
+      venueId,
+      timestamp: Date.now(),
+      latitude,
+      longitude,
+      wifiSsid,
+      sensorHash,
+      nonce: claimNonce,
+    };
+  }
 
-    public serializeClaim(claim: PoAPClaim): string {
-        return JSON.stringify(claim);
-    }
+  public serializeClaim(claim: PoAPClaim): string {
+    return JSON.stringify(claim);
+  }
 
-    private hashString(str: string): string {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash;
-        }
-        return Math.abs(hash).toString(16);
-    }
+  public signClaim(claim: PoAPClaim, secretKey: string): string {
+    const serialized = this.serializeClaim(claim);
+    return crypto
+      .createHmac("sha256", secretKey)
+      .update(serialized)
+      .digest("hex");
+  }
+
+  public verifyClaimSignature(
+    claim: PoAPClaim,
+    signature: string,
+    secretKey: string,
+  ): boolean {
+    if (!signature || signature.length !== 64) return false;
+    const expected = this.signClaim(claim, secretKey);
+    return crypto.timingSafeEqual(
+      Buffer.from(signature, "hex"),
+      Buffer.from(expected, "hex"),
+    );
+  }
+
+  public hashString(str: string): string {
+    return crypto.createHash("sha256").update(str).digest("hex");
+  }
 }

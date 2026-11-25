@@ -5,10 +5,10 @@ This document specifies the technical architecture, request parameters, output s
 $$\text{GET } \texttt{/api/admin/system/partitions/export}$$
 
 Implemented in:
-- **API Route:** [`src/app/api/admin/system/partitions/export/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/export/route.ts)
-- **Partition Lifecycle Engine:** [`src/app/api/admin/system/partitions/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/route.ts)
-- **Date & CSV Serialization Utilities:** [`src/app/api/admin/system/partitions/dateHelper.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/dateHelper.ts)
-- **Partition Archive Specification:** [`docs/database/PARTITION_EXPORT_AND_ARCHIVE_SPECIFICATION.md`](file:///c:/Users/admin/Desktop/workfere/docs/database/PARTITION_EXPORT_AND_ARCHIVE_SPECIFICATION.md)
+- **API Route:** [`src/app/api/admin/system/partitions/export/route.ts`](../../src/app/api/admin/system/partitions/export/route.ts)
+- **Partition Lifecycle Engine:** [`src/app/api/admin/system/partitions/route.ts`](../../src/app/api/admin/system/partitions/route.ts)
+- **Date & CSV Serialization Utilities:** [`src/app/api/admin/system/partitions/dateHelper.ts`](../../src/app/api/admin/system/partitions/dateHelper.ts)
+- **Partition Archive Specification:** [`docs/database/PARTITION_EXPORT_AND_ARCHIVE_SPECIFICATION.md`](../database/PARTITION_EXPORT_AND_ARCHIVE_SPECIFICATION.md)
 
 ---
 

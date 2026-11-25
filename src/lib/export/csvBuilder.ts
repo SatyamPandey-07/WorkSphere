@@ -14,9 +14,21 @@ import { CsvBuilderOptions, CsvColumn } from "./types";
 export function escapeCSVField(
   val: string | number | boolean | Date | null | undefined,
   sanitizeFormulas = true,
+  isNumeric = false,
 ): string {
   if (val === null || val === undefined) {
     return "";
+  }
+
+  // Handle finite JavaScript numbers directly
+  if (typeof val === "number") {
+    if (!Number.isFinite(val)) return "";
+    return String(val);
+  }
+
+  // Handle boolean values
+  if (typeof val === "boolean") {
+    return String(val);
   }
 
   let str: string;
@@ -26,10 +38,22 @@ export function escapeCSVField(
     str = String(val).replace(/\0/g, "");
   }
 
+  // If explicitly flagged as numeric or matches a pure signed decimal/integer number
+  if (isNumeric || /^-?\d+(\.\d+)?$/.test(str.trim())) {
+    if (/^-?\d+(\.\d+)?$/.test(str.trim())) {
+      return str.trim();
+    }
+  }
+
   // Formula injection sanitization (leading whitespace is trimmed by
   // spreadsheet apps before evaluation, so test both raw and trimmed string)
-  if (sanitizeFormulas && (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()))) {
-    str = "'" + str;
+  if (
+    sanitizeFormulas &&
+    (/^[=+\-@|\t\r]/.test(str) || /^[=+\-@|]/.test(str.trimStart()))
+  ) {
+    if (!str.startsWith("'")) {
+      str = "'" + str;
+    }
   }
 
   if (

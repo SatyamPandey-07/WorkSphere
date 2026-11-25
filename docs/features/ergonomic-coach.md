@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Architecture Overview
 
-WorkSphere's **Dynamic Ergonomic Coach** ([`src/components/wellness/DynamicErgonomicCoach.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/wellness/DynamicErgonomicCoach.tsx)) and algorithmic evaluation engine ([`src/lib/wellness/ergonomicCoachEngine.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wellness/ergonomicCoachEngine.ts)) provide real-time musculoskeletal fatigue prevention, 20-20-20 ocular reset countdowns, sit-to-stand posture cadence tracking, and dynamic Strain Risk Index (SRI) scoring for remote and in-office desk workers.
+WorkSphere's **Dynamic Ergonomic Coach** ([`src/components/wellness/DynamicErgonomicCoach.tsx`](../../src/components/wellness/DynamicErgonomicCoach.tsx)) and algorithmic evaluation engine ([`src/lib/wellness/ergonomicCoachEngine.ts`](../../src/lib/wellness/ergonomicCoachEngine.ts)) provide real-time musculoskeletal fatigue prevention, 20-20-20 ocular reset countdowns, sit-to-stand posture cadence tracking, and dynamic Strain Risk Index (SRI) scoring for remote and in-office desk workers.
 
 Prolonged static seating, forward-head monitor hunching ("tech-neck"), repetitive wrist flexion, and unmitigated display glare lead to cumulative trauma disorders and musculoskeletal injuries. The coach mitigates these risks by continuously computing an ergonomic strain score, triggering acoustic feedback chimes, recommending targeted micro-stretches, and guiding users through workplace ergonomics geometry standards (OSHA & ISO 9241-5).
 
@@ -77,7 +77,7 @@ Clicking **"+250ml"** logs water consumption against the daily target (default: 
 
 ### 3.1 Composite Ergonomic Strain Score Formulation
 
-The overall Ergonomic Strain Score ($S \in [0, 100]$) is computed by [`ErgonomicCoachEngine.calculateStrainScore`](file:///c:/Users/admin/Desktop/workfere/src/lib/wellness/ergonomicCoachEngine.ts):
+The overall Ergonomic Strain Score ($S \in [0, 100]$) is computed by [`ErgonomicCoachEngine.calculateStrainScore`](../../src/lib/wellness/ergonomicCoachEngine.ts):
 
 $$S = \text{clamp}_{[0, 100]}\left(0.35 \cdot S_{\text{posture}} + 0.30 \cdot S_{\text{stretch}} + 0.20 \cdot S_{\text{eye}} + 0.15 \cdot S_{\text{hydration}}\right)$$
 
@@ -131,7 +131,7 @@ $$S_{\text{hydration}} = \min\left(100, \text{round}\left(\min\left(1.2, \frac{V
 
 ### 3.3 Dynamic Stretch Recommendation Engine
 
-[`ErgonomicCoachEngine.getRecommendedStretch`](file:///c:/Users/admin/Desktop/workfere/src/lib/wellness/ergonomicCoachEngine.ts) selects the next priority stretch using the following decision tree:
+[`ErgonomicCoachEngine.getRecommendedStretch`](../../src/lib/wellness/ergonomicCoachEngine.ts) selects the next priority stretch using the following decision tree:
 
 ```mermaid
 flowchart TD

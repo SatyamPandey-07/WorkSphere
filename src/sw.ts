@@ -81,7 +81,10 @@ export class CacheExpirationPlugin {
    * Expire stale entries past TTL or drop oldest LRU items exceeding maxEntries.
    * Returns list of deleted URLs.
    */
-  async expireEntries(cache: CacheLike, now: number = Date.now()): Promise<string[]> {
+  async expireEntries(
+    cache: CacheLike,
+    now: number = Date.now(),
+  ): Promise<string[]> {
     const deletedUrls: string[] = [];
 
     // 1. Evict entries that exceed maxAgeSeconds
@@ -165,7 +168,7 @@ export class StaleWhileRevalidate {
           await this.expiration.expireEntries(cache);
         }
         return networkResponse;
-      } catch (error) {
+      } catch {
         // Silently swallow network errors during background revalidation
         return null;
       }
@@ -234,4 +237,46 @@ export async function handleVenuePhotoFetch(
   fetchFn?: typeof fetch,
 ): Promise<Response> {
   return venuePhotoStrategy.handle({ request, event, cacheInstance, fetchFn });
+}
+
+// ─── Service Worker Offline Mutation Sync Handler (Issue #9618) ───────────────
+import {
+  OfflineMutationQueue,
+  offlineMutationQueue,
+  DEFAULT_SYNC_TAG,
+} from "./core/sync/OfflineMutationQueue";
+
+/**
+ * Service Worker sync event listener callback for processing queued offline mutations.
+ * Processes queued offline mutations using Decorrelated Jitter backoff on 5xx errors.
+ */
+export async function handleOfflineMutationSync(
+  queue: OfflineMutationQueue = offlineMutationQueue,
+): Promise<{ succeeded: number; failed: number }> {
+  return queue.flush({ reason: "sync_event" });
+}
+
+/**
+ * Attaches the background sync event listener to the service worker global scope.
+ */
+export function registerOfflineMutationSyncHandler(
+  queue: OfflineMutationQueue = offlineMutationQueue,
+  targetScope: any = typeof self !== "undefined" ? self : undefined,
+) {
+  if (!targetScope || typeof targetScope.addEventListener !== "function") {
+    return;
+  }
+
+  targetScope.addEventListener("sync", (event: any) => {
+    if (
+      event.tag === DEFAULT_SYNC_TAG ||
+      event.tag === "offline-mutation-sync"
+    ) {
+      if (typeof event.waitUntil === "function") {
+        event.waitUntil(handleOfflineMutationSync(queue));
+      } else {
+        void handleOfflineMutationSync(queue);
+      }
+    }
+  });
 }

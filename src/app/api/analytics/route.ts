@@ -3,8 +3,40 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { ensureUserExists } from "@/lib/auth";
 import { calculateLevel } from "@/lib/gamification";
+import { isValidTimeZone } from "@/lib/booking/dateTimeAdapter";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Resolves the 0-23 local hour of a Date in the target IANA timezone.
+ */
+export function getLocalHourInTimeZone(date: Date, timeZone: string): number {
+  if (!(date instanceof Date) || isNaN(date.getTime())) {
+    return 12; // safe non-night-owl default
+  }
+  const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone,
+    hourCycle: "h23",
+    hour: "numeric",
+  }).formatToParts(date);
+  const hourPart = parts.find((p) => p.type === "hour");
+  const hour = Number(hourPart?.value ?? 0);
+  return hour === 24 ? 0 : hour;
+}
+
+/**
+ * Determines whether a review qualifies for the Night Owl badge
+ * (created at or after 21:00 or before 05:00 in the user's configured timezone).
+ */
+export function isNightOwlReview(
+  createdAt: Date,
+  timeZone?: string | null,
+): boolean {
+  const zone = isValidTimeZone(timeZone) ? timeZone : "UTC";
+  const hours = getLocalHourInTimeZone(createdAt, zone);
+  return hours >= 21 || hours < 5;
+}
 
 export async function GET() {
   try {
@@ -73,45 +105,56 @@ export async function GET() {
 
     const u = user as any;
 
-    // 1.5. Calculate Gamification Data
-    // A. Fetch all ratings to determine night reviews and speedtests
-    const allRatings = await prisma.venueRating.findMany({
-      where: { userId },
-      select: {
-        createdAt: true,
-        wifiSpeed: true,
-      },
-    });
-
-    // B. Fetch all unique cafe bookings
-    const cafeBookings = await prisma.booking.findMany({
-      where: {
-        userId,
-        status: "CONFIRMED",
-        venue: {
-          category: "cafe",
+    // 1.5. Calculate Gamification Data via Database Aggregates
+    // Execute database-level aggregations in parallel instead of unbounded in-memory table scans
+    const [
+      reviewsCount,
+      speedtestsCount,
+      uniqueCafeGroups,
+      venuesAddedCount,
+      nightOwlRatings,
+    ] = await Promise.all([
+      // A. Database count of all user ratings
+      prisma.venueRating.count({
+        where: { userId },
+      }),
+      // B. Database count of verified speedtests (wifiSpeed > 0)
+      prisma.venueRating.count({
+        where: {
+          userId,
+          wifiSpeed: { gt: 0 },
         },
-      },
-      select: {
-        venueId: true,
-      },
-    });
-    const uniqueCafesBooked = new Set(cafeBookings.map((b) => b.venueId)).size;
+      }),
+      // C. Database groupBy for distinct cafe venues
+      prisma.booking.groupBy({
+        by: ["venueId"],
+        where: {
+          userId,
+          status: "CONFIRMED",
+          venue: {
+            category: "cafe",
+          },
+        },
+      }),
+      // D. Count of venues created
+      prisma.venue.count({
+        where: { creatorId: userId },
+      }),
+      // E. Fetch ratings with createdAt to determine night reviews in user's timezone
+      prisma.venueRating.findMany({
+        where: { userId },
+        select: {
+          createdAt: true,
+        },
+      }),
+    ]);
 
-    // C. Fetch count of venues added
-    const venuesAddedCount = await prisma.venue.count({
-      where: { creatorId: userId },
-    });
+    const uniqueCafesBooked = uniqueCafeGroups.length;
+    const userTimeZone = isValidTimeZone(user.timezone) ? user.timezone : "UTC";
 
-    const reviewsCount = allRatings.length;
-    const speedtestsCount = allRatings.filter(
-      (r) => r.wifiSpeed !== null && r.wifiSpeed > 0,
+    const nightOwlReviewsCount = nightOwlRatings.filter((r) =>
+      isNightOwlReview(new Date(r.createdAt), userTimeZone),
     ).length;
-
-    const nightOwlReviewsCount = allRatings.filter((r) => {
-      const hours = new Date(r.createdAt).getHours();
-      return hours >= 21 || hours < 5;
-    }).length;
 
     // XP Breakdown:
     // - 50 XP per Review (rating)

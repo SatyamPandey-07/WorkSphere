@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { MessageSquare, Send, Check, Loader2 } from "lucide-react";
 import FAQAccordion from "@/components/ui/FAQAccordion";
+import { HighContrastToggle } from "@/components/HighContrastToggle";
 
 function Github({ className }: { className?: string }) {
   return (
@@ -320,7 +321,13 @@ export default function SiteFooter() {
         </div>
 
         {/* Footer Bottom Strip */}
-        <div className="mt-12 flex justify-end text-xs text-zinc-400 dark:text-white/30">
+        <div className="mt-12 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-zinc-200/40 dark:border-white/5 pt-8 text-xs text-zinc-400 dark:text-white/30">
+          <div className="flex items-center gap-4">
+            <HighContrastToggle
+              variant="switch"
+              id="footer-high-contrast-toggle"
+            />
+          </div>
           <p>© {new Date().getFullYear()} WorkSphere</p>
         </div>
       </div>

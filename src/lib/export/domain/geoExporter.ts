@@ -125,7 +125,6 @@ export type GeoExportFolder = {
   }>;
 };
 
-
 export const INVALID_XML_CHARS =
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
@@ -148,10 +147,15 @@ export function formatKmlNumber(value: number): string {
   return text === "-0" ? "0" : text;
 }
 
-export function hasValidCoordinates(venue: {
-  latitude: unknown;
-  longitude: unknown;
-} | null | undefined): boolean {
+export function hasValidCoordinates(
+  venue:
+    | {
+        latitude: unknown;
+        longitude: unknown;
+      }
+    | null
+    | undefined,
+): boolean {
   if (
     !venue ||
     typeof venue !== "object" ||
@@ -174,7 +178,9 @@ export function hasValidCoordinates(venue: {
   );
 }
 
-export function normalizeVenueAmenities(venue: GeoExportVenue | null | undefined): string[] {
+export function normalizeVenueAmenities(
+  venue: GeoExportVenue | null | undefined,
+): string[] {
   if (!venue || typeof venue !== "object") return [];
   const amenities: string[] = [];
   if ((venue.wifiSpeed ?? 0) > 0 || (venue.wifiQuality ?? 0) > 0) {
@@ -272,7 +278,11 @@ export function generateFolderBoundingPolygon(
       if (Number.isFinite(item[0]) && Number.isFinite(item[1])) {
         coordinates.push([item[0], item[1]]);
       }
-    } else if (typeof item === "object" && item !== null && "latitude" in item) {
+    } else if (
+      typeof item === "object" &&
+      item !== null &&
+      "latitude" in item
+    ) {
       const v = item as GeoExportVenue;
       if (hasValidCoordinates(v)) {
         coordinates.push([v.longitude, v.latitude]);
@@ -288,7 +298,8 @@ export function generateFolderBoundingPolygon(
   let ring: number[][];
   if (
     coordinates.length >= 4 &&
-    Math.abs(coordinates[0][0] - coordinates[coordinates.length - 1][0]) < 1e-9 &&
+    Math.abs(coordinates[0][0] - coordinates[coordinates.length - 1][0]) <
+      1e-9 &&
     Math.abs(coordinates[0][1] - coordinates[coordinates.length - 1][1]) < 1e-9
   ) {
     ring = repairSelfIntersectingPolygon(coordinates, {
@@ -300,7 +311,10 @@ export function generateFolderBoundingPolygon(
     if (hull.length >= 4 && !hasPolygonSelfIntersection(hull)) {
       ring = hull;
     } else {
-      ring = createBoundingBoxPolygon(coordinates, options.bufferPadding ?? 0.001);
+      ring = createBoundingBoxPolygon(
+        coordinates,
+        options.bufferPadding ?? 0.001,
+      );
     }
   }
 
@@ -320,7 +334,11 @@ export function generateFolderBoundingPolygon(
     },
     properties: {
       type: "BoundingPolygon",
-      name: options.folderName ? `${options.folderName} Boundary` : "Spatial Boundary",
+      name: options.folderName
+        ? `${options.folderName} Boundary`
+        : "Spatial Boundary",
+      description: "Derived spatial envelope enclosing collection venues",
+      isDerivedEnvelope: true,
       vertexCount: ring.length,
       isValidGeoJson: true,
     },
@@ -339,12 +357,17 @@ export function venuesToGeoJson(
     };
   }
 
-  const isFolder = !Array.isArray(input) && typeof input === "object" && input !== null;
+  const isFolder =
+    !Array.isArray(input) && typeof input === "object" && input !== null;
   const venues: GeoExportVenue[] = isFolder
-    ? (Array.isArray(input.items)
-        ? (input.items.map((item) => item?.venue).filter(Boolean) as GeoExportVenue[])
-        : [])
-    : (Array.isArray(input) ? input : []);
+    ? Array.isArray(input.items)
+      ? (input.items
+          .map((item) => item?.venue)
+          .filter(Boolean) as GeoExportVenue[])
+      : []
+    : Array.isArray(input)
+      ? input
+      : [];
 
   const pointFeatures: GeoJsonPointFeature[] = venues
     .filter(hasValidCoordinates)
@@ -381,7 +404,10 @@ export function venuesToGeoJson(
       folderId: input.id,
       folderName: input.name,
       description: input.description ?? null,
-      exportedAt: (exportedAt instanceof Date && !isNaN(exportedAt.getTime()) ? exportedAt : new Date()).toISOString(),
+      exportedAt: (exportedAt instanceof Date && !isNaN(exportedAt.getTime())
+        ? exportedAt
+        : new Date()
+      ).toISOString(),
       featureCount: features.length,
       generator: "WorkSphere",
     };
@@ -400,9 +426,10 @@ export function venuesToKml(
 
   if (Array.isArray(input)) {
     venues = input;
-    folder = (folderOrDate && !(folderOrDate instanceof Date))
-      ? folderOrDate
-      : { name: "Collection" };
+    folder =
+      folderOrDate && !(folderOrDate instanceof Date)
+        ? folderOrDate
+        : { name: "Collection" };
     if (folderOrDate instanceof Date && !isNaN(folderOrDate.getTime())) {
       exportDate = folderOrDate;
     }
@@ -424,7 +451,9 @@ export function venuesToKml(
   const placemarks = validVenues
     .map((venue) => {
       const amenities = normalizeVenueAmenities(venue);
-      const amenitiesText = amenities.length ? amenities.join(", ") : "None listed";
+      const amenitiesText = amenities.length
+        ? amenities.join(", ")
+        : "None listed";
       const addressText = venue.address?.trim() || "Not available";
       const url = getVenueWorkSphereUrl(venue.id);
 

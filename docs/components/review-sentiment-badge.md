@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Component Role
 
-The **`ReviewSentimentBadge`** is a high-visibility venue evaluation component located at [`src/components/venue/ReviewSentimentBadge.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/ReviewSentimentBadge.tsx). Backed by the multi-signal natural language and sensory heuristics in [`src/lib/reviewSentiment.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/reviewSentiment.ts), the component synthesizes user-submitted feedback, WiFi speed ratings, and ambient noise levels into an immediate, glanceable badge.
+The **`ReviewSentimentBadge`** is a high-visibility venue evaluation component located at [`src/components/venue/ReviewSentimentBadge.tsx`](../../src/components/venue/ReviewSentimentBadge.tsx). Backed by the multi-signal natural language and sensory heuristics in [`src/lib/reviewSentiment.ts`](../../src/lib/reviewSentiment.ts), the component synthesizes user-submitted feedback, WiFi speed ratings, and ambient noise levels into an immediate, glanceable badge.
 
 When browsing coworking venues, remote workers and digital nomads often lack the time to parse dozens of unstructured textual reviews. Naive average star ratings (e.g., "4.2 / 5") frequently obscure critical workspace deficiencies like unstable internet connections, loud background chatter, or broken power outlets.
 
@@ -101,7 +101,7 @@ Review sentiment is quantified on a continuous float scale normalized between **
 
 ### 3.1 Classification Boundaries
 
-The classification logic in [`src/lib/reviewSentiment.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/reviewSentiment.ts#L241-L244) applies strict mathematical boundaries:
+The classification logic in [`src/lib/reviewSentiment.ts`](../../src/lib/reviewSentiment.ts#L241-L244) applies strict mathematical boundaries:
 
 $$\text{Category}(\text{score}) = \begin{cases} 
 \text{"positive"} & \text{if } \text{score} \ge +0.3 \\

@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import nodemailer, { type Transporter } from "nodemailer";
 import twilio from "twilio";
-import { processUpcomingReservationAlerts } from "@/lib/reminderCron";
+import {
+  processUpcomingReservationAlerts,
+  claimReminderDelivery,
+  markReminderSent,
+  releaseReminderClaim,
+} from "@/lib/reminderCron";
 import { prisma } from "@/lib/prisma";
 import { getRedis } from "@/lib/redis";
 import { isWithinNotificationWindow } from "@/lib/notificationWindow";
@@ -32,35 +37,18 @@ function createSmsClient() {
   return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 }
 
-const sentInMemory = new Set<string>();
-
-async function alreadyNotified(key: string): Promise<boolean> {
-  const redis = getRedis();
-  if (redis) {
-    try {
-      return Boolean(await redis.get(key));
-    } catch {
-      // fall back to memory
-    }
-  }
-  return sentInMemory.has(key);
-}
-
-async function markNotified(key: string): Promise<void> {
-  const redis = getRedis();
-  if (redis) {
-    try {
-      await redis.set(key, "sent", { ex: 3600 });
-      return;
-    } catch {
-      // fall back to memory
-    }
-  }
-  sentInMemory.add(key);
-}
-
 /** Reminds hosts and attendees of coworking sessions starting within 30 minutes. */
 async function processSessionReminders(now: Date) {
+  let redis: ReturnType<typeof getRedis> = null;
+  try {
+    redis = getRedis();
+  } catch (err) {
+    console.warn(
+      "[processSessionReminders] Redis initialization failed, using in-memory store:",
+      err,
+    );
+  }
+
   const soon = new Date(now.getTime() + 30 * 60 * 1000);
   const sessions = await prisma.coworkingSession.findMany({
     where: { startsAt: { gt: now, lte: soon } },
@@ -87,7 +75,8 @@ async function processSessionReminders(now: Date) {
     for (const person of people) {
       if (!person.email) continue;
       const key = `session-reminder:${session.id}:${person.id}`;
-      if (await alreadyNotified(key)) continue;
+      const claim = await claimReminderDelivery(key, 300, redis);
+      if (!claim.claimed || !claim.claimToken) continue;
 
       if (
         !isWithinNotificationWindow(
@@ -97,6 +86,7 @@ async function processSessionReminders(now: Date) {
           person.timezone,
         )
       ) {
+        await releaseReminderClaim(key, claim.claimToken, redis);
         continue;
       }
 
@@ -153,7 +143,11 @@ async function processSessionReminders(now: Date) {
         }
       }
 
-      if (dispatched) await markNotified(key);
+      if (dispatched) {
+        await markReminderSent(key, claim.claimToken, 3600, redis);
+      } else {
+        await releaseReminderClaim(key, claim.claimToken, redis);
+      }
     }
   }
 

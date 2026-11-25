@@ -7,11 +7,18 @@
  * is infeasible or overconstrained.
  */
 
+export interface DeskPreferenceWeights {
+  window?: number;
+  power?: number;
+  quiet?: number;
+}
+
 export interface DeskRequirement {
   standingDesk?: boolean;
   dualMonitor?: boolean;
   quietZone?: boolean;
   nearWindow?: boolean;
+  powerOutlet?: boolean;
   wheelchairAccessible?: boolean;
   minimumWifiQuality?: number;
 }
@@ -21,6 +28,7 @@ export interface PersonCandidate {
   name?: string;
   priority?: number; // Higher number = higher priority
   requirements?: DeskRequirement;
+  preferenceWeights?: DeskPreferenceWeights;
   preferredDeskIds?: string[];
   department?: string;
 }
@@ -35,6 +43,9 @@ export interface DeskResource {
   dualMonitor?: boolean;
   quietZone?: boolean;
   nearWindow?: boolean;
+  powerOutlet?: boolean;
+  hasPowerOutlet?: boolean;
+  outlets?: number;
   wheelchairAccessible?: boolean;
   wifiQuality?: number; // 1-5
 }
@@ -55,7 +66,30 @@ export interface DeskAllocationResult {
   totalRequested: number;
 }
 
+const PREFERENCE_WEIGHT_SCALE = 20;
+
+function sanitizeWeight(weight: number | undefined): number {
+  if (typeof weight !== 'number' || !Number.isFinite(weight) || weight <= 0) {
+    return 0;
+  }
+  return weight;
+}
+
+function deskHasPower(desk: DeskResource): boolean {
+  return Boolean(
+    desk.powerOutlet ||
+      desk.hasPowerOutlet ||
+      (typeof desk.outlets === 'number' && desk.outlets > 0),
+  );
+}
+
 export class DeskAutoAllocator {
+  private readonly defaultPreferenceWeights: DeskPreferenceWeights;
+
+  constructor(defaultPreferenceWeights: DeskPreferenceWeights = {}) {
+    this.defaultPreferenceWeights = { ...defaultPreferenceWeights };
+  }
+
   /**
    * Evaluates whether a desk meets a person's strict eligibility requirements.
    */
@@ -70,6 +104,7 @@ export class DeskAutoAllocator {
     if (req.dualMonitor && !desk.dualMonitor) return false;
     if (req.quietZone && !desk.quietZone) return false;
     if (req.nearWindow && !desk.nearWindow) return false;
+    if (req.powerOutlet && !deskHasPower(desk)) return false;
     if (req.wheelchairAccessible && !desk.wheelchairAccessible) return false;
     if (
       req.minimumWifiQuality !== undefined &&
@@ -83,9 +118,14 @@ export class DeskAutoAllocator {
 
   /**
    * Calculates compatibility score between an eligible person and a desk.
+   * Applies multi-desk preference weights (window, power, quiet) when configured.
    * Higher score = stronger preference match.
    */
-  public calculateMatchScore(person: PersonCandidate, desk: DeskResource): number {
+  public calculateMatchScore(
+    person: PersonCandidate,
+    desk: DeskResource,
+    overrideWeights?: DeskPreferenceWeights,
+  ): number {
     let score = 100;
 
     // Preferred desk bonus
@@ -98,7 +138,38 @@ export class DeskAutoAllocator {
     if (desk.dualMonitor) score += 10;
     if (desk.quietZone) score += 5;
     if (desk.nearWindow) score += 5;
+    if (deskHasPower(desk)) score += 5;
     if (desk.wifiQuality) score += desk.wifiQuality * 2;
+
+    // Multi-desk preference weights (window, power, quiet)
+    const effectiveWeights: DeskPreferenceWeights = {
+      window:
+        overrideWeights?.window ??
+        person.preferenceWeights?.window ??
+        this.defaultPreferenceWeights.window,
+      power:
+        overrideWeights?.power ??
+        person.preferenceWeights?.power ??
+        this.defaultPreferenceWeights.power,
+      quiet:
+        overrideWeights?.quiet ??
+        person.preferenceWeights?.quiet ??
+        this.defaultPreferenceWeights.quiet,
+    };
+
+    const windowWeight = sanitizeWeight(effectiveWeights.window);
+    const powerWeight = sanitizeWeight(effectiveWeights.power);
+    const quietWeight = sanitizeWeight(effectiveWeights.quiet);
+
+    if (desk.nearWindow && windowWeight > 0) {
+      score += windowWeight * PREFERENCE_WEIGHT_SCALE;
+    }
+    if (deskHasPower(desk) && powerWeight > 0) {
+      score += powerWeight * PREFERENCE_WEIGHT_SCALE;
+    }
+    if (desk.quietZone && quietWeight > 0) {
+      score += quietWeight * PREFERENCE_WEIGHT_SCALE;
+    }
 
     return score;
   }

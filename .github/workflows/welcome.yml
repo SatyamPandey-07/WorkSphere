@@ -19,7 +19,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti'];
+            const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
             const issueAuthor = (context.payload.issue?.user?.login || '').toLowerCase();
             if (BLOCKED_USERS.some(u => u.toLowerCase() === issueAuthor)) {
               console.log(`Closing issue #${context.issue.number} by blocked user: ${issueAuthor}`);
@@ -166,7 +166,7 @@ jobs:
               const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
               
               // Immediately reject and close PRs from blocked/banned contributors
-              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti'];
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
               if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthor.toLowerCase())) {
                 console.log(`Auto-closing PR #${prNumber} from blocked contributor: ${prAuthor}`);
                 await github.rest.issues.createComment({

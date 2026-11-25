@@ -612,6 +612,7 @@ model FlaggedItem {
   type         FlagType
   itemId       String
   reason       String
+  details      String?
   status       FlagStatus @default(PENDING)
   reportedById String
   reportedBy   User       @relation(fields: [reportedById], references: [id], onDelete: Cascade)
@@ -657,6 +658,7 @@ model Folder {
   shortLinks ShortLink[]
 
   @@index([ownerId])
+  @@index([isPublic, upvotes(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
 }
 
 model ShortLink {
@@ -1342,4 +1344,69 @@ model TimebankSettlement {
 
   @@index([providerId])
   @@index([receiverId])
+}
+
+/// Persistent real-time venue amenity incident (#10257).
+/// Replaces process-local in-memory Map storage across instances and restarts.
+model AmenityIncident {
+  id                 String                        @id @default(cuid())
+  venueId            String
+  amenity            AmenityIncidentCategory
+  amenityLabel       String
+  title              String
+  description        String?
+  status             AmenityOperationalStatus      @default(DEGRADED)
+  severity           AmenityIncidentSeverity       @default(medium)
+  reporterId         String
+  reporterName       String
+  reporterAvatarUrl  String?
+  areaLocation       String?
+  confirmationsCount Int                           @default(1)
+  resolved           Boolean                       @default(false)
+  resolvedAt         DateTime?
+  createdAt          DateTime                      @default(now())
+  expiresAt          DateTime
+  updatedAt          DateTime                      @updatedAt
+  confirmations      AmenityIncidentConfirmation[]
+
+  @@index([venueId, resolved, expiresAt])
+  @@index([venueId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+}
+
+/// Per-user confirmation deduplication for amenity incidents (#10257).
+model AmenityIncidentConfirmation {
+  id          String          @id @default(cuid())
+  incidentId  String
+  incident    AmenityIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  userId      String
+  confirmedAt DateTime        @default(now())
+
+  @@unique([incidentId, userId])
+  @@index([incidentId])
+  @@index([userId])
+}
+
+enum AmenityIncidentCategory {
+  wifi
+  outlets
+  coffee
+  phone_booth
+  air_conditioning
+  restrooms
+  monitors
+  quiet_zone
+}
+
+enum AmenityOperationalStatus {
+  OPERATIONAL
+  DEGRADED
+  OUTAGE
+  MAINTENANCE
+}
+
+enum AmenityIncidentSeverity {
+  low
+  medium
+  critical
 }

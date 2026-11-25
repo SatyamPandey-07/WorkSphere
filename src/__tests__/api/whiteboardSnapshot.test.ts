@@ -8,6 +8,23 @@ import {
   type StoredDelta,
   type StoredSnapshot,
 } from "@/lib/crdt/snapshotManager";
+import { auth } from "@clerk/nextjs/server";
+import { prisma } from "@/lib/prisma";
+
+jest.mock("@clerk/nextjs/server", () => ({
+  auth: jest.fn(),
+}));
+
+jest.mock("@/lib/prisma", () => ({
+  prisma: {
+    folderMember: {
+      findUnique: jest.fn(),
+    },
+    folder: {
+      findUnique: jest.fn(),
+    },
+  },
+}));
 
 const ROOM = "room-snapshot-api";
 
@@ -38,6 +55,12 @@ describe("Whiteboard snapshot API (#7574)", () => {
   let delta: StoredDelta;
 
   beforeAll(() => {
+    (auth as unknown as jest.Mock).mockResolvedValue({ userId: "mock-test-owner" });
+    (prisma.folderMember.findUnique as jest.Mock).mockResolvedValue({
+      role: "OWNER",
+    });
+    (prisma.folder.findUnique as jest.Mock).mockResolvedValue({ ownerId: "mock-test-owner" });
+
     const doc = new Y.Doc();
     doc.getText("monaco").insert(0, "baseline");
     const update = Y.encodeStateAsUpdate(doc);
@@ -60,6 +83,14 @@ describe("Whiteboard snapshot API (#7574)", () => {
       checksum: computeSnapshotChecksum(deltaUpdate),
       createdAt: Date.now(),
     };
+  });
+
+  beforeEach(() => {
+    (auth as unknown as jest.Mock).mockResolvedValue({ userId: "mock-test-owner" });
+    (prisma.folderMember.findUnique as jest.Mock).mockResolvedValue({
+      role: "OWNER",
+    });
+    (prisma.folder.findUnique as jest.Mock).mockResolvedValue({ ownerId: "mock-test-owner" });
   });
 
   afterEach(async () => {

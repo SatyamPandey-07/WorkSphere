@@ -11,19 +11,20 @@ export interface VenueOpeningHours {
   schedule?: Partial<Record<WeekdayKey, DailyTimeWindow[]>>;
 }
 
-export type VenueOpeningState = "open" | "closing_soon" | "closed";
+export type VenueOpeningState = "open" | "closing_soon" | "closed" | "open_24_hours";
 
 export interface VenueOpeningStatus {
   state: VenueOpeningState;
   badgeText: string;
   ariaLabel: string;
+  is24Hours?: boolean;
   closesAtFormatted?: string;
   opensAtFormatted?: string;
   minutesRemaining?: number;
   countdownText?: string;
 }
 
-const WEEKDAY_ORDER: WeekdayKey[] = [
+export const WEEKDAY_ORDER: WeekdayKey[] = [
   "sun",
   "mon",
   "tue",
@@ -33,7 +34,7 @@ const WEEKDAY_ORDER: WeekdayKey[] = [
   "sat",
 ];
 
-function resolveTimeZone(tz?: string): string {
+export function resolveTimeZone(tz?: string): string {
   if (!tz) return "UTC";
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(new Date(0));
@@ -41,6 +42,63 @@ function resolveTimeZone(tz?: string): string {
   } catch {
     return "UTC";
   }
+}
+
+export function parseMinutes(hhmm: string): number {
+  if (!hhmm || typeof hhmm !== "string") return 0;
+  const [hStr, mStr] = hhmm.trim().split(":");
+  const hours = Number(hStr);
+  const minutes = Number(mStr ?? "0");
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return 0;
+  if (hours === 24 && minutes === 0) return 1440;
+  return Math.max(0, Math.min(1439, hours * 60 + minutes));
+}
+
+/**
+ * Evaluates whether a daily window represents continuous 24-hour operation for that day.
+ * Supported 24-hour patterns:
+ * - open: "00:00" and close: "24:00" or "00:00"
+ * - open equals close (e.g. "08:00" to "08:00")
+ * - 0 to 1440 minutes span
+ */
+export function isWindow24Hours(win: DailyTimeWindow): boolean {
+  if (!win || !win.open || !win.close) return false;
+  const o = win.open.trim();
+  const c = win.close.trim();
+  if (o === "00:00" && (c === "24:00" || c === "00:00")) return true;
+  if (o === c) return true;
+  const openMin = parseMinutes(o);
+  const closeMin = parseMinutes(c);
+  return openMin === 0 && (closeMin === 0 || closeMin === 1440);
+}
+
+/**
+ * Checks whether a venue operates 24 hours a day, 7 days a week.
+ * Criteria:
+ * 1. explicit `is24Seven: true` flag.
+ * 2. or all 7 days of the week in `schedule` have defined windows and every day operates 24 hours continuously.
+ */
+export function isSchedule24Seven(openingHours?: VenueOpeningHours): boolean {
+  if (!openingHours) return false;
+  if (openingHours.is24Seven === true) return true;
+
+  const schedule = openingHours.schedule;
+  if (!schedule || typeof schedule !== "object") return false;
+
+  // Must define all 7 days of the week
+  for (const day of WEEKDAY_ORDER) {
+    const windows = schedule[day];
+    if (!Array.isArray(windows) || windows.length === 0) {
+      return false;
+    }
+    // At least one window on that day must be 24-hour continuous
+    const has24HourSpan = windows.some((win) => isWindow24Hours(win));
+    if (!has24HourSpan) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function getLocalClock(
@@ -70,15 +128,6 @@ function getLocalClock(
     weekdayIndex,
     minutesSinceMidnight: hour * 60 + minute,
   };
-}
-
-function parseMinutes(hhmm: string): number {
-  const [hStr, mStr] = hhmm.split(":");
-  const hours = Number(hStr);
-  const minutes = Number(mStr ?? "0");
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) return 0;
-  if (hours === 24 && minutes === 0) return 1440;
-  return Math.max(0, Math.min(1439, hours * 60 + minutes));
 }
 
 export function formatMinutes12Hour(minutesFromMidnight: number): string {
@@ -147,14 +196,16 @@ function collectIntervals(
 }
 
 export function getVenueOpeningStatus(
-  openingHours: VenueOpeningHours,
+  openingHours: VenueOpeningHours = {},
   currentTime: Date | string | number = new Date(),
 ): VenueOpeningStatus {
-  if (openingHours.is24Seven) {
+  // Check 24/7 continuous operation first
+  if (isSchedule24Seven(openingHours)) {
     return {
-      state: "open",
-      badgeText: "Open Now",
-      ariaLabel: "Venue is currently Open Now, operating 24/7",
+      state: "open_24_hours",
+      badgeText: "Open 24 Hours",
+      ariaLabel: "Venue is open 24 hours, operating 24/7",
+      is24Hours: true,
     };
   }
 

@@ -22,6 +22,15 @@ export interface NoiseSpectrogramProps {
   onExportCsv?: () => void;
 }
 
+const NOTCH_FREQUENCY_HZ = 60;
+const NOTCH_Q = 10;
+
+function configureNotchFilter(filter: BiquadFilterNode): void {
+  filter.type = "notch";
+  filter.frequency.value = NOTCH_FREQUENCY_HZ;
+  filter.Q.value = NOTCH_Q;
+}
+
 /**
  * Aggregates Web Audio frequency bins into low (<300 Hz), mid (300–3000 Hz),
  * and high (>3000 Hz) bands. Each result is the mean bin magnitude (0–100%).
@@ -87,6 +96,7 @@ export function NoiseSpectrogram({
 }: NoiseSpectrogramProps) {
   const [isActive, setIsActive] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
+  const [isNotchEnabled, setIsNotchEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [energy, setEnergy] = useState<FrequencyBandEnergy>({
     low: 0,
@@ -148,37 +158,149 @@ export function NoiseSpectrogram({
   const streamRef = useRef<MediaStream | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const notchFilterRef = useRef<BiquadFilterNode | null>(null);
+  const notchEnabledRef = useRef(false);
+  const notchActiveRef = useRef(false);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const frameRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+  const isActiveRef = useRef(false);
+  const startGenerationRef = useRef(0);
+  const startPendingRef = useRef(false);
+  const trackEndedHandlerRef = useRef<(() => void) | null>(null);
+  const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const stop = useCallback(async () => {
+  const releaseAudio = useCallback(() => {
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     }
-    sourceRef.current?.disconnect();
-    sourceRef.current = null;
-    analyserRef.current?.disconnect();
-    analyserRef.current = null;
 
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    sourceRef.current?.disconnect();
+    notchFilterRef.current?.disconnect();
+    analyserRef.current?.disconnect();
+    sourceRef.current = null;
+    notchFilterRef.current = null;
+    analyserRef.current = null;
+    notchActiveRef.current = false;
+    isActiveRef.current = false;
+
+    const stream = streamRef.current;
+    const trackEndedHandler = trackEndedHandlerRef.current;
+    stream?.getTracks().forEach((track) => {
+      if (trackEndedHandler) {
+        track.removeEventListener("ended", trackEndedHandler);
+      }
+      track.stop();
+    });
     streamRef.current = null;
+    trackEndedHandlerRef.current = null;
 
     const context = contextRef.current;
     contextRef.current = null;
+    return context;
+  }, []);
+
+  const stop = useCallback(async () => {
+    startGenerationRef.current += 1;
+    startPendingRef.current = false;
+    const context = releaseAudio();
     if (context && context.state !== "closed") {
-      await context.close().catch(() => undefined);
+      try {
+        await context.close();
+      } catch (cause) {
+        if (mountedRef.current) {
+          setError(
+            `Unable to close audio context: ${cause instanceof Error ? cause.message : String(cause)}`,
+          );
+        }
+      }
     }
 
     if (mountedRef.current) {
       setIsActive(false);
       setEnergy({ low: 0, mid: 0, high: 0 });
     }
+  }, [releaseAudio]);
+
+  const applyNotchFilter = useCallback((enabled: boolean) => {
+    const context = contextRef.current;
+    const source = sourceRef.current;
+    const analyser = analyserRef.current;
+    if (!context || !source || !analyser || enabled === notchActiveRef.current) {
+      return;
+    }
+
+    if (enabled) {
+      const filter =
+        notchFilterRef.current ?? context.createBiquadFilter();
+      configureNotchFilter(filter);
+      notchFilterRef.current = filter;
+
+      source.disconnect(analyser);
+      try {
+        source.connect(filter);
+        filter.connect(analyser);
+        notchActiveRef.current = true;
+      } catch (cause) {
+        try {
+          source.disconnect(filter);
+          filter.disconnect(analyser);
+        } catch {
+          // A partially connected route may already have been disconnected.
+        }
+        source.connect(analyser);
+        throw cause;
+      }
+      return;
+    }
+
+    const filter = notchFilterRef.current;
+    if (!filter) return;
+
+    source.disconnect(filter);
+    filter.disconnect(analyser);
+    try {
+      source.connect(analyser);
+      notchActiveRef.current = false;
+    } catch (cause) {
+      source.connect(filter);
+      filter.connect(analyser);
+      throw cause;
+    }
   }, []);
 
+  const toggleNotchFilter = useCallback(async () => {
+    const enabled = !notchEnabledRef.current;
+    notchEnabledRef.current = enabled;
+    setIsNotchEnabled(enabled);
+
+    const context = contextRef.current;
+    if (!context || !sourceRef.current || !analyserRef.current) return;
+
+    try {
+      if (context.state === "suspended") {
+        await context.resume();
+      }
+      if (contextRef.current === context) {
+        applyNotchFilter(notchEnabledRef.current);
+      }
+    } catch (cause) {
+      const actualState = notchActiveRef.current;
+      notchEnabledRef.current = actualState;
+      if (mountedRef.current) {
+        setIsNotchEnabled(actualState);
+        setError(
+          `Unable to update acoustic notch filter: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+      }
+    }
+  }, [applyNotchFilter]);
+
   const start = useCallback(async () => {
-    if (isActive) return;
+    if (isActiveRef.current || startPendingRef.current) return;
+    const generation = ++startGenerationRef.current;
+    startPendingRef.current = true;
     setError(null);
 
     if (
@@ -187,6 +309,7 @@ export function NoiseSpectrogram({
       typeof window === "undefined" ||
       typeof window.AudioContext !== "function"
     ) {
+      startPendingRef.current = false;
       setIsSupported(false);
       setError("Live frequency analysis is not supported by this browser.");
       return;
@@ -200,23 +323,50 @@ export function NoiseSpectrogram({
           autoGainControl: false,
         },
       });
-      if (!mountedRef.current) {
+      if (!mountedRef.current || generation !== startGenerationRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
 
+      streamRef.current = stream;
       const context = new window.AudioContext();
+      contextRef.current = context;
+      if (context.state === "suspended") {
+        await context.resume();
+      }
+      if (!mountedRef.current || generation !== startGenerationRef.current) {
+        return;
+      }
+
       const analyser = context.createAnalyser();
       analyser.fftSize = fftSize;
       analyser.smoothingTimeConstant = 0.8;
       const source = context.createMediaStreamSource(stream);
-      source.connect(analyser);
-
-      streamRef.current = stream;
-      contextRef.current = context;
       sourceRef.current = source;
       analyserRef.current = analyser;
+
+      if (notchEnabledRef.current) {
+        const filter = context.createBiquadFilter();
+        configureNotchFilter(filter);
+        notchFilterRef.current = filter;
+        source.connect(filter);
+        filter.connect(analyser);
+        notchActiveRef.current = true;
+      } else {
+        source.connect(analyser);
+      }
+
+      const onTrackEnded = () => {
+        if (mountedRef.current) void stop();
+      };
+      trackEndedHandlerRef.current = onTrackEnded;
+      stream.getTracks().forEach((track) => {
+        track.addEventListener("ended", onTrackEnded);
+      });
+
       setSampleRate(context.sampleRate);
+      startPendingRef.current = false;
+      isActiveRef.current = true;
       setIsActive(true);
 
       const buffer = new Uint8Array(analyser.frequencyBinCount);
@@ -231,11 +381,28 @@ export function NoiseSpectrogram({
             activeAnalyser.fftSize,
           ),
         );
+        drawSpectrum(
+          spectrumCanvasRef.current,
+          buffer,
+          activeAnalyser.context.sampleRate,
+          notchEnabledRef.current,
+        );
         frameRef.current = requestAnimationFrame(sample);
       };
       frameRef.current = requestAnimationFrame(sample);
     } catch (cause) {
-      await stop();
+      if (generation !== startGenerationRef.current) return;
+      startPendingRef.current = false;
+      const context = releaseAudio();
+      if (context && context.state !== "closed") {
+        try {
+          await context.close();
+        } catch (closeCause) {
+          setError(
+            `Unable to close audio context: ${closeCause instanceof Error ? closeCause.message : String(closeCause)}`,
+          );
+        }
+      }
       const message =
         cause instanceof Error ? cause.message : "Microphone access was denied.";
       setError(
@@ -244,23 +411,20 @@ export function NoiseSpectrogram({
           : message,
       );
     }
-  }, [fftSize, isActive, stop]);
+  }, [fftSize, releaseAudio, stop]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-      sourceRef.current?.disconnect();
-      analyserRef.current?.disconnect();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      const context = contextRef.current;
-      contextRef.current = null;
+      startGenerationRef.current += 1;
+      startPendingRef.current = false;
+      const context = releaseAudio();
       if (context && context.state !== "closed") {
         void context.close().catch(() => undefined);
       }
     };
-  }, []);
+  }, [releaseAudio]);
 
   return (
     <section
@@ -297,6 +461,30 @@ export function NoiseSpectrogram({
           </button>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => void toggleNotchFilter()}
+        className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        aria-pressed={isNotchEnabled}
+      >
+        Simulate Acoustic Notch Filter
+      </button>
+
+      {isActive && (
+        <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
+          <p className="px-3 pt-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+            Frequency spectrum
+          </p>
+          <canvas
+            ref={spectrumCanvasRef}
+            width={640}
+            height={96}
+            className="block h-20 w-full"
+            aria-label="Live frequency spectrum"
+          />
+        </div>
+      )}
 
       <div className="mt-5 space-y-4" aria-live="polite">
         {BANDS.map((band) => {
@@ -348,6 +536,50 @@ export function NoiseSpectrogram({
       )}
     </section>
   );
+}
+
+function drawSpectrum(
+  canvas: HTMLCanvasElement | null,
+  frequencyData: Uint8Array,
+  sampleRate: number,
+  showNotch: boolean,
+): void {
+  const context = canvas?.getContext("2d");
+  if (!canvas || !context) return;
+
+  const { width, height } = canvas;
+  context.fillStyle = "#09090b";
+  context.fillRect(0, 0, width, height);
+
+  const barCount = Math.min(frequencyData.length, width);
+  const binStep = frequencyData.length / barCount;
+  const barWidth = width / barCount;
+  for (let index = 0; index < barCount; index += 1) {
+    const magnitude = frequencyData[Math.floor(index * binStep)] / 255;
+    const barHeight = magnitude * (height - 2);
+    context.fillStyle = "#38bdf8";
+    context.fillRect(
+      index * barWidth,
+      height - barHeight,
+      Math.max(1, barWidth - 1),
+      barHeight,
+    );
+  }
+
+  if (showNotch && sampleRate > 0) {
+    const nyquistFrequency = sampleRate / 2;
+    const centerX = (NOTCH_FREQUENCY_HZ / nyquistFrequency) * width;
+    const bandwidth = NOTCH_FREQUENCY_HZ / NOTCH_Q;
+    const leftX =
+      ((NOTCH_FREQUENCY_HZ - bandwidth / 2) / nyquistFrequency) * width;
+    const rightX =
+      ((NOTCH_FREQUENCY_HZ + bandwidth / 2) / nyquistFrequency) * width;
+
+    context.fillStyle = "rgba(56, 189, 248, 0.12)";
+    context.fillRect(leftX, 0, rightX - leftX, height);
+    context.fillStyle = "rgba(125, 211, 252, 0.85)";
+    context.fillRect(centerX, 0, 1, height);
+  }
 }
 
 export default NoiseSpectrogram;

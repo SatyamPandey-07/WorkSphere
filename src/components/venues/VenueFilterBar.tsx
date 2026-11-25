@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, {
   useCallback,
@@ -7,29 +7,17 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { ArrowUpDown, Monitor } from "lucide-react";
-import { buildVenueSearchParams } from "@/lib/venues/searchQuery";
 import {
-  Wifi,
-  Zap,
-  VolumeX,
-  Accessibility,
-  Sun,
+  ArrowUpDown,
+  Monitor,
   Coffee,
-  Check,
-  SlidersHorizontal,
-  Volume2,
-  X,
-  RotateCcw,
   LayoutGrid,
   Building2,
   BookOpen,
   MoveVertical,
-  Monitor,
   Armchair,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { DualRangeSlider } from "@/components/ui/DualRangeSlider";
+import { buildVenueSearchParams } from "@/lib/venues/searchQuery";
 
 // ---------------------------------------------------------------------------
 // Types & Defaults

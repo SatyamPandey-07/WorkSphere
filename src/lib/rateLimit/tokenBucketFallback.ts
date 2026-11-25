@@ -37,6 +37,15 @@ export interface TokenBucketFallbackConfig {
    * Defaults to 10,000 entries.
    */
   maxBuckets?: number;
+  /**
+   * Optional tier identifier used when reporting telemetry metrics.
+   */
+  tierName?: string;
+  /**
+   * Whether `consume()` invocations report into the shared fallback telemetry counters.
+   * Defaults to true.
+   */
+  trackMetrics?: boolean;
 }
 
 export interface FallbackRateLimitResult {
@@ -81,6 +90,144 @@ interface BucketEntry {
   lastAccessMs: number;
 }
 
+interface InternalTierTelemetry {
+  activationCount: number;
+  requestCount: number;
+  allowedCount: number;
+  rejectedCount: number;
+}
+
+interface InternalFallbackTelemetryState {
+  active: boolean;
+  activeSinceMs: number | null;
+  lastActivatedAtMs: number | null;
+  completedDurationMs: number;
+  activationCount: number;
+  requestCount: number;
+  allowedCount: number;
+  rejectedCount: number;
+  activeTiersInEpisode: Set<string>;
+  byTier: Map<string, InternalTierTelemetry>;
+}
+
+const globalForFallback = globalThis as unknown as {
+  __worksphereRateLimitFallbackTelemetry?: InternalFallbackTelemetryState;
+  __worksphereRateLimitFallbackLimiters?: Map<string, TokenBucketLimiter>;
+};
+
+const telemetryState: InternalFallbackTelemetryState =
+  globalForFallback.__worksphereRateLimitFallbackTelemetry ?? {
+    active: false,
+    activeSinceMs: null,
+    lastActivatedAtMs: null,
+    completedDurationMs: 0,
+    activationCount: 0,
+    requestCount: 0,
+    allowedCount: 0,
+    rejectedCount: 0,
+    activeTiersInEpisode: new Set<string>(),
+    byTier: new Map<string, InternalTierTelemetry>(),
+  };
+
+if (!globalForFallback.__worksphereRateLimitFallbackTelemetry) {
+  globalForFallback.__worksphereRateLimitFallbackTelemetry = telemetryState;
+}
+
+function resolveMonotonicNow(nowMonotonic?: number): number {
+  return typeof nowMonotonic === "number" && Number.isFinite(nowMonotonic)
+    ? nowMonotonic
+    : performance.now();
+}
+
+function getOrCreateTierTelemetry(tierName: string): InternalTierTelemetry {
+  let entry = telemetryState.byTier.get(tierName);
+  if (!entry) {
+    entry = {
+      activationCount: 0,
+      requestCount: 0,
+      allowedCount: 0,
+      rejectedCount: 0,
+    };
+    telemetryState.byTier.set(tierName, entry);
+  }
+  return entry;
+}
+
+/**
+ * Records entry into fallback rate-limiting mode for a given tier.
+ * Consecutive calls while already in fallback mode belong to the same outage episode
+ * unless recovery has been recorded via `recordFallbackRecovery()`.
+ */
+export function recordFallbackActivation(
+  tierName = "default",
+  nowMonotonic?: number,
+): void {
+  const now = resolveMonotonicNow(nowMonotonic);
+
+  if (!telemetryState.active) {
+    telemetryState.active = true;
+    telemetryState.activeSinceMs = now;
+    telemetryState.lastActivatedAtMs = now;
+    telemetryState.activationCount += 1;
+    telemetryState.activeTiersInEpisode.clear();
+  }
+
+  if (!telemetryState.activeTiersInEpisode.has(tierName)) {
+    telemetryState.activeTiersInEpisode.add(tierName);
+    const tierStats = getOrCreateTierTelemetry(tierName);
+    tierStats.activationCount += 1;
+  }
+}
+
+/**
+ * Records recovery back to primary Redis rate limiting, closing the active fallback
+ * episode and accumulating its elapsed duration.
+ */
+export function recordFallbackRecovery(nowMonotonic?: number): void {
+  if (!telemetryState.active) {
+    return;
+  }
+
+  const now = resolveMonotonicNow(nowMonotonic);
+  if (telemetryState.activeSinceMs !== null) {
+    telemetryState.completedDurationMs += Math.max(
+      0,
+      now - telemetryState.activeSinceMs,
+    );
+  }
+  telemetryState.active = false;
+  telemetryState.activeSinceMs = null;
+  telemetryState.activeTiersInEpisode.clear();
+}
+
+function recordFallbackConsume(
+  tierName: string,
+  allowed: boolean,
+  now: number,
+): void {
+  if (!telemetryState.active) {
+    recordFallbackActivation(tierName, now);
+  } else if (!telemetryState.activeTiersInEpisode.has(tierName)) {
+    telemetryState.activeTiersInEpisode.add(tierName);
+    getOrCreateTierTelemetry(tierName).activationCount += 1;
+  }
+
+  telemetryState.requestCount += 1;
+  if (allowed) {
+    telemetryState.allowedCount += 1;
+  } else {
+    telemetryState.rejectedCount += 1;
+  }
+
+  const tierStats = getOrCreateTierTelemetry(tierName);
+  tierStats.requestCount += 1;
+  if (allowed) {
+    tierStats.allowedCount += 1;
+  } else {
+    tierStats.rejectedCount += 1;
+  }
+}
+
 export class TokenBucketLimiter {
   public readonly capacity: number;
   public readonly refillRatePerSecond: number;
@@ -88,6 +235,8 @@ export class TokenBucketLimiter {
   public readonly effectiveCapacity: number;
   public readonly maxIdleMs: number;
   public readonly maxBuckets: number;
+  public readonly tierName: string;
+  public readonly trackMetrics: boolean;
 
   private readonly buckets = new Map<string, BucketEntry>();
   private totalRequests = 0;
@@ -132,6 +281,8 @@ export class TokenBucketLimiter {
     this.effectiveCapacity = config.capacity + burst;
     this.maxIdleMs = config.maxIdleMs ?? 60_000;
     this.maxBuckets = config.maxBuckets ?? 10_000;
+    this.tierName = config.tierName ?? "default";
+    this.trackMetrics = config.trackMetrics ?? true;
   }
 
   /**
@@ -148,10 +299,7 @@ export class TokenBucketLimiter {
   ): FallbackRateLimitResult {
     const safeCost =
       Number.isFinite(cost) && cost >= 1 ? Math.floor(cost) : 1;
-    const now =
-      typeof nowMonotonic === "number" && Number.isFinite(nowMonotonic)
-        ? nowMonotonic
-        : performance.now();
+    const now = resolveMonotonicNow(nowMonotonic);
 
     let entry = this.buckets.get(identifier);
 
@@ -242,13 +390,27 @@ export class TokenBucketLimiter {
   }
 
   /**
+   * Returns per-limiter request and rejection counters.
+   */
+  public getMetrics(): {
+    requestCount: number;
+    allowedCount: number;
+    rejectedCount: number;
+    activeBuckets: number;
+  } {
+    return {
+      requestCount: this.instanceRequestCount,
+      allowedCount: this.instanceAllowedCount,
+      rejectedCount: this.instanceRejectedCount,
+      activeBuckets: this.buckets.size,
+    };
+  }
+
+  /**
    * Prunes idle buckets that have been inactive longer than maxIdleMs.
    */
   public pruneExpired(nowMonotonic?: number): number {
-    const now =
-      typeof nowMonotonic === "number" && Number.isFinite(nowMonotonic)
-        ? nowMonotonic
-        : performance.now();
+    const now = resolveMonotonicNow(nowMonotonic);
 
     let pruned = 0;
     for (const [key, entry] of this.buckets.entries()) {
@@ -268,7 +430,7 @@ export class TokenBucketLimiter {
   }
 
   /**
-   * Resets all in-memory buckets (useful for test isolation).
+   * Resets all in-memory buckets and instance counters (useful for test isolation).
    */
   public reset(): void {
     this.buckets.clear();
@@ -468,6 +630,8 @@ export function getOrCreateFallbackLimiter(
     capacity,
     refillRatePerSecond,
     burstAllowance,
+    tierName,
+    trackMetrics: true,
   });
   fallbackLimiters.set(tierName, limiter);
   return limiter;

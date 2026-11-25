@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import DeskReservationCountdownTimer from "@/components/reservations/DeskReservationCountdownTimer";
 import { useDeskReservationCountdown } from "@/hooks/useDeskReservationCountdown";
 import type { UseDeskReservationCountdownReturn } from "@/hooks/useDeskReservationCountdown";
@@ -136,5 +136,78 @@ describe("DeskReservationCountdownTimer accessibility", () => {
     expect(alert).toHaveAttribute("aria-live", "assertive");
     expect(alert).toHaveAttribute("aria-atomic", "true");
     expect(alert).toHaveTextContent("Seat hold has expired.");
+  });
+
+  it("shows a descriptive hold and extension tooltip on mouse hover", () => {
+    renderTimer(createCountdownState());
+    const badge = screen.getByRole("group", {
+      name: "Seat hold countdown: 05:01 remaining",
+    });
+
+    expect(badge).toHaveTextContent("05:01");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(badge);
+
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("starts with 5 minutes");
+    expect(tooltip).toHaveTextContent("Select +2m");
+    expect(tooltip).toHaveTextContent("add up to 2 minutes");
+    expect(tooltip).toHaveTextContent("capped at 10 minutes");
+    expect(badge).toHaveAttribute("aria-describedby", tooltip.id);
+    expect(document.getElementById(tooltip.id)).toBe(tooltip);
+  });
+
+  it("shows and describes the tooltip on keyboard focus, then hides it on blur", () => {
+    renderTimer(createCountdownState());
+    const badge = screen.getByRole("group", {
+      name: "Seat hold countdown: 05:01 remaining",
+    });
+
+    expect(badge).toHaveAttribute("tabindex", "0");
+    fireEvent.focus(badge);
+
+    const tooltip = screen.getByRole("tooltip");
+    expect(badge).toHaveAttribute("aria-describedby", tooltip.id);
+    expect(tooltip).toHaveTextContent("Select +2m");
+
+    fireEvent.blur(badge);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(badge).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("uses a unique tooltip id for each countdown badge", () => {
+    mockedUseCountdown.mockReturnValue(createCountdownState());
+    render(
+      <>
+        <DeskReservationCountdownTimer {...props} />
+        <DeskReservationCountdownTimer {...props} deskId="desk-2" />
+      </>,
+    );
+    const badges = screen.getAllByTestId("desk-countdown-display");
+
+    badges.forEach((badge) => fireEvent.focus(badge));
+
+    const tooltipIds = badges.map((badge) =>
+      badge.getAttribute("aria-describedby"),
+    );
+    expect(new Set(tooltipIds).size).toBe(2);
+    expect(tooltipIds.every((id) => id !== null)).toBe(true);
+    tooltipIds.forEach((id) => {
+      if (id) {
+        expect(document.getElementById(id)).toHaveAttribute("role", "tooltip");
+      }
+    });
+  });
+
+  it("keeps the existing +2m control wired to the two-minute extension", async () => {
+    const countdown = createCountdownState();
+    renderTimer(countdown);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("desk-countdown-extend"));
+    });
+
+    expect(countdown.extendCountdown).toHaveBeenCalledWith(120);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Clock, PlusCircle, XCircle, AlertTriangle, Radio } from "lucide-react";
 import { useDeskReservationCountdown } from "@/hooks/useDeskReservationCountdown";
 
@@ -54,6 +54,10 @@ export function DeskReservationCountdownTimer({
 }: DeskReservationCountdownTimerProps) {
   const [extending, setExtending] = useState(false);
   const [releasing, setReleasing] = useState(false);
+  const [isTooltipHovered, setIsTooltipHovered] = useState(false);
+  const [isTooltipFocused, setIsTooltipFocused] = useState(false);
+  const tooltipId = useId();
+  const isTooltipVisible = isTooltipHovered || isTooltipFocused;
 
   const [announcement, setAnnouncement] = useState<{
     expiresAt: number | null;
@@ -246,7 +250,21 @@ export function DeskReservationCountdownTimer({
 
             <div
               data-testid="desk-countdown-display"
-              className="flex items-center gap-1.5 font-mono text-sm font-bold text-amber-300"
+              role="group"
+              aria-label={`Seat hold countdown: ${formattedTime} remaining`}
+              aria-describedby={isTooltipVisible ? tooltipId : undefined}
+              tabIndex={0}
+              onMouseEnter={() => setIsTooltipHovered(true)}
+              onMouseLeave={() => setIsTooltipHovered(false)}
+              onFocus={() => setIsTooltipFocused(true)}
+              onBlur={() => setIsTooltipFocused(false)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setIsTooltipHovered(false);
+                  setIsTooltipFocused(false);
+                }
+              }}
+              className="relative flex cursor-help items-center gap-1.5 rounded-sm font-mono text-sm font-bold text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2"
             >
               {isExpiringSoon ? (
                 <AlertTriangle className="h-4 w-4 animate-bounce text-amber-400" />
@@ -257,6 +275,18 @@ export function DeskReservationCountdownTimer({
               <span className="text-[10px] font-normal text-amber-400/80">
                 ({remainingSeconds}s)
               </span>
+              {isTooltipVisible && (
+                <span
+                  id={tooltipId}
+                  role="tooltip"
+                  data-testid="desk-countdown-tooltip"
+                  className="absolute right-0 top-full z-50 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-amber-500/30 bg-zinc-950 p-3 text-left font-sans text-xs font-normal leading-relaxed text-zinc-100 shadow-xl"
+                >
+                  Your seat hold starts with 5 minutes. Select +2m while the
+                  hold is active to add up to 2 minutes; the remaining hold
+                  time is capped at 10 minutes.
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5">

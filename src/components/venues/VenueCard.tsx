@@ -1,11 +1,16 @@
-﻿"use client";
+"use client";
 
-import React, { useMemo, useState } from "react";
-import { Bookmark, Heart, Share2 } from "lucide-react";
+import React, { useId, useMemo, useState } from "react";
+import { Bookmark, Heart, Share2, Sparkles } from "lucide-react";
 import {
   getVenueOpeningStatus,
   type VenueOpeningHours,
 } from "@/lib/venues/hours";
+import {
+  evaluateWorkspaceComfort,
+  type WorkspaceComfortInput,
+  type WorkspaceComfortResult,
+} from "@/lib/venues/workspaceComfortScorer";
 
 export interface VenueCardProps {
   id: string;
@@ -22,6 +27,10 @@ export interface VenueCardProps {
   onBookmark?: (id: string) => void;
   onFavorite?: (id: string) => void;
   onShare?: (id: string) => void;
+
+  // Comfort Score inputs / precomputed result
+  comfortScore?: number | null;
+  comfortData?: Partial<WorkspaceComfortInput> | WorkspaceComfortResult | null;
 }
 
 export const VenueCard: React.FC<VenueCardProps> = ({
@@ -39,6 +48,8 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   onBookmark,
   onFavorite,
   onShare,
+  comfortScore: rawComfortScore,
+  comfortData,
 }) => {
   const [internalBookmarked, setInternalBookmarked] = useState(
     Boolean(isBookmarked),
@@ -46,6 +57,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
   const [internalFavorited, setInternalFavorited] = useState(
     Boolean(isFavorited),
   );
+
+  const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+  const tooltipId = useId();
 
   const bookmarked =
     typeof isBookmarked === "boolean" ? isBookmarked : internalBookmarked;
@@ -76,6 +90,43 @@ export const VenueCard: React.FC<VenueCardProps> = ({
       openingHours ? getVenueOpeningStatus(openingHours, currentTime) : null,
     [openingHours, currentTime],
   );
+
+  // Compute or reuse comfort evaluation breakdown
+  const comfortResult = useMemo<WorkspaceComfortResult | null>(() => {
+    if (!comfortData && typeof rawComfortScore !== "number") {
+      return null;
+    }
+
+    // Check if full breakdown is already provided
+    if (
+      comfortData &&
+      "breakdown" in comfortData &&
+      comfortData.breakdown &&
+      typeof comfortData.overallScore === "number"
+    ) {
+      return comfortData as WorkspaceComfortResult;
+    }
+
+    // Evaluate using existing comfort scorer logic
+    const input: WorkspaceComfortInput = {
+      venueId: id,
+      mode: "balanced",
+      ...(comfortData as Partial<WorkspaceComfortInput>),
+    };
+
+    const computed = evaluateWorkspaceComfort(input);
+    if (typeof rawComfortScore === "number") {
+      return {
+        ...computed,
+        overallScore: rawComfortScore,
+      };
+    }
+    return computed;
+  }, [id, comfortData, rawComfortScore]);
+
+  const displayedComfortScore = comfortResult
+    ? comfortResult.overallScore
+    : rawComfortScore;
 
   const badgeStyle =
     status?.state === "open"
@@ -167,7 +218,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
         </div>
       </div>
 
-      {(status || (typeof wifiSpeed === "number" && wifiSpeed >= 100)) && (
+      {(status ||
+        (typeof wifiSpeed === "number" && wifiSpeed >= 100) ||
+        typeof displayedComfortScore === "number") && (
         <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
           {status && (
             <span
@@ -185,6 +238,7 @@ export const VenueCard: React.FC<VenueCardProps> = ({
               <span>{displayText}</span>
             </span>
           )}
+
           {typeof wifiSpeed === "number" && wifiSpeed >= 100 && (
             <span
               data-testid="gigabit-verified-badge"
@@ -192,6 +246,85 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             >
               <span>Gigabit Verified</span>
             </span>
+          )}
+
+          {/* Comfort Score Pill with Breakdown Tooltip (#10300) */}
+          {typeof displayedComfortScore === "number" && (
+            <div className="relative inline-block">
+              <div
+                tabIndex={0}
+                role="button"
+                data-testid="comfort-score-pill"
+                aria-describedby={isTooltipVisible ? tooltipId : undefined}
+                aria-label={`Comfort Score: ${displayedComfortScore}/100. Hover or focus for breakdown.`}
+                onMouseEnter={() => setIsTooltipVisible(true)}
+                onMouseLeave={() => setIsTooltipVisible(false)}
+                onFocus={() => setIsTooltipVisible(true)}
+                onBlur={() => setIsTooltipVisible(false)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/90 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-300 cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1 select-none transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" aria-hidden="true" />
+                <span>Comfort {displayedComfortScore}</span>
+              </div>
+
+              {/* Breakdown Tooltip */}
+              {isTooltipVisible && comfortResult && (
+                <div
+                  id={tooltipId}
+                  role="tooltip"
+                  data-testid="comfort-score-tooltip"
+                  className="absolute bottom-full left-0 mb-2 z-50 w-52 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-800 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 animate-in fade-in-50 zoom-in-95 duration-150"
+                >
+                  <div className="font-semibold text-slate-900 dark:text-slate-100 mb-2 pb-1 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <span>Comfort Breakdown</span>
+                    <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                      {displayedComfortScore}/100
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">
+                        Ergonomics
+                      </span>
+                      <span
+                        data-testid="subscore-ergonomics"
+                        className="font-mono font-medium text-slate-900 dark:text-slate-100"
+                      >
+                        {comfortResult.breakdown.ergonomicsScore}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">
+                        Power Access
+                      </span>
+                      <span
+                        data-testid="subscore-power"
+                        className="font-mono font-medium text-slate-900 dark:text-slate-100"
+                      >
+                        {comfortResult.breakdown.powerScore}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">
+                        Acoustic Comfort
+                      </span>
+                      <span
+                        data-testid="subscore-acoustics"
+                        className="font-mono font-medium text-slate-900 dark:text-slate-100"
+                      >
+                        {comfortResult.breakdown.acousticsScore}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Tooltip Arrow */}
+                  <div className="absolute top-full left-4 -mt-px border-4 border-transparent border-t-white dark:border-t-slate-900" />
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

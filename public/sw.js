@@ -17,6 +17,7 @@ const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
 const VENUE_PHOTO_CACHE_NAME = "worksphere-venue-photos-v1";
+const VENUE_PHOTO_META_DB_NAME = "worksphere-venue-photo-cache-lru";
 const PREFETCH_CACHE_NAME = "worksphere-prefetch-v1";
 const CACHE_VERSION = "v2";
 const STATIC_CACHE_NAME = `worksphere-static-${CACHE_VERSION}`;
@@ -318,9 +319,9 @@ async function handleFetch(request, event, url) {
   if (isAllowlistedPublicApi) {
     try {
       const response = await fetch(request);
-      if (response.ok && isCacheablePublicResponse(response)) {
-        const cache = await caches.open(RUNTIME_PUBLIC_CACHE_NAME);
-        cache.put(request, response.clone());
+      if (response.ok) {
+        const cache = await caches.open(CACHE_NAME);
+        await cacheApiMetadata(cache, request, response);
       }
       return response;
     } catch {
@@ -372,22 +373,19 @@ async function handleFetch(request, event, url) {
   } else if (isVenuePhoto) {
     const cache = await caches.open(VENUE_PHOTO_CACHE_NAME);
     const cached = await cache.match(request);
-    const revalidatePromise = fetch(request)
-      .then(async (networkResponse) => {
-        if (
-          networkResponse &&
-          (networkResponse.status === 200 || networkResponse.status === 0)
-        ) {
-          await cache.put(request, networkResponse.clone());
-        }
-        return networkResponse;
-      })
-      .catch(() => null);
-
+    const revalidatePromise = revalidateVenuePhoto(cache, request).catch(
+      (err) => {
+        console.warn("[SW] Venue photo fetch or cache failed:", err);
+        return null;
+      },
+    );
     if (cached) {
       if (event && event.waitUntil) {
         event.waitUntil(revalidatePromise);
       }
+      touchVenuePhotoTimestamp(request.url).catch((err) => {
+        console.warn("[SW] Failed to update venue photo cache age:", err);
+      });
       return cached;
     }
     const fresh = await revalidatePromise;
@@ -461,6 +459,247 @@ async function handleFetch(request, event, url) {
     }
   }
 }
+
+let venuePhotoDbPromise = null;
+let venuePhotoWriteQueue = Promise.resolve();
+
+function withVenuePhotoWriteLock(callback) {
+  const operation = venuePhotoWriteQueue.then(() => {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.locks &&
+      typeof navigator.locks.request === "function"
+    ) {
+      return navigator.locks.request(
+        "worksphere-venue-photo-cache-write",
+        callback,
+      );
+    }
+    return callback();
+  });
+  venuePhotoWriteQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
+}
+
+function openVenuePhotoMetadataDb() {
+  if (venuePhotoDbPromise) return venuePhotoDbPromise;
+  venuePhotoDbPromise = new Promise((resolve, reject) => {
+    try {
+      const request = indexedDB.open(VENUE_PHOTO_META_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("entries")) {
+          request.result.createObjectStore("entries", { keyPath: "url" });
+        }
+      };
+      request.onsuccess = () => {
+        request.result.onversionchange = () => {
+          request.result.close();
+          venuePhotoDbPromise = null;
+        };
+        resolve(request.result);
+      };
+      request.onerror = () => {
+        venuePhotoDbPromise = null;
+        reject(request.error || new Error("Unable to open venue photo metadata"));
+      };
+    } catch (error) {
+      venuePhotoDbPromise = null;
+      reject(error);
+    }
+  });
+  return venuePhotoDbPromise;
+}
+
+function isQuotaExceededError(error) {
+  return (
+    error &&
+    (error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      error.code === 22 ||
+      error.code === 1014)
+  );
+}
+
+async function writeVenuePhotoTimestamp(url) {
+  const db = await openVenuePhotoMetadataDb();
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction("entries", "readwrite");
+    transaction.objectStore("entries").put({ url, lastAccessed: Date.now() });
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+async function touchVenuePhotoTimestamp(url) {
+  await withVenuePhotoWriteLock(() => writeVenuePhotoTimestamp(url));
+}
+
+async function readVenuePhotoTimestamps() {
+  const db = await openVenuePhotoMetadataDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("entries", "readonly");
+    const request = transaction.objectStore("entries").getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function evictOldestVenuePhotos(cache) {
+  const requests = (await cache.keys()).filter(
+    (request) =>
+      request.url.includes("res.cloudinary.com") ||
+      request.url.includes("images.pexels.com"),
+  );
+  if (requests.length === 0) return 0;
+
+  const records = await readVenuePhotoTimestamps();
+  const timestamps = new Map(
+    records.map((record) => [record.url, record.lastAccessed]),
+  );
+  const metadataDb = await openVenuePhotoMetadataDb();
+  const requestUrls = new Set(requests.map((request) => request.url));
+  const staleRecords = records.filter((record) => !requestUrls.has(record.url));
+  const unknownRequests = requests.filter(
+    (request) => !timestamps.has(request.url),
+  );
+
+  if (staleRecords.length > 0 || unknownRequests.length > 0) {
+    await new Promise((resolve, reject) => {
+      const transaction = metadataDb.transaction("entries", "readwrite");
+      const store = transaction.objectStore("entries");
+      for (const record of staleRecords) {
+        store.delete(record.url);
+      }
+      for (const request of unknownRequests) {
+        // Legacy cache entries without timestamps are treated as the oldest.
+        store.put({ url: request.url, lastAccessed: 0 });
+        timestamps.set(request.url, 0);
+      }
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
+  const evictionCount = Math.min(
+    requests.length,
+    Math.max(1, Math.ceil(requests.length * 0.2)),
+  );
+  const oldest = requests
+    .slice()
+    .sort(
+      (requestA, requestB) =>
+        (timestamps.get(requestA.url) || 0) -
+          (timestamps.get(requestB.url) || 0) ||
+        requestA.url.localeCompare(requestB.url),
+    )
+    .slice(0, evictionCount);
+  let evictedCount = 0;
+
+  for (const request of oldest) {
+    if (await cache.delete(request)) {
+      evictedCount += 1;
+      await new Promise((resolve, reject) => {
+        const transaction = metadataDb.transaction("entries", "readwrite");
+        transaction.objectStore("entries").delete(request.url);
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+    }
+  }
+
+  return evictedCount;
+}
+
+function cacheVenuePhoto(cache, request, response) {
+  return withVenuePhotoWriteLock(async () => {
+    try {
+      await cache.put(request, response.clone());
+    } catch (error) {
+      if (!isQuotaExceededError(error)) throw error;
+
+      console.warn(
+        "[SW] Venue photo cache quota exceeded; evicting the oldest photos and retrying once.",
+      );
+      try {
+        await evictOldestVenuePhotos(cache);
+      } catch (evictionError) {
+        console.warn("[SW] Unable to evict venue photos after quota error:", evictionError);
+      }
+
+      try {
+        await cache.put(request, response.clone());
+      } catch (retryError) {
+        if (!isQuotaExceededError(retryError)) throw retryError;
+        console.warn(
+          "[SW] Venue photo cache retry still exceeded quota; serving the image without caching it.",
+        );
+        return false;
+      }
+    }
+
+    try {
+      await writeVenuePhotoTimestamp(request.url);
+    } catch (metadataError) {
+      console.warn("[SW] Failed to save venue photo cache age:", metadataError);
+    }
+    return true;
+  });
+}
+
+async function cacheApiMetadata(cache, request, response) {
+  try {
+    await cache.put(request, response.clone());
+    return;
+  } catch (error) {
+    if (!isQuotaExceededError(error)) {
+      console.warn(
+        "[SW] Failed to cache API metadata; returning the network response:",
+        error,
+      );
+      return;
+    }
+
+    console.warn(
+      "[SW] API metadata cache quota exceeded; evicting venue photos before retrying.",
+    );
+    try {
+      const photoCache = await caches.open(VENUE_PHOTO_CACHE_NAME);
+      await withVenuePhotoWriteLock(() => evictOldestVenuePhotos(photoCache));
+    } catch (evictionError) {
+      console.warn(
+        "[SW] Unable to free venue-photo storage for API metadata:",
+        evictionError,
+      );
+    }
+
+    try {
+      await cache.put(request, response.clone());
+    } catch (retryError) {
+      console.warn(
+        "[SW] API metadata cache retry failed; returning the network response:",
+        retryError,
+      );
+    }
+  }
+}
+
+async function revalidateVenuePhoto(cache, request) {
+  const networkResponse = await fetch(request);
+  if (
+    networkResponse &&
+    (networkResponse.status === 200 || networkResponse.status === 0)
+  ) {
+    await cacheVenuePhoto(cache, request, networkResponse);
+  }
+  return networkResponse;
+}
+
 // Background Sync for offline actions
 self.addEventListener("sync", (event) => {
   if (event.tag === "sync-crdt") {

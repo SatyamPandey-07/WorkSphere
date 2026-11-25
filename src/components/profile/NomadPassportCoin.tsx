@@ -263,6 +263,20 @@ function CoinMesh({
 
   useFrame(({ clock }, delta) => {
     if (!coin.current) return;
+
+    // Check operating system prefers-reduced-motion preference
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (prefersReducedMotion) {
+      // Direct jump to final front/back orientation without lerping/idle oscillation
+      coin.current.rotation.y = flipped ? Math.PI : 0;
+      coin.current.rotation.x = 0;
+      return;
+    }
+
     const idleTurn = Math.sin(clock.elapsedTime * 0.42) * 0.08;
     const target = (flipped ? Math.PI : 0) + idleTurn;
     coin.current.rotation.y +=
@@ -332,7 +346,8 @@ function CoinFallback({
   return (
     <div className={styles.fallback} aria-hidden="true">
       <div
-        className={`${styles.rotor} ${styles.transformStyle3d} ${flipped ? styles.rotateY180 : ""}`}
+        data-testid="nomad-coin-rotor"
+        className={`${styles.rotor} ${styles.transformStyle3d} motion-reduce:transition-none motion-reduce:transform-none ${flipped ? styles.rotateY180 : ""}`}
       >
         <div className={styles.face}>
           <span className={styles.kicker}>NOMAD PASSPORT</span>

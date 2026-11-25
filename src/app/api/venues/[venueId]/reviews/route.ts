@@ -104,6 +104,10 @@ export async function GET(
       });
     });
 
+    const hasMore = fetchedReviews.length > limit;
+    const reviews = hasMore ? fetchedReviews.slice(0, limit) : fetchedReviews;
+    const nextCursor = hasMore ? (reviews[reviews.length - 1]?.id ?? null) : null;
+
     const isUnauthenticated = !userId;
 
     const formattedReviews = reviews.map((r: any) => {
@@ -124,6 +128,8 @@ export async function GET(
 
     return NextResponse.json({
       reviews: formattedReviews,
+      nextCursor,
+      hasMore,
     });
   } catch (error) {
     if (

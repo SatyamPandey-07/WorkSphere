@@ -324,11 +324,14 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       );
 
       const clearBtn = screen.getByTestId("clear-search-input-btn");
+      const searchInput = screen.getByTestId("search-input");
       expect(clearBtn).toBeInTheDocument();
-      expect(clearBtn).toHaveAttribute("aria-label", "Clear search input");
+      expect(clearBtn).toHaveAttribute("aria-label", "Clear search");
+      expect(clearBtn).toHaveAttribute("type", "button");
 
       fireEvent.click(clearBtn);
       expect(handleSearchChange).toHaveBeenCalledWith("");
+      expect(searchInput).toHaveFocus();
     });
 
     it("hides clear button when search input is empty", () => {
@@ -341,6 +344,19 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       );
 
       expect(screen.queryByTestId("clear-search-input-btn")).not.toBeInTheDocument();
+    });
+
+    it("shows and clears whitespace-only queries", () => {
+      render(<VenueSearchDrawer isOpen={true} onClose={jest.fn()} />);
+
+      const searchInput = screen.getByTestId("search-input");
+      fireEvent.change(searchInput, { target: { value: " " } });
+
+      const clearBtn = screen.getByRole("button", { name: "Clear search" });
+      fireEvent.click(clearBtn);
+
+      expect(searchInput).toHaveValue("");
+      expect(searchInput).toHaveFocus();
     });
 
     it("clears search query and blurs input when Escape key is pressed", () => {

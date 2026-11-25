@@ -68,6 +68,7 @@ export const USDC_MINT = new PublicKey(
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 );
 export const USDC_DECIMALS = 6;
+export const SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS = 5_000_000n;
 
 export type EscrowCurrency = "SOL" | "USDC";
 
@@ -85,6 +86,26 @@ export interface EscrowDepositResult {
   escrowBump: number;
   amountBaseUnits: bigint;
   recentBlockhash: string;
+}
+
+export type EscrowDepositPreflightErrorCode =
+  | "INSUFFICIENT_BALANCE"
+  | "BALANCE_CHECK_FAILED"
+  | "INVALID_TOKEN_ACCOUNT"
+  | "RPC_REQUEST_FAILED";
+
+export class EscrowDepositPreflightError extends Error {
+  public readonly rpcError?: unknown;
+
+  constructor(
+    message: string,
+    public readonly code: EscrowDepositPreflightErrorCode,
+    cause?: unknown,
+  ) {
+    super(message);
+    this.name = "EscrowDepositPreflightError";
+    this.rpcError = cause;
+  }
 }
 
 export interface EscrowValidationResult {
@@ -110,6 +131,189 @@ export function toBaseUnits(amount: number, currency: EscrowCurrency): bigint {
   }
 
   return BigInt(baseUnits);
+}
+
+function formatBaseUnits(amount: bigint, decimals: number): string {
+  const scale = 10n ** BigInt(decimals);
+  const whole = amount / scale;
+  const fraction = (amount % scale)
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "");
+
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+function getTokenAccountErrorReason(
+  error: unknown,
+): "missing" | "uninitialized" | null {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/could not find account|account not found/i.test(message)) {
+    return "missing";
+  }
+  if (/account not initialized/i.test(message)) return "uninitialized";
+  return null;
+}
+
+async function withEscrowRpcTimeout<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+  operationDescription: string,
+  errorCode:
+    "BALANCE_CHECK_FAILED" | "RPC_REQUEST_FAILED" = "BALANCE_CHECK_FAILED",
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Solana RPC request timed out after ${timeoutMs}ms`,
+              ),
+            ),
+          timeoutMs,
+        );
+        timer.unref?.();
+      }),
+    ]);
+  } catch (error: unknown) {
+    const timedOut =
+      error instanceof Error && error.message.includes("timed out");
+    throw new EscrowDepositPreflightError(
+      timedOut
+        ? `Could not ${operationDescription} because the Solana RPC request timed out. Please try again.`
+        : `Could not ${operationDescription} because the Solana RPC request failed. Please try again.`,
+      errorCode,
+      error,
+    );
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function getVerifiedLamportBalance(
+  connection: Connection,
+  payer: PublicKey,
+  timeoutMs: number,
+): Promise<bigint> {
+  const balance = await withEscrowRpcTimeout(
+    () => connection.getBalance(payer, "confirmed"),
+    timeoutMs,
+    "verify the wallet balance",
+  );
+
+  if (!Number.isSafeInteger(balance) || balance < 0) {
+    throw new EscrowDepositPreflightError(
+      "Could not verify wallet balance because Solana RPC returned invalid balance data. Please try again.",
+      "BALANCE_CHECK_FAILED",
+    );
+  }
+
+  return BigInt(balance);
+}
+
+export async function verifyEscrowDepositBalance(
+  connection: Connection,
+  params: Pick<EscrowDepositParams, "payerWallet" | "amount" | "currency">,
+  timeoutMs: number = ESCROW_RPC_REQUEST_TIMEOUT_MS,
+): Promise<void> {
+  const payer = new PublicKey(params.payerWallet);
+  const solBalance = await getVerifiedLamportBalance(
+    connection,
+    payer,
+    timeoutMs,
+  );
+
+  if (params.currency === "SOL") {
+    const requiredLamports =
+      toBaseUnits(params.amount, "SOL") + SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS;
+
+    if (solBalance < requiredLamports) {
+      throw new EscrowDepositPreflightError(
+        `Insufficient wallet balance (Required: ${formatBaseUnits(requiredLamports, 9)} SOL, Available: ${formatBaseUnits(solBalance, 9)} SOL)`,
+        "INSUFFICIENT_BALANCE",
+      );
+    }
+
+    return;
+  }
+
+  if (solBalance < SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient SOL balance for fees and rent (Required: 0.005 SOL, Available: ${formatBaseUnits(solBalance, 9)} SOL). The USDC deposit requires ${formatBaseUnits(toBaseUnits(params.amount, "USDC"), USDC_DECIMALS)} USDC.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
+
+  const payerAta = getAssociatedTokenAddressSync(USDC_MINT, payer);
+  const requiredUsdcBaseUnits = toBaseUnits(params.amount, "USDC");
+  const tokenAccount = await withEscrowRpcTimeout(
+    () => connection.getAccountInfo(payerAta, "confirmed"),
+    timeoutMs,
+    "verify the USDC token account",
+  );
+
+  if (!tokenAccount) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: 0 USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
+
+  if (!tokenAccount.owner.equals(TOKEN_PROGRAM_ID)) {
+    throw new EscrowDepositPreflightError(
+      "The USDC token account is invalid. Please verify the account and try again.",
+      "INVALID_TOKEN_ACCOUNT",
+    );
+  }
+
+  const tokenBalance = await withEscrowRpcTimeout(
+    () => connection.getTokenAccountBalance(payerAta, "confirmed"),
+    timeoutMs,
+    "verify the USDC token balance",
+  ).catch((error: unknown) => {
+    const tokenAccountError =
+      error instanceof EscrowDepositPreflightError
+        ? getTokenAccountErrorReason(error.rpcError)
+        : null;
+
+    if (tokenAccountError === "missing") {
+      throw new EscrowDepositPreflightError(
+        `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: 0 USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+        "INSUFFICIENT_BALANCE",
+        error,
+      );
+    }
+
+    if (tokenAccountError === "uninitialized") {
+      throw new EscrowDepositPreflightError(
+        "The USDC token account is not initialized. Initialize and fund it before retrying.",
+        "INVALID_TOKEN_ACCOUNT",
+        error,
+      );
+    }
+    throw error;
+  });
+
+  const { amount, decimals } = tokenBalance.value;
+  if (decimals !== USDC_DECIMALS || !/^\d+$/.test(amount)) {
+    throw new EscrowDepositPreflightError(
+      "Could not verify the USDC token balance because Solana RPC returned invalid token balance data. Please try again.",
+      "BALANCE_CHECK_FAILED",
+    );
+  }
+
+  const availableUsdcBaseUnits = BigInt(amount);
+  if (availableUsdcBaseUnits < requiredUsdcBaseUnits) {
+    throw new EscrowDepositPreflightError(
+      `Insufficient USDC balance (Required: ${formatBaseUnits(requiredUsdcBaseUnits, USDC_DECIMALS)} USDC, Available: ${formatBaseUnits(availableUsdcBaseUnits, USDC_DECIMALS)} USDC). A separate 0.005 SOL reserve is required for fees and rent.`,
+      "INSUFFICIENT_BALANCE",
+    );
+  }
 }
 
 export function validateDepositParams(
@@ -169,7 +373,13 @@ export async function buildSolDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "SOL");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  await verifyEscrowDepositBalance(connection, params);
+  const { blockhash } = await withEscrowRpcTimeout(
+    () => connection.getLatestBlockhash("confirmed"),
+    ESCROW_RPC_REQUEST_TIMEOUT_MS,
+    "prepare the escrow transaction",
+    "RPC_REQUEST_FAILED",
+  );
 
   const transaction = new Transaction({
     recentBlockhash: blockhash,
@@ -219,7 +429,13 @@ export async function buildUsdcDepositTransaction(
   const amountBaseUnits = toBaseUnits(params.amount, "USDC");
 
   const connection = new Connection(params.rpcUrl, "confirmed");
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  await verifyEscrowDepositBalance(connection, params);
+  const { blockhash } = await withEscrowRpcTimeout(
+    () => connection.getLatestBlockhash("confirmed"),
+    ESCROW_RPC_REQUEST_TIMEOUT_MS,
+    "prepare the escrow transaction",
+    "RPC_REQUEST_FAILED",
+  );
 
   const payerAta = getAssociatedTokenAddressSync(
     USDC_MINT,

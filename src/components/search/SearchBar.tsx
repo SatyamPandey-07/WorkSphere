@@ -40,8 +40,8 @@ export const SearchBar: React.FC<SearchBarProps> = ({
         placeholder={placeholder}
         value={query}
         shortcutLabel={shortcutLabel}
-        onChange={(e) => {
-          const next = e.target.value;
+        enableShortcut={enableShortcut}
+        onChange={(next) => {
           setQuery(next);
           onSearch?.(next);
         }}

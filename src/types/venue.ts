@@ -23,6 +23,8 @@ export interface VenueAmenities {
   outletLocations?: string[];
   powerTypes?: string[];
   hasErgonomic?: boolean;
+  hasStandingDesk?: boolean;
+  hasExternalMonitor?: boolean;
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
@@ -41,7 +43,11 @@ export interface VenueAmenities {
   patioOnly?: boolean;
   waterBowlsProvided?: boolean;
   dogFriendly?: boolean;
+  petFriendly?: boolean;
   catsAllowed?: boolean;
+
+  veganOptions?: boolean;
+  veganFood?: boolean;
 
   singleOriginBeans?: boolean;
   specialtyEspresso?: boolean;

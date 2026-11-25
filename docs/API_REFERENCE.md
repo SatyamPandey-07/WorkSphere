@@ -43,6 +43,7 @@ This document provides a high-level reference for the REST API endpoints availab
 | `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics and time-bucket distributions.                                                                                                                         |
 | `POST /api/venues/{venueId}/noise-metrics`         | Submit calibrated crowdsourced ambient decibel reading.                                                                                                                             |
 | `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                                                                                                                                    |
+| `GET /api/venues/{venueId}/quiet-hours`            | Predict UTC hourly noise profiles, quiet windows, and peak hours from historical ratings. See the [Quiet-Hours Prediction API Guide](./api/QUIET_HOURS_PREDICTION.md).              |
 | `GET /api/venues/acoustics/rt60`                   | Retrieve venue RT60 reverberation time heatmap and call quality scores.                                                                                                             |
 | `POST /api/venues/acoustics/rt60`                  | Ingest crowdsourced RT60 reverberation decay measurements.                                                                                                                          |
 | `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                                                                                                                                     |
@@ -139,6 +140,7 @@ WorkSphere provides end-to-end environmental acoustics monitoring, crowdsourced 
 
 - `GET /api/venues/{venueId}/noise-metrics` — Retrieve venue ambient noise metrics and 4-period time buckets.
 - `POST /api/venues/{venueId}/noise-metrics` — Submit authenticated user decibel readings ($30\text{--}90\text{ dB}$).
+- `GET /api/venues/{venueId}/quiet-hours` — Predict UTC hourly noise profiles, quiet windows, and peak noise hours from historical venue ratings. See the [Quiet-Hours Prediction API Guide](./api/QUIET_HOURS_PREDICTION.md).
 - `POST /api/telemetry/noise` — Ingest hardware IoT noise telemetry with Gaussian differential privacy.
 - `GET /api/venues/acoustics/rt60` — Retrieve spatial reverberation time ($T_{60}$) heatmap and call-quality scores.
 - `POST /api/venues/acoustics/rt60` — Ingest crowdsourced impulse response RT60 measurements.

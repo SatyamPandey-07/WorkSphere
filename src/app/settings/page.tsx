@@ -6,7 +6,7 @@ import { ChevronRight, UserCircle, Webhook } from "lucide-react";
 import { UserPreferenceToggle } from "@/components/UserPreferenceToggle";
 import { AccentPicker } from "@/components/AccentPicker";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { HighContrastToggle } from "@/components/HighContrastToggle";
+import { HighContrastToggle, HighContrastStatusBadge } from "@/components/HighContrastToggle";
 import { PasskeyManager } from "@/components/auth/PasskeyManager";
 import { TelegramStatusBanner } from "@/components/dashboard/TelegramStatusBanner";
 import { WorkStyleProfile } from "@/app/dashboard/WorkStyleProfile";
@@ -196,8 +196,12 @@ export default function SettingsPage() {
                   <span className="text-sm font-medium">Accent</span>
                   <AccentPicker />
                 </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium">Mode Status</span>
+                  <HighContrastStatusBadge />
+                </div>
               </div>
-              <HighContrastToggle />
+              <HighContrastToggle showStatusBadge />
               <ThemeSelector />
             </div>
           </Section>

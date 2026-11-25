@@ -1,7 +1,11 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { getDatePreset, type DatePresetKey } from '@/lib/validations/dateFilter';
+import React, { useState, useEffect, useRef } from "react";
+import { Loader2 } from "lucide-react";
+import {
+  getDatePreset,
+  type DatePresetKey,
+} from "@/lib/validations/dateFilter";
 
 export interface BookingModalProps {
   venueId?: string;
@@ -10,28 +14,35 @@ export interface BookingModalProps {
   onClose: () => void;
   onConfirm?: () => void | Promise<void>;
   onSuccess?: () => void;
+  onError?: (error: unknown) => void;
   isSubmitting?: boolean;
   loading?: boolean;
   seatLabel?: string;
+  confirmButtonText?: string;
   children?: React.ReactNode;
 }
 
 export function BookingModal({
-  venueId = '',
-  venueName = 'WorkSphere Hub',
+  venueId = "",
+  venueName = "WorkSphere Hub",
   isOpen = true,
   onClose,
   onConfirm,
   onSuccess,
+  onError,
   isSubmitting = false,
   loading = false,
-  seatLabel = 'Desk A-12',
+  seatLabel = "Desk A-12",
+  confirmButtonText,
   children,
 }: BookingModalProps) {
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState("");
   const [activePreset, setActivePreset] = useState<DatePresetKey | null>(null);
+  const [internalSubmitting, setInternalSubmitting] = useState(false);
+  const inFlightRef = useRef(false);
 
-  const isBusy = Boolean(isSubmitting || loading);
+  const effectiveSubmitting = Boolean(isSubmitting || internalSubmitting);
+  const isBusy = Boolean(effectiveSubmitting || loading);
   const isPending = isBusy;
 
   const handlePresetSelect = (preset: DatePresetKey) => {
@@ -48,8 +59,10 @@ export function BookingModal({
         setActivePreset(null);
       }
     } else {
-      const presets: DatePresetKey[] = ['today', 'tomorrow', 'weekend'];
-      const matched = presets.find((p) => getDatePreset(p).startDate === newDate);
+      const presets: DatePresetKey[] = ["today", "tomorrow", "weekend"];
+      const matched = presets.find(
+        (p) => getDatePreset(p).startDate === newDate,
+      );
       if (matched) {
         setActivePreset(matched);
       }
@@ -60,15 +73,15 @@ export function BookingModal({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         if (!isBusy) {
           onClose();
         }
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, isBusy, onClose]);
 
   if (!isOpen) {
@@ -77,15 +90,30 @@ export function BookingModal({
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;
-    if (isSubmitting || loading) return;
+    if (isBusy) return;
     onClose();
   };
 
   const handleConfirmAction = async () => {
-    if (onConfirm) {
-      await onConfirm();
+    if (inFlightRef.current || isBusy || effectiveSubmitting) {
+      return;
     }
-    onSuccess?.();
+
+    inFlightRef.current = true;
+    setInternalSubmitting(true);
+
+    try {
+      if (onConfirm) {
+        await onConfirm();
+      }
+      onSuccess?.();
+    } catch (err) {
+      onError?.(err);
+      // Re-enable button so the user can correct inputs and retry
+    } finally {
+      inFlightRef.current = false;
+      setInternalSubmitting(false);
+    }
   };
 
   return (
@@ -104,22 +132,35 @@ export function BookingModal({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 id="booking-modal-title" className="text-base font-semibold text-slate-900 mb-1">
-              {venueName || 'Confirm Reservation'} {seatLabel ? `· ${seatLabel}` : ''}
+            <h2
+              id="booking-modal-title"
+              className="text-base font-semibold text-slate-900 mb-1"
+            >
+              {venueName || "Confirm Reservation"}{" "}
+              {seatLabel ? `· ${seatLabel}` : ""}
             </h2>
             {venueId && <span className="sr-only">Venue ID: {venueId}</span>}
             <div className="mb-1.5 flex items-center justify-between">
-              <label htmlFor="booking-date-input" className="block text-sm text-zinc-500">Date</label>
-              <div className="flex items-center gap-1.5" role="group" aria-label="Date quick presets">
+              <label
+                htmlFor="booking-date-input"
+                className="block text-sm text-zinc-500"
+              >
+                Date
+              </label>
+              <div
+                className="flex items-center gap-1.5"
+                role="group"
+                aria-label="Date quick presets"
+              >
                 <button
                   type="button"
                   data-testid="date-preset-today"
                   disabled={isPending}
-                  onClick={() => handlePresetSelect('today')}
+                  onClick={() => handlePresetSelect("today")}
                   className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
-                    activePreset === 'today'
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900'
+                    activePreset === "today"
+                      ? "bg-violet-600 text-white shadow-sm"
+                      : "border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
                   }`}
                 >
                   Today
@@ -128,11 +169,11 @@ export function BookingModal({
                   type="button"
                   data-testid="date-preset-tomorrow"
                   disabled={isPending}
-                  onClick={() => handlePresetSelect('tomorrow')}
+                  onClick={() => handlePresetSelect("tomorrow")}
                   className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
-                    activePreset === 'tomorrow'
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900'
+                    activePreset === "tomorrow"
+                      ? "bg-violet-600 text-white shadow-sm"
+                      : "border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
                   }`}
                 >
                   Tomorrow
@@ -141,20 +182,20 @@ export function BookingModal({
                   type="button"
                   data-testid="date-preset-weekend"
                   disabled={isPending}
-                  onClick={() => handlePresetSelect('weekend')}
+                  onClick={() => handlePresetSelect("weekend")}
                   className={`rounded-lg px-2.5 py-1 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 ${
-                    activePreset === 'weekend'
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900'
+                    activePreset === "weekend"
+                      ? "bg-violet-600 text-white shadow-sm"
+                      : "border border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
                   }`}
                 >
                   This Weekend
                 </button>
               </div>
             </div>
-            <input 
+            <input
               id="booking-date-input"
-              type="date" 
+              type="date"
               value={date}
               disabled={isPending}
               onChange={(e) => handleDateChange(e.target.value)}
@@ -175,7 +216,9 @@ export function BookingModal({
           </button>
         </div>
 
-        {children && <div className="mt-4 text-sm text-slate-700">{children}</div>}
+        {children && (
+          <div className="mt-4 text-sm text-slate-700">{children}</div>
+        )}
 
         <div className="mt-6 flex items-center justify-end gap-2.5">
           <button
@@ -193,15 +236,27 @@ export function BookingModal({
             <button
               type="button"
               disabled={isBusy}
+              aria-busy={isBusy}
               onClick={() => void handleConfirmAction()}
               data-testid="booking-modal-confirm"
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isBusy ? 'Booking...' : 'Confirm Booking'}
+              {isBusy && (
+                <Loader2
+                  className="h-4 w-4 animate-spin"
+                  data-testid="booking-confirm-spinner"
+                  aria-hidden="true"
+                />
+              )}
+              <span>
+                {isBusy
+                  ? "Booking..."
+                  : confirmButtonText || "Confirm Reservation"}
+              </span>
             </button>
           )}
         </div>
       </div>
     </div>
   );
-};
+}

@@ -1,22 +1,8 @@
- feature/nomad-break-buffers
- feature/nomad-break-buffers
-
-feature/booking-concurrency-lock
-
-import { isAbortError } from '@/lib/search/semanticSearchClient';
- main
+import { isAbortError } from "@/lib/search/semanticSearchClient";
 
 export const DEFAULT_XFETCH_BETA = 1.0;
 export const DEFAULT_BASELINE_DELTA_MS = 250;
 export const DEFAULT_EMBEDDING_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
- feature/nomad-break-buffers
-docs/git-worktree-guide
-main
- main
- main
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import Redis from "ioredis";
 
 export interface XFetchCacheEntry<T> {
   value: T;
@@ -26,7 +12,6 @@ export interface XFetchCacheEntry<T> {
   expiryMs: number;
   createdAtMs: number;
 }
- main
 
 export interface XFetchEvaluationOptions {
   nowMs?: number;
@@ -34,11 +19,6 @@ export interface XFetchEvaluationOptions {
   baselineDeltaMs?: number;
   randomFn?: () => number;
 }
-
- feature/nomad-break-buffers
-feature/nomad-break-buffers
-
-feature/booking-concurrency-lock
 
 export interface HybridEmbeddingSearchOptions {
   ttlMs?: number;
@@ -54,9 +34,8 @@ export interface HybridEmbeddingSearchOptions {
  * ("Quiet Cafe Near Me " -> "quiet cafe near me").
  */
 export function normalizeSemanticQueryKey(query: string): string {
-  return query.trim().toLowerCase().replace(/\s+/g, ' ');
+  return query.trim().toLowerCase().replace(/\s+/g, " ");
 }
- main
 
 /**
  * Evaluates the XFetch probabilistic early-expiration formula:
@@ -67,8 +46,8 @@ export function normalizeSemanticQueryKey(query: string): string {
  * prior to hard expiration.
  */
 export function shouldTriggerXFetchEarlyRefresh(
-  entry: Pick<XFetchCacheEntry<unknown>, 'deltaMs' | 'expiryMs'>,
-  options: XFetchEvaluationOptions = {}
+  entry: Pick<XFetchCacheEntry<unknown>, "deltaMs" | "expiryMs">,
+  options: XFetchEvaluationOptions = {},
 ): boolean {
   const {
     nowMs = Date.now(),
@@ -82,18 +61,11 @@ export function shouldTriggerXFetchEarlyRefresh(
     return true;
   }
 
- feature/nomad-break-buffers
-main
-main
- main
-const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
-
   // Seed cold/zero delta entries with a positive baseline latency estimate
   const effectiveDeltaMs =
     Number.isFinite(entry.deltaMs) && entry.deltaMs > 0
       ? entry.deltaMs
       : Math.max(1, baselineDeltaMs);
- main
 
   // Clamp random draw away from 0 to avoid -Infinity from Math.log(0)
   const u = Math.min(1 - Number.EPSILON, Math.max(Number.EPSILON, randomFn()));
@@ -106,17 +78,9 @@ const CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Days
  * Stampede-resistant XFetch vector embedding cache with single-flight coalescing
  * and cold-entry baseline delta seeding.
  */
- feature/nomad-break-buffers
-export async function getQueryEmbedding(query: string): Promise<number[]> {
-  const cacheKey = `embedding:${Buffer.from(query.toLowerCase().trim()).toString("base64")}`;
- feature/nomad-break-buffers
-
- feature/booking-concurrency-lock
-
 export class XFetchVectorCache<T = number[]> {
   private readonly store = new Map<string, XFetchCacheEntry<T>>();
   private readonly inFlight = new Map<string, Promise<XFetchCacheEntry<T>>>();
- main
 
   private readonly defaultTtlMs: number;
   private readonly defaultBeta: number;
@@ -124,26 +88,21 @@ export class XFetchVectorCache<T = number[]> {
   private readonly nowFn: () => number;
   private readonly randomFn: () => number;
 
- feature/nomad-break-buffers
- docs/git-worktree-guide
- main
- main
-main
-
-  constructor(options: {
-    ttlMs?: number;
-    beta?: number;
-    baselineDeltaMs?: number;
-    nowFn?: () => number;
-    randomFn?: () => number;
-  } = {}) {
+  constructor(
+    options: {
+      ttlMs?: number;
+      beta?: number;
+      baselineDeltaMs?: number;
+      nowFn?: () => number;
+      randomFn?: () => number;
+    } = {},
+  ) {
     this.defaultTtlMs = options.ttlMs ?? DEFAULT_EMBEDDING_TTL_MS;
     this.defaultBeta = options.beta ?? DEFAULT_XFETCH_BETA;
     this.baselineDeltaMs = options.baselineDeltaMs ?? DEFAULT_BASELINE_DELTA_MS;
     this.nowFn = options.nowFn ?? Date.now;
     this.randomFn = options.randomFn ?? Math.random;
   }
- main
 
   public getEntry(rawKey: string): XFetchCacheEntry<T> | undefined {
     return this.store.get(normalizeSemanticQueryKey(rawKey));
@@ -156,16 +115,16 @@ main
   public setEntry(
     rawKey: string,
     value: T,
-    options: { ttlMs?: number; deltaMs?: number } = {}
+    options: { ttlMs?: number; deltaMs?: number } = {},
   ): XFetchCacheEntry<T> {
     const key = normalizeSemanticQueryKey(rawKey);
     const nowMs = this.nowFn();
     const ttlMs = options.ttlMs ?? this.defaultTtlMs;
 
     const seededDeltaMs =
-      typeof options.deltaMs === 'number' &&
-        Number.isFinite(options.deltaMs) &&
-        options.deltaMs > 0
+      typeof options.deltaMs === "number" &&
+      Number.isFinite(options.deltaMs) &&
+      options.deltaMs > 0
         ? options.deltaMs
         : this.baselineDeltaMs;
 
@@ -180,13 +139,6 @@ main
     return entry;
   }
 
- feature/nomad-break-buffers
-  return embedding;
- feature/nomad-break-buffers
-
- feature/booking-concurrency-lock
-feature/logarithmic-volume-curve
-
   /**
    * Retrieves a cached embedding using XFetch early expiration and single-flight coalescing:
    * - Cold miss: coalesces all concurrent callers into a single upstream compute call.
@@ -197,15 +149,14 @@ feature/logarithmic-volume-curve
   public async getOrCompute(
     rawKey: string,
     computeFn: (signal?: AbortSignal) => Promise<T>,
-    options: HybridEmbeddingSearchOptions = {}
-  ): Promise<{ value: T; cacheStatus: 'HIT' | 'EARLY_REFRESH' | 'MISS' }> {
+    options: HybridEmbeddingSearchOptions = {},
+  ): Promise<{ value: T; cacheStatus: "HIT" | "EARLY_REFRESH" | "MISS" }> {
     const key = normalizeSemanticQueryKey(rawKey);
     const nowFn = options.nowFn ?? this.nowFn;
     const randomFn = options.randomFn ?? this.randomFn;
     const beta = options.beta ?? this.defaultBeta;
     const ttlMs = options.ttlMs ?? this.defaultTtlMs;
     const baselineDeltaMs = options.baselineDeltaMs ?? this.baselineDeltaMs;
- main
 
     const nowMs = nowFn();
     const cached = this.store.get(key);
@@ -226,14 +177,17 @@ feature/logarithmic-volume-curve
           nowFn,
         }).catch((err) => {
           if (!isAbortError(err)) {
-            console.warn(`[XFetchVectorCache] Background refresh failed for "${key}":`, err);
+            console.warn(
+              `[XFetchVectorCache] Background refresh failed for "${key}":`,
+              err,
+            );
           }
         });
 
-        return { value: cached.value, cacheStatus: 'EARLY_REFRESH' };
+        return { value: cached.value, cacheStatus: "EARLY_REFRESH" };
       }
 
-      return { value: cached.value, cacheStatus: 'HIT' };
+      return { value: cached.value, cacheStatus: "HIT" };
     }
 
     // Hard miss or hard-expired entry -> coalesce concurrent requests into one upstream call
@@ -244,7 +198,7 @@ feature/logarithmic-volume-curve
       signal: options.signal,
     });
 
-    return { value: entry.value, cacheStatus: 'MISS' };
+    return { value: entry.value, cacheStatus: "MISS" };
   }
 
   private async coalescedRecompute(
@@ -255,7 +209,7 @@ feature/logarithmic-volume-curve
       baselineDeltaMs: number;
       nowFn: () => number;
       signal?: AbortSignal;
-    }
+    },
   ): Promise<XFetchCacheEntry<T>> {
     const existingFlight = this.inFlight.get(normalizedKey);
     if (existingFlight) {
@@ -269,7 +223,7 @@ feature/logarithmic-volume-curve
 
       const measuredDeltaMs = Math.max(
         opts.baselineDeltaMs,
-        finishedAt - startedAt
+        finishedAt - startedAt,
       );
 
       const entry: XFetchCacheEntry<T> = {
@@ -298,13 +252,6 @@ feature/logarithmic-volume-curve
     this.store.clear();
     this.inFlight.clear();
   }
- feature/nomad-break-buffers
- main
- main
- main
- main
-
- main
 }
 
 // Shared singleton vector cache across hybrid semantic venue search invocations
@@ -317,5 +264,6 @@ export const sharedEmbeddingVectorCache =
   new XFetchVectorCache<number[]>();
 
 if (!globalForVectorCache.__worksphereXFetchVectorCache) {
-  globalForVectorCache.__worksphereXFetchVectorCache = sharedEmbeddingVectorCache;
+  globalForVectorCache.__worksphereXFetchVectorCache =
+    sharedEmbeddingVectorCache;
 }

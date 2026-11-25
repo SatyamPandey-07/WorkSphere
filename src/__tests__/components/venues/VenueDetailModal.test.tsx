@@ -347,4 +347,111 @@ describe("VenueDetailModal (Zero-CLS Reserved Hero Gallery)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reserve Desk" }));
     expect(onBookClick).toHaveBeenCalledWith(sampleVenue);
   });
+
+  test("renders an open-hours status pill", () => {
+    const venue = {
+      ...sampleVenue,
+      openingHours: JSON.stringify({
+        timezone: "UTC",
+        periods: {
+          monday: { open: "09:00", close: "17:00", closed: false },
+        },
+      }),
+    };
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-10-26T16:30:00Z"));
+
+    render(
+      <VenueDetailModal venue={venue} isOpen={true} onClose={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId("venue-opening-hours-status")).toHaveTextContent(
+      "Closing soon",
+    );
+    jest.useRealTimers();
+  });
+
+  test("renders 24/7 and missing-hours fallbacks", () => {
+    const { rerender } = render(
+      <VenueDetailModal
+        venue={{ ...sampleVenue, openingHours: "24/7" }}
+        isOpen={true}
+        onClose={jest.fn()}
+      />,
+    );
+    expect(screen.getByTestId("venue-opening-hours-status")).toHaveTextContent(
+      "Open 24 hours",
+    );
+
+    rerender(
+      <VenueDetailModal
+        venue={{ ...sampleVenue, openingHours: null }}
+        isOpen={true}
+        onClose={jest.fn()}
+      />,
+    );
+    expect(screen.getByTestId("venue-opening-hours-status")).toHaveTextContent(
+      "Hours unavailable",
+    );
+  });
+
+  test("updates countdown and cleans up status interval on unmount", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-10-26T16:15:00Z"));
+    const venue = {
+      ...sampleVenue,
+      openingHours: JSON.stringify({
+        timezone: "UTC",
+        periods: {
+          monday: { open: "09:00", close: "17:00", closed: false },
+        },
+      }),
+    };
+    const setIntervalSpy = jest.spyOn(window, "setInterval");
+    const clearIntervalSpy = jest.spyOn(window, "clearInterval");
+    const { unmount } = render(
+      <VenueDetailModal venue={venue} isOpen={true} onClose={jest.fn()} />,
+    );
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    act(() => {
+      jest.advanceTimersByTime(30_000);
+    });
+    unmount();
+    expect(clearIntervalSpy).toHaveBeenCalled();
+
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  test("transitions from closing soon to closed automatically", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-10-26T16:15:00Z"));
+    const venue = {
+      ...sampleVenue,
+      openingHours: JSON.stringify({
+        timezone: "UTC",
+        periods: {
+          monday: { open: "09:00", close: "16:30", closed: false },
+        },
+      }),
+    };
+
+    render(
+      <VenueDetailModal venue={venue} isOpen={true} onClose={jest.fn()} />,
+    );
+    expect(screen.getByTestId("venue-opening-hours-status")).toHaveTextContent(
+      "Closing soon",
+    );
+
+    act(() => {
+      jest.setSystemTime(new Date("2026-10-26T16:31:00Z"));
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(screen.getByTestId("venue-opening-hours-status")).toHaveTextContent(
+      "Closed",
+    );
+    jest.useRealTimers();
+  });
 });

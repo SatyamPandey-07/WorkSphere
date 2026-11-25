@@ -101,6 +101,8 @@ model Venue {
   pourOverAvailable      Boolean                                @default(false)
   noiseLevel             String? // quiet, moderate, loud
   hasErgonomic           Boolean                                @default(false)
+  hasStandingDesk        Boolean                                @default(false)
+  hasExternalMonitor     Boolean                                @default(false)
   hasPhoneBooths         Boolean                                @default(false)
   hasNoMusic             Boolean                                @default(false)
   hasQuietZone           Boolean                                @default(false)
@@ -353,22 +355,24 @@ model Booking {
 }
 
 model BookingGuest {
-  id              String      @id @default(cuid())
-  bookingId       String
-  booking         Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  email           String
-  name            String?
-  phone           String?
-  status          GuestStatus @default(PENDING)
-  calendarUid     String?
-  sentAt          DateTime?
+  id               String      @id @default(cuid())
+  bookingId        String
+  booking          Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  email            String
+  name             String?
+  phone            String?
+  status           GuestStatus @default(PENDING)
+  calendarUid      String?
+  sentAt           DateTime?
   // Split-bill payment state. `status = ACCEPTED` only means the guest RSVP'd
   // "yes"; a guest has paid if and only if `paidAt` is set.
-  paidAt          DateTime?
-  paidAmountCents Int?
-  paidCurrency    String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  paidCurrency     String?
+  paymentReference String?
+  paymentStatus    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   @@unique([bookingId, email])
   @@index([bookingId])
@@ -653,6 +657,7 @@ model Folder {
   shortLinks ShortLink[]
 
   @@index([ownerId])
+  @@index([isPublic, upvotes(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
 }
 
 model ShortLink {
@@ -983,13 +988,13 @@ model VenueSeatWaitlist {
   claimedAt       DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+  // Note: Partial unique index "VenueSeatWaitlist_active_uniqueness_idx" on (userId, venueId, date, time)
+  // WHERE status IN ('ACTIVE', 'NOTIFIED') is managed via migration to avoid blocking re-joins after CANCELLED/CLAIMED/EXPIRED.
 
   @@index([venueId, date, status])
   @@index([userId, status])
   @@index([seatId])
   @@index([status, claimExpiresAt])
-  // Note: Partial unique index "VenueSeatWaitlist_active_uniqueness_idx" on (userId, venueId, date, time)
-  // WHERE status IN ('ACTIVE', 'NOTIFIED') is managed via migration to avoid blocking re-joins after CANCELLED/CLAIMED/EXPIRED.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1338,4 +1343,69 @@ model TimebankSettlement {
 
   @@index([providerId])
   @@index([receiverId])
+}
+
+/// Persistent real-time venue amenity incident (#10257).
+/// Replaces process-local in-memory Map storage across instances and restarts.
+model AmenityIncident {
+  id                 String                        @id @default(cuid())
+  venueId            String
+  amenity            AmenityIncidentCategory
+  amenityLabel       String
+  title              String
+  description        String?
+  status             AmenityOperationalStatus      @default(DEGRADED)
+  severity           AmenityIncidentSeverity       @default(medium)
+  reporterId         String
+  reporterName       String
+  reporterAvatarUrl  String?
+  areaLocation       String?
+  confirmationsCount Int                           @default(1)
+  resolved           Boolean                       @default(false)
+  resolvedAt         DateTime?
+  createdAt          DateTime                      @default(now())
+  expiresAt          DateTime
+  updatedAt          DateTime                      @updatedAt
+  confirmations      AmenityIncidentConfirmation[]
+
+  @@index([venueId, resolved, expiresAt])
+  @@index([venueId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+}
+
+/// Per-user confirmation deduplication for amenity incidents (#10257).
+model AmenityIncidentConfirmation {
+  id          String          @id @default(cuid())
+  incidentId  String
+  incident    AmenityIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  userId      String
+  confirmedAt DateTime        @default(now())
+
+  @@unique([incidentId, userId])
+  @@index([incidentId])
+  @@index([userId])
+}
+
+enum AmenityIncidentCategory {
+  wifi
+  outlets
+  coffee
+  phone_booth
+  air_conditioning
+  restrooms
+  monitors
+  quiet_zone
+}
+
+enum AmenityOperationalStatus {
+  OPERATIONAL
+  DEGRADED
+  OUTAGE
+  MAINTENANCE
+}
+
+enum AmenityIncidentSeverity {
+  low
+  medium
+  critical
 }

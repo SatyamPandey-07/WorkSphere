@@ -14,7 +14,7 @@ import {
 import {
   getOrCreateFallbackLimiter,
   isRecoverableRedisError,
-} from "@/lib/ratelimit/tokenBucketFallback";
+} from "@/lib/rateLimit/tokenBucketFallback";
 import type { MiddlewareHandler } from "../types";
 
 export const REDIS_TIMEOUT_MS = 1500;
@@ -77,7 +77,8 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
       } catch (err: unknown) {
         if (isRecoverableRedisError(err)) {
           // Activate in-memory token bucket fallback limiter to prevent unbounded traffic during outages
-          const refillRate = sensitiveRule.limit / (sensitiveRule.windowMs / 1000);
+          const refillRate =
+            sensitiveRule.limit / (sensitiveRule.windowMs / 1000);
           const fallbackLimiter = getOrCreateFallbackLimiter(
             `sensitive:${sensitiveRule.name}`,
             sensitiveRule.limit,
@@ -128,7 +129,9 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
         try {
           const timeoutPromise = new Promise<RateLimitResult>((_, reject) => {
             const timer = setTimeout(() => {
-              reject(new Error("Redis token bucket rate-limit check timed out"));
+              reject(
+                new Error("Redis token bucket rate-limit check timed out"),
+              );
             }, REDIS_TIMEOUT_MS);
             timer.unref?.();
           });

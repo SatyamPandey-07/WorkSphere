@@ -30,6 +30,7 @@ import {
 import { generateClientNomadProof } from "@/lib/zkp/nomadProofClient";
 import { downloadSVG, generateQRCodeSVG } from "@/lib/qr/svgQr";
 import NomadPassportCoin from "./NomadPassportCoin";
+import { PassportAttestationBadge } from "./PassportAttestationBadge";
 
 /**
  * Celebratory sound chime synthesized using the Web Audio API upon successful PoAP token / passport stamp minting.
@@ -205,10 +206,12 @@ const INITIAL_EARNED_STAMPS: PassportStamp[] = [
 
 export interface NomadPassportGalleryProps {
   initialStamps?: PassportStamp[];
+  isLoading?: boolean;
 }
 
 export default function NomadPassportGallery({
   initialStamps,
+  isLoading = false,
 }: NomadPassportGalleryProps = {}) {
   const [selectedStatement, setSelectedStatement] =
     useState<NomadProductivityStatement>(AVAILABLE_STATEMENTS[0]);
@@ -252,25 +255,15 @@ export default function NomadPassportGallery({
     setGeneratingProof(true);
     setSuccessMsg(null);
     try {
-      const challengeResponse = await fetch("/api/auth/zkp/nomad-proof", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "challenge",
-          badgeType: selectedStatement.badgeType,
-        }),
-      });
+      const identitySecret = "user_nomad_secret_seed_99812";
+      const actualStreak = 32;
+      const actualHours = 124;
 
-      const challengeData = await challengeResponse.json();
-
-      if (!challengeResponse.ok || !challengeData.challenge) {
-        throw new Error(
-          challengeData.error || "Unable to prepare Nomad proof.",
-        );
-      }
-
-      const proofBundle = await generateClientNomadProof(
-        challengeData.challenge,
+      const payload = await generateClientNomadProof(
+        identitySecret,
+        actualStreak,
+        actualHours,
+        selectedStatement,
       );
 
       const res = await fetch("/api/auth/zkp/nomad-proof", {
@@ -529,7 +522,9 @@ export default function NomadPassportGallery({
           </span>
         </div>
 
-        {mintedStamps.length === 0 ? (
+        {isLoading ? (
+          <NomadPassportStampSkeleton count={3} />
+        ) : mintedStamps.length === 0 ? (
           <div
             data-testid="zero-stamps-empty-state"
             className="flex flex-col items-center justify-center py-12 px-6 rounded-2xl bg-slate-950/40 border border-dashed border-slate-800 text-center space-y-4 animate-in fade-in duration-300"
@@ -600,9 +595,12 @@ export default function NomadPassportGallery({
                   </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
-                    <span className="text-[10px] font-mono text-emerald-400 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> ZK Verified
-                    </span>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <PassportAttestationBadge
+                        stamp={stamp}
+                        testId={`passport-stamp-badge-${stamp.stampId}`}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -902,9 +900,10 @@ export default function NomadPassportGallery({
                 <span className="text-slate-400 block text-[10px]">
                   Attestation
                 </span>
-                <span className="text-emerald-400 block flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> ZK Verified
-                </span>
+                <PassportAttestationBadge
+                  stamp={previewModalStamp}
+                  testId="preview-modal-attestation-badge"
+                />
               </div>
             </div>
 

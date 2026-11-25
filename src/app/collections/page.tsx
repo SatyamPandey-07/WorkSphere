@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -28,6 +28,13 @@ export default function CollectionsPage() {
   const [publicFolders, setPublicFolders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingPublic, setLoadingPublic] = useState(false);
+  const [loadingMorePublic, setLoadingMorePublic] = useState(false);
+  const [publicError, setPublicError] = useState<string | null>(null);
+  const [publicHasMore, setPublicHasMore] = useState(false);
+  const [publicNextCursor, setPublicNextCursor] = useState<string | null>(null);
+  const isFetchingPublicRef = useRef(false);
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   const [creating, setCreating] = useState(false);
   const isCreatingRef = useRef(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -53,10 +60,10 @@ export default function CollectionsPage() {
   };
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
-  isDraggingRef.current = true;
-  setDraggedIndex(index);
-  e.dataTransfer.effectAllowed = "move";
-  e.dataTransfer.setData("text/plain", index.toString());
+    isDraggingRef.current = true;
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", index.toString());
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
@@ -68,7 +75,7 @@ export default function CollectionsPage() {
   const handleDragEnd = () => {
     setDraggedIndex(null);
     setDragOverIndex(null);
-  
+
     setTimeout(() => {
       isDraggingRef.current = false;
     }, 0);
@@ -124,18 +131,66 @@ export default function CollectionsPage() {
     }
   };
 
-  const fetchPublicFolders = async () => {
-    try {
-      setLoadingPublic(true);
-      const res = await fetch("/api/collections/public");
-      const data = await res.json();
-      if (data.folders) setPublicFolders(data.folders);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingPublic(false);
-    }
-  };
+  const fetchPublicFolders = useCallback(
+    async (options?: { cursor?: string | null; append?: boolean }) => {
+      if (isFetchingPublicRef.current) return;
+      const append = Boolean(options?.append);
+      const cursor = options?.cursor ?? null;
+
+      isFetchingPublicRef.current = true;
+      setPublicError(null);
+      if (append) {
+        setLoadingMorePublic(true);
+      } else {
+        setLoadingPublic(true);
+      }
+
+      try {
+        const params = new URLSearchParams({ limit: "20" });
+        if (append && cursor) {
+          params.set("cursor", cursor);
+        }
+
+        const res = await fetch(`/api/collections/public?${params.toString()}`);
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load public collections");
+        }
+
+        const incoming = Array.isArray(data.folders) ? data.folders : [];
+        if (append) {
+          setPublicFolders((prev) => {
+            const seenIds = new Set(prev.map((folder) => folder.id));
+            const uniqueNext = incoming.filter(
+              (folder: { id: string }) => !seenIds.has(folder.id),
+            );
+            return [...prev, ...uniqueNext];
+          });
+        } else {
+          setPublicFolders(incoming);
+        }
+
+        setPublicHasMore(Boolean(data.pagination?.hasMore));
+        setPublicNextCursor(data.pagination?.nextCursor ?? null);
+      } catch (e: any) {
+        const message = e?.message || "Failed to load public collections";
+        console.error(e);
+        setPublicError(message);
+        if (append) {
+          toastRef.current(message, "error");
+        }
+      } finally {
+        if (append) {
+          setLoadingMorePublic(false);
+        } else {
+          setLoadingPublic(false);
+        }
+        isFetchingPublicRef.current = false;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (activeTab === "public") {
@@ -143,7 +198,7 @@ export default function CollectionsPage() {
     } else {
       fetchFolders();
     }
-  }, [activeTab]);
+  }, [activeTab, fetchPublicFolders]);
 
   const createFolder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,7 +290,10 @@ export default function CollectionsPage() {
       setPublicFolders((prev) =>
         prev.map((f) => (f.id === folderId ? prevFolder : f)),
       );
-      toast(err?.message || "Failed to update upvote. Please try again.", "error");
+      toast(
+        err?.message || "Failed to update upvote. Please try again.",
+        "error",
+      );
     }
   };
 
@@ -399,7 +457,8 @@ export default function CollectionsPage() {
                       key={folder.id}
                       onClick={(e) => {
                         if (isDraggingRef.current) return;
-                        if ((e.target as HTMLElement).closest(".drag-handle")) return;
+                        if ((e.target as HTMLElement).closest(".drag-handle"))
+                          return;
                         router.push(`/collections/${folder.id}`);
                       }}
                       onDragOver={(e) => handleDragOver(e, index)}
@@ -461,8 +520,27 @@ export default function CollectionsPage() {
               )
             ) : // Public Discovery Feed tab
             loadingPublic ? (
-              <div className="flex justify-center p-12">
+              <div
+                className="flex justify-center p-12"
+                data-testid="public-collections-loading"
+              >
                 <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
+              </div>
+            ) : publicError && publicFolders.length === 0 ? (
+              <div
+                className="rounded-2xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/70 dark:bg-rose-950/20 p-8 text-center space-y-3"
+                role="alert"
+              >
+                <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+                  {publicError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => fetchPublicFolders()}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold accent-bg text-white hover:opacity-90 transition-opacity"
+                >
+                  Retry
+                </button>
               </div>
             ) : publicFolders.length === 0 ? (
               <EmptyState
@@ -471,69 +549,114 @@ export default function CollectionsPage() {
                 description="Share your curated workspace list with the community!"
               />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {publicFolders.map((pubFolder) => (
-                  <Link
-                    href={`/collections/${pubFolder.id}`}
-                    key={pubFolder.id}
-                  >
-                    <div className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 hover:accent-border-50 hover:shadow-lg hover:shadow-[var(--primary-accent)]/5 transition-all cursor-pointer h-full flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0">
-                              {pubFolder.owner?.imageUrl && (
-                                <Image
-                                  src={pubFolder.owner.imageUrl}
-                                  alt={pubFolder.owner.firstName || "User"}
-                                  width={24}
-                                  height={24}
-                                  className="w-full h-full object-cover"
-                                />
-                              )}
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {publicFolders.map((pubFolder) => (
+                    <Link
+                      href={`/collections/${pubFolder.id}`}
+                      key={pubFolder.id}
+                    >
+                      <div className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 hover:accent-border-50 hover:shadow-lg hover:shadow-[var(--primary-accent)]/5 transition-all cursor-pointer h-full flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0">
+                                {pubFolder.owner?.imageUrl && (
+                                  <Image
+                                    src={pubFolder.owner.imageUrl}
+                                    alt={pubFolder.owner.firstName || "User"}
+                                    width={24}
+                                    height={24}
+                                    className="w-full h-full object-cover"
+                                  />
+                                )}
+                              </div>
+                              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 truncate max-w-[120px]">
+                                {pubFolder.owner?.firstName || "Nomad"}
+                              </span>
                             </div>
-                            <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 truncate max-w-[120px]">
-                              {pubFolder.owner?.firstName || "Nomad"}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => toggleUpvote(pubFolder.id, e)}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${
+                                pubFolder.hasUpvoted
+                                  ? "accent-bg accent-border text-white shadow-sm shadow-[var(--primary-accent)]/20 scale-105"
+                                  : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:accent-border-50 hover:accent-text"
+                              }`}
+                            >
+                              <ThumbsUp
+                                className={`w-3.5 h-3.5 ${pubFolder.hasUpvoted ? "fill-current" : ""}`}
+                              />
+                              {pubFolder.upvotes}
+                            </button>
                           </div>
-                          <button
-                            onClick={(e) => toggleUpvote(pubFolder.id, e)}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${
-                              pubFolder.hasUpvoted
-                                ? "accent-bg accent-border text-white shadow-sm shadow-[var(--primary-accent)]/20 scale-105"
-                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:accent-border-50 hover:accent-text"
-                            }`}
-                          >
-                            <ThumbsUp
-                              className={`w-3.5 h-3.5 ${pubFolder.hasUpvoted ? "fill-current" : ""}`}
-                            />
-                            {pubFolder.upvotes}
-                          </button>
+
+                          <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:accent-text transition-colors line-clamp-1">
+                            {pubFolder.name}
+                          </h3>
+                          {pubFolder.description && (
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-4 leading-relaxed">
+                              {pubFolder.description}
+                            </p>
+                          )}
                         </div>
 
-                        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:accent-text transition-colors line-clamp-1">
-                          {pubFolder.name}
-                        </h3>
-                        {pubFolder.description && (
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-4 leading-relaxed">
-                            {pubFolder.description}
-                          </p>
-                        )}
+                        <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
+                            <MapPin className="w-3.5 h-3.5 accent-text" />
+                            {pubFolder._count?.venues || 0} Places
+                          </span>
+                          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
+                            <Users className="w-3.5 h-3.5 text-purple-500" />
+                            {pubFolder._count?.members || 1} Members
+                          </span>
+                        </div>
                       </div>
+                    </Link>
+                  ))}
+                </div>
 
-                      <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                        <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                          <MapPin className="w-3.5 h-3.5 accent-text" />
-                          {pubFolder._count?.venues || 0} Places
-                        </span>
-                        <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                          <Users className="w-3.5 h-3.5 text-purple-500" />
-                          {pubFolder._count?.members || 1} Members
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+                {publicError && (
+                  <div
+                    className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/70 dark:bg-rose-950/20 px-4 py-3 text-xs font-medium text-rose-700 dark:text-rose-300"
+                    role="alert"
+                  >
+                    <span>{publicError}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        fetchPublicFolders({
+                          cursor: publicNextCursor,
+                          append: true,
+                        })
+                      }
+                      className="font-bold underline shrink-0"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {publicHasMore && publicNextCursor && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      disabled={loadingMorePublic}
+                      onClick={() =>
+                        fetchPublicFolders({
+                          cursor: publicNextCursor,
+                          append: true,
+                        })
+                      }
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-100 hover:accent-border-50 transition-all disabled:opacity-60"
+                    >
+                      {loadingMorePublic && (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      )}
+                      {loadingMorePublic ? "Loading..." : "Load More"}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

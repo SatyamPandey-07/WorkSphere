@@ -1,4 +1,3 @@
-
 export interface MapPosition {
   lat: number;
   lng: number;
@@ -32,6 +31,7 @@ export interface MapMarker {
   rating?: number;
   score?: number;
   wifiQuality?: number;
+  wifiSpeed?: number | null;
 
   openingHours?: string;
   hasOutlets?: boolean;
@@ -86,4 +86,3 @@ export interface MapView {
   zoom: number;
   animate?: boolean;
 }
-

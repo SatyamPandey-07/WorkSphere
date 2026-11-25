@@ -1,8 +1,10 @@
+import { prisma } from "@/lib/prisma";
+
 /**
  * Venue Amenities Real-Time Status & Incident Reporting Service
  *
  * Tracks live operational health of venue hardware and facilities
- * with TTL-based crowdsourced incident reporting and community verification.
+ * with TTL-based crowdsourced incident reporting and durable persistence.
  */
 
 export type AmenityCategory =
@@ -15,7 +17,8 @@ export type AmenityCategory =
   | "monitors"
   | "quiet_zone";
 
-export type OperationalStatus = "OPERATIONAL" | "DEGRADED" | "OUTAGE" | "MAINTENANCE";
+export type OperationalStatus =
+  "OPERATIONAL" | "DEGRADED" | "OUTAGE" | "MAINTENANCE";
 export type IncidentSeverity = "low" | "medium" | "critical";
 
 export interface AmenityIncident {
@@ -56,35 +59,152 @@ export const AMENITY_METADATA: Record<
   AmenityCategory,
   { label: string; icon: string; defaultStatus: OperationalStatus }
 > = {
-  wifi: { label: "High-Speed Wi-Fi", icon: "📶", defaultStatus: "OPERATIONAL" },
-  outlets: { label: "Power Outlets", icon: "🔌", defaultStatus: "OPERATIONAL" },
-  coffee: { label: "Espresso & Coffee Bar", icon: "☕", defaultStatus: "OPERATIONAL" },
-  phone_booth: { label: "Acoustic Phone Booths", icon: "🚪", defaultStatus: "OPERATIONAL" },
-  air_conditioning: { label: "HVAC & Temperature", icon: "❄️", defaultStatus: "OPERATIONAL" },
-  restrooms: { label: "Restrooms & Facilities", icon: "🚻", defaultStatus: "OPERATIONAL" },
-  monitors: { label: "External Displays", icon: "🖥️", defaultStatus: "OPERATIONAL" },
-  quiet_zone: { label: "Quiet Focus Zone", icon: "🤫", defaultStatus: "OPERATIONAL" },
+  wifi: {
+    label: "High-Speed Wi-Fi",
+    icon: "📶",
+    defaultStatus: "OPERATIONAL",
+  },
+  outlets: {
+    label: "Power Outlets",
+    icon: "🔌",
+    defaultStatus: "OPERATIONAL",
+  },
+  coffee: {
+    label: "Espresso & Coffee Bar",
+    icon: "☕",
+    defaultStatus: "OPERATIONAL",
+  },
+  phone_booth: {
+    label: "Acoustic Phone Booths",
+    icon: "🚪",
+    defaultStatus: "OPERATIONAL",
+  },
+  air_conditioning: {
+    label: "HVAC & Temperature",
+    icon: "❄️",
+    defaultStatus: "OPERATIONAL",
+  },
+  restrooms: {
+    label: "Restrooms & Facilities",
+    icon: "🚻",
+    defaultStatus: "OPERATIONAL",
+  },
+  monitors: {
+    label: "External Displays",
+    icon: "🖥️",
+    defaultStatus: "OPERATIONAL",
+  },
+  quiet_zone: {
+    label: "Quiet Focus Zone",
+    icon: "🤫",
+    defaultStatus: "OPERATIONAL",
+  },
 };
 
-// In-memory persistent cache for TTL incident tracking (survives requests within Node process)
-const venueIncidentsStore = new Map<string, AmenityIncident[]>();
+const AMENITY_CATEGORIES: AmenityCategory[] = [
+  "wifi",
+  "outlets",
+  "coffee",
+  "phone_booth",
+  "air_conditioning",
+  "restrooms",
+  "monitors",
+  "quiet_zone",
+];
+
+const DEFAULT_INCIDENT_TTL_HOURS = 3;
+const CONFIRMATION_TTL_EXTENSION_MS = 2 * 60 * 60 * 1000;
+const DEFAULT_EXPIRED_RETENTION_HOURS = 24 * 7;
+
+interface PersistedConfirmationRecord {
+  userId: string;
+}
+
+interface PersistedIncidentRecord {
+  id: string;
+  venueId: string;
+  amenity: string;
+  amenityLabel: string;
+  title: string;
+  description: string | null;
+  status: string;
+  severity: string;
+  reporterId: string;
+  reporterName: string;
+  reporterAvatarUrl: string | null;
+  areaLocation: string | null;
+  confirmationsCount: number;
+  resolved: boolean;
+  resolvedAt: Date | null;
+  createdAt: Date;
+  expiresAt: Date;
+  confirmations?: PersistedConfirmationRecord[];
+}
+
+function mapPersistedIncident(
+  record: PersistedIncidentRecord,
+): AmenityIncident {
+  const confirmations = record.confirmations ?? [];
+  const confirmedUserIds = confirmations.map((c) => c.userId);
+  const meta = AMENITY_METADATA[record.amenity as AmenityCategory] ?? undefined;
+
+  return {
+    id: record.id,
+    venueId: record.venueId,
+    amenity: record.amenity as AmenityCategory,
+    amenityLabel: record.amenityLabel || meta?.label || record.amenity,
+    title: record.title,
+    description: record.description ?? undefined,
+    status: record.status as OperationalStatus,
+    severity: record.severity as IncidentSeverity,
+    reportedBy: {
+      id: record.reporterId,
+      name: record.reporterName,
+      avatarUrl: record.reporterAvatarUrl,
+    },
+    areaLocation: record.areaLocation ?? undefined,
+    confirmationsCount:
+      confirmations.length > 0
+        ? confirmations.length
+        : record.confirmationsCount,
+    confirmedUserIds,
+    resolved: record.resolved,
+    resolvedAt: record.resolvedAt ? record.resolvedAt.toISOString() : undefined,
+    createdAt: record.createdAt.toISOString(),
+    expiresAt: record.expiresAt.toISOString(),
+  };
+}
 
 export class AmenityIncidentService {
   /**
    * Retrieves active incidents and computes overall health matrix for a venue.
    */
-  public getVenueStatus(venueId: string, userId?: string | null): {
+  public async getVenueStatus(
+    venueId: string,
+    _userId?: string | null,
+  ): Promise<{
     overallHealthPercentage: number;
     amenities: AmenityHealthSummary[];
     activeIncidents: AmenityIncident[];
-  } {
-    const rawIncidents = venueIncidentsStore.get(venueId) || [];
+  }> {
     const now = new Date();
 
-    // Filter unexpired and unresolved incidents
-    const activeIncidents = rawIncidents.filter(
-      (inc) => !inc.resolved && new Date(inc.expiresAt) > now,
-    );
+    const rows = await prisma.amenityIncident.findMany({
+      where: {
+        venueId,
+        resolved: false,
+        expiresAt: { gt: now },
+      },
+      include: {
+        confirmations: {
+          select: { userId: true },
+          orderBy: { confirmedAt: "asc" },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const activeIncidents = rows.map(mapPersistedIncident);
 
     // Group incidents by amenity
     const incidentsByAmenity = new Map<AmenityCategory, AmenityIncident[]>();
@@ -94,28 +214,22 @@ export class AmenityIncidentService {
       incidentsByAmenity.set(inc.amenity, list);
     }
 
-    const categories: AmenityCategory[] = [
-      "wifi",
-      "outlets",
-      "coffee",
-      "phone_booth",
-      "air_conditioning",
-      "restrooms",
-      "monitors",
-      "quiet_zone",
-    ];
-
     let operationalCount = 0;
 
-    const amenities: AmenityHealthSummary[] = categories.map((cat) => {
+    const amenities: AmenityHealthSummary[] = AMENITY_CATEGORIES.map((cat) => {
       const meta = AMENITY_METADATA[cat];
       const catIncidents = incidentsByAmenity.get(cat) || [];
 
       let status: OperationalStatus = meta.defaultStatus;
       let statusText = "Operational · All Good";
-      let badgeClass = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      let badgeClass =
+        "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
 
-      if (catIncidents.some((i) => i.status === "OUTAGE" || i.severity === "critical")) {
+      if (
+        catIncidents.some(
+          (i) => i.status === "OUTAGE" || i.severity === "critical",
+        )
+      ) {
         status = "OUTAGE";
         statusText = "Outage Reported";
         badgeClass = "bg-rose-500/10 text-rose-400 border-rose-500/20";
@@ -143,11 +257,15 @@ export class AmenityIncidentService {
         statusText,
         badgeClass,
         activeIncidentsCount: catIncidents.length,
-        lastVerifiedAt: catIncidents[0]?.createdAt || new Date(Date.now() - 3600000).toISOString(),
+        lastVerifiedAt:
+          catIncidents[0]?.createdAt ||
+          new Date(now.getTime() - 3600000).toISOString(),
       };
     });
 
-    const overallHealthPercentage = Math.round((operationalCount / categories.length) * 100);
+    const overallHealthPercentage = Math.round(
+      (operationalCount / AMENITY_CATEGORIES.length) * 100,
+    );
 
     return {
       overallHealthPercentage,
@@ -157,9 +275,9 @@ export class AmenityIncidentService {
   }
 
   /**
-   * Reports a new amenity incident.
+   * Reports a new amenity incident and persists initial reporter confirmation atomically.
    */
-  public reportIncident(data: {
+  public async reportIncident(data: {
     venueId: string;
     amenity: AmenityCategory;
     title: string;
@@ -171,82 +289,165 @@ export class AmenityIncidentService {
     userName: string;
     userAvatar?: string | null;
     ttlHours?: number;
-  }): AmenityIncident {
+  }): Promise<AmenityIncident> {
     const meta = AMENITY_METADATA[data.amenity] || { label: data.amenity };
     const ttlHours =
       typeof data.ttlHours === "number" &&
       Number.isFinite(data.ttlHours) &&
       data.ttlHours > 0
         ? data.ttlHours
-        : 3;
+        : DEFAULT_INCIDENT_TTL_HOURS;
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlHours * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(now.getTime() + ttlHours * 60 * 60 * 1000);
 
-    const incident: AmenityIncident = {
-      id: `inc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      venueId: data.venueId,
-      amenity: data.amenity,
-      amenityLabel: meta.label,
-      title: data.title,
-      description: data.description,
-      status: data.status || "DEGRADED",
-      severity: data.severity || "medium",
-      reportedBy: {
-        id: data.userId,
-        name: data.userName,
-        avatarUrl: data.userAvatar,
-      },
-      areaLocation: data.areaLocation,
-      confirmationsCount: 1,
-      confirmedUserIds: [data.userId],
-      resolved: false,
-      createdAt: now.toISOString(),
-      expiresAt,
-    };
+    const created = await prisma.$transaction(async (tx) => {
+      const incident = await tx.amenityIncident.create({
+        data: {
+          venueId: data.venueId,
+          amenity: data.amenity,
+          amenityLabel: meta.label,
+          title: data.title,
+          description: data.description ?? null,
+          status: data.status || "DEGRADED",
+          severity: data.severity || "medium",
+          reporterId: data.userId,
+          reporterName: data.userName,
+          reporterAvatarUrl: data.userAvatar ?? null,
+          areaLocation: data.areaLocation ?? null,
+          confirmationsCount: 1,
+          resolved: false,
+          createdAt: now,
+          expiresAt,
+        },
+      });
 
-    const list = venueIncidentsStore.get(data.venueId) || [];
-    list.unshift(incident);
-    venueIncidentsStore.set(data.venueId, list);
+      await tx.amenityIncidentConfirmation.create({
+        data: {
+          incidentId: incident.id,
+          userId: data.userId,
+          confirmedAt: now,
+        },
+      });
 
-    return incident;
+      return {
+        ...incident,
+        confirmations: [{ userId: data.userId }],
+      };
+    });
+
+    return mapPersistedIncident(created);
   }
 
   /**
    * Confirms an active incident ("I'm also experiencing this") or extends its TTL.
+   * Deduplicates confirmations per (incidentId, userId) atomically across instances.
    */
-  public confirmIncident(venueId: string, incidentId: string, userId: string): AmenityIncident | null {
-    const list = venueIncidentsStore.get(venueId) || [];
-    const incident = list.find((i) => i.id === incidentId);
+  public async confirmIncident(
+    venueId: string,
+    incidentId: string,
+    userId: string,
+  ): Promise<AmenityIncident | null> {
+    const now = new Date();
 
-    if (!incident || incident.resolved) return null;
+    const updated = await prisma.$transaction(async (tx) => {
+      const existing = await tx.amenityIncident.findFirst({
+        where: { id: incidentId, venueId },
+        include: {
+          confirmations: {
+            select: { userId: true },
+            orderBy: { confirmedAt: "asc" },
+          },
+        },
+      });
 
-    if (!incident.confirmedUserIds.includes(userId)) {
-      incident.confirmedUserIds.push(userId);
-      incident.confirmationsCount += 1;
-      // Extend TTL by 2 hours upon confirmation, from the later of now
-      // and the current expiry so confirmations never shorten an incident.
-      const currentExpiry = new Date(incident.expiresAt).getTime();
+      if (!existing || existing.resolved || existing.expiresAt <= now) {
+        return null;
+      }
+
+      const insertResult = await tx.amenityIncidentConfirmation.createMany({
+        data: [{ incidentId, userId, confirmedAt: now }],
+        skipDuplicates: true,
+      });
+
+      if (insertResult.count === 0) {
+        return existing;
+      }
+
+      const currentExpiry = existing.expiresAt.getTime();
       const base = Number.isFinite(currentExpiry)
-        ? Math.max(Date.now(), currentExpiry)
-        : Date.now();
-      incident.expiresAt = new Date(base + 2 * 60 * 60 * 1000).toISOString();
-    }
+        ? Math.max(now.getTime(), currentExpiry)
+        : now.getTime();
+      const nextExpiresAt = new Date(base + CONFIRMATION_TTL_EXTENSION_MS);
 
-    return incident;
+      const confirmationRows = await tx.amenityIncidentConfirmation.findMany({
+        where: { incidentId },
+        select: { userId: true },
+        orderBy: { confirmedAt: "asc" },
+      });
+
+      const updatedIncident = await tx.amenityIncident.updateMany({
+        where: { id: incidentId, venueId, resolved: false },
+        data: {
+          confirmationsCount: confirmationRows.length,
+          expiresAt: nextExpiresAt,
+        },
+      });
+
+      if (updatedIncident.count === 0) {
+        return null;
+      }
+
+      return {
+        ...existing,
+        confirmationsCount: confirmationRows.length,
+        expiresAt: nextExpiresAt,
+        confirmations: confirmationRows,
+      };
+    });
+
+    return updated ? mapPersistedIncident(updated) : null;
   }
 
   /**
-   * Marks an incident as resolved.
+   * Marks an incident as resolved in durable storage.
    */
-  public resolveIncident(venueId: string, incidentId: string): boolean {
-    const list = venueIncidentsStore.get(venueId) || [];
-    const incident = list.find((i) => i.id === incidentId);
+  public async resolveIncident(
+    venueId: string,
+    incidentId: string,
+  ): Promise<boolean> {
+    const now = new Date();
+    const result = await prisma.amenityIncident.updateMany({
+      where: { id: incidentId, venueId },
+      data: {
+        resolved: true,
+        resolvedAt: now,
+      },
+    });
 
-    if (!incident) return false;
+    return result.count > 0;
+  }
 
-    incident.resolved = true;
-    incident.resolvedAt = new Date().toISOString();
-    return true;
+  /**
+   * Removes expired incident records beyond the audit retention window.
+   */
+  public async cleanupExpiredIncidents(
+    retentionHours: number = DEFAULT_EXPIRED_RETENTION_HOURS,
+  ): Promise<number> {
+    const safeHours =
+      typeof retentionHours === "number" &&
+      Number.isFinite(retentionHours) &&
+      retentionHours >= 0
+        ? retentionHours
+        : DEFAULT_EXPIRED_RETENTION_HOURS;
+    const cutoff = new Date(Date.now() - safeHours * 60 * 60 * 1000);
+
+    const result = await prisma.amenityIncident.deleteMany({
+      where: {
+        expiresAt: { lt: cutoff },
+      },
+    });
+
+    return result.count;
   }
 }
 

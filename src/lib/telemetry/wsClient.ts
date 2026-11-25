@@ -1,3 +1,11 @@
+import {
+  recordConnectionClosed,
+  recordConnectionDropped,
+  recordConnectionOpened,
+  recordReconnectAttempt,
+  type WsDropReason,
+} from "./wsMetrics";
+
 export const WS_CLOSE_UNAUTHORIZED = 4401;
 export const MAX_RECONNECT_ATTEMPTS = 5;
 export const BASE_RECONNECT_DELAY_MS = 1000;
@@ -56,6 +64,7 @@ export class TelemetryWebSocketClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isManuallyClosed = false;
   private isRefreshingAuth = false;
+  private isCountedAsActive = false;
 
   constructor(options: TelemetryWsClientOptions) {
     this.url = options.url;
@@ -100,6 +109,7 @@ export class TelemetryWebSocketClient {
       }
       this.reconnectAttempts = 0;
       this.isRefreshingAuth = false;
+      this.markConnectionOpened();
       this.onStatusChange?.("connected");
     };
 
@@ -122,16 +132,24 @@ export class TelemetryWebSocketClient {
       this.socket = null;
 
       if (this.isManuallyClosed) {
+        this.markConnectionClosed();
         this.onStatusChange?.("disconnected");
         return;
       }
 
+      const wasOpen = this.markConnectionClosed();
+
       if (isUnauthorizedCloseEvent(event)) {
+        recordConnectionDropped("unauthorized");
         void this.handleUnauthorizedClose();
         return;
       }
 
-      this.scheduleReconnect();
+      const reason: WsDropReason = wasOpen
+        ? "connection_lost"
+        : "connect_failed";
+      recordConnectionDropped(reason);
+      this.scheduleReconnect(reason);
     };
   }
 
@@ -161,6 +179,7 @@ export class TelemetryWebSocketClient {
       }
 
       // Re-establish connection with the newly refreshed Clerk token
+      recordReconnectAttempt("unauthorized");
       await this.connectWithExplicitToken(freshToken);
     } catch {
       this.haltWithSessionExpired(
@@ -182,6 +201,7 @@ export class TelemetryWebSocketClient {
       }
       this.reconnectAttempts = 0;
       this.isRefreshingAuth = false;
+      this.markConnectionOpened();
       this.onStatusChange?.("connected");
     };
 
@@ -202,21 +222,29 @@ export class TelemetryWebSocketClient {
       this.socket = null;
 
       if (this.isManuallyClosed) {
+        this.markConnectionClosed();
         this.onStatusChange?.("disconnected");
         return;
       }
 
+      const wasOpen = this.markConnectionClosed();
+
       if (isUnauthorizedCloseEvent(event)) {
+        recordConnectionDropped("unauthorized");
         this.haltWithSessionExpired("Session expired. Please sign in again.");
         return;
       }
 
+      const reason: WsDropReason = wasOpen
+        ? "connection_lost"
+        : "connect_failed";
+      recordConnectionDropped(reason);
       this.isRefreshingAuth = false;
-      this.scheduleReconnect();
+      this.scheduleReconnect(reason);
     };
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(reason: WsDropReason): void {
     if (this.isManuallyClosed) return;
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
@@ -231,6 +259,7 @@ export class TelemetryWebSocketClient {
       this.reconnectAttempts,
       this.baseDelayMs,
     );
+    recordReconnectAttempt(reason, delay);
     this.onStatusChange?.("reconnecting");
 
     this.reconnectTimer = setTimeout(() => {
@@ -242,6 +271,20 @@ export class TelemetryWebSocketClient {
     this.clearReconnectTimer();
     this.isRefreshingAuth = false;
     this.onStatusChange?.("session_expired", warningMessage);
+  }
+
+  private markConnectionOpened(): void {
+    if (this.isCountedAsActive) return;
+    this.isCountedAsActive = true;
+    recordConnectionOpened();
+  }
+
+  /** Returns whether the connection had been counted as open. */
+  private markConnectionClosed(): boolean {
+    if (!this.isCountedAsActive) return false;
+    this.isCountedAsActive = false;
+    recordConnectionClosed();
+    return true;
   }
 
   private buildAuthenticatedUrl(token: string): string {
@@ -259,6 +302,7 @@ export class TelemetryWebSocketClient {
   public disconnect(): void {
     this.isManuallyClosed = true;
     this.clearReconnectTimer();
+    this.markConnectionClosed();
     if (this.socket) {
       this.socket.onclose = null;
       this.socket.onerror = null;

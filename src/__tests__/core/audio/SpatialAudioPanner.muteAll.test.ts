@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { SpatialAudioPanner } from "@/core/audio/SpatialAudioPanner";
 
 describe("SpatialAudioPanner Master Gain & Mute All (#5631)", () => {
@@ -12,12 +11,12 @@ describe("SpatialAudioPanner Master Gain & Mute All (#5631)", () => {
     mockMasterGain = {
       gain: {
         value: 1.0,
-        setValueAtTime: vi.fn((val: number) => {
+        setValueAtTime: jest.fn((val: number) => {
           mockMasterGain.gain.value = val;
         }),
       },
-      connect: vi.fn(),
-      disconnect: vi.fn(),
+      connect: jest.fn(),
+      disconnect: jest.fn(),
     };
 
     mockListener = {
@@ -30,14 +29,14 @@ describe("SpatialAudioPanner Master Gain & Mute All (#5631)", () => {
       currentTime: 10,
       destination: mockDestination,
       listener: mockListener,
-      createGain: vi.fn(() => mockMasterGain),
-      createPanner: vi.fn(() => ({
-        connect: vi.fn(),
-        disconnect: vi.fn(),
+      createGain: jest.fn(() => mockMasterGain),
+      createPanner: jest.fn(() => ({
+        connect: jest.fn(),
+        disconnect: jest.fn(),
       })),
-      createMediaStreamSource: vi.fn(() => ({
-        connect: vi.fn(),
-        disconnect: vi.fn(),
+      createMediaStreamSource: jest.fn(() => ({
+        connect: jest.fn(),
+        disconnect: jest.fn(),
       })),
     };
   });

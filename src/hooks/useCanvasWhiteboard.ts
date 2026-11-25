@@ -289,7 +289,14 @@ export function useCanvasWhiteboard(
       clearInterval(heartbeatTimer);
       shapes.unobserveDeep(updateSnapshots);
       awareness?.off("change", handleAwarenessChange);
+      um.off("stack-item-added", updateUndoState);
+      um.off("stack-item-popped", updateUndoState);
+      um.clear();
       um.destroy();
+      localUndoStackRef.current = [];
+      localRedoStackRef.current = [];
+      setCanUndo(false);
+      setCanRedo(false);
       if (newProvider) {
         if (handleStatus) newProvider.off("status", handleStatus);
         if (handleSync) newProvider.off("sync", handleSync);

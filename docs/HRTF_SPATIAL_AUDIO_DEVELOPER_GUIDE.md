@@ -432,7 +432,7 @@ export function computePolarCoordinates(
 
 ## 8. Verification & Test Suite
 
-The engine is validated using automated Jest tests in [hrtfEngine.test.ts](file:///c:/Users/Rushabh%20Mahajan/Documents/GitHub/WorkSphere/src/__tests__/wasm/hrtfEngine.test.ts).
+The engine is validated using automated Jest tests in [hrtfEngine.test.ts](../src/__tests__/wasm/hrtfEngine.test.ts).
 
 ### Running Test Suite
 

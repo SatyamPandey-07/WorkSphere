@@ -21,6 +21,10 @@ import Image from "next/image";
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
 import { CollectionNotesEditor } from "@/components/collections/CollectionNotesEditor";
 import { EmptyState } from "@/components/ui/EmptyState";
+import {
+  sanitizeCsvFilename,
+  sanitizeCsvFilenameStem,
+} from "@/lib/export/csvFilename";
 
 interface ShortLink {
   id: string;
@@ -155,7 +159,10 @@ export default function FolderDetailsPage({
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `billing-export-${folder.name.toLowerCase().replace(/\s+/g, "-")}.csv`;
+      const safeFolderName = sanitizeCsvFilenameStem(
+        folder.name.toLowerCase(),
+      );
+      a.download = sanitizeCsvFilename(`billing-export-${safeFolderName}`);
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);

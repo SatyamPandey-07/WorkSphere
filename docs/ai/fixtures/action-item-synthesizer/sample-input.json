@@ -1,0 +1,43 @@
+{
+  "meetingId": "meet-launch-sync-01",
+  "title": "Launch Readiness Sync",
+  "referenceDate": "2026-11-17T10:00:00Z",
+  "attendees": ["Alice", "Bob", "Charlie", "Dana"],
+  "turns": [
+    {
+      "speaker": "Alice",
+      "timestamp": 1000,
+      "text": "Thanks everyone. We decided to move the launch to 2026-12-01. I will deploy the staging database migration by tomorrow."
+    },
+    {
+      "speaker": "Bob",
+      "timestamp": 18000,
+      "text": "I will build the API client once Alice finishes the migration. High priority."
+    },
+    {
+      "speaker": "Alice",
+      "timestamp": 34000,
+      "text": "Charlie, can you write the end-to-end tests in 3 days? This is important."
+    },
+    {
+      "speaker": "Charlie",
+      "timestamp": 51000,
+      "text": "Action item: update the runbook next week."
+    },
+    {
+      "speaker": "Dana",
+      "timestamp": 66000,
+      "text": "Someone should rotate the API keys. We need to confirm the retention policy."
+    },
+    {
+      "speaker": "Dana",
+      "timestamp": 80000,
+      "text": "I'll look into the cache issue if possible."
+    },
+    {
+      "speaker": "Alice",
+      "timestamp": 95000,
+      "text": "Reminder: I will deploy the staging database migration today."
+    }
+  ]
+}

@@ -125,13 +125,12 @@ export const telemetryReadingSchema = z
         message: "recordedAt must be a valid, finite date within supported range (2000-2100)",
       })
       .optional(),
+    timestamp: telemetryTimestampSchema.optional(),
+    recordedAt: telemetryTimestampSchema.optional(),
   })
-  .refine(
-    (data) => data.value !== undefined || data.decibels !== undefined,
-    {
-      message: "Either value or decibels must be specified",
-    },
-  );
+  .refine((data) => data.value !== undefined || data.decibels !== undefined, {
+    message: "Either value or decibels must be specified",
+  });
 
 export const telemetryBatchSchema = z
   .array(telemetryReadingSchema)
@@ -161,7 +160,20 @@ export async function validateTelemetryBatchParallel(readings: unknown[]) {
 }
 
 /**
- * Validates gateway API token authentication if configured in environment.
+ * Validates gateway API token authentication. Fails closed.
+ *
+ * The expected token is the first non-empty of `GATEWAY_API_TOKEN`,
+ * `TELEMETRY_GATEWAY_TOKEN`, `WORKER_SECRET`. The caller's token is read from
+ * `Authorization: Bearer`, then `x-gateway-token`, then `x-api-key`.
+ *
+ * - Token configured: the caller must send a matching token (constant-time
+ *   comparison after a length check). Missing or wrong returns `false`.
+ * - No token configured, `NODE_ENV=production`: always `false`.
+ * - No token configured, any other env: `false` if the caller sent a token
+ *   (it is never accepted without a configured secret). With no token sent,
+ *   returns `true` only for `NODE_ENV=development` or `test`.
+ *
+ * See docs/api/TELEMETRY_GATEWAY_AUTH.md for the full decision table.
  */
 export function verifyGatewayToken(req: NextRequest): boolean {
   const configuredToken =
@@ -191,21 +203,53 @@ export function verifyGatewayToken(req: NextRequest): boolean {
     }
   }
 
-  // If a token header was provided without an env secret, ensure it is non-empty
-  if (provided !== null && provided !== undefined) {
-    return provided.length > 0;
+  // When no gateway token is configured:
+  // In production, always fail closed
+  if (process.env.NODE_ENV === "production") {
+    return false;
   }
 
-  return true;
+  // In non-production, if a token was provided, it must not be accepted blindly without configured credentials
+  if (provided !== null && provided !== undefined) {
+    return false;
+  }
+
+  // Explicit non-production bypass only in development or test when no token headers were sent
+  return (
+    process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test"
+  );
 }
 
 /**
  * POST /api/telemetry/batch
  * Bulk telemetry ingestion pipeline with batch insert transactions,
  * parallel Zod validation, gateway API token authentication, and IP rate limiting.
+ *
+ * Authentication is fail-closed and runs before rate limiting, body parsing
+ * and any database access:
+ * - `503` when no gateway secret is configured and `NODE_ENV=production`.
+ * - `401` when the token is missing or wrong, or when a token is sent but no
+ *   secret is configured.
+ *
+ * See docs/api/TELEMETRY_GATEWAY_AUTH.md before changing this order.
  */
 export async function POST(req: NextRequest) {
   try {
+    const configuredToken =
+      process.env.GATEWAY_API_TOKEN ||
+      process.env.TELEMETRY_GATEWAY_TOKEN ||
+      process.env.WORKER_SECRET;
+
+    if (!configuredToken && process.env.NODE_ENV === "production") {
+      return NextResponse.json(
+        {
+          error:
+            "Service Unavailable: Telemetry gateway credentials not configured",
+        },
+        { status: 503 },
+      );
+    }
+
     // 1. Gateway API Token Authentication
     if (!verifyGatewayToken(req)) {
       return NextResponse.json(
@@ -252,7 +296,10 @@ export async function POST(req: NextRequest) {
 
     if (rawReadings.length === 0) {
       return NextResponse.json(
-        { error: "Validation failed", details: "readings array cannot be empty" },
+        {
+          error: "Validation failed",
+          details: "readings array cannot be empty",
+        },
         { status: 400 },
       );
     }

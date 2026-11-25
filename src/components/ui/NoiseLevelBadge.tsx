@@ -169,7 +169,7 @@ export function NoiseLevelBadge({
       role="status"
       data-testid="noise-level-badge"
       aria-label={`Ambient noise level: ${info.label} (${info.decibelRange})`}
-      className={`inline-flex items-center rounded-full font-medium transition-colors ${
+      className={`inline-flex max-w-full items-center whitespace-nowrap rounded-full font-medium transition-colors ${
         variant !== "subtle" ? "border shadow-xs" : ""
       } ${sizeClasses[size]} ${tierStyles[tier]} ${className}`}
       title={`${info.label} (${info.decibelRange}): ${info.description}`}
@@ -182,9 +182,9 @@ export function NoiseLevelBadge({
         className={`${iconSizes[size]} shrink-0 opacity-80`}
         aria-hidden="true"
       />
-      <span className="font-semibold">{labelText}</span>
+      <span className="min-w-0 truncate font-semibold">{labelText}</span>
       {showDecibels && (
-        <span className="opacity-75 font-normal text-[0.9em]">
+        <span className="shrink-0 opacity-75 font-normal text-[0.9em]">
           ({info.decibelRange})
         </span>
       )}

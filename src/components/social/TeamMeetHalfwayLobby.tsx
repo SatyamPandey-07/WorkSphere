@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Users,
   MapPin,
@@ -63,14 +63,36 @@ export default function TeamMeetHalfwayLobby({
   const [minWifiSpeed, setMinWifiSpeed] = useState<number>(50);
   const [hasOutlets, setHasOutlets] = useState<boolean>(true);
   const [minSeats, setMinSeats] = useState<number>(3);
-  const [transitPreference, setTransitPreference] = useState<"transit" | "walking" | "balanced">("transit");
+  const [transitPreference, setTransitPreference] = useState<
+    "transit" | "walking" | "balanced"
+  >("transit");
 
   const [loading, setLoading] = useState(false);
-  const [centroid, setCentroid] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [recommendations, setRecommendations] = useState<RankedVenueRecommendation[]>([]);
+  const [centroid, setCentroid] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [recommendations, setRecommendations] = useState<
+    RankedVenueRecommendation[]
+  >([]);
   const [votes, setVotes] = useState<Record<string, number>>({});
   const [copiedLink, setCopiedLink] = useState(false);
-  const [activeTab, setActiveTab] = useState<"ranked" | "members">("ranked");
+
+  const activeRequestIdRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      activeRequestIdRef.current += 1;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
 
   // PartySocket real-time sync for group planning lobby
   const partyHost =
@@ -88,9 +110,15 @@ export default function TeamMeetHalfwayLobby({
             ...prev,
             [data.venueId]: (prev[data.venueId] || 0) + 1,
           }));
-        } else if (data.type === "lobby_members_sync" && Array.isArray(data.members)) {
+        } else if (
+          data.type === "lobby_members_sync" &&
+          Array.isArray(data.members)
+        ) {
           setMembers(data.members);
-        } else if (data.type === "lobby_transit_preference_sync" && data.transitPreference) {
+        } else if (
+          data.type === "lobby_transit_preference_sync" &&
+          data.transitPreference
+        ) {
           setTransitPreference(data.transitPreference);
         }
       } catch (err) {
@@ -101,8 +129,22 @@ export default function TeamMeetHalfwayLobby({
 
   // Calculate Meet Halfway Recommendations
   const fetchMeetHalfway = useCallback(async () => {
-    if (members.length === 0) return;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const requestId = ++activeRequestIdRef.current;
+
+    if (members.length === 0) {
+      if (isMountedRef.current && requestId === activeRequestIdRef.current) {
+        setLoading(false);
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setLoading(true);
+
     try {
       const res = await fetch("/api/routing/meet-halfway", {
         method: "POST",
@@ -115,21 +157,63 @@ export default function TeamMeetHalfwayLobby({
           hasOutlets,
           transitPreference,
         }),
+        signal: controller.signal,
       });
+
+      if (
+        !isMountedRef.current ||
+        requestId !== activeRequestIdRef.current ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
+
       const data = await res.json();
+
+      if (
+        !isMountedRef.current ||
+        requestId !== activeRequestIdRef.current ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
+
       if (data.success) {
         setCentroid(data.centroid);
         setRecommendations(data.recommendations);
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      if (
+        !isMountedRef.current ||
+        requestId !== activeRequestIdRef.current ||
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === "AbortError")
+      ) {
+        return;
+      }
       console.error("Failed to compute meet halfway:", err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current && requestId === activeRequestIdRef.current) {
+        setLoading(false);
+      }
     }
-  }, [members, category, minWifiSpeed, minSeats, hasOutlets, transitPreference]);
+  }, [
+    members,
+    category,
+    minWifiSpeed,
+    minSeats,
+    hasOutlets,
+    transitPreference,
+  ]);
 
   useEffect(() => {
     fetchMeetHalfway();
+    return () => {
+      activeRequestIdRef.current += 1;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [fetchMeetHalfway]);
 
   // Real-time vote handler
@@ -143,7 +227,7 @@ export default function TeamMeetHalfwayLobby({
         type: "lobby_vote_update",
         venueId,
         lobbyId,
-      })
+      }),
     );
   };
 
@@ -167,7 +251,7 @@ export default function TeamMeetHalfwayLobby({
         type: "lobby_members_sync",
         members: updated,
         lobbyId,
-      })
+      }),
     );
   };
 
@@ -181,7 +265,7 @@ export default function TeamMeetHalfwayLobby({
         type: "lobby_members_sync",
         members: updated,
         lobbyId,
-      })
+      }),
     );
   };
 
@@ -189,16 +273,18 @@ export default function TeamMeetHalfwayLobby({
   const handleUpdateMember = (
     id: string,
     field: "name" | "transitMode" | "latitude" | "longitude",
-    val: any
+    val: any,
   ) => {
-    const updated = members.map((m) => (m.id === id ? { ...m, [field]: val } : m));
+    const updated = members.map((m) =>
+      m.id === id ? { ...m, [field]: val } : m,
+    );
     setMembers(updated);
     socket?.send(
       JSON.stringify({
         type: "lobby_members_sync",
         members: updated,
         lobbyId,
-      })
+      }),
     );
   };
 
@@ -238,7 +324,9 @@ export default function TeamMeetHalfwayLobby({
               Meet Halfway Geo-Clustering & Group Booking
             </h1>
             <p className="text-sm text-slate-300 max-w-2xl">
-              Equitably balances team commute times using Fermat-Weber geometric medians, verifies contiguous desk seating, and enables real-time group voting with split payment checkout.
+              Equitably balances team commute times using Fermat-Weber geometric
+              medians, verifies contiguous desk seating, and enables real-time
+              group voting with split payment checkout.
             </p>
           </div>
 
@@ -255,7 +343,9 @@ export default function TeamMeetHalfwayLobby({
               disabled={loading}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-lg shadow-blue-600/20 transition disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              />
               Recalculate
             </button>
           </div>
@@ -265,7 +355,9 @@ export default function TeamMeetHalfwayLobby({
         <div className="mt-6 flex flex-wrap items-center gap-4 pt-4 border-t border-slate-800 text-xs text-slate-400">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span>Lobby: <strong className="text-white">{lobbyId}</strong></span>
+            <span>
+              Lobby: <strong className="text-white">{lobbyId}</strong>
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-blue-400" />
@@ -275,7 +367,8 @@ export default function TeamMeetHalfwayLobby({
             <div className="flex items-center gap-1.5">
               <Compass className="w-3.5 h-3.5 text-indigo-400" />
               <span>
-                Midpoint Centroid: {centroid.latitude.toFixed(4)}, {centroid.longitude.toFixed(4)}
+                Midpoint Centroid: {centroid.latitude.toFixed(4)},{" "}
+                {centroid.longitude.toFixed(4)}
               </span>
             </div>
           )}
@@ -289,7 +382,8 @@ export default function TeamMeetHalfwayLobby({
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 md:p-5 space-y-4 backdrop-blur-md">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-400" /> Team Coordinates ({members.length})
+                <Users className="w-4 h-4 text-blue-400" /> Team Coordinates (
+                {members.length})
               </h2>
               <button
                 onClick={handleAddMember}
@@ -301,7 +395,7 @@ export default function TeamMeetHalfwayLobby({
 
             {/* Members List */}
             <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
-              {members.map((member, index) => (
+              {members.map((member) => (
                 <div
                   key={member.id}
                   className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-2 hover:border-slate-600 transition"
@@ -310,7 +404,9 @@ export default function TeamMeetHalfwayLobby({
                     <input
                       type="text"
                       value={member.name}
-                      onChange={(e) => handleUpdateMember(member.id, "name", e.target.value)}
+                      onChange={(e) =>
+                        handleUpdateMember(member.id, "name", e.target.value)
+                      }
                       className="text-xs font-semibold text-white bg-transparent border-b border-transparent hover:border-slate-600 focus:border-blue-500 focus:outline-none w-3/4"
                     />
                     {members.length > 1 && (
@@ -325,11 +421,17 @@ export default function TeamMeetHalfwayLobby({
 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
-                      <span className="text-slate-500 block text-[10px]">Transit Mode</span>
+                      <span className="text-slate-500 block text-[10px]">
+                        Transit Mode
+                      </span>
                       <select
                         value={member.transitMode || "transit"}
                         onChange={(e) =>
-                          handleUpdateMember(member.id, "transitMode", e.target.value as any)
+                          handleUpdateMember(
+                            member.id,
+                            "transitMode",
+                            e.target.value as any,
+                          )
                         }
                         className="w-full mt-0.5 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none"
                       >
@@ -341,11 +443,14 @@ export default function TeamMeetHalfwayLobby({
                     </div>
 
                     <div>
-                      <span className="text-slate-500 block text-[10px]">Location (Lat/Lng)</span>
+                      <span className="text-slate-500 block text-[10px]">
+                        Location (Lat/Lng)
+                      </span>
                       <div className="flex items-center gap-1 mt-0.5 text-slate-300 text-[11px] font-mono">
                         <MapPin className="w-3 h-3 text-blue-400 shrink-0" />
                         <span>
-                          {member.latitude.toFixed(2)}, {member.longitude.toFixed(2)}
+                          {member.latitude.toFixed(2)},{" "}
+                          {member.longitude.toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -358,9 +463,12 @@ export default function TeamMeetHalfwayLobby({
             <div className="pt-3 border-t border-slate-800 space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-slate-400 font-semibold flex items-center gap-1.5">
-                  <Compass className="w-3.5 h-3.5 text-blue-400" /> Commute Preference
+                  <Compass className="w-3.5 h-3.5 text-blue-400" /> Commute
+                  Preference
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">Team Priority</span>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  Team Priority
+                </span>
               </div>
 
               <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
@@ -373,7 +481,7 @@ export default function TeamMeetHalfwayLobby({
                         type: "lobby_transit_preference_sync",
                         transitPreference: "transit",
                         lobbyId,
-                      })
+                      }),
                     );
                   }}
                   className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
@@ -394,7 +502,7 @@ export default function TeamMeetHalfwayLobby({
                         type: "lobby_transit_preference_sync",
                         transitPreference: "walking",
                         lobbyId,
-                      })
+                      }),
                     );
                   }}
                   className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
@@ -415,7 +523,7 @@ export default function TeamMeetHalfwayLobby({
                         type: "lobby_transit_preference_sync",
                         transitPreference: "balanced",
                         lobbyId,
-                      })
+                      }),
                     );
                   }}
                   className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition ${
@@ -432,7 +540,9 @@ export default function TeamMeetHalfwayLobby({
             {/* Filter Criteria */}
             <div className="pt-3 border-t border-slate-800 space-y-3 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-slate-400">Required Contiguous Seats</span>
+                <span className="text-slate-400">
+                  Required Contiguous Seats
+                </span>
                 <input
                   type="number"
                   min={1}
@@ -471,7 +581,8 @@ export default function TeamMeetHalfwayLobby({
 
               <label className="flex items-center justify-between cursor-pointer pt-1">
                 <span className="text-slate-400 flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-yellow-400" /> Power Outlets Required
+                  <Zap className="w-3.5 h-3.5 text-yellow-400" /> Power Outlets
+                  Required
                 </span>
                 <input
                   type="checkbox"
@@ -489,7 +600,9 @@ export default function TeamMeetHalfwayLobby({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Navigation className="w-5 h-5 text-indigo-400" />
-              <h2 className="text-base font-bold text-white">Optimal Team Venues</h2>
+              <h2 className="text-base font-bold text-white">
+                Optimal Team Venues
+              </h2>
               <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">
                 {recommendations.length} Matches
               </span>
@@ -499,14 +612,19 @@ export default function TeamMeetHalfwayLobby({
           {loading ? (
             <div className="p-12 rounded-2xl bg-slate-900/40 border border-slate-800 flex flex-col items-center justify-center gap-3 text-slate-400">
               <RefreshCw className="w-6 h-6 animate-spin text-blue-400" />
-              <p className="text-sm">Calculating geometric median & evaluating travel matrices...</p>
+              <p className="text-sm">
+                Calculating geometric median & evaluating travel matrices...
+              </p>
             </div>
           ) : recommendations.length === 0 ? (
             <div className="p-12 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-3">
               <MapPin className="w-8 h-8 text-slate-600 mx-auto" />
-              <p className="text-sm font-medium text-slate-300">No venues matched all group criteria</p>
+              <p className="text-sm font-medium text-slate-300">
+                No venues matched all group criteria
+              </p>
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Try reducing required seats or expanding the search radius to discover more spots.
+                Try reducing required seats or expanding the search radius to
+                discover more spots.
               </p>
             </div>
           ) : (
@@ -528,12 +646,16 @@ export default function TeamMeetHalfwayLobby({
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-white">{venue.name}</h3>
+                            <h3 className="text-base font-bold text-white">
+                              {venue.name}
+                            </h3>
                             <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 capitalize">
                               {venue.category}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-400 line-clamp-1">{venue.address || "Central District"}</p>
+                          <p className="text-xs text-slate-400 line-clamp-1">
+                            {venue.address || "Central District"}
+                          </p>
                         </div>
                       </div>
 
@@ -544,8 +666,8 @@ export default function TeamMeetHalfwayLobby({
                             rec.fairnessScore >= 80
                               ? "bg-green-500/10 border-green-500/30 text-green-400"
                               : rec.fairnessScore >= 60
-                              ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
-                              : "bg-orange-500/10 border-orange-500/30 text-orange-400"
+                                ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
+                                : "bg-orange-500/10 border-orange-500/30 text-orange-400"
                           }`}
                         >
                           <Sparkles className="w-3 h-3" />
@@ -566,30 +688,40 @@ export default function TeamMeetHalfwayLobby({
                     {/* Middle Row: Metrics Pills */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
                       <div className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-800/80">
-                        <span className="text-slate-400 text-[10px] block">Avg Team Commute</span>
+                        <span className="text-slate-400 text-[10px] block">
+                          Avg Team Commute
+                        </span>
                         <strong className="text-white font-semibold">
                           ~{rec.averageDurationMinutes} mins
                         </strong>
                       </div>
 
                       <div className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-800/80">
-                        <span className="text-slate-400 text-[10px] block">Max Commute</span>
+                        <span className="text-slate-400 text-[10px] block">
+                          Max Commute
+                        </span>
                         <strong className="text-slate-300 font-semibold">
                           {rec.maxDurationMinutes} mins
                         </strong>
                       </div>
 
                       <div className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-800/80">
-                        <span className="text-slate-400 text-[10px] block">Available Seats</span>
+                        <span className="text-slate-400 text-[10px] block">
+                          Available Seats
+                        </span>
                         <strong className="text-emerald-400 font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> {rec.availableCapacity} Desks
+                          <CheckCircle2 className="w-3 h-3" />{" "}
+                          {rec.availableCapacity} Desks
                         </strong>
                       </div>
 
                       <div className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-800/80">
-                        <span className="text-slate-400 text-[10px] block">WiFi Speed</span>
+                        <span className="text-slate-400 text-[10px] block">
+                          WiFi Speed
+                        </span>
                         <strong className="text-blue-400 font-semibold flex items-center gap-1">
-                          <Wifi className="w-3 h-3" /> {venue.wifiSpeed || 75} Mbps
+                          <Wifi className="w-3 h-3" /> {venue.wifiSpeed || 75}{" "}
+                          Mbps
                         </strong>
                       </div>
                     </div>
@@ -606,8 +738,12 @@ export default function TeamMeetHalfwayLobby({
                             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-slate-300"
                           >
                             {getTransitIcon(est.transitMode)}
-                            <span className="font-medium text-white">{est.memberName}:</span>
-                            <span className="text-slate-300">{est.durationMinutes} min</span>
+                            <span className="font-medium text-white">
+                              {est.memberName}:
+                            </span>
+                            <span className="text-slate-300">
+                              {est.durationMinutes} min
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -616,7 +752,10 @@ export default function TeamMeetHalfwayLobby({
                     {/* Action Bar */}
                     <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                       <div className="text-xs text-slate-400">
-                        Composite Score: <strong className="text-indigo-400 font-mono">{rec.compositeRankScore}/100</strong>
+                        Composite Score:{" "}
+                        <strong className="text-indigo-400 font-mono">
+                          {rec.compositeRankScore}/100
+                        </strong>
                       </div>
 
                       <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -630,7 +769,8 @@ export default function TeamMeetHalfwayLobby({
                           href={`/reserve?venueId=${venue.id}&guests=${members.length}`}
                           className="w-1/2 sm:w-auto text-center px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-1.5"
                         >
-                          <CreditCard className="w-3.5 h-3.5" /> Book Group Desks
+                          <CreditCard className="w-3.5 h-3.5" /> Book Group
+                          Desks
                         </a>
                       </div>
                     </div>

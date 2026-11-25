@@ -1,4 +1,4 @@
-import { POST } from "@/app/api/venues/[venueId]/flag/route";
+﻿import { POST } from "@/app/api/venues/[venueId]/flag/route";
 import { NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { rateLimit } from "@/lib/rateLimit";
@@ -39,12 +39,51 @@ function makeRequest(
 }
 
 describe("POST /api/venues/[venueId]/flag", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("returns 200 when a valid flag is submitted", async () => {
     const response = await POST(
       makeRequest("venue-123", { reason: "permanently_closed" }),
       { params: Promise.resolve({ venueId: "venue-123" }) },
     );
     expect(response.status).toBe(200);
+  });
+
+  it("returns 400 when reason is whitespace-only or fewer than 5 non-whitespace characters", async () => {
+    for (const badReason of ["", "     ", "\t\n  ", "  a b  "]) {
+      const response = await POST(
+        makeRequest("venue-123", { reason: badReason, details: "   " }),
+        { params: Promise.resolve({ venueId: "venue-123" }) },
+      );
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.error).toBe(
+        "Reason must contain at least 5 non-whitespace characters",
+      );
+    }
+    expect(prisma.flaggedItem.create).not.toHaveBeenCalled();
+  });
+
+  it("trims leading and trailing whitespace from reason and details before database insertion", async () => {
+    const response = await POST(
+      makeRequest("venue-123", {
+        reason: "  permanently_closed  ",
+        details: "   Doors locked with notice on window   ",
+      }),
+      { params: Promise.resolve({ venueId: "venue-123" }) },
+    );
+    expect(response.status).toBe(200);
+    expect(prisma.flaggedItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "VENUE",
+        itemId: "venue-123",
+        reason: "permanently_closed",
+        details: "Doors locked with notice on window",
+        reportedById: "user-123",
+      }),
+    });
   });
 
   it("returns 400 for an invalid reason", async () => {

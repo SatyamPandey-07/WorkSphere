@@ -53,6 +53,33 @@ WorkSphere's security posture is grounded in the formal STRIDE threat modeling f
 
 ---
 
+## 1.2 Clerk Webhook Synchronization & Identity Architecture
+
+WorkSphere uses Clerk as its external identity provider. To maintain relational integrity across bookings, reviews, and collaborative spaces without synchronous identity API calls, WorkSphere synchronizes user profiles into local PostgreSQL records via webhook events (`user.created`, `user.updated`, `user.deleted`).
+
+Key security controls governing this synchronization pipeline:
+- **Cryptographic Svix Verification:** All incoming requests to `/api/webhooks/clerk` must provide valid `svix-id`, `svix-timestamp`, and `svix-signature` headers. Requests are verified using HMAC-SHA256 (`standardwebhooks` engine) against `CLERK_WEBHOOK_SIGNING_SECRET` before parsing or reading payload content.
+- **Replay Protection:** A strict 5-minute timestamp tolerance window defends against message replay attacks.
+- **Idempotent Persistence:** Database synchronization utilizes atomic PostgreSQL `INSERT ... ON CONFLICT (id) DO UPDATE` (`prisma.user.upsert`) and safe `deleteMany`, ensuring safe retries during network failures.
+- **Metadata Trust Boundaries:** Client-controlled `unsafeMetadata` is never trusted for authorization. Roles and permissions are strictly enforced server-side using trusted Clerk `publicMetadata.role` and `privateMetadata.role`.
+
+For the complete technical specification, event catalog, payload schemas, and local testing instructions, see the [Clerk Webhook Synchronization Guide](auth/CLERK_WEBHOOK_SYNCHRONIZATION.md).
+
+---
+
+## 1.3 Refresh Token Rotation & Session Hijacking Mitigation
+
+WorkSphere mitigates credential replay, stolen cookies, and long-lived session hijacking through rotating refresh tokens and token family reuse detection (`src/lib/auth/sessionTokens.ts`):
+
+- **Short-Lived Access Tokens:** Signed using HMAC-SHA256 (`HS256`) with a 15-minute expiration (`ACCESS_TOKEN_EXPIRY_SECONDS = 900`).
+- **Rotating Refresh Tokens:** Valid for 7 days (`REFRESH_TOKEN_EXPIRY_SECONDS = 604,800`) stored in `HttpOnly`, `SameSite=Lax`, `Secure` cookies.
+- **Token Family Reuse Detection:** Refresh tokens are bound to a `familyId` with sequential version numbers and single-use `jti` identifiers. Replaying an already-consumed token immediately invalidates the entire token family (`REUSE_DETECTED`), forcing re-authentication and neutralizing stolen credentials.
+- **Password-Reset Session Revocation:** Token rotation checks the user's `passwordChangedAt` timestamp in PostgreSQL (`prisma.user.findUnique`). Any token issued prior to a password change (`iat < passwordChangedAt`) is rejected (`STALE_REFTERM`), immediately revoking sessions across all other devices.
+
+For the comprehensive architectural runbook, attack matrix, and cookie configuration, see the [OAuth Refresh Token Rotation and Session Hijacking Mitigation Guide](auth/REFRESH_TOKEN_ROTATION_GUIDE.md).
+
+---
+
 ## 2. Content Security Policy (CSP) & Nonce Generation Pipeline
 
 Cross-Site Scripting (XSS) represents the single most dangerous vector for single-page applications. WorkSphere eliminates inline script execution vulnerabilities by mandating strict, dynamic cryptographic nonces for all inline scripts and enforcing modern Content Security Policies (CSP Level 3).
@@ -264,19 +291,34 @@ To prevent lockout when a user loses a registered passkey hardware device:
 |             | (Device Lost / Damaged / Unvailable)                                               |
 |             v                                                                                     |
 |   +-------------------+       Secondary Auth      +----------------------------------------+  |
-|   | Recovery Protocol | ========================> |  BIP-39 24-Word Emergency Recovery Seed|  |
+|   | Recovery Protocol | ========================> |  Shamir Secret Sharing (2-of-3) Kit    |  |
 |   +-------------------+                           +----------------------------------------+  |
 |             |                                                                                     |
 |             | (Fallback to Out-of-Band Auth)                                                      |
 |             v                                                                                     |
-|   +-------------------+       Admin Verification  +----------------------------------------+  |
-|   | Time-based TOTP   | ========================> |   Encrypted Backup Codes & Admin Re-Auth   |  |
+|   +-------------------+       Email OTP / Admin   +----------------------------------------+  |
+|   | Step-up OTP Auth  | ========================> |   Transaction-guarded Key Rotation     |  |
 |   +-------------------+                           +----------------------------------------+  |
 +---------------------------------------------------------------------------------------------------+
 ```
 
-1. **Cryptographic Backup Recovery Codes**: Enrolling a passkey generates 10 single-use 128-bit entropy recovery codes hashed with Argon2id before database storage.
-2. **Out-of-Band Admin Verification**: Organization admins can initiate a 24-hour delayed passkey reset window requiring dual-admin sign-off.
+1. **Cryptographic Backup & Emergency Kit**: WorkSphere implements Shamir's Secret Sharing (2-of-3 threshold) over $GF(2^8)$ to split and encrypt recovery shares via AES-GCM, exportable as an encrypted recovery QR code or PDF emergency kit.
+2. **Email OTP Step-up & Atomic Rotation**: Passkey rotation and credential revocation require email OTP verification within an atomic database transaction to prevent lockout or credential orphaning.
+
+---
+
+### 4.5 WebAuthn Passkey Hardware Assertion and Credential Registration Specification
+
+For an exhaustive, production-grade security runbook covering the end-to-end WebAuthn registration and assertion lifecycle, challenge entropy, RP ID validation, and troubleshooting, refer to the dedicated runbook:
+- [WebAuthn Passkey Hardware Assertion and Credential Registration Runbook](./security/WEBAUTHN_PASSKEY_INTEGRATION.md)
+
+#### Summary of Passkey Controls
+- **Passkey Authentication Architecture**: Asymmetric cryptography with resident (discoverable) credentials (`residentKey: "preferred"`) and direct attestation verification backed by `@simplewebauthn/server` and `@simplewebauthn/browser`.
+- **Registration & Assertion Ceremonies**: Authenticated registration via `/api/auth/passkey/register/options` and `/verify`; assertion authentication via `/api/auth/passkey/authenticate/options` and `/verify` with short-lived Clerk sign-in ticket handoff.
+- **Challenge Security**: Single-use, high-entropy 256-bit cryptographic nonces stored with 2-minute TTL in PostgreSQL (`PasskeyChallenge` table) and immediately purged on completion or cancellation.
+- **User Presence (UP) & User Verification (UV)**: Enforces `UP = 1` for all assertion signatures to prevent background forgery, and `UV` (`preferred`) to verify local biometric or PIN confirmation.
+- **Hardware Security Key Support**: Supports FIDO2/CTAP2 external tokens (e.g. YubiKey 5 Series) with monotonic signature counter clone detection alongside platform biometric authenticators (Touch ID, Windows Hello, Android Biometrics).
+- **Account Recovery Considerations**: Multi-passkey enrollment, Shamir's 2-of-3 secret sharing Emergency Recovery Kits (`src/lib/auth/passkeys/server/recovery.ts`), and step-up email OTP validation. (Note: BIP-39 seed phrases are not implemented for WebAuthn in WorkSphere).
 
 ---
 
@@ -722,3 +764,14 @@ WorkSphere streams security telemetry events in Common Event Format (CEF) / JSON
   }
 }
 ```
+
+---
+
+## 20. Zero-Knowledge Proof (ZKP) Cryptographic Security & Prover Verification
+
+WorkSphere incorporates privacy-preserving Groth16 zero-knowledge proofs over the BN254 (`alt_bn128`) pairing-friendly elliptic curve for anonymous membership verification, student discount eligibility, and nomad activity statements without exposing user identities or PII.
+
+For complete technical specifications on circuit compilation, trusted setup ceremonies, proving and verification key lifecycle, browser WebAssembly vs Node.js execution, and client-side IndexedDB verification caching, refer to:
+- [`zkp/CIRCOM_PROFILING_AND_AUDIT.md`](zkp/CIRCOM_PROFILING_AND_AUDIT.md) — Circom constraint count profiling workflow, 15,000-constraint budget enforcement, Groth16 Phase 1/Phase 2 trusted setup audit checklist, and verification cost analysis.
+- [`zkp/GROTH16_BENCHMARK_RUNBOOK.md`](zkp/GROTH16_BENCHMARK_RUNBOOK.md) — Groth16 circuit proving key verification benchmark runbook, covering Circom compilation, trusted setup artifacts, SnarkJS proof lifecycle, mobile memory constraints, and IndexedDB proof verification caching.
+- [`zkp/GROTH16_CIRCUIT_ARCHITECTURE.md`](zkp/GROTH16_CIRCUIT_ARCHITECTURE.md) — Circuit constraint architecture, Poseidon hash commitment schemes, and Web Worker proof generation.

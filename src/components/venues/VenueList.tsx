@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { VenueCard } from "@/components/VenueCard";
 import { cn } from "@/lib/utils";
 import { MapPin, Clock } from "lucide-react";
@@ -11,6 +12,7 @@ import {
   haversineKm,
 } from "@/lib/distance";
 import { getVenueHoursStatus } from "@/lib/venueHours";
+import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 
 export interface VenueListProps {
   venues?: any[];
@@ -21,6 +23,8 @@ export interface VenueListProps {
   className?: string;
   "data-testid"?: string;
   onBookmarkToggle?: (venueId: string) => void;
+  onSelectVenue?: (venue: any, index: number) => void;
+  enableKeyboardNavigation?: boolean;
 }
 
 /**
@@ -53,6 +57,7 @@ export function isVenueCurrentlyOpen(venue: any, now = new Date()): boolean {
 /**
  * VenueList renders venue cards in a responsive grid, with computed distance badge indicators
  * on the card corner, 'Open Now' quick filter chip, and proximity sorting when user GPS location permissions are granted.
+ * Supports keyboard shortcut navigation via 'j' (next), 'k' (previous), and 'Enter' / 'Space' (open selected venue).
  */
 export function VenueList({
   venues = [],
@@ -62,13 +67,18 @@ export function VenueList({
   showOpenNowFilter = true,
   className = "",
   onBookmarkToggle,
+  onSelectVenue,
+  enableKeyboardNavigation = true,
   ...props
 }: VenueListProps) {
+  const router = useRouter();
   const [openNowOnly, setOpenNowOnly] = useState(false);
   const [internalLocation, setInternalLocation] = useState<{
     lat: number;
     lng: number;
   } | null>(null);
+
+  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Attempt browser GPS coordinates if userLocation prop was not passed
   useEffect(() => {
@@ -110,6 +120,35 @@ export function VenueList({
 
     return result;
   }, [rawVenues, activeLocation, sortByProximity, maxDistanceKm, openNowOnly]);
+
+  const handleVenueSelection = (venue: any, index: number) => {
+    if (onSelectVenue) {
+      onSelectVenue(venue, index);
+    } else {
+      const venueId = venue.id || venue.placeId;
+      if (venueId && router) {
+        router.push(`/venues/${venueId}`);
+      }
+    }
+  };
+
+  const { activeIndex, setActiveIndex } = useKeyboardNavigation({
+    items: processedVenues,
+    enabled: enableKeyboardNavigation,
+    wrapAround: true,
+    onSelect: handleVenueSelection,
+  });
+
+  // Focus and scroll active card into view when activeIndex changes
+  useEffect(() => {
+    if (activeIndex >= 0 && cardRefs.current[activeIndex]) {
+      const el = cardRefs.current[activeIndex];
+      el?.focus();
+      if (el && typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+  }, [activeIndex]);
 
   return (
     <div
@@ -154,12 +193,14 @@ export function VenueList({
       ) : (
         <div
           data-testid="venue-list-grid"
+          role="feed"
+          aria-label="Venue search results"
           className={cn(
             "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6",
             className
           )}
         >
-          {processedVenues.map((venue) => {
+          {processedVenues.map((venue, index) => {
             const vLat = venue.latitude ?? venue.lat;
             const vLon = venue.longitude ?? venue.lng;
             const computedDistance =
@@ -177,9 +218,28 @@ export function VenueList({
                 : null;
 
             const venueId = venue.id || venue.placeId || "unknown";
+            const isActive = activeIndex === index;
 
             return (
-              <div key={venueId} className="relative group">
+              <div
+                key={venueId}
+                ref={(el) => {
+                  cardRefs.current[index] = el;
+                }}
+                tabIndex={0}
+                data-testid={`venue-card-wrapper-${venueId}`}
+                data-venue-index={index}
+                data-active={isActive ? "true" : "false"}
+                aria-current={isActive ? "true" : undefined}
+                onClick={() => setActiveIndex(index)}
+                onFocus={() => setActiveIndex(index)}
+                className={cn(
+                  "relative group rounded-3xl transition-all duration-150 outline-none",
+                  isActive
+                    ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-zinc-950 shadow-lg shadow-blue-500/10"
+                    : "focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950"
+                )}
+              >
                 <VenueCard
                   venue={venue}
                   onSaveFavorite={

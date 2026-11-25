@@ -9,12 +9,12 @@
 import { prisma } from "@/lib/prisma";
 
 export const QUIET_THRESHOLD_DB = 55; // dB below which a slot is considered "quiet"
-export const PEAK_THRESHOLD_DB  = 70; // dB above which a slot is "loud"
+export const PEAK_THRESHOLD_DB = 70; // dB above which a slot is "loud"
 
 export interface HourlyNoiseProfile {
-  hour: number;         // 0–23
+  hour: number; // 0–23
   averageDb: number | null;
-  label: string;        // "Quiet" | "Moderate" | "Loud"
+  label: string; // "Quiet" | "Moderate" | "Loud"
   samples: number;
 }
 
@@ -37,8 +37,15 @@ export function classifyNoiseLevelDb(
   return "Loud";
 }
 
+interface AggregatedHourRow {
+  hour: number | bigint;
+  averageDb: number | string | null;
+  samples: number | bigint;
+}
+
 /**
- * Aggregates VenueRating rows for the given venue by hour-of-day (UTC).
+ * Aggregates VenueRating rows for the given venue by hour-of-day (UTC)
+ * directly in PostgreSQL so only up to 24 bucket rows are transferred.
  * Returns a 24-element array indexed by hour.
  */
 export async function getHourlyNoiseProfile(
@@ -50,7 +57,7 @@ export async function getHourlyNoiseProfile(
   );
 
   if (!venueId || typeof venueId !== "string" || venueId.trim().length === 0) {
-    return buckets.map((b, hour) => ({
+    return buckets.map((_, hour) => ({
       hour,
       averageDb: null,
       label: "Moderate",
@@ -58,40 +65,47 @@ export async function getHourlyNoiseProfile(
     }));
   }
 
-  // Fetch all ratings with decibel data for this venue
-  const ratings = await prisma.venueRating.findMany({
-    where: { venueId: venueId.trim() },
-    select: {
-      avgDecibels: true,
-      createdAt: true,
-    },
-  });
+  const trimmedVenueId = venueId.trim();
 
-  for (const r of ratings || []) {
+  // Prisma stores DateTime columns as UTC TIMESTAMP(3) without timezone, so
+  // EXTRACT(HOUR FROM "createdAt") groups samples strictly by UTC hour 0-23
+  // regardless of the database session timezone.
+  const rows = await prisma.$queryRaw<AggregatedHourRow[]>`
+    SELECT
+      EXTRACT(HOUR FROM "createdAt")::int AS hour,
+      AVG("avgDecibels")::double precision AS "averageDb",
+      COUNT(*)::int AS samples
+    FROM "VenueRating"
+    WHERE "venueId" = ${trimmedVenueId}
+      AND "avgDecibels" IS NOT NULL
+      AND "avgDecibels" >= 0
+      AND "avgDecibels" < 'Infinity'::double precision
+      AND "avgDecibels" <> 'NaN'::double precision
+    GROUP BY 1
+    ORDER BY 1 ASC
+  `;
+
+  for (const row of rows || []) {
+    if (!row) continue;
+
+    const hour = Number(row.hour);
+    const samples = Number(row.samples);
+    const averageDb = row.averageDb === null ? NaN : Number(row.averageDb);
+
     if (
-      !r ||
-      r.avgDecibels == null ||
-      typeof r.avgDecibels !== "number" ||
-      !Number.isFinite(r.avgDecibels) ||
-      r.avgDecibels < 0
+      !Number.isInteger(hour) ||
+      hour < 0 ||
+      hour > 23 ||
+      !Number.isInteger(samples) ||
+      samples <= 0 ||
+      !Number.isFinite(averageDb) ||
+      averageDb < 0
     ) {
       continue;
     }
 
-    let hour = -1;
-    if (r.createdAt instanceof Date) {
-      hour = Number.isNaN(r.createdAt.getTime()) ? -1 : r.createdAt.getUTCHours();
-    } else if (typeof r.createdAt === "string" || typeof r.createdAt === "number") {
-      const parsed = new Date(r.createdAt);
-      hour = Number.isNaN(parsed.getTime()) ? -1 : parsed.getUTCHours();
-    }
-
-    if (hour < 0 || hour > 23 || !Number.isFinite(hour)) {
-      continue;
-    }
-
-    buckets[hour].sum += r.avgDecibels;
-    buckets[hour].count++;
+    buckets[hour].sum += averageDb * samples;
+    buckets[hour].count += samples;
   }
 
   return buckets.map((b, hour) => {
@@ -129,7 +143,11 @@ export async function predictQuietHours(
     .map((h) => h.hour);
 
   // Merge contiguous quiet hours into windows
-  const quietWindows: Array<{ startHour: number; endHour: number; avgDb: number }> = [];
+  const quietWindows: Array<{
+    startHour: number;
+    endHour: number;
+    avgDb: number;
+  }> = [];
   let windowStart: number | null = null;
 
   for (let i = 0; i < 24; i++) {
@@ -140,10 +158,14 @@ export async function predictQuietHours(
       const windowHours = hourlyProfile.slice(windowStart, i);
       const validDbs = windowHours
         .map((h) => h.averageDb)
-        .filter((d): d is number => typeof d === "number" && Number.isFinite(d));
+        .filter(
+          (d): d is number => typeof d === "number" && Number.isFinite(d),
+        );
       const avgDb =
         validDbs.length > 0
-          ? Math.round((validDbs.reduce((a, b) => a + b, 0) / validDbs.length) * 10) / 10
+          ? Math.round(
+              (validDbs.reduce((a, b) => a + b, 0) / validDbs.length) * 10,
+            ) / 10
           : 0;
       quietWindows.push({ startHour: windowStart, endHour: i - 1, avgDb });
       windowStart = null;
@@ -156,7 +178,9 @@ export async function predictQuietHours(
       .filter((d): d is number => typeof d === "number" && Number.isFinite(d));
     const avgDb =
       validDbs.length > 0
-        ? Math.round((validDbs.reduce((a, b) => a + b, 0) / validDbs.length) * 10) / 10
+        ? Math.round(
+            (validDbs.reduce((a, b) => a + b, 0) / validDbs.length) * 10,
+          ) / 10
         : 0;
     quietWindows.push({ startHour: windowStart, endHour: 23, avgDb });
   }
@@ -174,9 +198,11 @@ export async function predictQuietHours(
   const format = (h: number) =>
     h === 24 ? "24:00" : `${(h % 24).toString().padStart(2, "0")}:00`;
 
-  const windowDescs = quietWindows.slice(0, 3).map(
-    (w) => `${format(w.startHour)}–${format(w.endHour + 1)} (~${w.avgDb} dB)`,
-  );
+  const windowDescs = quietWindows
+    .slice(0, 3)
+    .map(
+      (w) => `${format(w.startHour)}–${format(w.endHour + 1)} (~${w.avgDb} dB)`,
+    );
 
   const summary =
     quietWindows.length > 0
@@ -187,5 +213,11 @@ export async function predictQuietHours(
         }`
       : "Insufficient noise data to predict quiet windows.";
 
-  return { venueId: safeVenueId, quietWindows, peakHours, summary, hourlyProfile };
+  return {
+    venueId: safeVenueId,
+    quietWindows,
+    peakHours,
+    summary,
+    hourlyProfile,
+  };
 }

@@ -1,7 +1,10 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { AmbientNoiseSpectrumVisualizer } from "@/components/noise/AmbientNoiseSpectrumVisualizer";
+import {
+  AmbientNoiseSpectrumVisualizer,
+  sanitizeDecibels,
+} from "@/components/noise/AmbientNoiseSpectrumVisualizer";
 
 describe("AmbientNoiseSpectrumVisualizer - WebGL Spectrogram Waterfall", () => {
   let mockGl: {
@@ -225,5 +228,145 @@ describe("AmbientNoiseSpectrumVisualizer - WebGL Spectrogram Waterfall", () => {
     expect(mockGl.deleteTexture).toHaveBeenCalled();
     expect(mockGl.deleteProgram).toHaveBeenCalled();
     expect(mockGl.deleteBuffer).toHaveBeenCalled();
+  });
+
+  describe("sanitizeDecibels telemetry validation helper", () => {
+    it("returns normal valid decibel reading unchanged when within range", () => {
+      expect(sanitizeDecibels(55)).toBe(55);
+      expect(sanitizeDecibels(42.5)).toBe(42.5);
+      expect(sanitizeDecibels(85)).toBe(85);
+    });
+
+    it("sanitizes NaN input by falling back to safe default", () => {
+      expect(sanitizeDecibels(NaN, 56)).toBe(56);
+      expect(sanitizeDecibels(Number.NaN, 42)).toBe(42);
+    });
+
+    it("sanitizes -Infinity input (such as muted/silent microphone) by falling back to default", () => {
+      expect(sanitizeDecibels(-Infinity, 30)).toBe(30);
+      expect(sanitizeDecibels(Number.NEGATIVE_INFINITY, 56)).toBe(56);
+    });
+
+    it("sanitizes +Infinity input by falling back to safe default", () => {
+      expect(sanitizeDecibels(Infinity, 56)).toBe(56);
+      expect(sanitizeDecibels(Number.POSITIVE_INFINITY, 74)).toBe(74);
+    });
+
+    it("clamps negative decibel input below the supported range to min bound", () => {
+      expect(sanitizeDecibels(-10, 56, 0, 140)).toBe(0);
+      expect(sanitizeDecibels(-999, 56, 0, 140)).toBe(0);
+    });
+
+    it("clamps extremely high decibel input above the supported range to max bound", () => {
+      expect(sanitizeDecibels(180, 56, 0, 140)).toBe(140);
+      expect(sanitizeDecibels(300, 56, 0, 140)).toBe(140);
+    });
+
+    it("handles non-number types gracefully with fallback", () => {
+      expect(sanitizeDecibels(null, 56)).toBe(56);
+      expect(sanitizeDecibels(undefined, 56)).toBe(56);
+      expect(sanitizeDecibels("65", 56)).toBe(56);
+    });
+  });
+
+  describe("Noise Visualizer out-of-range & corrupt telemetry rendering resilience", () => {
+    it("renders properly with NaN decibelBaseline and does not falsely classify as loud", () => {
+      render(
+        <AmbientNoiseSpectrumVisualizer
+          decibelBaseline={NaN}
+          noiseLevel="quiet"
+        />,
+      );
+
+      // Should fall back to quiet baseline (42 dB ± 2 dB jitter) instead of falsely labelling as loud
+      expect(screen.getByText(/Deep Focus/i)).toBeInTheDocument();
+      const text = screen.getByTestId("decibel-reading-value").textContent || "";
+      const parsed = parseInt(text, 10);
+      expect(parsed).toBeGreaterThanOrEqual(40);
+      expect(parsed).toBeLessThanOrEqual(44);
+      expect(text).toContain("dBA");
+      expect(
+        screen.queryByText(/Energetic \/ High Energy \(Loud\)/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("handles -Infinity decibelBaseline gracefully (muted mic) with quiet status", () => {
+      render(
+        <AmbientNoiseSpectrumVisualizer
+          decibelBaseline={-Infinity}
+          noiseLevel="quiet"
+        />,
+      );
+
+      expect(screen.getByText(/Deep Focus/i)).toBeInTheDocument();
+      const text = screen.getByTestId("decibel-reading-value").textContent || "";
+      const parsed = parseInt(text, 10);
+      expect(parsed).toBeGreaterThanOrEqual(40);
+      expect(parsed).toBeLessThanOrEqual(44);
+      expect(text).toContain("dBA");
+      expect(
+        screen.queryByText(/Energetic \/ High Energy \(Loud\)/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("clamps extremely high decibelBaseline to maximum range bound", () => {
+      render(
+        <AmbientNoiseSpectrumVisualizer
+          decibelBaseline={250}
+          noiseLevel="loud"
+        />,
+      );
+
+      // Clamped to 140 dB baseline (with subtle jitter bounded within [0, 140])
+      const text = screen.getByTestId("decibel-reading-value").textContent || "";
+      const parsed = parseInt(text, 10);
+      expect(parsed).toBeGreaterThanOrEqual(136);
+      expect(parsed).toBeLessThanOrEqual(140);
+      expect(text).toContain("dBA");
+    });
+
+    it("clamps negative decibelBaseline to minimum range bound", () => {
+      render(
+        <AmbientNoiseSpectrumVisualizer
+          decibelBaseline={-50}
+          noiseLevel="quiet"
+        />,
+      );
+
+      // Clamped to 0 dB baseline (with subtle jitter bounded >= 0)
+      const text = screen.getByTestId("decibel-reading-value").textContent || "";
+      const parsed = parseInt(text, 10);
+      expect(parsed).toBeGreaterThanOrEqual(0);
+      expect(parsed).toBeLessThanOrEqual(4);
+      expect(text).toContain("dBA");
+    });
+
+    it("renders 24-band frequency bars without invalid CSS percentages or NaN styles", () => {
+      const { container } = render(
+        <AmbientNoiseSpectrumVisualizer
+          initialViewMode="bars"
+          decibelBaseline={NaN}
+        />,
+      );
+
+      // Inspect all frequency bars in the container
+      const dynamicBars = container.querySelectorAll("[style*='height']");
+      expect(dynamicBars.length).toBeGreaterThan(0);
+
+      dynamicBars.forEach((bar) => {
+        const styleAttr = bar.getAttribute("style") || "";
+        expect(styleAttr).not.toContain("NaN");
+        expect(styleAttr).not.toContain("Infinity");
+        expect(styleAttr).toMatch(/height:\s*\d+(\.\d+)?%/);
+      });
+
+      const peakTicks = container.querySelectorAll("[style*='bottom']");
+      peakTicks.forEach((tick) => {
+        const styleAttr = tick.getAttribute("style") || "";
+        expect(styleAttr).not.toContain("NaN");
+        expect(styleAttr).not.toContain("Infinity");
+        expect(styleAttr).toMatch(/bottom:\s*\d+(\.\d+)?%/);
+      });
+    });
   });
 });

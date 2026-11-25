@@ -4,6 +4,7 @@
  */
 
 import {
+  buildQueryEmbeddingCacheKey,
   getQueryEmbedding,
   shouldRefreshEmbeddingEarly,
   _resetEmbeddingRefreshStateForTesting,
@@ -162,5 +163,101 @@ describe("getQueryEmbedding cache behaviour", () => {
     expect(write).toBeDefined();
     expect(JSON.parse(write![1])).toMatchObject({ embedding });
     expect(JSON.parse(write![1]).deltaMs).toBeGreaterThan(0);
+  });
+});
+
+describe("query normalization for the embedding cache (Issue #7670)", () => {
+  const VARIANTS = [
+    "quiet cafe",
+    " quiet cafe ",
+    "  quiet cafe",
+    "quiet cafe   ",
+    "quiet   cafe",
+    "QUIET CAFE",
+    "\tQuiet\u00a0 Cafe\n",
+  ];
+
+  /** Backs the mocked Redis with a real Map so a write is visible to later reads. */
+  function useStatefulRedis(): Map<string, string> {
+    const store = new Map<string, string>();
+    mockRedis.get.mockImplementation(
+      async (key: string) => store.get(key) ?? null,
+    );
+    mockRedis.set.mockImplementation(async (key: string, value: string) => {
+      store.set(key, value);
+      return "OK";
+    });
+    return store;
+  }
+
+  it("derives one cache key for every whitespace and casing variant", () => {
+    const keys = new Set(VARIANTS.map((q) => buildQueryEmbeddingCacheKey(q)));
+    expect(keys.size).toBe(1);
+  });
+
+  it("still gives different queries different keys", () => {
+    expect(buildQueryEmbeddingCacheKey("quiet cafe")).not.toBe(
+      buildQueryEmbeddingCacheKey("quiet cafes"),
+    );
+  });
+
+  it("keeps per-user and per-tier isolation while normalizing", () => {
+    const publicKey = buildQueryEmbeddingCacheKey("quiet cafe");
+    const userKey = buildQueryEmbeddingCacheKey(" Quiet  Cafe ", {
+      userId: "user_1",
+    });
+    const otherUserKey = buildQueryEmbeddingCacheKey("quiet cafe", {
+      userId: "user_2",
+    });
+    const tierKey = buildQueryEmbeddingCacheKey("quiet cafe", {
+      authorizationTier: "pro",
+    });
+
+    expect(new Set([publicKey, userKey, otherUserKey, tierKey]).size).toBe(4);
+    expect(userKey).toBe(
+      buildQueryEmbeddingCacheKey("quiet cafe", { userId: "user_1" }),
+    );
+  });
+
+  it("serves a warm cache hit for a spaced variant without a second Gemini call", async () => {
+    useStatefulRedis();
+    const embedding = [0.1, 0.2, 0.3];
+    mockEmbedContent.mockResolvedValue({ embeddings: [{ values: embedding }] });
+
+    // 1. "quiet cafe" -> cache miss, computed.
+    await expect(getQueryEmbedding("quiet cafe")).resolves.toEqual(embedding);
+    expect(mockEmbedContent).toHaveBeenCalledTimes(1);
+
+    // 2. " quiet cafe " -> must hit the warm cache.
+    await expect(getQueryEmbedding(" quiet cafe ")).resolves.toEqual(embedding);
+    await expect(getQueryEmbedding("quiet   cafe")).resolves.toEqual(embedding);
+    await expect(getQueryEmbedding("QUIET CAFE")).resolves.toEqual(embedding);
+
+    expect(mockEmbedContent).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes a single cache entry no matter which variant arrives first", async () => {
+    const store = useStatefulRedis();
+    mockEmbedContent.mockResolvedValue({ embeddings: [{ values: [1, 2, 3] }] });
+
+    await getQueryEmbedding("  Quiet   Cafe  ");
+    await getQueryEmbedding("quiet cafe");
+
+    const embeddingKeys = [...store.keys()].filter(
+      (key) =>
+        key.startsWith(CACHE_KEY_PREFIX) && !key.endsWith(LOCK_KEY_SUFFIX),
+    );
+    expect(embeddingKeys).toEqual([buildQueryEmbeddingCacheKey("quiet cafe")]);
+  });
+
+  it("embeds the normalized text so the cached vector does not depend on the first spelling", async () => {
+    useStatefulRedis();
+    mockEmbedContent.mockResolvedValue({ embeddings: [{ values: [1] }] });
+
+    await getQueryEmbedding("  Quiet   CAFE ");
+
+    expect(mockEmbedContent).toHaveBeenCalledWith(
+      expect.objectContaining({ contents: "quiet cafe" }),
+    );
   });
 });

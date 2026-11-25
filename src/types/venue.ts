@@ -1,10 +1,11 @@
+
 /**
  * Centralized Domain Types for Venues
  *
  * Unified type definitions for venues across client and server components.
  */
 
-export type NoiseLevel = "quiet" | "moderate" | "loud" | string | null;
+export type NoiseLevel = "quiet" | "moderate" | "loud" | null;
 
 export interface VenueCoordinates {
   lat: number;
@@ -22,10 +23,18 @@ export interface VenueAmenities {
   outletLocations?: string[];
   powerTypes?: string[];
   hasErgonomic?: boolean;
+  hasStandingDesk?: boolean;
+  hasExternalMonitor?: boolean;
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
   hasAncHeadsetRental?: boolean;
+
+  standing_desks?: boolean;
+  hasStandingDesks?: boolean;
+  external_monitors?: boolean;
+  hasExternalMonitors?: boolean;
+
   petsAllowedIndoors?: boolean;
   largeDogsAllowed?: boolean;
   smallDogsOnly?: boolean;
@@ -34,20 +43,29 @@ export interface VenueAmenities {
   patioOnly?: boolean;
   waterBowlsProvided?: boolean;
   dogFriendly?: boolean;
+  petFriendly?: boolean;
   catsAllowed?: boolean;
+
+  veganOptions?: boolean;
+  veganFood?: boolean;
+
   singleOriginBeans?: boolean;
   specialtyEspresso?: boolean;
   oatAlmondMilk?: boolean;
   pourOverAvailable?: boolean;
+
   seating?: number;
   coffee?: number;
   lighting?: string;
   musicStyle?: string;
   isWellLit?: boolean;
+
   hasCCTV?: boolean;
   safetyScore?: number | null;
+
   tableSize?: string | null;
   equipmentLoadout?: string | null;
+
   amenities?: Record<string, unknown>;
 }
 
@@ -63,22 +81,30 @@ export interface Venue extends VenueCoordinates, VenueAmenities, VenuePricing {
   id: string;
   name: string;
   category: string;
+
   address?: string;
   description?: string;
+
   rating?: number | null;
   score?: number;
   reviewCount?: number;
+
   placeId?: string;
   noiseLevel?: NoiseLevel;
+
   openingHours?: string;
+
   isClaimed?: boolean;
   ownerId?: string | null;
   hostMessage?: string | null;
+
   imageUrl?: string | null;
   photos?: string[];
   photoUrl?: string | null;
+
   currentOccupancy?: number;
   maxCapacity?: number;
+
   createdAt?: string | Date;
   updatedAt?: string | Date;
 }
@@ -89,3 +115,4 @@ export interface ClientVenue extends Venue {
   clusterScore?: number;
   cluster?: number;
 }
+

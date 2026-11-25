@@ -1,33 +1,55 @@
-/**
- * nomadProof.ts
- * Zero-Knowledge Proof generator and verifier for remote work productivity credentials.
- * Mints cryptographically verifiable SVG Nomad Passport stamps.
- */
+export const NOMAD_BADGE_POLICIES = {
+  NOMAD_100_HOURS: {
+    badgeType: "NOMAD_100_HOURS",
+    tierTitle: "100-Hour Deep Work Focus Master",
+    minThresholdStreak: 14,
+    minThresholdHours: 100,
+  },
+  STREAK_30_DAYS: {
+    badgeType: "STREAK_30_DAYS",
+    tierTitle: "30-Day Workspace Streak Champion",
+    minThresholdStreak: 30,
+    minThresholdHours: 60,
+  },
+} as const;
 
-import crypto from "crypto";
+export type ClaimableNomadBadgeType = keyof typeof NOMAD_BADGE_POLICIES;
+
+export type NomadBadgeType =
+  ClaimableNomadBadgeType | "NOMAD_50_HOURS" | "MULTI_CITY_EXPLORER";
 
 export interface NomadProductivityStatement {
+  badgeType: ClaimableNomadBadgeType;
+  tierTitle: string;
   minThresholdStreak: number;
   minThresholdHours: number;
   epoch: number; // e.g. 2026
-  badgeType: "NOMAD_50_HOURS" | "NOMAD_100_HOURS" | "STREAK_30_DAYS" | "MULTI_CITY_EXPLORER";
+  badgeType:
+    | "NOMAD_50_HOURS"
+    | "NOMAD_100_HOURS"
+    | "STREAK_30_DAYS"
+    | "MULTI_CITY_EXPLORER";
   tierTitle: string;
 }
 
-export interface ZkNomadProofPayload {
+export interface NomadProverInput {
+  minThresholdStreak: string;
+  minThresholdHours: string;
+  epoch: string;
+  expectedCommitment: string;
+  identitySecret: string;
+  actualStreakDays: string;
+  actualWorkMinutes: string;
+}
+
+export interface NomadProofChallenge {
   statement: NomadProductivityStatement;
-  publicInputs: {
-    minThresholdStreak: number;
-    minThresholdHours: number;
-    epoch: number;
-    expectedCommitment: string;
-  };
-  proof: {
-    pi_a: string[];
-    pi_b: string[][];
-    pi_c: string[];
-  };
-  nullifierHash: string;
+  input: NomadProverInput;
+}
+
+export interface NomadProofPayload {
+  proof: unknown;
+  publicSignals: unknown;
 }
 
 export interface PassportStamp {
@@ -45,19 +67,59 @@ export interface PassportStamp {
   countryName?: string;
 }
 
-/**
- * Generates clean standalone vector SVG markup for a passport badge with venue name and visit date.
- */
+export function createNomadProductivityStatement(
+  badgeType: unknown,
+  epoch = new Date().getUTCFullYear(),
+): NomadProductivityStatement | null {
+  if (
+    typeof badgeType !== "string" ||
+    !Object.prototype.hasOwnProperty.call(NOMAD_BADGE_POLICIES, badgeType) ||
+    !Number.isSafeInteger(epoch) ||
+    epoch <= 0
+  ) {
+    return null;
+  }
+
+  const policy = NOMAD_BADGE_POLICIES[badgeType as ClaimableNomadBadgeType];
+
+  return {
+    ...policy,
+    epoch,
+  };
+}
+
+function escapeSvgText(value: string): string {
+  const entities: Record<string, string> = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&apos;",
+  };
+
+  return value.replace(/[&<>"']/g, (character) => entities[character]);
+}
+
 export function generateBadgeSvgMarkup(stamp: PassportStamp): string {
-  const venue = stamp.venueName || "WorkSphere Verified Hub";
+  const venue = escapeSvgText(stamp.venueName || "WorkSphere Verified Hub");
+
+  const issuedAt = stamp.issuedAt ? new Date(stamp.issuedAt) : null;
+
   const visit =
     stamp.visitDate ||
-    (stamp.issuedAt
-      ? new Date(stamp.issuedAt).toISOString().split("T")[0]
-      : "2026-10-09");
-  const badgeTitle = stamp.countryName
-    ? `${stamp.countryName.toUpperCase()} NOMAD STAMP`
-    : stamp.tierTitle.toUpperCase();
+    (issuedAt && !Number.isNaN(issuedAt.getTime())
+      ? issuedAt.toISOString().split("T")[0]
+      : "Unknown");
+
+  const badgeTitle = escapeSvgText(
+    stamp.countryName
+      ? `${stamp.countryName.toUpperCase()} NOMAD STAMP`
+      : stamp.tierTitle.toUpperCase(),
+  );
+
+  const safeVisit = escapeSvgText(visit);
+  const safeNullifier = escapeSvgText((stamp.nullifierHash || "").slice(0, 20));
+  const safeStampId = escapeSvgText(stamp.stampId);
 
   return `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
@@ -70,24 +132,38 @@ export function generateBadgeSvgMarkup(stamp: PassportStamp): string {
   </defs>
   <circle cx="200" cy="200" r="185" fill="#0f172a" stroke="url(#stampBadgeGrad)" stroke-width="8" stroke-dasharray="12,6" />
   <circle cx="200" cy="200" r="158" fill="none" stroke="#334155" stroke-width="2" />
-  <text x="200" y="75" text-anchor="middle" fill="#38bdf8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold" letter-spacing="3">WORKSPHERE NOMAD PASSPORT</text>
-  <text x="200" y="115" text-anchor="middle" fill="#f8fafc" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="900">${badgeTitle}</text>
-  <text x="200" y="142" text-anchor="middle" fill="#a5f3fc" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700">📍 ${venue}</text>
-  <text x="200" y="166" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="11">VISIT DATE: ${visit} • EPOCH ${stamp.epoch || 2026}</text>
+  <text x="200" y="75" text-anchor="middle" fill="#38bdf8" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" letter-spacing="3">WORKSPHERE NOMAD PASSPORT</text>
+  <text x="200" y="115" text-anchor="middle" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="16" font-weight="900">${badgeTitle}</text>
+  <text x="200" y="142" text-anchor="middle" fill="#a5f3fc" font-family="system-ui, sans-serif" font-size="13">📍 ${venue}</text>
+  <text x="200" y="166" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="11">VISIT DATE: ${safeVisit} • EPOCH ${stamp.epoch}</text>
   <circle cx="200" cy="220" r="30" fill="#1e293b" stroke="#38bdf8" stroke-width="3" />
   <path d="M190 220 l7 7 l14 -14" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-  <text x="200" y="278" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="bold">✓ ZERO-KNOWLEDGE VERIFIED</text>
-  <text x="200" y="306" text-anchor="middle" fill="#64748b" font-family="monospace" font-size="9">NULLIFIER: ${(stamp.nullifierHash || "").slice(0, 20)}...</text>
-  <text x="200" y="328" text-anchor="middle" fill="#38bdf8" font-family="monospace" font-size="10" font-weight="bold">ID: ${stamp.stampId}</text>
+  <text x="200" y="278" text-anchor="middle" fill="#34d399" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">✓ ZERO-KNOWLEDGE VERIFIED</text>
+  <text x="200" y="306" text-anchor="middle" fill="#64748b" font-family="monospace" font-size="9">NULLIFIER: ${safeNullifier}...</text>
+  <text x="200" y="328" text-anchor="middle" fill="#38bdf8" font-family="monospace" font-size="10" font-weight="bold">ID: ${safeStampId}</text>
 </svg>`.trim();
 }
 
-const PASSPORT_SIGNING_KEY = process.env.ZKP_PASSPORT_KEY || "nomad-zkp-passport-secret-signature-2026";
+export const PASSPORT_SIGNING_KEY =
+  process.env.ZKP_PASSPORT_KEY || "nomad-zkp-passport-secret-signature-2026";
+
+/**
+ * Computes a standardized short fingerprint of a signature for UI display (e.g. "8f7e2a...3e4f").
+ */
+export function computeNomadSignatureFingerprint(signature: string): string {
+  if (!signature || typeof signature !== "string") return "";
+  const cleaned = signature.trim();
+  if (cleaned.length <= 16) return cleaned;
+  return `${cleaned.slice(0, 8)}...${cleaned.slice(-8)}`;
+}
 
 /**
  * Computes commitment hash: Poseidon/SHA-256 for user secret & epoch.
  */
-export function computeUserNomadCommitment(identitySecret: string, epoch: number): string {
+export function computeUserNomadCommitment(
+  identitySecret: string,
+  epoch: number,
+): string {
   return crypto
     .createHash("sha256")
     .update(`${identitySecret}:${epoch}:worksphere_nomad_v1`)
@@ -97,7 +173,10 @@ export function computeUserNomadCommitment(identitySecret: string, epoch: number
 /**
  * Computes unique nullifier to prevent double-claiming: Poseidon/SHA-256(secret, epoch, salt).
  */
-export function computeNomadNullifier(identitySecret: string, epoch: number): string {
+export function computeNomadNullifier(
+  identitySecret: string,
+  epoch: number,
+): string {
   return crypto
     .createHash("sha256")
     .update(`${identitySecret}:${epoch}:nullifier_salt_42`)
@@ -111,16 +190,23 @@ export async function generateClientNomadProof(
   identitySecret: string,
   actualStreak: number,
   actualHours: number,
-  statement: NomadProductivityStatement
+  statement: NomadProductivityStatement,
 ): Promise<ZkNomadProofPayload> {
   if (actualStreak < statement.minThresholdStreak) {
-    throw new Error(`Insufficient streak: ${actualStreak} < ${statement.minThresholdStreak}`);
+    throw new Error(
+      `Insufficient streak: ${actualStreak} < ${statement.minThresholdStreak}`,
+    );
   }
   if (actualHours < statement.minThresholdHours) {
-    throw new Error(`Insufficient work hours: ${actualHours} < ${statement.minThresholdHours}`);
+    throw new Error(
+      `Insufficient work hours: ${actualHours} < ${statement.minThresholdHours}`,
+    );
   }
 
-  const commitment = computeUserNomadCommitment(identitySecret, statement.epoch);
+  const commitment = computeUserNomadCommitment(
+    identitySecret,
+    statement.epoch,
+  );
   const nullifier = computeNomadNullifier(identitySecret, statement.epoch);
 
   return {
@@ -132,12 +218,24 @@ export async function generateClientNomadProof(
       expectedCommitment: commitment,
     },
     proof: {
-      pi_a: ["0x" + crypto.randomBytes(32).toString("hex"), "0x" + crypto.randomBytes(32).toString("hex")],
-      pi_b: [
-        ["0x" + crypto.randomBytes(32).toString("hex"), "0x" + crypto.randomBytes(32).toString("hex")],
-        ["0x" + crypto.randomBytes(32).toString("hex"), "0x" + crypto.randomBytes(32).toString("hex")],
+      pi_a: [
+        "0x" + crypto.randomBytes(32).toString("hex"),
+        "0x" + crypto.randomBytes(32).toString("hex"),
       ],
-      pi_c: ["0x" + crypto.randomBytes(32).toString("hex"), "0x" + crypto.randomBytes(32).toString("hex")],
+      pi_b: [
+        [
+          "0x" + crypto.randomBytes(32).toString("hex"),
+          "0x" + crypto.randomBytes(32).toString("hex"),
+        ],
+        [
+          "0x" + crypto.randomBytes(32).toString("hex"),
+          "0x" + crypto.randomBytes(32).toString("hex"),
+        ],
+      ],
+      pi_c: [
+        "0x" + crypto.randomBytes(32).toString("hex"),
+        "0x" + crypto.randomBytes(32).toString("hex"),
+      ],
     },
     nullifierHash: nullifier,
   };
@@ -146,9 +244,11 @@ export async function generateClientNomadProof(
 /**
  * Verifies a ZK Nomad Productivity Proof and mints a cryptographically signed SVG passport stamp.
  */
-export function verifyAndMintNomadPassportStamp(
-  payload: ZkNomadProofPayload
-): { isValid: boolean; stamp?: PassportStamp; error?: string } {
+export function verifyAndMintNomadPassportStamp(payload: ZkNomadProofPayload): {
+  isValid: boolean;
+  stamp?: PassportStamp;
+  error?: string;
+} {
   const { statement, publicInputs, proof, nullifierHash } = payload;
 
   if (!statement || !publicInputs || !proof || !nullifierHash) {
@@ -156,8 +256,16 @@ export function verifyAndMintNomadPassportStamp(
   }
 
   // Verify proof formatting
-  if (!proof.pi_a || proof.pi_a.length < 2 || !proof.pi_c || proof.pi_c.length < 2) {
-    return { isValid: false, error: "Invalid Groth16 elliptic curve proof elements" };
+  if (
+    !proof.pi_a ||
+    proof.pi_a.length < 2 ||
+    !proof.pi_c ||
+    proof.pi_c.length < 2
+  ) {
+    return {
+      isValid: false,
+      error: "Invalid Groth16 elliptic curve proof elements",
+    };
   }
 
   const stampId = `STAMP-${statement.badgeType}-${publicInputs.epoch}-${nullifierHash.slice(0, 8).toUpperCase()}`;

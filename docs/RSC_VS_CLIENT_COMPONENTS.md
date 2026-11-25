@@ -46,7 +46,7 @@ flowchart TD
 
 Server Components are ideal for static layouts, server redirect validations, dynamic server metadata generation, and direct server-side data fetching.
 
-#### Auth & Redirect Validation — [src/app/social/page.tsx](file:///c:/5th%20Sem/GSSOC/WorkSphere/src/app/social/page.tsx)
+#### Auth & Redirect Validation — [src/app/social/page.tsx](../src/app/social/page.tsx)
 
 This page checks authentication credentials securely on the server using Clerk's `auth()` helper before returning the view, avoiding flashing loading states or client-side redirects:
 
@@ -66,7 +66,7 @@ export default async function SocialPage() {
 }
 ```
 
-#### Direct Database Query & Metadata Generation — [src/app/sessions/\[slug\]/page.tsx](file:///c:/5th%20Sem/GSSOC/WorkSphere/src/app/sessions/%5Bslug%5D/page.tsx)
+#### Direct Database Query & Metadata Generation — [src/app/sessions/\[slug\]/page.tsx](../src/app/sessions/[slug]/page.tsx)
 
 This route directly retrieves a session from Prisma on the server to dynamically generate SEO metadata, and then passes the serialized data to a client dashboard:
 
@@ -106,7 +106,7 @@ export default async function SessionPage({ params }) {
 
 Client Components are required whenever your code relies on client-side state, event handlers, animations, or browser-specific capabilities.
 
-#### Interactive Multi-Agent Chatbot — [src/components/EnhancedChatbot.tsx](file:///c:/5th%20Sem/GSSOC/WorkSphere/src/components/EnhancedChatbot.tsx)
+#### Interactive Multi-Agent Chatbot — [src/components/EnhancedChatbot.tsx](../src/components/EnhancedChatbot.tsx)
 
 Uses states (`useState`), lifecycle events (`useEffect`), cursor tracking, and a WebSocket connection (`useMultiplayerSession`) to handle client-side message streams:
 
@@ -123,7 +123,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }) {
 }
 ```
 
-#### Decibel Sound Analyzer — [src/components/noise/NoiseMeter.tsx](file:///c:/5th%20Sem/GSSOC/WorkSphere/src/components/noise/NoiseMeter.tsx)
+#### Decibel Sound Analyzer — [src/components/noise/NoiseMeter.tsx](../src/components/noise/NoiseMeter.tsx)
 
 Accesses the browser's Web Audio API and captures real-time microphone frequencies using a Canvas element, which requires direct access to browser objects:
 

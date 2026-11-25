@@ -19,7 +19,7 @@ jobs:
             try {
               const pr = context.payload.pull_request;
               const prAuthor = (pr.user?.login || '').toLowerCase();
-              const BLOCKED_USERS = ['jasonjose007', 'Senthil455'];
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
 
               if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthor)) {
                 core.setFailed(`🚫 Contributions from @${pr.user?.login} are blocked on this repository.`);

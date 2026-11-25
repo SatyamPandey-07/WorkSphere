@@ -49,6 +49,8 @@ erDiagram
         boolean hasOutlets
         string noiseLevel "nullable"
         boolean hasErgonomic
+        boolean hasStandingDesk
+        boolean hasExternalMonitor
         string outletDensity "nullable"
         int wifiSpeed "nullable"
         boolean crowdsourced

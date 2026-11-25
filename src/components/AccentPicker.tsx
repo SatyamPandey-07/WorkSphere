@@ -7,6 +7,22 @@ import { ACCENT_OPTIONS, type AccentColor } from "@/lib/constants/theme";
 
 const ACCENT_NAVIGATION: AccentColor[] = ACCENT_OPTIONS.map((opt) => opt.name);
 
+function getContrastingForeground(hex: string): string {
+  const normalized = hex.replace("#", "");
+  if (!/^[\da-f]{6}$/i.test(normalized)) return "#ffffff";
+
+  const linearize = (offset: number) => {
+    const channel = parseInt(normalized.slice(offset, offset + 2), 16) / 255;
+    return channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance =
+    0.2126 * linearize(0) + 0.7152 * linearize(2) + 0.0722 * linearize(4);
+
+  return luminance > 0.179 ? "#111827" : "#ffffff";
+}
+
 export function AccentPicker() {
   const { accent, setAccent } = useTheme();
   const gridRef = useRef<HTMLDivElement>(null);
@@ -108,12 +124,12 @@ export function AccentPicker() {
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cyberpunk:text-fuchsia-100">
         Accent Color
       </h3>
       <div
         ref={gridRef}
-        className="flex gap-3 pt-6"
+        className="flex flex-wrap gap-3 pt-6"
         role="radiogroup"
         aria-label="Select accent color"
       >
@@ -196,11 +212,15 @@ export function AccentPicker() {
                   isTooltipOpen ? `swatch-tooltip-${option.name}` : undefined
                 }
                 data-emerald-swatch={isEmerald ? "true" : undefined}
-                data-testid={isEmerald ? `accent-swatch-${option.name}` : undefined}
+                data-testid={
+                  isEmerald ? `accent-swatch-${option.name}` : undefined
+                }
                 className={`
                   group relative flex items-center justify-center w-10 h-10 rounded-full
-                  cursor-pointer focus:outline-none focus:ring-offset-2
-                  dark:focus:ring-offset-zinc-950 focus:ring-offset-zinc-50
+                  cursor-pointer focus-visible:outline-none focus-visible:ring-4
+                  focus-visible:ring-zinc-900 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-50
+                  dark:focus-visible:ring-zinc-100 dark:focus-visible:ring-offset-zinc-950
+                  cyberpunk:focus-visible:ring-fuchsia-200 cyberpunk:focus-visible:ring-offset-[#090014]
                   ${
                     prefersReducedMotion
                       ? "transition-none transform-none motion-reduce:transform-none motion-reduce:transition-none"
@@ -213,11 +233,11 @@ export function AccentPicker() {
                             ? `ring-4 ring-emerald-400/50 ${prefersReducedMotion ? "" : "scale-110"}`
                             : ""
                         }`
-                      : "focus:ring-2"
+                      : ""
                   }
                   ${
                     isSelected
-                      ? "ring-2 ring-offset-2 ring-zinc-900 dark:ring-zinc-100 dark:ring-offset-zinc-950 ring-offset-zinc-50"
+                      ? "ring-2 ring-offset-2 ring-zinc-900 dark:ring-zinc-100 dark:ring-offset-zinc-950 cyberpunk:ring-fuchsia-200 cyberpunk:ring-offset-[#090014] ring-offset-zinc-50"
                       : ""
                   }
                 `}
@@ -226,8 +246,8 @@ export function AccentPicker() {
                   boxShadow: isSelected
                     ? `0 0 0 3px color-mix(in srgb, ${option.value} 40%, transparent)`
                     : isEmerald && isHoveredOrFocused
-                    ? "0 0 14px 2px rgba(52, 211, 153, 0.45)"
-                    : "0 1px 3px rgba(0, 0, 0, 0.1)",
+                      ? "0 0 14px 2px rgba(52, 211, 153, 0.45)"
+                      : "0 1px 3px rgba(0, 0, 0, 0.1)",
                 }}
                 aria-label={`Select ${option.label} accent color`}
                 role="radio"
@@ -246,8 +266,8 @@ export function AccentPicker() {
                         isSelected
                           ? "opacity-0"
                           : isHoveredOrFocused
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
                       }
                       ${prefersReducedMotion ? "" : "animate-pulse"}
                     `}
@@ -260,7 +280,8 @@ export function AccentPicker() {
                 )}
                 {isSelected && (
                   <Check
-                    className="w-5 h-5 text-white drop-shadow-md z-10"
+                    className="w-5 h-5 drop-shadow-md z-10"
+                    style={{ color: getContrastingForeground(option.value) }}
                     aria-hidden="true"
                   />
                 )}
@@ -269,7 +290,7 @@ export function AccentPicker() {
           );
         })}
       </div>
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 cyberpunk:text-fuchsia-200">
         Selected: {ACCENT_OPTIONS.find((opt) => opt.name === accent)?.label}
       </p>
     </div>

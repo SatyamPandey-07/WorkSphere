@@ -1,0 +1,23 @@
+{
+  "circuit": "nomad_productivity_proof.circom",
+  "circuitSha256": "c655d9de01b0e8ba7f52d62ef6deee0f68295e29e2e843979a7485198fb30f57",
+  "commitmentScheme": "poseidon-bn254-activity-bound",
+  "circomlibVersion": "2.0.5",
+  "powersOfTau": {
+    "file": "powersOfTau28_hez_final_12.ptau",
+    "checksumAlgorithm": "BLAKE2b-512",
+    "checksum": "ded2694169b7b08e898f736d5de95af87c3f1a64594013351b1a796dbee393bd825f88f9468c84505ddd11eb0b1465ac9b43b9064aa8ec97f2b73e04758b8a4a"
+  },
+  "publicSignals": [
+    "nullifierHash",
+    "minThresholdStreak",
+    "minThresholdHours",
+    "epoch",
+    "expectedCommitment"
+  ],
+  "runtimeArtifacts": {
+    "wasmSha256": "b696167f8bcdeb5aec638b8fdff73e788739b484a60ea9ff31b98027d6073bf3",
+    "zkeySha256": "bdcc70c98f7ffe30dcadda5b7e826a39d3c571f6ed6b493bc99ace922614e863",
+    "verificationKeySha256": "735355012c62730f501c4f059a216f3007e52a1fdec5a83ea3105f7f1864f905"
+  }
+}

@@ -2,6 +2,7 @@ import {
   generateVenueJsonLd,
   parsePostalAddress,
   extractAmenityFeatures,
+  serializeJsonLd,
 } from "@/lib/seo/venueJsonLd";
 
 describe("Venue JSON-LD SEO Structured Data", () => {
@@ -217,7 +218,10 @@ describe("Venue JSON-LD SEO Structured Data", () => {
         address: "45 Main St, Brooklyn, NY 11201",
         telephone: "+1-718-555-0142",
         rating: 4.8,
-        ratings: [{ id: "r1", wifiQuality: 5 }, { id: "r2", wifiQuality: 5 }],
+        ratings: [
+          { id: "r1", wifiQuality: 5 },
+          { id: "r2", wifiQuality: 5 },
+        ],
         wifiQuality: 5,
         hasOutlets: true,
         hasErgonomic: true,
@@ -319,6 +323,36 @@ describe("Venue JSON-LD SEO Structured Data", () => {
 
       const jsonLd = generateVenueJsonLd(venue);
       expect(jsonLd.telephone).toBe("+1-800-555-WORK");
+    });
+  });
+
+  describe("serializeJsonLd", () => {
+    it("escapes script tags, html elements, and special characters", () => {
+      const maliciousData = {
+        name: '</script><script>alert("xss")</script>',
+        description: 'Test & "quotes" <tag> --> \u2028 \u2029',
+      };
+
+      const serialized = serializeJsonLd(maliciousData);
+
+      expect(serialized).not.toContain("</script>");
+      expect(serialized).not.toContain("<script>");
+      expect(serialized).not.toContain("<tag>");
+      expect(serialized).toContain("\\u003c/script\\u003e");
+      expect(serialized).toContain("\\u003cscript\\u003e");
+      expect(serialized).toContain("\\u0026");
+
+      // Verify round-trip parsing produces the original unescaped strings
+      const parsed = JSON.parse(serialized);
+      expect(parsed.name).toBe('</script><script>alert("xss")</script>');
+      expect(parsed.description).toBe(
+        'Test & "quotes" <tag> --> \u2028 \u2029',
+      );
+    });
+
+    it("handles null and undefined input gracefully", () => {
+      expect(serializeJsonLd(null)).toBe("null");
+      expect(serializeJsonLd(undefined)).toBe("null");
     });
   });
 });

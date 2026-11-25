@@ -16,6 +16,7 @@ import {
   VenueDescriptionAndHostCard,
   VenueActionButtons,
 } from "./venue-dialog/VenueHeaderSection";
+import type { AirQualityReading } from "./venue-dialog/VenueHeaderSection";
 import { VenueMediaLightbox } from "./venue-dialog/VenueMediaLightbox";
 import { VenueNoiseSection } from "./venue-dialog/VenueNoiseSection";
 import { VenueAmenityVoting } from "./venue-dialog/VenueAmenityVoting";
@@ -56,7 +57,14 @@ export function VenueDetailDialog({
 }: VenueDetailDialogProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(true);
+  const [photoAttribution, setPhotoAttribution] = useState<{
+    photographer?: string;
+    photographerUrl?: string;
+    photoUrl?: string;
+    source?: string;
+  } | null>(null);
   const [liveScore, setLiveScore] = useState<number | null>(null);
+  const [airQuality, setAirQuality] = useState<AirQualityReading | null>(null);
   const [imageError, setImageError] = useState(false);
   const [previewImageError, setPreviewImageError] = useState(false);
   const [brokenMenuPhotos, setBrokenMenuPhotos] = useState<
@@ -310,7 +318,9 @@ export function VenueDetailDialog({
   useEffect(() => {
     if (!venue) return;
     setLiveScore(venue.score ?? null);
+    setAirQuality(null);
     setPhotoLoading(true);
+    setPhotoAttribution(null);
     setImageError(false);
     setBrokenMenuPhotos({});
     setActiveTab("overview");
@@ -330,9 +340,31 @@ export function VenueDetailDialog({
           throw new Error("Failed to load venue photo");
         }
         setPhotoUrl(response.url);
+
+        const photographerHeader = response.headers.get("X-Photo-Photographer");
+        const photographer = photographerHeader
+          ? decodeURIComponent(photographerHeader)
+          : undefined;
+        const photographerUrl =
+          response.headers.get("X-Photo-Photographer-Url") || undefined;
+        const photoPageUrl =
+          response.headers.get("X-Photo-Page-Url") || undefined;
+        const source =
+          response.headers.get("X-Photo-Source") ||
+          (photographer ? "pexels" : undefined);
+
+        if (photographer || photoPageUrl || source === "pexels") {
+          setPhotoAttribution({
+            photographer,
+            photographerUrl,
+            photoUrl: photoPageUrl,
+            source: "pexels",
+          });
+        }
       })
       .catch(() => {
         setPhotoUrl(null);
+        setPhotoAttribution(null);
       })
       .finally(() => {
         setPhotoLoading(false);
@@ -402,11 +434,13 @@ export function VenueDetailDialog({
 
   // Real-time SSE updates
   useEffect(() => {
-    if (!isOpen || !venue) return;
+    setAirQuality(null);
+    if (!isOpen || !venue || typeof EventSource === "undefined") return;
 
     let eventSource: EventSource | null = null;
 
     const connect = () => {
+      setAirQuality(null);
       if (eventSource) {
         eventSource.close();
       }
@@ -418,16 +452,44 @@ export function VenueDetailDialog({
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if (data?.type === "air_quality") {
+            const reading = data.payload;
+            if (
+              data.available &&
+              reading &&
+              Number.isFinite(reading.co2) &&
+              reading.co2 >= 0 &&
+              Number.isFinite(reading.pm25) &&
+              reading.pm25 >= 0 &&
+              Number.isFinite(reading.tvoc) &&
+              reading.tvoc >= 0 &&
+              typeof reading.timestamp === "string" &&
+              Number.isFinite(Date.parse(reading.timestamp))
+            ) {
+              setAirQuality({
+                co2: reading.co2,
+                pm25: reading.pm25,
+                tvoc: reading.tvoc,
+                timestamp: reading.timestamp,
+              });
+            } else {
+              setAirQuality(null);
+            }
+            return;
+          }
+
           if (data && typeof data.score === "number") {
             setLiveScore(data.score);
           }
         } catch (err) {
           console.error("Error parsing SSE data:", err);
+          setAirQuality(null);
         }
       };
 
       eventSource.onerror = (error) => {
         console.error("SSE Connection Error:", error);
+        setAirQuality(null);
       };
     };
 
@@ -717,7 +779,8 @@ export function VenueDetailDialog({
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
         );
         const focusableArray = Array.from(focusable).filter(
-          (item) => !item.hasAttribute("disabled") && item.offsetParent !== null,
+          (item) =>
+            !item.hasAttribute("disabled") && item.offsetParent !== null,
         );
 
         if (focusableArray.length === 0) return;
@@ -810,8 +873,10 @@ export function VenueDetailDialog({
         <VenueHeaderSection
           venue={venue}
           currentScore={currentScore ?? null}
+          airQuality={airQuality}
           displayPhoto={displayPhoto}
           photoLoading={photoLoading}
+          photoAttribution={photoAttribution}
           setImageError={setImageError}
           sentiment={sentiment}
           activeTab={activeTab}
@@ -822,23 +887,7 @@ export function VenueDetailDialog({
           isLibrary={isLibrary}
           quickSaveLoading={quickSaveLoading}
           onQuickSave={handleQuickSave}
-          selectedVenueLang={selectedVenueLang}
-          onSelectVenueLang={handleVenueDescriptionTranslation}
-          isTranslatingDesc={isTranslatingDesc}
-          descTranslationError={descTranslationError}
-          translatedDescription={translatedDescription}
-          onGetDirections={onGetDirections}
-          onToggleFavorite={onToggleFavorite}
-          isFavorited={isFavorited}
           enableTransition={enableTransition}
-          onRate={onRate}
-          showFlagMenu={showFlagMenu}
-          setShowFlagMenu={setShowFlagMenu}
-          flagSubmitting={flagSubmitting}
-          flagSubmitted={flagSubmitted}
-          onSubmitFlag={submitFlag}
-          copied={copied}
-          onShare={handleShare}
         />
 
         {/* Modular Body Content Section */}

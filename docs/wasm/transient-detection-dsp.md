@@ -1,6 +1,6 @@
 # Transient Acoustic Event Classification & DSP Architecture
 
-This document specifies the digital signal processing (DSP) architecture, mathematical foundations, attack-slope profiling, and event classification thresholds implemented in [`src/wasm/audio/transient_detector.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/audio/transient_detector.c) and [`src/wasm/audio/anc_profiler.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/audio/anc_profiler.c).
+This document specifies the digital signal processing (DSP) architecture, mathematical foundations, attack-slope profiling, and event classification thresholds implemented in [`src/wasm/audio/transient_detector.c`](../../src/wasm/audio/transient_detector.c) and [`src/wasm/audio/anc_profiler.c`](../../src/wasm/audio/anc_profiler.c).
 
 WorkSphere operates in noisy, unpredictable remote environments—such as specialty espresso bars, airport departure lounges, and shared open desks. This DSP engine isolates sharp acoustic distractions (espresso steam wands, dropped ceramic mugs, door slams, keyboard hammering) from stationary café background ambiance (HVAC hum, continuous conversational murmur, distant street traffic).
 
@@ -43,7 +43,7 @@ In normalized decibel scale ($\text{dBFS}$):
 
 $$E_{\text{dBFS}} = 10 \log_{10}\left( \frac{E_n}{N \cdot x_{\text{ref}}^2} \right), \quad \text{where } x_{\text{ref}} = 1.0$$
 
-In [`src/wasm/audio/transient_detector.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/audio/transient_detector.c#L45-L50), the peak amplitude $A_{\max}$ across the analysis window is extracted as the instantaneous envelope driver:
+In [`src/wasm/audio/transient_detector.c`](../../src/wasm/audio/transient_detector.c#L45-L50), the peak amplitude $A_{\max}$ across the analysis window is extracted as the instantaneous envelope driver:
 
 $$A_{\max} = \max_{0 \le i < N} |x[i]|$$
 
@@ -64,7 +64,7 @@ $$\Phi(t) = \sum_{k=0}^{K-1} H\left( |X_t[k]| - |X_{t-1}[k]| \right)$$
 
 where $H(x) = \frac{x + |x|}{2}$ is the half-wave rectifier function ensuring that only positive onset energy increments contribute, and $|X_t[k]|$ is the STFT magnitude at bin $k$ and frame $t$.
 
-As implemented in [`src/wasm/audio/anc_profiler.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/audio/anc_profiler.c#L58-L63):
+As implemented in [`src/wasm/audio/anc_profiler.c`](../../src/wasm/audio/anc_profiler.c#L58-L63):
 ```c
 float diff = mag - prev_mag;
 if (diff > 0.0f) {
@@ -76,7 +76,7 @@ if (diff > 0.0f) {
 
 ## 3. Asymmetric Envelope Tracking & Attack Slope Profiling
 
-Audio transients are characterized by **rapid rise times (attacks)** followed by **slower logarithmic decays (releases)**. To avoid false triggers caused by slow volume swells, [`transient_detector.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/audio/transient_detector.c#L13-L34) employs a dual one-pole leaky integrator with independent attack and release time constants:
+Audio transients are characterized by **rapid rise times (attacks)** followed by **slower logarithmic decays (releases)**. To avoid false triggers caused by slow volume swells, [`transient_detector.c`](../../src/wasm/audio/transient_detector.c#L13-L34) employs a dual one-pole leaky integrator with independent attack and release time constants:
 
 - **Attack Time:** $\tau_{\text{attack}} = 10.0\text{ ms}$
 - **Release Time:** $\tau_{\text{release}} = 100.0\text{ ms}$
@@ -133,7 +133,7 @@ In urban coworking cafes, the acoustic environment consists of a continuous ambi
 
 ## 5. Active Noise Cancellation (ANC) Feasibility Scoring
 
-In [`src/wasm/audio/anc_profiler.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/audio/anc_profiler.c#L74-L82), transient detection feeds directly into the ANC Feasibility Engine. Active Noise Cancellation relies on anti-phase wave cancellation, which succeeds against predictable, low-frequency sounds but degrades catastrophically in the presence of erratic high-frequency transients:
+In [`src/wasm/audio/anc_profiler.c`](../../src/wasm/audio/anc_profiler.c#L74-L82), transient detection feeds directly into the ANC Feasibility Engine. Active Noise Cancellation relies on anti-phase wave cancellation, which succeeds against predictable, low-frequency sounds but degrades catastrophically in the presence of erratic high-frequency transients:
 
 $$\text{Energy Ratio} = \frac{E_{\text{low}} (< 500\text{ Hz}) + 1.0}{E_{\text{high}} (> 2000\text{ Hz}) + 1.0}$$
 

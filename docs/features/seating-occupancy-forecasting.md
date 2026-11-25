@@ -10,10 +10,10 @@ In high-demand coworking environments, flexible hot-desk offices, and shared stu
 To resolve these challenges, WorkSphere implements an intelligent **Predictive Seating Occupancy Forecasting Engine**. The system generates 24-hour diurnal utilization curves, identifies optimal low-occupancy focus hours, and models weekly attendance patterns.
 
 This technical engineering manual documents:
-1. The **Time-Series Prediction Algorithms** executing in [`src/app/api/venues/[venueId]/seating-forecast/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/venues/[venueId]/seating-forecast/route.ts).
+1. The **Time-Series Prediction Algorithms** executing in [`src/app/api/venues/[venueId]/seating-forecast/route.ts`](../../src/app/api/venues/[venueId]/seating-forecast/route.ts).
 2. The **Day-of-Week & Hourly Weight Models** calibrated against empirical hybrid work patterns.
 3. The **API Contract & Response Schema** powering client applications.
-4. The **Interactive Client Visualization Components** ([`src/components/venue/SeatingForecastChart.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SeatingForecastChart.tsx) and [`src/components/venue/SeatOccupancyHeatmap.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SeatOccupancyHeatmap.tsx)).
+4. The **Interactive Client Visualization Components** ([`src/components/venue/SeatingForecastChart.tsx`](../../src/components/venue/SeatingForecastChart.tsx) and [`src/components/venue/SeatOccupancyHeatmap.tsx`](../../src/components/venue/SeatOccupancyHeatmap.tsx)).
 
 ---
 
@@ -130,7 +130,7 @@ While the hourly diurnal curve models intra-day fluctuation, weekly attendance i
 
 ### 4.1 Day-of-Week Multiplier Matrix ($W_d$)
 
-In [`src/components/venue/SeatingForecastChart.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SeatingForecastChart.tsx), weekly forecasts project baseline hourly predictions across the 7-day Gregorian calendar:
+In [`src/components/venue/SeatingForecastChart.tsx`](../../src/components/venue/SeatingForecastChart.tsx), weekly forecasts project baseline hourly predictions across the 7-day Gregorian calendar:
 
 | Day of Week | Code | Weight Factor ($W_d$) | Typical Peak Hour | Recommended Quiet Window | Expected Utilization Tier |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -257,7 +257,7 @@ Accept: application/json
 
 ### 7.1 `SeatingForecastChart` Component Architecture
 
-The visualizer ([`src/components/venue/SeatingForecastChart.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SeatingForecastChart.tsx)) renders an interactive dual-mode analytical dashboard:
+The visualizer ([`src/components/venue/SeatingForecastChart.tsx`](../../src/components/venue/SeatingForecastChart.tsx)) renders an interactive dual-mode analytical dashboard:
 
 ```mermaid
 flowchart TD
@@ -341,7 +341,7 @@ export default async function VenuePage({ params }: VenuePageProps) {
 
 ## 9. Testing Recipes & Mocking Strategy
 
-Unit tests in [`src/__tests__/api/venues/seatingForecast.test.ts`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/api/venues/seatingForecast.test.ts) verify route execution, capacity clamping, and response invariants:
+Unit tests in [`src/__tests__/api/seatingForecast.test.ts`](../../src/__tests__/api/seatingForecast.test.ts) verify route execution, capacity clamping, and response invariants:
 
 ```typescript
 import { GET } from "@/app/api/venues/[venueId]/seating-forecast/route";
@@ -408,7 +408,7 @@ describe("GET /api/venues/[venueId]/seating-forecast", () => {
 
 ## 10. `SeatOccupancyHeatmap` Floorplan Integration
 
-In addition to temporal line/area charts, WorkSphere projects forecast density onto spatial 2D/3D floorplans via [`src/components/venue/SeatOccupancyHeatmap.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/venue/SeatOccupancyHeatmap.tsx).
+In addition to temporal line/area charts, WorkSphere projects forecast density onto spatial 2D/3D floorplans via [`src/components/venue/SeatOccupancyHeatmap.tsx`](../../src/components/venue/SeatOccupancyHeatmap.tsx).
 
 ### 10.1 Spatial Density Normalization
 

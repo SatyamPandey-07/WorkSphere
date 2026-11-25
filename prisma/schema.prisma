@@ -101,6 +101,8 @@ model Venue {
   pourOverAvailable      Boolean                                @default(false)
   noiseLevel             String? // quiet, moderate, loud
   hasErgonomic           Boolean                                @default(false)
+  hasStandingDesk        Boolean                                @default(false)
+  hasExternalMonitor     Boolean                                @default(false)
   hasPhoneBooths         Boolean                                @default(false)
   hasNoMusic             Boolean                                @default(false)
   hasQuietZone           Boolean                                @default(false)
@@ -163,7 +165,7 @@ model Venue {
   beaconPathLossExponent Float?
   seatWaitlists          VenueSeatWaitlist[]
   liveFeedbacks          VenueLiveFeedback[]
-  slaPenaltyPoints       Int       @default(0)
+  slaPenaltyPoints       Int                                    @default(0)
   slaComplianceScore     Float?
   slaLastAuditedAt       DateTime?
   slaAudits              VenueSlaAudit[]
@@ -241,6 +243,7 @@ model VenueRating {
 
   @@unique([userId, venueId])
   @@index([venueId])
+  @@index([venueId, createdAt(sort: Desc)])
   @@index([createdAt])
 }
 
@@ -334,6 +337,7 @@ model Booking {
   recurringGroupId   String?
   frequency          String?
   guestCount         Int?
+  version            Int            @default(1)
 
   // A partial unique index, `Booking_active_seat_slot_key`, protects against
   // concurrent reservations of the same active (venueId, seat, date, time)
@@ -351,22 +355,24 @@ model Booking {
 }
 
 model BookingGuest {
-  id              String      @id @default(cuid())
-  bookingId       String
-  booking         Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  email           String
-  name            String?
-  phone           String?
-  status          GuestStatus @default(PENDING)
-  calendarUid     String?
-  sentAt          DateTime?
+  id               String      @id @default(cuid())
+  bookingId        String
+  booking          Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  email            String
+  name             String?
+  phone            String?
+  status           GuestStatus @default(PENDING)
+  calendarUid      String?
+  sentAt           DateTime?
   // Split-bill payment state. `status = ACCEPTED` only means the guest RSVP'd
   // "yes"; a guest has paid if and only if `paidAt` is set.
-  paidAt          DateTime?
-  paidAmountCents Int?
-  paidCurrency    String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  paidCurrency     String?
+  paymentReference String?
+  paymentStatus    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   @@unique([bookingId, email])
   @@index([bookingId])
@@ -387,6 +393,7 @@ enum BookingStatus {
   CHECKED_IN
   CANCELLED
   COMPLETED
+  CANCELLED_BY_OPERATOR // added to the database by 20261111110000_operator_cancellation_webhook
 }
 
 model UserMemory {
@@ -605,6 +612,7 @@ model FlaggedItem {
   type         FlagType
   itemId       String
   reason       String
+  details      String?
   status       FlagStatus @default(PENDING)
   reportedById String
   reportedBy   User       @relation(fields: [reportedById], references: [id], onDelete: Cascade)
@@ -650,6 +658,7 @@ model Folder {
   shortLinks ShortLink[]
 
   @@index([ownerId])
+  @@index([isPublic, upvotes(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
 }
 
 model ShortLink {
@@ -980,6 +989,8 @@ model VenueSeatWaitlist {
   claimedAt       DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+  // Note: Partial unique index "VenueSeatWaitlist_active_uniqueness_idx" on (userId, venueId, date, time)
+  // WHERE status IN ('ACTIVE', 'NOTIFIED') is managed via migration to avoid blocking re-joins after CANCELLED/CLAIMED/EXPIRED.
 
   @@index([venueId, date, status])
   @@index([userId, status])
@@ -1072,6 +1083,24 @@ model IoTOrchestrationLog {
   @@index([userId])
 }
 
+/// /api/checkin/poap
+model PoapClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  venueId    String
+  latitude   Float
+  longitude  Float
+  wifiSsid   String
+  sensorHash String
+  nonce      String   @unique
+  signature  String
+  confidence Float
+  createdAt  DateTime @default(now())
+
+  @@index([userId, venueId])
+  @@index([createdAt])
+}
+
 /// /api/network/multiplex
 model MeshSession {
   id             String   @id @default(cuid())
@@ -1153,20 +1182,20 @@ model VenueCancellationWebhookEvent {
 }
 
 model WebhookOutboxEvent {
-  id                           String           @id
-  userId                       String
-  eventType                    WebhookEventType
-  data                         Json
-  state                        String           @default("PENDING")
-  attempts                     Int              @default(0)
-  completedEndpointIds         String[]         @default([])
-  permanentFailureEndpointIds  String[]         @default([])
-  lastError                    String?
-  nextAttemptAt                DateTime         @default(now())
-  lockedUntil                  DateTime?
-  deadLetteredAt               DateTime?
-  createdAt                    DateTime         @default(now())
-  updatedAt                    DateTime         @updatedAt
+  id                          String           @id
+  userId                      String
+  eventType                   WebhookEventType
+  data                        Json
+  state                       String           @default("PENDING")
+  attempts                    Int              @default(0)
+  completedEndpointIds        String[]         @default([])
+  permanentFailureEndpointIds String[]         @default([])
+  lastError                   String?
+  nextAttemptAt               DateTime         @default(now())
+  lockedUntil                 DateTime?
+  deadLetteredAt              DateTime?
+  createdAt                   DateTime         @default(now())
+  updatedAt                   DateTime         @updatedAt
 
   @@index([state, nextAttemptAt])
   @@index([state, lockedUntil])
@@ -1204,20 +1233,22 @@ model VenueSlaAudit {
 /// `REFUNDED` after the signature is confirmed on-chain. `refundTxSignature`
 /// plus the status guard make repeated or concurrent cron runs idempotent.
 model SolanaEscrow {
-  id                String             @id @default(cuid())
-  bookingId         String             @unique
-  depositorWallet   String
-  amountLamports    BigInt
-  currency          String             @default("SOL")
-  status            SolanaEscrowStatus @default(PENDING)
-  holdExpiresAt     DateTime
+  id                 String             @id @default(cuid())
+  bookingId          String             @unique
+  depositorWallet    String
+  /// Base58 signature of the deposit transaction. Written upon broadcast.
+  depositTxSignature String?            @unique
+  amountLamports     BigInt
+  currency           String             @default("SOL")
+  status             SolanaEscrowStatus @default(PENDING)
+  holdExpiresAt      DateTime
   /// Base58 signature of the refund transaction. Written before broadcast.
-  refundTxSignature String?
-  refundAttemptedAt DateTime?
-  refundedAt        DateTime?
-  lastRefundError   String?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  refundTxSignature  String?
+  refundAttemptedAt  DateTime?
+  refundedAt         DateTime?
+  lastRefundError    String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([status, holdExpiresAt])
   @@index([status, refundAttemptedAt])
@@ -1229,4 +1260,153 @@ enum SolanaEscrowStatus {
   REFUNDED
   RELEASED
   FAILED
+}
+
+/// Persistent micro-billing session for pay-as-you-go desks (#8436).
+/// Replaces process-local in-memory storage to survive restarts and multi-instance concurrency.
+model MicroBillingSessionRecord {
+  id                String                    @id @default(cuid())
+  sessionId         String                    @unique
+  deskId            String
+  deskName          String
+  venueName         String
+  userId            String?
+  paymentRail       String
+  status            MicroBillingSessionStatus @default(ACTIVE)
+  startTime         DateTime
+  lastHeartbeatTime DateTime
+  elapsedSeconds    Int                       @default(0)
+  hourlyRateUsd     Decimal                   @db.Decimal(10, 4)
+  totalAccruedUsd   Decimal                   @default(0) @db.Decimal(10, 4)
+  totalAccruedSats  BigInt                    @default(0)
+  totalAccruedUsdc  Decimal                   @default(0) @db.Decimal(10, 4)
+  depositHoldUsd    Decimal                   @default(10.0) @db.Decimal(10, 4)
+  paymentProofHash  String?
+  settledAt         DateTime?
+  idempotencyKey    String?                   @unique
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@index([userId])
+  @@index([deskId])
+  @@index([status])
+}
+
+enum MicroBillingSessionStatus {
+  ACTIVE
+  PAUSED
+  SETTLING
+  SETTLED
+  FAILED
+}
+
+/// Persistent time-barter agreement between nomads (#9585).
+model BarterAgreement {
+  id             String               @id @default(cuid())
+  providerId     String
+  receiverId     String
+  skillOffered   String
+  skillRequested String
+  amountMinutes  Int
+  state          BarterAgreementState @default(PROPOSED)
+  providerPubKey String
+  receiverPubKey String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  settlement     TimebankSettlement?
+
+  @@index([providerId])
+  @@index([receiverId])
+  @@index([state])
+}
+
+enum BarterAgreementState {
+  PROPOSED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  SETTLED
+  CANCELLED
+}
+
+/// Cryptographically verified timebank credit settlement (#9585).
+model TimebankSettlement {
+  id            String          @id @default(cuid())
+  agreementId   String          @unique
+  agreement     BarterAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  providerId    String
+  receiverId    String
+  amountMinutes Int
+  providerSig   String
+  receiverSig   String
+  nonce         String
+  settledAt     DateTime        @default(now())
+
+  @@index([providerId])
+  @@index([receiverId])
+}
+
+/// Persistent real-time venue amenity incident (#10257).
+/// Replaces process-local in-memory Map storage across instances and restarts.
+model AmenityIncident {
+  id                 String                        @id @default(cuid())
+  venueId            String
+  amenity            AmenityIncidentCategory
+  amenityLabel       String
+  title              String
+  description        String?
+  status             AmenityOperationalStatus      @default(DEGRADED)
+  severity           AmenityIncidentSeverity       @default(medium)
+  reporterId         String
+  reporterName       String
+  reporterAvatarUrl  String?
+  areaLocation       String?
+  confirmationsCount Int                           @default(1)
+  resolved           Boolean                       @default(false)
+  resolvedAt         DateTime?
+  createdAt          DateTime                      @default(now())
+  expiresAt          DateTime
+  updatedAt          DateTime                      @updatedAt
+  confirmations      AmenityIncidentConfirmation[]
+
+  @@index([venueId, resolved, expiresAt])
+  @@index([venueId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+}
+
+/// Per-user confirmation deduplication for amenity incidents (#10257).
+model AmenityIncidentConfirmation {
+  id          String          @id @default(cuid())
+  incidentId  String
+  incident    AmenityIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  userId      String
+  confirmedAt DateTime        @default(now())
+
+  @@unique([incidentId, userId])
+  @@index([incidentId])
+  @@index([userId])
+}
+
+enum AmenityIncidentCategory {
+  wifi
+  outlets
+  coffee
+  phone_booth
+  air_conditioning
+  restrooms
+  monitors
+  quiet_zone
+}
+
+enum AmenityOperationalStatus {
+  OPERATIONAL
+  DEGRADED
+  OUTAGE
+  MAINTENANCE
+}
+
+enum AmenityIncidentSeverity {
+  low
+  medium
+  critical
 }

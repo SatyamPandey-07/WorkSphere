@@ -2,12 +2,12 @@
 
 ## 1. Executive Summary
 
-In global workspace networks and nomad booking workflows, travelers reserve desks, meeting rooms, and acoustic phone booths across divergent global timezones. The **`TimezoneClock`** component ([`src/components/bookings/TimezoneClock.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/bookings/TimezoneClock.tsx)) renders real-time, localized wall-clock time for any venue's designated IANA timezone, coupled with user auto-detection and UTC offset indicators.
+In global workspace networks and nomad booking workflows, travelers reserve desks, meeting rooms, and acoustic phone booths across divergent global timezones. The **`TimezoneClock`** component ([`src/components/bookings/TimezoneClock.tsx`](../../src/components/bookings/TimezoneClock.tsx)) renders real-time, localized wall-clock time for any venue's designated IANA timezone, coupled with user auto-detection and UTC offset indicators.
 
 This developer documentation covers:
 - **Venue Timezone Rendering Pipeline:** 1-second interval live ticks, hydration mismatch prevention, and tabular numeral styling.
 - **IANA Timezone Resolution & Fallbacks:** Safe string sanitization, validation against `Intl.DateTimeFormat`, and fallback mechanics handling unknown or malformed timezones without throwing runtime `RangeError`.
-- **Local Browser Auto-Detection:** Browser timezone discovery via `Intl.DateTimeFormat().resolvedOptions().timeZone` in [`TimezoneBadge.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/TimezoneBadge.tsx).
+- **Local Browser Auto-Detection:** Browser timezone discovery via `Intl.DateTimeFormat().resolvedOptions().timeZone` in [`TimezoneBadge.tsx`](../../src/components/TimezoneBadge.tsx).
 - **World Clock Lists & UTC Offset Calculations:** Deriving localized offsets, Daylight Saving Time (DST) transitions, and multi-timezone displays.
 
 ---
@@ -99,7 +99,7 @@ const [isValid, setIsValid] = useState(() => {
 
 ### 4.1 Resolution Strategy in `venueHours.ts`
 
-For backend and utility calculations, [`src/lib/venueHours.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/venueHours.ts) provides the `resolveTimezone` helper:
+For backend and utility calculations, [`src/lib/venueHours.ts`](../../src/lib/venueHours.ts) provides the `resolveTimezone` helper:
 
 ```typescript
 export function resolveTimezone(

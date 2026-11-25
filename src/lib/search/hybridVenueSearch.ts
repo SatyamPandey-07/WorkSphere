@@ -1,5 +1,9 @@
+import { createHash } from "crypto";
 import { Prisma } from "@prisma/client";
+import { getAnalyticsSummaryAsync } from "@/lib/analytics";
+import { swrCache } from "@/lib/cache/swrCache";
 import { prisma } from "@/lib/prisma";
+import { normalizeSearchQuery } from "@/lib/searchSanitizer";
 import { fuzzyFilterVenues } from "@/lib/search/fuzzySearch";
 
 export interface HybridVenueSearchFilters {
@@ -9,6 +13,8 @@ export interface HybridVenueSearchFilters {
   maxLng?: number;
   category?: string;
   cities?: string[];
+  /** Amenity filters (e.g. "quiet", "standing desk"); order and case do not matter. */
+  amenities?: string[];
   semanticWeight?: number;
   fullTextWeight?: number;
   rrfK?: number;
@@ -17,6 +23,11 @@ export interface HybridVenueSearchFilters {
   enableFuzzyFallback?: boolean;
   /** Minimum pg_trgm similarity for a fuzzy match (default 0.25). */
   minSimilarity?: number;
+  /**
+   * Best cosine similarity below which a semantic-only result set counts as
+   * low confidence and trigram matches are mixed in (default 0.65).
+   */
+  semanticConfidenceThreshold?: number;
 }
 
 export interface RankedVenueId {
@@ -33,6 +44,8 @@ export interface RankedVenueId {
 export interface RankedVenueList extends Array<RankedVenueId> {
   fuzzyMatched?: boolean;
   suggestedQuery?: string;
+  /** True when trigram matches were mixed into low-confidence semantic results. */
+  lowConfidenceFallback?: boolean;
 }
 
 export interface HybridVenueSearchResult {
@@ -42,6 +55,390 @@ export interface HybridVenueSearchResult {
 }
 
 export const DEFAULT_RRF_K = 60;
+export const DEFAULT_SEMANTIC_CONFIDENCE_THRESHOLD = 0.65;
+export const DEFAULT_MIN_TRIGRAM_SIMILARITY = 0.25;
+/** Trigram matches mixed into a low-confidence result set are capped here. */
+export const LOW_CONFIDENCE_FUZZY_LIMIT = 20;
+export const MAX_CONCURRENT_TRENDING_SEARCH_REFRESHES = 2;
+
+const SEARCH_CACHE_FRESH_TTL_SECONDS = 300;
+const SEARCH_CACHE_STALE_TTL_SECONDS = 900;
+const TRENDING_SEARCH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const TRENDING_PREFETCH_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_QUEUED_SEARCH_REFRESHES = 100;
+
+interface CachedRankedVenueList {
+  results: RankedVenueId[];
+  fuzzyMatched: boolean;
+  suggestedQuery?: string;
+  lowConfidenceFallback?: boolean;
+}
+
+interface SearchTelemetryEvent {
+  name?: unknown;
+  properties?: unknown;
+  timestamp?: unknown;
+}
+
+let searchCacheHits = 0;
+let searchCacheMisses = 0;
+let lastTrendingPrefetchAt = 0;
+let trendingPrefetchPromise: Promise<void> | null = null;
+let activeBackgroundSearchRefreshes = 0;
+const backgroundSearchRefreshQueue: Array<() => void> = [];
+const inFlightSearches = new Map<string, Promise<CachedRankedVenueList>>();
+
+function runWithBackgroundSearchLimit<T>(work: () => Promise<T>): Promise<T> {
+  if (
+    activeBackgroundSearchRefreshes >=
+      MAX_CONCURRENT_TRENDING_SEARCH_REFRESHES &&
+    backgroundSearchRefreshQueue.length >= MAX_QUEUED_SEARCH_REFRESHES
+  ) {
+    return Promise.reject(
+      new Error("Trending venue search refresh queue is full"),
+    );
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const start = () => {
+      activeBackgroundSearchRefreshes += 1;
+      Promise.resolve()
+        .then(work)
+        .then(resolve, reject)
+        .finally(() => {
+          activeBackgroundSearchRefreshes -= 1;
+          backgroundSearchRefreshQueue.shift()?.();
+        });
+    };
+
+    if (
+      activeBackgroundSearchRefreshes < MAX_CONCURRENT_TRENDING_SEARCH_REFRESHES
+    ) {
+      start();
+    } else {
+      backgroundSearchRefreshQueue.push(start);
+    }
+  });
+}
+
+/**
+ * Normalizes an array of amenity filter tokens deterministically:
+ * - Trims surrounding whitespace and collapses interior multi-space runs
+ * - Converts each token to lowercase (locale-agnostic)
+ * - Drops empty/whitespace-only tokens and non-string values
+ * - Deduplicates normalized values
+ * - Sorts remaining tokens alphabetically
+ * - Guarantees immutability of the input array
+ */
+export function normalizeAmenityFilters(
+  amenities?: readonly (string | unknown)[] | null,
+): string[] {
+  if (!Array.isArray(amenities) || amenities.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  for (const item of amenities) {
+    if (typeof item !== "string") continue;
+    const normalized = item.trim().toLowerCase();
+    if (normalized.length > 0) {
+      seen.add(normalized);
+    }
+  }
+
+  return Array.from(seen).sort();
+}
+
+export function normalizedSearchCacheKey(
+  query: string,
+  filters: HybridVenueSearchFilters = {},
+  candidateLimit: number = 20,
+): string {
+  const embedding =
+    filters.queryEmbedding === undefined
+      ? "auto"
+      : filters.queryEmbedding === null
+        ? null
+        : createHash("sha256")
+            .update(JSON.stringify(filters.queryEmbedding))
+            .digest("hex");
+
+  const normalizedCategory =
+    typeof filters.category === "string" && filters.category.trim() !== ""
+      ? filters.category.trim().toLowerCase()
+      : null;
+
+  const normalizedAmenities = normalizeAmenityFilters(filters.amenities);
+
+  const keyParts = {
+    query: normalizeSearchQuery(query).slice(0, 256),
+    minLat: filters.minLat,
+    maxLat: filters.maxLat,
+    minLng: filters.minLng,
+    maxLng: filters.maxLng,
+    category: normalizedCategory,
+    cities: [...(filters.cities ?? [])].sort(),
+    amenities: normalizedAmenities,
+    semanticWeight: filters.semanticWeight ?? null,
+    fullTextWeight: filters.fullTextWeight ?? null,
+    rrfK: filters.rrfK ?? null,
+    queryEmbedding: embedding,
+    enableFuzzyFallback: filters.enableFuzzyFallback ?? null,
+    minSimilarity: filters.minSimilarity ?? null,
+    semanticConfidenceThreshold: filters.semanticConfidenceThreshold ?? null,
+    candidateLimit,
+  };
+  const digest = createHash("sha256")
+    .update(JSON.stringify(keyParts))
+    .digest("hex");
+  return `venue:hybrid-search:v2:${digest}`;
+}
+
+function toCachedRankedVenueList(
+  ranked: RankedVenueList,
+): CachedRankedVenueList {
+  return {
+    results: [...ranked],
+    fuzzyMatched: Boolean(ranked.fuzzyMatched),
+    suggestedQuery: ranked.suggestedQuery,
+    lowConfidenceFallback: ranked.lowConfidenceFallback,
+  };
+}
+
+function isCachedRankedVenueList(
+  value: unknown,
+): value is CachedRankedVenueList {
+  if (!value || typeof value !== "object") return false;
+  const cached = value as Partial<CachedRankedVenueList>;
+  return (
+    Array.isArray(cached.results) &&
+    cached.results.every(
+      (result) =>
+        result !== null &&
+        typeof result === "object" &&
+        typeof result.id === "string" &&
+        typeof result.score === "number" &&
+        Number.isFinite(result.score),
+    ) &&
+    typeof cached.fuzzyMatched === "boolean"
+  );
+}
+
+function fromCachedRankedVenueList(
+  cached: CachedRankedVenueList,
+): RankedVenueList {
+  return Object.assign([...cached.results], {
+    fuzzyMatched: cached.fuzzyMatched,
+    suggestedQuery: cached.suggestedQuery,
+    lowConfidenceFallback: cached.lowConfidenceFallback,
+  });
+}
+
+function runSearchSingleFlight(
+  cacheKey: string,
+  fetcher: () => Promise<CachedRankedVenueList>,
+): Promise<CachedRankedVenueList> {
+  const existing = inFlightSearches.get(cacheKey);
+  if (existing) return existing;
+
+  const task = Promise.resolve()
+    .then(fetcher)
+    .finally(() => {
+      if (inFlightSearches.get(cacheKey) === task) {
+        inFlightSearches.delete(cacheKey);
+      }
+    });
+  inFlightSearches.set(cacheKey, task);
+  return task;
+}
+
+function recordSearchCacheStatus(status: "hit" | "miss"): void {
+  if (status === "hit") {
+    searchCacheHits += 1;
+  } else {
+    searchCacheMisses += 1;
+  }
+}
+
+export function getHybridVenueSearchCacheMetrics(): {
+  requests: number;
+  hits: number;
+  misses: number;
+  hitRatio: number;
+} {
+  const requests = searchCacheHits + searchCacheMisses;
+  return {
+    requests,
+    hits: searchCacheHits,
+    misses: searchCacheMisses,
+    hitRatio: requests === 0 ? 0 : searchCacheHits / requests,
+  };
+}
+
+export async function getTrendingVenueSearchQueries(
+  limit = 10,
+  nowMs = Date.now(),
+): Promise<Array<{ query: string; count: number; lastUsed: number }>> {
+  let recentEvents: unknown;
+  try {
+    recentEvents = (await getAnalyticsSummaryAsync())?.recentEvents;
+  } catch (error) {
+    console.warn(
+      "[Hybrid Venue Search] Failed to read search telemetry:",
+      error,
+    );
+    return [];
+  }
+
+  if (!Array.isArray(recentEvents)) return [];
+
+  const cutoff = nowMs - TRENDING_SEARCH_WINDOW_MS;
+  const searches = new Map<string, { count: number; lastUsed: number }>();
+  for (const candidate of recentEvents as SearchTelemetryEvent[]) {
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      candidate.name !== "search_performed" ||
+      typeof candidate.timestamp !== "number" ||
+      !Number.isFinite(candidate.timestamp) ||
+      (candidate.timestamp as number) < cutoff ||
+      (candidate.timestamp as number) > nowMs ||
+      !candidate.properties ||
+      typeof candidate.properties !== "object" ||
+      Array.isArray(candidate.properties)
+    ) {
+      continue;
+    }
+
+    const rawQuery = (candidate.properties as Record<string, unknown>).query;
+    if (typeof rawQuery !== "string") continue;
+    const query = normalizeSearchQuery(rawQuery).slice(0, 256);
+    if (!query) continue;
+
+    const entry = searches.get(query) ?? { count: 0, lastUsed: 0 };
+    entry.count += 1;
+    entry.lastUsed = Math.max(entry.lastUsed, candidate.timestamp as number);
+    searches.set(query, entry);
+  }
+
+  const safeLimit =
+    Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 50) : 10;
+  return [...searches.entries()]
+    .map(([query, data]) => ({ query, ...data }))
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        b.lastUsed - a.lastUsed ||
+        a.query.localeCompare(b.query),
+    )
+    .slice(0, safeLimit);
+}
+
+async function getCachedRankedVenueSearch(
+  query: string,
+  filters: HybridVenueSearchFilters,
+  candidateLimit: number,
+  countMetrics: boolean,
+): Promise<RankedVenueList> {
+  const cacheKey = normalizedSearchCacheKey(query, filters, candidateLimit);
+  const fetcher = () =>
+    runSearchSingleFlight(cacheKey, async () =>
+      toCachedRankedVenueList(
+        await searchVenuesWithRrfUncached(query, filters, candidateLimit),
+      ),
+    );
+  const cached = await swrCache(cacheKey, fetcher, {
+    freshTtlSeconds: SEARCH_CACHE_FRESH_TTL_SECONDS,
+    staleTtlSeconds: SEARCH_CACHE_STALE_TTL_SECONDS,
+    onCacheStatus: countMetrics ? recordSearchCacheStatus : undefined,
+    validateData: isCachedRankedVenueList,
+    backgroundFetch: runWithBackgroundSearchLimit,
+    cacheMissFetch: countMetrics ? undefined : runWithBackgroundSearchLimit,
+  });
+  return fromCachedRankedVenueList(cached);
+}
+
+export async function prefetchTrendingVenueSearches(): Promise<void> {
+  const trending = await getTrendingVenueSearchQueries();
+  await Promise.all(
+    trending.map(async ({ query }) => {
+      try {
+        await getCachedRankedVenueSearch(query, {}, 500, false);
+      } catch (error) {
+        console.warn(
+          `[Hybrid Venue Search] Failed to warm trending query "${query}":`,
+          error,
+        );
+      }
+    }),
+  );
+}
+
+export function scheduleTrendingVenueSearchPrefetch(): void {
+  const now = Date.now();
+  if (
+    trendingPrefetchPromise ||
+    now - lastTrendingPrefetchAt < TRENDING_PREFETCH_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  lastTrendingPrefetchAt = now;
+  trendingPrefetchPromise = prefetchTrendingVenueSearches()
+    .catch((error) => {
+      console.warn("[Hybrid Venue Search] Trending prefetch failed:", error);
+    })
+    .finally(() => {
+      trendingPrefetchPromise = null;
+    });
+}
+
+export function _resetHybridVenueSearchStateForTesting(): void {
+  searchCacheHits = 0;
+  searchCacheMisses = 0;
+  lastTrendingPrefetchAt = 0;
+  trendingPrefetchPromise = null;
+  inFlightSearches.clear();
+}
+
+function resolveMinSimilarity(value?: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0.05, Math.min(1.0, value))
+    : DEFAULT_MIN_TRIGRAM_SIMILARITY;
+}
+
+function resolveConfidenceThreshold(value?: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(1, value))
+    : DEFAULT_SEMANTIC_CONFIDENCE_THRESHOLD;
+}
+
+/**
+ * Alternates trigram matches with semantic results, trigram match first, and
+ * keeps one entry per venue. A venue found by both keeps its trigram entry,
+ * so the caller can still label it as a fuzzy match.
+ */
+export function interleaveFuzzyAndSemantic(
+  fuzzy: RankedVenueId[],
+  semantic: RankedVenueId[],
+): RankedVenueId[] {
+  const fuzzyIds = new Set(fuzzy.map((venue) => venue.id));
+  const remainingSemantic = semantic.filter((venue) => !fuzzyIds.has(venue.id));
+  const seen = new Set<string>();
+  const merged: RankedVenueId[] = [];
+
+  const longest = Math.max(fuzzy.length, remainingSemantic.length);
+  for (let index = 0; index < longest; index++) {
+    for (const venue of [fuzzy[index], remainingSemantic[index]]) {
+      if (venue && !seen.has(venue.id)) {
+        seen.add(venue.id);
+        merged.push(venue);
+      }
+    }
+  }
+
+  return merged;
+}
 
 /**
  * Validates and clamps the RRF smoothing constant k to an integer >= 1.
@@ -227,7 +624,87 @@ async function embedSearchQuery(query: string): Promise<number[] | null> {
   }
 }
 
-export async function searchVenuesWithRrf(
+/**
+ * Marks the venues that came from the trigram fallback of a low-confidence
+ * search, so the UI can show a "Fuzzy match suggestion" badge. Any other
+ * result set is returned unchanged.
+ */
+export function labelFuzzySuggestions<T extends { id: string }>(
+  venues: T[],
+  ranked: RankedVenueList,
+): Array<T & { fuzzyMatched?: boolean }> {
+  if (!ranked.lowConfidenceFallback) return venues;
+  const fuzzyIds = new Set(
+    ranked.filter((venue) => venue.fuzzyMatched).map((venue) => venue.id),
+  );
+  return venues.map((venue) =>
+    fuzzyIds.has(venue.id) ? { ...venue, fuzzyMatched: true } : venue,
+  );
+}
+
+interface RankedSearchRow extends RankedVenueId {
+  top_vector_similarity?: number | string | null;
+  has_text_match?: boolean | null;
+}
+
+/**
+ * Trigram matches on venue name, address and amenities (food tags and power
+ * types). The name is compared as a whole; the longer address and amenity
+ * text is compared by its best-matching word run.
+ */
+async function findTrigramMatches(
+  searchQuery: string,
+  venueFilters: Prisma.Sql,
+  minSimilarity: number,
+  limit: number,
+): Promise<RankedVenueId[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      name: string;
+      similarity: number;
+      score: number;
+      needs_embedding: boolean;
+    }>
+  >(Prisma.sql`
+    SELECT
+      v."id",
+      v."name",
+      m.similarity,
+      m.similarity *
+        (1.0 - LEAST(100, GREATEST(0, COALESCE(v."slaPenaltyPoints", 0))) / 100.0) AS score,
+      v."searchEmbedding" IS NULL AS needs_embedding
+    FROM "Venue" v
+    CROSS JOIN LATERAL (
+      SELECT GREATEST(
+        SIMILARITY(v."name", ${searchQuery}),
+        WORD_SIMILARITY(${searchQuery}, COALESCE(v."address", '')),
+        WORD_SIMILARITY(
+          ${searchQuery},
+          concat_ws(' ',
+            array_to_string(v."foodTags", ' '),
+            array_to_string(v."powerTypes", ' ')
+          )
+        )
+      ) AS similarity
+    ) m
+    WHERE m.similarity >= ${minSimilarity}
+    ${venueFilters}
+    ORDER BY score DESC, v."id"
+    LIMIT ${limit}
+  `);
+
+  return (rows ?? []).map((row) => ({
+    id: row.id,
+    score: Number(row.score ?? row.similarity ?? 0),
+    needs_embedding: Boolean(row.needs_embedding),
+    fuzzyMatched: true,
+    similarity: Number(row.similarity ?? 0),
+    matchedName: row.name,
+  }));
+}
+
+async function searchVenuesWithRrfUncached(
   query: string,
   filters: HybridVenueSearchFilters = {},
   candidateLimit = 500,
@@ -315,11 +792,18 @@ export async function searchVenuesWithRrf(
     );
   }
 
+  const amenityFilters = normalizeAmenityFilters(filters.amenities);
+  for (const amenity of amenityFilters) {
+    predicates.push(
+      Prisma.sql`EXISTS (SELECT 1 FROM "AmenityValidation" av WHERE av."venueId" = v."id" AND LOWER(av."amenity") = ${amenity})`,
+    );
+  }
+
   const venueFilters = predicates.length
     ? Prisma.sql`AND ${Prisma.join(predicates, " AND ")}`
     : Prisma.empty;
 
-  const results = await prisma.$queryRaw<RankedVenueId[]>(Prisma.sql`
+  const results = await prisma.$queryRaw<RankedSearchRow[]>(Prisma.sql`
     WITH search_input AS (
       SELECT
         ${searchQuery}::text AS query_text,
@@ -362,7 +846,8 @@ export async function searchVenuesWithRrf(
         v."id",
         ROW_NUMBER() OVER (
           ORDER BY v."searchEmbedding" <=> i.query_embedding, v."id"
-        ) AS rank_vector
+        ) AS rank_vector,
+        1 - (v."searchEmbedding" <=> i.query_embedding) AS cosine_similarity
       FROM "Venue" v
       CROSS JOIN search_input i
       WHERE i.query_embedding IS NOT NULL
@@ -390,6 +875,8 @@ export async function searchVenuesWithRrf(
       fused_scores."id",
       fused_scores.rrf_score * (1.0 - LEAST(100, GREATEST(0, COALESCE(v."slaPenaltyPoints", 0))) / 100.0) AS score,
       v."searchEmbedding" IS NULL AS needs_embedding,
+      (SELECT MAX(cosine_similarity) FROM vector_candidates) AS top_vector_similarity,
+      EXISTS (SELECT 1 FROM text_candidates) AS has_text_match,
       concat_ws(' ',
         v."name", v."category", v."address",
         array_to_string(v."foodTags", ' '),
@@ -410,10 +897,66 @@ export async function searchVenuesWithRrf(
     ORDER BY score DESC, fused_scores."id"
   `);
 
-  let ranked: RankedVenueList = Object.assign([...(results ?? [])], {
+  // The confidence columns repeat on every row; read them once and keep them
+  // out of the returned venues.
+  const rows = results ?? [];
+  const topVectorSimilarity = rows[0]?.top_vector_similarity;
+  const hasTextMatch = rows[0]?.has_text_match === true;
+  const venues: RankedVenueId[] = rows.map(
+    ({ top_vector_similarity: _top, has_text_match: _text, ...venue }) => venue,
+  );
+
+  let ranked: RankedVenueList = Object.assign(venues, {
     fuzzyMatched: false,
     suggestedQuery: undefined,
   });
+
+  // ── Low-confidence semantic fallback (#7846) ────────────────────────────────
+  // Vector search always returns its nearest neighbours, even for a query it
+  // does not understand (a typo, a name it has never seen). When nothing
+  // matched the text and the best cosine similarity is under the threshold,
+  // mix in trigram matches on name, address and amenities.
+  const isLowConfidence =
+    embeddingString !== null &&
+    ranked.length > 0 &&
+    !hasTextMatch &&
+    topVectorSimilarity !== null &&
+    topVectorSimilarity !== undefined &&
+    Number.isFinite(Number(topVectorSimilarity)) &&
+    Number(topVectorSimilarity) <
+      resolveConfidenceThreshold(filters.semanticConfidenceThreshold);
+
+  if (
+    isLowConfidence &&
+    filters.enableFuzzyFallback !== false &&
+    searchQuery.length >= 3
+  ) {
+    try {
+      const fuzzyMatches = await findTrigramMatches(
+        searchQuery,
+        venueFilters,
+        resolveMinSimilarity(filters.minSimilarity),
+        Math.min(candidateLimit, LOW_CONFIDENCE_FUZZY_LIMIT),
+      );
+
+      if (fuzzyMatches.length > 0) {
+        ranked = Object.assign(
+          interleaveFuzzyAndSemantic(fuzzyMatches, ranked),
+          {
+            fuzzyMatched: true,
+            suggestedQuery: undefined,
+            lowConfidenceFallback: true,
+          },
+        );
+      }
+    } catch (fuzzyError) {
+      // Keep the semantic results; the fallback is an improvement, not a requirement.
+      console.warn(
+        "Low-confidence pg_trgm fallback failed, keeping semantic results:",
+        fuzzyError,
+      );
+    }
+  }
 
   // ── Typo tolerance fuzzy matching fallback (pg_trgm SIMILARITY) (#5771) ──────
   // When standard full-text / ts_query search yields 0 rows, trigger trigram similarity
@@ -423,11 +966,7 @@ export async function searchVenuesWithRrf(
     filters.enableFuzzyFallback !== false &&
     searchQuery.length >= 3
   ) {
-    const minSimilarity =
-      typeof filters.minSimilarity === "number" &&
-      Number.isFinite(filters.minSimilarity)
-        ? Math.max(0.05, Math.min(1.0, filters.minSimilarity))
-        : 0.25;
+    const minSimilarity = resolveMinSimilarity(filters.minSimilarity);
 
     try {
       const fuzzyResults = await prisma.$queryRaw<
@@ -536,4 +1075,17 @@ export async function searchVenuesWithRrf(
   }
 
   return ranked;
+}
+
+export async function searchVenuesWithRrf(
+  query: string,
+  filters: HybridVenueSearchFilters = {},
+  candidateLimit = 500,
+): Promise<RankedVenueList> {
+  const searchQuery = normalizeSearchQuery(query).slice(0, 256);
+  if (!searchQuery) {
+    return searchVenuesWithRrfUncached(query, filters, candidateLimit);
+  }
+
+  return getCachedRankedVenueSearch(searchQuery, filters, candidateLimit, true);
 }

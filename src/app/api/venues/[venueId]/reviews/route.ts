@@ -34,13 +34,34 @@ export async function GET(
     });
 
     if (!venue) {
-      return NextResponse.json({ reviews: [] });
+      return NextResponse.json({
+        reviews: [],
+        nextCursor: null,
+        hasMore: false,
+      });
     }
 
-    const cacheKey = getVenueReviewsCacheKey(venue.id);
-    const reviews = await swrCache(cacheKey, async () => {
+    const searchParams = req.nextUrl.searchParams;
+    const rawLimit = Number(searchParams.get("limit") ?? "20");
+    const limit =
+      Number.isSafeInteger(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, 100)
+        : 20;
+    const cursor = searchParams.get("cursor")?.trim() || null;
+
+    // Keep the existing cache key for the default first page; isolate all
+    // other pages so one cursor cannot receive another page's cached results.
+    const baseCacheKey = getVenueReviewsCacheKey(venue.id);
+    const cacheKey =
+      !cursor && limit === 20
+        ? baseCacheKey
+        : `${baseCacheKey}:cursor:${cursor ?? "first"}:limit:${limit}`;
+
+    const fetchedReviews = await swrCache(cacheKey, async () => {
       return await prisma.venueRating.findMany({
         where: { venueId: venue.id },
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        take: limit + 1,
         include: {
           user: {
             select: {
@@ -49,19 +70,43 @@ export async function GET(
             },
           },
         },
-        orderBy: { createdAt: "desc" },
+        // The ID tie-breaker makes the cursor order deterministic when two
+        // reviews share the same createdAt timestamp.
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       });
     });
 
+    const hasMore = fetchedReviews.length > limit;
+    const pageReviews = fetchedReviews.slice(0, limit);
+    const nextCursor =
+      hasMore && pageReviews.length > 0
+        ? pageReviews[pageReviews.length - 1].id
+        : null;
+
     return NextResponse.json({
-      reviews: reviews.map((r: any) => ({
-        ...r,
-        user: userId
-          ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
-          : null,
-      })),
+      reviews: pageReviews.map((r: any) => {
+        if (!userId) {
+          const { userId: _reviewerUserId, ...rest } = r;
+          return {
+            ...rest,
+            user: null,
+          };
+        }
+        return {
+          ...r,
+          user: { firstName: r.user?.firstName, lastName: r.user?.lastName },
+        };
+      }),
+      nextCursor,
+      hasMore,
     });
   } catch (error) {
+    if (
+      (error as { code?: string })?.code === "P2025" &&
+      req.nextUrl.searchParams.has("cursor")
+    ) {
+      return apiError("Invalid reviews cursor", 400, "INVALID_CURSOR");
+    }
     console.error("GET /api/venues/[venueId]/reviews error:", error);
     return apiError("Failed to fetch reviews", 500, "INTERNAL_ERROR");
   }

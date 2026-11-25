@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { apiError } from "@/lib/apiResponse";
 
 export const STATUS_THRESHOLD: Record<string, number> = {
   yellow: 0.6,
@@ -20,7 +21,7 @@ export async function GET() {
     const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json({ venues: [] });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
 
     const favorites = await prisma.favorite.findMany({
@@ -55,6 +56,6 @@ export async function GET() {
     return NextResponse.json({ venues: result });
   } catch (error) {
     console.error("GET /api/availability/delta error:", error);
-    return NextResponse.json({ venues: [] });
+    return apiError("Internal server error", 500, "INTERNAL_ERROR");
   }
 }

@@ -9,6 +9,11 @@
  * edit collisions, and facilitate automated or manual conflict resolution.
  */
 
+import {
+  openDatabaseWithMigration,
+  isConnectionValid,
+} from "../lib/offline/migrationCoordinator";
+
 export const DB_NAME = "worksphere-offline";
 export const REVIEW_STORE_NAME = "pendingReviews";
 export const DEFAULT_CHECK_INTERVAL_MS = 30000;
@@ -96,19 +101,20 @@ let periodicIntervalId: ReturnType<typeof setInterval> | null = null;
 let isSyncInProgress = false;
 
 /**
- * Open worksphere-offline IndexedDB safely within worker context.
+ * Open worksphere-offline IndexedDB safely within worker context via shared migration coordinator.
  */
-function openWorkerReviewDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") {
-      return reject(new Error("IndexedDB unavailable in worker"));
-    }
-
-    const req = indexedDB.open(DB_NAME);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error("IndexedDB open blocked"));
+async function openWorkerReviewDB(): Promise<IDBDatabase> {
+  if (typeof indexedDB === "undefined") {
+    throw new Error("IndexedDB unavailable in worker");
+  }
+  const db = await openDatabaseWithMigration(DB_NAME, {
+    context: "worker",
+    skipDataMigrations: true,
   });
+  if (!isConnectionValid(db)) {
+    throw new Error("IndexedDB connection invalidated by schema upgrade");
+  }
+  return db;
 }
 
 /**

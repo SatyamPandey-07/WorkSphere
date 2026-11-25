@@ -47,7 +47,7 @@ To ensure that PoAP badges maintain institutional-grade integrity and represent 
 
 ### 2.1 Multi-Modal Sensor Fusion Engine
 
-The presence validation criteria are governed by [`GeofenceValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/attestation/GeofenceValidator.ts):
+The presence validation criteria are governed by [`GeofenceValidator.ts`](../../src/core/attestation/GeofenceValidator.ts):
 
 | Sensor Vector | Measurement Parameter | Validation Criteria | Weight / Confidence Impact |
 | :--- | :--- | :--- | :--- |
@@ -77,7 +77,7 @@ If the nomad is outside the geofence perimeter, fails the authorized venue Wi-Fi
 
 ## 3. Cryptographic Claim Architecture (`PoAPGenerator`)
 
-Once physical presence criteria are satisfied, the server generates a standardized, tamper-evident cryptographic claim using [`PoAPGenerator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/attestation/PoAPGenerator.ts).
+Once physical presence criteria are satisfied, the server generates a standardized, tamper-evident cryptographic claim using [`PoAPGenerator.ts`](../../src/core/attestation/PoAPGenerator.ts).
 
 ### 3.1 Claim Data Model
 
@@ -117,7 +117,7 @@ This digest is permanently bound within the claim before serialization into cano
 
 ## 4. API Endpoints & Attestation Lifecycle
 
-The attestation workflow is exposed via HTTP POST at `/api/checkin/poap` ([`src/app/api/checkin/poap/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/checkin/poap/route.ts)).
+The attestation workflow is exposed via HTTP POST at `/api/checkin/poap` ([`src/app/api/checkin/poap/route.ts`](../../src/app/api/checkin/poap/route.ts)).
 
 ### 4.1 Request Payload
 
@@ -165,7 +165,7 @@ The attestation workflow is exposed via HTTP POST at `/api/checkin/poap` ([`src/
 
 ## 5. Client-Side WebAssembly (WASM) Verification
 
-To allow mobile wallets, progressive web applications (PWAs), and offline decentralized clients to verify badges without querying central infrastructure or leaking user location queries, WorkSphere utilizes WebAssembly-accelerated ECDSA verification ([`src/lib/wasm-loader/attestation.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/attestation.ts)).
+To allow mobile wallets, progressive web applications (PWAs), and offline decentralized clients to verify badges without querying central infrastructure or leaking user location queries, WorkSphere utilizes WebAssembly-accelerated ECDSA verification ([`src/lib/wasm-loader/attestation.ts`](../../src/lib/wasm-loader/attestation.ts)).
 
 ### 5.1 Architecture of `AttestationWasmLoader`
 

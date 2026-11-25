@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
             complianceScore: slaResult.complianceScore,
             isCompliant: slaResult.isCompliant,
             penaltyPoints,
-            violations: violations as Prisma.InputJsonValue,
+            violations: violations as unknown as Prisma.InputJsonValue,
           },
           update: {
             status: "COMPLETE",
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
             complianceScore: slaResult.complianceScore,
             isCompliant: slaResult.isCompliant,
             penaltyPoints,
-            violations: violations as Prisma.InputJsonValue,
+            violations: violations as unknown as Prisma.InputJsonValue,
           },
         });
         await tx.venue.update({

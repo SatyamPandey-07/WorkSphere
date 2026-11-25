@@ -1,9 +1,20 @@
 import {
   GET,
+  POST,
   sanitizeTelemetryPayload,
 } from "@/app/api/admin/system/diagnostics/route";
 import { getAdminUser } from "@/lib/admin";
 import { getAdminSystemMetrics } from "@/lib/adminSystemMetrics";
+import { prisma } from "@/lib/prisma";
+
+jest.mock("@/lib/prisma", () => ({
+  prisma: {
+    adminAuditLog: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+    },
+  },
+}));
 
 jest.mock("@/lib/admin", () => ({
   getAdminUser: jest.fn(),
@@ -16,6 +27,8 @@ jest.mock("@/lib/adminSystemMetrics", () => ({
 describe("Admin Diagnostics Export API (#4412)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (prisma.adminAuditLog.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.adminAuditLog.create as jest.Mock).mockResolvedValue({});
   });
 
   describe("sanitizeTelemetryPayload", () => {
@@ -116,4 +129,88 @@ describe("Admin Diagnostics Export API (#4412)", () => {
       expect(json.error).toBe("Failed to generate diagnostic report");
     });
   });
+
+  describe("POST /api/admin/system/diagnostics", () => {
+    const report = {
+      version: 1,
+      adapterAvailable: true,
+      features: {
+        timestampQuery: true,
+        shaderF16: false,
+        subgroups: true,
+      },
+      limits: {
+        bufferSize: "large",
+        workgroupSizeX: "medium",
+        workgroupInvocations: "large",
+        workgroupsPerDimension: "very-large",
+      },
+    };
+
+    it("rejects unauthenticated capability submissions", async () => {
+      (getAdminUser as jest.Mock).mockResolvedValue(null);
+      const response = await POST(
+        new Request("http://localhost/api/admin/system/diagnostics", {
+          method: "POST",
+          body: JSON.stringify(report),
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      expect(response.status).toBe(403);
+      expect(prisma.adminAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    it("stores only the allowlisted, coarse capability report", async () => {
+      (getAdminUser as jest.Mock).mockResolvedValue({ id: "admin_user_99" });
+      const response = await POST(
+        new Request("http://localhost/api/admin/system/diagnostics", {
+          method: "POST",
+          body: JSON.stringify({
+            ...report,
+            vendor: "must-not-be-stored",
+            device: "must-not-be-stored",
+          }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      expect(response.status).toBe(202);
+      expect(prisma.adminAuditLog.create).toHaveBeenCalledWith({
+        data: {
+          adminId: "admin_user_99",
+          action: "WEBGPU_CAPABILITY_REPORT",
+          entityType: "WebGpuCapabilityReport",
+          entityId: "aggregate",
+          details: JSON.stringify(report),
+        },
+      });
+    });
+
+    it("rejects invalid capability buckets and oversized payloads", async () => {
+      (getAdminUser as jest.Mock).mockResolvedValue({ id: "admin_user_99" });
+      const invalid = {
+        ...report,
+        limits: { ...report.limits, bufferSize: "exact-device-limit" },
+      };
+      const invalidResponse = await POST(
+        new Request("http://localhost/api/admin/system/diagnostics", {
+          method: "POST",
+          body: JSON.stringify(invalid),
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      expect(invalidResponse.status).toBe(400);
+
+      const largeResponse = await POST(
+        new Request("http://localhost/api/admin/system/diagnostics", {
+          method: "POST",
+          body: JSON.stringify({ report: "x".repeat(9_000) }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      expect(largeResponse.status).toBe(413);
+    });
+  });
+
 });

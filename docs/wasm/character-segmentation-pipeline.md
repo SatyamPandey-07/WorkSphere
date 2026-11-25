@@ -1,6 +1,6 @@
 # Character Segmentation Pipeline: Morphological Dilation & Connected Components Analysis
 
-This document details the computer vision and image processing architecture implemented in WebAssembly via [`src/wasm/ocr/character_segment.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/ocr/character_segment.c) and [`src/wasm/ocr/image_binarize.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/ocr/image_binarize.c). This pipeline processes raw camera frames and flyer photos to segment menu items, signage, and workspace amenity boards into isolated character and word bounding boxes for downstream OCR and LLM classification.
+This document details the computer vision and image processing architecture implemented in WebAssembly via [`src/wasm/ocr/character_segment.c`](../../src/wasm/ocr/character_segment.c) and [`src/wasm/ocr/image_binarize.c`](../../src/wasm/ocr/image_binarize.c). This pipeline processes raw camera frames and flyer photos to segment menu items, signage, and workspace amenity boards into isolated character and word bounding boxes for downstream OCR and LLM classification.
 
 ---
 
@@ -54,7 +54,7 @@ Offset (2W×H) ├────────────────────�
 ## 3. Grayscale Binarization & Morphological Operations
 
 ### 3.1 Otsu's Adaptive Global Thresholding
-Implemented in [`image_binarize.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/ocr/image_binarize.c), Otsu's algorithm maximizes the between-class variance $\sigma_B^2(t)$ across pixel intensity histogram $H(i)$:
+Implemented in [`image_binarize.c`](../../src/wasm/ocr/image_binarize.c), Otsu's algorithm maximizes the between-class variance $\sigma_B^2(t)$ across pixel intensity histogram $H(i)$:
 
 $$\sigma_B^2(t) = \omega_0(t) \cdot \omega_1(t) \cdot \left(\mu_0(t) - \mu_1(t)\right)^2$$
 

@@ -17,6 +17,7 @@ export interface JobPayload {
 
 export interface JobState {
   id: string;
+  userId?: string;
   status: JobStatus;
   resultUrl?: string;
   error?: string;
@@ -24,9 +25,14 @@ export interface JobState {
 }
 
 export async function pushJob(jobId: string, payload: JobPayload) {
-  // Store job state
+  if (!payload || !payload.userId) {
+    throw new Error("Job payload must include a valid userId");
+  }
+
+  // Store job state with authenticated owner metadata
   const state: JobState = {
     id: jobId,
+    userId: payload.userId,
     status: "QUEUED",
     createdAt: Date.now(),
   };
@@ -53,6 +59,7 @@ export async function getJobStatus(jobId: string): Promise<JobState | null> {
   const parsed = state as unknown as Record<string, string>;
   return {
     id: String(parsed.id ?? jobId),
+    userId: parsed.userId ? String(parsed.userId) : undefined,
     status: (parsed.status as JobStatus) ?? "QUEUED",
     resultUrl: parsed.resultUrl,
     error: parsed.error,
@@ -64,5 +71,16 @@ export async function updateJobStatus(
   jobId: string,
   updates: Partial<JobState>,
 ) {
-  await requireRedis().hset(`pdf:job:${jobId}`, updates);
+  const cleanUpdates: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(updates)) {
+    if (val !== undefined) {
+      cleanUpdates[key] = val;
+    }
+  }
+  if (Object.keys(cleanUpdates).length > 0) {
+    await requireRedis().hset(`pdf:job:${jobId}`, cleanUpdates);
+  }
 }
+
+// ─── Offline Mutation Queue Integration (Issue #9618) ───────────────────────────
+export * from "@/core/sync/OfflineMutationQueue";

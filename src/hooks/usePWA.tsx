@@ -41,6 +41,11 @@ export function useSyncWorker() {
 
     const handleMessage = (event: MessageEvent) => {
       const msg = event.data;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("worksphere:sync-progress", { detail: msg }),
+        );
+      }
       switch (msg.type) {
         case "SYNC_SUCCESS":
           console.log(

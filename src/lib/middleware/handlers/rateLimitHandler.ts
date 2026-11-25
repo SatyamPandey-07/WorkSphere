@@ -11,6 +11,10 @@ import {
   getSlidingWindowRateLimitHeaders,
   matchSensitiveRateLimit,
 } from "@/lib/rateLimit/slidingWindowRateLimiter";
+import {
+  getOrCreateFallbackLimiter,
+  isRecoverableRedisError,
+} from "@/lib/rateLimit/tokenBucketFallback";
 import type { MiddlewareHandler } from "../types";
 
 export const REDIS_TIMEOUT_MS = 1500;
@@ -56,8 +60,11 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
 
       let strictResult: RateLimitResult;
       try {
-        const timeoutPromise = new Promise<RateLimitResult>((resolve) => {
-          const timer = setTimeout(() => resolve(fallback), REDIS_TIMEOUT_MS);
+        const timeoutPromise = new Promise<RateLimitResult>((_, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("Redis rate-limit check timed out")),
+            REDIS_TIMEOUT_MS,
+          );
           timer.unref?.();
         });
 
@@ -67,8 +74,29 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
           ),
           timeoutPromise,
         ]);
-      } catch {
-        strictResult = fallback;
+      } catch (err: unknown) {
+        if (isRecoverableRedisError(err)) {
+          // Activate in-memory token bucket fallback limiter to prevent unbounded traffic during outages
+          const refillRate =
+            sensitiveRule.limit / (sensitiveRule.windowMs / 1000);
+          const fallbackLimiter = getOrCreateFallbackLimiter(
+            `sensitive:${sensitiveRule.name}`,
+            sensitiveRule.limit,
+            refillRate,
+            0,
+          );
+          const fbRes = fallbackLimiter.consume(identifier, 1);
+          strictResult = {
+            success: fbRes.allowed,
+            limit: fbRes.limit,
+            remaining: fbRes.remaining,
+            reset: Math.floor(Date.now() / 1000) + fbRes.resetSeconds,
+            retryAfter: fbRes.retryAfterSeconds,
+            identity: identifier,
+          };
+        } else {
+          strictResult = fallback;
+        }
       }
 
       if (!strictResult.success) {
@@ -99,17 +127,11 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
 
         let rateLimitResult: RateLimitResult;
         try {
-          const timeoutPromise = new Promise<RateLimitResult>((resolve) => {
+          const timeoutPromise = new Promise<RateLimitResult>((_, reject) => {
             const timer = setTimeout(() => {
-              resolve({
-                success: true,
-                limit: tier.limit,
-                remaining: tier.limit,
-                reset: Math.ceil((Date.now() + tier.windowMs) / 1000),
-                retryAfter: 0,
-                tier: tier.name,
-                identity: identifier,
-              });
+              reject(
+                new Error("Redis token bucket rate-limit check timed out"),
+              );
             }, REDIS_TIMEOUT_MS);
             timer.unref?.();
           });
@@ -118,17 +140,38 @@ export const rateLimitMiddleware: MiddlewareHandler = async (
             checkTokenBucketRateLimit(tier, identifier),
             timeoutPromise,
           ]);
-        } catch {
-          // Gracefully fail-open if Redis encounters connection timeouts or errors
-          rateLimitResult = {
-            success: true,
-            limit: tier.limit,
-            remaining: tier.limit,
-            reset: Math.ceil((Date.now() + tier.windowMs) / 1000),
-            retryAfter: 0,
-            tier: tier.name,
-            identity: identifier,
-          };
+        } catch (err: unknown) {
+          if (isRecoverableRedisError(err)) {
+            // Activate client-side / edge token bucket fallback when Redis experiences transient failure
+            const refillRate = tier.limit / (tier.windowMs / 1000);
+            const fallbackLimiter = getOrCreateFallbackLimiter(
+              `tier:${tier.name}`,
+              tier.limit,
+              refillRate,
+              0,
+            );
+            const fbRes = fallbackLimiter.consume(identifier, 1);
+            rateLimitResult = {
+              success: fbRes.allowed,
+              limit: fbRes.limit,
+              remaining: fbRes.remaining,
+              reset: Math.floor(Date.now() / 1000) + fbRes.resetSeconds,
+              retryAfter: fbRes.retryAfterSeconds,
+              tier: tier.name,
+              identity: identifier,
+            };
+          } else {
+            // Fail-open for unrecognized exceptions to preserve availability
+            rateLimitResult = {
+              success: true,
+              limit: tier.limit,
+              remaining: tier.limit,
+              reset: Math.ceil((Date.now() + tier.windowMs) / 1000),
+              retryAfter: 0,
+              tier: tier.name,
+              identity: identifier,
+            };
+          }
         }
 
         if (!rateLimitResult.success) {

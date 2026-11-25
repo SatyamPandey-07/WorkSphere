@@ -1,6 +1,6 @@
 # Advanced Cryptography Whitepaper: Batch Groth16 Zero-Knowledge Proof Verification Pipeline & Gas/CPU Optimization
 
-This technical whitepaper details WorkSphere's batch zero-knowledge proof (ZKP) verification engine, elliptic curve pairing batching algorithms, randomized linear combination (RLC) mathematical proofs, EVM gas optimizations, and high-performance multi-venue identity verification ([src/lib/zkp/batch.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/batch.ts), [src/lib/zkp/verify.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/verify.ts), and [src/lib/zkp/poseidon.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/poseidon.ts)).
+This technical whitepaper details WorkSphere's batch zero-knowledge proof (ZKP) verification engine, elliptic curve pairing batching algorithms, randomized linear combination (RLC) mathematical proofs, EVM gas optimizations, and high-performance multi-venue identity verification ([src/lib/zkp/batch.ts](../../src/lib/zkp/batch.ts), [src/lib/zkp/verify.ts](../../src/lib/zkp/verify.ts), and [src/lib/zkp/poseidon.ts](../../src/lib/zkp/poseidon.ts)).
 
 ---
 
@@ -44,7 +44,7 @@ When thousands of users check into co-working spaces simultaneously or when batc
 - **High CPU Computational Overhead:** Each single Groth16 verification requires calculating **4 bilinear pairings** on the BN254 elliptic curve, consuming $15\text{--}25\text{ ms}$ of V8 CPU thread time per proof.
 - **Prohibitive EVM Gas Costs:** Verifying a single Groth16 proof on Ethereum/L2 smart contracts consumes $\approx 210,000\text{ gas}$. Verifying $N = 100$ proofs sequentially costs over $21,000,000\text{ gas}$, exceeding standard block gas limits.
 
-To solve this bottleneck, WorkSphere implements a **Randomized Linear Combination (RLC) Batch Verification Pipeline** ([src/lib/zkp/batch.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/batch.ts)). By combining $N$ independent proofs into a single unified multi-scalar multiplication (MSM) and pairing check using random scalars $r_k \stackrel{\$}{\leftarrow} \mathbb{F}_r$, the total number of expensive $\mathbb{G}_T$ pairing operations is reduced from $4N$ to just **4 pairings**, yielding up to an **$85\%$ reduction in CPU execution time** and a **$78\%$ reduction in EVM gas usage**.
+To solve this bottleneck, WorkSphere implements a **Randomized Linear Combination (RLC) Batch Verification Pipeline** ([src/lib/zkp/batch.ts](../../src/lib/zkp/batch.ts)). By combining $N$ independent proofs into a single unified multi-scalar multiplication (MSM) and pairing check using random scalars $r_k \stackrel{\$}{\leftarrow} \mathbb{F}_r$, the total number of expensive $\mathbb{G}_T$ pairing operations is reduced from $4N$ to just **4 pairings**, yielding up to an **$85\%$ reduction in CPU execution time** and a **$78\%$ reduction in EVM gas usage**.
 
 ---
 
@@ -213,7 +213,7 @@ Evaluating $\sum r_k \cdot C_k$ and $\sum r_k \cdot \text{VK}_{\mathbf{x}}^{(k)}
 
 ## 4. Multi-Venue & Student Discount Batch Pipeline Architecture
 
-File: [src/lib/zkp/batch.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/batch.ts#L8-L71)
+File: [src/lib/zkp/batch.ts](../../src/lib/zkp/batch.ts#L8-L71)
 
 WorkSphere exposes two primary batch verification interfaces:
 1. `verifyMultiVenueBatchProofs`: Verifies multi-venue cluster access tokens across multiple coworking locations.
@@ -753,7 +753,7 @@ export async function verifyBatchStudentDiscountProofs(
 
 ## 8. Repository Code Reference Map
 
-- [src/lib/zkp/batch.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/batch.ts) — Multi-venue cluster verification, student discount batch processing, Poseidon Merkle cluster hashing, and nullifier de-duplication.
-- [src/lib/zkp/verify.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/verify.ts) — Individual Groth16 proof verification (`verifyMembershipProof`), WASM curve lifecycle management (`releaseCurve`), and verification key loading.
-- [src/lib/zkp/poseidon.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/poseidon.ts) — Poseidon hash function implementation for Merkle tree node evaluation.
-- [src/lib/zkp/studentMembership.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/zkp/studentMembership.ts) — Academic institution Merkle root verification and epoch validation.
+- [src/lib/zkp/batch.ts](../../src/lib/zkp/batch.ts) — Multi-venue cluster verification, student discount batch processing, Poseidon Merkle cluster hashing, and nullifier de-duplication.
+- [src/lib/zkp/verify.ts](../../src/lib/zkp/verify.ts) — Individual Groth16 proof verification (`verifyMembershipProof`), WASM curve lifecycle management (`releaseCurve`), and verification key loading.
+- [src/lib/zkp/poseidon.ts](../../src/lib/zkp/poseidon.ts) — Poseidon hash function implementation for Merkle tree node evaluation.
+- [src/lib/zkp/studentMembership.ts](../../src/lib/zkp/studentMembership.ts) — Academic institution Merkle root verification and epoch validation.

@@ -548,6 +548,16 @@ describe("Map Component", () => {
       expect(mapContainer).toHaveStyle({ width: "95%", height: "95%" });
     });
 
+    it("defines dark initial background (#0B0F17) for the Leaflet map container to prevent unstyled flash on CartoDB tiles (#9161)", () => {
+      const { container } = render(<Map {...defaultProps} />);
+
+      // Verify the embedded style tag contains the dark initial background rule
+      const styleTag = container.querySelector("style");
+      expect(styleTag).not.toBeNull();
+      expect(styleTag?.innerHTML).toContain(".leaflet-container");
+      expect(styleTag?.innerHTML).toMatch(/\.leaflet-container\s*\{[^}]*background:\s*#0B0F17/i);
+    });
+
     it("keeps the reset control clear of map attribution with a 44px touch target", () => {
       render(<Map {...defaultProps} />);
 

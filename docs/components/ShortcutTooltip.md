@@ -1,6 +1,6 @@
 # Component Reference: `ShortcutTooltip` & Keyboard Shortcut Tooltips
 
-This document details the architecture, props interface, placement positioning engine, cross-platform modifier key resolution, and accessibility guidelines for the **`ShortcutTooltip`** component ([`src/components/ui/ShortcutTooltip.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ui/ShortcutTooltip.tsx)).
+This document details the architecture, props interface, placement positioning engine, cross-platform modifier key resolution, and accessibility guidelines for the **`ShortcutTooltip`** component ([`src/components/ui/ShortcutTooltip.tsx`](../../src/components/ui/ShortcutTooltip.tsx)).
 
 ---
 
@@ -78,7 +78,7 @@ The component positions floating tooltips relative to the trigger container usin
 
 ## 4. Cross-Platform Modifier Key Resolution
 
-The tooltip integrates with [`src/hooks/usePlatformModifier.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/usePlatformModifier.ts) and [`src/components/ui/KeyboardShortcutBadge.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/ui/KeyboardShortcutBadge.tsx):
+The tooltip integrates with [`src/hooks/usePlatformModifier.ts`](../../src/hooks/usePlatformModifier.ts) and [`src/components/ui/KeyboardShortcutBadge.tsx`](../../src/components/ui/KeyboardShortcutBadge.tsx):
 
 - **macOS / iOS:** Resolves `isMac = true`. Formats visual label as `⌘ + <key>` or `⌘<key>`.
 - **Windows / Linux:** Resolves `isMac = false`. Formats visual label as `Ctrl + <key>`.

@@ -22,7 +22,10 @@ export async function POST(req: NextRequest) {
         : undefined;
 
     if (typeof venueId !== "string" || venueId.trim().length === 0) {
-      return NextResponse.json({ error: "Venue ID is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Venue ID is required" },
+        { status: 400 },
+      );
     }
 
     // Check if venue is already claimed
@@ -35,17 +38,42 @@ export async function POST(req: NextRequest) {
     }
 
     if (venue.isClaimed) {
-      return NextResponse.json({ error: "Venue is already claimed" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Venue is already claimed" },
+        { status: 400 },
+      );
     }
 
-    // Claim the venue
-    const updatedVenue = await prisma.venue.update({
-      where: { id: venueId },
-      data: {
-        isClaimed: true,
-        ownerId: userId,
-      },
-    });
+    // Atomic update conditioned on isClaimed: false to prevent concurrent overwrites
+    let updatedVenue;
+    if (typeof prisma.venue.updateMany === "function") {
+      const updateResult = await prisma.venue.updateMany({
+        where: { id: venueId, isClaimed: false },
+        data: {
+          isClaimed: true,
+          ownerId: userId,
+        },
+      });
+
+      if (updateResult.count === 0) {
+        return NextResponse.json(
+          { error: "Venue is already claimed" },
+          { status: 409 },
+        );
+      }
+
+      updatedVenue = await prisma.venue.findUnique({
+        where: { id: venueId },
+      });
+    } else {
+      updatedVenue = await prisma.venue.update({
+        where: { id: venueId },
+        data: {
+          isClaimed: true,
+          ownerId: userId,
+        },
+      });
+    }
 
     return NextResponse.json({ success: true, venue: updatedVenue });
   } catch (error) {

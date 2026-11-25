@@ -33,7 +33,9 @@ describe("AmenityFilterPills Component", () => {
     it("renders popular amenities with icons and labels", () => {
       render(<AmenityFilterPills />);
 
-      expect(screen.getByTestId("amenity-filter-pills-container")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("amenity-filter-pills-container"),
+      ).toBeInTheDocument();
       expect(screen.getByTestId("amenity-pills-scroll")).toBeInTheDocument();
 
       POPULAR_AMENITIES.forEach((item) => {
@@ -57,7 +59,7 @@ describe("AmenityFilterPills Component", () => {
           amenities={[]}
           emptyMessage="No amenities configured"
           data-testid="custom-empty-msg"
-        />
+        />,
       );
 
       const msg = screen.getByTestId("custom-empty-msg");
@@ -68,9 +70,7 @@ describe("AmenityFilterPills Component", () => {
 
   describe("Controlled Selection", () => {
     it("highlights selected items and marks aria-checked=true", () => {
-      render(
-        <AmenityFilterPills selectedAmenities={["wifi", "coffee"]} />
-      );
+      render(<AmenityFilterPills selectedAmenities={["wifi", "coffee"]} />);
 
       const wifiPill = screen.getByTestId("amenity-pill-wifi");
       const coffeePill = screen.getByTestId("amenity-pill-coffee");
@@ -90,10 +90,22 @@ describe("AmenityFilterPills Component", () => {
 
       render(<AmenityFilterPills />);
 
-      expect(screen.getByTestId("amenity-pill-wifi")).toHaveAttribute("aria-checked", "true");
-      expect(screen.getByTestId("amenity-pill-coffee")).toHaveAttribute("aria-checked", "true");
-      expect(screen.getByTestId("amenity-pill-quiet")).toHaveAttribute("aria-checked", "true");
-      expect(screen.getByTestId("amenity-pill-outlets")).toHaveAttribute("aria-checked", "false");
+      expect(screen.getByTestId("amenity-pill-wifi")).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      expect(screen.getByTestId("amenity-pill-coffee")).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      expect(screen.getByTestId("amenity-pill-quiet")).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      expect(screen.getByTestId("amenity-pill-outlets")).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
     });
   });
 
@@ -114,7 +126,34 @@ describe("AmenityFilterPills Component", () => {
       const wifiPill = screen.getByTestId("amenity-pill-wifi");
       fireEvent.click(wifiPill);
 
-      expect(mockReplace).toHaveBeenCalledWith("/venues?wifi=true", { scroll: false });
+      expect(mockReplace).toHaveBeenCalledWith("/venues?wifi=true", {
+        scroll: false,
+      });
+    });
+
+    it("toggles Standing Desk using the dedicated URL parameter", () => {
+      render(<AmenityFilterPills syncWithUrl />);
+
+      const standingDeskPill = screen.getByTestId("amenity-pill-standing_desk");
+      expect(standingDeskPill).toHaveTextContent("Standing Desk");
+      fireEvent.click(standingDeskPill);
+
+      expect(mockReplace).toHaveBeenCalledWith("/venues?standingDesk=true", {
+        scroll: false,
+      });
+    });
+
+    it("restores Standing Desk active state from the URL", () => {
+      (useSearchParams as jest.Mock).mockReturnValue(
+        new URLSearchParams("standingDesk=true"),
+      );
+
+      render(<AmenityFilterPills />);
+
+      expect(screen.getByTestId("amenity-pill-standing_desk")).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
     });
 
     it("removes query parameter from URL when deselecting", () => {
@@ -126,7 +165,9 @@ describe("AmenityFilterPills Component", () => {
       const wifiPill = screen.getByTestId("amenity-pill-wifi");
       fireEvent.click(wifiPill);
 
-      expect(mockReplace).toHaveBeenCalledWith("/venues?amenities=quiet", { scroll: false });
+      expect(mockReplace).toHaveBeenCalledWith("/venues?amenities=quiet", {
+        scroll: false,
+      });
     });
 
     it("does not call router.replace when syncWithUrl is false", () => {
@@ -145,7 +186,7 @@ describe("AmenityFilterPills Component", () => {
         <AmenityFilterPills
           className="custom-pill-row"
           data-testid="custom-pills-test-id"
-        />
+        />,
       );
 
       const container = screen.getByTestId("custom-pills-test-id");

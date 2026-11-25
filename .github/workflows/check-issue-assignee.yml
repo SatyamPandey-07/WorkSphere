@@ -39,7 +39,7 @@ jobs:
                 return;
               }
 
-              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti'];
+              const BLOCKED_USERS = ['jasonjose007', 'Senthil455', 'riteshbonthalakoti', 'RitikaDevi-12', 'KartikeyG-world'];
               if (BLOCKED_USERS.some(u => u.toLowerCase() === prAuthorLower)) {
                 console.log(`Closing PR #${prNumber} from blocked contributor: ${prAuthor}`);
                 await github.rest.issues.createComment({

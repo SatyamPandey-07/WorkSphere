@@ -1,0 +1,3 @@
+ALTER TABLE "Venue"
+ADD COLUMN "hasStandingDesk" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "hasExternalMonitor" BOOLEAN NOT NULL DEFAULT false;

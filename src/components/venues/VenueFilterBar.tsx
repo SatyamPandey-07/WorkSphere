@@ -10,9 +10,43 @@ import React, {
 import { ArrowUpDown, Monitor } from "lucide-react";
 import { buildVenueSearchParams } from "@/lib/venues/searchQuery";
 import {
-  useSearchPreferences,
-  ALLOWED_RADIUS_OPTIONS,
-} from "@/hooks/useSearchPreferences";
+  Wifi,
+  Zap,
+  VolumeX,
+  Accessibility,
+  Sun,
+  Coffee,
+  Check,
+  SlidersHorizontal,
+  Volume2,
+  X,
+  RotateCcw,
+  LayoutGrid,
+  Building2,
+  BookOpen,
+  MoveVertical,
+  Monitor,
+  Armchair,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { DualRangeSlider } from "@/components/ui/DualRangeSlider";
+
+// ---------------------------------------------------------------------------
+// Types & Defaults
+// ---------------------------------------------------------------------------
+
+export interface VenueCategoryItem {
+  id: string;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+}
+
+export const DEFAULT_VENUE_CATEGORIES: VenueCategoryItem[] = [
+  { id: "all", label: "All", icon: LayoutGrid },
+  { id: "cafe", label: "Cafes", icon: Coffee },
+  { id: "coworking", label: "Coworking", icon: Building2 },
+  { id: "library", label: "Libraries", icon: BookOpen },
+];
 
 export interface VenueFilterOption {
   id: string;
@@ -62,9 +96,28 @@ export const DEFAULT_VENUE_AMENITY_FILTERS: VenueFilterOption[] = [
     icon: Monitor,
   },
   {
-    id: "lightning_wifi",
-    label: "⚡ 100+ Mbps",
-    paramKey: "minWifiSpeed",
+    id: "standingDesk",
+    label: "Standing Desk",
+    paramKey: "standingDesk",
+    icon: MoveVertical,
+  },
+  {
+    id: "externalMonitor",
+    label: "External Monitor",
+    paramKey: "externalMonitor",
+    icon: Monitor,
+  },
+  {
+    id: "ergonomic",
+    label: "Ergonomic Chair",
+    paramKey: "ergonomic",
+    icon: Armchair,
+  },
+  {
+    id: "coffee",
+    label: "Specialty Coffee",
+    paramKey: "coffee",
+    icon: Coffee,
   },
 ];
 

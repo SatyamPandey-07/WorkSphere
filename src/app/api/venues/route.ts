@@ -60,45 +60,12 @@ function suggestVenueQuery(
   return suggestion;
 }
 
-function makeSearchResponse(
-  req: NextRequest,
-  userId: string | null,
-  query: string,
-  body: unknown,
-): NextResponse {
-  const searchParams = req.nextUrl.searchParams;
-  const hasLocationFilter = [
-    "lat",
-    "lng",
-    "radius",
-    "minLat",
-    "maxLat",
-    "minLng",
-    "maxLng",
-  ].some((key) => searchParams.has(key));
-  const isPublicSearch =
-    Boolean(normalizeSearchQuery(query)) &&
-    !userId &&
-    !req.headers.has("authorization") &&
-    !hasLocationFilter &&
-    !req.headers.has("cookie");
-
-  const response = NextResponse.json(body);
-  response.headers.set(
-    "Cache-Control",
-    isPublicSearch
-      ? "public, s-maxage=300"
-      : "private, no-store, max-age=0, must-revalidate",
-  );
-  return response;
-}
-
-function recordVenueSearch(query: string): void {
-  const normalizedQuery = normalizeSearchQuery(query).slice(0, 256);
-  if (!normalizedQuery) return;
-
-  trackEvent("search_performed", { query: normalizedQuery });
-  scheduleTrendingVenueSearchPrefetch();
+function isEnabledSearchParam(
+  searchParams: URLSearchParams,
+  key: string,
+): boolean {
+  const value = searchParams.get(key);
+  return value === "true" || value === "1";
 }
 
 interface VenueSearchData {
@@ -115,6 +82,7 @@ interface VenueSearchData {
   quiet?: boolean;
   ergonomic?: boolean;
   standingDesk?: boolean;
+  externalMonitor?: boolean;
   outletDensity?: string;
   wifiSpeedBand?: string;
   hasPhoneBooths?: boolean;
@@ -256,41 +224,14 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const categoryParam =
-        searchParams.get("category") ?? searchParams.get("type");
-      if (categoryParam && categoryParam !== "all") {
-        andConditions.push({ category: categoryParam });
-      }
-      if (isEnabled("wifi") || selectedAmenities.has("wifi")) {
-        andConditions.push({ wifiQuality: { gte: 3 } });
-      }
-      const minWifiSpeedParam = searchParams.get("minWifiSpeed");
-      if (minWifiSpeedParam !== null && !isNaN(Number(minWifiSpeedParam))) {
-        andConditions.push({
-          wifiSpeed: { gte: parseFloat(minWifiSpeedParam) },
-        });
-      }
-      if (isEnabled("outlets") || selectedAmenities.has("outlets")) {
-        andConditions.push({ hasOutlets: true });
-      }
-      if (isEnabled("quiet") || selectedAmenities.has("quiet")) {
-        andConditions.push({ noiseLevel: "quiet" });
-      }
-      if (isEnabled("ergonomic") || selectedAmenities.has("ergonomic")) {
+      if (isEnabledSearchParam(searchParams, "ergonomic")) {
         andConditions.push({ hasErgonomic: true });
       }
-      if (isEnabled("hasPhoneBooths") || selectedAmenities.has("phonebooths")) {
-        andConditions.push({ hasPhoneBooths: true });
+      if (isEnabledSearchParam(searchParams, "standingDesk")) {
+        andConditions.push({ hasStandingDesk: true });
       }
-      if (isEnabled("standingDesk") || selectedAmenities.has("standing_desk")) {
-        andConditions.push({
-          validations: {
-            some: {
-              amenity: { equals: "standing_desk", mode: "insensitive" },
-              upvotes: { gt: 0 },
-            },
-          },
-        });
+      if (isEnabledSearchParam(searchParams, "externalMonitor")) {
+        andConditions.push({ hasExternalMonitor: true });
       }
 
       const suggestionWhere =
@@ -450,6 +391,7 @@ export async function GET(req: NextRequest) {
       "quiet",
       "ergonomic",
       "standingDesk",
+      "externalMonitor",
       "outletDensity",
       "wifiSpeedBand",
       "hasPhoneBooths",
@@ -532,6 +474,7 @@ export async function GET(req: NextRequest) {
       quiet,
       ergonomic,
       standingDesk,
+      externalMonitor,
       outletDensity,
       wifiSpeedBand,
       hasPhoneBooths,
@@ -585,6 +528,12 @@ export async function GET(req: NextRequest) {
 
     if (ergonomic) {
       where.hasErgonomic = true;
+    }
+    if (standingDesk) {
+      where.hasStandingDesk = true;
+    }
+    if (externalMonitor) {
+      where.hasExternalMonitor = true;
     }
 
     if (standingDesk) {
@@ -907,6 +856,8 @@ export async function POST(req: NextRequest) {
       hasOutlets,
       noiseLevel,
       hasErgonomic,
+      hasStandingDesk,
+      hasExternalMonitor,
       outletDensity,
       wifiSpeed,
       hasPhoneBooths,
@@ -982,6 +933,8 @@ export async function POST(req: NextRequest) {
         hasOutlets,
         noiseLevel,
         hasErgonomic,
+        hasStandingDesk,
+        hasExternalMonitor,
         outletDensity,
         wifiSpeed,
         hasPhoneBooths,
@@ -1015,6 +968,8 @@ export async function POST(req: NextRequest) {
         hasOutlets: hasOutlets || false,
         noiseLevel,
         hasErgonomic: hasErgonomic || false,
+        hasStandingDesk: hasStandingDesk || false,
+        hasExternalMonitor: hasExternalMonitor || false,
         outletDensity: outletDensity || "none",
         wifiSpeed: wifiSpeed || null,
         hasPhoneBooths: hasPhoneBooths || false,

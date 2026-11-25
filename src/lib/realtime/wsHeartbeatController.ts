@@ -13,7 +13,22 @@ export class WsHeartbeatController {
   public getQueuedCount(): number { return this.outboundQueue.length; }
   public getReconnectAttempts(): number { return this.reconnectAttempts; }
   private setState(next: WsHealthState, detail?: string): void { if (this.state !== next) { this.state = next; this.onStateChange?.(next, detail); } }
-  public connect(): void { if (this.disposed) return; this.manuallyClosed = false; this.clearReconnectTimer(); this.setState('connecting'); try { this.socket = this.createSocket(); } catch (err) { this.setState('stalled', err instanceof Error ? err.message : 'Socket creation failed'); this.scheduleReconnect(); } }
+  public connect(): void {
+    if (this.disposed) return;
+    this.manuallyClosed = false;
+    this.awaitingPong = false;
+    this.stopHeartbeatLoop();
+    this.clearPongTimer();
+    this.clearReconnectTimer();
+    this.setState('connecting');
+    try {
+      this.socket = this.createSocket();
+    } catch (err) {
+      if (this.disposed || this.manuallyClosed) return;
+      this.setState('stalled', err instanceof Error ? err.message : 'Socket creation failed');
+      this.scheduleReconnect();
+    }
+  }
   public handleOpen(): void { if (this.disposed || this.manuallyClosed) return; this.reconnectAttempts = 0; this.awaitingPong = false; this.clearPongTimer(); this.setState('healthy'); this.startHeartbeatLoop(); this.flushQueue(); }
   public handleIncomingMessage(rawData: string): void { if (this.disposed) return; if (this.isPongMessage(rawData)) { this.awaitingPong = false; this.clearPongTimer(); if (this.state === 'stalled' || this.state === 'connecting') this.setState('healthy'); return; } this.onMessage?.(rawData); }
   public handleSocketClose(reason = 'socket closed'): void { this.stopHeartbeatLoop(); this.clearPongTimer(); this.awaitingPong = false; this.socket = null; if (this.disposed || this.manuallyClosed) { this.setState('closed', reason); return; } this.scheduleReconnect(reason); }
@@ -37,11 +52,32 @@ export class WsHeartbeatController {
   private startHeartbeatLoop(): void {
     this.stopHeartbeatLoop();
     this.heartbeatTimer = setInterval(() => {
-      if (!this.socket || this.socket.readyState !== 1 || this.disposed) return;
+      if (!this.socket || this.socket.readyState !== 1 || this.disposed || this.manuallyClosed) {
+        return;
+      }
       this.awaitingPong = true;
-      try { if (this.onPing) this.onPing(this.socket); else this.socket.send(JSON.stringify({ type: 'ping', ts: this.nowFn() })); } catch { this.handleSocketClose('ping send failed'); return; }
+      try {
+        if (this.onPing) {
+          this.onPing(this.socket);
+        } else {
+          this.socket.send(JSON.stringify({ type: 'ping', ts: this.nowFn() }));
+        }
+      } catch {
+        this.handleSocketClose('ping send failed');
+        return;
+      }
+      if (this.disposed || this.manuallyClosed) {
+        return;
+      }
       this.clearPongTimer();
-      this.pongTimer = setTimeout(() => { if (this.awaitingPong && !this.disposed && !this.manuallyClosed) { this.setState('stalled', 'Missed pong heartbeat'); this.scheduleReconnect('Pong timeout'); } }, this.pongTimeoutMs);
+      this.pongTimer = setTimeout(() => {
+        this.pongTimer = null;
+        if (this.awaitingPong && !this.disposed && !this.manuallyClosed) {
+          this.awaitingPong = false;
+          this.setState('stalled', 'Missed pong heartbeat');
+          this.scheduleReconnect('Pong timeout');
+        }
+      }, this.pongTimeoutMs);
     }, this.heartbeatIntervalMs);
   }
   private scheduleReconnect(reason = 'reconnecting'): void {
@@ -55,6 +91,19 @@ export class WsHeartbeatController {
   private stopHeartbeatLoop(): void { if (this.heartbeatTimer !== null) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; } }
   private clearPongTimer(): void { if (this.pongTimer !== null) { clearTimeout(this.pongTimer); this.pongTimer = null; } }
   private clearReconnectTimer(): void { if (this.reconnectTimer !== null) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; } }
-  public disconnect(code = 1000, reason = 'manual disconnect'): void { this.manuallyClosed = true; this.stopHeartbeatLoop(); this.clearPongTimer(); this.clearReconnectTimer(); if (this.socket) { try { this.socket.close(code, reason); } catch {} this.socket = null; } this.setState('closed', reason); }
+  public disconnect(code = 1000, reason = 'manual disconnect'): void {
+    this.manuallyClosed = true;
+    this.awaitingPong = false;
+    this.stopHeartbeatLoop();
+    this.clearPongTimer();
+    this.clearReconnectTimer();
+    if (this.socket) {
+      try {
+        this.socket.close(code, reason);
+      } catch {}
+      this.socket = null;
+    }
+    this.setState('closed', reason);
+  }
   public dispose(): void { this.disposed = true; this.disconnect(1000, 'controller disposed'); this.outboundQueue = []; }
 }

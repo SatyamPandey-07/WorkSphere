@@ -3,7 +3,15 @@ import {
   getOrCreateFallbackLimiter,
   resetFallbackLimiters,
   isRecoverableRedisError,
-} from "@/lib/ratelimit/tokenBucketFallback";
+  recordFallbackActivation,
+  recordFallbackRecovery,
+  getFallbackTelemetrySnapshot,
+  resetFallbackTelemetry,
+} from "@/lib/rateLimit/tokenBucketFallback";
+import {
+  buildSystemVitalsSnapshot,
+  formatSystemVitalsPrometheus,
+} from "@/lib/export/domain/systemVitalExporter";
 import { NextRequest, NextResponse } from "next/server";
 import type { MiddlewareContext } from "@/lib/middleware/types";
 
@@ -332,5 +340,128 @@ describe("API Gateway Middleware Fallback Integration Tests", () => {
     const res2 = await rateLimitMiddleware(req2, ctx, mockNext);
     expect(res2.status).toBe(200);
     expect(res2.headers.get("RateLimit-Remaining")).toBe("59");
+  });
+});
+
+describe("Fallback Telemetry Metrics Exporter (#10302)", () => {
+  beforeEach(() => {
+    resetFallbackLimiters();
+    jest.restoreAllMocks();
+  });
+
+  it("tracks activation count, episode duration, and rejected request count", () => {
+    const limiter = getOrCreateFallbackLimiter("tier:search", 2, 1);
+
+    // Episode 1: starts at 1000ms, 2 allowed + 1 rejected
+    recordFallbackActivation("tier:search", 1000);
+    expect(limiter.consume("user-1", 1, 1000).allowed).toBe(true);
+    expect(limiter.consume("user-1", 1, 1100).allowed).toBe(true);
+    expect(limiter.consume("user-1", 1, 1200).allowed).toBe(false);
+
+    const activeSnapshot = getFallbackTelemetrySnapshot(1500);
+    expect(activeSnapshot.active).toBe(true);
+    expect(activeSnapshot.activationCount).toBe(1);
+    expect(activeSnapshot.requestCount).toBe(3);
+    expect(activeSnapshot.allowedCount).toBe(2);
+    expect(activeSnapshot.rejectedCount).toBe(1);
+    expect(activeSnapshot.currentEpisodeDurationMs).toBe(500);
+    expect(activeSnapshot.totalDurationMs).toBe(500);
+    expect(activeSnapshot.activeBuckets).toBe(1);
+    expect(activeSnapshot.byTier["tier:search"]).toEqual({
+      activationCount: 1,
+      requestCount: 3,
+      allowedCount: 2,
+      rejectedCount: 1,
+      activeBuckets: 1,
+    });
+
+    // Recovery at 2000ms closes Episode 1 with 1000ms duration
+    recordFallbackRecovery(2000);
+    const recoveredSnapshot = getFallbackTelemetrySnapshot(2500);
+    expect(recoveredSnapshot.active).toBe(false);
+    expect(recoveredSnapshot.currentEpisodeDurationMs).toBe(0);
+    expect(recoveredSnapshot.totalDurationMs).toBe(1000);
+
+    // Episode 2: auto-activates via consume at 5000ms
+    expect(limiter.consume("user-2", 1, 5000).allowed).toBe(true);
+    recordFallbackRecovery(5400);
+
+    const secondSnapshot = getFallbackTelemetrySnapshot(6000);
+    expect(secondSnapshot.activationCount).toBe(2);
+    expect(secondSnapshot.requestCount).toBe(4);
+    expect(secondSnapshot.allowedCount).toBe(3);
+    expect(secondSnapshot.rejectedCount).toBe(1);
+    expect(secondSnapshot.totalDurationMs).toBe(1400);
+  });
+
+  it("resets all fallback telemetry counters and episode durations cleanly", () => {
+    const limiter = getOrCreateFallbackLimiter("tier:mutations", 1, 1);
+    recordFallbackActivation("tier:mutations", 1000);
+    limiter.consume("u1", 1, 1000);
+    limiter.consume("u1", 1, 1000);
+    recordFallbackRecovery(1800);
+
+    expect(getFallbackTelemetrySnapshot(2000).activationCount).toBe(1);
+    expect(getFallbackTelemetrySnapshot(2000).rejectedCount).toBe(1);
+    expect(getFallbackTelemetrySnapshot(2000).totalDurationMs).toBe(800);
+
+    resetFallbackTelemetry();
+
+    const cleared = getFallbackTelemetrySnapshot(2500);
+    expect(cleared.active).toBe(false);
+    expect(cleared.activationCount).toBe(0);
+    expect(cleared.requestCount).toBe(0);
+    expect(cleared.allowedCount).toBe(0);
+    expect(cleared.rejectedCount).toBe(0);
+    expect(cleared.totalDurationMs).toBe(0);
+    expect(cleared.currentEpisodeDurationMs).toBe(0);
+    expect(cleared.lastActivatedAtMs).toBeNull();
+  });
+
+  it("records fallback activations and recovery through rateLimitMiddleware and exports to system vitals", async () => {
+    const err503 = new Error("503 Service Unavailable");
+    (err503 as any).status = 503;
+    mockedCheckTokenBucket.mockRejectedValue(err503);
+
+    const ctx = { userId: "telemetry-user" } as MiddlewareContext;
+    // Mutations tier limit = 10 -> 10 allowed + 2 rejected
+    for (let i = 0; i < 12; i++) {
+      const req = new NextRequest("http://localhost/api/reviews", { method: "POST" });
+      await rateLimitMiddleware(req, ctx, async () => NextResponse.json({ ok: true }));
+    }
+
+    const midSnapshot = getFallbackTelemetrySnapshot();
+    expect(midSnapshot.active).toBe(true);
+    expect(midSnapshot.activationCount).toBe(1);
+    expect(midSnapshot.requestCount).toBe(12);
+    expect(midSnapshot.allowedCount).toBe(10);
+    expect(midSnapshot.rejectedCount).toBe(2);
+
+    const vitals = buildSystemVitalsSnapshot();
+    expect(vitals.rateLimitFallback).toBeDefined();
+    expect(vitals.rateLimitFallback?.activationCount).toBe(1);
+    expect(vitals.rateLimitFallback?.rejectedCount).toBe(2);
+
+    const prom = formatSystemVitalsPrometheus(vitals);
+    expect(prom).toContain("worksphere_rate_limit_fallback_active 1");
+    expect(prom).toContain("worksphere_rate_limit_fallback_activations_total 1");
+    expect(prom).toContain("worksphere_rate_limit_fallback_requests_total 12");
+    expect(prom).toContain("worksphere_rate_limit_fallback_rejected_total 2");
+
+    // Redis recovers -> fallback episode closes
+    mockedCheckTokenBucket.mockResolvedValueOnce({
+      success: true,
+      limit: 10,
+      remaining: 9,
+      reset: Math.floor(Date.now() / 1000) + 60,
+      retryAfter: 0,
+      tier: "mutations",
+      identity: "mutations:telemetry-user",
+    });
+
+    const recoveryReq = new NextRequest("http://localhost/api/reviews", { method: "POST" });
+    await rateLimitMiddleware(recoveryReq, ctx, async () => NextResponse.json({ ok: true }));
+
+    expect(getFallbackTelemetrySnapshot().active).toBe(false);
   });
 });

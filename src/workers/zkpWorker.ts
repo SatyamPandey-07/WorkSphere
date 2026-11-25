@@ -1,4 +1,4 @@
-﻿import {
+import {
   prepareGigabitCircuitInputs,
   evaluateMeasurementsPrecheck,
   resolveGigabitArtifactPaths,
@@ -72,7 +72,7 @@ export function releaseZkpWasmMemory(): void {
   _activeWasmHeapRef = null;
 }
 
-type WorkerMessage =
+type _WorkerMessage =
   | PremiumProofRequest
   | StudentProofRequest
   | VerifyRequest
@@ -82,7 +82,7 @@ type WorkerMessage =
 
 export type ZkpProofProgressPhase = "witness" | "proving" | "finalizing";
 
-interface ZkpProofProgressMessage {
+interface _ZkpProofProgressMessage {
   type: "progress";
   stage: "generating";
   phase: ZkpProofProgressPhase;
@@ -94,25 +94,43 @@ type ZkpProofProgressReporter = (
   percent: number,
 ) => void;
 
-let generation = 0;
+const _generation = 0;
 
 export const DEFAULT_VERIFICATION_TIMEOUT_MS = 15_000;
 export const DEFAULT_PROVING_TIMEOUT_MS = 30_000;
 
 // Setup unhandled rejection and uncaught exception listeners inside the worker
 if (typeof self !== "undefined") {
-  self.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
-    event.preventDefault();
-    const reason = event.reason;
-    const errorType = classifyError(reason);
-    self.postMessage({
-      type: "error",
-      error: sanitizeError(reason),
-      code: errorType === "timeout" ? "PROVING_TIMEOUT" : "UNHANDLED_REJECTION",
-      isTimeout: errorType === "timeout",
-      details: reason instanceof Error ? reason.message : String(reason),
-    });
-  });
+  self.addEventListener(
+    "unhandledrejection",
+    (event: PromiseRejectionEvent) => {
+      event.preventDefault();
+      const reason = event.reason;
+      const errorType = classifyError(reason);
+      self.postMessage({
+        type: "error",
+        error: sanitizeError(reason),
+        code:
+          errorType === "timeout" ? "PROVING_TIMEOUT" : "UNHANDLED_REJECTION",
+        isTimeout: errorType === "timeout",
+        details: reason instanceof Error ? reason.message : String(reason),
+      });
+    },
+  );
+}
+
+export async function runGigabitWitnessAndProof(
+  requestId: string | undefined,
+  payload: ZkpProofRequest["payload"],
+  emit: (msg: ZkpWorkerOutgoingMessage) => void,
+): Promise<void> {
+  abortedRequestId = null;
+  _activeWasmHeapRef = new Uint8Array(1024);
+
+  if (abortedRequestId === requestId) {
+    releaseZkpWasmMemory();
+    return;
+  }
 
   if (!payload || typeof payload !== "object") {
     releaseZkpWasmMemory();
@@ -138,7 +156,9 @@ if (typeof self !== "undefined") {
 
       const precheck = evaluateMeasurementsPrecheck(payload.measurements);
       if (!precheck.valid) {
-        throw new Error(`Pre-circuit constraint check failed: ${precheck.reason}`);
+        throw new Error(
+          `Pre-circuit constraint check failed: ${precheck.reason}`,
+        );
       }
 
       const prepared = prepareGigabitCircuitInputs({
@@ -146,7 +166,10 @@ if (typeof self !== "undefined") {
         measurements: payload.measurements,
         salt: payload.salt,
       });
-      circuitInputs = prepared.circuitInputs as unknown as Record<string, unknown>;
+      circuitInputs = prepared.circuitInputs as unknown as Record<
+        string,
+        unknown
+      >;
     }
 
     if (abortedRequestId === requestId) {
@@ -163,7 +186,10 @@ if (typeof self !== "undefined") {
 
     const startTime = Date.now();
     const snarkjs = await getSnarkjs();
-    const { wasmPath, zkeyPath } = resolveGigabitArtifactPaths(payload.wasmPath, payload.zkeyPath);
+    const { wasmPath, zkeyPath } = resolveGigabitArtifactPaths(
+      payload.wasmPath,
+      payload.zkeyPath,
+    );
     const { proof, publicSignals } = await snarkjs.groth16.fullProve(
       circuitInputs,
       wasmPath,
@@ -290,18 +316,20 @@ export function handleZkpWorkerMessage(
   }
 
   if (data.type === "GENERATE_GIGABIT_PROOF") {
-    runGigabitWitnessAndProof(data.requestId, data.payload, emit).catch((err) => {
-      releaseZkpWasmMemory();
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Gigabit witness generation failed unexpectedly";
-      emit({
-        type: "PROOF_ERROR",
-        requestId: data.requestId,
-        error: message,
-      });
-    });
+    runGigabitWitnessAndProof(data.requestId, data.payload, emit).catch(
+      (err) => {
+        releaseZkpWasmMemory();
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Gigabit witness generation failed unexpectedly";
+        emit({
+          type: "PROOF_ERROR",
+          requestId: data.requestId,
+          error: message,
+        });
+      },
+    );
     return;
   }
 }
@@ -355,16 +383,23 @@ export async function terminateCurveBn128(): Promise<void> {
  * 4. release references after the proof completes;
  * 5. terminate the BN128 worker when snarkjs created one.
  */
-async function generateProof(
+async function _generateProof(
   identityToken: string,
   expectedCommit: string,
   reportProgress: ZkpProofProgressReporter,
 ): Promise<{
   proof: unknown;
   publicSignals: string[];
-  durationMs: number;
+  durationMs?: number;
   simdAccelerated?: boolean;
-}
+}> {
+  const snarkjs = await getSnarkjs();
+  let wtns: unknown = { type: "mem" };
+  const zkpOptions = {
+    witnessOptions: {} as Record<string, unknown>,
+    proverOptions: {} as Record<string, unknown>,
+    simdEnabled: false,
+  };
 
   try {
     // The compiled circuit has no component-progress imports; report only
@@ -603,22 +638,25 @@ export class ZkpWitnessWorkerPool {
       return;
     }
 
-    try {
-      // Using the memory-optimized generateProof instead of fullProve
-      const { proof, publicSignals } = await withTimeout(
-        () =>
-          generateProof(identityToken, expectedCommit, (phase, percent) => {
-            if (myGeneration !== generation) return;
-            const progressMessage: ZkpProofProgressMessage = {
-              type: "progress",
-              stage: "generating",
-              phase,
-              percent,
-            };
-            self.postMessage(progressMessage);
-          }),
-        timeoutMs,
-        "Witness generation timed out after 30 seconds",
+    if (data.type === "WITNESS_ERROR" || data.type === "PROOF_ERROR") {
+      this.handleWorkerError(poolWorker, {
+        message: data.error || "Witness generation error",
+      });
+    }
+  }
+
+  public async executeTask(
+    task: ZkpWitnessTask,
+  ): Promise<ZkpWitnessTaskResult> {
+    if (this.isTerminated) {
+      throw new Error("ZkpWitnessWorkerPool has been terminated.");
+    }
+    if (task.signal?.aborted) {
+      throw new Error("Task was aborted before execution.");
+    }
+    if (this.taskQueue.length >= this.maxQueueSize) {
+      throw new Error(
+        `Worker pool task queue is full (max: ${this.maxQueueSize}).`,
       );
     }
 
@@ -656,8 +694,30 @@ export class ZkpWitnessWorkerPool {
         task.signal.addEventListener("abort", onAbort, { once: true });
       }
 
-      generation++;
-      const errorType = classifyError(error);
+      const queued: QueuedTask = {
+        task,
+        resolve: (val) => {
+          if (task.signal) task.signal.removeEventListener("abort", onAbort);
+          resolve(val);
+        },
+        reject: (err) => {
+          if (task.signal) task.signal.removeEventListener("abort", onAbort);
+          reject(err);
+        },
+      };
+
+      this.taskQueue.push(queued);
+      this.pumpQueue();
+    });
+  }
+
+  private pumpQueue(): void {
+    if (this.isTerminated || this.taskQueue.length === 0) return;
+    const idleWorkerIndex = this.workers.findIndex((w) => !w.busy);
+    if (idleWorkerIndex === -1) return;
+
+    const queued = this.taskQueue.shift();
+    if (!queued) return;
 
     const poolWorker = this.workers[idleWorkerIndex];
     poolWorker.busy = true;

@@ -1,16 +1,24 @@
-﻿import {
+import {
+  Connection,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  TransactionInstruction,
+} from "@solana/web3.js";
+import {
   EscrowTransitionError,
   isAutoRefundEligible,
   transitionEscrowRecord,
   type EscrowLifecycleState,
   type EscrowRecord,
-} from '@/lib/solana/escrowStateMachine';
+} from "@/lib/solana/escrowStateMachine";
 
 export interface SettlementRequest {
   escrowId: string;
   targetState: Extract<
     EscrowLifecycleState,
-    'released' | 'refunded' | 'partially_refunded'
+    "released" | "refunded" | "partially_refunded"
   >;
   idempotencyKey: string;
   refundBasisPoints?: number;
@@ -27,18 +35,9 @@ export interface SettlementReceipt {
 export interface SolanaEscrowRpcLike {
   submitSettlement?: (
     record: EscrowRecord,
-    idempotencyKey: string
+    idempotencyKey: string,
   ) => Promise<{ txSignature: string }>;
 }
-
-export class SolanaEscrowClient {
-  private readonly rpc: SolanaEscrowRpcLike;
-  private readonly escrows = new Map<string, EscrowRecord>();
-  private readonly settlementReceipts = new Map<string, SettlementReceipt>();
-  private readonly inFlightSettlements = new Map<
-    string,
-    Promise<SettlementReceipt>
-  >();
 
 export const TOKEN_PROGRAM_ID = new PublicKey(
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -195,9 +194,7 @@ async function withEscrowRpcTimeout<T>(
         timer = setTimeout(
           () =>
             reject(
-              new Error(
-                `Solana RPC request timed out after ${timeoutMs}ms`,
-              ),
+              new Error(`Solana RPC request timed out after ${timeoutMs}ms`),
             ),
           timeoutMs,
         );
@@ -523,6 +520,27 @@ export async function buildDepositTransaction(
   if (params.currency === "SOL") {
     return buildSolDepositTransaction(params);
   }
+  return buildUsdcDepositTransaction(params);
+}
+
+export class SolanaEscrowClient {
+  private readonly rpc: SolanaEscrowRpcLike;
+  private readonly escrows = new Map<string, EscrowRecord>();
+  private readonly settlementReceipts = new Map<string, SettlementReceipt>();
+  private readonly inFlightSettlements = new Map<
+    string,
+    Promise<SettlementReceipt>
+  >();
+
+  constructor(
+    rpc: SolanaEscrowRpcLike = {},
+    initialEscrows: EscrowRecord[] = [],
+  ) {
+    this.rpc = rpc;
+    for (const item of initialEscrows) {
+      this.escrows.set(item.escrowId, item);
+    }
+  }
 
   public registerEscrow(record: EscrowRecord): void {
     this.escrows.set(record.escrowId, record);
@@ -535,13 +553,13 @@ export async function buildDepositTransaction(
   public openDispute(
     escrowId: string,
     disputeReason: string,
-    nowUnixSeconds?: number
+    nowUnixSeconds?: number,
   ): EscrowRecord {
     const current = this.escrows.get(escrowId);
     if (!current) {
       throw new Error(`Escrow "${escrowId}" not found`);
     }
-    const updated = transitionEscrowRecord(current, 'disputed', {
+    const updated = transitionEscrowRecord(current, "disputed", {
       disputeReason,
       nowUnixSeconds,
     });
@@ -550,7 +568,7 @@ export async function buildDepositTransaction(
   }
 
   public async settleEscrow(
-    request: SettlementRequest
+    request: SettlementRequest,
   ): Promise<SettlementReceipt> {
     const existingReceipt = this.settlementReceipts.get(request.idempotencyKey);
     if (existingReceipt) {
@@ -575,7 +593,7 @@ export async function buildDepositTransaction(
       });
 
       const txResult =
-        typeof this.rpc.submitSettlement === 'function'
+        typeof this.rpc.submitSettlement === "function"
           ? await this.rpc.submitSettlement(nextRecord, request.idempotencyKey)
           : {
               txSignature: `sig_${request.escrowId}_${request.idempotencyKey}`,
@@ -604,7 +622,7 @@ export async function buildDepositTransaction(
   public async triggerGracePeriodAutoRefund(
     escrowId: string,
     idempotencyKey: string,
-    nowUnixSeconds?: number
+    nowUnixSeconds?: number,
   ): Promise<SettlementReceipt> {
     const current = this.escrows.get(escrowId);
     if (!current) {
@@ -622,14 +640,14 @@ export async function buildDepositTransaction(
     if (!eligible) {
       throw new EscrowTransitionError(
         current.state,
-        'refunded',
-        'Escrow is not eligible for grace-period auto-refund'
+        "refunded",
+        "Escrow is not eligible for grace-period auto-refund",
       );
     }
 
     return this.settleEscrow({
       escrowId,
-      targetState: 'refunded',
+      targetState: "refunded",
       idempotencyKey,
       nowUnixSeconds,
     });

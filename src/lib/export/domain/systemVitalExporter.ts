@@ -2,6 +2,10 @@ import {
   getCompressionTelemetry,
   type CompressionTelemetrySnapshot,
 } from "../../crdt/compressionTelemetry";
+import {
+  getFallbackTelemetrySnapshot,
+  type FallbackTelemetrySnapshot,
+} from "../../rateLimit/tokenBucketFallback";
 
 export interface LatencySample {
   route?: string;
@@ -27,6 +31,8 @@ export interface RouteVitalsSummary extends LatencyPercentiles {
 export interface SystemVitalsSnapshot {
   /** CRDT differential snapshot compression telemetry (#8015) */
   crdtSnapshotCompression?: CompressionTelemetrySnapshot;
+  /** In-memory rate-limit fallback telemetry (#10302) */
+  rateLimitFallback?: FallbackTelemetrySnapshot;
   generatedAt: string;
   windowSeconds: number;
   uptimeSeconds: number;
@@ -236,6 +242,7 @@ export function buildSystemVitalsSnapshot(
       byRoute,
     },
     crdtSnapshotCompression: getCompressionTelemetry(),
+    rateLimitFallback: getFallbackTelemetrySnapshot(),
   };
 }
 
@@ -322,6 +329,34 @@ export function formatSystemVitalsPrometheus(
       "# HELP worksphere_crdt_snapshot_compression_ratio Aggregate compression ratio, 1 - compressed/raw",
       "# TYPE worksphere_crdt_snapshot_compression_ratio gauge",
       `worksphere_crdt_snapshot_compression_ratio ${crdt.compressionRatio}`,
+    );
+  }
+
+  const fb = snapshot.rateLimitFallback;
+  if (fb) {
+    lines.push(
+      "",
+      "# HELP worksphere_rate_limit_fallback_active Whether in-memory rate-limit fallback mode is currently active (1=active, 0=inactive)",
+      "# TYPE worksphere_rate_limit_fallback_active gauge",
+      `worksphere_rate_limit_fallback_active ${fb.active ? 1 : 0}`,
+      "# HELP worksphere_rate_limit_fallback_activations_total Number of Redis outage fallback episodes activated",
+      "# TYPE worksphere_rate_limit_fallback_activations_total counter",
+      `worksphere_rate_limit_fallback_activations_total ${fb.activationCount}`,
+      "# HELP worksphere_rate_limit_fallback_requests_total Total requests evaluated by the in-memory fallback rate limiter",
+      "# TYPE worksphere_rate_limit_fallback_requests_total counter",
+      `worksphere_rate_limit_fallback_requests_total ${fb.requestCount}`,
+      "# HELP worksphere_rate_limit_fallback_allowed_total Total requests allowed by the in-memory fallback rate limiter",
+      "# TYPE worksphere_rate_limit_fallback_allowed_total counter",
+      `worksphere_rate_limit_fallback_allowed_total ${fb.allowedCount}`,
+      "# HELP worksphere_rate_limit_fallback_rejected_total Total requests rejected (429) by the in-memory fallback rate limiter",
+      "# TYPE worksphere_rate_limit_fallback_rejected_total counter",
+      `worksphere_rate_limit_fallback_rejected_total ${fb.rejectedCount}`,
+      "# HELP worksphere_rate_limit_fallback_duration_ms_total Total cumulative duration spent in fallback mode in milliseconds",
+      "# TYPE worksphere_rate_limit_fallback_duration_ms_total counter",
+      `worksphere_rate_limit_fallback_duration_ms_total ${Math.round(fb.totalDurationMs)}`,
+      "# HELP worksphere_rate_limit_fallback_active_buckets Current number of in-memory rate-limit fallback buckets",
+      "# TYPE worksphere_rate_limit_fallback_active_buckets gauge",
+      `worksphere_rate_limit_fallback_active_buckets ${fb.activeBuckets}`,
     );
   }
 

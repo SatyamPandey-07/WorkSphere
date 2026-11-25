@@ -1095,3 +1095,5 @@ export function VenueSearchDrawer({
     </div>
   );
 }
+
+export default VenueSearchDrawer;

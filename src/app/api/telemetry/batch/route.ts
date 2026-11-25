@@ -6,6 +6,25 @@ import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
+export const telemetryTimestampSchema = z.union([
+  z
+    .number()
+    .int()
+    .positive("timestamp must be a positive integer")
+    .refine(
+      (val) => !Number.isNaN(new Date(val).getTime()),
+      "Invalid numeric timestamp",
+    ),
+  z
+    .string()
+    .min(1, "timestamp string cannot be empty")
+    .refine(
+      (val) => !Number.isNaN(Date.parse(val)),
+      "Invalid date-time string",
+    ),
+  z.date().refine((val) => !Number.isNaN(val.getTime()), "Invalid date object"),
+]);
+
 export const telemetryReadingSchema = z
   .object({
     venueId: z.string().min(1, "venueId is required"),
@@ -28,6 +47,8 @@ export const telemetryReadingSchema = z
     recordedAt: z
       .union([z.number().int().positive(), z.string(), z.date()])
       .optional(),
+    timestamp: telemetryTimestampSchema.optional(),
+    recordedAt: telemetryTimestampSchema.optional(),
   })
   .refine((data) => data.value !== undefined || data.decibels !== undefined, {
     message: "Either value or decibels must be specified",

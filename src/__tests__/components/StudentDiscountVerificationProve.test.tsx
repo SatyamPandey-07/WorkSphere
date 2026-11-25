@@ -34,6 +34,11 @@ class FakeWorker {
   }
 }
 
+jest.mock("@/components/student/createZkpWorker", () => ({
+  createZkpWorker: () =>
+    new (globalThis as unknown as { Worker: new () => Worker }).Worker(),
+}));
+
 const fetchMock = jest.fn(async (url: string) =>
   url === "/zkp/verification_key.json"
     ? new Response('{"protocol":"groth16"}', { status: 200 })
@@ -220,4 +225,133 @@ it("clears progress on worker error and resets it for a new attempt", async () =
     }),
   );
   expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
+});
+
+it("renders a cancel button during witness generation, terminates the worker, and allows retrying", async () => {
+  render(<StudentDiscountVerification />);
+
+  // Cancel button is not rendered while idle
+  expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText(/numeric student id/i), {
+    target: { value: "12345678" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /verify/i }));
+
+  // Cancel button appears while proving is active
+  const cancelButton = await screen.findByRole("button", { name: /cancel/i });
+  expect(cancelButton).toBeInTheDocument();
+
+  await waitFor(() =>
+    expect(posted.some((message) => message.type === "prove")).toBe(true),
+  );
+
+  const firstWorker = currentWorker();
+  act(() =>
+    firstWorker.emit({
+      type: "progress",
+      stage: "generating",
+      phase: "witness",
+      percent: 25,
+    }),
+  );
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "25");
+
+  fireEvent.click(cancelButton);
+
+  expect(posted.some((message) => message.type === "abort")).toBe(true);
+  expect(terminatedCount).toBeGreaterThanOrEqual(1);
+  expect(firstWorker.onmessage).toBeNull();
+  expect(firstWorker.onerror).toBeNull();
+  expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(screen.getByTestId("student-verification-error")).toHaveTextContent(
+    /cancelled/i,
+  );
+
+  // Late messages from the cancelled worker are ignored
+  act(() =>
+    firstWorker.emit({
+      type: "success",
+      proof: { pi_a: ["1"] },
+      publicSignals: ["123"],
+    }),
+  );
+  expect(screen.queryByTestId("student-verification-success-card")).not.toBeInTheDocument();
+
+  // User can immediately start a new verification attempt
+  const verifyButton = screen.getByRole("button", { name: /verify/i });
+  expect(verifyButton).toBeEnabled();
+  fireEvent.click(verifyButton);
+
+  await waitFor(() => expect(workers.length).toBe(2));
+  await waitFor(() =>
+    expect(posted.filter((message) => message.type === "prove")).toHaveLength(2),
+  );
+
+  act(() =>
+    currentWorker().emit({
+      type: "success",
+      proof: { pi_a: ["1"] },
+      publicSignals: ["123"],
+    }),
+  );
+
+  await screen.findByTestId("student-verification-success-card");
+});
+
+it("aborts in-flight server verification when cancel is clicked", async () => {
+  let capturedSignal: AbortSignal | undefined;
+  let resolveFetch: ((value: Response) => void) | undefined;
+
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/zkp/verification_key.json") {
+      return Promise.resolve(
+        new Response('{"protocol":"groth16"}', { status: 200 }),
+      );
+    }
+    return new Promise<Response>((resolve) => {
+      capturedSignal = init?.signal ?? undefined;
+      resolveFetch = resolve;
+    });
+  });
+
+  const onVerified = jest.fn();
+  render(<StudentDiscountVerification onVerified={onVerified} />);
+  fireEvent.change(screen.getByLabelText(/numeric student id/i), {
+    target: { value: "12345678" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /verify/i }));
+
+  await waitFor(() =>
+    expect(posted.some((message) => message.type === "prove")).toBe(true),
+  );
+
+  act(() =>
+    currentWorker().emit({
+      type: "success",
+      proof: { pi_a: ["1"] },
+      publicSignals: ["123"],
+    }),
+  );
+
+  await waitFor(() => expect(capturedSignal).toBeDefined());
+  expect(capturedSignal?.aborted).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+  expect(capturedSignal?.aborted).toBe(true);
+
+  await act(async () => {
+    resolveFetch?.(
+      new Response(JSON.stringify({ verified: true }), { status: 200 }),
+    );
+  });
+
+  expect(onVerified).not.toHaveBeenCalled();
+  expect(
+    screen.queryByTestId("student-verification-success-card"),
+  ).not.toBeInTheDocument();
+  expect(screen.getByTestId("student-verification-error")).toHaveTextContent(
+    /cancelled/i,
+  );
 });

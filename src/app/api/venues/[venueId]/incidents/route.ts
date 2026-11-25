@@ -25,7 +25,12 @@ const VALID_AMENITIES: AmenityCategory[] = [
   "quiet_zone",
 ];
 
-const VALID_STATUSES: OperationalStatus[] = ["OPERATIONAL", "DEGRADED", "OUTAGE", "MAINTENANCE"];
+const VALID_STATUSES: OperationalStatus[] = [
+  "OPERATIONAL",
+  "DEGRADED",
+  "OUTAGE",
+  "MAINTENANCE",
+];
 const VALID_SEVERITIES: IncidentSeverity[] = ["low", "medium", "critical"];
 
 /**
@@ -44,7 +49,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     const { userId } = await auth();
-    const data = amenityIncidentService.getVenueStatus(venueId, userId);
+    const data = await amenityIncidentService.getVenueStatus(venueId, userId);
 
     return NextResponse.json({
       success: true,
@@ -79,17 +84,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const identifier = userId
       ? `incident:${userId}`
-      : `incident:${request.headers.get("x-forwarded-for") || "anon"}`;
+      : `incident:${request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "anon"}`;
 
     if (!(await rateLimit(identifier, 10))) {
       return NextResponse.json(
-        { success: false, error: "Too many incident reports. Please wait a moment." },
+        {
+          success: false,
+          error: "Too many incident reports. Please wait a moment.",
+        },
         { status: 429 },
       );
     }
 
     const body = await request.json().catch(() => ({}));
-    const { amenity, title, description, status, severity, areaLocation } = body;
+    const { amenity, title, description, status, severity, areaLocation } =
+      body;
 
     if (!amenity || !VALID_AMENITIES.includes(amenity)) {
       return NextResponse.json(
@@ -106,16 +115,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const cleanStatus = VALID_STATUSES.includes(status) ? status : "DEGRADED";
-    const cleanSeverity = VALID_SEVERITIES.includes(severity) ? severity : "medium";
+    const cleanSeverity = VALID_SEVERITIES.includes(severity)
+      ? severity
+      : "medium";
 
-    const reportedUserId = userId || `anon-${Math.random().toString(36).substring(2, 8)}`;
+    const reportedUserId =
+      userId || `anon-${Math.random().toString(36).substring(2, 8)}`;
     const reportedUserName =
       user?.firstName && user?.lastName
         ? `${user.firstName} ${user.lastName}`
         : user?.firstName || "Community Member";
     const reportedAvatar = user?.imageUrl || null;
 
-    const incident = amenityIncidentService.reportIncident({
+    const incident = await amenityIncidentService.reportIncident({
       venueId,
       amenity,
       title: title.trim(),
@@ -128,7 +140,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       userAvatar: reportedAvatar,
     });
 
-    const updatedVenueStatus = amenityIncidentService.getVenueStatus(venueId, userId);
+    const updatedVenueStatus = await amenityIncidentService.getVenueStatus(
+      venueId,
+      userId,
+    );
 
     return NextResponse.json({
       success: true,
@@ -171,10 +186,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const userKey = userId || request.headers.get("x-forwarded-for") || "anon-client";
+    const userKey =
+      userId ||
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      request.headers.get("x-real-ip") ||
+      "anon-client";
 
     if (action === "confirm") {
-      const updated = amenityIncidentService.confirmIncident(venueId, incidentId, userKey);
+      const updated = await amenityIncidentService.confirmIncident(
+        venueId,
+        incidentId,
+        userKey,
+      );
       if (!updated) {
         return NextResponse.json(
           { success: false, error: "Incident not found or already resolved." },
@@ -182,7 +205,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
       }
     } else if (action === "resolve") {
-      const resolved = amenityIncidentService.resolveIncident(venueId, incidentId);
+      const resolved = await amenityIncidentService.resolveIncident(
+        venueId,
+        incidentId,
+      );
       if (!resolved) {
         return NextResponse.json(
           { success: false, error: "Incident not found." },
@@ -191,16 +217,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     } else {
       return NextResponse.json(
-        { success: false, error: "Invalid action. Must be 'confirm' or 'resolve'." },
+        {
+          success: false,
+          error: "Invalid action. Must be 'confirm' or 'resolve'.",
+        },
         { status: 400 },
       );
     }
 
-    const updatedVenueStatus = amenityIncidentService.getVenueStatus(venueId, userId);
+    const updatedVenueStatus = await amenityIncidentService.getVenueStatus(
+      venueId,
+      userId,
+    );
 
     return NextResponse.json({
       success: true,
-      message: action === "confirm" ? "Confirmed issue." : "Marked as resolved.",
+      message:
+        action === "confirm" ? "Confirmed issue." : "Marked as resolved.",
       ...updatedVenueStatus,
     });
   } catch (error) {

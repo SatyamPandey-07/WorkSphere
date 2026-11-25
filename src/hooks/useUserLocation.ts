@@ -97,19 +97,37 @@ export function useUserLocation(options: UseUserLocationOptions = {}) {
 
   const isMountedRef = useRef(true);
 
-  // Fallback to IP-based location API or default coordinates
+  // Fallback to server IP geolocation API (/api/location) or default coordinates
   const fallbackToIp = useCallback(async () => {
+    const isStandardDefault =
+      defaultLocation.latitude === DEFAULT_FALLBACK_LOCATION.latitude &&
+      defaultLocation.longitude === DEFAULT_FALLBACK_LOCATION.longitude;
+
     try {
       const response = await fetch("/api/location");
       if (response.ok) {
         const data = await response.json();
+
+        // If the server-side API fell back to its own default static coordinates,
+        // treat it as an unfulfilled IP resolution and apply the hook's configured defaultLocation.
+        if (data.source === "default") {
+          if (!isMountedRef.current) return;
+          setLocation(defaultLocation);
+          setLocationName(isStandardDefault ? "San Francisco, CA" : null);
+          setSource("default");
+          return;
+        }
+
+        const resolvedLat = data.latitude ?? data.lat;
+        const resolvedLng = data.longitude ?? data.lng;
+
         if (
-          Number.isFinite(data.lat) &&
-          Number.isFinite(data.lng) &&
-          !(data.lat === 0 && data.lng === 0)
+          Number.isFinite(resolvedLat) &&
+          Number.isFinite(resolvedLng) &&
+          !(resolvedLat === 0 && resolvedLng === 0)
         ) {
           if (!isMountedRef.current) return;
-          setLocation({ latitude: data.lat, longitude: data.lng });
+          setLocation({ latitude: resolvedLat, longitude: resolvedLng });
           const nameParts = [data.city, data.region || data.country].filter(
             Boolean,
           );
@@ -124,7 +142,7 @@ export function useUserLocation(options: UseUserLocationOptions = {}) {
 
     if (!isMountedRef.current) return;
     setLocation(defaultLocation);
-    setLocationName("San Francisco, CA");
+    setLocationName(isStandardDefault ? "San Francisco, CA" : null);
     setSource("default");
   }, [defaultLocation]);
 
@@ -196,7 +214,11 @@ export function useUserLocation(options: UseUserLocationOptions = {}) {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
 
-        if (Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0)) {
+        if (
+          Number.isFinite(lat) &&
+          Number.isFinite(lng) &&
+          !(lat === 0 && lng === 0)
+        ) {
           setLocation({ latitude: lat, longitude: lng });
           setSource("gps");
           setPermissionState("granted");

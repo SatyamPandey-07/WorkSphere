@@ -13,6 +13,7 @@ import {
 } from "@/lib/webVitalsCollector";
 import { downloadWebVitalsCSV } from "@/lib/export/domain/systemVitalsExporter";
 import { TelemetryOscilloscope } from "./TelemetryOscilloscope";
+import { WebGpuCapabilityPanel } from "./WebGpuCapabilityPanel";
 
 export { TelemetryOscilloscope } from "./TelemetryOscilloscope";
 
@@ -677,6 +678,7 @@ export function WebVitalsWidget({
           </p>
         </div>
       ) : null}
+      <WebGpuCapabilityPanel />
     </section>
   );
 }

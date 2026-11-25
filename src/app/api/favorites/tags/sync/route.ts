@@ -3,13 +3,23 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
-import { syncFavoriteTagsSchema, validateRequest } from "@/lib/validations";
+import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import {
+  bulkFavoriteSyncSchema,
+  syncFavoriteTagsSchema,
+  validateRequest,
+  type SyncFavoriteOperation,
+} from "@/lib/validations";
 import { syncFavoriteTagsBulk } from "@/lib/favoriteTagSync";
 
-interface SyncOperation {
-  venueId: string;
-  action: "add" | "remove";
-  timestamp: number;
+const FAVORITES_SYNC_RATE_LIMIT = 30;
+const FAVORITES_SYNC_WINDOW_MS = 60_000;
+
+class UnresolvedVenuesError extends Error {
+  constructor(public readonly missingVenueIds: string[]) {
+    super("One or more venues were not found");
+    this.name = "UnresolvedVenuesError";
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -19,88 +29,156 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    await ensureUserExists(userId);
+    const dbUser = await ensureUserExists(userId);
+    if (!dbUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    const body = await req.json();
+    const rateLimitKey = `favorites-sync:${userId}`;
+    const allowed = await rateLimit(
+      rateLimitKey,
+      FAVORITES_SYNC_RATE_LIMIT,
+      FAVORITES_SYNC_WINDOW_MS,
+    );
+    if (!allowed) {
+      const info = await getRateLimitInfo(
+        rateLimitKey,
+        FAVORITES_SYNC_RATE_LIMIT,
+        FAVORITES_SYNC_WINDOW_MS,
+      );
+      const retryAfter = info?.resetTime
+        ? Math.max(1, Math.ceil((info.resetTime - Date.now()) / 1000))
+        : 60;
+      return NextResponse.json(
+        {
+          error: "Too many sync requests. Please try again later.",
+          retryAfter,
+        },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } },
+      );
+    }
 
-    // 1. Check if this is a Favorites Sync request
-    if (body.operations) {
-      const operations: SyncOperation[] = body.operations;
-      if (!Array.isArray(operations)) {
-        return NextResponse.json(
-          { error: "Invalid operations array" },
-          { status: 400 },
-        );
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON request body" },
+        { status: 400 },
+      );
+    }
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "Request body must be a JSON object" },
+        { status: 400 },
+      );
+    }
+
+    // 1. Check if this is a Bulk Favorites Sync request
+    if ("operations" in body) {
+      const validation = validateRequest(bulkFavoriteSyncSchema, body);
+      if (!validation.success) {
+        return NextResponse.json({ error: validation.error }, { status: 400 });
       }
 
-      // Sort operations by timestamp so they are processed in order
-      operations.sort((a, b) => a.timestamp - b.timestamp);
+      const operations: SyncFavoriteOperation[] = validation.data.operations;
 
-      // Keep track of the final action for each venueId to avoid redundant db operations
+      // Sort non-destructively by timestamp ascending (preserving original order on ties)
+      const indexedOps = operations.map((op, index) => ({ op, index }));
+      indexedOps.sort(
+        (a, b) => a.op.timestamp - b.op.timestamp || a.index - b.index,
+      );
+
+      // Keep only the latest action per venueId
       const finalActions = new Map<string, "add" | "remove">();
-      for (const op of operations) {
+      for (const { op } of indexedOps) {
         finalActions.set(op.venueId, op.action);
       }
 
-      let processedCount = 0;
+      const requestedVenueIds = Array.from(finalActions.keys());
 
-      for (const [venueId, action] of finalActions.entries()) {
-        // Find venue in DB
-        let venue = await prisma.venue.findFirst({
+      const processedCount = await prisma.$transaction(async (tx) => {
+        const venues = await tx.venue.findMany({
           where: {
-            OR: [{ id: venueId }, { placeId: venueId }],
+            OR: [
+              { id: { in: requestedVenueIds } },
+              { placeId: { in: requestedVenueIds } },
+            ],
           },
+          select: { id: true, placeId: true },
         });
 
-        if (action === "add") {
-          if (!venue) {
-            // Upsert venue if missing
-            venue = await prisma.venue.create({
-              data: {
-                placeId: venueId,
-                name: "Unknown Venue",
-                latitude: 0,
-                longitude: 0,
-                category: "other",
-              },
-            });
+        const venueIdLookup = new Map<string, string>();
+        for (const v of venues) {
+          venueIdLookup.set(v.id, v.id);
+          if (v.placeId) {
+            venueIdLookup.set(v.placeId, v.id);
           }
+        }
 
-          await prisma.favorite.upsert({
+        const missingAddIds: string[] = [];
+        const resolvedActions = new Map<string, "add" | "remove">();
+        let unmappedRemoveCount = 0;
+
+        for (const { op } of indexedOps) {
+          const resolvedId = venueIdLookup.get(op.venueId);
+          if (!resolvedId) {
+            if (finalActions.get(op.venueId) === "add") {
+              if (!missingAddIds.includes(op.venueId)) {
+                missingAddIds.push(op.venueId);
+              }
+            }
+          } else {
+            // Re-fold in timestamp order by canonical DB venue.id so matching id/placeId stay consistent
+            resolvedActions.set(resolvedId, op.action);
+          }
+        }
+
+        if (missingAddIds.length > 0) {
+          throw new UnresolvedVenuesError(missingAddIds);
+        }
+
+        for (const [rawId, action] of finalActions.entries()) {
+          if (action === "remove" && !venueIdLookup.has(rawId)) {
+            unmappedRemoveCount++;
+          }
+        }
+
+        const addVenueIds: string[] = [];
+        const removeVenueIds: string[] = [];
+
+        for (const [resolvedId, action] of resolvedActions.entries()) {
+          if (action === "add") {
+            addVenueIds.push(resolvedId);
+          } else {
+            removeVenueIds.push(resolvedId);
+          }
+        }
+
+        addVenueIds.sort();
+        removeVenueIds.sort();
+
+        if (addVenueIds.length > 0) {
+          await tx.favorite.createMany({
+            data: addVenueIds.map((venueId) => ({ userId, venueId })),
+            skipDuplicates: true,
+          });
+        }
+
+        if (removeVenueIds.length > 0) {
+          await tx.favorite.deleteMany({
             where: {
-              userId_venueId: {
-                userId,
-                venueId: venue.id,
-              },
-            },
-            update: {},
-            create: {
               userId,
-              venueId: venue.id,
+              venueId: { in: removeVenueIds },
             },
           });
-          processedCount++;
-        } else if (action === "remove") {
-          if (venue) {
-            try {
-              await prisma.favorite.delete({
-                where: {
-                  userId_venueId: {
-                    userId,
-                    venueId: venue.id,
-                  },
-                },
-              });
-            } catch (e: any) {
-              if (e.code !== "P2025") throw e; // ignore already deleted
-            }
-          }
-          processedCount++;
         }
-      }
+
+        return addVenueIds.length + removeVenueIds.length + unmappedRemoveCount;
+      });
 
       if (processedCount > 0) {
-        // Trigger background sync just like the regular POST/DELETE
         updateUserPreferencesSummary(userId).catch((err) =>
           console.error(
             "[FavoriteAPI Bulk Sync] Background preference sync failed:",
@@ -140,6 +218,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ tags });
   } catch (error: unknown) {
+    if (error instanceof UnresolvedVenuesError) {
+      return NextResponse.json(
+        {
+          error: "One or more venues were not found",
+          unknownVenueIds: error.missingVenueIds,
+        },
+        { status: 404 },
+      );
+    }
+
     console.error("POST /api/favorites/tags/sync error:", error);
 
     const code =

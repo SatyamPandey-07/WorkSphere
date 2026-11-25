@@ -655,6 +655,7 @@ model Folder {
   shortLinks ShortLink[]
 
   @@index([ownerId])
+  @@index([isPublic, upvotes(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
 }
 
 model ShortLink {

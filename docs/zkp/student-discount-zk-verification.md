@@ -10,9 +10,9 @@ WorkSphere provides subsidized workspace desks, high-speed Wi-Fi passes, and stu
 WorkSphere resolves this through **Zero-Knowledge Succinct Non-Interactive Arguments of Knowledge (zk-SNARKs)** utilizing the **Groth16 protocol** over the **BN254 (alt_bn128)** elliptic curve. Using client-side WebAssembly (WASM), students prove cryptographic membership within an accredited university registry without revealing their name, email, student ID number, or institutional department.
 
 The end-to-end pipeline spans three integrated layers:
-1. **Interactive Client Component:** [`src/components/student/StudentDiscountVerification.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/student/StudentDiscountVerification.tsx) managing camera QR scanning, user secret inputs, and cached verification passes.
-2. **Background Web Worker:** [`src/workers/zkpWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/zkpWorker.ts) executing witness computation and Groth16 proof generation off the main UI thread with WebAssembly SIMD acceleration.
-3. **Server-Side Verification API:** [`src/app/api/user/verify-student/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/user/verify-student/route.ts) executing pairing checks via `snarkjs`, enforcing Merkle root validity, preventing nullifier double-spending, and issuing student discounts.
+1. **Interactive Client Component:** [`src/components/student/StudentDiscountVerification.tsx`](../../src/components/student/StudentDiscountVerification.tsx) managing camera QR scanning, user secret inputs, and cached verification passes.
+2. **Background Web Worker:** [`src/workers/zkpWorker.ts`](../../src/workers/zkpWorker.ts) executing witness computation and Groth16 proof generation off the main UI thread with WebAssembly SIMD acceleration.
+3. **Server-Side Verification API:** [`src/app/api/user/verify-student/route.ts`](../../src/app/api/user/verify-student/route.ts) executing pairing checks via `snarkjs`, enforcing Merkle root validity, preventing nullifier double-spending, and issuing student discounts.
 
 ```mermaid
 sequenceDiagram
@@ -168,7 +168,7 @@ $$\text{nullifierHash} = \text{Poseidon}_2(s, \text{epoch})$$
 
 ### 4.2 Database Concurrency & Double-Spend Defense
 
-The database enforces unique nullifier consumption using an atomic transaction in [`src/app/api/user/verify-student/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/user/verify-student/route.ts):
+The database enforces unique nullifier consumption using an atomic transaction in [`src/app/api/user/verify-student/route.ts`](../../src/app/api/user/verify-student/route.ts):
 
 ```typescript
 if (nullifierHash) {
@@ -211,7 +211,7 @@ If two concurrent requests attempt to spend the same nullifier simultaneously, P
 
 Computing zero-knowledge proofs requires heavy polynomial evaluations and multi-scalar multiplications (MSM). Running this on the browser's main JavaScript thread would freeze UI animations, user clicks, and video playback for 5–15 seconds.
 
-WorkSphere delegates all proving workloads to an isolated dedicated worker in [`src/workers/zkpWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/zkpWorker.ts).
+WorkSphere delegates all proving workloads to an isolated dedicated worker in [`src/workers/zkpWorker.ts`](../../src/workers/zkpWorker.ts).
 
 ### 5.1 Prover Architecture in `zkpWorker.ts`
 
@@ -515,3 +515,56 @@ To ensure the client-side proving engine reliably executes across low-memory sma
 | **`PROVING_TIMEOUT` in Web Worker** | Client hardware throttled or mobile background suspension. | Increase `timeoutMs` to 45s; advise user to keep the tab open during proving. |
 | **`OOM / RangeError` during proving** | Memory leak from multiple consecutive proofs retaining curve instances. | Verify `terminateCurveBn128()` runs inside `finally` blocks in `zkpWorker.ts`. |
 | **`Malformed or invalid proof signals`** | Corrupted QR code scan or JSON truncation. | Re-scan QR code or re-enter secret token directly. |
+
+---
+
+## 13. Web Worker Memory Recycling & Cancellation Lifecycle
+
+To avoid retaining multi-megabyte WebAssembly linear heaps or background BN254 worker threads across consecutive verifications, cancellations, or modal unmounts, [`StudentDiscountVerification.tsx`](../../src/components/student/StudentDiscountVerification.tsx) and [`zkpWorker.ts`](../../src/workers/zkpWorker.ts) enforce an explicit memory-recycling lifecycle:
+
+### 13.1 Lifecycle Flow
+
+```mermaid
+sequenceDiagram
+    participant UI as StudentDiscountVerification.tsx
+    participant AC as AbortController
+    participant W as zkpWorker.ts
+    participant BN as globalThis.curve_bn128
+
+    UI->>UI: terminateWorker() (recycle any prior worker)
+    UI->>AC: new AbortController()
+    UI->>W: createZkpWorker() + postMessage(GENERATE_PROOF)
+    W->>W: Allocate _activeWasmHeapRef / wtns buffer
+    alt Proof completes or throws
+        W->>W: releaseZkpWasmMemory() + wtns = null
+        W->>BN: terminateCurveBn128() (terminate + delete global ref)
+        W-->>UI: PROOF_COMPLETE / PROOF_ERROR
+    else User clicks Abort, unmounts, or worker times out
+        UI->>AC: controller.abort() (ignores late messages)
+        UI->>W: clear onmessage/onerror, postMessage({ type: "abort" }), worker.terminate()
+        UI->>UI: workerRef.current = null
+    end
+```
+
+### 13.2 Client Component Cleanup (`StudentDiscountVerification.tsx`)
+
+1. **On-Demand Spawning**: `createZkpWorker()` is only invoked after both `loadZkpCache()` and `verifyWithCachedProof(expectedCommit)` miss.
+2. **Pre-Spawn Recycling**: Before instantiating a new `Worker` inside `handleVerify()`, `terminateWorker()` cleans up any prior worker instance so repeated clicks never leak concurrent threads.
+3. **Ordered Teardown in `terminateWorker()`**:
+   - Aborts `abortControllerRef.current` and sets it to `null` so any in-flight `onmessage` / `onerror` or `fetch` continuation exits early via `controller.signal.aborted`.
+   - Nullifies `workerRef.current.onmessage` and `workerRef.current.onerror`.
+   - Sends `{ type: "abort" }` via `postMessage` inside a `try/catch` before invoking `workerRef.current.terminate()` and clearing `workerRef.current = null`.
+4. **Trigger Points**: `terminateWorker()` is executed on user-initiated `handleAbort()`, on `ERROR` responses (including `VERIFICATION_TIMEOUT` and `isOom` fallback), on `worker.onerror`, and in the `useEffect` unmount cleanup (`isMountedRef.current = false`).
+
+### 13.3 Worker Heap & BN254 Thread Recycling (`src/workers/zkpWorker.ts`)
+
+- **`releaseZkpWasmMemory()`**: Resets `_activeWasmHeapRef = null` on completion, error, `ABORT` messages, and `finally` blocks so typed-array heap references become immediately eligible for garbage collection.
+- **Witness Reference Drop (`_generateProof`)**: Explicitly assigns `wtns = null` inside the `finally` block after `snarkjs.groth16.prove(...)` finishes, releasing the memory-backed witness buffer between proofs.
+- **`terminateCurveBn128()`**: Awaits `globalThis.curve_bn128.terminate()` and deletes `globalThis.curve_bn128` in a `finally` block so `snarkjs`'s internal BN254 multi-scalar multiplication worker pool does not persist indefinitely.
+- **`ZkpWitnessWorkerPool` Crash/Timeout Recovery**: On unhandled worker errors or `defaultTimeoutMs` (30,000 ms) timeouts, `handleWorkerError()` calls `worker.terminate()`, invokes `releaseZkpWasmMemory()` and `terminateCurveBn128()`, and spawns a replacement worker (`createInternalWorker`) unless the pool itself has been terminated (`pool.terminate()`).
+
+### 13.4 Verification Coverage
+
+- [`src/__tests__/features/zkp/zkpWorkerPoolRecovery.test.ts`](../../src/__tests__/features/zkp/zkpWorkerPoolRecovery.test.ts)
+- [`src/__tests__/components/StudentDiscountVerification.test.tsx`](../../src/__tests__/components/StudentDiscountVerification.test.tsx)
+

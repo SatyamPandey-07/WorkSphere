@@ -1,6 +1,6 @@
 ﻿# Reciprocal Rank Fusion (RRF) k-Constant Tuning in Hybrid Venue Search
 
-This technical research guide documents the mathematical foundations, parameter tuning, and benchmark performance of **Reciprocal Rank Fusion (RRF)** within WorkSphere's hybrid search architecture ([`src/core/search/PgVectorQueryOptimizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/search/PgVectorQueryOptimizer.ts)). It analyzes how varying the smoothing constant $k$ ($k=20$, $k=60$, $k=100$) impacts venue relevance, keyword precision, and semantic recall.
+This technical research guide documents the mathematical foundations, parameter tuning, and benchmark performance of **Reciprocal Rank Fusion (RRF)** within WorkSphere's hybrid search architecture ([`src/core/search/PgVectorQueryOptimizer.ts`](../../src/core/search/PgVectorQueryOptimizer.ts)). It analyzes how varying the smoothing constant $k$ ($k=20$, $k=60$, $k=100$) impacts venue relevance, keyword precision, and semantic recall.
 
 ---
 

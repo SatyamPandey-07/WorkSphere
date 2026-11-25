@@ -1,36 +1,61 @@
-/**
- * route.ts
- * API endpoint that returns the optimal accessible path and highlights physical barriers on the map.
- */
+import { NextRequest, NextResponse } from "next/server";
+import {
+  fetchAccessibleRoute,
+  normalizeAccessibilityCoordinate,
+  RoutingProviderError,
+} from "@/lib/accessibility/openRouteService";
 
-import { NextRequest, NextResponse } from 'next/server';
+function readMobilityProfile(value: unknown): {
+  wheelchairMode: boolean;
+  maxAllowedGradePercent: number;
+} {
+  const profile = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+  const max = Number(profile.maxInclinePercent ?? profile.maxAllowedGradePercent ?? 8.33);
+  return {
+    wheelchairMode: profile.wheelchairMode !== false && profile.type !== "walking",
+    maxAllowedGradePercent: Number.isFinite(max) ? Math.max(1, Math.min(20, max)) : 8.33,
+  };
+}
 
 export async function POST(request: NextRequest) {
-    try {
-        const body = await request.json();
-        const { venueId, startCoords, endCoords, mobilityProfile } = body;
-
-        if (!venueId || !startCoords || !endCoords || !mobilityProfile) {
-            return NextResponse.json({ error: 'Missing required routing parameters' }, { status: 400 });
-        }
-
-        return NextResponse.json({
-            success: true,
-            venueId,
-            route: {
-                path: ['node-1', 'node-5', 'node-12', 'node-45'],
-                totalDistanceMeters: 125.5,
-                accessibilityScore: 90,
-                warnings: ['Steep gradient (6.5%) on segment to node-12']
-            },
-            barriers: [
-                { type: 'stairs', latitude: 40.7128, longitude: -74.0060 },
-                { type: 'narrow_door', latitude: 40.7130, longitude: -74.0062, widthCm: 70 }
-            ]
-        }, { status: 200 });
-
-    } catch (error) {
-        console.error('Accessibility routing error:', error);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  try {
+    const body = await request.json();
+    const venueId = typeof body?.venueId === "string" ? body.venueId : null;
+    const start = normalizeAccessibilityCoordinate(body?.startCoords);
+    const end = normalizeAccessibilityCoordinate(body?.endCoords);
+    if (!venueId || !start || !end || !body?.mobilityProfile) {
+      return NextResponse.json(
+        { error: "A venueId, valid startCoords/endCoords, and mobilityProfile are required." },
+        { status: 400 },
+      );
     }
+
+    const profile = readMobilityProfile(body.mobilityProfile);
+    const result = await fetchAccessibleRoute(start, end, profile);
+
+    return NextResponse.json({
+      success: true,
+      venueId,
+      route: {
+        path: result.geometry,
+        totalDistanceMeters: result.totalDistanceMeters,
+        totalDurationSeconds: result.totalDurationSeconds,
+        accessibilityScore: result.evaluation.accessibilityScore,
+        isRecommended: result.evaluation.isRecommended,
+        penaltyMultiplier: result.evaluation.penaltyMultiplier,
+        warnings: result.warnings,
+        navigationCues: result.evaluation.cues,
+      },
+      barriers: result.barriers,
+      dataSource: result.dataSource,
+    });
+  } catch (error) {
+    if (error instanceof RoutingProviderError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
+    console.error("[Accessibility API] Routing failed:", error);
+    return NextResponse.json({ error: "Unable to calculate an accessible route." }, { status: 500 });
+  }
 }

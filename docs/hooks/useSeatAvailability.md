@@ -1,6 +1,6 @@
 # `useSeatAvailability`: Polling Intervals, Backoff Strategy & WebSocket Handoff
 
-This document details the architecture, configuration parameters, asynchronous lifecycle, exponential backoff mechanics, and WebSocket handoff patterns of the **`useSeatAvailability`** React hook ([`src/hooks/useSeatAvailability.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useSeatAvailability.ts)).
+This document details the architecture, configuration parameters, asynchronous lifecycle, exponential backoff mechanics, and WebSocket handoff patterns of the **`useSeatAvailability`** React hook ([`src/hooks/useSeatAvailability.ts`](../../src/hooks/useSeatAvailability.ts)).
 
 ---
 

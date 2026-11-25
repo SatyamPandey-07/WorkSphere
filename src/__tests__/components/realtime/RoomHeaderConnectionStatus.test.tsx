@@ -112,4 +112,43 @@ describe("RoomHeaderConnectionStatus Component", () => {
     const badge = screen.getByTestId("room-status-connected");
     expect(badge).toHaveClass("custom-room-badge");
   });
+
+  it("renders subtle relay mode status chip when isRelayed is true", () => {
+    render(
+      <RoomHeaderConnectionStatus status="connected" isRelayed={true} />,
+    );
+
+    const connectedBadge = screen.getByTestId("room-status-connected");
+    expect(connectedBadge).toBeInTheDocument();
+
+    const relayBadge = screen.getByTestId("room-status-relay");
+    expect(relayBadge).toBeInTheDocument();
+    expect(relayBadge).toHaveAttribute("role", "status");
+    expect(relayBadge).toHaveAttribute(
+      "aria-label",
+      "Relay Mode: Bandwidth Optimized",
+    );
+    expect(screen.getByText("Relay Mode: Bandwidth Optimized")).toBeInTheDocument();
+  });
+
+  it("renders subtle relay mode status chip when relayStatus is 'relay'", () => {
+    render(
+      <RoomHeaderConnectionStatus status="connected" relayStatus="relay" />,
+    );
+
+    const relayBadge = screen.getByTestId("room-status-relay");
+    expect(relayBadge).toBeInTheDocument();
+  });
+
+  it("does not render relay mode status chip when relayStatus is 'direct' or 'unknown'", () => {
+    const { rerender } = render(
+      <RoomHeaderConnectionStatus status="connected" relayStatus="direct" />,
+    );
+    expect(screen.queryByTestId("room-status-relay")).toBeNull();
+
+    rerender(
+      <RoomHeaderConnectionStatus status="connected" relayStatus="unknown" />,
+    );
+    expect(screen.queryByTestId("room-status-relay")).toBeNull();
+  });
 });

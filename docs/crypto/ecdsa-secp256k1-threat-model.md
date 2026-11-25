@@ -3,10 +3,10 @@
 This document specifies the cryptographic security architecture, mathematical formalisms, side-channel attack mitigations, signature malleability countermeasures, and multi-modal replay defenses for the client-side WebAssembly ECDSA verification engine in WorkSphere. 
 
 The implementation spans:
-- **C WebAssembly Core:** [`src/wasm/crypto/ecdsa_verify.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/ecdsa_verify.c)
-- **TypeScript WebAssembly Bridge:** [`src/lib/wasm-loader/attestation.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/attestation.ts)
-- **Multi-Threaded Worker Pool:** [`src/workers/ecdsaVerifyWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/ecdsaVerifyWorker.ts)
-- **Proof-of-Attendance Protocol:** [`docs/features/poap-attestation.md`](file:///c:/Users/admin/Desktop/workfere/docs/features/poap-attestation.md)
+- **C WebAssembly Core:** [`src/wasm/crypto/ecdsa_verify.c`](../../src/wasm/crypto/ecdsa_verify.c)
+- **TypeScript WebAssembly Bridge:** [`src/lib/wasm-loader/attestation.ts`](../../src/lib/wasm-loader/attestation.ts)
+- **Multi-Threaded Worker Pool:** [`src/workers/ecdsaVerifyWorker.ts`](../../src/workers/ecdsaVerifyWorker.ts)
+- **Proof-of-Attendance Protocol:** [`docs/features/poap-attestation.md`](../features/poap-attestation.md)
 
 ---
 
@@ -326,7 +326,7 @@ Since $s + (n - s) = n$, exactly one value in the pair $\{s, n - s\}$ will be $\
 
 ### Zero-Allocation Byte-Level Canonical Verification
 
-In [`src/wasm/crypto/ecdsa_verify.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/ecdsa_verify.c), the half-order is defined as a static 32-byte constant:
+In [`src/wasm/crypto/ecdsa_verify.c`](../../src/wasm/crypto/ecdsa_verify.c), the half-order is defined as a static 32-byte constant:
 
 ```c
 static const uint8_t SECP256K1_HALF_ORDER[32] = {
@@ -351,7 +351,7 @@ static bool is_canonical_low_s(const uint8_t* signature) {
 }
 ```
 
-The TypeScript loader [`src/lib/wasm-loader/attestation.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/attestation.ts) mirrors this exact check prior to dispatching payloads to the Wasm engine:
+The TypeScript loader [`src/lib/wasm-loader/attestation.ts`](../../src/lib/wasm-loader/attestation.ts) mirrors this exact check prior to dispatching payloads to the Wasm engine:
 
 ```typescript
 public isCanonicalLowS(signatureBytes: Uint8Array): boolean {
@@ -585,7 +585,7 @@ If the reported GPS accuracy radius exceeds $50 \text{ meters}$, the claim is pe
 
 WebAssembly executes within a sandboxed virtual machine isolated from the host JavaScript environment. Communication between JavaScript/TypeScript and the C Wasm runtime occurs via a continuous, byte-addressable array buffer called **WebAssembly Linear Memory**.
 
-In [`src/workers/ecdsaVerifyWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/ecdsaVerifyWorker.ts) and [`src/lib/wasm-loader/attestation.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/attestation.ts), linear memory is configured with an initial allocation of 32 pages ($32 \times 64\text{ KB} = 2,048\text{ KB}$):
+In [`src/workers/ecdsaVerifyWorker.ts`](../../src/workers/ecdsaVerifyWorker.ts) and [`src/lib/wasm-loader/attestation.ts`](../../src/lib/wasm-loader/attestation.ts), linear memory is configured with an initial allocation of 32 pages ($32 \times 64\text{ KB} = 2,048\text{ KB}$):
 
 ```
 0x0000 ┌──────────────────────────────────────────┐  pkPtr (Offset: 0)
@@ -634,7 +634,7 @@ The C WebAssembly sandbox provides strong security properties:
 
 ECDSA verification involves thousands of big-integer field multiplications. When verifying large batches of attendance badges (e.g., verifying an entire conference attendee list or syncing months of historical check-ins), executing verifications sequentially on the JavaScript main thread would freeze UI interactions.
 
-WorkSphere implements a dedicated Web Worker pool in [`src/lib/wasm-loader/attestation.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/attestation.ts):
+WorkSphere implements a dedicated Web Worker pool in [`src/lib/wasm-loader/attestation.ts`](../../src/lib/wasm-loader/attestation.ts):
 - Queries `navigator.hardwareConcurrency` to detect available CPU cores.
 - Instantiates a dedicated Web Worker per core, each holding its own compiled `WebAssembly.Instance`.
 - Batches of verification requests are evenly partitioned into chunks:
@@ -661,7 +661,7 @@ WorkSphere implements a dedicated Web Worker pool in [`src/lib/wasm-loader/attes
 
 ### C Wasm Header Definitions
 
-The C WebAssembly module [`src/wasm/crypto/ecdsa_verify.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/ecdsa_verify.c) exposes the following binary application interface (ABI):
+The C WebAssembly module [`src/wasm/crypto/ecdsa_verify.c`](../../src/wasm/crypto/ecdsa_verify.c) exposes the following binary application interface (ABI):
 
 ```c
 #ifndef ECDSA_VERIFY_H
@@ -703,7 +703,7 @@ int ecdsa_verify_attestation(
 
 ### TypeScript Driver & Loader Interfaces
 
-The TypeScript driver in [`src/lib/wasm-loader/attestation.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/attestation.ts) encapsulates lifecycle management, worker threading, and signature verification:
+The TypeScript driver in [`src/lib/wasm-loader/attestation.ts`](../../src/lib/wasm-loader/attestation.ts) encapsulates lifecycle management, worker threading, and signature verification:
 
 ```typescript
 export interface VerifySignatureItem {

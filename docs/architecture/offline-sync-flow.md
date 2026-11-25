@@ -1,5 +1,7 @@
 # IndexedDB Synchronization & Conflict Resolution Architecture
 
+> For the application-level multi-peer causal clock model, see the [Causal Vector Clock Specification](./CAUSAL_VECTOR_CLOCK_SPEC.md).
+
 This document provides a developer guide and reference architecture for WorkSphere's offline-first synchronization engine (`src/lib/offline/sync/syncEngine.ts`), local IndexedDB queueing, Web Locks serialization, and conflict resolution protocols.
 
 ---

@@ -82,7 +82,20 @@ export async function validateTelemetryBatchParallel(readings: unknown[]) {
 }
 
 /**
- * Validates gateway API token authentication if configured in environment.
+ * Validates gateway API token authentication. Fails closed.
+ *
+ * The expected token is the first non-empty of `GATEWAY_API_TOKEN`,
+ * `TELEMETRY_GATEWAY_TOKEN`, `WORKER_SECRET`. The caller's token is read from
+ * `Authorization: Bearer`, then `x-gateway-token`, then `x-api-key`.
+ *
+ * - Token configured: the caller must send a matching token (constant-time
+ *   comparison after a length check). Missing or wrong returns `false`.
+ * - No token configured, `NODE_ENV=production`: always `false`.
+ * - No token configured, any other env: `false` if the caller sent a token
+ *   (it is never accepted without a configured secret). With no token sent,
+ *   returns `true` only for `NODE_ENV=development` or `test`.
+ *
+ * See docs/api/TELEMETRY_GATEWAY_AUTH.md for the full decision table.
  */
 export function verifyGatewayToken(req: NextRequest): boolean {
   const configuredToken =
@@ -133,6 +146,14 @@ export function verifyGatewayToken(req: NextRequest): boolean {
  * POST /api/telemetry/batch
  * Bulk telemetry ingestion pipeline with batch insert transactions,
  * parallel Zod validation, gateway API token authentication, and IP rate limiting.
+ *
+ * Authentication is fail-closed and runs before rate limiting, body parsing
+ * and any database access:
+ * - `503` when no gateway secret is configured and `NODE_ENV=production`.
+ * - `401` when the token is missing or wrong, or when a token is sent but no
+ *   secret is configured.
+ *
+ * See docs/api/TELEMETRY_GATEWAY_AUTH.md before changing this order.
  */
 export async function POST(req: NextRequest) {
   try {

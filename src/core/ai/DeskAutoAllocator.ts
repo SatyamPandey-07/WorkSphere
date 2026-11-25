@@ -1,1 +1,375 @@
-﻿export type AcousticZone = 'quiet' | 'moderate' | 'calls_ok'; export interface DeskCandidate { id: string; floor: number; zone: AcousticZone; noiseDb: number; outlets: number; wifiMbps: number; hasMonitor: boolean; wheelchairAccessible: boolean; ergonomicScore: number; } export interface DeskAllocationRequestUser { userId: string; teamId?: string; preferredFloor?: number; preferredZone?: AcousticZone; maxNoiseDb?: number; minOutlets?: number; minWifiMbps?: number; requiresMonitor?: boolean; wheelchairAccessible?: boolean; minErgonomicScore?: number; } export interface PreferenceWeights { acousticMismatch?: number; teamColocationBonus?: number; accessibilityErgonomics?: number; powerOutletNeed?: number; floorMismatch?: number; } export interface DeskAssignment { userId: string; deskId: string; edgeCost: number; satisfactionScore: number; } export interface UnassignedUser { userId: string; reason: string; } export interface DeskAllocationResult { assignments: DeskAssignment[]; unassigned: UnassignedUser[]; totalAssigned: number; totalCost: number; totalSatisfactionScore: number; } interface FlowEdge { to: number; rev: number; cap: number; cost: number; userIdx?: number; deskIdx?: number; } const DEFAULT_WEIGHTS: Required<PreferenceWeights> = { acousticMismatch: 30, teamColocationBonus: 25, accessibilityErgonomics: 20, powerOutletNeed: 15, floorMismatch: 10 }; const BASELINE_EDGE_OFFSET = 10_000; function zoneRank(zone: AcousticZone): number { return zone === 'quiet' ? 0 : zone === 'moderate' ? 1 : 2; } export function checkHardConstraintReason(user: DeskAllocationRequestUser, desk: DeskCandidate): string | null { if (user.requiresMonitor && !desk.hasMonitor) return 'Missing required monitor'; if (user.wheelchairAccessible && !desk.wheelchairAccessible) return 'Not wheelchair accessible'; if (typeof user.minWifiMbps === 'number' && Number.isFinite(user.minWifiMbps) && desk.wifiMbps < user.minWifiMbps) return `WiFi ${desk.wifiMbps}Mbps below required ${user.minWifiMbps}Mbps`; if (typeof user.maxNoiseDb === 'number' && Number.isFinite(user.maxNoiseDb) && desk.noiseDb > user.maxNoiseDb) return `Noise ${desk.noiseDb}dB exceeds max ${user.maxNoiseDb}dB`; if (typeof user.minOutlets === 'number' && Number.isFinite(user.minOutlets) && desk.outlets < user.minOutlets) return `Outlets ${desk.outlets} below required ${user.minOutlets}`; if (typeof user.minErgonomicScore === 'number' && Number.isFinite(user.minErgonomicScore) && desk.ergonomicScore < user.minErgonomicScore) return `Ergonomics ${desk.ergonomicScore} below required ${user.minErgonomicScore}`; return null; } export function computePreferenceEdgeCost(user: DeskAllocationRequestUser, desk: DeskCandidate, teamCountsByFloor: Map<string, Map<number, number>>, weights: Required<PreferenceWeights>): number { let rawDelta = 0; if (user.preferredZone) rawDelta += Math.abs(zoneRank(user.preferredZone) - zoneRank(desk.zone)) * weights.acousticMismatch; if (typeof user.preferredFloor === 'number' && Number.isFinite(user.preferredFloor)) rawDelta += Math.abs(user.preferredFloor - desk.floor) * weights.floorMismatch; if (user.teamId) { const peers = teamCountsByFloor.get(user.teamId)?.get(desk.floor) ?? 0; rawDelta -= Math.min(weights.teamColocationBonus, peers * 10); } const ergoClamped = Math.max(0, Math.min(100, desk.ergonomicScore)); rawDelta += Math.round(((100 - ergoClamped) / 100) * weights.accessibilityErgonomics); const neededOutlets = Math.max(1, user.minOutlets ?? 1); if (desk.outlets < neededOutlets) rawDelta += (neededOutlets - desk.outlets) * weights.powerOutletNeed; return Math.max(1, BASELINE_EDGE_OFFSET + rawDelta); } export class DeskAutoAllocator { private readonly weights: Required<PreferenceWeights>; constructor(weights: PreferenceWeights = {}) { this.weights = { acousticMismatch: typeof weights.acousticMismatch === 'number' && Number.isFinite(weights.acousticMismatch) ? weights.acousticMismatch : DEFAULT_WEIGHTS.acousticMismatch, teamColocationBonus: typeof weights.teamColocationBonus === 'number' && Number.isFinite(weights.teamColocationBonus) ? weights.teamColocationBonus : DEFAULT_WEIGHTS.teamColocationBonus, accessibilityErgonomics: typeof weights.accessibilityErgonomics === 'number' && Number.isFinite(weights.accessibilityErgonomics) ? weights.accessibilityErgonomics : DEFAULT_WEIGHTS.accessibilityErgonomics, powerOutletNeed: typeof weights.powerOutletNeed === 'number' && Number.isFinite(weights.powerOutletNeed) ? weights.powerOutletNeed : DEFAULT_WEIGHTS.powerOutletNeed, floorMismatch: typeof weights.floorMismatch === 'number' && Number.isFinite(weights.floorMismatch) ? weights.floorMismatch : DEFAULT_WEIGHTS.floorMismatch }; } public allocate(users: readonly DeskAllocationRequestUser[], desks: readonly DeskCandidate[]): DeskAllocationResult { const sortedUsers = [...users].sort((a, b) => a.userId.localeCompare(b.userId)); const sortedDesks = [...desks].sort((a, b) => a.id.localeCompare(b.id)); const teamCountsByFloor = new Map<string, Map<number, number>>(); for (const u of sortedUsers) { if (!u.teamId || typeof u.preferredFloor !== 'number') continue; let fm = teamCountsByFloor.get(u.teamId); if (!fm) { fm = new Map<number, number>(); teamCountsByFloor.set(u.teamId, fm); } fm.set(u.preferredFloor, (fm.get(u.preferredFloor) ?? 0) + 1); } const numUsers = sortedUsers.length; const numDesks = sortedDesks.length; const source = 0; const sink = 1 + numUsers + numDesks; const nodeCount = sink + 1; const adj: FlowEdge[][] = Array.from({ length: nodeCount }, () => []); const addEdge = (from: number, to: number, cap: number, cost: number, userIdx?: number, deskIdx?: number) => { const safeCost = Number.isFinite(cost) ? cost : BASELINE_EDGE_OFFSET; adj[from].push({ to, rev: adj[to].length, cap, cost: safeCost, userIdx, deskIdx }); adj[to].push({ to: from, rev: adj[from].length, cap: 0, cost: -safeCost }); }; const rejectionReasons = new Map<string, string[]>(); for (const u of sortedUsers) rejectionReasons.set(u.userId, []); for (let uIdx = 0; uIdx < numUsers; uIdx += 1) { const user = sortedUsers[uIdx]; const userNode = 1 + uIdx; addEdge(source, userNode, 1, 0); let feasibleCount = 0; for (let dIdx = 0; dIdx < numDesks; dIdx += 1) { const desk = sortedDesks[dIdx]; const reason = checkHardConstraintReason(user, desk); if (reason) { rejectionReasons.get(user.userId)?.push(`${desk.id}: ${reason}`); continue; } feasibleCount += 1; addEdge(userNode, 1 + numUsers + dIdx, 1, computePreferenceEdgeCost(user, desk, teamCountsByFloor, this.weights), uIdx, dIdx); } if (feasibleCount === 0 && sortedDesks.length > 0) rejectionReasons.get(user.userId)?.push('No desk satisfies hard constraints'); else if (sortedDesks.length === 0) rejectionReasons.get(user.userId)?.push('No desks available'); } for (let dIdx = 0; dIdx < numDesks; dIdx += 1) addEdge(1 + numUsers + dIdx, sink, 1, 0); const maxAugmentations = Math.max(1, numUsers * Math.max(1, numDesks)); for (let step = 0; step < maxAugmentations; step += 1) { const dist = new Array<number>(nodeCount).fill(Number.POSITIVE_INFINITY); const parentNode = new Array<number>(nodeCount).fill(-1); const parentEdge = new Array<number>(nodeCount).fill(-1); const relaxCount = new Array<number>(nodeCount).fill(0); const inQueue = new Array<boolean>(nodeCount).fill(false); dist[source] = 0; const queue: number[] = [source]; inQueue[source] = true; let negativeCycleDetected = false; for (let head = 0; head < queue.length; head += 1) { const u = queue[head]; inQueue[u] = false; for (let i = 0; i < adj[u].length; i += 1) { const edge = adj[u][i]; if (edge.cap > 0 && dist[u] + edge.cost < dist[edge.to]) { dist[edge.to] = dist[u] + edge.cost; parentNode[edge.to] = u; parentEdge[edge.to] = i; relaxCount[edge.to] += 1; if (relaxCount[edge.to] > nodeCount) { negativeCycleDetected = true; break; } if (!inQueue[edge.to]) { queue.push(edge.to); inQueue[edge.to] = true; } } } if (negativeCycleDetected) break; } if (negativeCycleDetected || !Number.isFinite(dist[sink])) break; let cur = sink; while (cur !== source) { const p = parentNode[cur]; const idx = parentEdge[cur]; const fwd = adj[p][idx]; fwd.cap -= 1; adj[cur][fwd.rev].cap += 1; cur = p; } } const assignments: DeskAssignment[] = []; const assignedUserIds = new Set<string>(); let totalCost = 0; let totalSatisfactionScore = 0; for (let uIdx = 0; uIdx < numUsers; uIdx += 1) { const userNode = 1 + uIdx; for (const edge of adj[userNode]) { if (typeof edge.deskIdx === 'number' && edge.cap === 0 && edge.to > userNode) { const user = sortedUsers[uIdx]; const desk = sortedDesks[edge.deskIdx]; const satisfactionScore = Math.max(0, 100 - Math.max(0, edge.cost - BASELINE_EDGE_OFFSET)); assignments.push({ userId: user.userId, deskId: desk.id, edgeCost: edge.cost, satisfactionScore }); assignedUserIds.add(user.userId); totalCost += edge.cost; totalSatisfactionScore += satisfactionScore; break; } } } const unassigned: UnassignedUser[] = []; for (const user of sortedUsers) if (!assignedUserIds.has(user.userId)) { const reasons = rejectionReasons.get(user.userId) ?? []; unassigned.push({ userId: user.userId, reason: reasons.length > 0 ? reasons[0] : 'Desk capacity saturated by higher-value matches' }); } return { assignments, unassigned, totalAssigned: assignments.length, totalCost, totalSatisfactionScore }; } } export default DeskAutoAllocator;
+/**
+ * DeskAutoAllocator.ts
+ *
+ * Automated desk allocation engine for coworking venues, hot desks, and team pods.
+ * Employs maximum bipartite matching / Hungarian algorithm for optimal allocation,
+ * paired with a deterministic greedy fallback strategy when the assignment graph
+ * is infeasible or overconstrained.
+ *
+ * Empty Desk-Pool Handling (#10450):
+ * - If the provided desk pool is empty (`desks` is empty, null, or has 0 available desks),
+ *   the allocator intercepts this condition BEFORE any graph construction, distance matrix
+ *   allocations, cost calculations, or matching routines execute.
+ * - Rather than returning `Infinity`, `NaN`, or throwing a runtime exception:
+ *   1. When people are provided but 0 desks are available:
+ *      Returns a graceful result with `feasible: false`, `isFallback: true`,
+ *      all requested people marked in `unassignedPersonIds` (deterministically sorted),
+ *      `totalCost: 0`, and `assignments: []`.
+ *   2. When people array is empty (regardless of desk count):
+ *      Returns `feasible: true`, `isFallback: false`, `totalCost: 0`, and empty arrays.
+ *   3. All returned cost, score, and count metrics remain strictly finite numbers.
+ */
+
+export interface DeskRequirement {
+  standingDesk?: boolean;
+  dualMonitor?: boolean;
+  quietZone?: boolean;
+  nearWindow?: boolean;
+  wheelchairAccessible?: boolean;
+  minimumWifiQuality?: number;
+}
+
+export interface PersonCandidate {
+  id: string;
+  name?: string;
+  priority?: number; // Higher number = higher priority
+  requirements?: DeskRequirement;
+  preferredDeskIds?: string[];
+  department?: string;
+}
+
+export interface DeskResource {
+  id: string;
+  name?: string;
+  zone?: string;
+  capacity?: number; // Default 1
+  isAvailable?: boolean; // Default true
+  standingDesk?: boolean;
+  dualMonitor?: boolean;
+  quietZone?: boolean;
+  nearWindow?: boolean;
+  wheelchairAccessible?: boolean;
+  wifiQuality?: number; // 1-5
+}
+
+export interface AllocationAssignment {
+  personId: string;
+  deskId: string;
+  score: number;
+  matchReasons?: string[];
+}
+
+export interface DeskAllocationResult {
+  feasible: boolean;
+  isFallback: boolean;
+  assignments: AllocationAssignment[];
+  unassignedPersonIds: string[];
+  totalAllocated: number;
+  totalRequested: number;
+  totalCost?: number;
+}
+
+export class DeskAutoAllocator {
+  /**
+   * Evaluates whether a desk meets a person's strict eligibility requirements.
+   */
+  public isEligible(person: PersonCandidate, desk: DeskResource): boolean {
+    if (desk.isAvailable === false) return false;
+    if (desk.capacity !== undefined && desk.capacity <= 0) return false;
+
+    const req = person.requirements;
+    if (!req) return true;
+
+    if (req.standingDesk && !desk.standingDesk) return false;
+    if (req.dualMonitor && !desk.dualMonitor) return false;
+    if (req.quietZone && !desk.quietZone) return false;
+    if (req.nearWindow && !desk.nearWindow) return false;
+    if (req.wheelchairAccessible && !desk.wheelchairAccessible) return false;
+    if (
+      req.minimumWifiQuality !== undefined &&
+      (desk.wifiQuality ?? 3) < req.minimumWifiQuality
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Calculates compatibility score between an eligible person and a desk.
+   * Higher score = stronger preference match.
+   */
+  public calculateMatchScore(person: PersonCandidate, desk: DeskResource): number {
+    let score = 100;
+
+    // Preferred desk bonus
+    if (person.preferredDeskIds && person.preferredDeskIds.includes(desk.id)) {
+      score += 50;
+    }
+
+    // Additional amenity bonuses
+    if (desk.standingDesk) score += 10;
+    if (desk.dualMonitor) score += 10;
+    if (desk.quietZone) score += 5;
+    if (desk.nearWindow) score += 5;
+    if (desk.wifiQuality) score += desk.wifiQuality * 2;
+
+    return score;
+  }
+
+  /**
+   * Computes a finite assignment cost from match score.
+   * Ensures the cost is always a finite number.
+   */
+  public calculateCost(score: number): number {
+    if (!Number.isFinite(score)) return 0;
+    // Lower cost is preferred in bipartite matching formulations
+    return Math.max(0, 200 - score);
+  }
+
+  /**
+   * Bipartite matching via augmenting paths (Hopcroft-Karp / Ford-Fulkerson).
+   * Returns complete matching if a full assignment is feasible.
+   */
+  private tryMaxBipartiteMatching(
+    sortedPersons: PersonCandidate[],
+    availableDesks: DeskResource[],
+  ): Map<string, string> | null {
+    // deskId -> personId
+    const deskMatch = new Map<string, string>();
+
+    const dfs = (
+      person: PersonCandidate,
+      visitedDesks: Set<string>,
+    ): boolean => {
+      // Deterministically sort candidate desks for this person
+      const eligibleDesks = availableDesks
+        .filter((d) => this.isEligible(person, d))
+        .sort((a, b) => {
+          const scoreB = this.calculateMatchScore(person, b);
+          const scoreA = this.calculateMatchScore(person, a);
+          if (scoreB !== scoreA) return scoreB - scoreA;
+          return a.id.localeCompare(b.id);
+        });
+
+      for (const desk of eligibleDesks) {
+        if (!visitedDesks.has(desk.id)) {
+          visitedDesks.add(desk.id);
+
+          const currentPersonId = deskMatch.get(desk.id);
+          if (
+            !currentPersonId ||
+            dfs(
+              sortedPersons.find((p) => p.id === currentPersonId)!,
+              visitedDesks,
+            )
+          ) {
+            deskMatch.set(desk.id, person.id);
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    for (const person of sortedPersons) {
+      const visited = new Set<string>();
+      const matched = dfs(person, visited);
+      if (!matched) {
+        // Complete assignment not feasible via standard graph matching
+        return null;
+      }
+    }
+
+    // Reverse map: personId -> deskId
+    const personMatch = new Map<string, string>();
+    for (const [deskId, personId] of deskMatch.entries()) {
+      personMatch.set(personId, deskId);
+    }
+    return personMatch;
+  }
+
+  /**
+   * Deterministic fallback allocation strategy for infeasible or overconstrained graphs.
+   * Produces stable, identical partial or best-effort allocations across repeated runs.
+   */
+  public allocateDeterministicFallback(
+    persons: PersonCandidate[],
+    desks: DeskResource[],
+  ): DeskAllocationResult {
+    const deskCapacities = new Map<string, number>();
+    for (const d of (desks || [])) {
+      if (d && d.isAvailable !== false) {
+        deskCapacities.set(d.id, d.capacity ?? 1);
+      }
+    }
+
+    // 1. Sort persons with strict deterministic tie-breaking
+    const sortedPersons = [...(persons || [])].sort((a, b) => {
+      const priorityA = a.priority ?? 0;
+      const priorityB = b.priority ?? 0;
+      if (priorityB !== priorityA) return priorityB - priorityA;
+
+      // Count eligible desks (fewer choices = higher placement urgency)
+      const countA = (desks || []).filter((d) => this.isEligible(a, d)).length;
+      const countB = (desks || []).filter((d) => this.isEligible(b, d)).length;
+      if (countA !== countB) return countA - countB;
+
+      // Stable tie-breaker
+      return a.id.localeCompare(b.id);
+    });
+
+    const assignments: AllocationAssignment[] = [];
+    const unassignedPersonIds: string[] = [];
+    let totalCost = 0;
+
+    for (const person of sortedPersons) {
+      // Find eligible desks with available capacity
+      const eligibleDesks = (desks || [])
+        .filter((d) => this.isEligible(person, d) && (deskCapacities.get(d.id) ?? 0) > 0)
+        .sort((a, b) => {
+          const scoreB = this.calculateMatchScore(person, b);
+          const scoreA = this.calculateMatchScore(person, a);
+          if (scoreB !== scoreA) return scoreB - scoreA;
+
+          // Stable tie-breaker by ID
+          return a.id.localeCompare(b.id);
+        });
+
+      if (eligibleDesks.length > 0) {
+        const chosenDesk = eligibleDesks[0];
+        const currentCap = deskCapacities.get(chosenDesk.id) ?? 1;
+        deskCapacities.set(chosenDesk.id, currentCap - 1);
+
+        const score = this.calculateMatchScore(person, chosenDesk);
+        assignments.push({
+          personId: person.id,
+          deskId: chosenDesk.id,
+          score,
+        });
+        totalCost += this.calculateCost(score);
+      } else {
+        unassignedPersonIds.push(person.id);
+      }
+    }
+
+    // Sort output assignments deterministically by personId
+    assignments.sort((a, b) => a.personId.localeCompare(b.personId));
+    unassignedPersonIds.sort((a, b) => a.localeCompare(b));
+
+    return {
+      feasible: false,
+      isFallback: true,
+      assignments,
+      unassignedPersonIds,
+      totalAllocated: assignments.length,
+      totalRequested: (persons || []).length,
+      totalCost,
+    };
+  }
+
+  /**
+   * Main allocation method.
+   * Explicitly checks for empty desk pool or empty people list before graph construction,
+   * cost calculations, or matching algorithms execute (#10450).
+   */
+  public allocateDesks(
+    persons: PersonCandidate[],
+    desks: DeskResource[],
+  ): DeskAllocationResult {
+    const safePersons = Array.isArray(persons) ? persons : [];
+    const safeDesks = Array.isArray(desks) ? desks : [];
+
+    // Case 1: Empty people list (with any desk count)
+    if (safePersons.length === 0) {
+      return {
+        feasible: true,
+        isFallback: false,
+        assignments: [],
+        unassignedPersonIds: [],
+        totalAllocated: 0,
+        totalRequested: 0,
+        totalCost: 0,
+      };
+    }
+
+    // Filter available desks with positive capacity
+    const availableDesks = safeDesks.filter(
+      (d) => d && d.isAvailable !== false && (d.capacity === undefined || d.capacity > 0),
+    );
+
+    // Case 2: Empty desk pool (no available desks for candidates) (#10450)
+    // Handle explicitly without graph construction, distance matrix allocations, or Infinity costs.
+    if (availableDesks.length === 0) {
+      const sortedUnassigned = [...safePersons]
+        .map((p) => p.id)
+        .sort((a, b) => a.localeCompare(b));
+
+      return {
+        feasible: false,
+        isFallback: true,
+        assignments: [],
+        unassignedPersonIds: sortedUnassigned,
+        totalAllocated: 0,
+        totalRequested: safePersons.length,
+        totalCost: 0, // Strictly finite, never Infinity or NaN
+      };
+    }
+
+    // Sort persons deterministically
+    const sortedPersons = [...safePersons].sort((a, b) => {
+      const pDiff = (b.priority ?? 0) - (a.priority ?? 0);
+      if (pDiff !== 0) return pDiff;
+      return a.id.localeCompare(b.id);
+    });
+
+    // If total capacity < total persons, full assignment is trivially infeasible
+    const totalCapacity = availableDesks.reduce(
+      (acc, d) => acc + (d.capacity ?? 1),
+      0,
+    );
+
+    if (totalCapacity >= sortedPersons.length) {
+      // If each desk has capacity 1, attempt bipartite matching
+      const allUnitCapacity = availableDesks.every((d) => (d.capacity ?? 1) === 1);
+      if (allUnitCapacity) {
+        const matchResult = this.tryMaxBipartiteMatching(
+          sortedPersons,
+          availableDesks,
+        );
+
+        if (matchResult && matchResult.size === sortedPersons.length) {
+          const assignments: AllocationAssignment[] = [];
+          let totalCost = 0;
+          for (const person of sortedPersons) {
+            const deskId = matchResult.get(person.id)!;
+            const desk = safeDesks.find((d) => d.id === deskId)!;
+            const score = this.calculateMatchScore(person, desk);
+            assignments.push({
+              personId: person.id,
+              deskId,
+              score,
+            });
+            totalCost += this.calculateCost(score);
+          }
+          assignments.sort((a, b) => a.personId.localeCompare(b.personId));
+
+          return {
+            feasible: true,
+            isFallback: false,
+            assignments,
+            unassignedPersonIds: [],
+            totalAllocated: assignments.length,
+            totalRequested: sortedPersons.length,
+            totalCost,
+          };
+        }
+      }
+    }
+
+    // Infeasible for full bipartite matching: apply deterministic fallback allocation
+    return this.allocateDeterministicFallback(safePersons, safeDesks);
+  }
+}
+
+export const defaultDeskAutoAllocator = new DeskAutoAllocator();

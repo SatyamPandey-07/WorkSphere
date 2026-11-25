@@ -313,9 +313,46 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
     };
   }, [safelyDisconnectNode]);
 
-  const handleToggleNotch = () => {
+  const handleToggleNotch = useCallback(() => {
     setIsNotchEnabled((prev) => !prev);
-  };
+  }, []);
+
+  // Keyboard shortcut (N) to toggle acoustic notch filter (#10437)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key.toLowerCase() !== 'n') return;
+
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        if (target.isContentEditable) return;
+        const tag = target.tagName;
+        if (tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (tag === 'INPUT') {
+          const inputType = ((target as HTMLInputElement).type || 'text').toLowerCase();
+          if (
+            inputType !== 'range' &&
+            inputType !== 'button' &&
+            inputType !== 'checkbox' &&
+            inputType !== 'radio'
+          ) {
+            return;
+          }
+        }
+      }
+
+      event.preventDefault();
+      handleToggleNotch();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [handleToggleNotch]);
 
   const handleNotchFrequencyChange = (rawHz: number) => {
     const clamped = Math.min(
@@ -494,6 +531,8 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
               type="button"
               data-testid="toggle-notch-btn"
               aria-pressed={isNotchEnabled}
+              aria-keyshortcuts="n"
+              title="Toggle acoustic notch filter (N)"
               onClick={handleToggleNotch}
               className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
                 isNotchEnabled
@@ -502,6 +541,9 @@ export const AmbientSoundGenerator: React.FC<AmbientSoundGeneratorProps> = ({
               }`}
             >
               {isNotchEnabled ? 'Notch On' : 'Notch Off'}
+              <kbd className="ml-1.5 rounded bg-slate-200/70 px-1 py-0.5 font-mono text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                N
+              </kbd>
             </button>
           </div>
 

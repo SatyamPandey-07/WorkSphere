@@ -13,6 +13,7 @@
  * Security:
  * - Requires Clerk authentication.
  * - Validates booking ownership (the caller must own the booking).
+ * - Checks payer SOL/USDC balances before returning an unsigned transaction.
  * - Rejects duplicate deposits for already-paid bookings.
  * - Rate-limited per user.
  */
@@ -27,6 +28,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 import {
+  EscrowDepositPreflightError,
   buildDepositTransaction,
   confirmTransaction,
   simulateEscrowTransaction,
@@ -49,7 +51,9 @@ import {
 
 const depositRequestSchema = z.object({
   bookingId: z.string().min(1, "bookingId is required"),
-  payerWallet: z.string().min(32, "payerWallet must be a valid Solana address"),
+  payerWallet: z
+    .string()
+    .min(32, "Connect a Solana wallet and provide its public key"),
   amount: z.number().positive("amount must be positive"),
   currency: z.enum(["SOL", "USDC"], {
     message: "currency must be SOL or USDC",
@@ -197,9 +201,14 @@ export async function POST(request: Request) {
     // --- Deposit flow ---
     const parsed = depositRequestSchema.safeParse(body);
     if (!parsed.success) {
+      const payerWalletInvalid = parsed.error.issues.some(
+        (issue) => issue.path[0] === "payerWallet",
+      );
       return NextResponse.json(
         {
-          error: "Invalid request",
+          error: payerWalletInvalid
+            ? "Connect a Solana wallet before continuing."
+            : "Invalid request",
           details: parsed.error.flatten().fieldErrors,
         },
         { status: 400 },
@@ -293,6 +302,24 @@ export async function POST(request: Request) {
       },
     });
   } catch (error: unknown) {
+    if (error instanceof EscrowDepositPreflightError) {
+      if (
+        error.code === "BALANCE_CHECK_FAILED" ||
+        error.code === "RPC_REQUEST_FAILED"
+      ) {
+        console.error("[solana-pay] escrow preflight failed:", error);
+      }
+      const status =
+        error.code === "BALANCE_CHECK_FAILED" ||
+        error.code === "RPC_REQUEST_FAILED"
+          ? 503
+          : 400;
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status },
+      );
+    }
+
     console.error("[solana-pay] deposit error:", error);
 
     // Distinguish RPC errors from other failures.

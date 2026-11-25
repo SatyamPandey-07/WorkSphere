@@ -4,7 +4,7 @@
 
 WorkSphere uses [Clerk](https://clerk.com) for user identity, session management, and authentication across the platform.
 
-Authentication enforcement is centralized in Next.js middleware ([src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)). WorkSphere follows a **protect-by-default (deny-by-default)** security model:
+Authentication enforcement is centralized in Next.js middleware ([src/middleware.ts](../src/middleware.ts)). WorkSphere follows a **protect-by-default (deny-by-default)** security model:
 
 - Every route intercepted by the middleware requires an authenticated Clerk user session by default.
 - Only routes explicitly defined in the public routes allowlist bypass authentication.
@@ -18,7 +18,7 @@ Authentication enforcement is centralized in Next.js middleware ([src/middleware
 
 The authentication middleware is configured in:
 
-- **[src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)**
+- **[src/middleware.ts](../src/middleware.ts)**
 
 The middleware executes on every incoming request matching the `config.matcher` pattern, before the request reaches Next.js pages, layouts, or route handlers.
 
@@ -39,7 +39,7 @@ The middleware executes on every incoming request matching the `config.matcher` 
 
 ### Middleware Implementation Example
 
-The core Clerk authentication logic in [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts) is structured as follows:
+The core Clerk authentication logic in [src/middleware.ts](../src/middleware.ts) is structured as follows:
 
 ```typescript
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
@@ -150,8 +150,8 @@ WorkSphere distinguishes between **Public** routes (accessible to guests without
 | `/api/collections/public(.*)` | Public            | Public collection retrieval, sharing, and upvote endpoints                                     |
 | `/api/webhook(.*)`            | Public            | External incoming webhooks (e.g., Clerk user sync, Stripe events; verified by Svix/signatures) |
 | `/api/auth/csrf-token`        | Public            | Generates and issues CSRF protection tokens                                                    |
-| `/api/auth/resend-otp`        | Public            | Resends one-time verification codes during sign-in/verification                                |
-| `/api/auth/verify-otp`        | Public            | Validates one-time verification codes                                                          |
+| `/api/auth/resend-otp`        | Retired (410)     | Retired legacy endpoint (HTTP 410 Gone). Password reset codes are resent via Clerk.            |
+| `/api/auth/verify-otp`        | Retired (410)     | Retired legacy endpoint (HTTP 410 Gone). Verification codes are verified via Clerk.            |
 | `/api/auth/forgot-password`   | Public            | Initiates account password recovery requests                                                   |
 | `/api/auth/reset-password`    | Public            | Finalizes password reset operations                                                            |
 | `/api/auth/webauthn/verify`   | Public            | WebAuthn passkey assertion verification during sign-in                                         |
@@ -216,7 +216,7 @@ Create your new route under `src/app`:
 
 #### Step 2: Ensure Route is Omitted from `isPublicRoute`
 
-Leave [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts) unchanged. Because your route is not listed in `isPublicRoute`, the middleware automatically intercepts it and executes `await auth.protect()`.
+Leave [src/middleware.ts](../src/middleware.ts) unchanged. Because your route is not listed in `isPublicRoute`, the middleware automatically intercepts it and executes `await auth.protect()`.
 
 #### Step 3: Access Authenticated User Context in Your Code
 
@@ -309,7 +309,7 @@ When creating a route that should be publicly accessible without authentication 
 
 ### Step-by-Step Guide
 
-1. Open **[src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts)**.
+1. Open **[src/middleware.ts](../src/middleware.ts)**.
 2. Locate the `isPublicRoute` array defined inside `createRouteMatcher([ ... ])`.
 3. Add your route pattern to the array:
    - For an exact page match: `"/about"`
@@ -342,7 +342,7 @@ const isPublicRoute = createRouteMatcher([
 ```
 
 4. **CSRF Exemption for Mutating Webhook Endpoints**:
-   If the new route is a mutating API endpoint (`POST`, `PUT`, `DELETE`, `PATCH`) called by external third-party services that do not hold a browser CSRF cookie (e.g., payment gateways or third-party webhooks), also add it to `isCsrfExemptMatcher` in [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts):
+   If the new route is a mutating API endpoint (`POST`, `PUT`, `DELETE`, `PATCH`) called by external third-party services that do not hold a browser CSRF cookie (e.g., payment gateways or third-party webhooks), also add it to `isCsrfExemptMatcher` in [src/middleware.ts](../src/middleware.ts):
 
 ```typescript
 const isCsrfExemptMatcher = createRouteMatcher([
@@ -393,7 +393,7 @@ To verify that protection is working:
 
 ### 4. Unit Testing with Mocks (Jest)
 
-When writing Jest tests for components or route handlers that interact with Clerk, mock `@clerk/nextjs` or `@clerk/nextjs/server` as documented in [CONTRIBUTING.md](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/CONTRIBUTING.md):
+When writing Jest tests for components or route handlers that interact with Clerk, mock `@clerk/nextjs` or `@clerk/nextjs/server` as documented in [CONTRIBUTING.md](../CONTRIBUTING.md):
 
 ```typescript
 // Mocking Clerk in API route tests
@@ -423,7 +423,7 @@ To test unauthenticated scenarios, configure the mock to return `null`:
 
 ### 1. Assuming New Routes Are Public by Default
 
-- **Mistake**: Creating a new route intended for public or guest use and expecting it to work without updating [src/middleware.ts](file:///c:/Users/kadal/Downloads/worksphere/WorkSphere/src/middleware.ts).
+- **Mistake**: Creating a new route intended for public or guest use and expecting it to work without updating [src/middleware.ts](../src/middleware.ts).
 - **Result**: WorkSphere's protect-by-default architecture blocks unauthenticated visitors and redirects them to `/sign-in`.
 - **Solution**: Explicitly add the path pattern to `isPublicRoute`.
 
@@ -462,3 +462,26 @@ To test unauthenticated scenarios, configure the mock to return `null`:
 - **Mistake**: Testing protected admin routes (`/admin/*` or `/api/admin/*`) with a standard authenticated user.
 - **Result**: Requests are denied with HTTP `403 Forbidden` or redirected to `/` because admin routes enforce role checks beyond basic authentication.
 - **Solution**: Set the user's Clerk metadata role to `admin` or add their email to the `ADMIN_EMAILS` environment variable.
+
+---
+
+## 8. Password Recovery & Verification Architecture
+
+WorkSphere relies exclusively on Clerk for native password reset and verification code lifecycle.
+
+- **Forgot Password**: The forgot password page (`/forgot-password`) initiates code dispatch via:
+  ```typescript
+  await signIn.create({
+    strategy: "reset_password_email_code",
+    identifier: cleanEmail,
+  });
+  ```
+- **Reset Password & Verification**: The reset password page (`/reset-password`) authoritatively attempts verification and updates the password via:
+  ```typescript
+  await signIn.attemptFirstFactor({
+    strategy: "reset_password_email_code",
+    code: cleanCode,
+    password,
+  });
+  ```
+- **Legacy Endpoints Retired**: The legacy standalone endpoints `POST /api/auth/verify-otp` and `POST /api/auth/resend-otp` have been retired and return `HTTP 410 Gone` with `{ code: "ENDPOINT_RETIRED" }`. No standalone OTP generation, verification, or unauthenticated token validation is accepted outside of Clerk's native authentication pipeline.

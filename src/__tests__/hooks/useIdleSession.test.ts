@@ -11,40 +11,77 @@ jest.mock("next/navigation", () => ({
   }),
 }));
 
-// Mock global fetch
-const originalFetch = global.fetch;
+// Mock Clerk
+const mockClerkSignOut = jest.fn().mockResolvedValue(undefined);
+const mockTouch = jest.fn().mockResolvedValue(undefined);
+const mockGetToken = jest.fn().mockResolvedValue("mock-token");
 
-describe("useIdleSession Hook", () => {
+let mockIsLoaded = true;
+let mockIsSignedIn = true;
+let mockSession: { touch: jest.Mock; getToken: jest.Mock } | null = {
+  touch: mockTouch,
+  getToken: mockGetToken,
+};
+
+jest.mock("@clerk/nextjs", () => ({
+  useSession: () => ({
+    isLoaded: mockIsLoaded,
+    isSignedIn: mockIsSignedIn,
+    session: mockSession,
+  }),
+  useClerk: () => ({
+    signOut: mockClerkSignOut,
+  }),
+}));
+
+describe("useIdleSession Hook (Clerk-native)", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockPush.mockClear();
     mockRefresh.mockClear();
+    mockClerkSignOut.mockClear();
+    mockTouch.mockClear();
+    mockGetToken.mockClear();
     localStorage.clear();
 
-    global.fetch = jest.fn().mockImplementation((url) => {
-      if (url === "/api/auth/session/refresh") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ success: true }),
-        });
-      }
-      if (url === "/api/auth/session/logout") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ success: true }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
-    });
+    mockIsLoaded = true;
+    mockIsSignedIn = true;
+    mockSession = {
+      touch: mockTouch,
+      getToken: mockGetToken,
+    };
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    jest.clearAllTimers();
     jest.useRealTimers();
-    global.fetch = originalFetch;
   });
 
-  it("initializes in active state without warning", () => {
+  it("does not trigger warning or countdown for anonymous/signed-out users", () => {
+    mockIsSignedIn = false;
+    mockSession = null;
+
+    const onWarning = jest.fn();
+    const { result } = renderHook(() =>
+      useIdleSession({
+        idleTimeoutMs: 10000,
+        warningDurationMs: 5000,
+        onWarning,
+      }),
+    );
+
+    expect(result.current.showWarning).toBe(false);
+
+    act(() => {
+      jest.advanceTimersByTime(20000);
+    });
+
+    expect(result.current.showWarning).toBe(false);
+    expect(onWarning).not.toHaveBeenCalled();
+    expect(mockClerkSignOut).not.toHaveBeenCalled();
+  });
+
+  it("initializes in active state without warning for authenticated users", () => {
     const { result } = renderHook(() =>
       useIdleSession({ idleTimeoutMs: 10000, warningDurationMs: 5000 }),
     );
@@ -65,7 +102,7 @@ describe("useIdleSession Hook", () => {
 
     expect(result.current.showWarning).toBe(false);
 
-    // Advance timers past idleTimeoutMs (10s)
+    // Advance past idleTimeoutMs (10s)
     act(() => {
       jest.advanceTimersByTime(11000);
     });
@@ -74,7 +111,7 @@ describe("useIdleSession Hook", () => {
     expect(onWarning).toHaveBeenCalledTimes(1);
   });
 
-  it("extends session and dismisses warning when extendSession is called", async () => {
+  it("extends session and touches Clerk session when extendSession is called", async () => {
     const { result } = renderHook(() =>
       useIdleSession({ idleTimeoutMs: 10000, warningDurationMs: 5000 }),
     );
@@ -89,13 +126,10 @@ describe("useIdleSession Hook", () => {
     });
 
     expect(result.current.showWarning).toBe(false);
-    expect(global.fetch).toHaveBeenCalledWith(
-      "/api/auth/session/refresh",
-      expect.objectContaining({ method: "POST" }),
-    );
+    expect(mockTouch).toHaveBeenCalledTimes(1);
   });
 
-  it("automatically signs out and redirects to /sign-in after warning countdown expires", async () => {
+  it("automatically signs out via Clerk after warning countdown expires", async () => {
     const onExpired = jest.fn();
     const { result } = renderHook(() =>
       useIdleSession({
@@ -112,17 +146,13 @@ describe("useIdleSession Hook", () => {
     });
     expect(result.current.showWarning).toBe(true);
 
-    // Wait for warning duration to elapse (5s)
+    // Wait for warning countdown (5s) to elapse
     await act(async () => {
       jest.advanceTimersByTime(6000);
     });
 
     expect(onExpired).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith(
-      "/api/auth/session/logout",
-      expect.objectContaining({ method: "POST" }),
-    );
-    expect(mockPush).toHaveBeenCalledWith("/sign-in");
+    expect(mockClerkSignOut).toHaveBeenCalledWith({ redirectUrl: "/sign-in" });
   });
 
   it("resets idle timer on user activity", () => {
@@ -143,5 +173,26 @@ describe("useIdleSession Hook", () => {
 
     // Still shouldn't show warning because activity reset the timer
     expect(result.current.showWarning).toBe(false);
+  });
+
+  it("handles explicit signOut call gracefully", async () => {
+    const onExpired = jest.fn();
+    const { result } = renderHook(() =>
+      useIdleSession({
+        idleTimeoutMs: 10000,
+        warningDurationMs: 5000,
+        redirectUrl: "/custom-sign-in",
+        onExpired,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(onExpired).toHaveBeenCalledTimes(1);
+    expect(mockClerkSignOut).toHaveBeenCalledWith({
+      redirectUrl: "/custom-sign-in",
+    });
   });
 });

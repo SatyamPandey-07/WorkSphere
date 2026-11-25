@@ -6,6 +6,7 @@ import {
   MIN_USERNAME_LENGTH,
   MAX_USERNAME_LENGTH,
 } from "@/lib/profileSanitizer";
+import { sanitizeVenueFlagDetails } from "./validations/venueFlag";
 
 // =========================================================================
 // RESERVATION SCHEMAS
@@ -172,6 +173,8 @@ export const venueCreateSchema = z.object({
   hasOutlets: z.boolean().optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]).optional(),
   hasErgonomic: z.boolean().optional(),
+  hasStandingDesk: z.boolean().optional(),
+  hasExternalMonitor: z.boolean().optional(),
   singleOriginBeans: z.boolean().optional(),
   specialtyEspresso: z.boolean().optional(),
   oatAlmondMilk: z.boolean().optional(),
@@ -193,7 +196,61 @@ export const venueCreateSchema = z.object({
   dogFriendly: z.boolean().optional(),
   catsAllowed: z.boolean().optional(),
   musicStyle: z.string().optional(),
+  placeId: z
+    .string()
+    .trim()
+    .min(1, "placeId cannot be empty")
+    .max(255, "placeId cannot exceed 255 characters")
+    .optional(),
+  rating: z
+    .number()
+    .min(0, "Rating must be between 0 and 5")
+    .max(5, "Rating must be between 0 and 5")
+    .optional()
+    .nullable(),
+  imageUrl: z
+    .string()
+    .trim()
+    .url("Invalid image URL")
+    .max(2048, "Image URL cannot exceed 2048 characters")
+    .refine(
+      (url) => /^https?:\/\//i.test(url),
+      "Image URL must use http or https protocol",
+    )
+    .optional()
+    .nullable()
+    .or(z.literal("")),
 });
+
+export const venueSupplementalMetadataSchema = z.object({
+  placeId: z
+    .string({ required_error: "placeId is required" })
+    .trim()
+    .min(1, "placeId is required")
+    .max(255, "placeId cannot exceed 255 characters"),
+  rating: z
+    .number()
+    .min(0, "Rating must be between 0 and 5")
+    .max(5, "Rating must be between 0 and 5")
+    .optional()
+    .nullable(),
+  imageUrl: z
+    .string()
+    .trim()
+    .url("Invalid image URL")
+    .max(2048, "Image URL cannot exceed 2048 characters")
+    .refine(
+      (url) => /^https?:\/\//i.test(url),
+      "Image URL must use http or https protocol",
+    )
+    .optional()
+    .nullable()
+    .or(z.literal("")),
+});
+
+export type VenueSupplementalMetadata = z.infer<
+  typeof venueSupplementalMetadataSchema
+>;
 
 export const venueRatingSchema = z.object({
   wifiQuality: z.number().min(1).max(5),
@@ -205,6 +262,7 @@ export const venueRatingSchema = z.object({
     .string()
     .trim()
     .max(1000)
+    .transform((val) => sanitizeVenueFlagDetails(val ?? ""))
     .refine((val) => val.length === 0 || val.length >= 3, {
       message: "Comment must be at least 3 characters if provided",
     })
@@ -307,6 +365,31 @@ export const syncFavoriteTagsSchema = z.object({
     .min(1)
     .max(200),
 });
+
+export const MAX_BULK_FAVORITE_OPERATIONS = 100;
+
+export const syncFavoriteOperationSchema = z.object({
+  venueId: z
+    .string()
+    .trim()
+    .min(1, "venueId must be a non-empty string")
+    .max(128),
+  action: z.enum(["add", "remove"]),
+  timestamp: z.number().finite().nonnegative(),
+});
+
+export const bulkFavoriteSyncSchema = z.object({
+  operations: z
+    .array(syncFavoriteOperationSchema)
+    .min(1, "operations must contain at least one operation")
+    .max(
+      MAX_BULK_FAVORITE_OPERATIONS,
+      `Maximum ${MAX_BULK_FAVORITE_OPERATIONS} operations allowed per request`,
+    ),
+});
+
+export type SyncFavoriteOperation = z.infer<typeof syncFavoriteOperationSchema>;
+export type BulkFavoriteSync = z.infer<typeof bulkFavoriteSyncSchema>;
 
 // Location schema
 export const locationSchema = z.object({
@@ -449,5 +532,79 @@ export function validateRequest<T>(
     error: result.error.issues
       .map((e) => `${e.path.join(".")}: ${e.message}`)
       .join(", "),
+  };
+}
+
+// =========================================================================
+// PAGINATION SCHEMA & HELPERS
+// =========================================================================
+
+export const DEFAULT_PAGE = 1;
+export const DEFAULT_LIMIT = 50;
+export const MAX_LIMIT = 100;
+
+export interface ValidatedPagination {
+  page: number;
+  limit: number;
+  skip: number;
+}
+
+/**
+ * Validates and parses query parameters for pagination.
+ * Requires page and limit to be finite positive integers.
+ * Clamps limit to maxLimit (default: 100).
+ * Returns a validation error for non-numeric, negative, decimal, or zero values.
+ */
+export function parsePaginationParams(
+  pageParam: string | null | undefined,
+  limitParam: string | null | undefined,
+  defaultLimit: number = DEFAULT_LIMIT,
+  maxLimit: number = MAX_LIMIT,
+):
+  | { success: true; data: ValidatedPagination }
+  | { success: false; error: string } {
+  let page = DEFAULT_PAGE;
+  if (pageParam !== null && pageParam !== undefined && pageParam !== "") {
+    const trimmed = pageParam.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return {
+        success: false,
+        error: "page must be a positive integer",
+      };
+    }
+    const parsedPage = Number(trimmed);
+    if (!Number.isSafeInteger(parsedPage) || parsedPage < 1) {
+      return {
+        success: false,
+        error: "page must be a positive integer",
+      };
+    }
+    page = parsedPage;
+  }
+
+  let limit = defaultLimit;
+  if (limitParam !== null && limitParam !== undefined && limitParam !== "") {
+    const trimmed = limitParam.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return {
+        success: false,
+        error: "limit must be a positive integer",
+      };
+    }
+    const parsedLimit = Number(trimmed);
+    if (!Number.isSafeInteger(parsedLimit) || parsedLimit < 1) {
+      return {
+        success: false,
+        error: "limit must be a positive integer",
+      };
+    }
+    limit = Math.min(maxLimit, parsedLimit);
+  }
+
+  const skip = (page - 1) * limit;
+
+  return {
+    success: true,
+    data: { page, limit, skip },
   };
 }

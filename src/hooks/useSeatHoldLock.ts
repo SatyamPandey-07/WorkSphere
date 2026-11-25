@@ -3,6 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
 import { useAuth, useUser } from "@clerk/nextjs";
+import { useToast } from "@/components/ui/Toast";
+
+/** Fallback length of the "Extend Hold" prompt when the server omits graceMs (#7943). */
+const DEFAULT_LOCK_RECOVERY_GRACE_MS = 30_000;
 
 export interface SeatHoldInfo {
   seatId: string;
@@ -32,6 +36,12 @@ export interface UseSeatHoldLockOptions {
   onSeatLocked?: (seatId: string, heldBy: string, heldByName?: string) => void;
   onSeatUnlocked?: (seatId: string, reason: string) => void;
   onHoldRenewed?: (seatId: string, expiresAt: number) => void;
+  /** Fired when the server reports that this user's hold hit its TTL (#7943). */
+  onLockExpired?: (seatId: string, graceMs: number) => void;
+  /** Fired after the user successfully re-acquires a seat from the recovery toast (#7943). */
+  onHoldExtended?: (seatId: string, expiresAt: number) => void;
+  /** Show the interactive "Extend Hold" toast on expiry. Defaults to true. */
+  showLockRecoveryToast?: boolean;
 }
 
 export function useSeatHoldLock({
@@ -47,15 +57,56 @@ export function useSeatHoldLock({
   onSeatLocked,
   onSeatUnlocked,
   onHoldRenewed,
+  onLockExpired,
+  onHoldExtended,
+  showLockRecoveryToast = true,
 }: UseSeatHoldLockOptions) {
-  const { userId: authUserId } = useAuth();
+  const { toast } = useToast();
+  const { userId: authUserId, getToken, isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
-  const effectiveUserId = propUserId || authUserId || "guest_viewer";
+  const effectiveUserId = authUserId || propUserId || "guest_viewer";
   const effectiveUserName =
     propUserName ||
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
     user?.username ||
     "User";
+  const [socketAuth, setSocketAuth] = useState<{
+    userId: string;
+    token: string;
+  } | null>(null);
+
+  const authToken = socketAuth?.userId === authUserId ? socketAuth.token : null;
+
+  const isAuthReady = isLoaded && (!isSignedIn || Boolean(authToken));
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isLoaded || !isSignedIn || !authUserId) {
+      setSocketAuth(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSocketAuth(null);
+
+    getToken()
+      .then((token) => {
+        if (!cancelled && token) {
+          setSocketAuth({ userId: authUserId, token });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSocketAuth(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken, isLoaded, isSignedIn, authUserId]);
 
   const [activeHolds, setActiveHolds] = useState<Record<string, SeatHoldInfo>>(
     {},
@@ -66,6 +117,16 @@ export function useSeatHoldLock({
 
   const myHeldSeatIdRef = useRef<string | null>(null);
   myHeldSeatIdRef.current = myHeldSeatId;
+
+  // Latest holds for the 1s ticker, which must not raise toasts from inside a
+  // state updater. The announce ref lets the socket handler (created before
+  // the callbacks below) call the current implementation.
+  const activeHoldsRef = useRef<Record<string, SeatHoldInfo>>({});
+  activeHoldsRef.current = activeHolds;
+  const announceLockExpiredRef = useRef<
+    (seatId: string, graceMs?: number) => void
+  >(() => {});
+  const announcedAtRef = useRef<Map<string, number>>(new Map());
 
   // References for pending promises to resolve acquireHold requests
   const pendingRequests = useRef<
@@ -88,7 +149,8 @@ export function useSeatHoldLock({
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
     room: isMounted ? targetRoom : `floorplan-${venueId}`,
-    startClosed: !isMounted,
+    startClosed: !isMounted || !isAuthReady,
+    query: authToken ? { token: authToken } : undefined,
     onOpen() {
       setIsConnected(true);
       // Request active seat holds snapshot upon connection
@@ -260,6 +322,32 @@ export function useSeatHoldLock({
           onSeatUnlocked?.(data.seatId, data.reason || "UNLOCKED");
           return;
         }
+
+        // 6. Direct notice that this user's own hold reached its TTL (#7943)
+        if (data.type === "lock_expired" && data.seatId) {
+          if (data.venueId && data.venueId !== venueId) return;
+
+          // Ignore a late notice if the hold has since been renewed.
+          const current = activeHoldsRef.current[data.seatId];
+          if (current?.isSelf && current.expiresAt > Date.now()) return;
+
+          const graceMs =
+            typeof data.graceMs === "number" && data.graceMs > 0
+              ? data.graceMs
+              : DEFAULT_LOCK_RECOVERY_GRACE_MS;
+
+          setActiveHolds((prev) => {
+            if (!prev[data.seatId]) return prev;
+            const updated = { ...prev };
+            delete updated[data.seatId];
+            return updated;
+          });
+          setMyHeldSeatId((prev) => (prev === data.seatId ? null : prev));
+
+          onLockExpired?.(data.seatId, graceMs);
+          announceLockExpiredRef.current(data.seatId, graceMs);
+          return;
+        }
       } catch {
         // Ignore unparseable frames
       }
@@ -310,6 +398,15 @@ export function useSeatHoldLock({
   // Client-side 1-second countdown ticker & auto-release expired locks without page reload
   useEffect(() => {
     const interval = setInterval(() => {
+      // Prompt immediately at local expiry instead of waiting for the server
+      // sweep to send lock_expired. Deduplicated per seat by the announcer.
+      const tickNow = Date.now();
+      for (const hold of Object.values(activeHoldsRef.current)) {
+        if (hold.isSelf && tickNow >= hold.expiresAt) {
+          announceLockExpiredRef.current(hold.seatId);
+        }
+      }
+
       setActiveHolds((prev) => {
         let hasChanges = false;
         const now = Date.now();
@@ -450,6 +547,65 @@ export function useSeatHoldLock({
   );
 
   /**
+   * Re-acquire a seat whose hold expired. Uses the same atomic server-side
+   * acquire as a fresh hold, so it only succeeds while the seat is unreserved.
+   */
+  const extendHold = useCallback(
+    async (seatId: string): Promise<boolean> => {
+      let acquired = false;
+      try {
+        acquired = await acquireHold(seatId);
+      } catch {
+        acquired = false;
+      }
+      announcedAtRef.current.delete(seatId);
+
+      if (acquired) {
+        toast("Seat hold extended. You have 5 more minutes.", "success", {
+          key: `seat-lock-extended:${seatId}`,
+        });
+        onHoldExtended?.(seatId, Date.now() + 300_000);
+      } else {
+        toast(
+          "Couldn't extend your hold. The seat may have been taken.",
+          "error",
+          { key: `seat-lock-extended:${seatId}` },
+        );
+      }
+      return acquired;
+    },
+    [acquireHold, toast, onHoldExtended],
+  );
+
+  const announceLockExpired = useCallback(
+    (seatId: string, graceMs: number = DEFAULT_LOCK_RECOVERY_GRACE_MS) => {
+      if (!showLockRecoveryToast) return;
+
+      const now = Date.now();
+      const lastAnnounced = announcedAtRef.current.get(seatId);
+      if (lastAnnounced !== undefined && now - lastAnnounced < graceMs) return;
+      announcedAtRef.current.set(seatId, now);
+
+      toast(
+        "Your seat hold expired. Extend it within {countdown} seconds if the seat is still free.",
+        "warning",
+        {
+          key: `seat-lock-expired:${seatId}`,
+          countdown: Math.max(1, Math.ceil(graceMs / 1000)),
+          action: {
+            label: "Extend Hold",
+            onClick: () => {
+              void extendHold(seatId);
+            },
+          },
+        },
+      );
+    },
+    [showLockRecoveryToast, toast, extendHold],
+  );
+  announceLockExpiredRef.current = announceLockExpired;
+
+  /**
    * Release hold on a seat.
    */
   const releaseHold = useCallback(
@@ -566,6 +722,7 @@ export function useSeatHoldLock({
     remainingSeconds,
     isConnected,
     acquireHold,
+    extendHold,
     releaseHold,
     confirmCheckout,
     isSeatHeldByOther,

@@ -58,6 +58,9 @@ export function CookieBanner({ reducedMotion }: CookieBannerProps = {}) {
     } catch {
       // ignore
     }
+    window.dispatchEvent(
+      new CustomEvent("worksphere:cookie-consent", { detail: choice }),
+    );
     setVisible(false);
   };
 

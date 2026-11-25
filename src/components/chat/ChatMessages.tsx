@@ -1,6 +1,5 @@
 "use client";
 
-import { useRateLimit } from "@/hooks/useRateLimit";
 import {
   BookOpen,
   Brain,
@@ -14,10 +13,7 @@ import {
   Info,
   Loader2,
   MapPin,
-  Mic,
-  MicOff,
   Navigation,
-  Send,
   Star,
   Volume2,
   Wifi,
@@ -27,8 +23,6 @@ import {
   Copy,
   Check,
   Clock,
-  Trash2,
-  X,
 } from "lucide-react";
 import { usePreferenceReranking } from "@/hooks/usePreferenceReranking";
 import { useKMeansClustering } from "@/hooks/useKMeansClustering";
@@ -43,8 +37,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { motion, LayoutGroup } from "framer-motion";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
@@ -90,6 +83,28 @@ export interface Message {
   cached?: boolean;
   complexity?: string;
   isStreaming?: boolean;
+}
+
+/**
+ * Deduplicates chat messages by unique identifier (message.id).
+ * Retains the first occurrence, preserving message sequence and order.
+ * Prevents duplicate message bubbles from rendering during rapid WebRTC
+ * DataChannel reconnects or redundant peer mesh history sync (#10014).
+ */
+export function deduplicateChatMessages(
+  messages: readonly Message[],
+): Message[] {
+  if (!Array.isArray(messages)) return [];
+  const seen = new Set<string>();
+  const result: Message[] = [];
+  for (const msg of messages) {
+    if (!msg || !msg.id) continue;
+    if (!seen.has(msg.id)) {
+      seen.add(msg.id);
+      result.push(msg);
+    }
+  }
+  return result;
 }
 
 const AGENT_ICONS: Record<string, React.ElementType> = {
@@ -1081,12 +1096,18 @@ export function MessageList({
 
   const { speakingMessageId, speakingSentenceIndex } = useSpeechSynthesis();
 
-  const prevMessageCountRef = useRef(messages.length);
+  // Deduplicate incoming messages to prevent rendering duplicate bubbles on rapid WebRTC reconnect (#10014)
+  const displayMessages = useMemo(
+    () => deduplicateChatMessages(messages),
+    [messages],
+  );
+
+  const prevMessageCountRef = useRef(displayMessages.length);
   const isNearBottomRef = useRef(true);
   const [hasNewMessagesBelow, setHasNewMessagesBelow] = useState(false);
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
-  const checkIsNearBottom = useCallback(() => {
+  const _checkIsNearBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return true;
     const distanceFromBottom =
@@ -1126,8 +1147,8 @@ export function MessageList({
   // Handle messages changes and auto-scroll logic
   useEffect(() => {
     const container = containerRef.current;
-    const isNewMessage = messages.length > prevMessageCountRef.current;
-    prevMessageCountRef.current = messages.length;
+    const isNewMessage = displayMessages.length > prevMessageCountRef.current;
+    prevMessageCountRef.current = displayMessages.length;
 
     if (!container) return;
 
@@ -1142,12 +1163,12 @@ export function MessageList({
       setHasNewMessagesBelow(true);
       setShowScrollToLatest(true);
     }
-  }, [messages, isLoading]);
+  }, [displayMessages, isLoading]);
 
   // Also re-check whenever the container's own size changes
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || typeof ResizeObserver === "undefined") return;
     const resizeObserver = new ResizeObserver(() => {
       if (isNearBottomRef.current || isLoading) {
         requestAnimationFrame(() => {
@@ -1167,203 +1188,210 @@ export function MessageList({
         className="flex-1 overflow-y-auto p-4 space-y-4"
         style={{ scrollbarGutter: "stable" }}
       >
-      {messages.length === 0 && (
-        <div className="text-center py-8">
-          <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
-          <p className="text-zinc-900 dark:text-white font-bold mb-4 uppercase text-xs tracking-widest">
-            How can I help you find a workspace today?
-          </p>
-          <div className="grid grid-cols-1 gap-2">
-            {initialSuggestions.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => onSuggestionClick(s)}
-                disabled={isLoading}
-                className="text-left cursor-pointer px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-[var(--primary-accent)] hover:text-white transition-all shadow-sm"
-              >
-                {s}
-              </button>
-            ))}
+        {displayMessages.length === 0 && (
+          <div className="text-center py-8">
+            <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
+            <p className="text-zinc-900 dark:text-white font-bold mb-4 uppercase text-xs tracking-widest">
+              How can I help you find a workspace today?
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {initialSuggestions.map((s, i) => (
+                <button
+                  key={i}
+                  onClick={() => onSuggestionClick(s)}
+                  disabled={isLoading}
+                  className="text-left cursor-pointer px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-[var(--primary-accent)] hover:text-white transition-all shadow-sm"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {messages.map((message) => (
-        <div
-          key={message.id}
-          className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
-        >
-          {message.role === "assistant" &&
-          message.content.trim().length === 0 ? (
-            <ChatMessageSkeleton />
-          ) : (
-            <div
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
+        {displayMessages.map((message) => (
+          <div
+            key={message.id}
+            data-testid={`chat-message-${message.id}`}
+            className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
+          >
+            {message.role === "assistant" &&
+            message.content.trim().length === 0 ? (
+              <ChatMessageSkeleton />
+            ) : (
               <div
-                className={`group relative max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
-                  message.role === "user"
-                    ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
-                    : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
-                }`}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {message.role === "assistant" && (
-                  <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <ReadAloudButton text={message.content} />
-                    <CopyMessageButton text={message.content} />
+                <div
+                  className={`group relative max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
+                    message.role === "user"
+                      ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
+                      : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
+                  }`}
+                >
+                  {message.role === "assistant" && (
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <ReadAloudButton text={message.content} />
+                      <CopyMessageButton text={message.content} />
+                    </div>
+                  )}
+                  <div
+                    className={`text-sm font-medium leading-relaxed ${message.role === "assistant" ? "pr-12" : ""}`}
+                  >
+                    {message.role === "assistant" ? (
+                      <div className="relative">
+                        <MessageRenderer
+                          content={message.content}
+                          speakingSentenceIndex={
+                            speakingMessageId === message.id
+                              ? speakingSentenceIndex
+                              : null
+                          }
+                        />
+                        {message.isStreaming && (
+                          <span className="inline-flex gap-0.5 items-center ml-1 accent-text dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] font-black animate-pulse">
+                            <span>.</span>
+                            <span>.</span>
+                            <span>.</span>
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <TranslatedMessage
+                        messageId={message.id}
+                        text={message.content}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {message.agentSteps && message.agentSteps.length > 0 && (
+              <div className="ml-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => onToggleSteps(message.id)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-all hover:scale-105"
+                  >
+                    <TerminalIcon className="w-3 h-3" />
+                    <span>Agent Reasoning Details</span>
+                    {expandedSteps[message.id] ? (
+                      <ChevronUp className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                  </button>
+                  {message.cached && (
+                    <span className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 text-[10px] font-bold uppercase tracking-wider">
+                      ⚡ Cached
+                    </span>
+                  )}
+                  {message.complexity === "simple" && !message.cached && (
+                    <span className="flex items-center gap-1 px-2 py-1 rounded accent-bg-10 accent-text accent-bg-dark-20 dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] text-[10px] font-bold uppercase tracking-wider">
+                      ⚡ Simple Routing
+                    </span>
+                  )}
+                </div>
+
+                {expandedSteps[message.id] && (
+                  <div className="mt-3 space-y-2 ml-4">
+                    {message.agentSteps.map((step, idx) => {
+                      const Icon = AGENT_ICONS[step.agent] || Brain;
+                      const color = AGENT_COLORS[step.agent] || "text-zinc-500";
+                      const skipped = (step.result as any)?.skipped;
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`rounded-xl p-3 text-xs border ${skipped ? "bg-zinc-900/50 border-zinc-800/50 opacity-50" : "bg-zinc-950 border-zinc-800"}`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div
+                              className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${color}`}
+                            >
+                              {(() => {
+                                const AnyIcon = Icon as any;
+                                return <AnyIcon className="w-3 h-3" />;
+                              })()}
+                              <span>
+                                {step.agent} {skipped && "(Skipped)"}
+                              </span>
+                            </div>
+                            {step.latencyMs !== undefined && (
+                              <span className="text-[10px] text-zinc-500 font-mono font-bold">
+                                {step.latencyMs}ms
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-zinc-400 font-mono text-[11px]">
+                            {(() => {
+                              const res = step.result as any;
+                              if (res.reasoning) return String(res.reasoning);
+                              if (res.reason) return String(res.reason);
+                              if (step.agent === "Action")
+                                return `Rendered ${res.markerCount || 0} map markers.`;
+                              if (step.agent === "Context")
+                                return res.skipped
+                                  ? "Skipped."
+                                  : `Extracted filters: ${JSON.stringify(res.parameters)}`;
+                              if (step.agent === "Data")
+                                return res.skipped
+                                  ? "Skipped."
+                                  : `Found ${res.venueCount || 0} venues.`;
+                              return JSON.stringify(res).slice(0, 100);
+                            })()}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-                <div
-                  className={`text-sm font-medium leading-relaxed ${message.role === "assistant" ? "pr-12" : ""}`}
-                >
-                  {message.role === "assistant" ? (
-                    <div className="relative">
-                      <MessageRenderer
-                        content={message.content}
-                        speakingSentenceIndex={
-                          speakingMessageId === message.id
-                            ? speakingSentenceIndex
-                            : null
-                        }
-                      />
-                      {message.isStreaming && (
-                        <span className="inline-flex gap-0.5 items-center ml-1 accent-text dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] font-black animate-pulse">
-                          <span>.</span>
-                          <span>.</span>
-                          <span>.</span>
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <TranslatedMessage
-                      messageId={message.id}
-                      text={message.content}
-                    />
-                  )}
-                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {message.agentSteps && message.agentSteps.length > 0 && (
-            <div className="ml-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => onToggleSteps(message.id)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-all hover:scale-105"
-                >
-                  <TerminalIcon className="w-3 h-3" />
-                  <span>Agent Reasoning Details</span>
-                  {expandedSteps[message.id] ? (
-                    <ChevronUp className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                </button>
-                {message.cached && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 text-[10px] font-bold uppercase tracking-wider">
-                    ⚡ Cached
-                  </span>
-                )}
-                {message.complexity === "simple" && !message.cached && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded accent-bg-10 accent-text accent-bg-dark-20 dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] text-[10px] font-bold uppercase tracking-wider">
-                    ⚡ Simple Routing
-                  </span>
-                )}
-              </div>
+            {message.venues && message.venues.length > 0 && (
+              <VenueListings
+                venues={message.venues}
+                favorites={favorites}
+                onGetDirections={onGetDirections}
+                onToggleFavorite={onToggleFavorite}
+                onRateVenue={onRateVenue}
+                onOpenDetails={onOpenDetails}
+                onBook={onBook}
+                onRefresh={onRefreshVenues}
+              />
+            )}
+          </div>
+        ))}
 
-              {expandedSteps[message.id] && (
-                <div className="mt-3 space-y-2 ml-4">
-                  {message.agentSteps.map((step, idx) => {
-                    const Icon = AGENT_ICONS[step.agent] || Brain;
-                    const color = AGENT_COLORS[step.agent] || "text-zinc-500";
-                    const skipped = (step.result as any)?.skipped;
+        {isLoading && (
+          <div className="space-y-6 pt-4">
+            <BrainTerminal />
+          </div>
+        )}
 
-                    return (
-                      <div
-                        key={idx}
-                        className={`rounded-xl p-3 text-xs border ${skipped ? "bg-zinc-900/50 border-zinc-800/50 opacity-50" : "bg-zinc-950 border-zinc-800"}`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <div
-                            className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${color}`}
-                          >
-                            {(() => {
-                              const AnyIcon = Icon as any;
-                              return <AnyIcon className="w-3 h-3" />;
-                            })()}
-                            <span>
-                              {step.agent} {skipped && "(Skipped)"}
-                            </span>
-                          </div>
-                          {step.latencyMs !== undefined && (
-                            <span className="text-[10px] text-zinc-500 font-mono font-bold">
-                              {step.latencyMs}ms
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-zinc-400 font-mono text-[11px]">
-                          {(() => {
-                            const res = step.result as any;
-                            if (res.reasoning) return String(res.reasoning);
-                            if (res.reason) return String(res.reason);
-                            if (step.agent === "Action")
-                              return `Rendered ${res.markerCount || 0} map markers.`;
-                            if (step.agent === "Context")
-                              return res.skipped
-                                ? "Skipped."
-                                : `Extracted filters: ${JSON.stringify(res.parameters)}`;
-                            if (step.agent === "Data")
-                              return res.skipped
-                                ? "Skipped."
-                                : `Found ${res.venueCount || 0} venues.`;
-                            return JSON.stringify(res).slice(0, 100);
-                          })()}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+        {error && (
+          <div className="bg-red-950 border-2 border-red-800 rounded-xl px-4 py-3 text-xs font-bold text-red-100">
+            SYSTEM ERROR: {error}
+          </div>
+        )}
 
-          {message.venues && message.venues.length > 0 && (
-            <VenueListings
-              venues={message.venues}
-              favorites={favorites}
-              onGetDirections={onGetDirections}
-              onToggleFavorite={onToggleFavorite}
-              onRateVenue={onRateVenue}
-              onOpenDetails={onOpenDetails}
-              onBook={onBook}
-              onRefresh={onRefreshVenues}
-            />
-          )}
-        </div>
-      ))}
-
-      {isLoading && (
-        <div className="space-y-6 pt-4">
-          <BrainTerminal />
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-red-950 border-2 border-red-800 rounded-xl px-4 py-3 text-xs font-bold text-red-100">
-          SYSTEM ERROR: {error}
-        </div>
-      )}
-
-      <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} />
       </div>
 
-      {showScrollToLatest && messages.length > 0 && (
+      {showScrollToLatest && displayMessages.length > 0 && (
         <button
           type="button"
           onClick={handleScrollToLatest}
-          aria-label={hasNewMessagesBelow ? "New messages below" : "Scroll to latest message"}
-          title={hasNewMessagesBelow ? "New messages below" : "Scroll to latest"}
+          aria-label={
+            hasNewMessagesBelow
+              ? "New messages below"
+              : "Scroll to latest message"
+          }
+          title={
+            hasNewMessagesBelow ? "New messages below" : "Scroll to latest"
+          }
           className={`absolute bottom-3 z-10 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-400 ${
             hasNewMessagesBelow
               ? "left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg text-xs font-bold flex items-center gap-1.5 animate-bounce"
@@ -1415,393 +1443,4 @@ function CopyMessageButton({ text }: { text: string }) {
 
 // ─── ChatInput ────────────────────────────────────────────────────────────────
 
-interface ChatInputProps {
-  input: string;
-  isLoading: boolean;
-  onInputChange: (value: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
-  distanceRadius?: number;
-  onDistanceChange?: (radius: number) => void;
-}
-
-export function ChatInput({
-  input = "",
-  isLoading,
-  onInputChange,
-  onSubmit,
-  distanceRadius = 0,
-  onDistanceChange,
-}: ChatInputProps) {
-  const safeInput = input || "";
-  const MAX_CHARS = 2000;
-  const charCount = safeInput.length;
-  const isOverLimit = charCount > MAX_CHARS;
-  const retryAfter = useRateLimit("chat");
-
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [isFocused, setIsFocused] = useState(false);
-  const [keyboardInset, setKeyboardInset] = useState(0);
-  const [shortcutLabel, setShortcutLabel] = useState("Ctrl+K");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleClear = () => {
-    onInputChange("");
-    inputRef.current?.focus();
-  };
-
-  useEffect(() => {
-    const history = localStorage.getItem("ws-recent-searches");
-    if (history) {
-      try {
-        setRecentSearches(JSON.parse(history));
-      } catch (e) {
-        console.error(e);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const isApple =
-      typeof navigator !== "undefined" &&
-      /Mac|iPhone|iPad|iPod/i.test(
-        navigator.platform || navigator.userAgent || "",
-      );
-    setShortcutLabel(isApple ? "⌘K" : "Ctrl+K");
-  }, []);
-
-  // Keep the composer above the iOS soft keyboard / browser chrome.
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    const sync = () => {
-      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      setKeyboardInset(inset);
-    };
-
-    sync();
-    vv.addEventListener("resize", sync);
-    vv.addEventListener("scroll", sync);
-    return () => {
-      vv.removeEventListener("resize", sync);
-      vv.removeEventListener("scroll", sync);
-    };
-  }, []);
-
-  const saveToHistory = (term: string) => {
-    const updated = [
-      term,
-      ...recentSearches.filter((item) => item !== term),
-    ].slice(0, 5);
-    setRecentSearches(updated);
-    localStorage.setItem("ws-recent-searches", JSON.stringify(updated));
-  };
-
-  const clearHistory = () => {
-    setRecentSearches([]);
-    localStorage.removeItem("ws-recent-searches");
-  };
-
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (safeInput.trim() && !isOverLimit) {
-      saveToHistory(safeInput.trim());
-    }
-    onSubmit(e);
-  };
-
-  // ── Voice input banner state ─────────────────────────────────────────────
-  // Tracks whether the unsupported-browser banner is currently visible.
-  // It auto-dismisses after 6 s so it never blocks the UI permanently.
-  const [showVoiceBanner, setShowVoiceBanner] = useState(false);
-  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /** Show the banner and auto-hide it after 6 seconds. */
-  const triggerBanner = useCallback(() => {
-    setShowVoiceBanner(true);
-    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
-    bannerTimerRef.current = setTimeout(() => setShowVoiceBanner(false), 6000);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
-    };
-  }, []);
-
-  // ── Speech recognition ───────────────────────────────────────────────────
-  /**
-   * When recognition returns a final transcript, prepend whatever the user
-   * had already typed (preserving their original input) then append the
-   * recognised text with a space separator.
-   */
-  const handleTranscript = useCallback(
-    (text: string) => {
-      if (!text) return;
-      const current = (input || "").trim();
-      onInputChange(current ? `${current} ${text}` : text);
-    },
-    [input, onInputChange],
-  );
-
-  const { isSupported, status, errorMessage, startListening, stopListening } =
-    useSpeechRecognition(handleTranscript);
-
-  const isListening = status === "listening";
-
-  /**
-   * Handle microphone button click.
-   * - Unsupported browser (e.g. Firefox Nightly without the flag) →
-   *   show a clear user-facing banner; do NOT crash silently.
-   * - Currently listening → stop recognition.
-   * - Idle / error → start recognition.
-   */
-  const handleMicClick = useCallback(() => {
-    if (!isSupported) {
-      triggerBanner();
-      return;
-    }
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
-    }
-  }, [isSupported, isListening, startListening, stopListening, triggerBanner]);
-
-  // Show the banner whenever the hook surfaces an error message too
-  useEffect(() => {
-    if (errorMessage) triggerBanner();
-  }, [errorMessage, triggerBanner]);
-
-  const showCharCounter = charCount > 800;
-  let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
-  if (isOverLimit || charCount > 1000) {
-    counterColor = "text-red-500";
-  } else if (charCount >= MAX_CHARS - 200) {
-    counterColor = "text-yellow-500";
-  }
-  if (isOverLimit) {
-    counterColor = "text-red-500";
-  } else if (charCount >= MAX_CHARS - 200) {
-    counterColor = "text-yellow-500";
-  }
-
-  // ── Mic button styling ───────────────────────────────────────────────────
-  const micButtonBase =
-    "p-3 rounded-xl transition-all active:scale-95 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-accent)]";
-
-  const micButtonStyle = !isSupported
-    ? // Visually disabled but still focusable so screen readers can reach the
-      // tooltip / aria-label describing why it is unavailable.
-      `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60 cursor-pointer`
-    : isListening
-      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse cursor-pointer`
-      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 cursor-pointer`;
-
-  const micAriaLabel = !isSupported
-    ? "Voice input is not supported in this browser"
-    : isListening
-      ? "Stop voice input"
-      : "Start voice input";
-
-  return (
-    <div
-      data-keyboard-inset={keyboardInset}
-      className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 pb-[max(1rem,env(safe-area-inset-bottom))]"
-      style={
-        keyboardInset > 0
-          ? {
-              paddingBottom: `calc(${keyboardInset}px + env(safe-area-inset-bottom, 0px))`,
-            }
-          : undefined
-      }
-    >
-      <AnimatePresence>
-        {isFocused && recentSearches.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="absolute bottom-full left-4 right-4 mb-2 z-50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col gap-3"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                Recent Searches
-              </span>
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  clearHistory();
-                }}
-                className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
-              >
-                <Trash2 className="w-3 h-3" />
-                Clear
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {recentSearches.map((term) => (
-                <button
-                  key={term}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onInputChange(term);
-                  }}
-                  className="px-3 py-1.5 bg-zinc-100 accent-bg-hover dark:bg-zinc-900 accent-bg-dark-10 border border-zinc-200/50 dark:border-zinc-800 accent-border-20 accent-border-dark-20 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 accent-text-hover dark:text-zinc-400 dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] transition-all flex items-center gap-1"
-                >
-                  {term}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Unsupported-browser / error banner ─────────────────────────── */}
-      {showVoiceBanner && (
-        <div
-          role="alert"
-          className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
-        >
-          <MicOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="font-semibold leading-snug">
-            {errorMessage ||
-              "Voice input is not supported in this browser. Please use Chrome, Edge, or enable speech recognition in Firefox (about:config → media.webspeech.recognition.enable)."}
-          </span>
-          <button
-            type="button"
-            aria-label="Dismiss voice input warning"
-            onClick={() => setShowVoiceBanner(false)}
-            className="ml-auto cursor-pointer shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      <form
-        id="ws-chat-form"
-        onSubmit={handleFormSubmit}
-        className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:accent-border transition-all shadow-inner"
-      >
-        <button
-          type="button"
-          onClick={handleMicClick}
-          className={`p-3 rounded-xl cursor-pointer transition-all active:scale-95 shadow-lg group ${
-            isListening
-              ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
-              : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
-          }`}
-          title={isListening ? "Stop dictation" : "Start dictation"}
-        >
-          <Mic className="w-5 h-5" />
-        </button>
-
-        <div className="flex items-center border-r border-zinc-200 dark:border-zinc-700/50 pr-2 mr-2">
-          <select
-            value={distanceRadius}
-            onChange={(e) => onDistanceChange?.(Number(e.target.value))}
-            className="bg-transparent text-sm font-semibold text-zinc-600 dark:text-zinc-300 cursor-pointer focus:outline-none appearance-none pr-6 pl-2 relative"
-            style={{
-              backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2371717A%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 0.2rem top 50%",
-              backgroundSize: "0.65rem auto",
-            }}
-            title="Filter by distance"
-            aria-label="Filter by distance"
-          >
-            <option value={0}>Any</option>
-            <option value={1}>1 km</option>
-            <option value={5}>5 km</option>
-            <option value={10}>10 km</option>
-          </select>
-        </div>
-
-        <div className="relative flex min-w-0 flex-1 items-center">
-          <input
-            ref={inputRef}
-            type="text"
-            value={safeInput}
-            onChange={(e) => onInputChange(e.target.value ?? "")}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            placeholder={
-              isListening ? "Listening…" : "Where's the focus mode hotspot?"
-            }
-            disabled={isLoading || retryAfter > 0}
-            className="w-full bg-transparent px-4 py-3 pr-16 text-sm font-bold text-zinc-900 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 dark:text-zinc-50"
-          />
-          {safeInput.length > 0 && (
-            <button
-              type="button"
-              onClick={handleClear}
-              className="absolute right-2 p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-              aria-label="Clear search"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-          {!safeInput.trim() && (
-            <kbd
-              className="pointer-events-none absolute right-2 hidden select-none rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-zinc-400 shadow-sm sm:inline-block dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500"
-              aria-hidden="true"
-              title="Focus search"
-            >
-              {shortcutLabel}
-            </kbd>
-          )}
-        </div>
-
-        {/* ── Microphone button ──────────────────────────────────────────── */}
-        <button
-          type="button"
-          onClick={handleMicClick}
-          aria-label={micAriaLabel}
-          // Keep the button in the tab order even when unsupported so
-          // keyboard-only users discover the "not available" message.
-          aria-disabled={!isSupported}
-          title={micAriaLabel}
-          className={micButtonStyle}
-        >
-          {isListening ? (
-            <MicOff className="w-5 h-5" aria-hidden="true" />
-          ) : (
-            <Mic className="w-5 h-5" aria-hidden="true" />
-          )}
-        </button>
-
-        {/* ── Send button ────────────────────────────────────────────────── */}
-        <button
-          type="submit"
-          disabled={isLoading || !input.trim() || isOverLimit || retryAfter > 0}
-          className="p-3 bg-[var(--primary-accent)] cursor-pointer hover:opacity-90 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group flex items-center justify-center gap-1.5"
-        >
-          {isLoading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : retryAfter > 0 ? (
-            <span className="text-xs font-black whitespace-nowrap px-1">
-              Retry in {retryAfter}s
-            </span>
-          ) : (
-            <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-          )}
-        </button>
-      </form>
-
-      {showCharCounter && (
-        <div className="mt-2 text-right">
-          <span
-            className={`text-xs font-semibold transition-colors ${counterColor}`}
-          >
-            {charCount}/{MAX_CHARS}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
+export { ChatInput, type ChatInputProps } from "./ChatInput";

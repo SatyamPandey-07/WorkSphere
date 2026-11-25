@@ -28,6 +28,202 @@ export const DEFAULT_POLL_INTERVAL_MS = 2_000; // 2 seconds
 export const DEFAULT_CONSECUTIVE_429_THRESHOLD = 3;
 export const DEFAULT_CIRCUIT_COOLDOWN_MS = 30_000; // 30 seconds
 
+/** Maximum RPC timestamp clock skew tolerated (in seconds) for cluster block-time comparisons (#9735). */
+export const MAX_RPC_CLOCK_SKEW_SECONDS = 300; // 5 minutes
+export const MAX_RPC_CLOCK_SKEW_MS = MAX_RPC_CLOCK_SKEW_SECONDS * 1_000;
+
+export const DEFAULT_ESCROW_COMPUTE_UNIT_LIMIT = 250_000;
+export const DEFAULT_ESCROW_MAX_RETRIES = 3;
+export const DEFAULT_ESCROW_BASE_BACKOFF_MS = 1_000;
+export const DEFAULT_ESCROW_MAX_BACKOFF_MS = 8_000;
+export const DEFAULT_ESCROW_FEE_BUMP_MULTIPLIER = 1.5;
+
+export const DEFAULT_RPC_POLL_TIMEOUT_MS = 5_000; // 5 seconds strict abort timeout (#9448)
+export const STATUS_TIMEOUT = "timeout" as const;
+
+export class SolanaRpcPollTimeoutError extends Error {
+  constructor(message = "Solana RPC status poll timed out after 5000ms") {
+    super(message);
+    this.name = "SolanaRpcPollTimeoutError";
+  }
+}
+
+// Exponential backoff with full jitter defaults for RPC HTTP 429 (#9510)
+export const DEFAULT_RPC_429_MAX_RETRIES = 5;
+export const DEFAULT_RPC_429_BASE_DELAY_MS = 500;
+export const DEFAULT_RPC_429_MAX_DELAY_MS = 8_000;
+
+export interface Rpc429RetryOptions {
+  /** Maximum consecutive 429 retry attempts before failing (default: 5). */
+  maxRetries?: number;
+  /** Base delay in ms for exponential backoff (default: 500). */
+  baseDelayMs?: number;
+  /** Maximum delay cap in ms for exponential backoff (default: 8,000). */
+  maxDelayMs?: number;
+  /** Custom random function for deterministic testing (returns in [0, 1)). */
+  randomFn?: () => number;
+}
+
+/**
+ * Detects whether an error represents an HTTP 429 (Too Many Requests) or rate limit.
+ * Supports standard HTTP status codes, Fetch/Axios error shapes, Solana RPC errors,
+ * and rate-limit error messages, without confusing unrelated failures as 429.
+ */
+export function isSolanaRpcRateLimitError(error: unknown): boolean {
+  if (!error) return false;
+
+  const candidate = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    code?: unknown;
+    name?: unknown;
+    message?: unknown;
+    response?: { status?: unknown; statusCode?: unknown };
+  };
+
+  for (const code of [
+    candidate.status,
+    candidate.statusCode,
+    candidate.code,
+    candidate.response?.status,
+    candidate.response?.statusCode,
+  ]) {
+    if (code === 429 || code === "429") {
+      return true;
+    }
+  }
+
+  const name = typeof candidate.name === "string" ? candidate.name : "";
+  if (name === "RateLimitError" || name === "TooManyRequestsError") {
+    return true;
+  }
+
+  const message =
+    typeof error === "string"
+      ? error
+      : typeof candidate.message === "string"
+        ? candidate.message
+        : "";
+
+  if (!message) return false;
+
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("429") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("ratelimit") ||
+    normalized.includes("resource exhausted") ||
+    normalized.includes("exceeded rate limit")
+  );
+}
+
+/**
+ * Reads a header from various header containers (Headers instance, plain Record, or nested in error.response).
+ */
+function readHeaderValue(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== "object") return undefined;
+
+  const getter = (headers as { get?: unknown }).get;
+  if (typeof getter === "function") {
+    const val = (getter as (header: string) => unknown).call(headers, name);
+    if (typeof val === "string") return val;
+  }
+
+  const record = headers as Record<string, unknown>;
+  const lowerName = name.toLowerCase();
+  for (const key of Object.keys(record)) {
+    if (key.toLowerCase() === lowerName) {
+      const val = record[key];
+      return typeof val === "string"
+        ? val
+        : typeof val === "number"
+          ? String(val)
+          : undefined;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extracts and parses a Retry-After header from an RPC error, returning delay in milliseconds.
+ * Supports integer delta-seconds, floating seconds, and HTTP-date formats.
+ * Returns undefined if header is absent, invalid, or negative.
+ */
+export function parseRetryAfterMs(
+  error: unknown,
+  now: number = Date.now(),
+): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+
+  const candidate = error as {
+    headers?: unknown;
+    response?: { headers?: unknown };
+    retryAfter?: unknown;
+  };
+
+  // If error has a direct retryAfter property (numeric seconds or ms)
+  if (
+    typeof candidate.retryAfter === "number" &&
+    Number.isFinite(candidate.retryAfter) &&
+    candidate.retryAfter > 0
+  ) {
+    // If > 1000, likely already in ms, otherwise seconds
+    return candidate.retryAfter > 1000
+      ? Math.round(candidate.retryAfter)
+      : Math.round(candidate.retryAfter * 1000);
+  }
+
+  const rawHeader =
+    readHeaderValue(candidate.headers, "retry-after") ??
+    readHeaderValue(candidate.response?.headers, "retry-after");
+
+  if (!rawHeader) return undefined;
+  const trimmed = rawHeader.trim();
+  if (!trimmed) return undefined;
+
+  // 1. Delta-seconds format (e.g. "3", "2.5")
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const sec = parseFloat(trimmed);
+    return Number.isFinite(sec) && sec >= 0
+      ? Math.round(sec * 1000)
+      : undefined;
+  }
+
+  // 2. HTTP-date format (e.g. "Wed, 21 Oct 2026 07:28:00 GMT")
+  const parsedDate = Date.parse(trimmed);
+  if (!Number.isNaN(parsedDate)) {
+    return Math.max(0, parsedDate - now);
+  }
+
+  return undefined;
+}
+
+/**
+ * Computes exponential backoff with full jitter for attempt number (0-indexed).
+ * Full jitter: delay = random * min(maxDelay, baseDelay * 2 ** attempt)
+ */
+export function computeRpc429Delay(
+  attempt: number,
+  options: Rpc429RetryOptions = {},
+): number {
+  const baseDelay = options.baseDelayMs ?? DEFAULT_RPC_429_BASE_DELAY_MS;
+  const maxDelay = options.maxDelayMs ?? DEFAULT_RPC_429_MAX_DELAY_MS;
+  const randomFn = options.randomFn ?? Math.random;
+
+  const expDelay = Math.min(
+    maxDelay,
+    baseDelay * Math.pow(2, Math.max(0, attempt)),
+  );
+  const rand = randomFn();
+  const validRand =
+    typeof rand === "number" && Number.isFinite(rand) && rand >= 0 && rand <= 1
+      ? rand
+      : 0.5;
+  return Math.round(validRand * expDelay);
+}
+
 export type SeatConfirmationMode = "websocket" | "polling";
 
 export type SeatState =
@@ -59,6 +255,9 @@ export interface SeatReservationState {
   error?: string | null;
   slot?: number;
   updatedAt: number;
+  retryAttempt?: number;
+  lastValidBlockHeight?: number;
+  recentBlockhash?: string;
 }
 
 export interface SeatReservationCallbacks {
@@ -161,11 +360,40 @@ export function isHttp429Error(err: unknown): boolean {
 async function fetchSignatureStatusViaConnection(
   connection: Connection,
   signature: string,
+  options?: { signal?: AbortSignal },
 ): Promise<SignatureStatus | null> {
-  const response = await connection.getSignatureStatuses?.([signature], {
-    searchTransactionHistory: true,
+  const signal = options?.signal;
+  if (signal?.aborted) {
+    throw signal.reason || new Error("Aborted");
+  }
+
+  const fetchPromise = Promise.resolve().then(() =>
+    connection.getSignatureStatuses?.([signature], {
+      searchTransactionHistory: true,
+    }),
+  );
+
+  if (!signal) {
+    const response = await fetchPromise;
+    return response?.value?.[0] ?? null;
+  }
+
+  let abortHandler: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    abortHandler = () => {
+      reject(signal.reason || new Error("Aborted"));
+    };
+    signal.addEventListener("abort", abortHandler, { once: true });
   });
-  return response?.value?.[0] ?? null;
+
+  try {
+    const response = await Promise.race([fetchPromise, abortPromise]);
+    return response?.value?.[0] ?? null;
+  } finally {
+    if (abortHandler) {
+      signal.removeEventListener("abort", abortHandler);
+    }
+  }
 }
 
 export class SolanaPayEscrowManager {
@@ -293,6 +521,9 @@ export class SolanaPayEscrowManager {
       currency,
       error: null,
       updatedAt: Date.now(),
+      retryAttempt: 0,
+      lastValidBlockHeight: options.lastValidBlockHeight,
+      recentBlockhash: options.recentBlockhash,
     };
 
     this.reservations.set(seatId, initialState);
@@ -307,6 +538,26 @@ export class SolanaPayEscrowManager {
 
     // Clean up any stale subscription for this seat before starting a new one
     this.cleanupSubscription(seatId);
+
+    const effectiveFallbackConn = fallbackConnection ?? secondaryConnection;
+
+    // Handle early abortion signal
+    if (signal?.aborted) {
+      const rolledBack = this.rollback(
+        seatId,
+        "Reservation aborted by client",
+        "failed",
+      );
+      return (
+        rolledBack ?? {
+          ...initialState,
+          state: "available",
+          paymentStatus: "failed",
+          error: "Reservation aborted by client",
+          updatedAt: Date.now(),
+        }
+      );
+    }
 
     // 2. Track confirmation (WebSocket notifications or background status polling) & start timeout
     if (confirmationMode === "polling") {
@@ -372,12 +623,51 @@ export class SolanaPayEscrowManager {
 
     // 60-Second timeout: rollback to available if transaction drops from mempool
     subRecord.timeoutTimer = setTimeout(() => {
-      const timeoutReason =
-        `Transaction confirmation timed out after ${Math.round(timeoutMs / 1000)} seconds ` +
-        `(dropped from mempool). Seat reservation has been restored to available.`;
-      this.rollback(seatId, timeoutReason, "timeout");
+      void this.handleTimeoutOrExpiration(seatId);
     }, timeoutMs);
     subRecord.timeoutTimer.unref?.();
+
+    // Fallback trigger helper to initiate background polling if WebSocket disconnects
+    let fallbackInitiated = false;
+    const triggerFallbackPolling = (reason: string) => {
+      if (fallbackInitiated || subRecord.pollTimer || subRecord.pollAborted)
+        return;
+      fallbackInitiated = true;
+      console.warn(
+        `[SolanaPayEscrow] WebSocket subscription degraded (${reason}); activating background status polling fallback.`,
+      );
+      this.scheduleNextPoll(
+        subRecord,
+        signature,
+        pollIntervalMs,
+        pollSignatureStatus,
+      );
+    };
+
+    const attachDisconnectListener = (subId: number) => {
+      let wasSubscribed = false;
+      const connAny = connection as any;
+      if (typeof connAny._onSubscriptionStateChange === "function") {
+        try {
+          const remove = connAny._onSubscriptionStateChange(
+            subId,
+            (state: string) => {
+              if (state === "subscribed") {
+                wasSubscribed = true;
+              } else if (state === "error") {
+                triggerFallbackPolling("subscription error");
+              } else if (state === "pending" && wasSubscribed) {
+                triggerFallbackPolling("subscription dropped to pending");
+              }
+            },
+          );
+          if (typeof remove === "function") {
+            subRecord.stateRemovers = subRecord.stateRemovers || [];
+            subRecord.stateRemovers.push(remove);
+          }
+        } catch {}
+      }
+    };
 
     // Handle WebSocket listener for 'confirmed' commitment
     try {
@@ -386,6 +676,10 @@ export class SolanaPayEscrowManager {
         (notification, context) => {
           const err = (notification as any).err;
           if (err) {
+            if (isBlockhashExpiredError(err)) {
+              void this.handleTimeoutOrExpiration(seatId);
+              return;
+            }
             const errorMsg =
               typeof err === "string" ? err : JSON.stringify(err);
             const reason = `Transaction failed on-chain: ${errorMsg}. Seat reservation reverted to available.`;
@@ -398,6 +692,9 @@ export class SolanaPayEscrowManager {
         },
         { commitment: "confirmed" },
       );
+      if (subRecord.confirmedSubId !== undefined) {
+        attachDisconnectListener(subRecord.confirmedSubId);
+      }
     } catch (err) {
       console.error(
         "[SolanaPayEscrow] Failed to subscribe to confirmed notification:",
@@ -412,6 +709,10 @@ export class SolanaPayEscrowManager {
         (notification, context) => {
           const err = (notification as any).err;
           if (err) {
+            if (isBlockhashExpiredError(err)) {
+              void this.handleTimeoutOrExpiration(seatId);
+              return;
+            }
             const errorMsg =
               typeof err === "string" ? err : JSON.stringify(err);
             const reason = `Transaction failed on-chain during finalization: ${errorMsg}. Seat reservation reverted to available.`;
@@ -424,11 +725,31 @@ export class SolanaPayEscrowManager {
         },
         { commitment: "finalized" },
       );
+      if (subRecord.finalizedSubId !== undefined) {
+        attachDisconnectListener(subRecord.finalizedSubId);
+      }
     } catch (err) {
       console.error(
         "[SolanaPayEscrow] Failed to subscribe to finalized notification:",
         err,
       );
+    }
+
+    // Attach connection-level socket close/error listeners if present
+    const connAny = connection as any;
+    if (typeof connAny.on === "function") {
+      const onSocketClose = () => triggerFallbackPolling("socket closed/error");
+      connAny.on("close", onSocketClose);
+      connAny.on("error", onSocketClose);
+      connAny.on("disconnect", onSocketClose);
+      subRecord.stateRemovers = subRecord.stateRemovers || [];
+      subRecord.stateRemovers.push(() => {
+        try {
+          connAny.off?.("close", onSocketClose);
+          connAny.off?.("error", onSocketClose);
+          connAny.off?.("disconnect", onSocketClose);
+        } catch {}
+      });
     }
 
     this.activeSubscriptions.set(seatId, subRecord);
@@ -483,12 +804,19 @@ export class SolanaPayEscrowManager {
       cooldownMs: circuitBreaker?.cooldownMs ?? DEFAULT_CIRCUIT_COOLDOWN_MS,
     };
 
+    if (signal) {
+      const parentAbortHandler = () => {
+        this.rollback(seatId, "Reservation aborted by client", "failed");
+      };
+      signal.addEventListener("abort", parentAbortHandler, { once: true });
+      subRecord.parentSignal = signal;
+      subRecord.parentAbortHandler = parentAbortHandler;
+    }
+
     // Overall timeout: rollback to available if transaction drops from mempool
+
     subRecord.timeoutTimer = setTimeout(() => {
-      const timeoutReason =
-        `Transaction confirmation timed out after ${Math.round(timeoutMs / 1000)} seconds ` +
-        `(dropped from mempool). Seat reservation has been restored to available.`;
-      this.rollback(seatId, timeoutReason, "timeout");
+      void this.handleTimeoutOrExpiration(seatId);
     }, timeoutMs);
     subRecord.timeoutTimer.unref?.();
 
@@ -502,26 +830,245 @@ export class SolanaPayEscrowManager {
   }
 
   /**
+   * Handles timeout or slot expiration by checking on-chain blockheight and invoking
+   * exponential backoff retries with fresh blockhashes when available.
+   */
+  private async handleTimeoutOrExpiration(seatId: string): Promise<void> {
+    const subRecord = this.activeSubscriptions.get(seatId);
+    if (!subRecord || subRecord.pollAborted || subRecord.isRetrying) return;
+
+    const current = this.reservations.get(seatId);
+    if (
+      !current ||
+      current.state === "confirmed" ||
+      current.state === "finalized"
+    ) {
+      return;
+    }
+
+    const {
+      connection,
+      lastValidBlockHeight,
+      retryConfig,
+      resubmitTransaction,
+      callbacks,
+      timeoutMs,
+      pollIntervalMs,
+      pollSignatureStatus,
+      confirmationMode,
+    } = subRecord;
+
+    // 1. Verify on-chain blockheight: check if the blockhash has genuinely expired
+    if (typeof lastValidBlockHeight === "number" && lastValidBlockHeight > 0) {
+      const expiration = await verifyBlockheightExpiration(
+        connection,
+        lastValidBlockHeight,
+      );
+      if (!expiration.expired && expiration.currentBlockHeight !== undefined) {
+        // Blockhash is still valid on-chain despite RPC/timeout delay (clock drift / congestion)
+        // Keep waiting / polling until blockheight is actually exceeded
+        const remainingBlocks =
+          lastValidBlockHeight - expiration.currentBlockHeight;
+        const recheckMs = Math.max(
+          1_000,
+          Math.min(remainingBlocks * 400, timeoutMs),
+        );
+        subRecord.timeoutTimer = setTimeout(() => {
+          void this.handleTimeoutOrExpiration(seatId);
+        }, recheckMs);
+        subRecord.timeoutTimer.unref?.();
+        return;
+      }
+    }
+
+    // 2. Check if retry is configured and attempts remain
+    const maxRetries = retryConfig?.maxRetries ?? DEFAULT_ESCROW_MAX_RETRIES;
+    const currentAttempt = subRecord.attempt ?? 0;
+
+    if (resubmitTransaction && currentAttempt < maxRetries) {
+      subRecord.isRetrying = true;
+      const nextAttempt = currentAttempt + 1;
+      subRecord.attempt = nextAttempt;
+
+      const baseBackoff =
+        retryConfig?.baseBackoffMs ?? DEFAULT_ESCROW_BASE_BACKOFF_MS;
+      const maxBackoff =
+        retryConfig?.maxBackoffMs ?? DEFAULT_ESCROW_MAX_BACKOFF_MS;
+      const backoffDelay = Math.min(
+        baseBackoff * Math.pow(2, currentAttempt),
+        maxBackoff,
+      );
+
+      const feeMultiplier =
+        retryConfig?.feeBumpMultiplier ?? DEFAULT_ESCROW_FEE_BUMP_MULTIPLIER;
+      const baseFee = retryConfig?.priorityFeeMicroLamports ?? 5_000;
+      const suggestedFee = calculatePriorityFeeForAttempt(
+        baseFee,
+        nextAttempt,
+        feeMultiplier,
+      );
+
+      const retryReason =
+        `Transaction blockhash expired (attempt ${nextAttempt}/${maxRetries}). ` +
+        `Re-querying fresh blockhash with exponential backoff (${backoffDelay}ms) and stepped priority fee (${suggestedFee} micro-lamports).`;
+      console.warn(`[SolanaPayEscrow] ${retryReason}`);
+
+      callbacks?.onRetry?.(nextAttempt, retryReason, current);
+      subRecord.onRetryAttempt?.(
+        nextAttempt,
+        new Error(retryReason),
+        backoffDelay,
+      );
+
+      // Clean up previous listeners and timers before re-submitting
+      this.clearActiveListeners(subRecord);
+
+      if (backoffDelay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+      }
+
+      try {
+        const fresh = await fetchLatestBlockhashWithBackoff(connection);
+        const newSignature = await resubmitTransaction(
+          fresh.blockhash,
+          fresh.lastValidBlockHeight,
+          suggestedFee,
+        );
+
+        subRecord.signature = newSignature;
+        subRecord.recentBlockhash = fresh.blockhash;
+        subRecord.lastValidBlockHeight = fresh.lastValidBlockHeight;
+        subRecord.isRetrying = false;
+
+        const updatedState: SeatReservationState = {
+          ...current,
+          signature: newSignature,
+          retryAttempt: nextAttempt,
+          lastValidBlockHeight: fresh.lastValidBlockHeight,
+          recentBlockhash: fresh.blockhash,
+          error: null,
+          updatedAt: Date.now(),
+        };
+        this.reservations.set(seatId, updatedState);
+        callbacks?.onStateChange?.(updatedState);
+
+        // Re-arm confirmation tracking for the newly broadcasted transaction
+        if (confirmationMode === "polling") {
+          this.startPollingConfirmation(
+            connection,
+            seatId,
+            newSignature,
+            timeoutMs,
+            pollIntervalMs,
+            pollSignatureStatus,
+            callbacks,
+            fresh.lastValidBlockHeight,
+            fresh.blockhash,
+            retryConfig,
+            resubmitTransaction,
+            subRecord.onRetryAttempt,
+          );
+        } else {
+          this.subscribeToSignatureUpdates(
+            connection,
+            seatId,
+            newSignature,
+            timeoutMs,
+            callbacks,
+            pollIntervalMs,
+            pollSignatureStatus,
+            fresh.lastValidBlockHeight,
+            fresh.blockhash,
+            retryConfig,
+            resubmitTransaction,
+            subRecord.onRetryAttempt,
+          );
+        }
+        return;
+      } catch (err: any) {
+        console.error(
+          `[SolanaPayEscrow] Resubmission attempt ${nextAttempt} failed:`,
+          err,
+        );
+        subRecord.isRetrying = false;
+        if (subRecord.attempt < maxRetries) {
+          void this.handleTimeoutOrExpiration(seatId);
+          return;
+        }
+      }
+    }
+
+    // 3. Rollback when retries are exhausted or no resubmission handler exists
+    const timeoutReason =
+      subRecord.attempt > 0
+        ? `Transaction confirmation timed out after ${subRecord.attempt} retry attempts ` +
+          `(blockhash expired or dropped from mempool). Seat reservation has been restored to available.`
+        : `Transaction confirmation timed out after ${Math.round(timeoutMs / 1000)} seconds ` +
+          `(dropped from mempool). Seat reservation has been restored to available.`;
+    this.rollback(seatId, timeoutReason, "timeout");
+  }
+
+  /**
+   * Clears timers, listeners, and polling handlers for an active subscription without aborting.
+   */
+  private clearActiveListeners(sub: ActiveSubscription): void {
+    if (sub.timeoutTimer) {
+      clearTimeout(sub.timeoutTimer);
+      sub.timeoutTimer = undefined;
+    }
+    if (sub.pollTimer) {
+      clearTimeout(sub.pollTimer);
+      sub.pollTimer = undefined;
+    }
+    if (sub.stateRemovers) {
+      for (const remover of sub.stateRemovers) {
+        try {
+          remover();
+        } catch {}
+      }
+      sub.stateRemovers = undefined;
+    }
+    if (sub.confirmedSubId !== undefined) {
+      try {
+        Promise.resolve(
+          sub.connection.removeSignatureListener(sub.confirmedSubId),
+        ).catch(() => {});
+      } catch {}
+      sub.confirmedSubId = undefined;
+    }
+    if (sub.finalizedSubId !== undefined) {
+      try {
+        Promise.resolve(
+          sub.connection.removeSignatureListener(sub.finalizedSubId),
+        ).catch(() => {});
+      } catch {}
+      sub.finalizedSubId = undefined;
+    }
+  }
+
+  /**
    * Schedules the next background status poll for an active subscription.
    */
   private scheduleNextPoll(
     subRecord: ActiveSubscription,
     signature: string,
-    pollIntervalMs: number,
+    delayMs: number,
     pollSignatureStatus?: (
       signature: string,
       activeConnection: Connection,
     ) => Promise<SignatureStatus | null>,
+    normalPollIntervalMs?: number,
   ): void {
     if (subRecord.pollAborted) return;
+    const intervalToUse = normalPollIntervalMs ?? delayMs;
     subRecord.pollTimer = setTimeout(() => {
       void this.pollSignatureStatusOnce(
         subRecord,
         signature,
-        pollIntervalMs,
+        intervalToUse,
         pollSignatureStatus,
       );
-    }, pollIntervalMs);
+    }, delayMs);
     subRecord.pollTimer.unref?.();
   }
 
@@ -653,9 +1200,28 @@ export class SolanaPayEscrowManager {
 
     if (subRecord.pollAborted) return;
 
+    // Status not visible on-chain yet — keep polling; verify if blockheight has expired
+
+    // Successful RPC response resets consecutive 429 counter
+    subRecord.rpc429ConsecutiveCount = 0;
+
     // Status not visible on-chain yet — keep polling; the overall timeout
     // handles the dropped-from-mempool case.
+
     if (!status) {
+      if (typeof subRecord.lastValidBlockHeight === "number") {
+        try {
+          const currentBlockHeight =
+            await connection.getBlockHeight?.("confirmed");
+          if (
+            typeof currentBlockHeight === "number" &&
+            currentBlockHeight > subRecord.lastValidBlockHeight
+          ) {
+            void this.handleTimeoutOrExpiration(seatId);
+            return;
+          }
+        } catch {}
+      }
       this.scheduleNextPoll(
         subRecord,
         signature,
@@ -666,6 +1232,10 @@ export class SolanaPayEscrowManager {
     }
 
     if (status.err) {
+      if (isBlockhashExpiredError(status.err)) {
+        void this.handleTimeoutOrExpiration(seatId);
+        return;
+      }
       const errorMsg =
         typeof status.err === "string"
           ? status.err
@@ -812,19 +1382,15 @@ export class SolanaPayEscrowManager {
     const sub = this.activeSubscriptions.get(seatId);
     if (!sub) return;
 
-    // Halt any background polling loop for this reservation
-    sub.pollAborted = true;
-    if (sub.pollTimer) {
-      clearTimeout(sub.pollTimer);
-      sub.pollTimer = undefined;
+    if (sub.parentSignal && sub.parentAbortHandler) {
+      try {
+        sub.parentSignal.removeEventListener("abort", sub.parentAbortHandler);
+      } catch {}
+      sub.parentSignal = undefined;
+      sub.parentAbortHandler = undefined;
     }
 
-    if (sub.timeoutTimer) {
-      clearTimeout(sub.timeoutTimer);
-      sub.timeoutTimer = undefined;
-    }
-
-    if (sub.confirmedSubId !== undefined) {
+    if (sub.activeAbortController) {
       try {
         Promise.resolve(
           sub.primaryConnection.removeSignatureListener(sub.confirmedSubId),
@@ -843,10 +1409,20 @@ export class SolanaPayEscrowManager {
       } catch {
         // Ignore unhandled connection close errors
       }
-      sub.finalizedSubId = undefined;
+      sub.stateRemovers = undefined;
     }
 
+    // Halt any background polling loop for this reservation
+    sub.pollAborted = true;
+    this.clearActiveListeners(sub);
     this.activeSubscriptions.delete(seatId);
+  }
+
+  /**
+   * Explicitly cleans up any active subscription, polling timers, and listeners for a seat.
+   */
+  public cleanup(seatId: string): void {
+    this.cleanupSubscription(seatId);
   }
 }
 
@@ -882,4 +1458,120 @@ export function resetSeatReservations(): void {
 
 export function validateSeatReservationPoW(submission: PoWSubmission): boolean {
   return solanaPayEscrowManager.validatePoW(submission);
+}
+
+export function cleanupSeatReservation(seatId: string): void {
+  solanaPayEscrowManager.cleanup(seatId);
+}
+
+export interface FetchSignatureStatusWithTimeoutOptions {
+  timeoutMs?: number;
+  fallbackConnection?: Connection;
+  secondaryConnection?: Connection;
+  fallbackPollSignatureStatus?: (
+    signature: string,
+    options?: { signal?: AbortSignal },
+  ) => Promise<SignatureStatus | null>;
+  signal?: AbortSignal;
+}
+
+/**
+ * Wraps an RPC status poll in an AbortController with a strict timeout (default 5000ms),
+ * failing over to secondary fallback RPC endpoint or returning STATUS_TIMEOUT (#9448).
+ */
+export async function fetchSignatureStatusWithTimeout(
+  connection: Connection,
+  signature: string,
+  options: FetchSignatureStatusWithTimeoutOptions = {},
+): Promise<SignatureStatus | null | typeof STATUS_TIMEOUT> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_RPC_POLL_TIMEOUT_MS;
+  const parentSignal = options.signal;
+  const fallbackConn =
+    options.fallbackConnection ?? options.secondaryConnection;
+  const fallbackPoller = options.fallbackPollSignatureStatus;
+
+  const tryPoll = async (
+    conn: Connection,
+    poller?: (
+      sig: string,
+      opts?: { signal?: AbortSignal },
+    ) => Promise<SignatureStatus | null>,
+  ): Promise<SignatureStatus | null> => {
+    let pollTimedOut = false;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const onParentAbort = () => {
+      controller.abort(parentSignal?.reason || new Error("Aborted"));
+    };
+    if (parentSignal) {
+      if (parentSignal.aborted) {
+        controller.abort(parentSignal.reason || new Error("Aborted"));
+      } else {
+        parentSignal.addEventListener("abort", onParentAbort, { once: true });
+      }
+    }
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        pollTimedOut = true;
+        controller.abort(
+          new SolanaRpcPollTimeoutError(
+            `Solana RPC status poll timed out after ${timeoutMs}ms`,
+          ),
+        );
+        reject(
+          new SolanaRpcPollTimeoutError(
+            `Solana RPC status poll timed out after ${timeoutMs}ms`,
+          ),
+        );
+      }, timeoutMs);
+      timer.unref?.();
+    });
+
+    try {
+      const pollPromise = poller
+        ? poller(signature, { signal: controller.signal })
+        : fetchSignatureStatusViaConnection(conn, signature, {
+            signal: controller.signal,
+          });
+
+      return await Promise.race([pollPromise, timeoutPromise]);
+    } catch (pollErr) {
+      if (pollTimedOut) {
+        throw new SolanaRpcPollTimeoutError(
+          `Solana RPC status poll timed out after ${timeoutMs}ms`,
+        );
+      }
+      throw pollErr;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (parentSignal) {
+        parentSignal.removeEventListener("abort", onParentAbort);
+      }
+    }
+  };
+
+  try {
+    return await tryPoll(connection);
+  } catch (err) {
+    const isTimeout =
+      err instanceof SolanaRpcPollTimeoutError ||
+      (err instanceof Error &&
+        (err.name === "AbortError" ||
+          err.message.includes("timed out") ||
+          err.message.includes("Timeout")));
+
+    if (isTimeout) {
+      if (fallbackConn || fallbackPoller) {
+        try {
+          return await tryPoll(fallbackConn || connection, fallbackPoller);
+        } catch {
+          return STATUS_TIMEOUT;
+        }
+      }
+      return STATUS_TIMEOUT;
+    }
+    throw err;
+  }
 }

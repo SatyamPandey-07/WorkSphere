@@ -241,26 +241,38 @@ const updateHeatLayer = (instance: any, props: any, prevProps: any) => {
 };
 
 const HeatmapOverlay = createLayerComponent(createHeatLayer, updateHeatLayer);
-function ResizeWatcher({ delay = 150 }: { delay?: number }) {
+function ResizeWatcher({ delay = 100 }: { delay?: number }) {
   const map = useMap();
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let isActive = true;
 
     const handleResize = () => {
-      clearTimeout(timer);
-      const centerBeforeResize = map.getCenter();
-
+      if (!isActive) return;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
       timer = setTimeout(() => {
-        map.invalidateSize();
-        map.setView(centerBeforeResize, map.getZoom(), { animate: false });
+        if (!isActive) return;
+        map.invalidateSize({ pan: false });
       }, delay);
     };
 
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(handleResize);
+
+    if (observer) {
+      observer.observe(map.getContainer());
+    }
     window.addEventListener("resize", handleResize);
 
     return () => {
+      isActive = false;
       clearTimeout(timer);
+      observer?.disconnect();
       window.removeEventListener("resize", handleResize);
     };
   }, [map, delay]);

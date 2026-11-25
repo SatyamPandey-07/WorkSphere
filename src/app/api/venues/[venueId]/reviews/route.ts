@@ -8,6 +8,34 @@ import { apiError } from "@/lib/apiResponse";
 import { swrCache, getVenueReviewsCacheKey } from "@/lib/cache/swrCache";
 import { executeIdempotent, IdempotencyConflictError } from "@/lib/idempotency";
 
+/**
+ * Recursively redacts sensitive userId fields from review objects, nested replies,
+ * reply arrays, and arbitrary child data structures.
+ */
+export function redactReviewPayload<T>(data: T, shouldRedact: boolean = true): T {
+  if (!shouldRedact || data === null || data === undefined) {
+    return data;
+  }
+
+  if (Array.isArray(data)) {
+    return data.map((item) => redactReviewPayload(item, shouldRedact)) as unknown as T;
+  }
+
+  if (typeof data === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (key === "userId") {
+        // Redact / strip sensitive userId
+        continue;
+      }
+      result[key] = redactReviewPayload(value, shouldRedact);
+    }
+    return result as T;
+  }
+
+  return data;
+}
+
 // GET /api/venues/[venueId]/reviews - Get all reviews/ratings for a venue
 export async function GET(
   req: NextRequest,
@@ -53,13 +81,26 @@ export async function GET(
       });
     });
 
-    return NextResponse.json({
-      reviews: reviews.map((r: any) => ({
+    const isUnauthenticated = !userId;
+
+    const formattedReviews = reviews.map((r: any) => {
+      const baseReview = {
         ...r,
         user: userId
           ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
           : null,
-      })),
+      };
+
+      // When unauthenticated, redact top-level and nested reply userId fields
+      if (isUnauthenticated) {
+        return redactReviewPayload(baseReview, true);
+      }
+
+      return baseReview;
+    });
+
+    return NextResponse.json({
+      reviews: formattedReviews,
     });
   } catch (error) {
     console.error("GET /api/venues/[venueId]/reviews error:", error);

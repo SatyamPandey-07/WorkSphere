@@ -23,11 +23,11 @@ import {
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import {
-  generateClientNomadProof,
   generateBadgeSvgMarkup,
   type NomadProductivityStatement,
   type PassportStamp,
 } from "@/lib/zkp/nomadProof";
+import { generateClientNomadProof } from "@/lib/zkp/nomadProofClient";
 import { downloadSVG, generateQRCodeSVG } from "@/lib/qr/svgQr";
 import NomadPassportCoin from "./NomadPassportCoin";
 import { PassportAttestationBadge } from "./PassportAttestationBadge";
@@ -144,21 +144,14 @@ const AVAILABLE_STATEMENTS: NomadProductivityStatement[] = [
     tierTitle: "100-Hour Deep Work Focus Master",
     minThresholdStreak: 14,
     minThresholdHours: 100,
-    epoch: 2026,
+    epoch: new Date().getUTCFullYear(),
   },
   {
     badgeType: "STREAK_30_DAYS",
     tierTitle: "30-Day Workspace Streak Champion",
     minThresholdStreak: 30,
     minThresholdHours: 60,
-    epoch: 2026,
-  },
-  {
-    badgeType: "MULTI_CITY_EXPLORER",
-    tierTitle: "Multi-City Global Nomad Explorer",
-    minThresholdStreak: 10,
-    minThresholdHours: 40,
-    epoch: 2026,
+    epoch: new Date().getUTCFullYear(),
   },
 ];
 
@@ -213,10 +206,12 @@ const INITIAL_EARNED_STAMPS: PassportStamp[] = [
 
 export interface NomadPassportGalleryProps {
   initialStamps?: PassportStamp[];
+  isLoading?: boolean;
 }
 
 export default function NomadPassportGallery({
   initialStamps,
+  isLoading = false,
 }: NomadPassportGalleryProps = {}) {
   const [selectedStatement, setSelectedStatement] =
     useState<NomadProductivityStatement>(AVAILABLE_STATEMENTS[0]);
@@ -274,10 +269,21 @@ export default function NomadPassportGallery({
       const res = await fetch("/api/auth/zkp/nomad-proof", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          action: "verify",
+          badgeType: selectedStatement.badgeType,
+          proof: proofBundle.proof,
+          publicSignals: proofBundle.publicSignals,
+        }),
       });
 
       const data = await res.json();
+
+      if (!res.ok || !data.success || !data.stamp) {
+        throw new Error(
+          data.error || "Nomad Passport proof verification failed.",
+        );
+      }
       if (data.success && data.stamp) {
         const enrichedStamp: PassportStamp = {
           ...data.stamp,
@@ -363,6 +369,21 @@ export default function NomadPassportGallery({
   useEffect(() => {
     setQrCopyStatus("idle");
   }, [previewModalStamp?.stampId]);
+
+  useEffect(() => {
+    if (!previewModalStamp) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewModalStamp(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [previewModalStamp]);
 
   const getPassportVerificationUrl = (stamp: PassportStamp) => {
     if (typeof window === "undefined") return "";
@@ -501,7 +522,9 @@ export default function NomadPassportGallery({
           </span>
         </div>
 
-        {mintedStamps.length === 0 ? (
+        {isLoading ? (
+          <NomadPassportStampSkeleton count={3} />
+        ) : mintedStamps.length === 0 ? (
           <div
             data-testid="zero-stamps-empty-state"
             className="flex flex-col items-center justify-center py-12 px-6 rounded-2xl bg-slate-950/40 border border-dashed border-slate-800 text-center space-y-4 animate-in fade-in duration-300"
@@ -764,11 +787,11 @@ export default function NomadPassportGallery({
           aria-modal="true"
           aria-labelledby="stamp-modal-title"
           data-testid="stamp-preview-modal"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 overflow-hidden"
           onClick={() => setPreviewModalStamp(null)}
         >
           <div
-            className="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-700/80 p-6 md:p-8 space-y-6 shadow-2xl"
+            className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-3xl bg-slate-900 border border-slate-700/80 p-6 md:p-8 space-y-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close Button */}

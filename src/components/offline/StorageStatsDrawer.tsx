@@ -5,7 +5,6 @@ import {
   X,
   HardDrive,
   Database,
-  Layers,
   RefreshCw,
   Trash2,
   AlertTriangle,
@@ -41,6 +40,10 @@ export interface StorageStatsDrawerProps {
   onClearCache?: () => Promise<void> | void;
   /** Optional initial unsynced check-ins count override (e.g. for testing) */
   initialUnsyncedCheckIns?: number;
+  /** How long success announcements remain available to assistive technology. */
+  successAnnouncementTimeoutMs?: number;
+  /** Optional initial section to focus/scroll to upon opening */
+  initialFocusSection?: "cleanup" | "stale" | "reset" | "overview";
 }
 
 export function StorageStatsDrawer({
@@ -51,9 +54,13 @@ export function StorageStatsDrawer({
   refreshTrigger,
   onClearCache,
   initialUnsyncedCheckIns,
+  successAnnouncementTimeoutMs = 4000,
+  initialFocusSection,
 }: StorageStatsDrawerProps) {
   const isMountedRef = useRef(true);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cleanupSectionRef = useRef<HTMLDivElement | null>(null);
+  const clearCacheButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const [stats, setStats] = useState<OfflineStorageStats | null>(initialStats);
   const [loading, setLoading] = useState(!initialStats);
@@ -67,6 +74,7 @@ export function StorageStatsDrawer({
   const [showClearCacheConfirmation, setShowClearCacheConfirmation] =
     useState(false);
   const [isClearingCache, setIsClearingCache] = useState(false);
+  const [isResettingDb, setIsResettingDb] = useState(false);
   const [unsyncedCheckIns, setUnsyncedCheckIns] = useState<number>(
     initialUnsyncedCheckIns ?? 0,
   );
@@ -162,6 +170,28 @@ export function StorageStatsDrawer({
     refreshTrigger,
   ]);
 
+  // Handle focusing or scrolling to initialFocusSection
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (initialFocusSection === "cleanup" || initialFocusSection === "stale") {
+      const timer = setTimeout(() => {
+        if (!isMountedRef.current) return;
+        if (cleanupSectionRef.current) {
+          cleanupSectionRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
+        if (clearCacheButtonRef.current) {
+          clearCacheButtonRef.current.focus();
+        }
+      }, 50);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, initialFocusSection]);
+
   // Handle ESC key to close modals or drawer
   useEffect(() => {
     if (!isOpen) return;
@@ -199,7 +229,9 @@ export function StorageStatsDrawer({
       await purgeStaleFloorPlanCache();
       if (!isMountedRef.current) return;
       setShowCleanConfirmation(false);
-      setSuccessMessage("Stale cache successfully purged!");
+      setSuccessMessage(
+        `Stale cache successfully purged. ${formatBytes(staleStats?.reclaimableBytes ?? 0)} reclaimed.`,
+      );
       await Promise.all([
         fetchStats(),
         fetchStaleStats(),
@@ -208,7 +240,7 @@ export function StorageStatsDrawer({
       if (successTimerRef.current) clearTimeout(successTimerRef.current);
       successTimerRef.current = setTimeout(() => {
         if (isMountedRef.current) setSuccessMessage(null);
-      }, 4000);
+      }, successAnnouncementTimeoutMs);
     } catch (err) {
       console.error("[StorageStatsDrawer] Failed to purge stale cache:", err);
       if (isMountedRef.current) {
@@ -258,7 +290,7 @@ export function StorageStatsDrawer({
 
       if (!isMountedRef.current) return;
       setShowClearCacheConfirmation(false);
-      setSuccessMessage("Offline cache successfully cleared!");
+      setSuccessMessage("Offline cache successfully cleared.");
       await Promise.all([
         fetchStats(),
         fetchStaleStats(),
@@ -277,6 +309,34 @@ export function StorageStatsDrawer({
       if (isMountedRef.current) {
         setIsClearingCache(false);
       }
+    }
+  };
+
+  const handleNonDestructiveReset = async () => {
+    setIsResettingDb(true);
+    setErrorMessage(null);
+    try {
+      const { restoredCount } =
+        await syncQueueManager.resetDatabaseNonDestructive();
+      setSuccessMessage(
+        restoredCount > 0
+          ? `Offline database reset cleanly (${restoredCount} pending item${restoredCount === 1 ? "" : "s"} preserved).`
+          : "Offline database schema reset cleanly without data loss.",
+      );
+      await Promise.all([
+        fetchStats(),
+        fetchStaleStats(),
+        fetchUnsyncedCheckIns(),
+      ]);
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err) {
+      console.error(
+        "[StorageStatsDrawer] Non-destructive DB reset failed:",
+        err,
+      );
+      setErrorMessage("Failed to reset offline database. Please try again.");
+    } finally {
+      setIsResettingDb(false);
     }
   };
 
@@ -376,7 +436,7 @@ export function StorageStatsDrawer({
       aria-labelledby="storage-stats-drawer-title"
     >
       <div
-        className="w-full max-w-md h-full bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300"
+        className="w-full max-w-md h-full bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col overflow-hidden"
         data-testid="storage-stats-drawer"
       >
         {/* Drawer Header */}
@@ -390,7 +450,7 @@ export function StorageStatsDrawer({
                 id="storage-stats-drawer-title"
                 className="text-base font-bold text-zinc-900 dark:text-zinc-100"
               >
-                Storage & Quota Stats
+                Storage &amp; Quota Stats
               </h2>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 Offline persistence and cache allocation
@@ -524,7 +584,7 @@ export function StorageStatsDrawer({
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60">
                   <div className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 font-semibold mb-1">
-                    <Layers className="w-4 h-4" />
+                    <MapPin className="w-4 h-4" />
                     Cached Plans
                   </div>
                   <div
@@ -540,7 +600,7 @@ export function StorageStatsDrawer({
 
                 <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60">
                   <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-semibold mb-1">
-                    <MapPin className="w-4 h-4" />
+                    <HardDrive className="w-4 h-4" />
                     Total Footprint
                   </div>
                   <div
@@ -593,6 +653,9 @@ export function StorageStatsDrawer({
                 {successMessage && (
                   <p
                     data-testid="storage-stats-success-message"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
                     className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" /> {successMessage}
@@ -610,8 +673,43 @@ export function StorageStatsDrawer({
                 )}
               </div>
 
+              {/* Non-Destructive Database Reset Section */}
+              <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-900/50 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5 text-blue-500" />
+                      Repair &amp; Reset Offline Database
+                    </h3>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
+                      Rebuild IndexedDB schema safely while preserving all
+                      pending offline sync items.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleNonDestructiveReset}
+                    disabled={isResettingDb || loading}
+                    data-testid="non-destructive-db-reset-btn"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {isResettingDb ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                    {isResettingDb ? "Resetting..." : "Reset DB Safely"}
+                  </button>
+                </div>
+              </div>
+
               {/* Clear Offline Cache Section */}
-              <div className="p-4 rounded-2xl bg-red-50/70 dark:bg-red-950/20 border border-red-200/80 dark:border-red-900/50 space-y-3">
+              <div
+                ref={cleanupSectionRef}
+                tabIndex={-1}
+                data-testid="storage-stats-cleanup-section"
+                className="p-4 rounded-2xl bg-red-50/70 dark:bg-red-950/20 border border-red-200/80 dark:border-red-900/50 space-y-3 focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
@@ -624,11 +722,12 @@ export function StorageStatsDrawer({
                     </p>
                   </div>
                   <button
+                    ref={clearCacheButtonRef}
                     type="button"
                     onClick={() => setShowClearCacheConfirmation(true)}
                     disabled={isClearingCache || loading}
                     data-testid="storage-stats-clear-cache-btn"
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:ring-2 focus:ring-red-500 focus:outline-none"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Clear Offline Cache
@@ -641,7 +740,7 @@ export function StorageStatsDrawer({
                 <Info className="w-4 h-4 shrink-0 text-zinc-400 mt-0.5" />
                 <span>
                   {isEstimateAvailable
-                    ? "Storage estimates are measured via the browser StorageManager API. WorkSphere automatically caches visited venues and floor plans for offline availability."
+                    ? "Storage estimates are measured via the browser StorageManager API. WorkSphere automatically caches visited venues and floor plans for offline access."
                     : "Estimated storage values are simulated when navigator.storage is restricted."}
                 </span>
               </div>
@@ -680,12 +779,17 @@ export function StorageStatsDrawer({
             aria-modal="true"
             aria-labelledby="confirm-purge-title"
           >
-            <h4
-              id="confirm-purge-title"
-              className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
-            >
-              Clean stale floor plans?
-            </h4>
+            <div className="flex items-center gap-2.5 text-blue-600 dark:text-blue-400">
+              <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-950/50">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <h4
+                id="confirm-purge-title"
+                className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
+              >
+                Clean stale floor plans?
+              </h4>
+            </div>
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
               This will remove {staleStats?.count ?? 0} cached floor plan
               {staleStats?.count === 1 ? "" : "s"} not accessed in 30 days,

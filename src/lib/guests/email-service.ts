@@ -82,9 +82,47 @@ interface InviteEmailParams {
 }
 
 /**
+ * Context-aware HTML escaping for plain text and attribute values.
+ * Escapes &, <, >, ", and '.
+ */
+export function escapeHtml(value?: string | null): string {
+  if (!value) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Validates and sanitizes a URL for use in href or src attributes.
+ * Allows only safe schemes (http:, https:) or relative paths.
+ * Rejects javascript:, data:, vbscript:, etc.
+ * Returns the escaped URL if valid, or fallback string if invalid.
+ */
+export function sanitizeUrl(url?: string | null, fallback = "#"): string {
+  if (!url || typeof url !== "string") return fallback;
+  const trimmed = url.trim();
+  // Safe relative paths starting with /
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return escapeHtml(trimmed);
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return escapeHtml(trimmed);
+    }
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Builds the email HTML body for a guest invitation.
  */
-function buildInviteHtml(params: InviteEmailParams): string {
+export function buildInviteHtml(params: InviteEmailParams): string {
   const {
     guestName,
     hostName,
@@ -100,21 +138,39 @@ function buildInviteHtml(params: InviteEmailParams): string {
     guestId,
   } = params;
 
-  const greeting = guestName ? `Hi ${guestName},` : "Hello,";
+  const safeGuestName = escapeHtml(guestName);
+  const safeHostName = escapeHtml(hostName);
+  const safeVenueName = escapeHtml(venueName);
+  const safeVenueAddress = escapeHtml(venueAddress || venueName);
+  const safeDate = escapeHtml(date);
+  const safeTime = escapeHtml(time);
+  const safeBookingRef = escapeHtml(bookingRef);
+
+  const greeting = safeGuestName ? `Hi ${safeGuestName},` : "Hello,";
   const durationLabel =
     durationMinutes >= 60
       ? `${Math.floor(durationMinutes / 60)}h${durationMinutes % 60 > 0 ? ` ${durationMinutes % 60}m` : ""}`
       : `${durationMinutes} minutes`;
 
-  const photoHtml = venuePhotoUrl
+  const safePhotoUrl = venuePhotoUrl ? sanitizeUrl(venuePhotoUrl, "") : "";
+  const photoHtml = safePhotoUrl
     ? `<div style="margin: 20px 0;">
-         <img src="${venuePhotoUrl}" alt="${venueName}" style="width: 100%; max-width: 560px; border-radius: 12px; height: auto;" />
+         <img src="${safePhotoUrl}" alt="${safeVenueName}" style="width: 100%; max-width: 560px; border-radius: 12px; height: auto;" />
        </div>`
     : "";
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const acceptUrl = `${baseUrl}/api/bookings/${bookingId}/guests?guestId=${guestId}&status=ACCEPTED`;
-  const declineUrl = `${baseUrl}/api/bookings/${bookingId}/guests?guestId=${guestId}&status=DECLINED`;
+  const encodedBookingId = encodeURIComponent(bookingId || "");
+  const encodedGuestId = encodeURIComponent(guestId || "");
+  const acceptUrl = sanitizeUrl(
+    `${baseUrl}/api/bookings/${encodedBookingId}/guests?guestId=${encodedGuestId}&status=ACCEPTED`,
+    "#",
+  );
+  const declineUrl = sanitizeUrl(
+    `${baseUrl}/api/bookings/${encodedBookingId}/guests?guestId=${encodedGuestId}&status=DECLINED`,
+    "#",
+  );
+  const safeDirectionsUrl = sanitizeUrl(directionsUrl, "#");
 
   return `
     <!DOCTYPE html>
@@ -132,7 +188,7 @@ function buildInviteHtml(params: InviteEmailParams): string {
               <tr>
                 <td style="background: linear-gradient(135deg, #7c3aed, #6d28d9); padding: 30px; text-align: center;">
                   <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">You're Invited!</h1>
-                  <p style="color: #c4b5fd; margin: 8px 0 0 0; font-size: 14px;">Workspace Session at ${venueName}</p>
+                  <p style="color: #c4b5fd; margin: 8px 0 0 0; font-size: 14px;">Workspace Session at ${safeVenueName}</p>
                 </td>
               </tr>
               <!-- Content -->
@@ -140,7 +196,7 @@ function buildInviteHtml(params: InviteEmailParams): string {
                 <td style="padding: 30px;">
                   <p style="font-size: 16px; color: #18181b; margin: 0 0 20px 0;">${greeting}</p>
                   <p style="font-size: 14px; color: #52525b; margin: 0 0 20px 0;">
-                    <strong>${hostName}</strong> has invited you to a workspace session at <strong>${venueName}</strong>.
+                    <strong>${safeHostName}</strong> has invited you to a workspace session at <strong>${safeVenueName}</strong>.
                   </p>
 
                   <!-- Event Details -->
@@ -148,19 +204,19 @@ function buildInviteHtml(params: InviteEmailParams): string {
                     <tr>
                       <td style="padding: 12px 16px; border-bottom: 1px solid #e4e4e7;">
                         <span style="color: #71717a; font-size: 12px;">DATE</span>
-                        <p style="color: #18181b; font-size: 14px; font-weight: 600; margin: 2px 0 0 0;">${date}</p>
+                        <p style="color: #18181b; font-size: 14px; font-weight: 600; margin: 2px 0 0 0;">${safeDate}</p>
                       </td>
                     </tr>
                     <tr>
                       <td style="padding: 12px 16px; border-bottom: 1px solid #e4e4e7;">
                         <span style="color: #71717a; font-size: 12px;">TIME</span>
-                        <p style="color: #18181b; font-size: 14px; font-weight: 600; margin: 2px 0 0 0;">${time} (${durationLabel})</p>
+                        <p style="color: #18181b; font-size: 14px; font-weight: 600; margin: 2px 0 0 0;">${safeTime} (${durationLabel})</p>
                       </td>
                     </tr>
                     <tr>
                       <td style="padding: 12px 16px;">
                         <span style="color: #71717a; font-size: 12px;">LOCATION</span>
-                        <p style="color: #18181b; font-size: 14px; font-weight: 600; margin: 2px 0 0 0;">${venueAddress || venueName}</p>
+                        <p style="color: #18181b; font-size: 14px; font-weight: 600; margin: 2px 0 0 0;">${safeVenueAddress}</p>
                       </td>
                     </tr>
                   </table>
@@ -193,7 +249,7 @@ function buildInviteHtml(params: InviteEmailParams): string {
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
                       <td align="center" style="padding: 10px 0;">
-                        <a href="${directionsUrl}" target="_blank" style="display: inline-block; background: #7c3aed; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;">
+                        <a href="${safeDirectionsUrl}" target="_blank" style="display: inline-block; background: #7c3aed; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;">
                           Get Directions
                         </a>
                       </td>
@@ -201,7 +257,7 @@ function buildInviteHtml(params: InviteEmailParams): string {
                   </table>
 
                   <p style="font-size: 13px; color: #a1a1aa; margin: 20px 0 0 0; text-align: center;">
-                    Reference: ${bookingRef} &bull; The calendar invite is attached to this email.
+                    Reference: ${safeBookingRef} &bull; The calendar invite is attached to this email.
                   </p>
                 </td>
               </tr>

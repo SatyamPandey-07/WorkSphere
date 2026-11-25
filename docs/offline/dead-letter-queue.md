@@ -38,7 +38,7 @@ flowchart TD
 
 ## 2. Data Structures & Type Definitions
 
-The queue manager operates on typed interfaces defined in [src/lib/offlineSyncQueue.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/offlineSyncQueue.ts).
+The queue manager operates on typed interfaces defined in [src/lib/offlineSyncQueue.ts](../../src/lib/offlineSyncQueue.ts).
 
 ### 2.1 SyncItemStatus
 

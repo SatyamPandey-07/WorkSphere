@@ -6,7 +6,7 @@ WorkSphere uses asynchronous webhook event handlers to process user lifecycle ev
 
 During local development, webhook signing secrets (`CLERK_WEBHOOK_SECRET` and `STRIPE_WEBHOOK_SECRET`) allow local Next.js API route handlers (`/api/webhook` and `/api/webhooks/stripe`) to cryptographically verify that incoming HTTP requests originate from legitimate third-party providers rather than malicious actors.
 
-This document details environment variable setup in [.env.example](file:///c:/Users/admin/Desktop/workfere/.env.example), local CLI tunneling and forwarding commands, signature verification mechanics, and troubleshooting procedures.
+This document details environment variable setup in [.env.example](../../.env.example), local CLI tunneling and forwarding commands, signature verification mechanics, and troubleshooting procedures.
 
 ---
 
@@ -42,7 +42,7 @@ flowchart TD
 
 ## 2. Environment Variables Quick Reference
 
-Webhook configuration variables are defined in [.env.example](file:///c:/Users/admin/Desktop/workfere/.env.example):
+Webhook configuration variables are defined in [.env.example](../../.env.example):
 
 | Variable Name | Required / Optional | Target Endpoint | Description | Example Secret Value |
 | :--- | :---: | :--- | :--- | :--- |

@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export const MAX_CONCIERGE_BODY_BYTES = 32 * 1024; // 32 KB hard payload ceiling
 export const MAX_CONCIERGE_MESSAGES = 20;
@@ -11,27 +11,29 @@ export const CONCIERGE_RATE_LIMIT_MAX_REQUESTS = 15;
 export const CONCIERGE_RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const ConciergeMessageSchema = z.object({
-  role: z.enum(['user', 'assistant']),
+  role: z.enum(["user", "assistant"]),
   content: z
-    .string({ required_error: 'Message content is required' })
+    .string({ error: "Message content is required" })
     .trim()
-    .min(1, 'Message content cannot be empty')
+    .min(1, "Message content cannot be empty")
     .max(
       MAX_MESSAGE_CONTENT_LENGTH,
-      `Message content cannot exceed ${MAX_MESSAGE_CONTENT_LENGTH} characters`
+      `Message content cannot exceed ${MAX_MESSAGE_CONTENT_LENGTH} characters`,
     ),
 });
 
 export const VenueConciergeRequestSchema = z.object({
   messages: z
     .array(ConciergeMessageSchema, {
-      required_error: 'messages array is required',
-      invalid_type_error: 'messages must be an array',
+      error: (issue) =>
+        issue.input === undefined
+          ? "messages array is required"
+          : "messages must be an array",
     })
-    .min(1, 'At least one conversation message is required')
+    .min(1, "At least one conversation message is required")
     .max(
       MAX_CONCIERGE_MESSAGES,
-      `Conversation history cannot exceed ${MAX_CONCIERGE_MESSAGES} messages`
+      `Conversation history cannot exceed ${MAX_CONCIERGE_MESSAGES} messages`,
     ),
   venueContext: z
     .object({
@@ -76,7 +78,7 @@ export function checkConciergeSlidingWindowRateLimit(
   identifier: string,
   nowMs: number = Date.now(),
   maxRequests: number = CONCIERGE_RATE_LIMIT_MAX_REQUESTS,
-  windowMs: number = CONCIERGE_RATE_LIMIT_WINDOW_MS
+  windowMs: number = CONCIERGE_RATE_LIMIT_WINDOW_MS,
 ): SlidingWindowCheckResult {
   const cutoff = nowMs - windowMs;
   const entry = slidingWindowStore.get(identifier) ?? { timestamps: [] };
@@ -96,9 +98,9 @@ export function checkConciergeSlidingWindowRateLimit(
       remaining: 0,
       retryAfterSeconds,
       headers: {
-        'X-RateLimit-Limit': String(maxRequests),
-        'X-RateLimit-Remaining': '0',
-        'Retry-After': String(retryAfterSeconds),
+        "X-RateLimit-Limit": String(maxRequests),
+        "X-RateLimit-Remaining": "0",
+        "Retry-After": String(retryAfterSeconds),
       },
     };
   }
@@ -113,8 +115,8 @@ export function checkConciergeSlidingWindowRateLimit(
     remaining,
     retryAfterSeconds: 0,
     headers: {
-      'X-RateLimit-Limit': String(maxRequests),
-      'X-RateLimit-Remaining': String(remaining),
+      "X-RateLimit-Limit": String(maxRequests),
+      "X-RateLimit-Remaining": String(remaining),
     },
   };
 }
@@ -124,17 +126,20 @@ export function resetConciergeRateLimitStore(): void {
 }
 
 function resolveRequesterKey(request: NextRequest): string {
-  const userId = request.headers.get('x-user-id')?.trim();
+  const userId = request.headers.get("x-user-id")?.trim();
   if (userId) return `user:${userId}`;
 
-  const forwardedFor = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  const forwardedFor = request.headers
+    .get("x-forwarded-for")
+    ?.split(",")[0]
+    ?.trim();
   if (forwardedFor) return `ip:${forwardedFor}`;
 
-  return 'ip:anonymous';
+  return "ip:anonymous";
 }
 
 const SYSTEM_CONCIERGE_PROMPT =
-  'You are the WorkSphere Workspace Concierge. Recommend quiet, high-Wi-Fi coworking cafes and spaces concisely based on user preferences.';
+  "You are the WorkSphere Workspace Concierge. Recommend quiet, high-Wi-Fi coworking cafes and spaces concisely based on user preferences.";
 
 export async function POST(request: NextRequest) {
   // 1. Enforce sliding-window rate limiter before reading/forwarding LLM payloads
@@ -144,24 +149,27 @@ export async function POST(request: NextRequest) {
   if (!rateLimit.allowed) {
     return NextResponse.json(
       {
-        error: 'Rate limit exceeded for AI venue concierge',
+        error: "Rate limit exceeded for AI venue concierge",
         retryAfterSeconds: rateLimit.retryAfterSeconds,
       },
       {
         status: 429,
         headers: {
           ...rateLimit.headers,
-          'Cache-Control': 'no-store, max-age=0',
+          "Cache-Control": "no-store, max-age=0",
         },
-      }
+      },
     );
   }
 
   // 2. Reject oversized Content-Length headers immediately before buffering
-  const contentLengthHeader = request.headers.get('content-length');
+  const contentLengthHeader = request.headers.get("content-length");
   if (contentLengthHeader !== null) {
     const declaredBytes = Number(contentLengthHeader);
-    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_CONCIERGE_BODY_BYTES) {
+    if (
+      Number.isFinite(declaredBytes) &&
+      declaredBytes > MAX_CONCIERGE_BODY_BYTES
+    ) {
       return NextResponse.json(
         {
           error: `Request payload exceeds maximum allowed size of ${MAX_CONCIERGE_BODY_BYTES} bytes`,
@@ -169,7 +177,7 @@ export async function POST(request: NextRequest) {
         {
           status: 413,
           headers: rateLimit.headers,
-        }
+        },
       );
     }
   }
@@ -180,8 +188,8 @@ export async function POST(request: NextRequest) {
     rawBodyText = await request.text();
   } catch {
     return NextResponse.json(
-      { error: 'Unable to read request body' },
-      { status: 400, headers: rateLimit.headers }
+      { error: "Unable to read request body" },
+      { status: 400, headers: rateLimit.headers },
     );
   }
 
@@ -194,7 +202,7 @@ export async function POST(request: NextRequest) {
       {
         status: 413,
         headers: rateLimit.headers,
-      }
+      },
     );
   }
 
@@ -203,8 +211,8 @@ export async function POST(request: NextRequest) {
     parsedJson = JSON.parse(rawBodyText);
   } catch {
     return NextResponse.json(
-      { error: 'Invalid JSON request payload' },
-      { status: 400, headers: rateLimit.headers }
+      { error: "Invalid JSON request payload" },
+      { status: 400, headers: rateLimit.headers },
     );
   }
 
@@ -213,16 +221,16 @@ export async function POST(request: NextRequest) {
   if (!validation.success) {
     return NextResponse.json(
       {
-        error: 'Invalid venue concierge request payload',
+        error: "Invalid venue concierge request payload",
         details: validation.error.issues.map((issue) => ({
-          path: issue.path.join('.'),
+          path: issue.path.join("."),
           message: issue.message,
         })),
       },
       {
         status: 400,
         headers: rateLimit.headers,
-      }
+      },
     );
   }
 
@@ -231,7 +239,7 @@ export async function POST(request: NextRequest) {
   // 5. Forward strictly bounded conversation history to upstream LLM provider
   const upstreamMessages = [
     {
-      role: 'system' as const,
+      role: "system" as const,
       content: venueContext?.city
         ? `${SYSTEM_CONCIERGE_PROMPT} Active city context: ${venueContext.city}.`
         : SYSTEM_CONCIERGE_PROMPT,
@@ -241,33 +249,35 @@ export async function POST(request: NextRequest) {
 
   const apiKey = process.env.GROQ_API_KEY ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((m) => m.role === "user");
     return NextResponse.json(
       {
-        reply: `Concierge ready (${messages.length} turns validated): "${lastUserMessage?.content.slice(0, 120) ?? ''}"`,
+        reply: `Concierge ready (${messages.length} turns validated): "${lastUserMessage?.content.slice(0, 120) ?? ""}"`,
         messageCount: messages.length,
       },
       {
         status: 200,
         headers: rateLimit.headers,
-      }
+      },
     );
   }
 
   try {
     const upstreamEndpoint = process.env.GROQ_API_KEY
-      ? 'https://api.groq.com/openai/v1/chat/completions'
-      : 'https://api.openai.com/v1/chat/completions';
+      ? "https://api.groq.com/openai/v1/chat/completions"
+      : "https://api.openai.com/v1/chat/completions";
 
     const model = process.env.GROQ_API_KEY
-      ? 'llama-3.3-70b-versatile'
-      : 'gpt-4o-mini';
+      ? "llama-3.3-70b-versatile"
+      : "gpt-4o-mini";
 
     const upstreamRes = await fetch(upstreamEndpoint, {
-      method: 'POST',
+      method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model,
@@ -279,11 +289,11 @@ export async function POST(request: NextRequest) {
 
     if (!upstreamRes.ok) {
       return NextResponse.json(
-        { error: 'Upstream AI concierge service temporarily unavailable' },
+        { error: "Upstream AI concierge service temporarily unavailable" },
         {
           status: upstreamRes.status === 429 ? 429 : 502,
           headers: rateLimit.headers,
-        }
+        },
       );
     }
 
@@ -293,7 +303,7 @@ export async function POST(request: NextRequest) {
 
     const reply =
       completion.choices?.[0]?.message?.content?.trim() ??
-      'No workspace recommendations available right now.';
+      "No workspace recommendations available right now.";
 
     return NextResponse.json(
       {
@@ -303,16 +313,16 @@ export async function POST(request: NextRequest) {
       {
         status: 200,
         headers: rateLimit.headers,
-      }
+      },
     );
   } catch (error: unknown) {
-    console.error('[VenueConcierge] Upstream completion failure:', error);
+    console.error("[VenueConcierge] Upstream completion failure:", error);
     return NextResponse.json(
-      { error: 'Failed to generate workspace recommendation' },
+      { error: "Failed to generate workspace recommendation" },
       {
         status: 502,
         headers: rateLimit.headers,
-      }
+      },
     );
   }
 }

@@ -115,7 +115,7 @@ const globalForFallback = globalThis as unknown as {
   __worksphereRateLimitFallbackLimiters?: Map<string, TokenBucketLimiter>;
 };
 
-const telemetryState: InternalFallbackTelemetryState =
+const internalTelemetryState: InternalFallbackTelemetryState =
   globalForFallback.__worksphereRateLimitFallbackTelemetry ?? {
     active: false,
     activeSinceMs: null,
@@ -130,7 +130,8 @@ const telemetryState: InternalFallbackTelemetryState =
   };
 
 if (!globalForFallback.__worksphereRateLimitFallbackTelemetry) {
-  globalForFallback.__worksphereRateLimitFallbackTelemetry = telemetryState;
+  globalForFallback.__worksphereRateLimitFallbackTelemetry =
+    internalTelemetryState;
 }
 
 function resolveMonotonicNow(nowMonotonic?: number): number {
@@ -140,7 +141,7 @@ function resolveMonotonicNow(nowMonotonic?: number): number {
 }
 
 function getOrCreateTierTelemetry(tierName: string): InternalTierTelemetry {
-  let entry = telemetryState.byTier.get(tierName);
+  let entry = internalTelemetryState.byTier.get(tierName);
   if (!entry) {
     entry = {
       activationCount: 0,
@@ -148,7 +149,7 @@ function getOrCreateTierTelemetry(tierName: string): InternalTierTelemetry {
       allowedCount: 0,
       rejectedCount: 0,
     };
-    telemetryState.byTier.set(tierName, entry);
+    internalTelemetryState.byTier.set(tierName, entry);
   }
   return entry;
 }
@@ -158,22 +159,22 @@ function getOrCreateTierTelemetry(tierName: string): InternalTierTelemetry {
  * Consecutive calls while already in fallback mode belong to the same outage episode
  * unless recovery has been recorded via `recordFallbackRecovery()`.
  */
-export function recordFallbackActivation(
+function recordInternalFallbackActivation(
   tierName = "default",
   nowMonotonic?: number,
 ): void {
   const now = resolveMonotonicNow(nowMonotonic);
 
-  if (!telemetryState.active) {
-    telemetryState.active = true;
-    telemetryState.activeSinceMs = now;
-    telemetryState.lastActivatedAtMs = now;
-    telemetryState.activationCount += 1;
-    telemetryState.activeTiersInEpisode.clear();
+  if (!internalTelemetryState.active) {
+    internalTelemetryState.active = true;
+    internalTelemetryState.activeSinceMs = now;
+    internalTelemetryState.lastActivatedAtMs = now;
+    internalTelemetryState.activationCount += 1;
+    internalTelemetryState.activeTiersInEpisode.clear();
   }
 
-  if (!telemetryState.activeTiersInEpisode.has(tierName)) {
-    telemetryState.activeTiersInEpisode.add(tierName);
+  if (!internalTelemetryState.activeTiersInEpisode.has(tierName)) {
+    internalTelemetryState.activeTiersInEpisode.add(tierName);
     const tierStats = getOrCreateTierTelemetry(tierName);
     tierStats.activationCount += 1;
   }
@@ -183,40 +184,40 @@ export function recordFallbackActivation(
  * Records recovery back to primary Redis rate limiting, closing the active fallback
  * episode and accumulating its elapsed duration.
  */
-export function recordFallbackRecovery(nowMonotonic?: number): void {
-  if (!telemetryState.active) {
+function _recordInternalFallbackRecovery(nowMonotonic?: number): void {
+  if (!internalTelemetryState.active) {
     return;
   }
 
   const now = resolveMonotonicNow(nowMonotonic);
-  if (telemetryState.activeSinceMs !== null) {
-    telemetryState.completedDurationMs += Math.max(
+  if (internalTelemetryState.activeSinceMs !== null) {
+    internalTelemetryState.completedDurationMs += Math.max(
       0,
-      now - telemetryState.activeSinceMs,
+      now - internalTelemetryState.activeSinceMs,
     );
   }
-  telemetryState.active = false;
-  telemetryState.activeSinceMs = null;
-  telemetryState.activeTiersInEpisode.clear();
+  internalTelemetryState.active = false;
+  internalTelemetryState.activeSinceMs = null;
+  internalTelemetryState.activeTiersInEpisode.clear();
 }
 
-function recordFallbackConsume(
+function _recordFallbackConsume(
   tierName: string,
   allowed: boolean,
   now: number,
 ): void {
-  if (!telemetryState.active) {
-    recordFallbackActivation(tierName, now);
-  } else if (!telemetryState.activeTiersInEpisode.has(tierName)) {
-    telemetryState.activeTiersInEpisode.add(tierName);
+  if (!internalTelemetryState.active) {
+    recordInternalFallbackActivation(tierName, now);
+  } else if (!internalTelemetryState.activeTiersInEpisode.has(tierName)) {
+    internalTelemetryState.activeTiersInEpisode.add(tierName);
     getOrCreateTierTelemetry(tierName).activationCount += 1;
   }
 
-  telemetryState.requestCount += 1;
+  internalTelemetryState.requestCount += 1;
   if (allowed) {
-    telemetryState.allowedCount += 1;
+    internalTelemetryState.allowedCount += 1;
   } else {
-    telemetryState.rejectedCount += 1;
+    internalTelemetryState.rejectedCount += 1;
   }
 
   const tierStats = getOrCreateTierTelemetry(tierName);

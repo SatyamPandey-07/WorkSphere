@@ -1,4 +1,7 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { clerkMiddleware } from "@clerk/nextjs/server";
+import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
+import type { MiddlewareContext } from "@/lib/middleware/types";
+import { runMiddlewarePipeline } from "@/lib/middleware/chain";
 
 export function generateCspNonce(): string {
   const bytes = new Uint8Array(16);
@@ -70,30 +73,65 @@ export function buildContentSecurityPolicy(nonce: string): string {
     .join('; ');
 }
 
-export function middleware(request: NextRequest): NextResponse {
+function addSecurityHeaders(
+  response: NextResponse,
+  nonce: string,
+  cspHeader: string,
+): NextResponse {
+  response.headers.set("x-nonce", nonce);
+  response.headers.set("x-csp-nonce", nonce);
+  response.headers.set("Content-Security-Policy", cspHeader);
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  return response;
+}
+
+const clerkMiddlewareHandler = clerkMiddleware(async (auth, request) => {
+  const nonce = request.headers.get("x-nonce") || generateCspNonce();
+  const cspHeader =
+    request.headers.get("Content-Security-Policy") ||
+    buildContentSecurityPolicy(nonce);
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", cspHeader);
+
+  const context: MiddlewareContext = {
+    auth: async () => {
+      const authState = await auth();
+      return {
+        userId: authState.userId ?? null,
+        sessionClaims: authState.sessionClaims ?? null,
+      };
+    },
+    protect: () => auth.protect(),
+    nonce,
+    csp: cspHeader,
+    requestHeaders,
+  };
+
+  return await runMiddlewarePipeline(request, context);
+});
+
+export async function middleware(
+  request: NextRequest,
+  event: NextFetchEvent,
+): Promise<NextResponse> {
   const nonce = generateCspNonce();
   const cspHeader = buildContentSecurityPolicy(nonce);
-
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set('x-nonce', nonce);
-  requestHeaders.set('Content-Security-Policy', cspHeader);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", cspHeader);
 
-  const response = NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  });
+  const requestWithNonce = new NextRequest(request, { headers: requestHeaders });
+  const response = await clerkMiddlewareHandler(requestWithNonce, event);
 
-  response.headers.set('x-nonce', nonce);
-  response.headers.set('Content-Security-Policy', cspHeader);
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-
-  return response;
+  return addSecurityHeaders(response, nonce, cspHeader);
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf|eot|css|js|json|txt|xml|webmanifest)|manifest\\.json|sw\\.js|service-worker\\.js|robots\\.txt).*)",
+    "/(api|trpc)(.*)",
+    "/__clerk/:path*",
   ],
 };

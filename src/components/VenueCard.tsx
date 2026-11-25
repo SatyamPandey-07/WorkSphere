@@ -846,6 +846,7 @@ export function VenueCard({
           <button
             onClick={handleFavorite}
             disabled={isSavingFavorite}
+            aria-pressed={isFavorited}
             aria-label={
               isFavorited
                 ? `Remove ${venue.name} from favorites`

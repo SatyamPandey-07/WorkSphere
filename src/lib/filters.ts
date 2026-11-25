@@ -212,6 +212,15 @@ export function applyFilters<T extends object>(
           return matchesOutletDensity(venue, value as string);
         case "wifiSpeedBand":
           return matchesWifiSpeedBand(venue, value as string);
+        case "minWifiSpeed": {
+          const target = typeof value === "number" ? value : Number(value);
+          if (isNaN(target)) return true;
+          const speed =
+            typeof venue.wifiSpeed === "number"
+              ? venue.wifiSpeed
+              : Number(venue.wifiSpeed);
+          return !isNaN(speed) && speed >= target;
+        }
         case "hasPhoneBooths":
           return venue.hasPhoneBooths === true;
         case "hasAncHeadsetRental":
@@ -305,6 +314,7 @@ export function buildVenueSearchSchema() {
       .optional(),
     semanticWeight: z.coerce.number().min(0).max(100).optional(),
     fullTextWeight: z.coerce.number().min(0).max(100).optional(),
+    minWifiSpeed: z.coerce.number().min(0).optional(),
   };
 
   for (const [key, config] of Object.entries(VENUE_FILTERS)) {

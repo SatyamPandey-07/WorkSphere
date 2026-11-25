@@ -353,22 +353,24 @@ model Booking {
 }
 
 model BookingGuest {
-  id              String      @id @default(cuid())
-  bookingId       String
-  booking         Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  email           String
-  name            String?
-  phone           String?
-  status          GuestStatus @default(PENDING)
-  calendarUid     String?
-  sentAt          DateTime?
+  id               String      @id @default(cuid())
+  bookingId        String
+  booking          Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  email            String
+  name             String?
+  phone            String?
+  status           GuestStatus @default(PENDING)
+  calendarUid      String?
+  sentAt           DateTime?
   // Split-bill payment state. `status = ACCEPTED` only means the guest RSVP'd
   // "yes"; a guest has paid if and only if `paidAt` is set.
-  paidAt          DateTime?
-  paidAmountCents Int?
-  paidCurrency    String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  paidCurrency     String?
+  paymentReference String?
+  paymentStatus    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   @@unique([bookingId, email])
   @@index([bookingId])
@@ -983,13 +985,13 @@ model VenueSeatWaitlist {
   claimedAt       DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+  // Note: Partial unique index "VenueSeatWaitlist_active_uniqueness_idx" on (userId, venueId, date, time)
+  // WHERE status IN ('ACTIVE', 'NOTIFIED') is managed via migration to avoid blocking re-joins after CANCELLED/CLAIMED/EXPIRED.
 
   @@index([venueId, date, status])
   @@index([userId, status])
   @@index([seatId])
   @@index([status, claimExpiresAt])
-  // Note: Partial unique index "VenueSeatWaitlist_active_uniqueness_idx" on (userId, venueId, date, time)
-  // WHERE status IN ('ACTIVE', 'NOTIFIED') is managed via migration to avoid blocking re-joins after CANCELLED/CLAIMED/EXPIRED.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

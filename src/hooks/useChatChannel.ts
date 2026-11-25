@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   getLastReadTimestamp,
   getStoredUnreadCount,
   markRoomAsRead,
   setStoredUnreadCount,
   UNREAD_MESSAGES_CHANGED_EVENT,
-} from '@/lib/chat/unreadTracker';
+} from "@/lib/chat/unreadTracker";
 
 export interface ChatChannelMessage {
   id?: string;
@@ -32,17 +32,23 @@ export interface UseChatChannelOptions {
 /**
  * Derives the localStorage key for persisting channel message history.
  */
-export function getChatHistoryStorageKey(roomId: string = 'default', userId?: string | null): string {
-  const cleanRoom = roomId || 'default';
-  const userPrefix = userId ? `u:${userId}:` : '';
+export function getChatHistoryStorageKey(
+  roomId: string = "default",
+  userId?: string | null,
+): string {
+  const cleanRoom = roomId || "default";
+  const userPrefix = userId ? `u:${userId}:` : "";
   return `ws-chat-history:${userPrefix}room:${cleanRoom}`;
 }
 
 /**
  * Retrieves persisted channel message history from localStorage.
  */
-export function getStoredChatHistory(roomId: string = 'default', userId?: string | null): ChatChannelMessage[] {
-  if (typeof window === 'undefined') return [];
+export function getStoredChatHistory(
+  roomId: string = "default",
+  userId?: string | null,
+): ChatChannelMessage[] {
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(getChatHistoryStorageKey(roomId, userId));
     if (!raw) return [];
@@ -58,14 +64,17 @@ export function getStoredChatHistory(roomId: string = 'default', userId?: string
  */
 export function setStoredChatHistory(
   messages: ChatChannelMessage[],
-  roomId: string = 'default',
-  userId?: string | null
+  roomId: string = "default",
+  userId?: string | null,
 ): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     // Only persist non-system messages
     const toStore = messages.filter((m) => !m.isSystem);
-    localStorage.setItem(getChatHistoryStorageKey(roomId, userId), JSON.stringify(toStore));
+    localStorage.setItem(
+      getChatHistoryStorageKey(roomId, userId),
+      JSON.stringify(toStore),
+    );
   } catch {
     // Ignore quota issues
   }
@@ -74,8 +83,11 @@ export function setStoredChatHistory(
 /**
  * Removes channel message history from localStorage.
  */
-export function clearStoredChatHistory(roomId: string = 'default', userId?: string | null): void {
-  if (typeof window === 'undefined') return;
+export function clearStoredChatHistory(
+  roomId: string = "default",
+  userId?: string | null,
+): void {
+  if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(getChatHistoryStorageKey(roomId, userId));
   } catch {
@@ -85,7 +97,7 @@ export function clearStoredChatHistory(roomId: string = 'default', userId?: stri
 
 export function useChatChannel(options: UseChatChannelOptions = {}) {
   const {
-    roomId = 'default',
+    roomId = "default",
     currentUserId = null,
     currentUserName = null,
     initialIsOpen = false,
@@ -95,7 +107,7 @@ export function useChatChannel(options: UseChatChannelOptions = {}) {
 
   const [isOpen, setIsOpen] = useState(initialIsOpen);
   const [lastReadTimestamp, setLastReadTimestamp] = useState<number>(() =>
-    getLastReadTimestamp(roomId, currentUserId)
+    getLastReadTimestamp(roomId, currentUserId),
   );
   const [unreadCount, setUnreadCount] = useState<number>(() => {
     if (initialIsOpen) return 0;
@@ -138,7 +150,10 @@ export function useChatChannel(options: UseChatChannelOptions = {}) {
 
     window.addEventListener(UNREAD_MESSAGES_CHANGED_EVENT, handleUnreadChange);
     return () => {
-      window.removeEventListener(UNREAD_MESSAGES_CHANGED_EVENT, handleUnreadChange);
+      window.removeEventListener(
+        UNREAD_MESSAGES_CHANGED_EVENT,
+        handleUnreadChange,
+      );
     };
   }, [roomId, isOpen]);
 
@@ -188,11 +203,14 @@ export function useChatChannel(options: UseChatChannelOptions = {}) {
     setUnreadCount(0);
     markRoomAsRead(roomId, currentUserId, now);
 
-    // 3. Set messages in state to only contain the inline system notice
+    // 3. Clear processed message ID deduplication set to prevent stale message tracking (#10122)
+    processedMessageIdsRef.current.clear();
+
+    // 4. Set messages in state to only contain the inline system notice
     const systemNotice: ChatChannelMessage = {
       id: `sys-clear-${now}-${Math.random().toString(36).substring(2, 9)}`,
-      senderName: 'System',
-      content: 'Chat history cleared locally.',
+      senderName: "System",
+      content: "Chat history cleared locally.",
       timestamp: now,
       roomId,
       isSystem: true,
@@ -218,15 +236,15 @@ export function useChatChannel(options: UseChatChannelOptions = {}) {
       const trimmed = rawContent.trim();
 
       // Intercept /clear command
-      if (trimmed.toLowerCase() === '/clear') {
+      if (trimmed.toLowerCase() === "/clear") {
         clearChatHistory();
         return true;
       }
 
       // Normal message submission
       const now = Date.now();
-      const sId = senderOverride?.id ?? currentUserId ?? 'user-local';
-      const sName = senderOverride?.name ?? currentUserName ?? 'You';
+      const sId = senderOverride?.id ?? currentUserId ?? "user-local";
+      const sName = senderOverride?.name ?? currentUserName ?? "You";
 
       const newMessage: ChatChannelMessage = {
         id: `msg-${now}-${Math.random().toString(36).substring(2, 9)}`,
@@ -252,7 +270,13 @@ export function useChatChannel(options: UseChatChannelOptions = {}) {
 
       return false;
     },
-    [clearChatHistory, currentUserId, currentUserName, roomId, onBroadcastMessage]
+    [
+      clearChatHistory,
+      currentUserId,
+      currentUserName,
+      roomId,
+      onBroadcastMessage,
+    ],
   );
 
   const onIncomingMessage = useCallback(
@@ -303,7 +327,7 @@ export function useChatChannel(options: UseChatChannelOptions = {}) {
         return prevLastRead;
       });
     },
-    [isOpen, currentUserId, currentUserName, roomId]
+    [isOpen, currentUserId, currentUserName, roomId],
   );
 
   return {

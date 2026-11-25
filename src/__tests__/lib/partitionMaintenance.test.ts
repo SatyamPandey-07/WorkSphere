@@ -7,6 +7,7 @@ import {
 } from "@/lib/db/partitionMaintenance";
 import {
   archiveExpiredPushNotificationPartitions,
+  archiveExpiredTelemetryPartitions,
   autoCreateUpcomingPartitions,
   checkPartitionHealth,
   formatPartitionBytes,
@@ -279,5 +280,99 @@ describe("partition disk storage gauge & size parsing (#3778)", () => {
     expect(report.partitions[1].tableSizeBytes).toBe(125829120);
     expect(report.partitions[1].tableSizePretty).toBe("120 MB");
     expect(report.partitions[1].isNearColdStorage).toBe(true);
+  });
+});
+
+
+describe("archiveExpiredTelemetryPartitions with rolling 90-day retention", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    transactionExecuteRawUnsafe.mockResolvedValue(0);
+  });
+
+  it("summarizes and archives only complete monthly partitions older than 90 days", async () => {
+    queryRawUnsafe.mockResolvedValue([
+      { name: "TelemetryRecord_y2026m06" },
+      { name: "TelemetryRecord_y2026m07" },
+      { name: "TelemetryRecord_y2026m08" },
+      { name: "TelemetryRecord_y2026m09" },
+    ]);
+
+    const result = await archiveExpiredTelemetryPartitions({
+      now: new Date("2026-11-18T00:00:00.000Z"),
+      retentionDays: 90,
+    });
+
+    expect(result.archived).toEqual([
+      {
+        name: "TelemetryRecord_y2026m06",
+        archivedSchema: "telemetry_archive",
+      },
+      {
+        name: "TelemetryRecord_y2026m07",
+        archivedSchema: "telemetry_archive",
+      },
+    ]);
+    // August contains records newer than the 90-day cutoff, so the entire
+    // monthly partition must remain attached until its upper boundary expires.
+    expect(result.retained).toEqual([
+      "TelemetryRecord_y2026m08",
+      "TelemetryRecord_y2026m09",
+    ]);
+
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      'CREATE SCHEMA IF NOT EXISTS "telemetry_archive"',
+    );
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE IF NOT EXISTS "telemetry_archive"."noise_monthly_summary"'),
+    );
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('AVG("noiseLevel")'),
+      "2026-06-01",
+    );
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('AVG("noiseLevel")'),
+      "2026-07-01",
+    );
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      'ALTER TABLE "TelemetryRecord" DETACH PARTITION "TelemetryRecord_y2026m06"',
+    );
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      'ALTER TABLE "TelemetryRecord_y2026m06" SET SCHEMA "telemetry_archive"',
+    );
+  });
+
+  it("rejects invalid or conflicting retention configuration", async () => {
+    await expect(
+      archiveExpiredTelemetryPartitions({ retentionDays: 0 }),
+    ).rejects.toThrow("retentionDays must be a positive integer");
+
+    await expect(
+      archiveExpiredTelemetryPartitions({
+        retentionDays: 90,
+        retentionMonths: 3,
+      }),
+    ).rejects.toThrow("Specify either retentionDays or retentionMonths");
+  });
+
+  it("does not start a transaction when no complete partition has aged past the cutoff", async () => {
+    queryRawUnsafe.mockResolvedValue([
+      { name: "TelemetryRecord_y2026m08" },
+      { name: "TelemetryRecord_y2026m09" },
+    ]);
+
+    await expect(
+      archiveExpiredTelemetryPartitions({
+        now: new Date("2026-11-18T00:00:00.000Z"),
+        retentionDays: 90,
+      }),
+    ).resolves.toEqual({
+      archived: [],
+      retained: [
+        "TelemetryRecord_y2026m08",
+        "TelemetryRecord_y2026m09",
+      ],
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

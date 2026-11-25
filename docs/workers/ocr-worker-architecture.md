@@ -3,10 +3,10 @@
 This document details the background optical character recognition (OCR) worker architecture in WorkSphere. It covers worker instantiation, the structured clone message protocol (`OCR_INIT` $\to$ `OCR_PROCESS` $\to$ `OCR_PROGRESS` $\to$ `OCR_COMPLETE`), traineddata language model caching via the Cache Storage API / IndexedDB, and memory lifecycle optimizations for low-end mobile devices.
 
 Implemented in:
-- **Web Worker Engine:** [`src/workers/ocrWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/ocrWorker.ts)
-- **Amenity Extraction Classifier:** [`src/core/ocr/AmenityClassifier.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ocr/AmenityClassifier.ts)
-- **WASM Preprocessing Pipeline:** [`src/wasm/ocr/image_binarize.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/ocr/image_binarize.c) & [`src/wasm/ocr/character_segment.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/ocr/character_segment.c)
-- **API Extraction Gateway:** [`src/app/api/venues/ocr/extract/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/venues/ocr/extract/route.ts)
+- **Web Worker Engine:** [`src/workers/ocrWorker.ts`](../../src/workers/ocrWorker.ts)
+- **Amenity Extraction Classifier:** [`src/core/ocr/AmenityClassifier.ts`](../../src/core/ocr/AmenityClassifier.ts)
+- **WASM Preprocessing Pipeline:** [`src/wasm/ocr/image_binarize.c`](../../src/wasm/ocr/image_binarize.c) & [`src/wasm/ocr/character_segment.c`](../../src/wasm/ocr/character_segment.c)
+- **API Extraction Gateway:** [`src/app/api/venues/ocr/extract/route.ts`](../../src/app/api/venues/ocr/extract/route.ts)
 
 ---
 
@@ -262,7 +262,7 @@ worker.postMessage({ type: 'OCR_PROCESS', payload: { ... } }, [buffer]);
 When transferred, the buffer on the main thread is cleared (`byteLength === 0`), eliminating memory spikes.
 
 ### 4.3 WebAssembly Linear Memory Pre-Allocation & Reuse
-In [`src/workers/ocrWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/ocrWorker.ts#L18-L20):
+In [`src/workers/ocrWorker.ts`](../../src/workers/ocrWorker.ts#L18-L20):
 - Memory is instantiated with an initial page count:
   $$\text{Initial Pages} = 256 \times 64\text{ KB} = 16\text{ MB}$$
 - Memory is **not reallocated per frame**. A single contiguous buffer handles the grayscale conversion (`imgPtr = 0`) and Otsu binary output (`binPtr = pixelCount`).

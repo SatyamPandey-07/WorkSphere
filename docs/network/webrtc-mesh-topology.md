@@ -3,10 +3,10 @@
 This technical architecture specification defines the multi-hop routing topology, distributed spanning tree formation, Link-State Advertisements (LSA), hop-limit decrements, and loop-prevention mechanics implemented for decentralized workspace collaboration in WorkSphere.
 
 Implemented in:
-- **Core Mesh Engine:** [`src/core/network/WebRTCMesh.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/WebRTCMesh.ts)
-- **React Mesh Orchestrator:** [`src/hooks/useWebRTCMesh.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useWebRTCMesh.ts)
-- **WebRTC Networking Guide:** [`docs/WEBRTC_MESH_NETWORKING_GUIDE.md`](file:///c:/Users/admin/Desktop/workfere/docs/WEBRTC_MESH_NETWORKING_GUIDE.md)
-- **Chunked File Transfer Protocol:** [`docs/network/chunked-transfer-protocol.md`](file:///c:/Users/admin/Desktop/workfere/docs/network/chunked-transfer-protocol.md)
+- **Core Mesh Engine:** [`src/core/network/WebRTCMesh.ts`](../../src/core/network/WebRTCMesh.ts)
+- **React Mesh Orchestrator:** [`src/hooks/useWebRTCMesh.ts`](../../src/hooks/useWebRTCMesh.ts)
+- **WebRTC Networking Guide:** [`docs/WEBRTC_MESH_NETWORKING_GUIDE.md`](../WEBRTC_MESH_NETWORKING_GUIDE.md)
+- **Chunked File Transfer Protocol:** [`docs/network/chunked-transfer-protocol.md`](chunked-transfer-protocol.md)
 
 ---
 
@@ -57,7 +57,7 @@ However, physical radio constraints prevent every device from establishing a dir
 - **NAT & Firewall Asymmetries:** Symmetric NATs often permit connections to some peers while blocking direct connections to others.
 - **Resource Exhaustion:** Establishing $N-1$ direct WebRTC audio/video/data connections on mobile devices causes thermal throttling, battery drain, and CPU contention.
 
-WorkSphere addresses this through the **`WebRTCMesh` multi-hop forwarding engine** ([`src/core/network/WebRTCMesh.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/WebRTCMesh.ts)). By constructing a distributed spanning tree, maintaining dynamic routing tables, and enforcing strict loop-prevention invariants (Hop-Limit decrements, Split-Horizon, and Route Poisoning), `WebRTCMesh` enables reliable multi-hop communication across arbitrary, dynamically shifting topologies.
+WorkSphere addresses this through the **`WebRTCMesh` multi-hop forwarding engine** ([`src/core/network/WebRTCMesh.ts`](../../src/core/network/WebRTCMesh.ts)). By constructing a distributed spanning tree, maintaining dynamic routing tables, and enforcing strict loop-prevention invariants (Hop-Limit decrements, Split-Horizon, and Route Poisoning), `WebRTCMesh` enables reliable multi-hop communication across arbitrary, dynamically shifting topologies.
 
 ---
 
@@ -73,7 +73,7 @@ For a room of $N$ participants:
 - **Connections per Peer:**
   $$d_i = N - 1 = O(N)$$
 
-When $N = 6$ participants, each peer manages $5$ connections ($15$ total in the room)—the practical upper limit implemented in [`src/hooks/useWebRTCMesh.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useWebRTCMesh.ts). When $N \ge 15$ in a dense workshop, $105$ connections saturate browser thread pools and exhaust ICE candidate buffers.
+When $N = 6$ participants, each peer manages $5$ connections ($15$ total in the room)—the practical upper limit implemented in [`src/hooks/useWebRTCMesh.ts`](../../src/hooks/useWebRTCMesh.ts). When $N \ge 15$ in a dense workshop, $105$ connections saturate browser thread pools and exhaust ICE candidate buffers.
 
 ### Partial Mesh with Relay Forwarding ($O(N)$ Degree Bound)
 
@@ -139,7 +139,7 @@ If a peer ceases receiving BPDUs from its parent on the Root Port for longer tha
 
 ## 4. Mesh Routing Tables & Forwarding Buffers
 
-In [`src/core/network/WebRTCMesh.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/WebRTCMesh.ts#L30-L38), multi-hop state is managed across three specialized in-memory data structures:
+In [`src/core/network/WebRTCMesh.ts`](../../src/core/network/WebRTCMesh.ts#L30-L38), multi-hop state is managed across three specialized in-memory data structures:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -185,7 +185,7 @@ The packet is dispatched via `sendData("peer-C", packetBuffer)`.
 
 When forwarding high-throughput file transfers across multiple hops, downstream link speeds may vary. If link $B \to C$ has lower throughput than link $A \to B$, Node B must buffer chunks in memory to avoid dropping packets.
 
-In [`WebRTCMesh.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/WebRTCMesh.ts#L226-L246):
+In [`WebRTCMesh.ts`](../../src/core/network/WebRTCMesh.ts#L226-L246):
 
 ```typescript
 export interface PendingTransferBuffer {
@@ -387,7 +387,7 @@ function processIncomingMeshPacket(
 
 ### Detailed Analysis of `onPeerDisconnect(peerId)`
 
-When a physical or signaling disconnection occurs, [`src/core/network/WebRTCMesh.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/WebRTCMesh.ts#L143-L214) executes a comprehensive, four-tier teardown pipeline:
+When a physical or signaling disconnection occurs, [`src/core/network/WebRTCMesh.ts`](../../src/core/network/WebRTCMesh.ts#L143-L214) executes a comprehensive, four-tier teardown pipeline:
 
 ```typescript
 public onPeerDisconnect(peerId: string): void

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAdminUser } from "@/lib/admin";
 import { getAdminSystemMetrics } from "@/lib/adminSystemMetrics";
+import { prisma } from "@/lib/prisma";
+import {
+  normalizeWebGpuCapabilityReport,
+  summarizeWebGpuCapabilityReports,
+} from "@/lib/webgpu/capabilityReport";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +62,23 @@ export async function GET() {
 
     const metrics = await getAdminSystemMetrics("30d");
 
+    let webGpuCapabilities = summarizeWebGpuCapabilityReports([]);
+    try {
+      const capabilityRows = await prisma.adminAuditLog.findMany({
+        where: {
+          action: "WEBGPU_CAPABILITY_REPORT",
+          entityType: "WebGpuCapabilityReport",
+        },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        select: { details: true, createdAt: true },
+      });
+      webGpuCapabilities = summarizeWebGpuCapabilityReports(capabilityRows);
+    } catch (error) {
+      // Diagnostics export remains available if capability telemetry is not yet configured.
+      console.warn("[Admin Diagnostics] WebGPU capability history unavailable:", error);
+    }
+
     const diagnosticReport = {
       reportType: "WorkSphere Diagnostics & Telemetry Report",
       exportedAt: new Date().toISOString(),
@@ -66,6 +88,7 @@ export async function GET() {
         platform: process.platform,
       },
       systemMetrics: metrics,
+      webGpuCapabilities,
       status: "HEALTHY",
     };
 
@@ -88,6 +111,72 @@ export async function GET() {
     console.error("[Admin Diagnostics Export API]", error);
     return NextResponse.json(
       { error: "Failed to generate diagnostic report" },
+      { status: 500 },
+    );
+  }
+}
+
+
+/**
+ * POST /api/admin/system/diagnostics
+ *
+ * Accepts a coarse, privacy-limited WebGPU capability report from an
+ * authenticated administrator's client and persists it in the audit log.
+ */
+export async function POST(request: Request) {
+  try {
+    const admin = await getAdminUser();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Admin access required" },
+        { status: 403 },
+      );
+    }
+
+    const rawBody = await request.text();
+    if (rawBody.length > 8_192) {
+      return NextResponse.json(
+        { error: "Capability report is too large" },
+        { status: 413 },
+      );
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON payload" },
+        { status: 400 },
+      );
+    }
+
+    const report = normalizeWebGpuCapabilityReport(body);
+    if (!report) {
+      return NextResponse.json(
+        { error: "Invalid WebGPU capability report" },
+        { status: 400 },
+      );
+    }
+
+    await prisma.adminAuditLog.create({
+      data: {
+        adminId: admin.id,
+        action: "WEBGPU_CAPABILITY_REPORT",
+        entityType: "WebGpuCapabilityReport",
+        entityId: "aggregate",
+        details: JSON.stringify(report),
+      },
+    });
+
+    return NextResponse.json(
+      { success: true, report },
+      { status: 202, headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    console.error("[Admin Diagnostics] WebGPU capability submission failed:", error);
+    return NextResponse.json(
+      { error: "Failed to save WebGPU capability report" },
       { status: 500 },
     );
   }

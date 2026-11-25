@@ -26,7 +26,28 @@ describe("VenueCheckInButton Component", () => {
     expect(button).toHaveTextContent("Check In");
   });
 
-  it("fires success haptic pattern ([15, 50, 20]) on successful check-in confirmation", async () => {
+  it("fires the pending tap pattern ([30]) before the success pattern", async () => {
+    const handleCheckIn = jest.fn().mockResolvedValue(true);
+
+    render(
+      <VenueCheckInButton
+        venueId="venue-123"
+        venueName="Nomad Space"
+        onCheckIn={handleCheckIn}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button"));
+
+    await waitFor(() => {
+      expect(mockVibrate.mock.calls.map((call) => call[0])).toEqual([
+        [30],
+        [50, 30, 50],
+      ]);
+    });
+  });
+
+  it("fires success haptic pattern ([50, 30, 50]) on successful check-in confirmation", async () => {
     const handleCheckIn = jest.fn().mockResolvedValue(true);
     const handleSuccess = jest.fn();
 
@@ -45,13 +66,13 @@ describe("VenueCheckInButton Component", () => {
     await waitFor(() => {
       expect(handleCheckIn).toHaveBeenCalledTimes(1);
       expect(handleSuccess).toHaveBeenCalledTimes(1);
-      expect(mockVibrate).toHaveBeenCalledWith([15, 50, 20]);
+      expect(mockVibrate).toHaveBeenCalledWith([50, 30, 50]);
     });
 
     expect(screen.getByText("Checked In")).toBeInTheDocument();
   });
 
-  it("fires error haptic pattern ([50, 100, 50]) when check-in fails", async () => {
+  it("fires error haptic pattern ([100, 50, 100, 50, 100]) when check-in fails", async () => {
     const handleCheckIn = jest.fn().mockRejectedValue(new Error("Seat unavailable"));
     const handleError = jest.fn();
 
@@ -69,7 +90,7 @@ describe("VenueCheckInButton Component", () => {
     await waitFor(() => {
       expect(handleCheckIn).toHaveBeenCalledTimes(1);
       expect(handleError).toHaveBeenCalledTimes(1);
-      expect(mockVibrate).toHaveBeenCalledWith([50, 100, 50]);
+      expect(mockVibrate).toHaveBeenCalledWith([100, 50, 100, 50, 100]);
     });
 
     expect(screen.getByText("Check In")).toBeInTheDocument();
@@ -91,7 +112,7 @@ describe("VenueCheckInButton Component", () => {
     fireEvent.click(button);
 
     await waitFor(() => {
-      expect(mockVibrate).toHaveBeenCalledWith([50, 100, 50]);
+      expect(mockVibrate).toHaveBeenCalledWith([100, 50, 100, 50, 100]);
       expect(handleError).toHaveBeenCalled();
     });
   });

@@ -9,7 +9,7 @@ WorkSphere allows coworkers, remote professionals, and workspace hosts to author
 3. **Abuse, Profanity & Harassment:** Coarse language, abusive slurs, or harassment degrading community workspace trust and violating service policies.
 4. **Buffer & Resource Exhaustion (DoS):** Unbounded payloads, memory exhaustion, or regex denial of service (ReDoS).
 
-To neutralize these threats, WorkSphere deploys a multi-stage sanitization and moderation pipeline in [`src/lib/reviewCommentSanitizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/reviewCommentSanitizer.ts), complemented by automated sentiment and spam heuristics in [`src/lib/reviews/reviewModerator.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/reviews/reviewModerator.ts).
+To neutralize these threats, WorkSphere deploys a multi-stage sanitization and moderation pipeline in [`src/lib/reviewCommentSanitizer.ts`](../../src/lib/reviewCommentSanitizer.ts), complemented by automated sentiment and spam heuristics in [`src/lib/reviews/reviewModerator.ts`](../../src/lib/reviews/reviewModerator.ts).
 
 ```mermaid
 flowchart TD
@@ -252,7 +252,7 @@ export async function POST(req: Request) {
 
 ## 8. Automated Verification & Testing
 
-The sanitization engine is verified through unit tests in [`src/__tests__/lib/reviewCommentSanitizer.test.ts`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/lib/reviewCommentSanitizer.test.ts):
+The sanitization engine is verified through unit tests in [`src/__tests__/lib/reviewCommentSanitizer.test.ts`](../../src/__tests__/lib/reviewCommentSanitizer.test.ts):
 
 *   **Allowed HTML Tags:** Verifies preservation of `<b>`, `<i>`, and safe `<a>` tags with `target` and `rel` enforcement.
 *   **Script & Event Stripping:** Asserts removal of `<script>`, `<style>`, `<iframe>`, and inline event attributes (`onload`, `onerror`, `onclick`).

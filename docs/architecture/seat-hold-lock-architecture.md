@@ -9,7 +9,7 @@ Without deterministic concurrency control, naive reservation pipelines suffer fr
 2. **Checkout Abandonment Deadlocks**: A user reserves a seat, enters the checkout flow, and closes their mobile browser or loses network connectivity. If the seat is hard-locked in the relational database without a dynamic time-to-live (TTL), the venue inventory becomes artificially depleted.
 3. **Stale Lock Overwrites & Erroneous Releases**: If User A's hold expires and User B acquires the seat, an oblivious User A completing an overdue checkout must never overwrite User B's lock, nor should User A's cancellation routine accidentally delete User B's newly minted lock.
 
-To solve these challenges with sub-millisecond overhead while guaranteeing multi-region consistency, WorkSphere implements a **Two-Tier Distributed Temporary Seat Hold Lock** system orchestrated in [`src/lib/locks/seatHoldLock.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/locks/seatHoldLock.ts). The architecture combines:
+To solve these challenges with sub-millisecond overhead while guaranteeing multi-region consistency, WorkSphere implements a **Two-Tier Distributed Temporary Seat Hold Lock** system orchestrated in [`src/lib/locks/seatHoldLock.ts`](../../src/lib/locks/seatHoldLock.ts). The architecture combines:
 - **Redis Atomic Primitives & Lua Scripting**: Enforcing atomic `Check-and-Set` (CAS) and `Compare-and-Delete` (CAD) semantics directly on the distributed Redis cache.
 - **Configurable TTL Windows (5 to 10 Minutes)**: Providing guaranteed passive expiration without requiring expensive database polling daemons.
 - **Client Heartbeat Leases**: Allowing active checkout participants to renew locks without creating race vulnerabilities.

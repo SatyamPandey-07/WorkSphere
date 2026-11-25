@@ -57,10 +57,28 @@ export async function GET(
     });
     const venues = folderVenues.map((fv) => fv.venue);
 
+    const includeBoundaryParam =
+      req.nextUrl.searchParams.get("includeBoundary");
+    const boundaryParam = req.nextUrl.searchParams.get("boundary");
+    const includeBoundary =
+      includeBoundaryParam === "true" ||
+      includeBoundaryParam === "1" ||
+      boundaryParam === "true" ||
+      boundaryParam === "1";
+
+    const folderContext = {
+      id: folder.id,
+      name: folder.name,
+      description: folder.description,
+      items: venues.map((venue) => ({ venue })),
+    };
+
     const body =
       format === "geojson"
-        ? JSON.stringify(generateGeoJson(venues))
-        : generateKml(venues, {
+        ? JSON.stringify(
+            generateGeoJson(folderContext, new Date(), { includeBoundary }),
+          )
+        : generateKml(folderContext, {
             name: folder.name,
             description: folder.description,
           });

@@ -1,9 +1,18 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import VenueListDefault, {
   VenueList,
   isVenueCurrentlyOpen,
 } from "@/components/venues/VenueList";
+import { useKeyboardNavigation, isEditableElement } from "@/hooks/useKeyboardNavigation";
+import { renderHook } from "@testing-library/react";
+
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
 
 jest.mock("@/components/VenueCard", () => ({
   VenueCard: ({ venue, onSaveFavorite }: any) => (
@@ -45,6 +54,10 @@ describe("VenueList Component Suite", () => {
       openNow: true,
     },
   ];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
   it("exports default component matching named export", () => {
     expect(VenueListDefault).toBe(VenueList);
@@ -137,7 +150,6 @@ describe("VenueList Component Suite", () => {
     });
 
     it("filters venues within maxDistanceKm radius", () => {
-      // 1.5 km should include venue-1 (0 km) and venue-2 (~1.4 km), but not venue-3 (~2.8 km)
       render(
         <VenueList
           venues={sampleVenues}
@@ -152,7 +164,6 @@ describe("VenueList Component Suite", () => {
     });
 
     it("sorts venues by proximity when sortByProximity is enabled", () => {
-      // Reversed location: user near venue-3
       const farLocation = { lat: 37.7949, lng: -122.3994 };
       render(
         <VenueList
@@ -206,6 +217,238 @@ describe("VenueList Component Suite", () => {
       expect(isVenueCurrentlyOpen({ openNow: false })).toBe(false);
       expect(isVenueCurrentlyOpen({ isOpen: true })).toBe(true);
       expect(isVenueCurrentlyOpen({ isOpen: false })).toBe(false);
+    });
+  });
+
+  describe("Keyboard Shortcut Navigation (j/k, Enter, Space)", () => {
+    it("selects next venue on 'j' and wraps around to the beginning", () => {
+      render(<VenueList venues={sampleVenues} />);
+
+      const wrapper0 = screen.getByTestId("venue-card-wrapper-venue-1");
+      const wrapper1 = screen.getByTestId("venue-card-wrapper-venue-2");
+      const wrapper2 = screen.getByTestId("venue-card-wrapper-venue-3");
+
+      // Initially no active card
+      expect(wrapper0).toHaveAttribute("data-active", "false");
+
+      // Press 'j' -> moves to first venue (index 0)
+      fireEvent.keyDown(window, { key: "j" });
+      expect(wrapper0).toHaveAttribute("data-active", "true");
+      expect(wrapper0).toHaveAttribute("aria-current", "true");
+      expect(wrapper1).toHaveAttribute("data-active", "false");
+
+      // Press 'j' -> moves to second venue (index 1)
+      fireEvent.keyDown(window, { key: "j" });
+      expect(wrapper1).toHaveAttribute("data-active", "true");
+      expect(wrapper0).toHaveAttribute("data-active", "false");
+
+      // Press 'j' -> moves to third venue (index 2)
+      fireEvent.keyDown(window, { key: "j" });
+      expect(wrapper2).toHaveAttribute("data-active", "true");
+
+      // Press 'j' at boundary -> wraps around to index 0
+      fireEvent.keyDown(window, { key: "j" });
+      expect(wrapper0).toHaveAttribute("data-active", "true");
+      expect(wrapper2).toHaveAttribute("data-active", "false");
+    });
+
+    it("selects previous venue on 'k' and wraps around to the last venue", () => {
+      render(<VenueList venues={sampleVenues} />);
+
+      const wrapper0 = screen.getByTestId("venue-card-wrapper-venue-1");
+      const wrapper2 = screen.getByTestId("venue-card-wrapper-venue-3");
+
+      // Press 'k' when unselected -> wraps to the last venue (index 2)
+      fireEvent.keyDown(window, { key: "k" });
+      expect(wrapper2).toHaveAttribute("data-active", "true");
+
+      // Press 'k' -> moves to index 1
+      fireEvent.keyDown(window, { key: "k" });
+      const wrapper1 = screen.getByTestId("venue-card-wrapper-venue-2");
+      expect(wrapper1).toHaveAttribute("data-active", "true");
+
+      // Press 'k' -> moves to index 0
+      fireEvent.keyDown(window, { key: "k" });
+      expect(wrapper0).toHaveAttribute("data-active", "true");
+
+      // Press 'k' at index 0 -> wraps around to last venue (index 2)
+      fireEvent.keyDown(window, { key: "k" });
+      expect(wrapper2).toHaveAttribute("data-active", "true");
+    });
+
+    it("activates selected venue on 'Enter' and navigates via router or callback", () => {
+      const handleSelect = jest.fn();
+      render(<VenueList venues={sampleVenues} onSelectVenue={handleSelect} />);
+
+      // Select first venue
+      fireEvent.keyDown(window, { key: "j" });
+      // Press Enter
+      fireEvent.keyDown(window, { key: "Enter" });
+
+      expect(handleSelect).toHaveBeenCalledWith(sampleVenues[0], 0);
+    });
+
+    it("activates selected venue on 'Space' without unintended default scrolling", () => {
+      render(<VenueList venues={sampleVenues} />);
+
+      // Select second venue
+      fireEvent.keyDown(window, { key: "j" });
+      fireEvent.keyDown(window, { key: "j" });
+
+      const spaceEvent = new KeyboardEvent("keydown", {
+        key: " ",
+        bubbles: true,
+        cancelable: true,
+      });
+      const preventDefaultSpy = jest.spyOn(spaceEvent, "preventDefault");
+      window.dispatchEvent(spaceEvent);
+
+      expect(preventDefaultSpy).toHaveBeenCalled();
+      expect(mockPush).toHaveBeenCalledWith("/venues/venue-2");
+    });
+
+    it("does not navigate on Enter/Space if no venue is selected", () => {
+      const handleSelect = jest.fn();
+      render(<VenueList venues={sampleVenues} onSelectVenue={handleSelect} />);
+
+      fireEvent.keyDown(window, { key: "Enter" });
+      fireEvent.keyDown(window, { key: " " });
+
+      expect(handleSelect).not.toHaveBeenCalled();
+      expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it("ignores shortcuts when focus is inside text input, textarea, or contenteditable", () => {
+      render(
+        <div>
+          <input data-testid="test-input" type="text" />
+          <textarea data-testid="test-textarea" />
+          <div data-testid="test-editable" contentEditable="true" />
+          <VenueList venues={sampleVenues} />
+        </div>
+      );
+
+      const input = screen.getByTestId("test-input");
+      const textarea = screen.getByTestId("test-textarea");
+      const editable = screen.getByTestId("test-editable");
+
+      const wrapper0 = screen.getByTestId("venue-card-wrapper-venue-1");
+
+      // Focus input and press 'j'
+      input.focus();
+      fireEvent.keyDown(input, { key: "j" });
+      expect(wrapper0).toHaveAttribute("data-active", "false");
+
+      // Focus textarea and press 'j'
+      textarea.focus();
+      fireEvent.keyDown(textarea, { key: "j" });
+      expect(wrapper0).toHaveAttribute("data-active", "false");
+
+      // Focus contenteditable and press 'j'
+      editable.focus();
+      fireEvent.keyDown(editable, { key: "j" });
+      expect(wrapper0).toHaveAttribute("data-active", "false");
+    });
+
+    it("safely does nothing when list is empty", () => {
+      render(<VenueList venues={[]} />);
+
+      // Should not throw
+      expect(() => {
+        fireEvent.keyDown(window, { key: "j" });
+        fireEvent.keyDown(window, { key: "k" });
+        fireEvent.keyDown(window, { key: "Enter" });
+        fireEvent.keyDown(window, { key: " " });
+      }).not.toThrow();
+
+      expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it("resets or bounds activeIndex when venues list shrinks or filters change", () => {
+      const { rerender } = render(<VenueList venues={sampleVenues} />);
+
+      // Select last venue (index 2)
+      fireEvent.keyDown(window, { key: "k" });
+      expect(screen.getByTestId("venue-card-wrapper-venue-3")).toHaveAttribute(
+        "data-active",
+        "true"
+      );
+
+      // Rerender with only 1 venue
+      rerender(<VenueList venues={[sampleVenues[0]]} />);
+
+      // Active index should be clamped to 0 (the only remaining venue)
+      expect(screen.getByTestId("venue-card-wrapper-venue-1")).toHaveAttribute(
+        "data-active",
+        "true"
+      );
+    });
+
+    it("cleans up event listeners on unmount", () => {
+      const removeListenerSpy = jest.spyOn(window, "removeEventListener");
+      const { unmount } = render(<VenueList venues={sampleVenues} />);
+
+      unmount();
+
+      expect(removeListenerSpy).toHaveBeenCalledWith(
+        "keydown",
+        expect.any(Function)
+      );
+    });
+  });
+
+  describe("useKeyboardNavigation hook directly", () => {
+    it("supports non-wrap boundary behavior when wrapAround is false", () => {
+      const { result } = renderHook(() =>
+        useKeyboardNavigation({
+          items: ["a", "b", "c"],
+          wrapAround: false,
+        })
+      );
+
+      // Start at -1, selectNext -> 0
+      act(() => {
+        result.current.selectNext();
+      });
+      expect(result.current.activeIndex).toBe(0);
+
+      // selectPrevious at 0 -> stays at 0 (wrapAround: false)
+      act(() => {
+        result.current.selectPrevious();
+      });
+      expect(result.current.activeIndex).toBe(0);
+
+      // Next to 1, then 2
+      act(() => {
+        result.current.selectNext();
+        result.current.selectNext();
+      });
+      expect(result.current.activeIndex).toBe(2);
+
+      // Next at last item -> stays at 2 (wrapAround: false)
+      act(() => {
+        result.current.selectNext();
+      });
+      expect(result.current.activeIndex).toBe(2);
+    });
+
+    it("isEditableElement returns true for input, textarea, select, contenteditable, role=textbox", () => {
+      const input = document.createElement("input");
+      const textarea = document.createElement("textarea");
+      const select = document.createElement("select");
+      const divEditable = document.createElement("div");
+      divEditable.setAttribute("contenteditable", "true");
+      const divRole = document.createElement("div");
+      divRole.setAttribute("role", "textbox");
+      const plainDiv = document.createElement("div");
+
+      expect(isEditableElement(input)).toBe(true);
+      expect(isEditableElement(textarea)).toBe(true);
+      expect(isEditableElement(select)).toBe(true);
+      expect(isEditableElement(divEditable)).toBe(true);
+      expect(isEditableElement(divRole)).toBe(true);
+      expect(isEditableElement(plainDiv)).toBe(false);
+      expect(isEditableElement(null)).toBe(false);
     });
   });
 });

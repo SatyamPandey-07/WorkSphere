@@ -19,7 +19,9 @@ import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
-import { Contrast } from "lucide-react";
+import { Contrast, Plus, Minus } from "lucide-react";
+import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
+import { MapShortcutLegend, isEditableElement } from "./map/MapShortcutLegend";
 import {
   MapMarkerFactory,
   SEAT_RING_COLORS,
@@ -61,22 +63,80 @@ function MapController({ mapView }: { mapView: MapView | null }) {
   return null;
 }
 
-function ResetMapViewControl({ center }: { center: [number, number] }) {
+function MapNavigationControls({
+  center,
+  isLegendOpen,
+  onOpenLegend,
+  onCloseLegend,
+}: {
+  center: [number, number];
+  isLegendOpen: boolean;
+  onOpenLegend: () => void;
+  onCloseLegend: () => void;
+}) {
   const map = useMap();
 
   return (
-    <div className="absolute bottom-8 right-4 z-[1000] sm:bottom-4">
+    <div className="absolute bottom-8 right-4 z-[1000] sm:bottom-4 flex items-center gap-2">
+      {/* Zoom In */}
+      <ShortcutTooltip
+        content="Zoom in"
+        shortcut="+"
+        withModifier={false}
+        position="top"
+      >
+        <button
+          type="button"
+          aria-label="Zoom in"
+          data-testid="map-zoom-in-button"
+          onClick={() => map.zoomIn()}
+          className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 p-2 text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          <span className="sr-only">Zoom in (+)</span>
+        </button>
+      </ShortcutTooltip>
+
+      {/* Zoom Out */}
+      <ShortcutTooltip
+        content="Zoom out"
+        shortcut="-"
+        withModifier={false}
+        position="top"
+      >
+        <button
+          type="button"
+          aria-label="Zoom out"
+          data-testid="map-zoom-out-button"
+          onClick={() => map.zoomOut()}
+          className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 p-2 text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <Minus className="h-4 w-4" aria-hidden="true" />
+          <span className="sr-only">Zoom out (-)</span>
+        </button>
+      </ShortcutTooltip>
+
+      {/* Reset View */}
       <button
         type="button"
         aria-label="Reset Map View"
+        data-testid="map-reset-view-button"
         onClick={() => map.setView(center, 13)}
-        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white"
+        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-sm transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
       >
         Reset Map View
       </button>
+
+      {/* Keyboard Shortcut Legend */}
+      <MapShortcutLegend
+        isOpen={isLegendOpen}
+        onOpen={onOpenLegend}
+        onClose={onCloseLegend}
+      />
     </div>
   );
 }
+
 
 function AutoCenter({
   markers,
@@ -181,26 +241,149 @@ const updateHeatLayer = (instance: any, props: any, prevProps: any) => {
 };
 
 const HeatmapOverlay = createLayerComponent(createHeatLayer, updateHeatLayer);
+
+/**
+ * ResizeWatcher & Zero-Height Flash Prevention (#10448, #10425):
+ *
+ * Problem:
+ * When the map sidebar is rapidly toggled (opened/closed), CSS layout animations and flex/grid reflows
+ * can momentarily cause the map container's measured height or width to drop to 0px before settling.
+ * In Leaflet / Mapbox:
+ * 1. Calling `map.invalidateSize()` while `offsetHeight` or `clientHeight` is 0 (or near zero) resets the
+ *    map canvas/tile viewport to 0x0.
+ * 2. This causes tile unmounting, a jarring visual "white flash" / collapse, and miscalculated tile bounds.
+ * 3. Rapid repeated toggles trigger multiple overlapping resize events and asynchronous animation frames.
+ *    If an earlier callback resolves after a later toggle, stale dimensions and coordinates get applied.
+ *
+ * Workaround:
+ * 1. Maintain the last known valid (non-zero) dimensions (`lastValidDimensionsRef`) and enforce a minimum
+ *    height floor (e.g., `minHeight: "100px"`, `minWidth: "100px"`) on the container style to prevent hard collapses.
+ * 2. In `ResizeObserver` and window `resize` handlers, inspect candidate container dimensions:
+ *    If `height <= 0` or `width <= 0`, ignore the transient 0x0 measurement to prevent resetting the map canvas,
+ *    and schedule a check via `requestAnimationFrame` for when the layout transition finishes and dimensions recover.
+ * 3. Cancel and clear pending debounce timers (`setTimeout`) and animation frame requests (`cancelAnimationFrame`)
+ *    on every new resize event and during component unmount to eliminate race conditions and callback leaks.
+ * 4. Coordinate `map.invalidateSize({ debounceMoveend: true })` and preserve the map's center and zoom
+ *    viewport only when container dimensions are confirmed strictly positive and settled.
+ */
 function ResizeWatcher({ delay = 150 }: { delay?: number }) {
   const map = useMap();
+  const lastValidDimensionsRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+  const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let isActive = true;
+
+    const cancelPendingWork = () => {
+      clearTimeout(timer);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+
+    const performMapResize = () => {
+      const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+      if (!container) return;
+
+      const currentWidth = container.clientWidth || container.offsetWidth;
+      const currentHeight = container.clientHeight || container.offsetHeight;
+
+      // Transient zero-height / zero-width guard:
+      // If the sidebar is mid-animation and height or width is 0, do NOT invalidate size
+      // as it causes Leaflet/Mapbox to calculate an empty tile grid and flash white.
+      if (currentWidth <= 0 || currentHeight <= 0) {
+        // Defer until the container dimension recovers in a subsequent frame
+        cancelPendingWork();
+        rafIdRef.current = requestAnimationFrame(() => {
+          performMapResize();
+        });
+        return;
+      }
+
+      // Record valid dimensions
+      lastValidDimensionsRef.current = { width: currentWidth, height: currentHeight };
+
+      try {
+        const centerBeforeResize = map.getCenter();
+        const zoomBeforeResize = map.getZoom();
+
+        map.invalidateSize();
+
+        if (centerBeforeResize) {
+          map.setView(centerBeforeResize, zoomBeforeResize, { animate: false });
+        }
+      } catch (err) {
+        // Safe fallback if map is in transient unmount state
+      }
+    };
 
     const handleResize = () => {
-      clearTimeout(timer);
-      const centerBeforeResize = map.getCenter();
+      cancelPendingWork();
+
+      const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+      if (container) {
+        const w = container.clientWidth || container.offsetWidth;
+        const h = container.clientHeight || container.offsetHeight;
+
+        // If dimensions are non-zero, record immediately to keep baseline stable
+        if (w > 0 && h > 0) {
+          lastValidDimensionsRef.current = { width: w, height: h };
+        } else {
+          // In transient zero-height measurement during rapid toggle:
+          // Maintain map container stability by skipping premature invalidateSize
+          // and scheduling recovery once layout settles.
+          rafIdRef.current = requestAnimationFrame(() => {
+            handleResize();
+          });
+          return;
+        }
+      }
 
       timer = setTimeout(() => {
-        map.invalidateSize();
-        map.setView(centerBeforeResize, map.getZoom(), { animate: false });
+        performMapResize();
       }, delay);
     };
+
+    // Attach ResizeObserver to the map container element for sidebar width shifts
+    let resizeObserver: ResizeObserver | null = null;
+    const container = typeof map.getContainer === "function" ? map.getContainer() : null;
+
+    if (container && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver((entries) => {
+        if (!entries || entries.length === 0) {
+          handleResize();
+          return;
+        }
+
+        const entry = entries[0];
+        const cr = entry.contentRect;
+        const width = cr ? cr.width : (entry.target as HTMLElement).clientWidth;
+        const height = cr ? cr.height : (entry.target as HTMLElement).clientHeight;
+
+        // Ignore transient zero-height or zero-width frames during sidebar toggle animations
+        if (width <= 0 || height <= 0) {
+          cancelPendingWork();
+          rafIdRef.current = requestAnimationFrame(() => {
+            handleResize();
+          });
+          return;
+        }
+
+        handleResize();
+      });
+
+      resizeObserver.observe(container);
+    }
 
     window.addEventListener("resize", handleResize);
 
     return () => {
-      clearTimeout(timer);
+      cancelPendingWork();
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       window.removeEventListener("resize", handleResize);
     };
   }, [map, delay]);
@@ -582,8 +765,8 @@ export const ClusterMarkerComponent = memo(function ClusterMarkerComponent({
 export interface MapProps {
   location: { latitude: number; longitude: number };
   markers: MapMarker[];
-  routes: MapRoute[];
-  mapView: MapView | null;
+  routes?: MapRoute[];
+  mapView?: MapView | null;
   roomId?: string | null;
   initialHighContrast?: boolean;
   highContrast?: boolean;
@@ -596,13 +779,19 @@ export interface MapProps {
   selectedVenueId?: string | null;
   onBookVenue?: (venue: MapMarker) => void;
   onGetDirections?: (venue: MapMarker) => void;
+  initialRoutingQueue?: Array<{
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 const Map = ({
   location,
-  markers,
-  routes,
-  mapView,
+  markers = [],
+  routes = [],
+  mapView = null,
   roomId,
   initialHighContrast = false,
   highContrast: controlledHighContrast,
@@ -615,6 +804,7 @@ const Map = ({
   selectedVenueId,
   onBookVenue,
   onGetDirections,
+  initialRoutingQueue = [],
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -738,8 +928,13 @@ const Map = ({
   // =========================================================================
   // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
   // =========================================================================
-  const [routingQueue, setRoutingQueue] = useState<any[]>([]);
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
+  const [showForecastControls, setShowForecastControls] = useState(false);
+  const [routingQueue, setRoutingQueue] = useState<any[]>(initialRoutingQueue);
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
+  const [isRoutingLoading, setIsRoutingLoading] = useState<boolean>(false);
+  const [routingError, setRoutingError] = useState<string | null>(null);
+  const routingRequestIdRef = useRef<number>(0);
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
@@ -769,15 +964,49 @@ const Map = ({
     }
   }, [markers, selectedMarkerId, handleSelectMarker]);
 
+  // Global keydown handler for map shortcuts (Esc to deselect, F to toggle filters, ? to toggle legend)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (isEditableElement(e.target) || isEditableElement(document.activeElement)) {
+        return;
+      }
+
+      if (e.key === "Escape") {
+        if (isLegendOpen) {
+          setIsLegendOpen(false);
+        } else if (selectedMarkerId) {
+          handleSelectMarker(null);
+        }
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        setShowForecastControls((prev) => !prev);
+      } else if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        e.preventDefault();
+        setIsLegendOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isLegendOpen, selectedMarkerId, handleSelectMarker]);
+
   const activeVenueForDrawer = useMemo(() => {
     if (!selectedMarkerId) return null;
     return markers.find((m) => m.id === selectedMarkerId) || null;
   }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
-  const calculateOptimizedRoute = async (venuesList = routingQueue) => {
+  const calculateOptimizedRoute = async (
+    venuesList = routingQueue,
+    profile = travelProfile,
+  ) => {
+    const requestId = ++routingRequestIdRef.current;
+
     if (venuesList.length < 2) {
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError(null);
       return;
     }
 
@@ -794,6 +1023,8 @@ const Map = ({
 
     if (dedupedList.length < 2) {
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError(null);
       return;
     }
 
@@ -816,6 +1047,8 @@ const Map = ({
     if (validList.length < 2) {
       console.warn("[OSRM] Not enough valid coordinates for routing");
       setOptimizedRoute(null);
+      setIsRoutingLoading(false);
+      setRoutingError("Not enough valid coordinates to calculate route");
       return;
     }
 
@@ -824,18 +1057,26 @@ const Map = ({
       .join(";");
 
     const osrmProfile =
-      travelProfile === "walking"
+      profile === "walking"
         ? "foot"
-        : travelProfile === "cycling"
+        : profile === "cycling"
           ? "bicycle"
           : "driving";
     const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
+
+    setIsRoutingLoading(true);
+    setRoutingError(null);
 
     try {
       const response = await fetch(url);
       const data = await response.json();
 
-      if (data.code === "Ok") {
+      // Guard against stale overlapping asynchronous responses
+      if (requestId !== routingRequestIdRef.current) {
+        return;
+      }
+
+      if (data.code === "Ok" && data.routes && data.routes.length > 0) {
         const coords = data.routes[0].geometry.coordinates;
         const hasElevation = coords.some(
           (c: any[]) =>
@@ -856,9 +1097,21 @@ const Map = ({
           legs: data.routes[0].legs,
           elevationProfile,
         });
+        setRoutingError(null);
+      } else {
+        setOptimizedRoute(null);
+        setRoutingError(data.message || "Unable to find route between waypoints");
       }
     } catch (error) {
-      console.error("OSRM Multi-Stop routing resolution failed:", error);
+      if (requestId === routingRequestIdRef.current) {
+        console.error("OSRM Multi-Stop routing resolution failed:", error);
+        setOptimizedRoute(null);
+        setRoutingError("Failed to calculate route. Please try again.");
+      }
+    } finally {
+      if (requestId === routingRequestIdRef.current) {
+        setIsRoutingLoading(false);
+      }
     }
   };
 
@@ -1097,6 +1350,7 @@ const Map = ({
           border-radius: 12px;
           position: relative;
           z-index: 20;
+          background: #0B0F17 !important;
         }
         
         /* UPDATED: Target map tiles specifically so they don't hide the heatmap canvas */
@@ -1438,59 +1692,89 @@ const Map = ({
         style={{
           width: "95%",
           height: "95%",
+          minHeight: "200px",
+          minWidth: "200px",
           borderRadius: "12px",
           position: "relative",
           zIndex: 20,
         }}
       >
         <ScaleControl position="bottomleft" metric={true} imperial={false} />
-        <ResetMapViewControl center={center} />
+        <MapNavigationControls
+          center={center}
+          isLegendOpen={isLegendOpen}
+          onOpenLegend={() => setIsLegendOpen(true)}
+          onCloseLegend={() => setIsLegendOpen(false)}
+        />
 
-        {/* Map Control Options: High-Contrast Mode Toggle (WCAG 2.1 AA) */}
-        <div className="map-accessibility-controls absolute top-3 left-16 z-[1000]">
+        {/* Map Control Options: High-Contrast Mode Toggle (WCAG 2.1 AA) and Filter Toggle */}
+        <div className="map-accessibility-controls absolute top-3 left-16 z-[1000] flex items-center gap-2">
           <button
             type="button"
             role="switch"
             aria-checked={isHighContrast}
             aria-label="Toggle high-contrast mode"
             onClick={toggleHighContrast}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${
-              isHighContrast
-                ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
-                : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
-            }`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${isHighContrast
+              ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
+              : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              }`}
           >
             <Contrast className="w-3.5 h-3.5 text-current" />
             <span>High Contrast</span>
           </button>
+
+          <ShortcutTooltip
+            content="Toggle forecast filters"
+            shortcut="F"
+            withModifier={false}
+            position="bottom"
+          >
+            <button
+              type="button"
+              aria-label="Toggle venue filters"
+              aria-expanded={showForecastControls}
+              data-testid="map-toggle-filters-button"
+              onClick={() => setShowForecastControls((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${
+                showForecastControls
+                  ? "bg-blue-600 text-white border-blue-500 ring-2 ring-blue-400"
+                  : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+              }`}
+            >
+              <span>Filters</span>
+            </button>
+          </ShortcutTooltip>
         </div>
         {/* Forecast selector UI */}
-        <div className="map-forecast-controls">
-          <label htmlFor="day-select">Day</label>
-          <select
-            id="day-select"
-            value={selectedDay}
-            onChange={(e) => setSelectedDay(parseInt(e.target.value))}
-          >
-            <option value={0}>Sunday</option>
-            <option value={1}>Monday</option>
-            <option value={2}>Tuesday</option>
-            <option value={3}>Wednesday</option>
-            <option value={4}>Thursday</option>
-            <option value={5}>Friday</option>
-            <option value={6}>Saturday</option>
-          </select>
-          <label htmlFor="hour-range">Hour</label>
-          <input
-            id="hour-range"
-            type="range"
-            min={0}
-            max={23}
-            value={selectedHour}
-            onChange={(e) => setSelectedHour(parseInt(e.target.value))}
-          />
-          <span>{selectedHour}:00</span>
-        </div>
+        {showForecastControls && (
+          <div className="map-forecast-controls" data-testid="map-forecast-controls">
+            <label htmlFor="day-select">Day</label>
+            <select
+              id="day-select"
+              value={selectedDay}
+              onChange={(e) => setSelectedDay(parseInt(e.target.value))}
+            >
+              <option value={0}>Sunday</option>
+              <option value={1}>Monday</option>
+              <option value={2}>Tuesday</option>
+              <option value={3}>Wednesday</option>
+              <option value={4}>Thursday</option>
+              <option value={5}>Friday</option>
+              <option value={6}>Saturday</option>
+            </select>
+            <label htmlFor="hour-range">Hour</label>
+            <input
+              id="hour-range"
+              type="range"
+              min={0}
+              max={23}
+              value={selectedHour}
+              onChange={(e) => setSelectedHour(parseInt(e.target.value))}
+            />
+            <span>{selectedHour}:00</span>
+          </div>
+        )}
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer
@@ -1601,16 +1885,29 @@ const Map = ({
           onClearQueue={() => {
             setRoutingQueue([]);
             setOptimizedRoute(null);
+            setIsRoutingLoading(false);
+            setRoutingError(null);
           }}
           onRemoveVenue={(idx) => {
             const updated = routingQueue.filter((_, i) => i !== idx);
             setRoutingQueue(updated);
             calculateOptimizedRoute(updated);
           }}
+          onReorderWaypoints={(newQueue) => {
+            setRoutingQueue(newQueue);
+            calculateOptimizedRoute(newQueue);
+          }}
           travelProfile={travelProfile}
-          onTravelProfileChange={(mode) => setTravelProfile(mode)}
+          onTravelProfileChange={(mode) => {
+            setTravelProfile(mode);
+            if (routingQueue.length >= 2) {
+              calculateOptimizedRoute(routingQueue, mode);
+            }
+          }}
           onCalculateRoute={() => calculateOptimizedRoute()}
           optimizedRoute={optimizedRoute}
+          isLoading={isRoutingLoading}
+          routingError={routingError}
         />
       </MapContainer>
 

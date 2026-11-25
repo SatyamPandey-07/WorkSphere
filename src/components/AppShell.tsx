@@ -30,9 +30,12 @@ export function AppShell({
     >
       <CosmosBackground enabled={showCosmosBackground} />
       <TopNav />
-      <main id="main-content" className="relative z-10 flex-1">
+      <div
+        data-testid="app-shell-content"
+        className="relative z-10 flex-1"
+      >
         {children}
-      </main>
+      </div>
     </div>
   );
 }

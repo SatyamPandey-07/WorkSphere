@@ -5,11 +5,12 @@
 Cross-Site Request Forgery (CSRF) and session hijacking are primary attack vectors against web applications managing stateful user sessions. WorkSphere processes financial reservations, workspace access passes, confidential community notes, and administrative permissions; securing mutating operations against unauthorized cross-origin execution is paramount.
 
 WorkSphere implements a defense-in-depth security model that combines:
+
 1. **Edge-Safe Signed Double-Submit Cookie Pattern:** Eliminates CSRF vulnerabilities using cryptographically signed tokens verified via Web Crypto HMAC-SHA256 in Next.js Edge Middleware.
 2. **Hardened Cookie Policy:** Enforces modern browser cookie protections (`SameSite`, `HttpOnly`, `Secure`, and `__Host-` prefix semantics) across production domains.
-3. **Sliding Session Token Families with Theft Detection:** Couples short-lived access JWTs with rotating refresh token families that detect replay attacks and automatically revoke compromised token trees.
+3. **Clerk-Native Session Lifecycle Management:** Leverages Clerk's distributed session infrastructure for token rotation, idle session tracking (`session.touch()`), and secure sign-out.
 
-The security subsystem is implemented across [`src/lib/csrf.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/csrf.ts), [`src/lib/middleware/handlers/csrfHandler.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/middleware/handlers/csrfHandler.ts), [`src/lib/auth/sessionTokens.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/auth/sessionTokens.ts), [`src/hooks/useCsrfToken.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useCsrfToken.ts), and [`src/lib/apiClient.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/apiClient.ts).
+The security subsystem is implemented across [`src/lib/csrf.ts`](../../src/lib/csrf.ts), [`src/lib/middleware/handlers/csrfHandler.ts`](../../src/lib/middleware/handlers/csrfHandler.ts), [`src/hooks/useIdleSession.ts`](../../src/hooks/useIdleSession.ts), [`src/hooks/useCsrfToken.ts`](../../src/hooks/useCsrfToken.ts), and [`src/lib/apiClient.ts`](../../src/lib/apiClient.ts).
 
 ```mermaid
 flowchart TD
@@ -27,13 +28,13 @@ flowchart TD
 
     subgraph Backend ["API & Session Layer"]
         ApiRoute["API Route Handler"]
-        SessionMgr["sessionTokens.ts (Rotation & Reuse Detection)"]
+        SessionMgr["Clerk Native Session Management"]
     end
 
     ClientApp -->|1. Initial Load: GET /api/auth/csrf-token| Edge
     Edge -->|Set-Cookie: csrf_token=raw.sig (HttpOnly)| CookieJar
     Edge -->|Response JSON: { csrfToken: raw }| ClientApp
-    
+
     ClientApp -->|2. Mutating Request (POST/PUT/DELETE)| RouteFilter
     CookieJar -.->|Cookie: csrf_token=raw.sig| RouteFilter
     ClientApp -->|Header: x-csrf-token=raw| RouteFilter
@@ -57,6 +58,7 @@ flowchart TD
 ### 2.1 The Cross-Site Request Forgery (CSRF) Threat
 
 In a standard CSRF attack:
+
 1. An authenticated WorkSphere user visits a malicious website (`https://evil-attacker.com`) in the same browser session.
 2. The malicious site executes a hidden background request (via `<form>`, `fetch()`, or `<img>`) targeting a mutating WorkSphere endpoint (e.g., `POST https://worksphere.app/api/bookings/cancel`).
 3. Because browsers automatically attach ambient credentials (session cookies) to cross-origin requests targeting `worksphere.app`, the server interprets the request as legitimate and cancels the user's booking.
@@ -64,16 +66,18 @@ In a standard CSRF attack:
 ### 2.2 Why `SameSite` Cookies Alone Are Insufficient
 
 While `SameSite=Lax` or `SameSite=Strict` provides baseline defense in modern browsers:
-* **Legacy Browsers & Mobile WebViews:** Older mobile embedded browsers or enterprise clients may fail to enforce `SameSite`.
-* **Top-Level GET Navigation Transitions:** `SameSite=Lax` permits cookies on top-level cross-site navigations (e.g., clicking an external link), exposing endpoints that improperly allow state mutations via GET.
-* **Subdomain Vulnerabilities:** An attacker who compromises a development subdomain or subsidiary domain (`vulnerable.worksphere.app`) can forge or overwrite cookies targeting the parent domain.
+
+- **Legacy Browsers & Mobile WebViews:** Older mobile embedded browsers or enterprise clients may fail to enforce `SameSite`.
+- **Top-Level GET Navigation Transitions:** `SameSite=Lax` permits cookies on top-level cross-site navigations (e.g., clicking an external link), exposing endpoints that improperly allow state mutations via GET.
+- **Subdomain Vulnerabilities:** An attacker who compromises a development subdomain or subsidiary domain (`vulnerable.worksphere.app`) can forge or overwrite cookies targeting the parent domain.
 
 ### 2.3 The Flaw in Naive Double-Submit Cookies vs. WorkSphere's Signed Solution
 
 In a **naive** double-submit cookie architecture:
-* The server sets an unsigned random cookie `csrf_token=xyz`.
-* The client echoes `x-csrf-token: xyz`.
-* The server simply checks if `cookie === header`.
+
+- The server sets an unsigned random cookie `csrf_token=xyz`.
+- The client echoes `x-csrf-token: xyz`.
+- The server simply checks if `cookie === header`.
 
 **The Attack Vector:** If an attacker can inject a cookie via a sibling subdomain or HTTP header injection, they can set `csrf_token=evil_token` and send `x-csrf-token: evil_token`. Because both values match, the naive check passes.
 
@@ -88,7 +92,7 @@ An attacker on a compromised subdomain can inject arbitrary text, but cannot for
 
 ### 3.1 Web Crypto API Architecture (Edge Runtime Safe)
 
-WorkSphere executes in both Node.js server environments and Next.js Edge Middleware runtimes (Cloudflare Workers / Vercel Edge). The signing implementation in [`src/lib/csrf.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/csrf.ts) strictly utilizes the standard W3C **Web Crypto API** (`crypto.subtle`) rather than Node.js `crypto`:
+WorkSphere executes in both Node.js server environments and Next.js Edge Middleware runtimes (Cloudflare Workers / Vercel Edge). The signing implementation in [`src/lib/csrf.ts`](../../src/lib/csrf.ts) strictly utilizes the standard W3C **Web Crypto API** (`crypto.subtle`) rather than Node.js `crypto`:
 
 ```typescript
 const ENCODER = new TextEncoder();
@@ -99,12 +103,12 @@ async function hmacSign(raw: string, secret: string): Promise<string> {
     ENCODER.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
   const signatureBuffer = await crypto.subtle.sign(
     "HMAC",
     key,
-    ENCODER.encode(raw)
+    ENCODER.encode(raw),
   );
   return base64UrlEncode(new Uint8Array(signatureBuffer));
 }
@@ -140,7 +144,7 @@ function getSecret(): string {
   if (!secret) {
     if (process.env.NODE_ENV === "production") {
       throw new Error(
-        "CSRF_SECRET (or CLERK_SECRET_KEY) must be set in production to sign CSRF tokens."
+        "CSRF_SECRET (or CLERK_SECRET_KEY) must be set in production to sign CSRF tokens.",
       );
     }
     return "insecure-development-only-csrf-secret";
@@ -157,12 +161,12 @@ In production, missing secrets crash fast at startup rather than defaulting to w
 
 ### 4.1 Token Verification Algorithm
 
-On mutating requests, [`verifyCsrfToken`](file:///c:/Users/admin/Desktop/workfere/src/lib/csrf.ts) executes three sequential checks:
+On mutating requests, [`verifyCsrfToken`](../../src/lib/csrf.ts) executes three sequential checks:
 
 ```typescript
 export async function verifyCsrfToken(
   cookieValue: string | undefined | null,
-  headerValue: string | undefined | null
+  headerValue: string | undefined | null,
 ): Promise<boolean> {
   if (!cookieValue || !headerValue) return false;
 
@@ -186,8 +190,14 @@ export async function verifyCsrfToken(
 ### 4.2 Mutating Methods & Route Enforcement
 
 WorkSphere monitors all state-mutating HTTP verbs:
+
 ```typescript
-export const CSRF_PROTECTED_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+export const CSRF_PROTECTED_METHODS = new Set([
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+]);
 ```
 
 `GET`, `HEAD`, and `OPTIONS` are deemed safe from CSRF according to RFC 7231 Section 4.2.1. When a client performs a safe request without an existing cookie, the middleware auto-provisions a signed CSRF cookie so the user is primed for subsequent mutating interactions.
@@ -195,9 +205,10 @@ export const CSRF_PROTECTED_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]
 ### 4.3 Route Exemption Handling
 
 Certain endpoints cannot provide standard double-submit headers:
-* External incoming webhooks (e.g., Stripe, WhatsApp, Twilio) that authenticate via HMAC request signatures.
-* Server-Sent Events (SSE) telemetry streams.
-* OpenID Connect / OAuth callbacks.
+
+- External incoming webhooks (e.g., Stripe, WhatsApp, Twilio) that authenticate via HMAC request signatures.
+- Server-Sent Events (SSE) telemetry streams.
+- OpenID Connect / OAuth callbacks.
 
 These paths are declared in `src/lib/middleware/routes.ts` via `isCsrfExemptRoute(req)` and authenticated via alternative cryptographic mechanisms.
 
@@ -207,19 +218,19 @@ These paths are declared in `src/lib/middleware/routes.ts` via `isCsrfExemptRout
 
 The CSRF cookie and session cookies are configured with strict browser security attributes:
 
-| Cookie Attribute | Configuration | Security Objective |
-| :--- | :--- | :--- |
-| **`HttpOnly`** | `true` | Prevents malicious client-side JavaScript (e.g., from an XSS flaw) from reading the signed cookie string. |
-| **`Secure`** | `process.env.NODE_ENV === "production"` | Restricts cookie transmission exclusively to encrypted HTTPS connections, preventing plaintext sniffing on untrusted Wi-Fi. |
-| **`SameSite`** | `Lax` (CSRF) / `Strict` (Auth) | Restricts cross-site cookie attachment. `Strict` blocks cookie transmission on all external cross-site navigations. |
-| **`Path`** | `/` | Scopes cookie availability to all application routes while preventing leakage outside the origin. |
-| **Prefix Hardening** | `__Host-` prefix recommendations | Prevents subdomains from writing or overwriting cookies on the apex domain. |
+| Cookie Attribute     | Configuration                           | Security Objective                                                                                                          |
+| :------------------- | :-------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------- |
+| **`HttpOnly`**       | `true`                                  | Prevents malicious client-side JavaScript (e.g., from an XSS flaw) from reading the signed cookie string.                   |
+| **`Secure`**         | `process.env.NODE_ENV === "production"` | Restricts cookie transmission exclusively to encrypted HTTPS connections, preventing plaintext sniffing on untrusted Wi-Fi. |
+| **`SameSite`**       | `Lax` (CSRF) / `Strict` (Auth)          | Restricts cross-site cookie attachment. `Strict` blocks cookie transmission on all external cross-site navigations.         |
+| **`Path`**           | `/`                                     | Scopes cookie availability to all application routes while preventing leakage outside the origin.                           |
+| **Prefix Hardening** | `__Host-` prefix recommendations        | Prevents subdomains from writing or overwriting cookies on the apex domain.                                                 |
 
 ---
 
-## 6. Sliding Session Tokens & Replay Attack Mitigation
+## 6. Session Lifecycle & Clerk-Native Token Management
 
-Beyond CSRF, session tokens require protection against token theft and re-use. WorkSphere implements **Rotating Refresh Token Families** in [`src/lib/auth/sessionTokens.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/auth/sessionTokens.ts).
+Beyond CSRF, session tokens require protection against token theft and re-use. WorkSphere delegates session lifecycle and rotation natively to **Clerk**, retiring legacy in-memory token-family stores.
 
 ### 6.1 Token Lifespan Matrix
 
@@ -240,8 +251,8 @@ gantt
     Sliding Refresh Token (7 Days) :0, 604800
 ```
 
-* **Access Token:** Short-lived JWT (15 minutes). Contains user identity (`sub`), email, and roles. Kept in memory or short-lived cookie.
-* **Refresh Token:** Long-lived sliding token (7 days). Stored in `worksphere_refresh_token` (`HttpOnly`, `SameSite=Strict`, `Secure`).
+- **Access Token:** Short-lived JWT (15 minutes). Contains user identity (`sub`), email, and roles. Kept in memory or short-lived cookie.
+- **Refresh Token:** Long-lived sliding token (7 days). Stored in `worksphere_refresh_token` (`HttpOnly`, `SameSite=Strict`, `Secure`).
 
 ### 6.2 Token Family Rotation & Replay Attack Detection
 
@@ -265,7 +276,7 @@ sequenceDiagram
     Note over Server: REUSE DETECTED!
     Server->>Server: Invalidate Entire Token Family (Revoked = true)
     Server-->>Attacker: 401 Unauthorized (REUSE_DETECTED)
-    
+
     User->>Server: Next request with Refresh Token v2
     Server-->>User: 401 Unauthorized (Family Revoked)
     Note over User: User forced to log in again with MFA/Passkey
@@ -291,7 +302,11 @@ export async function rotateRefreshToken(
   }
 
   // ── REUSE DETECTION: Replay Attack Defense ────────────────────────────────
-  if (usedJtis.has(jti) || record.currentJti !== jti || record.version !== version) {
+  if (
+    usedJtis.has(jti) ||
+    record.currentJti !== jti ||
+    record.version !== version
+  ) {
     // Invalidate entire family immediately to neutralize the breach
     record.revoked = true;
     tokenFamilyStore.set(familyId, record);
@@ -338,7 +353,7 @@ export async function rotateRefreshToken(
 
 ### 7.1 React Hook: `useCsrfToken.ts`
 
-The [`useCsrfToken`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useCsrfToken.ts) hook provides a single source of truth for CSRF token availability:
+The [`useCsrfToken`](../../src/hooks/useCsrfToken.ts) hook provides a single source of truth for CSRF token availability:
 
 ```typescript
 export function useCsrfToken() {
@@ -403,7 +418,7 @@ import { issueCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 describe("CSRF Protection Unit Tests", () => {
   it("generates a valid signed token pair and verifies successfully", async () => {
     const { cookieValue, raw } = await issueCsrfToken();
-    
+
     expect(cookieValue).toContain(".");
     expect(raw).toBeDefined();
 
@@ -451,7 +466,7 @@ describe("Session Token Family Rotation", () => {
 
   it("detects replay attack when reusing an old refresh token", async () => {
     const initialToken = await generateRefreshToken("user-victim");
-    
+
     // Legitimate rotation
     const result1 = await rotateRefreshToken(initialToken);
     expect(result1.success).toBe(true);
@@ -481,7 +496,9 @@ describe("Session Token Family Rotation", () => {
 import { test, expect } from "@playwright/test";
 
 test.describe("Cross-Site CSRF Rejection E2E", () => {
-  test("rejects cross-origin POST without valid x-csrf-token", async ({ request }) => {
+  test("rejects cross-origin POST without valid x-csrf-token", async ({
+    request,
+  }) => {
     // Attempting state mutation with ambient cookie but missing header
     const response = await request.post("/api/bookings/cancel", {
       headers: {
@@ -516,10 +533,10 @@ Engineers must verify compliance with this checklist before merging authenticati
 
 ## 10. Operational Runbook & Troubleshooting Matrix
 
-| Issue | Root Cause | Remediation Procedure |
-| :--- | :--- | :--- |
-| **HTTP 403 CSRF validation failed** | Missing `x-csrf-token` header or tampered cookie signature. | Inspect request headers in browser network tab; verify `useCsrfToken` hook is initialized. |
-| **`CSRF_SECRET must be set in production` Error** | Missing environment variable in production deployment. | Set `CSRF_SECRET` or `CLERK_SECRET_KEY` in Vercel project environment settings. |
-| **`REUSE_DETECTED` Error during refresh** | Stolen refresh token replayed, or browser sent duplicate concurrent refresh requests. | Clear client session cookies and re-authenticate via `/sign-in`. Check for network race conditions. |
-| **Cookies missing in cross-site iframe** | `SameSite=Lax` or `Strict` prevents embedding in foreign iframes. | WorkSphere disallows iframe framing via `X-Frame-Options: DENY` and CSP `frame-ancestors 'none'`. |
-| **Subdomain Cookie Infiltration** | Sibling domain injecting unsigned cookie. | Handled automatically: unsigned cookies fail HMAC signature verification. |
+| Issue                                             | Root Cause                                                                            | Remediation Procedure                                                                               |
+| :------------------------------------------------ | :------------------------------------------------------------------------------------ | :-------------------------------------------------------------------------------------------------- |
+| **HTTP 403 CSRF validation failed**               | Missing `x-csrf-token` header or tampered cookie signature.                           | Inspect request headers in browser network tab; verify `useCsrfToken` hook is initialized.          |
+| **`CSRF_SECRET must be set in production` Error** | Missing environment variable in production deployment.                                | Set `CSRF_SECRET` or `CLERK_SECRET_KEY` in Vercel project environment settings.                     |
+| **`REUSE_DETECTED` Error during refresh**         | Stolen refresh token replayed, or browser sent duplicate concurrent refresh requests. | Clear client session cookies and re-authenticate via `/sign-in`. Check for network race conditions. |
+| **Cookies missing in cross-site iframe**          | `SameSite=Lax` or `Strict` prevents embedding in foreign iframes.                     | WorkSphere disallows iframe framing via `X-Frame-Options: DENY` and CSP `frame-ancestors 'none'`.   |
+| **Subdomain Cookie Infiltration**                 | Sibling domain injecting unsigned cookie.                                             | Handled automatically: unsigned cookies fail HMAC signature verification.                           |

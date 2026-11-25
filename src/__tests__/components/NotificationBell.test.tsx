@@ -412,4 +412,51 @@ describe("NotificationBell Component (#685, #3429)", () => {
 
     jest.useRealTimers();
   });
+
+  it("rolls back optimistic notification removal and recovers count when dismiss API call fails", async () => {
+    const mockNotifications = [
+      {
+        id: "notif-fail-1",
+        title: "Rollback Alert",
+        body: "Testing dismiss rollback on failure",
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          notifications: mockNotifications,
+          unreadCount: 1,
+        }),
+      } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true }),
+      } as any)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: "Internal Server Error" }),
+      } as any);
+
+    render(<NotificationBell />);
+
+    await screen.findByText("1");
+
+    const bellBtn = screen.getByRole("button", {
+      name: "Open notifications menu",
+    });
+    fireEvent.click(bellBtn);
+
+    const dismissBtn = await screen.findByTitle("Dismiss");
+    fireEvent.click(dismissBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Rollback Alert")).toBeInTheDocument();
+    });
+  });
 });

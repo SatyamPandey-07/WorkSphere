@@ -1,6 +1,7 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import {
+  calculateIndoorAirQualityScore,
   VenueHeaderSection,
   VenueDescriptionAndHostCard,
   VenueActionButtons,
@@ -62,7 +63,8 @@ describe("VenueHeaderSection Component Suite", () => {
     hasOutlets: true,
     isClaimed: true,
     hostMessage: "Welcome digital nomads! Fiber optic WiFi on floor 2.",
-    description: "Quiet cafe workspace with natural sunlight and artisanal espresso.",
+    description:
+      "Quiet cafe workspace with natural sunlight and artisanal espresso.",
   };
 
   const defaultProps: VenueHeaderSectionProps = {
@@ -80,23 +82,7 @@ describe("VenueHeaderSection Component Suite", () => {
     isLibrary: false,
     quickSaveLoading: false,
     onQuickSave: jest.fn(),
-    selectedVenueLang: "EN",
-    onSelectVenueLang: jest.fn(),
-    isTranslatingDesc: false,
-    descTranslationError: null,
-    translatedDescription: "",
-    onGetDirections: jest.fn(),
-    onToggleFavorite: jest.fn(),
-    isFavorited: false,
     enableTransition: false,
-    onRate: jest.fn(),
-    showFlagMenu: false,
-    setShowFlagMenu: jest.fn(),
-    flagSubmitting: false,
-    flagSubmitted: false,
-    onSubmitFlag: jest.fn(),
-    copied: false,
-    onShare: jest.fn(),
   };
 
   beforeEach(() => {
@@ -104,18 +90,104 @@ describe("VenueHeaderSection Component Suite", () => {
   });
 
   describe("VenueHeaderSection Header, Banners & Tabs", () => {
-    it("renders gracefully with undefined or null voteMetrics without crashing", () => {
-      render(
-        <VenueHeaderSection
-          {...defaultProps}
-          voteMetrics={undefined}
-        />,
+    it("shows calibrating without sensor data, updates reactively, and exposes pollutant details", () => {
+      const { rerender } = render(
+        <VenueHeaderSection {...defaultProps} airQuality={null} />,
       );
 
+      expect(screen.getByTestId("air-quality-calibrating")).toHaveTextContent(
+        "Sensors Calibrating",
+      );
+
+      const reading = {
+        co2: 450,
+        pm25: 6,
+        tvoc: 80,
+        timestamp: "2026-11-18T15:00:00.000Z",
+      };
+      rerender(<VenueHeaderSection {...defaultProps} airQuality={reading} />);
+
+      expect(screen.getByTestId("air-quality-badge")).toHaveTextContent(
+        "AQI 28 · Good",
+      );
+      fireEvent.mouseEnter(screen.getByTestId("air-quality-badge"));
+      expect(screen.getByTestId("air-quality-tooltip")).toHaveTextContent(
+        "CO₂: 28 (450 ppm)",
+      );
+      expect(screen.getByTestId("air-quality-tooltip")).toHaveTextContent(
+        "PM2.5: 25 (6 µg/m³)",
+      );
+      expect(screen.getByTestId("air-quality-tooltip")).toHaveTextContent(
+        "TVOC: 18 (80 ppb)",
+      );
+      expect(screen.getByTestId("air-quality-tooltip")).toHaveTextContent(
+        "Sensor timestamp: 2026-11-18T15:00:00.000Z",
+      );
+      expect(screen.getByTestId("air-quality-tooltip")).toHaveClass(
+        "max-w-[calc(100vw-3rem)]",
+      );
       expect(
-        screen.getByText("Artisan Roasters & Cowork"),
-      ).toBeInTheDocument();
-      expect(screen.queryByTestId("wifi-warning-banner")).not.toBeInTheDocument();
+        screen.getByTestId("air-quality-badge").parentElement?.parentElement,
+      ).toHaveClass("flex-wrap");
+
+      rerender(
+        <VenueHeaderSection
+          {...defaultProps}
+          airQuality={{
+            ...reading,
+            co2: 1800,
+            timestamp: "2026-11-18T15:00:15.000Z",
+          }}
+        />,
+      );
+      expect(screen.getByTestId("air-quality-badge")).toHaveTextContent(
+        "AQI 250 · Action Required",
+      );
+
+      rerender(<VenueHeaderSection {...defaultProps} airQuality={null} />);
+      expect(screen.getByTestId("air-quality-calibrating")).toBeInTheDocument();
+    });
+
+    it("uses the requested green, yellow, orange, and red AQI bands", () => {
+      const score = (co2: number, pm25 = 0, tvoc = 0) =>
+        calculateIndoorAirQualityScore({
+          co2,
+          pm25,
+          tvoc,
+          timestamp: "2026-11-18T15:00:00.000Z",
+        });
+
+      expect(score(800)).toMatchObject({
+        overall: 50,
+        label: "Good",
+        colorClass: expect.stringContaining("emerald"),
+      });
+      expect(score(804)).toMatchObject({
+        overall: 51,
+        label: "Moderate",
+        colorClass: expect.stringContaining("yellow"),
+      });
+      expect(score(1400)).toMatchObject({
+        overall: 150,
+        label: "Action Required",
+        colorClass: expect.stringContaining("orange"),
+      });
+      expect(score(1404)).toMatchObject({
+        overall: 151,
+        label: "Action Required",
+        colorClass: expect.stringContaining("rose"),
+      });
+      expect(score(450, 55.4).overall).toBe(150);
+      expect(score(450, 0, 2000).overall).toBe(201);
+    });
+
+    it("renders gracefully with undefined or null voteMetrics without crashing", () => {
+      render(<VenueHeaderSection {...defaultProps} voteMetrics={undefined} />);
+
+      expect(screen.getByText("Artisan Roasters & Cowork")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("wifi-warning-banner"),
+      ).not.toBeInTheDocument();
     });
 
     it("renders community warning banners when metrics are flagged as hidden/low-confidence", () => {
@@ -137,18 +209,17 @@ describe("VenueHeaderSection Component Suite", () => {
 
       expect(screen.getByTestId("wifi-warning-banner")).toBeInTheDocument();
       expect(screen.getByTestId("outlets-warning-banner")).toBeInTheDocument();
-      expect(screen.getByTestId("silent-room-warning-banner")).toBeInTheDocument();
-      expect(screen.getByTestId("study-table-warning-banner")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("silent-room-warning-banner"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("study-table-warning-banner"),
+      ).toBeInTheDocument();
       expect(screen.getByTestId("scanner-warning-banner")).toBeInTheDocument();
     });
 
     it("renders loading skeleton when photoLoading is true", () => {
-      render(
-        <VenueHeaderSection
-          {...defaultProps}
-          photoLoading={true}
-        />,
-      );
+      render(<VenueHeaderSection {...defaultProps} photoLoading={true} />);
 
       expect(screen.getByTestId("photo-loading-skeleton")).toBeInTheDocument();
       expect(screen.queryByTestId("cover-photo-img")).not.toBeInTheDocument();
@@ -352,7 +423,9 @@ describe("VenueHeaderSection Component Suite", () => {
         />,
       );
 
-      expect(screen.queryByTestId("flag-menu-dropdown")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("flag-menu-dropdown"),
+      ).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId("flag-menu-btn"));
       expect(setShowFlagMenu).toHaveBeenCalledTimes(1);

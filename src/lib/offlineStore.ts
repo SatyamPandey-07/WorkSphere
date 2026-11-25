@@ -6,17 +6,25 @@
 export { withWebLock, LockTimeoutError, type WebLockOptions } from "./webLock";
 import { withWebLock } from "./webLock";
 import { syncQueueManager } from "./offline/SyncQueueManager";
+import {
+  openDatabaseWithMigration,
+  isConnectionValid,
+} from "./offline/migrationCoordinator";
+import { MigrationError } from "./offline/migrations/types";
 
 // Register checkin handler with consolidated SyncQueueManager
 syncQueueManager.registerHandler("checkin", async (item) => {
   const payload = item.payload as { venueId: string };
   if (!payload?.venueId) return;
 
-  const res = await fetch(`/api/venues/${encodeURIComponent(payload.venueId)}/check-in`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ timestamp: item.timestamp }),
-  });
+  const res = await fetch(
+    `/api/venues/${encodeURIComponent(payload.venueId)}/check-in`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp: item.timestamp }),
+    },
+  );
   if (!res.ok) {
     throw new Error(`Check-in sync failed: ${res.statusText}`);
   }
@@ -24,14 +32,21 @@ syncQueueManager.registerHandler("checkin", async (item) => {
 
 // Register amenity_vote handler with consolidated SyncQueueManager
 syncQueueManager.registerHandler("amenity_vote", async (item) => {
-  const payload = item.payload as { venueId: string; amenityId?: string; vote?: number };
+  const payload = item.payload as {
+    venueId: string;
+    amenityId?: string;
+    vote?: number;
+  };
   if (!payload?.venueId) return;
 
-  const res = await fetch(`/api/venues/${encodeURIComponent(payload.venueId)}/amenity-votes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const res = await fetch(
+    `/api/venues/${encodeURIComponent(payload.venueId)}/amenity-votes`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
   if (!res.ok) {
     throw new Error(`Amenity vote sync failed: ${res.statusText}`);
   }
@@ -56,6 +71,7 @@ export interface OfflineAction {
 export interface OfflineCheckIn {
   id?: number;
   venueId: string;
+  seatId?: string;
   timestamp: number;
   retryCount?: number;
 }
@@ -114,10 +130,11 @@ export function getDB(): Promise<IDBDatabase> {
     );
   }
 
-  // Fast path — return the already-open connection immediately.
-  if (dbInstance !== null) {
+  // Fast path — return the already-open connection immediately if still valid.
+  if (dbInstance !== null && isConnectionValid(dbInstance)) {
     return Promise.resolve(dbInstance);
   }
+  dbInstance = null;
 
   // In-flight path — a previous caller already issued indexedDB.open();
   // share that same Promise instead of opening a second connection.
@@ -125,138 +142,38 @@ export function getDB(): Promise<IDBDatabase> {
     return dbPromise;
   }
 
-  // Slow path — first caller: open the database and cache the Promise.
-  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-    let settled = false;
-    const timeoutId = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        dbInstance = null;
-        dbPromise = null;
-        console.warn("[OfflineStore] IndexedDB open timed out (likely Safari Private Browsing)");
-        reject(new DOMException("IndexedDB open timed out", "SecurityError"));
-      }
-    }, 3000);
-
-    try {
-      const request = indexedDB.open(DB_NAME, 3);
-
-      request.onblocked = () => {
-        console.warn("[OfflineStore] Database upgrade blocked by open connection, closing inactive connections");
-        if (dbInstance) {
-          try {
-            dbInstance.close();
-          } catch {
-            // ignore
-          }
-          dbInstance = null;
-          dbPromise = null;
-        }
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-
-        if (transaction) {
-          transaction.onabort = (e) => {
-            console.warn("[OfflineStore] Upgrade transaction aborted", transaction.error || e);
-          };
-          transaction.onerror = (e) => {
-            console.warn("[OfflineStore] Upgrade transaction error", transaction.error || e);
-          };
-        }
-
-        db.onversionchange = () => {
-          console.warn("[OfflineStore] Database version change during upgrade, closing connection gracefully");
-          try {
-            db.close();
-          } catch {
-            // ignore
-          }
-          dbInstance = null;
-          dbPromise = null;
-        };
-
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME, {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-        if (!db.objectStoreNames.contains(CHECKIN_STORE_NAME)) {
-          db.createObjectStore(CHECKIN_STORE_NAME, {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-        if (!db.objectStoreNames.contains(TAG_STORE_NAME)) {
-          db.createObjectStore(TAG_STORE_NAME, {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-      };
-
-      request.onsuccess = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeoutId);
-        const db = request.result;
-
-        // Handle external schema upgrades (e.g. another tab calling a higher
-        // DB version).  Close the stale connection and clear the singleton so
-        // the next getDB() call re-opens with the new version.
-        db.onversionchange = () => {
-          console.warn("[OfflineStore] Database version change detected, closing connection gracefully");
-          try {
-            db.close();
-          } catch {
-            // ignore
-          }
-          dbInstance = null;
-          dbPromise = null;
-        };
-
-        dbInstance = db;
-        dbPromise = null; // opening is complete; dbInstance is now the sole authority
-        resolve(db);
-      };
-
-      request.onerror = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeoutId);
-        // Clear both variables so the next getDB() call starts fresh.
-        if (dbInstance) {
-          try {
-            dbInstance.close();
-          } catch {
-            // ignore
-          }
-        }
-        dbInstance = null;
-        dbPromise = null;
-        const err = request.error || new Error("Unknown IndexedDB error");
-        if (err.name === "SecurityError") {
-          showPrivateBrowsingAlert();
-        } else if (err.name === "AbortError") {
-          console.warn("[OfflineStore] Transaction abort error during schema upgrade handled gracefully", err);
-        }
-        reject(err);
-      };
-    } catch (err: any) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
+  // Slow path — coordinate through the shared WorkSphereOfflineDB v3 migration registry.
+  dbPromise = openDatabaseWithMigration(DB_NAME, {
+    context: "page",
+    targetVersion: 3,
+    timeoutMs: 3000,
+    onVersionChange: () => {
+      console.warn(
+        "[OfflineStore] Database version change detected, closing connection gracefully",
+      );
       dbInstance = null;
       dbPromise = null;
-      if (err.name === "SecurityError") {
+    },
+  })
+    .then((db) => {
+      dbInstance = db;
+      dbPromise = null;
+      return db;
+    })
+    .catch((err: unknown) => {
+      dbInstance = null;
+      dbPromise = null;
+      const cause = err instanceof MigrationError ? err.cause : err;
+      const causeName = (cause as { name?: string } | null)?.name;
+      if (
+        causeName === "SecurityError" ||
+        (err instanceof Error &&
+          (err.name === "SecurityError" || err.message.includes("SecurityError")))
+      ) {
         showPrivateBrowsingAlert();
       }
-      reject(err);
-    }
-  });
+      throw err;
+    });
 
   return dbPromise;
 }
@@ -283,9 +200,7 @@ export async function queueOfflineFavorite(
         request.onsuccess = () => {
           const queued = (request.result || []) as OfflineAction[];
 
-          const sameVenue = queued.filter(
-            (item) => item.venueId === venueId,
-          );
+          const sameVenue = queued.filter((item) => item.venueId === venueId);
 
           const existing = sameVenue[0];
 
@@ -333,7 +248,7 @@ export async function queueOfflineFavorite(
     }
   });
 }
- /**
+/**
  * Retrieves all currently queued actions awaiting synchronization
  * @deprecated Use @/lib/offline instead.
  */
@@ -453,19 +368,28 @@ export async function dequeueOfflineAction(id: number): Promise<void> {
  * Pushes a check-in action into the client IndexedDB checkin queue.
  * @deprecated Use @/lib/offline instead.
  */
-export async function queueOfflineCheckIn(venueId: string): Promise<void> {
+export async function queueOfflineCheckIn(
+  venueId: string,
+  seatId?: string,
+): Promise<void> {
   return withWebLock(async () => {
     try {
       const db = await getDB();
 
-      // Check for existing identical un-synced checkin for same venue
+      // Check for existing identical un-synced checkin for same venue and seat
       const existing = await new Promise<OfflineCheckIn | undefined>(
         (resolve, reject) => {
           const tx = db.transaction(CHECKIN_STORE_NAME, "readonly");
           const store = tx.objectStore(CHECKIN_STORE_NAME);
           const request = store.getAll();
           request.onsuccess = () =>
-            resolve((request.result || []).find((a) => a.venueId === venueId));
+            resolve(
+              (request.result || []).find(
+                (a) =>
+                  a.venueId === venueId &&
+                  (seatId === undefined || a.seatId === seatId),
+              ),
+            );
           request.onerror = () => reject(request.error);
         },
       );
@@ -476,6 +400,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
         const store = tx.objectStore(CHECKIN_STORE_NAME);
         store.add({
           venueId,
+          seatId,
           timestamp: Date.now(),
           retryCount: 0,
         });
@@ -483,7 +408,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
           .enqueue<OfflineCheckIn>({
             entity: "checkin",
             action: "create",
-            payload: { venueId, timestamp: Date.now() },
+            payload: { venueId, seatId, timestamp: Date.now() },
           })
           .catch(() => {});
         tx.oncomplete = () => resolve();

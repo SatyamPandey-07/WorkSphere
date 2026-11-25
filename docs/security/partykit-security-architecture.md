@@ -1,6 +1,6 @@
 # PartyKit Zero-Trust Security Architecture: Room Authentication, WebSocket Rate Limiting, and End-to-End Encryption
 
-This technical manual documents the zero-trust security architecture, cryptographic protocols, token lifecycle, rate-limiting sliding windows, and Double Ratchet end-to-end encryption (E2EE) pipelines securing WorkSphere's real-time collaborative services ([`src/party/encryptedChat.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/encryptedChat.room.ts), [`src/party/whiteboard.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/whiteboard.room.ts), and [`src/app/api/partykit/auth/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/partykit/auth/route.ts)).
+This technical manual documents the zero-trust security architecture, cryptographic protocols, token lifecycle, rate-limiting sliding windows, and Double Ratchet end-to-end encryption (E2EE) pipelines securing WorkSphere's real-time collaborative services ([`src/party/encryptedChat.room.ts`](../../src/party/encryptedChat.room.ts), [`src/party/whiteboard.room.ts`](../../src/party/whiteboard.room.ts), and [`src/app/api/partykit/auth/route.ts`](../../src/app/api/partykit/auth/route.ts)).
 
 ---
 
@@ -57,13 +57,13 @@ sequenceDiagram
 
 | Attack Vector | Potential Impact | Zero-Trust Mitigation Mechanism | Implementation File |
 | :--- | :--- | :--- | :--- |
-| **Server Compromise / Eavesdropping** | Attacker with root access on PartyKit server inspects messages | **End-to-End Encryption (E2EE)**: Messages are encrypted with client-side keys; server only sees Base64 ciphertext. | [`src/party/encryptedChat.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/encryptedChat.room.ts) |
-| **Room Hijacking / Unauthorized Join** | Unauthenticated user connects to arbitrary workspace room | **HMAC-Signed Room Tokens & `onBeforeConnect`**: Upgrades require valid signature, role, and expiration window. | [`src/app/api/partykit/auth/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/partykit/auth/route.ts) |
-| **WebSocket Frame Flooding (DoS)** | Malicious client floods room with high-frequency messages | **Token Bucket & Sliding Window Rate Limiting**: Frames exceeding burst capacity are dropped with HTTP 429 / WS 4429 close. | [`src/lib/rateLimit/index.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/rateLimit/index.ts) |
-| **Timing Attacks on Auth Verification** | Attacker deduces shared server secret via timing differences | **Constant-Time Comparison (`timingSafeEqual`)**: Rejects mismatched tokens with uniform comparison execution duration. | [`src/app/api/partykit/auth/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/partykit/auth/route.ts#L46) |
-| **Replay Attacks** | Stale intercepted WebSocket packets are re-transmitted | **Monotonic Ratchet Counters & Ephemeral Nonces**: Replayed messages fail MAC validation or match spent sequence IDs. | [`src/wasm/crypto/double_ratchet.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/double_ratchet.c) |
-| **Future Key Compromise** | Stolen private key decrypts historical captured traffic | **Forward Secrecy (FS)**: Ephemeral message keys are immediately deleted upon derivation and cannot be reconstructed. | [`src/wasm/crypto/double_ratchet.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/double_ratchet.c) |
-| **Past Key Compromise** | Compromised terminal allows attacker to impersonate indefinitely | **Post-Compromise Security (PCS)**: DH ratchet updates automatically restore cryptographic privacy on the next reply. | [`src/wasm/crypto/curve25519.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/curve25519.c) |
+| **Server Compromise / Eavesdropping** | Attacker with root access on PartyKit server inspects messages | **End-to-End Encryption (E2EE)**: Messages are encrypted with client-side keys; server only sees Base64 ciphertext. | [`src/party/encryptedChat.room.ts`](../../src/party/encryptedChat.room.ts) |
+| **Room Hijacking / Unauthorized Join** | Unauthenticated user connects to arbitrary workspace room | **HMAC-Signed Room Tokens & `onBeforeConnect`**: Upgrades require valid signature, role, and expiration window. | [`src/app/api/partykit/auth/route.ts`](../../src/app/api/partykit/auth/route.ts) |
+| **WebSocket Frame Flooding (DoS)** | Malicious client floods room with high-frequency messages | **Token Bucket & Sliding Window Rate Limiting**: Frames exceeding burst capacity are dropped with HTTP 429 / WS 4429 close. | [`src/lib/rateLimit/index.ts`](../../src/lib/rateLimit/index.ts) |
+| **Timing Attacks on Auth Verification** | Attacker deduces shared server secret via timing differences | **Constant-Time Comparison (`timingSafeEqual`)**: Rejects mismatched tokens with uniform comparison execution duration. | [`src/app/api/partykit/auth/route.ts`](../../src/app/api/partykit/auth/route.ts#L46) |
+| **Replay Attacks** | Stale intercepted WebSocket packets are re-transmitted | **Monotonic Ratchet Counters & Ephemeral Nonces**: Replayed messages fail MAC validation or match spent sequence IDs. | [`src/wasm/crypto/double_ratchet.c`](../../src/wasm/crypto/double_ratchet.c) |
+| **Future Key Compromise** | Stolen private key decrypts historical captured traffic | **Forward Secrecy (FS)**: Ephemeral message keys are immediately deleted upon derivation and cannot be reconstructed. | [`src/wasm/crypto/double_ratchet.c`](../../src/wasm/crypto/double_ratchet.c) |
+| **Past Key Compromise** | Compromised terminal allows attacker to impersonate indefinitely | **Post-Compromise Security (PCS)**: DH ratchet updates automatically restore cryptographic privacy on the next reply. | [`src/wasm/crypto/curve25519.c`](../../src/wasm/crypto/curve25519.c) |
 
 ---
 
@@ -77,7 +77,7 @@ Authentication is separated into two distinct authorization tiers:
 
 ### 3.2 Constant-Time Secret Verification
 
-In [`src/app/api/partykit/auth/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/partykit/auth/route.ts#L28-L47), incoming authorization headers are validated using constant-time buffer comparisons to prevent character-by-character timing leak attacks:
+In [`src/app/api/partykit/auth/route.ts`](../../src/app/api/partykit/auth/route.ts#L28-L47), incoming authorization headers are validated using constant-time buffer comparisons to prevent character-by-character timing leak attacks:
 
 ```typescript
 function verifySharedSecret(req: NextRequest): boolean {
@@ -125,7 +125,7 @@ flowchart TD
 - **`OWNER`**: Unrestricted write, erase, membership mutation, and room eviction capabilities.
 - **`EDITOR`**: Read/write permissions for collaborative CRDT whiteboard edits and notes.
 - **`VIEWER` (Member)**: Read-only observation of updates; cannot broadcast mutations.
-- **`VIEWER` (Outsider, `member: false`)**: Blocked from sensitive collections ([#3360](file:///c:/Users/admin/Desktop/workfere/src/app/api/partykit/auth/route.ts#L98)).
+- **`VIEWER` (Outsider, `member: false`)**: Blocked from sensitive collections ([#3360](../../src/app/api/partykit/auth/route.ts#L98)).
 
 ### 3.4 JWT Room Token Claims Specification
 
@@ -204,7 +204,7 @@ Where:
 
 ## 5. End-to-End Encryption (E2EE) with the Double Ratchet Algorithm
 
-WorkSphere's encrypted chat and confidential channels implement the **Double Ratchet Algorithm** ([`src/wasm/crypto/double_ratchet.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/double_ratchet.c)) combined with **Curve25519 (X25519)** key exchanges ([`src/wasm/crypto/curve25519.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/curve25519.c)).
+WorkSphere's encrypted chat and confidential channels implement the **Double Ratchet Algorithm** ([`src/wasm/crypto/double_ratchet.c`](../../src/wasm/crypto/double_ratchet.c)) combined with **Curve25519 (X25519)** key exchanges ([`src/wasm/crypto/curve25519.c`](../../src/wasm/crypto/curve25519.c)).
 
 ### 5.1 The Two Cryptographic Ratchets
 
@@ -278,7 +278,7 @@ In distributed WebSocket networks, network packets may arrive out of order. If a
 
 ## 6. Payload Wire Format & Opaque Server Routing
 
-The PartyKit server acts as a blind router. In [`src/party/encryptedChat.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/encryptedChat.room.ts), the room handler validates the envelope schema without decrypting the payload:
+The PartyKit server acts as a blind router. In [`src/party/encryptedChat.room.ts`](../../src/party/encryptedChat.room.ts), the room handler validates the envelope schema without decrypting the payload:
 
 ### 6.1 Encrypted Wire Message Envelope
 
@@ -332,7 +332,7 @@ Collaborative features require tracking peer online status and cursor positions 
 
 ### 7.1 Ephemeral Metadata Sanitization
 
-Presence broadcasts in [`src/party/encryptedChat.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/encryptedChat.room.ts#L20-L27) and [`src/party/whiteboard.room.ts`](file:///c:/Users/admin/Desktop/workfere/src/party/whiteboard.room.ts#L20-L26) transmit only sanitized, non-sensitive identifiers:
+Presence broadcasts in [`src/party/encryptedChat.room.ts`](../../src/party/encryptedChat.room.ts#L20-L27) and [`src/party/whiteboard.room.ts`](../../src/party/whiteboard.room.ts#L20-L26) transmit only sanitized, non-sensitive identifiers:
 
 ```typescript
 async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
@@ -430,7 +430,7 @@ export function useEncryptedRoom(roomId: string, userId: string) {
 
 ## 10. C and WebAssembly Cryptographic Primitives & Memory Safety
 
-For performance-critical mobile and desktop web clients, core Double Ratchet and elliptic curve calculations are compiled into WebAssembly from native C sources located at [`src/wasm/crypto/double_ratchet.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/double_ratchet.c) and [`src/wasm/crypto/curve25519.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/curve25519.c).
+For performance-critical mobile and desktop web clients, core Double Ratchet and elliptic curve calculations are compiled into WebAssembly from native C sources located at [`src/wasm/crypto/double_ratchet.c`](../../src/wasm/crypto/double_ratchet.c) and [`src/wasm/crypto/curve25519.c`](../../src/wasm/crypto/curve25519.c).
 
 ### 10.1 WebAssembly Memory Layout and Struct Packing
 
@@ -452,7 +452,7 @@ typedef struct {
 
 ### 10.2 Constant-Time Arithmetic & Side-Channel Mitigation
 
-In [`src/wasm/crypto/curve25519.c`](file:///c:/Users/admin/Desktop/workfere/src/wasm/crypto/curve25519.c), all elliptic curve scalar multiplications utilize Montgomery ladder operations with branchless conditional swaps (`cswap`):
+In [`src/wasm/crypto/curve25519.c`](../../src/wasm/crypto/curve25519.c), all elliptic curve scalar multiplications utilize Montgomery ladder operations with branchless conditional swaps (`cswap`):
 
 ```c
 void fe_cswap(fe f, fe g, unsigned int b) {

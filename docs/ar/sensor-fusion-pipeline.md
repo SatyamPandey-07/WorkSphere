@@ -111,7 +111,7 @@ $$\mathbf{R}(\mathbf{q}) = \begin{bmatrix}
 
 ## 4. Extended Kalman Filter (EKF) Fusion Engine
 
-File: [src/lib/spatial/compassFilter.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/spatial/compassFilter.ts)
+File: [src/lib/spatial/compassFilter.ts](../../src/lib/spatial/compassFilter.ts)
 
 ### 1D Circular Heading Kalman Filter (`CompassKalmanFilter`)
 
@@ -150,7 +150,7 @@ export class CompassKalmanFilter {
 
 ### 6-DOF State Space Formulation (`ExtendedKalmanFilter6D`)
 
-File: [src/lib/spatial/indoorPdrEngine.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/spatial/indoorPdrEngine.ts)
+File: [src/lib/spatial/indoorPdrEngine.ts](../../src/lib/spatial/indoorPdrEngine.ts)
 
 The 6-DOF EKF tracks user position, velocity, orientation, and sensor bias:
 
@@ -232,7 +232,7 @@ export function clampToScreenEdge(
 
 ## 6. Multi-Tier Sensor Degradation & Fallback Mechanics
 
-File: [src/components/ar/CompassFallback.tsx](file:///c:/Users/admin/Desktop/workfere/src/components/ar/CompassFallback.tsx)
+File: [src/components/ar/CompassFallback.tsx](../../src/components/ar/CompassFallback.tsx)
 
 WorkSphere detects available hardware capabilities and seamlessly transitions across four operation tiers:
 

@@ -340,16 +340,16 @@ You cannot add a storage-side "reject if token ≤ last seen" guard on top of th
 
 ---
 
-## 8. Proposed hardening
+## 8. Hardening: Implemented Improvements and Follow-ups
 
-> **Proposed.** None of this is implemented. These are options for follow-up issues, listed roughly by value.
+> **Status.** Items 4, 5, and 6 below have been **implemented and verified** in [`RedlockManager.ts`](../../src/lib/redis/RedlockManager.ts) and [`redlockManager.test.ts`](../../src/__tests__/lib/redlockManager.test.ts). Items 1–3 remain architectural options for storage-level fencing.
 
 1. **Generate the token from one linearizable source.** For example, increment a `fencingVersion` column on the seat row (or use a PostgreSQL sequence) inside the reservation transaction. This gives strict ordering independent of Redis node health. Redis then only reduces contention, and the database stays the authority.
 2. **If the Redis token is kept, do not take an unsynchronised `max`.** One option is to write the chosen token back to all granting nodes before returning (`SET counter max(counter, token)`) so counters converge. This reduces drift but still does not survive a node restart without persistence. Document the persistence requirement (`appendfsync always`, or a delayed restart longer than the max TTL).
 3. **Validate at the transaction boundary.** Once the token is monotonic, store the last accepted token for each seat and reject writes where `incoming ≤ stored` in the same statement as the insert. Do not add this guard before step 1 or 2 (see §6.3).
-4. **Make `checkLost()` time-aware.** Also throw when `performance.now() >= lock.expiresAt`, so a client that resumes from a pause longer than its lease aborts before its next write.
-5. **Add a per-node timeout to `RedlockManager`**, matching `distributedRedlock.ts`, so one slow node cannot use up the validity budget.
-6. **Add hash tags** (`{seat:<id>}` and `{seat:<id>}:fencing`) if any node may be a sharded Redis Cluster.
+4. **Monotonic lease expiration (Implemented ✅).** `DistributedLock.checkLost()` validates that monotonic time (`performance.now()`) has not passed `this.expiresAt`. If the process pauses (e.g. GC, CPU throttling) longer than the remaining lease validity, the original holder immediately aborts upon resuming rather than executing writes under an expired lease.
+5. **Per-node acquisition timeouts and late compensation (Implemented ✅).** `RedlockManager` enforces a configurable `nodeTimeoutMs` (defaulting to `Math.max(50, Math.floor(defaultTtlMs / 10))`) on each Redis node operation via `withNodeTimeout`. If a slow or partitioned node completes after the timeout, an asynchronous compensating release is dispatched specifically to that node, ensuring no orphaned keys remain while healthy nodes satisfy quorum.
+6. **Redis Cluster hash-tag compatibility (Implemented ✅).** An optional `clusterMode` flag enables `{key}` and `{key}:fencing` wrapping via `toClusterKey()` and `toClusterFencingKey()`. Both the distributed lock key and the fencing counter key share the exact same hash slot on sharded Redis Clusters, preventing `CROSSSLOT` script execution errors.
 7. **Regression test.** Add the drift and restart scenarios from §6.2 to `src/__tests__/lib/redlockManager.test.ts`. Write them to expect the current behaviour, or as `it.failing` until item 1 or 2 lands, so the guarantee is checked by tests.
 
 ---

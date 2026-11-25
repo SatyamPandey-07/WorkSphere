@@ -193,6 +193,32 @@ jest.mock("@clerk/nextjs", () => ({
 jest.mock("@clerk/nextjs/server", () => ({
   auth: jest.fn().mockResolvedValue({ userId: "test-user" }),
   currentUser: jest.fn().mockResolvedValue({ id: "test-user" }),
+  createClerkClient: jest.fn(() => ({
+    users: {
+      getUserList: jest.fn().mockResolvedValue({ data: [] }),
+      getUser: jest.fn(),
+      updateUser: jest.fn().mockResolvedValue({ id: "test-user" }),
+    },
+    sessions: {
+      getSessionList: jest.fn().mockResolvedValue({ data: [] }),
+      revokeSession: jest.fn().mockResolvedValue({ id: "session_1" }),
+    },
+    signInTokens: {
+      createSignInToken: jest.fn().mockResolvedValue({ url: "https://clerk.example/ticket" }),
+      revokeSignInToken: jest.fn(),
+    },
+  })),
+  clerkClient: jest.fn(() => ({
+    users: {
+      getUserList: jest.fn().mockResolvedValue({ data: [] }),
+      getUser: jest.fn(),
+      updateUser: jest.fn().mockResolvedValue({ id: "test-user" }),
+    },
+    sessions: {
+      getSessionList: jest.fn().mockResolvedValue({ data: [] }),
+      revokeSession: jest.fn().mockResolvedValue({ id: "session_1" }),
+    },
+  })),
 }));
 
 // Mock fetch
@@ -202,6 +228,25 @@ global.fetch = jest.fn(() =>
     json: () => Promise.resolve({}),
   }),
 );
+
+// Mock svix for Jest CommonJS test runner
+jest.mock("svix", () => ({
+  Webhook: class {
+    constructor(secret) {
+      this.secret = secret;
+    }
+    verify(payload) {
+      try {
+        return typeof payload === "string" ? JSON.parse(payload) : payload;
+      } catch {
+        return payload;
+      }
+    }
+    sign() {
+      return "mock_signature";
+    }
+  },
+}));
 
 // Mock groq-sdk
 jest.mock("groq-sdk", () => {

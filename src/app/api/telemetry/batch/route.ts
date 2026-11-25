@@ -6,6 +6,25 @@ import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
+export const telemetryTimestampSchema = z.union([
+  z
+    .number()
+    .int()
+    .positive("timestamp must be a positive integer")
+    .refine(
+      (val) => !Number.isNaN(new Date(val).getTime()),
+      "Invalid numeric timestamp",
+    ),
+  z
+    .string()
+    .min(1, "timestamp string cannot be empty")
+    .refine(
+      (val) => !Number.isNaN(Date.parse(val)),
+      "Invalid date-time string",
+    ),
+  z.date().refine((val) => !Number.isNaN(val.getTime()), "Invalid date object"),
+]);
+
 export const telemetryReadingSchema = z
   .object({
     venueId: z.string().min(1, "venueId is required"),
@@ -14,7 +33,10 @@ export const telemetryReadingSchema = z
     type: z.string().min(1).optional(),
     value: z.number().optional(),
     decibels: z.number().min(0, "decibels must be non-negative").optional(),
-    peakDecibels: z.number().min(0, "peakDecibels must be non-negative").optional(),
+    peakDecibels: z
+      .number()
+      .min(0, "peakDecibels must be non-negative")
+      .optional(),
     timestamp: z
       .union([
         z.number().int().positive("timestamp must be a positive integer"),
@@ -25,13 +47,12 @@ export const telemetryReadingSchema = z
     recordedAt: z
       .union([z.number().int().positive(), z.string(), z.date()])
       .optional(),
+    timestamp: telemetryTimestampSchema.optional(),
+    recordedAt: telemetryTimestampSchema.optional(),
   })
-  .refine(
-    (data) => data.value !== undefined || data.decibels !== undefined,
-    {
-      message: "Either value or decibels must be specified",
-    },
-  );
+  .refine((data) => data.value !== undefined || data.decibels !== undefined, {
+    message: "Either value or decibels must be specified",
+  });
 
 export const telemetryBatchSchema = z
   .array(telemetryReadingSchema)
@@ -91,12 +112,21 @@ export function verifyGatewayToken(req: NextRequest): boolean {
     }
   }
 
-  // If a token header was provided without an env secret, ensure it is non-empty
-  if (provided !== null && provided !== undefined) {
-    return provided.length > 0;
+  // When no gateway token is configured:
+  // In production, always fail closed
+  if (process.env.NODE_ENV === "production") {
+    return false;
   }
 
-  return true;
+  // In non-production, if a token was provided, it must not be accepted blindly without configured credentials
+  if (provided !== null && provided !== undefined) {
+    return false;
+  }
+
+  // Explicit non-production bypass only in development or test when no token headers were sent
+  return (
+    process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test"
+  );
 }
 
 /**
@@ -106,6 +136,21 @@ export function verifyGatewayToken(req: NextRequest): boolean {
  */
 export async function POST(req: NextRequest) {
   try {
+    const configuredToken =
+      process.env.GATEWAY_API_TOKEN ||
+      process.env.TELEMETRY_GATEWAY_TOKEN ||
+      process.env.WORKER_SECRET;
+
+    if (!configuredToken && process.env.NODE_ENV === "production") {
+      return NextResponse.json(
+        {
+          error:
+            "Service Unavailable: Telemetry gateway credentials not configured",
+        },
+        { status: 503 },
+      );
+    }
+
     // 1. Gateway API Token Authentication
     if (!verifyGatewayToken(req)) {
       return NextResponse.json(
@@ -152,7 +197,10 @@ export async function POST(req: NextRequest) {
 
     if (rawReadings.length === 0) {
       return NextResponse.json(
-        { error: "Validation failed", details: "readings array cannot be empty" },
+        {
+          error: "Validation failed",
+          details: "readings array cannot be empty",
+        },
         { status: 400 },
       );
     }

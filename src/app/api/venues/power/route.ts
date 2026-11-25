@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { OutletLoadBalancer, AnomalyReport, DeskOutlet } from '@/core/sensors/OutletLoadBalancer';
+import { getClientIp } from '@/lib/rateLimit';
 
 // Mocked initial venue topology
 const mockOutlets: DeskOutlet[] = [
@@ -25,17 +26,37 @@ function getBalancer(): OutletLoadBalancer {
     return balancer;
 }
 
+export function resetBalancer(): void {
+    balancer = null;
+}
+
 export async function POST(req: NextRequest) {
+    let body: any;
     try {
-        const body = await req.json();
-        const { telemetryBatch, queryDeskId } = body;
+        body = await req.json();
+    } catch {
+        const sourceIp = getClientIp(req);
+        const contentLength = req.headers.get('content-length');
+        const payloadLength = contentLength ? parseInt(contentLength, 10) : undefined;
+        console.warn('[API] Power telemetry ingestion rejected - malformed JSON payload', {
+            sourceIp,
+            payloadLength: isNaN(payloadLength as number) ? undefined : payloadLength,
+        });
+        return NextResponse.json(
+            { error: 'Malformed JSON payload' },
+            { status: 400 }
+        );
+    }
+
+    try {
+        const { telemetryBatch, queryDeskId } = body || {};
 
         const lb = getBalancer();
 
         // 1. Process incoming telemetry batch
         if (telemetryBatch && Array.isArray(telemetryBatch)) {
             for (const report of telemetryBatch as AnomalyReport[]) {
-                if (report.status !== 'NORMAL') {
+                if (report && report.status !== 'NORMAL') {
                     lb.ingestAnomaly(report);
                 }
             }

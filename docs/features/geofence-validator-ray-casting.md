@@ -1,6 +1,6 @@
 # GeofenceValidator: Polygon Ray-Casting & Anti-Spoofing Architecture
 
-Comprehensive technical documentation for [`GeofenceValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/attestation/GeofenceValidator.ts), detailing the computational geometry algorithms (Jordan curve theorem ray-casting), multi-vector sensor fusion, and anti-spoofing heuristics used to establish proof of physical presence for WorkSphere's Proof of Attendance Protocol (PoAP) check-ins.
+Comprehensive technical documentation for [`GeofenceValidator.ts`](../../src/core/attestation/GeofenceValidator.ts), detailing the computational geometry algorithms (Jordan curve theorem ray-casting), multi-vector sensor fusion, and anti-spoofing heuristics used to establish proof of physical presence for WorkSphere's Proof of Attendance Protocol (PoAP) check-ins.
 
 ---
 
@@ -8,7 +8,7 @@ Comprehensive technical documentation for [`GeofenceValidator.ts`](file:///c:/Us
 
 The Proof of Attendance Protocol (PoAP) relies on tamper-resistant verification of a user's location before minting digital attendance attestations. Traditional GPS check-ins are easily circumvented via Android mock location providers, browser developer tools overrides, or virtual GPS spoofing applications.
 
-[`GeofenceValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/attestation/GeofenceValidator.ts) eliminates these vulnerabilities through two core mechanisms:
+[`GeofenceValidator.ts`](../../src/core/attestation/GeofenceValidator.ts) eliminates these vulnerabilities through two core mechanisms:
 1. **Computational Geometry Boundary Validation:** Uses the **Jordan Curve Theorem Ray-Casting Algorithm** to verify whether client coordinates lie strictly within complex venue polygon footprints and geofences.
 2. **Multi-Vector Sensor Fusion & Anti-Spoofing Heuristics:** Combines GPS horizontal accuracy bounds, venue-authorized WiFi SSID/BSSID beacons, and 3-axis accelerometer gravity norms to detect synthetic or emulated sensor streams.
 
@@ -121,7 +121,7 @@ $$d = R \cdot c \cdot 1000 \quad (\text{meters})$$
 
 ## 4. Anti-Spoofing & Mock GPS Detection Heuristics
 
-Software-based location mockers (e.g., FakeGPS, Xcode Location Simulator, Chrome DevTools Sensors) manipulate high-level GPS APIs but leave distinct kinematic and network anomalies. [`GeofenceValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/attestation/GeofenceValidator.ts) applies layered heuristic checks to identify emulated telemetry.
+Software-based location mockers (e.g., FakeGPS, Xcode Location Simulator, Chrome DevTools Sensors) manipulate high-level GPS APIs but leave distinct kinematic and network anomalies. [`GeofenceValidator.ts`](../../src/core/attestation/GeofenceValidator.ts) applies layered heuristic checks to identify emulated telemetry.
 
 ### 4.1 Kinematic Dynamics & Gravitational Norm
 
@@ -173,7 +173,7 @@ $$\text{confidence} = \max(0, \min(100, \sum \Delta \text{scores}))$$
 
 ## 6. Implementation Reference
 
-The validation logic is implemented in [`GeofenceValidator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/attestation/GeofenceValidator.ts) and consumed by the PoAP check-in API route:
-- API Handler: [`src/app/api/checkin/poap/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/checkin/poap/route.ts)
-- Generator Service: [`src/core/attestation/PoAPGenerator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/attestation/PoAPGenerator.ts)
-- WASM Verification Loader: [`src/lib/wasm-loader/attestation.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/attestation.ts)
+The validation logic is implemented in [`GeofenceValidator.ts`](../../src/core/attestation/GeofenceValidator.ts) and consumed by the PoAP check-in API route:
+- API Handler: [`src/app/api/checkin/poap/route.ts`](../../src/app/api/checkin/poap/route.ts)
+- Generator Service: [`src/core/attestation/PoAPGenerator.ts`](../../src/core/attestation/PoAPGenerator.ts)
+- WASM Verification Loader: [`src/lib/wasm-loader/attestation.ts`](../../src/lib/wasm-loader/attestation.ts)

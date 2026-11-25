@@ -6,6 +6,7 @@
 
 import Groq from 'groq-sdk';
 import { estimateTokens } from '@/lib/context-compression/tokens';
+import { isRetryableLlmError } from '@/lib/ai/retryWithBackoff';
 
 export interface AgentMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -96,6 +97,12 @@ export interface SubagentTask {
   history?: AgentMessage[];
   tools?: AgentToolDeclaration[];
   tokenAllowance?: number;
+  /**
+   * When true, a transient upstream error (429, 502, 503, 504) from the LLM call is
+   * rethrown instead of being replaced by the deterministic fallback, so the caller
+   * can retry it (see retryWithBackoff). Defaults to false.
+   */
+  rethrowRetryableErrors?: boolean;
 }
 
 export interface SubagentExecutionResult {
@@ -364,6 +371,9 @@ export class MultiAgentOrchestrator {
         outputContent = completion.choices[0]?.message?.content || 'Task completed successfully.';
         completionTokens = completion.usage?.completion_tokens ?? estimateTokens(outputContent);
       } catch (err: unknown) {
+        if (task.rethrowRetryableErrors && isRetryableLlmError(err)) {
+          throw err;
+        }
         if (this.config.debug) {
           console.debug(`[MultiAgentOrchestrator] Groq invocation failed, using deterministic fallback:`, err);
         }

@@ -35,10 +35,92 @@ export const PARTY_SOCKET_RECONNECT_OPTIONS: PartyReconnectOptions = {
 
 export const DEFAULT_BACKOFF_OPTIONS = PARTY_SOCKET_RECONNECT_OPTIONS;
 
+/**
+ * Full-jitter exponential backoff for reconnecting clients. Each retry samples
+ * uniformly from zero to its capped exponential delay ceiling.
+ */
+export function calculateFullJitterBackoff(
+  attempt: number,
+  options: CalculateJitteredBackoffOptions = {},
+): number {
+  if (!Number.isInteger(attempt) || attempt <= 0) return 0;
+
+  const baseDelay =
+    options.baseDelay ?? PARTY_SOCKET_RECONNECT_OPTIONS.minReconnectionDelay;
+  const maxDelay = options.maxDelay ?? 10_000;
+  if (
+    !Number.isFinite(baseDelay) ||
+    baseDelay < 0 ||
+    !Number.isFinite(maxDelay) ||
+    maxDelay < 0
+  ) {
+    return 0;
+  }
+
+  const ceiling = Math.min(maxDelay, baseDelay * Math.pow(2, attempt - 1));
+  const sample = options.random?.() ?? Math.random();
+  const bounded = Number.isFinite(sample)
+    ? Math.min(1, Math.max(0, sample))
+    : 0;
+  return Math.round(ceiling * bounded);
+}
+
 export interface CalculateJitteredBackoffOptions {
   baseDelay?: number;
   maxDelay?: number;
   random?: () => number;
+}
+
+export interface CalculateDecorrelatedJitterOptions {
+  baseDelay?: number;
+  maxDelay?: number;
+  factor?: number;
+  random?: () => number;
+}
+
+/**
+ * Decorrelated Jitter backoff algorithm for API retry loops (Marc Brooker / AWS Architecture).
+ *
+ * sleep_i = min(maxDelay, rand(baseDelay, sleep_{i-1} * factor))
+ *
+ * Used during repeated API 5xx errors to prevent synchronized retry waves from
+ * overwhelming an already stressed or recovering backend service.
+ */
+export function calculateDecorrelatedJitterBackoff(
+  previousDelay: number,
+  options: CalculateDecorrelatedJitterOptions = {},
+): number {
+  const baseDelay =
+    options.baseDelay ?? PARTY_SOCKET_RECONNECT_OPTIONS.minReconnectionDelay;
+  const maxDelay =
+    options.maxDelay ?? PARTY_SOCKET_RECONNECT_OPTIONS.maxReconnectionDelay;
+  const factor = options.factor ?? 3;
+
+  if (
+    !Number.isFinite(baseDelay) ||
+    baseDelay < 0 ||
+    !Number.isFinite(maxDelay) ||
+    maxDelay < 0
+  ) {
+    return 0;
+  }
+
+  const effectiveBase = Math.min(baseDelay, maxDelay);
+  const effectivePrev =
+    Number.isFinite(previousDelay) && previousDelay >= effectiveBase
+      ? previousDelay
+      : effectiveBase;
+
+  const ceiling = Math.min(maxDelay, effectivePrev * factor);
+  if (ceiling <= effectiveBase) {
+    return Math.round(effectiveBase);
+  }
+
+  const sample = options.random?.() ?? Math.random();
+  const bounded = Number.isFinite(sample)
+    ? Math.min(1, Math.max(0, sample))
+    : 0;
+  return Math.round(effectiveBase + (ceiling - effectiveBase) * bounded);
 }
 
 /**

@@ -1,216 +1,271 @@
-import type * as Party from "partykit/server";
+import type * as Party from 'partykit/server';
 
-/**
- * VenueRoom.ts
- * PartyKit room server managing real-time seat check-ins, CRDT sequence tracking,
- * and delta state synchronization for nomadic workers.
- */
+export const HEARTBEAT_PING_INTERVAL_MS = 10_000; // Send ping every 10s
+export const HEARTBEAT_TIMEOUT_MS = 30_000;       // Evict stale peer after 30s without pong
 
-export interface SeatCheckin {
-  seatId: string;
+export interface VenuePeerPresence {
+  peerId: string;
   userId: string;
-  userName?: string;
-  status: "OCCUPIED" | "AVAILABLE" | "HELD";
-  timestamp: number;
-  sequenceId: number;
+  displayName: string;
+  avatarUrl?: string | null;
+  deskZone?: string | null;
+  status: 'working' | 'break' | 'focus';
+  joinedAt: number;
+  lastSeenAt: number;
 }
 
-export interface VenueRoomEvent {
-  sequenceId: number;
-  epoch: number;
-  type: "seat_checkin" | "seat_checkout" | "seat_hold" | "seat_release";
-  seat: SeatCheckin;
-  timestamp: number;
+export type IncomingVenueRoomMessage =
+  | {
+    type: 'join';
+    userId: string;
+    displayName: string;
+    avatarUrl?: string | null;
+    deskZone?: string | null;
+    status?: 'working' | 'break' | 'focus';
+  }
+  | {
+    type: 'status_update';
+    status?: 'working' | 'break' | 'focus';
+    deskZone?: string | null;
+  }
+  | {
+    type: 'pong';
+    timestamp?: number;
+  };
+
+export type OutgoingVenueRoomMessage =
+  | {
+    type: 'presence_sync';
+    roomId: string;
+    peers: VenuePeerPresence[];
+    timestamp: number;
+  }
+  | {
+    type: 'peer_joined';
+    peer: VenuePeerPresence;
+    timestamp: number;
+  }
+  | {
+    type: 'peer_updated';
+    peer: VenuePeerPresence;
+    timestamp: number;
+  }
+  | {
+    type: 'peer_left';
+    peerId: string;
+    userId: string;
+    reason: 'closed' | 'heartbeat_timeout' | 'error';
+    timestamp: number;
+  }
+  | {
+    type: 'ping';
+    timestamp: number;
+  };
+
+interface TrackedConnectionRecord {
+  connection: Party.Connection;
+  presence: VenuePeerPresence;
+  lastPongAt: number;
 }
 
-export default class VenueRoom implements Party.Server {
-  private serverEpoch: number = Date.now();
-  private sequenceId: number = 0;
-  private seats: Map<string, SeatCheckin> = new Map();
-  private eventHistory: VenueRoomEvent[] = [];
-  private readonly maxHistorySize: number = 500;
+export default class VenuePresenceRoom implements Party.Server {
+  private readonly peers = new Map<string, TrackedConnectionRecord>();
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(readonly room: Party.Room) {}
+  constructor(readonly room: Party.Room) { }
 
-  public getSequenceId(): number {
-    return this.sequenceId;
+  public get activePeerCount(): number {
+    return this.peers.size;
   }
 
-  public getEpoch(): number {
-    return this.serverEpoch;
+  public getActivePeers(): VenuePeerPresence[] {
+    return Array.from(this.peers.values()).map((record) => ({
+      ...record.presence,
+    }));
   }
 
-  public getSeats(): SeatCheckin[] {
-    return Array.from(this.seats.values());
-  }
-
-  public getEventHistory(): VenueRoomEvent[] {
-    return [...this.eventHistory];
-  }
-
-  async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
-    const url = new URL(ctx.request.url);
-    const lastSeqParam = url.searchParams.get("lastSeq");
-    const epochParam = url.searchParams.get("epoch");
-
-    const lastSeq = lastSeqParam ? parseInt(lastSeqParam, 10) : 0;
-    const epoch = epochParam ? parseInt(epochParam, 10) : undefined;
-
-    if (lastSeq > 0) {
-      this.handleSyncRequest(conn, lastSeq, epoch);
-    } else {
-      conn.send(
-        JSON.stringify({
-          type: "seat_snapshot",
-          epoch: this.serverEpoch,
-          sequenceId: this.sequenceId,
-          seats: Array.from(this.seats.values()),
-        })
-      );
+  private ensureHeartbeatLoop(): void {
+    if (this.heartbeatTimer !== null) {
+      return;
     }
+
+    this.heartbeatTimer = setInterval(() => {
+      this.runHeartbeatSweep(Date.now());
+    }, HEARTBEAT_PING_INTERVAL_MS);
   }
 
-  async onMessage(message: string | ArrayBuffer, sender: Party.Connection) {
-    if (typeof message !== "string") return;
-
-    try {
-      const data = JSON.parse(message);
-
-      if (data.type === "sync_request") {
-        const lastSeq = typeof data.lastSeq === "number" ? data.lastSeq : 0;
-        const epoch = typeof data.epoch === "number" ? data.epoch : undefined;
-        this.handleSyncRequest(sender, lastSeq, epoch);
-        return;
-      }
-
-      if (data.type === "seat_checkin") {
-        this.sequenceId++;
-        const seat: SeatCheckin = {
-          seatId: data.seatId,
-          userId: data.userId,
-          userName: data.userName,
-          status: "OCCUPIED",
-          timestamp: Date.now(),
-          sequenceId: this.sequenceId,
-        };
-
-        this.seats.set(data.seatId, seat);
-        this.recordAndBroadcastEvent("seat_checkin", seat);
-        return;
-      }
-
-      if (data.type === "seat_checkout") {
-        this.sequenceId++;
-        const seat: SeatCheckin = {
-          seatId: data.seatId,
-          userId: data.userId || "",
-          status: "AVAILABLE",
-          timestamp: Date.now(),
-          sequenceId: this.sequenceId,
-        };
-
-        this.seats.set(data.seatId, seat);
-        this.recordAndBroadcastEvent("seat_checkout", seat);
-        return;
-      }
-    } catch (err) {
-      sender.send(
-        JSON.stringify({
-          type: "error",
-          message: "Failed to parse or process room message",
-        })
-      );
+  private stopHeartbeatLoopIfEmpty(): void {
+    if (this.peers.size === 0 && this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
   }
 
   /**
-   * Reconciles delta state requests from reconnecting clients.
+   * Sweeps all tracked connections:
+   * 1. Evicts peers whose `lastPongAt` exceeds `HEARTBEAT_TIMEOUT_MS` (30s) without a pong,
+   *    closes the dead socket, and broadcasts a `peer_left` state diff.
+   * 2. Sends a `ping` frame to remaining healthy connections.
    */
-  public handleSyncRequest(
-    conn: Party.Connection,
-    lastSeq: number,
-    clientEpoch?: number
-  ): void {
-    // If epoch changed (server restarted / migrated), provide full snapshot fallback
-    if (typeof clientEpoch === "number" && clientEpoch !== this.serverEpoch) {
-      this.sendFullSyncFallback(conn, "epoch_mismatch");
-      return;
+  public runHeartbeatSweep(nowMs: number = Date.now()): string[] {
+    const evictedPeerIds: string[] = [];
+
+    for (const [peerId, record] of Array.from(this.peers.entries())) {
+      const silenceDurationMs = nowMs - record.lastPongAt;
+
+      if (silenceDurationMs > HEARTBEAT_TIMEOUT_MS) {
+        evictedPeerIds.push(peerId);
+        this.evictPeer(peerId, 'heartbeat_timeout', nowMs);
+
+        try {
+          record.connection.close(1001, 'Heartbeat timeout');
+        } catch {
+          // Socket may already be half-open/dead after laptop sleep
+        }
+        continue;
+      }
+
+      try {
+        const pingPayload: OutgoingVenueRoomMessage = {
+          type: 'ping',
+          timestamp: nowMs,
+        };
+        record.connection.send(JSON.stringify(pingPayload));
+      } catch {
+        // Immediate send failure indicates broken pipe -> evict cleanly
+        evictedPeerIds.push(peerId);
+        this.evictPeer(peerId, 'error', nowMs);
+      }
     }
 
-    // Client is already up to date
-    if (lastSeq >= this.sequenceId) {
-      conn.send(
-        JSON.stringify({
-          type: "sync_ack",
-          epoch: this.serverEpoch,
-          latestSeq: this.sequenceId,
-          status: "synchronized",
-        })
-      );
-      return;
-    }
-
-    const oldestEvent = this.eventHistory[0];
-    const oldestSeq = oldestEvent ? oldestEvent.sequenceId : this.sequenceId + 1;
-
-    // History gap: client is farther behind than retained history
-    if (lastSeq + 1 < oldestSeq) {
-      this.sendFullSyncFallback(conn, "history_unavailable");
-      return;
-    }
-
-    // Filter missed events in chronological sequence order
-    const missedEvents = this.eventHistory.filter(
-      (e) => e.sequenceId > lastSeq && e.sequenceId <= this.sequenceId
-    );
-
-    conn.send(
-      JSON.stringify({
-        type: "sync_replay",
-        epoch: this.serverEpoch,
-        fromSeq: lastSeq + 1,
-        toSeq: this.sequenceId,
-        events: missedEvents,
-      })
-    );
+    this.stopHeartbeatLoopIfEmpty();
+    return evictedPeerIds;
   }
 
-  private sendFullSyncFallback(conn: Party.Connection, reason: string): void {
-    conn.send(
-      JSON.stringify({
-        type: "sync_fallback",
-        reason,
-        epoch: this.serverEpoch,
-        latestSeq: this.sequenceId,
-        seats: Array.from(this.seats.values()),
-      })
-    );
-  }
-
-  private recordAndBroadcastEvent(
-    type: "seat_checkin" | "seat_checkout" | "seat_hold" | "seat_release",
-    seat: SeatCheckin
+  private evictPeer(
+    peerId: string,
+    reason: 'closed' | 'heartbeat_timeout' | 'error',
+    nowMs: number = Date.now()
   ): void {
-    const event: VenueRoomEvent = {
-      sequenceId: this.sequenceId,
-      epoch: this.serverEpoch,
-      type,
-      seat,
-      timestamp: Date.now(),
+    const existing = this.peers.get(peerId);
+    if (!existing) {
+      return;
+    }
+
+    this.peers.delete(peerId);
+
+    const diffMessage: OutgoingVenueRoomMessage = {
+      type: 'peer_left',
+      peerId: existing.presence.peerId,
+      userId: existing.presence.userId,
+      reason,
+      timestamp: nowMs,
     };
 
-    this.eventHistory.push(event);
-    if (this.eventHistory.length > this.maxHistorySize) {
-      this.eventHistory.shift();
+    this.room.broadcast(JSON.stringify(diffMessage), [peerId]);
+    this.stopHeartbeatLoopIfEmpty();
+  }
+
+  onConnect(connection: Party.Connection, _ctx: Party.ConnectionContext): void {
+    const now = Date.now();
+    const initialPresence: VenuePeerPresence = {
+      peerId: connection.id,
+      userId: connection.id,
+      displayName: 'Coworker',
+      avatarUrl: null,
+      deskZone: null,
+      status: 'working',
+      joinedAt: now,
+      lastSeenAt: now,
+    };
+
+    this.peers.set(connection.id, {
+      connection,
+      presence: initialPresence,
+      lastPongAt: now,
+    });
+
+    this.ensureHeartbeatLoop();
+
+    // Send full presence snapshot to the newly connected peer
+    const syncPayload: OutgoingVenueRoomMessage = {
+      type: 'presence_sync',
+      roomId: this.room.id,
+      peers: this.getActivePeers(),
+      timestamp: now,
+    };
+    connection.send(JSON.stringify(syncPayload));
+  }
+
+  onMessage(message: string | ArrayBuffer, sender: Party.Connection): void {
+    const now = Date.now();
+    const record = this.peers.get(sender.id);
+
+    if (!record) {
+      return;
     }
 
-    this.room.broadcast(
-      JSON.stringify({
-        type: "seat_update",
-        epoch: this.serverEpoch,
-        sequenceId: this.sequenceId,
-        event,
-      })
-    );
+    // Any frame received from the client proves socket liveness
+    record.lastPongAt = now;
+    record.presence.lastSeenAt = now;
+
+    if (typeof message !== 'string') {
+      return;
+    }
+
+    let parsed: IncomingVenueRoomMessage;
+    try {
+      parsed = JSON.parse(message) as IncomingVenueRoomMessage;
+    } catch {
+      return;
+    }
+
+    if (parsed.type === 'pong') {
+      return;
+    }
+
+    if (parsed.type === 'join') {
+      record.presence = {
+        ...record.presence,
+        userId: parsed.userId?.trim() || sender.id,
+        displayName: parsed.displayName?.trim() || 'Coworker',
+        avatarUrl: parsed.avatarUrl ?? null,
+        deskZone: parsed.deskZone ?? null,
+        status: parsed.status ?? 'working',
+        lastSeenAt: now,
+      };
+
+      const joinedMsg: OutgoingVenueRoomMessage = {
+        type: 'peer_joined',
+        peer: { ...record.presence },
+        timestamp: now,
+      };
+      this.room.broadcast(JSON.stringify(joinedMsg), [sender.id]);
+      return;
+    }
+
+    if (parsed.type === 'status_update') {
+      if (parsed.status) {
+        record.presence.status = parsed.status;
+      }
+      if (parsed.deskZone !== undefined) {
+        record.presence.deskZone = parsed.deskZone;
+      }
+
+      const updatedMsg: OutgoingVenueRoomMessage = {
+        type: 'peer_updated',
+        peer: { ...record.presence },
+        timestamp: now,
+      };
+      this.room.broadcast(JSON.stringify(updatedMsg), [sender.id]);
+    }
+  }
+
+  onClose(connection: Party.Connection): void {
+    this.evictPeer(connection.id, 'closed', Date.now());
+  }
+
+  onError(connection: Party.Connection, _err: Error): void {
+    this.evictPeer(connection.id, 'error', Date.now());
   }
 }

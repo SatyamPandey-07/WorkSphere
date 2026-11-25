@@ -1,6 +1,6 @@
 # Semantic Search API Reference
 
-Comprehensive technical API documentation for WorkSphere's Semantic Search service ([`/api/search/semantic`](file:///c:/Users/admin/Desktop/workfere/src/app/api/search/semantic/route.ts)). This endpoint orchestrates Unicode text segmentation, high-dimensional vector embedding generation, and cosine similarity scoring over PostgreSQL `pgvector` HNSW indexes.
+Comprehensive technical API documentation for WorkSphere's Semantic Search service ([`/api/search/semantic`](../../src/app/api/search/semantic/route.ts)). This endpoint orchestrates Unicode text segmentation, high-dimensional vector embedding generation, and cosine similarity scoring over PostgreSQL `pgvector` HNSW indexes.
 
 ---
 
@@ -12,9 +12,9 @@ Comprehensive technical API documentation for WorkSphere's Semantic Search servi
 - **Headers:**
   - `Content-Type: application/json`
 - **Engine Stack:**
-  - **Tokenizer:** WebAssembly Unicode UAX #29 Segmentation ([`unicodeTokenizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/wasm-loader/tokenizer.ts))
-  - **Embedding Generator:** Groq API / LLM Embeddings ([`SemanticEmbeddingGenerator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/search/SemanticEmbeddingGenerator.ts))
-  - **Vector Query Optimizer:** `pgvector` HNSW index builder ([`PgVectorQueryOptimizer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/search/PgVectorQueryOptimizer.ts))
+  - **Tokenizer:** WebAssembly Unicode UAX #29 Segmentation ([`unicodeTokenizer.ts`](../../src/lib/wasm-loader/tokenizer.ts))
+  - **Embedding Generator:** Groq API / LLM Embeddings ([`SemanticEmbeddingGenerator.ts`](../../src/core/search/SemanticEmbeddingGenerator.ts))
+  - **Vector Query Optimizer:** `pgvector` HNSW index builder ([`PgVectorQueryOptimizer.ts`](../../src/core/search/PgVectorQueryOptimizer.ts))
 
 ---
 
@@ -64,7 +64,7 @@ Comprehensive technical API documentation for WorkSphere's Semantic Search servi
 
 ## 3. Embedding Model & Vector Dimensions
 
-The semantic search pipeline supports high-dimensional vector representations configured in [`SemanticEmbeddingGenerator.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/search/SemanticEmbeddingGenerator.ts):
+The semantic search pipeline supports high-dimensional vector representations configured in [`SemanticEmbeddingGenerator.ts`](../../src/core/search/SemanticEmbeddingGenerator.ts):
 
 | Model Name | Provider | Dimensionality ($d$) | Metric | Primary Use Case |
 | :--- | :--- | :---: | :---: | :--- |

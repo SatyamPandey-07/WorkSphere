@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `useDebounce` hook ([`src/hooks/useDebounce.ts`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useDebounce.ts)) delays updating a component's state value until a designated duration has elapsed without new changes. It is used across WorkSphere to postpone expensive operations — such as API search queries, notes auto-saving, map boundary recalculations, and filter applications — until user input has settled.
+The `useDebounce` hook ([`src/hooks/useDebounce.ts`](../../src/hooks/useDebounce.ts)) delays updating a component's state value until a designated duration has elapsed without new changes. It is used across WorkSphere to postpone expensive operations — such as API search queries, notes auto-saving, map boundary recalculations, and filter applications — until user input has settled.
 
 ```mermaid
 sequenceDiagram
@@ -72,7 +72,7 @@ Understanding when to choose debouncing versus throttling is critical for UI per
 | **Execution Timing** | Executes **after** a period of inactivity (trailing edge). | Executes at **fixed intervals** during continuous activity. |
 | **Reset Trigger** | Every new input restarts the delay timer. | Ignores intermediate inputs until the throttle interval expires. |
 | **Primary Use Cases** | Autocomplete search inputs, note auto-saving, text field validation, window resize end events. | Infinite scroll triggers, mouse move tracking, canvas drawing coordinates, map drag events. |
-| **WorkSphere Examples** | [`VenueSearch`](file:///c:/Users/admin/Desktop/workfere/src/hooks/useVenueSearch.ts), [`NoteEditor`](file:///c:/Users/admin/Desktop/workfere/src/components/saved-venues/NoteEditor.tsx), [`TimezoneClock`](file:///c:/Users/admin/Desktop/workfere/src/components/bookings/TimezoneClock.tsx). | Screen share bitrate throttling, map viewport bounding box updates. |
+| **WorkSphere Examples** | [`VenueSearch`](../../src/hooks/useVenueSearch.ts), [`NoteEditor`](../../src/components/saved-venues/NoteEditor.tsx), [`TimezoneClock`](../../src/components/bookings/TimezoneClock.tsx). | Screen share bitrate throttling, map viewport bounding box updates. |
 
 ---
 
@@ -159,7 +159,7 @@ export function VenueSearchBar() {
 
 ### 4.2 Auto-Saving Venue Notes (`NoteEditor`)
 
-In [`src/components/saved-venues/NoteEditor.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/saved-venues/NoteEditor.tsx), `useDebounce` postpones saving draft notes to localStorage or the backend until 1000ms after the last edit:
+In [`src/components/saved-venues/NoteEditor.tsx`](../../src/components/saved-venues/NoteEditor.tsx), `useDebounce` postpones saving draft notes to localStorage or the backend until 1000ms after the last edit:
 
 ```tsx
 "use client";

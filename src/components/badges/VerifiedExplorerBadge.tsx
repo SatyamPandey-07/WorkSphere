@@ -20,7 +20,7 @@ export interface VerifiedExplorerBadgeProps {
 
 export function VerifiedExplorerBadge({
   refreshKey,
-  description = "Verified Explorer: Verified nomad with 5+ verified coworking venue check-ins.",
+  description = "Verified Explorer: earned after 10 accurate amenity votes match community consensus.",
   earned: propEarned,
   className = "",
   testId,
@@ -28,7 +28,7 @@ export function VerifiedExplorerBadge({
 }: VerifiedExplorerBadgeProps) {
   const [data, setData] = useState<BadgeData | null>(
     propEarned !== undefined
-      ? { earned: propEarned, progress: propEarned ? 5 : 0, target: 5 }
+      ? { earned: propEarned, progress: propEarned ? 10 : 0, target: 10 }
       : null,
   );
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
@@ -79,8 +79,8 @@ export function VerifiedExplorerBadge({
     if (propEarned !== undefined) {
       setData({
         earned: propEarned,
-        progress: propEarned ? 5 : 0,
-        target: 5,
+        progress: propEarned ? 10 : 0,
+        target: 10,
       });
     } else {
       fetchBadge();

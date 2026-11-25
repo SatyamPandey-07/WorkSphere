@@ -7,7 +7,7 @@ WorkSphere enables users and team administrators to organize workspace venues, d
 1. **GeoJSON (IETF RFC 7946):** The standard JSON-based geospatial format widely utilized in modern web mapping frameworks (Mapbox GL JS, Leaflet, OpenLayers), spatial analysis engines (PostGIS, Turf.js), and desktop GIS suites (QGIS, ArcGIS).
 2. **KML (OGC KML 2.2):** The XML-based Keyhole Markup Language standard optimized for 3D globe visualization in Google Earth, Google Earth Pro, and custom pin overlays in Google My Maps.
 
-The geographic transformation subsystem is implemented in [`src/lib/folderGeoExport.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/folderGeoExport.ts) and backed by the core domain logic in [`src/lib/export/domain/geoExporter.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/export/domain/geoExporter.ts).
+The geographic transformation subsystem is implemented in [`src/lib/folderGeoExport.ts`](../../src/lib/folderGeoExport.ts) and backed by the core domain logic in [`src/lib/export/domain/geoExporter.ts`](../../src/lib/export/domain/geoExporter.ts).
 
 ```mermaid
 flowchart TD
@@ -53,7 +53,7 @@ A universal pitfall in geospatial software is the inversion of coordinate axes (
 RFC 7946 Section 3.1.1 strictly mandates:
 > *"A position is an array of numbers. There MUST be two or more elements. The first two elements are longitude and latitude, or easting and northing, precisely in that order and using decimal numbers."*
 
-In [`src/lib/export/domain/geoExporter.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/export/domain/geoExporter.ts), coordinate pairs are mapped as:
+In [`src/lib/export/domain/geoExporter.ts`](../../src/lib/export/domain/geoExporter.ts), coordinate pairs are mapped as:
 
 ```typescript
 geometry: {
@@ -262,7 +262,7 @@ Each workspace is serialized as a distinct `<Placemark>` element containing iden
 
 ### 4.3 XML Escaping & Sanitization
 
-To prevent malformed XML parse crashes when users save venues with special characters (e.g., `&`, `<`, `>`, quotes, or non-printable ASCII codes), [`src/lib/folderGeoExport.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/folderGeoExport.ts) applies strict character scrubbing:
+To prevent malformed XML parse crashes when users save venues with special characters (e.g., `&`, `<`, `>`, quotes, or non-printable ASCII codes), [`src/lib/folderGeoExport.ts`](../../src/lib/folderGeoExport.ts) applies strict character scrubbing:
 
 ```typescript
 const INVALID_XML_CHARS =

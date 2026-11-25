@@ -26,7 +26,9 @@ const mockGetLatestBlockhash = jest.fn().mockResolvedValue({
   blockhash: "GHtXQBtRBcvNx4VdU5KnfQuL1RKJbF1sHhGGbCPNg6cB",
   lastValidBlockHeight: 200_000,
 });
-
+const mockGetBalance = jest.fn();
+const mockGetAccountInfo = jest.fn();
+const mockGetTokenAccountBalance = jest.fn();
 const mockGetSignatureStatus = jest.fn();
 const mockGetParsedTransaction = jest.fn();
 
@@ -34,8 +36,12 @@ jest.mock("@solana/web3.js", () => {
   const actual = jest.requireActual("@solana/web3.js");
   return {
     ...actual,
-    Connection: jest.fn().mockImplementation(() => ({
+    Connection: jest.fn().mockImplementation((rpcEndpoint: string) => ({
+      rpcEndpoint,
       getLatestBlockhash: mockGetLatestBlockhash,
+      getBalance: mockGetBalance,
+      getAccountInfo: mockGetAccountInfo,
+      getTokenAccountBalance: mockGetTokenAccountBalance,
       getSignatureStatus: mockGetSignatureStatus,
       getParsedTransaction: mockGetParsedTransaction,
     })),
@@ -92,6 +98,9 @@ import {
   recordEscrowState,
   getEscrowState,
   ESCROW_DISCRIMINATORS,
+  ESCROW_RPC_REQUEST_TIMEOUT_MS,
+  SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS,
+  TOKEN_PROGRAM_ID,
   USDC_DECIMALS,
   ESCROW_PROGRAM_ID,
   type EscrowDepositParams,
@@ -112,6 +121,20 @@ const validParams: EscrowDepositParams = {
   currency: "SOL",
   rpcUrl: VALID_RPC,
 };
+
+beforeEach(() => {
+  mockGetBalance.mockResolvedValue(10 * LAMPORTS_PER_SOL);
+  mockGetAccountInfo.mockResolvedValue({ owner: TOKEN_PROGRAM_ID });
+  mockGetTokenAccountBalance.mockResolvedValue({
+    value: {
+      amount: "1000000000",
+      decimals: USDC_DECIMALS,
+      uiAmount: 1000,
+      uiAmountString: "1000",
+    },
+  });
+});
+
 
 // ===========================================================================
 // § PDA Derivation
@@ -213,9 +236,9 @@ describe("validateDepositParams", () => {
   });
 
   it("accepts valid USDC params", () => {
-    expect(
-      validateDepositParams({ ...validParams, currency: "USDC" }),
-    ).toEqual({ valid: true });
+    expect(validateDepositParams({ ...validParams, currency: "USDC" })).toEqual(
+      { valid: true },
+    );
   });
 
   it("rejects missing payerWallet", () => {
@@ -325,6 +348,23 @@ describe("buildSolDepositTransaction", () => {
     );
   });
 
+  it("returns lastValidBlockHeight from latest blockhash query (#9635)", async () => {
+    const result = await buildSolDepositTransaction(validParams);
+    expect(result.lastValidBlockHeight).toBe(200_000);
+  });
+
+  it("incorporates compute unit limit instruction (#9635)", async () => {
+    const result = await buildSolDepositTransaction({
+      ...validParams,
+      computeUnitLimit: 300_000,
+    });
+    const { Transaction } = jest.requireActual("@solana/web3.js");
+    const tx = Transaction.from(
+      Buffer.from(result.serializedTransaction, "base64"),
+    );
+    expect(tx.instructions.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("throws on invalid params", async () => {
     await expect(
       buildSolDepositTransaction({ ...validParams, amount: -1 }),
@@ -379,6 +419,11 @@ describe("buildUsdcDepositTransaction", () => {
     expect(result.amountBaseUnits).toBe(BigInt(25 * 10 ** USDC_DECIMALS));
   });
 
+  it("returns lastValidBlockHeight from latest blockhash query (#9635)", async () => {
+    const result = await buildUsdcDepositTransaction(usdcParams);
+    expect(result.lastValidBlockHeight).toBe(200_000);
+  });
+
   it("throws on invalid params", async () => {
     await expect(
       buildUsdcDepositTransaction({ ...usdcParams, payerWallet: "" }),
@@ -413,6 +458,225 @@ describe("buildDepositTransaction", () => {
       amount: 10,
     });
     expect(result.amountBaseUnits).toBe(BigInt(10 * 10 ** USDC_DECIMALS));
+  });
+});
+
+describe("escrow deposit balance preflight", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetLatestBlockhash.mockResolvedValue({
+      blockhash: "GHtXQBtRBcvNx4VdU5KnfQuL1RKJbF1sHhGGbCPNg6cB",
+      lastValidBlockHeight: 200_000,
+    });
+  });
+
+  it("allows a SOL deposit when the deposit and 0.005 SOL reserve are funded", async () => {
+    const result = await buildSolDepositTransaction(validParams);
+
+    expect(result.serializedTransaction).toBeTruthy();
+    expect(mockGetBalance).toHaveBeenCalledWith(
+      new PublicKey(VALID_WALLET),
+      "confirmed",
+    );
+    expect(mockGetBalance.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGetLatestBlockhash.mock.invocationCallOrder[0],
+    );
+    expect(SOLANA_DEPOSIT_FEE_RESERVE_LAMPORTS).toBe(5_000_000n);
+  });
+
+  it("blocks a SOL deposit when the deposit plus reserve is insufficient", async () => {
+    mockGetBalance.mockResolvedValueOnce(1_504_999_999);
+
+    await expect(buildSolDepositTransaction(validParams)).rejects.toMatchObject(
+      {
+        code: "INSUFFICIENT_BALANCE",
+        message:
+          "Insufficient wallet balance (Required: 1.505 SOL, Available: 1.504999999 SOL)",
+      },
+    );
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("blocks a zero SOL balance", async () => {
+    mockGetBalance.mockResolvedValueOnce(0);
+
+    await expect(buildSolDepositTransaction(validParams)).rejects.toMatchObject(
+      { code: "INSUFFICIENT_BALANCE" },
+    );
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the SOL balance response is invalid", async () => {
+    mockGetBalance.mockResolvedValueOnce(Number.NaN);
+
+    await expect(buildSolDepositTransaction(validParams)).rejects.toMatchObject(
+      { code: "BALANCE_CHECK_FAILED" },
+    );
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("allows USDC when both the token balance and SOL reserve are sufficient", async () => {
+    const result = await buildUsdcDepositTransaction({
+      ...validParams,
+      currency: "USDC",
+      amount: 25,
+    });
+
+    expect(result.serializedTransaction).toBeTruthy();
+    expect(mockGetBalance).toHaveBeenCalled();
+    expect(mockGetAccountInfo).toHaveBeenCalled();
+    expect(mockGetTokenAccountBalance).toHaveBeenCalled();
+    expect(mockGetLatestBlockhash).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a USDC deposit when the token balance is insufficient", async () => {
+    mockGetTokenAccountBalance.mockResolvedValueOnce({
+      value: {
+        amount: "24999999",
+        decimals: USDC_DECIMALS,
+        uiAmount: 24.999999,
+        uiAmountString: "24.999999",
+      },
+    });
+
+    await expect(
+      buildUsdcDepositTransaction({
+        ...validParams,
+        currency: "USDC",
+        amount: 25,
+      }),
+    ).rejects.toMatchObject({
+      code: "INSUFFICIENT_BALANCE",
+      message: expect.stringContaining(
+        "Required: 25 USDC, Available: 24.999999 USDC",
+      ),
+    });
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the USDC balance response has unexpected decimals", async () => {
+    mockGetTokenAccountBalance.mockResolvedValueOnce({
+      value: {
+        amount: "25000000",
+        decimals: USDC_DECIMALS - 1,
+        uiAmount: 250,
+        uiAmountString: "250",
+      },
+    });
+
+    await expect(
+      buildUsdcDepositTransaction({
+        ...validParams,
+        currency: "USDC",
+        amount: 25,
+      }),
+    ).rejects.toMatchObject({ code: "BALANCE_CHECK_FAILED" });
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("blocks a USDC deposit when the separate SOL reserve is insufficient", async () => {
+    mockGetBalance.mockResolvedValueOnce(4_999_999);
+
+    await expect(
+      buildUsdcDepositTransaction({
+        ...validParams,
+        currency: "USDC",
+        amount: 25,
+      }),
+    ).rejects.toMatchObject({
+      code: "INSUFFICIENT_BALANCE",
+      message: expect.stringContaining(
+        "Insufficient SOL balance for fees and rent",
+      ),
+    });
+    expect(mockGetAccountInfo).not.toHaveBeenCalled();
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("treats a missing USDC token account as zero USDC", async () => {
+    mockGetAccountInfo.mockResolvedValueOnce(null);
+
+    await expect(
+      buildUsdcDepositTransaction({
+        ...validParams,
+        currency: "USDC",
+        amount: 25,
+      }),
+    ).rejects.toMatchObject({
+      code: "INSUFFICIENT_BALANCE",
+      message: expect.stringContaining("Available: 0 USDC"),
+    });
+    expect(mockGetTokenAccountBalance).not.toHaveBeenCalled();
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("rejects an uninitialized USDC token account", async () => {
+    mockGetTokenAccountBalance.mockRejectedValueOnce(
+      new Error("Invalid param: account not initialized"),
+    );
+
+    await expect(
+      buildUsdcDepositTransaction({
+        ...validParams,
+        currency: "USDC",
+        amount: 25,
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_TOKEN_ACCOUNT",
+      message: expect.stringContaining("not initialized"),
+    });
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the balance RPC request times out", async () => {
+    jest.useFakeTimers();
+    let resolveBalance: (balance: number) => void = () => {};
+    mockGetBalance.mockImplementationOnce(
+      () =>
+        new Promise<number>((resolve) => {
+          resolveBalance = resolve;
+        }),
+    );
+
+    try {
+      const buildPromise = buildSolDepositTransaction(validParams);
+      const rejection = expect(buildPromise).rejects.toMatchObject({
+        code: "BALANCE_CHECK_FAILED",
+        message: expect.stringContaining("timed out"),
+      });
+      await jest.advanceTimersByTimeAsync(ESCROW_RPC_REQUEST_TIMEOUT_MS);
+
+      await rejection;
+      expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+
+      resolveBalance(2 * LAMPORTS_PER_SOL);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("fails closed when the balance RPC request fails", async () => {
+    mockGetBalance.mockRejectedValueOnce(new Error("fetch failed"));
+
+    await expect(buildSolDepositTransaction(validParams)).rejects.toMatchObject(
+      {
+        code: "BALANCE_CHECK_FAILED",
+        message: expect.stringContaining("RPC request failed"),
+      },
+    );
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
+  it("does not query balances when the wallet is not connected", async () => {
+    await expect(
+      buildSolDepositTransaction({ ...validParams, payerWallet: "" }),
+    ).rejects.toThrow("Validation failed: payerWallet is required");
+
+    expect(mockGetBalance).not.toHaveBeenCalled();
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
   });
 });
 
@@ -831,6 +1095,9 @@ describe("POST /api/pay/solana", () => {
     auth.mockResolvedValue({ userId: "user_123" } as never);
     const res = await POST(makeRequest({ bookingId: "b1" }));
     expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("Solana wallet");
+    expect(mockGetBalance).not.toHaveBeenCalled();
   });
 
   it("returns 400 for invalid currency", async () => {
@@ -897,6 +1164,33 @@ describe("POST /api/pay/solana", () => {
     expect(json.data.currency).toBe("USDC");
   });
 
+  it("returns an insufficient-balance error before creating a transaction", async () => {
+    auth.mockResolvedValue({ userId: "user_123" } as never);
+    (prisma.booking.findUnique as jest.Mock).mockResolvedValue({
+      id: "booking1",
+      userId: "user_123",
+      status: "CONFIRMED",
+    });
+    mockGetBalance.mockResolvedValueOnce(1_004_999_999);
+
+    const res = await POST(
+      makeRequest({
+        bookingId: "booking1",
+        payerWallet: VALID_WALLET,
+        amount: 1,
+        currency: "SOL",
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      code: "INSUFFICIENT_BALANCE",
+      error:
+        "Insufficient wallet balance (Required: 1.005 SOL, Available: 1.004999999 SOL)",
+    });
+    expect(mockGetLatestBlockhash).not.toHaveBeenCalled();
+  });
+
   // --- RPC Error Handling ---
 
   it("returns 503 for RPC connection errors", async () => {
@@ -921,7 +1215,7 @@ describe("POST /api/pay/solana", () => {
 
     expect(res.status).toBe(503);
     const json = await res.json();
-    expect(json.error).toContain("unavailable");
+    expect(json.error).toContain("RPC request failed");
   });
 
   // --- Confirm Action ---
@@ -1241,7 +1535,9 @@ describe("POST /api/pay/solana", () => {
 // ===========================================================================
 
 describe("Anchor On-Chain Instructions & Verification", () => {
-  const recipientKey = new PublicKey("4sj1hqUXasW44qUiXtx47h14UHJbQhmcfGuNMLTzwanu");
+  const recipientKey = new PublicKey(
+    "4sj1hqUXasW44qUiXtx47h14UHJbQhmcfGuNMLTzwanu",
+  );
   const authorityKey = new PublicKey(VALID_WALLET);
 
   it("creates release instruction with correct Anchor discriminator and accounts", () => {
@@ -1380,4 +1676,3 @@ describe("Anchor On-Chain Instructions & Verification", () => {
     expect(getEscrowState("escrow-refund-test")).toBe("REFUNDED");
   });
 });
-

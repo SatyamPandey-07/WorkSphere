@@ -8,6 +8,34 @@ import { apiError } from "@/lib/apiResponse";
 import { swrCache, getVenueReviewsCacheKey } from "@/lib/cache/swrCache";
 import { executeIdempotent, IdempotencyConflictError } from "@/lib/idempotency";
 
+/**
+ * Recursively redacts sensitive userId fields from review objects, nested replies,
+ * reply arrays, and arbitrary child data structures.
+ */
+export function redactReviewPayload<T>(data: T, shouldRedact: boolean = true): T {
+  if (!shouldRedact || data === null || data === undefined) {
+    return data;
+  }
+
+  if (Array.isArray(data)) {
+    return data.map((item) => redactReviewPayload(item, shouldRedact)) as unknown as T;
+  }
+
+  if (typeof data === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (key === "userId") {
+        // Redact / strip sensitive userId
+        continue;
+      }
+      result[key] = redactReviewPayload(value, shouldRedact);
+    }
+    return result as T;
+  }
+
+  return data;
+}
+
 // GET /api/venues/[venueId]/reviews - Get all reviews/ratings for a venue
 export async function GET(
   req: NextRequest,
@@ -34,13 +62,34 @@ export async function GET(
     });
 
     if (!venue) {
-      return NextResponse.json({ reviews: [] });
+      return NextResponse.json({
+        reviews: [],
+        nextCursor: null,
+        hasMore: false,
+      });
     }
 
-    const cacheKey = getVenueReviewsCacheKey(venue.id);
-    const reviews = await swrCache(cacheKey, async () => {
+    const searchParams = req.nextUrl.searchParams;
+    const rawLimit = Number(searchParams.get("limit") ?? "20");
+    const limit =
+      Number.isSafeInteger(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, 100)
+        : 20;
+    const cursor = searchParams.get("cursor")?.trim() || null;
+
+    // Keep the existing cache key for the default first page; isolate all
+    // other pages so one cursor cannot receive another page's cached results.
+    const baseCacheKey = getVenueReviewsCacheKey(venue.id);
+    const cacheKey =
+      !cursor && limit === 20
+        ? baseCacheKey
+        : `${baseCacheKey}:cursor:${cursor ?? "first"}:limit:${limit}`;
+
+    const fetchedReviews = await swrCache(cacheKey, async () => {
       return await prisma.venueRating.findMany({
         where: { venueId: venue.id },
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        take: limit + 1,
         include: {
           user: {
             select: {
@@ -49,19 +98,40 @@ export async function GET(
             },
           },
         },
-        orderBy: { createdAt: "desc" },
+        // The ID tie-breaker makes the cursor order deterministic when two
+        // reviews share the same createdAt timestamp.
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       });
     });
 
-    return NextResponse.json({
-      reviews: reviews.map((r: any) => ({
+    const isUnauthenticated = !userId;
+
+    const formattedReviews = reviews.map((r: any) => {
+      const baseReview = {
         ...r,
         user: userId
           ? { firstName: r.user?.firstName, lastName: r.user?.lastName }
           : null,
-      })),
+      };
+
+      // When unauthenticated, redact top-level and nested reply userId fields
+      if (isUnauthenticated) {
+        return redactReviewPayload(baseReview, true);
+      }
+
+      return baseReview;
+    });
+
+    return NextResponse.json({
+      reviews: formattedReviews,
     });
   } catch (error) {
+    if (
+      (error as { code?: string })?.code === "P2025" &&
+      req.nextUrl.searchParams.has("cursor")
+    ) {
+      return apiError("Invalid reviews cursor", 400, "INVALID_CURSOR");
+    }
     console.error("GET /api/venues/[venueId]/reviews error:", error);
     return apiError("Failed to fetch reviews", 500, "INTERNAL_ERROR");
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   Volume2,
   VolumeX,
@@ -289,6 +290,8 @@ export interface AmbientSoundPlayerProps {
   standalone?: boolean;
   /** Initial open state for the popover panel */
   defaultOpen?: boolean;
+  /** Venue the trigger belongs to; used to name the trigger button for screen readers */
+  venueName?: string;
   /** Optional custom class name */
   className?: string;
 }
@@ -297,6 +300,7 @@ export function AmbientSoundPlayer({
   noiseLevel,
   standalone = false,
   defaultOpen = false,
+  venueName,
   className = "",
 }: AmbientSoundPlayerProps) {
   const [showPanel, setShowPanel] = useState(defaultOpen);
@@ -321,6 +325,14 @@ export function AmbientSoundPlayer({
   const presetNodesRef = useRef<
     Map<PresetId, { source: AudioBufferSourceNode; gain: GainNode }>
   >(new Map());
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useFocusTrap(dialogRef, {
+    isActive: showPanel && !standalone,
+    returnFocus: true,
+    onEscape: () => setShowPanel(false),
+  });
 
   // Safe AudioContext getter
   const getOrCreateAudioContext = useCallback((): AudioContext | null => {
@@ -526,7 +538,7 @@ export function AmbientSoundPlayer({
   const soundscapePanelContent = (
     <div
       role="region"
-      aria-label="Preset Soundscapes Player"
+      aria-label="Ambient audio synthesizer controls"
       data-testid="soundscape-player-panel"
       className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-2xl p-4 space-y-4"
     >
@@ -570,7 +582,10 @@ export function AmbientSoundPlayer({
           <button
             type="button"
             onClick={toggleMasterMute}
-            aria-label={isMasterMuted ? "Unmute master" : "Mute master"}
+            aria-label={
+              isMasterMuted ? "Unmute audio guide" : "Mute audio guide"
+            }
+            aria-pressed={!isMasterMuted}
             data-testid="master-mute-btn"
             className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
           >
@@ -586,6 +601,10 @@ export function AmbientSoundPlayer({
             max={100}
             value={masterVolume}
             aria-label="Master volume"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={masterVolume}
+            aria-valuetext={isMasterMuted ? "Muted" : `${masterVolume}%`}
             data-testid="master-volume-slider"
             onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
             className="flex-1 h-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 accent-blue-600 cursor-pointer"
@@ -644,6 +663,10 @@ export function AmbientSoundPlayer({
                     max={100}
                     value={state.volume}
                     aria-label={`${preset.name} volume`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={state.volume}
+                    aria-valuetext={`${state.volume}%`}
                     data-testid={`volume-slider-${preset.id}`}
                     onChange={(e) =>
                       handlePresetVolumeChange(
@@ -709,20 +732,30 @@ export function AmbientSoundPlayer({
     <div className={`relative inline-flex items-center ${className}`}>
       {/* Trigger button */}
       <button
+        ref={triggerRef}
         id={`ambient-player-trigger-${noiseLevel ?? "default"}`}
         type="button"
         onClick={() => setShowPanel((v) => !v)}
-        aria-label="Preset focus soundscapes player"
+        aria-label={
+          venueName
+            ? `Preset focus soundscapes player for ${venueName}`
+            : "Preset focus soundscapes player"
+        }
+        aria-expanded={showPanel}
         title="Focus Soundscapes: White Noise, Rain, Café Hum"
         data-testid="ambient-sound-trigger"
         className={`
           inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold
           transition-all duration-150 active:scale-95
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500
           text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-300 dark:border-zinc-700
           ${showPanel ? "ring-1 ring-blue-500 ring-offset-1" : ""}
         `}
       >
-        <Headphones className="w-3 h-3 shrink-0 text-blue-500" />
+        <Headphones
+          className="w-3 h-3 shrink-0 text-blue-500"
+          aria-hidden="true"
+        />
         <span className="sr-only">Focus soundscapes</span>
         {anyPlaying && <WaveBars active={!isMasterMuted} />}
       </button>
@@ -736,8 +769,10 @@ export function AmbientSoundPlayer({
             aria-hidden="true"
           />
           <div
+            ref={dialogRef}
             role="dialog"
-            aria-label="Ambient soundscapes player"
+            aria-modal="true"
+            aria-label="Ambient audio synthesizer controls"
             className="absolute bottom-full left-0 z-50 mb-2 w-80 sm:w-96 max-w-[95vw]"
           >
             {soundscapePanelContent}

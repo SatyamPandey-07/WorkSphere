@@ -8,7 +8,7 @@ export type {
 } from "./BookmarkVenueButton";
 export { RecentlyViewedVenues } from "./RecentlyViewedVenues";
 export { RecentlyViewedTracker } from "./RecentlyViewedTracker";
-export { SearchBar } from "./SearchBar";
+export { SearchBar, trimSearchQuery, isValidSearchQuery } from "./SearchBar";
 export { VenueSearchDrawer } from "./VenueSearchDrawer";
 export { VenueSearchEmptyState } from "./VenueSearchEmptyState";
 export { VenueSeatWaitlistModal } from "./VenueSeatWaitlistModal";
@@ -71,3 +71,12 @@ export type {
   VenueFilterDropdownProps,
   FilterOption,
 } from "./VenueFilterDropdown";
+
+export { StarRating } from "./StarRating";
+export type { StarRatingProps } from "./StarRating";
+
+export { NoiseMetricsPanel } from "./NoiseMetricsPanel";
+export type { NoiseMetricsPanelProps } from "./NoiseMetricsPanel";
+
+export { VenueHoursBadge } from "./VenueHoursBadge";
+export type { VenueHoursBadgeProps } from "./VenueHoursBadge";

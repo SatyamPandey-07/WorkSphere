@@ -68,6 +68,75 @@ describe("AcousticSpectrumAnalyzer Component", () => {
     expect(screen.getByTestId("spectrum-decay-badge")).toHaveTextContent("20 dB/s DECAY");
   });
 
+  it("disconnects microphone nodes, stops tracks, closes context, and cancels RAF on unmount", async () => {
+    const originalAudioContext = Object.getOwnPropertyDescriptor(window, "AudioContext");
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+
+    const track = { stop: jest.fn() };
+    const stream = { getTracks: () => [track] };
+    const source = { connect: jest.fn(), disconnect: jest.fn() };
+    const analyser = {
+      fftSize: 1024,
+      smoothingTimeConstant: 0.75,
+      minDecibels: -70,
+      maxDecibels: 0,
+      frequencyBinCount: 512,
+      getFloatFrequencyData: jest.fn(),
+      disconnect: jest.fn(),
+    };
+    const close = jest.fn().mockResolvedValue(undefined);
+    const audioContext = {
+      state: "running",
+      sampleRate: 44100,
+      createMediaStreamSource: jest.fn(() => source),
+      createAnalyser: jest.fn(() => analyser),
+      close,
+    };
+    const getUserMedia = jest.fn().mockResolvedValue(stream);
+
+    try {
+      Object.defineProperty(window, "AudioContext", {
+        configurable: true,
+        writable: true,
+        value: jest.fn(() => audioContext),
+      });
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia },
+      });
+
+      const { unmount } = render(<AcousticSpectrumAnalyzer />);
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("spectrum-mic-button"));
+        await Promise.resolve();
+      });
+
+      expect(getUserMedia).toHaveBeenCalledTimes(1);
+      expect(source.connect).toHaveBeenCalledWith(analyser);
+      expect(screen.getByTestId("spectrum-mic-button")).toHaveTextContent("Mic Live");
+
+      unmount();
+
+      expect(track.stop).toHaveBeenCalledTimes(1);
+      expect(source.disconnect).toHaveBeenCalledTimes(1);
+      expect(analyser.disconnect).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(window.cancelAnimationFrame).toHaveBeenCalled();
+    } finally {
+      if (originalAudioContext) {
+        Object.defineProperty(window, "AudioContext", originalAudioContext);
+      } else {
+        delete (window as any).AudioContext;
+      }
+      if (originalMediaDevices) {
+        Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
+      } else {
+        delete (navigator as any).mediaDevices;
+      }
+    }
+  });
+
+
   it("exports 32 frequency bands matching the acoustic specification", () => {
     expect(NUM_FREQUENCY_BARS).toBe(32);
     expect(FREQUENCY_BANDS_32).toHaveLength(32);

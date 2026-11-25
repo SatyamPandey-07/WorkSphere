@@ -3,9 +3,9 @@
 This document defines the network protocol specification, binary framing architecture, MTU sizing dynamics, flow control, and error recovery mechanisms for peer-to-peer file transfers over WebRTC DataChannels in WorkSphere.
 
 Implemented in:
-- **Core File Transfer Engine:** [`src/core/network/ChunkedFileTransfer.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/network/ChunkedFileTransfer.ts)
-- **WebRTC Mesh Architecture:** [`docs/WEBRTC_MESH_NETWORKING_GUIDE.md`](file:///c:/Users/admin/Desktop/workfere/docs/WEBRTC_MESH_NETWORKING_GUIDE.md)
-- **Congestion Telemetry:** [`docs/network/congestion-heatmap-telemetry.md`](file:///c:/Users/admin/Desktop/workfere/docs/network/congestion-heatmap-telemetry.md)
+- **Core File Transfer Engine:** [`src/core/network/ChunkedFileTransfer.ts`](../../src/core/network/ChunkedFileTransfer.ts)
+- **WebRTC Mesh Architecture:** [`docs/WEBRTC_MESH_NETWORKING_GUIDE.md`](../WEBRTC_MESH_NETWORKING_GUIDE.md)
+- **Congestion Telemetry:** [`docs/network/congestion-heatmap-telemetry.md`](congestion-heatmap-telemetry.md)
 
 ---
 

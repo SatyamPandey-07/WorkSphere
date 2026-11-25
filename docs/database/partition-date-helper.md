@@ -17,7 +17,7 @@ The integrity of this partitioning system hinges entirely on exact, mathematical
 3. **Partition Pruning Failures**: Queries scanning date ranges fail to prune partitions, resulting in full-table scans across hundreds of millions of historical rows.
 4. **Data Export Inconsistencies**: Administrative partition exports omit or duplicate records at monthly boundaries.
 
-To eliminate these hazards, WorkSphere centralizes all partition date arithmetic in [`src/app/api/admin/system/partitions/dateHelper.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/dateHelper.ts). This manual details the algorithms, timezone normalization techniques, RFC 4180 CSV escaping mechanics, and testing recipes for partition boundary calculation.
+To eliminate these hazards, WorkSphere centralizes all partition date arithmetic in [`src/app/api/admin/system/partitions/dateHelper.ts`](../../src/app/api/admin/system/partitions/dateHelper.ts). This manual details the algorithms, timezone normalization techniques, RFC 4180 CSV escaping mechanics, and testing recipes for partition boundary calculation.
 
 ---
 
@@ -217,7 +217,7 @@ export function escapeCsv(
 
 ### 7.1 Automated Monthly Partition Pre-Creation
 
-The partition maintenance cron ([`src/app/api/cron/partition-maintenance/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/cron/partition-maintenance/route.ts)) runs on the 1st of every month to pre-provision upcoming partition tables across all partitioned models:
+The partition maintenance cron ([`src/app/api/cron/partition-maintenance/route.ts`](../../src/app/api/cron/partition-maintenance/route.ts)) runs on the 1st of every month to pre-provision upcoming partition tables across all partitioned models:
 
 ```typescript
 // Cron calculation for upcoming month
@@ -267,7 +267,7 @@ Expected output:
 
 ## 8. Integration with Streaming CSV Export API
 
-The streaming export endpoint ([`src/app/api/admin/system/partitions/export/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/export/route.ts)) allows administrators to download telemetry and audit logs directly from a specific partition without blowing up server RAM.
+The streaming export endpoint ([`src/app/api/admin/system/partitions/export/route.ts`](../../src/app/api/admin/system/partitions/export/route.ts)) allows administrators to download telemetry and audit logs directly from a specific partition without blowing up server RAM.
 
 ```typescript
 import { calculatePartitionDates, escapeCsv } from "../dateHelper";
@@ -342,7 +342,7 @@ export async function GET(req: NextRequest) {
 
 ## 9. Unit Testing Recipes & Verification Suite
 
-Unit tests in [`src/__tests__/api/admin/system/partitions.test.ts`](file:///c:/Users/admin/Desktop/workfere/src/__tests__/api/admin/system/partitions.test.ts) assert mathematical correctness across boundary conditions.
+Unit tests in [`src/__tests__/api/admin/system/partitions.test.ts`](../../src/__tests__/api/admin/system/partitions.test.ts) assert mathematical correctness across boundary conditions.
 
 ### Recipe 1: Leap Year February Range Assertion
 

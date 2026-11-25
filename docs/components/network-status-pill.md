@@ -4,7 +4,7 @@
 
 In high-concurrency, offline-first Progressive Web Applications (PWAs) like WorkSphere, remote workers and digital nomads frequently experience fluctuating connectivity. Users book desks from underground transit stations, submit reviews in cafes with captive portals, or check in to coworking spaces with intermittent signal.
 
-The `NetworkStatusPill` component ([`src/components/NetworkStatusPill.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/NetworkStatusPill.tsx)) provides a compact, non-intrusive, real-time visual indicator of the client application's network connectivity and offline synchronization state.
+The `NetworkStatusPill` component ([`src/components/NetworkStatusPill.tsx`](../../src/components/NetworkStatusPill.tsx)) provides a compact, non-intrusive, real-time visual indicator of the client application's network connectivity and offline synchronization state.
 
 ### Primary Responsibilities:
 1. **Connectivity Transparency**: Instantly conveys whether the application is running in **Online ("Live")**, **Offline ("Local Mode")**, or **Syncing / Restored ("Back Online")** state.
@@ -296,7 +296,7 @@ To protect color-blind individuals (protanopia, deuteranopia, tritanopia), the p
 
 ### Pattern 1: Global Navigation Bar Integration
 
-Embed inside [`src/components/layout/Navbar.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/layout/Navbar.tsx):
+Embed inside [`src/components/Navbar.tsx`](../../src/components/Navbar.tsx):
 
 ```tsx
 import React from "react";

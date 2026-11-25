@@ -29,7 +29,11 @@ import { useUser } from "@clerk/nextjs";
 import confetti from "canvas-confetti";
 import { Venue } from "@/types/venue";
 import { trackEvent } from "@/lib/analytics";
-import { getCalendarUrls, downloadICS } from "@/lib/calendar";
+import { getCalendarUrls } from "@/lib/calendar";
+import {
+  generateIcsFile,
+  type BookingDetails,
+} from "@/lib/booking/icsGenerator";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
 import {
   handleModalBackdropClick,
@@ -418,6 +422,34 @@ export function BookingModal({
     } else if (bookingError === "End time must be after start time.") {
       setBookingError(null);
     }
+  };
+
+  const downloadConfirmedBookingIcs = () => {
+    if (!venue || !confirmation) return;
+
+    const booking: BookingDetails = {
+      id: confirmation.bookingId ?? confirmation.ids[0],
+      confirmationId: confirmation.ids[0],
+      date: confirmation.dates[0],
+      time: confirmation.time,
+      timeZone: browserTimeZone(),
+      duration: calculateDurationMinutes(bookingTime, bookingEndTime) ?? 60,
+      venue: {
+        name: venue.name,
+        address: venue.address ?? null,
+      },
+    };
+    const file = new Blob([generateIcsFile(booking)], {
+      type: "text/calendar;charset=utf-8",
+    });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `booking-${booking.id}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const isTimeInvalid =
@@ -823,7 +855,7 @@ export function BookingModal({
                   venue.address ?? "",
                   confirmation.dates[0],
                   confirmation.time,
-                  60,
+                  calculateDurationMinutes(bookingTime, bookingEndTime) ?? 60,
                   browserTimeZone(),
                 );
 
@@ -885,14 +917,7 @@ export function BookingModal({
                             type="button"
                             onClick={() => {
                               setShowCalendarDropdown(false);
-                              downloadICS(
-                                venue.name,
-                                venue.address ?? "",
-                                confirmation.dates[0],
-                                confirmation.time,
-                                60,
-                                confirmation.ids[0],
-                              );
+                              downloadConfirmedBookingIcs();
                             }}
                             data-testid="download-ics-button"
                             className="w-full flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors text-left"
@@ -900,7 +925,7 @@ export function BookingModal({
                           >
                             <span className="flex items-center gap-2">
                               <Download className="w-4 h-4 text-zinc-500" />
-                              Download (.ics)
+                              Download .ics
                             </span>
                           </button>
                         </div>

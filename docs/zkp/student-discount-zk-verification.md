@@ -10,9 +10,9 @@ WorkSphere provides subsidized workspace desks, high-speed Wi-Fi passes, and stu
 WorkSphere resolves this through **Zero-Knowledge Succinct Non-Interactive Arguments of Knowledge (zk-SNARKs)** utilizing the **Groth16 protocol** over the **BN254 (alt_bn128)** elliptic curve. Using client-side WebAssembly (WASM), students prove cryptographic membership within an accredited university registry without revealing their name, email, student ID number, or institutional department.
 
 The end-to-end pipeline spans three integrated layers:
-1. **Interactive Client Component:** [`src/components/student/StudentDiscountVerification.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/student/StudentDiscountVerification.tsx) managing camera QR scanning, user secret inputs, and cached verification passes.
-2. **Background Web Worker:** [`src/workers/zkpWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/zkpWorker.ts) executing witness computation and Groth16 proof generation off the main UI thread with WebAssembly SIMD acceleration.
-3. **Server-Side Verification API:** [`src/app/api/user/verify-student/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/user/verify-student/route.ts) executing pairing checks via `snarkjs`, enforcing Merkle root validity, preventing nullifier double-spending, and issuing student discounts.
+1. **Interactive Client Component:** [`src/components/student/StudentDiscountVerification.tsx`](../../src/components/student/StudentDiscountVerification.tsx) managing camera QR scanning, user secret inputs, and cached verification passes.
+2. **Background Web Worker:** [`src/workers/zkpWorker.ts`](../../src/workers/zkpWorker.ts) executing witness computation and Groth16 proof generation off the main UI thread with WebAssembly SIMD acceleration.
+3. **Server-Side Verification API:** [`src/app/api/user/verify-student/route.ts`](../../src/app/api/user/verify-student/route.ts) executing pairing checks via `snarkjs`, enforcing Merkle root validity, preventing nullifier double-spending, and issuing student discounts.
 
 ```mermaid
 sequenceDiagram
@@ -168,7 +168,7 @@ $$\text{nullifierHash} = \text{Poseidon}_2(s, \text{epoch})$$
 
 ### 4.2 Database Concurrency & Double-Spend Defense
 
-The database enforces unique nullifier consumption using an atomic transaction in [`src/app/api/user/verify-student/route.ts`](file:///c:/Users/admin/Desktop/workfere/src/app/api/user/verify-student/route.ts):
+The database enforces unique nullifier consumption using an atomic transaction in [`src/app/api/user/verify-student/route.ts`](../../src/app/api/user/verify-student/route.ts):
 
 ```typescript
 if (nullifierHash) {
@@ -211,7 +211,7 @@ If two concurrent requests attempt to spend the same nullifier simultaneously, P
 
 Computing zero-knowledge proofs requires heavy polynomial evaluations and multi-scalar multiplications (MSM). Running this on the browser's main JavaScript thread would freeze UI animations, user clicks, and video playback for 5–15 seconds.
 
-WorkSphere delegates all proving workloads to an isolated dedicated worker in [`src/workers/zkpWorker.ts`](file:///c:/Users/admin/Desktop/workfere/src/workers/zkpWorker.ts).
+WorkSphere delegates all proving workloads to an isolated dedicated worker in [`src/workers/zkpWorker.ts`](../../src/workers/zkpWorker.ts).
 
 ### 5.1 Prover Architecture in `zkpWorker.ts`
 

@@ -16,9 +16,16 @@ export type {
 export { ProfileOverview } from "./ProfileOverview";
 export { NomadStatsCard } from "./NomadStatsCard";
 export type { NomadStatsCardProps } from "./NomadStatsCard";
+export { NomadPassportCertificate } from "./NomadPassportCertificate";
+export type { NomadPassportCertificateProps } from "./NomadPassportCertificate";
 export type { ProfileOverviewProps } from "./ProfileOverview";
 export {
   NomadPassportCoin,
   NomadPassportCoinSkeleton,
 } from "./NomadPassportCoin";
 export type { NomadPassportCoinProps } from "./NomadPassportCoin";
+export {
+  PassportAttestationBadge,
+  type PassportAttestationBadgeProps,
+  type AttestationStatus,
+} from "./PassportAttestationBadge";

@@ -77,7 +77,7 @@ The codebase fetches routes relative to the host:
 const url = `/osrm/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
 ```
 
-In [next.config.ts](file:///c:/Users/ADMIN/OneDrive/Desktop/ECSoC/WorkSphere/next.config.ts), rewrites proxy these requests to the destination set by `NEXT_PUBLIC_OSRM_URL`:
+In [next.config.ts](../next.config.ts), rewrites proxy these requests to the destination set by `NEXT_PUBLIC_OSRM_URL`:
 
 ```typescript
 // next.config.ts

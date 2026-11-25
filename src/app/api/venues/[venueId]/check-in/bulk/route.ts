@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import {
+  invalidateVenueAvailability,
+  venueAvailabilityCacheKey,
+} from "@/lib/cache/venueAvailabilityCache";
 
 export const BulkCheckInSchema = z.object({
   bookingIds: z.array(z.string().cuid()).min(1).max(50),
@@ -114,7 +118,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
         const booking = foundMap.get(id);
         if (!booking) {
           failedIds.push(id);
-        } else if ((booking.status === "CANCELLED" || booking.status === "CANCELLED_BY_OPERATOR")) {
+        } else if (
+          booking.status === "CANCELLED" ||
+          booking.status === "CANCELLED_BY_OPERATOR"
+        ) {
           failedIds.push(id);
         } else {
           eligibleBookings.push(booking);
@@ -125,7 +132,35 @@ export async function POST(req: NextRequest, context: RouteContext) {
       let updatedBookings: typeof matchingBookings = [];
 
       if (eligibleIds.length > 0) {
-        // Atomically update booking rows to CHECKED_IN
+        // Record check-in timestamp and upsert CheckIn occupancy records
+        const checkInTime = checkInTimestamp
+          ? new Date(checkInTimestamp)
+          : new Date();
+        const expiresAt = new Date(checkInTime.getTime() + 4 * 60 * 60 * 1000);
+
+        // Atomically ensure occupancy records are created as an integral part of the transaction
+        for (const booking of eligibleBookings) {
+          await tx.checkIn.upsert({
+            where: {
+              userId_venueId: {
+                userId: booking.userId,
+                venueId: venue.id,
+              },
+            },
+            create: {
+              userId: booking.userId,
+              venueId: venue.id,
+              createdAt: checkInTime,
+              expiresAt,
+            },
+            update: {
+              createdAt: checkInTime,
+              expiresAt,
+            },
+          });
+        }
+
+        // Atomically update booking rows to CHECKED_IN once occupancy records are ensured
         await tx.booking.updateMany({
           where: {
             id: { in: eligibleIds },
@@ -135,37 +170,6 @@ export async function POST(req: NextRequest, context: RouteContext) {
             status: "CHECKED_IN",
           },
         });
-
-        // Record check-in timestamp and upsert CheckIn records if supported
-        const checkInTime = checkInTimestamp
-          ? new Date(checkInTimestamp)
-          : new Date();
-        const expiresAt = new Date(checkInTime.getTime() + 4 * 60 * 60 * 1000);
-
-        for (const booking of eligibleBookings) {
-          try {
-            await tx.checkIn.upsert({
-              where: {
-                userId_venueId: {
-                  userId: booking.userId,
-                  venueId: venue.id,
-                },
-              },
-              create: {
-                userId: booking.userId,
-                venueId: venue.id,
-                createdAt: checkInTime,
-                expiresAt,
-              },
-              update: {
-                createdAt: checkInTime,
-                expiresAt,
-              },
-            });
-          } catch {
-            // Ignore CheckIn table constraints if user relation is mocked or absent
-          }
-        }
 
         updatedBookings = await tx.booking.findMany({
           where: {
@@ -181,6 +185,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
         updatedBookings,
       };
     });
+
+    if (result.successfulCount > 0) {
+      await invalidateVenueAvailability(venueAvailabilityCacheKey(venue.id));
+    }
 
     return NextResponse.json(
       {

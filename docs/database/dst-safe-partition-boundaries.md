@@ -1,6 +1,6 @@
 # Database Maintenance Manual: PostgreSQL DateHelper Partition Boundary Normalization & DST Resilience
 
-This maintenance manual documents WorkSphere's PostgreSQL partition boundary generation, UTC normalization algorithms, Daylight Saving Time (DST) drift prevention, and system catalog verification engine ([src/app/api/admin/system/partitions/dateHelper.ts](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/dateHelper.ts) and [src/lib/partitionMaintenance.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/partitionMaintenance.ts)).
+This maintenance manual documents WorkSphere's PostgreSQL partition boundary generation, UTC normalization algorithms, Daylight Saving Time (DST) drift prevention, and system catalog verification engine ([src/app/api/admin/system/partitions/dateHelper.ts](../../src/app/api/admin/system/partitions/dateHelper.ts) and [src/lib/partitionMaintenance.ts](../../src/lib/partitionMaintenance.ts)).
 
 ---
 
@@ -35,7 +35,7 @@ Timezone shifts caused by Daylight Saving Time (DST) transitions (such as $\pm 1
 - **Data Insertion Gaps:** Gaps of $1 \text{ hour}$ between partition ranges cause PostgreSQL to reject incoming rows or dump them into unmonitored default partitions.
 - **Leap Year & Month-End Irregularities:** Months with 28, 29, 30, or 31 days require dynamic end-of-month calculation.
 
-To guarantee zero database downtime, WorkSphere normalizes all partition boundaries to **UTC Canonical Timestamps** (`00:00:00.000Z`) via [src/app/api/admin/system/partitions/dateHelper.ts](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/dateHelper.ts).
+To guarantee zero database downtime, WorkSphere normalizes all partition boundaries to **UTC Canonical Timestamps** (`00:00:00.000Z`) via [src/app/api/admin/system/partitions/dateHelper.ts](../../src/app/api/admin/system/partitions/dateHelper.ts).
 
 ---
 
@@ -179,7 +179,7 @@ $$\text{Valid Row Timestamp } t \in [\text{Start}, \text{End}) \iff \text{Start}
 
 ## 4. Automated Partition Pre-Creation & Catalog Verification
 
-File: [src/lib/partitionMaintenance.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/partitionMaintenance.ts#L135-L149)
+File: [src/lib/partitionMaintenance.ts](../../src/lib/partitionMaintenance.ts#L135-L149)
 
 ### System Catalog Inspection (`pg_inherits`, `pg_class`, `pg_namespace`)
 
@@ -199,7 +199,7 @@ ORDER BY child.relname;
 
 ### Automated Rolling Partition Pre-Creation
 
-To prevent row insertion failures when a new month begins, automated cron jobs ([src/lib/partitionMaintenance.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/partitionMaintenance.ts)) pre-create partitions **1 to 3 months in advance**:
+To prevent row insertion failures when a new month begins, automated cron jobs ([src/lib/partitionMaintenance.ts](../../src/lib/partitionMaintenance.ts)) pre-create partitions **1 to 3 months in advance**:
 
 ```typescript
 export async function autoCreateUpcomingTelemetryPartitions(
@@ -242,7 +242,7 @@ export async function autoCreateUpcomingTelemetryPartitions(
 
 ## 5. API Reference & Helper Contracts
 
-File: [src/app/api/admin/system/partitions/dateHelper.ts](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/dateHelper.ts)
+File: [src/app/api/admin/system/partitions/dateHelper.ts](../../src/app/api/admin/system/partitions/dateHelper.ts)
 
 ### Function Specifications
 
@@ -286,6 +286,6 @@ export function escapeCsv(
 
 ## 6. Repository Code Reference Map
 
-- [src/app/api/admin/system/partitions/dateHelper.ts](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/dateHelper.ts) — Boundary normalization utilities, regex validation, UTC date constructors, and CSV escaping.
-- [src/lib/partitionMaintenance.ts](file:///c:/Users/admin/Desktop/workfere/src/lib/partitionMaintenance.ts) — PostgreSQL system catalog querying (`pg_inherits`), automated rolling partition pre-creation, and partition detachment.
-- [src/app/api/admin/system/partitions/export/route.ts](file:///c:/Users/admin/Desktop/workfere/src/app/api/admin/system/partitions/export/route.ts) — Partition export endpoints consuming date boundary helpers and CSV escaping.
+- [src/app/api/admin/system/partitions/dateHelper.ts](../../src/app/api/admin/system/partitions/dateHelper.ts) — Boundary normalization utilities, regex validation, UTC date constructors, and CSV escaping.
+- [src/lib/partitionMaintenance.ts](../../src/lib/partitionMaintenance.ts) — PostgreSQL system catalog querying (`pg_inherits`), automated rolling partition pre-creation, and partition detachment.
+- [src/app/api/admin/system/partitions/export/route.ts](../../src/app/api/admin/system/partitions/export/route.ts) — Partition export endpoints consuming date boundary helpers and CSV escaping.

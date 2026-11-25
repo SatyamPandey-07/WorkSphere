@@ -55,7 +55,9 @@ describe("theme initialization before hydration", () => {
     expect(document.documentElement).not.toHaveClass("dark");
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
     expect(document.documentElement.style.colorScheme).toBe("light");
-    expect(document.documentElement.style.backgroundColor).toBe("rgb(255, 255, 255)");
+    expect(document.documentElement.style.backgroundColor).toBe(
+      "rgb(255, 255, 255)",
+    );
   });
 
   it("uses the system preference when no theme has been saved", () => {
@@ -85,6 +87,21 @@ describe("theme initialization before hydration", () => {
     const root = document.documentElement;
     expect(root.style.getPropertyValue("--primary-accent")).toBe("#00ff88");
     expect(root.style.getPropertyValue("--accent-lantern")).toBe("#00ff88");
+  });
+
+  it.each([
+    ["indigo", "#4338ca"],
+    ["rose", "#be123c"],
+    ["cyan", "#0e7490"],
+    ["violet", "#6d28d9"],
+  ] as const)("applies the saved %s accent before hydration", (accent, hex) => {
+    window.localStorage.setItem("worksphere-accent", accent);
+
+    runThemeInitScript();
+
+    expect(
+      document.documentElement.style.getPropertyValue("--primary-accent"),
+    ).toBe(hex);
   });
 
   it("preserves the pre-paint theme during provider hydration", () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { prisma } from "./prisma";
 import nodemailer from "nodemailer";
 import { getRedis } from "./redis";
@@ -6,10 +7,143 @@ import { appUrl } from "./appUrl";
 import { escapeHtml } from "./html";
 import { bookingStartsAt } from "./bookingTime";
 
-// Fallback idempotency store for deployments without Redis (single instance only).
-const sentInMemory = new Map<string, number>();
+export interface ReminderClaimResult {
+  claimed: boolean;
+  claimToken?: string;
+}
 
-async function wasSent(
+interface InMemoryReminderEntry {
+  state: "claimed" | "sent";
+  token: string;
+  expiresAt: number;
+}
+
+// Fallback idempotency store for deployments without Redis (single instance only).
+// NOTE: Single-process in-memory fallback cannot coordinate across multi-instance serverless deployments.
+// Production environments MUST configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.
+const sentInMemory = new Map<string, InMemoryReminderEntry>();
+
+/**
+ * Reset in-memory cache for deterministic unit test isolation.
+ */
+export function _clearSentInMemory(): void {
+  sentInMemory.clear();
+}
+
+/**
+ * Atomically attempts to claim a reminder delivery slot.
+ * Uses Redis `SET key value NX EX claimTtlSeconds` so only ONE concurrent worker can succeed.
+ *
+ * @param key Unique reminder idempotency key (e.g. `booking-reminder:${bookingId}`)
+ * @param claimTtlSeconds Lock holding duration during active dispatch (default: 300s / 5m)
+ * @param redisClient Optional Redis instance
+ */
+export async function claimReminderDelivery(
+  key: string,
+  claimTtlSeconds: number = 300,
+  redisClient?: ReturnType<typeof getRedis>,
+): Promise<ReminderClaimResult> {
+  const claimToken = randomUUID();
+  const redis = redisClient !== undefined ? redisClient : getRedis();
+
+  if (redis) {
+    try {
+      const res = await redis.set(key, `claimed:${claimToken}`, {
+        nx: true,
+        ex: claimTtlSeconds,
+      });
+      if (res === "OK" || res === true) {
+        return { claimed: true, claimToken };
+      }
+      return { claimed: false };
+    } catch (err) {
+      console.warn(
+        `[reminderCron] Redis claim failed for ${key}, falling back to memory:`,
+        err,
+      );
+    }
+  }
+
+  // In-memory fallback
+  const now = Date.now();
+  const existing = sentInMemory.get(key);
+  if (existing && existing.expiresAt > now) {
+    return { claimed: false };
+  }
+
+  sentInMemory.set(key, {
+    state: "claimed",
+    token: claimToken,
+    expiresAt: now + claimTtlSeconds * 1000,
+  });
+
+  return { claimed: true, claimToken };
+}
+
+/**
+ * Transitions a successfully dispatched reminder to the committed "sent" state.
+ * Extends the TTL for the full deduplication window (e.g. 1-2 hours) so future sweeps skip it.
+ */
+export async function markReminderSent(
+  key: string,
+  claimToken: string,
+  successTtlSeconds: number = 7200,
+  redisClient?: ReturnType<typeof getRedis>,
+): Promise<void> {
+  const redis = redisClient !== undefined ? redisClient : getRedis();
+
+  if (redis) {
+    try {
+      await redis.set(key, "sent", { ex: successTtlSeconds });
+      return;
+    } catch (err) {
+      console.warn(
+        `[reminderCron] Redis markSent failed for ${key}, falling back to memory:`,
+        err,
+      );
+    }
+  }
+
+  sentInMemory.set(key, {
+    state: "sent",
+    token: claimToken,
+    expiresAt: Date.now() + successTtlSeconds * 1000,
+  });
+}
+
+/**
+ * Releases a claimed reminder delivery when dispatch fails, allowing immediate retry.
+ * Only releases if the claim token matches the caller's token.
+ */
+export async function releaseReminderClaim(
+  key: string,
+  claimToken: string,
+  redisClient?: ReturnType<typeof getRedis>,
+): Promise<void> {
+  const redis = redisClient !== undefined ? redisClient : getRedis();
+
+  if (redis) {
+    try {
+      const current = await redis.get<string>(key);
+      if (current === `claimed:${claimToken}`) {
+        await redis.del(key);
+      }
+      return;
+    } catch (err) {
+      console.warn(
+        `[reminderCron] Redis release failed for ${key}, falling back to memory:`,
+        err,
+      );
+    }
+  }
+
+  const existing = sentInMemory.get(key);
+  if (existing && existing.token === claimToken) {
+    sentInMemory.delete(key);
+  }
+}
+
+export async function wasSent(
   key: string,
   redisClient?: ReturnType<typeof getRedis>,
 ): Promise<boolean> {
@@ -21,11 +155,11 @@ async function wasSent(
       // fall through to memory
     }
   }
-  const expiresAt = sentInMemory.get(key);
-  return expiresAt !== undefined && expiresAt > Date.now();
+  const entry = sentInMemory.get(key);
+  return entry !== undefined && entry.expiresAt > Date.now();
 }
 
-async function markSent(
+export async function markSent(
   key: string,
   ttlSeconds: number,
   redisClient?: ReturnType<typeof getRedis>,
@@ -39,7 +173,11 @@ async function markSent(
       // fall through to memory
     }
   }
-  sentInMemory.set(key, Date.now() + ttlSeconds * 1000);
+  sentInMemory.set(key, {
+    state: "sent",
+    token: "legacy",
+    expiresAt: Date.now() + ttlSeconds * 1000,
+  });
 }
 
 export { parseBookingDateTime } from "./bookingTime";
@@ -174,11 +312,23 @@ export async function processUpcomingReservationAlerts(
       }
 
       const key = `booking-reminder:${booking.id}`;
-      if (await wasSent(key, redis)) continue;
+      const claim = await claimReminderDelivery(key, 300, redis);
+      if (!claim.claimed || !claim.claimToken) {
+        continue;
+      }
 
-      if (await sendEmailAlert(booking)) {
-        await markSent(key, 2 * 60 * 60, redis);
-        sent++;
+      let emailSent = false;
+      try {
+        emailSent = await sendEmailAlert(booking);
+        if (emailSent) {
+          await markReminderSent(key, claim.claimToken, 2 * 60 * 60, redis);
+          sent++;
+        } else {
+          await releaseReminderClaim(key, claim.claimToken, redis);
+        }
+      } catch (err) {
+        await releaseReminderClaim(key, claim.claimToken, redis);
+        throw err;
       }
     } catch (err) {
       console.error(

@@ -2,7 +2,7 @@
 
 ## 1. Overview & Operational Role
 
-WorkSphere incorporates a **Gasless Transaction Relayer** ([`src/lib/payments/solanaRelayer.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/payments/solanaRelayer.ts) & [`src/lib/payments/solanaPay.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/payments/solanaPay.ts)) designed to streamline user micro-payments and seat reservations using SPL-Token USDC on the Solana blockchain.
+WorkSphere incorporates a **Gasless Transaction Relayer** ([`src/lib/payments/solanaRelayer.ts`](../../src/lib/payments/solanaRelayer.ts) & [`src/lib/payments/solanaPay.ts`](../../src/lib/payments/solanaPay.ts)) designed to streamline user micro-payments and seat reservations using SPL-Token USDC on the Solana blockchain.
 
 In standard decentralized applications, users must possess both the target token (USDC) and native network tokens (SOL) to cover base transaction execution and priority fees. This requirement introduces significant onboarding friction. The WorkSphere relayer eliminates this barrier by acting as the **designated fee payer**, co-signing transactions and covering network lamports on behalf of end users while strict cryptographic guarantees ensure treasury funds cannot be diverted or drained.
 

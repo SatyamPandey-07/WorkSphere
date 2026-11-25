@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Tests for the escrow RPC connection pool failover and optimistic client
  * confirmation with background status polling (#7529).
  *
- * All Solana SDK calls are mocked — no real network or wallet interactions.
+ * All Solana SDK calls are mocked â€” no real network or wallet interactions.
  */
 
 // Fix jsdom Buffer vs Uint8Array realm mismatch for @noble/hashes
@@ -31,6 +31,10 @@ import {
   resetEscrowRpcPool,
   getEscrowClient,
   resetEscrowClient,
+  simulateEscrowTransaction,
+  simulateEscrowDeposit,
+  withRpcPollTimeout,
+  type QuorumTelemetryRecord,
 } from "@/lib/solana/escrowClient";
 import { SolanaPayEscrowManager } from "@/lib/solana/solanaPayEscrow";
 
@@ -116,7 +120,7 @@ function buildPool(
 }
 
 // ===========================================================================
-// § Retry classification, backoff, and endpoint resolution
+// Â§ Retry classification, backoff, and endpoint resolution
 // ===========================================================================
 
 describe("isEscrowRpcRetryableError", () => {
@@ -202,7 +206,7 @@ describe("resolveEscrowRpcEndpoints", () => {
 });
 
 // ===========================================================================
-// § RPC pool failover
+// Â§ RPC pool failover
 // ===========================================================================
 
 describe("EscrowRpcConnectionPool failover", () => {
@@ -315,6 +319,93 @@ describe("EscrowRpcConnectionPool failover", () => {
     }
   });
 
+  it("completes multi-endpoint failover cleanly without unhandled promise rejections on slow primary timeout (#7633)", async () => {
+    const unhandledRejections: unknown[] = [];
+    const rejectionHandler = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on("unhandledRejection", rejectionHandler);
+
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      let primaryLateReject: ((err: Error) => void) | undefined;
+      const primaryPromise = new Promise((_, reject) => {
+        primaryLateReject = reject;
+      });
+
+      const primary = createMockConnection({
+        getLatestBlockhash: jest.fn().mockImplementation(() => primaryPromise),
+      });
+      const secondary = createMockConnection();
+
+      const { pool } = buildPool(
+        [PRIMARY, SECONDARY],
+        { [PRIMARY]: primary, [SECONDARY]: secondary },
+        { requestTimeoutMs: 15, maxRetriesPerEndpoint: 0 },
+      );
+
+      const result = await pool.execute((conn) => conn.getLatestBlockhash());
+
+      expect(result.blockhash).toBe(
+        "GHtXQBtRBcvNx4VdU5KnfQuL1RKJbF1sHhGGbCPNg6cB",
+      );
+      expect(pool.getActiveEndpoint()).toBe(SECONDARY);
+
+      // Simulate primary endpoint socket rejecting late after failover
+      primaryLateReject?.(new Error("RPC connection timeout"));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      // Must not emit unhandled rejection
+      expect(unhandledRejections).toEqual([]);
+
+      // Must log clean failover diagnostic message
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`[EscrowRpcPool] Endpoint ${PRIMARY} failed`),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`failing over to ${SECONDARY}`),
+      );
+    } finally {
+      process.removeListener("unhandledRejection", rejectionHandler);
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not emit unhandled rejection when withRpcPollTimeout aborts an abandoned operation that rejects late (#7633)", async () => {
+    const unhandledRejections: unknown[] = [];
+    const rejectionHandler = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on("unhandledRejection", rejectionHandler);
+
+    try {
+      let lateReject: ((err: Error) => void) | undefined;
+      const hungOperation = (_signal: AbortSignal) =>
+        new Promise((_, reject) => {
+          lateReject = reject;
+        });
+
+      await expect(
+        withRpcPollTimeout(hungOperation, {
+          timeoutMs: 15,
+          endpoint: PRIMARY,
+        }),
+      ).rejects.toBeInstanceOf(EscrowRpcTimeoutError);
+
+      lateReject?.(new Error("RPC connection timeout"));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(unhandledRejections).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", rejectionHandler);
+    }
+  });
+
+  it("simulateEscrowDeposit is defined and callable (#7633)", () => {
+    expect(typeof simulateEscrowDeposit).toBe("function");
+  });
+
   it("does not retry non-retryable errors on the same endpoint", async () => {
     const primary = createMockConnection({
       getLatestBlockhash: jest
@@ -395,7 +486,7 @@ describe("EscrowRpcConnectionPool failover", () => {
 });
 
 // ===========================================================================
-// § RPC pool health checks
+// Â§ RPC pool health checks
 // ===========================================================================
 
 describe("EscrowRpcConnectionPool health checks", () => {
@@ -465,7 +556,7 @@ describe("EscrowRpcConnectionPool health checks", () => {
 });
 
 // ===========================================================================
-// § EscrowClient optimistic confirmation with background polling
+// Â§ EscrowClient optimistic confirmation with background polling
 // ===========================================================================
 
 describe("EscrowClient optimistic confirmation (#7529)", () => {
@@ -723,7 +814,7 @@ describe("EscrowClient optimistic confirmation (#7529)", () => {
 });
 
 // ===========================================================================
-// § WebSocket subscription failure falls back to background polling
+// Â§ WebSocket subscription failure falls back to background polling
 // ===========================================================================
 
 describe("SolanaPayEscrowManager WebSocket fallback to polling", () => {
@@ -776,7 +867,7 @@ describe("SolanaPayEscrowManager WebSocket fallback to polling", () => {
 });
 
 // ===========================================================================
-// § Shared singletons
+// Â§ Shared singletons
 // ===========================================================================
 
 describe("escrow client singletons", () => {
@@ -793,5 +884,123 @@ describe("escrow client singletons", () => {
     resetEscrowRpcPool();
     expect(getEscrowRpcPool()).not.toBe(pool);
     expect(getEscrowClient()).not.toBe(client);
+  });
+});
+
+// ===========================================================================
+// Â§ Multi-RPC 2-of-3 quorum simulation, PENDING_CONSENSUS & leader-drop rollback (#7682)
+// ===========================================================================
+
+describe("simulateEscrowTransaction 2-of-3 multi-RPC quorum (#7682)", () => {
+  it("achieves 2-of-3 quorum when one RPC fails transiently, returns PENDING_CONSENSUS immediately, and finalizes", async () => {
+    const telemetryLog: QuorumTelemetryRecord[] = [];
+    const onRollback = jest.fn();
+    let pollRound = 0;
+
+    const makeNode = (id: string, failSim = false) =>
+      ({
+        rpcEndpoint: id,
+        simulateTransaction: jest.fn(async () => {
+          if (failSim) {
+            throw httpError(429, "Too Many Requests");
+          }
+          return {
+            context: { slot: 800_100 },
+            value: {
+              err: null,
+              logs: ["Program log: Escrow deposited"],
+              slot: 800_100,
+            },
+          };
+        }),
+        getSignatureStatuses: jest.fn(async () => {
+          if (failSim) {
+            throw httpError(503, "Node desynchronized");
+          }
+          pollRound++;
+          const finalized = pollRound > 2;
+          return {
+            value: [
+              makeStatus(
+                finalized ? "finalized" : "confirmed",
+                finalized ? 800_120 : 800_105,
+              ),
+            ],
+          };
+        }),
+      }) as unknown as Connection;
+
+    const c1 = makeNode(PRIMARY, true);
+    const c2 = makeNode(SECONDARY, false);
+    const c3 = makeNode(TERTIARY, false);
+
+    const result = await simulateEscrowTransaction([c1, c2, c3], {} as any, {
+      endpoints: [PRIMARY, SECONDARY, TERTIARY],
+      signature: "sig_quorum_ok_7682",
+      quorumSize: 2,
+      pollIntervalMs: 5,
+      maxPollAttempts: 5,
+      onRollback,
+      onTelemetry: (rec) => telemetryLog.push(rec),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.state).toBe("PENDING_CONSENSUS");
+    expect(result.quorumReached).toBe(true);
+    expect(result.optimisticSlot).toBe(800_100);
+
+    const finalized = await result.commitmentPromise;
+    expect(finalized.state).toBe("FINALIZED");
+    expect(finalized.rolledBack).toBe(false);
+    expect(finalized.finalizedSlot).toBe(800_120);
+    expect(onRollback).not.toHaveBeenCalled();
+    expect(telemetryLog.length).toBeGreaterThanOrEqual(2);
+    expect(telemetryLog[0].achievedConfirmations).toBe(2);
+  });
+
+  it("rolls back automatically when signature is dropped from the leader queue before finalized commitment", async () => {
+    const onRollback = jest.fn();
+    let pollCalls = 0;
+
+    const makeNode = (id: string) =>
+      ({
+        rpcEndpoint: id,
+        simulateTransaction: jest.fn(async () => ({
+          context: { slot: 900_000 },
+          value: { err: null, logs: [], slot: 900_000 },
+        })),
+        getSignatureStatuses: jest.fn(async () => {
+          pollCalls++;
+          if (pollCalls <= 3) {
+            return { value: [makeStatus("processed", 900_001)] };
+          }
+          return { value: [null] };
+        }),
+      }) as unknown as Connection;
+
+    const result = await simulateEscrowTransaction(
+      [makeNode(PRIMARY), makeNode(SECONDARY), makeNode(TERTIARY)],
+
+      {} as any,
+      {
+        endpoints: [PRIMARY, SECONDARY, TERTIARY],
+        signature: "sig_dropped_7682",
+        quorumSize: 2,
+        pollIntervalMs: 5,
+        maxPollAttempts: 5,
+        onRollback,
+      },
+    );
+
+    expect(result.state).toBe("PENDING_CONSENSUS");
+
+    const outcome = await result.commitmentPromise;
+    expect(outcome.state).toBe("ROLLED_BACK");
+    expect(outcome.rolledBack).toBe(true);
+    expect(outcome.rollbackReason).toMatch(/dropped from leader queue/i);
+    expect(onRollback).toHaveBeenCalledWith(
+      "sig_dropped_7682",
+      expect.stringMatching(/dropped from leader queue/i),
+    );
   });
 });

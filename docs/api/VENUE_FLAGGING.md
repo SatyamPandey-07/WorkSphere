@@ -110,11 +110,70 @@ Errors use the shared `apiError` format:
 For validation failures, the middleware may also include a `details` object
 containing field-level messages.
 
-## Persistence and moderation notifications
+## Prisma persistence schema
 
-The current handler writes a `FlaggedItem` row with `type: "VENUE"`,
-`itemId`, `reason`, `reportedById`, optional `details`, and the model's
-default pending status. It then invalidates the venue reviews cache.
+Venue and review flags are persisted in PostgreSQL via the `FlaggedItem` model in
+[`prisma/schema.prisma`](../../prisma/schema.prisma):
+
+```prisma
+enum FlagType {
+  VENUE
+  REVIEW
+}
+
+enum FlagStatus {
+  PENDING
+  DISMISSED
+  RESOLVED
+}
+
+model FlaggedItem {
+  id           String     @id @default(cuid())
+  type         FlagType
+  itemId       String
+  reason       String
+  details      String?
+  status       FlagStatus @default(PENDING)
+  reportedById String
+  reportedBy   User       @relation(fields: [reportedById], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([status])
+  @@index([itemId])
+}
+```
+
+### Schema & indexing notes
+
+- **Polymorphic target (`type`, `itemId`)**: Prisma does not enforce a foreign-key relation on `itemId` because `FlaggedItem` references either `Venue.id` (`type: "VENUE"`) or `VenueRating.id` (`type: "REVIEW"`). `POST /api/venues/{venueId}/flag` always verifies that `prisma.venue.findUnique({ where: { id: venueId } })` exists before inserting, and writes `type: "VENUE"`.
+- **Reporter cascade (`reportedBy`, `reportedById`)**: Linked to `User.id` with `onDelete: Cascade`, cleaning up flags if a reporter account is deleted.
+- **Deduplication lookup**: Before inserting, the route checks `prisma.flaggedItem.findFirst({ where: { itemId: venueId, reportedById: userId, reason, status: "PENDING" } })`. Filtering on `status: "PENDING"` prevents duplicate active tickets for the same `(venueId, userId, reason)` tuple while still allowing a user to submit a fresh report if a previous ticket was already `DISMISSED` or `RESOLVED`.
+- **Indexes**: `@@index([status])` accelerates the admin moderation queue (`where: { status: "PENDING" }`), and `@@index([itemId])` supports per-venue/per-review lookups.
+- **Cache invalidation**: After persisting a new `FlaggedItem`, the handler calls `invalidateVenueReviewsCache(venueId)`.
+
+## Moderation status transitions
+
+Moderation state changes are performed by authenticated administrators (`User.isAdmin === true`, verified via `verifyAdmin()`) in [`src/app/admin/actions.ts`](../../src/app/admin/actions.ts):
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING : POST /api/venues/[venueId]/flag
+    PENDING --> DISMISSED : dismissFlag(flagId)
+    PENDING --> RESOLVED : deleteFlaggedItem(flagId)
+```
+
+| Transition | Trigger / Server Action | Database & Side Effects | Audit Log (`AdminAuditLog`) |
+| :--- | :--- | :--- | :--- |
+| `[*] -> PENDING` | `POST /api/venues/[venueId]/flag` | Creates `FlaggedItem` with `status: PENDING` (default), `type: "VENUE"`, trimmed `reason`, optional trimmed `details`; calls `invalidateVenueReviewsCache(venueId)`. | — |
+| `PENDING -> DISMISSED` | `dismissFlag(flagId)` | Updates `FlaggedItem.status` to `"DISMISSED"`; revalidates `/admin/feedback`. Leaves the target venue or review intact. | `action: "DISMISS_FLAG"`, `entityType: "FlaggedItem"`, `entityId: flagId` |
+| `PENDING -> RESOLVED` | `deleteFlaggedItem(flagId)` | Runs inside `prisma.$transaction`: fetches `FlaggedItem`, deletes the target `Venue` (`type === "VENUE"`) or `VenueRating` (`type === "REVIEW"`), updates `FlaggedItem.status` to `"RESOLVED"`, and revalidates `/admin/feedback`. | `action: "DELETE_VENUE"` or `"DELETE_REVIEW"`, `entityType: "FlaggedItem"`, `entityId: flagId`, `details: {"itemIdDeleted": "..."}` |
+
+### Admin queue hydration (`getPendingFlags`)
+
+`getPendingFlags()` queries `prisma.flaggedItem.findMany({ where: { status: "PENDING" }, orderBy: { createdAt: "desc" } })` along with reporter metadata (`firstName`, `lastName`, `email`), then resolves `itemDetails` manually via `prisma.venue.findUnique` (`VENUE`) or `prisma.venueRating.findUnique` (`REVIEW`) because `itemId` is polymorphic.
+
+## Moderation notifications
 
 **No moderator webhook is dispatched by this route today.** There is therefore
 no truthful outbound webhook payload schema to document yet. A webhook
@@ -124,6 +183,8 @@ retry/idempotency behavior) before clients or moderators rely on it.
 ## Implementation references
 
 - `src/app/api/venues/[venueId]/flag/route.ts`
+- `src/app/admin/actions.ts`
+- `prisma/schema.prisma`
 - `src/lib/apiHandler.ts`
 - `src/lib/apiResponse.ts`
 - `src/lib/rateLimit.ts`

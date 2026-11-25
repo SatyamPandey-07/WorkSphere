@@ -27,7 +27,7 @@ function buildResponse(amenity: string, upvotes: number, downvotes: number) {
 // GET /api/venues/[venueId]/amenity-votes
 export async function GET(
   _req: NextRequest,
-  context: { params: Promise<{ venueId: string }> }
+  context: { params: Promise<{ venueId: string }> },
 ) {
   try {
     const { venueId } = await context.params;
@@ -68,7 +68,7 @@ export async function GET(
       const myVote = userId
         ? v.votes.find(
             (vote: { userId: string; isUpvote: boolean }) =>
-              vote.userId === userId
+              vote.userId === userId,
           )
         : undefined;
 
@@ -95,7 +95,7 @@ export async function GET(
 // POST /api/venues/[venueId]/amenity-votes
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ venueId: string }> }
+  context: { params: Promise<{ venueId: string }> },
 ) {
   try {
     const { venueId } = await context.params;
@@ -137,7 +137,7 @@ export async function POST(
     if (existingVote) {
       if (existingVote.isUpvote === isUpvote) {
         return NextResponse.json(
-          buildResponse(amenity, validation.upvotes, validation.downvotes)
+          buildResponse(amenity, validation.upvotes, validation.downvotes),
         );
       }
 
@@ -154,7 +154,7 @@ export async function POST(
       });
 
       return NextResponse.json(
-        buildResponse(amenity, updated.upvotes, updated.downvotes)
+        buildResponse(amenity, updated.upvotes, updated.downvotes),
       );
     }
 
@@ -170,10 +170,93 @@ export async function POST(
     });
 
     return NextResponse.json(
-      buildResponse(amenity, updated.upvotes, updated.downvotes)
+      buildResponse(amenity, updated.upvotes, updated.downvotes),
     );
   } catch (error: any) {
     console.error("POST /api/venues/[venueId]/amenity-votes error:", error);
+    return apiError(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      "INTERNAL_ERROR",
+    );
+  }
+}
+
+// DELETE /api/venues/[venueId]/amenity-votes
+export async function DELETE(
+  req: NextRequest,
+  context: { params: Promise<{ venueId: string }> },
+) {
+  try {
+    const { venueId } = await context.params;
+    const { userId } = await auth();
+    if (!userId) {
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
+    }
+
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return apiError("Invalid JSON body", 400, "VALIDATION_FAILED");
+    }
+
+    const amenity = normalizeRequiredText(body?.amenity);
+    if (!amenity) {
+      return apiError(
+        "Missing required amenity parameter",
+        400,
+        "VALIDATION_FAILED",
+      );
+    }
+
+    const venue = await prisma.venue.findUnique({
+      where: { id: venueId },
+    });
+    if (!venue) {
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
+    }
+
+    const validation = await prisma.amenityValidation.findUnique({
+      where: { venueId_amenity: { venueId, amenity } },
+    });
+    if (!validation) {
+      return apiError(
+        "Amenity validation record not found",
+        404,
+        "AMENITY_NOT_FOUND",
+      );
+    }
+
+    const existingVote = await prisma.amenityVote.findUnique({
+      where: { userId_validationId: { userId, validationId: validation.id } },
+    });
+    if (!existingVote) {
+      return apiError(
+        "No vote found for this user and amenity",
+        404,
+        "VOTE_NOT_FOUND",
+      );
+    }
+
+    await prisma.$transaction([
+      prisma.amenityVote.delete({
+        where: { id: existingVote.id },
+      }),
+      prisma.amenityValidation.update({
+        where: { id: validation.id },
+        data: existingVote.isUpvote
+          ? { upvotes: { decrement: 1 } }
+          : { downvotes: { decrement: 1 } },
+      }),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      message: "Vote deleted successfully",
+    });
+  } catch (error: any) {
+    console.error("DELETE /api/venues/[venueId]/amenity-votes error:", error);
     return apiError(
       error instanceof Error ? error.message : "Internal server error",
       500,

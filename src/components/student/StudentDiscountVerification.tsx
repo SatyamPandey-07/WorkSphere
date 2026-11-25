@@ -16,7 +16,11 @@ import {
   Zap,
 } from "lucide-react";
 import { computeMembershipCommit } from "@/lib/zkp/commitment";
-import { getCachedProof, invalidateProof, storeProof } from "@/lib/zkp/proofCache";
+import {
+  getCachedProof,
+  invalidateProof,
+  storeProof,
+} from "@/lib/zkp/proofCache";
 import type { ZkpProofProgressPhase } from "@/workers/zkpWorker";
 
 interface StudentDiscountVerificationProps {
@@ -319,7 +323,8 @@ export function StudentDiscountVerification({
               body: JSON.stringify({ serverSideFallback: true, studentId }),
               signal: controller?.signal,
             });
-            if (workerRef.current !== worker || controller?.signal.aborted) return;
+            if (workerRef.current !== worker || controller?.signal.aborted)
+              return;
             const data = await response.json();
             if (response.ok) {
               setError(null);
@@ -362,7 +367,8 @@ export function StudentDiscountVerification({
             signal: controller?.signal,
           });
 
-          if (workerRef.current !== worker || controller?.signal.aborted) return;
+          if (workerRef.current !== worker || controller?.signal.aborted)
+            return;
           const data = await response.json();
 
           if (!response.ok) {
@@ -411,7 +417,9 @@ export function StudentDiscountVerification({
     workerRef.current = worker;
     return worker;
   }, [terminateWorker, studentId]);
-  spawnWorkerRef.current = spawnWorker;
+  useEffect(() => {
+    spawnWorkerRef.current = spawnWorker;
+  });
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -942,7 +950,7 @@ export function StudentDiscountVerification({
                   Abort
                 </Button>
               )}
-            </Button>
+            </div>
             {isProving && proofProgress !== null && (
               <ProofProgressIndicator
                 progress={proofProgress.percent}

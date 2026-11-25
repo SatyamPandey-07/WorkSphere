@@ -944,32 +944,16 @@ export function BookingModal({
                 </p>
               )}
 
-              {confirmation && (() => {
-                const calUrls = getCalendarUrls(
-                  venue.name,
-                  venue.address ?? "",
-                  confirmation.dates[0],
-                  confirmation.time,
-                  calculateDurationMinutes(bookingTime, bookingEndTime) ?? 60,
-                  browserTimeZone(),
-                );
-
-                return (
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {/* Add to Calendar Dropdown */}
-                    <div className="relative inline-block text-left">
-                      <button
-                        type="button"
-                        onClick={() => setShowCalendarDropdown((prev) => !prev)}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                        aria-expanded={showCalendarDropdown}
-                        aria-haspopup="true"
-                        data-testid="calendar-quick-add-btn"
-                      >
-                        <CalendarPlus className="w-4 h-4 text-blue-500" />
-                        <span>Add to Calendar</span>
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showCalendarDropdown ? "rotate-180" : ""}`} />
-                      </button>
+              {confirmation &&
+                (() => {
+                  const calUrls = getCalendarUrls(
+                    venue.name,
+                    venue.address ?? "",
+                    confirmation.dates[0],
+                    confirmation.time,
+                    calculateDurationMinutes(bookingTime, bookingEndTime) ?? 60,
+                    browserTimeZone(),
+                  );
 
                   return (
                     <div className="flex flex-wrap justify-center gap-2">
@@ -985,55 +969,68 @@ export function BookingModal({
                           aria-haspopup="true"
                           data-testid="calendar-quick-add-btn"
                         >
-                          <a
-                            href={calUrls.googleUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => setShowCalendarDropdown(false)}
-                            data-testid="add-to-google-calendar"
-                            className="flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors"
-                          >
-                            <span className="flex items-center gap-2">
-                              <CalendarPlus className="w-4 h-4 text-blue-500" />
-                              Add to Google Calendar
-                            </span>
-                            <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
-                          </a>
+                          <CalendarPlus className="w-4 h-4 text-blue-500" />
+                          <span>Add to Calendar</span>
+                          <ChevronDown
+                            className={`w-3.5 h-3.5 transition-transform duration-200 ${showCalendarDropdown ? "rotate-180" : ""}`}
+                          />
+                        </button>
 
-                          <a
-                            href={calUrls.outlookUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => setShowCalendarDropdown(false)}
-                            data-testid="add-to-outlook-calendar"
-                            className="flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors"
+                        {showCalendarDropdown && (
+                          <div
+                            data-testid="calendar-quick-add-dropdown"
+                            className="absolute left-0 sm:left-auto sm:right-0 mt-1.5 w-56 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-150"
                           >
-                            <span className="flex items-center gap-2">
-                              <Calendar className="w-4 h-4 text-sky-500" />
-                              Add to Outlook
-                            </span>
-                            <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
-                          </a>
+                            <a
+                              href={calUrls.googleUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => setShowCalendarDropdown(false)}
+                              data-testid="add-to-google-calendar"
+                              className="flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors"
+                            >
+                              <span className="flex items-center gap-2">
+                                <CalendarPlus className="w-4 h-4 text-blue-500" />
+                                Add to Google Calendar
+                              </span>
+                              <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                            </a>
 
-                          <div className="my-1 border-t border-zinc-100 dark:border-zinc-700/50" />
+                            <a
+                              href={calUrls.outlookUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={() => setShowCalendarDropdown(false)}
+                              data-testid="add-to-outlook-calendar"
+                              className="flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors"
+                            >
+                              <span className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-sky-500" />
+                                Add to Outlook
+                              </span>
+                              <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                            </a>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowCalendarDropdown(false);
-                              downloadConfirmedBookingIcs();
-                            }}
-                            data-testid="download-ics-button"
-                            className="w-full flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors text-left"
-                            aria-label="Download .ics file"
-                          >
-                            <span className="flex items-center gap-2">
-                              <Download className="w-4 h-4 text-zinc-500" />
-                              Download .ics
-                            </span>
-                          </button>
-                        </div>
-                      )}
+                            <div className="my-1 border-t border-zinc-100 dark:border-zinc-700/50" />
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowCalendarDropdown(false);
+                                downloadConfirmedBookingIcs();
+                              }}
+                              data-testid="download-ics-button"
+                              className="w-full flex items-center justify-between px-3.5 py-2 text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition-colors text-left"
+                              aria-label="Download .ics file"
+                            >
+                              <span className="flex items-center gap-2">
+                                <Download className="w-4 h-4 text-zinc-500" />
+                                Download .ics
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })()}

@@ -1,6 +1,7 @@
 /**
  * route.ts
  * API handler to persist and reconcile converged whiteboard states with monotonic sequence numbering.
+ * Enforces Clerk authentication and room-level authorization for all operations (#10364).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -20,6 +21,10 @@ import {
     type StoredDelta,
     type StoredSnapshot,
 } from '@/lib/crdt/snapshotManager';
+import {
+    authorizeRoomOperation,
+    type RoomOperationType,
+} from '@/lib/whiteboard/whiteboardAuthorization';
 
 interface WhiteboardSnapshot {
     state: CrdtState;
@@ -73,16 +78,50 @@ function verifyChecksum(update: Uint8Array, checksum: string): boolean {
     return computeSnapshotChecksum(update) === checksum;
 }
 
+/**
+ * Validates request authorization for a room and required permission tier.
+ */
+async function enforceAuth(
+    request: NextRequest,
+    roomId: string,
+    operation: RoomOperationType,
+): Promise<NextResponse | null> {
+    const authResult = await authorizeRoomOperation(request, roomId, operation);
+    if (!authResult.authorized) {
+        return NextResponse.json(
+            { error: authResult.error || 'Forbidden' },
+            { status: authResult.statusCode || 403 },
+        );
+    }
+    return null;
+}
+
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
+        let body: any;
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+        }
 
+        if (!body || typeof body !== 'object') {
+            return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+        }
+
+        // Operation 6: Room-state clearing (destructive / delete operation)
         if (body.action === 'clear') {
             const { roomId } = body as { roomId?: string };
-            if (roomId) {
-                roomSnapshots.delete(roomId);
-                await getSnapshotStorage().clearRoom(roomId);
+            if (!roomId || typeof roomId !== 'string') {
+                return NextResponse.json({ error: 'Missing roomId' }, { status: 400 });
             }
+
+            const authErr = await enforceAuth(request, roomId, 'delete');
+            if (authErr) return authErr;
+
+            roomSnapshots.delete(roomId);
+            await getSnapshotStorage().clearRoom(roomId);
+
             return NextResponse.json({
                 success: true,
                 message: 'Whiteboard canvas cleared',
@@ -91,12 +130,20 @@ export async function POST(request: NextRequest) {
             }, { status: 200 });
         }
 
+        // Operation 2: Snapshot creation (write operation)
         if (body.action === 'snapshot') {
             if (!isSerializedSnapshot(body.snapshot)) {
                 return NextResponse.json({ error: 'Invalid snapshot payload' }, { status: 400 });
             }
 
             const snapshot: StoredSnapshot = deserializeSnapshot(body.snapshot);
+            if (!snapshot.roomId || typeof snapshot.roomId !== 'string') {
+                return NextResponse.json({ error: 'Missing roomId in snapshot' }, { status: 400 });
+            }
+
+            const authErr = await enforceAuth(request, snapshot.roomId, 'write');
+            if (authErr) return authErr;
+
             if (!verifyChecksum(snapshot.update, snapshot.checksum)) {
                 return NextResponse.json({ error: 'Snapshot checksum mismatch' }, { status: 400 });
             }
@@ -109,12 +156,20 @@ export async function POST(request: NextRequest) {
             }, { status: 200 });
         }
 
+        // Operation 3: Delta insertion (write operation)
         if (body.action === 'delta') {
             if (!isSerializedDelta(body.delta)) {
                 return NextResponse.json({ error: 'Invalid delta payload' }, { status: 400 });
             }
 
             const delta: StoredDelta = deserializeDelta(body.delta);
+            if (!delta.roomId || typeof delta.roomId !== 'string') {
+                return NextResponse.json({ error: 'Missing roomId in delta' }, { status: 400 });
+            }
+
+            const authErr = await enforceAuth(request, delta.roomId, 'write');
+            if (authErr) return authErr;
+
             if (!verifyChecksum(delta.update, delta.checksum)) {
                 return NextResponse.json({ error: 'Delta checksum mismatch' }, { status: 400 });
             }
@@ -127,41 +182,53 @@ export async function POST(request: NextRequest) {
             }, { status: 200 });
         }
 
+        // Operation 5: Delta cleanup / purging (destructive / delete operation)
         if (body.action === 'purgeDeltas') {
             const { roomId, throughSeq } = body as {
                 roomId?: string;
                 throughSeq?: number;
             };
-            if (!roomId || typeof throughSeq !== 'number') {
+            if (!roomId || typeof roomId !== 'string' || typeof throughSeq !== 'number') {
                 return NextResponse.json(
                     { error: 'Missing roomId or throughSeq' },
                     { status: 400 },
                 );
             }
 
+            const authErr = await enforceAuth(request, roomId, 'delete');
+            if (authErr) return authErr;
+
             await getSnapshotStorage().deleteDeltasThrough(roomId, throughSeq);
             return NextResponse.json({ success: true, roomId, throughSeq }, { status: 200 });
         }
 
+        // Operation 4: Snapshot deletion (destructive / delete operation)
         if (body.action === 'deleteSnapshot') {
             const { roomId } = body as { roomId?: string };
-            if (!roomId) {
+            if (!roomId || typeof roomId !== 'string') {
                 return NextResponse.json({ error: 'Missing roomId' }, { status: 400 });
             }
+
+            const authErr = await enforceAuth(request, roomId, 'delete');
+            if (authErr) return authErr;
 
             await getSnapshotStorage().deleteSnapshot(roomId);
             return NextResponse.json({ success: true, roomId }, { status: 200 });
         }
 
+        // Fallback / legacy POST operation: direct state persistence (write operation)
         const { roomId, state, sequenceNumber } = body as {
             roomId: string;
             state: CrdtState;
             sequenceNumber?: number;
         };
 
-        if (!roomId || !state) {
+        if (!roomId || typeof roomId !== 'string' || !state) {
             return NextResponse.json({ error: 'Missing roomId or state' }, { status: 400 });
         }
+
+        const authErr = await enforceAuth(request, roomId, 'write');
+        if (authErr) return authErr;
 
         const existing = roomSnapshots.get(roomId);
         const incomingSeq = typeof sequenceNumber === 'number' ? sequenceNumber : (existing?.sequenceNumber ?? 0) + 1;
@@ -193,6 +260,7 @@ export async function POST(request: NextRequest) {
     }
 }
 
+// Operation 7: Room-state deletion via DELETE (destructive / delete operation)
 export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const roomId = searchParams.get('roomId');
@@ -200,6 +268,9 @@ export async function DELETE(request: NextRequest) {
     if (!roomId) {
         return NextResponse.json({ error: 'Missing roomId' }, { status: 400 });
     }
+
+    const authErr = await enforceAuth(request, roomId, 'delete');
+    if (authErr) return authErr;
 
     roomSnapshots.delete(roomId);
     await getSnapshotStorage().clearRoom(roomId);
@@ -212,6 +283,7 @@ export async function DELETE(request: NextRequest) {
     }, { status: 200 });
 }
 
+// Operation 1: Snapshot retrieval and inspection (read operation)
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const roomId = searchParams.get('roomId');
@@ -219,6 +291,9 @@ export async function GET(request: NextRequest) {
     if (!roomId) {
         return NextResponse.json({ error: 'Missing roomId' }, { status: 400 });
     }
+
+    const authErr = await enforceAuth(request, roomId, 'read');
+    if (authErr) return authErr;
 
     const action = searchParams.get('action');
     const storage = getSnapshotStorage();

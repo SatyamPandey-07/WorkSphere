@@ -198,12 +198,23 @@ describe("POST /api/favorites", () => {
     );
   });
 
-  it("returns 409 when the same venue is favorited again", async () => {
+  it("returns the existing favorite when concurrent creation causes P2002", async () => {
+    const existingFavorite = {
+      id: "favorite_existing_123",
+      userId: "user_test_123",
+      venueId: "venue_123",
+      venue: {},
+      tags: [],
+    };
+
     (resolveVenue as jest.Mock).mockResolvedValue({
       id: "venue_123",
       placeId: "place_123",
     });
     (prisma.favorite.upsert as jest.Mock).mockRejectedValue({ code: "P2002" });
+    (prisma.favorite.findFirst as jest.Mock).mockResolvedValue(
+      existingFavorite,
+    );
 
     const req = new NextRequest("http://localhost/api/favorites", {
       method: "POST",
@@ -211,9 +222,10 @@ describe("POST /api/favorites", () => {
     });
     const res = await POST(req);
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.error).toBe("Already in favorites");
+    expect(data.bookmarked).toBe(true);
+    expect(data.favorite.id).toBe("favorite_existing_123");
   });
 });
 

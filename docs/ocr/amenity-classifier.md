@@ -1,6 +1,6 @@
 ﻿# AmenityClassifier: Tokenization, Regex Pattern Matching, and Confidence Scoring Pipeline
 
-This document details the architecture, regex dictionary dictionaries, tokenization pipeline, and confidence score calculation methodology of **AmenityClassifier** ([`src/core/ocr/AmenityClassifier.ts`](file:///c:/Users/admin/Desktop/workfere/src/core/ocr/AmenityClassifier.ts)), used for extracting structured workspace amenities from OCR-scanned venue flyers, menu photos, signage, and user reviews.
+This document details the architecture, regex dictionary dictionaries, tokenization pipeline, and confidence score calculation methodology of **AmenityClassifier** ([`src/core/ocr/AmenityClassifier.ts`](../../src/core/ocr/AmenityClassifier.ts)), used for extracting structured workspace amenities from OCR-scanned venue flyers, menu photos, signage, and user reviews.
 
 ---
 

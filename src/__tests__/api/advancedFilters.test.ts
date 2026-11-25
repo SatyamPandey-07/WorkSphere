@@ -1,4 +1,9 @@
-import { venueSearchSchema, venueRatingSchema } from "@/lib/validations";
+import {
+  venueCreateSchema,
+  venueSearchSchema,
+  venueRatingSchema,
+} from "@/lib/validations";
+import { applyFilters } from "@/lib/filters";
 
 describe("Advanced Workspace Filters validations", () => {
   describe("venueSearchSchema (Search Parameters Parsing)", () => {
@@ -15,6 +20,24 @@ describe("Advanced Workspace Filters validations", () => {
       }
     });
 
+    it("should parse the ergonomic quick filter parameters independently", () => {
+      const result = venueSearchSchema.safeParse({
+        lat: "35.6762",
+        lng: "139.6503",
+        radius: "1000",
+        ergonomic: "true",
+        standingDesk: "1",
+        externalMonitor: "false",
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.ergonomic).toBe(true);
+        expect(result.data.standingDesk).toBe(true);
+        expect(result.data.externalMonitor).toBe(false);
+      }
+    });
+
     it("should accept valid outlet density bands", () => {
       const densities = ["every_table", "some_tables", "wall_seats", "none"];
       densities.forEach((density) => {
@@ -24,6 +47,7 @@ describe("Advanced Workspace Filters validations", () => {
           radius: "1000",
           outletDensity: density,
         });
+
         expect(result.success).toBe(true);
         if (result.success) {
           expect(result.data.outletDensity).toBe(density);
@@ -71,6 +95,56 @@ describe("Advanced Workspace Filters validations", () => {
           expect(result.data.musicStyle).toBe(style);
         }
       });
+    });
+  });
+
+  describe("Ergonomic filter matching", () => {
+    it("matches standing desks, monitors, and chairs using their venue fields", () => {
+      const venues = [
+        {
+          id: "all-equipment",
+          hasStandingDesk: true,
+          hasExternalMonitor: true,
+          hasErgonomic: true,
+        },
+        {
+          id: "chair-only",
+          hasStandingDesk: false,
+          hasExternalMonitor: false,
+          hasErgonomic: true,
+        },
+        { id: "monitor-only", hasExternalMonitor: true },
+      ];
+
+      expect(
+        applyFilters(venues, {
+          standingDesk: true,
+          externalMonitor: true,
+          ergonomic: true,
+        }).map((venue) => venue.id),
+      ).toEqual(["all-equipment"]);
+      expect(
+        applyFilters(venues, { standingDesk: true }).map((venue) => venue.id),
+      ).toEqual(["all-equipment"]);
+    });
+  });
+
+  describe("venueCreateSchema ergonomic features", () => {
+    it("accepts distinct standing-desk and monitor venue attributes", () => {
+      const result = venueCreateSchema.safeParse({
+        name: "Work Lounge",
+        latitude: 35.6762,
+        longitude: 139.6503,
+        category: "coworking",
+        hasStandingDesk: true,
+        hasExternalMonitor: true,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.hasStandingDesk).toBe(true);
+        expect(result.data.hasExternalMonitor).toBe(true);
+      }
     });
   });
 

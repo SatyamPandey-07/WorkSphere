@@ -37,13 +37,19 @@ export async function GET() {
     }
 
     const notifications = await prisma.pushNotificationLog.findMany({
-      where: { userId },
+      where: {
+        userId,
+        status: { notIn: ["DISMISSED", "ARCHIVED"] },
+      },
       orderBy: { createdAt: "desc" },
       take: 20,
     });
 
     const unreadCount = await prisma.pushNotificationLog.count({
-      where: { userId, status: { not: "READ" } },
+      where: {
+        userId,
+        status: { notIn: ["READ", "DISMISSED", "ARCHIVED"] },
+      },
     });
 
     return NextResponse.json({
@@ -100,6 +106,33 @@ export async function POST(req: Request) {
           data: {
             status: "DELIVERED",
             read: false,
+          },
+        });
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.action === "clearAll") {
+      await executeWithRetry(async () => {
+        await prisma.pushNotificationLog.deleteMany({
+          where: { userId },
+        });
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.action === "dismiss") {
+      if (!body.id || typeof body.id !== "string") {
+        return NextResponse.json(
+          { error: "Notification id is required for dismiss" },
+          { status: 400 },
+        );
+      }
+      await executeWithRetry(async () => {
+        await prisma.pushNotificationLog.deleteMany({
+          where: {
+            userId,
+            id: body.id,
           },
         });
       });

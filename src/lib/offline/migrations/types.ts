@@ -173,6 +173,7 @@ export interface MigrationDiagnosticSnapshot {
 export interface MigrationBroadcastMessage {
   type:
     | "UPGRADE_REQUESTED"
+    | "CLOSE_CONNECTION"
     | "CONNECTION_CLOSED"
     | "UPGRADE_BLOCKED"
     | "UPGRADE_COMPLETED"
@@ -212,6 +213,9 @@ export interface CoordinateOpenOptions {
   targetVersion?: number;
   timeoutMs?: number;
   blockedTimeoutMs?: number;
+  maxRetries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
   signal?: AbortSignal;
   onVersionChange?: (event: IDBVersionChangeEvent) => void;
   onBlocked?: () => void;

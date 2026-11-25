@@ -1732,7 +1732,11 @@ function initSwMigrationCoordination() {
     swMigrationChannel.onmessage = (event) => {
       const msg = event.data;
       if (!msg || msg.dbName !== "worksphere-offline") return;
-      if (msg.type === "UPGRADE_REQUESTED" || msg.type === "UPGRADE_BLOCKED") {
+      if (
+        msg.type === "UPGRADE_REQUESTED" ||
+        msg.type === "UPGRADE_BLOCKED" ||
+        msg.type === "CLOSE_CONNECTION"
+      ) {
         swMigrationUpgradeInProgress = true;
         if (swDb) {
           try {

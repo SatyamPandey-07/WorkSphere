@@ -18,7 +18,9 @@ jest.mock("@/components/profile/NomadPassportCoin", () => ({
   default: () => <div data-testid="mock-passport-coin">Coin</div>,
 }));
 
-import NomadPassportGallery, { playPoapMintChime } from "@/components/profile/NomadPassportGallery";
+import NomadPassportGallery, {
+  playPoapMintChime,
+} from "@/components/profile/NomadPassportGallery";
 
 describe("NomadPassportGallery Component & playPoapMintChime", () => {
   const mockSetValueAtTime = jest.fn();
@@ -59,6 +61,18 @@ describe("NomadPassportGallery Component & playPoapMintChime", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (window as any).AudioContext = MockAudioContext;
+    global.fetch = jest.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            valid: true,
+            status: "verified",
+            signatureFingerprint: "mocked...fingerprint",
+            timestamp: "2024-03-01T12:00:00Z",
+          }),
+      }),
+    );
   });
 
   afterEach(() => {
@@ -103,10 +117,16 @@ describe("NomadPassportGallery Component & playPoapMintChime", () => {
     it("renders gallery header and earned stamps section", () => {
       render(<NomadPassportGallery />);
 
-      expect(screen.getByText(/Proof-of-Productivity & Digital Nomad Passport/i)).toBeInTheDocument();
-      expect(screen.getByText(/Earned Passport Stamps & Country Badges/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Proof-of-Productivity & Digital Nomad Passport/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/Earned Passport Stamps & Country Badges/i),
+      ).toBeInTheDocument();
       expect(screen.getByText(/Portugal Country Stamp/i)).toBeInTheDocument();
-      expect(screen.getAllByText(/Second Home Coworking Lisboa/i).length).toBeGreaterThan(0);
+      expect(
+        screen.getAllByText(/Second Home Coworking Lisboa/i).length,
+      ).toBeGreaterThan(0);
     });
 
     it("toggles celebration audio on and off", () => {
@@ -116,7 +136,10 @@ describe("NomadPassportGallery Component & playPoapMintChime", () => {
       expect(soundBtn).toHaveAttribute("aria-label", "Mute celebratory chime");
 
       fireEvent.click(soundBtn);
-      expect(soundBtn).toHaveAttribute("aria-label", "Enable celebratory chime");
+      expect(soundBtn).toHaveAttribute(
+        "aria-label",
+        "Enable celebratory chime",
+      );
     });
 
     it("opens stamp inspection modal when clicking Preview button", () => {

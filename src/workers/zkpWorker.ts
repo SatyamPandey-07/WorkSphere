@@ -42,6 +42,20 @@ type WorkerMessage =
   | TerminateMessage
   | AbortMessage;
 
+export type ZkpProofProgressPhase = "witness" | "proving" | "finalizing";
+
+interface ZkpProofProgressMessage {
+  type: "progress";
+  stage: "generating";
+  phase: ZkpProofProgressPhase;
+  percent: number;
+}
+
+type ZkpProofProgressReporter = (
+  phase: ZkpProofProgressPhase,
+  percent: number,
+) => void;
+
 let generation = 0;
 
 export const DEFAULT_VERIFICATION_TIMEOUT_MS = 15_000;
@@ -202,6 +216,7 @@ export async function terminateCurveBn128(): Promise<void> {
 async function generateProof(
   identityToken: string,
   expectedCommit: string,
+  reportProgress: ZkpProofProgressReporter,
 ): Promise<{
   proof: unknown;
   publicSignals: unknown;
@@ -211,6 +226,9 @@ async function generateProof(
   const zkpOptions = await getOptimizedZkpOptions();
 
   try {
+    // The compiled circuit has no component-progress imports; report only
+    // phase boundaries rather than estimating in-phase progress.
+    reportProgress("witness", 0);
     await (snarkjs as any).wtns.calculate(
       { identityToken, expectedCommit },
       "/zkp/premium_membership.wasm",
@@ -218,6 +236,7 @@ async function generateProof(
       zkpOptions.witnessOptions,
     );
 
+    reportProgress("proving", 50);
     const proofResult = await (snarkjs.groth16 as any).prove(
       "/zkp/premium_membership.zkey",
       wtns,
@@ -225,6 +244,7 @@ async function generateProof(
       zkpOptions.proverOptions,
     );
 
+    reportProgress("finalizing", 90);
     return {
       ...proofResult,
       simdAccelerated: zkpOptions.simdEnabled,
@@ -371,14 +391,19 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
     }
 
     try {
-      self.postMessage({
-        type: "progress",
-        stage: "generating",
-      });
-
       // Using the memory-optimized generateProof instead of fullProve
       const { proof, publicSignals } = await withTimeout(
-        () => generateProof(identityToken, expectedCommit),
+        () =>
+          generateProof(identityToken, expectedCommit, (phase, percent) => {
+            if (myGeneration !== generation) return;
+            const progressMessage: ZkpProofProgressMessage = {
+              type: "progress",
+              stage: "generating",
+              phase,
+              percent,
+            };
+            self.postMessage(progressMessage);
+          }),
         timeoutMs,
         "Witness generation timed out after 30 seconds",
       );
@@ -397,6 +422,7 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
         return;
       }
 
+      generation++;
       const errorType = classifyError(error);
 
       self.postMessage({

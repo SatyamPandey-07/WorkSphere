@@ -36,6 +36,24 @@ describe("CopyToClipboardButton", () => {
     expect(screen.getByText("Copy Location")).toBeInTheDocument();
   });
 
+  it("renders with custom ariaLabel on title and aria-label attributes", () => {
+    render(
+      <CopyToClipboardButton
+        textToCopy="37.7749° N, 122.4194° W"
+        ariaLabel="Copy GPS coordinates for Workspace Coffee"
+      />,
+    );
+
+    const button = screen.getByRole("button", {
+      name: "Copy GPS coordinates for Workspace Coffee",
+    });
+    expect(button).toBeInTheDocument();
+    expect(button).toHaveAttribute(
+      "title",
+      "Copy GPS coordinates for Workspace Coffee",
+    );
+  });
+
   it("copies text using navigator.clipboard.writeText and shows checkmark and toast", async () => {
     const mockWriteText = jest.fn().mockResolvedValue(undefined);
     Object.assign(navigator, {
@@ -79,9 +97,15 @@ describe("CopyToClipboardButton", () => {
     expect(screen.getByText("Copied!")).toBeInTheDocument();
     expect(screen.getByRole("status")).toBeInTheDocument();
 
-    // Advance timers by 2000ms
     act(() => {
-      jest.advanceTimersByTime(2000);
+      jest.advanceTimersByTime(1999);
+    });
+
+    expect(screen.getByText("Copied!")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(1);
     });
 
     expect(screen.getByText("Copy Address")).toBeInTheDocument();
@@ -131,6 +155,39 @@ describe("CopyToClipboardButton", () => {
     expect(execCommandMock).toHaveBeenCalledWith("copy");
     expect(screen.getByText("Copied!")).toBeInTheDocument();
     consoleErrorSpy.mockRestore();
+  });
+
+  it("shows an error when clipboard and fallback copying both fail", async () => {
+    const mockWriteText = jest
+      .fn()
+      .mockRejectedValue(new Error("Permission denied"));
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: mockWriteText,
+      },
+    });
+    document.execCommand = jest.fn().mockReturnValue(false);
+    const onCopySpy = jest.fn();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+
+    render(
+      <CopyToClipboardButton
+        textToCopy="Uncopied Value"
+        onCopy={onCopySpy}
+        errorToastMessage="Please copy manually."
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("copy-to-clipboard-button"));
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Please copy manually.",
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("Copied!")).not.toBeInTheDocument();
+    expect(onCopySpy).not.toHaveBeenCalled();
   });
 
   it("stops click propagation so parent click handlers are not triggered", async () => {

@@ -2,9 +2,9 @@
 
 ## 1. Executive Summary & Engine Architecture
 
-The WorkSphere Solar Desk Illumination Engine ([`src/lib/sunPosition.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/sunPosition.ts)) calculates real-time solar coordinates, window orientation vectors, and ambient glare risks for indoor workstations and outdoor coworking patios. Remote workers and digital nomads require optimal natural lighting conditions without direct monitor glare, excessive thermal radiation, or UV eye strain.
+The WorkSphere Solar Desk Illumination Engine ([`src/lib/sunPosition.ts`](../../src/lib/sunPosition.ts)) calculates real-time solar coordinates, window orientation vectors, and ambient glare risks for indoor workstations and outdoor coworking patios. Remote workers and digital nomads require optimal natural lighting conditions without direct monitor glare, excessive thermal radiation, or UV eye strain.
 
-By implementing the NOAA Solar Calculator algorithms directly in pure TypeScript without external runtime dependencies, the engine runs efficiently across client browsers, WebGL shaders ([`src/components/VenueGodRays.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/VenueGodRays.tsx)), and edge serverless API routes.
+By implementing the NOAA Solar Calculator algorithms directly in pure TypeScript without external runtime dependencies, the engine runs efficiently across client browsers, WebGL shaders ([`src/components/VenueGodRays.tsx`](../../src/components/VenueGodRays.tsx)), and edge serverless API routes.
 
 ```mermaid
 flowchart TD
@@ -44,7 +44,7 @@ flowchart TD
 
 ## 2. Astronomical Solar Position Mathematics
 
-Solar calculation in [`src/lib/sunPosition.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/sunPosition.ts) converts standard UTC timestamps into astronomical coordinates relative to a venue's latitude $\phi$ and longitude $\lambda$.
+Solar calculation in [`src/lib/sunPosition.ts`](../../src/lib/sunPosition.ts) converts standard UTC timestamps into astronomical coordinates relative to a venue's latitude $\phi$ and longitude $\lambda$.
 
 ### 2.1 Julian Day & Century Conversions
 
@@ -323,7 +323,7 @@ Screen glare occurs when direct sunlight strikes the monitor display surface at 
 
 ## 6. WebGL 2.0 God Rays Shader Projection
 
-In addition to numerical spatial ratings, WorkSphere renders real-time volumetric light shafts in venue detail views via WebGL 2.0 ([`src/components/VenueGodRays.tsx`](file:///c:/Users/admin/Desktop/workfere/src/components/VenueGodRays.tsx)).
+In addition to numerical spatial ratings, WorkSphere renders real-time volumetric light shafts in venue detail views via WebGL 2.0 ([`src/components/VenueGodRays.tsx`](../../src/components/VenueGodRays.tsx)).
 
 ### 6.1 Screen Space Coordinates Mapping
 
@@ -343,6 +343,6 @@ const sunY = Math.sin((pos.altitude * Math.PI) / 180) * 0.4 + 0.6;
 
 ## 7. Verification & Edge-Runtime Guidelines
 
-1. **Zero External Dependencies:** Keep [`src/lib/sunPosition.ts`](file:///c:/Users/admin/Desktop/workfere/src/lib/sunPosition.ts) free of external libraries (`moment`, `suncalc`, `mathjs`) to ensure zero-overhead edge routing compatibility.
+1. **Zero External Dependencies:** Keep [`src/lib/sunPosition.ts`](../../src/lib/sunPosition.ts) free of external libraries (`moment`, `suncalc`, `mathjs`) to ensure zero-overhead edge routing compatibility.
 2. **Angle Clamping:** Always apply `Math.min(1, Math.max(-1, cosVal))` before invoking `Math.acos()` to prevent `NaN` returns caused by floating-point precision loss near horizon boundaries ($0^\circ$ and $90^\circ$).
 3. **Southern Hemisphere Verification:** Verify that summer peak UV heuristics account for inverted southern hemisphere seasonality (November–March).

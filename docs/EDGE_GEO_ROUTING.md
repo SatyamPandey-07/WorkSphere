@@ -46,7 +46,7 @@ Where:
 - $\Delta \text{lat} = \text{lat}_2 - \text{lat}_1$
 - $\Delta \text{lng} = \text{lng}_2 - \text{lng}_1$
 
-Implemented in [geoRouter.ts](file:///c:/Users/shrut/OneDrive/Desktop/WorkSphere/src/lib/edge/geoRouter.ts):
+Implemented in [geoRouter.ts](../src/lib/edge/geoRouter.ts):
 
 ```typescript
 function haversineDistance(
@@ -87,7 +87,7 @@ Node health is continually audited. The client selects the optimal endpoint usin
 
 ## 4. Failover Room State Reconnection
 
-When a primary edge node crashes or drops connection, the client reconnects to an alternative regional failover node. To prevent data corruption or state drift (where local edits conflict with stale failover state), the [FailoverSyncManager](file:///c:/Users/shrut/OneDrive/Desktop/WorkSphere/src/lib/edge/failoverSync.ts) enforces a strict state reconciliation protocol.
+When a primary edge node crashes or drops connection, the client reconnects to an alternative regional failover node. To prevent data corruption or state drift (where local edits conflict with stale failover state), the [FailoverSyncManager](../src/lib/edge/failoverSync.ts) enforces a strict state reconciliation protocol.
 
 ### Reconnection Synchronization Pipeline
 

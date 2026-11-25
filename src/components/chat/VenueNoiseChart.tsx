@@ -87,10 +87,10 @@ export function VenueNoiseChart({
         >
           <h3 className="text-xs font-black uppercase tracking-widest text-zinc-200 mb-1 flex items-center gap-2">
             <Zap className="w-4 h-4 text-blue-400" />
-            AI Wifi Prediction
+            Observed Wi-Fi Speeds
           </h3>
           <p className="text-[10px] text-zinc-400 uppercase tracking-widest mb-4">
-            Expected speeds based on crowd telemetry
+            Hourly measurements based on crowd telemetry
           </p>
           <div className="h-40 w-full mt-2">
             <ResponsiveContainer width="99%" height="100%" debounce={50}>
@@ -246,7 +246,11 @@ export function VenueNoiseChart({
           <div className="h-44 w-full mt-2">
             <ResponsiveContainer width="99%" height="100%" debounce={50}>
               <LineChart data={forecastData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#27272a"
+                  vertical={false}
+                />
                 <XAxis
                   dataKey="hour"
                   axisLine={false}
@@ -266,15 +270,21 @@ export function VenueNoiseChart({
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
                       if (!data) return null;
-                      const confPercent = Math.round((data.confidence ?? 0) * 100);
+                      const confPercent = Math.round(
+                        (data.confidence ?? 0) * 100,
+                      );
                       return (
                         <div
                           data-testid="noise-tooltip"
                           className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl text-xs"
                         >
-                          <p className="font-bold text-zinc-200 mb-1">{data.hour}</p>
+                          <p className="font-bold text-zinc-200 mb-1">
+                            {data.hour}
+                          </p>
                           <p className="text-pink-400 font-semibold">
-                            {data.predictedDb ? `${data.predictedDb} dB` : "No data"}
+                            {data.predictedDb
+                              ? `${data.predictedDb} dB`
+                              : "No data"}
                           </p>
                           <p className="text-zinc-500 text-[10px] mt-0.5">
                             Confidence: {isNaN(confPercent) ? 0 : confPercent}%
